@@ -5333,6 +5333,20 @@ struct Generator
                                 w.emit(") catch @panic(\"OOM\");\n")
                                 lli += 1
                             return
+                    if gtll.name == "HashMap"
+                        # §28f: `var m: HashMap(K,V) = {}` — only the annotation can type an
+                        # EMPTY dict literal, so handle it here (just the typed init; no puts,
+                        # so no const/var-mutation hazard). NON-empty typed dict literals fall
+                        # through to the genExpr labeled-block, which is self-contained (its
+                        # internal `var` does the puts) and therefore const-safe.
+                        if ie is Expr.dict_lit as dl_init
+                            if dl_init.entries.len == 0
+                                w.emit(": ")
+                                genType(n.type_!)
+                                w.emit(" = ")
+                                genType(n.type_!)
+                                w.emit(".init(_allocator);\n")
+                                return
             # BUG-092: var lines: List(str) = s.split(sep) / s.lines() —
             # auto-collect SplitIterator into an ArrayList.  Use a labeled
             # block so const/var both work (the outer var holds the result;
@@ -9236,14 +9250,63 @@ struct Generator
                     sli += 1
                 w.emit("break :" + sl_label + " " + sl_var + "; })")
             on Expr.dict_lit as dl
-                w.emit("blk: { var _dl = std.StringHashMap(anytype).init(_allocator); ")
+                # §28f: `{k: v, ...}` lowers to a labeled-block building a HashMap —
+                # StringHashMap(V) for str keys (interned), AutoHashMap(K, V) otherwise;
+                # str values are interned too (like HashMap.set). K/V types come from
+                # the first entry. An empty `{}` has no entry to infer from — it emits
+                # AutoHashMap(anytype, anytype) and relies on the var-init type-hint path
+                # (a bare `{}` with no annotation then errors, as intended).
+                var dl_uid = w.nextUid()
+                var dl_label: str = "blk_dl_" + dl_uid.toString()
+                var dl_var:   str = "_dl_" + dl_uid.toString()
+                var dk_t: Type_ = Type_.unknown_
+                var dv_t: Type_ = Type_.unknown_
+                if .infer_ctx != nil
+                    for d0 in dl.entries
+                        dk_t = inferExpr(d0.key, .infer_ctx!)
+                        dv_t = inferExpr(d0.value, .infer_ctx!)
+                        break
+                var dk_is_str = dk_t is Type_.string_
+                var dv_is_str = dv_t is Type_.string_
+                var dv_zig: str = "i64"
+                if structNameFromType(dv_t) as dvs
+                    if class_names.contains_(dvs)
+                        dv_zig = "*" + dvs
+                    else
+                        dv_zig = dvs
+                else
+                    dv_zig = zigTypeForListElem(dv_t)
+                w.emit("(" + dl_label + ": { var " + dl_var + " = ")
+                if dk_is_str
+                    w.emit("std.StringHashMap(" + dv_zig + ")")
+                else
+                    var dk_zig: str = "i64"
+                    if structNameFromType(dk_t) as dks
+                        if class_names.contains_(dks)
+                            dk_zig = "*" + dks
+                        else
+                            dk_zig = dks
+                    else
+                        dk_zig = zigTypeForListElem(dk_t)
+                    w.emit("std.AutoHashMap(" + dk_zig + ", " + dv_zig + ")")
+                w.emit(".init(_allocator); ")
                 for en in dl.entries
-                    w.emit("_dl.put(")
-                    genExpr(en.key)
+                    w.emit(dl_var + ".put(")
+                    if dk_is_str
+                        w.emit("_intern(")
+                        genExpr(en.key)
+                        w.emit(")")
+                    else
+                        genExpr(en.key)
                     w.emit(", ")
-                    genExpr(en.value)
+                    if dv_is_str
+                        w.emit("_intern(")
+                        genExpr(en.value)
+                        w.emit(")")
+                    else
+                        genExpr(en.value)
                     w.emit(") catch @panic(\"OOM\"); ")
-                w.emit("break :blk _dl; }")
+                w.emit("break :" + dl_label + " " + dl_var + "; })")
             on Expr.array_lit as al
                 w.emit(".{")
                 var ali = 0

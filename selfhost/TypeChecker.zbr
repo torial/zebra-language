@@ -2152,6 +2152,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 var set_elem_t: Type_ = inferExpr(sl.elems.at(0), ctx)
                 return Type_.set_(set_elem_t)
             return Type_.set_(Type_.unknown_)
+        on Expr.dict_lit as dl
+            # §28f: {k: v, ...} → HashMap(K, V); K/V from the first entry (empty → unknown).
+            # (Iterate to read the first entry — a for-binding auto-derefs the ^Expr fields.)
+            for d0 in dl.entries
+                var dk_t: Type_ = inferExpr(d0.key, ctx)
+                var dv_t: Type_ = inferExpr(d0.value, ctx)
+                return Type_.hashmap_(HashMapType_(dk_t, dv_t))
+            return Type_.hashmap_(HashMapType_(Type_.unknown_, Type_.unknown_))
         on Expr.tuple_lit as tl
             var telems: List(Type_) = List()
             for telem in tl.elems

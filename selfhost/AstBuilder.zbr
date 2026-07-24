@@ -16,7 +16,7 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use Ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclTypeAlias, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, FnTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtIn, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprSetLit, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain, ExprIf
+use Ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclTypeAlias, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, FnTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtIn, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprSetLit, ExprDictLit, DictEntry, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain, ExprIf
 use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PAssertCmp, PAssertUnary, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PTypeAlias, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain, PIfExpr
 
 def zspan(): Span
@@ -979,6 +979,19 @@ class ASTBuilder
                 for e in ps.elems
                     elems_s.add(.buildExpr(e)?)
                 return Expr.set_lit(ExprSetLit(zspan(), nil, elems_s))
+
+            on PNode.expr_dict_lit as pd
+                # {k: v, ...} — dict literal.  Parallel key/value PNode lists lower
+                # to a DictEntry list; K/V types inferred at codegen (or from a
+                # HashMap annotation for the empty `{}` case).
+                var dentries: List(DictEntry) = List(DictEntry)()
+                var pdi = 0
+                while pdi < pd.keys.len
+                    var dk_e: Expr = .buildExpr(pd.keys.at(pdi))?
+                    var dv_e: Expr = .buildExpr(pd.values.at(pdi))?
+                    dentries.add(DictEntry(dk_e, dv_e))
+                    pdi = pdi + 1
+                return Expr.dict_lit(ExprDictLit(zspan(), dentries))
 
             on PNode.expr_chained_cmp as pcc
                 var ops_list: List(str) = List(str)()

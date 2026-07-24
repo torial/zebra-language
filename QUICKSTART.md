@@ -681,8 +681,10 @@ var total = items.reduce(0, def(acc, x) = acc + x)      # fold to a scalar; resu
 items.sort()                         # natural ascending (numeric / lexicographic)
 items.sort(def(a, b) = a > b)        # custom comparator (descending here); same as sortBy
 
-# HashMap
+# HashMap — construct with HashMap(K,V)() or a dict literal `{k: v, ...}`:
 var m = HashMap(str, int)()
+var scores = {"a": 1, "b": 2}        # dict literal → HashMap(str, int) (K/V inferred)
+var byId: HashMap(int, str) = {}     # empty dict — type from the annotation
 m.set("a", 1)
 var v = m.get("a")                   # returns int? (optional)
 var present = m.contains("a")        # bool
@@ -723,9 +725,9 @@ var a = Set(int)()                   # explicit constructor
 var b: Set(int) = Set()              # bare ctor (element type from annotation)
 var c = {1, 2, 3, 2}                 # set literal → Set(int) (deduped to {1,2,3})
 var d: Set(str) = {"x", "y"}         # typed set literal
-# `{a, b, c}` (comma-separated, no colons) is a set literal. `{}` is a compile
-# error (ambiguous empty set vs dict — use `Set()`); `{k: v}` (dict literal) is
-# reserved and not yet implemented.
+# `{a, b, c}` (comma-separated, no colons) is a set literal; `{k: v, ...}` is a
+# dict literal (→ HashMap, see below). `{}` is an empty dict — a bare `{}` with no
+# type context errors, so annotate it: `var m: HashMap(str,int) = {}`.
 #
 # Element type T must be auto-hashable (int/uint/enum/str/pointer). A struct
 # with slice fields is not auto-hashable and will fail to compile — same

@@ -12,13 +12,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## [0.15] — 2026-05 (in progress)
 
-### Set literal syntax `{a, b, c}` (§28f)
+### Collection literal syntax `{…}` (§28f)
 
-- **`{a, b, c}` is a set literal** producing a `Set(T)` (element type inferred, or
-  from a `var s: Set(int) =` annotation). Comma-separated, colon-free braces only:
-  `{}` is a compile error (ambiguous empty set vs dict — use `Set()`), and `{k: v}`
-  (dict literals) are reserved/not-yet-implemented. Works in every position a `Set`
-  value does (var-init, return, call arg, nested). See QUICKSTART §10.
+- **`{a, b, c}` is a set literal** → `Set(T)`, and **`{k: v, ...}` is a dict literal**
+  → `HashMap(K, V)`, disambiguated by a `:` after the first element. Element/key/value
+  types are inferred (or taken from a `var x: Set(int) =` / `HashMap(str,int) =`
+  annotation). **`{}` is an empty dict** — a bare `{}` with no type context is an error,
+  so annotate it (`var m: HashMap(str,int) = {}`). Both work in every position their
+  collection value does (var-init, return, call arg, nested). See QUICKSTART §10.
 
 ### `Set(T)` — generic hash set (§28f)
 

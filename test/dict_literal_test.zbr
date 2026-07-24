@@ -1,0 +1,32 @@
+# §28f: dict literal syntax `{k: v, ...}` — lowers to a HashMap(K, V).
+
+def main()
+    # str-key dict literal → HashMap(str, int), inferred from the first entry.
+    var ages = {"alice": 30, "bob": 25}
+    assert ages.count() == 2, "dict count 2"
+    assert ages.get("alice")! == 30, "alice → 30"
+    assert ages.contains("bob"), "has bob"
+    assert not ages.contains("carol"), "no carol"
+
+    # int-key dict → HashMap(int, str).
+    var names = {1: "one", 2: "two"}
+    assert names.get(1)! == "one", "1 → one"
+    assert names.count() == 2, "int-key dict count"
+
+    # typed non-empty: annotation supplies K/V.
+    var scores: HashMap(str, int) = {"x": 100}
+    assert scores.get("x")! == 100, "typed dict"
+
+    # typed empty {} — only the annotation can type this.
+    var empty: HashMap(str, int) = {}
+    assert empty.count() == 0, "empty dict count 0"
+    empty.set("y", 5)
+    assert empty.get("y")! == 5, "empty-then-set"
+
+    # for k, v iteration over a literal-built map.
+    var total = 0
+    for k, v in ages
+        total += v
+    assert total == 55, "sum ages 30+25 == 55"
+
+    print("dict_literal: OK")

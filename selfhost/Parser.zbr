@@ -102,6 +102,7 @@ union PNode
     expr_array_lit: ^PArrayLit
     expr_list_lit: ^PArrayLit          # [a, b, c] — same shape as array, different lowering
     expr_set_lit: ^PArrayLit           # {a, b, c} — set literal (third lowering)
+    expr_dict_lit: ^PDictLit           # {k: v, ...} — dict literal
     expr_chained_cmp: ^PChainedCmp    # a < b < c — chained comparison
     expr_opt_chain: ^POptChain         # expr?.member / expr?.method(args)
     expr_if_expr: ^PIfExpr             # if cond: val else: other  (inline ternary)
@@ -184,6 +185,14 @@ struct PArrayLit
     var elems: List(PNode)
     cue init(elems: List(PNode))
         .elems = elems
+
+# {k: v, ...} dict literal — parallel key/value lists (lowered to ExprDictLit).
+struct PDictLit
+    var keys: List(PNode)
+    var values: List(PNode)
+    cue init(keys: List(PNode), values: List(PNode))
+        .keys = keys
+        .values = values
 
 struct PExcept
     var base: List(PNode)
@@ -2965,19 +2974,38 @@ class Parser
             .expectText("]")?
             return PNode.expr_list_lit(PArrayLit(elems))
         else if .textIs("{")
-            # { elem, elem, ... } — set literal.  `{k: v}` (dict) is reserved but
-            # not yet implemented, and bare `{}` is ambiguous (empty set vs empty
-            # dict) — both raise a clear error so the syntax stays unambiguous.
-            # Non-empty, colon-free braces lower (like the list literal) to a
-            # labeled-block that builds a void-valued hash map.
+            # Brace literal, disambiguated by a `:` after the first element:
+            #   {k: v, ...}  → dict literal (→ HashMap(K, V))
+            #   {a, b, ...}  → set literal (→ Set(T))
+            #   {}           → empty dict literal (typed from a HashMap annotation
+            #                  at codegen; a bare `{}` with no type context errors there).
             .advance()
             if .textIs("}")
-                raise .errorAt("empty `{}` is ambiguous — use `Set()` for an empty set")
-            var first_se = .parseExpr()?
+                .advance()
+                return PNode.expr_dict_lit(PDictLit(List(PNode)(), List(PNode)()))
+            var first_be = .parseExpr()?
             if .textIs(":")
-                raise .errorAt("dict literals `{k: v}` are not yet implemented — use `HashMap()`")
+                # Dict literal: { k: v, k: v, ... }
+                .advance()
+                var first_bv = .parseExpr()?
+                var dkeys = List(PNode)()
+                var dvals = List(PNode)()
+                dkeys.add(first_be)
+                dvals.add(first_bv)
+                while .textIs(",")
+                    .advance()
+                    if .textIs("}")
+                        break
+                    var dk = .parseExpr()?
+                    .expectText(":")?
+                    var dv = .parseExpr()?
+                    dkeys.add(dk)
+                    dvals.add(dv)
+                .expectText("}")?
+                return PNode.expr_dict_lit(PDictLit(dkeys, dvals))
+            # Set literal: { a, b, c }
             var elems = List(PNode)()
-            elems.add(first_se)
+            elems.add(first_be)
             while .textIs(",")
                 .advance()
                 if .textIs("}")
