@@ -756,6 +756,15 @@ def mightUseNameInExpr(name: str, expr: Expr): bool
 # run), the float types, bool/void/type/…, the c_* ABI types, and the primitive
 # values null/undefined.  Zig rejects such declarations with "name shadows
 # primitive".  Mirrors src/CodeGen.zig isZigPrimitiveName.
+# The canonical stdlib-namespace set — the single source of truth for "is `X` a
+# stdlib namespace you dispatch `X.method()` on" (no `use` required). BOTH
+# `CodeGen.isStdlibNamespace` (dispatch) and `Resolver.isBuiltin` (name resolution)
+# consult this, so the set can no longer drift between them (the BUG that let `Build`
+# be a namespace in codegen but "undefined" in the resolver — the divergence audit's
+# root class). Add a new stdlib namespace HERE, once.
+def isStdlibNs(name: str): bool
+    return name == "Math" or name == "File" or name == "sys" or name == "Arg" or name == "Json" or name == "DynLib" or name == "Http" or name == "Ws" or name == "HttpResponse" or name == "Regex" or name == "DateTime" or name == "Hash" or name == "Crypto" or name == "Random" or name == "Terminal" or name == "Log" or name == "Csv" or name == "Timer" or name == "Progress" or name == "Profile" or name == "Uri" or name == "Compress" or name == "Mime" or name == "Tcp" or name == "Udp" or name == "Sqlite" or name == "Net" or name == "Gui" or name == "Shell" or name == "Dir" or name == "Path" or name == "Reflect" or name == "Build"
+
 def isZigPrimitiveName(name: str): bool
     if name.len >= 2
         var c0 = name[0]

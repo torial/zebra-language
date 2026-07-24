@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
-use CgHelpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, isZigPrimitiveName, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
+use CgHelpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
 
@@ -2311,7 +2311,9 @@ struct Generator
     # `Http.get(...)` (undeclared identifier 'Http').  Used to guard `.get` (and any
     # future colliding heuristic) so a namespace receiver falls through to dispatch.
     def isStdlibNamespace(nm: str): bool
-        return nm == "Math" or nm == "File" or nm == "sys" or nm == "Arg" or nm == "Json" or nm == "DynLib" or nm == "Http" or nm == "Ws" or nm == "HttpResponse" or nm == "Regex" or nm == "DateTime" or nm == "Hash" or nm == "Crypto" or nm == "Random" or nm == "Terminal" or nm == "Log" or nm == "Csv" or nm == "Timer" or nm == "Progress" or nm == "Profile" or nm == "Uri" or nm == "Compress" or nm == "Mime" or nm == "Tcp" or nm == "Udp" or nm == "Sqlite" or nm == "Net" or nm == "Gui" or nm == "Shell" or nm == "Dir" or nm == "Path" or nm == "Reflect" or nm == "Build"
+        # Single source of truth in CgHelpers.isStdlibNs — shared with Resolver.isBuiltin
+        # so the namespace set can't drift between the two (the `Build` divergence bug).
+        return isStdlibNs(nm)
 
     # True when the member's object is a stdlib namespace ident (see isStdlibNamespace).
     def isNamespaceReceiver(m: ExprMember): bool
