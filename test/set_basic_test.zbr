@@ -37,4 +37,11 @@ def main()
     names.clear()
     assert names.len == 0, "cleared"
 
+    # Bare Set() — element type from the var annotation.
+    var bare: Set(int) = Set()
+    bare.add(7)
+    bare.add(7)
+    assert bare.len == 1, "bare Set() dedup"
+    assert bare.contains(7), "bare contains 7"
+
     print("set_basic: OK")

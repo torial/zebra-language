@@ -718,10 +718,14 @@ for x in seen                        # direct iteration over elements
 if 2 in seen                         # membership operator
     print("has 2")
 seen.clear()
+# Construct either explicitly — `Set(int)()` — or bare with the element type
+# taken from the variable annotation: `var s: Set(int) = Set()`.
+#
 # Element type T must be auto-hashable (int/uint/enum/str/pointer). A struct
 # with slice fields is not auto-hashable and will fail to compile — same
-# constraint HashMap keys have. Set equality (`==`) and print(set) are not
-# supported (mirrors HashMap); iterate items() to compare or display.
+# constraint HashMap keys have. Set equality (`==`) is a compile error (as with
+# HashMap). `print(set)` dumps the raw backing-map struct (again, same as
+# `print(someHashMap)`) — not human-readable; iterate `items()` to display.
 
 # Iteration
 for item in items

@@ -5616,9 +5616,11 @@ struct Generator
                 branch outer.callee
                     on Expr.call as inner
                         if inner.callee is Expr.ident as id
+                            # Explicit Set(T)() keeps its genGenericCtorCall routing
+                            # (genCall) — only bare Set() needs the type-hint path below.
                             return id.name == "List" or id.name == "HashMap"
                     on Expr.ident as id
-                        return id.name == "StrSet" or id.name == "List" or id.name == "HashMap"
+                        return id.name == "StrSet" or id.name == "List" or id.name == "HashMap" or id.name == "Set"
                     else
                         pass
         return false
@@ -5698,6 +5700,28 @@ struct Generator
                         else
                             w.emit("std.AutoHashMap(anytype, anytype")
                         w.emit(").init(_allocator)")
+                        return
+                    if id.name == "Set"
+                        # §28f: bare `Set()` — element type from the `var s: Set(T) =`
+                        # annotation. Mirrors bare HashMap; void value.
+                        if type_hint != nil
+                            branch type_hint!
+                                on TypeRef.generic as gtr
+                                    var set_key_str = gtr.args.len > 0 and isStringTypeRef(gtr.args.at(0))
+                                    if set_key_str
+                                        w.emit("std.StringHashMap(void)")
+                                    else
+                                        w.emit("std.AutoHashMap(")
+                                        if gtr.args.len > 0
+                                            genType(gtr.args.at(0))
+                                        else
+                                            w.emit("anytype")
+                                        w.emit(", void)")
+                                else
+                                    w.emit("std.AutoHashMap(anytype, void)")
+                        else
+                            w.emit("std.AutoHashMap(anytype, void)")
+                        w.emit(".init(_allocator)")
                         return
                 else
                     pass
