@@ -475,12 +475,19 @@ Assorted resolver/timing divergences the sweep surfaced, all low-signal:
 eventual reject); a lone `@result`/unknown `@`-directive at EOF (bootstrap accepts,
 selfhost errors "unexpected end of input").
 
-## Grammar hygiene — dead rule
+## Grammar hygiene — dead rule  ✅ RESOLVED (wired in, 2026-07-23)
 
-`ValueArgListNE` / `ValueArg` (grammar.txt lines ~452–461) are **defined but
-unreferenced** by any production — surfaced as permanently-uncovered by the sampler.
-Candidate for removal or wiring-in (they were meant for value-applied aliases in type
-position). Cosmetic; noted, not filed.
+`ValueArgListNE` / `ValueArg` were **defined but unreferenced** (surfaced as
+permanently-uncovered by the sampler). Turned out NOT to be dead functionality — it's
+a *real, working* feature (`var x: Bounded(0, 99) = 42` compiles + runs; the corpus
+uses `Bounded(0, 100)`); the grammar's `TypeRef` simply never documented type
+*application* at all. Fixed by wiring both application forms into `TypeRef`:
+`open_call TypeRefListNE rparen` (generic, `List(int)`) and `open_call ValueArgListNE
+rparen` (value-applied alias, `Bounded(0,99)`) — matching the parser's literal-vs-type
+first-arg branch in `eatTypeName`. `ValueArg` is now covered; gramgen coverage 94%→97%.
+(Remaining `TypeRef` gaps still not modelled, per a note in the grammar: `^T`
+heap-indirection and `def(T1,T2):R` fn-pointer types — handled by `eatTypeName`'s
+string encoding.)
 
 ## Campaign 2026-07-23 (post-BUG-199) — parser robustness confirmed
 

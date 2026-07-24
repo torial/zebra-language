@@ -225,9 +225,19 @@ TypeRef              → bang TypeRef
                      |  int_size
                      |  uint_size
                      |  float_size
+                     |  open_call TypeRefListNE rparen
+                     |  open_call ValueArgListNE rparen
                      |  TypeRef dot id
                      |  TypeRef question
                      |  TypeRef star
+
+# Type APPLICATION (the two `open_call …` alternatives above; `open_call` is the
+# glued `Name(` token). The parser (Parser.zbr eatTypeName) branches on the first
+# argument: TYPE args → generic application (`List(int)`, `HashMap(str, int)`); LITERAL
+# args (ValueArg) → a value-applied refinement alias (`Bounded(0, 99)`). The literal-vs-
+# type split is what keeps them unambiguous — hence ValueArg admits only literals.
+# (Grammar gaps still not modelled here, handled by eatTypeName's string encoding:
+# `^T` heap-indirection prefix and the `def(T1, T2): R` inline function-pointer type.)
 
 Block                → indent StmtList dedent
 
@@ -462,8 +472,9 @@ AliasParamListNE     → AliasParam
 
 AliasParam           → id colon TypeRef
 
-# Value-applied alias in type position (only literal args — not identifier args to avoid
-# ambiguity with generic type args, which are always TypeRef productions)
+# Value-applied alias args — referenced by `TypeRef → open_call ValueArgListNE rparen`
+# (e.g. `Bounded(0, 99)`). Only literal args (not identifiers) so the value form stays
+# unambiguous with generic type args, which are always TypeRef productions.
 ValueArgListNE       → ValueArg
                      |  ValueArgListNE comma ValueArg
 
