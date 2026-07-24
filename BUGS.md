@@ -1,6 +1,22 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-199. Next new bug: BUG-200.**
+**Last bug number generated: BUG-200. Next new bug: BUG-201.**
+
+---
+
+### BUG-200: deeply-nested expressions stack-overflow both compilers ⛔ OPEN (low priority, both compilers)
+A single expression with ~1000+ terms/nesting (`1 + 1 + … + 1`, or equivalently deep
+parens/calls) crashes the compiler with a **stack overflow** instead of a clean
+diagnostic: selfhost segfaults at ~N=1000, the Zig bootstrap earlier at ~N=400. Root:
+the AST tree-walk (parse → resolve → typecheck; `zebra --check` alone crashes, so it's
+the front-end, not codegen) recurses on expression-tree depth with **no depth guard**;
+a depth-N expression is a depth-N tree → N stack frames. Not a scaling problem — the
+selfhost is otherwise linear and 2-10x faster than the bootstrap on program size (see
+`tools/scaling_probe.py`, which found this). **Low priority:** no hand-written
+expression is that deep; the risk is machine-generated code. Same reliability family as
+BUG-199 (ungraceful crash on valid input). Fix is a decision (imposes a nesting limit):
+bound expression-nesting depth at parse time and emit "expression too deeply nested
+(max N)", vs. run the parse on a larger-stack thread. Deferred pending that call.
 
 ---
 
