@@ -117,7 +117,19 @@ Two distinct facets surfaced when probing BUG-196, each its own mechanism:
   `for (m.items) |*r|` + deref. A separate mutation-aware loop-lowering feature (detect a
   mutating method on the loop var → emit `|*r|`). Matrix-in-place-build pattern.
 
-### BUG-198: assigning a union value to an OPTIONAL field drops the box type arg ⛔ OPEN (both compilers)
+### BUG-198: assigning a union value to an OPTIONAL field drops the box type arg ✅ CANNOT REPRODUCE — likely resolved (2026-07-24)
+**Could not reproduce** with four faithful shapes (all run correctly): the exact reported
+`.field = t` setter pattern (non-optional union param → `Type_?`-style optional union
+field), a recursive union (`node: ^Tree`), and an explicit `^Tree?` field. Emits a
+correct box, no bare `create()`. Appears resolved by intervening codegen (the divergence
+burn-down / BUG-187/188 nil-narrowing era), same as BUG-196's filed face (b). NOT
+definitively closed: the original trigger was the specific extend_test
+`InferCtx.self_type_override: Type_?` context with the param-as-optional workaround NOT
+applied, which wasn't reconstructed here. Added a regression GUARD for the now-working
+behavior: `test/bug198_union_optional_field_test.zbr` (smoke_run "bug198: OK"). If it ever
+resurfaces, reconstruct the extend self-typing context. Original report retained below.
+
+
 Direct assignment of a non-optional union value to an optional heap-boxed field —
 e.g. `def withSelfType(t: Type_): .self_type_override = t` where the field is
 `Type_?` — emits `_allocator.create()` with **no type argument** (`create()` needs

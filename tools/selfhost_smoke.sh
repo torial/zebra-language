@@ -865,6 +865,10 @@ smoke_run test/bug193_listdir_test.zbr "bug193: OK"
 # _MapKV derefs the pointer before reading .KV (worked on a local, failed on a param).
 smoke_run test/bug195_map_param_test.zbr "bug195: 62"
 
+# BUG-198 guard: non-optional union value -> optional union field (regression guard;
+# the reported create()-drops-type bug no longer reproduces — see BUGS.md).
+smoke_run test/bug198_union_optional_field_test.zbr "bug198: OK"
+
 # Empty / marker structs+classes are legal (2026-07-23): body-less struct/class is a
 # valid instantiable marker type. grammar.txt MemberBlockOpt; fuzz/FINDINGS.md G2.
 smoke_run test/marker_struct_test.zbr "marker: OK"

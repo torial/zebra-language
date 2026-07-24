@@ -1,0 +1,23 @@
+# BUG-198 regression guard: assigning a non-optional UNION value to an OPTIONAL union
+# field used to drop the box type arg (emit `_allocator.create()` with no T). Could not
+# reproduce as of 2026-07-24 (the exact `.field = t` setter pattern from the report, a
+# recursive union, and a `^T?` field all work) — appears resolved by intervening codegen;
+# this guards the behavior. See BUGS.md BUG-198.
+union Tree
+    leaf: int
+    node: ^Tree
+
+class Box
+    var t: Tree?
+    # exact BUG-198 shape: non-optional union param assigned to an optional union field
+    def setTree(x: Tree)
+        .t = x
+
+class Program
+    static
+        def main
+            var b: Box = Box()
+            b.setTree(Tree.leaf(5))
+            var b2: Box = Box()
+            b2.setTree(Tree.node(Tree.leaf(1)))
+            print("bug198: OK")
