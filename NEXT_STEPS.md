@@ -73,10 +73,10 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   - [x] **All selfhost gaps closed (2026-07-22).** 17 emit-compile D-clusters + the final 3
     post-BUG-181 (string_methods/expressiveness_test/throws_autoprop_test). Every fix diffed
     against the known-good bootstrap emit and gated.
-  - [ ] **Root fix — unify the stdlib-namespace list.** `Resolver.isBuiltin` and
-    `CodeGen.isStdlibNamespace` are two hand-maintained copies that drift (the Build bug's
-    cause). One shared source both consult prevents the whole sub-class. (Still open — the
-    class prevention, not a live gap.)
+  - [x] **Root fix — unify the stdlib-namespace list (DONE 2026-07-23, `0b11d83`).**
+    Extracted `CgHelpers.isStdlibNs` as the single source both `Resolver.isBuiltin` and
+    `CodeGen.isStdlibNamespace` consult — the Build-bug drift class can no longer recur.
+    Behavior-preserving; all 5 gates green.
   - [x] **GATED (2026-07-22).** `bash tools/divergence_check.sh --gate` exits 1 on any selfhost
     gap; baselined 0. Documented in CLAUDE.md verification-gates. Per-session/pre-release (heavy).
   - Note: **14 BOOTSTRAP gaps** = selfhost LEADS; no fix needed (bootstrap sunsets).
