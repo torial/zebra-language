@@ -75,11 +75,16 @@ found 1". Added the natural-log handler `std.math.log(f64, std.math.e, @as(f64, 
 (+ `isNaN`→`isNan`, `isInf`, `atan2` while converging `math_test`). Surfaced again by
 the selfhost↔bootstrap divergence audit.
 
-### BUG-195: `.entries()` on a HashMap *parameter* fails ⛔ OPEN
-The `_zebra_map_entries` preamble does `@TypeOf(map).KV`; a HashMap passed as a
-fn parameter is a `*HashMap`, and `.KV` is not a member of the pointer. Works on
-a local map. `.get`/`.set` on a HashMap param DO work. Fix: preamble should use
-`@TypeOf(map.*)` / deref, or the call site should pass the value.
+### BUG-195: `.entries()`/`.keys()`/`.values()` on a HashMap *parameter* ✅ RESOLVED (2026-07-24)
+The `_zebra_map_keys`/`_values`/`_entries` preamble helpers did `@TypeOf(map).KV`; a
+HashMap passed as a fn parameter is a `*HashMap`, and `.KV` is not a decl on the pointer
+(worked on a local). Fixed in the shared `selfhost/stdlib_preamble.zig` (read by BOTH
+compilers at emit time — one fix covers both): added `_MapKV(comptime T)` that derefs a
+pointer (`@typeInfo(T) == .pointer`) before reading `.KV`, used in all three helpers. All
+three methods now work on a map param. Verified selfhost (entries=30/keys=2/vals=30) and
+the bootstrap emit compiles. Regression: `test/bug195_map_param_test.zbr` (smoke_run
+"bug195: 62"). Gates all green. No compiler rebuild needed for the fix (preamble is read
+at emit time), but regen confirmed clean.
 
 ### BUG-196: container-method dispatch broken on `List(List(T))` ✅ RESOLVED (2026-07-23)
 Two filed faces: (a) `.len`/`.at` on a `for` binding over `List(List(T))` → "no field

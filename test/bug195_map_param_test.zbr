@@ -1,0 +1,23 @@
+# BUG-195: .entries()/.keys()/.values() on a HashMap PASSED AS A PARAMETER (a *HashMap)
+# failed — `@TypeOf(map).KV` isn't a decl on the pointer. Fixed in stdlib_preamble.zig
+# via _MapKV (deref if pointer). Worked on a local map before; now works on a param too.
+class Program
+    static
+        def sumEntries(m: HashMap(str, int)): int
+            var t: int = 0
+            for k, v in m.entries()
+                t = t + v
+            return t
+        def keyCount(m: HashMap(str, int)): int
+            return m.keys().len
+        def sumValues(m: HashMap(str, int)): int
+            var s: int = 0
+            for v in m.values()
+                s = s + v
+            return s
+        def main
+            var m: HashMap(str, int) = HashMap(str, int)()
+            m.set("a", 10)
+            m.set("b", 20)
+            # entries 30 + keys 2 + values 30 = 62
+            print("bug195: " + (sumEntries(m) + keyCount(m) + sumValues(m)).toString())

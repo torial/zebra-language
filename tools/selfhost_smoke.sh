@@ -861,6 +861,10 @@ smoke_run test/bug196_nested_list_test.zbr "bug196: 43"
 # BUG-193: File.listDir ported to the selfhost (was @compileError); returns List(str).
 smoke_run test/bug193_listdir_test.zbr "bug193: OK"
 
+# BUG-195: .entries()/.keys()/.values() on a HashMap PARAMETER (a *HashMap) — preamble
+# _MapKV derefs the pointer before reading .KV (worked on a local, failed on a param).
+smoke_run test/bug195_map_param_test.zbr "bug195: 62"
+
 # Empty / marker structs+classes are legal (2026-07-23): body-less struct/class is a
 # valid instantiable marker type. grammar.txt MemberBlockOpt; fuzz/FINDINGS.md G2.
 smoke_run test/marker_struct_test.zbr "marker: OK"
