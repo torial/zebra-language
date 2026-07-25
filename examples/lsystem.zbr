@@ -1,0 +1,267 @@
+# L-system fractal renderer — turtle graphics on an ASCII canvas.
+#
+# An L-system is a tiny grammar: an axiom (start string) plus rewrite rules that
+# replace each symbol with a string, applied N times. The expanded string is then
+# read as turtle commands:
+#     F G A B  move forward one step, drawing
+#     f        move forward without drawing
+#     + -      turn left / right by the system's angle
+#     [ ]      push / pop turtle state (for branching plants)
+# A handful of rules unfolds into a fern. It rhymes with what a parser does —
+# production rules and recursion — made visible.
+#
+# Run through the fast selfhost:
+#     zig build && zig-out/bin/zebra.exe run examples/lsystem.zbr
+# Each figure auto-fits the canvas (no per-system tuning of origin or scale), and
+# strokes are shaded along the path with a light→dark glyph ramp.
+#
+# Rendered in ASCII (a light→dark glyph ramp), not truecolour: it reads in any
+# terminal and kept the piece focused. Dogfooding the first, colour version of
+# this file surfaced BUG-208 — `zebra run` hung on any program printing over
+# ~4 KB because it captured the child's stdout pipe instead of inheriting it
+# (now fixed). So colour would work too; ASCII is a style choice, not a fix.
+
+use math
+
+# ── canvas ────────────────────────────────────────────────────────────────
+struct Canvas
+    var w: int
+    var h: int
+    var cell: List(str)   # w*h glyphs; " " = blank
+
+# Lists are reference types: plot/drawLine mutate the buffer in place (no
+# per-pixel struct copying), so they take the buffer directly and return void.
+def plot(cell: List(str), w: int, h: int, x: int, y: int, glyph: str)
+    if x < 0 or x >= w or y < 0 or y >= h
+        return
+    cell[y * w + x] = glyph
+
+# Bresenham line — keeps segments connected after scaling.
+def drawLine(cell: List(str), w: int, h: int, x0: int, y0: int, x1: int, y1: int, glyph: str)
+    var dx = abs(x1 - x0)
+    var dy = 0 - abs(y1 - y0)
+    var sx = -1
+    if x0 < x1
+        sx = 1
+    var sy = -1
+    if y0 < y1
+        sy = 1
+    var err = dx + dy
+    var x = x0
+    var y = y0
+    var steps = 0
+    while steps < 100000
+        plot(cell, w, h, x, y, glyph)
+        if x == x1 and y == y1
+            steps = 100000
+        else
+            var e2 = 2 * err
+            if e2 >= dy
+                err = err + dy
+                x = x + sx
+            if e2 <= dx
+                err = err + dx
+                y = y + sy
+        steps = steps + 1
+
+def abs(n: int): int
+    if n < 0
+        return 0 - n
+    return n
+
+# ── L-system rewriting ──────────────────────────────────────────────────────
+# One rule set per system id. Structural symbols pass through as themselves;
+# anything with no rule is dropped.
+def applyRule(sysId: int, c: u21): str
+    if sysId == 0            # Koch snowflake
+        if c == 'F': return "F-F++F-F"
+        if c == '+': return "+"
+        if c == '-': return "-"
+    if sysId == 1            # Dragon curve
+        if c == 'X': return "X+YF+"
+        if c == 'Y': return "-FX-Y"
+        if c == 'F': return "F"
+        if c == '+': return "+"
+        if c == '-': return "-"
+    if sysId == 2            # Sierpinski triangle
+        if c == 'F': return "F-G+F+G-F"
+        if c == 'G': return "GG"
+        if c == '+': return "+"
+        if c == '-': return "-"
+    if sysId == 3            # Fractal plant
+        if c == 'X': return "F+[[X]-X]-F[-FX]+X"
+        if c == 'F': return "FF"
+        if c == '+': return "+"
+        if c == '-': return "-"
+        if c == '[': return "["
+        if c == ']': return "]"
+    return ""
+
+def rewrite(axiom: str, sysId: int, iters: int): str
+    var s = axiom
+    var n = 0
+    while n < iters
+        # accumulate pieces and join once — clearer than repeated `out = out +
+        # piece`, which reallocates the growing string on every step (O(n²)).
+        var parts = List(str)()
+        var i = 0
+        while i < s.len
+            parts.add(applyRule(sysId, s[i]))
+            i = i + 1
+        s = parts.join("")
+        n = n + 1
+    return s
+
+# ── turtle → segments (in unit turtle space) ────────────────────────────────
+struct Seg
+    var x1: float
+    var y1: float
+    var x2: float
+    var y2: float
+    var t: float          # 0..1 progression along the path, for shading
+
+def buildSegments(s: str, angleDeg: float): List(Seg)
+    var segs = List(Seg)()
+    var x = 0.0
+    var y = 0.0
+    var ang = Math.PI / 2.0            # start pointing up
+    var astep = angleDeg * Math.PI / 180.0
+    var sx = List(float)()
+    var sy = List(float)()
+    var sa = List(float)()
+    var i = 0
+    var total = s.len
+    while i < s.len
+        var c = s[i]
+        if c == 'F' or c == 'G' or c == 'A' or c == 'B'
+            var nx = x + Math.cos(ang)
+            var ny = y + Math.sin(ang)
+            segs.add(Seg(x1: x, y1: y, x2: nx, y2: ny, t: i.toFloat() / total.toFloat()))
+            x = nx
+            y = ny
+        if c == 'f'
+            x = x + Math.cos(ang)
+            y = y + Math.sin(ang)
+        if c == '+'
+            ang = ang + astep
+        if c == '-'
+            ang = ang - astep
+        if c == '['
+            sx.add(x)
+            sy.add(y)
+            sa.add(ang)
+        if c == ']'
+            x = sx[sx.len - 1]
+            y = sy[sy.len - 1]
+            ang = sa[sa.len - 1]
+            sx.remove(sx.len - 1)
+            sy.remove(sy.len - 1)
+            sa.remove(sa.len - 1)
+        i = i + 1
+    return segs
+
+# light → dark stroke glyph, chosen by progression along the path
+def glyphFor(t: float): str
+    if t < 0.15: return "."
+    if t < 0.30: return ":"
+    if t < 0.45: return "-"
+    if t < 0.60: return "="
+    if t < 0.75: return "+"
+    if t < 0.90: return "*"
+    return "#"
+
+# ── render a system to a canvas (auto-fit) ──────────────────────────────────
+def render(sysId: int, axiom: str, iters: int, angleDeg: float, w: int, h: int): Canvas
+    var s = rewrite(axiom, sysId, iters)
+    var segs = buildSegments(s, angleDeg)
+    # local buffer (mutable by-reference — a List reached through a struct field
+    # is *const, so we draw into a local and wrap it in a Canvas at the end)
+    var cell = List(str)()
+    var bi = 0
+    while bi < w * h
+        cell.add(" ")
+        bi = bi + 1
+    if segs.len == 0
+        return Canvas(w: w, h: h, cell: cell)
+    # bounds in turtle space
+    var minx = segs[0].x1
+    var maxx = segs[0].x1
+    var miny = segs[0].y1
+    var maxy = segs[0].y1
+    var i = 0
+    while i < segs.len
+        var sg = segs[i]
+        if sg.x1 < minx
+            minx = sg.x1
+        if sg.x2 < minx
+            minx = sg.x2
+        if sg.x1 > maxx
+            maxx = sg.x1
+        if sg.x2 > maxx
+            maxx = sg.x2
+        if sg.y1 < miny
+            miny = sg.y1
+        if sg.y2 < miny
+            miny = sg.y2
+        if sg.y1 > maxy
+            maxy = sg.y1
+        if sg.y2 > maxy
+            maxy = sg.y2
+        i = i + 1
+    var spanx = maxx - minx
+    var spany = maxy - miny
+    if spanx < 0.0001
+        spanx = 0.0001
+    if spany < 0.0001
+        spany = 0.0001
+    var margin = 1.0
+    var scx = (w.toFloat() - 2.0 * margin) / spanx
+    var scy = (h.toFloat() - 2.0 * margin) / spany
+    var sc = scx
+    if scy < sc
+        sc = scy
+    # draw, flipping y so it grows upward on screen
+    i = 0
+    while i < segs.len
+        var sg = segs[i]
+        var cx0 = (margin + (sg.x1 - minx) * sc + 0.5).toInt()
+        var cx1 = (margin + (sg.x2 - minx) * sc + 0.5).toInt()
+        var cy0 = h - 1 - (margin + (sg.y1 - miny) * sc + 0.5).toInt()
+        var cy1 = h - 1 - (margin + (sg.y2 - miny) * sc + 0.5).toInt()
+        drawLine(cell, w, h, cx0, cy0, cx1, cy1, glyphFor(sg.t))
+        i = i + 1
+    return Canvas(w: w, h: h, cell: cell)
+
+# ── print a canvas (plain ASCII rows — see the BUG-207 note above) ───────────
+def show(c: Canvas)
+    var y = 0
+    while y < c.h
+        var row = ""
+        var x = 0
+        while x < c.w
+            row = row + c.cell[y * c.w + x]
+            x = x + 1
+        print(row)
+        y = y + 1
+
+def banner(title: str)
+    print("")
+    print("-- " + title + " --")
+
+def main()
+    banner("Koch snowflake")
+    show(render(0, "F++F++F", 4, 60.0, 74, 32))
+
+    banner("Dragon curve")
+    show(render(1, "FX", 11, 90.0, 74, 32))
+
+    banner("Sierpinski triangle")
+    show(render(2, "F-G-G", 6, 120.0, 74, 32))
+
+    banner("Fractal plant")
+    show(render(3, "X", 6, 25.0, 74, 38))
+
+    print("")
+    print("4 grammars, one turtle. Each figure is a fixed set of rewrite")
+    print("rules expanded and read as pen strokes, shaded . : - = + * # by")
+    print("progression along the path.")
