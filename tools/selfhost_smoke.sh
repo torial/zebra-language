@@ -793,6 +793,8 @@ smoke_run test/set_advanced_test.zbr "set_advanced: OK"
 smoke_run test/set_literal_test.zbr "set_literal: OK"
 # §28f: dict literal syntax {k: v, ...} — str/int keys, typed, empty {}, for k,v.
 smoke_run test/dict_literal_test.zbr "dict_literal: OK"
+# BUG-203: explicit `.eql(value)` on a @derive(Eq) struct addresses the value arg.
+smoke_run test/derive_eql_explicit_test.zbr "derive_eql_explicit: OK"
 # Full-corpus sweep (2026-07-24): stale tests using removed syntax, refreshed to
 # current forms (print("x") not print "x"; `: T` not `as T`) and now gated.
 smoke_run test/branch_inline_return_test.zbr "branch inline return OK"

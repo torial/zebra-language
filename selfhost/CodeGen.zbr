@@ -10735,6 +10735,17 @@ struct Generator
             if isDetailsMemberOnCatchVar(m.object, catch_var)
                 w.emit("(if (_error_ctx.details) |_det| _det.toString() else \"\")")
                 return
+        # BUG-203: explicit `.eql(v)` on a @derive(Eq) struct. The generated eql is
+        # `fn eql(self: *const Self, other: *const Self)`, so a value argument must be
+        # addressed — mirrors the == path in genBinary, which emits `left.eql(&right)`.
+        # Guarded by isDeriveEqExpr (same as ==) so a user-overridden by-value eql is
+        # treated identically to == rather than newly broken.
+        if mname == "eql" and args.len == 1 and isDeriveEqExpr(m.object)
+            genExpr(m.object)
+            w.emit(".eql(&")
+            genExpr(args.at(0).value)
+            w.emit(")")
+            return
         # DateTime.inZone — unique enough name; dispatch without type inference
         if mname == "inZone"
             w.emit("_dt_in_zone(")

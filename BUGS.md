@@ -37,10 +37,18 @@ and a same-scope fn parameter `key` as a shadow → hard error. Same class as `f
 (collides with `_pad_fill(fill: …)`), hit earlier during §28f set-literal testing.
 **Impact:** common identifiers (`key`, `val`, `fill`, …) are unusable as user function
 names. **Workaround:** rename the user function (the example uses `cellKey`).
-**Fix direction:** prefix preamble-internal parameter names (`_key`, `_val`, …) so they
-can't collide with emitted user symbols — the preamble owns those names, so this is a
-safe one-sided rename. Low severity (clear error, easy workaround) but a papercut that
-undermines "the language feels right". Discovered 2026-07-24.
+**Fix direction / disposition (2026-07-25):** SUBSUMED by the single-file-emit epic
+(`docs/single_file_emit_design.md`) — deferred, do NOT hand-rename the preamble.
+Verified: the repro (`def key(...)`) FAILS under default multi-file emit but COMPILES
+CLEAN under `--single-file`, because single-file mode wraps user decls in
+`const _Mod = struct {…}`, so user `key` becomes `_Mod.key` and a file-scope preamble
+param `key` shadows nothing. When single-file becomes the default emission mode, this
+class disappears wholesale. The alternative — prefixing preamble identifiers — is worse
+than it looks: Zig forbids shadowing a container decl with ANY local, so a preamble
+body `var key`/`const key` collides too (not just params); plus perpetual per-helper
+maintenance and pre-`HELPERS_START` dual-maintenance. Disproportionate for a
+low-severity papercut with a clean architectural cure already in flight. **Workaround
+until then:** rename the user function (e.g. `key` → `cellKey`). Discovered 2026-07-24.
 
 ### BUG-200: deeply-nested expressions stack-overflow ✅ FIXED for recursive nesting (2026-07-23); flat-chain residual documented
 A deeply-nested expression crashed the compiler with a **stack overflow** instead of a
