@@ -89,6 +89,15 @@ python fuzz/gramgen.py --gate   # THE PARSER-ROBUSTNESS GATE: derives 960 determ
                                 #   parser infinite loop) automatically. Complements the
                                 #   above (which only ever see human-written programs).
                                 #   Optional per-session; ~a few min. Needs both .exe built.
+python tools/lint_fallthrough.py   # THE FALL-THROUGH GATE (static, instant, no build):
+                                #   flags a value-returning fn whose TAIL `branch` has a
+                                #   value-producing arm that can fall through without
+                                #   returning. Codegen TCO-wraps such fns in `while(true)`,
+                                #   so a fall-through arm HANGS (not a compile error). Caught
+                                #   nothing new when written (the hazard was isolated to the
+                                #   §28f set-literal arms, since fixed) but re-flags that exact
+                                #   bug if reintroduced. Run after adding any `branch` arm to a
+                                #   recursive walker (exprHasTry/inferExpr/…). 0 = clean.
 ```
 
 Why this matters: a green round-trip means the compiler is *self-consistent*, NOT that
