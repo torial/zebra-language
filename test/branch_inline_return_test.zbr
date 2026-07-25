@@ -99,9 +99,9 @@ def main()
     # Comma inline form (regression guard)
     var x = Op.mul()
     branch x
-        on Op.add, print "unexpected"
-        on Op.sub, print "unexpected"
-        on Op.mul, print "matched mul"
-        on Op.neg, print "unexpected"
+        on Op.add, print("unexpected")
+        on Op.sub, print("unexpected")
+        on Op.mul, print("matched mul")
+        on Op.neg, print("unexpected")
 
     print("branch inline return OK")

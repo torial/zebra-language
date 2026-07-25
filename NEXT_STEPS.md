@@ -149,6 +149,13 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   least per-session) — it is currently a manual tool, so the coverage-blindness it closes
   is only closed on the days someone remembers to run it. Cost: a few min at JOBS=3.
 - [ ] **⚠️ 1.0 BLOCKER — emit-compile triage campaign** → **`docs/emit_compile_triage.md`**.
+  > **RE-SWEPT + GATED 2026-07-24** (`docs/full_sweep_triage.md`, `tools/full_sweep.sh`).
+  > Full 403-file re-sweep: **328 PASS, 0 regressions, 0 NEW bugs** — every remaining
+  > CFAIL/EMITFAIL is a negative test, library module, interop-needs-libs, multi-module,
+  > or a KNOWN item in this campaign's backlog. Fixed 3 stale tests (removed syntax) en
+  > route. The corpus is now gate-able: `full_sweep.sh --gate` fails on regression vs a
+  > 328-test baseline (no skip-list needed). The codegen backlog below is unchanged — the
+  > sweep confirmed the state rather than finding new work.
   A full-corpus independent-witness sweep (all 399 `test/`+`examples/` `.zbr`, not just the
   ~201 smoke-registered) found **52 standalone-compile FAILs**: ~11 negative/harness, and
   **~30 genuine codegen/type miscompiles on current constructs**, clustered into ~15–20 root

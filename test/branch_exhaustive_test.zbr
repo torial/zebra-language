@@ -26,4 +26,5 @@ def main()
     branch s2
         on Shape.rect as n
             print(n)
-        else, print "other"
+        else, print("other")
+    print("branch_exhaustive: OK")

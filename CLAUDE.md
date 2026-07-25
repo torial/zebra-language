@@ -98,6 +98,15 @@ python tools/lint_fallthrough.py   # THE FALL-THROUGH GATE (static, instant, no 
                                 #   §28f set-literal arms, since fixed) but re-flags that exact
                                 #   bug if reintroduced. Run after adding any `branch` arm to a
                                 #   recursive walker (exprHasTry/inferExpr/…). 0 = clean.
+JOBS=2 bash tools/full_sweep.sh --gate   # THE FULL-CORPUS WITNESS: emits + zig-
+                                #   typechecks EVERY test/*.zbr (403), not just the ~210
+                                #   compile_check covers. --gate fails on REGRESSION vs
+                                #   tools/full_sweep_baseline.txt (the set that currently
+                                #   emit+compile clean, 328). Known negatives/library/
+                                #   triage-backlog files need no skip-list — the baseline
+                                #   IS the allow-list; re-baseline (--update-baseline) when
+                                #   the pass set intentionally grows. Heavy (~25 min, JOBS=2
+                                #   — RAM-bound); per-session/pre-release like compile_check.
 ```
 
 Why this matters: a green round-trip means the compiler is *self-consistent*, NOT that

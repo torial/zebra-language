@@ -1,5 +1,5 @@
 class Math
-    def minMax(a: int, b: int) as (int, int)
+    def minMax(a: int, b: int): (int, int)
         if a < b
             return (a, b)
         else
@@ -15,7 +15,7 @@ class Program
         print(p.1)
 
         # Typed tuple variable
-        var q as (int, int) = (3, 7)
+        var q: (int, int) = (3, 7)
         print(q.0 + q.1)
 
         # Destructuring
@@ -26,3 +26,4 @@ class Program
         # Tuple in expression
         var t = (1, 2, 3)
         print(t.2)
+        print("tuple_test: OK")
