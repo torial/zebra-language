@@ -1,8 +1,39 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-206. Next new bug: BUG-207.**
+**Last bug number generated: BUG-208. Next new bug: BUG-209.**
 
 ---
+
+### BUG-208: `zebra run` hangs when the program prints more than ~4 KB ✅ FIXED 2026-07-25
+`zebra run <file>` ran the compiled program via `sys.run()`, which **captures**
+the child's stdout/stderr through OS pipes. The reader blocks once the pipe
+buffer (~4 KB on Windows) fills, so any program that prints more than a few KB
+**hangs forever** (CPU 0%, blocked on the write). Found dogfooding
+`examples/lsystem.zbr` (ASCII output ~9.5 KB): every run hung at ~4275 bytes
+regardless of line length or count — the tell-tale fixed pipe-buffer cutoff.
+**Not a codegen bug:** the *standalone* compiled exe prints 64 KB instantly under
+both backends, and the bootstrap (`zebra-bootstrap.exe file.zbr > out`) prints
+64 KB fine through the identical harness — because it **inherits** stdio for the
+program run (`src/main.zig`, `.stdout = .inherit`) instead of capturing it.
+**Fix (`selfhost/main.zbr`):** run the compiled program with inherited stdio
+(`sys.exec_inherit`), never captured. The LLVM run path was switched from
+`zig run` (which captured the program's output via `sys.run`) to
+`zig build-exe -femit-bin=<exe>` (capture only the small compile output, where
+`remapZigErrors` belongs) followed by `sys.exec_inherit(<exe>)`. Mirrors the
+bootstrap. Verified: `zebra run` on a 64 KB-output program now completes
+(64005 bytes, exit 0); the L-system renders; small output unaffected.
+*(Honest note: the first attempt put `exec_inherit` in the fast `-fno-llvm` path,
+which — see the follow-up below — isn't currently taken, so it was correct but
+dormant; the operative path was the LLVM branch. Both now inherit.)*
+**Follow-ups (separate, lower priority):**
+- The fast `-fno-llvm` run path isn't being taken (no `.fast.exe` is produced for
+  a plain program), so every `zebra run` currently uses the slower LLVM route.
+  Worth a one-line trace to find why the `2213` condition or fast build falls
+  through — restoring it is a ~3× dev-loop speedup. Its run step already inherits.
+- `sys.run()`'s ~4 KB capture block still affects its *other* callers (node-addon
+  build, `Shell.run`, and the compile-error stream itself if a build ever emits
+  >4 KB). The program-run case is fixed by not capturing; those capture sites
+  retain the latent limit. Fix if they ever handle >4 KB output.
 
 ### BUG-204/205/206: bootstrap (LLVM) lags the selfhost on `except` — blocks GUI/TUI apps
 All three found 2026-07-25 dogfooding `examples/tears_of_the_tuon.zbr` (a game

@@ -2225,27 +2225,34 @@ def main()
                 fargv.add("-mcpu=" + cpu_flag)
             var fr = sys.run(fargv)
             if fr.exit_code == 0
+                # Run the compiled program with INHERITED stdio, not captured.
+                # sys.run() pipes the child's stdout/stderr; the reader blocks once
+                # the OS pipe buffer (~4 KB) fills, hanging any program that prints
+                # more than a few KB (BUG-208). Inheriting streams output live and
+                # never blocks — matching the bootstrap's run path (src/main.zig).
                 var rargv = List(str)()
                 rargv.add(fast_exe)
-                var rr = sys.run(rargv)
-                if rr.stdout != ""
-                    Terminal.write(rr.stdout, "")
-                if rr.stderr != ""
-                    sys.err(rr.stderr)
-                if rr.exit_code != 0
+                var rc: int = sys.exec_inherit(rargv)
+                if rc != 0
                     sys.exit(1)
                 sys.exit(0)
 
         var argv2 = List(str)()
         argv2.add("zig")
+        # Non-`-c` run: build an exe (capturing only the small compile output for
+        # error remapping), then run it with INHERITED stdio below. Using `zig run`
+        # + sys.run() captured the *program's* output through a pipe that blocks at
+        # ~4 KB (BUG-208). Mirrors src/main.zig (pipe the compile, inherit the run).
+        var llvm_exe: str = zig_path + ".run.exe"
         if mode_c
             argv2.add("build-exe")
             argv2.add(zig_path)
             if release
                 argv2.add("-OReleaseFast")
         else
-            argv2.add("run")
+            argv2.add("build-exe")
             argv2.add(zig_path)
+            argv2.add("-femit-bin=" + llvm_exe)
         if single_threaded
             argv2.add("-fsingle-threaded")
 
@@ -2282,6 +2289,14 @@ def main()
             sys.err(remapped)
         if r2.exit_code != 0
             sys.exit(1)
+        if not mode_c
+            # Run the freshly built exe with inherited stdio — output streams live
+            # and never blocks, no matter how much the program prints (BUG-208).
+            var rargv2 = List(str)()
+            rargv2.add(llvm_exe)
+            var rc2: int = sys.exec_inherit(rargv2)
+            if rc2 != 0
+                sys.exit(1)
         sys.exit(0)
 
     # -- Zig backend delegation (--zig-backend) ----------------------------
