@@ -95,6 +95,23 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   - Note: **14 BOOTSTRAP gaps** = selfhost LEADS; no fix needed (bootstrap sunsets).
     Full 5-family root-cause triage under "Bootstrap-lags-selfhost convergence" below
     (2026-07-22): pointer/value, `.items`-on-non-list, inference, parser/SIMD, sqlite-binding.
+- [ ] **GUI builds via selfhost emission — phase the bootstrap out of the GUI path**
+  (epic; decided 2026-07-25). Today `--gui-backend=*` (stub/tui/glfw/libui_ng) delegates the
+  WHOLE build to `zebra-bootstrap.exe`, so bootstrap-lags-selfhost gaps BLOCK GUI/TUI apps
+  even though the primary/selfhost compiler accepts the code — found porting
+  `examples/tears_of_the_tuon.zbr` (BUG-204 return-position `except`, BUG-206
+  `.toInt()`-on-float, and the GUI module-resolution limit all bite here; see BUGS.md).
+  **The selfhost already EMITS the GUI glue** (`selfhost/CodeGen.zbr` `_gui_active_backend.*`);
+  it delegates only for the scaffold + `zig build` project + zigzag-pkg driver, which lives
+  ONLY in `src/main.zig` (~160 lines of build.zig/.zon templates + one scaffold-and-spawn fn
+  ~line 1348). **Plan:** port that driver into `selfhost/main.zbr` and route the selfhost
+  `--gui-backend` path through emit-then-scaffold instead of delegating. **Payoff: dissolves
+  BUG-204 + BUG-206 + the GUI module-resolution limit at once**, and removes the last
+  mainstream reason a user program touches the bootstrap — matching the endgame ("Zig only in
+  special-case files"). **Decision (Sean 2026-07-25):** this is the right fix; do NOT do the
+  bootstrap grammar surgery for BUG-204 (sizable change to a sunsetting compiler — the
+  bind-then-return workaround holds meanwhile). Bounded, focused session; gate with a real TUI
+  build + `bootstrap_check`.
 - [ ] **Grow the fuzzer's `DEFAULT_CAPS`** (`fuzz/gen.py`) — highest-leverage
   correctness lever (risk surface is combinatorial; see `docs/COVERAGE_MAP.md`).
   Remaining caps need class-relationship generation: (4) `^T` boxing,

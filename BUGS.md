@@ -25,6 +25,14 @@ def f(p: P): P
 ```
 **Workaround (used in the example):** bind first, then return —
 `var q = p except x = 1` / `return q`.
+🚫 **WON'T-FIX in the bootstrap (Sean 2026-07-25).** A real fix needs a new
+expr-level AST node + Expr9 postfix grammar production + AstBuilder + CodeGen,
+with Earley ambiguity to manage — a sizable change to the *sunsetting* bootstrap,
+against "don't do sizable ports into the phasing-out bootstrap." Superseded by
+the **"GUI builds via selfhost emission"** epic (NEXT_STEPS, Compiler hardening),
+which routes GUI through the selfhost — where return-position `except` already
+parses — and dissolves this plus BUG-206 and the GUI module-resolution limit at
+once. The bind-then-return workaround holds until then.
 
 **BUG-205 — codegen: a var *initialized with* `except` is emitted `const`.**
 ✅ **FIXED 2026-07-25** (`src/CodeGen.zig` `genVarExcept`). The bootstrap
