@@ -80,6 +80,7 @@ crypto_test
 ctor_arg_ref_test
 datetime_inzone_test
 datetime_test
+derive_eql_explicit_test
 derive_test
 dict_literal_test
 dir_walk_test
