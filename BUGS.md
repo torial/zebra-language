@@ -1,8 +1,55 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-203. Next new bug: BUG-204.**
+**Last bug number generated: BUG-206. Next new bug: BUG-207.**
 
 ---
+
+### BUG-204/205/206: bootstrap (LLVM) lags the selfhost on `except` — blocks GUI/TUI apps
+All three found 2026-07-25 dogfooding `examples/tears_of_the_tuon.zbr` (a game
+port). They share a theme: the **selfhost compiles these fine**, but the
+**bootstrap does not** — and GUI backends (`--gui-backend=stub|tui|glfw`) are
+hard-wired to *delegate to the bootstrap* (it carries the GUI/zigzag runtime),
+so these gaps block any GUI/TUI program even though the primary compiler accepts
+it. This is the normally-"don't-chase" bootstrap-lags-selfhost category, but the
+GUI-delegation makes it user-visible. Closing them is a scoped parser+codegen
+job on `src/` (the selfhost already has the correct behavior to mirror).
+
+**BUG-204 — parser: `except` only parses in var-init position.**
+`return p except x = 1` and even `return (p except x = 1)` → `syntax error near
+'except'` in the bootstrap; `var q = p except x = 1` is fine. The selfhost
+parses `except` as a general (postfix) expression. Repro:
+```
+struct P { var x: int }
+def f(p: P): P
+    return p except x = 1     # bootstrap: syntax error; selfhost: OK
+```
+**Workaround (used in the example):** bind first, then return —
+`var q = p except x = 1` / `return q`.
+
+**BUG-205 — codegen: a var *initialized with* `except` is emitted `const`.**
+`var m = model except f = v` then a later `m = …` → the bootstrap emits
+`const m = blk:{…}` and the reassignment fails with `error: cannot assign to
+constant`. Its mutation analysis misses the reassignment when the *initializer*
+is an `except` block (reassigning a plainly-initialized var is detected
+correctly). Repro:
+```
+def g(p: P): P
+    var m = p except x = 1    # emitted `const m`
+    m = m except x = 2        # error: cannot assign to constant
+    return m
+```
+**Workaround:** plain-init then reassign — `var m = p` / `m = m except x = 1`.
+
+**BUG-206 — codegen: `.toInt()` on a float loses float-inference across
+reassignments.** In `resolveAttack`, `(attackRoll - defenseRoll).toInt()` (both
+operands provably `f64`) emitted a passthrough `.toInt()` (invalid Zig:
+`no field or member function named 'toInt' in 'f64'`) after the operands were
+conditionally reassigned in intervening blocks. The bootstrap has correct
+float→int (`@intFromFloat`) but its float detection at the call site didn't
+survive the reassignment history. Minimal repro is elusive (isolated shapes emit
+`@intFromFloat` correctly) — needs the full-function context; investigate against
+the emitted scaffold. **Workaround:** bind an explicitly-typed float first —
+`var delta: float = attackRoll - defenseRoll` / `var rollDelta = delta.toInt()`.
 
 ### BUG-203: explicit `@derive(Eq)` `.eql(value)` call doesn't address the value argument
 Calling a derived `eql` explicitly with a value argument fails to compile:

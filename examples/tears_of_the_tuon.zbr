@@ -1,0 +1,417 @@
+# Tears of the Tuon — a faithful port of Sean's C# interview RPG.
+#
+# Original brief: "Make a console based RPG that allows the characters to
+# attack with 2 different items." This is the combat core of that game,
+# ported to Zebra + the GameEngine MVU GUI (run it with --gui-backend=tui).
+#
+# Faithful to TearsOfTheTuon/Engines/CombatEngine.cs:
+#   - agility-based hit rolls, difficulty bonuses that favour the player
+#   - critical hits, the strength/armor damage formula
+#   - initiative, enemy target/weapon AI, flee, and end-of-battle XP
+# Roster matches the original story map (EnemiesList = "Ruffian,Ruffian"):
+#   Yehu (the hero) vs two Ruffians.
+#
+# The pure combat functions at the top take primitives and return small
+# result structs, so test/tears_combat_test.zbr can `use` this file and
+# assert the exact faithful numbers with a fixed RNG seed — no GUI needed.
+#
+# RNG note (deliberate divergence): the C# original does
+# `new Random((int)DateTime.Now.Ticks)` inside every roll, which correlates
+# rolls made within one tick. We carry a single seeded stream in the model
+# and advance it each turn instead — a strictly better, still-deterministic
+# source. Do not "fix" it back to per-roll reseeding.
+
+# ---------------------------------------------------------------------------
+# Pure combat core (exposed for testing)
+# ---------------------------------------------------------------------------
+
+struct Weapon
+    var name: str
+    var action: str
+    var damage: int
+    var critChance: int
+    var critDamage: int
+
+def swordW(): Weapon
+    return Weapon(name: "sword", action: "stabs", damage: 15, critChance: 20, critDamage: 25)
+
+def bowW(): Weapon
+    return Weapon(name: "bow", action: "shoots", damage: 12, critChance: 15, critDamage: 25)
+
+def daggerW(): Weapon
+    return Weapon(name: "dagger", action: "stabs", damage: 10, critChance: 10, critDamage: 20)
+
+struct AttackOutcome
+    var hit: bool
+    var crit: bool
+    var damage: int
+    var message: str
+    var nextSeed: int
+
+# Faithful port of CombatEngine.DetermineAttackSuccess.
+# diff: 0 = easy, 1 = medium, 2 = hard. Difficulty always favours the player:
+# easy adds +2 to the player's roll, hard subtracts 2 (whether attacking or
+# defending). Damage mirrors the C# expression, where `>>2` (== integer /4,
+# operands are non-negative here) binds looser than `+`:
+#   damage = base + ((rollDelta + strength) / 4) - (armor / 4)
+def resolveAttack(seed: int, attackerName: str, attAgi: int, attStr: int, w: Weapon, victimName: str, defAgi: int, defArmor: int, isPlayerAttacker: bool, diff: int): AttackOutcome
+    var rng = Random.new(seed)
+    var attackRoll = rng.nextFloat() * attAgi.toFloat()
+    var defenseRoll = rng.nextFloat() * defAgi.toFloat()
+    if diff == 0
+        if isPlayerAttacker
+            attackRoll = attackRoll + 2.0
+        else
+            defenseRoll = defenseRoll + 2.0
+    if diff == 2
+        if isPlayerAttacker
+            attackRoll = attackRoll - 2.0
+        else
+            defenseRoll = defenseRoll - 2.0
+    var critRoll = rng.nextFloat() * 100.0
+    var ns = rng.nextInt(1, 2000000000)
+    if attackRoll < defenseRoll
+        return AttackOutcome(hit: false, crit: false, damage: 0, message: attackerName + " " + w.action + " and misses!", nextSeed: ns)
+    var isCrit = critRoll <= w.critChance.toFloat()
+    var base = w.damage
+    if isCrit
+        base = w.critDamage
+    var delta: float = attackRoll - defenseRoll
+    var rollDelta = delta.toInt()
+    var dmg = base + ((rollDelta + attStr) / 4) - (defArmor / 4)
+    if dmg < 1
+        dmg = 1
+    var msg = attackerName + " " + w.action
+    if isCrit
+        msg = msg + " and hits a vital organ of " + victimName + "!"
+    else
+        msg = msg + " and hits " + victimName + "."
+    return AttackOutcome(hit: true, crit: isCrit, damage: dmg, message: msg, nextSeed: ns)
+
+# Weapon "strength" used by the enemy AI (CombatEngine.DetermineWeaponEnemyUses).
+def weaponScore(w: Weapon): int
+    return w.damage + w.critChance * w.critDamage
+
+# Enemy weapon choice: easy picks the weakest, hard the strongest, medium
+# a seed-derived pick (kept off the attack stream so it never perturbs rolls).
+# Returns 0 (first weapon) or 1 (second).
+def chooseEnemyWeapon(seed: int, wa: Weapon, wb: Weapon, diff: int): int
+    if diff == 0
+        if weaponScore(wa) <= weaponScore(wb)
+            return 0
+        return 1
+    if diff == 2
+        if weaponScore(wa) >= weaponScore(wb)
+            return 0
+        return 1
+    return seed % 2
+
+# Faithful port of CanPlayersFlee.
+def tryFlee(seed: int, playerAgiSum: int, enemyAgiSum: int, diff: int): bool
+    var rng = Random.new(seed)
+    var enemyRoll = rng.nextFloat() * enemyAgiSum.toFloat()
+    var playerRoll = rng.nextFloat() * playerAgiSum.toFloat()
+    if diff == 0
+        playerRoll = playerRoll + 3.0
+    if diff == 2
+        playerRoll = playerRoll - 3.0
+    return playerRoll >= enemyRoll
+
+# Faithful port of DetermineInitiative: easy = player first, hard = enemy
+# first, medium = higher total agility goes first.
+def playerFirst(diff: int, playerAgiSum: int, enemyAgiSum: int): bool
+    if diff == 0
+        return true
+    if diff == 2
+        return false
+    return playerAgiSum >= enemyAgiSum
+
+# ---------------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------------
+# Phases: 0 title  1 chooseWeapon  2 chooseTarget  3 enemyTurn
+#         4 won    5 lost          6 fled
+
+struct GameModel
+    var phase: int
+    var diff: int
+    var pHp: int
+    var e0Hp: int
+    var e1Hp: int
+    var selWeapon: int
+    var round: int
+    var xp: int
+    var rngSeed: int
+    var log: List(str)
+
+union Msg
+    selEasy
+    selMedium
+    selHard
+    atkSword
+    atkBow
+    tgt0
+    tgt1
+    doFlee
+    enemyTurn
+    restart
+
+def init(): GameModel
+    var seed = Random.randInt(1, 2000000000)
+    return GameModel(phase: 0, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, rngSeed: seed, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
+
+# ---------------------------------------------------------------------------
+# Update helpers (deterministic given the model's seed — testable)
+# ---------------------------------------------------------------------------
+
+def diffName(diff: int): str
+    if diff == 0
+        return "Easy"
+    if diff == 2
+        return "Hard"
+    return "Medium"
+
+def aliveEnemies(model: GameModel): int
+    var n = 0
+    if model.e0Hp > 0
+        n = n + 1
+    if model.e1Hp > 0
+        n = n + 1
+    return n
+
+# Append a battle-log line functionally. A List field reached through an
+# `except`-copy of a const model is a *const pointer, so `m.log.add(...)`
+# won't compile; copying the list, appending, and re-binding it does.
+def withLog(m: GameModel, line: str): GameModel
+    var lg = m.log
+    lg.add(line)
+    var m2 = m except log = lg
+    return m2
+
+def beginBattle(model: GameModel, diff: int): GameModel
+    # Note: init the accumulator with a plain copy, THEN reassign with `except`.
+    # The bootstrap (LLVM) codegen marks a var *initialized with* `except` as
+    # const, so a later reassignment won't compile — see docs/BUGS.md BUG-205.
+    var m = model
+    m = m except diff = diff
+    if playerFirst(diff, 25, 30)
+        m = withLog(m, "On " + diffName(diff) + " — Yehu goes first!")
+        m = m except phase = 1
+        return m
+    m = withLog(m, "On " + diffName(diff) + " — the Ruffians go first!")
+    m = m except phase = 3
+    return m
+
+# Resolve Yehu's attack (his selected weapon) against enemy `tgt` (0 or 1).
+def playerAttack(model: GameModel, tgt: int): GameModel
+    var w = swordW()
+    if model.selWeapon == 1
+        w = bowW()
+    var tgtName = "Ruffian A"
+    var tgtHp = model.e0Hp
+    if tgt == 1
+        tgtName = "Ruffian B"
+        tgtHp = model.e1Hp
+    var out = resolveAttack(model.rngSeed, "Yehu", 25, 15, w, tgtName, 15, 10, true, model.diff)
+    var m = model
+    m = m except rngSeed = out.nextSeed
+    m = withLog(m, out.message)
+    if out.hit
+        var nh = tgtHp - out.damage
+        if nh < 0
+            nh = 0
+        if tgt == 0
+            m = m except e0Hp = nh
+        else
+            m = m except e1Hp = nh
+        if nh <= 0
+            m = withLog(m, tgtName + " collapses.")
+    if m.e0Hp <= 0 and m.e1Hp <= 0
+        m = withLog(m, "The Ruffians are defeated! Yehu gains 50 experience.")
+        m = m except phase = 4, xp = m.xp + 50
+        return m
+    m = m except phase = 3
+    return m
+
+# One enemy attacks Yehu, picking a weapon by the difficulty AI.
+def oneEnemyAttack(model: GameModel, which: int): GameModel
+    var wi = chooseEnemyWeapon(model.rngSeed, bowW(), daggerW(), model.diff)
+    var w = bowW()
+    if wi == 1
+        w = daggerW()
+    var ename = "Ruffian A"
+    if which == 1
+        ename = "Ruffian B"
+    var out = resolveAttack(model.rngSeed, ename, 15, 10, w, "Yehu", 25, 10, false, model.diff)
+    var m = model
+    m = m except rngSeed = out.nextSeed
+    m = withLog(m, out.message)
+    if out.hit
+        var nh = m.pHp - out.damage
+        if nh < 0
+            nh = 0
+        m = m except pHp = nh
+        if nh <= 0
+            m = withLog(m, "Yehu collapses!")
+    return m
+
+def runEnemyTurn(model: GameModel): GameModel
+    var m = model
+    if m.e0Hp > 0 and m.pHp > 0
+        m = oneEnemyAttack(m, 0)
+    if m.e1Hp > 0 and m.pHp > 0
+        m = oneEnemyAttack(m, 1)
+    if m.pHp <= 0
+        m = m except phase = 5
+        return m
+    m = m except phase = 1, round = m.round + 1
+    return m
+
+def attemptFlee(model: GameModel): GameModel
+    var enemyAgi = aliveEnemies(model) * 15
+    var rng = Random.new(model.rngSeed)
+    var probe = rng.nextInt(1, 2000000000)
+    var m = model
+    m = m except rngSeed = probe
+    if tryFlee(model.rngSeed, 25, enemyAgi, model.diff)
+        m = withLog(m, "Yehu breaks away and escapes down the road.")
+        m = m except phase = 6
+        return m
+    m = withLog(m, "Yehu tries to flee but the Ruffians cut him off!")
+    m = m except phase = 3
+    return m
+
+# ---------------------------------------------------------------------------
+# Update
+# ---------------------------------------------------------------------------
+
+# Player picked a weapon; move to target selection.
+def chooseWeapon(model: GameModel, w: int): GameModel
+    var m = model except selWeapon = w, phase = 2
+    return m
+
+def update(model: GameModel, msg: Msg): GameModel
+    branch msg
+        on Msg.selEasy    return beginBattle(model, 0)
+        on Msg.selMedium  return beginBattle(model, 1)
+        on Msg.selHard    return beginBattle(model, 2)
+        on Msg.atkSword   return chooseWeapon(model, 0)
+        on Msg.atkBow     return chooseWeapon(model, 1)
+        on Msg.tgt0       return playerAttack(model, 0)
+        on Msg.tgt1       return playerAttack(model, 1)
+        on Msg.doFlee     return attemptFlee(model)
+        on Msg.enemyTurn  return runEnemyTurn(model)
+        on Msg.restart    return init()
+
+# ---------------------------------------------------------------------------
+# View
+# ---------------------------------------------------------------------------
+
+def drawHud(g: Gui, model: GameModel)
+    g.text("Round " + model.round.toString() + "   (" + diffName(model.diff) + ")")
+    g.text("Yehu       HP " + model.pHp.toString() + "/35")
+    var a = "down"
+    if model.e0Hp > 0
+        a = model.e0Hp.toString() + "/20"
+    var b = "down"
+    if model.e1Hp > 0
+        b = model.e1Hp.toString() + "/20"
+    g.text("Ruffian A  HP " + a)
+    g.text("Ruffian B  HP " + b)
+    g.separator()
+
+def drawLog(g: Gui, model: GameModel)
+    g.separator()
+    var total = model.log.len
+    var start = 0
+    if total > 8
+        start = total - 8
+    var i = start
+    while i < total
+        g.text(model.log.at(i))
+        i = i + 1
+
+def viewTitle(g: Gui, model: GameModel)
+    g.text("A pair of Ruffians blocks the road. Choose your trial:")
+    g.separator()
+    if g.button("Easy   — Yehu strikes first, fortune favours him")
+        g.send(Msg.selEasy)
+    if g.button("Medium — a fair fight")
+        g.send(Msg.selMedium)
+    if g.button("Hard   — the Ruffians are quick and cruel")
+        g.send(Msg.selHard)
+
+def viewChooseWeapon(g: Gui, model: GameModel)
+    drawHud(g, model)
+    g.text("Yehu's move — attack with which weapon?")
+    if g.button("Attack with Sword  (stabs, dmg 15, crit 20%)")
+        g.send(Msg.atkSword)
+    if g.button("Attack with Bow    (shoots, dmg 12, crit 15%)")
+        g.send(Msg.atkBow)
+    if g.button("Flee")
+        g.send(Msg.doFlee)
+    drawLog(g, model)
+
+def viewChooseTarget(g: Gui, model: GameModel)
+    drawHud(g, model)
+    var wn = "Sword"
+    if model.selWeapon == 1
+        wn = "Bow"
+    g.text("Strike with the " + wn + " — choose a target:")
+    if model.e0Hp > 0
+        if g.button("Ruffian A  (HP " + model.e0Hp.toString() + ")")
+            g.send(Msg.tgt0)
+    if model.e1Hp > 0
+        if g.button("Ruffian B  (HP " + model.e1Hp.toString() + ")")
+            g.send(Msg.tgt1)
+    drawLog(g, model)
+
+def viewEnemyTurn(g: Gui, model: GameModel)
+    drawHud(g, model)
+    g.text("The Ruffians ready their attack...")
+    if g.button("Continue")
+        g.send(Msg.enemyTurn)
+    drawLog(g, model)
+
+def viewWon(g: Gui, model: GameModel)
+    g.text("VICTORY — the road is clear.")
+    g.text("Yehu earned " + model.xp.toString() + " experience.")
+    g.separator()
+    if g.button("Play again")
+        g.send(Msg.restart)
+    drawLog(g, model)
+
+def viewLost(g: Gui, model: GameModel)
+    g.text("DEFEAT — Yehu falls on the mountain road.")
+    g.separator()
+    if g.button("Try again")
+        g.send(Msg.restart)
+    drawLog(g, model)
+
+def viewFled(g: Gui, model: GameModel)
+    g.text("You fled. The Tuon's tears go unwept another day.")
+    g.separator()
+    if g.button("Face them again")
+        g.send(Msg.restart)
+    drawLog(g, model)
+
+def view(g: Gui, model: GameModel)
+    g.text("=== Tears of the Tuon ===")
+    g.separator()
+    if model.phase == 0
+        viewTitle(g, model)
+    if model.phase == 1
+        viewChooseWeapon(g, model)
+    if model.phase == 2
+        viewChooseTarget(g, model)
+    if model.phase == 3
+        viewEnemyTurn(g, model)
+    if model.phase == 4
+        viewWon(g, model)
+    if model.phase == 5
+        viewLost(g, model)
+    if model.phase == 6
+        viewFled(g, model)
+
+def main()
+    Gui.run("Tears of the Tuon", 640, 480, init, update, view)

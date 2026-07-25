@@ -1,0 +1,105 @@
+# Faithful-math regression test for examples/tears_of_the_tuon.zbr.
+#
+# Imports only the PURE combat functions from the game (the GUI `main` is not
+# run on import), so we can pin the exact ported numbers with a fixed RNG
+# seed — no GUI backend involved. This is the payoff of keeping `update`'s
+# combat logic in seed-in / result-out pure functions.
+
+use tears_of_the_tuon exposing Weapon, swordW, bowW, daggerW, AttackOutcome, resolveAttack, weaponScore, chooseEnemyWeapon, tryFlee, playerFirst, GameModel, Msg, update
+
+def main()
+    # --- weapon data matches the original JSON ---
+    var s = swordW()
+    assert s.damage == 15 and s.critChance == 20 and s.critDamage == 25, "sword data"
+    var b = bowW()
+    assert b.damage == 12 and b.critChance == 15 and b.critDamage == 25, "bow data"
+    var d = daggerW()
+    assert d.damage == 10 and d.critChance == 10 and d.critDamage == 20, "dagger data"
+
+    # --- weaponScore = damage + critChance*critDamage (enemy AI metric) ---
+    assert weaponScore(s) == 15 + 20 * 25, "sword score"
+    assert weaponScore(b) == 12 + 15 * 25, "bow score"
+    assert weaponScore(d) == 10 + 10 * 20, "dagger score"
+
+    # --- enemy weapon AI: easy = weakest, hard = strongest (bow vs dagger) ---
+    # dagger score = 210, bow score = 387 → dagger is weaker.
+    assert chooseEnemyWeapon(1, bowW(), daggerW(), 0) == 1, "easy picks weakest (dagger)"
+    assert chooseEnemyWeapon(1, bowW(), daggerW(), 2) == 0, "hard picks strongest (bow)"
+    # medium is seed-derived (seed % 2), off the attack stream.
+    assert chooseEnemyWeapon(4, bowW(), daggerW(), 1) == 0, "medium seed 4 -> 0"
+    assert chooseEnemyWeapon(5, bowW(), daggerW(), 1) == 1, "medium seed 5 -> 1"
+
+    # --- resolveAttack is deterministic for a fixed seed ---
+    # Yehu (agi 25, str 15) sword vs Ruffian (agi 15, armor 10), medium.
+    var o1 = resolveAttack(42, "Yehu", 25, 15, swordW(), "Ruffian A", 15, 10, true, 1)
+    var o2 = resolveAttack(42, "Yehu", 25, 15, swordW(), "Ruffian A", 15, 10, true, 1)
+    assert o1.hit == o2.hit and o1.damage == o2.damage and o1.crit == o2.crit, "deterministic per seed"
+    assert o1.nextSeed == o2.nextSeed, "seed advance deterministic"
+    assert o1.nextSeed != 42, "stream actually advanced"
+
+    # A hit's damage never drops below the 1-damage floor, and a miss deals 0.
+    var seed = 1
+    var hits = 0
+    var misses = 0
+    var minHitDmg = 9999
+    var i = 0
+    while i < 200
+        var o = resolveAttack(seed, "Yehu", 25, 15, swordW(), "Ruffian", 15, 10, true, 1)
+        if o.hit
+            hits = hits + 1
+            assert o.damage >= 1, "hit damage floor"
+            if o.damage < minHitDmg
+                minHitDmg = o.damage
+        else
+            misses = misses + 1
+            assert o.damage == 0, "miss deals no damage"
+        seed = o.nextSeed
+        i = i + 1
+    assert hits > 0 and misses > 0, "both hits and misses occur over 200 rolls"
+
+    # --- difficulty favours the player: easy attacker beats hard attacker on
+    #     the same seed (easy adds +2 to the attack roll, hard subtracts 2) ---
+    var easyHits = 0
+    var hardHits = 0
+    seed = 7
+    i = 0
+    while i < 200
+        var oe = resolveAttack(seed, "Yehu", 25, 15, swordW(), "Ruffian", 15, 10, true, 0)
+        var oh = resolveAttack(seed, "Yehu", 25, 15, swordW(), "Ruffian", 15, 10, true, 2)
+        if oe.hit
+            easyHits = easyHits + 1
+        if oh.hit
+            hardHits = hardHits + 1
+        seed = oe.nextSeed
+        i = i + 1
+    assert easyHits >= hardHits, "easy lands at least as many hits as hard"
+
+    # --- initiative: easy = player first, hard = enemy first, medium by agility ---
+    assert playerFirst(0, 25, 30) == true, "easy: player first"
+    assert playerFirst(2, 25, 30) == false, "hard: enemy first"
+    assert playerFirst(1, 30, 25) == true, "medium: higher agility first"
+    assert playerFirst(1, 25, 30) == false, "medium: lower agility second"
+
+    # --- end-to-end FSM: drive `update` through a full Easy battle ---
+    # Fixed-seed model (bypasses init()'s entropy) so the playthrough is
+    # reproducible. On Easy, Yehu (35 HP, +2 rolls) should beat two 20-HP
+    # Ruffians. We auto-pick the sword and target the first standing enemy.
+    var m = GameModel(phase: 1, diff: 0, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, rngSeed: 12345, log: ["start"])
+    var steps = 0
+    while m.phase != 4 and m.phase != 5 and steps < 500
+        if m.phase == 1
+            m = update(m, Msg.atkSword)
+        if m.phase == 2
+            if m.e0Hp > 0
+                m = update(m, Msg.tgt0)
+            else
+                m = update(m, Msg.tgt1)
+        if m.phase == 3
+            m = update(m, Msg.enemyTurn)
+        steps = steps + 1
+    assert m.phase == 4, "easy battle ends in victory"
+    assert m.xp == 50, "victory awards 50 xp (2 x killExp 25)"
+    assert m.e0Hp <= 0 and m.e1Hp <= 0, "both Ruffians defeated"
+    assert m.pHp > 0, "Yehu survives on Easy"
+
+    print("tears_combat_test: OK  (" + hits.toString() + " hits / " + misses.toString() + " misses; easy " + easyHits.toString() + " vs hard " + hardHits.toString() + "; won in " + steps.toString() + " steps, Yehu " + m.pHp.toString() + " HP)")
