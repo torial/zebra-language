@@ -3,6 +3,23 @@
 Working document for the documentation effort. Each row tracks one chapter/section
 against its current coverage in `QUICKSTART.md` (the primary reference document).
 
+> **Dogfood pass 2026-07-25.** Extracted all 126 `zebra` code blocks and compiled
+> every runnable one (16 with an entry point) against the current compiler. Found +
+> fixed stale syntax the prose had drifted past:
+> - `print` documented as a *statement* (`print "x"`) — it's a **function** now
+>   (`print("x")`, multi-arg space-separated); the §28 statement form was removed.
+>   (5 sites, incl. the reversed "print is a statement" claim.)
+> - Getting-Started args example used `use sys` + `Arg.all()` + `args[0]` — all
+>   stale. Now: no `use` (sys is builtin), `sys.args()`, `.at(i)` (List has no `[]`).
+>   Also fixed the compiler so `sys.args()` is typed `List(str)` (elements printed as
+>   bytes before — see below).
+> - `sig` examples passed `@[...]` (array) where `List(int)` was wanted → `[...]`.
+> - `@derive` example used explicit `.eql(v)` (BUG-203, value-arg not addressed) →
+>   switched to `==`, which the trait rewires and which works.
+> Result: 14/16 runnable blocks compile clean; the 2 remaining are legitimate
+> multi-module examples (`use math_utils`) that need their companion block to link.
+> Compiler side-effects: `sys.args()` element typing fixed (selfhost); BUG-203 filed.
+
 **Status legend:**
 - ✅ good — complete and accurate
 - ⚠️ thin — exists but needs significant expansion

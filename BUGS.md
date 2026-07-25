@@ -1,8 +1,31 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-202. Next new bug: BUG-203.**
+**Last bug number generated: BUG-203. Next new bug: BUG-204.**
 
 ---
+
+### BUG-203: explicit `@derive(Eq)` `.eql(value)` call doesn't address the value argument
+Calling a derived `eql` explicitly with a value argument fails to compile:
+`a.eql(b)` → `error: expected type '*const Color', found 'Color'`. The derived
+`eql(other: *const Self)` takes its argument by const-pointer, and an explicit
+`.eql(b)` passes `b` (a value) without taking its address. The **`==` operator
+works** (`a == b`, which the Eq trait rewires to `a.eql(b)`, DOES address the
+argument), as do `toString()`, `hash()`, and struct-keyed `HashMap` — so only the
+explicit `.eql(value)` form is affected. Repro:
+```
+@derive(Eq) struct Color { var r: int; var g: int; var b: int }
+def main()
+    var a = Color(r:1, g:2, b:3)
+    var b = Color(r:1, g:2, b:3)
+    print(a == b)        # OK → true
+    print(a.eql(b))      # FAIL: expected '*const Color', found 'Color'
+```
+**Fix direction:** the explicit-member-call path should address a value argument
+passed to a `*const Self` parameter the same way the `==` rewrite already does
+(mirror the arg-addressing in genMemberCall). **Workaround:** use `==`.
+Low severity (idiomatic `==` works; `.eql()` is the lower-level form). Found
+2026-07-25 during the QUICKSTART dogfood. Related: `docs/emit_compile_triage.md`
+`derive_test` entry.
 
 ### BUG-202: user top-level function name collides with preamble-internal parameter names
 A user `def` whose name matches a parameter used inside a preamble helper emits Zig

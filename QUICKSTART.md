@@ -28,7 +28,7 @@ to native executables via a Zig backend.
   `ensure`, `invariant`) make precondition violations visible at compile time rather than
   as runtime crashes.
 - **Readable.** Python-style indentation, no semicolons, no boilerplate class scaffolding,
-  `print "hello"` without import.
+  `print("hello")` without import.
 - **Fast native output.** The Zig backend gives C-level performance and a simple,
   deterministic memory model (arena allocator by default).
 - **Self-hosting.** The compiler is being progressively rewritten in Zebra itself
@@ -113,14 +113,12 @@ Hello, Zebra!
 **A slightly larger example** — reading command-line arguments:
 
 ```zebra
-use sys
-
 def main
-    var args = Arg.all()
-    if args.len == 0
+    var args = sys.args()          # args.at(0) is the program; user args follow
+    if args.len < 2
         print("Usage: hello <name>")
     else
-        print("Hello, ${args[0]}!")
+        print("Hello, ${args.at(1)}!")
 ```
 
 ```bash
@@ -641,8 +639,8 @@ if e is Expr.member as m
 
 # ✓ Multi-variant: use branch
 branch e
-    on Expr.int_ as n    print "int: ${n}"
-    on Expr.str_ as s    print "str: ${s}"
+    on Expr.int_ as n    print("int: ${n}")
+    on Expr.str_ as s    print("str: ${s}")
     else                 pass
 ```
 
@@ -1572,7 +1570,7 @@ static def ascending(a: int, b: int): int
     return a - b
 
 def main
-    var nums = @[3, 1, 4, 1, 5]
+    var nums = [3, 1, 4, 1, 5]
     sort(nums, ascending)
 ```
 
@@ -1615,7 +1613,7 @@ def applyAll(items: List(int), fn: Transform): List(int)
     return out
 
 def main
-    var ns = @[1, 2, 3]
+    var ns = [1, 2, 3]
     var doubled = applyAll(ns, double)
     var negated = applyAll(ns, negate)
 ```
@@ -2001,8 +1999,9 @@ fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are 
    process(c0.withOwner("Foo"))
    ```
 
-8. **`print` is a statement, not a function:** `print "hello"`, not `print("hello")`.
-   For multiple values: `print "a", b, "c"`.
+8. **`print` is a function:** `print("hello")` — the bare `print "hello"` statement
+   form was removed (§28). Multiple arguments are printed space-separated:
+   `print("a", b, "c")` → `a b c`.
 
 9. **Keyword escaping** — Zig keywords used as Zebra field names get a
    trailing-underscore convention: `type_`, `void_`.
@@ -3973,8 +3972,8 @@ def main()
     var green = Color(r: 0,   g: 255, b: 0)
 
     print(red.toString())          # → Color(r=255, g=0, b=0)
-    print(red.eql(red2))           # → true
-    print(red.eql(green))          # → false
+    print(red == red2)             # → true   (Eq rewires `==` to call eql)
+    print(red == green)            # → false
 
     var seen = HashMap(Color, bool)()
     seen.set(red, true)
