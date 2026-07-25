@@ -1,0 +1,81 @@
+# Conway's Game of Life — on a Set(int) of live cells.
+#
+# The board is toroidal (edges wrap). A cell (x, y) is encoded as a single int
+# `y * width + x`, so the whole live population is just a `Set(int)`. That makes
+# the rules read almost like their English statement:
+#   - a live cell with 2 or 3 live neighbours survives
+#   - a dead cell with exactly 3 live neighbours is born
+#
+# It also shows off set literals (`{...}`) — the glider is seeded as a literal
+# set of encoded coordinates.
+
+def cellKey(x: int, y: int, w: int): int
+    return y * w + x
+
+# Count the live neighbours of (x, y), wrapping around the torus.
+def liveNeighbours(live: Set(int), x: int, y: int, w: int, h: int): int
+    var count = 0
+    var dy = -1
+    while dy <= 1
+        var dx = -1
+        while dx <= 1
+            if not (dx == 0 and dy == 0)
+                var nx = (x + dx + w) % w
+                var ny = (y + dy + h) % h
+                if live.contains(cellKey(nx, ny, w))
+                    count += 1
+            dx += 1
+        dy += 1
+    return count
+
+# One generation: the whole board's next state as a fresh Set.
+def step(live: Set(int), w: int, h: int): Set(int)
+    var next = Set(int)()
+    var y = 0
+    while y < h
+        var x = 0
+        while x < w
+            var n = liveNeighbours(live, x, y, w, h)
+            var here = live.contains(cellKey(x, y, w))
+            if here and (n == 2 or n == 3)
+                next.add(cellKey(x, y, w))
+            else if not here and n == 3
+                next.add(cellKey(x, y, w))
+            x += 1
+        y += 1
+    return next
+
+def render(live: Set(int), w: int, h: int)
+    var y = 0
+    while y < h
+        var row = StringBuilder()
+        var x = 0
+        while x < w
+            if live.contains(cellKey(x, y, w))
+                row.append("#")
+            else
+                row.append(".")
+            x += 1
+        print(row.build())
+        y += 1
+
+def main()
+    var w = 24
+    var h = 12
+
+    # A glider, seeded as a literal set of encoded (x, y) cells:
+    #   .#.      (1,0)
+    #   ..#      (2,1)
+    #   ###      (0,2) (1,2) (2,2)
+    # With w = 24 the codes are 1, 26, 48, 49, 50.
+    var live: Set(int) = {1, 26, 48, 49, 50}
+
+    var gen = 0
+    while gen <= 24
+        print("── generation ${gen} ──")
+        render(live, w, h)
+        print("")
+        live = step(live, w, h)
+        gen += 1
+
+    print("The glider has walked ${live.len} cells down the diagonal and keeps going.")

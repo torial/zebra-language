@@ -1,8 +1,23 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-201. Next new bug: BUG-202.**
+**Last bug number generated: BUG-202. Next new bug: BUG-203.**
 
 ---
+
+### BUG-202: user top-level function name collides with preamble-internal parameter names
+A user `def` whose name matches a parameter used inside a preamble helper emits Zig
+that fails to compile with `error: function parameter shadows declaration of '<name>'`.
+Found writing `examples/game_of_life.zbr`: a top-level `def key(x, y, w)` collided with
+the preamble's `_json_get_str(v, key: []const u8)` (and `_json_get_int/float/bool/obj`),
+which all take a parameter literally named `key`. Zig treats a file-scope `pub fn key`
+and a same-scope fn parameter `key` as a shadow → hard error. Same class as `fill`
+(collides with `_pad_fill(fill: …)`), hit earlier during §28f set-literal testing.
+**Impact:** common identifiers (`key`, `val`, `fill`, …) are unusable as user function
+names. **Workaround:** rename the user function (the example uses `cellKey`).
+**Fix direction:** prefix preamble-internal parameter names (`_key`, `_val`, …) so they
+can't collide with emitted user symbols — the preamble owns those names, so this is a
+safe one-sided rename. Low severity (clear error, easy workaround) but a papercut that
+undermines "the language feels right". Discovered 2026-07-24.
 
 ### BUG-200: deeply-nested expressions stack-overflow ✅ FIXED for recursive nesting (2026-07-23); flat-chain residual documented
 A deeply-nested expression crashed the compiler with a **stack overflow** instead of a
