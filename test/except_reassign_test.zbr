@@ -1,0 +1,28 @@
+# BUG-205 regression: a var initialized with `except` must be emittable as `var`
+# when later reassigned (the bootstrap used to hardcode `const` for except-init
+# vars, so a later reassignment failed to compile with "cannot assign to
+# constant"). Also guards the invariant that a never-reassigned except-init var
+# stays valid. Exercised through BOTH compilers by divergence_check.
+
+struct P
+    var x: int
+    var y: int
+
+# except-init, then reassigned with another except — must be `var`.
+def reassigned(p: P): P
+    var m = p except x = 1
+    m = m except y = 2
+    m = m except x = m.x + 10
+    return m
+
+# except-init, never reassigned — must stay `const` (compiles = invariant held;
+# a spurious `var` here would trip Zig's "never mutated" error).
+def frozen(p: P): int
+    var q = p except x = 5
+    return q.x + q.y
+
+def main()
+    var r = reassigned(P(x: 0, y: 0))
+    assert r.x == 11 and r.y == 2, "except-init reassignment"
+    assert frozen(P(x: 0, y: 7)) == 12, "frozen except-init"
+    print("except_reassign_test: OK")

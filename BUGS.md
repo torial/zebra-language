@@ -27,18 +27,19 @@ def f(p: P): P
 `var q = p except x = 1` / `return q`.
 
 **BUG-205 — codegen: a var *initialized with* `except` is emitted `const`.**
-`var m = model except f = v` then a later `m = …` → the bootstrap emits
-`const m = blk:{…}` and the reassignment fails with `error: cannot assign to
-constant`. Its mutation analysis misses the reassignment when the *initializer*
-is an `except` block (reassigning a plainly-initialized var is detected
-correctly). Repro:
+✅ **FIXED 2026-07-25** (`src/CodeGen.zig` `genVarExcept`). The bootstrap
+hardcoded `const` for except-initialized vars; it now picks `const`/`var` from
+the mutation set exactly like `genLocalVar` (a reassigned except-init var → `var`,
+a never-reassigned one → `const`, preserving const-correctness). The selfhost was
+already correct because it lowers `except` to an expression initializer through
+the normal local-var path. Was:
 ```
 def g(p: P): P
     var m = p except x = 1    # emitted `const m`
     m = m except x = 2        # error: cannot assign to constant
     return m
 ```
-**Workaround:** plain-init then reassign — `var m = p` / `m = m except x = 1`.
+**Historical workaround (no longer needed):** plain-init then reassign.
 
 **BUG-206 — codegen: `.toInt()` on a float loses float-inference across
 reassignments.** In `resolveAttack`, `(attackRoll - defenseRoll).toInt()` (both
@@ -46,10 +47,16 @@ operands provably `f64`) emitted a passthrough `.toInt()` (invalid Zig:
 `no field or member function named 'toInt' in 'f64'`) after the operands were
 conditionally reassigned in intervening blocks. The bootstrap has correct
 float→int (`@intFromFloat`) but its float detection at the call site didn't
-survive the reassignment history. Minimal repro is elusive (isolated shapes emit
-`@intFromFloat` correctly) — needs the full-function context; investigate against
-the emitted scaffold. **Workaround:** bind an explicitly-typed float first —
-`var delta: float = attackRoll - defenseRoll` / `var rollDelta = delta.toInt()`.
+survive the reassignment history. **Workaround:** bind an explicitly-typed float
+first — `var delta: float = attackRoll - defenseRoll` / `var rollDelta =
+delta.toInt()`.
+⏸ **DEFERRED 2026-07-25 — minimal repro not found (time-boxed).** Reconstructing
+`resolveAttack`'s exact shape in isolation (var-instance `rng.nextFloat()`,
+nested-if operand reassignment, an early `return` before the `.toInt()`, and the
+intervening `var isCrit`/`var base` block) all emit `@intFromFloat` correctly.
+The passthrough only manifests inside the full multi-function game module, so a
+fix cannot be verified against a minimal case — deferred rather than shipped
+blind. The workaround is in place and documented; reopen with a full-module repro.
 
 ### BUG-203: explicit `@derive(Eq)` `.eql(value)` call doesn't address the value argument
 Calling a derived `eql` explicitly with a value argument fails to compile:

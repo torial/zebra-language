@@ -13626,7 +13626,14 @@ const Generator = struct {
     /// Emits: `const name [: T] = blk: { var _tmp = base; _tmp.f = v; break :blk _tmp; };`
     fn genVarExcept(g: Generator, s: *Ast.StmtVarExcept) anyerror!void {
         try g.writeIndent();
-        try g.w.writeAll("const ");
+        // BUG-205: pick `const` vs `var` from the mutation set, exactly as
+        // genLocalVar does — a var initialized with `except` and later reassigned
+        // must be `var` (else Zig rejects the reassignment), while one never
+        // reassigned must stay `const` (else Zig rejects the unused mutability).
+        // The selfhost gets this for free because it lowers `except` to an
+        // expression initializer through the normal local-var path.
+        const is_mutated = if (g.mutated) |m| m.contains(s.name) else false;
+        try g.w.writeAll(if (is_mutated) "var " else "const ");
         try g.w.writeAll(s.name);
         if (s.type_ref) |tr| {
             try g.w.writeAll(": ");
