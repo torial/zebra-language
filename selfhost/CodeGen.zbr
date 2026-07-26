@@ -1257,22 +1257,22 @@ def sfModStructName(path: str): str
 # STDLIB_PREAMBLE_GUI markers.  guiSelectPreamble lets codegen — not the flat
 # preamble read — decide which backend goes into the output, based on _gui_backend.
 # Default / "stub": the preamble is emitted unchanged (byte-identical).
-# "tui": the stub GUI section (START marker → `= _gui_stub_backend;`) is replaced
-# with the tui backend section (`// ─── GUI: backend isolation` → `= _gui_tui_backend;`),
-# read from selfhost/gui_tui_section.zig and set by main via setGuiTuiSection.
-# The tui section is NOT delegated to the bootstrap anymore — this dissolves
-# BUG-204/206 + GUI module-resolution, which only bit the delegated path.
+# Non-stub backend (tui, libui_ng): main reads the matching section file
+# (selfhost/gui_<backend>_section.zig) and passes it via setGuiSection; codegen
+# then replaces the stub GUI section (START marker → `= _gui_stub_backend;`) with
+# it. These backends are NOT delegated to the bootstrap anymore — dissolving the
+# bootstrap-lags-selfhost gaps that only bit the delegated path.
 var _gui_backend: str = ""
-var _gui_tui_section: str = ""
+var _gui_section: str = ""
 
 def setGuiBackend(v: str)
     _gui_backend = v
 
-def setGuiTuiSection(v: str)
-    _gui_tui_section = v
+def setGuiSection(v: str)
+    _gui_section = v
 
 def guiSelectPreamble(preamble: str): str
-    if _gui_backend != "tui" or _gui_tui_section == ""
+    if _gui_section == ""
         return preamble
     var startMarker = "// === STDLIB_PREAMBLE_GUI_START ==="
     var stubEnd = "const _gui_active_backend: _GuiBackend = _gui_stub_backend;"
@@ -1282,7 +1282,7 @@ def guiSelectPreamble(preamble: str): str
         return preamble
     var siEnd = si + startMarker.len
     var aeEnd = ae + stubEnd.len
-    return preamble[0 .. siEnd] + "\n" + _gui_tui_section + preamble[aeEnd .. preamble.len]
+    return preamble[0 .. siEnd] + "\n" + _gui_section + preamble[aeEnd .. preamble.len]
 
 def generateFull(m: Module, file: str, preamble_path: str, strip_contracts: bool, library_mode: bool): str throws
     return generateFullWith(m, file, preamble_path, List(str)(), ModuleTypes(), strip_contracts, library_mode)

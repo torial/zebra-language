@@ -6200,21 +6200,21 @@ pub fn sfModStructName(path: []const u8) []const u8 {
 
 pub var _zbr_mv__gui_backend: []const u8 = "";
 
-pub var _zbr_mv__gui_tui_section: []const u8 = "";
+pub var _zbr_mv__gui_section: []const u8 = "";
 
 pub fn setGuiBackend(v: []const u8) void {
 // zbr:selfhost/CodeGen.zbr:1269
     _zbr_mv__gui_backend = v;
 }
 
-pub fn setGuiTuiSection(v: []const u8) void {
+pub fn setGuiSection(v: []const u8) void {
 // zbr:selfhost/CodeGen.zbr:1272
-    _zbr_mv__gui_tui_section = v;
+    _zbr_mv__gui_section = v;
 }
 
 pub fn guiSelectPreamble(preamble: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:1275
-    if ((!std.mem.eql(u8, _zbr_mv__gui_backend, "tui") or std.mem.eql(u8, _zbr_mv__gui_tui_section, ""))) {
+    if (std.mem.eql(u8, _zbr_mv__gui_section, "")) {
 // zbr:selfhost/CodeGen.zbr:1276
         return preamble;
     }
@@ -6236,7 +6236,7 @@ pub fn guiSelectPreamble(preamble: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:1284
     const aeEnd = (ae + @as(i64, @intCast(stubEnd.len)));
 // zbr:selfhost/CodeGen.zbr:1285
-    return _str_concat(_str_concat(_str_concat(preamble[@intCast(0)..@intCast(siEnd)], "\n", _allocator), _zbr_mv__gui_tui_section, _allocator), preamble[@intCast(aeEnd)..@intCast(@as(i64, @intCast(preamble.len)))], _allocator);
+    return _str_concat(_str_concat(_str_concat(preamble[@intCast(0)..@intCast(siEnd)], "\n", _allocator), _zbr_mv__gui_section, _allocator), preamble[@intCast(aeEnd)..@intCast(@as(i64, @intCast(preamble.len)))], _allocator);
 }
 
 pub fn generateFull(m: Module, file: []const u8, preamble_path: []const u8, strip_contracts: bool, library_mode: bool) anyerror![]const u8 {

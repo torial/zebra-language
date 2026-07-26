@@ -119,6 +119,11 @@ pub fn build(b: *std.Build) void {
         "bin/gui_tui_section.zig",
     );
     b.getInstallStep().dependOn(&install_gui_tui.step);
+    const install_gui_lui = b.addInstallFile(
+        b.path("selfhost/gui_libui_ng_section.zig"),
+        "bin/gui_libui_ng_section.zig",
+    );
+    b.getInstallStep().dependOn(&install_gui_lui.step);
 
     const run = b.addRunArtifact(exe);
     run.addArgs(b.args orelse &.{});
