@@ -96,22 +96,44 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
     Full 5-family root-cause triage under "Bootstrap-lags-selfhost convergence" below
     (2026-07-22): pointer/value, `.items`-on-non-list, inference, parser/SIMD, sqlite-binding.
 - [ ] **GUI builds via selfhost emission — phase the bootstrap out of the GUI path**
-  (epic; decided 2026-07-25). Today `--gui-backend=*` (stub/tui/glfw/libui_ng) delegates the
-  WHOLE build to `zebra-bootstrap.exe`, so bootstrap-lags-selfhost gaps BLOCK GUI/TUI apps
-  even though the primary/selfhost compiler accepts the code — found porting
-  `examples/tears_of_the_tuon.zbr` (BUG-204 return-position `except`, BUG-206
-  `.toInt()`-on-float, and the GUI module-resolution limit all bite here; see BUGS.md).
-  **The selfhost already EMITS the GUI glue** (`selfhost/CodeGen.zbr` `_gui_active_backend.*`);
-  it delegates only for the scaffold + `zig build` project + zigzag-pkg driver, which lives
-  ONLY in `src/main.zig` (~160 lines of build.zig/.zon templates + one scaffold-and-spawn fn
-  ~line 1348). **Plan:** port that driver into `selfhost/main.zbr` and route the selfhost
-  `--gui-backend` path through emit-then-scaffold instead of delegating. **Payoff: dissolves
-  BUG-204 + BUG-206 + the GUI module-resolution limit at once**, and removes the last
-  mainstream reason a user program touches the bootstrap — matching the endgame ("Zig only in
-  special-case files"). **Decision (Sean 2026-07-25):** this is the right fix; do NOT do the
-  bootstrap grammar surgery for BUG-204 (sizable change to a sunsetting compiler — the
-  bind-then-return workaround holds meanwhile). Bounded, focused session; gate with a real TUI
-  build + `bootstrap_check`.
+  (epic; scoped 2026-07-25, scoped TUI-only, deferred to a fresh session). Today
+  `--gui-backend=*` delegates the WHOLE build to `zebra-bootstrap.exe`, so bootstrap-lags-
+  selfhost gaps BLOCK GUI/TUI apps even though the primary/selfhost compiler accepts the code —
+  found porting `examples/tears_of_the_tuon.zbr` (BUG-204 return-position `except`, BUG-206
+  `.toInt()`-on-float, GUI module-resolution all bite here). **Payoff: dissolves BUG-204 +
+  BUG-206 + GUI module-resolution at once**, phases the bootstrap out of the GUI path (endgame).
+  **Decision (Sean 2026-07-25): the right fix; do NOT do bootstrap grammar surgery for BUG-204.
+  Scope TUI-only (defer imgui/libui_ng). Mechanical copy into the selfhost — do NOT refactor the
+  sunsetting bootstrap (its GUI copy dies with it). Do it as a fresh, gated, phased effort.**
+  - **Corrected scope (was mis-estimated as ~160 lines / "focused session"):** ~500 lines
+    TUI-only, ~2000 all-backends. The scaffold driver was only half. **The real work + risk:**
+    the selfhost gets its GUI backend from the preamble file UNCONDITIONALLY (always **stub** —
+    `selfhost/stdlib_preamble.zig`, `_gui_active_backend` between the STDLIB_PREAMBLE_GUI markers;
+    the selfhost reads the whole file, the bootstrap keeps the section inline in CodeGen with a
+    `switch(gui_backend)`). To emit tui *instead*, stub must become codegen-**selected** — split
+    the stub block out of the shared preamble, gate on `gui_backend`. This restructures a path
+    every GUI-stub test depends on: it **MUST stay byte-identical for the stub case** or
+    `bootstrap_check` breaks + every GUI stub test shifts. That gate-holding restructure is the
+    crux, NOT the tui glue (static strings — mechanical copy, watch CRLF/escaping in `.zbr`).
+  - **Reference map (bootstrap side, to copy/mirror):** backend `switch(g.gui_backend)` =
+    `src/CodeGen.zig:3061-4683` (stub 3062-3234, imgui ~3234-3835, **tui 3841-4114**, libui
+    4124-4683; each arm ends `const _gui_active_backend = _gui_<x>_backend`). Scaffold =
+    `compileGuiProject` `src/main.zig:1348-1417`; build.zig/.zon templates `1188-1300`
+    (tui template `1254-1300`). Selfhost currently: parses `gui_backend` (`selfhost/main.zbr:2094`)
+    only to delegate (`~2320`); CodeGen emits `_gui_active_backend.*` CALLS but has NO
+    `gui_backend` field/param (never threaded).
+  - **Phase 1 (gated):** thread `gui_backend` through the selfhost pipeline (main → compileDep →
+    generate → a Generator field) and make the STUB backend codegen-selected instead of
+    preamble-baked. **Acceptance: `bootstrap_check` byte-identical + smoke 254/254 (stub output
+    unchanged).** No behavior change yet — pure restructure. This is the risky part; land it
+    alone.
+  - **Phase 2 (gated):** copy the tui backend block (`src/CodeGen.zig:3841-4114`) into the
+    selfhost as a `gui_backend == tui` arm; port the scaffold+zig-build driver
+    (`compileGuiProject`, uses `.stdout=.inherit` already — no BUG-208 issue) + the tui
+    build.zig/.zon templates into `selfhost/main.zbr`; route `--gui-backend=tui` through
+    emit-then-scaffold instead of delegating. **Acceptance: `zebra --gui-backend=tui
+    examples/tears_of_the_tuon.zbr` builds + runs the game WITHOUT the BUG-204/206 workarounds
+    (revert those in the example to prove it); `bootstrap_check` + smoke green.**
 - [ ] **Grow the fuzzer's `DEFAULT_CAPS`** (`fuzz/gen.py`) — highest-leverage
   correctness lever (risk surface is combinatorial; see `docs/COVERAGE_MAP.md`).
   Remaining caps need class-relationship generation: (4) `^T` boxing,
