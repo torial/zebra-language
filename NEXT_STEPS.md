@@ -122,18 +122,37 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
     (tui template `1254-1300`). Selfhost currently: parses `gui_backend` (`selfhost/main.zbr:2094`)
     only to delegate (`~2320`); CodeGen emits `_gui_active_backend.*` CALLS but has NO
     `gui_backend` field/param (never threaded).
-  - **Phase 1 (gated):** thread `gui_backend` through the selfhost pipeline (main → compileDep →
-    generate → a Generator field) and make the STUB backend codegen-selected instead of
-    preamble-baked. **Acceptance: `bootstrap_check` byte-identical + smoke 254/254 (stub output
-    unchanged).** No behavior change yet — pure restructure. This is the risky part; land it
-    alone.
-  - **Phase 2 (gated):** copy the tui backend block (`src/CodeGen.zig:3841-4114`) into the
-    selfhost as a `gui_backend == tui` arm; port the scaffold+zig-build driver
-    (`compileGuiProject`, uses `.stdout=.inherit` already — no BUG-208 issue) + the tui
-    build.zig/.zon templates into `selfhost/main.zbr`; route `--gui-backend=tui` through
-    emit-then-scaffold instead of delegating. **Acceptance: `zebra --gui-backend=tui
-    examples/tears_of_the_tuon.zbr` builds + runs the game WITHOUT the BUG-204/206 workarounds
-    (revert those in the example to prove it); `bootstrap_check` + smoke green.**
+  - [x] **Phase 1 DONE 2026-07-25 (commit `61a3ffa`, gated).** Threaded `gui_backend` through
+    the pipeline (`main` → `setGuiBackend` → `_gui_backend` var in CodeGen, mirroring
+    `setSingleFile`) and routed every preamble-append site through `guiSelectPreamble`, which
+    splits on the STDLIB_PREAMBLE_GUI markers so codegen picks the backend. **Refinement vs the
+    original plan:** stub stays SOURCED FROM the preamble file (split-then-reassemble = verbatim),
+    NOT extracted into codegen strings — so stub is byte-identical by construction (lower risk).
+    Verified: counter (GUI stub) + a plain program emit byte-identical to pre-change;
+    bootstrap_check byte-identical; smoke 254/254.
+  - [~] **Phase 2 — core mechanism VALIDATED 2026-07-25; delivery+scaffold+routing remain.**
+    **Validated (the make-or-break unknown):** grafting the bootstrap's tui GUI section into a
+    *selfhost* emit (selfhost preGui + bootstrap tui-section + selfhost postGui) COMPILES + links
+    with zigzag (`zig build` exit 0). So the selfhost preamble is compatible with the bootstrap's
+    tui glue; the ~20-line stub-vs-preamble divergence is confined to the GUI section (replaced
+    wholesale for tui) and is irrelevant. **tui section extraction (reproducible):** emit any GUI
+    program with the bootstrap twice — `zebra-bootstrap.exe --emit-zig g.zbr` (stub) and
+    `--gui-backend=tui --emit-zig g.zbr` (tui); the tui GUI section = the tui emit's text from
+    `// ─── GUI: backend isolation` through `const _gui_active_backend: _GuiBackend =
+    _gui_tui_backend;` (~508 lines / 26 KB; contains the sole `@import("zigzag")`; no `"""`).
+    **`guiSelectPreamble` tui branch (validated shape):** for `_gui_backend=="tui"`, return
+    `preamble[0..siEnd] + "\n" + <tui-section> + preamble[aeEnd..]` where `si`=STDLIB_PREAMBLE_GUI_START
+    marker, `ae`=`const _gui_active_backend … = _gui_stub_backend;` (ASCII-stable anchors). **NOT
+    byte-identical to the bootstrap is fine** — tui isn't in the divergence corpus; it only needs
+    to build+run. **Remaining:** (a) deliver the tui section — file `selfhost/gui_tui_section.zig`
+    read at runtime (resolve like `preamble_path`, install next to exe in build.zig) is cleaner
+    than a 508-line embed [triple-quoted `"""` works but bloats CodeGen]; (b) port the
+    scaffold+zig-build driver (`compileGuiProject` `src/main.zig:1348-1417`, uses `.stdout=.inherit`
+    already) + the tui build.zig/.zon templates (`src/main.zig:1254-1300`) into `selfhost/main.zbr`;
+    (c) route `--gui-backend=tui` through emit-then-scaffold instead of delegating (`selfhost/main.zbr`
+    ~2320). **Acceptance: `zebra --gui-backend=tui examples/tears_of_the_tuon.zbr` builds + runs the
+    game WITHOUT the BUG-204/206 workarounds (revert those in the example to prove it);
+    bootstrap_check + smoke green.**
 - [ ] **Grow the fuzzer's `DEFAULT_CAPS`** (`fuzz/gen.py`) — highest-leverage
   correctness lever (risk surface is combinatorial; see `docs/COVERAGE_MAP.md`).
   Remaining caps need class-relationship generation: (4) `^T` boxing,
