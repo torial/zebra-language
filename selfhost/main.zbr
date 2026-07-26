@@ -40,7 +40,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setGuiBackend
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -2092,6 +2092,9 @@ def main()
     # The hard exhaustiveness ERROR (no else + missing variant) is unaffected.
     var warn_ne              = args.contains("--warn-non-exhaustive")
     var gui_backend: str     = args.option("--gui-backend", "")
+    # Thread the backend into codegen (GUI-via-selfhost Phase 1). Emission is stub
+    # for "" / "stub"; Phase 2 will emit tui here and stop delegating.
+    setGuiBackend(gui_backend)
     # --gui-backend=XXX delegates to bootstrap (GUI needs zig build + deps, not zig run)
     var has_gui              = gui_backend != ""
     var mode_zig             = args.contains("--zig-backend") or has_gui
