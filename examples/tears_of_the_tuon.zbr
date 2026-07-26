@@ -76,8 +76,7 @@ def resolveAttack(seed: int, attackerName: str, attAgi: int, attStr: int, w: Wea
     var base = w.damage
     if isCrit
         base = w.critDamage
-    var delta: float = attackRoll - defenseRoll
-    var rollDelta = delta.toInt()
+    var rollDelta = (attackRoll - defenseRoll).toInt()
     var dmg = base + ((rollDelta + attStr) / 4) - (defArmor / 4)
     if dmg < 1
         dmg = 1
@@ -185,22 +184,15 @@ def aliveEnemies(model: GameModel): int
 def withLog(m: GameModel, line: str): GameModel
     var lg = m.log
     lg.add(line)
-    var m2 = m except log = lg
-    return m2
+    return m except log = lg
 
 def beginBattle(model: GameModel, diff: int): GameModel
-    # Note: init the accumulator with a plain copy, THEN reassign with `except`.
-    # The bootstrap (LLVM) codegen marks a var *initialized with* `except` as
-    # const, so a later reassignment won't compile — see docs/BUGS.md BUG-205.
-    var m = model
-    m = m except diff = diff
+    var m = model except diff = diff
     if playerFirst(diff, 25, 30)
         m = withLog(m, "On " + diffName(diff) + " — Yehu goes first!")
-        m = m except phase = 1
-        return m
+        return m except phase = 1
     m = withLog(m, "On " + diffName(diff) + " — the Ruffians go first!")
-    m = m except phase = 3
-    return m
+    return m except phase = 3
 
 # Resolve Yehu's attack (his selected weapon) against enemy `tgt` (0 or 1).
 def playerAttack(model: GameModel, tgt: int): GameModel
@@ -213,8 +205,7 @@ def playerAttack(model: GameModel, tgt: int): GameModel
         tgtName = "Ruffian B"
         tgtHp = model.e1Hp
     var out = resolveAttack(model.rngSeed, "Yehu", 25, 15, w, tgtName, 15, 10, true, model.diff)
-    var m = model
-    m = m except rngSeed = out.nextSeed
+    var m = model except rngSeed = out.nextSeed
     m = withLog(m, out.message)
     if out.hit
         var nh = tgtHp - out.damage
@@ -228,10 +219,8 @@ def playerAttack(model: GameModel, tgt: int): GameModel
             m = withLog(m, tgtName + " collapses.")
     if m.e0Hp <= 0 and m.e1Hp <= 0
         m = withLog(m, "The Ruffians are defeated! Yehu gains 50 experience.")
-        m = m except phase = 4, xp = m.xp + 50
-        return m
-    m = m except phase = 3
-    return m
+        return m except phase = 4, xp = m.xp + 50
+    return m except phase = 3
 
 # One enemy attacks Yehu, picking a weapon by the difficulty AI.
 def oneEnemyAttack(model: GameModel, which: int): GameModel
@@ -243,8 +232,7 @@ def oneEnemyAttack(model: GameModel, which: int): GameModel
     if which == 1
         ename = "Ruffian B"
     var out = resolveAttack(model.rngSeed, ename, 15, 10, w, "Yehu", 25, 10, false, model.diff)
-    var m = model
-    m = m except rngSeed = out.nextSeed
+    var m = model except rngSeed = out.nextSeed
     m = withLog(m, out.message)
     if out.hit
         var nh = m.pHp - out.damage
@@ -262,41 +250,31 @@ def runEnemyTurn(model: GameModel): GameModel
     if m.e1Hp > 0 and m.pHp > 0
         m = oneEnemyAttack(m, 1)
     if m.pHp <= 0
-        m = m except phase = 5
-        return m
-    m = m except phase = 1, round = m.round + 1
-    return m
+        return m except phase = 5
+    return m except phase = 1, round = m.round + 1
 
 def attemptFlee(model: GameModel): GameModel
     var enemyAgi = aliveEnemies(model) * 15
     var rng = Random.new(model.rngSeed)
     var probe = rng.nextInt(1, 2000000000)
-    var m = model
-    m = m except rngSeed = probe
+    var m = model except rngSeed = probe
     if tryFlee(model.rngSeed, 25, enemyAgi, model.diff)
         m = withLog(m, "Yehu breaks away and escapes down the road.")
-        m = m except phase = 6
-        return m
+        return m except phase = 6
     m = withLog(m, "Yehu tries to flee but the Ruffians cut him off!")
-    m = m except phase = 3
-    return m
+    return m except phase = 3
 
 # ---------------------------------------------------------------------------
 # Update
 # ---------------------------------------------------------------------------
-
-# Player picked a weapon; move to target selection.
-def chooseWeapon(model: GameModel, w: int): GameModel
-    var m = model except selWeapon = w, phase = 2
-    return m
 
 def update(model: GameModel, msg: Msg): GameModel
     branch msg
         on Msg.selEasy    return beginBattle(model, 0)
         on Msg.selMedium  return beginBattle(model, 1)
         on Msg.selHard    return beginBattle(model, 2)
-        on Msg.atkSword   return chooseWeapon(model, 0)
-        on Msg.atkBow     return chooseWeapon(model, 1)
+        on Msg.atkSword   return model except selWeapon = 0, phase = 2
+        on Msg.atkBow     return model except selWeapon = 1, phase = 2
         on Msg.tgt0       return playerAttack(model, 0)
         on Msg.tgt1       return playerAttack(model, 1)
         on Msg.doFlee     return attemptFlee(model)

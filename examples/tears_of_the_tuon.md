@@ -84,23 +84,22 @@ difficulty bonus), initiative, and an **end-to-end FSM run** that drives `update
 through a full Easy battle to victory. It is co-located in `examples/` (not the
 gated `test/` suite) so it can resolve the app by module name; run it manually.
 
-## Compiler gaps found (and worked around)
+## Compiler gaps found — now dissolved
 
-Dogfooding this port surfaced three **bootstrap-lags-selfhost** gaps, filed as
-`BUGS.md` BUG-204/205/206. They matter because GUI backends delegate to the
-bootstrap (LLVM) — so they block GUI apps even though the primary/selfhost
-compiler accepts the code. The example is written to avoid all three; the
-workarounds are commented inline where they occur:
+Dogfooding this port surfaced three **bootstrap-lags-selfhost** gaps
+(`BUGS.md` BUG-204/205/206). They bit only the *bootstrap-delegated* GUI path:
+`--gui-backend=tui` used to hand the whole build to `zebra-bootstrap.exe`, whose
+older parser/codegen rejected forms the primary selfhost compiler accepts —
+- **BUG-204** — return-position `except` (`return x except …`);
+- **BUG-205** — a var *initialized with* `except` then reassigned;
+- **BUG-206** — `.toInt()` on a float whose operands were reassigned.
 
-- **BUG-204** — bootstrap parser only accepts `except` in var-init position
-  (not `return x except …`). Workaround: bind, then return.
-- **BUG-205** — bootstrap codegen marks a var *initialized with* `except` as
-  `const`, breaking later reassignment. Workaround: plain-init, then reassign.
-- **BUG-206** — bootstrap codegen's `.toInt()`-on-float inference doesn't survive
-  reassignment of the operands. Workaround: bind an explicitly-typed
-  `var delta: float` first.
+These are **gone for this example**: `--gui-backend=tui` now emits + scaffolds
+through the **selfhost itself** (no bootstrap delegation), so the natural forms
+compile directly. The workarounds have been removed — the code above is written
+plainly. (See NEXT_STEPS "GUI builds via selfhost emission" for the mechanism.)
 
-Two other language notes worth keeping:
+Two language notes worth keeping:
 
 - **List field of an `except`-copied model is `*const`** — `m.log.add(…)` won't
   compile. The `withLog` helper copies the list, appends, and re-binds it
