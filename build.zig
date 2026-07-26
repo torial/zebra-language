@@ -290,6 +290,11 @@ pub fn build(b: *std.Build) void {
     // error; the two-step idiom is intentional.
     const update_run = b.addSystemCommand(&.{ "bash", "tools/bootstrap_check.sh", "--update" });
     update_run.step.dependOn(&bootstrap_exe.step); // only needs the Zig-compiled bootstrap, not zebra.exe
+    // BUG-210: this step regenerates selfhost/*.zig from selfhost/*.zbr but declares
+    // no .zbr inputs, so Zig's build cache would skip it after a .zbr-only edit
+    // (fixed argv + unchanged bootstrap dep → cache hit), silently leaving the
+    // generated .zig stale. Force it to always run — regeneration is the point.
+    update_run.has_side_effects = true;
     const update_selfhost_step = b.step("update-selfhost", "Regenerate selfhost/*.zig from .zbr sources (then run 'zig build')");
     update_selfhost_step.dependOn(&update_run.step);
 }

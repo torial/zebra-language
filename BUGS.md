@@ -24,7 +24,7 @@ preamble contributes exactly one `_sqlite_open` (the definition), so a real
 taken, `.fast.exe` produced); a `Sqlite.open` program still routes to LLVM and
 runs; `bootstrap_check` byte-identical; smoke 254/254.
 
-### BUG-210: `zig build update-selfhost` can skip regeneration after a `.zbr`-only edit ⚠️ OPEN (workflow footgun)
+### BUG-210: `zig build update-selfhost` can skip regeneration after a `.zbr`-only edit ✅ FIXED 2026-07-25
 `update_run` (`build.zig`) is `b.addSystemCommand({"bash","tools/bootstrap_check.sh",
 "--update"})` with a fixed argv, `dependOn(bootstrap_exe)`, and **no declared
 `.zbr` inputs**. So Zig's build cache can treat it as up-to-date and **skip the
@@ -38,6 +38,10 @@ regenerate directly — `zig-out/bin/zebra-bootstrap.exe --emit-zig selfhost/foo
 the cache key tracks them. Small build.zig change; do it carefully (build system).
 `bootstrap_check.sh` itself (the gate) is unaffected — it regenerates into /tmp
 fresh each run.
+**Fixed (`build.zig`):** `update_run.has_side_effects = true` — the regeneration
+step now always runs when `zig build update-selfhost` is invoked. Verified: two
+back-to-back invocations both fully regenerate (Step 1/2/3 + PASS each time);
+before, the second was a cache no-op.
 
 ### BUG-208: `zebra run` hangs when the program prints more than ~4 KB ✅ FIXED 2026-07-25
 `zebra run <file>` ran the compiled program via `sys.run()`, which **captures**
