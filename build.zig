@@ -111,6 +111,15 @@ pub fn build(b: *std.Build) void {
     );
     b.getInstallStep().dependOn(&install_preamble.step);
 
+    // The tui GUI backend section (GUI-via-selfhost Phase 2): read at runtime for
+    // --gui-backend=tui, resolved next to stdlib_preamble.zig. Bootstrap doesn't
+    // use it (it has the inline switch); selfhost-only resource.
+    const install_gui_tui = b.addInstallFile(
+        b.path("selfhost/gui_tui_section.zig"),
+        "bin/gui_tui_section.zig",
+    );
+    b.getInstallStep().dependOn(&install_gui_tui.step);
+
     const run = b.addRunArtifact(exe);
     run.addArgs(b.args orelse &.{});
     const run_step = b.step("run", "Run the Zebra compiler");

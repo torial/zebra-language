@@ -40,7 +40,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setGuiBackend
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setGuiBackend, setGuiTuiSection
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -1849,6 +1849,77 @@ def runFmt(path: str, check_only: bool, print_only: bool) throws
     File.write(path, formatted)
     sys.errln("fmt: " + path + " reformatted")
 
+# ── GUI-via-selfhost: --gui-backend=tui scaffold driver ─────────────────────
+# Wrap the emitted zig (already using the tui backend) in a minimal `zig build`
+# project with the zigzag dependency, then build/run it. Ported from
+# src/main.zig compileGuiProject; uses --build-file/--cache-dir so no cwd change
+# is needed. sys.exec_inherit streams output live (no BUG-208 pipe block).
+def tuiBuildZig(): str
+    return """
+const std = @import("std");
+pub fn build(b: *std.Build) void {
+    const target   = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+    const zz_dep = b.dependency("zigzag", .{
+        .target   = target,
+        .optimize = optimize,
+    });
+    const app_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target           = target,
+        .optimize         = optimize,
+    });
+    app_mod.addImport("zigzag", zz_dep.module("zigzag"));
+    const exe = b.addExecutable(.{
+        .name        = "app",
+        .root_module = app_mod,
+    });
+    b.installArtifact(exe);
+    const run_step = b.addRunArtifact(exe);
+    b.step("run", "Run the app").dependOn(&run_step.step);
+}
+"""
+
+def tuiBuildZon(): str
+    return """
+.{
+    .name                 = .app,
+    .version              = "0.0.1",
+    .minimum_zig_version  = "0.16.0",
+    .fingerprint          = 0xc96e70cf4d3a38ad,
+    .dependencies = .{
+        .zigzag = .{
+            .url  = "git+https://github.com/meszmate/zigzag#v0.1.5",
+            .hash = "zigzag-0.1.2-YXwYS17aEQBlpxPETTrhY5leFh7vV0DpnXJbHogs4Lsv",
+        },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}
+"""
+
+def compileGuiTui(zig_path: str, mode_run: bool): int
+    var stem: str = zig_path
+    if stem.endsWith(".zig")
+        stem = stem[0 .. stem.len - 4]
+    var proj: str = stem + "_gui_tui"
+    var srcDir: str = proj + "/src"
+    Dir.createAll(srcDir)
+    File.copy(zig_path, srcDir + "/main.zig")
+    if not File.exists(proj + "/build.zig")
+        File.write(proj + "/build.zig", tuiBuildZig())
+    if not File.exists(proj + "/build.zig.zon")
+        File.write(proj + "/build.zig.zon", tuiBuildZon())
+    var argv = List(str)()
+    argv.add("zig")
+    argv.add("build")
+    argv.add("--build-file")
+    argv.add(proj + "/build.zig")
+    argv.add("--cache-dir")
+    argv.add(proj + "/.zig-cache")
+    if mode_run
+        argv.add("run")
+    return sys.exec_inherit(argv)
+
 def main()
     var args = Arg.parse()
 
@@ -2095,9 +2166,11 @@ def main()
     # Thread the backend into codegen (GUI-via-selfhost Phase 1). Emission is stub
     # for "" / "stub"; Phase 2 will emit tui here and stop delegating.
     setGuiBackend(gui_backend)
-    # --gui-backend=XXX delegates to bootstrap (GUI needs zig build + deps, not zig run)
+    # --gui-backend=tui is now emitted+scaffolded by the selfhost itself (below),
+    # dissolving BUG-204/206 + GUI module-resolution. Other GUI backends (glfw,
+    # libui_ng, stub) still delegate to the bootstrap for now.
     var has_gui              = gui_backend != ""
-    var mode_zig             = args.contains("--zig-backend") or has_gui
+    var mode_zig             = args.contains("--zig-backend") or (has_gui and gui_backend != "tui")
     # --target node-addon: compile to a Node.js native addon (.node + .js + .d.ts)
     var target_opt: str      = args.option("--target", "")
     var mode_node            = target_opt == "node-addon" or target_opt == "node_addon"
@@ -2113,6 +2186,15 @@ def main()
         if pre_exe_dir == ""
             pre_exe_dir = "."
         preamble_path = pre_exe_dir + "/stdlib_preamble.zig"
+    # GUI-via-selfhost: for --gui-backend=tui, load the tui backend section (lives
+    # next to the preamble) so codegen can substitute it for the stub (see
+    # CodeGen.guiSelectPreamble).
+    if gui_backend == "tui"
+        var tui_sec_path: str = preamble_path.replace("stdlib_preamble.zig", "gui_tui_section.zig")
+        if not File.exists(tui_sec_path)
+            sys.errln("zebra: gui_tui_section.zig not found next to the preamble (" + tui_sec_path + ")")
+            sys.exit(1)
+        setGuiTuiSection(File.read(tui_sec_path))
     # --output-dir=DIR style to avoid positional arg confusion
     var output_dir: str    = args.option("--output-dir", "")
     # --module-path DIR: extra search dir for `use` deps not adjacent to the
@@ -2213,6 +2295,16 @@ def main()
 
         # --selfhost-compile: invoke zig to compile/run the generated file
         var zig_path: str = mc.zbrToZig(path)
+
+        # GUI-via-selfhost: --gui-backend=tui wraps the emitted zig (already using
+        # the tui backend via guiSelectPreamble) in a minimal `zig build` project
+        # with the zigzag dependency, then builds/runs it. Replaces the old
+        # delegate-to-bootstrap path — dissolving BUG-204/206 + module-resolution.
+        if gui_backend == "tui"
+            var grc: int = compileGuiTui(zig_path, not mode_c)
+            if grc != 0
+                sys.exit(1)
+            sys.exit(0)
 
         # Debug fast path (run mode, no C deps): build a temp exe with Zig's
         # self-hosted x86_64 backend + self-hosted linker (-fno-llvm -fno-lld),

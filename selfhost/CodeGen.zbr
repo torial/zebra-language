@@ -1252,31 +1252,37 @@ def fwdSlashes(p: str): str
 def sfModStructName(path: str): str
     return "_mod_" + path.replace(".", "_").replace("/", "_")
 
-# ── GUI backend selection (GUI-via-selfhost, Phase 1) ───────────────────────
+# ── GUI backend selection (GUI-via-selfhost) ────────────────────────────────
 # The stdlib preamble carries the GUI section (the stub backend) between the
-# STDLIB_PREAMBLE_GUI markers.  guiSelectPreamble splits the preamble there so
-# codegen — not the flat preamble read — decides which backend goes into the
-# output.  Phase 1: the stub backend is emitted verbatim from the file, so the
-# split-and-reassemble is byte-identical.  Phase 2 will substitute the tui backend
-# here when _gui_backend == "tui".  Set by main via setGuiBackend before generate.
+# STDLIB_PREAMBLE_GUI markers.  guiSelectPreamble lets codegen — not the flat
+# preamble read — decide which backend goes into the output, based on _gui_backend.
+# Default / "stub": the preamble is emitted unchanged (byte-identical).
+# "tui": the stub GUI section (START marker → `= _gui_stub_backend;`) is replaced
+# with the tui backend section (`// ─── GUI: backend isolation` → `= _gui_tui_backend;`),
+# read from selfhost/gui_tui_section.zig and set by main via setGuiTuiSection.
+# The tui section is NOT delegated to the bootstrap anymore — this dissolves
+# BUG-204/206 + GUI module-resolution, which only bit the delegated path.
 var _gui_backend: str = ""
+var _gui_tui_section: str = ""
 
 def setGuiBackend(v: str)
     _gui_backend = v
 
+def setGuiTuiSection(v: str)
+    _gui_tui_section = v
+
 def guiSelectPreamble(preamble: str): str
-    var startMarker = "// === STDLIB_PREAMBLE_GUI_START ==="
-    var endMarker = "// === STDLIB_PREAMBLE_GUI_END ==="
-    var si = preamble.indexOf(startMarker)
-    var ei = preamble.indexOf(endMarker)
-    if si < 0 or ei < 0
+    if _gui_backend != "tui" or _gui_tui_section == ""
         return preamble
-    var guiEnd = ei + endMarker.len
-    var preGui = preamble[0 .. si]
-    var stubSection = preamble[si .. guiEnd]
-    var postGui = preamble[guiEnd .. preamble.len]
-    var backend = stubSection
-    return preGui + backend + postGui
+    var startMarker = "// === STDLIB_PREAMBLE_GUI_START ==="
+    var stubEnd = "const _gui_active_backend: _GuiBackend = _gui_stub_backend;"
+    var si = preamble.indexOf(startMarker)
+    var ae = preamble.indexOf(stubEnd)
+    if si < 0 or ae < 0
+        return preamble
+    var siEnd = si + startMarker.len
+    var aeEnd = ae + stubEnd.len
+    return preamble[0 .. siEnd] + "\n" + _gui_tui_section + preamble[aeEnd .. preamble.len]
 
 def generateFull(m: Module, file: str, preamble_path: str, strip_contracts: bool, library_mode: bool): str throws
     return generateFullWith(m, file, preamble_path, List(str)(), ModuleTypes(), strip_contracts, library_mode)
