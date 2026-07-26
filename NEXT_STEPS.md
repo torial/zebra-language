@@ -104,14 +104,19 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   runtime) + `CodeGen.guiSelectPreamble` (substitutes it for the stub section) +
   `main.compileGuiTui` (scaffold + `zig build --build-file` w/ inherited stdio). Gated:
   stub emit byte-identical, bootstrap_check byte-identical, smoke 254/254.
-  **Remaining (follow-ups, not blocking):** (a) `compileGuiTui` copies only the root
+  **libui_ng also ported (2026-07-26, commit `af4d0f3`)** via the same generalized path
+  (`compileGuiProject(zig_path, mode_run, backend)` + `gui_libui_ng_section.zig` +
+  `luiBuildZig/Zon`). Verified at emit+scaffold level; **end-to-end build is blocked by the
+  upstream `zig-libui-ng` dep, which doesn't compile under Zig 0.16** (`ui.h` `uiRect`
+  errors — a pre-existing ~30min upstream fix, NOT the port). Will build once the dep is fixed.
+  **Remaining (follow-ups, not blocking):** (a) `compileGuiProject` copies only the root
   emitted `.zig` — multi-module GUI apps still need dep `.zig` files copied into the
-  scaffold (single-file / no-dep GUI apps like the game work now; this is the residual
-  "GUI module-resolution" limit). (b) glfw/libui_ng backends still delegate to the
-  bootstrap (only tui was ported — the rarely-used ones can follow the same recipe:
-  extract their arm from `src/CodeGen.zig`, add a gui section file + a guiSelectPreamble
-  branch + a build template). (c) `--gui-backend=stub` explicit still delegates (plain
-  `zebra run` already emits stub via the selfhost).
+  scaffold (single-file / no-dep GUI apps like the game work now; residual "GUI
+  module-resolution" limit). (b) **only glfw** still delegates to the bootstrap (same recipe
+  to port when wanted: extract its arm from `src/CodeGen.zig`, add a section file +
+  build template + backend name to `gui_selfhost`). (c) `--gui-backend=stub` explicit still
+  delegates (plain `zebra run` already emits stub via the selfhost). (d) fix the
+  `zig-libui-ng` Zig-0.16 dep to unblock libui_ng end-to-end.
 - [ ] ~~**GUI builds via selfhost emission — phase the bootstrap out of the GUI path**~~
   (epic; scoped 2026-07-25, scoped TUI-only). Today
   `--gui-backend=*` delegates the WHOLE build to `zebra-bootstrap.exe`, so bootstrap-lags-
