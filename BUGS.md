@@ -97,12 +97,13 @@ def f(p: P): P
 `var q = p except x = 1` / `return q`.
 🚫 **WON'T-FIX in the bootstrap (Sean 2026-07-25).** A real fix needs a new
 expr-level AST node + Expr9 postfix grammar production + AstBuilder + CodeGen,
-with Earley ambiguity to manage — a sizable change to the *sunsetting* bootstrap,
-against "don't do sizable ports into the phasing-out bootstrap." Superseded by
-the **"GUI builds via selfhost emission"** epic (NEXT_STEPS, Compiler hardening),
-which routes GUI through the selfhost — where return-position `except` already
-parses — and dissolves this plus BUG-206 and the GUI module-resolution limit at
-once. The bind-then-return workaround holds until then.
+with Earley ambiguity to manage — a sizable change to the *sunsetting* bootstrap.
+✅ **DISSOLVED for the GUI/tui path (2026-07-26).** `--gui-backend=tui` now builds
+through the **selfhost** (no bootstrap delegation), where return-position `except`
+already parses — so GUI/tui apps use the natural form. Proven: `examples/tears_of_the_tuon.zbr`
+builds via `--gui-backend=tui` with the workaround removed. Still latent for the
+bootstrap itself + non-tui GUI backends that still delegate; the bind-then-return
+workaround remains valid there. See NEXT_STEPS "GUI builds via selfhost emission".
 
 **BUG-205 — codegen: a var *initialized with* `except` is emitted `const`.**
 ✅ **FIXED 2026-07-25** (`src/CodeGen.zig` `genVarExcept`). The bootstrap
@@ -135,6 +136,10 @@ intervening `var isCrit`/`var base` block) all emit `@intFromFloat` correctly.
 The passthrough only manifests inside the full multi-function game module, so a
 fix cannot be verified against a minimal case — deferred rather than shipped
 blind. The workaround is in place and documented; reopen with a full-module repro.
+✅ **DISSOLVED for the GUI/tui path (2026-07-26)** — `--gui-backend=tui` builds
+through the selfhost now, whose `.toInt()`-on-float emission is correct; the game
+builds via `--gui-backend=tui` with the `var delta: float` workaround removed.
+Still latent for the bootstrap itself.
 
 ### BUG-203: explicit `@derive(Eq)` `.eql(value)` call doesn't address the value argument
 Calling a derived `eql` explicitly with a value argument fails to compile:

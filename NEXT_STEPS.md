@@ -95,8 +95,25 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   - Note: **14 BOOTSTRAP gaps** = selfhost LEADS; no fix needed (bootstrap sunsets).
     Full 5-family root-cause triage under "Bootstrap-lags-selfhost convergence" below
     (2026-07-22): pointer/value, `.items`-on-non-list, inference, parser/SIMD, sqlite-binding.
-- [ ] **GUI builds via selfhost emission — phase the bootstrap out of the GUI path**
-  (epic; scoped 2026-07-25, scoped TUI-only, deferred to a fresh session). Today
+- [x] **GUI builds via selfhost emission (TUI) — DONE 2026-07-26.** `--gui-backend=tui`
+  now emits the tui backend and scaffolds/builds the `zig build` project via the
+  **selfhost itself** (commits `61a3ffa` Phase 1, `bbc7845` Phase 2, `3ef1e8e` example
+  cleanup) — no more bootstrap delegation. Dissolves BUG-204 + BUG-206 for the tui path
+  (proven: `examples/tears_of_the_tuon.zbr` builds via `--gui-backend=tui` with all
+  workarounds removed). Mechanism: `selfhost/gui_tui_section.zig` (tui backend, read at
+  runtime) + `CodeGen.guiSelectPreamble` (substitutes it for the stub section) +
+  `main.compileGuiTui` (scaffold + `zig build --build-file` w/ inherited stdio). Gated:
+  stub emit byte-identical, bootstrap_check byte-identical, smoke 254/254.
+  **Remaining (follow-ups, not blocking):** (a) `compileGuiTui` copies only the root
+  emitted `.zig` — multi-module GUI apps still need dep `.zig` files copied into the
+  scaffold (single-file / no-dep GUI apps like the game work now; this is the residual
+  "GUI module-resolution" limit). (b) glfw/libui_ng backends still delegate to the
+  bootstrap (only tui was ported — the rarely-used ones can follow the same recipe:
+  extract their arm from `src/CodeGen.zig`, add a gui section file + a guiSelectPreamble
+  branch + a build template). (c) `--gui-backend=stub` explicit still delegates (plain
+  `zebra run` already emits stub via the selfhost).
+- [ ] ~~**GUI builds via selfhost emission — phase the bootstrap out of the GUI path**~~
+  (epic; scoped 2026-07-25, scoped TUI-only). Today
   `--gui-backend=*` delegates the WHOLE build to `zebra-bootstrap.exe`, so bootstrap-lags-
   selfhost gaps BLOCK GUI/TUI apps even though the primary/selfhost compiler accepts the code —
   found porting `examples/tears_of_the_tuon.zbr` (BUG-204 return-position `except`, BUG-206
