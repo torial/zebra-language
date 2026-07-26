@@ -194,8 +194,16 @@ class MultiCompiler
                         zig_src = generateFullWithDepsTest(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result, tag_filter)?
                     else
                         zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result, library_mode)?
-                    # Detect SQLite usage in generated root Zig
-                    if zig_src.contains("_sqlite_open")
+                    # Detect SQLite usage in generated root Zig. The preamble
+                    # inlines the `fn _sqlite_open` DEFINITION into every program,
+                    # so a plain `contains` false-positives for ALL programs —
+                    # which disabled the fast-run path and linked sqlite3.c into
+                    # every compile (BUG-209). A real Sqlite.open/query call adds a
+                    # SECOND occurrence, so detect by count (>1), not presence.
+                    # (Bind the split to a List first — a chained `.split(x).len`
+                    # emits a Zig split *iterator*, which has no `.len`.)
+                    var sqParts: List(str) = zig_src.split("_sqlite_open")
+                    if sqParts.len > 2
                         uses_sqlite = true
                 else
                     # node-addon emits the root unwrapped (exports must stay at file scope —

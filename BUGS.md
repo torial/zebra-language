@@ -1,8 +1,43 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-208. Next new bug: BUG-209.**
+**Last bug number generated: BUG-210. Next new bug: BUG-211.**
 
 ---
+
+### BUG-209: `uses_sqlite` false-positive disabled the fast run path + linked sqlite3.c into every compile ✅ FIXED 2026-07-25
+The selfhost detected SQLite usage with `zig_src.contains("_sqlite_open")` — but
+the preamble **inlines** the `fn _sqlite_open` *definition* into every emitted
+program, so the check was true for **every** program. Two costs compounded:
+1. The `-fno-llvm -fno-lld` self-hosted-backend **fast run path** (gated on
+   `not uses_sqlite`) was never taken → every `zebra run` used the slow LLVM route.
+2. The LLVM path linked `vendor/sqlite/sqlite3.c` into **every** compile.
+Net: a trivial program took ~14 s to `zebra run` instead of ~1 s. Found while
+investigating why the fast path (added `f9a05d1`, verified ~3× then) had gone
+dormant. The bootstrap was never affected — it sets `uses_sqlite` structurally in
+codegen (`src/CodeGen.zig`), only when a real Sqlite call is emitted.
+**Fix (`selfhost/main.zbr`):** detect by **occurrence count**, not presence — the
+preamble contributes exactly one `_sqlite_open` (the definition), so a real
+`Sqlite.open/query` call adds a second. Bind the split to a `List(str)` first
+(`var p: List(str) = zig_src.split("_sqlite_open")`; `p.len > 2`) — a chained
+`.split(x).len` emits a Zig split *iterator*, which has no `.len`.
+**Verified:** `zebra run` on a plain program dropped ~14 s → ~1 s (fast path now
+taken, `.fast.exe` produced); a `Sqlite.open` program still routes to LLVM and
+runs; `bootstrap_check` byte-identical; smoke 254/254.
+
+### BUG-210: `zig build update-selfhost` can skip regeneration after a `.zbr`-only edit ⚠️ OPEN (workflow footgun)
+`update_run` (`build.zig`) is `b.addSystemCommand({"bash","tools/bootstrap_check.sh",
+"--update"})` with a fixed argv, `dependOn(bootstrap_exe)`, and **no declared
+`.zbr` inputs**. So Zig's build cache can treat it as up-to-date and **skip the
+regeneration** when only `selfhost/*.zbr` changed (bootstrap exe unchanged) —
+`zig build update-selfhost` silently no-ops and `selfhost/*.zig` stays stale,
+drifting from its `.zbr` source. Observed repeatedly 2026-07-25: edits to
+`selfhost/main.zbr` did not reach `main.zig` until forced. **Workaround:**
+regenerate directly — `zig-out/bin/zebra-bootstrap.exe --emit-zig selfhost/foo.zbr
+> selfhost/foo.zig` — or invalidate the cache. **Fix direction:** mark the step
+`has_side_effects = true` (always run) or declare the `.zbr` files as inputs so
+the cache key tracks them. Small build.zig change; do it carefully (build system).
+`bootstrap_check.sh` itself (the gate) is unaffected — it regenerates into /tmp
+fresh each run.
 
 ### BUG-208: `zebra run` hangs when the program prints more than ~4 KB ✅ FIXED 2026-07-25
 `zebra run <file>` ran the compiled program via `sys.run()`, which **captures**
