@@ -38,20 +38,23 @@ and `tears_of_the_tuon.zbr` both emit Zig that `zig build-exe` links to an
 
 | Program | Implementation exercised | Evidence | Status |
 |---|---|---|---|
-| `examples/counter.zbr` | window, root VBox, `text`(Label), `separator`, `button`×3, `sameLine` | **Window renders on screen** — Sean-confirmed 2026-07-27; `zig build run` exits **0** | **RUN-VERIFIED (render)** |
-| `examples/tears_of_the_tuon.zbr` | full game view | Compiles + links `app.exe` cold from GitHub; run **not** re-confirmed post-manifest | COMPILE-VERIFIED |
-| Everything else (all other widgets, dialogs, CodeEditor) | — | Links into `counter.exe`/`app.exe`; never instantiated at runtime | **NEVER-RUN** |
+| `examples/counter.zbr` | window, root VBox, `text`(Label), `separator`, `button`×3, `sameLine` | Window renders **and `+`/`−`/`Reset` all change the count** — Sean-confirmed 2026-07-27; exits **0** | **RUN-VERIFIED (render + interaction)** |
+| `examples/tears_of_the_tuon.zbr` | game view (difficulty-select: easy/medium/hard buttons) | **Window renders on screen** — Sean-confirmed 2026-07-27 | **RUN-VERIFIED (render)** |
+| Everything else (checkbox, slider, entry, combobox, spinbox, progressbar, panel, all dialogs, CodeEditor/Scintilla) | — | Links into the exe; never instantiated at runtime | **NEVER-RUN** |
 
-**Precise scope of the runtime proof:** "the counter window appears and the
-process exits cleanly." It does **not** yet establish that clicking `+`
-increments the count (interaction unconfirmed), nor that layout matches intent —
-in fact it does **not**: `counter.zbr` calls `g.sameLine()` between its buttons,
-and `sameLine` is a **no-op stub** in libui (§3), so the three buttons stack
-**vertically** instead of inline. "Window shows" ≠ "renders as authored."
+**What the runtime proof now covers:** counter's `+`/`−`/`Reset` buttons all
+change the count (Sean, 2026-07-27), so the **full MVU round-trip is
+RUN-VERIFIED** — button-click latch → `update` → model change → `Label.SetText`
+re-render, driven by `uiMainStep`. The game's difficulty-select screen also
+renders. This exercises: window, root VBox, Label(dynamic), Separator, Button +
+its click callback, and the MVU loop. Button interaction proven via counter
+applies to the game's buttons (same code path); the game's *own* flow past the
+first screen (does clicking "easy" start play?) is not separately confirmed.
 
-**Open one-question verifications** (cheap, high-value, need Sean's eyes):
-1. In the counter window, does clicking `+`/`−`/`Reset` change the number? → proves the MVU event loop + button latch + Label-update round-trip.
-2. Does `tears_of_the_tuon.zbr --gui-backend=libui_ng` now open a window too?
+**Still true — "renders" ≠ "renders as authored":** `counter.zbr` calls
+`g.sameLine()` between its buttons, and `sameLine` is a **no-op stub** in libui
+(§3), so the three buttons stack **vertically** instead of inline. The behavior
+is correct; the layout is not what the source asks for.
 
 ---
 
