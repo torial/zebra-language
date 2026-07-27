@@ -241,12 +241,15 @@ Status as of 2026-07-27 (what "already wired" hid):
   `@alignCast`), compiled only when a program first *referenced* an editor — fixed
   in `torial/zig-libui-ng` `93c7f54`; (3) **BUG-211** (`using`-block usage
   analysis) blocked the minimal program — fixed in `33571e5`.
-- **The full IDE does NOT build yet:** `IDE/ZebraIDE.zbr` compiles cleanly through
-  *all* the CodeEditor code, then hits an **unrelated** selfhost gap —
-  `proc.isRunning()` on a `sys.spawn` handle (`_SysProcess`) isn't dispatched by
-  the selfhost (bootstrap handles it at `src/CodeGen.zig:8502`). That + any gaps
-  behind it are a separate follow-up. The IDE's real open question — **four
-  Scintilla controls coexisting** — is therefore still untested.
+- **The full IDE now COMPILES + LINKS** (as of `1895d79`): past the CodeEditor
+  code and past the `isRunning` gap (BUG-213, `SysProcess`→`sys_process`). But it
+  **aborts at runtime** (exit 3) in the type-erased MVU `send` queue-copy —
+  **BUG-214**: a no-payload `union(enum)` `Msg` variant is emitted as a bare tag
+  (`Msg.list_targets`) rather than a full union value, so the `send(anytype)` copy
+  hits a size/type mismatch. counter dodges it (pure-enum `Msg`); the IDE's mixed
+  payload/no-payload `Msg` triggers it. So the IDE's real open question — **four
+  Scintilla controls coexisting** — is still untested (it never reaches a stable
+  frame). Fix is scoped in BUG-214; IDE remains a follow-up.
 - **Genuinely missing for an IDE (unbuilt, not lost):** syntax highlighting /
   lexer (`forZebra` falls back to plain), error markers (`setErrorMarkers` no-op),
   fixed column in `setCursorPosition`, and any Table/Tree (file-explorer) widget.

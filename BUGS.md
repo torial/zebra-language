@@ -1,8 +1,28 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-213. Next new bug: BUG-214.**
+**Last bug number generated: BUG-214. Next new bug: BUG-215.**
 
 ---
+
+### BUG-214: no-payload `union(enum)` variant in value position emitted as tag, not union value → MVU send abort ⬜ OPEN
+`IDE/ZebraIDE.zbr` now **compiles + links** via `--gui-backend=libui_ng` (all compile gaps
+closed: CodeEditor port `b42074a`, BUG-211, BUG-213), but **aborts at runtime (exit code 3)**
+in the type-erased MVU `send` queue-copy (`_gui_mvu_run` `_sfn`, emitted main.zig:3003),
+reached from `view → g.send`. **Root cause (well-supported by the emit):** the IDE's `Msg`
+is a `union(enum)` with mixed variants — no-payload (`list_targets`, `open_file`, …) and
+payload (`filepath_changed: []const u8`, …). A no-payload variant in **value position** is
+emitted as bare **`Msg.list_targets`** (the tag), whereas payload variants correctly emit a
+full union value `Msg{ .buildfile_changed = bfVal }`. When `Msg.list_targets` is passed to
+`g.send(msg: anytype)`, the argument's inferred type is the tag, not the full `Msg` union;
+the send queue then reinterprets `&msg` as `*const MsgType` (= full `Msg`) and copies
+`@sizeOf(Msg)` bytes from a tag-sized source → size/type mismatch → abort. The crash stack
+points exactly at the `g.send(Msg.list_targets)` call site (view:4812). **counter.zbr is
+unaffected** — its `Msg` is a *pure enum* (all no-payload), so `Msg.inc` is already a valid
+full value and `MsgType` sizes match; the bug needs a `union(enum)` Msg with ≥1 payload
+variant AND a no-payload variant sent. **Fix direction:** emit a no-payload `union(enum)`
+variant in value/argument position as `Msg{ .variant = {} }` (a full union value), not bare
+`Msg.variant`. Verify against the bootstrap and add a minimal mixed-union-MVU repro. NOT yet
+isolated to a minimal case (characterized from the IDE emit) — confirm before fixing.
 
 ### BUG-213: selfhost `typeFromName` missing `SysProcess` → `proc.isRunning()` mis-dispatched ✅ FIXED 2026-07-27
 Verified post-rebuild: both call forms the IDE uses — `m.proc!.isRunning()` (force-unwrap)
