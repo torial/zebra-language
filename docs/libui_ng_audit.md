@@ -40,7 +40,20 @@ and `tears_of_the_tuon.zbr` both emit Zig that `zig build-exe` links to an
 |---|---|---|---|
 | `examples/counter.zbr` | window, root VBox, `text`(Label), `separator`, `button`×3, `sameLine` | Window renders **and `+`/`−`/`Reset` all change the count** — Sean-confirmed 2026-07-27; exits **0** | **RUN-VERIFIED (render + interaction)** |
 | `examples/tears_of_the_tuon.zbr` | game view (difficulty-select: easy/medium/hard buttons) | **Window renders on screen** — Sean-confirmed 2026-07-27 | **RUN-VERIFIED (render)** |
-| Everything else (checkbox, slider, entry, combobox, spinbox, progressbar, panel, all dialogs, CodeEditor/Scintilla) | — | Links into the exe; never instantiated at runtime | **NEVER-RUN** |
+| `examples/editor_min.zbr` | window, VBox, `text`, **one CodeEditor** (`forZebra` + `setText` + `render`) | **A Scintilla control renders and displays its setText content** ("hi from scintilla", plain black text) — Sean-confirmed 2026-07-27 | **RUN-VERIFIED (single-editor display)** |
+| Everything else (checkbox, slider, entry, combobox, spinbox, progressbar, panel, all dialogs) | — | Links into the exe; never instantiated at runtime | **NEVER-RUN** |
+
+**CodeEditor scope, precisely:** what's proven is that **one** Scintilla control
+instantiates, renders, and shows the text set via `setText`. **Not** yet
+exercised: editability (typing into it — Sean saw it, didn't type), syntax
+highlighting (`forZebra` falls back to plain — no lexer wired, by design),
+`setErrorMarkers` (a no-op stub), and — the IDE's real unknown — **multiple**
+Scintilla controls coexisting in one window (editor_min has one; the IDE has
+four). Getting here required porting the `CodeEditor` builtin to the selfhost
+front-end + codegen (commit `b42074a`) and fixing BUG-211 (commit `33571e5`) —
+before which no CodeEditor program could even name-resolve through the selfhost.
+**CodeEditor is NEVER-gate-covered** (no corpus test uses it — it needs a GUI
+backend + manifest); the only witness is a manual libui_ng build + on-screen check.
 
 **What the runtime proof now covers:** counter's `+`/`−`/`Reset` buttons all
 change the count (Sean, 2026-07-27), so the **full MVU round-trip is
@@ -215,22 +228,32 @@ was refreshed 2026-07-27 and matches.
 
 ## 7. IDE readiness (Sean's question: "recover/merge Scintilla for an IDE")
 
-**Nothing to recover — Scintilla is already present and wired**, and
-`IDE/ZebraIDE.zbr` already uses `codeEditor`. What's actually true:
+Scintilla was never lost — but "already wired" hid that it had **never once run**,
+plus three real gaps. `IDE/ZebraIDE.zbr` uses `codeEditor` throughout.
 
-- **Present & compiles+links:** the `sci` module + `_CodeEditor` glue (create,
-  set/get text, readonly, cursor line/col via raw Scintilla messages).
-- **NEVER-RUN:** no program has instantiated a Scintilla control, so the editor
-  pane is unproven at runtime — the single most valuable next verification for
-  the IDE thread is to build+run `IDE/ZebraIDE.zbr --gui-backend=libui_ng` and
-  confirm the editor appears.
-- **Genuinely missing for an IDE:** syntax highlighting / lexer setup (not
-  wired), error markers (`setErrorMarkers` is a no-op), fixed column in
-  setCursorPosition, and any Table/Tree (file-explorer) widget — all STUB/absent.
+Status as of 2026-07-27 (what "already wired" hid):
 
-**Bottom line:** the IDE substrate exists at the compile level; the gap is
-runtime verification + the highlighting/markers/tree features that a real editor
-needs, none of which are "lost" — they're unbuilt.
+- **RUN-VERIFIED (single editor):** a Scintilla control renders and displays its
+  text via `editor_min.zbr` (§1). Getting here needed work "already wired" masked:
+  (1) CodeEditor was **never ported to the selfhost front-end** — every CodeEditor
+  program failed at name resolution through the selfhost until commit `b42074a`;
+  (2) a **latent Zig-0.16 bug in the binding's `sci.zig`** (`as_control` missing
+  `@alignCast`), compiled only when a program first *referenced* an editor — fixed
+  in `torial/zig-libui-ng` `93c7f54`; (3) **BUG-211** (`using`-block usage
+  analysis) blocked the minimal program — fixed in `33571e5`.
+- **The full IDE does NOT build yet:** `IDE/ZebraIDE.zbr` compiles cleanly through
+  *all* the CodeEditor code, then hits an **unrelated** selfhost gap —
+  `proc.isRunning()` on a `sys.spawn` handle (`_SysProcess`) isn't dispatched by
+  the selfhost (bootstrap handles it at `src/CodeGen.zig:8502`). That + any gaps
+  behind it are a separate follow-up. The IDE's real open question — **four
+  Scintilla controls coexisting** — is therefore still untested.
+- **Genuinely missing for an IDE (unbuilt, not lost):** syntax highlighting /
+  lexer (`forZebra` falls back to plain), error markers (`setErrorMarkers` no-op),
+  fixed column in `setCursorPosition`, and any Table/Tree (file-explorer) widget.
+
+**Bottom line:** the single-editor Scintilla path is real and runtime-proven; the
+full IDE needs the selfhost `isRunning` dispatch (+ possibly more), and the
+editor-quality features (highlighting/markers/tree) remain to be built.
 
 ---
 
