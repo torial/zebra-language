@@ -122,6 +122,22 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   Needs a manual interactive run to confirm the window actually shows. Also fixed a latent
   `compileGuiProject` bug: it wrote `build.zig`/`build.zig.zon` only when absent, so a
   stale scaffold silently kept an old dependency pin — now rewritten unconditionally.
+  **RUNTIME-VERIFIED 2026-07-27:** counter (`+`/`−`/reset work), the game
+  (difficulty screen renders), and — after porting the `CodeEditor` builtin to the
+  selfhost — a single Scintilla editor (`examples/editor_min.zbr`: renders + displays
+  its `setText` content, Sean-confirmed). See `docs/libui_ng_audit.md` for the full
+  claims-vs-verified ledger.
+  **IDE next step (fresh session): fix BUG-214, then re-test `IDE/ZebraIDE.zbr`.**
+  The IDE now compiles + links + **renders** via `--gui-backend=libui_ng` (all compile
+  gaps closed: CodeEditor port `b42074a`, BUG-211 `using`-usage `33571e5`, BUG-213
+  `SysProcess` dispatch `1895d79`), but **crashes on the first toolbar-button click** —
+  BUG-214: a no-payload `union(enum)` `Msg` variant emits as a bare tag (`Msg.list_targets`)
+  instead of `Msg{ .variant = {} }`, so the type-erased MVU `g.send(anytype)` copy size-
+  mismatches. Well-characterized + interaction-confirmed; bounded codegen fix. Do it
+  minimal-repro-first (a mixed payload/no-payload union MVU program), confirm, fix, gate.
+  Then the IDE should be interactive → verify the four editors + typing (the remaining
+  multi-instance unknown). NOTE: use `bash tools/bootstrap_check.sh --update` DIRECTLY to
+  regen after `.zbr` edits — `zig build update-selfhost` silently skips (BUG-210).
   **Remaining (follow-ups, not blocking):** (a) `compileGuiProject` copies only the root
   emitted `.zig` — multi-module GUI apps still need dep `.zig` files copied into the
   scaffold (single-file / no-dep GUI apps like the game work now; residual "GUI
