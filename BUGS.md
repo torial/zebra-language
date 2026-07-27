@@ -1,6 +1,72 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-214. Next new bug: BUG-215.**
+**Last bug number generated: BUG-216. Next new bug: BUG-217.**
+
+---
+
+### BUG-216: `\"` inside an INTERPOLATED string is double-escaped by the bootstrap ✅ VICTIMS FIXED 2026-07-27 (bootstrap root cause left open by choice)
+A string that is both interpolated and contains an escaped double quote is compiled
+differently by the two compilers:
+```zebra
+var s = "say \"hi\" n=${n}"
+```
+- **selfhost** emits `allocPrint(_allocator, "say \"hi\" n={}", …)` — **correct**.
+- **bootstrap** emits `allocPrint(_allocator, "say \\\"hi\\\" n={}", …)` — **wrong**.
+
+Root cause (`src/CodeGen.zig` `genStringInterp`, the `if (c == '"') … if (c == '\\')`
+escape pass around 16686): the literal parts of an interpolated string carry the **raw
+source text**, which is then escaped *again* on the way out, so `\"` → `\\\"`. A plain
+non-interpolated string is unescaped correctly by both compilers.
+
+**Why a bootstrap-only bug mattered here.** Normally the rule is "don't chase, the
+bootstrap sunsets". But the bootstrap is the **regen authority** for `selfhost/*.zig`, so
+this corruption is baked into the *shipping* compiler wherever the pattern appears in the
+compiler's own source. It did, in exactly three places: all three `genCopyOut` `<<-`/`<-`
+diagnostics emitted `@compileError(\"…` — a Zig **parse** error rather than the message
+they were written to give — from the day they were added until 2026-07-27. Nobody noticed
+because those diagnostics only appear when you make that specific mistake.
+
+**Fixed:** the three victims now emit the line number as its own piece so every string
+stays plain (`w.emit("@compileError(\"line ")` / `w.emit(co.span.line.toString())` / …).
+**Gated:** `python tools/lint_interp_escape.py` — static, instant, no build; flags any
+`${`-bearing literal containing `\"` in `selfhost/*.zbr` and `IDE/*.zbr`. 0 = clean.
+**Left open:** the bootstrap root cause. Fixing it would make the two compilers agree, but
+the pattern is now greppable and gated, and the bootstrap is being phased out. Retire the
+lint when the bootstrap is fixed or removed.
+
+### BUG-215: two-argument `str.indexOf(sub, from)` silently dropped the offset ✅ FIXED 2026-07-27
+`indexOf` takes **one** argument; the offset form is a separately named method,
+`indexOfFrom(sub, from)`, returning `int?`. Both compilers accepted `indexOf(sub, from)`
+and **silently discarded** the second argument — every search restarted at 0.
+
+**How it presented:** `IDE/ZebraIDE.zbr` used the two-argument form in five places. In
+`parseLine` that made `colon1 == colon2 == colon3`, and the very next line does
+`ln.substring(colon1 + 1, colon2)` — start > end → Zig slice panic, three frames from the
+typo. `parseBuildTargetNames` had the same shape. Those are the **Check** and **List
+Targets** toolbar buttons; the IDE aborted (exit 3) on both. Found immediately after
+BUG-214 stopped masking it (before that, no button ever dispatched at all).
+
+**Fixed, two parts:**
+1. `IDE/ZebraIDE.zbr` — all five sites moved to `indexOfFrom` with `int?` handling.
+   Verified against realistic input: `foo.zbr:12:5: error: …` → `12|5|error: bad thing`,
+   the Windows `C:/…` drive-letter form parses, non-matching lines return nil, and target
+   parsing yields `app`/`lib`.
+2. **Codegen guard** (`selfhost/CodeGen.zbr`, both string-method dispatch sites) — an
+   `indexOf` call with more than one argument now emits `@compileError("line N:
+   str.indexOf takes 1 argument; for an offset search use indexOfFrom(sub, from)
+   (returns int?)")` instead of miscompiling. Silently dropping an argument is the worst
+   available behavior: it converts a typo into a runtime panic far from its cause.
+
+**Gated:** `smoke_emit_contains test/fail_fixtures/indexof_arity_rejected_test.zbr`.
+**Note on the guard's presentation:** Zig reports it as `error: unreachable code` with the
+`@compileError` text visible on the offending line, rather than as the compileError itself
+(the guard sits in a `const` initializer). The message reaches the user either way; this
+matches the pre-existing `genCopyOut` guard pattern.
+**Not addressed — the wider class:** arity is unchecked for stdlib methods generally
+(`if args.len > 0 genExpr(args[0])` is the pervasive shape, extra arguments ignored).
+A real fix is a stdlib signature/arity table in the front end so this becomes a proper
+Zebra-level error with a source location. Worth doing before 1.0; `indexOf` is only the
+instance that drew blood.
 
 ---
 

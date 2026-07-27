@@ -1,0 +1,16 @@
+# BUG-215 regression fixture — `str.indexOf` takes ONE argument.
+#
+# The offset form is a separately named method, `indexOfFrom(sub, from)`, which
+# returns `int?`.  Writing `indexOf(sub, from)` used to SILENTLY drop the offset:
+# every search restarted at 0, so a scan loop got the same index forever and then
+# panicked inside the `substring(a, b)` that consumed it with a > b.  That is
+# exactly how `IDE/ZebraIDE.zbr` crashed on the Check and List Targets buttons.
+#
+# Codegen now emits a `@compileError` naming the fix instead of miscompiling, so
+# this fixture EMITS successfully but the emitted Zig must carry the marker.
+# Verified by `smoke_emit_contains` in tools/selfhost_smoke.sh.
+
+def main()
+    var s = "a:b:c"
+    var i = s.indexOf(":", 2)
+    print(i.toString())

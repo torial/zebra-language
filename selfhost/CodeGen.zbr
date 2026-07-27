@@ -8726,7 +8726,12 @@ struct Generator
             if chan_locals.contains_(co_lhs_nm!)
                 if co.deep
                     writeIndent()
-                    w.emit("@compileError(\"line ${co.span.line}: '<<-' is arena copy-out; channel send uses '<-' (ch <- value)\");\n")
+                    # BUG-216: no `\"` inside an INTERPOLATED string — the bootstrap (regen
+                    # authority) double-escapes it, so this emitted `@compileError(\\"...`,
+                    # a Zig PARSE error instead of the message. Keep every piece plain.
+                    w.emit("@compileError(\"line ")
+                    w.emit(co.span.line.toString())
+                    w.emit(": '<<-' is arena copy-out; channel send uses '<-' (ch <- value)\");\n")
                     return
                 writeIndent()
                 genExpr(co.target)
@@ -8740,7 +8745,12 @@ struct Generator
             if chan_locals.contains_(co_rhs_nm!)
                 if co.deep
                     writeIndent()
-                    w.emit("@compileError(\"line ${co.span.line}: '<<-' is arena copy-out; channel receive uses '<-' (var x <- ch)\");\n")
+                    # BUG-216: no `\"` inside an INTERPOLATED string — the bootstrap (regen
+                    # authority) double-escapes it, so this emitted `@compileError(\\"...`,
+                    # a Zig PARSE error instead of the message. Keep every piece plain.
+                    w.emit("@compileError(\"line ")
+                    w.emit(co.span.line.toString())
+                    w.emit(": '<<-' is arena copy-out; channel receive uses '<-' (var x <- ch)\");\n")
                     return
                 writeIndent()
                 genExpr(co.target)
@@ -8750,7 +8760,12 @@ struct Generator
                 return
         if not co.deep
             writeIndent()
-            w.emit("@compileError(\"line ${co.span.line}: '<-' is channel send/receive only; arena copy-out now uses '<<-' (target <<- value)\");\n")
+            # BUG-216: no `\"` inside an INTERPOLATED string — the bootstrap (regen
+            # authority) double-escapes it, so this emitted `@compileError(\\"...`,
+            # a Zig PARSE error instead of the message. Keep every piece plain.
+            w.emit("@compileError(\"line ")
+            w.emit(co.span.line.toString())
+            w.emit(": '<-' is channel send/receive only; arena copy-out now uses '<<-' (target <<- value)\");\n")
             return
         var is_str  = .isStringBoth(co.value, "copy_out")
         var is_prim = .isPrimType(co.value)
@@ -11649,6 +11664,17 @@ struct Generator
                         w.emit(")")
                         return
                     if mname == "indexOf"
+                        # BUG-215: `indexOf` takes ONE argument.  The offset form is a
+                        # separately named method, `indexOfFrom(sub, from)`.  Writing
+                        # `indexOf(sub, from)` used to SILENTLY drop the offset — every
+                        # search restarted at 0, which in a scan loop yields the same
+                        # index forever and then panics in the `substring(a, b)` that
+                        # consumes it with a > b.  Name the fix instead of miscompiling.
+                        if args.len > 1
+                            w.emit("@compileError(\"line ")
+                            w.emit(m.span.line.toString())
+                            w.emit(": str.indexOf takes 1 argument; for an offset search use indexOfFrom(sub, from) (returns int?)\")")
+                            return
                         # BUG-181: str.indexOf returns i64 with a -1 not-found convention
                         # (mirror src/CodeGen.zig) — NOT ?i64.  The optional form broke
                         # arithmetic use (`indexOf(" ") + 1` → `?i64 + comptime_int`).
@@ -12623,6 +12649,13 @@ struct Generator
             w.emit(")")
             return
         if mname == "indexOf"
+            # BUG-215: one argument only — the offset form is `indexOfFrom(sub, from)`.
+            # See the sibling guard in the string-typed-receiver arm above.
+            if args.len > 1
+                w.emit("@compileError(\"line ")
+                w.emit(m.span.line.toString())
+                w.emit(": str.indexOf takes 1 argument; for an offset search use indexOfFrom(sub, from) (returns int?)\")")
+                return
             # BUG-181: str.indexOf returns i64 with a -1 not-found convention (mirror
             # src/CodeGen.zig) — NOT ?i64.  The optional form broke arithmetic use.
             w.emit("(if (std.mem.indexOf(u8, ")

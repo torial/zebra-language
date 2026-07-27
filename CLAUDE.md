@@ -89,6 +89,14 @@ python fuzz/gramgen.py --gate   # THE PARSER-ROBUSTNESS GATE: derives 960 determ
                                 #   parser infinite loop) automatically. Complements the
                                 #   above (which only ever see human-written programs).
                                 #   Optional per-session; ~a few min. Needs both .exe built.
+python tools/lint_interp_escape.py # THE INTERP-ESCAPE GATE (static, instant, no build):
+                                #   flags a Zebra string that is BOTH interpolated (`${`) and
+                                #   contains `\"`. The bootstrap — still the REGEN AUTHORITY for
+                                #   selfhost/*.zig — double-escapes that combination, so the
+                                #   corruption lands in the shipping compiler. It silently broke
+                                #   all 3 genCopyOut `<<-`/`<-` diagnostics (they emitted a Zig
+                                #   PARSE error instead of their message) until 2026-07-27.
+                                #   BUG-216. 0 = clean. Retire when the bootstrap is fixed/gone.
 python tools/lint_fallthrough.py   # THE FALL-THROUGH GATE (static, instant, no build):
                                 #   flags a value-returning fn whose TAIL `branch` has a
                                 #   value-producing arm that can fall through without

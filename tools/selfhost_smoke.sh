@@ -96,6 +96,32 @@ smoke_test() {
     rm -f "$TMPDIR_OUT"/*.zig
 }
 
+# Emit-only fixture that must emit successfully but whose emitted Zig must CONTAIN
+# a given substring. Used for codegen guards that are lowered to `@compileError`
+# rather than rejected by the Zebra front end (e.g. BUG-215 indexOf arity, and the
+# `<<-` / `<-` mixup in genCopyOut) — the front end has no stdlib arity table, so
+# the guard fires when Zig compiles the emitted program.
+smoke_emit_contains() {
+    local zbr="$1"
+    local expected="$2"
+    local label
+    label="$(basename "$zbr" .zbr)_emit"
+    local zig_out="$TMPDIR_OUT/$(basename "$zbr" .zbr).zig"
+    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>&1; then
+        if grep -qF "$expected" "$zig_out"; then
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $label (expected '$expected' in emitted Zig)" >&2
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "  FAIL: $label (emit failed)" >&2
+        FAIL=$((FAIL + 1))
+    fi
+    rm -f "$TMPDIR_OUT"/*.zig
+}
+
 # Run a fixture expected to COMPILE (exit 0) but emit a specific warning substring
 # on stderr. Used for non-fatal diagnostics (e.g. BUG-142 arg-count warnings).
 smoke_warn() {
@@ -912,6 +938,12 @@ smoke_run test/module_var_shadow_test.zbr "module_var_shadow_test: OK"
 # under the stub GUI backend (one frame, no display), so this is a real runtime
 # gate: pre-fix it panicked with "incorrect alignment".
 smoke_run test/mvu_mixed_union_test.zbr "update: set_label -> hello"
+
+# BUG-215: two-argument `str.indexOf(sub, from)` silently dropped the offset —
+# every search restarted at 0.  Codegen now emits a @compileError naming the real
+# API (`indexOfFrom`).  Found via the IDE crashing on Check / List Targets.
+smoke_emit_contains test/fail_fixtures/indexof_arity_rejected_test.zbr \
+    "str.indexOf takes 1 argument"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then
