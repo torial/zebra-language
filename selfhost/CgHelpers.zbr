@@ -1073,6 +1073,22 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
             return false
         on Stmt.defer_ as d
             return nameUsedInStmt(name, d.stmt)
+        on Stmt.with_ as wth
+            # `with EXPR` block (contextual self): a name can be used in the
+            # header expr OR the body.
+            if nameUsedInExpr(name, wth.target)
+                return true
+            return nameUsedInStmts(name, wth.stmts)
+        on Stmt.in_scope as ins
+            # `using EXPR` block: a name can be used in the header expr OR in the
+            # block body. Without this arm, params/locals used ONLY inside a
+            # `using` block were seen as unused → a spurious `_ = name;` discard
+            # (which Zig then rejects as "pointless discard … used here"). Bit
+            # every idiomatic MVU `view` whose g/model are touched only inside
+            # `using g.vbox(...)`. Sibling `mightUseNameStmt` already recurses here.
+            if nameUsedInExpr(name, ins.expr)
+                return true
+            return nameUsedInStmts(name, ins.stmts)
         else
             return false
 

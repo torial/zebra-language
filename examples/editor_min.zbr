@@ -1,0 +1,22 @@
+# Minimal libui_ng CodeEditor smoke: one editor, setText, render.
+# Proves a single Scintilla control instantiates at runtime.
+
+class Model
+    var editor: CodeEditor? = nil
+
+def editInit(): Model
+    var m = Model()
+    m.editor = CodeEditor.forZebra()
+    m.editor!.setText("def main()\n    print(\"hi from scintilla\")\n")
+    return m
+
+def update(m: Model, msg: int): Model
+    return m
+
+def view(g: Gui, m: Model)
+    using g.vbox("##root", true)
+        g.text("Editor smoke")
+        m.editor!.render(g, "##code", 0, 0)
+
+def main()
+    Gui.run("Editor Smoke", 700, 500, editInit, update, view)

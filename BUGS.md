@@ -1,8 +1,41 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-210. Next new bug: BUG-211.**
+**Last bug number generated: BUG-212. Next new bug: BUG-213.**
 
 ---
+
+### BUG-211: selfhost `nameUsedInStmt` ignored `using` blocks → spurious param discard ✅ FIXED 2026-07-27
+`CgHelpers.nameUsedInStmt` (the name-presence scan behind param/local unused-discard
+emission) handled 16 statement kinds but had **no `Stmt.in_scope` arm** (the node the
+`using` keyword parses to — NOT `Stmt.with_`, which is the `with` contextual-self keyword;
+`nameUsedInStmt` was missing both). So a `using EXPR` block fell to `else → false`: any
+parameter or local used *only* inside a `using` block was seen as unused, and codegen
+emitted a `_ = name;` discard — which Zig then rejects: `error: pointless discard of
+function parameter … used here`. This bit **every idiomatic MVU `view`** whose `g`/model
+are touched only inside `using g.vbox(...)` (the canonical libui/tui layout form).
+`counter.zbr` dodged it (uses `g` at top level); the minimal `examples/editor_min.zbr` and
+any params-only-in-`using` program hit it. Found building a minimal CodeEditor program via
+`--gui-backend=libui_ng`. **Fix:** add both the `Stmt.in_scope` and `Stmt.with_` arms
+(check the header expr + recurse into body `stmts`), mirroring the sibling passes
+(`mightUseNameStmt`, `scanMutationsInto`, escape helpers) that already recurse into both.
+Verified: `scanMutationsInto` already had both arms and `collectAllIdents` is expr-level,
+so `nameUsedInStmt` was the sole gap. Strictly widens the "used" set → can only remove
+false discards, never add one (the one exception — a param shadowed by a same-named local
+inside the block — is not present in the corpus).
+
+### BUG-212: selfhost emits `var` (not `const`) for a builtin-pointer local used only as a method receiver ⬜ OPEN
+`var e = CodeEditor()` followed by `e.setText(...)` / `e.getText()` (and no reassignment)
+emits `var e = _code_editor_new();`, which Zig rejects: `error: local variable is never
+mutated`. `e` is a `*_CodeEditor` (a pointer) — calling `_code_editor_*(e, …)` passes the
+pointer by value and never reassigns `e`, so it should be `const`. The mutation analysis
+appears to treat a method call on the local as mutating its receiver, which is correct for
+by-value struct receivers but wrong for these builtin heap-handle value types (code_editor;
+likely also other pointer builtins). **Impact:** low — the IDE and normal code assign such
+handles straight into a field (`m.editor = CodeEditor.forZebra()`), never a bare local, so
+this only bites `var x = CodeEditor()` used purely as a receiver. Workaround: assign into a
+field/struct, or add another use. **Fix direction:** in the const/var mutation scan, don't
+count a method call as mutating the receiver when the receiver's inferred type is a
+pointer-builtin value type (code_editor, …). Verify against the bootstrap's behavior.
 
 ### BUG-209: `uses_sqlite` false-positive disabled the fast run path + linked sqlite3.c into every compile ✅ FIXED 2026-07-25
 The selfhost detected SQLite usage with `zig_src.contains("_sqlite_open")` — but
