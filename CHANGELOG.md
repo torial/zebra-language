@@ -81,8 +81,12 @@ confirmed via `tools/bootstrap_check.sh`.
   Grid.delete/numChildren, Draw.Transform/Clip/Save/Restore,
   Entry/Combobox placeholder).
 
-- **`--gui-backend=libui_ng`** — end-to-end tested; `examples/counter.zbr
-  --gui-backend=libui_ng` opens a native Win32 window.
+- **`--gui-backend=libui_ng`** — emits + scaffolds a native libui-ng `zig
+  build` project. (Runtime was not actually achievable at this point — the
+  upstream dependency did not compile under Zig 0.16. End-to-end runtime —
+  `counter.zbr` opens a native Win32 window and its buttons work — was first
+  reached 2026-07-27 after the Common-Controls manifest fix; see
+  `docs/libui_ng_audit.md`.)
 
 ### GUI: MVU architecture
 

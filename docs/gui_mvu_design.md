@@ -71,9 +71,10 @@ const _LuiMut = struct {
 
 **Activate:** `--gui-backend=libui_ng` (or `libui-ng`). Generates a `build.zig.zon` that fetches `torial/zig-libui-ng`. Project directory: `<stem>_gui_libui_ng/` (TUI uses `<stem>_gui_tui/`, others use `<stem>_gui/`).
 
-**Package hashes (pinned, 2026-05-22):**
-- zig-libui-ng: `bindings_libui_ng-0.1.0-p2CY9WKMAgCOLTUoD8b1NK1eplwP9TucFhKQV_iE6c-B` (commit `39665dc`)
-- libui-ng: `N-V-__8AAEujJQCHCZIDKlQ1fg9j03MUEN1w3FPRW4g0HojW` (commit `5c24fd66`)
+**Package hashes (pinned, 2026-07-27 — supersede the 2026-05-22 pins):**
+- zig-libui-ng: `bindings_libui_ng-0.1.0-p2CY9cIOQgD6ELPBtySSzOXKEbM3EBCHC0aB6xktF89h` (commit `8677b01`, branch `main`)
+- libui-ng: `N-V-__8AAJUpKQC_gvsKqMnq2StXzP7vXUVZ-2SFoxrur37u` (commit `85976bc`, branch `main`)
+- Source of truth: `selfhost/main.zbr` `luiBuildZon()` (not the older `src/main.zig`).
 
 **MVP limitations:**
 - `beginPanel`/`beginWindow`/table/tree/color/style calls are no-ops (all widgets render in one flat vbox)

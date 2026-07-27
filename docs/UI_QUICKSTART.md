@@ -23,8 +23,10 @@ zig build run -- myapp.zbr --gui-backend=libui_ng
 
 The Zebra compiler scaffolds a `<stem>_gui_libui_ng/` project directory
 alongside the source file, writes a `build.zig.zon` pinned to the
-`torial/zig-libui-ng` fork (zig-0.16 branch), and invokes `zig build run`.
-**Delete the project directory if you change the Scintilla package hash.**
+`torial/zig-libui-ng` fork (`main` branch), and invokes `zig build run`.
+(The scaffold's `build.zig`/`build.zig.zon`/`app.manifest` are rewritten on
+every run, so a changed dependency pin is picked up automatically — no need to
+delete the project directory.)
 
 ---
 
@@ -230,15 +232,18 @@ def main()
 
 ---
 
-## Package hashes (2026-05-22)
+## Package hashes (2026-07-27)
 
-Pinned in `src/main.zig` `gui_libui_ng_project_build_zig_zon`:
+Pinned in `selfhost/main.zbr` `luiBuildZon()` (the single source of truth; the
+older `src/main.zig` bootstrap path is no longer used for libui_ng):
 
-| Dependency    | Commit    | Hash                                                              |
-|---------------|-----------|-------------------------------------------------------------------|
-| zig-libui-ng  | `d99a49c` | `bindings_libui_ng-0.1.0-p2CY9QkWGgBjeLI8hICTNlxLEjcSbkLLJCh3-CHi11Kj` |
+| Dependency    | Commit     | Hash                                                                |
+|---------------|------------|--------------------------------------------------------------------|
+| zig-libui-ng  | `8677b01`  | `bindings_libui_ng-0.1.0-p2CY9cIOQgD6ELPBtySSzOXKEbM3EBCHC0aB6xktF89h` |
+| libui-ng (transitive) | `85976bc` | `N-V-__8AAJUpKQC_gvsKqMnq2StXzP7vXUVZ-2SFoxrur37u`                 |
 
-The fork is `torial/zig-libui-ng` branch `zig-0.16`. It vendors Scintilla 5.5.2
+The fork is `torial/zig-libui-ng` branch `main` (consolidated 2026-07-27; the
+old `zig-0.16` / `wp` branches are deleted). It vendors Scintilla 5.5.2
 sources and `libui_scintilla/win.cxx`. For platform support:
 - **Windows**: Win32, Scintilla WinAPI backend, `imm32` linked
 - **Linux/macOS**: GTK3/Cocoa — Scintilla GTK/Cocoa backends not yet vendored;
