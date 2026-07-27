@@ -139,9 +139,25 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   `test/mvu_mixed_union_test.zbr` (reproduces under the **stub** backend, no display
   needed) is in the smoke suite. Gates green: round-trip byte-identical, smoke 255/255,
   compile_check 215/0/1, divergence 0 selfhost gaps.
-  **What no gate can prove:** that a real toolbar click now works. Run
-  `zebra --gui-backend=libui_ng run IDE/ZebraIDE.zbr` interactively and click a button;
-  then verify the four editors + typing (the remaining multi-instance unknown).
+  **INTERACTIVE RESULT (Sean, 2026-07-27): BUG-214 CONFIRMED FIXED — buttons dispatch,
+  "many worked".** Two downstream crashes were unmasked by it (nothing ever dispatched
+  before, so they could not have been seen):
+  - **BUG-215 (FIXED)** — `Check` and `List Targets` aborted: the IDE called
+    `str.indexOf(sub, from)`, which is not a real signature (`indexOfFrom` is), and both
+    compilers silently dropped the offset → `substring(start > end)` panic. Fixed in the
+    IDE *and* guarded in codegen so it cannot recur silently.
+  - **`Build` still aborts (exit 3) — OPEN, needs the panic line.** The entire handler
+    reproduces CLEAN headless (`File.write` of the tmp file, `sys.spawn` of
+    `cmd /C zebra build > … 2>&1`, and a 173-frame `isRunning` poll doing incremental
+    `substring` reads, exit 0), so the defect is in what the GUI path adds — most likely
+    `setText` into a live Scintilla control or the `build_output_chunk` payload send,
+    NOT the build logic. Ruled out already: spawn-failure handling (`_sys_spawn` returns
+    a dead handle and `_sys_process_is_running` guards on `.alive`), `setText`
+    NUL-termination (`uiScintillaSetText` takes an explicit length), and the
+    `content.len > m.buildLastPos` substring guard. **Next session: get the
+    `thread N panic: …` line + first frames** (`… 2>&1 | tee /tmp/ide.log`, click Build,
+    `head -40`) — three hypotheses were killed guessing without it.
+  Then verify the four editors + typing (the remaining multi-instance unknown).
   NOTE: use `bash tools/bootstrap_check.sh --update` DIRECTLY to
   regen after `.zbr` edits — `zig build update-selfhost` silently skips (BUG-210).
   **Housekeeping surfaced by BUG-214:** the checked-in `examples/*.zig` artifacts are
