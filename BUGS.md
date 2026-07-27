@@ -6,9 +6,12 @@
 
 ### BUG-214: no-payload `union(enum)` variant in value position emitted as tag, not union value → MVU send abort ⬜ OPEN
 `IDE/ZebraIDE.zbr` now **compiles + links** via `--gui-backend=libui_ng` (all compile gaps
-closed: CodeEditor port `b42074a`, BUG-211, BUG-213), but **aborts at runtime (exit code 3)**
-in the type-erased MVU `send` queue-copy (`_gui_mvu_run` `_sfn`, emitted main.zig:3003),
-reached from `view → g.send`. **Root cause (well-supported by the emit):** the IDE's `Msg`
+closed: CodeEditor port `b42074a`, BUG-211, BUG-213), and **the window RENDERS and runs**
+(Sean-confirmed 2026-07-27: "I did see the IDE"). It **aborts at runtime (exit code 3) on
+the first no-payload-variant send** — i.e. clicking any toolbar button (`Open`/`Save`/
+`List Targets`/… all send no-payload `Msg` variants) — NOT on startup. The abort is in the
+type-erased MVU `send` queue-copy (`_gui_mvu_run` `_sfn`, emitted main.zig:3003), reached
+from `view → g.send` (the button-click handler runs inside `view`). **Root cause (well-supported by the emit):** the IDE's `Msg`
 is a `union(enum)` with mixed variants — no-payload (`list_targets`, `open_file`, …) and
 payload (`filepath_changed: []const u8`, …). A no-payload variant in **value position** is
 emitted as bare **`Msg.list_targets`** (the tag), whereas payload variants correctly emit a
