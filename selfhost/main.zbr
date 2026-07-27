@@ -1915,8 +1915,13 @@ pub fn build(b: *std.Build) void {
     app_mod.addImport("ui",  lui_dep.module("ui"));
     app_mod.addImport("sci", lui_dep.module("sci"));
     const exe = b.addExecutable(.{
-        .name        = "app",
-        .root_module = app_mod,
+        .name          = "app",
+        .root_module   = app_mod,
+        // libui is linked STATICALLY here, so the Common-Controls v6 manifest
+        // that libui-ng only embeds in a *shared* build is absent — a static
+        // consumer exe must supply it or window/control init fails on Windows
+        // (see libui-ng windows/resources.rc + test/test.static.manifest).
+        .win32_manifest = b.path("app.manifest"),
     });
     b.installArtifact(exe);
     const run_step = b.addRunArtifact(exe);
@@ -1936,8 +1941,43 @@ def luiBuildZon(): str
             .hash = "bindings_libui_ng-0.1.0-p2CY9cIOQgD6ELPBtySSzOXKEbM3EBCHC0aB6xktF89h",
         },
     },
-    .paths = .{ "build.zig", "build.zig.zon", "src" },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "app.manifest" },
 }
+"""
+
+# Common-Controls v6 application manifest. libui-ng embeds this only in a
+# *shared* build; a static consumer exe (what we emit) must supply it itself
+# or window/control creation fails on Windows (verbatim from libui-ng's
+# test/test.static.manifest — "we DO need comctl6 in the static case").
+def luiManifest(): str
+    return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+<assemblyIdentity
+    version="1.0.0.0"
+    processorArchitecture="*"
+    name="Zebra.Gui.Application"
+    type="win32"
+/>
+<description>Zebra libui_ng application.</description>
+<dependency>
+    <dependentAssembly>
+        <assemblyIdentity
+            type="win32"
+            name="Microsoft.Windows.Common-Controls"
+            version="6.0.0.0"
+            processorArchitecture="*"
+            publicKeyToken="6595b64144ccf1df"
+            language="*"
+        />
+    </dependentAssembly>
+</dependency>
+<compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+        <supportedOS Id="{e2011457-1546-43c5-a5fe-008deee3d3f0}"/>
+        <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>
+    </application>
+</compatibility>
+</assembly>
 """
 
 def compileGuiProject(zig_path: str, mode_run: bool, backend: str): int
@@ -1961,6 +2001,8 @@ def compileGuiProject(zig_path: str, mode_run: bool, backend: str): int
     # rather than silently keeping the old one.
     File.write(proj + "/build.zig", bz)
     File.write(proj + "/build.zig.zon", bzon)
+    if backend == "libui_ng"
+        File.write(proj + "/app.manifest", luiManifest())
     var argv = List(str)()
     argv.add("zig")
     argv.add("build")
