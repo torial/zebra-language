@@ -115,7 +115,11 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   Both forks consolidated to a single `main` (stale branches deleted, defaults set).
   **Proven portable:** `examples/tears_of_the_tuon.zbr` compiles + links `app.exe` via
   `--gui-backend=libui_ng` from a **cold global cache** (both deps fetched fresh from
-  GitHub) — only the headless `run` step fails (no display). Also fixed a latent
+  GitHub). The *proven* part is compile + link (the emitted `app.exe` is produced); only
+  the `run` step fails — the exe won't launch in this non-interactive shell (exit 57 under
+  `zig build run`, 127 when invoked directly from git-bash). Not diagnosed to a root cause;
+  most plausibly the lack of an interactive Windows display/session, NOT a build problem.
+  Needs a manual interactive run to confirm the window actually shows. Also fixed a latent
   `compileGuiProject` bug: it wrote `build.zig`/`build.zig.zon` only when absent, so a
   stale scaffold silently kept an old dependency pin — now rewritten unconditionally.
   **Remaining (follow-ups, not blocking):** (a) `compileGuiProject` copies only the root
