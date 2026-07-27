@@ -1,8 +1,26 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-212. Next new bug: BUG-213.**
+**Last bug number generated: BUG-213. Next new bug: BUG-214.**
 
 ---
+
+### BUG-213: selfhost `typeFromName` missing `SysProcess` → `proc.isRunning()` mis-dispatched ✅ FIXED 2026-07-27
+Verified post-rebuild: both call forms the IDE uses — `m.proc!.isRunning()` (force-unwrap)
+and `if m.proc as p` → `p.isRunning()` (binding) — now emit `_sys_process_is_running(...)`
+(probe: 2 call sites converted, 0 residual `.isRunning()`).
+The selfhost already dispatches `sys_process` instance methods (`CodeGen.zbr:10981` →
+`_sys_process_is_running` / `_sys_process_kill`) and infers `sys.spawn` → `sys_process`.
+But `typeFromName` had no `SysProcess` → `sys_process` arm (the bootstrap does, at
+`src/TypeChecker.zig:4696`). So a field/var **annotated** `SysProcess?` was not typed as
+`sys_process`; a receiver bound from it (`m.debugProc as proc` or `m.debugProc!`) inferred
+as unknown, and `proc.isRunning()` fell through to generic method dispatch — emitting a
+literal `proc.isRunning()` that Zig rejects (`_SysProcess` has no such member). Blocked the
+libui_ng build of `IDE/ZebraIDE.zbr` (its `debugProc`/`buildProc: SysProcess?` fields drive
+process polling), *after* the program compiled cleanly through all the CodeEditor code.
+**Fix:** one line — `if n == "SysProcess" return Type_.sys_process`, alongside the sibling
+builtin-type mappings (Gui, CodeEditor, SqliteDb, …). Same class as the CodeEditor
+name→type gap. Note `SysProcess` already resolves (it's not the resolver that was missing
+it) — only the type-inference mapping.
 
 ### BUG-211: selfhost `nameUsedInStmt` ignored `using` blocks → spurious param discard ✅ FIXED 2026-07-27
 `CgHelpers.nameUsedInStmt` (the name-presence scan behind param/local unused-discard

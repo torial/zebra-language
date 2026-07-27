@@ -563,6 +563,8 @@ def typeFromName(n: str): Type_
         return Type_.gui_context
     if n == "CodeEditor"
         return Type_.code_editor
+    if n == "SysProcess"
+        return Type_.sys_process
     # Sized numeric types — enable format-spec inference for int32, float64, etc.
     if n == "int8"
         return Type_.int_n(8)
