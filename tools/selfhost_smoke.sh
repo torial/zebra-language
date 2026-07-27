@@ -906,6 +906,13 @@ smoke_run test/module_var_collision_test.zbr "module_var_collision_test: OK"
 # same-named module var (keep the bare name); module vars stay untouched.
 smoke_run test/module_var_shadow_test.zbr "module_var_shadow_test: OK"
 
+# BUG-214: `g.send(Msg.bump)` on a MIXED union(enum) Msg (>=1 payload variant).
+# A bare no-payload variant is the 1-byte TAG in Zig, not the union, so the
+# type-erased MVU send copied @sizeOf(Msg) bytes out of it and aborted.  Runs
+# under the stub GUI backend (one frame, no display), so this is a real runtime
+# gate: pre-fix it panicked with "incorrect alignment".
+smoke_run test/mvu_mixed_union_test.zbr "update: set_label -> hello"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

@@ -863,6 +863,10 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                                 g.boxed_variants.add(makeDottedKey(u.name, v.name))
                             else
                                 pass
+                    else
+                        # BUG-214: same-module no-payload variants, for the
+                        # type-erased-send fix in genMemberCall.
+                        g.novalue_variants.add(makeDottedKey(u.name, v.name))
             on Decl.enum_ as e
                 g.enum_names.add(e.name)
             on Decl.use_ as imp
@@ -2002,6 +2006,7 @@ struct Generator
     var struct_with_init     : StrSet  # subset of struct_names that have cue init → emit .init()
     var toString_types       : StrSet  # names of types that have a toString() method
     var boxed_variants       : StrSet  # "UnionName.variant" entries where payload is ^T
+    var novalue_variants     : StrSet  # "UnionName.variant" entries with NO payload (BUG-214)
     var ref_fields           : StrSet  # "StructName.fieldName" entries where field is ^T (non-optional)
     var opt_ref_fields       : StrSet  # "StructName.fieldName" entries where field is ^T? (optional)
     var ext_method_keys      : StrSet  # "TypeName.method" for `extend TypeName` methods → rewrite obj.m() to _ext_TypeName_m(obj)
@@ -2105,6 +2110,7 @@ struct Generator
         .struct_with_init      = StrSet()
         .toString_types        = StrSet()
         .boxed_variants        = StrSet()
+        .novalue_variants      = StrSet()
         .ref_fields            = StrSet()
         .opt_ref_fields        = StrSet()
         .ext_method_keys       = StrSet()
@@ -2933,6 +2939,8 @@ struct Generator
                         boxed_variants.add(makeDottedKey(n.name, v.name))
                     else
                         pass
+            else
+                novalue_variants.add(makeDottedKey(n.name, v.name))
         writeIndent()
         w.emit("pub const ")
         w.emit(n.name)
@@ -9933,6 +9941,39 @@ struct Generator
                         return true
         return false
 
+    # BUG-214: a bare no-payload `union(enum)` variant (`Msg.bump`) is the union's
+    # TAG type in Zig, not the union — `@sizeOf(tag)` is 1 while `@sizeOf(Msg)` grows
+    # with the largest payload.  Every TYPED position (assignment, typed parameter,
+    # return, `==` against the union) coerces the tag to the union for free, which is
+    # why the bare form is emitted everywhere else and must STAY that way: `Type_.string_`
+    # appears in hundreds of the compiler's own emitted sites, and `x == Union{ .v = {} }`
+    # is not even legal Zig ("operator == not allowed for type"), so a blanket rewrite
+    # would be both a large bootstrap-parity diff and a new compile error.
+    #
+    # The one position with no type to coerce to is a type-ERASED `anytype` parameter:
+    # the MVU `Gui.send(msg: anytype)` takes `&msg` and the queue reinterprets it as
+    # `*const MsgType` (the full union), copying `@sizeOf(Msg)` bytes out of a tag-sized
+    # source.  Emit the full union value there.  Returns false when `e` is not a bare
+    # no-payload variant of a union declared in THIS module, so the caller falls back to
+    # the normal emit (cross-module unions never populate `novalue_variants`, so the
+    # rewrite cannot fire on a payload variant it cannot see).
+    def isNoPayloadUnionValue(e: Expr): bool
+        if e is Expr.member as um
+            var uobj = getIdentName(um.object)
+            if uobj != nil
+                return novalue_variants.contains_(makeDottedKey(uobj!, um.member))
+        return false
+
+    def genNoPayloadUnionValue(e: Expr)
+        # Precondition: isNoPayloadUnionValue(e).
+        if e is Expr.member as um2
+            var uobj2 = getIdentName(um2.object)
+            if uobj2 != nil
+                w.emit(uobj2!)
+                w.emit("{ .")
+                w.emit(um2.member)
+                w.emit(" = {} }")
+
     def isDeriveEqExpr(e: Expr): bool
         # Detect @derive(Eq) struct variable: ident whose type name is in derive_eq_structs.
         if .infer_ctx == nil
@@ -10989,6 +11030,22 @@ struct Generator
                         genExpr(m.object)
                         w.emit(")")
                         return
+                on Type_.gui_context
+                    # BUG-214: `g.send(Msg.bump)` — the MVU send is type-erased
+                    # (`anytype` → `*const anyopaque`), so a bare no-payload variant
+                    # arrives as the 1-byte tag and the queue copies `@sizeOf(Msg)`
+                    # bytes out of it.  Emit the full union value instead.  Any other
+                    # Gui method — and any `send` whose argument is not a bare
+                    # no-payload variant of a same-module union — falls through to the
+                    # normal member-call path below unchanged.
+                    if mname == "send" and args.len == 1
+                        var send_arg: Expr = args.at(0).value
+                        if isNoPayloadUnionValue(send_arg)
+                            genExpr(m.object)
+                            w.emit(".send(")
+                            genNoPayloadUnionValue(send_arg)
+                            w.emit(")")
+                            return
                 on Type_.build_ctx
                     genBuildInstanceCall(m.object, mname, args)
                     return

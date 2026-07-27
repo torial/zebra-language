@@ -127,16 +127,22 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   selfhost — a single Scintilla editor (`examples/editor_min.zbr`: renders + displays
   its `setText` content, Sean-confirmed). See `docs/libui_ng_audit.md` for the full
   claims-vs-verified ledger.
-  **IDE next step (fresh session): fix BUG-214, then re-test `IDE/ZebraIDE.zbr`.**
-  The IDE now compiles + links + **renders** via `--gui-backend=libui_ng` (all compile
-  gaps closed: CodeEditor port `b42074a`, BUG-211 `using`-usage `33571e5`, BUG-213
-  `SysProcess` dispatch `1895d79`), but **crashes on the first toolbar-button click** —
-  BUG-214: a no-payload `union(enum)` `Msg` variant emits as a bare tag (`Msg.list_targets`)
-  instead of `Msg{ .variant = {} }`, so the type-erased MVU `g.send(anytype)` copy size-
-  mismatches. Well-characterized + interaction-confirmed; bounded codegen fix. Do it
-  minimal-repro-first (a mixed payload/no-payload union MVU program), confirm, fix, gate.
-  Then the IDE should be interactive → verify the four editors + typing (the remaining
-  multi-instance unknown). NOTE: use `bash tools/bootstrap_check.sh --update` DIRECTLY to
+  **IDE: BUG-214 FIXED 2026-07-27 — next step is ONE INTERACTIVE RUN (Sean).**
+  The IDE compiles + links + **renders** via `--gui-backend=libui_ng` (all compile gaps
+  closed: CodeEditor port `b42074a`, BUG-211 `using`-usage `33571e5`, BUG-213 `SysProcess`
+  dispatch `1895d79`), and the click-crash is fixed: BUG-214 emitted a no-payload
+  `union(enum)` `Msg` variant as a bare **tag** (`Msg.list_targets`, 1 byte) instead of
+  `Msg{ .variant = {} }` (the full union), so the type-erased MVU `g.send(anytype)` copy
+  size-mismatched. Fixed selfhost-side, narrowly (only the `send`-on-`Gui` argument
+  position — a blanket rewrite is illegal Zig for `==` and would force a bootstrap-parity
+  diff; see BUGS.md). All 11 bare IDE sends now convert; new runtime gate
+  `test/mvu_mixed_union_test.zbr` (reproduces under the **stub** backend, no display
+  needed) is in the smoke suite. Gates green: round-trip byte-identical, smoke 255/255,
+  compile_check 215/0/1, divergence 0 selfhost gaps.
+  **What no gate can prove:** that a real toolbar click now works. Run
+  `zebra --gui-backend=libui_ng run IDE/ZebraIDE.zbr` interactively and click a button;
+  then verify the four editors + typing (the remaining multi-instance unknown).
+  NOTE: use `bash tools/bootstrap_check.sh --update` DIRECTLY to
   regen after `.zbr` edits — `zig build update-selfhost` silently skips (BUG-210).
   **Remaining (follow-ups, not blocking):** (a) `compileGuiProject` copies only the root
   emitted `.zig` — multi-module GUI apps still need dep `.zig` files copied into the

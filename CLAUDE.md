@@ -102,7 +102,7 @@ JOBS=2 bash tools/full_sweep.sh --gate   # THE FULL-CORPUS WITNESS: emits + zig-
                                 #   typechecks EVERY test/*.zbr (403), not just the ~210
                                 #   compile_check covers. --gate fails on REGRESSION vs
                                 #   tools/full_sweep_baseline.txt (the set that currently
-                                #   emit+compile clean, 328). Known negatives/library/
+                                #   emit+compile clean, 331). Known negatives/library/
                                 #   triage-backlog files need no skip-list — the baseline
                                 #   IS the allow-list; re-baseline (--update-baseline) when
                                 #   the pass set intentionally grows. Heavy (~25 min, JOBS=2

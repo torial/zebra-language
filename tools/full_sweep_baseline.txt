@@ -97,6 +97,7 @@ error_prop
 escape_field_test
 except_inline_test
 except_local_test
+except_reassign_test
 exposing_test
 expressiveness_test
 extend_test
@@ -201,6 +202,7 @@ module_var_collision_test
 module_var_shadow_test
 module_var_test
 mutating_capture_test
+mvu_mixed_union_test
 named_args_infer_test
 named_default_test
 namespace_main

@@ -4,7 +4,7 @@
 
 ---
 
-### BUG-214: no-payload `union(enum)` variant in value position emitted as tag, not union value → MVU send abort ⬜ OPEN
+### BUG-214: no-payload `union(enum)` variant in value position emitted as tag, not union value → MVU send abort ✅ FIXED 2026-07-27 (awaiting interactive IDE confirmation)
 `IDE/ZebraIDE.zbr` now **compiles + links** via `--gui-backend=libui_ng` (all compile gaps
 closed: CodeEditor port `b42074a`, BUG-211, BUG-213), and **the window RENDERS and runs**
 (Sean-confirmed 2026-07-27: "I did see the IDE"). It **aborts at runtime (exit code 3) on
@@ -22,10 +22,44 @@ the send queue then reinterprets `&msg` as `*const MsgType` (= full `Msg`) and c
 points exactly at the `g.send(Msg.list_targets)` call site (view:4812). **counter.zbr is
 unaffected** — its `Msg` is a *pure enum* (all no-payload), so `Msg.inc` is already a valid
 full value and `MsgType` sizes match; the bug needs a `union(enum)` Msg with ≥1 payload
-variant AND a no-payload variant sent. **Fix direction:** emit a no-payload `union(enum)`
-variant in value/argument position as `Msg{ .variant = {} }` (a full union value), not bare
-`Msg.variant`. Verify against the bootstrap and add a minimal mixed-union-MVU repro. NOT yet
-isolated to a minimal case (characterized from the IDE emit) — confirm before fixing.
+variant AND a no-payload variant sent.
+
+**CONFIRMED at the language level 2026-07-27**, twice over:
+1. Zig probe — for `union(enum) { a, b: []const u8, c }`, `@TypeOf(Msg.a)` is
+   `@typeInfo(Msg).@"union".tag_type.?` with `@sizeOf == 1`, while `Msg{ .a = {} }` is `Msg`
+   with `@sizeOf == 24`. `examples/counter.zbr` survives only because an all-no-payload
+   union and its tag are both 1 byte, so the memcpy is accidentally correct.
+2. Minimal repro — `test/mvu_mixed_union_test.zbr` (mixed `union Msg { bump, set_label: str }`,
+   `view` sends both forms). It aborts under the **plain stub backend** — no GUI, no display
+   needed: `thread N panic: incorrect alignment`, from the `@alignCast` in the send queue
+   applied to a 1-byte-aligned tag. This makes BUG-214 a runnable regression gate.
+
+**Fix direction — NARROW, not "value/argument position" (the original note was wrong).**
+A blanket rewrite of bare `Union.variant` is both unnecessary and actively harmful:
+- Every **typed** position (assignment, typed parameter, return, `==` against the union)
+  coerces the tag to the union for free, so the bare form is correct there.
+- `x == Union{ .v = {} }` is **not legal Zig** (`error: operator == not allowed for type`),
+  so a blanket rewrite would introduce a new compile error class.
+- `Type_.string_` and friends appear in hundreds of the compiler's own emitted sites, so a
+  blanket rewrite would force a matching change in the sunsetting bootstrap to keep
+  `bootstrap_check` byte-identical.
+The only position with no type to coerce to is the type-**erased** `anytype` parameter of the
+MVU `Gui.send`. So: rewrite bare no-payload variants to `Msg{ .variant = {} }` **only** as the
+single argument of `send` on a `Gui` receiver, and only for unions declared in the same module
+(`novalue_variants`, populated alongside `boxed_variants`). Selfhost-only by construction —
+the compiler's own source has no `Gui.send`, so the round-trip stays byte-identical.
+**Known limitation:** the rewrite is depth-1 — `g.send(if c then Msg.a else Msg.b)` and a
+`send` whose receiver does not infer to `Gui` are not covered. Neither appears in the corpus.
+
+**Landed:** `selfhost/CodeGen.zbr` — `novalue_variants` (populated alongside `boxed_variants`
+in both the pre-pass and `genUnion`), `isNoPayloadUnionValue` / `genNoPayloadUnionValue`, and
+an `on Type_.gui_context` arm in `genMemberCall` that falls through unchanged for every other
+Gui method and every non-matching `send` argument. Verified: all 11 bare sends in
+`IDE/ZebraIDE.zbr` convert; repro runs clean; `bootstrap_check` byte-identical; smoke 255/255;
+`compile_check` 215/0/1; `divergence_check --gate` 0 selfhost gaps.
+**Not verified by any gate:** that the IDE survives a real toolbar click — the gates prove
+emit shape and no-regression only. Needs one interactive run (`zebra --gui-backend=libui_ng
+run IDE/ZebraIDE.zbr`, click a button).
 
 ### BUG-213: selfhost `typeFromName` missing `SysProcess` → `proc.isRunning()` mis-dispatched ✅ FIXED 2026-07-27
 Verified post-rebuild: both call forms the IDE uses — `m.proc!.isRunning()` (force-unwrap)

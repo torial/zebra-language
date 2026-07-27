@@ -1,0 +1,44 @@
+# BUG-214 regression fixture — MVU `send` of a NO-PAYLOAD variant on a MIXED
+# `union(enum)` Msg (at least one variant carries a payload).
+#
+# Why the mix matters: for an all-no-payload union the Zig tag type and the
+# union have the same size/layout, so the type-erased `send` memcpy happens to
+# be correct (that is why examples/counter.zbr never tripped this).  Add ONE
+# payload variant and `@sizeOf(Msg)` grows past the tag, while a bare
+# `Msg.bump` still has the TAG type — `send(msg: anytype)` then copies
+# `@sizeOf(Msg)` bytes out of a tag-sized source.
+#
+# The stub GUI backend runs exactly one frame, so `view` dispatches both a
+# no-payload and a payload message and `update` prints what it actually
+# received.  Expected output ends with:
+#   update: bump -> 1
+#   update: set_label -> hello
+# Before the fix this aborted inside the MVU send queue instead.
+
+struct Model
+    var count: int
+    var label: str
+
+union Msg
+    bump
+    set_label: str
+
+def init(): Model
+    return Model(count: 0, label: "none")
+
+def update(model: Model, msg: Msg): Model
+    branch msg
+        on Msg.bump
+            print("update: bump -> " + (model.count + 1).toString())
+            return Model(count: model.count + 1, label: model.label)
+        on Msg.set_label as s
+            print("update: set_label -> " + s)
+            return Model(count: model.count, label: s)
+
+def view(g: Gui, model: Model)
+    g.text("count=" + model.count.toString() + " label=" + model.label)
+    g.send(Msg.bump)
+    g.send(Msg.set_label("hello"))
+
+def main()
+    Gui.run("mvu mixed union", 320, 200, init, update, view)

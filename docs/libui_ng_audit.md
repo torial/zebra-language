@@ -243,20 +243,28 @@ Status as of 2026-07-27 (what "already wired" hid):
   analysis) blocked the minimal program — fixed in `33571e5`.
 - **The full IDE now COMPILES + LINKS and its window RENDERS** (as of `1895d79`):
   past the CodeEditor code and the `isRunning` gap (BUG-213). Sean saw the IDE
-  window on screen (2026-07-27). It **aborts (exit 3) on the first button click**,
+  window on screen (2026-07-27). It **aborted (exit 3) on the first button click**,
   not on startup — **BUG-214**: a no-payload `union(enum)` `Msg` variant is emitted
   as a bare tag (`Msg.list_targets`) rather than a full union value, so the
   type-erased `g.send(anytype)` copy hits a size/type mismatch; every toolbar
-  button sends a no-payload variant. counter dodges it (pure-enum `Msg`). So the
-  IDE **renders** but can't be interacted with yet. The four-coexisting-Scintilla
-  question is *likely* answered by the render (Sean saw "the IDE") but the specific
-  "four editor panes visible" detail is unconfirmed. Fix scoped in BUG-214.
+  button sends a no-payload variant. counter dodges it (its all-no-payload `Msg`
+  and its tag are both 1 byte, so the copy is accidentally correct).
+  **BUG-214 fix LANDED 2026-07-27, AWAITING INTERACTIVE VERIFICATION.** All 11 bare
+  `g.send(Msg.…)` sites in `IDE/ZebraIDE.zbr` now emit `Msg{ .variant = {} }`, and
+  the minimal repro (`test/mvu_mixed_union_test.zbr`, which reproduced the abort
+  under the *stub* backend — no display needed) runs clean. The gates cannot close
+  this one: they prove the emit shape and that nothing regressed, **not** that the
+  IDE stops aborting on a click. That needs Sean clicking a toolbar button in an
+  interactive session. The four-coexisting-Scintilla question is *likely* answered
+  by the render (Sean saw "the IDE") but the specific "four editor panes visible"
+  detail is unconfirmed, as is typing into them.
 - **Genuinely missing for an IDE (unbuilt, not lost):** syntax highlighting /
   lexer (`forZebra` falls back to plain), error markers (`setErrorMarkers` no-op),
   fixed column in `setCursorPosition`, and any Table/Tree (file-explorer) widget.
 
 **Bottom line:** the single-editor Scintilla path is real and runtime-proven; the
-full IDE needs the selfhost `isRunning` dispatch (+ possibly more), and the
+full IDE renders and every known compile/dispatch gap is closed (BUG-211, BUG-213,
+BUG-214), with the BUG-214 click fix awaiting one interactive confirmation; the
 editor-quality features (highlighting/markers/tree) remain to be built.
 
 ---
