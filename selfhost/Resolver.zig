@@ -4545,73 +4545,78 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:450
             return true;
         }
-// zbr:selfhost/Resolver.zbr:451
-        if (((std.mem.eql(u8, name, "SqliteDb") or std.mem.eql(u8, name, "SqliteRow")) or std.mem.eql(u8, name, "Base64"))) {
-// zbr:selfhost/Resolver.zbr:452
-            return true;
-        }
-// zbr:selfhost/Resolver.zbr:453
-        if ((std.mem.eql(u8, name, "Allocator") or std.mem.eql(u8, name, "Arena"))) {
-// zbr:selfhost/Resolver.zbr:454
-            return true;
-        }
 // zbr:selfhost/Resolver.zbr:455
-        if (((std.mem.eql(u8, name, "Debug") or std.mem.eql(u8, name, "FixedBuffer")) or std.mem.eql(u8, name, "StackFallback"))) {
+        if (std.mem.eql(u8, name, "CodeEditor")) {
 // zbr:selfhost/Resolver.zbr:456
             return true;
         }
 // zbr:selfhost/Resolver.zbr:457
-        if (((std.mem.eql(u8, name, "Page") or std.mem.eql(u8, name, "Smp")) or std.mem.eql(u8, name, "C"))) {
+        if (((std.mem.eql(u8, name, "SqliteDb") or std.mem.eql(u8, name, "SqliteRow")) or std.mem.eql(u8, name, "Base64"))) {
 // zbr:selfhost/Resolver.zbr:458
             return true;
         }
 // zbr:selfhost/Resolver.zbr:459
-        if (self.isSimdName(name)) {
+        if ((std.mem.eql(u8, name, "Allocator") or std.mem.eql(u8, name, "Arena"))) {
 // zbr:selfhost/Resolver.zbr:460
             return true;
         }
 // zbr:selfhost/Resolver.zbr:461
+        if (((std.mem.eql(u8, name, "Debug") or std.mem.eql(u8, name, "FixedBuffer")) or std.mem.eql(u8, name, "StackFallback"))) {
+// zbr:selfhost/Resolver.zbr:462
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:463
+        if (((std.mem.eql(u8, name, "Page") or std.mem.eql(u8, name, "Smp")) or std.mem.eql(u8, name, "C"))) {
+// zbr:selfhost/Resolver.zbr:464
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:465
+        if (self.isSimdName(name)) {
+// zbr:selfhost/Resolver.zbr:466
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:467
         return false;
     }
 
     pub fn isSimdName(self: *Resolver, name: []const u8) bool {
         _ = self;
-// zbr:selfhost/Resolver.zbr:465
+// zbr:selfhost/Resolver.zbr:471
         if ((!(std.mem.indexOf(u8, name, "x") != null))) {
-// zbr:selfhost/Resolver.zbr:466
+// zbr:selfhost/Resolver.zbr:472
             return false;
         }
-// zbr:selfhost/Resolver.zbr:467
+// zbr:selfhost/Resolver.zbr:473
         var parts: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty;
         { var _split_iter_2 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_2.next()) |_se_2| { parts.append(_allocator, _se_2) catch @panic("OOM"); } }
-// zbr:selfhost/Resolver.zbr:468
-        if ((@as(i64, @intCast(parts.items.len)) != 2)) {
-// zbr:selfhost/Resolver.zbr:469
-            return false;
-        }
-// zbr:selfhost/Resolver.zbr:470
-        if (std.mem.eql(u8, parts.items[@as(usize, @intCast(1))], "")) {
-// zbr:selfhost/Resolver.zbr:471
-            return false;
-        }
-// zbr:selfhost/Resolver.zbr:472
-        const prefix = parts.items[@as(usize, @intCast(0))];
-// zbr:selfhost/Resolver.zbr:473
-        if (((std.mem.eql(u8, prefix, "f16") or std.mem.eql(u8, prefix, "f32")) or std.mem.eql(u8, prefix, "f64"))) {
 // zbr:selfhost/Resolver.zbr:474
-            return true;
-        }
+        if ((@as(i64, @intCast(parts.items.len)) != 2)) {
 // zbr:selfhost/Resolver.zbr:475
-        if ((((std.mem.eql(u8, prefix, "i8") or std.mem.eql(u8, prefix, "i16")) or std.mem.eql(u8, prefix, "i32")) or std.mem.eql(u8, prefix, "i64"))) {
+            return false;
+        }
 // zbr:selfhost/Resolver.zbr:476
-            return true;
-        }
+        if (std.mem.eql(u8, parts.items[@as(usize, @intCast(1))], "")) {
 // zbr:selfhost/Resolver.zbr:477
-        if ((((std.mem.eql(u8, prefix, "u8") or std.mem.eql(u8, prefix, "u16")) or std.mem.eql(u8, prefix, "u32")) or std.mem.eql(u8, prefix, "u64"))) {
+            return false;
+        }
 // zbr:selfhost/Resolver.zbr:478
+        const prefix = parts.items[@as(usize, @intCast(0))];
+// zbr:selfhost/Resolver.zbr:479
+        if (((std.mem.eql(u8, prefix, "f16") or std.mem.eql(u8, prefix, "f32")) or std.mem.eql(u8, prefix, "f64"))) {
+// zbr:selfhost/Resolver.zbr:480
             return true;
         }
-// zbr:selfhost/Resolver.zbr:479
+// zbr:selfhost/Resolver.zbr:481
+        if ((((std.mem.eql(u8, prefix, "i8") or std.mem.eql(u8, prefix, "i16")) or std.mem.eql(u8, prefix, "i32")) or std.mem.eql(u8, prefix, "i64"))) {
+// zbr:selfhost/Resolver.zbr:482
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:483
+        if ((((std.mem.eql(u8, prefix, "u8") or std.mem.eql(u8, prefix, "u16")) or std.mem.eql(u8, prefix, "u32")) or std.mem.eql(u8, prefix, "u64"))) {
+// zbr:selfhost/Resolver.zbr:484
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:485
         return false;
     }
 
@@ -4632,7 +4637,7 @@ pub fn main(_zinit: std.process.Init) void {
     @import("CgHelpers.zig")._initAllocator(_allocator);
     @import("CgHelpers.zig")._initIo(_io);
     _initModuleVars();
-// zbr:selfhost/Resolver.zbr:484
+// zbr:selfhost/Resolver.zbr:490
     std.debug.print("{s}\n", .{"resolver: loaded (run resolver_test.zbr to exercise)"});
 }
 

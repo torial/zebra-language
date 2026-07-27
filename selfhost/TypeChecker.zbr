@@ -133,6 +133,10 @@ union Type_
     sqlite_row_list
     # GUI context passed to view(g: Gui, ...) in MVU programs.
     gui_context
+    # CodeEditor widget handle. Constructed via CodeEditor() or
+    # CodeEditor.forZebra(); emitted as a heap `*_CodeEditor`; methods dispatch
+    # to `_code_editor_*`. Ported from bootstrap TypeChecker `.code_editor`.
+    code_editor
     # JSON dynamic value (std.json.Value) returned by Json.parse/object/array.
     json_value
     # Generic collections with element/key/value type info.
@@ -557,6 +561,8 @@ def typeFromName(n: str): Type_
         return Type_.sqlite_row
     if n == "Gui"
         return Type_.gui_context
+    if n == "CodeEditor"
+        return Type_.code_editor
     # Sized numeric types — enable format-spec inference for int32, float64, etc.
     if n == "int8"
         return Type_.int_n(8)
@@ -1668,6 +1674,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             return Type_.named(bname)
                         if bname == "Regex" and mem.member == "compile"
                             return Type_.regex
+                        # CodeEditor.forZebra() (and any future static factory) →
+                        # code_editor. The bare CodeEditor() ctor already infers via
+                        # typeFromName above. Mirrors bootstrap TypeChecker:3523.
+                        if bname == "CodeEditor"
+                            return Type_.code_editor
                         if bname == "sys" and mem.member == "spawn"
                             return Type_.sys_process
                         if bname == "sys" and mem.member == "args"

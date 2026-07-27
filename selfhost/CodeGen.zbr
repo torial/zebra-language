@@ -2448,6 +2448,12 @@ struct Generator
                 if maybe_alias != nil
                     genType(maybe_alias!.base)
                     return
+                # CodeEditor builtin — heap widget handle (bootstrap emits the
+                # same `*_CodeEditor`). Optional `CodeEditor?` becomes
+                # `?*_CodeEditor` via the enclosing optional TypeRef branch.
+                if n.name == "CodeEditor"
+                    w.emit("*_CodeEditor")
+                    return
                 if isSimdTypeName(n.name)
                     var sparts: List(str) = n.name.split("x")
                     w.emit("@Vector(")
@@ -10416,6 +10422,12 @@ struct Generator
                 genArgList(c.args)
                 w.emit(")")
                 return
+        # CodeEditor bare constructor: CodeEditor() → _code_editor_new().
+        # (The `.forZebra()` static factory is handled in genMemberCall.)
+        if c.callee is Expr.ident as ce_ctor
+            if ce_ctor.name == "CodeEditor"
+                w.emit("_code_editor_new()")
+                return
         # Cross-module constructor: Module.ClassName(args) → Module.ClassName.init(args)
         # Two detection paths:
         # 1. isCrossModuleCtorCall: obj_name == member_name (same-name unwrap)
@@ -12790,6 +12802,11 @@ struct Generator
             if id.name == "Gui"
                 genGuiCall(mname, args)
                 return
+            if id.name == "CodeEditor"
+                # Static factory `CodeEditor.forZebra()` (the only one) →
+                # same heap ctor as the bare `CodeEditor()`.
+                w.emit("_code_editor_new()")
+                return
             if id.name == "Shell"
                 genShellCall(mname, args)
                 return
@@ -12805,6 +12822,39 @@ struct Generator
             if id.name == "Build"
                 genBuildStaticCall(mname, args)
                 return
+        # CodeEditor instance methods: dispatch by receiver type to the backend
+        # `_code_editor_*` glue (bootstrap: genCodeEditorMethod). The receiver is
+        # an expression (e.g. `m.editor!`), so this is keyed on the inferred type,
+        # not a bare namespace ident. Mirrors src/CodeGen.zig method mapping.
+        if .infer_ctx != nil
+            var ce_recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
+            if ce_recv_t is Type_.code_editor
+                var ce_fn = ""
+                if mname == "setText"
+                    ce_fn = "_code_editor_set_text"
+                if mname == "getText"
+                    ce_fn = "_code_editor_get_text"
+                if mname == "setReadOnly"
+                    ce_fn = "_code_editor_set_readonly"
+                if mname == "render"
+                    ce_fn = "_code_editor_render"
+                if mname == "setErrorMarkers"
+                    ce_fn = "_code_editor_set_error_markers"
+                if mname == "getCursorLine"
+                    ce_fn = "_code_editor_get_cursor_line"
+                if mname == "getCursorCol"
+                    ce_fn = "_code_editor_get_cursor_col"
+                if mname == "setCursorPosition"
+                    ce_fn = "_code_editor_set_cursor_position"
+                if ce_fn != ""
+                    w.emit(ce_fn)
+                    w.emit("(")
+                    genExpr(m.object)
+                    for ce_a in args
+                        w.emit(", ")
+                        genExpr(ce_a.value)
+                    w.emit(")")
+                    return
         # SIMD instance methods: sum/dot/max_element/min_element.  These names are
         # also legal user-defined struct/class methods (e.g. `Vec2.sum()`), so
         # dispatch to the SIMD reduction ONLY when the receiver is provably a SIMD

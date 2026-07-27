@@ -1937,8 +1937,8 @@ def luiBuildZon(): str
     .fingerprint  = 0xc96e70cfe3b36b0a,
     .dependencies = .{
         .zig_libui_ng = .{
-            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#8677b018212d2e4bcbad9a64ce400736299809f6",
-            .hash = "bindings_libui_ng-0.1.0-p2CY9cIOQgD6ELPBtySSzOXKEbM3EBCHC0aB6xktF89h",
+            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#93c7f54b2051d17b9f69d203ff3cd4500e60d285",
+            .hash = "bindings_libui_ng-0.1.0-p2CY9VwQQgApSplQXciuuEWGImM_PPrHwvCG9f_SXioP",
         },
     },
     .paths = .{ "build.zig", "build.zig.zon", "src", "app.manifest" },
