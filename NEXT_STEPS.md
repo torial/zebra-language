@@ -144,6 +144,11 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   then verify the four editors + typing (the remaining multi-instance unknown).
   NOTE: use `bash tools/bootstrap_check.sh --update` DIRECTLY to
   regen after `.zbr` edits — `zig build update-selfhost` silently skips (BUG-210).
+  **Housekeeping surfaced by BUG-214:** the checked-in `examples/*.zig` artifacts are
+  stale — regenerating `examples/counter.zig` produced ~1400 lines of pre-existing
+  preamble drift on top of the 3 lines BUG-214 actually changed, so it was left alone
+  rather than burying the fix. Regenerate the `examples/` artifacts as a standalone
+  cleanup commit (or decide they should be gitignored like `selfhost/*.zig` is not).
   **Remaining (follow-ups, not blocking):** (a) `compileGuiProject` copies only the root
   emitted `.zig` — multi-module GUI apps still need dep `.zig` files copied into the
   scaffold (single-file / no-dep GUI apps like the game work now; residual "GUI

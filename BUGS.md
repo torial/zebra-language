@@ -48,8 +48,18 @@ MVU `Gui.send`. So: rewrite bare no-payload variants to `Msg{ .variant = {} }` *
 single argument of `send` on a `Gui` receiver, and only for unions declared in the same module
 (`novalue_variants`, populated alongside `boxed_variants`). Selfhost-only by construction —
 the compiler's own source has no `Gui.send`, so the round-trip stays byte-identical.
-**Known limitation:** the rewrite is depth-1 — `g.send(if c then Msg.a else Msg.b)` and a
-`send` whose receiver does not infer to `Gui` are not covered. Neither appears in the corpus.
+**Known limitations — measured, not guessed** (probe: `viewM` as a class method, a send
+nested inside `using g.vbox(...)`, a local `var g2: Gui = gg`, and an UNANNOTATED `def
+view(g, m)`; emit inspected for each):
+- Receiver inference is wide enough for every idiomatic shape — annotated parameter, class
+  method, inside a `using` block, and an annotated local all convert. The **only** shape that
+  falls back to the bare tag is an **unannotated** receiver parameter (`def view(g, m)`),
+  where `inferExpr` cannot reach `Type_.gui_context`. That is a silent miscompile if anyone
+  writes it; §28a is moving the language away from unannotated params, and no corpus program
+  has that shape. Widening the rewrite to fire on an unknown receiver was considered and
+  rejected: it would have to bypass the generic member-call tail, which is where `throws`
+  propagation is emitted — trading a documented narrow gap for an undocumented one.
+- The rewrite is depth-1: `g.send(if c then Msg.a else Msg.b)` is not covered.
 
 **Landed:** `selfhost/CodeGen.zbr` — `novalue_variants` (populated alongside `boxed_variants`
 in both the pre-pass and `genUnion`), `isNoPayloadUnionValue` / `genNoPayloadUnionValue`, and
