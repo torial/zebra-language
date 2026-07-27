@@ -338,7 +338,7 @@ fn _lui_btn_cb(_btn: *ui.Button, _m: ?*_LuiMut) anyerror!void {
     _ = _btn;
     if (_m) |p| p.clicked = true;
 }
-fn _lui_chk_cb(_chk: *ui.Checkbox, _m: ?*_LuiMut) void {
+fn _lui_chk_cb(_chk: *ui.Checkbox, _m: ?*_LuiMut) anyerror!void {
     if (_m) |p| p.checked = _chk.Checked();
 }
 fn _lui_entry_cb(_ent: *ui.Entry, _m: ?*_LuiMut) anyerror!void {
@@ -525,7 +525,7 @@ fn _lui_checkbox(_label: []const u8, _value: bool) bool {
         const _chk = ui.Checkbox.New(_lz) catch return _value;
         _chk.SetChecked(_value);
         _r.m.checked = _value;
-        ui.Checkbox.OnToggled(_chk, _LuiMut, _lui_chk_cb, _r.m);
+        ui.Checkbox.OnToggled(_chk, _LuiMut, anyerror, _lui_chk_cb, _r.m);
         _r.m.ctrl = _chk.as_control();
         if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _chk.as_control(), .dont_stretch);
     }

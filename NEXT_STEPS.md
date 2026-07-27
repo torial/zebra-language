@@ -104,19 +104,27 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   runtime) + `CodeGen.guiSelectPreamble` (substitutes it for the stub section) +
   `main.compileGuiTui` (scaffold + `zig build --build-file` w/ inherited stdio). Gated:
   stub emit byte-identical, bootstrap_check byte-identical, smoke 254/254.
-  **libui_ng also ported (2026-07-26, commit `af4d0f3`)** via the same generalized path
-  (`compileGuiProject(zig_path, mode_run, backend)` + `gui_libui_ng_section.zig` +
-  `luiBuildZig/Zon`). Verified at emit+scaffold level; **end-to-end build is blocked by the
-  upstream `zig-libui-ng` dep, which doesn't compile under Zig 0.16** (`ui.h` `uiRect`
-  errors — a pre-existing ~30min upstream fix, NOT the port). Will build once the dep is fixed.
+  **libui_ng also ported (2026-07-26, commit `af4d0f3`) AND now works end-to-end
+  (2026-07-27).** Same generalized path (`compileGuiProject(zig_path, mode_run, backend)`
+  + `gui_libui_ng_section.zig` + `luiBuildZig/Zon`). The former blocker — the upstream
+  `zig-libui-ng` dep not compiling under Zig 0.16 (`ui.h` `uiRect` undefined) — is
+  resolved by pointing the binding at Sean's consolidated forks:
+  `torial/zig-libui-ng@main` (wp base + zig-0.16's sci/scintilla, Zig-0.16 fixes:
+  `@intFromBool` on c_int setters, `Separator` alias, 5-arg `OnToggled`) which in turn
+  pins `torial/libui-ng@main` (carries the vendored `uiRect` struct from petabyt/libui-dev).
+  Both forks consolidated to a single `main` (stale branches deleted, defaults set).
+  **Proven portable:** `examples/tears_of_the_tuon.zbr` compiles + links `app.exe` via
+  `--gui-backend=libui_ng` from a **cold global cache** (both deps fetched fresh from
+  GitHub) — only the headless `run` step fails (no display). Also fixed a latent
+  `compileGuiProject` bug: it wrote `build.zig`/`build.zig.zon` only when absent, so a
+  stale scaffold silently kept an old dependency pin — now rewritten unconditionally.
   **Remaining (follow-ups, not blocking):** (a) `compileGuiProject` copies only the root
   emitted `.zig` — multi-module GUI apps still need dep `.zig` files copied into the
   scaffold (single-file / no-dep GUI apps like the game work now; residual "GUI
   module-resolution" limit). (b) **only glfw** still delegates to the bootstrap (same recipe
   to port when wanted: extract its arm from `src/CodeGen.zig`, add a section file +
   build template + backend name to `gui_selfhost`). (c) `--gui-backend=stub` explicit still
-  delegates (plain `zebra run` already emits stub via the selfhost). (d) fix the
-  `zig-libui-ng` Zig-0.16 dep to unblock libui_ng end-to-end.
+  delegates (plain `zebra run` already emits stub via the selfhost).
 - [ ] ~~**GUI builds via selfhost emission — phase the bootstrap out of the GUI path**~~
   (epic; scoped 2026-07-25, scoped TUI-only). Today
   `--gui-backend=*` delegates the WHOLE build to `zebra-bootstrap.exe`, so bootstrap-lags-

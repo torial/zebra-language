@@ -1932,8 +1932,8 @@ def luiBuildZon(): str
     .fingerprint  = 0xc96e70cfe3b36b0a,
     .dependencies = .{
         .zig_libui_ng = .{
-            .url  = "git+https://github.com/torial/zig-libui-ng?ref=zig-0.16#4b14c1023bd44f4ff124a8f446f48005dfb24eaa",
-            .hash = "bindings_libui_ng-0.1.0-p2CY9YYbGgDTtt6M7yEczXB-7lVfF3bslNAFZSxBObgg",
+            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#8677b018212d2e4bcbad9a64ce400736299809f6",
+            .hash = "bindings_libui_ng-0.1.0-p2CY9cIOQgD6ELPBtySSzOXKEbM3EBCHC0aB6xktF89h",
         },
     },
     .paths = .{ "build.zig", "build.zig.zon", "src" },
@@ -1956,10 +1956,11 @@ def compileGuiProject(zig_path: str, mode_run: bool, backend: str): int
     if backend == "libui_ng"
         bz = luiBuildZig()
         bzon = luiBuildZon()
-    if not File.exists(proj + "/build.zig")
-        File.write(proj + "/build.zig", bz)
-    if not File.exists(proj + "/build.zig.zon")
-        File.write(proj + "/build.zig.zon", bzon)
+    # Always (re)write the generated build files — they are templates, and a
+    # stale scaffold from a prior run must pick up an updated dependency pin
+    # rather than silently keeping the old one.
+    File.write(proj + "/build.zig", bz)
+    File.write(proj + "/build.zig.zon", bzon)
     var argv = List(str)()
     argv.add("zig")
     argv.add("build")
