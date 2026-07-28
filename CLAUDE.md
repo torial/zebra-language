@@ -52,6 +52,34 @@ zbuild.bat                                   # convenience wrapper (Windows)
 Module resolution: `use module_name` is looked up relative to the input file,
 then in `selfhost/`, `test/`, and stdlib paths.
 
+## Rebuild + gate runners (start here)
+
+Two wrappers encode the sequences below so you don't reassemble them by hand:
+
+```bash
+bash tools/rebuild.sh          # make a selfhost/*.zbr edit REAL (regen + build)
+bash tools/rebuild.sh --no-regen   # build only (no .zbr changed)
+bash tools/gates.sh            # QUICK tier (~6 min): lints + smoke + round-trip
+bash tools/gates.sh --full     # FULL tier (~50 min): + compile_check, full_sweep, divergence
+bash tools/gates.sh --list     # what each tier runs and what it cannot see
+```
+
+`rebuild.sh` exists because the regen sequence has three footguns that have each
+cost real time: `zig build update-selfhost` **silently skips** regeneration after a
+`.zbr`-only edit (BUG-210); a stale `/tmp/bs-zig` from a killed run causes unrelated
+failures; and an orphaned `zebra.exe`/`zig.exe` holds a file lock so the build dies
+with `AccessDenied`. It also verifies the built compiler can actually run a
+hello-world before reporting success. **A `stdlib_preamble.zig` edit needs the full
+sequence too** — the preamble is inlined at emit time, so the compiler only picks up
+a preamble change after regeneration (this is what made BUG-219's first fix look
+like it hadn't worked).
+
+`gates.sh` runs the set in order with one summary line each and exits non-zero on
+any failure. It deliberately does **not** fold in the GUI paths, `fuzz/gramgen.py`,
+or `node_addon_test.sh`, so that "gates green" keeps a precise meaning — see its
+`--list` for the honest limits. Notably **no gate exercises a GUI**: six green gates
+once sat on top of three real GUI crashes that only a human clicking found.
+
 ## Verification gates (and what each one CANNOT catch)
 
 Three complementary checks. They have **different blind spots** — running one is
