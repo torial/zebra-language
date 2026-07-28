@@ -1472,7 +1472,38 @@ bootstrap rather than emit un-compilable output.
 
 ---
 
-## BUG-174: `str.indexOf` signature divergence — int? (docs+selfhost) vs int/-1 (bootstrap) ⚠️ OPEN (design call)
+## BUG-174: `str.indexOf` signature divergence ✅ RESOLVED (verified closed 2026-07-28)
+
+**RESOLVED — verified 2026-07-28.** The three-way inconsistency below is gone; the
+design call was effectively made (BUG-181 aligned the selfhost) and the docs were
+updated, but the ticket was never closed. It has been sitting in the pre-1.0
+blocker list as an open decision that no longer needs deciding.
+
+The convention that actually shipped is **mixed, and consistent everywhere**:
+
+| method | returns | not-found |
+|---|---|---|
+| `indexOf(sub)` | `int` | `-1` |
+| `lastIndexOf(sub)` | `int` | `-1` |
+| `indexOfFrom(sub, from)` | `int?` | `nil` |
+| `indexOfIgnoreCase(sub)` | `int?` | `nil` |
+
+That split is defensible rather than accidental: the plain forms are used in
+arithmetic (`indexOf(x) + 1`), which an optional makes painful — the note at
+`CodeGen.zbr` records exactly that as the reason BUG-181 moved the selfhost to the
+sentinel. The offset/case-insensitive forms are not used that way and keep `int?`.
+
+Verified by running the same program through BOTH compilers:
+
+    indexOf hit=1  miss=-1  (negative-on-miss branch taken)   — identical
+    lastIndexOf 4                                              — identical
+    indexOfFrom("b", 2) -> 4 via `f!`                           — identical
+    indexOfIgnoreCase("B") -> 1 via `ic!`                       — identical
+
+QUICKSTART:1085 now documents `(str): int` / "`-1` if not found", matching. The
+`test/stdlib_str_test.zbr` comment that once contradicted the docs is now correct.
+
+Historical detail below is kept for the record.
 
 **Severity:** medium (equivalence divergence on a documented stdlib method; the
 selfhost additionally emits invalid Zig). Surfaced 2026-07-12 hand-testing the

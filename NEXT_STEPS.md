@@ -220,9 +220,14 @@ the compiler's most-run command.
   literals root-caused a nasty TCO fall-through hang — see [[project_tco_fallthrough_hazard]];
   dict literals went smoothly since that plumbing was already safe.) Tests: `set_basic_test`,
   `set_advanced_test`, `set_literal_test`, `dict_literal_test` (all smoke-gated). → detail §28f.
-- [ ] **BUG-174 — `str.indexOf` signature design call.** QUICKSTART + selfhost say
-  `int?`; bootstrap says `int/-1`; selfhost `int?` codegen is currently broken.
-  Recommendation on file: commit to `int?`. → `BUGS.md`.
+- [x] **BUG-174 — `str.indexOf` signature design call. CLOSED 2026-07-28 — it was
+  already resolved, just never closed.** Both compilers and the docs now agree on a
+  mixed convention: `indexOf`/`lastIndexOf` return `int` with a `-1` sentinel (so
+  arithmetic like `indexOf(x) + 1` stays natural — the reason BUG-181 moved the
+  selfhost off `int?`), while `indexOfFrom`/`indexOfIgnoreCase` return `int?`.
+  Verified by running the same program through both compilers: identical output on
+  all four methods, hit and miss. **Was sitting in the pre-1.0 blocker list as an
+  open decision that no longer needed deciding.**
 - [ ] **Selfhost `_initIo` propagation gap** — track for 1.0 pre-flight (harmless
   today; would bite if a transitive dep gains file I/O). → *Open detail, Open Bugs.*
 - [ ] **§15 — 1.0 stability lock + final CHANGELOG pass.** The milestone act itself:
@@ -922,7 +927,6 @@ fail at the parser (BUG-172 follow-on). See `fuzz/README.md` + `FINDINGS.md`.
   Harmless now (`Ast`/`CgHelpers`/`TypeChecker` don't call `_io` ops directly); would
   silently use undefined `_io` if a transitive dep gains file I/O. Fix: emit a
   propagating `_initIo` in `generateModuleWith`. **Track for 1.0 pre-flight.**
-- **BUG-174** — `str.indexOf` signature divergence (see Open-work index). Design call.
 - **BUG-180** — bootstrap ctor-default fill (see Compiler hardening). Bootstrap-only.
 - **BUG-026** — `instance_method_return_types` gaps for exposed-type method chains.
   Not manifesting (`scanMutationsInExpr` conservatively marks cross-module calls
