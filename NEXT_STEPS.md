@@ -159,11 +159,18 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
     one round after three hypotheses died guessing — including this one, dismissed
     because the *binding* takes an explicit length (it does, then discards it at the C
     boundary). For any future GUI crash, get `… > log 2>&1` + the top 40 lines FIRST.
-  **REMAINING IDE UNKNOWN (the only one left):** whether the four Scintilla editors
-  coexist and accept typing. Everything upstream of that — build, link, render,
-  dispatch, and every handler reachable from the toolbar — is now run-verified.
-  Also worth re-running `examples/editor_min.zbr`: its RUN-VERIFIED marker was
-  earned under the BUG-217 buggy code and has not been re-earned.
+  **ALL IDE UNKNOWNS NOW CLOSED (2026-07-27).** The four Scintilla editors **do**
+  coexist in one window, and editability behaves exactly as authored: typing works in
+  `m.editor`, while the three panes given `setReadOnly(true)` in `ideInit`
+  (diag/output/buildOutput) correctly reject input — Sean confirmed the one-editable-
+  pane behavior and correctly attributed it to read-only mode. `examples/editor_min.zbr`
+  was also re-run post-BUG-217, re-earning the marker it held under the buggy code.
+  **The IDE is END-TO-END RUN-VERIFIED**: builds, links, renders, dispatches, survives
+  every toolbar button, and hosts four coexisting Scintilla controls.
+  **What remains is UNBUILT, not broken** — syntax highlighting (`forZebra` falls back
+  to plain; no lexer wired), `setErrorMarkers` (no-op stub), the column half of
+  `setCursorPosition`, and any Table/Tree widget for a file explorer. Those are the
+  next IDE features whenever the IDE comes back up the queue.
   NOTE: use `bash tools/bootstrap_check.sh --update` DIRECTLY to
   regen after `.zbr` edits — `zig build update-selfhost` silently skips (BUG-210).
   **Housekeeping surfaced by BUG-214:** the checked-in `examples/*.zig` artifacts are

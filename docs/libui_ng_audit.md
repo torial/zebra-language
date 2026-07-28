@@ -40,16 +40,20 @@ and `tears_of_the_tuon.zbr` both emit Zig that `zig build-exe` links to an
 |---|---|---|---|
 | `examples/counter.zbr` | window, root VBox, `text`(Label), `separator`, `button`×3, `sameLine` | Window renders **and `+`/`−`/`Reset` all change the count** — Sean-confirmed 2026-07-27; exits **0** | **RUN-VERIFIED (render + interaction)** |
 | `examples/tears_of_the_tuon.zbr` | game view (difficulty-select: easy/medium/hard buttons) | **Window renders on screen** — Sean-confirmed 2026-07-27 | **RUN-VERIFIED (render)** |
-| `examples/editor_min.zbr` | window, VBox, `text`, **one CodeEditor** (`forZebra` + `setText` + `render`) | **A Scintilla control renders and displays its setText content** ("hi from scintilla", plain black text) — Sean-confirmed 2026-07-27 | **RUN-VERIFIED (single-editor display)** |
+| `examples/editor_min.zbr` | window, VBox, `text`, **one CodeEditor** (`forZebra` + `setText` + `render`) | A Scintilla control renders and displays its setText content — Sean-confirmed 2026-07-27, **re-confirmed post-BUG-217** (the first pass was made under the read-past-the-end bug) | **RUN-VERIFIED (single-editor display)** |
+| `IDE/ZebraIDE.zbr` | full IDE: **four** CodeEditors, toolbar buttons, MVU dispatch, subprocess spawn/poll | Renders; **all toolbar buttons click without crashing** (Build/Check/List Targets); **four Scintilla controls coexist**; typing works in the one editable editor, the three `setReadOnly(true)` panes correctly reject input — Sean-confirmed 2026-07-27 | **RUN-VERIFIED (render + interaction + multi-editor)** |
 | Everything else (checkbox, slider, entry, combobox, spinbox, progressbar, panel, all dialogs) | — | Links into the exe; never instantiated at runtime | **NEVER-RUN** |
 
 **CodeEditor scope, precisely:** what's proven is that **one** Scintilla control
 instantiates, renders, and shows the text set via `setText`. **Not** yet
 exercised: editability (typing into it — Sean saw it, didn't type), syntax
 highlighting (`forZebra` falls back to plain — no lexer wired, by design),
-`setErrorMarkers` (a no-op stub), and — the IDE's real unknown — **multiple**
-Scintilla controls coexisting in one window (editor_min has one; the IDE has
-four). Getting here required porting the `CodeEditor` builtin to the selfhost
+`setErrorMarkers` (a no-op stub). **The multi-editor question is CLOSED
+(2026-07-27):** the IDE's four Scintilla controls coexist in one window, all
+render, and editability behaves as authored — typing works in `m.editor` and the
+three panes given `setReadOnly(true)` in `ideInit` (diag/output/buildOutput)
+correctly reject it. Typing into a Scintilla control is therefore also
+RUN-VERIFIED, which `editor_min` never established. Getting here required porting the `CodeEditor` builtin to the selfhost
 front-end + codegen (commit `b42074a`) and fixing BUG-211 (commit `33571e5`) —
 before which no CodeEditor program could even name-resolve through the selfhost.
 **CodeEditor is NEVER-gate-covered** (no corpus test uses it — it needs a GUI
