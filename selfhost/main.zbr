@@ -2411,7 +2411,19 @@ def main()
         # unresolved C/libc symbols (it emits a crashing exe), so compile-failure
         # fallback can't protect those.  A pure-Zig backend gap is a real compile
         # error, so falling through to the LLVM path below stays safe.
-        if not mode_c and not release and mc.c_sources.len == 0 and not mc.uses_sqlite
+        # CHECK MODE joins the fast path too (2026-07-28).  `-c` used to be excluded
+        # here and fell through to LLVM+LLD, so *checking* a program cost ~4 s while
+        # *running* it cost ~0.7 s — the compiler's most latency-sensitive command,
+        # and the one the IDE Check button calls, took the slowest available route.
+        # The same compile-failure fallback protects it: if the self-hosted backend
+        # cannot build the program we fall through to the authoritative LLVM path
+        # below, so a backend gap can never be reported as a user error.
+        #
+        # A check also needs no BINARY, only the semantic analysis that produces the
+        # diagnostics, so it passes `-fno-emit-bin` and skips linking entirely —
+        # measured as most of the cost (LLVM: 6.2 s with a binary vs 0.96 s without).
+        # Verified that `-fno-emit-bin` reports the identical diagnostics.
+        if not release and mc.c_sources.len == 0 and not mc.uses_sqlite
             var fast_exe: str = zig_path + ".fast.exe"
             var fargv = List(str)()
             fargv.add("zig")
@@ -2419,13 +2431,21 @@ def main()
             fargv.add(zig_path)
             fargv.add("-fno-llvm")
             fargv.add("-fno-lld")
-            fargv.add("-femit-bin=" + fast_exe)
+            if mode_c
+                fargv.add("-fno-emit-bin")
+            else
+                fargv.add("-femit-bin=" + fast_exe)
             if single_threaded
                 fargv.add("-fsingle-threaded")
             if cpu_flag != ""
                 fargv.add("-mcpu=" + cpu_flag)
             var fr = sys.run(fargv)
             if fr.exit_code == 0
+                # Check mode: a clean compile IS the answer; nothing to execute.
+                if mode_c
+                    if fr.stderr != ""
+                        sys.err(remapZigErrors(fr.stderr, zig_path))
+                    sys.exit(0)
                 # Run the compiled program with INHERITED stdio, not captured.
                 # sys.run() pipes the child's stdout/stderr; the reader blocks once
                 # the OS pipe buffer (~4 KB) fills, hanging any program that prints
@@ -2448,6 +2468,10 @@ def main()
         if mode_c
             argv2.add("build-exe")
             argv2.add(zig_path)
+            # A check needs diagnostics, not an executable.  Skipping the link step
+            # is most of the cost (6.2 s -> 0.96 s on a hello-world) and reports the
+            # identical errors, since they come from semantic analysis.
+            argv2.add("-fno-emit-bin")
             if release
                 argv2.add("-OReleaseFast")
         else

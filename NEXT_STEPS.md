@@ -47,6 +47,39 @@ to weigh strategies before implementation.
 - Therefore *tree-shaking the preamble* (conditional population — Sean's alternative) buys
   ~0.2 s. See the verdict under #1.
 
+### THE ORGANIZING GOAL (agreed with Sean, 2026-07-28): move checking INTO Zebra
+
+The measurement that produced this frame:
+
+| `zebra -c` outcome | time |
+|---|---|
+| clean program | 0.81 s |
+| error only `zig` can see | 1.88 s |
+| **error the Zebra front end catches itself** | **0.062 s** |
+
+A check the front end can answer costs **62 milliseconds**, because it never invokes
+Zig at all. So the question was never "how do we make checking fast" — it is
+**"how much checking can Zebra do itself?"** Every check moved into the front end is
+simultaneously ~25x faster, reported against the user's own source instead of
+generated Zig, and available to the IDE/LSP without a build.
+
+That reframes three items below as **one project wearing three hats**:
+
+- **#3** (nil-narrowing into the TypeChecker) — makes the TC authoritative about what
+  is known, which everything else builds on.
+- **#5a** (stdlib arity/signature table) — moves a whole class of silent miscompiles
+  (BUG-215) into front-end diagnostics.
+- **#4** (what `-c` should promise) — becomes a *consequence* rather than a separate
+  design question: the more the front end checks, the more a fast check is a real one.
+
+Related, same direction: BUG-218 (`str + int`) was exactly this move — a mistake that
+used to surface as a Zig error about `_str_concat` in a 3,790-line generated file now
+resolves in 62 ms against the user's own line, with a caret. That is the template.
+
+**Sequencing:** #5a first (self-contained, immediate user-visible payoff, no
+dependencies), then #3 (deeper, unlocks the rest), then revisit #4 with Sean once the
+front end's coverage is actually worth promising something about.
+
 ### FREE WIN — `-c` is excluded from the fast backend (do this first)
 
 `selfhost/main.zbr:2414` reads `if not mode_c and not release and …` — check mode is
