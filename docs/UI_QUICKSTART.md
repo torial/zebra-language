@@ -123,20 +123,21 @@ the ID unique, e.g. `g.input("##filepath", m.filepath)`.
 The `CodeEditor` widget wraps **Scintilla** in the libui-ng backend:
 
 ```zebra
-struct Model
-    var editor: ^CodeEditor = CodeEditor.forZebra()
-    var output_editor: ^CodeEditor = CodeEditor()
+class Model
+    var editor: CodeEditor? = nil
+    var output_editor: CodeEditor? = nil
 
 def init(): Model
     var m = Model()
-    m.editor.setText(File.read("main.zbr"))
-    m.output_editor.setReadOnly(true)
+    m.editor = CodeEditor.forZebra()
+    m.output_editor = CodeEditor()
+    m.editor!.setText(File.read("main.zbr"))
+    m.output_editor!.setReadOnly(true)
     return m
 
 def view(g: Gui, m: Model)
-    g.beginHBox("main", true)
-      m.editor.render(g, "##editor", 0, 0)
-    g.endHBox()
+    using g.hbox("##main", true)
+        m.editor!.render(g, "##editor", 0, 0)
 ```
 
 - `CodeEditor()` — plain editor
@@ -149,11 +150,31 @@ def view(g: Gui, m: Model)
 - `editor.setCursorPosition(line, col)` — jump to line/col (col ignored in MVP)
 - `editor.setErrorMarkers(diags)` — no-op in MVP
 
-**Important:** The `^` (heap-indirection) prefix on the field type is required:
+**Important — how to hold an editor handle** (corrected 2026-07-28; the previous
+advice here did not compile):
+
 ```zebra
-var editor: ^CodeEditor = CodeEditor.forZebra()   # correct
-var editor: CodeEditor  = CodeEditor.forZebra()    # wrong — struct copy breaks widget
+class Model
+    var editor: CodeEditor? = nil     # correct: optional field, assigned in init
 ```
+
+A `CodeEditor` is a live widget handle, so the model must refer to *the* editor
+rather than a copy of it. Two consequences:
+
+1. **Use a `class`, not a `struct`.** A struct model is copied into `update`, so
+   mutations through it are discarded.
+2. **Assign in `init`, do not use a field default.** A field initialiser that
+   calls `CodeEditor.forZebra()` fails to compile — the emitted Zig needs a
+   comptime-known struct default and a widget handle is not one:
+
+```zebra
+var editor: ^CodeEditor = CodeEditor.forZebra()   # ✗ error: unable to resolve comptime value
+var editor: CodeEditor  = CodeEditor.forZebra()   # ✗ same, and copies the handle
+var editor: CodeEditor? = nil                     # ✓ then `m.editor = CodeEditor.forZebra()` in init
+```
+
+Verified against the current compiler in all three forms. `IDE/ZebraIDE.zbr` uses
+the working form for all four of its editors.
 
 ---
 
