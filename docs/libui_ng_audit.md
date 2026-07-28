@@ -273,6 +273,27 @@ Status as of 2026-07-27 (what "already wired" hid):
   as run-verified, and it does render — but it was reading past the end of its buffer
   the whole time (BUG-217). It survived only because `strlen` found a zero in fresh
   arena memory. "Renders correctly" is not evidence of memory safety at a C boundary.
+  Its RUN-VERIFIED marker was **earned under the buggy code** and has not been re-earned;
+  treat it as unverified until someone runs it again post-fix.
+
+- **Class audit after BUG-217 (negative result, 2026-07-27):** swept
+  `gui_libui_ng_section.zig` for every other value crossing into C. All clean — the
+  per-frame label/button/checkbox/slider/entry paths each copy into a stack buffer with
+  an explicit `[:0]` sentinel (12 sites, every one clamped with `@min` against its buffer
+  size), the window title uses `bufPrintZ`, and the msgBox title/description use `dupeZ`.
+  `_CodeEditor` was the sole outlier precisely *because* its buffer is long-lived and
+  heap-managed rather than a per-frame stack copy — the one place the established idiom
+  was not reachable. No BUG-218.
+
+- **Transferable rule, paid for the hard way:** when a C API is involved, read the C
+  implementation, not the Zig wrapper's signature. BUG-217 was dismissed mid-session on
+  the grounds that `uiScintillaSetText(self, text.ptr, text.len)` takes an explicit
+  length — it does, and then hands it to `SendMessage(…, SCI_SETTEXT, len, text)`, where
+  Scintilla ignores `wParam` and calls `strlen(text)` two frames deeper. A wrapper that
+  accepts a length is not a promise that anything downstream uses it. ("Get the stack
+  trace first" is the weaker version of this lesson — the trace helped, but the reasoning
+  error was stopping at the wrapper, and a future reader will have a trace and still stop
+  there.)
 
 **Bottom line:** the single-editor Scintilla path is real and runtime-proven; the
 full IDE renders, dispatches, and every known compile/dispatch/memory gap is closed
