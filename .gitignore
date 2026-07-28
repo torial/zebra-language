@@ -83,3 +83,9 @@ test/node_addon/*.js
 
 # fuzzer scratch
 .fuzz_tmp/
+
+# IDE runtime artifacts — IDE/ZebraIDE.zbr uses its working directory for the
+# Build handler's scratch file and for its default (unsaved) document, so running
+# the IDE from the repo root drops these here.
+.ide_build.tmp
+untitled.zbr
