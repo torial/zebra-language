@@ -1,8 +1,35 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-217. Next new bug: BUG-218.**
+**Last bug number generated: BUG-218. Next new bug: BUG-219.**
 
 ---
+
+### BUG-218: `str + int` is diagnosed in an annotated context but LEAKS to Zig in a call argument ⬜ OPEN
+Found 2026-07-27 while auditing the book: chapter 1 promises *"When you make a mistake,
+Zebra tells you clearly"* and shows a clean Zebra-level diagnostic for `"Hello " + 5`.
+The compiler only delivers that when there is a type to check against:
+
+| Written as | Diagnosed by |
+|---|---|
+| `var s: str = "Hello " + 5` | **Zebra** — `error: expected type 'str', found 'comptime_int'` ✅ |
+| `var n: int = 5` … `var s = "Hello " + n` | **Zebra** — `error: expected type 'str', found 'i64'` ✅ |
+| `print("Hello " + 5)` | **Zig** — `e.zig:3779:54: error: expected type '[]const u8', found 'comptime_int'` ❌ |
+
+In argument position there is no annotation to drive the check, so the bad concat reaches
+codegen and the user gets an error pointing at *generated Zig* (`_str_concat`, a line
+number in a 3,800-line emitted file) for a plain type mistake in their own source. This is
+the `docs/error_experience_audit.md` class, and it is the single most likely first error a
+newcomer hits — string-plus-number in a `print` is the canonical beginner slip.
+
+**Fix direction:** type the operands of `+` when either side is known to be `str` and reject
+a non-`str` operand at the Zebra level, independent of whether an expected type is in play.
+The TypeChecker already reaches the right answer with a target type; it needs to run the
+same check bottom-up. Related to the arity gap noted under BUG-215 — both are "the front
+end declines to check something it has enough information to check."
+
+**Book impact (already handled):** `01-Getting-Started.md` now uses the annotated form so
+its promised error transcript is one the compiler actually produces. Revert that example to
+the `print(...)` form once this is fixed — it reads better.
 
 ### BUG-217: `CodeEditor.setText` handed Scintilla a non-NUL-terminated buffer → segfault ✅ FIXED + RUN-VERIFIED 2026-07-27
 `IDE/ZebraIDE.zbr` aborted (exit 3) on the **Build** button. Sean's stack trace was decisive:
