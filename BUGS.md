@@ -57,7 +57,7 @@ build tooling.
 
 ---
 
-### BUG-220: ANY top-level `def` whose name matches a preamble identifier fails to compile ⬜ OPEN
+### BUG-220: ANY top-level `def` whose name matches a preamble identifier fails to compile ✅ FIXED 2026-07-28
 A user function named `f` emits Zig that will not compile:
 
 ```
@@ -106,7 +106,42 @@ internals.** Two candidate fixes:
    justified on architecture grounds, and it would dissolve this whole bug class as a
    side-effect. Worth adding to that design note's motivation.
 
-Recommend (2) if single-file emission is going ahead anyway; (1) as a stopgap only if not.
+**FIXED — by (1), on Sean's call: prefix unconditionally.** Top-level `def`s now emit under
+the reserved `_zbr_fn_` prefix, exactly mirroring `_zbr_mv_` for module vars. Prefixing is
+unconditional rather than only-on-collision by explicit decision: a conditional form needs a
+hand-maintained list of preamble identifiers, and a parallel list that drifts is the bug class
+the Build failure came from. Selfhost-only — round-trip compares selfhost-A against selfhost-B
+and *both* prefix, so byte-identity holds without touching the bootstrap, which continues to
+emit `selfhost/*.zig` unprefixed and only has to compile it.
+
+**Reference sites covered** (each of the last five was found by a gate, not by reading):
+| Site | Where |
+|---|---|
+| declaration | `genMethod`, gated `owner == "" and not in_namespace` |
+| direct call + by-value reference | `genIdentRaw`, with BUG-137's shadow guard |
+| fn-ref **var binding** (`var p = isDigit`) | writes the name directly, `&`-prefixed |
+| fn-ref **reassignment** (`p = isDigit`) | same, separate path — caught by full_sweep |
+| cross-module alias | `genUse`, prefixed on **both** sides |
+| `zebra test` harness | `generateTestEntryPoint` calls tests by name — 10 smoke failures |
+| generic call `identity(int)(42)` | `genCall` writes the callee directly |
+
+Not prefixed, correctly: class methods and `namespace` members (already namespaced inside a
+struct — `genNamespace` needed an explicit `in_namespace` flag because it emits through a
+Generator copy that still has `owner == ""`).
+
+The naming rule lives in **one** module-level function, `zbrFnSymbol(name, is_export)`; the
+Generator method and the test-harness emitter both route through it, so the two copies cannot
+drift.
+
+**Residual limitation:** `@export` and `@node_export` functions keep their source names,
+because for those the ABI symbol *is* the name. So `@node_export def count(...)` remains
+exposed to the original collision. Narrow, and the tradeoff is right, but real. (For
+`@node_export` specifically it would be fixable — the JS export name comes from a string, not
+the Zig symbol — but the napi wrappers call the underlying function by name and it is not worth
+the risk for a niche case.)
+
+Note (2) — namespaced emission — remains the deeper fix and would also cover the export cases;
+this does not remove the argument for it, it just stops the bleeding now.
 
 ---
 

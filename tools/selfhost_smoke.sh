@@ -956,6 +956,13 @@ smoke_emit_contains test/fail_fixtures/indexof_arity_rejected_test.zbr \
 smoke_tc_fail test/fail_fixtures/str_plus_number_rejected_test.zbr \
     "cannot concatenate 'str' and 'int'"
 
+# BUG-220: a top-level `def` whose name matches a preamble parameter/local used to
+# fail to compile (15 of 16 everyday names — count, data, total, buf, body, color).
+# Top-level defs now emit under the reserved `_zbr_fn_` prefix, mirroring `_zbr_mv_`
+# for module vars (BUG-137). Exercises declaration, direct call, and — the subtle one
+# — a function passed BY VALUE rather than called.
+smoke_run test/toplevel_name_collision_test.zbr "toplevel_name_collision_test: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

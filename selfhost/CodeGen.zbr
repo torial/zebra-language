@@ -869,6 +869,13 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                         g.novalue_variants.add(makeDottedKey(u.name, v.name))
             on Decl.enum_ as e
                 g.enum_names.add(e.name)
+            on Decl.method as tlm
+                # BUG-220: register every top-level `def` so genIdentRaw can prefix
+                # references to it.  A StrSet (not a scan of module_decls) because
+                # genIdentRaw runs on EVERY identifier in the program.
+                g.toplevel_fns.add(tlm.name)
+                if tlm.mods.is_export or tlm.mods.is_node_export
+                    g.toplevel_export_fns.add(tlm.name)
             on Decl.use_ as imp
                 populateBoxedVariants(g.boxed_variants, deps_mt)
                 populateRefFields(g.ref_fields, g.opt_ref_fields, deps_mt)
@@ -895,6 +902,12 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                         if isUpperCase(exposed_name)
                             g.struct_names.add(exposed_name)
                             g.struct_with_init.add(exposed_name)  # cross-module structs all have cue init
+                        else
+                            # BUG-220: a lowercase exposed name is a cross-module top-level `def`
+                            # (the comment above states the same rule). Register it so genIdentRaw
+                            # prefixes references, and genUse aliases the prefixed symbol that the
+                            # defining module actually emitted.
+                            g.toplevel_fns.add(exposed_name)
             on Decl.struct_ as s
                 g.struct_names.add(s.name)
                 if declMembersHaveInit(s.members)
@@ -1105,6 +1118,21 @@ def generateEntryPoint(m: Module, library_mode: bool): str
     sb.append("}\n")
     return sb.build()
 
+# BUG-220: THE single source of truth for how a top-level `def` is spelled in the
+# emitted Zig.  Both the Generator method `topLevelFnZigName` and the module-level
+# test-harness emitter route through this, so the rule cannot drift between them —
+# a hand-maintained second copy of a naming rule is exactly the bug class that
+# produced the Build failure (root-fixed by unifying isStdlibNs).
+#
+# `main` keeps its name (Zig entry point); an @export/@node_export fn keeps its
+# name (the ABI symbol IS the name).  Everything else takes the reserved prefix.
+def zbrFnSymbol(name: str, is_export: bool): str
+    if name == "main"
+        return name
+    if is_export
+        return name
+    return "_zbr_fn_" + name
+
 def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     # Collect test entries: (call expression, display label).
     # Auto-tags: file_stem (all tests) + class name (class-contained static tests).
@@ -1125,9 +1153,11 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
                     included = matched
                 if included
                     # Single-file: test fns live inside `_Mod`; label stays the plain name.
-                    var tcall: str = mth.name
+                    # BUG-220: the harness calls the function by its EMITTED name.
+                    var tsym: str = zbrFnSymbol(mth.name, mth.mods.is_export or mth.mods.is_node_export)
+                    var tcall: str = tsym
                     if _single_file
-                        tcall = "_Mod.${mth.name}"
+                        tcall = "_Mod.${tsym}"
                     test_calls.add(tcall)
                     test_labels.add(mth.name)
 
@@ -2007,6 +2037,9 @@ struct Generator
     var toString_types       : StrSet  # names of types that have a toString() method
     var boxed_variants       : StrSet  # "UnionName.variant" entries where payload is ^T
     var novalue_variants     : StrSet  # "UnionName.variant" entries with NO payload (BUG-214)
+    var toplevel_fns         : StrSet  # names of top-level `def`s (BUG-220 prefixing)
+    var in_namespace         : bool    # emitting inside a `namespace` struct (BUG-220: no prefix)
+    var toplevel_export_fns  : StrSet  # subset that must KEEP their source name (export/@node_export)
     var ref_fields           : StrSet  # "StructName.fieldName" entries where field is ^T (non-optional)
     var opt_ref_fields       : StrSet  # "StructName.fieldName" entries where field is ^T? (optional)
     var ext_method_keys      : StrSet  # "TypeName.method" for `extend TypeName` methods → rewrite obj.m() to _ext_TypeName_m(obj)
@@ -2111,6 +2144,9 @@ struct Generator
         .toString_types        = StrSet()
         .boxed_variants        = StrSet()
         .novalue_variants      = StrSet()
+        .toplevel_fns          = StrSet()
+        .in_namespace          = false
+        .toplevel_export_fns   = StrSet()
         .ref_fields            = StrSet()
         .opt_ref_fields        = StrSet()
         .ext_method_keys       = StrSet()
@@ -2807,12 +2843,20 @@ struct Generator
                 # symbol (it's `alias._zbr_mv_name`, and a deferred var is undefined at
                 # import) — genIdent rewrites each reference, so emit no `const` here.
                 if ename != alias and not .exposed_module_vars.contains(ename)
+                    # BUG-220: an exposed top-level `def` is emitted by its defining module
+                    # under the reserved `_zbr_fn_` prefix, so the alias must name the
+                    # prefixed symbol. The alias binding is ALSO a file-scope declaration,
+                    # so it takes the prefix too — otherwise `const count = Mod._zbr_fn_count;`
+                    # would reintroduce the very collision the prefix exists to prevent.
+                    var uname: str = ename
+                    if toplevel_fns.contains_(ename)
+                        uname = topLevelFnZigName(ename)
                     w.emit("const ")
-                    w.emit(ename)
+                    w.emit(uname)
                     w.emit(" = ")
                     w.emit(alias)
                     w.emit(".")
-                    w.emit(ename)
+                    w.emit(uname)
                     w.emit(";\n")
                 i = i + 1
 
@@ -3850,7 +3894,12 @@ struct Generator
     def genMethod(m: DeclMethod)
         var has_self = owner != "" and not m.mods.is_static
         # @once: emit cache field + public wrapper, then emit private impl function.
+        # BUG-220: a TOP-LEVEL def (owner == "") emits under the reserved `_zbr_fn_`
+        # prefix so it cannot collide with a preamble parameter/local.  Methods are
+        # inside a struct namespace and cannot collide, so they keep their names.
         var fn_name: str = m.name
+        if owner == "" and not in_namespace
+            fn_name = topLevelFnZigName(m.name)
         if m.mods.is_once
             # Cache field (skipped when genClass already emitted it in the fields pass).
             if not w.suppress_once_field
@@ -4263,6 +4312,11 @@ struct Generator
         while body_depth < depth
             ig = ig.indented()
             body_depth += 1
+        # BUG-220: a namespace member emits INSIDE `Outer.Inner = struct { … }` and is
+        # referenced as `Outer.Inner.greet`, so it is already collision-proof and must
+        # NOT take the top-level prefix. genMethod sees owner == "" here (namespaces
+        # do not set an owner), so it needs telling explicitly.
+        ig.in_namespace = true
         for d in ns.decls
             branch d
                 on Decl.method as mth
@@ -5163,7 +5217,10 @@ struct Generator
                 if isTopLevelMethod(fid.name)
                     writeIndent()
                     var zn_fnref: str = zigSafeName(n.name)
-                    w.emit("var " + zn_fnref + ": @TypeOf(&" + fid.name + ") = &" + fid.name + ";\n")
+                    # BUG-220: this path writes the function's Zig name directly rather than
+                    # going through genIdent, so it needs the prefix applied explicitly.
+                    var zn_target: str = topLevelFnZigName(fid.name)
+                    w.emit("var " + zn_fnref + ": @TypeOf(&" + zn_target + ") = &" + zn_target + ";\n")
                     return
         # Interface coercion: `var x: IFace = ClassCtor()` or `var x: ^IFace = ClassCtor()`
         if n.init_expr != nil
@@ -5579,6 +5636,28 @@ struct Generator
     # Returns true if `name` is a top-level `def` in the current module.
     # Used to detect bare function-name expressions (fn_ref) in local var inits
     # and assignments — Zig requires `&funcName` / `@TypeOf(&funcName)` for those.
+    # BUG-220: the emitted Zig name for a top-level `def`.
+    #
+    # Zig makes it an error for a function parameter to shadow a file-scope
+    # declaration, and user top-level defs emit at file scope.  The runtime
+    # preamble has 423 non-underscore identifiers, so `def count(...)` collided
+    # with a preamble parameter named `count` — 15 of 16 everyday names tested
+    # (count, data, total, buf, body, color, …) failed to compile, with the error
+    # pointing into preamble source the user never wrote.
+    #
+    # The reserved `_zbr_fn_` prefix makes collision impossible by construction.
+    # This is the same mechanism BUG-137 already applied to module VARS
+    # (`_zbr_mv_`); top-level functions were simply the half that never got done.
+    # Prefixing is UNCONDITIONAL rather than only-on-collision, deliberately: a
+    # conditional form would need a hand-maintained list of preamble identifiers,
+    # and a parallel list that drifts is exactly the bug class the Build failure
+    # came from (root-fixed by unifying isStdlibNs).
+    #
+    # Two names keep their source spelling: `main` (Zig's entry point) and any
+    # `@export`/`@node_export` fn (the ABI symbol name is the whole point).
+    def topLevelFnZigName(name: str): str
+        return zbrFnSymbol(name, toplevel_export_fns.contains_(name))
+
     def isTopLevelMethod(name: str): bool
         for decl in module_decls
             if decl is Decl.method as m
@@ -5968,8 +6047,10 @@ struct Generator
         if a.op == AssignOp.assign
             if a.value is Expr.ident as vid
                 if isTopLevelMethod(vid.name)
+                    # BUG-220: writes the function's Zig name directly (with `&`),
+                    # bypassing genIdent — same as the var-init fn-ref path.
                     w.emit("&")
-                    w.emit(vid.name)
+                    w.emit(topLevelFnZigName(vid.name))
                     w.emit(";\n")
                     return
         if a.op == AssignOp.assign and isStringField(a.target)
@@ -9660,6 +9741,16 @@ struct Generator
             w.emit("._zbr_mv_")
             w.emit(id.name)
             return
+        # BUG-220: a reference to a top-level `def` → its prefixed file-scope name
+        # (matches genMethod).  Covers BOTH a direct call (`count(3)`, whose callee
+        # is this ident) and a bare reference passed as a value (`applyTwice(count,
+        # 10)`, or the `init, update, view` arguments of Gui.run) — the latter is
+        # easy to miss precisely because it is not a call.  Same shadow guard as
+        # the module-var case: a local or param of the same name keeps its bare
+        # name and refers to the local.
+        if toplevel_fns.contains_(id.name) and not isLocalOrParamName(id.name)
+            w.emit(topLevelFnZigName(id.name))
+            return
         emitName(id.name)
 
     # True if `name` is a module-level var/const (registered under the ""
@@ -10455,7 +10546,12 @@ struct Generator
         if c.callee is Expr.call as gf_inner
             if gf_inner.callee is Expr.ident as gf_id
                 if .module_types.hasGenericFn(gf_id.name) or .dep_types.hasGenericFn(gf_id.name)
-                    w.emit(gf_id.name)
+                    # BUG-220: this path writes the callee name directly rather than
+                    # going through genIdent, so it needs the prefix applied here too.
+                    if toplevel_fns.contains_(gf_id.name)
+                        w.emit(topLevelFnZigName(gf_id.name))
+                    else
+                        w.emit(gf_id.name)
                     w.emit("(")
                     var gf_first = true
                     for ta in gf_inner.args

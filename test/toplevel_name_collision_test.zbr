@@ -1,0 +1,70 @@
+# BUG-220 regression: a top-level `def` whose name matches a runtime-preamble
+# parameter or local must still compile and run.
+#
+# Zig makes it an error for a function parameter to shadow a file-scope
+# declaration. User top-level `def`s emit at file scope, and the preamble has
+# 423 non-underscore identifiers — so before the fix, `def count(...)` produced
+#     error: function parameter shadows declaration of 'count'
+# pointing into preamble source the user never wrote. 15 of 16 everyday names
+# tested this way failed, including every name below.
+#
+# This is the other half of BUG-137, which fixed the identical problem for
+# module VARIABLES via the reserved `_zbr_mv_` prefix (see
+# module_var_collision_test.zbr, which guards `total` and `count` as vars).
+# Top-level functions now take the same treatment.
+#
+# Exercises the three ways a top-level function name reaches the emitted Zig:
+#   1. the declaration itself
+#   2. a direct call
+#   3. a reference passed as a VALUE (the MVU/callback form) — easy to miss,
+#      because it is a bare identifier rather than a call
+
+def count(a: int): int
+    return a + 1
+
+def total(a: int, b: int): int
+    return a + b
+
+def data(): str
+    return "payload"
+
+def buf(n: int): int
+    return n * 2
+
+def body(s: str): str
+    return "<" + s + ">"
+
+def color(): str
+    return "red"
+
+def item(i: int): int
+    return i
+
+def key(): str
+    return "k"
+
+def val(): int
+    return 7
+
+def acc(x: int): int
+    return x
+
+# A top-level function taking another top-level function as a value — this is
+# the shape `Gui.run(title, w, h, init, update, view)` uses, and the reference
+# is a bare identifier, not a call.
+def applyTwice(f: def(int): int, n: int): int
+    return f(f(n))
+
+def main()
+    print(count(1).toString())            # 2
+    print(total(2, 3).toString())         # 5
+    print(data())                         # payload
+    print(buf(4).toString())              # 8
+    print(body("x"))                      # <x>
+    print(color())                        # red
+    print(item(9).toString())             # 9
+    print(key())                          # k
+    print(val().toString())               # 7
+    print(acc(5).toString())              # 5
+    print(applyTwice(count, 10).toString())   # 12 — `count` passed BY VALUE
+    print("toplevel_name_collision_test: OK")

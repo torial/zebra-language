@@ -292,6 +292,7 @@ tcp_test
 terminal_test
 test_capture_simple
 test_elif
+test_gui_simple
 test_module_test
 thread_alloc_stress_test
 thread_pool_test
@@ -301,6 +302,7 @@ throws_nested_test
 throws_raise
 timer_test
 toplevel_main_test
+toplevel_name_collision_test
 tostring_test
 transitive_list_param_test
 transitive_test
