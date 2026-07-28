@@ -4,7 +4,7 @@
 
 ---
 
-### BUG-218: `str + int` is diagnosed in an annotated context but LEAKS to Zig in a call argument ⬜ OPEN
+### BUG-218: `str + int` is diagnosed in an annotated context but LEAKS to Zig in a call argument ✅ FIXED 2026-07-28
 Found 2026-07-27 while auditing the book: chapter 1 promises *"When you make a mistake,
 Zebra tells you clearly"* and shows a clean Zebra-level diagnostic for `"Hello " + 5`.
 The compiler only delivers that when there is a type to check against:
@@ -27,9 +27,27 @@ The TypeChecker already reaches the right answer with a target type; it needs to
 same check bottom-up. Related to the arity gap noted under BUG-215 — both are "the front
 end declines to check something it has enough information to check."
 
-**Book impact (already handled):** `01-Getting-Started.md` now uses the annotated form so
-its promised error transcript is one the compiler actually produces. Revert that example to
-the `print(...)` form once this is fixed — it reads better.
+**FIXED 2026-07-28.** `inferExpr`'s `BinaryOp.add` arm now checks bottom-up: when one
+operand is `str` and the other is a KNOWN numeric or bool, it raises a Zebra error naming
+both fixes. Deliberately narrow — `unknown_` never fires (selfhost inference is weaker than
+the bootstrap's; erroring on unknown would convert every inference gap into a false compile
+error), and `char_` is excluded, so `"a" + c` is untouched. Gated by
+`test/fail_fixtures/str_plus_number_rejected_test.zbr`. Full sweep: 0 regressions across 331.
+
+**Known limitation — no source location when BOTH operands are literals.** `AstBuilder`
+constructs binary expressions, string literals and int literals all with `zspan()` (a zero
+span; 95 of its node kinds do this), so there is no position to report. The diagnostic
+borrows the nearest operand's span from an ident, member or call — which covers the realistic
+cases (`"n=" + n`) — but `print("Hello " + 5)`, two literals, still reports `0:0`. Fixing it
+properly means populating spans in `AstBuilder` from the parser's tokens, which is a broader
+change worth doing on its own: **many expression-level diagnostics inherit this same
+weakness**, not just this one. Filed here rather than fixed because it is a parser/AST change,
+not a type-checker one.
+
+**Book impact (done):** `01-Getting-Started.md` now shows `print("Hello " + count)` with the
+real transcript, captured verbatim from the compiler. It uses a variable rather than a literal
+precisely because of the limitation above — with two literals the transcript would have had no
+line number, and putting a fabricated one in the book was not an option.
 
 ### BUG-217: `CodeEditor.setText` handed Scintilla a non-NUL-terminated buffer → segfault ✅ FIXED + RUN-VERIFIED 2026-07-27
 `IDE/ZebraIDE.zbr` aborted (exit 3) on the **Build** button. Sean's stack trace was decisive:
