@@ -1454,6 +1454,50 @@ def isNumeric(t: Type_): bool
         else
             return false
 
+# BUG-218 support: binary expressions are built with a ZERO span — AstBuilder uses
+# `zspan()` for 95 of its node kinds, binary among them — so `b.span.line` is 0 and a
+# diagnostic anchored to it would carry no source location at all, which is most of
+# what makes a diagnostic useful.  Idents and members DO carry real spans, so borrow
+# the nearest operand's.  Returns a zero span only when neither operand has one
+# (e.g. `"a" + 5`, two literals), which is no worse than the status quo.
+# (Line and col are returned separately rather than as a Span because `Span` is not
+# in TypeChecker's `use Ast exposing` list, and widening a shared import for a
+# diagnostic is not worth the blast radius.)
+def exprSpanLine(e: Expr): int
+    branch e
+        on Expr.ident as sid
+            return sid.span.line
+        on Expr.member as smem
+            return smem.span.line
+        on Expr.call as scall
+            return scall.span.line
+        else
+            return 0
+
+def exprSpanCol(e: Expr): int
+    branch e
+        on Expr.ident as cid
+            return cid.span.col
+        on Expr.member as cmem
+            return cmem.span.col
+        on Expr.call as ccall
+            return ccall.span.col
+        else
+            return 0
+
+# BUG-218: is `t` a type that is definitely WRONG on one side of a `str + t`?
+# Only definitively-known scalars qualify.  Everything else — `unknown_`, a named
+# class (which may define its own concat), `char_`, containers — is left alone, so
+# an inference gap can never manufacture a compile error out of valid code.
+def isConcatMistake(t: Type_): bool
+    if isNumeric(t)
+        return true
+    branch t
+        on Type_.bool_
+            return true
+        else
+            return false
+
 # Helper: true iff t is one of the three abstract/placeholder types.
 # Mirrors src/TypeChecker.zig isAbstract().
 def isAbstractType(t: Type_): bool
@@ -2057,9 +2101,46 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             branch b.op
                 on BinaryOp.add
                     # String concatenation: if either side is a string, result is string.
+                    # BUG-218: `str + <number>` is a MISTAKE, not a concatenation.  It
+                    # used to be diagnosed only where an expected type forced the issue
+                    # (`var s: str = "x" + 5`); in argument position (`print("x" + 5)`)
+                    # there is nothing to check against, so the bad concat reached
+                    # codegen and the user got a Zig error about `_str_concat` and a
+                    # line number inside a 3,800-line generated file — for a plain type
+                    # mistake in their own source.  Check it bottom-up instead.
+                    #
+                    # Deliberately narrow: fire ONLY when the other side is a KNOWN
+                    # numeric or bool.  `unknown_` means inference never reached it, and
+                    # selfhost inference is weaker than the bootstrap's (§28a) — erroring
+                    # on unknown would turn every inference gap into a false compile
+                    # error.  `char_` is excluded by isNumeric, so `"a" + c` is untouched.
                     if isString(lt)
+                        if isConcatMistake(rt)
+                            var eln: int = b.span.line
+                            var ecl: int = b.span.col
+                            if eln == 0
+                                eln = exprSpanLine(b.right)
+                                ecl = exprSpanCol(b.right)
+                            if eln == 0
+                                eln = exprSpanLine(b.left)
+                                ecl = exprSpanCol(b.left)
+                            ctx.addErr(ctx.file, eln, ecl,
+                                "cannot concatenate 'str' and '" + typeTag(rt) +
+                                "' — call .toString() on it, or use string interpolation")
                         return Type_.string_
                     if isString(rt)
+                        if isConcatMistake(lt)
+                            var eln2: int = b.span.line
+                            var ecl2: int = b.span.col
+                            if eln2 == 0
+                                eln2 = exprSpanLine(b.left)
+                                ecl2 = exprSpanCol(b.left)
+                            if eln2 == 0
+                                eln2 = exprSpanLine(b.right)
+                                ecl2 = exprSpanCol(b.right)
+                            ctx.addErr(ctx.file, eln2, ecl2,
+                                "cannot concatenate '" + typeTag(lt) +
+                                "' and 'str' — call .toString() on it, or use string interpolation")
                         return Type_.string_
                     if isNumeric(lt)
                         return lt

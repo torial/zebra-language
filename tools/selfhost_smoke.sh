@@ -27,7 +27,11 @@ if [[ ! -x "$ZEBRA" ]]; then
 fi
 BOOTSTRAP="$REPO/zig-out/bin/zebra-bootstrap.exe"
 
-TMPDIR_OUT="/tmp/selfhost-smoke"
+# Per-process scratch dir. Two concurrent runs used to share "/tmp/selfhost-smoke",
+# which each one rm -rf's at startup and clears between tests — so running smoke
+# twice at once made tests fail for no reason and looked exactly like a real
+# regression. $$ keeps concurrent invocations independent.
+TMPDIR_OUT="/tmp/selfhost-smoke-$$"
 rm -rf "$TMPDIR_OUT"
 mkdir -p "$TMPDIR_OUT"
 trap 'rm -rf "$TMPDIR_OUT"' EXIT
@@ -39,12 +43,12 @@ smoke() {
     local zbr="$1"
     local label
     label="$(basename "$zbr" .zbr)"
-    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>/tmp/smoke-err; then
+    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
         echo "  PASS: $label"
         PASS=$((PASS + 1))
     else
         echo "  FAIL: $label" >&2
-        grep -v "^wrote \|^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" /tmp/smoke-err >&2 || true
+        grep -v "^wrote \|^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" "$TMPDIR_OUT/smoke-err" >&2 || true
         FAIL=$((FAIL + 1))
     fi
     # Clear between tests so dep files don't bleed across
@@ -56,7 +60,7 @@ smoke_turbo() {
     local zbr="$1"
     local label
     label="$(basename "$zbr" .zbr)_turbo"
-    if "$ZEBRA" --turbo --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>/tmp/smoke-err; then
+    if "$ZEBRA" --turbo --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
         local zig_out="$TMPDIR_OUT/$(basename "$zbr" .zbr).zig"
         if grep -qE "_check_invariant|require failed|ensure failed" "$zig_out" 2>/dev/null; then
             echo "  FAIL: $label (contract strings found in turbo output)" >&2
@@ -68,7 +72,7 @@ smoke_turbo() {
         fi
     else
         echo "  FAIL: $label (emit failed)" >&2
-        grep -v "^wrote \|^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" /tmp/smoke-err >&2 || true
+        grep -v "^wrote \|^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" "$TMPDIR_OUT/smoke-err" >&2 || true
         FAIL=$((FAIL + 1))
     fi
     rm -f "$TMPDIR_OUT"/*.zig
@@ -79,10 +83,10 @@ smoke_test() {
     local zbr="$1"
     local label
     label="$(basename "$zbr" .zbr)_test"
-    if "$ZEBRA" test "$zbr" >/tmp/smoke-test-out 2>&1; then
-        if grep -qF "FAIL:" /tmp/smoke-test-out; then
+    if "$ZEBRA" test "$zbr" >"$TMPDIR_OUT/smoke-test-out" 2>&1; then
+        if grep -qF "FAIL:" "$TMPDIR_OUT/smoke-test-out"; then
             echo "  FAIL: $label (some tests failed)" >&2
-            cat /tmp/smoke-test-out >&2
+            cat "$TMPDIR_OUT/smoke-test-out" >&2
             FAIL=$((FAIL + 1))
         else
             echo "  PASS: $label"
@@ -90,7 +94,7 @@ smoke_test() {
         fi
     else
         echo "  FAIL: $label (exit non-zero)" >&2
-        grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved\|^wrote " /tmp/smoke-test-out >&2 || true
+        grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved\|^wrote " "$TMPDIR_OUT/smoke-test-out" >&2 || true
         FAIL=$((FAIL + 1))
     fi
     rm -f "$TMPDIR_OUT"/*.zig
@@ -129,13 +133,13 @@ smoke_warn() {
     local expected_msg="$2"
     local label
     label="$(basename "$zbr" .zbr)_warn"
-    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>/tmp/smoke-err; then
-        if grep -qF "$expected_msg" /tmp/smoke-err; then
+    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
+        if grep -qF "$expected_msg" "$TMPDIR_OUT/smoke-err"; then
             echo "  PASS: $label"
             PASS=$((PASS + 1))
         else
             echo "  FAIL: $label (compiled but warning missing: $expected_msg)" >&2
-            grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" /tmp/smoke-err >&2 || true
+            grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" "$TMPDIR_OUT/smoke-err" >&2 || true
             FAIL=$((FAIL + 1))
         fi
     else
@@ -174,17 +178,17 @@ smoke_tc_fail() {
     local expected_msg="$2"
     local label
     label="$(basename "$zbr" .zbr)"
-    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>/tmp/smoke-err; then
+    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
         echo "  FAIL: $label (expected TC failure, got exit 0)" >&2
         FAIL=$((FAIL + 1))
     else
-        if grep -qF "$expected_msg" /tmp/smoke-err; then
+        if grep -qF "$expected_msg" "$TMPDIR_OUT/smoke-err"; then
             echo "  PASS: $label"
             PASS=$((PASS + 1))
         else
             echo "  FAIL: $label (wrong/missing diagnostic)" >&2
             echo "    expected substring: $expected_msg" >&2
-            grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" /tmp/smoke-err >&2 || true
+            grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" "$TMPDIR_OUT/smoke-err" >&2 || true
             FAIL=$((FAIL + 1))
         fi
     fi
@@ -199,16 +203,16 @@ smoke_multi_parse_fail() {
     local expected2="$3"
     local label
     label="$(basename "$zbr" .zbr)"
-    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>/tmp/smoke-err; then
+    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
         echo "  FAIL: $label (expected parse failures, got exit 0)" >&2
         FAIL=$((FAIL + 1))
     else
         local ok=1
-        if ! grep -qF "$expected1" /tmp/smoke-err; then
+        if ! grep -qF "$expected1" "$TMPDIR_OUT/smoke-err"; then
             echo "  FAIL: $label (first parse error missing: $expected1)" >&2
             ok=0
         fi
-        if ! grep -qF "$expected2" /tmp/smoke-err; then
+        if ! grep -qF "$expected2" "$TMPDIR_OUT/smoke-err"; then
             echo "  FAIL: $label (second parse error missing: $expected2)" >&2
             ok=0
         fi
@@ -216,7 +220,7 @@ smoke_multi_parse_fail() {
             echo "  PASS: $label"
             PASS=$((PASS + 1))
         else
-            grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" /tmp/smoke-err >&2 || true
+            grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved" "$TMPDIR_OUT/smoke-err" >&2 || true
             FAIL=$((FAIL + 1))
         fi
     fi
@@ -548,7 +552,7 @@ smoke_run_bootstrap() {
         fi
     else
         echo "  FAIL: $label (non-zero exit)" >&2
-        cat /tmp/smoke-err >&2 || true
+        cat "$TMPDIR_OUT/smoke-err" >&2 || true
         FAIL=$((FAIL + 1))
     fi
 }
@@ -944,6 +948,13 @@ smoke_run test/mvu_mixed_union_test.zbr "update: set_label -> hello"
 # API (`indexOfFrom`).  Found via the IDE crashing on Check / List Targets.
 smoke_emit_contains test/fail_fixtures/indexof_arity_rejected_test.zbr \
     "str.indexOf takes 1 argument"
+
+# BUG-218: `str + <number>` in ARGUMENT position used to escape the type checker
+# and surface as a Zig error about generated code (_str_concat, a line inside a
+# 3,800-line emitted file). Now a Zebra error located in the user's own source.
+# String-plus-number in a print is the canonical beginner slip.
+smoke_tc_fail test/fail_fixtures/str_plus_number_rejected_test.zbr \
+    "cannot concatenate 'str' and 'int'"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

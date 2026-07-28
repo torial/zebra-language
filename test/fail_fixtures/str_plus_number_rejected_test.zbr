@@ -1,0 +1,24 @@
+# BUG-218 regression fixture — `str + <number>` must be a ZEBRA error, with a
+# location in the user's own source.
+#
+# Before the fix this was only diagnosed where an expected type forced the issue
+# (`var s: str = "x" + 5`).  In argument position there is no annotation to check
+# against, so the bad concatenation reached codegen and the user got:
+#
+#   e.zig:3779:54: error: expected type '[]const u8', found 'comptime_int'
+#       std.debug.print("{s}\n", .{_str_concat("Hello ", 5, _allocator)});
+#
+# — a Zig error, about generated code, in a 3,800-line file the user never wrote,
+# for a plain type mistake on their own line.  String-plus-number inside a print
+# is the canonical beginner slip, which made this the most likely first error
+# anyone new to Zebra would ever see.
+#
+# Now:
+#   str_plus_number_rejected_test.zbr:N:C: error: cannot concatenate 'str' and 'int'
+#       — call .toString() on it, or use string interpolation
+#
+# Both suggested fixes are verified to work:  "n=" + n.toString()   and   "n=${n}"
+
+def main()
+    var n = 42
+    print("n=" + n)
