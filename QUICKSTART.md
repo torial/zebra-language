@@ -1120,8 +1120,8 @@ var result = sb.build()              # str (drains the builder)
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `split(sep)` | `(str): List(str)` | Split on `sep` string |
-| `chars()` | `(): List(char)` | Sequence of Unicode codepoints (`u21`) |
-| `bytes()` | `(): List(int)` | Sequence of bytes (`u8` as `int`) |
+| `chars()` | *iterator* | Unicode codepoints (`u21`). **`for`-only** — `for c in s.chars()` works; binding it (`var cs = s.chars()`) does not compile. |
+| `bytes()` | *iterator* | Bytes (`u8` as `int`). **`for`-only** — same restriction as `chars()`. |
 
 ### Raw strings (`r'…'` / `r"…"`)
 

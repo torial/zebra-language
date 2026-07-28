@@ -128,6 +128,30 @@ the compiler's most-run command.
   only `indexOf` is guarded, via `@compileError`. The real fix is a stdlib signature table in the
   front end so arity errors become proper Zebra diagnostics with a source location.
 
+  **Groundwork done 2026-07-28 — read this before starting, it rules out two approaches.**
+  1. **Deriving arities from CodeGen is UNSOUND.** Scanning each `if mname == "X"` block for the
+     highest `args.at(N)` it reads gives 292 method names but wrong numbers — it reports
+     `addDays 0`, `abs 0`, `ceil 0`, because codegen reads arguments through several idioms
+     (`genArgList`, loops, helpers) an AST-free scan cannot see. A wrong table produces FALSE
+     errors on valid code, which is worse than no table. Do not revive this.
+  2. **QUICKSTART's documented signatures are a good source, and 42 of 45 string methods
+     validate against the compiler** (script: build a call at the documented arity, run `-c`).
+     But the section is not receiver-uniform — `join` is documented under "String method
+     reference" while being a `List` method (`parts.join(", ")`), which my first validator
+     mis-reported as a doc bug. **Any signature table or doc-checking gate must carry the
+     receiver KIND per row, not assume it from the section heading.**
+  3. Real finding from that pass, already fixed: `chars()`/`bytes()` were documented as
+     returning `List(char)`/`List(int)` but are **`for`-only iterators** — `for c in s.chars()`
+     compiles, `var cs = s.chars()` does not.
+
+  **Recommended shape:** a table keyed by *(receiver kind, method name) -> arity*, consulted by
+  the TypeChecker only where the receiver type is KNOWN (unknown receiver -> no check, so an
+  inference gap can never manufacture a false error). Pair it with a gate that, for every table
+  row, compiles a call at the declared arity — so a wrong entry fails loudly at gate time
+  instead of silently breaking users. That gate is the artifact worth having; it also
+  doubles as a doc-vs-implementation check for the language reference, which is how the
+  `chars`/`bytes` inaccuracy surfaced.
+
 - [ ] **#5b — Spans on all AST nodes.** `AstBuilder` uses `zspan()` for 95 of its node kinds.
   Measured impact is *narrower than first claimed* (17 corpus diagnostics carry locations, 0 land
   at `0:0`; the only reproducible case is a two-literal concat), so this is a cap on how good
