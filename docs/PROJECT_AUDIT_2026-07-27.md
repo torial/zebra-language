@@ -13,6 +13,93 @@ not by reading prose. Where a claim is an estimate it says so. Counts are as of
 
 ---
 
+## 0a. Work completed (same day, 2026-07-27)
+
+Everything in the "half-day" and "hygiene" blocks of §6 was executed. Status of
+each finding:
+
+| # | Finding | Status |
+|---|---|---|
+| A1 | Book `print` drift | ✅ **DONE** — 772 + 31 sites rewritten across 31 chapters |
+| A2 | Book `to!` | ✅ **DONE** — 12 sites → `!` force-unwrap; zero remain |
+| A3 | `examples/` fossilized | ✅ **DONE** — regenerated; 180 stale → **679** current, all LF |
+| A4 | Extractor silently extracted nothing | ✅ **DONE** — and found **two more** breaks (below) |
+| A5 | Validator could not fail | ✅ **DONE** — rewritten; regression gate, falsification-tested |
+| A6 | Book CRLF | ✅ **DONE** — `.gitattributes` added **and** the generator's write fixed |
+| A8 | No GUI chapter | ⬜ open — genuine new content, not a mechanical fix |
+| A9/A10 | Filename + duplicate chapters | ⬜ open — **needs your call**, see below |
+| B1 | README hello-world broken | ✅ **DONE** — plus a broken link and two stale claims |
+| B2/B3/B4/B5 | Root sprawl, naming, debris, scripts | ✅ **DONE** — 15 root docs → 10 |
+| B6/C3 | Generated-`.zig` diff noise | ✅ **DONE** (zebra-language); ⬜ GameEngine `zbra/` |
+| C1 | GameEngine root artifacts | ✅ **DONE** — 474 quarantined; **diagnosis corrected, below** |
+| C2 | GameEngine doc archiving | ⬜ open — left alone, repo has uncommitted WIP |
+| D1 | libui fork branch | ✅ **DONE** — on `main`, stale branches deleted |
+
+### Correction to C1 — my original diagnosis was wrong
+
+I reported the 476 root artifacts as an ongoing build-configuration problem ("the
+test driver writes to the invocation directory"). The evidence says otherwise:
+**all 237 executables date from May 2026**, and the `.zbr` sources for them no
+longer exist (`ability_charge_test.zbr`, `aggro_table_test.zbr`, … all gone —
+the corpus was reorganized since). Exactly **one** of 238 (`math_test.exe`) has a
+live source in `zbra/`.
+
+So these were one-time leftovers from the May test campaign, not a recurring
+emission problem. Moved to `zig-out/legacy-artifacts-2026-05/` (already
+gitignored) rather than deleted, since that is reversible and they are not
+regenerable — their sources are gone. Root went from ~290 entries to 32.
+
+The broader point I drew from it still stands independently — Zebra tools writing
+into the invocation directory is a real pattern (three IDE scratch files needed
+gitignoring today) — but it is not what produced these particular files.
+
+### Two more breaks found while fixing A4
+
+The extractor had **three** independent defects, not one. Each still exited 0:
+
+1. The glob (the one I found in the audit).
+2. `_parse_metadata` recognised only `// file:` — **Cobra-era comment syntax**.
+   Zebra comments are `#`, so no modern block carried a filename and
+   `write_example` dropped every one, reporting "Extracted 0 examples" per
+   chapter. This also explains why the stale `examples/` were all `//`-commented:
+   they were extracted before the comment syntax changed.
+3. It wrote `.zbr` with `open(..., 'w')` and **no `newline='\n'`** — Python on
+   Windows emits CRLF, which the tokenizer rejects. Every generated example was
+   unusable *by construction*. This is the exact footgun `CLAUDE.md` documents.
+
+So finding A6 (CRLF) was a *symptom* of A4, not an independent problem. Fixing the
+generator fixes it at the source; the `.gitattributes` is now belt-and-braces.
+
+### The validator is now a real gate — verified in both directions
+
+The original sin here was a gate that could not fail, so I tested that the
+replacement can:
+
+```
+clean tree                          → exit 0, "no regressions vs baseline (118 examples)"
+break one baselined example         → exit 1, names the file and the error
+```
+
+`validation-baseline.txt` holds the 118 examples that currently compile, in the
+same allow-list style as `tools/full_sweep_baseline.txt`. 679 extracted, 118
+compile; the rest are fragments, deliberately-wrong teaching examples, and
+half-of-a-pair module examples — which is why the gate is on *regression*, not on
+absolute pass rate.
+
+### Still needs your decision
+
+- **A10 — duplicate chapters.** `19-22_Final-Chapters.md` (374 lines) covers the
+  same ground as standalone `19-`/`20-`/`21-`/`22-` files; `17-18_Projects-2-3.md`
+  likewise. I did not delete either — which is canonical is a content call, and
+  it is your book. Both currently feed the extractor, so duplicated examples are
+  in the corpus.
+- **A8 — the GUI chapter.** Happy to draft it; `docs/UI_QUICKSTART.md` is most of
+  the raw material and the IDE is a ready-made worked example.
+- **BUG-218**, filed today, came out of this audit: chapter 1 promised an error
+  message the compiler does not actually produce.
+
+---
+
 ## 0. Executive summary
 
 The **compiler is in the best shape of the four** and is not the problem. The
