@@ -1,6 +1,109 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-218. Next new bug: BUG-219.**
+**Last bug number generated: BUG-220. Next new bug: BUG-221.**
+
+---
+
+### BUG-219: `sys.run` DEADLOCKS when a child writes more than a pipe buffer to stderr → `zebra -c` hangs on any program with errors ⬜ OPEN
+`_sys_run` (`selfhost/stdlib_preamble.zig:459`) drains the child's pipes **sequentially**:
+
+```zig
+if (child.stdout) |f| { ... allocRemaining(...) }   // reads stdout to EOF FIRST
+if (child.stderr) |f| { ... allocRemaining(...) }   // only then reads stderr
+const term = child.wait(_io) ...
+```
+
+If the child fills its **stderr** pipe buffer, it blocks writing. Blocked, it never exits, so
+its **stdout** never reaches EOF, so the parent never finishes its first read and never starts
+draining stderr. Deadlock — both sides waiting on the other, forever.
+
+**Reproduced 2026-07-28.** A five-line program:
+
+```zebra
+def f(a: int)
+    print(a.toString())
+
+def main()
+    print("hi")
+```
+
+`zebra -c` on it runs for **>180 s with 0.25 s of CPU** — blocked, not spinning — and never
+returns. The emitted Zig makes `zig build-exe` produce **5,952 bytes** of stderr (see BUG-220
+for *why* that program fails to compile), comfortably past a 4 KB pipe buffer.
+
+**Why this one matters more than it looks:** `-c` is *check* mode. It exists to report errors,
+and it deadlocks precisely when there are enough errors to report — clean programs pass, broken
+ones hang. It is also what `IDE/ZebraIDE.zbr`'s **Check** button runs (`CompilerBridge.check`
+→ `zebra -c <file>`), so checking a file with a handful of errors hangs the IDE.
+
+This is the **same family as BUG-208** (`zebra run` blocking on a ~4 KB pipe), which was fixed
+for the run path via `exec_inherit` — and whose note explicitly said *"other `sys.run` callers
+still limited (follow-ups)."* This is that follow-up, now with a concrete repro.
+
+**Fix direction:** the parent must not serialise the two reads. Options, cheapest first:
+1. **Redirect the child's stderr to a temp file** and read the file after `wait()`. Files never
+   block. This is what the IDE itself does when it shells out (`cmd /C … > file 2>&1`), and it
+   needs no threads or async.
+2. Drain both pipes concurrently (a thread per pipe).
+3. Where the caller does not need stderr captured, use `.inherit`.
+Option 1 is recommended: `sys.run`'s contract (return both streams) is preserved, the change is
+local to `_sys_run`, and there is no concurrency to get wrong. Note `sys.run` is used by other
+callers (`CompilerBridge`, build tooling), so fixing it here fixes the class.
+
+---
+
+### BUG-220: ANY top-level `def` whose name matches a preamble identifier fails to compile ⬜ OPEN
+A user function named `f` emits Zig that will not compile:
+
+```
+t.zig:255:35: error: function parameter shadows declaration of 'f'
+        pub fn map(self: @This(), f: anytype) _Result(
+                                  ^
+```
+
+The stdlib preamble's `map` takes a parameter named `f`, and a top-level user `def f` becomes a
+file-scope declaration that it shadows. The user never mentions `map`; merely *naming a function
+`f`* breaks the build, with an error pointing into preamble code they did not write.
+
+Found while reproducing BUG-219 (the 5,952 bytes of stderr that deadlocks `sys.run` are this
+error and its reference trace).
+
+**MEASURED SCOPE 2026-07-28 — far larger than one name.** Zig makes it an error for a function
+parameter or local to shadow a file-scope declaration, and user top-level `def`s emit as
+file-scope declarations. So a user function collides with *any* preamble parameter or local
+anywhere in the 186 KB preamble. Tested by emitting `def NAME(a: int)` + `main` and running
+`zig build-exe`:
+
+| Name | Result | | Name | Result |
+|---|---|---|---|---|
+| `f` | FAIL | | `count` | **FAIL** |
+| `g` | FAIL | | `data` | **FAIL** |
+| `x` | FAIL | | `body` | **FAIL** |
+| `s` | FAIL | | `buf` | **FAIL** |
+| `self` | FAIL | | `color` | **FAIL** |
+| `item` | FAIL | | `total` | **FAIL** |
+| `acc`, `key`, `val` | FAIL | | `parse` | OK |
+
+**15 of 16 tested names fail.** Extracting every non-`_`-prefixed identifier from the preamble
+gives **423 names, 293 of them ≤6 characters** — including `count`, `data`, `body`, `buf`,
+`ctx`, `conn`, `depth`, `chunk`, `color`, `copy`, `cur`, `child`. These are not exotic; they
+are the names a person reaches for first. The error they get points into preamble source they
+did not write.
+
+**Class, not instance** — same shape as the CherryCobbler finding where an identifier named
+`fn` emitted a Zig keyword: **user identifiers share a file-scope namespace with compiler
+internals.** Two candidate fixes:
+1. **Prefix every preamble parameter/local** with `_` so collision is impossible by
+   construction. Mechanical but touches 423 identifiers.
+2. **Emit user declarations inside a namespace/struct instead of at file scope.** This is
+   *already designed* — `docs/single_file_emit_design.md` specifies exactly that ("all modules
+   → one .zig, namespaced structs"). BUG-220 is an independent argument for that work: it was
+   justified on architecture grounds, and it would dissolve this whole bug class as a
+   side-effect. Worth adding to that design note's motivation.
+
+Recommend (2) if single-file emission is going ahead anyway; (1) as a stopgap only if not.
+
+---
 
 ---
 
@@ -39,10 +142,17 @@ constructs binary expressions, string literals and int literals all with `zspan(
 span; 95 of its node kinds do this), so there is no position to report. The diagnostic
 borrows the nearest operand's span from an ident, member or call — which covers the realistic
 cases (`"n=" + n`) — but `print("Hello " + 5)`, two literals, still reports `0:0`. Fixing it
-properly means populating spans in `AstBuilder` from the parser's tokens, which is a broader
-change worth doing on its own: **many expression-level diagnostics inherit this same
-weakness**, not just this one. Filed here rather than fixed because it is a parser/AST change,
-not a type-checker one.
+properly means populating spans in `AstBuilder` from the parser's tokens.
+
+**Measured 2026-07-28 — and my first claim here was wrong.** I originally wrote that "many
+expression-level diagnostics inherit this same weakness." They do not. Probing the corpus'
+negative tests: 17 produce a located diagnostic, **0 land at `0:0`**. Probing expression-level
+errors directly — undefined name `2:11`, var type mismatch `2:0`, wrong argument type `4:5`,
+`str + int` with an ident operand `3:17` — all carry locations. The only reproducible `0:0` is
+the two-literal concat (`print("a" + 5)`). So this is a narrow wart, not a systemic one, and
+the AstBuilder span work it seemed to justify is **not** worth prioritising. Recording the
+correction rather than the tidy version: the generalisation was speculation, and one probe
+refuted it.
 
 **Book impact (done):** `01-Getting-Started.md` now shows `print("Hello " + count)` with the
 real transcript, captured verbatim from the compiler. It uses a variable rather than a literal
