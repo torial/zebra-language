@@ -45,6 +45,28 @@ file-scope globals (the init fan-out is deleted).
 
 ---
 
+### 1a. A related motivation, partly discharged (2026-07-28)
+
+BUG-220: Zig forbids a function parameter from shadowing a file-scope declaration, and user
+top-level `def`s emit at file scope — so a user function collided with any of the preamble's
+423 non-underscore identifiers. 15 of 16 everyday names (`count`, `data`, `total`, `buf`,
+`body`, `color`, …) failed to compile, with the error pointing into preamble source the user
+never wrote.
+
+Namespacing user declarations under a struct — what this design already specifies — dissolves
+that class entirely: preamble parameters at file scope can no longer shadow anything of the
+user's, because the user's declarations are no longer *at* file scope.
+
+**That is no longer the argument for doing this work**, because BUG-220 was fixed more cheaply
+on 2026-07-28 by giving top-level `def`s a reserved `_zbr_fn_` prefix (mirroring `_zbr_mv_` for
+module vars from BUG-137). Recording it here anyway for two reasons:
+
+1. The prefix has a **residual gap this design would close**: `@export` and `@node_export`
+   functions keep their source names, because for those the ABI symbol *is* the name — so
+   `@node_export def count(...)` is still exposed to the collision. Namespacing covers it.
+2. It is a second, independent pressure toward the same shape, arrived at from a bug rather
+   than from architecture. Worth knowing that two roads led here.
+
 ## 2. Why the alternatives were rejected
 
 | Approach | Verdict |

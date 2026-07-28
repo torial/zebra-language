@@ -78,6 +78,21 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
 
 ## Compiler hardening (gated; unattended-safe — deterministic, round-trip-checked)
 
+- [x] **BUG-220 — user function names could collide with preamble internals. FIXED 2026-07-28.**
+  Zig forbids a parameter shadowing a file-scope declaration, and top-level `def`s emit at file
+  scope, so a user function collided with any of the preamble's 423 non-underscore identifiers:
+  `count`, `data`, `total`, `buf`, `body`, `color` — 15 of 16 everyday names tested — failed to
+  compile, with the error pointing into preamble source the user never wrote. Top-level defs now
+  take the reserved `_zbr_fn_` prefix, finishing the half of BUG-137 (`_zbr_mv_` for module vars)
+  that was never done. Selfhost-only; gate `test/toplevel_name_collision_test.zbr`. Residual:
+  `@export`/`@node_export` keep their names (the ABI symbol IS the name) — closed only by the
+  namespaced-emission design (§ docs/single_file_emit_design.md 1a).
+- [x] **BUG-219 — `sys.run` deadlock. FIXED 2026-07-28.** Sequential pipe drain (stdout to EOF,
+  then stderr) deadlocked whenever a child filled its stderr buffer — which made `zebra -c` hang
+  precisely when a program had errors to report, and that is what the IDE's Check button runs.
+  Now delegates to `std.process.run` (concurrent drain via `Io.File.MultiReader`). 4 min → 1.09 s,
+  verified against 29.5 KB of child stderr. Same family as BUG-208's noted follow-ups.
+
 - [ ] **Selfhost↔bootstrap divergence burn-down** (`tools/divergence_check.sh`,
   `docs/divergence_audit.md`). New harness (2026-07-18) catches drift the other gates
   can't (they all emit with one compiler). First run: 272 agree-pass, **19 → 17 selfhost
