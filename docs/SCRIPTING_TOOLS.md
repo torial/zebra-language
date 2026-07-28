@@ -85,6 +85,9 @@ One of the cleanest porting targets once `Dir.walk` lands.
 
 ## REPL Prototype
 
+> **Location:** these three scripts live in `tools/` (moved there 2026-07-27
+> from the repo root, alongside the other developer scripts).
+
 ### `zebra-repl.py`
 **Language:** Python  
 **Purpose:** Interactive Zebra REPL (Phase 0).  Wraps single-line expressions

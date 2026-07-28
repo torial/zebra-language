@@ -3197,9 +3197,9 @@ the bootstrap so both compilers emit the discard identically.
 
 ---
 
-> BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `FixedBugs.md`.
+> BUG-029 and BUG-030 were resolved incidentally in the selfhost implementation — see `BUGS_FIXED.md`.
 
-Fixed / closed bugs have been moved to `FixedBugs.md`.
+Fixed / closed bugs have been moved to `BUGS_FIXED.md`.
 
 ---
 
@@ -3272,7 +3272,7 @@ Closing as not-reproduced. No code change needed for BUG-111.
 Grammar rule removed from both `src/Parser.zig` and `selfhost/parser.zbr`.
 38-site sweep (`def name: T → def name(): T`) across 17 files completed.
 Bootstrap 5/5, smoke 43/43. See commits `2f7e767` + `598a533`.
-Migrated to FixedBugs.md.
+Migrated to BUGS_FIXED.md.
 
 ---
 
@@ -3397,7 +3397,7 @@ Alarm bell added to `checkVarDecl` behind `ctx.strict` flag (enabled by
 Verified: bootstrap 5/5 round-trip, 44/44 selfhost smoke, full test suite clean.
 
 See commits 429ff98d → 4c84c51b (Zig) for the audit trail. Migrating to
-FixedBugs.md.
+BUGS_FIXED.md.
 
 ---
 
@@ -3915,7 +3915,7 @@ Bootstrap verified: `zig build update-selfhost` + smoke 117/117 passing + bootst
 
 ### BUG-120: Selfhost codegen `.add()` → `.append()` rewrite fires on class method calls via lowercase variables
 - **Severity:** Medium (silent miscompile — method call becomes a list append; Zig rejects with "no field or member function named 'append'")
-- **Status:** Fixed 2026-05-07 — see `FixedBugs.md`
+- **Status:** Fixed 2026-05-07 — see `BUGS_FIXED.md`
 - **Symptom:** In `selfhost/codegen.zbr`, the `.add()` → `.append()` heuristic only guards on `isUpperCase(receiver_name)` (capital first letter = namespace/class static call, e.g., `Math.add()`). Lowercase instance variables (e.g., `c: Calc`) are not guarded. So `c.add(2, 3)` where `c` is a `Calc` instance incorrectly emits `c.append(_allocator, 2)`, which Zig rejects.
 - **Reproducer:**
   ```zebra

@@ -5,7 +5,7 @@ constructs are actually exercised by which verification layer — and, more usef
 which are **not**, because that is where the next undiscovered bug lives.*
 
 Companions: [`QA_TOOLS.md`](QA_TOOLS.md) (the tools that produce this coverage),
-[`FEATURE_AUDIT_2026-07-05.md`](FEATURE_AUDIT_2026-07-05.md) (constructs known to be
+[`FEATURE_AUDIT_2026-07-05.md`](archive/FEATURE_AUDIT_2026-07-05.md) (constructs known to be
 *broken* — this doc is about constructs that are *unwatched*), [`../fuzz/README.md`](../fuzz/README.md).
 
 ---
@@ -155,7 +155,7 @@ numerics (`int32`, …) as a generic arg fail at the parser (BUGS.md).
 
 **4. Keep this map + the audit as living docs.** When a construct enters the
 fuzzer, move it to 🟢 here. When a 🔴 gets a real test, update the count. Pair with
-`FEATURE_AUDIT_2026-07-05.md` (known-broken) — this doc is known-*unwatched*; the
+`archive/FEATURE_AUDIT_2026-07-05.md` (known-broken) — this doc is known-*unwatched*; the
 overlap between them (a construct that's both broken *and* unwatched) is the
 top-priority fix.
 
