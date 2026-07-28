@@ -4,7 +4,7 @@
 
 ---
 
-### BUG-219: `sys.run` DEADLOCKS when a child writes more than a pipe buffer to stderr → `zebra -c` hangs on any program with errors ⬜ OPEN
+### BUG-219: `sys.run` DEADLOCKS when a child writes more than a pipe buffer to stderr → `zebra -c` hangs on any program with errors ✅ FIXED 2026-07-28
 `_sys_run` (`selfhost/stdlib_preamble.zig:459`) drains the child's pipes **sequentially**:
 
 ```zig
@@ -41,14 +41,19 @@ for the run path via `exec_inherit` — and whose note explicitly said *"other `
 still limited (follow-ups)."* This is that follow-up, now with a concrete repro.
 
 **Fix direction:** the parent must not serialise the two reads. Options, cheapest first:
-1. **Redirect the child's stderr to a temp file** and read the file after `wait()`. Files never
-   block. This is what the IDE itself does when it shells out (`cmd /C … > file 2>&1`), and it
-   needs no threads or async.
-2. Drain both pipes concurrently (a thread per pipe).
-3. Where the caller does not need stderr captured, use `.inherit`.
-Option 1 is recommended: `sys.run`'s contract (return both streams) is preserved, the change is
-local to `_sys_run`, and there is no concurrency to get wrong. Note `sys.run` is used by other
-callers (`CompilerBridge`, build tooling), so fixing it here fixes the class.
+**FIXED — by delegating to `std.process.run`.** The Zig standard library already solves this:
+its `run()` drains both streams concurrently through `Io.File.MultiReader`. `_sys_run` now calls
+it instead of hand-rolling the reads. That preserves the contract (both streams + exit code),
+deletes the read-ordering bug rather than reordering it, and puts the tricky part upstream where
+it is maintained. (The temp-file redirect I had planned would also have worked, but re-deriving
+a solution the stdlib ships is the wrong trade.)
+
+**Verified:** the 4-minute deadlock now completes in **1.09 s** and reports its error; stress-
+tested against an emit producing **29,593 bytes** of child stderr — 7× a pipe buffer, previously
+a guaranteed hang — 1.2 s, captured correctly. Gates: smoke 257/257, round-trip byte-identical,
+compile_check 215/0/1 (load-bearing here, since the preamble is inlined into every emitted
+program). Fixes the class, not just `-c`: `sys.run` is also used by `CompilerBridge` and the
+build tooling.
 
 ---
 
