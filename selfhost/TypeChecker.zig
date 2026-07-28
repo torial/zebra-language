@@ -415,30 +415,29 @@ const _alloc_stats_vtable = std.mem.Allocator.VTable{
 };
 const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
-    var child = std.process.spawn(_io, .{
-        .argv   = argv.items,
-        .stdin  = .ignore,
-        .stdout = .pipe,
-        .stderr = .pipe,
-    }) catch return SysRunResult{ .exit_code = -1, .stdout = "", .stderr = "spawn failed" };
-    var stdout_bytes: []const u8 = "";
-    var stderr_bytes: []const u8 = "";
-    if (child.stdout) |f| {
-        var buf: [65536]u8 = undefined;
-        var rdr = f.readerStreaming(_io, &buf);
-        stdout_bytes = rdr.interface.allocRemaining(_allocator, .limited(16*1024*1024)) catch "";
-    }
-    if (child.stderr) |f| {
-        var buf: [65536]u8 = undefined;
-        var rdr = f.readerStreaming(_io, &buf);
-        stderr_bytes = rdr.interface.allocRemaining(_allocator, .limited(16*1024*1024)) catch "";
-    }
-    const term = child.wait(_io) catch return SysRunResult{ .exit_code = -1, .stdout = stdout_bytes, .stderr = stderr_bytes };
-    const _ec: i64 = switch (term) {
-        .exited => |code| @intCast(code),
-        else    => -1,
+    // BUG-219: this used to spawn with two pipes and drain them SEQUENTIALLY —
+    // stdout to EOF first, then stderr. A child that fills its stderr buffer blocks
+    // writing; blocked, it never exits; so its stdout never reaches EOF; so the
+    // parent never finishes read #1 and never starts read #2. Deadlock, with both
+    // sides idle. `zebra -c` hit it on any program whose emitted Zig produced more
+    // than a pipe buffer of errors — i.e. exactly when check mode had something to
+    // report — and that is what the IDE's Check button runs.
+    //
+    // std.process.run drains both streams concurrently via Io.File.MultiReader, so
+    // delegate rather than hand-roll it. Same contract (both streams + exit code),
+    // deadlock-free by construction, and maintained upstream.
+    const r = std.process.run(_allocator, _io, .{
+        .argv = argv.items,
+    }) catch |e| return SysRunResult{
+        .exit_code = -1,
+        .stdout = "",
+        .stderr = if (e == error.FileNotFound) "spawn failed" else @errorName(e),
     };
-    return .{ .exit_code = _ec, .stdout = stdout_bytes, .stderr = stderr_bytes };
+    const _ec: i64 = switch (r.term) {
+        .exited => |code| @intCast(code),
+        else => -1,
+    };
+    return .{ .exit_code = _ec, .stdout = r.stdout, .stderr = r.stderr };
 }
 fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
     var child = std.process.spawn(_io, .{
