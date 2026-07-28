@@ -236,32 +236,60 @@ fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, 
 }
 // ─── CodeEditor widget — Scintilla via libui-scintilla ───────────────────────
 const sci = @import("sci");
+// BUG-217: the text buffer is kept NUL-TERMINATED — `buf[len] == 0` is an
+// invariant, and `buf.len >= len + 1` always holds.
+//
+// Scintilla's SCI_SETTEXT IGNORES the length it is handed and calls strlen() on
+// the pointer (scintilla/src/Editor.cxx: `pdoc->InsertString(0, text, strlen(text))`),
+// even though the libui-scintilla binding's signature takes an explicit length.
+// So an ordinary `dupe` — which produces no terminator — makes Scintilla read off
+// the end of the allocation. The empty case is worse than a stray read: `dupe` of
+// an empty slice returns a zero-length slice whose `.ptr` is not a readable
+// address at all, so `setText("")` segfaulted immediately (address
+// 0xffffffffffffffff). That is what crashed the IDE's Build button, which opens
+// with `buildOutputEditor.setText("")`.
+//
+// SCI_GETTEXTRANGE likewise writes n+1 bytes (it NUL-terminates), so the same
+// +1 reservation is what makes the read path safe; the old code reallocated only
+// when `n > buf.len`, which let an exactly-full buffer overflow by one byte.
 const _CodeEditor = struct {
     scint: ?*sci.Scintilla = null,
     read_only: bool = false,
-    text: []u8 = &.{},
+    buf: []u8 = &.{},
+    len: usize = 0,
 };
+// Ensure room for `need` bytes of text PLUS the terminator. Returns false only on OOM.
+fn _ce_reserve(_ed: *_CodeEditor, need: usize) bool {
+    if (_ed.buf.len >= need + 1) return true;
+    const _nb = _allocator.alloc(u8, need + 1) catch return false;
+    if (_ed.buf.len != 0) _allocator.free(_ed.buf);
+    _ed.buf = _nb;
+    return true;
+}
 fn _code_editor_new() *_CodeEditor {
     const _ed = _allocator.create(_CodeEditor) catch unreachable;
     _ed.* = .{};
+    // Establish the invariant up front so every later path can hand Scintilla a
+    // terminated pointer without a special case for "never set".
+    if (_ce_reserve(_ed, 0)) _ed.buf[0] = 0;
     return _ed;
 }
 fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void {
-    _allocator.free(_ed.text);
-    _ed.text = _allocator.dupe(u8, text) catch &.{};
-    if (_ed.scint) |_s| _s.setText(_ed.text);
+    if (!_ce_reserve(_ed, text.len)) return;
+    @memcpy(_ed.buf[0..text.len], text);
+    _ed.buf[text.len] = 0;
+    _ed.len = text.len;
+    if (_ed.scint) |_s| _s.setText(_ed.buf[0.._ed.len]);
 }
 fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 {
     if (_ed.scint) |_s| {
-        const _len = _s.getLength();
-        if (_len > _ed.text.len) {
-            _allocator.free(_ed.text);
-            _ed.text = _allocator.alloc(u8, _len + 1) catch return _ed.text;
-        }
-        if (_len > 0) _s.getRange(0, _len, _ed.text.ptr);
-        _ed.text = _ed.text[0.._len];
+        const _n = _s.getLength();
+        if (!_ce_reserve(_ed, _n)) return _ed.buf[0.._ed.len];
+        if (_n > 0) _s.getRange(0, _n, _ed.buf.ptr) else _ed.buf[0] = 0;
+        _ed.len = _n;
     }
-    return _ed.text;
+    if (_ed.buf.len == 0) return "";
+    return _ed.buf[0.._ed.len];
 }
 fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void {
     _ed.read_only = v;
@@ -271,7 +299,9 @@ fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, _w: f6
     _ = id; _ = _w; _ = _h; _ = _g;
     if (_ed.scint == null) {
         _ed.scint = sci.Scintilla.new() catch return;
-        if (_ed.text.len > 0) _ed.scint.?.setText(_ed.text);
+        // Safe unconditionally now: `buf[len] == 0` holds even when len == 0
+        // (the old code had to skip the empty case to avoid the strlen crash).
+        if (_ed.buf.len > 0) _ed.scint.?.setText(_ed.buf[0.._ed.len]);
         if (_ed.read_only) _ = _ed.scint.?.sendMessage(2171, 1, 0);
         if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _ed.scint.?.as_control(), .stretch);
     }

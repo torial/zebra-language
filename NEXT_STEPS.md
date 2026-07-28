@@ -146,17 +146,17 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
     `str.indexOf(sub, from)`, which is not a real signature (`indexOfFrom` is), and both
     compilers silently dropped the offset → `substring(start > end)` panic. Fixed in the
     IDE *and* guarded in codegen so it cannot recur silently.
-  - **`Build` still aborts (exit 3) — OPEN, needs the panic line.** The entire handler
-    reproduces CLEAN headless (`File.write` of the tmp file, `sys.spawn` of
-    `cmd /C zebra build > … 2>&1`, and a 173-frame `isRunning` poll doing incremental
-    `substring` reads, exit 0), so the defect is in what the GUI path adds — most likely
-    `setText` into a live Scintilla control or the `build_output_chunk` payload send,
-    NOT the build logic. Ruled out already: spawn-failure handling (`_sys_spawn` returns
-    a dead handle and `_sys_process_is_running` guards on `.alive`), `setText`
-    NUL-termination (`uiScintillaSetText` takes an explicit length), and the
-    `content.len > m.buildLastPos` substring guard. **Next session: get the
-    `thread N panic: …` line + first frames** (`… 2>&1 | tee /tmp/ide.log`, click Build,
-    `head -40`) — three hypotheses were killed guessing without it.
+  - **BUG-217 (FIXED, awaiting confirmation)** — `Build` segfaulted: `SCI_SETTEXT`
+    **ignores** the length it is given and calls `strlen()` on the pointer
+    (`scintilla/src/Editor.cxx:6190`), but `_code_editor_set_text` used
+    `_allocator.dupe`, which produces no terminator. `setText("")` — the first thing
+    `Msg.build_start` does — passes a zero-length slice whose `.ptr` is not readable at
+    all, hence `Segmentation fault at address 0xffffffffffffffff`. `_CodeEditor` now
+    maintains `buf[len] == 0` as an invariant; also fixed a latent one-byte overflow on
+    the `SCI_GETTEXTRANGE` read path. **Method note:** the stack trace settled this in
+    one round after three hypotheses died guessing — including this one, dismissed
+    because the *binding* takes an explicit length (it does, then discards it at the C
+    boundary). For any future GUI crash, get `… > log 2>&1` + the top 40 lines FIRST.
   Then verify the four editors + typing (the remaining multi-instance unknown).
   NOTE: use `bash tools/bootstrap_check.sh --update` DIRECTLY to
   regen after `.zbr` edits — `zig build update-selfhost` silently skips (BUG-210).

@@ -1,8 +1,46 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-216. Next new bug: BUG-217.**
+**Last bug number generated: BUG-217. Next new bug: BUG-218.**
 
 ---
+
+### BUG-217: `CodeEditor.setText` handed Scintilla a non-NUL-terminated buffer → segfault ✅ FIXED 2026-07-27 (awaiting interactive confirmation)
+`IDE/ZebraIDE.zbr` aborted (exit 3) on the **Build** button. Sean's stack trace was decisive:
+
+```
+Segmentation fault at address 0xffffffffffffffff
+  ... in strlen (compiler_rt.lib)
+  scintilla/src/Editor.cxx:6190  pdoc->InsertString(0, text, strlen(text));
+  ... Editor::WndProc → ScintillaBase::WndProc → ScintillaWin::WndProc
+  libui_scintilla/win.cxx:60  SendMessage(s->hwnd, SCI_SETTEXT, len, (LPARAM)text);
+  src/sci.zig:9  uiScintillaSetText(self, text.ptr, @intCast(text.len));
+  main.zig  _code_editor_set_text → if (_ed.scint) |_s| _s.setText(_ed.text);
+```
+
+**Root cause:** `SCI_SETTEXT` **ignores** the length in `wParam` and calls `strlen()` on
+the pointer — even though the libui-scintilla binding's Zig signature accepts an explicit
+length, which is exactly what makes this trap convincing. `_code_editor_set_text` used
+`_allocator.dupe`, which produces **no terminator**, so Scintilla read off the end of the
+allocation. The empty case is worse than a stray read: `dupe` of an empty slice returns a
+zero-length slice whose `.ptr` is not a readable address at all, so **`setText("")`
+segfaults immediately** — and `Msg.build_start` opens with
+`m.buildOutputEditor!.setText("")`. Address `0xffffffffffffffff` is that pointer.
+
+**Why it wasn't found earlier:** `examples/editor_min.zbr` (the run-verified single-editor
+proof) only ever calls `setText` with a non-empty string literal, where `strlen` usually
+finds a zero somewhere in fresh arena memory before faulting. It is a latent
+read-past-the-end there too — it just survived.
+
+**Fix (`selfhost/gui_libui_ng_section.zig`):** `_CodeEditor` now keeps `buf` + `len` with
+the invariant `buf[len] == 0` and `buf.len >= len + 1`, established in `_code_editor_new`
+so no path needs a "never set" special case. Also fixes a second latent defect on the read
+path: `SCI_GETTEXTRANGE` writes `n + 1` bytes (it NUL-terminates), but the old code
+reallocated only when `n > buf.len`, letting an exactly-full buffer overflow by one byte.
+`_code_editor_render` can now call `setText` unconditionally.
+
+**Scope:** libui_ng backend only — the stub/tui `_code_editor_*` store plain slices and
+never cross a C boundary. **Not gate-provable** (no headless GUI); needs an interactive
+click on Build.
 
 ### BUG-216: `\"` inside an INTERPOLATED string is double-escaped by the bootstrap ✅ VICTIMS FIXED 2026-07-27 (bootstrap root cause left open by choice)
 A string that is both interpolated and contains an escaped double quote is compiled

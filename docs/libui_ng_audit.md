@@ -262,10 +262,23 @@ Status as of 2026-07-27 (what "already wired" hid):
   lexer (`forZebra` falls back to plain), error markers (`setErrorMarkers` no-op),
   fixed column in `setCursorPosition`, and any Table/Tree (file-explorer) widget.
 
+- **Interactive session 2026-07-27 (Sean clicking):** BUG-214 **confirmed fixed** —
+  buttons dispatch, "many worked". Two crashes it had been masking surfaced and are
+  fixed: **BUG-215** (`Check` / `List Targets` — `indexOf(sub, from)` is not a real
+  signature and both compilers silently dropped the offset) and **BUG-217** (`Build` —
+  `SCI_SETTEXT` ignores its length argument and `strlen()`s the pointer, so the
+  non-terminated `dupe` buffer segfaulted; `setText("")` faulted on an unreadable
+  `.ptr`). Both await one more interactive pass to confirm.
+  **Correction to this document's earlier claim:** `examples/editor_min.zbr` was listed
+  as run-verified, and it does render — but it was reading past the end of its buffer
+  the whole time (BUG-217). It survived only because `strlen` found a zero in fresh
+  arena memory. "Renders correctly" is not evidence of memory safety at a C boundary.
+
 **Bottom line:** the single-editor Scintilla path is real and runtime-proven; the
-full IDE renders and every known compile/dispatch gap is closed (BUG-211, BUG-213,
-BUG-214), with the BUG-214 click fix awaiting one interactive confirmation; the
-editor-quality features (highlighting/markers/tree) remain to be built.
+full IDE renders, dispatches, and every known compile/dispatch/memory gap is closed
+(BUG-211, BUG-213, BUG-214, BUG-215, BUG-217), with the last two awaiting one
+interactive confirmation; the editor-quality features (highlighting/markers/tree)
+remain to be built.
 
 ---
 
