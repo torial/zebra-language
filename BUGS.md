@@ -1,6 +1,62 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-220. Next new bug: BUG-221.**
+**Last bug number generated: BUG-221. Next new bug: BUG-222.**
+
+---
+
+### BUG-221: module init is not TRANSITIVE — a 3-module program crashes if the deepest dep does I/O ⬜ OPEN
+The entry point initialises **direct dependencies only**. A module that is itself only
+reached through another module never receives `_initAllocator`/`_initIo`, so its `_io` and
+`_allocator` stay `undefined` and the first use segfaults.
+
+**Reproduced 2026-07-28** — three files, nothing exotic:
+
+```zebra
+# leaf.zbr
+def readIt(p: str): str
+    if File.exists(p)
+        return File.read(p)
+    return "missing"
+
+# mid.zbr
+use leaf exposing readIt
+def viaMid(p: str): str
+    return readIt(p)
+
+# top.zbr
+use mid exposing viaMid
+def main()
+    print(viaMid("nope.txt"))
+```
+
+| depth | result |
+|---|---|
+| `main` → `leaf` (direct dep does the I/O) | works — prints `missing` |
+| `main` → `mid` → `leaf` (transitive) | **`Segmentation fault at address 0xffffffffffffffff`** |
+
+The stack carries `0xaaaaaaaaaaaaaaa9` — Zig's poison pattern for `undefined`, confirming
+the pointer was never initialised rather than corrupted.
+
+**Mechanism, confirmed in the emit:** `top.zig` emits
+`@import("mid.zig")._initAllocator(_allocator);` for each `use` in the ENTRY module only.
+`mid.zig` *defines* `_initAllocator`/`_initIo` but never calls them on `leaf.zig`. So init
+reaches depth 1 and stops.
+
+**This was previously tracked as "Selfhost `_initIo` propagation gap — harmless today;
+would bite if a transitive dep gains file I/O. Track for 1.0 pre-flight."** It is not
+harmless and it does not need a future trigger: any three-module program whose deepest
+module touches a file crashes today. Re-filed as a bug with a repro and promoted out of
+the "track for later" list.
+
+**Fix direction:** make init transitive. Either (a) emit a propagating `_initIo`/
+`_initAllocator` in `generateModuleWith` so each module initialises its own `use` deps
+(watch for cycles — needs a visited set), or (b) let the single-file emission
+(`docs/single_file_emit_design.md`) dissolve it: one preamble, one `_allocator`/`_io`, no
+fan-out at all. That design note already lists **deleting this fan-out** as one of its
+wins, so BUG-221 is a third independent argument for it (alongside BUG-220's `@export`
+residual and error-location legibility).
+
+---
 
 ---
 

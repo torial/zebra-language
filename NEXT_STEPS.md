@@ -178,6 +178,25 @@ the compiler's most-run command.
 
 ## Pre-1.0 blockers (the road to 0.9 / 1.0)
 
+> **AUDITED 2026-07-28 — the list was longer than the work.** Every item was checked
+> against reality. Of 8 entries, 3 were already complete, and of the 5 that read as
+> open:
+> - **1 is a real blocker, and more serious than it was labelled** — BUG-221 (module
+>   init is not transitive) was recorded as "harmless today"; it is a live segfault.
+> - **1 is the milestone act itself** (§15) — not work, the promise to freeze.
+> - **1 is explicitly NOT a blocker by its own text** — §28a, which records Sean's
+>   2026-07-23 framing verbatim: *"NOT a 1.0/1.5 gate … Doesn't block anything."* It
+>   was sitting in the blocker list anyway.
+> - **1 had a stale premise** — §19.5d claims 5–10 min; measured 163–180 s.
+> - **1 is 1.5 groundwork by its own description** — §28e exists to ground the *1.5*
+>   `str_view` design. Left in place pending Sean's call rather than moved unilaterally.
+> - **1 was already resolved months ago** — BUG-174, closed 2026-07-28.
+>
+> **So the honest road to 1.0 is one technical bug plus the freeze**, not five open
+> items. A stale blocker is not free: it makes the distance look longer than it is and
+> invites re-litigating decisions already shipped.
+
+
 - [ ] **§28a step 4 — inference-or-error language flip (selfhost).** Phase 1 (measure)
   DONE 2026-07-15: instrumented the 3 selfhost guess sites; 80 unique sites but ~0 genuine
   ambiguity — the gap is selfhost *inference strength*, not a flip. **Step 2 open: close the
@@ -228,13 +247,22 @@ the compiler's most-run command.
   Verified by running the same program through both compilers: identical output on
   all four methods, hit and miss. **Was sitting in the pre-1.0 blocker list as an
   open decision that no longer needed deciding.**
-- [ ] **Selfhost `_initIo` propagation gap** — track for 1.0 pre-flight (harmless
-  today; would bite if a transitive dep gains file I/O). → *Open detail, Open Bugs.*
+- [ ] **BUG-221 — module init is not TRANSITIVE (was: "`_initIo` propagation gap,
+  harmless today").** **Re-verified 2026-07-28 and it is NOT harmless:** a three-module
+  program whose deepest module touches a file **segfaults today** — no future trigger
+  needed. `main` → `leaf` works; `main` → `mid` → `leaf` crashes at
+  `0xffffffffffffffff` with Zig's `0xaaaa…` poison pattern in the trace, because the
+  entry point initialises direct deps only. Repro + mechanism in `BUGS.md`. **This is
+  the one genuine technical blocker left on this list.**
 - [ ] **§15 — 1.0 stability lock + final CHANGELOG pass.** The milestone act itself:
   everything below the line is delivered; 1.0 is the promise to freeze it. → *Open
   detail §15.*
-- [ ] **§19.5d — `bootstrap_check.sh` latency.** Profile + optimize where cheap
-  (gated on a profiling pass). → *Open detail §19.5d.*
+- [ ] **§19.5d — `bootstrap_check.sh` latency. NOT A BLOCKER; premise was stale.**
+  The §19.5d note says "5–10 min observed". Measured 2026-07-28 via the new per-gate
+  timing in `tools/gates.sh`: **163–180 s** (~3 min), roughly half the recorded figure.
+  It is an optimisation, not a correctness gate, and nothing about 1.0 depends on it.
+  Moved off the blocker list in spirit — left here only until someone re-files it under
+  tooling.
 
 ## Compiler hardening (gated; unattended-safe — deterministic, round-trip-checked)
 
