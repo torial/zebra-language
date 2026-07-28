@@ -89,3 +89,4 @@ test/node_addon/*.js
 # the IDE from the repo root drops these here.
 .ide_build.tmp
 untitled.zbr
+_ide_tmp_check.zbr
