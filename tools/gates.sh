@@ -89,8 +89,12 @@ run() {
     fi
 }
 
-if [[ ! -x zig-out/bin/zebra.exe ]]; then
-    echo "gates.sh: zig-out/bin/zebra.exe missing — run 'bash tools/rebuild.sh' first" >&2
+# Preflight: a gate result is only meaningful if it measured the right compiler.
+# doctor exits 1 on states that make results LIE (chiefly stale generated .zig,
+# i.e. you would be testing the OLD compiler — see BUG-210).
+if ! bash "$SCRIPT_DIR/doctor.sh" >/tmp/gates-doctor.log 2>&1; then
+    echo "gates.sh: refusing to run — the tree is in a state where results cannot be trusted:" >&2
+    grep -E "WRONG" /tmp/gates-doctor.log >&2 || cat /tmp/gates-doctor.log >&2
     exit 1
 fi
 

@@ -87,3 +87,4 @@ fi
 
 echo
 echo "rebuild: OK — now run a gate:  bash tools/gates.sh"
+echo "            (environment check: bash tools/doctor.sh)"

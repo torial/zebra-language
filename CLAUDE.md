@@ -54,9 +54,11 @@ then in `selfhost/`, `test/`, and stdlib paths.
 
 ## Rebuild + gate runners (start here)
 
-Two wrappers encode the sequences below so you don't reassemble them by hand:
+Three wrappers encode the sequences below so you don't reassemble them by hand:
 
 ```bash
+bash tools/doctor.sh           # is this tree in a state where results can be TRUSTED?
+bash tools/doctor.sh --fix     # ...and clear what is safely clearable
 bash tools/rebuild.sh          # make a selfhost/*.zbr edit REAL (regen + build)
 bash tools/rebuild.sh --no-regen   # build only (no .zbr changed)
 bash tools/gates.sh            # QUICK tier (~6 min): lints + smoke + round-trip
@@ -73,6 +75,17 @@ hello-world before reporting success. **A `stdlib_preamble.zig` edit needs the f
 sequence too** — the preamble is inlined at emit time, so the compiler only picks up
 a preamble change after regeneration (this is what made BUG-219's first fix look
 like it hadn't worked).
+
+`doctor.sh` checks the failure modes this environment actually produces, every one of
+which has bitten us: **stale generated `.zig`** (you would be testing the OLD compiler —
+`zig build update-selfhost` silently skips regeneration, BUG-210, and this made a real
+BUG-219 fix appear not to work), orphaned compiler processes holding a lock on
+`zig-out/bin` (→ `AccessDenied`), stale `/tmp/bs-*` scratch from a killed run causing
+unrelated failures, a compiler that cannot run a hello-world, and low RAM before a
+RAM-bound gate. It exits **1** only for states that make results *lie*; everything else
+is a warning. **`gates.sh` runs it as a preflight and refuses to report on an
+untrustworthy tree** — a green gate that measured the wrong compiler is worse than no
+gate at all.
 
 `gates.sh` runs the set in order with one summary line each and exits non-zero on
 any failure. It deliberately does **not** fold in the GUI paths, `fuzz/gramgen.py`,
