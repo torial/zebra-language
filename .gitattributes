@@ -1,3 +1,11 @@
 # Force LF line endings for Zebra source files on all platforms.
 # The Zebra tokenizer only handles LF; CRLF causes error.UnexpectedCharacter.
 *.zbr text eol=lf
+
+# Generated Zig artifacts. These MUST stay tracked — they are the bootstrap seed
+# (a self-hosted compiler needs a compiler to build itself). But they are machine
+# output, not hand-written source: 16% of their lines are `// zbr:file:N` markers
+# that renumber on any shift, so a 57-line .zbr edit rewrites ~22,000 lines.
+# `-diff` keeps that noise out of diffs/logs (use `git diff --text` to see it);
+# `linguist-generated` keeps it out of GitHub review and language stats.
+selfhost/*.zig linguist-generated=true -diff
