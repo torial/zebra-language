@@ -139,14 +139,16 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
   `test/mvu_mixed_union_test.zbr` (reproduces under the **stub** backend, no display
   needed) is in the smoke suite. Gates green: round-trip byte-identical, smoke 255/255,
   compile_check 215/0/1, divergence 0 selfhost gaps.
-  **INTERACTIVE RESULT (Sean, 2026-07-27): BUG-214 CONFIRMED FIXED — buttons dispatch,
-  "many worked".** Two downstream crashes were unmasked by it (nothing ever dispatched
-  before, so they could not have been seen):
-  - **BUG-215 (FIXED)** — `Check` and `List Targets` aborted: the IDE called
+  **INTERACTIVE RESULT (Sean, 2026-07-27): THE IDE IS NOW CLICK-STABLE.** Final word after
+  the second pass: *"All crashing behavior w/ those buttons is gone."* BUG-214 confirmed
+  (buttons dispatch), and the two crashes it had been masking — BUG-215 and BUG-217 —
+  are fixed and confirmed in the same session. Nothing ever dispatched before BUG-214, so
+  neither downstream crash could have been seen until it was fixed:
+  - **BUG-215 (FIXED + confirmed)** — `Check` and `List Targets` aborted: the IDE called
     `str.indexOf(sub, from)`, which is not a real signature (`indexOfFrom` is), and both
     compilers silently dropped the offset → `substring(start > end)` panic. Fixed in the
     IDE *and* guarded in codegen so it cannot recur silently.
-  - **BUG-217 (FIXED, awaiting confirmation)** — `Build` segfaulted: `SCI_SETTEXT`
+  - **BUG-217 (FIXED + confirmed)** — `Build` segfaulted: `SCI_SETTEXT`
     **ignores** the length it is given and calls `strlen()` on the pointer
     (`scintilla/src/Editor.cxx:6190`), but `_code_editor_set_text` used
     `_allocator.dupe`, which produces no terminator. `setText("")` — the first thing
@@ -157,7 +159,11 @@ the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
     one round after three hypotheses died guessing — including this one, dismissed
     because the *binding* takes an explicit length (it does, then discards it at the C
     boundary). For any future GUI crash, get `… > log 2>&1` + the top 40 lines FIRST.
-  Then verify the four editors + typing (the remaining multi-instance unknown).
+  **REMAINING IDE UNKNOWN (the only one left):** whether the four Scintilla editors
+  coexist and accept typing. Everything upstream of that — build, link, render,
+  dispatch, and every handler reachable from the toolbar — is now run-verified.
+  Also worth re-running `examples/editor_min.zbr`: its RUN-VERIFIED marker was
+  earned under the BUG-217 buggy code and has not been re-earned.
   NOTE: use `bash tools/bootstrap_check.sh --update` DIRECTLY to
   regen after `.zbr` edits — `zig build update-selfhost` silently skips (BUG-210).
   **Housekeeping surfaced by BUG-214:** the checked-in `examples/*.zig` artifacts are

@@ -268,7 +268,8 @@ Status as of 2026-07-27 (what "already wired" hid):
   signature and both compilers silently dropped the offset) and **BUG-217** (`Build` —
   `SCI_SETTEXT` ignores its length argument and `strlen()`s the pointer, so the
   non-terminated `dupe` buffer segfaulted; `setText("")` faulted on an unreadable
-  `.ptr`). Both await one more interactive pass to confirm.
+  `.ptr`). **Both CONFIRMED on a second interactive pass** — Sean: *"All crashing
+  behavior w/ those buttons is gone."* Build, Check and List Targets all clean.
   **Correction to this document's earlier claim:** `examples/editor_min.zbr` was listed
   as run-verified, and it does render — but it was reading past the end of its buffer
   the whole time (BUG-217). It survived only because `strlen` found a zero in fresh
@@ -295,11 +296,12 @@ Status as of 2026-07-27 (what "already wired" hid):
   error was stopping at the wrapper, and a future reader will have a trace and still stop
   there.)
 
-**Bottom line:** the single-editor Scintilla path is real and runtime-proven; the
-full IDE renders, dispatches, and every known compile/dispatch/memory gap is closed
-(BUG-211, BUG-213, BUG-214, BUG-215, BUG-217), with the last two awaiting one
-interactive confirmation; the editor-quality features (highlighting/markers/tree)
-remain to be built.
+**Bottom line:** the full IDE builds, links, renders, and is **click-stable** —
+RUN-VERIFIED 2026-07-27 across two interactive passes. Every known compile,
+dispatch, and memory-safety gap is closed (BUG-211, BUG-213, BUG-214, BUG-215,
+BUG-217). One unknown remains: whether the four Scintilla editors coexist and
+accept typing. The editor-quality features (syntax highlighting, error markers,
+a file tree) are unbuilt rather than broken.
 
 ---
 

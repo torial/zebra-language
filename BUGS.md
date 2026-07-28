@@ -4,7 +4,7 @@
 
 ---
 
-### BUG-217: `CodeEditor.setText` handed Scintilla a non-NUL-terminated buffer → segfault ✅ FIXED 2026-07-27 (awaiting interactive confirmation)
+### BUG-217: `CodeEditor.setText` handed Scintilla a non-NUL-terminated buffer → segfault ✅ FIXED + RUN-VERIFIED 2026-07-27
 `IDE/ZebraIDE.zbr` aborted (exit 3) on the **Build** button. Sean's stack trace was decisive:
 
 ```
@@ -39,8 +39,9 @@ reallocated only when `n > buf.len`, letting an exactly-full buffer overflow by 
 `_code_editor_render` can now call `setText` unconditionally.
 
 **Scope:** libui_ng backend only — the stub/tui `_code_editor_*` store plain slices and
-never cross a C boundary. **Not gate-provable** (no headless GUI); needs an interactive
-click on Build.
+never cross a C boundary. **Not gate-provable** (no headless GUI) — closed instead by
+interactive confirmation: Sean clicked Build/Check/List Targets post-fix, "all crashing
+behavior w/ those buttons is gone" (2026-07-27).
 
 ### BUG-216: `\"` inside an INTERPOLATED string is double-escaped by the bootstrap ✅ VICTIMS FIXED 2026-07-27 (bootstrap root cause left open by choice)
 A string that is both interpolated and contains an escaped double quote is compiled
@@ -108,7 +109,7 @@ instance that drew blood.
 
 ---
 
-### BUG-214: no-payload `union(enum)` variant in value position emitted as tag, not union value → MVU send abort ✅ FIXED 2026-07-27 (awaiting interactive IDE confirmation)
+### BUG-214: no-payload `union(enum)` variant in value position emitted as tag, not union value → MVU send abort ✅ FIXED + RUN-VERIFIED 2026-07-27
 `IDE/ZebraIDE.zbr` now **compiles + links** via `--gui-backend=libui_ng` (all compile gaps
 closed: CodeEditor port `b42074a`, BUG-211, BUG-213), and **the window RENDERS and runs**
 (Sean-confirmed 2026-07-27: "I did see the IDE"). It **aborts at runtime (exit code 3) on
@@ -171,9 +172,11 @@ an `on Type_.gui_context` arm in `genMemberCall` that falls through unchanged fo
 Gui method and every non-matching `send` argument. Verified: all 11 bare sends in
 `IDE/ZebraIDE.zbr` convert; repro runs clean; `bootstrap_check` byte-identical; smoke 255/255;
 `compile_check` 215/0/1; `divergence_check --gate` 0 selfhost gaps.
-**Not verified by any gate:** that the IDE survives a real toolbar click — the gates prove
-emit shape and no-regression only. Needs one interactive run (`zebra --gui-backend=libui_ng
-run IDE/ZebraIDE.zbr`, click a button).
+**RUN-VERIFIED 2026-07-27:** the gates proved emit shape and no-regression only; the
+IDE surviving a real toolbar click was confirmed by Sean clicking through the toolbar.
+Buttons dispatch. Doing so immediately unmasked BUG-215 and BUG-217 — two crashes that
+were unreachable while nothing dispatched at all; both fixed and confirmed in the same
+session.
 
 ### BUG-213: selfhost `typeFromName` missing `SysProcess` → `proc.isRunning()` mis-dispatched ✅ FIXED 2026-07-27
 Verified post-rebuild: both call forms the IDE uses — `m.proc!.isRunning()` (force-unwrap)
