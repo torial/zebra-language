@@ -573,6 +573,13 @@ and it fixes ~37% of the breakage on the way.
   perfectly and still describe semantics that changed (§28b's explicit-`?` flip is the
   likeliest candidate — it changes when you must write `?`, not whether code parses).
   That needs a read, not a grep, and it is the obvious next audit.
-- **GameEngine's runtime state is unverified here.** I audited its structure, docs and
-  artifacts, not whether its 293 test executables still pass against today's compiler.
-  Given the compiler has moved considerably since 2026-07-14, that is worth a run.
+- ~~**GameEngine's runtime state is unverified here.**~~ **ANSWERED 2026-07-28: it is fine.**
+  Compiled all 29 `zbra/*_test.zbr` sources against the current compiler — **28 pass**. The
+  single failure, `maid_test`, is *documented as non-compiling by design*: its own header
+  says "maid_test.zig is hand-authored — do NOT regenerate from this .zbr… the .zig uses
+  module-level vars + named functions to work around Zebra's const-capture limitation in
+  closures." The error (`zbra/maid_test.zbr:11: expected type '*T', found '*const T'`, on a
+  `def()` closure argument) is exactly that limitation. So two weeks of compiler change —
+  including the `_zbr_fn_` prefixing of every top-level function — broke nothing in the
+  engine. Worth re-running after #1 (preamble as a module), which is the next change with
+  comparable blast radius.
