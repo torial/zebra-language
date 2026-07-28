@@ -21,6 +21,104 @@ one-line archive rows). Full history for anything archived lives in git, `BUGS.m
 Every genuinely-open item, grouped. Each links to its detail section below or to
 the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
 
+## Language & compiler direction — 2026-07-28 assessment
+
+Sean asked what would make Zebra a daily driver on technical grounds (ecosystem/user-base
+explicitly excluded). Items below are that answer, re-ordered by MEASUREMENT after the first
+pass got the cause wrong. **#2 and #4 are flagged DISCUSS-FIRST at Sean's request** — he wants
+to weigh strategies before implementation.
+
+### The measurements everything below rests on (don't re-derive these)
+
+| What | Time |
+|---|---|
+| Zebra front end, hello-world (`--emit-zig`) | **0.057 s** |
+| `zig build-exe`, trivial 5-line Zig, LLVM | **5.2 s** |
+| `zig build-exe`, Zebra 3,790-line emit, LLVM | 6.2 s |
+| `zig build-exe`, trivial Zig, `-fno-llvm -fno-lld` | **0.94 s** |
+| `zig build-exe`, Zebra 3,790-line emit, `-fno-llvm -fno-lld` | **1.15 s** |
+
+**The conclusions, which are not what I first claimed:**
+- The front end is *excellent* — 57 ms. Latency is entirely downstream of it.
+- **Zig's own floor dominates**: ~5.2 s LLVM / ~0.94 s self-hosted, for ANY program.
+- The entire 186 KB preamble therefore costs **~1 s on LLVM and ~0.2 s on the fast backend** —
+  not the bulk of the time. My first analysis attributed the 5.2 s to the preamble without
+  measuring the floor; one probe refuted it. **Preamble work is NOT a latency fix.**
+- Therefore *tree-shaking the preamble* (conditional population — Sean's alternative) buys
+  ~0.2 s. See the verdict under #1.
+
+### FREE WIN — `-c` is excluded from the fast backend (do this first)
+
+`selfhost/main.zbr:2414` reads `if not mode_c and not release and …` — check mode is
+**explicitly excluded** from the `-fno-llvm -fno-lld` path. So the most latency-sensitive
+operation in the compiler, and the one that `IDE/ZebraIDE.zbr`'s Check button runs, deliberately
+takes the *slowest* route: **5.2 s where ~1 s was available.**
+
+The exclusion may be deliberate — the comment above it notes the self-hosted linker does not
+error on unresolved C symbols, so compile-failure fallback cannot protect C-dep builds. But that
+argument is about C deps, which the condition already tests separately. Worth an hour: determine
+whether `mode_c` needs excluding at all, and if not, delete two words for a 5x improvement in
+the compiler's most-run command.
+
+- [ ] **#1 — Stop inlining the preamble; ship it as a precompiled Zig module.** Emitted programs
+  would `@import` a runtime package instead of carrying 3,790 lines of copy-pasted preamble for a
+  2-line source. **Re-justified after measurement — this is NOT about speed** (worth ~0.2 s on
+  the fast path). It is about three things that are real:
+  1. **Error locations.** Errors currently land in generated code (`_str_concat` at line 3779 of
+     a file the user never wrote — BUG-215/218). With a ~50-line emitted file there is almost
+     nowhere for an error to land except user code.
+  2. **Namespace isolation.** Closes BUG-220 *completely*, including the `@export`/`@node_export`
+     cases the `_zbr_fn_` prefix cannot cover.
+  3. **Artifact comprehensibility** — debugging, DAP, `remapZigErrors`, and anyone reading the
+     emitted Zig.
+
+  **Verdict on the tree-shaking alternative** (conditionally populate the preamble by what the
+  program uses): *not recommended as a substitute.* It buys ~0.2 s; it requires a call-graph
+  reachability analysis over the preamble (whose helpers call each other) that must be
+  conservative or it emits undefined identifiers; and — the decisive objection — it makes
+  BUG-220-class collisions **input-dependent**: a program compiles until you add a call that
+  drags in a preamble chunk containing your function's name. A collision that appears when you
+  add an unrelated line is a far worse failure mode than one that is either always present or
+  never. Tree-shaking is a reasonable *optimisation* later; it is not the fix for what #1 is for.
+
+  Overlaps `docs/single_file_emit_design.md` but is distinct: that combines *modules*; this stops
+  copy-pasting the *runtime*.
+
+- [ ] **#3 — Move nil-narrowing into the TypeChecker.** Narrowing is currently codegen-only (see
+  the BUG-188 note in `genMemberCall`): `inferExpr` still reports `?TcpConn` inside
+  `if conn != nil`, so the type checker and codegen disagree about what is known. It works today
+  because emit unwraps, but it caps every future check built on inference. Prerequisite for
+  making the TC authoritative.
+
+- [ ] **#5a — Stdlib arity/signature checking.** The BUG-215 class: `indexOf(a, b)` silently
+  discarded its second argument, turning a typo into a runtime panic three frames away. Today
+  only `indexOf` is guarded, via `@compileError`. The real fix is a stdlib signature table in the
+  front end so arity errors become proper Zebra diagnostics with a source location.
+
+- [ ] **#5b — Spans on all AST nodes.** `AstBuilder` uses `zspan()` for 95 of its node kinds.
+  Measured impact is *narrower than first claimed* (17 corpus diagnostics carry locations, 0 land
+  at `0:0`; the only reproducible case is a two-literal concat), so this is a cap on how good
+  diagnostics can get, not a present emergency. Do it when it blocks something.
+
+- [ ] **#2 — Typed error sets. DISCUSS STRATEGY WITH SEAN FIRST.** Errors are stringly-typed:
+  `raise "division by zero"`, caught as `e.message`, everything `anyerror!T`. A caller cannot
+  know which errors a function raises, cannot handle them exhaustively, gets no compiler help
+  when a new failure mode is added, and breaks silently when someone rewords a string. This is
+  the one place Zebra is **less typed than the Zig it compiles to** (Zig has error sets; we
+  flatten them). In a language whose differentiator is Eiffel-style contracts — careful machinery
+  for stating what must hold going in and out — leaving "what can go wrong" untyped is the
+  design's biggest internal inconsistency. Sketch: `def parse(s: str) throws ParseError` with
+  exhaustive `catch`. Design space includes declared vs inferred sets, subtyping/widening, and
+  migrating every existing `raise`.
+
+- [ ] **#4 — A check mode that actually checks. DISCUSS STRATEGY WITH SEAN FIRST.** `zebra -c`
+  runs a full `zig build-exe`. A check that stops after typecheck would be **~0.06 s instead of
+  5.2 s** — 90x on the compiler's most-run command, and it would make the IDE Check button
+  instant. The strategy question is what `-c` should *promise*: front-end-only (fast, misses
+  emit/codegen bugs only `zig` catches) versus today's full build (slow, total). Plausible answer
+  is both — a fast default plus an opt-in `--check-full` — but that contract is worth agreeing
+  before building. The FREE WIN above is independent and can land first regardless.
+
 ## Pre-1.0 blockers (the road to 0.9 / 1.0)
 
 - [ ] **§28a step 4 — inference-or-error language flip (selfhost).** Phase 1 (measure)
