@@ -53,19 +53,37 @@ FAILED=()
 PASSED=0
 
 # run <label> <expected-substring-on-success> <command...>
+#
+# Prints the label BEFORE running and streams to a per-gate log, so a hang is
+# visible immediately instead of after the fact. The first version captured with
+# command substitution and printed only on completion — which meant a gate that
+# hung looked exactly like a gate that was working, for 32 minutes. Also applies
+# a per-gate timeout so a hang FAILS instead of blocking the suite forever.
 run() {
     local label="$1"; shift
     local expect="$1"; shift
-    printf '  %-16s ' "$label"
-    local out rc
-    out="$("$@" 2>&1)"; rc=$?
+    local out rc log t0 t1
+    log="$(mktemp -t gate-XXXXXX)"
+    t0=$SECONDS
+    # Announce BEFORE running and leave the line open, so an in-progress gate is
+    # visibly in progress. stderr so it survives a caller piping stdout.
+    printf '  %-16s ...' "$label" >&2
+    timeout "${GATE_TIMEOUT:-2700}" "$@" >"$log" 2>&1; rc=$?
+    t1=$((SECONDS - t0))
+    out="$(cat "$log")"; rm -f "$log"
+    printf '\r  %-16s ' "$label" >&2
+    if [[ $rc -eq 124 ]]; then
+        printf '\033[31mHANG\033[0m  killed after %ss\n' "${GATE_TIMEOUT:-2700}"
+        FAILED+=("$label(timeout)")
+        return
+    fi
     local last
-    last="$(echo "$out" | grep -vE '^\s*$' | tail -1)"
+    last="$(echo "$out" | grep -vE '^[[:space:]]*$' | tail -1)"
     if [[ $rc -eq 0 ]] && { [[ -z "$expect" ]] || echo "$out" | grep -qF "$expect"; }; then
-        printf '\033[32mPASS\033[0m  %s\n' "${last:0:78}"
+        printf '\033[32mPASS\033[0m  %-58s %ss\n' "${last:0:58}" "$t1"
         PASSED=$((PASSED + 1))
     else
-        printf '\033[31mFAIL\033[0m  %s\n' "${last:0:78}"
+        printf '\033[31mFAIL\033[0m  %-58s %ss\n' "${last:0:58}" "$t1"
         FAILED+=("$label")
         echo "$out" | tail -12 | sed 's/^/        /'
     fi

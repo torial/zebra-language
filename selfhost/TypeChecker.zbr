@@ -1489,6 +1489,21 @@ def exprSpanCol(e: Expr): int
 # Only definitively-known scalars qualify.  Everything else — `unknown_`, a named
 # class (which may define its own concat), `char_`, containers — is left alone, so
 # an inference gap can never manufacture a compile error out of valid code.
+# #3 / BUG-188: does `cond` nil-check a plain identifier (`x != nil` / `nil != x`)?
+# Returns the identifier name, else nil.  Deliberately mirrors CodeGen's
+# `nilCheckedIdent` EXACTLY (plain idents only, not fields) — the two must agree
+# about what counts as narrowed, and matching scope is how that is kept true.
+def nilCheckedName(cond: Expr): str?
+    if cond is Expr.binary as nb
+        if nb.op == BinaryOp.ne
+            if nb.right is Expr.nil_
+                if nb.left is Expr.ident as nlid
+                    return nlid.name
+            if nb.left is Expr.nil_
+                if nb.right is Expr.ident as nrid
+                    return nrid.name
+    return nil
+
 def isConcatMistake(t: Type_): bool
     if isNumeric(t)
         return true
@@ -2411,7 +2426,31 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                     if cond_t is Type_.optional as inner
                         cap_t = inner
                 ctx.bind(cap_name, cap_t)
+            # #3: narrow `x` to its non-optional type across the THEN branch of
+            # `if x != nil`.  CodeGen already narrows here (it emits `x.?`), but the
+            # TypeChecker did not — so inferExpr still reported `?T` inside the
+            # branch and the two disagreed about what is known.  The cost was
+            # user-visible: `"v=" + n` inside a nil-check produced a Zig error
+            # ("expected type 'str', found 'i64'") instead of the Zebra diagnostic
+            # the same mistake gets outside one (BUG-218).
+            #
+            # Save/restore rather than a scoped bind, because InferCtx.scope is flat:
+            # the else branch and everything after the `if` must still see the
+            # ORIGINAL optional type.
+            var narrowed_nm: str? = nilCheckedName(si.cond)
+            var had_narrow: bool = false
+            var saved_t: Type_ = Type_.unknown_
+            if narrowed_nm as nnm
+                if ctx.hasLocal(nnm)
+                    var cur_t: Type_ = ctx.localType(nnm)
+                    if cur_t is Type_.optional as narrow_inner
+                        saved_t = cur_t
+                        had_narrow = true
+                        ctx.bind(nnm, narrow_inner)
             walkStmts(si.then_stmts, ctx)
+            if had_narrow
+                if narrowed_nm as nnm2
+                    ctx.bind(nnm2, saved_t)
             for ei in si.else_ifs
                 walkExpr(ei.cond, ctx)
                 if ei.is_capture as ei_cap_name

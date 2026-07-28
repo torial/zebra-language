@@ -1,0 +1,61 @@
+# #3 regression: the TypeChecker narrows `x` to its non-optional type inside the
+# then-branch of `if x != nil`, and — equally important — un-narrows afterwards.
+#
+# Codegen already narrowed here (it emits `x.?`); the TypeChecker did not, so
+# inferExpr still reported `?T` inside the branch and the two disagreed about what
+# was known. That disagreement was user-visible: the same mistake got a good Zebra
+# diagnostic outside a nil-check and a raw Zig error inside one.
+#
+#   outside:  nn2.zbr:3:18: error: cannot concatenate 'str' and 'int' — call .toString()...
+#   inside:   nn.zbr:3: error: expected type 'str', found 'i64'        <- Zig, no column
+#
+# The narrowing must be SCOPED. InferCtx.scope is flat, so the then-branch save/
+# restores the original type; the else branch and everything after the `if` must
+# still see the optional. This fixture exercises both directions — a leak would
+# show up as a false error on the valid code below, not as a missing error.
+
+def describe(n: int): str
+    return "n=" + n.toString()
+
+def main()
+    var a: int? = 5
+
+    # 1. narrowed inside the then-branch: `a` is int here, so it can be passed
+    #    to a function taking a plain int with no unwrap.
+    if a != nil
+        print(describe(a))
+
+    # 2. nil on the left works too (`nil != x`), matching CodeGen's detection.
+    var b: int? = 7
+    if nil != b
+        print(describe(b))
+
+    # 3. still OPTIONAL after the if — force-unwrap is required again.
+    if a != nil
+        print("in branch")
+    print(describe(a!))
+
+    # 4. the ELSE branch must NOT be narrowed; `a` is optional there.
+    var c: int? = nil
+    if c != nil
+        print(describe(c))
+    else
+        if c == nil
+            print("c is nil in else")
+
+    # 5. nesting: inner narrow does not disturb the outer one on restore.
+    var d: int? = 1
+    var e: int? = 2
+    if d != nil
+        if e != nil
+            print(describe(d) + " " + describe(e))
+        print(describe(d))
+
+    # 6. a same-named local in an inner scope must not be confused with the
+    #    narrowed outer optional.
+    var f: int? = 9
+    if f != nil
+        print(describe(f))
+    print(describe(f!))
+
+    print("nil_narrow_tc_test: OK")

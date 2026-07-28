@@ -963,6 +963,12 @@ smoke_tc_fail test/fail_fixtures/str_plus_number_rejected_test.zbr \
 # — a function passed BY VALUE rather than called.
 smoke_run test/toplevel_name_collision_test.zbr "toplevel_name_collision_test: OK"
 
+# #3: the TypeChecker narrows `x` inside `if x != nil` (codegen already did),
+# so a mistake there gets the Zebra diagnostic instead of a raw Zig error. The
+# fixture also proves the narrowing is SCOPED — cases 3-6 would produce false
+# errors if the restore leaked.
+smoke_run test/nil_narrow_tc_test.zbr "nil_narrow_tc_test: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"
