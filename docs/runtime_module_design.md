@@ -107,6 +107,37 @@ directly (it already does) and drop the call from `_initIo`; or keep a
 settable `?*const fn () void` hook in the runtime module. **The second is simplest**
 and should be checked first — `main` already emits `_initModuleVars();`.
 
+## 3b. Corpus validation (2026-07-28) — 36/40, one known class remaining
+
+The transformation was built as a standalone tool (`tools/rtsplit_spike.py`) and run
+over the first 40 programs of `full_sweep_baseline.txt`: emit → split → compile.
+
+| result | count |
+|---|---|
+| split **and compiled** clean | **36** |
+| failed, all one class | 4 |
+
+Validating the transformation *before* wiring it into codegen was the right call: the
+mutable-var emission surface is 250+ sites embedded in string literals
+(`_allocator` alone appears at 135 places in `CodeGen.zbr`, mostly inside larger
+emitted snippets like `w.emit("(std.fmt.allocPrint(_allocator, …")`). Debugging this
+inside codegen would have been far more expensive than debugging it as a text pass.
+
+**The remaining 4 are one class:** members of preamble *types* need `pub` too, not just
+top-level decls — `_TsAlloc.allocator`, `_AllocStats.allocator`, and a `call` method on
+a struct declared *inside a function* (`_ws_invoke`'s `_Wrap`). The spike marks the
+enclosing types `pub` but not their members; the brace/context tracking that decides
+"is this a type member (pub legal) or a function local (pub illegal)?" is incomplete.
+
+That is a **scaffolding bug, not a design problem** — nothing about it suggests the
+runtime-module split fails. The real implementation has a better option available than
+text heuristics: codegen *knows* which preamble decls are types, so it can mark members
+structurally instead of guessing from indentation. Do that rather than porting the
+spike's heuristic.
+
+**Verified working end-to-end:** hello-world splits 3,791 → **25 lines**, compiles, and
+prints `hi`.
+
 ## 4. What this dissolves
 
 | Bug | How |
