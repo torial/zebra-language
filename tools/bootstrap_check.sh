@@ -17,9 +17,11 @@
 #   1. Regenerates all selfhost .zig files from the Zig-compiled zebra into
 #      /tmp/bs-zig (leaving selfhost/*.zig untouched at this stage).
 #   2. Builds zebra-selfhost-A.exe from /tmp/bs-zig.
-#   3. Has A re-emit into selfhost/ + /tmp/bs-A snapshots; diff baseline.
-#   4. Builds zebra-selfhost-B.exe from the selfhost-A-emitted selfhost/.
-#   5. Has B re-emit; diffs /tmp/bs-A against /tmp/bs-B.
+#   3. Has A re-emit every module into /tmp/bs-A/<mod>/ (one dir per root, so a
+#      later root's deps cannot clobber an earlier root's emit).
+#   4. Builds zebra-selfhost-B.exe from A's OWN emit (/tmp/bs-A/main/) — that is
+#      what makes it level-2; building from the committed .zig would just rebuild A.
+#   5. Has B re-emit the same way; diffs /tmp/bs-A against /tmp/bs-B.
 #
 # Quick mode runs only steps 1+2 and exits. Use it for iterative work after
 # editing selfhost/*.zbr — you get a fresh zebra-selfhost.exe in ~10s without
@@ -196,23 +198,39 @@ if [[ $QUICK -eq 1 ]]; then
     exit 0
 fi
 
+# Emit each root into its OWN directory.
+#
+# This used to be `--emit-zig` with no --output-dir, then `cp selfhost/$f.zig`.
+# That has not worked since --emit-zig started writing to $TEMP (#230, to stop
+# run-mode polluting the source tree): selfhost-A never touched selfhost/$f.zig,
+# so both this step and step 5 copied the same UNCHANGED committed file and the
+# A-vs-B diff compared a file to itself. It could not fail. Found 2026-07-28;
+# the property itself does hold (verified by hand, 0 divergent over all 11
+# modules) — it simply was not being checked.
+#
+# Per-file directories, not one shared dir: emitting a root also emits its deps
+# alongside it, dep-shaped (no entry thunk, no _zbr_error_msg). A shared dir
+# would let a later root's deps overwrite an earlier root's emit — the same
+# clobber the old `cp`-immediately comment was defending against.
 echo "── Step 3: selfhost-A re-emits its own source"
-mkdir -p /tmp/bs-A /tmp/bs-B
+rm -rf /tmp/bs-A /tmp/bs-B
 for f in "${FILES[@]}"; do
-    if ! "$SELFHOST_A" --emit-zig "selfhost/$f.zbr" >/dev/null 2>/tmp/bs-emit-err; then
+    mkdir -p "/tmp/bs-A/$f"
+    if ! "$SELFHOST_A" --emit-zig --output-dir "/tmp/bs-A/$f" "selfhost/$f.zbr" >/dev/null 2>/tmp/bs-emit-err; then
         echo "FAIL: selfhost-A could not emit selfhost/$f.zig" >&2
         grep -v "^wrote " /tmp/bs-emit-err >&2 || true
         exit 1
     fi
-    # Stash the root emit immediately — subsequent iterations recompile $f as a
-    # dep of some other file, overwriting selfhost/$f.zig with a dep-shaped
-    # version (no entry thunk, no _zbr_error_msg helper).
-    cp "selfhost/$f.zig" "/tmp/bs-A/$f.zig"
 done
 
-echo "── Step 4: build selfhost-B (level-2 bootstrap)"
+# Build B from selfhost-A's OWN OUTPUT — that is what makes this level-2.
+# It used to build from the committed selfhost/*.zig, which is bootstrap-emitted,
+# so B was the same compiler as A and the step proved nothing about A's emit.
+# /tmp/bs-A/main/ is the right set: emitting main.zbr produces main.zig root-shaped
+# plus every dep dep-shaped, in one directory — exactly a buildable tree.
+echo "── Step 4: build selfhost-B from selfhost-A's emit (level-2 bootstrap)"
 rm -f "$SELFHOST_B"
-if ! build_compiler selfhost/main.zig "$SELFHOST_B" /tmp/bs-rebuildB.err; then
+if ! build_compiler /tmp/bs-A/main/main.zig "$SELFHOST_B" /tmp/bs-rebuildB.err; then
     echo "FAIL: selfhost-B build errors:" >&2
     grep -E "^selfhost[\\\\/].+:[0-9]+:[0-9]+: error:" /tmp/bs-rebuildB.err >&2 || head -30 /tmp/bs-rebuildB.err >&2
     exit 1
@@ -220,17 +238,17 @@ fi
 
 echo "── Step 5: selfhost-B re-emits + diff against selfhost-A output"
 for f in "${FILES[@]}"; do
-    if ! "$SELFHOST_B" --emit-zig "selfhost/$f.zbr" >/dev/null 2>/tmp/bs-emit-err; then
+    mkdir -p "/tmp/bs-B/$f"
+    if ! "$SELFHOST_B" --emit-zig --output-dir "/tmp/bs-B/$f" "selfhost/$f.zbr" >/dev/null 2>/tmp/bs-emit-err; then
         echo "FAIL: selfhost-B could not emit selfhost/$f.zig" >&2
         grep -v "^wrote " /tmp/bs-emit-err >&2 || true
         exit 1
     fi
-    cp "selfhost/$f.zig" "/tmp/bs-B/$f.zig"
 done
 
 DIVERGENT=0
 for f in "${FILES[@]}"; do
-    if ! diff -q "/tmp/bs-A/$f.zig" "/tmp/bs-B/$f.zig" >/dev/null; then
+    if ! diff -q "/tmp/bs-A/$f/$f.zig" "/tmp/bs-B/$f/$f.zig" >/dev/null; then
         echo "DIVERGENT: $f.zig"
         DIVERGENT=$((DIVERGENT+1))
     fi
@@ -241,11 +259,11 @@ if [[ $DIVERGENT -ne 0 ]]; then
     exit 1
 fi
 
-# Tree is left in selfhost-B-emitted state: main.zig as root (with entry
-# thunk + _zbr_error_msg), everything else last-written as a dep of main.
-# This is the deterministic fixed point, so subsequent runs produce no diff.
-# (We used to restore to zebra-emitted form here, but zebra leaks pointer
-# addresses into _box_<hex>/_bp_<hex> identifier names — see BUGS.md — so
-# every bootstrap run would dirty the working tree.)
+# The working tree is untouched by steps 3-5: both selfhost passes emit into
+# /tmp/bs-A and /tmp/bs-B, so selfhost/*.zig keeps whatever the bootstrap (the
+# regen authority) last wrote. The old comment here claimed the tree was left
+# "in selfhost-B-emitted state ... the deterministic fixed point"; that stopped
+# being true when --emit-zig moved to $TEMP, and it is now false by design
+# rather than by accident.
 
 echo "PASS: round-trip clean, selfhost-B produces output byte-identical to selfhost-A"
