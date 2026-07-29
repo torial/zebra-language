@@ -2733,6 +2733,15 @@ const Generator = struct {
         // pre-HELPERS preamble; it MUST stay in sync with the pre-`STDLIB_PREAMBLE_HELPERS_START`
         // section of selfhost/stdlib_preamble.zig (the selfhost reads the whole file, the
         // bootstrap hardcodes this part). Docs live in that file.
+        //
+        // "In sync" means SEMANTIC content. The preamble file's declarations are marked
+        // `pub` (2026-07-28, tools/pub_mark_preamble.py) as step 1 of the runtime-module
+        // change — emitted programs will `@import` the runtime instead of inlining it, and
+        // an imported declaration must be public. That marking is deliberately NOT mirrored
+        // here: the bootstrap keeps inlining the runtime, and `pub` has no effect on an
+        // inlined file. So bootstrap emit lacks `pub` in this header and in the GUI section
+        // (both of which it supplies itself) while selfhost emit has it — cosmetic, both
+        // compile. See docs/runtime_module_design.md §3c.
         try g.w.writeAll(
             \\const _TsAlloc = struct {
             \\    child: std.mem.Allocator,

@@ -138,6 +138,39 @@ spike's heuristic.
 **Verified working end-to-end:** hello-world splits 3,791 → **25 lines**, compiles, and
 prints `hi`.
 
+## 3c. Step 1 landed 2026-07-28 — and it is inert until the flag exists
+
+`tools/pub_mark_preamble.py` marks every preamble declaration `pub`: **396 top-level +
+33 members of top-level types**. `pub` at container scope is legal and has no effect in a
+file that is spliced inline, so this lands *before* any codegen change and is proven by
+the ordinary gates while emission is unchanged. It is the largest mechanical part of the
+work and `zig` can validate it on its own.
+
+Deliberately **not** mirrored into `src/CodeGen.zig`. The bootstrap hardcodes the
+pre-`STDLIB_PREAMBLE_HELPERS_START` header (build.zig strips that region from the file
+before embedding the rest) and emits the GUI section from its own inline switch — so
+bootstrap emit will lack `pub` in exactly those two regions while selfhost emit has it.
+That is cosmetic: both compile, round-trip is selfhost-vs-selfhost, and divergence only
+gates selfhost gaps. The bootstrap is sunsetting and keeps inlining the runtime, so it
+never needs the markings.
+
+Still unmarked, and required before the flag can cover the GUI paths:
+`selfhost/gui_tui_section.zig` (89 decls) and `selfhost/gui_libui_ng_section.zig` (102).
+
+### Ordering footgun found doing it — a preamble edit needs `zig build` FIRST
+
+`build.zig:37-49` reads `stdlib_preamble.zig` and embeds it into `zebra-bootstrap.exe`
+via `b.addOptions()` — at **bootstrap build time**, not at emit time. `rebuild.sh`
+regenerates with the *existing* bootstrap binary and only then runs `zig build`, so after
+a preamble edit the regen silently emits the **old** runtime and every downstream gate
+measures it. Observed here: the first `rebuild.sh` reported OK and produced **zero**
+changes to `selfhost/*.zig`. The correct order for a preamble edit is
+`zig build` → regen → `zig build`; `rebuild.sh` now does this itself.
+
+This is the same shape as the trap CLAUDE.md already records for BUG-219 (a preamble fix
+that looked like it hadn't worked), one level further out: there, regeneration was
+missing; here, regeneration ran against a binary that predated the edit.
+
 ## 4. What this dissolves
 
 | Bug | How |

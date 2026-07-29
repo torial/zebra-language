@@ -66,15 +66,25 @@ bash tools/gates.sh --full     # FULL tier (~50 min): + compile_check, full_swee
 bash tools/gates.sh --list     # what each tier runs and what it cannot see
 ```
 
-`rebuild.sh` exists because the regen sequence has three footguns that have each
+`rebuild.sh` exists because the regen sequence has four footguns that have each
 cost real time: `zig build update-selfhost` **silently skips** regeneration after a
 `.zbr`-only edit (BUG-210); a stale `/tmp/bs-zig` from a killed run causes unrelated
-failures; and an orphaned `zebra.exe`/`zig.exe` holds a file lock so the build dies
-with `AccessDenied`. It also verifies the built compiler can actually run a
-hello-world before reporting success. **A `stdlib_preamble.zig` edit needs the full
-sequence too** — the preamble is inlined at emit time, so the compiler only picks up
-a preamble change after regeneration (this is what made BUG-219's first fix look
-like it hadn't worked).
+failures; an orphaned `zebra.exe`/`zig.exe` holds a file lock so the build dies
+with `AccessDenied`; and a **preamble edit is invisible to the regen until the
+bootstrap is rebuilt** (below). It also verifies the built compiler can actually run a
+hello-world before reporting success.
+
+**A `stdlib_preamble.zig` edit needs the full sequence *and* the right order.** Two
+distinct traps, one at each end:
+- The preamble is inlined at emit time, so the compiler only picks up a preamble
+  change after **regeneration** (this is what made BUG-219's first fix look like it
+  hadn't worked).
+- `build.zig:37-59` **embeds** the preamble files into `zebra-bootstrap.exe` at *build*
+  time, and the regen runs that binary — so regenerating before rebuilding the
+  bootstrap emits the **old** runtime, and every gate downstream measures it. Observed
+  2026-07-28: a preamble edit followed by `rebuild.sh` reported OK and changed zero
+  generated files. The order is `zig build` → regen → `zig build`; `rebuild.sh` now
+  does the leading build itself when a preamble file is newer than the binary.
 
 `doctor.sh` checks the failure modes this environment actually produces, every one of
 which has bitten us: **stale generated `.zig`** (you would be testing the OLD compiler —
