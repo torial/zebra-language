@@ -17,7 +17,14 @@
 #      — and the emitted file would be 3,800 lines again. The size assertion is
 #      what makes "it worked" mean something.
 #
-# Both checks are cheap (three tiny programs), so this runs in the QUICK tier.
+#   3. That the routes users actually take work. Checks 1-2 drive
+#      `--emit-zig --output-dir` and then invoke `zig` by hand; `zebra run` and
+#      `zebra -c` take a DIFFERENT branch of zbrToZig (a temp dir, not
+#      `--output-dir`) and let the compiler drive zig itself. One write site covers
+#      every route by construction — but that is an argument from reading the code,
+#      so §3 exercises them.
+#
+# All of it is cheap (a handful of tiny programs), so this runs in the QUICK tier.
 #
 #   bash tools/runtime_module_check.sh
 #
@@ -91,7 +98,45 @@ if [ -f "$b/bug221_transitive_init_test.zbr" ]; then
     fi
 fi
 
-# ── 3. the mutually-exclusive flags are actually refused ─────────────────────
+# ── 3. the paths users actually invoke ───────────────────────────────────────
+# Checks 1 and 2 drive `--emit-zig --output-dir` and then run `zig` by hand. That
+# is NOT the route a user takes, and it is not even the same code path: without
+# `--output-dir`, zbrToZig emits into a TEMP dir instead, and the compiler invokes
+# zig itself. `zebra_rt.zig` has to land there too and the relative `@import` has
+# to resolve from there. One write site covers every route by construction — but
+# that is an argument from reading the code, so exercise the routes.
+# NOTE: Zebra's `print` emits `std.debug.print`, which writes to STDERR (true with
+# and without the flag — verified against the default path). So these read the
+# combined stream; discarding stderr here silently asserts nothing.
+if [ "$("$ZEBRA" run --runtime-module "$hw/hw.zbr" 2>&1 | tail -1)" = "hi" ]; then
+    pass "zebra run --runtime-module (temp-dir emit) runs"
+else
+    fail "zebra run --runtime-module did not print 'hi'"
+fi
+
+if "$ZEBRA" -c --runtime-module "$hw/hw.zbr" >/dev/null 2>&1; then
+    # A check that passes everything is not a check. `-c` takes the fast backend
+    # with a fallback to LLVM on failure, so confirm a real error still surfaces
+    # rather than being swallowed by the fallback.
+    printf 'def main()\n    var s: str = "x" + 1\n    print(s)\n' > "$hw/bad.zbr"
+    if "$ZEBRA" -c --runtime-module "$hw/bad.zbr" >/dev/null 2>&1; then
+        fail "zebra -c --runtime-module accepted a program with a type error"
+    else
+        pass "zebra -c --runtime-module passes clean code and rejects bad code"
+    fi
+else
+    fail "zebra -c --runtime-module rejected a valid program"
+fi
+
+# Multi-module through the temp-dir route: the deps and the runtime all have to
+# land in the same directory for the basename @imports to resolve.
+if [ "$("$ZEBRA" run --runtime-module test/bug221_transitive_init_test.zbr 2>&1 | tail -1)" = "missing" ]; then
+    pass "zebra run --runtime-module resolves a 3-module program + the runtime"
+else
+    fail "zebra run --runtime-module failed on the 3-module fixture"
+fi
+
+# ── 4. the mutually-exclusive flags are actually refused ─────────────────────
 if "$ZEBRA" --emit-zig --output-dir "$hw" --runtime-module --single-file \
         "$hw/hw.zbr" >/dev/null 2>&1; then
     fail "--runtime-module --single-file was accepted; it should be refused"

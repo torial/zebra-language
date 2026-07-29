@@ -38,10 +38,19 @@ different bug:
 1. **Error locations.** Errors land in generated code — `_str_concat` at line 3779 of
    a file the user never wrote (BUG-215, BUG-218). With a ~30-line emitted file there
    is almost nowhere for an error to land except user code.
-2. **Namespace isolation.** Closes **BUG-220 completely**, including the
-   `@export`/`@node_export` residual that the `_zbr_fn_` prefix cannot reach — because
-   preamble parameters leave the user's file scope entirely and can no longer shadow
-   anything.
+2. **Namespace isolation.** The emitted file's scope stops containing the runtime's 399
+   names and contains only the subset the program actually references — a strict subset of
+   what the inline path puts there, so it can only ever have *fewer* collisions, never more.
+   **Caveat, added 2026-07-28:** an earlier version of this note claimed the change "closes
+   BUG-220 completely, including the `@export`/`@node_export` residual." That claim is
+   **unverified.** A probe found `@export` is a *class-factory* annotation here
+   (`@export("sym") class Foo`), not a free-function one, so the obvious repro does not
+   exercise the residual at all; and `@node_export` is a node-addon build, which
+   `--runtime-module` currently refuses. Treat the BUG-220 benefit as "strictly fewer names
+   in scope", which is demonstrable, rather than as a proven closure.
+   Note also that runtime-module mode introduces one *new* reserved file-scope name, `_rt`,
+   with no collision guard — the same shape as BUG-220. Harmless while the flag is off;
+   it belongs on the list of things to settle before flipping the default.
 3. **BUG-221 — module init is not transitive.** See §4; this change *dissolves* it.
 
 ## 3. Spike results (2026-07-28) — what is proven

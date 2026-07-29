@@ -168,8 +168,15 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
       default-mode baseline**.
   - [ ] **Remaining before the flag could become the default:** `pub`-mark
     `gui_tui_section.zig` (89 decls) and `gui_libui_ng_section.zig` (102) to cover the GUI
-    paths; decide the node-addon story; then flip, which is its own gated decision. BUG-221
-    stays open on the default path until that flip.
+    paths; decide the node-addon story; guard the one *new* reserved file-scope name the
+    mode introduces (`_rt`, currently unguarded — the same shape as BUG-220, harmless only
+    because the flag is off); then flip, which is its own gated decision. BUG-221 stays open
+    on the default path until that flip. Note the design note's claim that this "closes
+    BUG-220 completely including the `@export` residual" is **unverified** — `@export` turns
+    out to be a class-factory annotation, so the obvious repro does not exercise it. What IS
+    demonstrable is that the emitted file's scope holds only the referenced subset of the
+    runtime's 399 names, a strict subset of the inline path's — so collisions can only
+    decrease.
 
 - [x] **#3 — Move nil-narrowing into the TypeChecker. DONE 2026-07-28 (`81501dc`).** Narrowing
   was codegen-only (the BUG-188 note in `genMemberCall`): `inferExpr` still reported `?T` inside

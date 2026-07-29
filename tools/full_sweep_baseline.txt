@@ -47,6 +47,7 @@ bug193_listdir_test
 bug195_map_param_test
 bug196_nested_list_test
 bug198_union_optional_field_test
+bug221_transitive_init_test
 build_declarative_test
 build_smoke_test
 capture_boundary
@@ -208,6 +209,7 @@ named_default_test
 namespace_main
 nested_namespace_dotted_test
 nested_namespace_nested_test
+nil_narrow_tc_test
 nil_simple
 nil_tracking_test
 nilable_test
