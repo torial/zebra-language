@@ -69,6 +69,10 @@ class MultiCompiler
     # them into one combined .zig. See docs/single_file_emit_design.md §7b.
     var sf_dep_bodies: List(str)
     var sf_dep_names: List(str)
+    # Runtime-module emission: the rendered zebra_rt.zig text, and the path it was
+    # last written to. Both are per-process caches — see writeRuntimeModule.
+    var rt_text: str
+    var rt_written: str
 
     cue init(preamble_path: str, output_dir: str)
         .visited = List(str)()
@@ -87,6 +91,8 @@ class MultiCompiler
         .module_path = ""
         .type_scanned = List(str)()
         .node_addon = false
+        .rt_text = ""
+        .rt_written = ""
         .sf_dep_bodies = List(str)()
         .sf_dep_names = List(str)()
 
@@ -366,16 +372,32 @@ class MultiCompiler
     # content is the overwhelmingly common case, so this removes nearly all of that
     # window.  It does not close it entirely; a genuinely concurrent FIRST run in a
     # fresh temp dir still races, and --output-dir avoids the shared path altogether.
+    # CACHED per process, in two layers, because this is called once per MODULE and
+    # the runtime text is ~186 KB. Rendering and re-reading it each time cost 3.6x on
+    # the front end (60 ms -> 219 ms for a hello-world emit) — unacceptable in a
+    # compiler whose front end is otherwise 57 ms and whose `-c` is 62 ms.
+    #   * rt_text    — the rendered runtime, which depends only on the preamble and
+    #                  the GUI backend, both fixed for the life of the process.
+    #   * rt_written — the path already written this run. Every module of a program
+    #                  emits into the same directory, so after the first module there
+    #                  is nothing left to decide.
     def writeRuntimeModule(zig_path: str)
         var dir: str = .dirOf(zig_path)
         var rt_path: str = "zebra_rt.zig"
         if dir != ""
             rt_path = dir + "/zebra_rt.zig"
-        var want: str = rtRuntimeText(File.read(.preamble_path))
+        if .rt_written == rt_path
+            return
+        if .rt_text == ""
+            .rt_text = rtRuntimeText(File.read(.preamble_path))
+        # Content compare, not existence: a stale file from an earlier run with a
+        # different GUI backend must still be replaced.
         if File.exists(rt_path)
-            if File.read(rt_path) == want
+            if File.read(rt_path) == .rt_text
+                .rt_written = rt_path
                 return
-        File.write(rt_path, want)
+        File.write(rt_path, .rt_text)
+        .rt_written = rt_path
 
     def zbrToZig(zbr_path: str): str
         # Replace ".zbr" extension with ".zig"

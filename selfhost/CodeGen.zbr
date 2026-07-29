@@ -1448,6 +1448,10 @@ def rtIsMutable(name: str): bool
 # needless indirection.  Indented lines are members of runtime types, reachable
 # as `_zbr_rt.Type.member`, so they never need a top-level alias.
 def rtScanNames(rt_text: str)
+    # Same reason as rtRuntimeText: called per MODULE, scans 3,767 lines, and the
+    # answer cannot change within a process.
+    if _rt_mut_names != ""
+        return
     var mut: str = " "
     var ali: str = " "
     for line in rt_text.split("\n")
@@ -1561,11 +1565,21 @@ def rtAliasHeader(src: str): str
 # ("use of undeclared identifier '_initModuleVars'").  The entry point already
 # calls it directly, and in runtime-module mode it calls it for every transitive
 # dependency too, so dropping it here loses nothing.
+# CACHED: the result depends only on the preamble text and the GUI backend, both
+# fixed for the life of the process, but this is called once per MODULE on a
+# ~186 KB string. Re-rendering it every time was most of a 3.6x front-end
+# regression (60 ms -> 219 ms for a hello-world emit) — unacceptable in a compiler
+# whose front end is otherwise 57 ms.
+var _rt_text_cache: str = ""
+
 def rtRuntimeText(preamble: str): str
+    if _rt_text_cache != ""
+        return _rt_text_cache
     var hook: str = "    _initModuleVars();\n"
     var gone: str = "    // _initModuleVars() removed: per-program, driven from the entry point.\n"
     var sel: str = guiSelectPreamble(preamble)
-    return sel.replace(hook, gone)
+    _rt_text_cache = sel.replace(hook, gone)
+    return _rt_text_cache
 
 # `pub ` in runtime-module mode, empty otherwise.
 #
