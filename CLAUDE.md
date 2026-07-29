@@ -194,6 +194,32 @@ intended) is the only gate that checks correctness of arbitrary emitted programs
 latent miscompile hid behind green round-trip + smoke once (see the §28a selfhost notes);
 `compile_check.sh` is how you avoid rediscovering that class the hard way.
 
+## What the gates do NOT cover — and when it was last checked
+
+`gates.sh` deliberately excludes three things so that "gates green" keeps a precise
+meaning. That precision is only worth anything if the excluded set is actually run
+sometimes, so record the date here when you do.
+
+**Swept 2026-07-29, all clean** — after runtime-module emission became the default,
+because that change made GUI and node-addon take a *new* fallback branch that no gate
+exercises:
+
+| path | result |
+|---|---|
+| `bash tools/node_addon_test.sh` | PASS — math + strings, and the negative case still rejected |
+| `python fuzz/gramgen.py --gate` | PASS — 960 derived programs, 0 hangs, 0 crashes |
+| `--gui-backend=tui` (counter.zbr) | scaffolds, builds, links `zig-out/bin/app.exe` |
+
+The GUI check is the one that mattered: it confirmed the fallback does what it claims
+— the emitted `src/main.zig` is the INLINE shape (3,947 lines, **zero** `zebra_rt.zig`
+imports) with the tui backend selected. A fallback that had silently emitted the split
+shape would have produced a program importing a runtime its own scaffold never places,
+and nothing in any gate tier would have caught it.
+
+Still uncovered by anything, including this sweep: **a human actually clicking a GUI.**
+Six green gates once sat on top of three real GUI crashes. Rendering and interaction
+are only ever proven by Sean running it.
+
 ## Self-hosting
 
 The self-hosting effort lives in `selfhost/`. Rule of thumb for this port:

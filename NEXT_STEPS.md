@@ -332,13 +332,22 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
   Verified by running the same program through both compilers: identical output on
   all four methods, hit and miss. **Was sitting in the pre-1.0 blocker list as an
   open decision that no longer needed deciding.**
-- [ ] **BUG-221 — module init is not TRANSITIVE (was: "`_initIo` propagation gap,
-  harmless today").** **Re-verified 2026-07-28 and it is NOT harmless:** a three-module
-  program whose deepest module touches a file **segfaults today** — no future trigger
-  needed. `main` → `leaf` works; `main` → `mid` → `leaf` crashes at
-  `0xffffffffffffffff` with Zig's `0xaaaa…` poison pattern in the trace, because the
-  entry point initialises direct deps only. Repro + mechanism in `BUGS.md`. **This is
-  the one genuine technical blocker left on this list.**
+- [x] **BUG-221 — module init is not TRANSITIVE. CLOSED 2026-07-29, both emission
+  paths.** A three-module program whose deepest module touched a file segfaulted at
+  `0xffffffffffffffff` (Zig's `0xaaaa…` poison in the trace) because the entry point
+  initialised DIRECT deps only. Fixed on the runtime-module path when that became the
+  default (`ade34cf`), then on the inline path — still reached by `--no-runtime-module`
+  and the fallback for `--single-file`/node-addon/GUI — the next day (`7e5fb72`), where
+  it was still live rather than latent. Same cause both times, same fix: sweep the
+  TRANSITIVE dep list instead of direct `use` decls. Gated in both shapes by
+  `tools/runtime_module_check.sh`.
+
+  **This was "the one genuine technical blocker left on this list" per the 2026-07-28
+  audit. With it closed, nothing on this list is a technical blocker:** §28a is
+  explicitly not a 1.0 gate (Sean, 2026-07-23), §28e is documentation that grounds a
+  *1.5* design, §19.5d had a stale premise and is an optimisation. **What remains
+  between here and 1.0 is §15 — the freeze itself.** That is a decision to make, not
+  work to do, and it is Sean's.
 - [ ] **§15 — 1.0 stability lock + final CHANGELOG pass.** The milestone act itself:
   everything below the line is delivered; 1.0 is the promise to freeze it. → *Open
   detail §15.*
