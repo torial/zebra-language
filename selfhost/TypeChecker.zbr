@@ -1384,6 +1384,84 @@ def stringMethodReturn(name: str): Type_?
         return Type_.string_
     return nil
 
+# ── Stdlib arity checking (#5a) ──────────────────────────────────────────────
+# Data source: tools/stdlib_arity.tsv, where EVERY row was compiled against the
+# real compiler before being trusted. Arity is a RANGE: min < max only where a
+# trailing argument genuinely defaults.
+#
+# The minima are CURATED, not probed. Probing measures what the compiler tolerates,
+# and what it tolerates is the bug — `s.count()`, `s.split()` and `join()` all
+# compile today and `s.count()` panics at runtime (BUG-222). A table learned from a
+# defective implementation records the defect as the specification.
+#
+# Returns "" when the call is acceptable OR the method is not in the table. An
+# unknown method means NO OPINION, so an incomplete table can never manufacture a
+# false error on valid code — the failure mode the #5a groundwork warns about.
+# Callers must also only consult this where the receiver type is KNOWN, so an
+# inference gap cannot do the same.
+def stdlibArityError(recv_kind: str, name: str, argc: int): str
+    var lo: int = -1
+    var hi: int = -1
+    if recv_kind == "str"
+        # no arguments
+        if name == "upper" or name == "lower" or name == "trim" or name == "trimLeft"
+            lo = 0
+            hi = 0
+        else if name == "trimRight" or name == "reverse" or name == "toHex" or name == "fromHex"
+            lo = 0
+            hi = 0
+        else if name == "encodeBase64" or name == "decodeBase64" or name == "lines"
+            lo = 0
+            hi = 0
+        else if name == "toInt" or name == "tryInt" or name == "tryFloat" or name == "codePointCount"
+            lo = 0
+            hi = 0
+        else if name == "isEmpty" or name == "isAlpha" or name == "isNumeric"
+            lo = 0
+            hi = 0
+        else if name == "isAlphanumeric" or name == "isPrintable" or name == "isValidUtf8"
+            lo = 0
+            hi = 0
+        # exactly one
+        else if name == "repeat" or name == "concat" or name == "count" or name == "split"
+            lo = 1
+            hi = 1
+        else if name == "indexOf" or name == "lastIndexOf" or name == "indexOfIgnoreCase"
+            lo = 1
+            hi = 1
+        else if name == "toIntBase" or name == "contains" or name == "startsWith" or name == "endsWith"
+            lo = 1
+            hi = 1
+        else if name == "eqlIgnoreCase" or name == "startsWithIgnoreCase"
+            lo = 1
+            hi = 1
+        else if name == "endsWithIgnoreCase" or name == "containsIgnoreCase"
+            lo = 1
+            hi = 1
+        # width required, `fill` defaults to a space (verified by running them)
+        else if name == "padLeft" or name == "padRight" or name == "center"
+            lo = 1
+            hi = 2
+        # exactly two
+        else if name == "replace" or name == "substring" or name == "indexOfFrom"
+            lo = 2
+            hi = 2
+    else if recv_kind == "List(str)"
+        if name == "join"
+            lo = 1
+            hi = 1
+    if lo < 0
+        return ""
+    if argc >= lo and argc <= hi
+        return ""
+    var want: str = lo.toString()
+    if hi != lo
+        want = want + " to " + hi.toString()
+    var plural: str = " arguments"
+    if hi == 1 and lo == 1
+        plural = " argument"
+    return recv_kind + "." + name + " expects " + want + plural + ", got " + argc.toString()
+
 # Phase 17d diagnostic: short tag name for a Type_ variant. Caller may strip.
 def typeTag(t: Type_): str
     branch t
@@ -2902,6 +2980,26 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
                     cline = mem.span.line
                     ccol = mem.span.col
             else
+                # #5a: stdlib arity. Only where the receiver type is KNOWN — an
+                # unknown receiver gets no check, so an inference gap can never
+                # manufacture a false error on valid code. BUG-215 (too many args)
+                # and BUG-222 (too few) both land here as real diagnostics with a
+                # source location instead of a dropped argument and a later panic.
+                var sk: str = ""
+                if isString(recv)
+                    sk = "str"
+                else if recv is Type_.list_ as rle
+                    if isString(rle)
+                        sk = "List(str)"
+                if sk != ""
+                    var aerr: str = stdlibArityError(sk, mem.member, call.args.len)
+                    if aerr != ""
+                        var eline: int = line
+                        var ecol: int = 0
+                        if mem.span.line > 0
+                            eline = mem.span.line
+                            ecol = mem.span.col
+                        ctx.addErr(file, eline, ecol, aerr)
                 return
         else
             return

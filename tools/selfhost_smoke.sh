@@ -944,10 +944,21 @@ smoke_run test/module_var_shadow_test.zbr "module_var_shadow_test: OK"
 smoke_run test/mvu_mixed_union_test.zbr "update: set_label -> hello"
 
 # BUG-215: two-argument `str.indexOf(sub, from)` silently dropped the offset —
-# every search restarted at 0.  Codegen now emits a @compileError naming the real
-# API (`indexOfFrom`).  Found via the IDE crashing on Check / List Targets.
-smoke_emit_contains test/fail_fixtures/indexof_arity_rejected_test.zbr \
-    "str.indexOf takes 1 argument"
+# every search restarted at 0.  Found via the IDE crashing on Check / List Targets.
+# Was a codegen @compileError (asserted with smoke_emit_contains); #5a moved it into
+# the TYPE CHECKER, so it is now rejected before emit with a source location — the
+# point of BUG-215, and it generalises from `indexOf` alone to the whole documented
+# stdlib surface in both directions (BUG-222 = the too-few half).
+smoke_tc_fail test/fail_fixtures/indexof_arity_rejected_test.zbr \
+    "str.indexOf expects 1 argument, got 2"
+
+# #5a positive side, and the one that matters more: every call shape the arity
+# checker must ACCEPT. A signature table that is WRONG is worse than none — a bad
+# row rejects valid code and the user cannot work around it — so the defaulted rows
+# are exercised in BOTH forms (`padLeft(20)` and `padLeft(20, ".")`; `fill` really
+# does default, confirmed by running it). Also covers a user class with a `count`
+# method, to prove an unknown receiver gets NO opinion rather than a stdlib verdict.
+smoke_run test/stdlib_arity_ok_test.zbr "stdlib_arity_ok_test: OK"
 
 # BUG-218: `str + <number>` in ARGUMENT position used to escape the type checker
 # and surface as a Zig error about generated code (_str_concat, a line inside a

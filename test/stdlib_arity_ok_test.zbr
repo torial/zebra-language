@@ -1,0 +1,45 @@
+# #5a positive test: every shape the arity checker must ACCEPT.
+#
+# This file exists to catch FALSE POSITIVES, which are the failure mode that makes a
+# signature table worse than no table — a wrong row rejects valid code and the user
+# has no way around it. The defaulted-argument rows matter most: `fill` genuinely
+# defaults on padLeft/padRight/center (verified by running them), so a fixed arity
+# would break these three lines.
+def main()
+    var s: str = "hello world"
+
+    # zero-arg
+    print(s.upper())
+    print(s.trim())
+    print(s.isEmpty().toString())
+
+    # exact arity
+    print(s.indexOf("o").toString())
+    print(s.contains("world").toString())
+    print(s.replace("l", "L"))
+    print(s.substring(0, 5))
+    # indexOfFrom returns int? (nil when not found) — bind, do not print directly
+    if s.indexOfFrom("o", 5) as found
+        print(found.toString())
+
+    # `fill` defaults — BOTH forms must be accepted
+    print(s.padLeft(20))
+    print(s.padLeft(20, "."))
+    print(s.center(21))
+    print(s.center(21, "-"))
+
+    # List(str).join — documented under str, but a list method
+    var parts: List(str) = List(str)()
+    parts.add("a")
+    parts.add("b")
+    print(parts.join(", "))
+
+    # An unknown receiver must get NO opinion: this is a user class, not stdlib.
+    var u: Unrelated = Unrelated()
+    print(u.count("x").toString())
+
+    print("stdlib_arity_ok_test: OK")
+
+class Unrelated
+    def count(sub: str): int
+        return sub.len

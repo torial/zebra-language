@@ -6,9 +6,16 @@
 # panicked inside the `substring(a, b)` that consumed it with a > b.  That is
 # exactly how `IDE/ZebraIDE.zbr` crashed on the Check and List Targets buttons.
 #
-# Codegen now emits a `@compileError` naming the fix instead of miscompiling, so
-# this fixture EMITS successfully but the emitted Zig must carry the marker.
-# Verified by `smoke_emit_contains` in tools/selfhost_smoke.sh.
+# The first fix put a `@compileError` in CODEGEN, so this fixture emitted
+# successfully and the marker had to be found in the generated Zig. #5a replaced
+# that with a real front-end check (TypeChecker.stdlibArityError, driven by the
+# verified table in tools/stdlib_arity.tsv), so the call is now rejected BEFORE
+# emit, with a Zebra diagnostic at the user's own line and column.
+#
+# That is the outcome BUG-215 wanted: the error stopped living inside generated
+# code. It also generalises — the codegen guard covered `indexOf` alone, while the
+# table covers the whole documented surface in both directions (BUG-222 is the
+# too-FEW-arguments half). Asserted by `smoke_tc_fail`, matching BUG-218's fixture.
 
 def main()
     var s = "a:b:c"
