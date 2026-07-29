@@ -93,7 +93,7 @@ argument is about C deps, which the condition already tests separately. Worth an
 whether `mode_c` needs excluding at all, and if not, delete two words for a 5x improvement in
 the compiler's most-run command.
 
-- [ ] **#1 — Stop inlining the preamble; ship it as a precompiled Zig module.** Emitted programs
+- [ ] **#1 — Stop inlining the preamble; ship it as a runtime module. SPIKED 2026-07-28 — design proven end-to-end, see `docs/runtime_module_design.md` before starting.** Emitted programs
   would `@import` a runtime package instead of carrying 3,790 lines of copy-pasted preamble for a
   2-line source. **Re-justified after measurement — this is NOT about speed** (worth ~0.2 s on
   the fast path). It is about three things that are real:
@@ -116,6 +116,17 @@ the compiler's most-run command.
 
   Overlaps `docs/single_file_emit_design.md` but is distinct: that combines *modules*; this stops
   copy-pasting the *runtime*.
+
+  **Spike outcome (do not re-derive):** `@import` shares file-scope state across modules at
+  any depth (proven 3 levels deep) — so one shared `_allocator`/`_io` **dissolves BUG-221**
+  outright, no fan-out. A real hello-world split cleanly: **3,791 lines → a 30-line user file
+  + a 3,770-line runtime module (126×)**. Two constraints found before writing any compiler
+  code: (a) `usingnamespace` is **removed in Zig 0.16**, so symbols come in by explicit alias;
+  (b) a mutable `var` **cannot be aliased** across modules (`const x = _rt.x` → "unable to
+  resolve comptime value"), so the **19 mutable preamble vars must be QUALIFIED** at every
+  emit site — that is the main implementation cost, and it is also exactly what makes them
+  shared. Plus one backward dependency to break: the preamble's `_initIo` calls
+  `_initModuleVars()`, which codegen emits into the *user* file.
 
 - [ ] **#3 — Move nil-narrowing into the TypeChecker.** Narrowing is currently codegen-only (see
   the BUG-188 note in `genMemberCall`): `inferExpr` still reports `?TcpConn` inside
