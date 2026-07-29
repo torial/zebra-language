@@ -1319,16 +1319,22 @@ def guiSelectPreamble(preamble: str): str
     return preamble[0 .. siEnd] + "\n" + _gui_section + preamble[aeEnd .. preamble.len]
 
 # ── Runtime-module emission (#1, `--runtime-module`) ─────────────────────────
-# DEFAULT OFF.  When on, the runtime preamble is written ONCE as `zebra_rt.zig`
-# beside the emitted program and the program `@import`s it, instead of carrying a
-# verbatim 3,767-line copy.  Design + measurements: docs/runtime_module_design.md.
+# DEFAULT ON since 2026-07-28 (opt out with `--no-runtime-module`).  The runtime
+# preamble is written ONCE as `zebra_rt.zig` beside the emitted program and the
+# program `@import`s it, instead of carrying a verbatim 3,767-line copy: a
+# hello-world emits 27 lines rather than 3,791.  Design: docs/runtime_module_design.md.
+#
+# The import binds to `_zbr_rt`, not `_rt`: this mode introduces a new file-scope
+# name into every emitted program, which is precisely the BUG-220 hazard.  The
+# `_zbr_` prefix is already reserved for exactly this (`_zbr_fn_`, `_zbr_mv_`), so
+# reusing it makes the name safe by the same argument rather than by luck.
 #
 # Two Zig 0.16 facts shape the whole thing, and neither is negotiable:
 #   * `usingnamespace` is REMOVED, so runtime symbols come in one explicit alias
-#     at a time (`const _intern = _rt._intern;`), not wholesale.
-#   * a mutable `var` CANNOT be aliased — `const x = _rt.x` is "unable to resolve
+#     at a time (`const _intern = _zbr_rt._intern;`), not wholesale.
+#   * a mutable `var` CANNOT be aliased — `const x = _zbr_rt.x` is "unable to resolve
 #     comptime value" — so the runtime's mutable vars must be QUALIFIED at each
-#     use site (`_rt._allocator`).  That constraint is also the payoff: qualifying
+#     use site (`_zbr_rt._allocator`).  That constraint is also the payoff: qualifying
 #     is exactly what makes them one shared instance, which is why BUG-221
 #     dissolves.  Every module at every depth then reads the same `_allocator`.
 #
@@ -1345,7 +1351,7 @@ def guiSelectPreamble(preamble: str): str
 # split shape, the compiler's own committed .zig would depend on which tool last
 # regenerated it (the bootstrap emits monolithic).  Keeping the flag out of the
 # round-trip keeps one answer to "what shape is selfhost/*.zig".
-var _runtime_module: bool = false
+var _runtime_module: bool = true
 # Space-delimited and space-fenced (" a b c ") so membership is a plain substring
 # test.  Kept as strings rather than containers because these are MODULE-level and
 # a module-global container would need deferred init (BUG-153) for no benefit.
@@ -1440,7 +1446,7 @@ def rtIsMutable(name: str): bool
 # and the must-be-qualified set.  `std`/`builtin` are excluded — the emitted
 # program declares its own, and aliasing them through the runtime would be a
 # needless indirection.  Indented lines are members of runtime types, reachable
-# as `_rt.Type.member`, so they never need a top-level alias.
+# as `_zbr_rt.Type.member`, so they never need a top-level alias.
 def rtScanNames(rt_text: str)
     var mut: str = " "
     var ali: str = " "
@@ -1473,7 +1479,7 @@ def rtScanNames(rt_text: str)
     _rt_mut_names = mut
     _rt_alias_names = ali
 
-# Rewrite every bare reference to a runtime mutable var as `_rt.<name>`.
+# Rewrite every bare reference to a runtime mutable var as `_zbr_rt.<name>`.
 # Deliberately skipped: "…" and '…' literals (a user's `print("_allocator")` must
 # survive verbatim), `//` comments, `\\` multiline-string lines, and anything
 # after a `.` (that is a field, not the runtime's var).  Text is copied in slices
@@ -1501,7 +1507,7 @@ def rtQualify(src: str): str
                 j = j + 1
             if rtIsIdentStart(c) and not rtIsFieldAccess(src, i) and rtIsMutable(src[i .. j])
                 sb.append(src[seg .. i])
-                sb.append("_rt.")
+                sb.append("_zbr_rt.")
                 seg = i
             i = j
         else
@@ -1538,12 +1544,12 @@ def rtAliasHeader(src: str): str
     var sb: StringBuilder = StringBuilder()
     sb.append("const std     = @import(\"std\");\n")
     sb.append("const builtin = @import(\"builtin\");\n")
-    sb.append("const _rt     = @import(\"zebra_rt.zig\");\n")
+    sb.append("const _zbr_rt = @import(\"zebra_rt.zig\");\n")
     for nm in _rt_alias_names.split(" ")
         if nm != "" and used.contains(nm)
             sb.append("const ")
             sb.append(nm)
-            sb.append(" = _rt.")
+            sb.append(" = _zbr_rt.")
             sb.append(nm)
             sb.append(";\n")
     sb.append("\n")
@@ -1605,7 +1611,7 @@ def rtAssemble(file: str, preamble: str, body: str): str
     return sb.build()
 
 # One shared `_error_ctx` means the cross-module walk collapses to a local read.
-# (Emitted unqualified; the qualify pass rewrites `_error_ctx` to `_rt._error_ctx`.)
+# (Emitted unqualified; the qualify pass rewrites `_error_ctx` to `_zbr_rt._error_ctx`.)
 def rtErrorMsgHelper(): str
     var sb: StringBuilder = StringBuilder()
     sb.append("fn _zbr_error_msg() []const u8 {\n")

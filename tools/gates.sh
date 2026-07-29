@@ -16,15 +16,16 @@
 #   bash tools/gates.sh --list       # what each tier runs, and what it cannot see
 #
 # QUICK = the static lints (instant), smoke (emits + runs fixtures), round-trip
-#         (self-consistency), runtime-module (3 tiny end-to-end programs emitted
-#         with --runtime-module, including the BUG-221 repro — the only gate that
-#         RUNS anything in that mode). Enough to catch most breakage fast.
+#         (self-consistency), runtime-module (small end-to-end programs incl. the
+#         BUG-221 repro — the only gate that RUNS emitted output, and the only one
+#         that checks the DEFAULT shape is actually the split one). Catches most
+#         breakage fast.
 # FULL  = QUICK plus the four heavy independent witnesses:
-#         compile_check    — compiles what the selfhost emits (`zig` as the witness)
-#         compile_check-rt — the same corpus emitted with --runtime-module, which is
-#                            a genuinely different shape (qualified vars, aliased
-#                            symbols, no inline preamble), so the default mode
-#                            passing says nothing about it
+#         compile_check        — compiles what the selfhost emits (`zig` as witness)
+#         compile_check-inline — the same corpus with --no-runtime-module. The split
+#                                runtime is the DEFAULT now, so the INLINE shape is
+#                                the one that would go unwatched — and it stays live
+#                                via the opt-out and the GUI/node-addon fallbacks
 #         full_sweep       — emits + typechecks the WHOLE corpus, gated on regression
 #         divergence       — emits with BOTH compilers, gated on selfhost gaps
 #
@@ -115,16 +116,18 @@ run "interp-escape"  "0 hazard"  python tools/lint_interp_escape.py
 run "fallthrough"    "0 hazard"  python tools/lint_fallthrough.py
 run "smoke"          "passed"    bash tools/selfhost_smoke.sh
 run "round-trip"     "PASS"      bash tools/bootstrap_check.sh
-# Three tiny programs; the only gate that RUNS anything emitted under
-# --runtime-module, and therefore the only one that can see BUG-221.
+# The only gate that RUNS emitted output, hence the only one that can see BUG-221 —
+# and the only one that would notice if the default silently stopped being the split
+# runtime, since every other gate is happy either way.
 run "runtime-module" "all checks pass" bash tools/runtime_module_check.sh
 
 if [[ "$MODE" == "full" ]]; then
     run "compile_check" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh
-    # The same corpus again with the runtime externalised. It is a genuinely
-    # different emit shape — qualified vars, aliased symbols, no inline preamble —
-    # so passing the default mode says nothing about it.
-    run "compile_check-rt" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh --runtime-module
+    # The same corpus with the INLINE runtime. Since 2026-07-28 the split runtime is
+    # the DEFAULT, so this is the mode that would otherwise go unwatched — and it is
+    # still live: --no-runtime-module selects it, and the GUI and node-addon paths
+    # fall back to it.
+    run "compile_check-inline" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh --no-runtime-module
     run "full_sweep"    "gate PASS" env JOBS="$JOBS" bash tools/full_sweep.sh --gate
     run "divergence"    "gate PASS" env JOBS="$JOBS" bash tools/divergence_check.sh --gate
 fi

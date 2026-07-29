@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# runtime_module_check.sh — end-to-end gate for `--runtime-module` (#1).
+# runtime_module_check.sh — end-to-end gate for runtime-module emission (#1),
+# which has been the DEFAULT since 2026-07-28 (`--no-runtime-module` opts out).
 #
 # WHY A SEPARATE GATE
 # -------------------
-# `compile_check.sh --runtime-module` proves the emitted Zig COMPILES across the
-# corpus, which is the big coverage win. It cannot prove two things that are the
-# whole point of the change, because it never runs anything and never looks at the
-# shape of what was emitted:
+# `compile_check.sh` proves the emitted Zig COMPILES across the corpus, which is the
+# big coverage win. It cannot prove three things that are the whole point of the
+# change, because it never runs anything and never looks at the shape of what was
+# emitted:
 #
 #   1. BUG-221 — module init is not transitive. A three-module program whose
 #      DEEPEST module touches a file segfaults at 0xffffffffffffffff, because the
@@ -24,13 +25,17 @@
 #      every route by construction — but that is an argument from reading the code,
 #      so §3 exercises them.
 #
+#   4. That the INLINE runtime still works. It is no longer the default, so it is
+#      now the shape that can rot unnoticed — and it is still live, both via the
+#      opt-out and as the fallback for every path the split runtime does not cover.
+#
 # All of it is cheap (a handful of tiny programs), so this runs in the QUICK tier.
 #
 #   bash tools/runtime_module_check.sh
 #
-# NOTE: `--runtime-module` is deliberately NOT passed by bootstrap_check.sh. The
-# round-trip re-emits selfhost/*.zig with the selfhost itself, and the compiler's
-# own committed .zig must have one shape no matter which tool last regenerated it.
+# Note the checks deliberately pass NO flag where they can: `--runtime-module` is a
+# no-op now, so a gate that passed it would still go green if the default silently
+# reverted to inlining. Asserting on the default is the point.
 
 set -uo pipefail
 
@@ -57,7 +62,7 @@ echo
 # ── 1. hello-world: emits, externalises the runtime, compiles, runs ───────────
 hw="$OUT/hw"; mkdir -p "$hw"
 printf 'def main()\n    print("hi")\n' > "$hw/hw.zbr"
-if ! "$ZEBRA" --emit-zig --output-dir "$hw" --runtime-module "$hw/hw.zbr" >/dev/null 2>&1; then
+if ! "$ZEBRA" --emit-zig --output-dir "$hw" "$hw/hw.zbr" >/dev/null 2>&1; then
     fail "hello-world did not emit"
 else
     lines=$(wc -l < "$hw/hw.zig" | tr -d ' ')
@@ -82,7 +87,7 @@ cp test/bug221_transitive_init_leaf.zbr test/bug221_transitive_init_mid.zbr \
    test/bug221_transitive_init_test.zbr "$b/" 2>/dev/null || {
        fail "BUG-221 fixture missing from test/"; }
 if [ -f "$b/bug221_transitive_init_test.zbr" ]; then
-    if ! "$ZEBRA" --emit-zig --output-dir "$b" --runtime-module \
+    if ! "$ZEBRA" --emit-zig --output-dir "$b" \
             "$b/bug221_transitive_init_test.zbr" >/dev/null 2>&1; then
         fail "BUG-221 fixture did not emit"
     elif ! ( cd "$b" && zig build-exe bug221_transitive_init_test.zig \
@@ -108,40 +113,62 @@ fi
 # NOTE: Zebra's `print` emits `std.debug.print`, which writes to STDERR (true with
 # and without the flag — verified against the default path). So these read the
 # combined stream; discarding stderr here silently asserts nothing.
-if [ "$("$ZEBRA" run --runtime-module "$hw/hw.zbr" 2>&1 | tail -1)" = "hi" ]; then
-    pass "zebra run --runtime-module (temp-dir emit) runs"
+if [ "$("$ZEBRA" run "$hw/hw.zbr" 2>&1 | tail -1)" = "hi" ]; then
+    pass "zebra run (temp-dir emit) runs"
 else
-    fail "zebra run --runtime-module did not print 'hi'"
+    fail "zebra run did not print 'hi'"
 fi
 
-if "$ZEBRA" -c --runtime-module "$hw/hw.zbr" >/dev/null 2>&1; then
+if "$ZEBRA" -c "$hw/hw.zbr" >/dev/null 2>&1; then
     # A check that passes everything is not a check. `-c` takes the fast backend
     # with a fallback to LLVM on failure, so confirm a real error still surfaces
     # rather than being swallowed by the fallback.
     printf 'def main()\n    var s: str = "x" + 1\n    print(s)\n' > "$hw/bad.zbr"
-    if "$ZEBRA" -c --runtime-module "$hw/bad.zbr" >/dev/null 2>&1; then
-        fail "zebra -c --runtime-module accepted a program with a type error"
+    if "$ZEBRA" -c "$hw/bad.zbr" >/dev/null 2>&1; then
+        fail "zebra -c accepted a program with a type error"
     else
-        pass "zebra -c --runtime-module passes clean code and rejects bad code"
+        pass "zebra -c passes clean code and rejects bad code"
     fi
 else
-    fail "zebra -c --runtime-module rejected a valid program"
+    fail "zebra -c rejected a valid program"
 fi
 
 # Multi-module through the temp-dir route: the deps and the runtime all have to
 # land in the same directory for the basename @imports to resolve.
-if [ "$("$ZEBRA" run --runtime-module test/bug221_transitive_init_test.zbr 2>&1 | tail -1)" = "missing" ]; then
-    pass "zebra run --runtime-module resolves a 3-module program + the runtime"
+if [ "$("$ZEBRA" run test/bug221_transitive_init_test.zbr 2>&1 | tail -1)" = "missing" ]; then
+    pass "zebra run resolves a 3-module program + the runtime"
 else
-    fail "zebra run --runtime-module failed on the 3-module fixture"
+    fail "zebra run failed on the 3-module fixture"
 fi
 
-# ── 4. the mutually-exclusive flags are actually refused ─────────────────────
-if "$ZEBRA" --emit-zig --output-dir "$hw" --runtime-module --single-file \
-        "$hw/hw.zbr" >/dev/null 2>&1; then
-    fail "--runtime-module --single-file was accepted; it should be refused"
+# ── 4. the opt-out and the fallbacks still produce the INLINE runtime ────────
+# The split runtime is the default now, so the INLINE shape is the one that can rot
+# unnoticed. It is still live: --no-runtime-module selects it, and every path the
+# split runtime does not cover (--single-file, --target node-addon, --gui-backend)
+# falls back to it. A fallback that silently emitted the SPLIT shape would produce a
+# program importing a zebra_rt.zig that its own scaffold never places — that failure
+# would appear only in those paths, which no other gate exercises.
+off="$OUT/off"; mkdir -p "$off"
+if ! "$ZEBRA" --emit-zig --output-dir "$off" --no-runtime-module "$hw/hw.zbr" >/dev/null 2>&1; then
+    fail "--no-runtime-module did not emit"
+elif [ -f "$off/zebra_rt.zig" ]; then
+    fail "--no-runtime-module still wrote zebra_rt.zig"
+elif [ "$(wc -l < "$off/hw.zig" | tr -d ' ')" -lt 1000 ]; then
+    fail "--no-runtime-module did not inline the runtime"
+elif ! ( cd "$off" && zig build-exe hw.zig -fno-llvm -fno-lld -femit-bin=off.exe >/dev/null 2>&1 ); then
+    fail "--no-runtime-module output does not compile"
+elif [ "$("$off/off.exe" 2>&1)" != "hi" ]; then
+    fail "--no-runtime-module output does not run"
 else
-    pass "--runtime-module + --single-file is refused"
+    pass "--no-runtime-module inlines the runtime, compiles and runs"
+fi
+
+sf="$OUT/sf"; mkdir -p "$sf"
+if "$ZEBRA" --emit-zig --output-dir "$sf" --single-file "$hw/hw.zbr" >/dev/null 2>&1 \
+   && [ ! -f "$sf/zebra_rt.zig" ]; then
+    pass "--single-file falls back to the inline runtime"
+else
+    fail "--single-file did not fall back to the inline runtime"
 fi
 
 echo

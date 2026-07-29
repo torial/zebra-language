@@ -13,7 +13,7 @@
 #   bash tools/compile_check.sh                 # selfhost (zebra.exe), all tests
 #   bash tools/compile_check.sh --bootstrap     # bootstrap (zebra-bootstrap.exe)
 #   bash tools/compile_check.sh --single-file   # emit each test with --single-file, then check
-#   bash tools/compile_check.sh --runtime-module # emit each test with --runtime-module, then check
+#   bash tools/compile_check.sh --no-runtime-module # emit with the INLINE runtime, then check
 #   bash tools/compile_check.sh --only hashmap   # only tests whose name contains 'hashmap'
 #   JOBS=8 bash tools/compile_check.sh           # override parallelism (default 4)
 #
@@ -62,9 +62,12 @@ if [ "${1:-}" = "--worker" ]; then
   mode="$2"; rel="$3"
   name=$(basename "$rel" .zbr)
   zebra=$(zebra_for "$mode")
-  # CC_SINGLE_FILE / CC_RUNTIME_MODULE are exported by the main process.
+  # CC_SINGLE_FILE / CC_INLINE_RT are exported by the main process. Runtime-module
+  # emission is the DEFAULT as of 2026-07-28, so the interesting second mode is the
+  # inline runtime (still reachable via --no-runtime-module, and what the GUI and
+  # node-addon paths fall back to), not the split one.
   sf_flag=""; [ "${CC_SINGLE_FILE:-0}" = 1 ] && sf_flag="--single-file"
-  [ "${CC_RUNTIME_MODULE:-0}" = 1 ] && sf_flag="--runtime-module"
+  [ "${CC_INLINE_RT:-0}" = 1 ] && sf_flag="--no-runtime-module"
   wdir="$OUT/w-$name"; rm -rf "$wdir"; mkdir -p "$wdir"
   main="$wdir/$name.zig"
   if [ "$mode" = bootstrap ]; then
@@ -89,7 +92,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --bootstrap)   MODE=bootstrap; shift;;
     --single-file) SF=1; shift;;
-    --runtime-module) RM=1; shift;;
+    --no-runtime-module) RM=1; shift;;
     --only)        ONLY="${2:-}"; shift 2;;
     *) shift;;
   esac
@@ -97,7 +100,7 @@ done
 JOBS="${JOBS:-4}"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"   # ensure zig is reachable when run standalone
 export CC_SINGLE_FILE="$SF"                   # picked up by --worker
-export CC_RUNTIME_MODULE="$RM"                # picked up by --worker
+export CC_INLINE_RT="$RM"                     # picked up by --worker
 mkdir -p "$OUT"
 
 tests=$(grep -hE '^(smoke|smoke_turbo|smoke_test|smoke_run|smoke_run_bootstrap|smoke_warn) +test/' "$SMOKE" \
