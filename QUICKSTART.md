@@ -1076,6 +1076,8 @@ var result = sb.build()              # str (drains the builder)
 | `encodeBase64()` | `(): str` | Base64-encode |
 | `decodeBase64()` | `(): str` | Base64-decode |
 | `lines()` | `(): List(str)` | Split on newlines |
+| `replaceAll(from, to)` | `(str, str): str` | Alias of `replace` |
+| `toString()` | `(): str` | Identity; lets `str` satisfy a `toString`-shaped call |
 
 **Returns `int`:**
 
@@ -1092,6 +1094,7 @@ var result = sb.build()              # str (drains the builder)
 | `tryInt()` | `(): int?` | Parse as decimal integer; **nil** on bad input |
 | `tryFloat()` | `(): float?` | Parse as float; **nil** on bad input |
 | `codePointCount()` | `(): int` | Count Unicode codepoints (not bytes) |
+| `toFloat()` | `(): float` | Parse as float (**0.0** on bad input — use `tryFloat`) |
 
 > `toFloat()` / `toInt()` return `0.0` / `0` on unparseable input (they cannot
 > signal failure); prefer `tryFloat()` / `tryInt()` (which return `nil`) when a
@@ -1120,6 +1123,7 @@ var result = sb.build()              # str (drains the builder)
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `split(sep)` | `(str): List(str)` | Split on `sep` string |
+| `tokenize(seps)` | `(str): List(str)` | Split on ANY character in `seps`, dropping empties |
 | `chars()` | *iterator* | Unicode codepoints (`u21`). **`for`-only** — `for c in s.chars()` works; binding it (`var cs = s.chars()`) does not compile. |
 | `bytes()` | *iterator* | Bytes (`u8` as `int`). **`for`-only** — same restriction as `chars()`. |
 

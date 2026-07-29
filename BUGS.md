@@ -1,10 +1,46 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-222. Next new bug: BUG-223.**
+**Last bug number generated: BUG-223. Next new bug: BUG-224.**
 
 ---
 
-### BUG-222: stdlib calls accept TOO FEW arguments — `s.count()` compiles and panics ⬜ OPEN
+### BUG-223: `str.charAt` is typed `str` but emits `u8` ⬜ OPEN
+Found 2026-07-29 while closing #5a's doc gaps. The TypeChecker and codegen disagree:
+
+* `TypeChecker.stringMethodReturn` (~1340) groups `charAt` with `substring` and returns
+  `Type_.string_`.
+* codegen (`CodeGen.zbr` ~13560) emits `s[@intCast(i)]`, and indexing a `[]const u8`
+  yields **`u8`**.
+
+```zebra
+def main()
+    var s: str = "abc"
+    var c = s.charAt(0)
+```
+```
+c2.zbr:3: error: expected type 'str', found 'u8'
+```
+
+Note the missing COLUMN: the diagnostic comes from Zig via the remapper, not from the
+front end, which is the BUG-215/BUG-218 shape — the type checker believed something
+untrue, so it had no complaint of its own to make. Printing it directly is worse
+(`invalid format string 's' for type 'u8'`, pointing into std).
+
+**Also unguarded:** the emit site is `if mname == "charAt" and args.len > 0`, so
+`s.charAt()` with no argument falls through to another path entirely — the BUG-222
+family. `charAt` is absent from QUICKSTART's method tables, so #5a's arity table does
+not cover it and cannot catch that yet.
+
+**Needs a design call before a fix, because it is user-facing API.** The name says
+char, the implementation says byte, and Zebra has distinct `char` (u21) and `byte` (u8)
+types plus a `bytes()` iterator. Recommendation: make it `byte` — that matches the
+implementation and `bytes()`, costs no codegen change, and `s[i..j]`/`chars()` already
+cover the other two intents. Whichever is chosen, it then belongs in the QUICKSTART
+table so the arity checker picks it up.
+
+---
+
+### BUG-222: stdlib calls accept TOO FEW arguments — `s.count()` compiles and panics ✅ FIXED 2026-07-29
 Found 2026-07-29 by the #5a signature tooling, which probes each documented method at
 reduced arity to learn which trailing arguments default. Seven `str`/`List` rows accept
 zero arguments. Three are genuine defaults; **four are silently-dropped arguments**, the
@@ -31,7 +67,14 @@ frames away" shape that made BUG-215 worth fixing.
 | `s.concat()` | yes | identity — harmless but meaningless |
 | `List(str).join()` | yes | joins with no separator |
 
-**Fix:** this is what #5a is for. The verified arity table (`tools/stdlib_arity.tsv`,
+**FIXED 2026-07-29 by #5a (`9d713bc`).** `s.count()` is now
+`error: str.count expects 1 argument, got 0` at the user's own line and column.
+Verified in both directions by `tools/stdlib_sig_check.py`: the run that originally
+reported "7 rows accept FEWER args than required" now reports none, and every row is
+also checked at max+1 to prove the check is actually firing rather than the gate
+merely agreeing with itself.
+
+**Original analysis:** this is what #5a is for. The verified arity table (`tools/stdlib_arity.tsv`,
 min..max per receiver kind) already records that `count` requires 1; once the
 TypeChecker consults it, `s.count()` becomes a Zebra diagnostic with a caret instead of
 a panic. Tracked there rather than fixed separately — a one-off guard on `count` would

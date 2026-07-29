@@ -1416,6 +1416,14 @@ def stdlibArityError(recv_kind: str, name: str, argc: int): str
         else if name == "toInt" or name == "tryInt" or name == "tryFloat" or name == "codePointCount"
             lo = 0
             hi = 0
+        # Added 2026-07-29: these four were implemented but absent from QUICKSTART's
+        # method tables, so the extractor never saw them and `s.toFloat(1)` was
+        # accepted. Documenting them widened the table, and the max+1 leg of
+        # stdlib_sig_check.py then flagged this function as behind — which is the
+        # drift that gate exists to catch.
+        else if name == "toFloat" or name == "toString"
+            lo = 0
+            hi = 0
         else if name == "isEmpty" or name == "isAlpha" or name == "isNumeric"
             lo = 0
             hi = 0
@@ -1424,6 +1432,9 @@ def stdlibArityError(recv_kind: str, name: str, argc: int): str
             hi = 0
         # exactly one
         else if name == "repeat" or name == "concat" or name == "count" or name == "split"
+            lo = 1
+            hi = 1
+        else if name == "tokenize"
             lo = 1
             hi = 1
         else if name == "indexOf" or name == "lastIndexOf" or name == "indexOfIgnoreCase"
@@ -1443,7 +1454,10 @@ def stdlibArityError(recv_kind: str, name: str, argc: int): str
             lo = 1
             hi = 2
         # exactly two
-        else if name == "replace" or name == "substring" or name == "indexOfFrom"
+        else if name == "replace" or name == "replaceAll" or name == "substring"
+            lo = 2
+            hi = 2
+        else if name == "indexOfFrom"
             lo = 2
             hi = 2
     else if recv_kind == "List(str)"

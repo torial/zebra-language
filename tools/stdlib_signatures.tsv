@@ -21,6 +21,8 @@ str	fromHex	0
 str	encodeBase64	0
 str	decodeBase64	0
 str	lines	0
+str	replaceAll	2	str,str
+str	toString	0
 -	len	-		field, not a call
 str	indexOf	1	str
 str	lastIndexOf	1	str
@@ -32,6 +34,7 @@ str	toIntBase	1	int
 str	tryInt	0
 str	tryFloat	0
 str	codePointCount	0
+str	toFloat	0
 str	contains	1	str
 str	startsWith	1	str
 str	endsWith	1	str
@@ -46,5 +49,6 @@ str	startsWithIgnoreCase	1	str
 str	endsWithIgnoreCase	1	str
 str	containsIgnoreCase	1	str
 str	split	1	str
+str	tokenize	1	str
 -	chars	-		for-only iterator; cannot be bound
 -	bytes	-		for-only iterator; cannot be bound
