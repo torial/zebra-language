@@ -4,7 +4,7 @@
 
 ---
 
-### BUG-221: module init is not TRANSITIVE — a 3-module program crashes if the deepest dep does I/O ⚠️ FIXED under `--runtime-module` (2026-07-28); still OPEN on the default path
+### BUG-221: module init is not TRANSITIVE — a 3-module program crashes if the deepest dep does I/O ✅ FIXED 2026-07-28
 The entry point initialises **direct dependencies only**. A module that is itself only
 reached through another module never receives `_initAllocator`/`_initIo`, so its `_io` and
 `_allocator` stay `undefined` and the first use segfaults.
@@ -68,9 +68,15 @@ Note the fix is smaller than "delete the fan-out": `_allocator`/`_io` genuinely 
 needing propagation, but each module's own `_initModuleVars` still has to be REACHED —
 which is precisely the transitivity that was missing.
 
-**Still open on the DEFAULT path**, because `--runtime-module` is default-off while it
-phases in (as `--single-file` did). Closing this bug outright means making that flag the
-default, which is a separate, gated decision.
+**CLOSED on the default path 2026-07-28 (`ade34cf`)**: runtime-module emission is now the
+default, so this needs no flag. The repro prints `missing`.
+
+One caveat worth keeping, because it is the shape of the remaining risk: the paths that
+still emit the INLINE runtime — `--single-file`, `--target node-addon`, and every
+`--gui-backend` — retain the old direct-deps-only init and would reproduce this bug. They
+are single-module or scaffold-their-own-build cases today, so it is latent rather than
+live, but it becomes real the moment a multi-module GUI app touches a file from depth 2.
+Covering those paths is tracked in NEXT_STEPS under #1.
 
 ---
 

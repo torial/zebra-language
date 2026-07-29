@@ -92,7 +92,7 @@ tests separately, and the compile-failure fallback to the authoritative LLVM pat
 rest. A check also needs no binary, so it now passes `-fno-emit-bin` and skips linking
 entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, identical diagnostics.
 
-- [~] **#1 — Stop inlining the preamble; ship it as a runtime module. SHIPPED behind default-off `--runtime-module` 2026-07-28 — read `docs/runtime_module_design.md` before touching it.** Emitted programs
+- [~] **#1 — Stop inlining the preamble; ship it as a runtime module. NOW THE DEFAULT (2026-07-28; `--no-runtime-module` opts out) — read `docs/runtime_module_design.md` before touching it.** Emitted programs
   would `@import` a runtime package instead of carrying 3,790 lines of copy-pasted preamble for a
   2-line source. **Re-justified after measurement — this is NOT about speed** (worth ~0.2 s on
   the fast path). It is about three things that are real:
@@ -166,17 +166,32 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
       anything emitted in this mode, hence the only one that can see BUG-221) and
       `compile_check.sh --runtime-module` (FULL tier), which is **217/0/1, identical to the
       default-mode baseline**.
-  - [ ] **Remaining before the flag could become the default:** `pub`-mark
-    `gui_tui_section.zig` (89 decls) and `gui_libui_ng_section.zig` (102) to cover the GUI
-    paths; decide the node-addon story; guard the one *new* reserved file-scope name the
-    mode introduces (`_rt`, currently unguarded — the same shape as BUG-220, harmless only
-    because the flag is off); then flip, which is its own gated decision. BUG-221 stays open
-    on the default path until that flip. Note the design note's claim that this "closes
-    BUG-220 completely including the `@export` residual" is **unverified** — `@export` turns
-    out to be a class-factory annotation, so the obvious repro does not exercise it. What IS
-    demonstrable is that the emitted file's scope holds only the referenced subset of the
-    runtime's 399 names, a strict subset of the inline path's — so collisions can only
-    decrease.
+  - [x] **FLIPPED TO DEFAULT 2026-07-28 (`ade34cf`).** `--no-runtime-module` opts out.
+    **BUG-221 is fixed on the default path.** The three refusals became FALLBACKS, which is
+    the substance of the flip: under a flag, refusing an uncovered combination is honest; as
+    the default it would simply break those paths. `--single-file`, `--target node-addon` and
+    every `--gui-backend` now silently select the inline runtime. The import binds to
+    `_zbr_rt` (not `_rt`) — the mode adds a file-scope name to every emitted program, which
+    is exactly the BUG-220 hazard, and `_zbr_` is already the reserved prefix for it.
+    Gates 9/9, including a round-trip where **selfhost-B is built from selfhost-A's split
+    emit and reproduces it byte-identically** — the compiler bootstraps itself through the
+    new runtime.
+  - [ ] **Residual work, in priority order:**
+    1. **~70ms per emit vs the inline runtime** (hello-world ~120ms vs ~52ms; smoke 213s vs
+       187s baseline). `96c09b2` cached the render and the name scan, taking the regression
+       from 3.6x to ~1.15x on the suite, but the caches do NOT help a single-module program —
+       each is populated and used once. What remains is one render, one 3,767-line scan, and
+       one 186 KB read-and-compare per emit. **Needs instrumentation, not another guess**;
+       the read-and-compare is the first thing to attack (it exists only to narrow the
+       concurrent-write window on the shared temp path, which `--output-dir` avoids).
+    2. **Cover the fallback paths**: `pub`-mark `gui_tui_section.zig` (89 decls) and
+       `gui_libui_ng_section.zig` (102) for the GUI backends; decide the node-addon story.
+       Until then those emit the inline runtime, guarded by `runtime_module_check.sh`.
+    3. The design note's claim that this "closes BUG-220 completely including the `@export`
+       residual" is **unverified** — `@export` is a class-factory annotation here, so the
+       obvious repro does not exercise it. What IS demonstrable: the emitted file's scope
+       holds only the *referenced* subset of the runtime's 399 names, a strict subset of the
+       inline path's, so collisions can only decrease.
 
 - [x] **#3 — Move nil-narrowing into the TypeChecker. DONE 2026-07-28 (`81501dc`).** Narrowing
   was codegen-only (the BUG-188 note in `genMemberCall`): `inferExpr` still reported `?T` inside

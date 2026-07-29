@@ -157,24 +157,26 @@ python tools/lint_fallthrough.py   # THE FALL-THROUGH GATE (static, instant, no 
                                 #   §28f set-literal arms, since fixed) but re-flags that exact
                                 #   bug if reintroduced. Run after adding any `branch` arm to a
                                 #   recursive walker (exprHasTry/inferExpr/…). 0 = clean.
-bash tools/runtime_module_check.sh # THE ONLY GATE THAT RUNS `--runtime-module` OUTPUT:
-                                #   three tiny programs — hello-world (asserting the emitted
-                                #   file is <100 lines, i.e. the runtime really was
-                                #   externalised and did not silently go back to being
-                                #   spliced), the BUG-221 three-module repro (which SEGFAULTS
-                                #   on the default path and prints its answer here), and the
-                                #   refusal of `--runtime-module --single-file`. compile_check
-                                #   never runs anything, so it cannot see any of this.
+bash tools/runtime_module_check.sh # THE ONLY GATE THAT RUNS EMITTED OUTPUT: small programs
+                                #   exercising the DEFAULT emit shape — hello-world (asserting
+                                #   the emitted file is <100 lines, i.e. the runtime really was
+                                #   externalised into zebra_rt.zig and did not silently go back
+                                #   to being spliced), the BUG-221 three-module repro (which
+                                #   SEGFAULTED before this change), `zebra run` / `zebra -c`
+                                #   (a DIFFERENT branch of zbrToZig — temp dir, not
+                                #   --output-dir), and that `--no-runtime-module` and
+                                #   `--single-file` still produce the INLINE runtime.
+                                #   compile_check never runs anything, so it cannot see any of
+                                #   this; and every other gate is happy whichever shape is the
+                                #   default, so this is the only one that would notice a silent
+                                #   revert. It deliberately passes NO flag where it can.
                                 #   Cheap → QUICK tier. Pair with:
-JOBS=3 bash tools/compile_check.sh --runtime-module  # the SAME corpus with the runtime
-                                #   externalised — a genuinely different emit shape
-                                #   (qualified vars, aliased symbols, no inline preamble), so
-                                #   default-mode green says nothing about it. 217/0/1 as of
-                                #   2026-07-28, identical to the default baseline. FULL tier.
-                                #   NOTE: `bootstrap_check.sh` must NEVER pass this flag —
-                                #   its step 3 re-emits selfhost/*.zig with the selfhost, and
-                                #   the compiler's own committed .zig must have ONE shape
-                                #   regardless of which tool last regenerated it.
+JOBS=3 bash tools/compile_check.sh --no-runtime-module  # the SAME corpus with the INLINE
+                                #   runtime. Runtime-module emission is the DEFAULT as of
+                                #   2026-07-28, so the INLINE shape is the one that would
+                                #   otherwise go unwatched — and it stays live via the opt-out
+                                #   and as the fallback for --single-file / node-addon / every
+                                #   --gui-backend. 217/0/1, identical to the default. FULL tier.
 JOBS=2 bash tools/full_sweep.sh --gate   # THE FULL-CORPUS WITNESS: emits + zig-
                                 #   typechecks EVERY test/*.zbr (403), not just the ~210
                                 #   compile_check covers. --gate fails on REGRESSION vs
