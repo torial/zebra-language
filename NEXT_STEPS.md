@@ -242,7 +242,13 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
   at `0:0`; the only reproducible case is a two-literal concat), so this is a cap on how good
   diagnostics can get, not a present emergency. Do it when it blocks something.
 
-- [ ] **#2 — Typed error sets. DISCUSS STRATEGY WITH SEAN FIRST.** Errors are stringly-typed:
+- [ ] **#2 — Typed error sets. STRATEGY DECIDED 2026-07-29: declared-only, opt-in.**
+  `def parse(s: str) throws ParseError` declares an explicit set; a bare `throws` keeps
+  meaning "anything". Migration is therefore per-function and nothing breaks on day one.
+  **Inferred sets were considered and rejected**: they are more ergonomic, but a new
+  failure mode added to a leaf function would silently change the signature of callers
+  several modules up, which is exactly the invisible-ripple behaviour a contracts
+  language should not have. A function should state what it promises. Original framing: Errors are stringly-typed:
   `raise "division by zero"`, caught as `e.message`, everything `anyerror!T`. A caller cannot
   know which errors a function raises, cannot handle them exhaustively, gets no compiler help
   when a new failure mode is added, and breaks silently when someone rewords a string. This is
@@ -253,7 +259,14 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
   exhaustive `catch`. Design space includes declared vs inferred sets, subtyping/widening, and
   migrating every existing `raise`.
 
-- [ ] **#4 — A check mode that actually checks. DISCUSS STRATEGY WITH SEAN FIRST.** `zebra -c`
+- [ ] **#4 — A check mode that actually checks. STRATEGY DECIDED 2026-07-29: fast default
+  + `--check-full`.** `-c` becomes front-end-only (~62 ms where the front end can answer);
+  `--check-full` keeps today's full `zig build-exe` pass. The IDE Check button is the
+  dominant caller and that is the difference between live feedback and a pause.
+  **Non-negotiable part of this decision:** the asymmetry must be NAMED in `--help` —
+  a fast `-c` can pass on code that `zebra run` then fails to build, and a check whose
+  limits are undocumented is the same class of problem as a gate that cannot fail.
+  Best sequenced after #5a, which raises what the front end can answer. Original framing: `zebra -c`
   runs a full `zig build-exe`. A check that stops after typecheck would be **~0.06 s instead of
   5.2 s** — 90x on the compiler's most-run command, and it would make the IDE Check button
   instant. The strategy question is what `-c` should *promise*: front-end-only (fast, misses
@@ -348,7 +361,13 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
   *1.5* design, §19.5d had a stale premise and is an optimisation. **What remains
   between here and 1.0 is §15 — the freeze itself.** That is a decision to make, not
   work to do, and it is Sean's.
-- [ ] **§15 — 1.0 stability lock + final CHANGELOG pass.** The milestone act itself:
+- [ ] **§15 — 1.0 stability lock + final CHANGELOG pass. SEQUENCE DECIDED 2026-07-29:
+  §28e + docs polish → ship 0.9 public → freeze 1.0 on evidence.** Not a straight freeze:
+  the public release is 0.9 (ready-for-others), and it should read as finished when it
+  lands, so the `str` ownership table (§28e) and a documentation pass come FIRST.
+  Freezing 1.0 before anyone outside has compiled a line would spend the stability
+  commitment against a corpus of 335 files instead of against real use. The milestone
+  act itself:
   everything below the line is delivered; 1.0 is the promise to freeze it. → *Open
   detail §15.*
 - [ ] **§19.5d — `bootstrap_check.sh` latency. NOT A BLOCKER; premise was stale.**
