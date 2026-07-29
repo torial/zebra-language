@@ -1,6 +1,48 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-221. Next new bug: BUG-222.**
+**Last bug number generated: BUG-222. Next new bug: BUG-223.**
+
+---
+
+### BUG-222: stdlib calls accept TOO FEW arguments — `s.count()` compiles and panics ⬜ OPEN
+Found 2026-07-29 by the #5a signature tooling, which probes each documented method at
+reduced arity to learn which trailing arguments default. Seven `str`/`List` rows accept
+zero arguments. Three are genuine defaults; **four are silently-dropped arguments**, the
+mirror image of BUG-215 (which was about too MANY).
+
+```zebra
+def main()
+    var s: str = "ab"
+    print(s.count().toString())     # compiles clean
+```
+```
+thread 4680 panic: reached unreachable code
+```
+
+`s.count("ab")` correctly returns 2. Dropping the argument type-checks, emits, links,
+and dies at runtime with no diagnostic — the same "typo becomes a runtime panic three
+frames away" shape that made BUG-215 worth fixing.
+
+| call | accepted? | actual behaviour |
+|---|---|---|
+| `s.padLeft(5)` / `padRight` / `center` | yes | **genuine default** — pads with spaces |
+| `s.count()` | yes | **PANIC**, reached unreachable code |
+| `s.split()` | yes | returns 1 element (silently wrong) |
+| `s.concat()` | yes | identity — harmless but meaningless |
+| `List(str).join()` | yes | joins with no separator |
+
+**Fix:** this is what #5a is for. The verified arity table (`tools/stdlib_arity.tsv`,
+min..max per receiver kind) already records that `count` requires 1; once the
+TypeChecker consults it, `s.count()` becomes a Zebra diagnostic with a caret instead of
+a panic. Tracked there rather than fixed separately — a one-off guard on `count` would
+leave the other three, which is exactly how BUG-215 ended up as a single `@compileError`
+on `indexOf` while the rest of the surface stayed unguarded.
+
+**Note on method:** the probe that found this originally *encoded* these as legal
+minima, because probing measures what the compiler tolerates and what it tolerates is
+the bug. Separating real defaults from dropped arguments required RUNNING them. A tool
+that learns a specification from a defective implementation will faithfully record the
+defect as the specification.
 
 ---
 
