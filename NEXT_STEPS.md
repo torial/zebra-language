@@ -76,22 +76,21 @@ Related, same direction: BUG-218 (`str + int`) was exactly this move — a mista
 used to surface as a Zig error about `_str_concat` in a 3,790-line generated file now
 resolves in 62 ms against the user's own line, with a caret. That is the template.
 
-**Sequencing:** #5a first (self-contained, immediate user-visible payoff, no
-dependencies), then #3 (deeper, unlocks the rest), then revisit #4 with Sean once the
-front end's coverage is actually worth promising something about.
+**Sequencing:** ~~#5a first, then #3~~ — **#3 landed first** (2026-07-28, `81501dc`), which
+makes the TC authoritative about what is known and unblocks the rest. **#5a is next** in this
+group (self-contained, immediate user-visible payoff, no dependencies); then revisit #4 with
+Sean once the front end's coverage is actually worth promising something about.
 
-### FREE WIN — `-c` is excluded from the fast backend (do this first)
+### ~~FREE WIN — `-c` is excluded from the fast backend~~ — **DONE 2026-07-28 (`3fabc50`)**
 
-`selfhost/main.zbr:2414` reads `if not mode_c and not release and …` — check mode is
-**explicitly excluded** from the `-fno-llvm -fno-lld` path. So the most latency-sensitive
-operation in the compiler, and the one that `IDE/ZebraIDE.zbr`'s Check button runs, deliberately
-takes the *slowest* route: **5.2 s where ~1 s was available.**
-
-The exclusion may be deliberate — the comment above it notes the self-hosted linker does not
-error on unresolved C symbols, so compile-failure fallback cannot protect C-dep builds. But that
-argument is about C deps, which the condition already tests separately. Worth an hour: determine
-whether `mode_c` needs excluding at all, and if not, delete two words for a 5x improvement in
-the compiler's most-run command.
+`selfhost/main.zbr:2414` read `if not mode_c and not release and …`, so check mode — the
+compiler's most latency-sensitive command, and the one `IDE/ZebraIDE.zbr`'s Check button runs —
+was **explicitly excluded** from the `-fno-llvm -fno-lld` path and took the slowest available
+route. The exclusion turned out not to be load-bearing: the comment's argument (the self-hosted
+linker does not error on unresolved C symbols) is about C deps, which the condition already
+tests separately, and the compile-failure fallback to the authoritative LLVM path protects the
+rest. A check also needs no binary, so it now passes `-fno-emit-bin` and skips linking
+entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, identical diagnostics.
 
 - [ ] **#1 — Stop inlining the preamble; ship it as a runtime module. SPIKED 2026-07-28 — design proven end-to-end, see `docs/runtime_module_design.md` before starting.** Emitted programs
   would `@import` a runtime package instead of carrying 3,790 lines of copy-pasted preamble for a
@@ -128,11 +127,15 @@ the compiler's most-run command.
   shared. Plus one backward dependency to break: the preamble's `_initIo` calls
   `_initModuleVars()`, which codegen emits into the *user* file.
 
-- [ ] **#3 — Move nil-narrowing into the TypeChecker.** Narrowing is currently codegen-only (see
-  the BUG-188 note in `genMemberCall`): `inferExpr` still reports `?TcpConn` inside
-  `if conn != nil`, so the type checker and codegen disagree about what is known. It works today
-  because emit unwraps, but it caps every future check built on inference. Prerequisite for
-  making the TC authoritative.
+- [x] **#3 — Move nil-narrowing into the TypeChecker. DONE 2026-07-28 (`81501dc`).** Narrowing
+  was codegen-only (the BUG-188 note in `genMemberCall`): `inferExpr` still reported `?T` inside
+  `if x != nil`, so the type checker and codegen disagreed about what was known. The cost was
+  user-visible — the same mistake got a Zebra diagnostic with a caret outside a nil-check and a
+  raw Zig error with no column inside one. `InferCtx.scope` is flat, so the then-branch saves and
+  restores the original type; four of the six cases in `test/nil_narrow_tc_test.zbr` exist to
+  prove the restore works, because a leak would produce FALSE errors on valid code rather than a
+  missing one. Detection mirrors CodeGen's `nilCheckedIdent` exactly so the two cannot drift.
+  Gates: 7/7 full.
 
 - [ ] **#5a — Stdlib arity/signature checking.** The BUG-215 class: `indexOf(a, b)` silently
   discarded its second argument, turning a typo into a runtime panic three frames away. Today
