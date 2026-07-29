@@ -322,9 +322,36 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
     `.load(slice)` (offset 0) unchanged. Benchmark rewritten to it — byte-identical, four one-line
     loads for four eight-arg constructors. **All three SIMD-data-bridge tiers complete; BUG-197
     fully resolved.**
-- [ ] **§28e — `str` ownership doc table.** Per-stdlib-call borrows-vs-owns table in
-  the spec/QUICKSTART (documentation, not a new type). Grounds the 1.5 `str_view`
-  design. → *Open detail §28e.*
+- [ ] **§28e — STRING LAYER COHERENCE (scope expanded 2026-07-29).** Was "a
+  borrows-vs-owns doc table"; now the one pass that makes Zebra's string layer tell the
+  truth, so strings are touched once before 0.9 rather than three times. Three parts:
+
+  1. **The ownership table** (the original §28e): per-stdlib-call borrows-vs-owns, in
+     the spec/QUICKSTART. Documentation, not a new type. Grounds the 1.5 `str_view`
+     design.
+  2. **Byte-vs-codepoint honesty.** `char` STAYS — Sean's call after review, and the
+     data backs it: 559 `c'x'` literals, and the compiler's own lexer is built on
+     `branch c on c'a'..c'z'` range matching, so it is the opposite of islanded.
+     Removing it would be a 559-site rewrite to buy one fewer type. What is wrong is
+     the PRETENSE that byte indexing yields codepoints:
+
+     | | actually is | typed as |
+     |---|---|---|
+     | `s[i]` / `Lexer.peek()` | byte, widened to u21 | `char` |
+     | `charAt(i)` | `u8` | `str` ← BUG-223 |
+     | `chars()` | real UTF-8 decode | `char` ✓ |
+
+     Only the third is honest. Adopt Go's model explicitly — `str` is bytes, `char`
+     is the decoded codepoint — and make the byte-oriented accessors SAY byte.
+  3. **State the ceiling in QUICKSTART.** A codepoint is not a user-perceived
+     character: `é` can be two codepoints, emoji families are many. Swift made
+     `Character` a grapheme cluster for exactly this reason; Rust and Go chose
+     codepoint and documented the limit. Zebra chooses codepoint, so the limit
+     belongs in the docs rather than being discovered by whoever first calls
+     `.chars()` on an emoji.
+
+  **Closes BUG-223 as part of the pass** (`charAt` → `byte`), which is why that bug is
+  filed with a recommendation instead of a patch. → *Open detail §28e.*
 - [x] **§28f — generic `Set(T)` DONE (2026-07-24).** Distinct `Type_.set_` variant
   emitting `AutoHashMap(T, void)` / `StringHashMap(void)` (str). API: `add`/`contains`/
   `remove`/`len`/`count`/`items`→`List(T)`/`clear`, `for x in set`, `x in set`. Works as
