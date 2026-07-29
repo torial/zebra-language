@@ -60,6 +60,29 @@ else
     ok "generated selfhost/*.zig is current with its .zbr sources"
 fi
 
+# ── 1b. bootstrap older than the preamble it EMBEDS (the other silent one) ───
+# build.zig:37-59 reads the preamble files and embeds them into zebra-bootstrap.exe
+# via b.addOptions — at BUILD time. The bootstrap is the regen authority, so if it
+# predates a preamble edit it regenerates the OLD runtime, the regen looks clean,
+# and every gate afterwards measures a compiler that does not contain the change.
+# Observed 2026-07-28: a preamble edit + rebuild.sh reported OK and changed nothing.
+# Same family as check 1 — there the .zig lags the .zbr; here the BINARY lags the
+# file it baked in. Both make results lie, so both are WRONG, not warn.
+BOOT=zig-out/bin/zebra-bootstrap.exe
+embed_stale=()
+if [[ -f "$BOOT" ]]; then
+    for f in selfhost/stdlib_preamble.zig selfhost/napi_preamble.zig; do
+        [[ -f "$f" && "$f" -nt "$BOOT" ]] && embed_stale+=("$(basename "$f")")
+    done
+fi
+if [[ ${#embed_stale[@]} -gt 0 ]]; then
+    wrong "bootstrap predates a preamble it embeds — a regen now emits the OLD runtime:"
+    for f in "${embed_stale[@]}"; do printf '           %s is newer than zebra-bootstrap.exe\n' "$f"; done
+    printf '           fix: zig build   (then regenerate — bash tools/rebuild.sh does both, in order)\n'
+elif [[ -f "$BOOT" ]]; then
+    ok "bootstrap is current with the preamble files it embeds"
+fi
+
 # ── 2. orphaned compilers holding locks ──────────────────────────────────────
 orph=0
 for p in zebra.exe zebra-bootstrap.exe zebra-selfhost.exe zebra-selfhost-B.exe zig.exe; do
