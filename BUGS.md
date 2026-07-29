@@ -4,7 +4,7 @@
 
 ---
 
-### BUG-221: module init is not TRANSITIVE — a 3-module program crashes if the deepest dep does I/O ⬜ OPEN
+### BUG-221: module init is not TRANSITIVE — a 3-module program crashes if the deepest dep does I/O ⚠️ FIXED under `--runtime-module` (2026-07-28); still OPEN on the default path
 The entry point initialises **direct dependencies only**. A module that is itself only
 reached through another module never receives `_initAllocator`/`_initIo`, so its `_io` and
 `_allocator` stay `undefined` and the first use segfaults.
@@ -55,6 +55,22 @@ the "track for later" list.
 fan-out at all. That design note already lists **deleting this fan-out** as one of its
 wins, so BUG-221 is a third independent argument for it (alongside BUG-220's `@export`
 residual and error-location legibility).
+
+**RESOLVED under `--runtime-module` (2026-07-28).** Route (b) was taken, via the runtime
+module rather than single-file emission: the runtime holds ONE `_allocator`/`_io` that
+every module shares at any depth, so there is nothing to propagate, and the entry point
+drives `_initModuleVars()` over the **transitive** dep list instead of direct `use` decls.
+The repro above now prints `missing` where it segfaulted. Gated by
+`tools/runtime_module_check.sh` (QUICK tier) — the only gate that runs anything emitted
+in this mode, and therefore the only one that can see this bug.
+
+Note the fix is smaller than "delete the fan-out": `_allocator`/`_io` genuinely stop
+needing propagation, but each module's own `_initModuleVars` still has to be REACHED —
+which is precisely the transitivity that was missing.
+
+**Still open on the DEFAULT path**, because `--runtime-module` is default-off while it
+phases in (as `--single-file` did). Closing this bug outright means making that flag the
+default, which is a separate, gated decision.
 
 ---
 

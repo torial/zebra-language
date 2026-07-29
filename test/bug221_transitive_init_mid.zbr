@@ -1,0 +1,6 @@
+# BUG-221 repro, depth 1: nothing here does I/O. Its only job is to put a level
+# between the entry point and the module that does.
+use bug221_transitive_init_leaf exposing readIt
+
+def viaMid(p: str): str
+    return readIt(p)

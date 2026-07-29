@@ -13,6 +13,7 @@
 #   bash tools/compile_check.sh                 # selfhost (zebra.exe), all tests
 #   bash tools/compile_check.sh --bootstrap     # bootstrap (zebra-bootstrap.exe)
 #   bash tools/compile_check.sh --single-file   # emit each test with --single-file, then check
+#   bash tools/compile_check.sh --runtime-module # emit each test with --runtime-module, then check
 #   bash tools/compile_check.sh --only hashmap   # only tests whose name contains 'hashmap'
 #   JOBS=8 bash tools/compile_check.sh           # override parallelism (default 4)
 #
@@ -61,8 +62,9 @@ if [ "${1:-}" = "--worker" ]; then
   mode="$2"; rel="$3"
   name=$(basename "$rel" .zbr)
   zebra=$(zebra_for "$mode")
-  # CC_SINGLE_FILE is exported by the main process; append --single-file to the emit.
+  # CC_SINGLE_FILE / CC_RUNTIME_MODULE are exported by the main process.
   sf_flag=""; [ "${CC_SINGLE_FILE:-0}" = 1 ] && sf_flag="--single-file"
+  [ "${CC_RUNTIME_MODULE:-0}" = 1 ] && sf_flag="--runtime-module"
   wdir="$OUT/w-$name"; rm -rf "$wdir"; mkdir -p "$wdir"
   main="$wdir/$name.zig"
   if [ "$mode" = bootstrap ]; then
@@ -82,11 +84,12 @@ if [ "${1:-}" = "--worker" ]; then
 fi
 
 # ── Main: parse flags, build worklist, fan out ──────────────────────────────────
-MODE=selfhost; ONLY=""; SF=0
+MODE=selfhost; ONLY=""; SF=0; RM=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --bootstrap)   MODE=bootstrap; shift;;
     --single-file) SF=1; shift;;
+    --runtime-module) RM=1; shift;;
     --only)        ONLY="${2:-}"; shift 2;;
     *) shift;;
   esac
@@ -94,6 +97,7 @@ done
 JOBS="${JOBS:-4}"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"   # ensure zig is reachable when run standalone
 export CC_SINGLE_FILE="$SF"                   # picked up by --worker
+export CC_RUNTIME_MODULE="$RM"                # picked up by --worker
 mkdir -p "$OUT"
 
 tests=$(grep -hE '^(smoke|smoke_turbo|smoke_test|smoke_run|smoke_run_bootstrap|smoke_warn) +test/' "$SMOKE" \

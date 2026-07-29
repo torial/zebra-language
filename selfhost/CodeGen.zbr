@@ -1318,6 +1318,302 @@ def guiSelectPreamble(preamble: str): str
     var aeEnd = ae + stubEnd.len
     return preamble[0 .. siEnd] + "\n" + _gui_section + preamble[aeEnd .. preamble.len]
 
+# ── Runtime-module emission (#1, `--runtime-module`) ─────────────────────────
+# DEFAULT OFF.  When on, the runtime preamble is written ONCE as `zebra_rt.zig`
+# beside the emitted program and the program `@import`s it, instead of carrying a
+# verbatim 3,767-line copy.  Design + measurements: docs/runtime_module_design.md.
+#
+# Two Zig 0.16 facts shape the whole thing, and neither is negotiable:
+#   * `usingnamespace` is REMOVED, so runtime symbols come in one explicit alias
+#     at a time (`const _intern = _rt._intern;`), not wholesale.
+#   * a mutable `var` CANNOT be aliased — `const x = _rt.x` is "unable to resolve
+#     comptime value" — so the runtime's mutable vars must be QUALIFIED at each
+#     use site (`_rt._allocator`).  That constraint is also the payoff: qualifying
+#     is exactly what makes them one shared instance, which is why BUG-221
+#     dissolves.  Every module at every depth then reads the same `_allocator`.
+#
+# The qualification runs as a post-pass over the ASSEMBLED emit rather than as an
+# edit at each emit site.  `_allocator` alone is written at 135 places in this
+# file, nearly all buried inside larger snippets like
+# `w.emit("(std.fmt.allocPrint(_allocator, …")`.  One quote-aware pass cannot miss
+# a site; 250+ hand edits can, and a missed one is an undefined identifier in
+# generated code.  The transformation was validated as a standalone script over
+# the corpus before any of this was written (tools/rtsplit_spike.py).
+#
+# INVARIANT: `bootstrap_check.sh` must never pass `--runtime-module`.  Step 3 of
+# the round-trip has selfhost-A re-emit into selfhost/ itself; if that emitted the
+# split shape, the compiler's own committed .zig would depend on which tool last
+# regenerated it (the bootstrap emits monolithic).  Keeping the flag out of the
+# round-trip keeps one answer to "what shape is selfhost/*.zig".
+var _runtime_module: bool = false
+# Space-delimited and space-fenced (" a b c ") so membership is a plain substring
+# test.  Kept as strings rather than containers because these are MODULE-level and
+# a module-global container would need deferred init (BUG-153) for no benefit.
+var _rt_mut_names: str = ""     # must be qualified: `pub var` / `pub threadlocal var`
+var _rt_alias_names: str = ""   # can be aliased: `pub fn` / `pub const`
+var _rt_deps: str = ""          # transitive dep modules, for the _initModuleVars sweep
+
+def setRuntimeModule(v: bool)
+    _runtime_module = v
+
+def runtimeModule(): bool
+    return _runtime_module
+
+def rtIsIdentChar(c: char): bool
+    branch c
+        on c'a'..c'z'
+            return true
+        on c'A'..c'Z'
+            return true
+        on c'0'..c'9'
+            return true
+        on c'_'
+            return true
+        else
+            return false
+
+def rtIsIdentStart(c: char): bool
+    branch c
+        on c'a'..c'z'
+            return true
+        on c'A'..c'Z'
+            return true
+        on c'_'
+            return true
+        else
+            return false
+
+# Leading identifier characters of `s` ("_allocator: std.mem…" → "_allocator").
+def rtIdentPrefix(s: str): str
+    var i: int = 0
+    while i < s.len and rtIsIdentChar(s[i])
+        i = i + 1
+    return s[0 .. i]
+
+# Index just past a "…" string literal starting at `start` (escape-aware).
+def rtSkipString(src: str, start: int): int
+    var i: int = start + 1
+    while i < src.len
+        if src[i] == c'\\'
+            i = i + 2
+        else if src[i] == c'"'
+            return i + 1
+        else
+            i = i + 1
+    return i
+
+# Index just past a '…' character literal starting at `start` (escape-aware).
+def rtSkipChar(src: str, start: int): int
+    var i: int = start + 1
+    while i < src.len
+        if src[i] == c'\\'
+            i = i + 2
+        else if src[i] == c'\''
+            return i + 1
+        else
+            i = i + 1
+    return i
+
+# Index just past the end of the current line — used for `//` comments and for
+# Zig `\\` multiline-string lines, both of which run to the newline.
+def rtSkipLine(src: str, start: int): int
+    var i: int = start
+    while i < src.len and src[i] != c'\n'
+        i = i + 1
+    return i
+
+# True when the identifier at `i` is a FIELD access (`x._io`) rather than a bare
+# reference.  `..` is excluded so a slice bound (`buf[0.._n]`) still counts as bare.
+def rtIsFieldAccess(src: str, i: int): bool
+    if i < 1
+        return false
+    if src[i - 1] != c'.'
+        return false
+    if i >= 2 and src[i - 2] == c'.'
+        return false
+    return true
+
+def rtIsMutable(name: str): bool
+    return (" " + name + " ") in _rt_mut_names
+
+# Split the runtime module's top-level `pub` declarations into the aliasable set
+# and the must-be-qualified set.  `std`/`builtin` are excluded — the emitted
+# program declares its own, and aliasing them through the runtime would be a
+# needless indirection.  Indented lines are members of runtime types, reachable
+# as `_rt.Type.member`, so they never need a top-level alias.
+def rtScanNames(rt_text: str)
+    var mut: str = " "
+    var ali: str = " "
+    for line in rt_text.split("\n")
+        if not line.startsWith("pub ")
+            continue
+        var rest: str = line[4 .. line.len]
+        var is_mut: bool = false
+        if rest.startsWith("threadlocal var ")
+            is_mut = true
+            rest = rest[16 .. rest.len]
+        else if rest.startsWith("var ")
+            is_mut = true
+            rest = rest[4 .. rest.len]
+        else if rest.startsWith("const ")
+            rest = rest[6 .. rest.len]
+        else if rest.startsWith("inline fn ")
+            rest = rest[10 .. rest.len]
+        else if rest.startsWith("fn ")
+            rest = rest[3 .. rest.len]
+        else
+            continue
+        var nm: str = rtIdentPrefix(rest)
+        if nm == "" or nm == "std" or nm == "builtin"
+            continue
+        if is_mut
+            mut = mut + nm + " "
+        else
+            ali = ali + nm + " "
+    _rt_mut_names = mut
+    _rt_alias_names = ali
+
+# Rewrite every bare reference to a runtime mutable var as `_rt.<name>`.
+# Deliberately skipped: "…" and '…' literals (a user's `print("_allocator")` must
+# survive verbatim), `//` comments, `\\` multiline-string lines, and anything
+# after a `.` (that is a field, not the runtime's var).  Text is copied in slices
+# and only cut at a rewrite point, so a program with no runtime vars is unchanged.
+def rtQualify(src: str): str
+    var sb: StringBuilder = StringBuilder()
+    var n: int = src.len
+    var i: int = 0
+    var seg: int = 0
+    while i < n
+        var c: char = src[i]
+        if c == c'"'
+            i = rtSkipString(src, i)
+        else if c == c'\''
+            i = rtSkipChar(src, i)
+        else if c == c'/' and i + 1 < n and src[i + 1] == c'/'
+            i = rtSkipLine(src, i)
+        else if c == c'\\' and i + 1 < n and src[i + 1] == c'\\'
+            i = rtSkipLine(src, i)
+        else if rtIsIdentChar(c)
+            # Consume the WHOLE alphanumeric run, so a numeric literal like `0x1f`
+            # is never split into a spurious identifier `x1f`.
+            var j: int = i
+            while j < n and rtIsIdentChar(src[j])
+                j = j + 1
+            if rtIsIdentStart(c) and not rtIsFieldAccess(src, i) and rtIsMutable(src[i .. j])
+                sb.append(src[seg .. i])
+                sb.append("_rt.")
+                seg = i
+            i = j
+        else
+            i = i + 1
+    sb.append(src[seg .. n])
+    return sb.build()
+
+# The program's file header: std/builtin, the runtime import, and one alias per
+# runtime symbol the program actually references.  The referenced set is read back
+# out of the emitted text — codegen needs no new tracking to know what it used.
+def rtAliasHeader(src: str): str
+    var used: HashMap(str, bool) = HashMap(str, bool)()
+    var n: int = src.len
+    var i: int = 0
+    while i < n
+        var c: char = src[i]
+        if c == c'"'
+            i = rtSkipString(src, i)
+        else if c == c'\''
+            i = rtSkipChar(src, i)
+        else if c == c'/' and i + 1 < n and src[i + 1] == c'/'
+            i = rtSkipLine(src, i)
+        else if c == c'\\' and i + 1 < n and src[i + 1] == c'\\'
+            i = rtSkipLine(src, i)
+        else if rtIsIdentChar(c)
+            var j: int = i
+            while j < n and rtIsIdentChar(src[j])
+                j = j + 1
+            if rtIsIdentStart(c) and not rtIsFieldAccess(src, i)
+                used.set(src[i .. j], true)
+            i = j
+        else
+            i = i + 1
+    var sb: StringBuilder = StringBuilder()
+    sb.append("const std     = @import(\"std\");\n")
+    sb.append("const builtin = @import(\"builtin\");\n")
+    sb.append("const _rt     = @import(\"zebra_rt.zig\");\n")
+    for nm in _rt_alias_names.split(" ")
+        if nm != "" and used.contains(nm)
+            sb.append("const ")
+            sb.append(nm)
+            sb.append(" = _rt.")
+            sb.append(nm)
+            sb.append(";\n")
+    sb.append("\n")
+    return sb.build()
+
+# The runtime module's own text: the (GUI-selected) preamble, minus the one
+# backward dependency.  `_initIo` calls `_initModuleVars()`, which codegen emits
+# into the PROGRAM — a shared runtime cannot call a per-program function
+# ("use of undeclared identifier '_initModuleVars'").  The entry point already
+# calls it directly, and in runtime-module mode it calls it for every transitive
+# dependency too, so dropping it here loses nothing.
+def rtRuntimeText(preamble: str): str
+    var hook: str = "    _initModuleVars();\n"
+    var gone: str = "    // _initModuleVars() removed: per-program, driven from the entry point.\n"
+    var sel: str = guiSelectPreamble(preamble)
+    return sel.replace(hook, gone)
+
+# `pub ` in runtime-module mode, empty otherwise.
+#
+# The `pub` marking runs in BOTH directions, and the second one is easy to miss.
+# Marking the runtime pub lets the program import it — but the runtime also calls
+# back INTO the program: `_ThreadPool.submit(f: anytype)` does
+# `@as(*T, @ptrCast(@alignCast(ctx))).call()` on a closure struct that CODEGEN
+# emitted. Once the two live in different modules, that member access needs `pub`
+# as much as any runtime symbol did ("error: 'call' is not marked 'pub'", caught by
+# compile_check on the three threading tests). Applied only under the flag, so the
+# default emit stays byte-for-byte what it was.
+def rtPub(): str
+    if _runtime_module
+        return "pub "
+    return ""
+
+def rtSetDeps(dep_modules: List(str))
+    var s: str = " "
+    var i: int = 0
+    while i < dep_modules.len
+        s = s + dep_modules.at(i) + " "
+        i = i + 1
+    _rt_deps = s
+
+# Assemble the final file.  Off the flag this is the historical shape byte for
+# byte — preamble spliced in, body after it — so the default path is unchanged.
+# On the flag the preamble is gone from the program entirely: the body is
+# qualified, and the header carries the import plus only the aliases it needs.
+def rtAssemble(file: str, preamble: str, body: str): str
+    var sb: StringBuilder = StringBuilder()
+    sb.append("// Generated by zebra-selfhost.\n")
+    sb.append("// Source: ")
+    sb.append(fwdSlashes(file))
+    sb.append("\n\n")
+    if _runtime_module
+        var qualified: str = rtQualify(body)
+        sb.append(rtAliasHeader(qualified))
+        sb.append(qualified)
+    else
+        sb.append(guiSelectPreamble(preamble))
+        sb.append("\n")
+        sb.append(body)
+    return sb.build()
+
+# One shared `_error_ctx` means the cross-module walk collapses to a local read.
+# (Emitted unqualified; the qualify pass rewrites `_error_ctx` to `_rt._error_ctx`.)
+def rtErrorMsgHelper(): str
+    var sb: StringBuilder = StringBuilder()
+    sb.append("fn _zbr_error_msg() []const u8 {\n")
+    sb.append("    if (_error_ctx.message.len > 0) return _error_ctx.message;\n")
+    sb.append("    return \"\";\n")
+    sb.append("}\n")
+    return sb.build()
+
 def generateFull(m: Module, file: str, preamble_path: str, strip_contracts: bool, library_mode: bool): str throws
     return generateFullWith(m, file, preamble_path, List(str)(), ModuleTypes(), strip_contracts, library_mode)
 
@@ -1328,35 +1624,37 @@ def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_n
     require
         preamble_path.len > 0
     var preamble = File.read(preamble_path)
+    # Runtime-module mode: learn the runtime's exported names, and hand the entry
+    # point the TRANSITIVE dep list.  Both must happen before generateModuleWith,
+    # which is where the entry point's init prologue is emitted.
+    if _runtime_module
+        rtScanNames(rtRuntimeText(preamble))
+        rtSetDeps(all_dep_modules)
     var decls = generateModuleWith(m, file, extra_class_names, deps_mt, strip_contracts, tc_result, library_mode)
     var entry = generateEntryPoint(m, library_mode)
     var error_helper: str = ""
-    if all_dep_modules.len > 0
+    if _runtime_module
+        error_helper = rtErrorMsgHelper()
+    else if all_dep_modules.len > 0
         error_helper = generateErrorMsgHelperWith(all_dep_modules)
     else
         error_helper = generateErrorMsgHelper(m)
-    var sb: StringBuilder = StringBuilder()
-    sb.append("// Generated by zebra-selfhost.\n")
-    sb.append("// Source: ")
-    sb.append(fwdSlashes(file))
-    sb.append("\n\n")
-    sb.append(guiSelectPreamble(preamble))
-    sb.append("\n")
+    var body: StringBuilder = StringBuilder()
     # Single-file: file-scope dispatcher (the preamble's _initIo + entry shims call
     # the bare name) fans into _Mod; then wrap the user region in the namespace struct.
     if _single_file
-        sb.append("pub fn _initModuleVars() void { _Mod._initModuleVarsImpl(); }\n")
-        sb.append("const _Mod = struct {\n")
-    sb.append(decls)
+        body.append("pub fn _initModuleVars() void { _Mod._initModuleVarsImpl(); }\n")
+        body.append("const _Mod = struct {\n")
+    body.append(decls)
     if _single_file
-        sb.append("};\n")
+        body.append("};\n")
     if error_helper != ""
-        sb.append("\n")
-        sb.append(error_helper)
+        body.append("\n")
+        body.append(error_helper)
     if entry != ""
-        sb.append("\n")
-        sb.append(entry)
-    return sb.build()
+        body.append("\n")
+        body.append(entry)
+    return rtAssemble(file, preamble, body.build())
 
 # ── N-API node-addon glue (mirror of src/CodeGen.zig generateNodeAddonGlue) ───
 # Emits one `_napi_w_<name>` wrapper per @node_export function (top-level `def`
@@ -1658,34 +1956,33 @@ def generateFullWithDepsTest(m: Module, file: str, preamble_path: str, extra_cla
         if not skip
             filtered_decls.add(d)
     var m_no_main: Module = Module(m.file, filtered_decls)
+    if _runtime_module
+        rtScanNames(rtRuntimeText(preamble))
+        rtSetDeps(all_dep_modules)
     var decls = generateModuleWith(m_no_main, file, extra_class_names, deps_mt, strip_contracts, tc_result, false)
     var entry = generateTestEntryPoint(m, file_stem, tag_filter)
     var error_helper: str = ""
-    if all_dep_modules.len > 0
+    if _runtime_module
+        error_helper = rtErrorMsgHelper()
+    else if all_dep_modules.len > 0
         error_helper = generateErrorMsgHelperWith(all_dep_modules)
     else
         error_helper = generateErrorMsgHelper(m)
-    var sb: StringBuilder = StringBuilder()
-    sb.append("// Generated by zebra-selfhost.\n")
-    sb.append("// Source: ")
-    sb.append(fwdSlashes(file))
-    sb.append("\n\n")
-    sb.append(guiSelectPreamble(preamble))
-    sb.append("\n")
+    var body: StringBuilder = StringBuilder()
     # Single-file: file-scope dispatcher + namespace-struct wrap (see generateFullWithDeps).
     if _single_file
-        sb.append("pub fn _initModuleVars() void { _Mod._initModuleVarsImpl(); }\n")
-        sb.append("const _Mod = struct {\n")
-    sb.append(decls)
+        body.append("pub fn _initModuleVars() void { _Mod._initModuleVarsImpl(); }\n")
+        body.append("const _Mod = struct {\n")
+    body.append(decls)
     if _single_file
-        sb.append("};\n")
+        body.append("};\n")
     if error_helper != ""
-        sb.append("\n")
-        sb.append(error_helper)
+        body.append("\n")
+        body.append(error_helper)
     if entry != ""
-        sb.append("\n")
-        sb.append(entry)
-    return sb.build()
+        body.append("\n")
+        body.append(entry)
+    return rtAssemble(file, preamble, body.build())
 
 # ── Single-file multi-module assembler (Phase 2) ──────────────────────────────
 # Emit ALL transitive modules into ONE .zig: one preamble at file scope, each dep as a
@@ -1758,16 +2055,10 @@ def generateDepWith(m: Module, file: str, preamble_path: str, extra_class_names:
     require
         preamble_path.len > 0
     var preamble = File.read(preamble_path)
+    if _runtime_module
+        rtScanNames(rtRuntimeText(preamble))
     var decls = generateModuleWith(m, file, extra_class_names, deps_mt, strip_contracts, nil, false)
-    var sb: StringBuilder = StringBuilder()
-    sb.append("// Generated by zebra-selfhost.\n")
-    sb.append("// Source: ")
-    sb.append(fwdSlashes(file))
-    sb.append("\n\n")
-    sb.append(guiSelectPreamble(preamble))
-    sb.append("\n")
-    sb.append(decls)
-    return sb.build()
+    return rtAssemble(file, preamble, decls)
 
 # ── Source-map helpers ────────────────────────────────────────────────────────
 # Return the source line number for an Expr or Stmt (0 = no span available).
@@ -4033,10 +4324,23 @@ struct Generator
                 if not .library_mode
                     ei.writeIndent()
                     ei.w.emit("defer _arena.deinit();\n")
+                # Runtime-module: _allocator/_io live in the runtime and are already
+                # shared by every module at every depth, so there is nothing to
+                # propagate — `_initAllocator`/`_initIo` are not even declared per
+                # module any more.  What DOES still need reaching is each module's own
+                # `_initModuleVars`, and reaching it TRANSITIVELY is exactly what
+                # BUG-221 was missing: the old loop below walks direct `use` decls
+                # only, so a dep-of-a-dep never initialised and segfaulted on first
+                # use.  `_rt_deps` is the transitive list, so depth no longer matters.
+                if _runtime_module
+                    for rt_dep in _rt_deps.split(" ")
+                        if rt_dep != ""
+                            ei.writeIndent()
+                            ei.w.emit("@import(\"" + rt_dep + ".zig\")._initModuleVars();\n")
                 # Single-file: all modules share ONE _allocator/_io (one preamble) and
                 # the file-scope _initModuleVars() dispatcher inits every module's vars,
                 # so the per-dep @import fan-out is both unnecessary and unresolvable.
-                if not _single_file
+                else if not _single_file
                     for ei_decl in module_decls
                         if ei_decl is Decl.use_ as ei_u
                             var ei_path: str = ei_u.path.replace(".", "/")
@@ -8173,7 +8477,7 @@ struct Generator
                 writeIndent()
                 w.emit("  const _rshim_")
                 w.emit(uid.toString())
-                w.emit(" = struct { fn call(p: *anyopaque) []const u8 {\n")
+                w.emit(" = struct { " + rtPub() + "fn call(p: *anyopaque) []const u8 {\n")
                 writeIndent()
                 w.emit("      return @as(*[]const u8, @alignCast(@ptrCast(p))).*;\n")
                 writeIndent()
@@ -8207,7 +8511,7 @@ struct Generator
                 writeIndent()
                 w.emit("  const _rshim_")
                 w.emit(uid.toString())
-                w.emit(" = struct { fn call(p: *anyopaque) []const u8 {\n")
+                w.emit(" = struct { " + rtPub() + "fn call(p: *anyopaque) []const u8 {\n")
                 writeIndent()
                 w.emit("      return @as(*[]const u8, @alignCast(@ptrCast(p))).*;\n")
                 writeIndent()
@@ -8250,7 +8554,7 @@ struct Generator
                 writeIndent()
                 w.emit("  const _rshim_")
                 w.emit(uid.toString())
-                w.emit(" = struct { fn call(p: *anyopaque) []const u8 {\n")
+                w.emit(" = struct { " + rtPub() + "fn call(p: *anyopaque) []const u8 {\n")
                 writeIndent()
                 w.emit("      return @as(*")
                 w.emit(type_name)
@@ -14197,7 +14501,7 @@ struct Generator
                     else
                         pass
             # call method
-            w.emit(" fn call(")
+            w.emit(" " + rtPub() + "fn call(")
             var first = true
             if has_capture
                 if any_cap_mutated

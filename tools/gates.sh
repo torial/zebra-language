@@ -16,11 +16,17 @@
 #   bash tools/gates.sh --list       # what each tier runs, and what it cannot see
 #
 # QUICK = the static lints (instant), smoke (emits + runs fixtures), round-trip
-#         (self-consistency). Enough to catch most breakage fast.
-# FULL  = QUICK plus the three heavy independent witnesses:
-#         compile_check   — compiles what the selfhost emits (`zig` as the witness)
-#         full_sweep      — emits + typechecks the WHOLE corpus, gated on regression
-#         divergence      — emits with BOTH compilers, gated on selfhost gaps
+#         (self-consistency), runtime-module (3 tiny end-to-end programs emitted
+#         with --runtime-module, including the BUG-221 repro — the only gate that
+#         RUNS anything in that mode). Enough to catch most breakage fast.
+# FULL  = QUICK plus the four heavy independent witnesses:
+#         compile_check    — compiles what the selfhost emits (`zig` as the witness)
+#         compile_check-rt — the same corpus emitted with --runtime-module, which is
+#                            a genuinely different shape (qualified vars, aliased
+#                            symbols, no inline preamble), so the default mode
+#                            passing says nothing about it
+#         full_sweep       — emits + typechecks the WHOLE corpus, gated on regression
+#         divergence       — emits with BOTH compilers, gated on selfhost gaps
 #
 # HONEST LIMITS — what NO tier here covers:
 #   * Anything requiring a GUI. No gate clicks a button; the libui_ng/IDE paths
@@ -42,7 +48,10 @@ MODE="quick"
 case "${1:-}" in
     --full) MODE="full" ;;
     --list)
-        sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+        # Print the whole leading comment block, however long it grows — a fixed
+        # line range silently truncated the header (and then leaked shell code
+        # into --list) the first time a gate was added.
+        sed -n '2,/^[^#]/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
         exit 0 ;;
     "" ) ;;
     * ) echo "gates.sh: unknown option '$1' (try --full or --list)" >&2; exit 2 ;;
@@ -106,9 +115,16 @@ run "interp-escape"  "0 hazard"  python tools/lint_interp_escape.py
 run "fallthrough"    "0 hazard"  python tools/lint_fallthrough.py
 run "smoke"          "passed"    bash tools/selfhost_smoke.sh
 run "round-trip"     "PASS"      bash tools/bootstrap_check.sh
+# Three tiny programs; the only gate that RUNS anything emitted under
+# --runtime-module, and therefore the only one that can see BUG-221.
+run "runtime-module" "all checks pass" bash tools/runtime_module_check.sh
 
 if [[ "$MODE" == "full" ]]; then
     run "compile_check" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh
+    # The same corpus again with the runtime externalised. It is a genuinely
+    # different emit shape — qualified vars, aliased symbols, no inline preamble —
+    # so passing the default mode says nothing about it.
+    run "compile_check-rt" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh --runtime-module
     run "full_sweep"    "gate PASS" env JOBS="$JOBS" bash tools/full_sweep.sh --gate
     run "divergence"    "gate PASS" env JOBS="$JOBS" bash tools/divergence_check.sh --gate
 fi

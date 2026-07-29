@@ -157,6 +157,24 @@ python tools/lint_fallthrough.py   # THE FALL-THROUGH GATE (static, instant, no 
                                 #   §28f set-literal arms, since fixed) but re-flags that exact
                                 #   bug if reintroduced. Run after adding any `branch` arm to a
                                 #   recursive walker (exprHasTry/inferExpr/…). 0 = clean.
+bash tools/runtime_module_check.sh # THE ONLY GATE THAT RUNS `--runtime-module` OUTPUT:
+                                #   three tiny programs — hello-world (asserting the emitted
+                                #   file is <100 lines, i.e. the runtime really was
+                                #   externalised and did not silently go back to being
+                                #   spliced), the BUG-221 three-module repro (which SEGFAULTS
+                                #   on the default path and prints its answer here), and the
+                                #   refusal of `--runtime-module --single-file`. compile_check
+                                #   never runs anything, so it cannot see any of this.
+                                #   Cheap → QUICK tier. Pair with:
+JOBS=3 bash tools/compile_check.sh --runtime-module  # the SAME corpus with the runtime
+                                #   externalised — a genuinely different emit shape
+                                #   (qualified vars, aliased symbols, no inline preamble), so
+                                #   default-mode green says nothing about it. 217/0/1 as of
+                                #   2026-07-28, identical to the default baseline. FULL tier.
+                                #   NOTE: `bootstrap_check.sh` must NEVER pass this flag —
+                                #   its step 3 re-emits selfhost/*.zig with the selfhost, and
+                                #   the compiler's own committed .zig must have ONE shape
+                                #   regardless of which tool last regenerated it.
 JOBS=2 bash tools/full_sweep.sh --gate   # THE FULL-CORPUS WITNESS: emits + zig-
                                 #   typechecks EVERY test/*.zbr (403), not just the ~210
                                 #   compile_check covers. --gate fails on REGRESSION vs

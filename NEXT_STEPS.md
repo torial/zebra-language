@@ -92,7 +92,7 @@ tests separately, and the compile-failure fallback to the authoritative LLVM pat
 rest. A check also needs no binary, so it now passes `-fno-emit-bin` and skips linking
 entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, identical diagnostics.
 
-- [~] **#1 — Stop inlining the preamble; ship it as a runtime module. SPIKED + STEP 1 LANDED 2026-07-28 — read `docs/runtime_module_design.md` before touching it.** Emitted programs
+- [~] **#1 — Stop inlining the preamble; ship it as a runtime module. SHIPPED behind default-off `--runtime-module` 2026-07-28 — read `docs/runtime_module_design.md` before touching it.** Emitted programs
   would `@import` a runtime package instead of carrying 3,790 lines of copy-pasted preamble for a
   2-line source. **Re-justified after measurement — this is NOT about speed** (worth ~0.2 s on
   the fast path). It is about three things that are real:
@@ -143,26 +143,33 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
     bootstrap keeps inlining, so it never needs the markings. Still unmarked, and required
     before the flag can cover GUI: `gui_tui_section.zig` (89 decls), `gui_libui_ng_section.zig`
     (102).
-  - [ ] **Steps 2-5 — the codegen change; they are inseparable.** Import + aliases +
-    var-qualification + writing `zebra_rt.zig` must land together, because aliasing is illegal
-    for a `var`: a state with the header emitted but the 19 mutable vars still bare does not
-    compile at all. (The design's suggested "step 1 + 3 first, vars still inlined" intermediate
-    therefore isn't a valid stopping point.) Qualify via a **post-pass over the assembled emit**
-    — the spike's quote-aware `qualify_outside_strings`, corpus-validated 36/40 — rather than
-    editing 250+ emit sites: `_allocator` alone appears at 135 places in `CodeGen.zbr`, mostly
-    inside larger `w.emit(…)` string literals. The alias set comes from scanning the same text,
-    so codegen needs no new tracking. `zbrToZig` is the single write site covering `--emit-zig`,
-    `--output-dir`, run-mode temp dir, `-c`, and the fast path, so one
-    `writeRuntimeModule(dirOf(zig_path))` reaches all of them; the GUI scaffold and node-addon
-    paths are separate and can stay inline initially. **Write it unconditionally, never "only if
-    absent"** — that exact bug already shipped once in `compileGuiProject`, where a stale
-    scaffold silently kept an old dependency pin.
-  - [ ] **Step 6 — the payoff, and it is smaller than "delete the fan-out".** `_allocator` and
-    `_io` become shared and need no propagation, but each module's own `_initModuleVars` still
-    has to be reached — which is exactly the transitivity BUG-221 is missing. So the fan-out
-    collapses to: the entry point calls `_initModuleVars()` on every **transitive** dep (codegen
-    already computes that list as `all_deps`). Gate it with the three-module repro from
-    `BUGS.md` as a runtime test, not a manual check.
+  - [x] **Steps 2-6 — the codegen change, LANDED 2026-07-28 behind `--runtime-module`.**
+    `zebra --runtime-module` writes `zebra_rt.zig` beside the program and `@import`s it:
+    hello-world **3,791 lines -> 27**, and **BUG-221 is dissolved** (the three-module repro
+    that segfaults on the default path prints its answer). Qualification runs as a
+    quote/comment/field-aware post-pass over the assembled emit — `_allocator` alone is
+    written at 135 emit sites, mostly inside larger `w.emit(...)` literals, so one pass that
+    cannot miss a site beats 250+ hand edits. The alias set is read back out of the emitted
+    text, so codegen needed no new tracking. Off the flag, assembly reproduces the historical
+    shape exactly.
+    - **The `pub` marking runs in BOTH directions — this is the finding worth keeping.**
+      Step 1 marked the runtime `pub` so the program could import it; but the runtime also
+      calls back INTO the program (`_ThreadPool.submit(f: anytype)` does `@as(*T, ...).call()`
+      on a closure struct that *codegen* emitted), and across a module boundary that member
+      needs `pub` too. The spike never saw it because it only ever split a hello-world.
+      `compile_check --runtime-module` caught it on the three threading tests (214/3/1) —
+      the clearest argument for gating the flag with the corpus witness rather than examples.
+    - **Refused, not guessed:** `--runtime-module` errors out with `--single-file` (both
+      restructure file scope), `--target node-addon`, and any `--gui-backend` (both scaffold
+      their own build; the GUI section files are not `pub`-marked yet).
+    - **Gates added:** `tools/runtime_module_check.sh` (QUICK tier — the only gate that RUNS
+      anything emitted in this mode, hence the only one that can see BUG-221) and
+      `compile_check.sh --runtime-module` (FULL tier), which is **217/0/1, identical to the
+      default-mode baseline**.
+  - [ ] **Remaining before the flag could become the default:** `pub`-mark
+    `gui_tui_section.zig` (89 decls) and `gui_libui_ng_section.zig` (102) to cover the GUI
+    paths; decide the node-addon story; then flip, which is its own gated decision. BUG-221
+    stays open on the default path until that flip.
 
 - [x] **#3 — Move nil-narrowing into the TypeChecker. DONE 2026-07-28 (`81501dc`).** Narrowing
   was codegen-only (the BUG-188 note in `genMemberCall`): `inferExpr` still reported `?T` inside

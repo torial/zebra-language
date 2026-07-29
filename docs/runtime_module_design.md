@@ -171,6 +171,47 @@ This is the same shape as the trap CLAUDE.md already records for BUG-219 (a prea
 that looked like it hadn't worked), one level further out: there, regeneration was
 missing; here, regeneration ran against a binary that predated the edit.
 
+## 3d. Steps 2–6 landed 2026-07-28 — behind `--runtime-module`, default off
+
+`zebra --runtime-module` writes the runtime once as `zebra_rt.zig` beside the emitted
+program and `@import`s it. Hello-world: **3,791 lines → 27**. `BUG-221 is dissolved` —
+the three-module repro that segfaults today prints its answer.
+
+**What was actually built**
+
+| | |
+|---|---|
+| `rtScanNames` | splits the runtime's 399 `pub` decls into 22 mutable (qualify) and the rest (alias) |
+| `rtQualify` | quote/comment/field-aware post-pass rewriting `_allocator` → `_rt._allocator` |
+| `rtAliasHeader` | reads the referenced set back out of the emitted text — no new tracking in codegen |
+| `rtRuntimeText` | the GUI-selected preamble, minus the `_initModuleVars()` back-call |
+| `rtAssemble` | one assembly point; off the flag it reproduces the historical shape exactly |
+| entry point | drives `_initModuleVars()` over the **transitive** dep list |
+
+**Two findings worth keeping**
+
+1. **The `pub` marking runs in BOTH directions.** Marking the runtime `pub` lets the
+   program import it — but the runtime also calls *back into* the program:
+   `_ThreadPool.submit(f: anytype)` does `@as(*T, …).call()` on a closure struct that
+   *codegen* emitted. Across a module boundary that member needs `pub` too
+   (`error: 'call' is not marked 'pub'`). Nothing in the spike surfaced this, because the
+   spike only ever split a hello-world. `compile_check --runtime-module` found it on the
+   three threading tests — 214/3/1 — and it is the clearest argument for gating the flag
+   with the corpus witness rather than a handful of examples.
+2. **Step 6 is smaller than "delete the fan-out".** `_allocator`/`_io` do become shared
+   and need no propagation, but each module's own `_initModuleVars` still has to be
+   reached — which is exactly the transitivity BUG-221 lacked. The fan-out collapses to
+   one transitive `_initModuleVars` sweep from the entry point.
+
+**Not yet covered, and refused rather than guessed:** `--runtime-module` errors out when
+combined with `--single-file` (both restructure file scope), `--target node-addon`, or any
+`--gui-backend` (both scaffold their own build; the GUI section files are not `pub`-marked).
+
+**Gates:** `compile_check --runtime-module` **217/0/1 — identical to the default-mode
+baseline**, plus `tools/runtime_module_check.sh` (in the QUICK tier), which is the only
+gate that *runs* anything emitted in this mode and therefore the only one that can see
+BUG-221 at all.
+
 ## 4. What this dissolves
 
 | Bug | How |

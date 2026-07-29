@@ -40,7 +40,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setGuiBackend, setGuiSection
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -223,6 +223,18 @@ class MultiCompiler
                     var zig_path: str = .zbrToZig(zbr_path)
                     File.write(zig_path, zig_src)
                     sys.errln("wrote " + zig_path)
+                    # Runtime-module: the program `@import("zebra_rt.zig")`s relative to
+                    # its own directory, so the runtime has to sit beside it.  Every emit
+                    # route — --emit-zig, --output-dir, the run-mode temp dir, `-c`, the
+                    # fast backend — resolves its destination through zbrToZig, so writing
+                    # it here reaches all of them from one place.
+                    #
+                    # Written UNCONDITIONALLY, never "only if absent": the runtime's
+                    # content varies (GUI backend selection), and compileGuiProject already
+                    # shipped this exact bug once — it wrote build.zig only when missing, so
+                    # a stale scaffold silently kept an old dependency pin.
+                    if runtimeModule()
+                        .writeRuntimeModule(zig_path)
 
                 # Step 7: Contribute this module's types to dep_types so
                 # subsequent deps (and the root) can resolve cross-module
@@ -336,6 +348,16 @@ class MultiCompiler
                 populateModuleTypes(dep_types, module)
             else
                 pass
+
+    # Write zebra_rt.zig into the same directory as an emitted program.  Deps and the
+    # root all emit into one directory, so repeated calls simply rewrite the same file
+    # with the same bytes — which is the point: it is always current, never stale.
+    def writeRuntimeModule(zig_path: str)
+        var dir: str = .dirOf(zig_path)
+        var rt_path: str = "zebra_rt.zig"
+        if dir != ""
+            rt_path = dir + "/zebra_rt.zig"
+        File.write(rt_path, rtRuntimeText(File.read(.preamble_path)))
 
     def zbrToZig(zbr_path: str): str
         # Replace ".zbr" extension with ".zig"
@@ -2251,6 +2273,22 @@ def main()
     # multi-module merge).  See docs/single_file_emit_design.md §7a.
     if args.contains("--single-file")
         setSingleFile(true)
+    # --runtime-module: emit the runtime ONCE as zebra_rt.zig beside the program and
+    # `@import` it, instead of splicing 3,767 lines into every emitted file.  Default
+    # OFF; phased exactly like --single-file was.  See docs/runtime_module_design.md.
+    # NOTE (invariant): tools/bootstrap_check.sh must never pass this — the round-trip
+    # re-emits selfhost/*.zig with the selfhost, and the compiler's own committed .zig
+    # must have one shape regardless of which tool last regenerated it.
+    var runtime_module = args.contains("--runtime-module")
+    if runtime_module
+        # Both alternatives already restructure file scope, and combining two such
+        # restructurings has no tested meaning. Refuse rather than emit something
+        # plausible-looking that nothing has ever compiled.
+        if args.contains("--single-file")
+            sys.errln("zebra: --runtime-module and --single-file are mutually exclusive")
+            sys.errln("  both restructure file scope; pick one")
+            sys.exit(1)
+        setRuntimeModule(true)
     # §28c (revised 2026-07-21): the else-catches-unnamed-variants WARNING is now
     # OFF by default (it was noisy — N warnings per else branch); opt in with
     # --warn-non-exhaustive.  --no-warn-non-exhaustive is kept as an accepted no-op.
@@ -2269,6 +2307,15 @@ def main()
     # --target node-addon: compile to a Node.js native addon (.node + .js + .d.ts)
     var target_opt: str      = args.option("--target", "")
     var mode_node            = target_opt == "node-addon" or target_opt == "node_addon"
+    # node-addon emits N-API glue at file scope and is built by a separate driver that
+    # would also have to learn to place zebra_rt.zig; GUI backends scaffold a `zig build`
+    # project whose section files are not `pub`-marked yet. Both keep the inline runtime
+    # until they are done deliberately — refuse the combination rather than emit
+    # something that has never been compiled.
+    if runtime_module and (mode_node or has_gui)
+        sys.errln("zebra: --runtime-module does not yet cover the node-addon or GUI paths")
+        sys.errln("  those scaffold their own build; they still inline the runtime")
+        sys.exit(1)
     # Preamble resolution (BUG: cwd-dependent File.read).  Prefer the repo-relative
     # path so every gate (all run from the repo root) is byte-identical; fall back to
     # a copy installed alongside the exe so `zebra.exe` works when invoked from any

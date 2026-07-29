@@ -1,0 +1,16 @@
+# BUG-221 — module init must be TRANSITIVE.
+#
+# The entry point used to initialise its DIRECT dependencies only, so a module
+# reached at depth 2 never had `_allocator`/`_io` set and segfaulted at
+# 0xffffffffffffffff on its first file touch. `main -> leaf` worked; adding one
+# module in between crashed. Nothing exotic is needed to trigger it — three
+# files and one File.exists call.
+#
+# Under `--runtime-module` the runtime holds ONE `_allocator`/`_io` that every
+# module shares at any depth, and the entry point drives `_initModuleVars` over
+# the TRANSITIVE dep list, so depth stops mattering. Without the flag this file
+# still reproduces the crash — it is the before/after pair, not a pure negative.
+use bug221_transitive_init_mid exposing viaMid
+
+def main()
+    print(viaMid("no_such_file.txt"))

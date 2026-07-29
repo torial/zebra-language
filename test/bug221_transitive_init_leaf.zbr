@@ -1,0 +1,7 @@
+# BUG-221 repro, depth 2: this module is reached ONLY through a middle module,
+# never directly from the entry point. Touching a file here is what crashed —
+# `_io` and `_allocator` were never initialised for a dep-of-a-dep.
+def readIt(p: str): str
+    if File.exists(p)
+        return File.read(p)
+    return "missing"
