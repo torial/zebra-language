@@ -187,6 +187,11 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
     2. **Cover the fallback paths**: `pub`-mark `gui_tui_section.zig` (89 decls) and
        `gui_libui_ng_section.zig` (102) for the GUI backends; decide the node-addon story.
        Until then those emit the inline runtime, guarded by `runtime_module_check.sh`.
+       **No longer a correctness gap** — BUG-221 was closed on the inline path too
+       (2026-07-29), so the fallback shape is merely *older*, not *broken*. It had been
+       live there: the fixture segfaulted under `--no-runtime-module` because the fan-out
+       walked direct `use` decls; it now sweeps the same transitive list. Both shapes are
+       gated.
     3. The design note's claim that this "closes BUG-220 completely including the `@export`
        residual" is **unverified** — `@export` is a class-factory annotation here, so the
        obvious repro does not exercise it. What IS demonstrable: the emitted file's scope

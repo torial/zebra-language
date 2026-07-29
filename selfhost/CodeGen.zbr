@@ -1357,7 +1357,7 @@ var _runtime_module: bool = true
 # a module-global container would need deferred init (BUG-153) for no benefit.
 var _rt_mut_names: str = ""     # must be qualified: `pub var` / `pub threadlocal var`
 var _rt_alias_names: str = ""   # can be aliased: `pub fn` / `pub const`
-var _rt_deps: str = ""          # transitive dep modules, for the _initModuleVars sweep
+var _entry_deps: str = ""          # TRANSITIVE deps, for the entry point's init sweep
 
 def setRuntimeModule(v: bool)
     _runtime_module = v
@@ -1602,7 +1602,7 @@ def rtSetDeps(dep_modules: List(str))
     while i < dep_modules.len
         s = s + dep_modules.at(i) + " "
         i = i + 1
-    _rt_deps = s
+    _entry_deps = s
 
 # Assemble the final file.  Off the flag this is the historical shape byte for
 # byte — preamble spliced in, body after it — so the default path is unchanged.
@@ -1647,9 +1647,12 @@ def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_n
     # Runtime-module mode: learn the runtime's exported names, and hand the entry
     # point the TRANSITIVE dep list.  Both must happen before generateModuleWith,
     # which is where the entry point's init prologue is emitted.
+    # The entry point needs the TRANSITIVE dep list in both emission shapes — for the
+    # _initModuleVars sweep with a shared runtime, and for the _initAllocator/_initIo
+    # sweep without one. Set it unconditionally.
+    rtSetDeps(all_dep_modules)
     if _runtime_module
         rtScanNames(rtRuntimeText(preamble))
-        rtSetDeps(all_dep_modules)
     var decls = generateModuleWith(m, file, extra_class_names, deps_mt, strip_contracts, tc_result, library_mode)
     var entry = generateEntryPoint(m, library_mode)
     var error_helper: str = ""
@@ -1976,9 +1979,12 @@ def generateFullWithDepsTest(m: Module, file: str, preamble_path: str, extra_cla
         if not skip
             filtered_decls.add(d)
     var m_no_main: Module = Module(m.file, filtered_decls)
+    # The entry point needs the TRANSITIVE dep list in both emission shapes — for the
+    # _initModuleVars sweep with a shared runtime, and for the _initAllocator/_initIo
+    # sweep without one. Set it unconditionally.
+    rtSetDeps(all_dep_modules)
     if _runtime_module
         rtScanNames(rtRuntimeText(preamble))
-        rtSetDeps(all_dep_modules)
     var decls = generateModuleWith(m_no_main, file, extra_class_names, deps_mt, strip_contracts, tc_result, false)
     var entry = generateTestEntryPoint(m, file_stem, tag_filter)
     var error_helper: str = ""
@@ -2075,6 +2081,9 @@ def generateDepWith(m: Module, file: str, preamble_path: str, extra_class_names:
     require
         preamble_path.len > 0
     var preamble = File.read(preamble_path)
+    # A dep is never the entry point. If one happens to contain `def main()`, it must not
+    # inherit the ROOT's dep list and emit an init sweep that is not its to run.
+    rtSetDeps(List(str)())
     if _runtime_module
         rtScanNames(rtRuntimeText(preamble))
     var decls = generateModuleWith(m, file, extra_class_names, deps_mt, strip_contracts, nil, false)
@@ -4353,7 +4362,7 @@ struct Generator
                 # only, so a dep-of-a-dep never initialised and segfaulted on first
                 # use.  `_rt_deps` is the transitive list, so depth no longer matters.
                 if _runtime_module
-                    for rt_dep in _rt_deps.split(" ")
+                    for rt_dep in _entry_deps.split(" ")
                         if rt_dep != ""
                             ei.writeIndent()
                             ei.w.emit("@import(\"" + rt_dep + ".zig\")._initModuleVars();\n")
@@ -4361,13 +4370,21 @@ struct Generator
                 # the file-scope _initModuleVars() dispatcher inits every module's vars,
                 # so the per-dep @import fan-out is both unnecessary and unresolvable.
                 else if not _single_file
-                    for ei_decl in module_decls
-                        if ei_decl is Decl.use_ as ei_u
-                            var ei_path: str = ei_u.path.replace(".", "/")
+                    # Inline runtime: every module carries its OWN _allocator/_io, so both
+                    # must be propagated — and TRANSITIVELY. Walking the DIRECT `use` decls
+                    # here IS BUG-221: init reached depth 1 and stopped, so a module reached
+                    # only through another module kept `undefined` handles and segfaulted at
+                    # 0xffffffffffffffff on its first file touch. Fixed on the runtime-module
+                    # path when that became the default; this closes the same hole on the
+                    # inline path, still reached by --no-runtime-module and the FALLBACK for
+                    # --single-file, --target node-addon and every --gui-backend.
+                    # `_entry_deps` is the transitive list the driver already computes.
+                    for ei_dep in _entry_deps.split(" ")
+                        if ei_dep != ""
                             ei.writeIndent()
-                            ei.w.emit("@import(\"" + ei_path + ".zig\")._initAllocator(_allocator);\n")
+                            ei.w.emit("@import(\"" + ei_dep + ".zig\")._initAllocator(_allocator);\n")
                             ei.writeIndent()
-                            ei.w.emit("@import(\"" + ei_path + ".zig\")._initIo(_io);\n")
+                            ei.w.emit("@import(\"" + ei_dep + ".zig\")._initIo(_io);\n")
                 # BUG-153: init this (root) module's deferred globals now that
                 # _allocator/_io and all deps are live, before any user code runs.
                 ei.writeIndent()

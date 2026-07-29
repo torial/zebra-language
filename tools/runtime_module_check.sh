@@ -163,6 +163,29 @@ else
     pass "--no-runtime-module inlines the runtime, compiles and runs"
 fi
 
+# BUG-221 on the INLINE path. The inline runtime is not a museum piece: it is what
+# --no-runtime-module selects and what --single-file, --target node-addon and every
+# --gui-backend fall back to. It kept the direct-deps-only init sweep until 2026-07-29
+# and reproduced the segfault exactly; a multi-module GUI app touching a file from
+# depth 2 would have hit it. Nothing else covers those paths, so assert it here.
+bi="$OUT/b221i"; mkdir -p "$bi"
+cp test/bug221_transitive_init_leaf.zbr test/bug221_transitive_init_mid.zbr \
+   test/bug221_transitive_init_test.zbr "$bi/" 2>/dev/null
+if ! "$ZEBRA" --emit-zig --output-dir "$bi" --no-runtime-module \
+        "$bi/bug221_transitive_init_test.zbr" >/dev/null 2>&1; then
+    fail "BUG-221 fixture did not emit with --no-runtime-module"
+elif ! ( cd "$bi" && zig build-exe bug221_transitive_init_test.zig \
+            -fno-llvm -fno-lld -femit-bin=b221i.exe >/dev/null 2>&1 ); then
+    fail "BUG-221 fixture does not compile with --no-runtime-module"
+else
+    got=$("$bi/b221i.exe" 2>&1)
+    if [ "$got" = "missing" ]; then
+        pass "BUG-221: fixed on the INLINE path too (was: segfault)"
+    else
+        fail "BUG-221 inline: expected 'missing', got: $got"
+    fi
+fi
+
 sf="$OUT/sf"; mkdir -p "$sf"
 if "$ZEBRA" --emit-zig --output-dir "$sf" --single-file "$hw/hw.zbr" >/dev/null 2>&1 \
    && [ ! -f "$sf/zebra_rt.zig" ]; then

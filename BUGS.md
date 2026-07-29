@@ -71,12 +71,19 @@ which is precisely the transitivity that was missing.
 **CLOSED on the default path 2026-07-28 (`ade34cf`)**: runtime-module emission is now the
 default, so this needs no flag. The repro prints `missing`.
 
-One caveat worth keeping, because it is the shape of the remaining risk: the paths that
-still emit the INLINE runtime — `--single-file`, `--target node-addon`, and every
-`--gui-backend` — retain the old direct-deps-only init and would reproduce this bug. They
-are single-module or scaffold-their-own-build cases today, so it is latent rather than
-live, but it becomes real the moment a multi-module GUI app touches a file from depth 2.
-Covering those paths is tracked in NEXT_STEPS under #1.
+**The inline path was fixed separately, 2026-07-29.** Closing this on the default path
+left the bug LIVE wherever the inline runtime is still emitted — `--no-runtime-module`,
+and as the fallback for `--single-file`, `--target node-addon` and every `--gui-backend`.
+Verified rather than assumed: the fixture segfaulted there exactly as before, and the
+emitted entry point initialised `mid` but never `leaf`. The cause was the same in both
+shapes — the fan-out walked DIRECT `use` decls — so the fix is the same: sweep the
+TRANSITIVE dep list the driver already computes. With an inline runtime each module owns
+its `_allocator`/`_io`, so both still have to be propagated; only the reach was wrong.
+
+Both shapes are now gated by `tools/runtime_module_check.sh`, which runs the fixture with
+and without `--no-runtime-module`. Fixing one path and documenting the other as "latent"
+was the wrong call: a multi-module GUI app touching a file from depth 2 would have hit a
+segfault that was already understood and already fixed twenty feet away.
 
 ---
 
