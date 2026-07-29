@@ -92,7 +92,7 @@ tests separately, and the compile-failure fallback to the authoritative LLVM pat
 rest. A check also needs no binary, so it now passes `-fno-emit-bin` and skips linking
 entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, identical diagnostics.
 
-- [ ] **#1 — Stop inlining the preamble; ship it as a runtime module. SPIKED 2026-07-28 — design proven end-to-end, see `docs/runtime_module_design.md` before starting.** Emitted programs
+- [~] **#1 — Stop inlining the preamble; ship it as a runtime module. SPIKED + STEP 1 LANDED 2026-07-28 — read `docs/runtime_module_design.md` before touching it.** Emitted programs
   would `@import` a runtime package instead of carrying 3,790 lines of copy-pasted preamble for a
   2-line source. **Re-justified after measurement — this is NOT about speed** (worth ~0.2 s on
   the fast path). It is about three things that are real:
@@ -126,6 +126,43 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
   emit site — that is the main implementation cost, and it is also exactly what makes them
   shared. Plus one backward dependency to break: the preamble's `_initIo` calls
   `_initModuleVars()`, which codegen emits into the *user* file.
+
+  **PHASING (decided 2026-07-28): behind a default-off `--runtime-module` flag**, exactly as
+  single-file emission was phased. The reason is more than caution: `bootstrap_check.sh` step 3
+  has selfhost-A re-emit into `selfhost/` itself, so an unconditional change would make the
+  compiler's own committed `.zig` shape depend on which tool last regenerated it (bootstrap =
+  monolithic, selfhost-A = split). A flag the round-trip never passes removes that entirely.
+  **Invariant: `bootstrap_check.sh` must never pass `--runtime-module`.**
+
+  - [x] **Step 1 — mark the preamble `pub` (2026-07-28, `f115795`).** 429 declarations (396
+    top-level + 33 type members) via `tools/pub_mark_preamble.py`, marked structurally — only
+    where every enclosing block is a container, since `pub` on a function-body statement is
+    illegal. Inert while the preamble is spliced inline, so it landed alone and was proven by
+    the full tier: **7/7 — compile_check 217/0/1, round-trip byte-identical, full_sweep 0
+    regressions (333), divergence 0 selfhost gaps.** NOT mirrored into `src/CodeGen.zig`: the
+    bootstrap keeps inlining, so it never needs the markings. Still unmarked, and required
+    before the flag can cover GUI: `gui_tui_section.zig` (89 decls), `gui_libui_ng_section.zig`
+    (102).
+  - [ ] **Steps 2-5 — the codegen change; they are inseparable.** Import + aliases +
+    var-qualification + writing `zebra_rt.zig` must land together, because aliasing is illegal
+    for a `var`: a state with the header emitted but the 19 mutable vars still bare does not
+    compile at all. (The design's suggested "step 1 + 3 first, vars still inlined" intermediate
+    therefore isn't a valid stopping point.) Qualify via a **post-pass over the assembled emit**
+    — the spike's quote-aware `qualify_outside_strings`, corpus-validated 36/40 — rather than
+    editing 250+ emit sites: `_allocator` alone appears at 135 places in `CodeGen.zbr`, mostly
+    inside larger `w.emit(…)` string literals. The alias set comes from scanning the same text,
+    so codegen needs no new tracking. `zbrToZig` is the single write site covering `--emit-zig`,
+    `--output-dir`, run-mode temp dir, `-c`, and the fast path, so one
+    `writeRuntimeModule(dirOf(zig_path))` reaches all of them; the GUI scaffold and node-addon
+    paths are separate and can stay inline initially. **Write it unconditionally, never "only if
+    absent"** — that exact bug already shipped once in `compileGuiProject`, where a stale
+    scaffold silently kept an old dependency pin.
+  - [ ] **Step 6 — the payoff, and it is smaller than "delete the fan-out".** `_allocator` and
+    `_io` become shared and need no propagation, but each module's own `_initModuleVars` still
+    has to be reached — which is exactly the transitivity BUG-221 is missing. So the fan-out
+    collapses to: the entry point calls `_initModuleVars()` on every **transitive** dep (codegen
+    already computes that list as `all_deps`). Gate it with the three-module repro from
+    `BUGS.md` as a runtime test, not a manual check.
 
 - [x] **#3 — Move nil-narrowing into the TypeChecker. DONE 2026-07-28 (`81501dc`).** Narrowing
   was codegen-only (the BUG-188 note in `genMemberCall`): `inferExpr` still reported `?T` inside
