@@ -67,17 +67,53 @@ CANDIDATES="$REPO/tools/full_sweep_baseline.txt"   # the emit+compile-clean set
 PER_FILE_LINES=60          # keep the manifest reviewable...
 TIMEOUT_SECS=25            # ...and a hung server/REPL test from wedging the sweep
 
-GATE=0; UPDATE=0; ONLY=""; SHOW=0
+GATE=0; UPDATE=0; ONLY=""; SHOW=0; MODE="default"; MODE_FLAGS=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --gate) GATE=1 ;;
         --update-baseline) UPDATE=1 ;;
         --only) ONLY="${2:-}"; shift ;;
         --show) SHOW=1 ;;
+        --mode) MODE="${2:-default}"; shift ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
     shift
 done
+
+# A2 — THE MODE DIFFERENTIAL.
+#
+# These emit/build modes must all produce the SAME program behaviour; they differ in how
+# the code is packaged, not in what it means. So they are compared against the SAME
+# baseline rather than each getting one of their own — which is the whole trick, and the
+# reason this cost almost nothing to add. A difference IS the bug.
+#
+# Until now these axes were only ever compared for COMPILABILITY (compile_check runs the
+# corpus with --no-runtime-module and checks it still builds). Nothing checked that they
+# still *behave* the same.
+case "$MODE" in
+    default)  MODE_FLAGS="" ;;
+    inline)   MODE_FLAGS="--no-runtime-module" ;;   # inline runtime instead of zebra_rt.zig
+    turbo)    MODE_FLAGS="--turbo" ;;               # contracts stripped
+    release)  MODE_FLAGS="--release" ;;             # LLVM path instead of the fast backend
+    *) echo "unknown --mode: $MODE (default|inline|turbo|release)" >&2; exit 2 ;;
+esac
+# --turbo is the interesting one: it removes contract checks, so a DIFFERENCE here means
+# a contract would have fired in the default build — i.e. the program relies on a check
+# that release builds do not perform. That is a finding, not noise.
+# --release additionally exercises a different BACKEND (LLVM), so it is much slower to
+# build; expect it to be used with --only or run rarely.
+
+# Checked HERE, before any work is done. The first version of this guard sat after the
+# main loop, so it refused only AFTER running the whole corpus — a check that takes 13
+# minutes to say "no" is a check people route around. It also came within one kill of
+# overwriting the default baseline with turbo output.
+if [ "$UPDATE" = 1 ] && [ "$MODE" != "default" ]; then
+    echo "REFUSING: --update-baseline is only valid in the default mode." >&2
+    echo "The baseline defines DEFAULT behaviour, and every other mode is compared" >&2
+    echo "against it. Recording mode '$MODE' into it would silently redefine the" >&2
+    echo "reference — after which the differential could never find anything." >&2
+    exit 2
+fi
 
 # The vacuity control FOR THIS TOOL. If `run_one` ever stops capturing program output —
 # a changed chatter prefix, a compiler that writes to a different stream, a filter that
@@ -97,7 +133,9 @@ OUT="$(mktemp -d)"; trap 'rm -rf "$OUT"' EXIT
 # therefore itself nondeterministic, and would exclude the entire corpus.
 run_one() { # $1 = test/foo.zbr ; echoes program output, or a classification token
     local zbr="$1" raw rc
-    raw=$(timeout "$TIMEOUT_SECS" "$ZEBRA" "$zbr" 2>&1); rc=$?
+    # $MODE_FLAGS is unquoted deliberately: it is either empty or a single flag, and an
+    # empty quoted "" would be passed to the compiler as a bogus argument.
+    raw=$(timeout "$TIMEOUT_SECS" "$ZEBRA" $MODE_FLAGS "$zbr" 2>&1); rc=$?
     if [ "$rc" -eq 124 ]; then printf '<<TIMEOUT>>'; return; fi
     printf '%s' "$raw" | grep -vE '^wrote |^compiling:|^ *parsing\.\.\.|^ *parsed OK|^ *resolved OK'
 }
@@ -121,6 +159,14 @@ capability_reason() { # $1 = path to .zbr; echoes a reason, or nothing
     case "$body" in
         *Http.*|*Https.*|*Tcp.*|*Udp.*|*WebSocket*|*Ws.*|*".serve("*)
             printf '(network: contacts a remote host — outcome not ours to control)' ;;
+        # SECOND MODALITY of the same rule, found 2026-07-30 by the A2 differential.
+        # dir_walk_test counts the files under examples/ and reported 1900 vs 1901 — not
+        # a mode difference at all, but a file added to the repo between the baseline and
+        # the run. Three consecutive samples agree happily, because the filesystem is
+        # stable across seconds and changes across hours. Enumerating the filesystem is
+        # therefore external state, exactly like a remote host.
+        *"Dir.walk("*|*"Dir.list("*|*listDir*|*"Dir.entries("*)
+            printf '(filesystem enumeration: counts files that change as the repo does)' ;;
     esac
 }
 
@@ -146,6 +192,7 @@ echo "── output sweep (${#NAMES[@]} candidates) ──"
 
 : > "$OUT/manifest.txt"; : > "$OUT/excluded.txt"; : > "$OUT/diffs.txt"
 n_ok=0; n_excl=0; n_diff=0; n_missing=0; n_empty=0; n_timeout=0; n_cap=0
+CAP_SKIPPED=""
 
 # At GATE time the derived exclusions must be honoured by NAME, before running anything.
 # Without this they execute on every gate run, produce output that matches no baseline
@@ -173,6 +220,11 @@ for name in "${NAMES[@]}"; do
     if [ -n "$cap" ]; then
         n_cap=$((n_cap+1)); n_excl=$((n_excl+1))
         [ "$UPDATE" = 1 ] && printf '%s\t%s\n' "$name" "$cap" >> "$OUT/excluded.txt"
+        # Remember it: a name newly excluded by CAPABILITY may still be present in an
+        # older baseline, and the "vanished" check would then fail the gate for a file we
+        # deliberately stopped measuring. Recording it is honest (it IS no longer
+        # measured) without being a failure.
+        CAP_SKIPPED="$CAP_SKIPPED $name"
         continue
     fi
 
@@ -279,13 +331,18 @@ if [ "$GATE" = 1 ]; then
     split_manifest "$BASELINE" "$OUT/base"
     split_manifest "$OUT/manifest.txt" "$OUT/cur"
 
-    changed=""; vanished=""; new=""
+    changed=""; vanished=""; new=""; newly_unmeasured=""
     for f in "$OUT/base"/*.txt; do
         [ -e "$f" ] || continue
         b="$(basename "$f" .txt)"
         if [ ! -f "$OUT/cur/$b.txt" ]; then
             # With --only, the run is deliberately a subset; absence proves nothing.
-            [ -n "$ONLY" ] || vanished="$vanished $b"
+            # A file skipped by CAPABILITY this run is not "vanished" — it is
+            # deliberately no longer measured. Reported below, never a failure.
+            case "$CAP_SKIPPED " in
+                *" $b "*) newly_unmeasured="$newly_unmeasured $b" ;;
+                *) [ -n "$ONLY" ] || vanished="$vanished $b" ;;
+            esac
         elif ! cmp -s "$f" "$OUT/cur/$b.txt"; then
             changed="$changed $b"
         fi
@@ -297,6 +354,7 @@ if [ "$GATE" = 1 ]; then
     done
 
     [ -n "$new" ] && echo "· new files not in baseline (informational):$new"
+    [ -n "$newly_unmeasured" ] && echo "· in baseline but now excluded by capability (re-baseline to drop):$newly_unmeasured"
 
     if [ -z "$changed" ] && [ -z "$vanished" ]; then
         echo "✓ output-sweep gate PASS — $n_ok files, behaviour identical to baseline" \
