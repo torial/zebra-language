@@ -297,16 +297,21 @@ def main() -> int:
         hand.append(f"| `{form}` | **{cls}** | {why} |")
     hand_table = "\n".join(hand)
 
-    print(table)
-    print("\nfor-only iterators (hand-stated, NOT derived — cannot be bound):\n")
-    print(hand_table)
+    # In --check mode print ONLY the verdict. Dumping the table made gates.sh report the
+    # gate's summary line as "Binary file (standard input) matches" — grep treating the
+    # em-dashes as binary. A gate whose one-line summary is unreadable is a gate whose
+    # output stops being read.
+    if "--check" not in sys.argv:
+        print(table)
+        print("\nfor-only iterators (hand-stated, NOT derived — cannot be bound):\n")
+        print(hand_table)
 
-    counts = {}
-    for _, _, c, _, _, _ in rows:
-        counts[c] = counts.get(c, 0) + 1
-    summary = ", ".join(f"{n} {c.lower()}" for c, n in sorted(counts.items()))
-    print(f"\n{len(rows)} derived operations: {summary}  (controls passed)"
-          f"\n{len(HAND_STATED)} hand-stated iterator forms")
+        counts = {}
+        for _, _, c, _, _, _ in rows:
+            counts[c] = counts.get(c, 0) + 1
+        summary = ", ".join(f"{n} {c.lower()}" for c, n in sorted(counts.items()))
+        print(f"\n{len(rows)} derived operations: {summary}  (controls passed)"
+              f"\n{len(HAND_STATED)} hand-stated iterator forms")
 
     if "--write" in sys.argv or "--check" in sys.argv:
         dest = REPO / "docs" / "str_ownership.md"
