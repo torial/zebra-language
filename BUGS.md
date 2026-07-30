@@ -130,10 +130,23 @@ A4 removed on 2026-07-30. Fixing this before A4 would have converted an unoptimi
 safe build directly into an optimised build with UB on OOM. Do not add the flag without
 first confirming `python tools/lint_oom_unreachable.py` is clean.
 
-Open question for the fix: `-OReleaseFast` or `-OReleaseSafe`? Safe keeps bounds and
-overflow checks (and is what the current behaviour accidentally approximates), which for
-a 0.9 aimed at "no surprises" is arguably the better default, with Fast behind an
-explicit opt-in.
+Open question for the fix: `-OReleaseFast` or `-OReleaseSafe`?
+
+**Sean's direction (2026-07-30):** aim to make **ReleaseFast good enough that ReleaseSafe
+does not buy much** — and treat it as something worth **A/B testing with users** rather
+than settling by argument. That is the Design-by-Contract position and it is coherent
+with Zebra's identity: contracts are checked in development and stripped for release
+*because* they established the property, so a release build should not need to re-check
+at runtime what the contracts already proved.
+
+One caveat worth carrying into that A/B, from today: **contracts prove what you STATED;
+ReleaseSafe catches what you did not.** BUG-229 and the A4 OOM audit were both
+unstated properties — nobody had written `require` for "this allocation may fail" or
+"this pointer must be assigned". So the gap ReleaseSafe covers is exactly the gap
+between the invariants we thought to write down and the ones we did not, which is
+precisely the quantity an A/B with real users would measure and no amount of reasoning
+here can. Worth instrumenting the test to distinguish the two, rather than only counting
+crashes.
 
 ---
 
