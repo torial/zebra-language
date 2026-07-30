@@ -164,6 +164,173 @@ def epiloguePage(i: int): str
     return "[ Here ends the road-slice of Episode One. ]||Gratta's hunt follows the scent westward. Gor and Kav|keep his flanks. And in Thas, word is about to arrive|that will pull Yehu into the tuons' war.||EPISODE II awaits its composing."
 
 # ---------------------------------------------------------------------------
+# THE VALLEY OF ARNASTHAS (phase 11) -- the original game's tile map, walked.
+# ---------------------------------------------------------------------------
+# Extracted MECHANICALLY from TearsOfTheTuon.Story/MapCreationHelper.cs
+# (30 rows x 80 cols; legend: A Arna, T Thas, /\ mountain, = road, . grass,
+# ^ forest, | river, H bridge -- passable set "=.^ATHC"). Player starts at
+# Arna (5,25) per the C# InitialLocation; the eleven canonical combat points
+# are the C# bulk-add list, coordinates used as-is (verified all passable).
+# Travel HEALS by difficulty (easy +2, medium +1, hard +0 per step), per the
+# original's healing-while-traveling. Reaching Thas (the T) leads into the
+# epilogue -> mission -> feast chain.
+
+def mapRow(y: int): str
+    if y == 0
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^^^^^^^^^^^^|||^^^^^^^^^^^^"
+    if y == 1
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^^^^^^^^^^^^^^^^^|||^^^^^^^^^^^^"
+    if y == 2
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^^^^^^^^^^^|||^^^^^^^^^^^^^"
+    if y == 3
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^^^^^^^^|||^^^^^^^^^^^^^^"
+    if y == 4
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^^^^^^^^^^^|||^^^^^^^^^^^^^^^"
+    if y == 5
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^============^^^^^^^^^^^|||^^^^^^^^^^^^^^"
+    if y == 6
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^======^^^^^^^==========^^^^^|||^^^^^^^^^^^^^"
+    if y == 7
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^^^=====^^^^/\\/\\/\\/\\/\\/^^^^======^^|||^^^^^^^^^^^^"
+    if y == 8
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^===^^^^^\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^^^==^^|||^^^^^^^^^^^"
+    if y == 9
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^^^===^^^^/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^^^==^|||^^^^^^^^^^/"
+    if y == 10
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^^^===^^^^^\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^==^|||^^^^^^^^^/\\"
+    if y == 11
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^^^===^^^^^\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^^^^^==^|||^^^^^^^^//\\"
+    if y == 12
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^^===^^^/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^^==^|||^^..../\\/\\/"
+    if y == 13
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^===^^^^/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^^^^^^==HHH====T.\\/\\/\\"
+    if y == 14
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^===^^^\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^^^^^==|||^^....\\/\\/\\"
+    if y == 15
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/^^^^^===^^^^\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^^^^^^^==^|||^^^^^^\\/\\/\\"
+    if y == 16
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^===^^\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^^^^^^^==^|||^^^^^^^/\\/\\"
+    if y == 17
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^===^^\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^^^^^^^==^|||^^^^^^^^^\\/\\"
+    if y == 18
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^===^^\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^^^^^==^^|||^^^^^^^^^^/\\"
+    if y == 19
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\====/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^^^^==^|||^^^^^^^^^^\\/\\"
+    if y == 20
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/====\\/====\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^^^^^^==^|||^^^^^^^^^/\\/\\"
+    if y == 21
+        return "/\\/\\/\\/\\/\\/\\/\\/===/\\/\\/\\/===/\\/\\/\\/\\/\\/\\/\\/\\/=========^^^^^^==^|||^^^^^^^^^\\/\\/\\"
+    if y == 22
+        return "/\\/\\/\\/\\/\\/\\/===/\\/\\/\\/\\/\\/===/\\/\\/\\/\\========/\\/\\/\\/========^^|||^^^^^^^^^\\/\\/\\"
+    if y == 23
+        return "/\\/\\/\\/\\======/\\/\\/\\/\\/\\/\\/\\===\\/\\=====\\/\\/\\/\\/\\/\\/\\/^^==^^^^^^|||^^^^^^^^^\\/\\/\\"
+    if y == 24
+        return "/\\/\\/\\===\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\=====\\/\\/\\/\\/\\/\\/\\/\\/\\/^^==^^^^^|||^^^^^^^^^/\\/\\/\\"
+    if y == 25
+        return "/\\/\\/A=\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^==^^^^|||^^^^^^^^/\\/\\/\\/\\"
+    if y == 26
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^==^^^^|||^^^^^^^\\/\\/\\/\\/\\"
+    if y == 27
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^==^^^^^|||^^^^^^/\\/\\/\\/\\/\\"
+    if y == 28
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\^^==^^^^|||^^^^^^^^\\/\\/\\/\\/\\"
+    if y == 29
+        return "/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/\\/^^==^^^^|||^^^^^^/\\/\\/\\/\\/\\"
+    return ""
+
+def tileAt(x: int, y: int): str
+    if x < 0 or y < 0 or y > 29 or x > 79
+        return "/"
+    var row = mapRow(y)
+    return row[x..x + 1]
+
+def isPassable(tile: str): bool
+    if tile == "=" or tile == "." or tile == "^"
+        return true
+    if tile == "A" or tile == "T" or tile == "H" or tile == "C"
+        return true
+    return false
+
+# The eleven canonical encounter points from MapCreationHelper's bulk-add.
+def isEncounterPoint(x: int, y: int): bool
+    if x == 7 and y == 24
+        return true
+    if x == 15 and y == 21
+        return true
+    if x == 23 and y == 20
+        return true
+    if x == 23 and y == 11
+        return true
+    if x == 29 and y == 10
+        return true
+    if x == 33 and y == 7
+        return true
+    if x == 38 and y == 6
+        return true
+    if x == 45 and y == 5
+        return true
+    if x == 52 and y == 4
+        return true
+    if x == 55 and y == 28
+        return true
+    if x == 38 and y == 22
+        return true
+    return false
+
+def encFlag(x: int, y: int): str
+    return "E" + x.toString() + "_" + y.toString()
+
+def dropFlag(m: GameModel, f: str): GameModel
+    var out: List(str) = []
+    var i = 0
+    while i < m.states.len
+        if m.states.at(i) != f
+            out.add(m.states.at(i))
+        i = i + 1
+    return m except states = out
+
+# An ambush at a canonical point: fresh Ruffians, initiative by difficulty,
+# OnRoad flag so victory returns to the map.
+def roadBattle(model: GameModel): GameModel
+    var m = withFlag(model, "OnRoad")
+    m = m except e0Hp = 20, e1Hp = 20, round = 1
+    m = withLog(m, "Ruffians spring from the rocks!")
+    if playerFirst(m.diff, 25, 30)
+        return m except phase = 1
+    return m except phase = 3
+
+# One step of travel: passability, healing, encounters, and Thas arrival.
+def tryMove(model: GameModel, dx: int, dy: int): GameModel
+    var nx = model.px + dx
+    var ny = model.py + dy
+    var tile = tileAt(nx, ny)
+    if not isPassable(tile)
+        return model
+    var m = model except px = nx, py = ny
+    var heal = 2 - m.diff
+    if heal > 0 and m.pHp < 35
+        var nh = m.pHp + heal
+        if nh > 35
+            nh = 35
+        m = m except pHp = nh
+    if tile == "T"
+        m = withLog(m, "The walls of Thas rise before you.")
+        return m except phase = 8, story = 0
+    if isEncounterPoint(nx, ny)
+        if not hasFlag(m, encFlag(nx, ny))
+            m = withFlag(m, encFlag(nx, ny))
+            return roadBattle(m)
+    return m
+
+def resumeWalk(model: GameModel): GameModel
+    var m = dropFlag(model, "OnRoad")
+    return m except phase = 11
+
+def startJourney(model: GameModel, diff: int): GameModel
+    var m = model except diff = diff, phase = 11, px = 5, py = 25
+    return withLog(m, "On " + diffName(diff) + " -- Yehu sets out from Arna for Thas.")
+
+# ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
 # Phases: 0 title  1 chooseWeapon  2 chooseTarget  3 enemyTurn
@@ -182,6 +349,8 @@ struct GameModel
     var xp: int
     var story: int
     var states: List(str)
+    var px: int
+    var py: int
     var rngSeed: int
     var log: List(str)
 
@@ -203,11 +372,16 @@ union Msg
     mA
     mB
     mC
+    mvN
+    mvS
+    mvW
+    mvE
+    walkOn
 
 def init(): GameModel
     var seed = Random.randInt(1, 2000000000)
     var noFlags: List(str) = []
-    return GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags, rngSeed: seed, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
+    return GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags, px: 5, py: 25, rngSeed: seed, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
 
 # ---------------------------------------------------------------------------
 # MISSION: The Cubs of Thas (phase 9) — the untold interior of Episode I.
@@ -418,14 +592,6 @@ def withLog(m: GameModel, line: str): GameModel
     lg.add(line)
     return m except log = lg
 
-def beginBattle(model: GameModel, diff: int): GameModel
-    var m = model except diff = diff
-    if playerFirst(diff, 25, 30)
-        m = withLog(m, "On " + diffName(diff) + " — Yehu goes first!")
-        return m except phase = 1
-    m = withLog(m, "On " + diffName(diff) + " — the Ruffians go first!")
-    return m except phase = 3
-
 # Resolve Yehu's attack (his selected weapon) against enemy `tgt` (0 or 1).
 def playerAttack(model: GameModel, tgt: int): GameModel
     var w = swordW()
@@ -533,9 +699,9 @@ def pickB(model: GameModel): GameModel
 
 def update(model: GameModel, msg: Msg): GameModel
     branch msg
-        on Msg.selEasy    return beginBattle(model, 0)
-        on Msg.selMedium  return beginBattle(model, 1)
-        on Msg.selHard    return beginBattle(model, 2)
+        on Msg.selEasy    return startJourney(model, 0)
+        on Msg.selMedium  return startJourney(model, 1)
+        on Msg.selHard    return startJourney(model, 2)
         on Msg.atkSword   return model except selWeapon = 0, phase = 2
         on Msg.atkBow     return model except selWeapon = 1, phase = 2
         on Msg.tgt0       return playerAttack(model, 0)
@@ -550,6 +716,11 @@ def update(model: GameModel, msg: Msg): GameModel
         on Msg.mA         return pickA(model)
         on Msg.mB         return pickB(model)
         on Msg.mC         return disputeStep(model, 2)
+        on Msg.mvN        return tryMove(model, 0, -1)
+        on Msg.mvS        return tryMove(model, 0, 1)
+        on Msg.mvW        return tryMove(model, -1, 0)
+        on Msg.mvE        return tryMove(model, 1, 0)
+        on Msg.walkOn     return resumeWalk(model)
 
 # ---------------------------------------------------------------------------
 # View
@@ -625,6 +796,9 @@ def viewWon(g: Gui, model: GameModel)
     g.text("VICTORY — the road is clear.")
     g.text("Yehu earned " + model.xp.toString() + " experience.")
     g.separator()
+    if hasFlag(model, "OnRoad")
+        if g.button("Walk on")
+            g.send(Msg.walkOn)
     if g.button("Continue the tale")
         g.send(Msg.contTale)
     if g.button("Play again")
@@ -684,6 +858,33 @@ def viewMission(g: Gui, model: GameModel)
         if g.button(b)
             g.send(Msg.mB)
 
+def viewMap(g: Gui, model: GameModel)
+    g.text("The Valley of ArnasThas   Yehu HP " + model.pHp.toString() + "/35   (" + diffName(model.diff) + ")")
+    g.separator()
+    var y = model.py - 6
+    if y < 0
+        y = 0
+    var yEnd = y + 13
+    if yEnd > 30
+        yEnd = 30
+        y = 17
+    while y < yEnd
+        var row = mapRow(y)
+        var line = row
+        if y == model.py
+            line = row[0..model.px] + "@" + row[model.px + 1..80]
+        g.text(line)
+        y = y + 1
+    g.separator()
+    if g.button("North")
+        g.send(Msg.mvN)
+    if g.button("South")
+        g.send(Msg.mvS)
+    if g.button("West")
+        g.send(Msg.mvW)
+    if g.button("East")
+        g.send(Msg.mvE)
+
 def viewDispute(g: Gui, model: GameModel)
     drawPage(g, disputePage(model))
     if g.button(disputeChoiceA(model))
@@ -722,6 +923,8 @@ def view(g: Gui, model: GameModel)
         viewMission(g, model)
     if model.phase == 10
         viewDispute(g, model)
+    if model.phase == 11
+        viewMap(g, model)
 
 def main()
     Gui.run("Tears of the Tuon", 640, 480, init, update, view)

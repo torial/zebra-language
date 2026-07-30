@@ -22,7 +22,7 @@ def choose(label: str)
 
 def main()
     var noFlags: List(str) = []
-    var m = GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags, rngSeed: 20260730, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
+    var m = GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags, px: 5, py: 25, rngSeed: 20260730, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
     print("==== TEARS OF THE TUON — a playthrough by Fable ====")
     print("")
     # intro pages
@@ -37,61 +37,98 @@ def main()
             else
                 choose("Stand your ground")
             m = update(m, Msg.getCubs)
-    # difficulty
-    print("  A pair of Ruffians blocks the road. Choose your trial.")
-    choose("Medium -- a fair fight")
+    # difficulty -> the valley
+    print("  The mountain road runs from Arna to Thas. Choose your trial.")
+    choose("Easy -- five cairns taught Yehu humility; the road is long")
     var logAt = m.log.len
-    m = update(m, Msg.selMedium)
+    m = update(m, Msg.selEasy)
     logAt = showNewLog(m, logAt)
-    # battle loop: sword, first standing target
-    var steps = 0
-    while m.phase != 4 and m.phase != 5 and m.phase != 6 and steps < 200
-        if m.phase == 1
-            choose("Attack with Sword")
-            m = update(m, Msg.atkSword)
-        if m.phase == 2
-            if m.e0Hp > 0
-                choose("Target Ruffian A")
-                m = update(m, Msg.tgt0)
-            else
-                choose("Target Ruffian B")
-                m = update(m, Msg.tgt1)
-        if m.phase == 3
-            m = update(m, Msg.enemyTurn)
-        logAt = showNewLog(m, logAt)
-        steps = steps + 1
+    # walk the BFS road; fight each ambush; count the miles
+    var road = "ENEENEEEEENEENEENEEENEEESEEESESEESESEEEENEEEENEEEEEEENEEEEEEEEEEEEEEEEENENNENNENNNEEEEEEEE"
+    var stepsWalked = 0
+    var battles = 0
+    var ri = 0
+    while ri < road.len
+        if m.phase == 8
+            break
+        var mv = road[ri..ri + 1]
+        ri = ri + 1
+        if mv == "E"
+            m = update(m, Msg.mvE)
+        if mv == "W"
+            m = update(m, Msg.mvW)
+        if mv == "N"
+            m = update(m, Msg.mvN)
+        if mv == "S"
+            m = update(m, Msg.mvS)
+        stepsWalked = stepsWalked + 1
+        if m.phase == 1 or m.phase == 3
+            battles = battles + 1
+            logAt = showNewLog(m, logAt)
+            print("  -- ambush " + battles.toString() + " at (" + m.px.toString() + "," + m.py.toString() + "), " + stepsWalked.toString() + " miles out; Yehu HP " + m.pHp.toString() + " --")
+            var bs = 0
+            while m.phase != 4 and m.phase != 5 and bs < 200
+                if m.phase == 1
+                    m = update(m, Msg.atkSword)
+                if m.phase == 2
+                    if m.e0Hp > 0
+                        m = update(m, Msg.tgt0)
+                    else
+                        m = update(m, Msg.tgt1)
+                if m.phase == 3
+                    m = update(m, Msg.enemyTurn)
+                logAt = showNewLog(m, logAt)
+                bs = bs + 1
+            if m.phase == 5
+                break
+            choose("Walk on")
+            m = update(m, Msg.walkOn)
+    var steps = stepsWalked
     var attempt = 1
     while m.phase == 5 and attempt < 6
         print("")
         print("  DEFEAT -- Yehu falls on the mountain road.")
         choose("Try again (attempt " + (attempt + 1).toString() + ")")
         var noFlagsR: List(str) = []
-        m = GameModel(phase: 1, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlagsR, rngSeed: 20260730 + attempt * 7919, log: ["Yehu rises, spits blood, and takes up his blade again."])
+        m = GameModel(phase: 11, diff: 0, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlagsR, px: 5, py: 25, rngSeed: 20260730 + attempt * 7919, log: ["Yehu rises, spits blood, and takes up his blade again."])
         logAt = showNewLog(m, 0)
-        steps = 0
-        while m.phase != 4 and m.phase != 5 and steps < 200
-            if m.phase == 1
-                choose("Attack with Sword")
-                m = update(m, Msg.atkSword)
-            if m.phase == 2
-                if m.e0Hp > 0
-                    choose("Target Ruffian A")
-                    m = update(m, Msg.tgt0)
-                else
-                    choose("Target Ruffian B")
-                    m = update(m, Msg.tgt1)
-            if m.phase == 3
-                m = update(m, Msg.enemyTurn)
-            logAt = showNewLog(m, logAt)
-            steps = steps + 1
+        var ri2 = 0
+        while ri2 < road.len
+            if m.phase == 8
+                break
+            var mv2 = road[ri2..ri2 + 1]
+            ri2 = ri2 + 1
+            if mv2 == "E"
+                m = update(m, Msg.mvE)
+            if mv2 == "W"
+                m = update(m, Msg.mvW)
+            if mv2 == "N"
+                m = update(m, Msg.mvN)
+            if mv2 == "S"
+                m = update(m, Msg.mvS)
+            if m.phase == 1 or m.phase == 3
+                var bs2 = 0
+                while m.phase != 4 and m.phase != 5 and bs2 < 200
+                    if m.phase == 1
+                        m = update(m, Msg.atkSword)
+                    if m.phase == 2
+                        if m.e0Hp > 0
+                            m = update(m, Msg.tgt0)
+                        else
+                            m = update(m, Msg.tgt1)
+                    if m.phase == 3
+                        m = update(m, Msg.enemyTurn)
+                    logAt = showNewLog(m, logAt)
+                    bs2 = bs2 + 1
+                if m.phase == 5
+                    break
+                m = update(m, Msg.walkOn)
         attempt = attempt + 1
-    if m.phase != 4
+    if m.phase != 8
         print("  (The road kept its toll five times. The tale waits for a better swordsman.)")
         return
     print("")
-    print("  VICTORY -- Yehu earned " + m.xp.toString() + " experience.")
-    choose("Continue the tale")
-    m = update(m, Msg.contTale)
+    print("  Yehu walked " + steps.toString() + " miles and fought " + battles.toString() + " ambushes; he carries " + m.xp.toString() + " experience to the gates.")
     while m.phase == 8
         showPage(epiloguePage(m.story))
         if m.story + 1 < 3

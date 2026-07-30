@@ -5,7 +5,7 @@
 # seed — no GUI backend involved. This is the payoff of keeping `update`'s
 # combat logic in seed-in / result-out pure functions.
 
-use tears_of_the_tuon exposing Weapon, swordW, bowW, daggerW, AttackOutcome, resolveAttack, weaponScore, chooseEnemyWeapon, tryFlee, playerFirst, GameModel, Msg, update, hasFlag
+use tears_of_the_tuon exposing Weapon, swordW, bowW, daggerW, AttackOutcome, resolveAttack, weaponScore, chooseEnemyWeapon, tryFlee, playerFirst, GameModel, Msg, update, hasFlag, tileAt
 
 def main()
     # --- weapon data matches the original JSON ---
@@ -85,7 +85,7 @@ def main()
     # reproducible. On Easy, Yehu (35 HP, +2 rolls) should beat two 20-HP
     # Ruffians. We auto-pick the sword and target the first standing enemy.
     var noFlags: List(str) = []
-    var m = GameModel(phase: 1, diff: 0, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags, rngSeed: 12345, log: ["start"])
+    var m = GameModel(phase: 1, diff: 0, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags, px: 5, py: 25, rngSeed: 12345, log: ["start"])
     var steps = 0
     while m.phase != 4 and m.phase != 5 and steps < 500
         if m.phase == 1
@@ -106,7 +106,7 @@ def main()
     # --- story FSM: intro pages -> Get the Cubs -> bridge -> title;
     #     victory -> epilogue pages -> last page holds ---
     var noFlags2: List(str) = []
-    var sm = GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags2, rngSeed: 1, log: ["start"])
+    var sm = GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags2, px: 5, py: 25, rngSeed: 1, log: ["start"])
     sm = update(sm, Msg.pageNext)
     sm = update(sm, Msg.pageNext)
     sm = update(sm, Msg.pageNext)
@@ -149,6 +149,29 @@ def main()
     assert cm.story == 3, "three pages of boasts reach the verdict"
     cm = update(cm, Msg.mC)                       # crown neither -- the Third Voice
     assert hasFlag(cm, "CrownGiver") and cm.story == 4, "the Third Voice verdict"
+
+    # --- the valley: tiles, movement, healing, ambush ---
+    assert tileAt(5, 25) == "A", "Arna is where MakePoint said"
+    assert tileAt(73, 13) == "T", "Thas is where the T is"
+    var noFlags3: List(str) = []
+    var wm = GameModel(phase: 11, diff: 1, pHp: 20, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags3, px: 5, py: 25, rngSeed: 9, log: ["at Arna"])
+    var held = update(wm, Msg.mvW)
+    assert held.px == 5 and held.py == 25, "mountains block the west"
+    wm = update(wm, Msg.mvE)
+    assert wm.px == 6 and wm.py == 25, "the road east of Arna is open"
+    assert wm.pHp == 21, "travel heals +1 on medium"
+    wm = update(wm, Msg.mvN)
+    wm = update(wm, Msg.mvE)
+    assert wm.px == 7 and wm.py == 24, "two more steps reach the first ambush point"
+    assert hasFlag(wm, "E7_24") and hasFlag(wm, "OnRoad"), "the ambush triggers once"
+    assert wm.phase == 1 or wm.phase == 3, "battle begins by initiative"
+    assert wm.e0Hp == 20 and wm.e1Hp == 20, "fresh Ruffians on the road"
+    var wmWon = wm except phase = 4
+    var back = update(wmWon, Msg.walkOn)
+    assert back.phase == 11 and not hasFlag(back, "OnRoad"), "victory walks on"
+    back = update(back, Msg.mvW)
+    back = update(back, Msg.mvE)
+    assert back.phase == 11, "a consumed ambush does not retrigger"
     # valor path: bunched score, bluff raises alarm; strike costs lives
     var vm = update(em, Msg.startMission)
     vm = update(vm, Msg.mA)

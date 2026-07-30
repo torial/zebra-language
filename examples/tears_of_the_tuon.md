@@ -33,6 +33,25 @@ changes initiative, hit odds, enemy AI, and flee odds. Win to earn experience
 and continue into a three-page epilogue (the first **Fable-composed** material
 in this world — the attachment point for authored episodes); flee to bail.
 
+## The Valley of ArnasThas (added 2026-07-30)
+
+The original game's **30×80 tile map**, extracted mechanically from
+`MapCreationHelper.cs` (zero hand-transcription) and walked in phase 11:
+choose a difficulty and Yehu sets out from Arna (5,25) for Thas (the `T`,
+73,13). Movement is N/S/E/W over the passable set `=.^ATHC`; **travel heals**
+by difficulty (easy +2, medium +1, hard +0 per step — the original's
+healing-while-traveling); the **eleven canonical combat points** from the C#
+bulk-add ambush once each (fresh Ruffians, initiative by difficulty, victory
+returns to the road via "Walk on"); reaching Thas enters the
+epilogue → mission → feast chain. The BFS road from Arna to Thas is 90 steps
+and crosses four of the eleven ambush points.
+
+**Difficulty note, honestly earned:** on Medium the enemies' agility-sum
+(30 vs 25) makes the Ruffians strike first at every ambush, and the
+playthrough driver lost the first ambush five seeds running before switching
+to Easy. That is the faithful math, not a bug — the road to Thas on Medium
+is genuinely dangerous.
+
 ## Story layer (added 2026-07-30)
 
 - **Scene data are pure functions** — `introPage(i)` / `epiloguePage(i)` return
@@ -158,6 +177,9 @@ and battle-log line (deterministic per its seed, with a try-again loop on
 defeat). First run of record, 2026-07-30: Fable lost the Medium road-battle on
 the first attempt and won on the second, finishing the mission on the faithful
 path — Split/Waited/CubsFree/SavedKeanna all true, ENDING: The Faithful Score.
+Second run of record (the valley campaign): five defeats at the first Medium
+ambush, then — humbled to Easy — 90 miles, four ambushes, 200 XP to the gates
+of Thas, the faithful mission, and the feast's Third Voice: every flag true.
 (The TUI itself is mouse-driven — `_tui_selectable` fires on a left-click at
 the widget's row; scripted SGR mouse-injection via winpty is untried, and a
 human clicking remains the only proof of rendering.)
