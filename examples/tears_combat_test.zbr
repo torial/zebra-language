@@ -167,6 +167,27 @@ def main()
     assert cm.story == 6, "candor and the untouched cup earn the garden"
     cm = update(cm, Msg.mA)                       # the Judge's commission
     assert hasFlag(cm, "PrinceHeart") and cm.story == 7, "the Open Door ending"
+    cm = update(cm, Msg.mB)                       # Episode III: the north road
+    assert cm.phase == 13 and cm.story == 0, "the Open Door leads to Muze"
+
+    # --- Episode III: The Road of Wings -- the merciful path sees the king ---
+    cm = update(cm, Msg.mA)                       # take the north road
+    cm = update(cm, Msg.mA)                       # strike his chains
+    assert hasFlag(cm, "SpyFriend"), "the wing-oath is given"
+    cm = update(cm, Msg.mA)                       # bread and salt for the nanae
+    cm = update(cm, Msg.mA)                       # the prophet's word
+    assert hasFlag(cm, "Warned"), "Yosef's warning is carried"
+    cm = update(cm, Msg.mA)                       # enter openly
+    cm = update(cm, Msg.mB)                       # ask for the king's own hall
+    assert cm.story == 6, "mercy and warning open the true hall"
+    cm = update(cm, Msg.mA)                       # take the feather
+    assert hasFlag(cm, "FeatherHeld") and cm.story == 7, "the Feather Carried ending"
+
+    # --- Episode III: without mercy, the veils hold ---
+    var noFlags5: List(str) = []
+    var e3 = GameModel(phase: 13, diff: 1, pHp: 35, e0Hp: 0, e1Hp: 0, selWeapon: 0, round: 1, xp: 0, level: 1, story: 5, states: noFlags5, px: 5, py: 25, rngSeed: 3, log: ["court"])
+    var e3b = update(e3, Msg.mB)                  # B without SpyFriend/Warned
+    assert e3b.story == 7 and not hasFlag(e3b, "FeatherHeld"), "the veils hold against the unwarned"
 
     # --- Episode II: the gambit is gated; unwatched B fights instead ---
     var noFlags4: List(str) = []

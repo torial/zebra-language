@@ -685,6 +685,8 @@ def ep2ChoiceB(model: GameModel): str
         return "The polished truth -- the judgment left vague"
     if id == 5
         return "Pour the libation -- courtesy is cheap"
+    if id == 7
+        return "EPISODE III -- take the north road to Muze"
     return ""
 
 def ep2Step(model: GameModel, pickedB: bool): GameModel
@@ -729,11 +731,107 @@ def ep2Step(model: GameModel, pickedB: bool): GameModel
     if id == 6
         var m6 = withFlag(model, "PrinceHeart")
         return m6 except story = 7
+    if pickedB
+        return model except phase = 13, story = 0
     return init()
 
 def rideOn(model: GameModel): GameModel
     var m = dropFlag(model, "OnEmbassy")
     return m except phase = 12, story = 4
+
+# ---------------------------------------------------------------------------
+# EPISODE III MISSION: THE ROAD OF WINGS (phase 13) -- Yehu's mission to Muze.
+# ---------------------------------------------------------------------------
+# Sean's arc: Episode III is Yehu's mission to Muze. Composed FORWARD-
+# COMPATIBLE: canon gives us the captured Muzite spy (Ep I ch.4, taken by
+# Anayah for questioning), Muze's caste-world and Sena overlords (Ikral ch.5:
+# the destroyed El Roi temple, Delev "the traitorous devil"), King Moriedhadu
+# in "thralldom" awaiting YOSEF's rescue (not Yehu's -- untouched here), and
+# Yosef+Nathan traveling north "past the great prison" in the same season.
+# The mission REPATRIATES THE SPY as cover for learning who commands the spy
+# network -- and its moral spine is the shapeshifters' own original gift
+# turned around: UNDERSTANDING ("compassion by inhabiting"), practiced by
+# the human on the Muzite. Patience -> candor -> SIGHT: only the merciful
+# see the true king. The spy's name (Veskar), the wing-oath, and the Court
+# of Veils are composed; every wall they stand inside is canonical.
+
+def ep3Page(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "[ Nurah -- the king's study ]||Anayah turns a molted grey feather in his fingers.|'The Muzite that Gratta gave me has told us nothing|in a year -- not under Doeg, and I have ended Doeg's|methods. So we will try the older road.||Take him HOME, Commander. A prisoner returned is a|door opened. And learn, if you can, who holds the|other end of his leash.'"
+    if id == 1
+        return "[ The cell below the barracks ]||The Muzite sits small in the corner, grey-feathered|in his true form, one wing bent from an old wound.|He watches you the way a hawk watches weather.||'I am called Veskar,' he says at last. 'You are the|one who dived at the bridge. Even our cages heard|of it.'"
+    if id == 2
+        return "[ The nanae valley ]||The road north runs through the nanae lands. At the|first sight of your spears the whole village pours|up the cliff-ladders and hides, pots still boiling.||Veskar makes a sound you have not heard from him|before. It takes you a moment to know it for|laughter. 'They hide from ME,' he says. 'From the|BENT-WINGED PRISONER. Truly the bravest of races.'"
+    if id == 3
+        return "[ The road past the Great Prison ]||It rises out of the northern waste like a mountain|that was built: no windows, one gate, older than any|kingdom's memory. You do not stop. No one stops.||At the waymeet beyond it, two travelers rest -- an|old man in a brown robe, and YOSEF. The prophet|blesses your road, then holds your eyes a long|moment: 'The king you will stand before is a|prisoner in his own hall. Do not say I said so|aloud.'"
+    if id == 4
+        return "[ The border of feathers ]||Muze at last: terraced cliff-cities, and the sky|full of forms -- hawks, cranes, things with no name|-- folding out of one shape into another as they|land. At the gate, molted feathers hang in strings:|the toll of entry, one feather from every wing.||Veskar is very quiet. He has not been home in nine|years."
+    if id == 5
+        return "[ The Court of Veils ]||The hall is hung with grey silk, layer behind layer.|Priests in sea-colored robes -- SENAS -- speak the|welcome, and between the veils sits a figure crowned|in bright plumage who is named to you as KING|MORIEDHADU.||Veskar's claw closes slowly on your wrist. His voice|is a breath: 'That is not the king. I can smell my|own. That is a Sena wearing us.'"
+    if id == 6
+        return "[ The true hall ]||A servant of the lowest caste -- one of Nathan's|secret faithful -- leads you by the cistern stair.|Behind a lattice of black wood: a thin Muzite with|living eyes, watched even here.||King Moriedhadu presses a molted feather and a small|pictograph token through the lattice. 'For the|prophet who is coming,' he says. 'Tell him: the|thrall is willing. Tell no one else in all the|world.'"
+    # id 7 -- endings
+    if hasFlag(model, "FeatherHeld")
+        return "[ The road home ]||You carry a feather and a token you must give to no|king, and a sentence you must carry like live|coals: THE THRALL IS WILLING.||At the border, Veskar takes his leave -- freed by|your own hand, on his wing-oath. High over the road|home a grey hawk circles you twice, and is gone|north.||[ ENDING: The Feather Carried ]||What Yehu carries now belongs to EPISODE III --|Sean's road, and the prophet's."
+    if hasFlag(model, "SpyFriend")
+        return "[ The road home ]||The Sena priests accepted your gifts with perfect|grace, and the plumed figure behind the veils spoke|warm words in a voice that never once moved the|silk.||You ride home to report a peace. Veskar, freed at|the border, does not look back. Some truths must|wait for better eyes.||[ ENDING: The Painted Peace ]"
+    return "[ The road home ]||You delivered the prisoner chained, as protocol|asked. The Sena priests thanked you twice. You did|not see where they took him, and no one in Muze|would meet your eyes afterward.||The treaty scroll is heavy in your bag and says|nothing true.||[ ENDING: The Chained Gift ]"
+
+def ep3ChoiceA(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "Take the north road"
+    if id == 1
+        return "Strike his chains -- take his wing-oath instead"
+    if id == 2
+        return "Leave bread and salt at the ladder's foot"
+    if id == 3
+        return "Ride on, and keep the prophet's word close"
+    if id == 4
+        return "Enter openly, as the king's emissary"
+    if id == 5
+        return "Present your gifts to the throne of veils"
+    if id == 6
+        return "Take the feather, and swear it"
+    return "Ride home to Nurah"
+
+def ep3ChoiceB(model: GameModel): str
+    var id = model.story
+    if id == 1
+        return "Keep him chained -- he is a spy, not a guest"
+    if id == 5
+        if hasFlag(model, "SpyFriend") and hasFlag(model, "Warned")
+            return "Ask, as courtesy, to greet the king in his own hall"
+        return ""
+    return ""
+
+def ep3Step(model: GameModel, tookB: bool): GameModel
+    var id = model.story
+    if id == 0
+        return model except story = 1
+    if id == 1
+        var m1 = model
+        if not tookB
+            m1 = withFlag(m1, "SpyFriend")
+            m1 = withLog(m1, "Veskar gives the wing-oath: 'By the First Form, I will not fly from you.'")
+        return m1 except story = 2
+    if id == 2
+        return model except story = 3
+    if id == 3
+        var m3 = withFlag(model, "Warned")
+        return m3 except story = 4
+    if id == 4
+        return model except story = 5
+    if id == 5
+        # the true hall opens only to the merciful who were warned
+        if tookB and hasFlag(model, "SpyFriend") and hasFlag(model, "Warned")
+            return model except story = 6
+        return model except story = 7
+    if id == 6
+        var m6 = withFlag(model, "FeatherHeld")
+        return m6 except story = 7
+    return init()
 
 # ---------------------------------------------------------------------------
 # Update helpers (deterministic given the model's seed — testable)
@@ -899,6 +997,8 @@ def pickA(model: GameModel): GameModel
         return disputeStep(model, 0)
     if model.phase == 12
         return ep2Step(model, false)
+    if model.phase == 13
+        return ep3Step(model, false)
     return missionStep(model, false)
 
 def pickB(model: GameModel): GameModel
@@ -906,6 +1006,8 @@ def pickB(model: GameModel): GameModel
         return disputeStep(model, 1)
     if model.phase == 12
         return ep2Step(model, true)
+    if model.phase == 13
+        return ep3Step(model, true)
     return missionStep(model, true)
 
 def update(model: GameModel, msg: Msg): GameModel
@@ -1086,6 +1188,15 @@ def viewEp2(g: Gui, model: GameModel)
         if g.button(b)
             g.send(Msg.mB)
 
+def viewEp3(g: Gui, model: GameModel)
+    drawPage(g, ep3Page(model))
+    if g.button(ep3ChoiceA(model))
+        g.send(Msg.mA)
+    var b = ep3ChoiceB(model)
+    if b != ""
+        if g.button(b)
+            g.send(Msg.mB)
+
 def viewMap(g: Gui, model: GameModel)
     g.text("The Valley of ArnasThas   Yehu Lv" + model.level.toString() + " HP " + model.pHp.toString() + "/" + levelMaxHp(model).toString() + " XP " + model.xp.toString() + "   (" + diffName(model.diff) + ")")
     g.separator()
@@ -1157,6 +1268,8 @@ def view(g: Gui, model: GameModel)
         viewMap(g, model)
     if model.phase == 12
         viewEp2(g, model)
+    if model.phase == 13
+        viewEp3(g, model)
 
 def main()
     Gui.run("Tears of the Tuon", 640, 480, init, update, view)

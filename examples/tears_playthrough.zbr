@@ -2,7 +2,7 @@
 # Drives the real update() FSM from title to mission ending, printing every
 # page and battle-log line. Deterministic given the hardcoded seed.
 
-use tears_of_the_tuon exposing GameModel, Msg, update, introPage, epiloguePage, missionPage, missionChoiceA, missionChoiceB, disputePage, disputeChoiceA, disputeChoiceC, ep2Page, ep2ChoiceA, ep2ChoiceB, hasFlag
+use tears_of_the_tuon exposing GameModel, Msg, update, introPage, epiloguePage, missionPage, missionChoiceA, missionChoiceB, disputePage, disputeChoiceA, disputeChoiceC, ep2Page, ep2ChoiceA, ep2ChoiceB, ep3Page, ep3ChoiceA, ep3ChoiceB, hasFlag
 
 def showPage(page: str)
     for ln in page.split("|")
@@ -181,5 +181,17 @@ def main()
             choose(ep2ChoiceA(m))
             m = update(m, Msg.mA)
     showPage(ep2Page(m))
+    choose(ep2ChoiceB(m))
+    m = update(m, Msg.mB)
+    # EPISODE III: The Road of Wings -- the merciful path
+    while m.phase == 13 and m.story < 7
+        showPage(ep3Page(m))
+        if m.story == 5
+            choose(ep3ChoiceB(m))
+            m = update(m, Msg.mB)
+        else
+            choose(ep3ChoiceA(m))
+            m = update(m, Msg.mA)
+    showPage(ep3Page(m))
     print("")
-    print("==== The playthrough ends. Flags: Split=" + hasFlag(m, "Split").toString() + " Waited=" + hasFlag(m, "Waited").toString() + " CubsFree=" + hasFlag(m, "CubsFree").toString() + " SavedKeanna=" + hasFlag(m, "SavedKeanna").toString() + " ThirdVoice=" + hasFlag(m, "CrownGiver").toString() + " OpenDoor=" + hasFlag(m, "PrinceHeart").toString() + " ====")
+    print("==== The playthrough ends. Flags: Split=" + hasFlag(m, "Split").toString() + " Waited=" + hasFlag(m, "Waited").toString() + " CubsFree=" + hasFlag(m, "CubsFree").toString() + " SavedKeanna=" + hasFlag(m, "SavedKeanna").toString() + " ThirdVoice=" + hasFlag(m, "CrownGiver").toString() + " OpenDoor=" + hasFlag(m, "PrinceHeart").toString() + " FeatherHeld=" + hasFlag(m, "FeatherHeld").toString() + " ====")

@@ -214,6 +214,33 @@ decide it themselves. Phase 12; entered when the victory feast burns low.
 - Tests walk the canonical path and the gated-gambit branch; the playthrough
   driver now runs both episodes end to end.
 
+## Episode III: The Road of Wings (wired 2026-07-30)
+
+Yehu's mission to Muze — **Sean's Episode III arc**, composed
+forward-compatible (phase 13): Torial repatriates the Muzite spy captured in
+Episode I (composed name: Veskar) as cover for learning who holds his leash.
+The road runs through the nanae valley (the bravest of races, hiding from a
+bent-winged prisoner), past the Great Prison — where **Yosef and Nathan's
+canonical northern journey crosses Yehu's** and the prophet leaves one
+warning: *"the king you will stand before is a prisoner in his own hall"* —
+to the Court of Veils, where Sena priests present a plumed figure as King
+Moriedhadu. Mercy is the key: only if the spy was freed on his wing-oath
+("By the First Form…") does he whisper *"that is not the king — I can smell
+my own"*, and only warned + befriended does the true hall open: the real
+Moriedhadu behind the lattice, pressing a feather and a token through —
+**"For the prophet who is coming. Tell him: the thrall is willing."** Yehu
+does not rescue him; that is Yosef's, and Sean's. The game makes Yehu the
+*courier* of Episode III's opening move.
+
+- Moral spine graduates again: patience → candor → **sight** — the
+  shapeshifters' original gift (understanding, "compassion by inhabiting"),
+  practiced by the human on the Muzite.
+- Endings: **The Feather Carried** / **The Painted Peace** (mercy without
+  the hall) / **The Chained Gift** (protocol, and a treaty that says nothing
+  true). No combat: this one is won by eyes.
+- Tests walk the merciful path and assert the veils hold against the
+  unwarned; the driver now plays **all three episodes** end to end.
+
 ## Playthrough driver
 
 `examples/tears_playthrough.zbr` — a headless full playthrough that drives the
