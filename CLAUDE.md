@@ -100,8 +100,11 @@ gate at all.
 `gates.sh` runs the set in order with one summary line each and exits non-zero on
 any failure. It deliberately does **not** fold in the GUI paths, `fuzz/gramgen.py`,
 or `node_addon_test.sh`, so that "gates green" keeps a precise meaning — see its
-`--list` for the honest limits. Notably **no gate exercises a GUI**: six green gates
-once sat on top of three real GUI crashes that only a human clicking found.
+`--list` for the honest limits. On GUIs the line moved on 2026-07-30: **no gate proves
+RENDERING, but startup is now covered** by `tools/gui_scaffold_check.sh` (BUG-229). Four
+GUI crashes have sat under fully green gates, and all four were at *startup* — which
+needs neither a human nor a terminal to detect. Rendering, input, layout, resize and
+colours still require Sean running it.
 
 ## Verification gates (and what each one CANNOT catch)
 
@@ -275,9 +278,25 @@ imports) with the tui backend selected. A fallback that had silently emitted the
 shape would have produced a program importing a runtime its own scaffold never places,
 and nothing in any gate tier would have caught it.
 
-Still uncovered by anything, including this sweep: **a human actually clicking a GUI.**
-Six green gates once sat on top of three real GUI crashes. Rendering and interaction
-are only ever proven by Sean running it.
+**Updated 2026-07-30 — the GUI gap is now partial, not total.** BUG-229 (tui apps
+segfaulting because the selfhost emit never assigned `_tui_env`) was the **fourth** GUI
+crash to sit under fully green gates. All four were at **startup**, and a startup crash is
+not a rendering problem — it needs neither a human nor a terminal. So
+`tools/gui_scaffold_check.sh` now covers that half:
+
+| | covered by | |
+|---|---|---|
+| scaffold declares a global `= undefined` and never assigns it | `gui_scaffold_check` leg 1 (static) | **gated** |
+| app dies with a memory fault at startup | `gui_scaffold_check` leg 2 (runtime) | best-effort |
+| rendering, input, layout, resize, colours | **a human running it** | still uncovered |
+
+Run it as `bash tools/gui_scaffold_check.sh [examples/foo.zbr]`. It builds a real tui app,
+so it is minutes, not seconds — treat it like `compile_check`: per-session and
+pre-release, not in the QUICK tier. The tool prints its own uncovered list, so the
+remaining gap cannot quietly be forgotten.
+
+Sean confirmed BUG-229's fix by running `--gui-backend=tui examples/counter.zbr` and
+clicking through it — which remains the only verification that can close a GUI bug.
 
 ## Self-hosting
 

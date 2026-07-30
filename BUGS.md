@@ -34,6 +34,10 @@ rendering, input, layout, resize, colours. Those need a human. What changed is t
 from "no gate touches a GUI" to "no gate touches a GUI **beyond startup**", and all four
 GUI crashes to date lived at startup.
 
+**CONFIRMED BY SEAN 2026-07-30**: `--gui-backend=tui examples/counter.zbr` runs and
+renders correctly. That is the only verification that can close a GUI bug — the gate
+proves it starts, a human proves it works.
+
 *Diagnosis by Fable (dossier, root cause, and fix sketch); implementation and guard by
 Opus. The dossier was accurate in every particular.*
 
