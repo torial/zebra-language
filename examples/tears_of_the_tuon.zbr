@@ -295,7 +295,7 @@ def roadBattle(model: GameModel): GameModel
     var m = withFlag(model, "OnRoad")
     m = m except e0Hp = 20, e1Hp = 20, round = 1
     m = withLog(m, "Ruffians spring from the rocks!")
-    if playerFirst(m.diff, 25, 30)
+    if playerFirst(m.diff, levelAgi(m), 30)
         return m except phase = 1
     return m except phase = 3
 
@@ -308,10 +308,11 @@ def tryMove(model: GameModel, dx: int, dy: int): GameModel
         return model
     var m = model except px = nx, py = ny
     var heal = 2 - m.diff
-    if heal > 0 and m.pHp < 35
+    var cap = levelMaxHp(m)
+    if heal > 0 and m.pHp < cap
         var nh = m.pHp + heal
-        if nh > 35
-            nh = 35
+        if nh > cap
+            nh = cap
         m = m except pHp = nh
     if tile == "T"
         m = withLog(m, "The walls of Thas rise before you.")
@@ -325,6 +326,52 @@ def tryMove(model: GameModel, dx: int, dy: int): GameModel
 def resumeWalk(model: GameModel): GameModel
     var m = dropFlag(model, "OnRoad")
     return m except phase = 11
+
+# ---------------------------------------------------------------------------
+# Save / Load (the C#'s Save/New/Open, ported small): one line-per-field file.
+# Saving is offered while on the map ("Make camp"); loading from the title.
+# NOTE: File IO inside update() is a deliberate MVU impurity, confined to
+# these two handlers.
+# ---------------------------------------------------------------------------
+
+def saveGame(m: GameModel): GameModel
+    var sb: StringBuilder = StringBuilder()
+    sb.append("tears-save-v1\n")
+    sb.append(m.diff.toString() + "\n")
+    sb.append(m.pHp.toString() + "\n")
+    sb.append(m.xp.toString() + "\n")
+    sb.append(m.level.toString() + "\n")
+    sb.append(m.px.toString() + "\n")
+    sb.append(m.py.toString() + "\n")
+    sb.append(m.rngSeed.toString() + "\n")
+    var i = 0
+    var flags = ""
+    while i < m.states.len
+        if i > 0
+            flags = flags + ";"
+        flags = flags + m.states.at(i)
+        i = i + 1
+    sb.append(flags + "\n")
+    File.write("tears_save.txt", sb.build())
+    return withLog(m, "Yehu makes camp; the journey is recorded.")
+
+def loadGame(): GameModel
+    var m = init()
+    if not File.exists("tears_save.txt")
+        return m
+    var src = File.read("tears_save.txt")
+    var lines: List(str) = []
+    for ln in src.split("\n")
+        lines.add(ln)
+    if lines.len < 9 or lines.at(0) != "tears-save-v1"
+        return m
+    m = m except diff = lines.at(1).toInt(), pHp = lines.at(2).toInt(), xp = lines.at(3).toInt(), level = lines.at(4).toInt(), px = lines.at(5).toInt(), py = lines.at(6).toInt(), rngSeed = lines.at(7).toInt()
+    var st: List(str) = []
+    if lines.at(8) != ""
+        for f in lines.at(8).split(";")
+            st.add(f)
+    m = m except states = st, phase = 11, story = 0
+    return withLog(m, "The recorded journey resumes.")
 
 def startJourney(model: GameModel, diff: int): GameModel
     var m = model except diff = diff, phase = 11, px = 5, py = 25
@@ -347,6 +394,7 @@ struct GameModel
     var selWeapon: int
     var round: int
     var xp: int
+    var level: int
     var story: int
     var states: List(str)
     var px: int
@@ -377,11 +425,13 @@ union Msg
     mvW
     mvE
     walkOn
+    saveCamp
+    loadCamp
 
 def init(): GameModel
     var seed = Random.randInt(1, 2000000000)
     var noFlags: List(str) = []
-    return GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags, px: 5, py: 25, rngSeed: seed, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
+    return GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, level: 1, story: 0, states: noFlags, px: 5, py: 25, rngSeed: seed, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
 
 # ---------------------------------------------------------------------------
 # MISSION: The Cubs of Thas (phase 9) — the untold interior of Episode I.
@@ -602,7 +652,7 @@ def playerAttack(model: GameModel, tgt: int): GameModel
     if tgt == 1
         tgtName = "Ruffian B"
         tgtHp = model.e1Hp
-    var out = resolveAttack(model.rngSeed, "Yehu", 25, 15, w, tgtName, 15, 10, true, model.diff)
+    var out = resolveAttack(model.rngSeed, "Yehu", levelAgi(model), levelStr(model), w, tgtName, 15, 10, true, model.diff)
     var m = model except rngSeed = out.nextSeed
     m = withLog(m, out.message)
     if out.hit
@@ -617,7 +667,8 @@ def playerAttack(model: GameModel, tgt: int): GameModel
             m = withLog(m, tgtName + " collapses.")
     if m.e0Hp <= 0 and m.e1Hp <= 0
         m = withLog(m, "The Ruffians are defeated! Yehu gains 50 experience.")
-        return m except phase = 4, xp = m.xp + 50
+        m = applyExperience(m, 50)
+        return m except phase = 4
     return m except phase = 3
 
 # One enemy attacks Yehu, picking a weapon by the difficulty AI.
@@ -629,7 +680,7 @@ def oneEnemyAttack(model: GameModel, which: int): GameModel
     var ename = "Ruffian A"
     if which == 1
         ename = "Ruffian B"
-    var out = resolveAttack(model.rngSeed, ename, 15, 10, w, "Yehu", 25, 10, false, model.diff)
+    var out = resolveAttack(model.rngSeed, ename, 15, 10, w, "Yehu", levelAgi(model), 10, false, model.diff)
     var m = model except rngSeed = out.nextSeed
     m = withLog(m, out.message)
     if out.hit
@@ -656,7 +707,7 @@ def attemptFlee(model: GameModel): GameModel
     var rng = Random.new(model.rngSeed)
     var probe = rng.nextInt(1, 2000000000)
     var m = model except rngSeed = probe
-    if tryFlee(model.rngSeed, 25, enemyAgi, model.diff)
+    if tryFlee(model.rngSeed, levelAgi(model), enemyAgi, model.diff)
         m = withLog(m, "Yehu breaks away and escapes down the road.")
         return m except phase = 6
     m = withLog(m, "Yehu tries to flee but the Ruffians cut him off!")
@@ -665,6 +716,42 @@ def attemptFlee(model: GameModel): GameModel
 # ---------------------------------------------------------------------------
 # Update
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Leveling (faithful to CombatEngine.ApplyExperienceToPlayer + the Human
+# EntityType JSON: thresholds 0,100,200,400... doubling to 409600; each level
+# grants +3 Agility, +3 Health, +3 Strength).
+# ---------------------------------------------------------------------------
+
+def expLevelMax(level: int): int
+    if level <= 1
+        return 0
+    if level >= 14
+        return 409600
+    # thresholds double from 100 at level 2
+    var maxExp = 100
+    var l = 2
+    while l < level
+        maxExp = maxExp * 2
+        l = l + 1
+    return maxExp
+
+def levelAgi(m: GameModel): int
+    return 25 + (m.level - 1) * 3
+
+def levelStr(m: GameModel): int
+    return 15 + (m.level - 1) * 3
+
+def levelMaxHp(m: GameModel): int
+    return 35 + (m.level - 1) * 3
+
+# C# do-while: level up while Experience > ExperienceLevels[Level-1].
+def applyExperience(model: GameModel, won: int): GameModel
+    var m = model except xp = model.xp + won
+    while m.level < 14 and m.xp > expLevelMax(m.level)
+        m = m except level = m.level + 1
+        m = withLog(m, "Yehu leveled up!")
+    return m
 
 # "Get the Cubs" (the intro scene's one choice, per the C# original) jumps to
 # the port-added bridge page; from the bridge it enters the difficulty title.
@@ -721,6 +808,8 @@ def update(model: GameModel, msg: Msg): GameModel
         on Msg.mvW        return tryMove(model, -1, 0)
         on Msg.mvE        return tryMove(model, 1, 0)
         on Msg.walkOn     return resumeWalk(model)
+        on Msg.saveCamp   return saveGame(model)
+        on Msg.loadCamp   return loadGame()
 
 # ---------------------------------------------------------------------------
 # View
@@ -728,7 +817,7 @@ def update(model: GameModel, msg: Msg): GameModel
 
 def drawHud(g: Gui, model: GameModel)
     g.text("Round " + model.round.toString() + "   (" + diffName(model.diff) + ")")
-    g.text("Yehu       HP " + model.pHp.toString() + "/35")
+    g.text("Yehu  Lv" + model.level.toString() + "  HP " + model.pHp.toString() + "/" + levelMaxHp(model).toString())
     var a = "down"
     if model.e0Hp > 0
         a = model.e0Hp.toString() + "/20"
@@ -759,6 +848,8 @@ def viewTitle(g: Gui, model: GameModel)
         g.send(Msg.selMedium)
     if g.button("Hard   — the Ruffians are quick and cruel")
         g.send(Msg.selHard)
+    if g.button("Resume a recorded journey")
+        g.send(Msg.loadCamp)
 
 def viewChooseWeapon(g: Gui, model: GameModel)
     drawHud(g, model)
@@ -859,7 +950,7 @@ def viewMission(g: Gui, model: GameModel)
             g.send(Msg.mB)
 
 def viewMap(g: Gui, model: GameModel)
-    g.text("The Valley of ArnasThas   Yehu HP " + model.pHp.toString() + "/35   (" + diffName(model.diff) + ")")
+    g.text("The Valley of ArnasThas   Yehu Lv" + model.level.toString() + " HP " + model.pHp.toString() + "/" + levelMaxHp(model).toString() + " XP " + model.xp.toString() + "   (" + diffName(model.diff) + ")")
     g.separator()
     var y = model.py - 6
     if y < 0
@@ -884,6 +975,8 @@ def viewMap(g: Gui, model: GameModel)
         g.send(Msg.mvW)
     if g.button("East")
         g.send(Msg.mvE)
+    if g.button("Make camp (save)")
+        g.send(Msg.saveCamp)
 
 def viewDispute(g: Gui, model: GameModel)
     drawPage(g, disputePage(model))

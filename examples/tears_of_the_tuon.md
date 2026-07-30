@@ -52,6 +52,27 @@ playthrough driver lost the first ambush five seeds running before switching
 to Easy. That is the faithful math, not a bug — the road to Thas on Medium
 is genuinely dangerous.
 
+## Leveling and Save/Load (added 2026-07-30 — feature parity)
+
+The C# ReadMe's remaining feature-list items, ported faithfully:
+
+- **Leveling** (`ApplyExperienceToPlayer` + the Human EntityType JSON):
+  thresholds 0, 100, 200, 400 … doubling to 409,600; level up **while**
+  `xp > levels[level-1]` (quirk-faithful: the 0 threshold means any victory
+  levels a fresh hero to 2); each level grants **+3 agility, +3 max HP,
+  +3 strength**, which feed the real combat rolls, flee rolls, initiative,
+  and the travel-healing cap. The valley campaign reaches the gates of Thas
+  at Level 3 with 200 XP.
+- **Save/Load** (`Save/New/Open`, ported small): "Make camp (save)" on the
+  map writes a one-field-per-line save (`tears_save.txt`, gitignored);
+  "Resume a recorded journey" on the title loads it back onto the map with
+  stats, position, and consumed-ambush flags intact (round-trip tested).
+  File IO inside `update()` is a deliberate, confined MVU impurity.
+
+Still absent from the original's list: sound (out of scope for the TUI) and
+the per-location story scenes beyond the intro (the criteria machinery is
+ready for them).
+
 ## Story layer (added 2026-07-30)
 
 - **Scene data are pure functions** — `introPage(i)` / `epiloguePage(i)` return

@@ -22,7 +22,7 @@ def choose(label: str)
 
 def main()
     var noFlags: List(str) = []
-    var m = GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags, px: 5, py: 25, rngSeed: 20260730, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
+    var m = GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, level: 1, story: 0, states: noFlags, px: 5, py: 25, rngSeed: 20260730, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
     print("==== TEARS OF THE TUON — a playthrough by Fable ====")
     print("")
     # intro pages
@@ -90,7 +90,7 @@ def main()
         print("  DEFEAT -- Yehu falls on the mountain road.")
         choose("Try again (attempt " + (attempt + 1).toString() + ")")
         var noFlagsR: List(str) = []
-        m = GameModel(phase: 11, diff: 0, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlagsR, px: 5, py: 25, rngSeed: 20260730 + attempt * 7919, log: ["Yehu rises, spits blood, and takes up his blade again."])
+        m = GameModel(phase: 11, diff: 0, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, level: 1, story: 0, states: noFlagsR, px: 5, py: 25, rngSeed: 20260730 + attempt * 7919, log: ["Yehu rises, spits blood, and takes up his blade again."])
         logAt = showNewLog(m, 0)
         var ri2 = 0
         while ri2 < road.len
@@ -128,7 +128,7 @@ def main()
         print("  (The road kept its toll five times. The tale waits for a better swordsman.)")
         return
     print("")
-    print("  Yehu walked " + steps.toString() + " miles and fought " + battles.toString() + " ambushes; he carries " + m.xp.toString() + " experience to the gates.")
+    print("  Yehu walked " + steps.toString() + " miles and fought " + battles.toString() + " ambushes; he reaches the gates at Level " + m.level.toString() + " with " + m.xp.toString() + " experience.")
     while m.phase == 8
         showPage(epiloguePage(m.story))
         if m.story + 1 < 3

@@ -5,7 +5,7 @@
 # seed — no GUI backend involved. This is the payoff of keeping `update`'s
 # combat logic in seed-in / result-out pure functions.
 
-use tears_of_the_tuon exposing Weapon, swordW, bowW, daggerW, AttackOutcome, resolveAttack, weaponScore, chooseEnemyWeapon, tryFlee, playerFirst, GameModel, Msg, update, hasFlag, tileAt
+use tears_of_the_tuon exposing Weapon, swordW, bowW, daggerW, AttackOutcome, resolveAttack, weaponScore, chooseEnemyWeapon, tryFlee, playerFirst, GameModel, Msg, update, hasFlag, tileAt, applyExperience, expLevelMax, levelAgi, levelMaxHp, saveGame, loadGame
 
 def main()
     # --- weapon data matches the original JSON ---
@@ -85,7 +85,7 @@ def main()
     # reproducible. On Easy, Yehu (35 HP, +2 rolls) should beat two 20-HP
     # Ruffians. We auto-pick the sword and target the first standing enemy.
     var noFlags: List(str) = []
-    var m = GameModel(phase: 1, diff: 0, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags, px: 5, py: 25, rngSeed: 12345, log: ["start"])
+    var m = GameModel(phase: 1, diff: 0, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, level: 1, story: 0, states: noFlags, px: 5, py: 25, rngSeed: 12345, log: ["start"])
     var steps = 0
     while m.phase != 4 and m.phase != 5 and steps < 500
         if m.phase == 1
@@ -100,13 +100,14 @@ def main()
         steps = steps + 1
     assert m.phase == 4, "easy battle ends in victory"
     assert m.xp == 50, "victory awards 50 xp (2 x killExp 25)"
+    assert m.level == 2, "50 xp crosses the level-1 threshold (0) once"
     assert m.e0Hp <= 0 and m.e1Hp <= 0, "both Ruffians defeated"
     assert m.pHp > 0, "Yehu survives on Easy"
 
     # --- story FSM: intro pages -> Get the Cubs -> bridge -> title;
     #     victory -> epilogue pages -> last page holds ---
     var noFlags2: List(str) = []
-    var sm = GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags2, px: 5, py: 25, rngSeed: 1, log: ["start"])
+    var sm = GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, level: 1, story: 0, states: noFlags2, px: 5, py: 25, rngSeed: 1, log: ["start"])
     sm = update(sm, Msg.pageNext)
     sm = update(sm, Msg.pageNext)
     sm = update(sm, Msg.pageNext)
@@ -154,7 +155,7 @@ def main()
     assert tileAt(5, 25) == "A", "Arna is where MakePoint said"
     assert tileAt(73, 13) == "T", "Thas is where the T is"
     var noFlags3: List(str) = []
-    var wm = GameModel(phase: 11, diff: 1, pHp: 20, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags3, px: 5, py: 25, rngSeed: 9, log: ["at Arna"])
+    var wm = GameModel(phase: 11, diff: 1, pHp: 20, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, level: 1, story: 0, states: noFlags3, px: 5, py: 25, rngSeed: 9, log: ["at Arna"])
     var held = update(wm, Msg.mvW)
     assert held.px == 5 and held.py == 25, "mountains block the west"
     wm = update(wm, Msg.mvE)
@@ -172,6 +173,21 @@ def main()
     back = update(back, Msg.mvW)
     back = update(back, Msg.mvE)
     assert back.phase == 11, "a consumed ambush does not retrigger"
+
+    # --- leveling: faithful thresholds and bonuses ---
+    assert expLevelMax(1) == 0 and expLevelMax(2) == 100 and expLevelMax(3) == 200 and expLevelMax(4) == 400, "threshold table"
+    var lm = applyExperience(back, 200)
+    assert lm.level >= 3, "200 xp reaches level 3 (0,100,200 quirk-faithful)"
+    assert levelAgi(lm) == 25 + (lm.level - 1) * 3, "agility scales +3 per level"
+    assert levelMaxHp(lm) == 35 + (lm.level - 1) * 3, "max hp scales +3 per level"
+
+    # --- save / load round-trip ---
+    var sv = saveGame(lm)
+    var ld = loadGame()
+    assert ld.phase == 11, "a loaded game resumes on the map"
+    assert ld.diff == sv.diff and ld.pHp == sv.pHp and ld.xp == sv.xp and ld.level == sv.level, "stats survive the camp"
+    assert ld.px == sv.px and ld.py == sv.py, "position survives the camp"
+    assert hasFlag(ld, "E7_24") == hasFlag(sv, "E7_24"), "consumed ambushes survive the camp"
     # valor path: bunched score, bluff raises alarm; strike costs lives
     var vm = update(em, Msg.startMission)
     vm = update(vm, Msg.mA)
