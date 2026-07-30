@@ -313,8 +313,23 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   cannot become invisible. "Exercised" deliberately includes fixtures driven by another
   tool or imported by a registered test — a gate that cries wolf gets switched off.
 - [x] **A4 — OOM policy. DONE 2026-07-30.** `unreachable` is **undefined behaviour** in
-  ReleaseFast, and `zebra --release` builds with `-OReleaseFast` — so an out-of-memory
-  condition in a *user's shipped program* was UB, not a clean failure. **21 allocation
+  ReleaseFast.
+
+  > **Correction, same day (and it matters for how urgent this was).** The commit message
+  > and the first version of this entry said "`zebra --release` builds with
+  > `-OReleaseFast`, so OOM in a user's shipped program was UB." **That was wrong**, found
+  > while scoping the contracts pilot. `--release` switches to LLVM but never passes an
+  > optimize flag on the exe-producing path, so it builds **Debug** — see **BUG-228**.
+  > `-OReleaseFast` is reached only by the **node-addon** build and by a `-fno-emit-bin`
+  > check that produces no binary.
+  >
+  > So the exposure was: node addons (real), and anyone taking `--emit-zig` output and
+  > building it themselves with `-OReleaseFast` (a documented workflow) — **not** ordinary
+  > `--release` users. Narrower than claimed.
+  >
+  > The fix stands, and the ORDER turns out to be load-bearing: fixing BUG-228 by adding
+  > `-OReleaseFast` would have switched on every `unreachable`-is-UB site at once. Doing
+  > A4 first means that flag can now be added safely. A4 is BUG-228's prerequisite. **21 allocation
   sites fixed** (20 emit sites in `CodeGen.zbr` + 1 in `stdlib_preamble.zig`) to
   `catch @panic("OOM")`, which aborts cleanly with a message in every build mode and is
   already what ~148 sibling sites do. Verified end-to-end: an emitted user program now

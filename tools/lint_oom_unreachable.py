@@ -3,9 +3,16 @@
 THE HAZARD
 ----------
 In `ReleaseFast` / `ReleaseSmall`, Zig's `unreachable` is **undefined behaviour**, not a
-crash. `zebra --release` builds with `-OReleaseFast`, and that is the artifact a user
-ships. So `alloc(...) catch unreachable` in emitted code means an out-of-memory condition
-in a user's program is UB — it may corrupt, or continue with garbage, rather than fail.
+crash. So `alloc(...) catch unreachable` in emitted code means an out-of-memory condition
+is UB — it may corrupt, or continue with garbage, rather than fail.
+
+Which builds actually reach ReleaseFast today (corrected 2026-07-30 — an earlier version
+of this header claimed `zebra --release` did, and it does not, see BUG-228):
+  * the **node-addon** build, which does pass `-OReleaseFast`;
+  * anyone taking `--emit-zig` output and building it themselves optimised, which
+    QUICKSTART documents as a workflow.
+`zebra --release` currently builds Debug — that is BUG-228, and **fixing it turns this
+hazard on everywhere at once**, which is precisely why this lint must stay green first.
 
 WHY NO GATE CAN CATCH IT
 ------------------------

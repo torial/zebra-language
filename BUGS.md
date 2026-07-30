@@ -1,6 +1,44 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-227. Next new bug: BUG-228.**
+**Last bug number generated: BUG-228. Next new bug: BUG-229.**
+
+---
+
+### BUG-228: `--release` produces an UNOPTIMIZED binary ⬜ OPEN
+Found 2026-07-30 while scoping the contracts pilot. `zebra --release prog.zbr` switches
+from the self-hosted backend to LLVM — a real change, and the binary shrinks from ~20 MB
+to ~2 MB — but the branch that actually emits an executable never passes an optimize
+flag, so Zig defaults to **Debug**:
+
+```
+        else
+            argv2.add("build-exe")
+            argv2.add(zig_path)
+            argv2.add("-femit-bin=" + llvm_exe)     # <- no -O anything
+```
+
+`release` is consumed in only three places (`selfhost/main.zbr` ~2478, ~2587, ~2647):
+the **node-addon** build (which does pass `-OReleaseFast`), a `mode_c` check branch that
+carries `-fno-emit-bin` and therefore produces **no binary at all**, and forwarding to
+`zebra build`. The ordinary exe path is not among them.
+
+Confirmed by observation, not just by reading: a runtime out-of-bounds slice still panics
+with a full stack trace under `--release`, which is Debug/ReleaseSafe behaviour, and the
+two binaries differ in name (`.fast.exe` vs `.run.exe`) rather than in optimisation.
+
+**Impact:** anyone shipping with `--release` ships an unoptimised build while believing
+otherwise — the flag's whole purpose. Exactly the "works but surprises you" class.
+
+**Fix ordering matters, and A4 has already done the prerequisite.** Adding `-OReleaseFast`
+to that branch would *simultaneously* turn on all the `unreachable`-is-UB behaviour that
+A4 removed on 2026-07-30. Fixing this before A4 would have converted an unoptimised-but-
+safe build directly into an optimised build with UB on OOM. Do not add the flag without
+first confirming `python tools/lint_oom_unreachable.py` is clean.
+
+Open question for the fix: `-OReleaseFast` or `-OReleaseSafe`? Safe keeps bounds and
+overflow checks (and is what the current behaviour accidentally approximates), which for
+a 0.9 aimed at "no surprises" is arguably the better default, with Fast behind an
+explicit opt-in.
 
 ---
 
