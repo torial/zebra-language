@@ -17,24 +17,24 @@
 | `s.trimLeft()` | **BORROW** | — | `std.mem.trimStart(u8, s, &std.ascii.whitespace)` |  |
 | `s.trimRight()` | **BORROW** | — | `std.mem.trimEnd(u8, s, &std.ascii.whitespace)` |  |
 | `s.center(20, " ")` | **OWN** | — | `_pad_center(s, @as(usize, @intCast(20)), " ", _zbr_rt._allocator)` |  |
-| `s.concat("!")` | **OWN** | — | `(std.mem.concat(_zbr_rt._allocator, u8, &.{ s, "!" }) catch unreach...` |  |
+| `s.concat("!")` | **OWN** | — | `(std.mem.concat(_zbr_rt._allocator, u8, &.{ s, "!" }) catch @panic(...` |  |
 | `b.decodeBase64()` | **OWN** | — | `_base64_decode_str(b)` | receiver must be base64 |
 | `s.encodeBase64()` | **OWN** | — | `_base64_encode(s)` |  |
-| `f.format(1)` | **OWN** | — | `(std.fmt.allocPrint(_zbr_rt._allocator, f, .{ 1 }) catch unreachable)` | variadic; see BUG-224 for 2+ args |
+| `f.format(1)` | **OWN** | — | `(std.fmt.allocPrint(_zbr_rt._allocator, f, .{ 1 }) catch @panic("OO...` | variadic; see BUG-224 for 2+ args |
 | `h.fromHex()` | **OWN** | — | `(blk_fhx: { if (h.len % 2 != 0) break :blk_fhx @as(?[]const u8, nul...` | receiver must be hex digits |
 | `parts.join(", ")` | **OWN** | — | `(std.mem.join(_zbr_rt._allocator, ", ", parts.items) catch @panic("...` | called on List(str) |
 | `s.lines()` | **OWN** | **BORROW** | `blk_sl_1: { var _ll_1: std.ArrayList([]const u8) = std.ArrayList([]...` |  |
-| `s.lower()` | **OWN** | — | `(std.ascii.allocLowerString(_zbr_rt._allocator, s) catch unreachable)` |  |
+| `s.lower()` | **OWN** | — | `(std.ascii.allocLowerString(_zbr_rt._allocator, s) catch @panic("OO...` |  |
 | `s.padLeft(20, " ")` | **OWN** | — | `_pad_left(s, @as(usize, @intCast(20)), " ", _zbr_rt._allocator)` |  |
 | `s.padRight(20, " ")` | **OWN** | — | `_pad_right(s, @as(usize, @intCast(20)), " ", _zbr_rt._allocator)` |  |
 | `s.repeat(2)` | **OWN** | — | `(blk_rep: { var _rep = std.ArrayList([]const u8).empty; defer _rep....` |  |
-| `s.replace("l", "L")` | **OWN** | — | `(std.mem.replaceOwned(u8, _zbr_rt._allocator, s, "l", "L") catch un...` |  |
-| `s.replaceAll("l", "L")` | **OWN** | — | `(std.mem.replaceOwned(u8, _zbr_rt._allocator, s, "l", "L") catch un...` |  |
+| `s.replace("l", "L")` | **OWN** | — | `(std.mem.replaceOwned(u8, _zbr_rt._allocator, s, "l", "L") catch @p...` |  |
+| `s.replaceAll("l", "L")` | **OWN** | — | `(std.mem.replaceOwned(u8, _zbr_rt._allocator, s, "l", "L") catch @p...` |  |
 | `s.reverse()` | **OWN** | — | `(blk_rev: { const _rbuf = _zbr_rt._allocator.alloc(u8, s.len) catch...` |  |
 | `s.split(",")` | **OWN** | **BORROW** | `blk_sl_2: { var _ll_2: std.ArrayList([]const u8) = std.ArrayList([]...` |  |
 | `s.toHex()` | **OWN** | — | `(blk_hex: { const _hx_s = s; const _hx_buf = _zbr_rt._allocator.all...` |  |
 | `s.tokenize(",")` | **OWN** | **BORROW** | `(blk_tok: { var _tok_it = std.mem.tokenizeSequence(u8, s, ","); var...` |  |
-| `s.upper()` | **OWN** | — | `(std.ascii.allocUpperString(_zbr_rt._allocator, s) catch unreachable)` |  |
+| `s.upper()` | **OWN** | — | `(std.ascii.allocUpperString(_zbr_rt._allocator, s) catch @panic("OO...` |  |
 | `s.bytes()` | **UNKNOWN** | — | `s.bytes()` | for-only; binding emits invalid Zig |
 | `s.chars()` | **UNKNOWN** | — | `s.chars()` | for-only; binding emits invalid Zig |
 | `s.charAt(0)` | **VALUE** | — | `s[@intCast(0)]` | BUG-223: typed str, emits u8 |

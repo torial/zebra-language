@@ -48,7 +48,7 @@ note() { printf '  \033[33m--\033[0m    %s\n' "$1"; }
 # the lint fell through to a repo-relative glob and raised. Repo-relative paths work
 # for every checker here without per-tool special casing.
 OUT="$REPO/.selfcheck_tmp"; rm -rf "$OUT"; mkdir -p "$OUT"
-trap 'rm -rf "$OUT"' EXIT
+trap 'rm -rf "$OUT" "$LAST_OUT_FILE"' EXIT
 
 # A checker that CRASHES must be reported as a crash, not as "found nothing". The first
 # version of this harness piped stderr to /dev/null, so a NotImplementedError inside the
@@ -68,10 +68,16 @@ run_checker() { # $@ = command; echoes combined output, prefixes a crash
 # The fix is two-legged and applies to all of them: establish the BASELINE first and
 # require silence, then plant the defect and require exactly the failure code. A rc the
 # check does not expect is reported as a CRASH, never as a verdict.
-LAST_OUT=""
-run_rc() { # $@ = command; sets LAST_OUT to combined output; echoes the exit code
-    LAST_OUT=$("$@" 2>&1); echo $?
+# NOTE the file, not a variable. `got=$(run_rc ...)` runs run_rc in a COMMAND
+# SUBSTITUTION SUBSHELL, so any variable it sets is discarded when that subshell exits —
+# every "crash, not a verdict: $(last_out)" message printed an empty string, which is how a
+# real bug-fixture failure got reported as an unexplained crash. A file survives the
+# subshell. (Found 2026-07-30 by this harness reporting FAIL on itself.)
+LAST_OUT_FILE="/tmp/gate_selfcheck_last_out.$$"
+run_rc() { # $@ = command; writes combined output to LAST_OUT_FILE; echoes the exit code
+    "$@" > "$LAST_OUT_FILE" 2>&1; echo $?
 }
+last_out() { head -c 400 "$LAST_OUT_FILE" 2>/dev/null; }
 
 echo "gate self-check — can each gate still fail?"
 echo
@@ -91,7 +97,7 @@ if [ -f selfhost/stdlib_preamble.zig ] && [ -f zig-out/bin/zebra-bootstrap.exe ]
         case "$got" in
             1) pass "doctor flags a stale bootstrap (clean 0 -> planted 1)" ;;
             0) bad "doctor did NOT flag a preamble newer than the bootstrap that embeds it" ;;
-            *) bad "doctor CRASHED (rc=$got) instead of reporting: $LAST_OUT" ;;
+            *) bad "doctor CRASHED (rc=$got) instead of reporting: $(last_out)" ;;
         esac
     fi
 else
@@ -160,7 +166,7 @@ else
     sig_ok=0
 fi
 if [ "$sig_ok" = 1 ]; then
-    cp tools/stdlib_signatures.tsv "$OUT/sig.bak"
+    cp -p tools/stdlib_signatures.tsv "$OUT/sig.bak"
     $PY - <<'PYEOF'
 import pathlib
 p = pathlib.Path("tools/stdlib_signatures.tsv")
@@ -168,11 +174,11 @@ s = p.read_text(encoding="utf-8")
 p.write_text(s.replace("str\ttrim\t0", "str\ttrim\t1\tstr"), encoding="utf-8", newline="\n")
 PYEOF
     got=$(run_rc $PY tools/stdlib_sig_check.py --only trim)
-    cp "$OUT/sig.bak" tools/stdlib_signatures.tsv
+    cp -p "$OUT/sig.bak" tools/stdlib_signatures.tsv
     case "$got" in
         1) pass "stdlib_sig_check rejects a corrupted arity row (clean 0 -> planted 1)" ;;
         0) bad "stdlib_sig_check accepted a CORRUPTED arity row" ;;
-        *) bad "stdlib_sig_check CRASHED (rc=$got) instead of reporting: $LAST_OUT" ;;
+        *) bad "stdlib_sig_check CRASHED (rc=$got) instead of reporting: $(last_out)" ;;
     esac
 fi
 
@@ -186,14 +192,14 @@ if [ -f docs/str_ownership.md ]; then
         note "str-ownership: skipped (--check already fails rc=$base on the UNPERTURBED"
         note "        doc, so rejecting a planted row would prove nothing)"
     else
-        cp docs/str_ownership.md "$OUT/own.bak"
+        cp -p docs/str_ownership.md "$OUT/own.bak"
         printf '\n| `s.bogus()` | **BORROW** | | | |\n' >> docs/str_ownership.md
         got=$(run_rc $PY tools/str_ownership_extract.py --check)
-        cp "$OUT/own.bak" docs/str_ownership.md
+        cp -p "$OUT/own.bak" docs/str_ownership.md
         case "$got" in
             1) pass "str-ownership rejects a perturbed table (clean 0 -> planted 1)" ;;
             0) bad "str-ownership accepted a PERTURBED generated table" ;;
-            *) bad "str-ownership CRASHED (rc=$got) instead of reporting: $LAST_OUT" ;;
+            *) bad "str-ownership CRASHED (rc=$got) instead of reporting: $(last_out)" ;;
         esac
     fi
 else
@@ -210,11 +216,11 @@ case "$r" in
     *)            bad "oom-unreachable lint is NOT clean on an unperturbed tree: $r" ;;
 esac
 if printf '%s' "$r" | grep -q '0 hazard'; then
-    cp selfhost/CodeGen.zbr "$OUT/cg.bak"
+    cp -p selfhost/CodeGen.zbr "$OUT/cg.bak"
     printf '\ndef _selfcheckProbe()\n    w.emit("_allocator.alloc(u8, 4) catch unreachable")\n' \
         >> selfhost/CodeGen.zbr
     r2=$(run_checker $PY tools/lint_oom_unreachable.py)
-    cp "$OUT/cg.bak" selfhost/CodeGen.zbr
+    cp -p "$OUT/cg.bak" selfhost/CodeGen.zbr
     case "$r2" in
         CRASH*)       bad "oom-unreachable lint CRASHED on the planted hazard: ${r2#CRASH }" ;;
         *"1 hazard"*) pass "oom-unreachable lint fires on a planted allocation (clean 0 -> 1)" ;;
@@ -238,14 +244,14 @@ p.write_text(s[:i] + "\n### BUG-901: planted by gate_selfcheck, no fixture FIXED
              encoding="utf-8", newline="\n")
 PYEOF
         got=$(run_rc $PY tools/bug_fixture_check.py --gate)
-        cp "$OUT/BUGS.bak" BUGS.md
+        cp -p "$OUT/BUGS.bak" BUGS.md
         # rc alone is ambiguous — a crash also exits 1 — so require the planted bug be NAMED.
-        if [ "$got" -eq 1 ] && printf '%s' "$LAST_OUT" | grep -q 'BUG-901'; then
+        if [ "$got" -eq 1 ] && printf '%s' "$(last_out)" | grep -q 'BUG-901'; then
             pass "bug-fixture catches a newly FIXED bug with no test (and names it)"
         elif [ "$got" -eq 0 ]; then
             bad "bug-fixture accepted a FIXED bug with NO fixture"
         else
-            bad "bug-fixture rc=$got without naming BUG-901 — crash, not a verdict: $LAST_OUT"
+            bad "bug-fixture rc=$got without naming BUG-901 — crash, not a verdict: $(last_out)"
         fi
     fi
 else
@@ -262,7 +268,7 @@ if [ -f tools/output_baseline.txt ]; then
         note "output-sweep: skipped (--gate already fails rc=$base on the UNPERTURBED"
         note "        baseline, so catching a planted change would prove nothing)"
     else
-        cp tools/output_baseline.txt "$OUT/outbase.bak"
+        cp -p tools/output_baseline.txt "$OUT/outbase.bak"
         $PY - <<'PYEOF'
 import pathlib
 p = pathlib.Path("tools/output_baseline.txt")
@@ -273,11 +279,11 @@ p.write_text(s[:i] + s[i:j].replace("true", "false", 1) + s[j:],
              encoding="utf-8", newline="\n")
 PYEOF
         got=$(run_rc bash tools/output_sweep.sh --gate --only any_all_test)
-        cp "$OUT/outbase.bak" tools/output_baseline.txt
+        cp -p "$OUT/outbase.bak" tools/output_baseline.txt
         case "$got" in
             1) pass "output-sweep catches a changed program output (clean 0 -> planted 1)" ;;
             0) bad "output-sweep accepted a PERTURBED recorded output" ;;
-            *) bad "output-sweep CRASHED (rc=$got) instead of reporting: $LAST_OUT" ;;
+            *) bad "output-sweep CRASHED (rc=$got) instead of reporting: $(last_out)" ;;
         esac
     fi
 else
