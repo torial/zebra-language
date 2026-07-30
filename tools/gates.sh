@@ -127,6 +127,10 @@ run "runtime-module" "all checks pass" bash tools/runtime_module_check.sh
 # --help promises ACTUALLY EXISTS (witnesses that pass -c and fail --check-full).
 # It also guards the speed, so `-c` silently starting to invoke zig again fails here.
 run "check-mode"     "all checks pass" bash tools/check_mode_check.sh
+# §28e: docs/str_ownership.md is DERIVED from real emit, so a codegen change that flips
+# a borrow into an own (or the reverse) makes the shipped table wrong while it still
+# carries a "GENERATED" banner vouching for it. One emit; cheap.
+run "str-ownership"  "is current" python tools/str_ownership_extract.py --check
 
 if [[ "$MODE" == "full" ]]; then
     run "compile_check" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh

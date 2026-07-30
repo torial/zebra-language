@@ -145,6 +145,23 @@ else
     note "stdlib_sig_check: skipped (no signature table)"
 fi
 
+# ── str-ownership: a perturbed generated table must be caught ────────────────
+# The doc is DERIVED from emit, so drift means the shipped ownership claims are wrong
+# while still carrying a GENERATED banner. Appending a bogus row stands in for a codegen
+# change that flips an ownership.
+if [ -f docs/str_ownership.md ]; then
+    cp docs/str_ownership.md "$OUT/own.bak"
+    printf '\n| `s.bogus()` | **BORROW** | | | |\n' >> docs/str_ownership.md
+    if $PY tools/str_ownership_extract.py --check >/dev/null 2>&1; then
+        bad "str-ownership accepted a PERTURBED generated table"
+    else
+        pass "str-ownership rejects a stale/perturbed table"
+    fi
+    cp "$OUT/own.bak" docs/str_ownership.md
+else
+    note "str-ownership: skipped (no generated table)"
+fi
+
 # ── round-trip: the freshness property whose absence made it vacuous ─────────
 # The emits compared must be FRESH selfhost output, not copies of the committed
 # bootstrap-emitted files. Checkable only if a prior full run left the dirs.
