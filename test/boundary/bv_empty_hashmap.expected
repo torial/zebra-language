@@ -1,0 +1,15 @@
+literalKeys=0
+ctorKeys=0
+values=0
+getIsNil=true
+getOrElse=-1
+contains=false
+afterRemoveKeys=0
+entries=0
+iter=0
+entriesIter=0
+oneKeys=1
+oneGet=1
+overwriteKeys=1
+overwriteGet=2
+backToEmpty=0

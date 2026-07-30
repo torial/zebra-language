@@ -1,0 +1,52 @@
+# @boundary runs
+#
+# BOUNDARY: the empty Set(T). Set is the newest of the three collections (§28f,
+# 2026-07-24) and therefore the one with the least accumulated corpus contact, so
+# its empty and single-element edges are the least likely to have been walked.
+#
+# The de-duplication rows are boundary cases too: adding the same element twice
+# must leave the count at one, and removing it once must empty the set.
+def main()
+    var ka = "a"
+    var s: Set(int) = Set()
+    var t = Set(int)()
+
+    print("annotatedLen=${s.len}")
+    print("ctorLen=${t.len}")
+    print("count=${s.count()}")
+    print("contains=${s.contains(1)}")
+    print("member=${1 in s}")
+
+    var xs: List(int) = s.items()
+    print("items=${xs.count()}")
+
+    # Removing an absent element and clearing an empty set are both no-ops.
+    s.remove(1)
+    print("afterRemove=${s.len}")
+    s.clear()
+    print("afterClear=${s.len}")
+
+    var it = 0
+    for x in s
+        it += 1
+    print("iter=${it}")
+
+    # First insertion, then the duplicate that must not count.
+    s.add(5)
+    print("oneLen=${s.len}")
+    s.add(5)
+    print("dupLen=${s.len}")
+    print("oneContains=${s.contains(5)}")
+    print("oneMember=${5 in s}")
+    var ys: List(int) = s.items()
+    print("oneItems=${ys.count()}")
+    s.remove(5)
+    print("backToEmpty=${s.len}")
+
+    # A set literal with a repeat collapses; a str-keyed set is a separate
+    # specialisation (content-hashed) and gets its own empty check.
+    var lit = {1, 2, 2}
+    print("literalLen=${lit.len}")
+    var strs: Set(str) = Set()
+    print("strSetLen=${strs.len}")
+    print("strSetContains=${strs.contains(ka)}")

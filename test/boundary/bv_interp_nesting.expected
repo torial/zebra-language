@@ -1,0 +1,10 @@
+adjacent=[AB]
+leading=[A tail]
+trailing=[head A]
+bothEnds=[AmidB]
+expr=2
+call=[A]
+nestedLiteral=[AZ]
+nestedTwoArgs=[Q]
+deep=[AB]
+braceText=[{} A]

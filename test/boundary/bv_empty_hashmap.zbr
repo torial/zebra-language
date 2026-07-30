@@ -1,0 +1,54 @@
+# @boundary runs
+#
+# BOUNDARY: the empty HashMap. The rows worth the most here are the ones where a
+# LOOKUP MISS and a REMOVE OF AN ABSENT KEY have to be ordinary answers rather
+# than faults — `get` is documented to return an optional precisely so a miss has
+# somewhere to go.
+def main()
+    var absent = "absent"
+    var ka = "a"
+    var m: HashMap(str, int) = {}
+    var n = HashMap(str, int)()
+
+    var ks: List(str) = m.keys()
+    print("literalKeys=${ks.count()}")
+    var nks: List(str) = n.keys()
+    print("ctorKeys=${nks.count()}")
+    var vs: List(int) = m.values()
+    print("values=${vs.count()}")
+
+    var g = m.get(absent)
+    print("getIsNil=${g == nil}")
+    print("getOrElse=${m.get(absent) orelse -1}")
+    print("contains=${m.contains(absent)}")
+
+    # Removing a key that was never there leaves the map empty and must not fault.
+    m.remove(absent)
+    var ks2: List(str) = m.keys()
+    print("afterRemoveKeys=${ks2.count()}")
+
+    var es = m.entries()
+    print("entries=${es.count()}")
+
+    var it = 0
+    for k, v in m
+        it += 1
+    print("iter=${it}")
+
+    var eit = 0
+    for k, v in m.entries()
+        eit += 1
+    print("entriesIter=${eit}")
+
+    # One entry: the first insertion into an empty map, and overwriting it.
+    m.set(ka, 1)
+    var ks3: List(str) = m.keys()
+    print("oneKeys=${ks3.count()}")
+    print("oneGet=${m.get(ka) orelse -1}")
+    m.set(ka, 2)
+    var ks4: List(str) = m.keys()
+    print("overwriteKeys=${ks4.count()}")
+    print("overwriteGet=${m.get(ka) orelse -1}")
+    m.remove(ka)
+    var ks5: List(str) = m.keys()
+    print("backToEmpty=${ks5.count()}")

@@ -1,0 +1,102 @@
+# @boundary runs
+#
+# BOUNDARY: the empty string, at every string operation the language reference
+# documents. Expected output authored from QUICKSTART "String method reference"
+# BEFORE this was ever run — see tools/boundary_check.sh for why that ordering is
+# the whole point.
+#
+# Values are bracketed as [..] so that "" and " " are distinguishable in a diff.
+# Quotes are deliberately NOT used inside interpolation: an interpolated string
+# containing \" is the BUG-216 shape the bootstrap double-escapes.
+def main()
+    var e = ""
+    var a = "abc"
+    # String literals used as ARGUMENTS are hoisted into locals on purpose: a
+    # nested `"` inside a `${...}` interpolation is its own lexer boundary
+    # (bv_interp_nesting.zbr), and mixing it in here would let one lexer surprise
+    # take every empty-string row down with it.
+    var sp = " "
+    var xx = "X"
+    var comma = ","
+
+    print("len=${e.len}")
+    print("isEmpty=${e.isEmpty()}")
+    print("nonEmptyIsEmpty=${a.isEmpty()}")
+
+    # Whitespace / case / order transforms of nothing are still nothing.
+    print("upper=[${e.upper()}]")
+    print("lower=[${e.lower()}]")
+    print("trim=[${e.trim()}]")
+    print("trimLeft=[${e.trimLeft()}]")
+    print("trimRight=[${e.trimRight()}]")
+    print("reverse=[${e.reverse()}]")
+
+    # Concatenation: the empty string is the identity element, on both sides.
+    print("concatRight=[${e.concat(a)}]")
+    print("concatLeft=[${a.concat(e)}]")
+    print("plusBoth=[${e + e}]")
+
+    # repeat(0) and repeat(n) of nothing are both nothing.
+    print("repeat0=[${e.repeat(0)}]")
+    print("repeat3=[${e.repeat(3)}]")
+    print("abcRepeat0=[${a.repeat(0)}]")
+
+    # Search: a miss in an empty haystack. The empty NEEDLE cases are the
+    # genuinely uncertain rows — the reference is silent, so these encode the
+    # conventional answer (every string contains and starts with "").
+    print("contains=${e.contains(a)}")
+    print("containsEmpty=${e.contains(e)}")
+    print("startsWithEmpty=${a.startsWith(e)}")
+    print("endsWithEmpty=${a.endsWith(e)}")
+    print("indexOf=${e.indexOf(a)}")
+    print("lastIndexOf=${e.lastIndexOf(a)}")
+    print("countSub=${e.count(a)}")
+    print("codePointCount=${e.codePointCount()}")
+
+    # Parsing: toInt/toFloat cannot signal failure and are documented to yield
+    # 0 / 0.0; tryInt/tryFloat are documented to yield nil.
+    print("toInt=${e.toInt()}")
+    var ti = e.tryInt()
+    print("tryIntIsNil=${ti == nil}")
+    var tf = e.tryFloat()
+    print("tryFloatIsNil=${tf == nil}")
+    print("toFloatIsZero=${e.toFloat() == 0.0}")
+
+    # Splitting nothing yields one empty piece (Go/Python/Zig convention).
+    var parts: List(str) = e.split(comma)
+    print("splitCount=${parts.count()}")
+    print("splitFirstEmpty=${parts.at(0) == e}")
+    var ls: List(str) = e.lines()
+    print("linesCount=${ls.count()}")
+
+    # All-quantifier predicates over an empty sequence are vacuously true.
+    print("isAlpha=${e.isAlpha()}")
+    print("isNumeric=${e.isNumeric()}")
+    print("isPrintable=${e.isPrintable()}")
+    print("isValidUtf8=${e.isValidUtf8()}")
+
+    # Zero-width slices, at both ends of a non-empty string.
+    print("substring00=[${e.substring(0, 0)}]")
+    print("slice00=[${e[0..0]}]")
+    print("abcSliceStart=[${a[0..0]}]")
+    print("abcSliceEnd=[${a[3..3]}]")
+
+    # Padding an empty string is pure fill; padding to a width SMALLER than the
+    # string must not truncate.
+    print("padLeft3=[${e.padLeft(3, sp)}]")
+    print("padRight3=[${e.padRight(3, sp)}]")
+    print("abcPadLeft0=[${a.padLeft(0, sp)}]")
+
+    print("replace=[${e.replace(a, xx)}]")
+    print("eqEmpty=${e == e}")
+    print("toStringEmpty=[${e.toString()}]")
+
+    # Iterating nothing runs the body zero times.
+    var nc = 0
+    for c in e.chars()
+        nc += 1
+    print("charsIter=${nc}")
+    var nb = 0
+    for b in e.bytes()
+        nb += 1
+    print("bytesIter=${nb}")

@@ -1,0 +1,13 @@
+zero=0
+one=1
+three=6
+def1=123
+def2=153
+def3=159
+named=127
+fmt0=[no args]
+fmt1=[one=7]
+fmt2=[two=7 and=8]
+fmt3=[three=1 2 3]
+fmtMixed=[s=abc i=4]
+nested=0

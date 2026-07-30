@@ -1,0 +1,33 @@
+# @boundary runs
+#
+# BOUNDARY: the lexer's handling of `${...}` at its edges — an empty-ish
+# interpolation, adjacent interpolations with no text between them, one at each
+# end of the string, a nested string LITERAL inside the braces, and a nested
+# call whose own argument is a string.
+#
+# This is split out from the other probes on purpose: a lexer surprise here would
+# otherwise fail whole files for a reason that has nothing to do with the boundary
+# they were written to test.
+#
+# NOT covered, deliberately: an interpolated string that also contains an escaped
+# quote. That is the BUG-216 hazard the bootstrap double-escapes, and
+# tools/lint_interp_escape.py exists to keep it out of the tree — a probe here
+# would be a hazard the lint is supposed to reject.
+def main()
+    var a = "A"
+    var b = "B"
+    var n = 1
+
+    print("adjacent=[${a}${b}]")
+    print("leading=[${a} tail]")
+    print("trailing=[head ${a}]")
+    print("bothEnds=[${a}mid${b}]")
+    print("expr=${n + 1}")
+    print("call=[${a.upper()}]")
+    print("nestedLiteral=[${a.concat("Z")}]")
+    print("nestedTwoArgs=[${a.replace("A", "Q")}]")
+    print("deep=[${a.concat(b).upper()}]")
+
+    # A literal brace next to an interpolation: the `{}` here is ordinary text in
+    # a Zebra string (format specifiers are only interpreted by .format()).
+    print("braceText=[{} ${a}]")

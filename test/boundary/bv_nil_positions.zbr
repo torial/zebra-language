@@ -1,0 +1,92 @@
+# @boundary runs
+#
+# BOUNDARY: nil in every position a value can occupy — local, parameter, return,
+# struct field, class field, collection element, and the receiver of an optional
+# chain. The interesting property is UNIFORMITY: nil should behave the same way
+# wherever it sits, and a position that was never walked is where it will not.
+#
+# Only DECIDED semantics are asserted here. Auto-narrowing is deliberately
+# exercised in the form QUICKSTART documents as supported (a plain `local != nil`
+# with no reassignment in the block); the forms it lists as NOT yet narrowed are
+# written with an explicit `!`, because asserting the aspirational behaviour would
+# encode a language change nobody has agreed to.
+struct Point
+    var x: int
+    var label: str?
+
+class Node
+    var value: int
+    var next: Node?
+
+    cue init(v: int)
+        .value = v
+        .next = nil
+
+def takeOpt(x: int?): int
+    return x orelse -1
+
+def giveNil(): int?
+    return nil
+
+def giveVal(): int?
+    return 9
+
+def main()
+    var fb = "fallback"
+
+    # Position 1: a local.
+    var a: int? = nil
+    var b: int? = 42
+    print("localNilIsNil=${a == nil}")
+    print("localValIsNil=${b == nil}")
+    print("localNilOrElse=${a orelse 7}")
+    print("localValOrElse=${b orelse 7}")
+
+    # Auto-narrowing: inside `if b != nil`, b is usable as a plain int.
+    if b != nil
+        print("narrowed=${b + 1}")
+    if a != nil
+        print("UNREACHABLE-a-was-nil")
+
+    # The binding form, on both a present and an absent optional.
+    if b as n
+        print("bindVal=${n}")
+    if a as n
+        print("UNREACHABLE-bind-on-nil")
+
+    # Position 2: a parameter, including a bare `nil` literal at the call site.
+    print("paramNil=${takeOpt(nil)}")
+    print("paramVal=${takeOpt(5)}")
+    print("paramFromLocal=${takeOpt(a)}")
+
+    # Position 3: a return value.
+    print("returnNil=${giveNil() orelse -2}")
+    print("returnVal=${giveVal() orelse -2}")
+
+    # Position 4: a struct field.
+    var p = Point(1, nil)
+    print("structFieldIsNil=${p.label == nil}")
+    print("structFieldOrElse=[${p.label orelse fb}]")
+
+    # Position 5: a class field, and the optional chain over it. `n.next` is nil,
+    # so `n.next?.value` must propagate nil rather than fault.
+    var node = Node(3)
+    print("classFieldIsNil=${node.next == nil}")
+    var chained = node.next?.value
+    print("chainIsNil=${chained == nil}")
+    print("chainOrElse=${node.next?.value orelse -3}")
+
+    # ...and the same chain once the link is present.
+    node.next = Node(4)
+    print("linkedIsNil=${node.next == nil}")
+    print("linkedChain=${node.next?.value orelse -3}")
+
+    # Position 6: an optional str, where the fallback has a different length.
+    var s: str? = nil
+    print("strNil=[${s orelse fb}]")
+    var s2: str? = ""
+    print("strEmptyIsNil=${s2 == nil}")
+    print("strEmptyOrElse=[${s2 orelse fb}]")
+
+    # An empty string is NOT nil — the row above is the one that catches a
+    # runtime conflating "absent" with "present but empty".

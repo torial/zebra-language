@@ -1,0 +1,52 @@
+# @boundary runs
+#
+# BOUNDARY: argument COUNT at 0, 1, and N — the dimension BUG-224 came from
+# (`format()` emitted one Zig tuple per argument instead of one tuple, so 2+
+# arguments produced invalid Zig; every existing corpus call passed exactly one,
+# which is why no gate saw it).
+#
+# This probe covers the arities that must WORK. The arities that must be REFUSED
+# get their own files, because a rejection aborts the compile and would take every
+# row here with it.
+def zero(): int
+    return 0
+
+def one(a: int): int
+    return a
+
+def three(a: int, b: int, c: int): int
+    return a + b + c
+
+def defaulted(a: int, b: int = 2, c: int = 3): int
+    return a * 100 + b * 10 + c
+
+def main()
+    var sarg = "abc"
+    print("zero=${zero()}")
+    print("one=${one(1)}")
+    print("three=${three(1, 2, 3)}")
+
+    # Defaults: supplying 1, 2, or all 3 of the parameters.
+    print("def1=${defaulted(1)}")
+    print("def2=${defaulted(1, 5)}")
+    print("def3=${defaulted(1, 5, 9)}")
+
+    # Named arguments, including skipping a defaulted middle parameter.
+    print("named=${defaulted(1, c: 7)}")
+
+    # format() at 0, 1 and 2 arguments — the BUG-224 shape. Specifiers are Zig's,
+    # so a str argument needs {s} and an int takes {}.
+    var f0 = "no args"
+    print("fmt0=[${f0.format()}]")
+    var f1 = "one={}"
+    print("fmt1=[${f1.format(7)}]")
+    var f2 = "two={} and={}"
+    print("fmt2=[${f2.format(7, 8)}]")
+    var f3 = "three={} {} {}"
+    print("fmt3=[${f3.format(1, 2, 3)}]")
+    var fs = "s={s} i={}"
+    print("fmtMixed=[${fs.format(sarg, 4)}]")
+
+    # A zero-argument call whose result feeds a one-argument call, so an arity
+    # slip in either direction shows up as a wrong number rather than a crash.
+    print("nested=${one(zero())}")

@@ -1,0 +1,61 @@
+# @boundary runs
+#
+# BOUNDARY: the empty List, at every List operation the reference documents.
+# Split from the other collections deliberately — one compile error in a single
+# large probe would take every other row's coverage down with it.
+#
+# The rows that matter most are the QUANTIFIERS: `any` over an empty sequence
+# must be false and `all` must be vacuously TRUE, and getting that pair backwards
+# is a classic off-by-nothing.
+def main()
+    var sep = ", "
+    var xs: List(int) = []
+    var ys = List(int)()
+
+    print("literalCount=${xs.count()}")
+    print("ctorCount=${ys.count()}")
+
+    print("any=${xs.any(def(x) = x > 0)}")
+    print("all=${xs.all(def(x) = x > 0)}")
+    var f = xs.find(def(x) = x > 0)
+    print("findIsNil=${f == nil}")
+
+    var doubled: List(int) = xs.map(def(x) = x * 2)
+    print("mapCount=${doubled.count()}")
+    var evens: List(int) = xs.filter(def(x) = x % 2 == 0)
+    print("filterCount=${evens.count()}")
+    print("reduce=${xs.reduce(0, def(acc, x) = acc + x)}")
+
+    # Sorting nothing must be a no-op, not a fault.
+    xs.sort()
+    print("sortedCount=${xs.count()}")
+
+    var it = 0
+    for x in xs
+        it += 1
+    print("iter=${it}")
+
+    var ii = 0
+    for i, x in xs
+        ii += 1
+    print("indexIter=${ii}")
+
+    # Joining an empty List(str) yields the empty string, not the separator.
+    var ss: List(str) = []
+    print("join=[${ss.join(sep)}]")
+
+    # One element is the other interesting boundary: join must emit NO separator,
+    # and the quantifiers must now follow the single element.
+    var one: List(int) = [7]
+    print("oneCount=${one.count()}")
+    print("oneAny=${one.any(def(x) = x > 0)}")
+    print("oneAll=${one.all(def(x) = x > 0)}")
+    var os: List(str) = ["only"]
+    print("oneJoin=[${os.join(sep)}]")
+
+    # Adding to an empty list and removing the only element returns it to empty.
+    var g = List(int)()
+    g.add(1)
+    print("afterAdd=${g.count()}")
+    g.remove(0)
+    print("afterRemove=${g.count()}")
