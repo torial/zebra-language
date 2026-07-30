@@ -133,7 +133,12 @@ def main():
     def compiles(recv, method, args, tag):
         src = work / ("sig_%s_%s_%s.zbr" % (recv.replace("(", "_").replace(")", ""), method, tag))
         src.write_text(program_for(recv, method, args), encoding="utf-8", newline="\n")
-        r = subprocess.run([str(ZEBRA), "-c", str(src)],
+        # --check-full, NOT -c. As of #4 (2026-07-29) `-c` is front-end-only, and this
+        # tool's positive leg has to mean "emits AND zig-compiles" — that is how the
+        # chars()/bytes() doc inaccuracy was originally found, via a Zig-level error.
+        # Switching to the fast path would have silently downgraded every row from a
+        # real compile to a parse, while still printing the same green count.
+        r = subprocess.run([str(ZEBRA), "--check-full", str(src)],
                            capture_output=True, text=True, env=env, timeout=180)
         if r.returncode == 0:
             return True, ""

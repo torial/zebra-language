@@ -16,7 +16,9 @@
 #   bash tools/gates.sh --list       # what each tier runs, and what it cannot see
 #
 # QUICK = the static lints (instant), smoke (emits + runs fixtures), round-trip
-#         (self-consistency), runtime-module (small end-to-end programs incl. the
+#         (self-consistency), check-mode (the -c vs --check-full contract, incl.
+#         proof the documented asymmetry is real), runtime-module (small
+#         end-to-end programs incl. the
 #         BUG-221 repro — the only gate that RUNS emitted output, and the only one
 #         that checks the DEFAULT shape is actually the split one). Catches most
 #         breakage fast.
@@ -120,6 +122,11 @@ run "round-trip"     "PASS"      bash tools/bootstrap_check.sh
 # and the only one that would notice if the default silently stopped being the split
 # runtime, since every other gate is happy either way.
 run "runtime-module" "all checks pass" bash tools/runtime_module_check.sh
+# #4: `-c` is front-end-only and deliberately incomplete. This gates the CONTRACT —
+# that valid code passes both modes, a front-end error fails both, and the asymmetry
+# --help promises ACTUALLY EXISTS (witnesses that pass -c and fail --check-full).
+# It also guards the speed, so `-c` silently starting to invoke zig again fails here.
+run "check-mode"     "all checks pass" bash tools/check_mode_check.sh
 
 if [[ "$MODE" == "full" ]]; then
     run "compile_check" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh

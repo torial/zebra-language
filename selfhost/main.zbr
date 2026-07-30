@@ -2272,7 +2272,9 @@ def main()
         sys.errln("  zebra test --tag <tag> <source.zbr>      run only tests matching tag")
         sys.errln("  zebra debug <source.zbr>                 compile + DAP debug proxy (requires lldb-dap)")
         sys.errln("  zebra debug --listen PORT <source.zbr>  compile + DAP proxy on TCP port (for custom IDE)")
-        sys.errln("  zebra -c <source.zbr>                    compile only (selfhost pipeline)")
+        sys.errln("  zebra -c <source.zbr>                    FAST check: front end only (~60ms), does not run zig")
+        sys.errln("                                           -> can pass on code that `zebra run` fails to build")
+        sys.errln("  zebra --check-full <source.zbr>           full check: front end + zig semantic analysis (slower, total)")
         sys.errln("  zebra --emit-zig <source.zbr>            print generated Zig to stdout")
         sys.errln("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR")
         sys.errln("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks")
@@ -2299,6 +2301,21 @@ def main()
     # -- Pipeline selection ------------------------------------------------
 
     var mode_c               = args.contains("-c")
+    # #4 (strategy decided 2026-07-29): `-c` is FRONT-END ONLY. It runs lex, resolve,
+    # type-check and codegen, then stops — it does NOT invoke zig. That is the whole
+    # point: a check the front end can answer costs ~60 ms instead of ~810 ms, and the
+    # IDE Check button is the dominant caller.
+    #
+    # `--check-full` keeps the old behaviour (emit, then `zig build-exe -fno-emit-bin`).
+    #
+    # THE ASYMMETRY IS REAL AND MUST STAY DOCUMENTED. A fast check can pass on a program
+    # that `zebra run` then fails to build, because some errors only `zig` can see.
+    # Demonstrated by three corpus files today — bug099_unresolved_test,
+    # bug106_heterogeneous_list_test, c_interop_test — each of which emits cleanly and is
+    # then rejected by zig. `tools/check_mode_check.sh` gates exactly that, so the claim
+    # cannot quietly stop being true. A check whose limits are undocumented is the same
+    # class of problem as a gate that cannot fail.
+    var check_full           = args.contains("--check-full")
     var mode_emit            = args.contains("--emit-zig")
     var release              = args.contains("--release")
     var turbo                = args.contains("--turbo")
@@ -2479,6 +2496,15 @@ def main()
 
         # --selfhost-compile: invoke zig to compile/run the generated file
         var zig_path: str = mc.zbrToZig(path)
+
+        # #4: fast check mode. Everything the front end can answer has been answered by
+        # now — parse, resolve, type-check and codegen all ran, and any diagnostic they
+        # produce has already been reported and exited. Emission also stays IN the fast
+        # path deliberately: it is cheap next to zig and it is what catches a codegen
+        # crash, so skipping it would trade real coverage for a few milliseconds.
+        # What is skipped is only the `zig build-exe` invocation below.
+        if mode_c and not check_full
+            sys.exit(0)
 
         # GUI-via-selfhost: tui/libui_ng wrap the emitted zig (already using the
         # chosen backend via guiSelectPreamble) in a minimal `zig build` project
