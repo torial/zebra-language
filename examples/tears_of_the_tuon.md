@@ -190,6 +190,30 @@ Bow (the Sumerian ending: one crowned, one bowed) or take the third voice the
 tradition's own history offers: crown neither boaster, and honor the Giver of
 the day. The test walks the boasts to the Third Voice verdict.
 
+## Episode II: The Herald's Road (wired 2026-07-30)
+
+Composed canon-interior from the full read of *Shadow of Ikral* (design +
+canon argument: `tears_episode2_script.md`): Yehu's **unnamed dangerous
+mission** (offstage in the novella, its charter spoken in ch. 2) — the
+embassy to the Prince of Pyrr, to tell the Clans what Thas meant before they
+decide it themselves. Phase 12; entered when the victory feast burns low.
+
+- Eight scenes: the commission, Keanna at the ford, the burned waystation,
+  the zealots' grove (the **Matisyahu gambit** — invoke the king and Ikral's
+  own honor — is *gated on having watched from the cold camp*; the first
+  information-dependent choice in the game; otherwise steel decides, with an
+  `OnEmbassy` battle that rides on to the court), the Prince's one question,
+  the courtesy trap (the Naaman-scene inverted), the dawn garden, and three
+  endings: **The Open Door** (truth told whole, cup untouched, the garden
+  earned — and the reveal of what Matisyahu's temple-fasting bought), **The
+  Sealed Account** (polished truth, thinner peace), **The Poured Cup** (some
+  doors close politely).
+- Moral spine graduates Episode I's *patience* into *candor*.
+- The Open Door ending points at Sean's own arc: **Episode III is the road
+  to Muze.**
+- Tests walk the canonical path and the gated-gambit branch; the playthrough
+  driver now runs both episodes end to end.
+
 ## Playthrough driver
 
 `examples/tears_playthrough.zbr` — a headless full playthrough that drives the

@@ -150,6 +150,33 @@ def main()
     assert cm.story == 3, "three pages of boasts reach the verdict"
     cm = update(cm, Msg.mC)                       # crown neither -- the Third Voice
     assert hasFlag(cm, "CrownGiver") and cm.story == 4, "the Third Voice verdict"
+    cm = update(cm, Msg.mA)                       # the feast burns low
+    assert cm.phase == 12 and cm.story == 0, "the feast leads into Episode II"
+
+    # --- Episode II: The Herald's Road -- canonical (Open Door) path ---
+    cm = update(cm, Msg.mA)                       # take the road south
+    cm = update(cm, Msg.mA)                       # ask the Judge to ride
+    assert hasFlag(cm, "Escort"), "Keanna rides along"
+    cm = update(cm, Msg.mB)                       # camp cold and watch
+    assert hasFlag(cm, "Watched"), "the cold camp counts the zealots"
+    cm = update(cm, Msg.mB)                       # the Matisyahu gambit
+    assert cm.story == 4 and not hasFlag(cm, "RoadBlood"), "the gambit passes the grove without blood"
+    cm = update(cm, Msg.mA)                       # the whole truth
+    assert hasFlag(cm, "TruthTold"), "the truth told whole"
+    cm = update(cm, Msg.mA)                       # set the cup down
+    assert cm.story == 6, "candor and the untouched cup earn the garden"
+    cm = update(cm, Msg.mA)                       # the Judge's commission
+    assert hasFlag(cm, "PrinceHeart") and cm.story == 7, "the Open Door ending"
+
+    # --- Episode II: the gambit is gated; unwatched B fights instead ---
+    var noFlags4: List(str) = []
+    var e2 = GameModel(phase: 12, diff: 1, pHp: 35, e0Hp: 0, e1Hp: 0, selWeapon: 0, round: 1, xp: 0, level: 1, story: 3, states: noFlags4, px: 5, py: 25, rngSeed: 5, log: ["grove"])
+    e2 = update(e2, Msg.mB)                       # gambit without Watched
+    assert hasFlag(e2, "RoadBlood") and hasFlag(e2, "OnEmbassy"), "without the cold camp, steel decides"
+    assert e2.e0Hp == 20 and e2.e1Hp == 20, "fresh zealots"
+    var e2w = e2 except phase = 4
+    e2w = update(e2w, Msg.embRide)
+    assert e2w.phase == 12 and e2w.story == 4 and not hasFlag(e2w, "OnEmbassy"), "victory rides on to the court"
 
     # --- the valley: tiles, movement, healing, ambush ---
     assert tileAt(5, 25) == "A", "Arna is where MakePoint said"

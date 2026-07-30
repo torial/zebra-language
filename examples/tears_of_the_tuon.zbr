@@ -427,6 +427,7 @@ union Msg
     walkOn
     saveCamp
     loadCamp
+    embRide
 
 def init(): GameModel
     var seed = Random.randInt(1, 2000000000)
@@ -612,8 +613,127 @@ def disputeStep(model: GameModel, pick: int): GameModel
         if pick == 2
             m = withFlag(m, "CrownGiver")
         return m except story = 4
+    # the feast burns low, and the king has one more errand: Episode II
+    return model except phase = 12, story = 0
+
+
+# ---------------------------------------------------------------------------
+# EPISODE II MISSION: THE HERALD'S ROAD (phase 12)
+# ---------------------------------------------------------------------------
+# Composed canon-interior from the full read of Shadow of Ikral (see
+# tears_episode2_script.md): Yehu's UNNAMED dangerous mission (Ikral ch.4-6,
+# offstage in the novella; El Roi's charter for it spoken in ch.2). Anayah
+# sends Yehu to the Prince of Pyrr to tell the Clans what Thas meant before
+# they decide it themselves. Moral spine: Episode I taught patience (wait for
+# the sign); this one teaches CANDOR (the truth, told whole). Episode III --
+# the road to Muze -- is Sean's, and the Open Door ending points at it.
+
+def ep2Page(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "[ Nurah -- the throne room, at night ]||Anayah, off the record, his voice low: 'The cats|will decide this season what Thas MEANT. I would|have them hear it from the man who was inside it.||You will carry no treaty, Commander -- only the|truth, told whole. That is the more dangerous|cargo.'"
+    if id == 1
+        return "[ The ford at the border river ]||Keanna waits at the crossing as if appointed. 'El|Roi mentioned you would be passing,' she says, and|does not explain.||The road beyond is Lyssan country, and the bull-mark|of Ikral has been seen on the waystones."
+    if id == 2
+        return "[ The burned waystation ]||The parasa post stands scorched and empty, the|king's banner torn down, Ikral's bull chalked on the|door. Whoever did this did not fear the crown.||Night is coming. The forest ahead is dark and close."
+    if id == 3
+        if hasFlag(model, "Watched")
+            return "[ The grove before the border ]||They step from the trees at dusk: red-haired men|with bull-amulets, spears low. Pilisian zealots of|Ikral.||'The cat-woman is a blasphemer of Ikral,' their|leader spits, 'and you her dog.'||You counted them last night from the cold camp: nine|men -- and a leader who flinched at the king's name."
+        return "[ The grove before the border ]||They step from the trees at dusk: red-haired men|with bull-amulets, spears low. Pilisian zealots of|Ikral.||'The cat-woman is a blasphemer of Ikral,' their|leader spits, 'and you her dog.'"
+    if id == 4
+        return "[ Pyrr -- the small hall of a small clan ]||No throne. A mat, a low table, the Prince pouring|the tea himself while the Elders watch from the|walls.||He asks one question only: 'Tell me what my Judge|could not see from inside a cell. WHY did your|people come to Thas?'"
+    if id == 5
+        return "[ The feast of the clans ]||An Elder of another clan rises, cup high: 'Let our|guests honor the gods of every land, as courtesy|commands.' The court turns. Keanna goes very still.||The cup is poured and waiting."
+    if id == 6
+        return "[ The Prince's garden, before dawn ]||He is alone, and smaller than his word. 'My command|was despised in Thas until the day fire vindicated|it. I do not know your god, soldier. But what I|commanded and what he judged were the same thing.||Tell me. Does El Roi SEE a maeuw?'"
+    # id 7 -- endings
+    if hasFlag(model, "PrinceHeart")
+        return "[ The road home ]||The Prince sends you out with a small carved token:|'For the day my clans and your king must speak|again.'||At the ford Keanna reins in. 'Matisyahu fasted for|you daily at the temple. His fasting was not wasted|-- though he will never know what it bought.'||[ ENDING: The Open Door ]||EPISODE III: the road to MUZE awaits."
+    if hasFlag(model, "Bowed")
+        return "[ The road home ]||The Elders toasted the flexible human twice. The|Prince did not appear again.||At the burned waystation men stand posted once more|-- wearing the bull-amulet openly now.||[ ENDING: The Poured Cup -- some doors close|politely. ]"
+    return "[ The road home ]||Peace, of a thinner kind. The Prince bowed exactly|as low as protocol required, and no lower.||Keanna rides in silence until the ford. 'You told|them a smaller Thas than the one that happened.|Smaller truths buy smaller peaces.'||[ ENDING: The Sealed Account ]"
+
+def ep2ChoiceA(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "Take the road south"
+    if id == 1
+        return "Ask the Judge to ride with you"
+    if id == 2
+        return "Press on by night"
+    if id == 3
+        return "Draw and fight"
+    if id == 4
+        return "The whole truth -- cubs, ruse, and a judgment that was no man's"
+    if id == 5
+        return "Set the cup down: 'My God watches me even here'"
+    if id == 6
+        return "Answer with the Judge's own commission"
+    return "Ride home to Nurah"
+
+def ep2ChoiceB(model: GameModel): str
+    var id = model.story
+    if id == 1
+        return "Decline, to spare her the road"
+    if id == 2
+        return "Camp cold and watch the road"
+    if id == 3
+        if hasFlag(model, "Watched")
+            return "Invoke the king -- and Ikral's own honor"
+        return ""
+    if id == 4
+        return "The polished truth -- the judgment left vague"
+    if id == 5
+        return "Pour the libation -- courtesy is cheap"
+    return ""
+
+def ep2Step(model: GameModel, pickedB: bool): GameModel
+    var id = model.story
+    if id == 0
+        return model except story = 1
+    if id == 1
+        var m1 = model
+        if not pickedB
+            m1 = withFlag(m1, "Escort")
+        return m1 except story = 2
+    if id == 2
+        var m2 = model
+        if pickedB
+            m2 = withFlag(m2, "Watched")
+        return m2 except story = 3
+    if id == 3
+        # the Matisyahu gambit needs the cold camp's knowledge; otherwise steel
+        if pickedB and hasFlag(model, "Watched")
+            return model except story = 4
+        var m3 = withFlag(model, "RoadBlood")
+        m3 = withFlag(m3, "OnEmbassy")
+        m3 = m3 except e0Hp = 20, e1Hp = 20, round = 1
+        m3 = withLog(m3, "The zealots close in with spears!")
+        if playerFirst(m3.diff, levelAgi(m3), 30)
+            return m3 except phase = 1
+        return m3 except phase = 3
+    if id == 4
+        var m4 = model
+        if pickedB
+            m4 = withFlag(m4, "TruthShaded")
+        else
+            m4 = withFlag(m4, "TruthTold")
+        return m4 except story = 5
+    if id == 5
+        var m5 = model
+        if pickedB
+            m5 = withFlag(m5, "Bowed")
+        if hasFlag(m5, "TruthTold") and not hasFlag(m5, "Bowed")
+            return m5 except story = 6
+        return m5 except story = 7
+    if id == 6
+        var m6 = withFlag(model, "PrinceHeart")
+        return m6 except story = 7
     return init()
 
+def rideOn(model: GameModel): GameModel
+    var m = dropFlag(model, "OnEmbassy")
+    return m except phase = 12, story = 4
 
 # ---------------------------------------------------------------------------
 # Update helpers (deterministic given the model's seed — testable)
@@ -777,11 +897,15 @@ def nextPage(model: GameModel): GameModel
 def pickA(model: GameModel): GameModel
     if model.phase == 10
         return disputeStep(model, 0)
+    if model.phase == 12
+        return ep2Step(model, false)
     return missionStep(model, false)
 
 def pickB(model: GameModel): GameModel
     if model.phase == 10
         return disputeStep(model, 1)
+    if model.phase == 12
+        return ep2Step(model, true)
     return missionStep(model, true)
 
 def update(model: GameModel, msg: Msg): GameModel
@@ -810,6 +934,7 @@ def update(model: GameModel, msg: Msg): GameModel
         on Msg.walkOn     return resumeWalk(model)
         on Msg.saveCamp   return saveGame(model)
         on Msg.loadCamp   return loadGame()
+        on Msg.embRide    return rideOn(model)
 
 # ---------------------------------------------------------------------------
 # View
@@ -890,6 +1015,9 @@ def viewWon(g: Gui, model: GameModel)
     if hasFlag(model, "OnRoad")
         if g.button("Walk on")
             g.send(Msg.walkOn)
+    if hasFlag(model, "OnEmbassy")
+        if g.button("Ride on")
+            g.send(Msg.embRide)
     if g.button("Continue the tale")
         g.send(Msg.contTale)
     if g.button("Play again")
@@ -945,6 +1073,15 @@ def viewMission(g: Gui, model: GameModel)
     var b = missionChoiceB(model)
     if g.button(a)
         g.send(Msg.mA)
+    if b != ""
+        if g.button(b)
+            g.send(Msg.mB)
+
+def viewEp2(g: Gui, model: GameModel)
+    drawPage(g, ep2Page(model))
+    if g.button(ep2ChoiceA(model))
+        g.send(Msg.mA)
+    var b = ep2ChoiceB(model)
     if b != ""
         if g.button(b)
             g.send(Msg.mB)
@@ -1018,6 +1155,8 @@ def view(g: Gui, model: GameModel)
         viewDispute(g, model)
     if model.phase == 11
         viewMap(g, model)
+    if model.phase == 12
+        viewEp2(g, model)
 
 def main()
     Gui.run("Tears of the Tuon", 640, 480, init, update, view)
