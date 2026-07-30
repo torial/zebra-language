@@ -12418,13 +12418,20 @@ struct Generator
                         w.emit("break :blk_fhx @as(?[]const u8, _hbuf); })")
                         return
                     if mname == "format"
+                        # BUG-224: allocPrint takes (allocator, fmt, ONE args tuple).
+                        # Emitting a `.{ x }` per argument produced N+2 arguments, so any
+                        # call with 2+ args failed to compile ("expected 3 argument(s),
+                        # found 4") and a 0-arg call passed only 2. One tuple, always.
                         w.emit("(std.fmt.allocPrint(_allocator, ")
                         genExpr(m.object)
+                        w.emit(", .{ ")
+                        var fmt_first: bool = true
                         for a in args
-                            w.emit(", .{ ")
+                            if not fmt_first
+                                w.emit(", ")
                             genExpr(a.value)
-                            w.emit(" }")
-                        w.emit(") catch unreachable)")
+                            fmt_first = false
+                        w.emit(" }) catch unreachable)")
                         return
                 else
                     pass
@@ -13695,13 +13702,17 @@ struct Generator
             w.emit("break :blk_fhx @as(?[]const u8, _hbuf); })")
             return
         if mname == "format"
+            # BUG-224 — see the sibling dispatch site above. One args tuple, always.
             w.emit("(std.fmt.allocPrint(_allocator, ")
             genExpr(m.object)
+            w.emit(", .{ ")
+            var fmt2_first: bool = true
             for a in args
-                w.emit(", .{ ")
+                if not fmt2_first
+                    w.emit(", ")
                 genExpr(a.value)
-                w.emit(" }")
-            w.emit(") catch unreachable)")
+                fmt2_first = false
+            w.emit(" }) catch unreachable)")
             return
         # BUG-027: expression-position chain fix — f().method(args) must materialise
         # the temporary as a mutable var so the pointer-receiver method can take *T.

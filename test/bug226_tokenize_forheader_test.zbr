@@ -1,0 +1,27 @@
+# BUG-226: `tokenize` was missing from TypeChecker.isStrListCallExpr, so a call in a
+# FOR-HEADER position did not type its loop element as str — print(t) emitted `{any}` and
+# rendered `{ 97 }` instead of `a`. Binding the result to a variable first worked, which
+# is exactly what hid the bug.
+#
+# The failure was a silently wrong RENDERING, not a compile error, so no compile-oriented
+# gate could have caught it. That is why this fixture asserts on printed output: keep both
+# the inline and the bound form, and keep them adjacent so a divergence is obvious.
+def main()
+    print("-- inline in the for-header (the regressing form) --")
+    for t in "a,b,c".tokenize(",")
+        print(t)
+
+    print("-- bound first, then iterated (always worked) --")
+    var toks = "a,b,c".tokenize(",")
+    for t in toks
+        print(t)
+
+    print("-- split, the sibling that was already correct --")
+    for t in "a,b,c".split(",")
+        print(t)
+
+    print("-- lines, the other sibling --")
+    for t in "x".lines()
+        print(t)
+
+    print("bug226_tokenize_forheader_test: OK")

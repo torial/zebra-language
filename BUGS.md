@@ -1,6 +1,57 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-225. Next new bug: BUG-226.**
+**Last bug number generated: BUG-227. Next new bug: BUG-228.**
+
+---
+
+### BUG-227: `str.tokenize(seps)` splits on the delimiter SEQUENCE, not on any character ⬜ OPEN
+Found 2026-07-29 while checking the QUICKSTART claim during the §28e docs pass. The
+documentation and the implementation disagree about what `seps` means.
+
+QUICKSTART: *"Split on ANY character in `seps`, dropping empties."* Codegen emits
+`std.mem.tokenizeSequence(u8, s, seps)`, which splits on the **whole sequence**:
+
+```zebra
+for t in "a,b;c".tokenize(",;")      # documented: 3 tokens (a, b, c)
+    print(t)                          # actual: 1 token — the entire string
+```
+
+The documented behaviour is the sensible one and the one the parameter name implies:
+`split(sep)` already covers the sequence case, so a `tokenize` that also splits on a
+sequence differs from `split` only in dropping empties. Zig has `tokenizeAny` for exactly
+the documented semantics, so the fix is a one-word emit change at both dispatch sites
+(`tokenizeSequence` → `tokenizeAny`).
+
+**Blast radius: zero.** `grep -rn '\.tokenize(' --include='*.zbr'` returns only
+`Lexer.tokenize(src)` — a user-defined class method on `Lexer`, unrelated to the `str`
+method. No `.zbr` in the repo calls `str.tokenize`, so changing the semantics cannot
+regress a caller. **Recommend fixing the implementation to match the documentation**
+rather than weakening the docs, since the documented behaviour is what makes the method
+distinct from `split`. Needs a fixture covering multi-character `seps`, which is the case
+that distinguishes the two.
+
+---
+
+### BUG-226: `for` over an inline `tokenize()` call types its element wrong ✅ FIXED 2026-07-29
+Found 2026-07-29 during the §28e docs pass, isolated from BUG-227. `tokenize` was missing
+from `TypeChecker.isStrListCallExpr` (~2458) alongside its siblings `split` and `lines`,
+so a call in a **for-header** position failed to type the loop element as `str`:
+
+```zebra
+for t in "a,b,c".tokenize(",")
+    print(t)                        # printed { 97 } { 98 } { 99 } — emitted {any}
+
+var toks = "a,b,c".tokenize(",")    # binding first worked correctly...
+for t in toks
+    print(t)                        # ...printed a b c — emitted {s}
+```
+
+The emit was `std.debug.print("{any}\n", .{t})` for the inline form and `{s}` for the
+bound form. That the bound form worked is what hid it — and note the failure is a silently
+wrong *rendering*, not a compile error, so no compile-oriented gate could have caught it.
+
+Fixed by adding `tokenize` to the predicate. Independent of BUG-227: this is the element
+*type*, that one is the split *semantics*.
 
 ---
 

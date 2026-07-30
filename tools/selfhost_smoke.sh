@@ -960,6 +960,18 @@ smoke_tc_fail test/fail_fixtures/indexof_arity_rejected_test.zbr \
 # method, to prove an unknown receiver gets NO opinion rather than a stdlib verdict.
 smoke_run test/stdlib_arity_ok_test.zbr "stdlib_arity_ok_test: OK"
 
+# BUG-224: `format()` emitted one `.{ x }` tuple PER argument, so allocPrint got N+2
+# arguments and any 2+-arg call failed to compile. The 1-arg case worked by coincidence
+# and is the only shape the corpus used, which is why no gate saw it. Keep the multi-arg
+# lines — a regression is a compile failure, not a wrong value.
+smoke_run test/bug224_format_multiarg_test.zbr "bug224_format_multiarg_test: OK"
+
+# BUG-226: `tokenize` was absent from isStrListCallExpr, so a FOR-HEADER call did not
+# type its element as str and print emitted `{any}` — rendering `{ 97 }` for `a`. Bound
+# form worked, which hid it. The failure is a wrong RENDERING, not a compile error, so
+# this must be a run-and-compare fixture; no compile-only gate can see it.
+smoke_run test/bug226_tokenize_forheader_test.zbr "bug226_tokenize_forheader_test: OK"
+
 # BUG-218: `str + <number>` in ARGUMENT position used to escape the type checker
 # and surface as a Zig error about generated code (_str_concat, a line inside a
 # 3,800-line emitted file). Now a Zebra error located in the user's own source.

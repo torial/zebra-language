@@ -1068,7 +1068,7 @@ var result = sb.build()              # str (drains the builder)
 | `padRight(width, fill)` | `(int, str): str` | Pad on the right to `width` characters |
 | `center(width, fill)` | `(int, str): str` | Center within `width` characters |
 | `concat(other)` | `(str): str` | Append `other` (same as `+`) |
-| `format(args...)` | variadic | `std.fmt.allocPrint`-style format |
+| `format(args...)` | variadic | `std.fmt.allocPrint`-style format. **Specifiers are Zig's**, so a `str` argument needs `{s}` — `{}` on a string is a compile error. Ints take `{}`. |
 | `join(sep)` | `(str): str` | Join list elements — called on `List(str)`, not a single `str` |
 | `substring(start, end)` | `(int, int): str` | Slice from `start` to `end` (same as `s[start..end]`) |
 | `toHex()` | `(): str` | Hex-encode bytes |
@@ -1123,7 +1123,7 @@ var result = sb.build()              # str (drains the builder)
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `split(sep)` | `(str): List(str)` | Split on `sep` string |
-| `tokenize(seps)` | `(str): List(str)` | Split on ANY character in `seps`, dropping empties |
+| `tokenize(seps)` | `(str): List(str)` | Split on ANY character in `seps`, dropping empties. **BUG-227: currently splits on the whole `seps` SEQUENCE, not on any character** — so multi-character `seps` does not yet behave as documented. Single-character `seps` is unaffected. |
 | `chars()` | *iterator* | Unicode codepoints (`u21`). **`for`-only** — `for c in s.chars()` works; binding it (`var cs = s.chars()`) does not compile. |
 | `bytes()` | *iterator* | Bytes (`u8` as `int`). **`for`-only** — same restriction as `chars()`. |
 

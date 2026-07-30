@@ -11,10 +11,15 @@ def main()
 
     # 2+ args — the case that did not compile at all
     print("{} and {}".format(1, 2))
-    print("{} {} {}".format("a", "b", "c"))
+
+    # `format` passes the format string through to Zig verbatim, so a str argument needs
+    # the `{s}` specifier — `{}` on a slice is a Zig compile error, not a Zebra one. Kept
+    # here deliberately: it is the shape a user will reach for first, and this fixture is
+    # where the required spelling is pinned.
+    print("{s} {s} {s}".format("a", "b", "c"))
 
     # mixed types in one tuple
-    print("{} is {}".format("answer", 42))
+    print("{s} is {}".format("answer", 42))
 
     # a computed argument, to confirm the tuple is built from expressions and not
     # just literals

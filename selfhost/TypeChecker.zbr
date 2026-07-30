@@ -2447,7 +2447,7 @@ def isRangeIterExpr(e: Expr): bool
     return false
 
 # Detects iterators whose elements are known to be strings:
-# .split()/.lines() return string slices; .items() on str containers;
+# .split()/.lines()/.tokenize() return string slices; .items() on str containers;
 # .groups()/.findAll() on Regex return string slices.
 # NOTE: .keys()/.values() are NOT here — their element type depends on the
 # HashMap's K/V (a HashMap(str,int).values() is int, not str), so the for_in
@@ -2455,7 +2455,11 @@ def isRangeIterExpr(e: Expr): bool
 def isStrListCallExpr(e: Expr): bool
     if e is Expr.call as cal
         if cal.callee is Expr.member as mem
-            if mem.member == "split" or mem.member == "lines"
+            # BUG-226: `tokenize` belongs here with its siblings. Omitting it meant a
+            # for-header call (`for t in s.tokenize(",")`) failed to type its element as
+            # str, so `print(t)` emitted `{any}` and printed `{ 97 }` instead of `a`.
+            # Binding the result first happened to work, which is what hid it.
+            if mem.member == "split" or mem.member == "lines" or mem.member == "tokenize"
                 return true
             if mem.member == "items"
                 return true
