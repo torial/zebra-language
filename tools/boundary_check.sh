@@ -223,6 +223,19 @@ echo "    non-ASCII indexing                    — BUG-225 is a KNOWN wrong beh
 echo "    charAt                                — BUG-223 is an open decision awaiting Sean"
 
 echo
+# A run that measured NOTHING must not report success. `--only typo` would otherwise
+# print "0 pass, 0 fail" and exit 0 — a green verdict on an empty measurement, which is
+# the exact vacuity shape tools/gate_selfcheck.sh exists to catch. It also protects the
+# no-argument case: an empty or mis-globbed test/boundary/ would pass silently forever.
+if [ "$((PASS + FAIL))" -eq 0 ]; then
+    if [ -n "$ONLY" ]; then
+        echo "boundary: --only '$ONLY' matched NO probe — refusing to report success on an empty run" >&2
+    else
+        echo "boundary: no probes found in $DIR — refusing to report success on an empty run" >&2
+    fi
+    exit 2
+fi
+
 if [ "$FAIL" -gt 0 ]; then
     printf '\033[31mboundary: %d pass, %d FAIL\033[0m\n' "$PASS" "$FAIL"
     exit 1
