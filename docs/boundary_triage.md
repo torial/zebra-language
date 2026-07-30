@@ -35,7 +35,7 @@ format, which is not the property under test.
 
 ## 2. Outcome kinds
 
-A boundary case has three honest outcomes and a stdout diff models only one. Each probe
+A boundary case has several honest outcomes and a stdout diff models only one. Each probe
 declares its kind in a `# @boundary` header:
 
 | kind | assertion |
@@ -43,6 +43,27 @@ declares its kind in a `# @boundary` header:
 | `runs` | exits 0, and stdout **equals** the hand-written `.expected` |
 | `rejects <text>` | the compiler **refuses** it, naming `<text>` |
 | `panics <text>` | it builds, then **fails at runtime** with `<text>` |
+| `warns <text>` | it compiles (exit 0) but **emits** `<text>` |
+
+`warns` was added *after* the first run, which is the honest way round: the three-kind
+taxonomy was written from reasoning and turned out to be one short. Too-few and too-many
+arguments neither run clean nor abort — they warn — and without a kind for that, the two
+arity probes would have had to be mis-declared as something they are not. It asserts by
+substring rather than by diff, because a warning line carries the absolute source path
+and an `.expected` containing one would be machine-specific.
+
+A probe may also carry a second directive:
+
+```
+# @boundary-pending BUG-NNN  <one-line reason>
+```
+
+meaning **this probe encodes current behaviour that is known to differ from intent**. The
+declared assertion is still checked (so the gate is green and honest about today), the
+ticket is printed on every run (so the debt cannot go quiet), and when the bug is fixed
+the assertion **breaks** — which is the signal to rewrite the probe to assert the intent
+it was always meant to. A pending probe is a tripwire on a known gap, not a suppression
+of it. See §3.5.
 
 `rejects` and `panics` abort the process, so each such probe is its **own file**. A trap
 in case 3 of 20 would silently hide cases 4–20 inside a green suite — the same
