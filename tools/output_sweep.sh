@@ -65,7 +65,11 @@ BASELINE="$REPO/tools/output_baseline.txt"
 EXCLUSIONS="$REPO/tools/output_baseline_excluded.txt"
 CANDIDATES="$REPO/tools/full_sweep_baseline.txt"   # the emit+compile-clean set
 PER_FILE_LINES=60          # keep the manifest reviewable...
-TIMEOUT_SECS=25            # ...and a hung server/REPL test from wedging the sweep
+TIMEOUT_SECS=40            # ...and a hung server/REPL test from wedging the sweep.
+                           # Raised 25->40 on 2026-07-30: the sweep runs 322 programs
+                           # back to back, so a healthy program can exceed a tight
+                           # budget purely from load. Paired with the retry in
+                           # run_one; neither alone is enough.
 
 GATE=0; UPDATE=0; ONLY=""; SHOW=0; MODE="default"; MODE_FLAGS=""
 while [ $# -gt 0 ]; do
@@ -136,6 +140,15 @@ run_one() { # $1 = test/foo.zbr ; echoes program output, or a classification tok
     # $MODE_FLAGS is unquoted deliberately: it is either empty or a single flag, and an
     # empty quoted "" would be passed to the compiler as a bogus argument.
     raw=$(timeout "$TIMEOUT_SECS" "$ZEBRA" $MODE_FLAGS "$zbr" 2>&1); rc=$?
+    # A timeout is the one classification here that depends on MACHINE LOAD rather than on
+    # the program, so a single observation must not become a verdict. Confirmed 2026-07-30:
+    # allocate_slice4_test timed out once during a back-to-back 322-program sweep and was
+    # reported as "stopped being measured" — a gate failure — while running fine on its own
+    # in both modes. Retry once; only a repeated timeout counts. Everything else is
+    # deterministic given the same binary and is not retried.
+    if [ "$rc" -eq 124 ]; then
+        raw=$(timeout "$TIMEOUT_SECS" "$ZEBRA" $MODE_FLAGS "$zbr" 2>&1); rc=$?
+    fi
     if [ "$rc" -eq 124 ]; then printf '<<TIMEOUT>>'; return; fi
     printf '%s' "$raw" | grep -vE '^wrote |^compiling:|^ *parsing\.\.\.|^ *parsed OK|^ *resolved OK'
 }
