@@ -2,7 +2,7 @@
 # Drives the real update() FSM from title to mission ending, printing every
 # page and battle-log line. Deterministic given the hardcoded seed.
 
-use tears_of_the_tuon exposing GameModel, Msg, update, introPage, epiloguePage, missionPage, missionChoiceA, missionChoiceB, disputePage, disputeChoiceA, disputeChoiceC, ep2Page, ep2ChoiceA, ep2ChoiceB, ep3Page, ep3ChoiceA, ep3ChoiceB, hasFlag
+use tears_of_the_tuon exposing GameModel, Msg, update, introPage, epiloguePage, missionPage, missionChoiceA, missionChoiceB, disputePage, disputeChoiceA, disputeChoiceC, itlPage, itlChoiceA, itlChoiceB, ep2Page, ep2ChoiceA, ep2ChoiceB, ep3Page, ep3ChoiceA, ep3ChoiceB, hasFlag
 
 def showPage(page: str)
     for ln in page.split("|")
@@ -169,7 +169,19 @@ def main()
     choose(disputeChoiceC(m))
     m = update(m, Msg.mC)
     showPage(disputePage(m))
-    choose("Let the feast burn low")
+    choose("INTERLUDE -- follow the Judge into Thas")
+    m = update(m, Msg.mB)
+    # INTERLUDE: The Judge of the Ashes -- mercy has no hit roll
+    while m.phase == 14 and m.story < 8
+        showPage(itlPage(m))
+        if m.story == 2 or m.story == 4 or m.story == 5 or m.story == 6
+            choose(itlChoiceB(m))
+            m = update(m, Msg.mB)
+        else
+            choose(itlChoiceA(m))
+            m = update(m, Msg.mA)
+    showPage(itlPage(m))
+    choose("Take the road to the ford")
     m = update(m, Msg.mA)
     # EPISODE II: The Herald's Road -- the canonical Open Door path
     while m.phase == 12 and m.story < 7
@@ -194,4 +206,4 @@ def main()
             m = update(m, Msg.mA)
     showPage(ep3Page(m))
     print("")
-    print("==== The playthrough ends. Flags: Split=" + hasFlag(m, "Split").toString() + " Waited=" + hasFlag(m, "Waited").toString() + " CubsFree=" + hasFlag(m, "CubsFree").toString() + " SavedKeanna=" + hasFlag(m, "SavedKeanna").toString() + " ThirdVoice=" + hasFlag(m, "CrownGiver").toString() + " OpenDoor=" + hasFlag(m, "PrinceHeart").toString() + " FeatherHeld=" + hasFlag(m, "FeatherHeld").toString() + " ====")
+    print("==== The playthrough ends. Flags: Split=" + hasFlag(m, "Split").toString() + " Waited=" + hasFlag(m, "Waited").toString() + " CubsFree=" + hasFlag(m, "CubsFree").toString() + " SavedKeanna=" + hasFlag(m, "SavedKeanna").toString() + " ThirdVoice=" + hasFlag(m, "CrownGiver").toString() + " OpenDoor=" + hasFlag(m, "PrinceHeart").toString() + " FeatherHeld=" + hasFlag(m, "FeatherHeld").toString() + " LamentTrust=" + hasFlag(m, "LamentTrust").toString() + " ====")

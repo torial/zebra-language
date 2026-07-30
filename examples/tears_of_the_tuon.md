@@ -190,6 +190,25 @@ Bow (the Sumerian ending: one crowned, one bowed) or take the third voice the
 tradition's own history offers: crown neither boaster, and honor the Giver of
 the day. The test walks the boasts to the Third Voice verdict.
 
+## Interlude: The Judge of the Ashes (wired 2026-07-30)
+
+The first **non-Yehu playable**: Keanna, returning into judged Thas — canon's
+own errand ("I must go to my people now, and minister to those that
+survive"; "find the Witness of Thas... for his clan needs him"). Phase 14,
+offered from the feast's last page; no combat — *mercy has no hit roll*.
+Triage at the well (her jailers, dying, against a pinned weaver and her
+kits), the spared maeuw asking for orders, the gold tent's still-chained
+slaves and the keys no one dared touch, the Witness writing the names of the
+dead — and the **qinah**: the game's second playable ancient form, a lament
+the player composes verse by verse with the mothers at the burial trench.
+Design law: **a lament has no wrong verses** — the opening and the hard
+question are never scored; only the final *turn* (toward trust, or toward
+waiting in the ashes) colors the ending, and both closings are honest ("it
+is addressed to him — and that is prayer"). The ending is assembled
+dynamically from the day's mercies, and its last beat stitches the game's
+own seam: El Roi sends her to the ford where Episode II's first scene finds
+her "waiting as if appointed."
+
 ## Episode II: The Herald's Road (wired 2026-07-30)
 
 Composed canon-interior from the full read of *Shadow of Ikral* (design +

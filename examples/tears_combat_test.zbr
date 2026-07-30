@@ -150,6 +150,25 @@ def main()
     assert cm.story == 3, "three pages of boasts reach the verdict"
     cm = update(cm, Msg.mC)                       # crown neither -- the Third Voice
     assert hasFlag(cm, "CrownGiver") and cm.story == 4, "the Third Voice verdict"
+    var fm = update(cm, Msg.mB)                   # INTERLUDE: follow the Judge
+    assert fm.phase == 14 and fm.story == 0, "the feast offers the Judge's road"
+    fm = update(fm, Msg.mA)                       # enter the city
+    fm = update(fm, Msg.mA)                       # the soldiers first
+    assert hasFlag(fm, "MercyFoe"), "her jailers are tended first"
+    fm = update(fm, Msg.mB)                       # take the spared one's hands
+    assert hasFlag(fm, "Helper"), "the spared serves"
+    fm = update(fm, Msg.mA)                       # free them to tend Thas
+    assert hasFlag(fm, "ServeStay"), "the freed stay to rebuild"
+    fm = update(fm, Msg.mB)                       # 'ask him yourself'
+    assert hasFlag(fm, "WitnessFound"), "the Witness is found"
+    fm = update(fm, Msg.mB)                       # begin with the children
+    fm = update(fm, Msg.mB)                       # 'why OUR cubs'
+    assert fm.story == 7, "the lament takes every verse without scoring"
+    fm = update(fm, Msg.mA)                       # the turn toward trust
+    assert hasFlag(fm, "LamentTrust") and fm.story == 8, "the qinah turns"
+    fm = update(fm, Msg.mA)                       # the road to the ford
+    assert fm.phase == 12 and fm.story == 0, "the Appointed Ford opens Episode II"
+
     cm = update(cm, Msg.mA)                       # the feast burns low
     assert cm.phase == 12 and cm.story == 0, "the feast leads into Episode II"
 

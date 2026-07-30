@@ -594,6 +594,8 @@ def disputeChoiceA(model: GameModel): str
 def disputeChoiceB(model: GameModel): str
     if model.story == 3
         return "Crown the Bow"
+    if model.story == 4
+        return "INTERLUDE -- follow the Judge into Thas"
     return ""
 
 def disputeChoiceC(model: GameModel): str
@@ -602,6 +604,8 @@ def disputeChoiceC(model: GameModel): str
     return ""
 
 def disputeStep(model: GameModel, pick: int): GameModel
+    if model.story == 4 and pick == 1
+        return model except phase = 14, story = 0
     if model.story < 3
         return model except story = model.story + 1
     if model.story == 3
@@ -834,6 +838,128 @@ def ep3Step(model: GameModel, tookB: bool): GameModel
     return init()
 
 # ---------------------------------------------------------------------------
+# INTERLUDE: THE JUDGE OF THE ASHES (phase 14) -- played as KEANNA.
+# ---------------------------------------------------------------------------
+# The first non-Yehu playable. Canon: Ep I ends with Keanna returning to
+# judged Thas -- "I must go to my people now, and minister to those that
+# survive" -- carrying El Roi's own errand ("find the Witness of Thas... for
+# his clan needs him") and having already healed one convulsing maeuw by
+# prayer. This interlude plays that ministry: triage, the gold tent's still-
+# chained slaves, the Witness, and a QINAH -- a lament the player COMPOSES
+# verse by verse with the mothers at the burial trench (the game's second
+# playable ancient form, after the dispute-poem; a lament has no wrong
+# verses -- the choices color the heart, they are never scored). Its last
+# beat stitches the game's own seam: El Roi sends her to the ford where
+# Episode II finds her "waiting as if appointed." No combat. Mercy has no
+# hit roll.
+
+def itlPage(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "[ The gate of Thas, at dawn ]||The gate Gratta tore open still stands wide. No|guard bars it now; no one has the strength to.|Inside, the smell the barels left: not death only --|sickness burning itself out, and cold hearth-smoke.||Keanna, Judge of the Pyrran Clans, walks into the|city her God judged, carrying water, herbs, and the|errand he gave her."
+    if id == 1
+        return "[ The square by the well ]||Two griefs at once: by the wall, three soldiers of|Thas convulsing where the plague took them -- the|same men who jeered her chains a day ago. Under a|fallen roof-beam, a weaver and her kits, pinned and|crying.||Her hands are two. The morning is one."
+    if id == 2
+        return "[ The one who was spared ]||He finds her at the well -- the maeuw she healed on|the day of wrath, the one whose life is now El|Roi's. He has been carrying water since sunrise; his|paws shake with weariness.||'Judge,' he says, 'tell me what to do and I will do|it. He did not spare me for nothing.'"
+    if id == 3
+        return "[ The gold tent ]||Lamek's market stands open and masterless. Inside,|the chained wait in rows -- nanae trembling like|leaves, humans staring at nothing, all still fettered|to a dead trade.||The keys hang on a hook, in plain sight. No one had|dared."
+    if id == 4
+        return "[ The Witness of Thas ]||She finds him where El Roi said she would: an old|maeuw scribe in the ruin of the record-house,|writing by a shuttered lamp. Not names of debts --|names of the DEAD, each one with a line of who they|were.||He looks up. 'You are the Judge. I have a question|before I serve: why did he spare ME?'"
+    if id == 5
+        return "[ The burial trench -- the qinah begins ]||The mothers of Thas stand at the long trench, and|they have no song for this. They look to her -- the|prophetess of the God who did it.||She lifts her voice to teach them the oldest form:|grief, spoken TO someone. How shall the lament|begin?"
+    if id == 6
+        return "[ The qinah -- the hard verse ]||The first verse is sung and the trench takes it.|Now the verse that laments always come to -- the one|that must be said aloud or it poisons: the question.||What shall the mothers ask?"
+    if id == 7
+        return "[ The qinah -- the turn ]||The question is asked and no lightning falls; the|sky takes it the way the sea takes a stone. Now the|last verse -- the turn every lament must choose."
+    # id 8 -- ending, assembled from the interlude's choices
+    var s = "[ Evening, on the wall of Thas ]||The day is spent and so is she."
+    if hasFlag(model, "MercyFoe")
+        s = s + "|The soldiers she tended first will live -- and they|will tell it in Pyrr: the Judge bound her jailers'|wounds before her kin's."
+    if hasFlag(model, "ServeStay")
+        s = s + "|In the square below, freed hands are stacking fallen|stone: the slaves of Thas, rebuilding the city that|chained them, because a Judge asked."
+    else
+        s = s + "|On the south road, the freed walk home with bread|and water she could barely spare. Their chains lie|in the well."
+    if hasFlag(model, "LamentTrust")
+        s = s + "||The mothers' last verse still hangs over the trench:|EL ROI SEES, AND WE WILL LOOK FOR HIM LOOKING.|It is not comfort yet. It is the door comfort uses."
+    else
+        s = s + "||The mothers' last verse still hangs over the trench:|WE WILL WAIT IN THE ASHES UNTIL HE ANSWERS.|It is not trust yet. But it is addressed to him --|and that is prayer."
+    s = s + "||And then, as the first star stands up over the|mountains, the word she has waited for all day:||GO TO THE FORD ON THE BORDER RIVER. A MAN OF TORIAL|WILL PASS AT MORNING. WALK HIS ROAD WITH HIM.||[ ENDING: The Appointed Ford ]"
+    return s
+
+def itlChoiceA(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "Enter the city"
+    if id == 1
+        return "The soldiers first -- her jailers, dying"
+    if id == 2
+        return "Send him to rest -- mercy includes him"
+    if id == 3
+        return "Free them, and ask them to help tend Thas"
+    if id == 4
+        return "'To write the names. A city is its remembered.'"
+    if id == 5
+        return "Begin with the city: 'How lonely she sits...'"
+    if id == 6
+        return "'Did our own hands not build this altar of grief?'"
+    if id == 7
+        return "'El Roi sees -- and we will look for him looking'"
+    return "Take the road to the ford"
+
+def itlChoiceB(model: GameModel): str
+    var id = model.story
+    if id == 1
+        return "The weaver and her kits, pinned and crying"
+    if id == 2
+        return "Take his hands -- El Roi spared a helper"
+    if id == 3
+        return "Free them with bread, and send them home"
+    if id == 4
+        return "'Ask him yourself. He is nearer than you fear.'"
+    if id == 5
+        return "Begin with the children: name them, one by one"
+    if id == 6
+        return "'Why OUR cubs, who built nothing?'"
+    if id == 7
+        return "'We will wait in the ashes until he answers'"
+    return ""
+
+def itlStep(model: GameModel, choseB: bool): GameModel
+    var id = model.story
+    if id == 0
+        return model except story = 1
+    if id == 1
+        var m1 = model
+        if not choseB
+            m1 = withFlag(m1, "MercyFoe")
+        return m1 except story = 2
+    if id == 2
+        var m2 = model
+        if choseB
+            m2 = withFlag(m2, "Helper")
+        return m2 except story = 3
+    if id == 3
+        var m3 = model
+        if not choseB
+            m3 = withFlag(m3, "ServeStay")
+        return m3 except story = 4
+    if id == 4
+        var m4 = withFlag(model, "WitnessFound")
+        return m4 except story = 5
+    if id == 5
+        # a lament has no wrong verses; the openings are not scored at all
+        return model except story = 6
+    if id == 6
+        return model except story = 7
+    if id == 7
+        var m7 = model
+        if not choseB
+            m7 = withFlag(m7, "LamentTrust")
+        return m7 except story = 8
+    # the Appointed Ford: the interlude flows into Episode II's commission
+    return model except phase = 12, story = 0
+
+# ---------------------------------------------------------------------------
 # Update helpers (deterministic given the model's seed — testable)
 # ---------------------------------------------------------------------------
 
@@ -999,6 +1125,8 @@ def pickA(model: GameModel): GameModel
         return ep2Step(model, false)
     if model.phase == 13
         return ep3Step(model, false)
+    if model.phase == 14
+        return itlStep(model, false)
     return missionStep(model, false)
 
 def pickB(model: GameModel): GameModel
@@ -1008,6 +1136,8 @@ def pickB(model: GameModel): GameModel
         return ep2Step(model, true)
     if model.phase == 13
         return ep3Step(model, true)
+    if model.phase == 14
+        return itlStep(model, true)
     return missionStep(model, true)
 
 def update(model: GameModel, msg: Msg): GameModel
@@ -1197,6 +1327,15 @@ def viewEp3(g: Gui, model: GameModel)
         if g.button(b)
             g.send(Msg.mB)
 
+def viewInterlude(g: Gui, model: GameModel)
+    drawPage(g, itlPage(model))
+    if g.button(itlChoiceA(model))
+        g.send(Msg.mA)
+    var b = itlChoiceB(model)
+    if b != ""
+        if g.button(b)
+            g.send(Msg.mB)
+
 def viewMap(g: Gui, model: GameModel)
     g.text("The Valley of ArnasThas   Yehu Lv" + model.level.toString() + " HP " + model.pHp.toString() + "/" + levelMaxHp(model).toString() + " XP " + model.xp.toString() + "   (" + diffName(model.diff) + ")")
     g.separator()
@@ -1270,6 +1409,8 @@ def view(g: Gui, model: GameModel)
         viewEp2(g, model)
     if model.phase == 13
         viewEp3(g, model)
+    if model.phase == 14
+        viewInterlude(g, model)
 
 def main()
     Gui.run("Tears of the Tuon", 640, 480, init, update, view)
