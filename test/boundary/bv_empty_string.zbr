@@ -69,7 +69,16 @@ def main()
     var ls: List(str) = e.lines()
     print("linesCount=${ls.count()}")
 
-    # All-quantifier predicates over an empty sequence are vacuously true.
+    # CORRECTED AFTER THE FIRST RUN — the intent below was MINE and it was wrong.
+    # I expected vacuous truth (an all-quantifier over an empty sequence). The
+    # compiler returns FALSE, via an explicit `if (s.len == 0) break :blk false`
+    # in codegen: a deliberate Python-compatible special case ("".isalpha() is
+    # False in Python too), not an oversight. The expectations are corrected to
+    # the language's actual, intentional answer.
+    #
+    # The real finding here was a DOC one, filed separately: these predicates are
+    # ASCII-only (std.ascii.isAlphabetic), while QUICKSTART describes them in terms
+    # of "Unicode letters" / "codepoints". Verified: "e-acute".isAlpha() is false.
     print("isAlpha=${e.isAlpha()}")
     print("isNumeric=${e.isNumeric()}")
     print("isPrintable=${e.isPrintable()}")

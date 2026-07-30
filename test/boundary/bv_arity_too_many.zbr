@@ -1,16 +1,17 @@
-# @boundary rejects too many arguments
+# @boundary warns too many arguments to 'one': expected at most 1, found 2
+# @boundary-pending BUG-142  too-many arguments warns instead of erroring
 #
-# BOUNDARY: MORE arguments than the function declares. A separate file because a
-# rejection ends the compile, and a rejection sharing a file with other rows would
-# silently take their coverage with it.
+# BOUNDARY: MORE arguments than the function declares. The extra argument has
+# nowhere to go and is discarded.
 #
-# INTENT: passing an argument a function has nowhere to put is a mistake the front
-# end can see with certainty, so it should be a diagnostic against this line — not
-# a silently discarded argument. The BUG-215 class is exactly what silent discard
-# costs: `str.indexOf(sub, from)` dropped its second argument and turned a typo
-# into a runtime panic three frames away.
+# Same intent-vs-today split as bv_arity_too_few.zbr: written first as a hard
+# rejection, corrected to pin the warning the compiler actually emits. The cost of
+# silent discard is on the record — BUG-215 was exactly that, where
+# `str.indexOf(sub, from)` dropped its second argument and turned a typo into a
+# runtime panic three frames away.
 def one(a: int): int
     return a
 
 def main()
-    print("${one(1, 2)}")
+    var r = one(1, 2)
+    print(r)

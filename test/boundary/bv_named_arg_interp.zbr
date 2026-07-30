@@ -1,0 +1,23 @@
+# @boundary rejects unexpected expression token
+# @boundary-pending BUG-231  named arguments do not parse inside ${...}
+#
+# PINS A BUG, NOT A FEATURE. Both halves of this program are documented Zebra:
+# named arguments are QUICKSTART section 4, and `${...}` interpolation is section 3.
+# The call parses as a statement and is a syntax error inside an interpolation.
+# When BUG-231 is fixed this probe starts failing — rewrite it to `runs` with an
+# .expected of `outside=127` / `inside=127`.
+#
+# Found by the A3 boundary suite (2026-07-30), from the argument-arity dimension.
+# Both compilers reject it, with different messages:
+#     selfhost : unexpected expression token: ': 7)'
+#     bootstrap: syntax error near ': 7)'
+#
+# The `outside` line below is the control: it proves the call itself is valid, so
+# the failure is attributable to the interpolation context and nothing else.
+def defaulted(a: int, b: int = 2, c: int = 3): int
+    return a * 100 + b * 10 + c
+
+def main()
+    var outside = defaulted(1, c: 7)
+    print("outside=${outside}")
+    print("inside=${defaulted(1, c: 7)}")

@@ -48,13 +48,96 @@ declares its kind in a `# @boundary` header:
 in case 3 of 20 would silently hide cases 4–20 inside a green suite — the same
 coverage-loss shape `gate_selfcheck.sh` exists to catch elsewhere.
 
-## 3. Findings from the first run
+## 3. Findings from the first run (2026-07-30)
 
-*Filled in by the run that follows the authoring commit. Every divergence between
-intended and actual output is listed here with a verdict, including the ones where the
-intent turned out to be wrong.*
+**9 probes, 6 disagreed with intent.** Of those six: **three were compiler bugs**, **two
+were my expectation being wrong**, and **one was a diagnostic-quality problem behind a
+wrong expectation. Every row is below, including the ones I got wrong** — a triage that
+only records the compiler's mistakes is a scoreboard, not a record.
 
-<!-- FIRST-RUN RESULTS GO HERE -->
+Scale, for calibration: roughly 140 individual assertions were authored, and about 130 of
+them matched the compiler exactly on the first run. The suite's value is concentrated in
+the handful that did not.
+
+### 3.1 Compiler bugs found
+
+| # | verdict | summary |
+|---|---|---|
+| **BUG-230** | real bug, high | `var nums: List(int) = [1, 2, 3]` — an **annotated, non-empty** list literal does not compile. |
+| **BUG-231** | real bug, medium | Named arguments do not parse inside `${...}` interpolation. |
+| **BUG-232** | real bug, high | Argument-count checking is **skipped entirely** inside `${...}` interpolation. |
+
+**BUG-230** is the one worth studying, because of *how* it hid. A list literal lowers to
+`std.ArrayList(T).empty` plus one generated `append` per element; the const-vs-var
+mutation analysis does not count those generated appends as mutations, so a binding the
+user never mutates is emitted as Zig `const` and its own initialisation then fails. The
+symptom appears to be about whichever read-only method follows (`.count()`, `.sort()`,
+`.map()`), and is not — adding `nums.add(4)` makes the identical program compile.
+
+It is invisible to **every** heavy gate simultaneously, for two independent reasons:
+both compilers do the identical wrong thing (so `divergence_check` cannot see it by
+construction), and no corpus file uses the annotated non-empty form (so `compile_check`
+and `full_sweep` never emit it). This is the "self-consistency is not correctness" class,
+and it is the first instance found *deliberately* rather than by accident.
+
+**BUG-231 and BUG-232 are the same family**: the expression sub-parser used inside
+`${...}` is a weaker path than the ordinary expression parser. BUG-232 is the more
+serious of the two — `print("${f(...)}")` is the most common shape in the language, so
+it is the context where a user is most likely to make an arity mistake and least likely
+to be told. The missing argument is padded with a deterministic zero, so the program runs
+and prints a plausible wrong answer.
+
+**Scope check, because the first reading was too broad.** After finding arity unchecked
+inside interpolation, the tempting conclusion was "the interpolation path skips checking."
+That is wrong, and probing it took ten minutes: unknown-method resolution fires normally
+inside `${}`, and type mismatches are still *caught* — they merely **degrade** from a
+Zebra diagnostic with a caret and the right line to a raw Zig error at the wrong one.
+Arity is the only check found absent outright. Recording the narrower claim is the point;
+the broader one would have been a correct measurement generalised past its evidence.
+
+### 3.2 Where my expectation was wrong
+
+| row | I expected | actual | verdict |
+|---|---|---|---|
+| `"".isAlpha()`, `isNumeric()`, `isPrintable()` | `true` (vacuous truth over an empty sequence) | `false` | **expectation wrong.** Codegen contains an explicit `if (s.len == 0) break :blk false` — a deliberate Python-compatible choice (`"".isalpha()` is `False` there too), not an oversight. Expectations corrected. |
+| `Point(1, nil)` on a field-only struct | constructs positionally | rejected | **expectation wrong.** QUICKSTART §6 is consistent: positional construction requires a `cue init`; a field-only struct takes named arguments. I omitted the constructor. |
+
+Both are recorded rather than quietly edited, because "the suite disagreed with the
+compiler" is only informative if the direction of the error is on the record too.
+
+### 3.3 Diagnostic-quality findings (no ticket filed; recorded for the front-end programme)
+
+These are not wrong behaviour, but they are exactly the *"error lands in generated Zig
+instead of the user's source"* problem that `NEXT_STEPS.md`'s "move checking INTO Zebra"
+programme exists to fix. Listed here as evidence for it rather than as separate bugs:
+
+1. **Type errors inside `${...}`** degrade from `type mismatch: expected int, got str`
+   with a caret at `4:13` to `expected type 'i64', found '*const [4:0]u8'` at line 2.
+2. **Positional construction of a field-only struct** reports `type 'Point' does not
+   support array initialization syntax` — Zig's vocabulary for a plain Zebra mistake.
+3. **`@[1, 2, 3].count()`** reports `no field named 'items' in tuple 'struct { comptime
+   comptime_int = 1, ... }'`, leaking the array literal's lowering. (Arrays are not
+   Lists, so rejecting it is correct; the message is not.)
+
+### 3.4 A documentation defect found on the way
+
+`isAlpha` / `isNumeric` / `isAlphanumeric` / `isPrintable` are **ASCII-only**
+(`std.ascii.isAlphabetic` in codegen), while QUICKSTART describes them as operating on
+"Unicode letters" and "codepoints". Verified: `"é".isAlpha()` and `"Ω".isAlpha()` both
+return `false`. Same class as the `chars()`/`bytes()` inaccuracy found during §28e's
+groundwork — the reference describing an intention rather than the implementation.
+QUICKSTART corrected; no compiler change proposed, since ASCII-only is a defensible
+choice as long as it is the one being documented.
+
+### 3.5 How the known-broken rows are kept without a red gate
+
+Deleting the three bug-finding probes would have bought a green gate by removing the
+coverage that earned it; leaving them red would have produced a gate people learn to
+ignore. Instead each carries a `@boundary-pending BUG-NNN` directive: the probe asserts
+what the compiler does **today**, the ticket is printed on every run so the debt stays
+visible, and when the bug is fixed the assertion **breaks** — which is the signal to
+rewrite the probe to assert the intent it was always meant to. A pending probe is a
+tripwire on a known gap, not a suppression of it.
 
 ## 4. Not covered, and why — no silent caps
 

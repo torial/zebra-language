@@ -1,19 +1,21 @@
-# @boundary rejects too few arguments
+# @boundary warns too few arguments to 'add': expected 2, found 1
+# @boundary-pending BUG-142  too-few arguments warns instead of erroring
 #
 # BOUNDARY: FEWER arguments than the function declares, with no default to cover
-# the gap.
+# the gap. Written in STATEMENT position deliberately — this is the control that
+# proves arity checking exists at all, which is what makes bv_arity_interp_
+# unchecked.zbr's silence attributable to the interpolation context.
 #
-# INTENT AS WRITTEN, AND THE KNOWN DISAGREEMENT: this asserts a hard rejection.
-# BUG-142 recorded that today's compiler emits a non-fatal WARNING ("too few
-# arguments to 'add'") and compiles anyway — test/arg_count_test.zbr pins that
-# behaviour. So this probe is expected to disagree with the compiler on its first
-# run, and that disagreement is a QUESTION for Sean recorded in
-# docs/boundary_triage.md, not a bug filed by fiat: a warning was a deliberate
-# choice at the time, and a boundary suite does not get to overturn one by
-# asserting its own opinion. Whichever way it is decided, this file is where the
-# decision gets pinned.
+# INTENT vs TODAY, recorded rather than legislated: this probe was first written to
+# assert a hard REJECTION. The compiler warns and compiles, padding the missing
+# argument with a deterministic zero. That is not an oversight — BUG-142 chose it
+# deliberately, and its own text names "promoting the warning to a hard error" as
+# the remaining work. A boundary suite does not get to overturn a deliberate
+# decision by asserting its own opinion, so this pins the warning and carries the
+# ticket. If the promotion happens, this probe fails and becomes `rejects`.
 def add(a: int, b: int): int
     return a + b
 
 def main()
-    print("${add(1)}")
+    var r = add(1)
+    print(r)

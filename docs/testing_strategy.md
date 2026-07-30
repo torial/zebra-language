@@ -88,6 +88,44 @@ non-ASCII everywhere, nil at every position. Written as *expected* output, not r
 `format`) and BUG-223 (`charAt` with no argument) are both boundary bugs we hit by
 accident. We have never looked systematically.*
 
+**FIRST PASS DONE 2026-07-30 — the yield estimate held.** `tools/boundary_check.sh`,
+probes in `test/boundary/`, triage in `docs/boundary_triage.md`. Four dimensions (empty
+string, empty collections, nil at every position, argument arity), ~140 assertions, and
+**three real bugs on the first run**: BUG-230 (an annotated non-empty list literal does
+not compile), BUG-232 (arity checking skipped inside `${...}`), BUG-231 (named arguments
+unparseable inside `${...}`), plus a documentation defect (the `is…` predicates are
+ASCII-only, not Unicode as documented).
+
+Three lessons worth keeping, because they generalise past A3:
+
+1. **BUG-230 is the receipt for why this tier had to exist.** Both compilers do the
+   identical wrong thing, so `divergence_check` cannot see it *by construction*; and the
+   `test/*.zbr` corpus the heavy gates sweep does not use the form. No amount of corpus
+   growth or mode differentiation would have found it — only an expectation written from
+   the reference could.
+
+   **And it immediately surfaced something larger than itself:** the one file in the repo
+   that *does* use the form is `examples/widget_smoke.zbr`, which **does not compile** and
+   is shipping that way, because **no gate sweeps `examples/`**. For a release whose whole
+   claim is ready-for-others, the directory a newcomer opens first having zero coverage is
+   a bigger finding than the bug that exposed it. Filed as an open item below.
+
+2. **The intent-first property needs a structural guard, not a promise.** It is trivially
+   easy to author an `.expected` from observed output with a rationalisation attached, at
+   which point the suite is `output_sweep` with extra steps. The guard used here is the
+   commit boundary: probes and intended output committed **unrun**, findings committed
+   after. Any future extension should do the same.
+
+3. **Known-broken rows are pinned, not deleted.** A `@boundary-pending BUG-NNN` directive
+   makes a probe assert what the compiler does *today* while printing the ticket on every
+   run — so the gate is green and honest, the debt stays visible, and the assertion breaks
+   when the bug is fixed. Deleting the bug-finding probes would have bought a green gate
+   by removing the coverage that earned it.
+
+**Open tail:** deep nesting, very long identifiers, and non-ASCII in string *operations*
+are unwritten. min/max int and float extremes are deliberately deferred until BUG-228
+settles what `--release` means, since their answers are build-mode dependent.
+
 **A4 · OOM policy audit — `catch unreachable` in emitted code.** The runtime and codegen
 use `catch unreachable` / `catch @panic("OOM")` on allocation. In ReleaseFast,
 `unreachable` is **undefined behaviour**, so an out-of-memory condition in a *user's*

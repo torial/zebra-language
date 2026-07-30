@@ -32,7 +32,14 @@ def main()
     print("def3=${defaulted(1, 5, 9)}")
 
     # Named arguments, including skipping a defaulted middle parameter.
-    print("named=${defaulted(1, c: 7)}")
+    #
+    # Bound to a local FIRST, deliberately: written inline as
+    # `print("named=${defaulted(1, c: 7)}")` this is a syntax error, because named
+    # arguments do not parse inside an interpolation. That is BUG-231, found by
+    # this probe and pinned in bv_named_arg_interp.zbr. Keeping the arity rows
+    # here means writing the call in a form that works.
+    var named = defaulted(1, c: 7)
+    print("named=${named}")
 
     # format() at 0, 1 and 2 arguments — the BUG-224 shape. Specifiers are Zig's,
     # so a str argument needs {s} and an int takes {}.

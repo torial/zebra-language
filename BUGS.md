@@ -1,6 +1,119 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-229. Next new bug: BUG-230.**
+**Last bug number generated: BUG-232. Next new bug: BUG-233.**
+
+---
+
+### BUG-232: argument-count checking is SKIPPED inside `${...}` interpolation ⚠ OPEN
+
+**Severity:** high (silent wrong behaviour, in the language's most common idiom).
+**Found:** 2026-07-30 by the A3 boundary suite (`test/boundary/`), from the
+argument-arity dimension. **Both compilers behave identically.**
+
+```zebra
+def add(a: int, b: int): int
+    return a + b
+
+var r = add(1)              # warning: too few arguments to 'add': expected 2, found 1
+print("${add(1)}")          # NO diagnostic at all — prints 1
+```
+
+The same asymmetry holds for too MANY arguments: extras are warned about in a
+statement and silently discarded inside an interpolation. The missing argument is
+padded with a deterministic zero (BUG-142's partial fix), so the program runs and
+prints a plausible wrong answer rather than failing.
+
+**Why this one matters more than its siblings:** `print("${f(...)}")` is the most
+common shape in Zebra, so this is the context where a user is *most* likely to make
+an arity mistake and *least* likely to be told about it.
+
+**Scope check, so this is not over-claimed** — not everything is skipped in an
+interpolation. Unknown-method resolution still fires normally, and type mismatches
+are still caught, but *degrade* from a Zebra diagnostic with a caret to a raw Zig
+error pointing at the wrong line. Arity is the only check found to be absent
+outright.
+
+Pinned by `test/boundary/bv_arity_interp_unchecked.zbr` (a `@boundary-pending`
+probe: it asserts today's wrong output and will FAIL when this is fixed, which is
+the signal to rewrite it as an assertion of the intended warning). Control:
+`bv_arity_too_few.zbr` proves the check exists outside interpolation.
+
+---
+
+### BUG-231: named arguments do not parse inside `${...}` interpolation ⚠ OPEN
+
+**Severity:** medium (documented feature unavailable in a documented context).
+**Found:** 2026-07-30 by the A3 boundary suite. **Both compilers reject it.**
+
+```zebra
+def defaulted(a: int, b: int = 2, c: int = 3): int
+    return a * 100 + b * 10 + c
+
+var outside = defaulted(1, c: 7)     # fine — 127
+print("${defaulted(1, c: 7)}")       # selfhost : unexpected expression token: ': 7)'
+                                     # bootstrap: syntax error near ': 7)'
+```
+
+Named arguments are QUICKSTART section 4; interpolation is section 3. The
+expression sub-parser used inside `${...}` does not accept the `name:` form. The
+workaround is to bind the call to a local first.
+
+Same family as BUG-232 — both are the interpolation sub-parser being a weaker path
+than the ordinary expression parser. Worth fixing together.
+
+Pinned by `test/boundary/bv_named_arg_interp.zbr`, which carries the statement-form
+call as a control so the failure is attributable to the interpolation and nothing
+else.
+
+---
+
+### BUG-230: an ANNOTATED, NON-EMPTY list literal does not compile ⚠ OPEN
+
+**Severity:** high (a three-line, entirely reasonable program fails to build).
+**Found:** 2026-07-30 by the A3 boundary suite, from the one-element List boundary.
+**Both compilers fail identically.**
+
+```zebra
+var nums = [1, 2, 3]              # inferred            -> compiles
+var nums: List(int) = []          # annotated, empty    -> compiles
+var nums: List(int) = [1, 2, 3]   # annotated, NON-EMPTY -> error: expected type '*T',
+                                  #                        found '*const T'
+```
+
+**Root cause** (from the emitted Zig): a list literal lowers to
+`std.ArrayList(T).empty` followed by one generated `append` per element. The
+const-vs-var mutation analysis does not count those *generated* appends as
+mutations, so a binding the user never mutates afterwards is emitted as Zig
+`const` — and its own initialisation then fails, because `append` requires
+`*ArrayList`. Adding any user mutation (`nums.add(4)`) makes it compile, which is
+why the error appears to be about whichever read-only method follows (`.count()`,
+`.sort()`, `.map()`, `.all()`, `.find()`) and is not.
+
+**IT IS SHIPPING BROKEN CODE TODAY.** `examples/widget_smoke.zbr:30` uses exactly
+this form (`var items: List(str) = ["Apple", "Banana", "Cherry"]`) and **does not
+compile** — its emitted Zig fails at `items.append`. Verified by emitting and running
+`zig build-exe` on the result.
+
+**Why no existing gate sees it, which is the transferable part.** Two independent
+reasons, and correcting an earlier over-claim of mine: both compilers do the identical
+wrong thing, so `divergence_check` cannot see it *by construction*; and the corpus the
+heavy gates sweep is `test/*.zbr`, which does not use the form. The one file that does
+is in **`examples/`, and NO gate sweeps `examples/` at all** — so a broken example has
+been shipping unnoticed. That is a coverage hole worth more than this bug: `examples/`
+is the first thing a new user reads, and 0.9 is the ready-for-others release.
+
+Note also that `zebra -c examples/widget_smoke.zbr` exits 0. That is correct and
+documented — `-c` is front-end-only — but it means check mode cannot be used to
+confirm this class. I briefly mis-read that exit 0 as "the example is fine."
+
+This is the "self-consistency is not correctness" class, and it is the first bug found
+by A3 rather than by accident.
+
+**Likely fix:** treat a literal's generated element-appends as mutations when
+deciding `const` vs `var` (or emit the literal through the same path the
+un-annotated form already uses, which is correct today).
+
+Pinned by `test/boundary/bv_list_literal_annotated.zbr`.
 
 ---
 

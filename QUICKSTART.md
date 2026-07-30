@@ -1108,11 +1108,21 @@ var result = sb.build()              # str (drains the builder)
 | `startsWith(pre)` | `(str): bool` | Prefix check |
 | `endsWith(suf)` | `(str): bool` | Suffix check |
 | `isEmpty()` | `(): bool` | True when `len == 0` |
-| `isAlpha()` | `(): bool` | All codepoints are Unicode letters |
-| `isNumeric()` | `(): bool` | All codepoints are decimal digits |
-| `isAlphanumeric()` | `(): bool` | All codepoints are letters or digits |
-| `isPrintable()` | `(): bool` | All codepoints are printable |
+| `isAlpha()` | `(): bool` | **ASCII** letters only — see the note below |
+| `isNumeric()` | `(): bool` | **ASCII** decimal digits only |
+| `isAlphanumeric()` | `(): bool` | **ASCII** letters or digits only |
+| `isPrintable()` | `(): bool` | **ASCII** printable characters only |
 | `isValidUtf8()` | `(): bool` | Valid UTF-8 byte sequence |
+
+> **The four `is…` predicates are ASCII-only, and the empty string is `false`.**
+> Corrected 2026-07-30 after the boundary suite found the documentation and the
+> implementation disagreeing: these lower to `std.ascii.*`, so `"é".isAlpha()` and
+> `"Ω".isAlpha()` are **`false`** despite both being letters. If you need Unicode
+> letter classification, iterate `.chars()` and classify the codepoints yourself.
+>
+> They also return **`false` for the empty string** rather than being vacuously true —
+> deliberately, matching Python (`"".isalpha()` is `False`). Guard with `.isEmpty()`
+> first if you want the other convention.
 | `eqlIgnoreCase(other)` | `(str): bool` | Case-insensitive equality |
 | `startsWithIgnoreCase(pre)` | `(str): bool` | Case-insensitive prefix |
 | `endsWithIgnoreCase(suf)` | `(str): bool` | Case-insensitive suffix |

@@ -290,6 +290,63 @@ else
     note "output-sweep: skipped (no behaviour baseline — run --update-baseline)"
 fi
 
+# ── boundary suite: a perturbed INTENDED output must be caught ───────────────
+# The A3 suite compares each probe's stdout against a HAND-WRITTEN expectation. The
+# failure mode it must not have is the one every diff-based check has: comparing
+# against something that cannot disagree. Perturbing one intended value stands in for
+# a compiler change that alters a boundary answer.
+#
+# Scoped with --only to one probe so this stays seconds. bv_empty_set is chosen because
+# it is the smallest `runs` probe that is NOT `@boundary-pending` — perturbing a pending
+# probe would test the tripwire rather than the diff.
+if [ -f test/boundary/bv_empty_set.expected ]; then
+    base=$(run_rc bash tools/boundary_check.sh --only bv_empty_set)
+    if [ "$base" -ne 0 ]; then
+        note "boundary: skipped (--only bv_empty_set already fails rc=$base on the"
+        note "        UNPERTURBED tree, so catching a planted change would prove nothing)"
+    else
+        cp -p test/boundary/bv_empty_set.expected "$OUT/bv.bak"
+        $PY - <<'PYEOF'
+import pathlib
+p = pathlib.Path("test/boundary/bv_empty_set.expected")
+s = p.read_text(encoding="utf-8")
+# "dupLen=1" is the de-duplication boundary: flipping it to 2 is exactly what a
+# broken Set.add would produce, so the planted defect is a realistic one.
+p.write_text(s.replace("dupLen=1", "dupLen=2", 1), encoding="utf-8", newline="\n")
+PYEOF
+        got=$(run_rc bash tools/boundary_check.sh --only bv_empty_set)
+        cp -p "$OUT/bv.bak" test/boundary/bv_empty_set.expected
+        case "$got" in
+            1) pass "boundary catches a changed boundary answer (clean 0 -> planted 1)" ;;
+            0) bad "boundary accepted a PERTURBED intended output" ;;
+            *) bad "boundary CRASHED (rc=$got) instead of reporting: $(last_out)" ;;
+        esac
+    fi
+else
+    note "boundary: skipped (no boundary suite present)"
+fi
+
+# ── boundary suite: a probe with no directive must be reported, not skipped ──
+# The runner is directive-driven, so the dangerous silent failure is a probe the loop
+# does not know how to assert and quietly passes over — coverage lost while the count
+# still looks healthy. A directive-less file must FAIL rather than vanish.
+if [ -d test/boundary ]; then
+    printf 'def main()\n    print("x")\n' > test/boundary/_selfcheck_nodirective.zbr
+    got=$(run_rc bash tools/boundary_check.sh --only _selfcheck_nodirective)
+    rm -f test/boundary/_selfcheck_nodirective.zbr
+    # Grep the CAPTURE FILE, not last_out(): last_out truncates to 400 chars and the
+    # relevant line sits below the runner's banner, so the assertion would have failed
+    # for a reason unrelated to the gate — the exact "wrong assertion cancels out"
+    # shape this harness exists to expose.
+    if [ "$got" -eq 1 ] && grep -q "_selfcheck_nodirective (no" "$LAST_OUT_FILE"; then
+        pass "boundary reports a probe with no directive (never silently skips one)"
+    elif [ "$got" -eq 0 ]; then
+        bad "boundary SILENTLY SKIPPED a probe with no directive"
+    else
+        bad "boundary rc=$got without naming the missing directive: $(last_out)"
+    fi
+fi
+
 # ── round-trip: the freshness property whose absence made it vacuous ─────────
 # The emits compared must be FRESH selfhost output, not copies of the committed
 # bootstrap-emitted files. Checkable only if a prior full run left the dirs.

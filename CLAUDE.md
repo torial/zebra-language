@@ -180,6 +180,29 @@ JOBS=3 bash tools/compile_check.sh --no-runtime-module  # the SAME corpus with t
                                 #   otherwise go unwatched — and it stays live via the opt-out
                                 #   and as the fallback for --single-file / node-addon / every
                                 #   --gui-backend. 217/0/1, identical to the default. FULL tier.
+bash tools/boundary_check.sh    # THE INTENT WITNESS (A3, QUICK tier, ~30s): the only
+                                #   gate whose expectations were WRITTEN FROM THE LANGUAGE
+                                #   REFERENCE rather than recorded from the compiler. Every
+                                #   other behaviour check here is a GOLDEN baseline, which
+                                #   catches regressions and can NEVER find something that
+                                #   was wrong on day one. Probes in test/boundary/, triage
+                                #   in docs/boundary_triage.md.
+                                #   FIRST RUN (2026-07-30) found BUG-230 (an annotated
+                                #   non-empty list literal does not compile — invisible to
+                                #   divergence BY CONSTRUCTION, since both compilers do the
+                                #   identical wrong thing, and absent from the corpus so
+                                #   compile_check never emits it), BUG-232 (arity checking
+                                #   SKIPPED inside `${...}`) and BUG-231.
+                                #   THE PROPERTY THAT MAKES IT WORK is that expectations are
+                                #   authored BEFORE the first run — protected structurally by
+                                #   the commit boundary (probes+intent unrun in 603a580,
+                                #   findings after). If an .expected is ever written by
+                                #   pasting observed output, this is output_sweep with extra
+                                #   steps: delete it rather than keep it.
+                                #   Probes marked `@boundary-pending BUG-NNN` pin KNOWN-BROKEN
+                                #   behaviour on purpose — they pass today, print their ticket
+                                #   every run, and FAIL when the bug is fixed. That failure is
+                                #   the signal to rewrite the probe, NOT to re-baseline.
 bash tools/output_sweep.sh --gate  # THE BEHAVIOUR WITNESS — the only heavy gate that
                                 #   RUNS the corpus and reads what it PRINTED. Everything
                                 #   else in the FULL tier asks "does the emitted Zig
@@ -238,6 +261,16 @@ below. Behaviour coverage went from 126 files to 327. It does not remove the nee
 `smoke_run` on a new fix: the sweep is a *golden* baseline, so it can only tell you
 behaviour CHANGED, never that it was right to begin with.
 
+**`tools/boundary_check.sh` (added 2026-07-30) is the answer to that last clause**, and it
+is the only gate here that can be. Its expectations were written from QUICKSTART *before*
+the compiler was run, so it asserts what the language is supposed to do rather than what it
+happens to do — which is why it found BUG-230 on its first run, a three-line program that
+does not compile and that no corpus-based gate could ever have surfaced (both compilers
+share the bend, and the `test/*.zbr` corpus the heavy gates sweep does not use the form —
+the one file that does is `examples/widget_smoke.zbr`, which is **shipping broken**,
+because no gate sweeps `examples/` at all). Treat "recorded" and "intended" as
+genuinely different properties: everything else in this file measures the first.
+
 ### Which property does each gate actually assert?
 
 Worth keeping straight, because "how many gates are green" answers a different question
@@ -249,6 +282,7 @@ than "what do we know":
 | emitted Zig compiles | `compile_check`, `full_sweep`, `divergence` | 335 |
 | compiler is self-consistent | `bootstrap_check` (round-trip) | selfhost only |
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **327** |
+| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 12 probes / ~140 assertions |
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |

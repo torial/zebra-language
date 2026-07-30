@@ -347,16 +347,54 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   *Build-mode note (Sean, 2026-07-30 — "whichever is fastest for our tests"): no tradeoff
   exists. The default fast backend (`-fno-llvm -fno-lld`, Debug) is both the fastest to
   compile (~6×) and the mode where `unreachable` traps. Tests are already on it.*
-- [ ] **A2 — behaviour differential across emit modes.** runtime-module vs
-  `--no-runtime-module`, fast backend vs LLVM, `--turbo` vs normal, `zebra run` vs a built
-  exe: all must behave IDENTICALLY, and we currently compare only compilability.
-  `tools/output_sweep.sh` makes this nearly free. `--turbo` (strips contracts) is the
-  least-tested path we ship.
-- [ ] **A3 — boundary-value suite, written from INTENT not recorded.** 0/1/N args, empty
-  string, min/max int, empty collections, deep nesting, long identifiers, non-ASCII, nil
-  at every position. BUG-224 and BUG-223 were both boundary bugs found by accident; we
-  have never looked systematically. This is also the antidote to the golden-baseline
-  limitation — recorded baselines cannot find day-one wrongness.
+- [~] **A2 — behaviour differential across emit modes. TWO OF FOUR AXES DONE
+  2026-07-30 (`16922ef`, `c161733`).** `tools/output_sweep.sh` gained `--mode`, comparing
+  each mode against the SAME baseline rather than giving each its own — a difference IS
+  the bug, which is what made it nearly free.
+  - [x] **inline** (`--no-runtime-module`) — zero real differences.
+  - [x] **turbo** (`--turbo`, contracts stripped) — zero real differences. Both controls
+    proved first, because "no differences" is also what a silently-dropped flag produces.
+  - [ ] **release** (`--release`, LLVM backend) — implemented as `--mode release` but
+    **not yet run across the corpus**; also entangled with BUG-228 (`--release` does not
+    currently pass an optimize flag), so run it after that lands or the result describes
+    a mode that is about to change.
+  - [ ] **`zebra run` vs a built exe** — not implemented. A different branch of
+    `zbrToZig` (temp dir, not `--output-dir`), so it is genuinely a separate path.
+- [~] **A3 — boundary-value suite, written from INTENT not recorded. FIRST PASS DONE
+  2026-07-30 — four dimensions, and it found three real bugs on its first run.**
+  `tools/boundary_check.sh` (QUICK tier, ~30 s, falsified in `gate_selfcheck.sh`), probes
+  in `test/boundary/`, full triage in `docs/boundary_triage.md`.
+
+  **The one property that makes it not another golden baseline** is that every expectation
+  was authored from QUICKSTART *before* the compiler was ever run, and that ordering is
+  protected structurally: the probes and their intended output were committed in one
+  commit (`603a580`) and the first run's findings in the next. If a future change authors
+  an `.expected` by pasting observed output, this has become `output_sweep` with extra
+  steps and should be deleted rather than kept.
+
+  **Found (~140 assertions authored, ~130 matched intent first try):**
+  - **BUG-230** (high) — `var nums: List(int) = [1, 2, 3]` does not compile. An
+    annotated, non-empty list literal is emitted as Zig `const`, because the const-vs-var
+    analysis does not count the literal's own GENERATED appends as mutations, so its
+    initialisation then fails. Invisible to every heavy gate at once: both compilers do
+    the identical wrong thing (divergence cannot see it by construction) and the
+    `test/*.zbr` corpus does not use the form. **`examples/widget_smoke.zbr` DOES, and is
+    shipping broken** — which surfaced a bigger hole than the bug: **no gate sweeps
+    `examples/`**, the first thing a new user reads.
+  - **BUG-232** (high) — argument-count checking is **skipped entirely** inside `${...}`.
+    `print("${add(1)}")` is silent where `var r = add(1)` warns; the missing argument is
+    zero-padded and the program prints a plausible wrong answer. This is the language's
+    most common shape.
+  - **BUG-231** (medium) — named arguments do not parse inside `${...}`.
+  - Plus a **documentation defect**: the four `is…` predicates are ASCII-only, not
+    Unicode as documented (`"é".isAlpha()` is false). QUICKSTART corrected.
+
+  **Deliberately NOT covered, printed by the runner on every run so it cannot pass for
+  coverage:** min/max int and float extremes (build-mode dependent — blocked on BUG-228,
+  or the expectations pin a mode that is about to change), `s[i]` on non-ASCII (BUG-225 is
+  a known wrong behaviour deferred to 1.x by §28e), `charAt` (BUG-223 is an open decision
+  awaiting Sean). **Open tail:** deep nesting, very long identifiers, non-ASCII in string
+  *operations* — none blocked, just not yet written.
 - [ ] **B2 spike (1 day) — is branch coverage feasible on Windows/Zig at all?** Decide
   B1-vs-B2 on evidence. One option worth the look: teaching Zebra itself to emit coverage
   counters, which would serve users too.

@@ -21,15 +21,33 @@
 #
 # OUTCOME KINDS
 # -------------
-# A boundary case has three possible honest outcomes, and a stdout diff models only
-# one of them. Each probe declares its kind in a header directive:
+# A boundary case has several honest outcomes, and a stdout diff models only one of
+# them. Each probe declares its kind in a header directive:
 #
 #   # @boundary runs                       -> must exit 0; stdout must EQUAL the .expected file
 #   # @boundary rejects <diagnostic text>  -> compiler must REFUSE it, naming <diagnostic text>
 #   # @boundary panics  <message text>     -> must build, then FAIL at runtime with <message text>
+#   # @boundary warns   <warning text>     -> must exit 0 but EMIT <warning text>
 #
 # `rejects` and `panics` abort the process, so a probe of either kind must be its own
 # file — a trap in case 3 of 20 silently hides cases 4..20 inside a green suite.
+#
+# PINNING WHAT IS KNOWN-WRONG, INSTEAD OF DELETING IT
+# ---------------------------------------------------
+# The first run found real bugs. Deleting those probes would have bought a green gate
+# by removing the coverage that earned it, and a permanently-red gate gets switched
+# off. So a probe may carry a second directive:
+#
+#   # @boundary-pending BUG-NNN  <one-line reason>
+#
+# meaning: THIS PROBE ENCODES CURRENT BEHAVIOUR THAT IS KNOWN TO DIFFER FROM INTENT.
+# The declared assertion is still checked (so the gate is green and honest about
+# today), the ticket is printed on every run (so the debt cannot go quiet), and when
+# the bug is finally fixed the assertion BREAKS — which is the point. A pending probe
+# is a tripwire on a known gap, not a suppression of it.
+#
+# When a pending probe starts failing, do not "fix" it: check whether BUG-NNN was
+# closed, and if so rewrite the probe to assert the INTENT it was always meant to.
 #
 # USAGE
 #   bash tools/boundary_check.sh              # the gate
@@ -74,6 +92,7 @@ rm -rf "$OUT"; mkdir -p "$OUT"
 trap 'rm -rf "$OUT"' EXIT
 
 PASS=0; FAIL=0; SKIP=0
+PENDING_LIST=""
 green() { printf '  \033[32mPASS\033[0m  %s\n' "$1"; PASS=$((PASS+1)); }
 red()   { printf '  \033[31mFAIL\033[0m  %s\n' "$1" >&2;  FAIL=$((FAIL+1)); }
 note()  { printf '  \033[33m--\033[0m    %s\n' "$1"; }
@@ -93,6 +112,12 @@ for zbr in "$DIR"/*.zbr; do
     fi
     kind="$(printf '%s' "$directive" | awk '{print $3}')"
     arg="$(printf '%s' "$directive" | sed -E 's/^# @boundary[[:space:]]+[a-z]+[[:space:]]*//')"
+
+    pending="$(grep -m1 '^# @boundary-pending ' "$zbr" 2>/dev/null \
+               | sed -E 's/^# @boundary-pending[[:space:]]*//' || true)"
+    if [ -n "$pending" ]; then
+        PENDING_LIST="${PENDING_LIST}${base}: ${pending}"$'\n'
+    fi
 
     # A compiled Zebra program's own output arrives on the COMBINED stream, interleaved
     # with the compiler's progress chatter — `zebra foo.zbr` prints "compiling:",
@@ -162,11 +187,34 @@ for zbr in "$DIR"/*.zbr; do
             sed 's/^/        /' "$OUT/both.txt" | head -20 >&2
         fi
         ;;
+    warns)
+        # Asserted by SUBSTRING rather than by a diff: a warning line carries the
+        # absolute source path, which would make an .expected file machine-specific.
+        if [ "$rc" -ne 0 ]; then
+            red "$base (expected a warning on a successful compile, exit $rc)"
+            sed 's/^/        /' "$OUT/both.txt" | head -20 >&2
+            continue
+        fi
+        if grep -qF "$arg" "$OUT/both.txt"; then
+            green "$base (warned: $arg)"
+        else
+            red "$base (compiled, but the intended warning is MISSING: $arg)"
+            sed 's/^/        /' "$OUT/both.txt" | head -20 >&2
+        fi
+        ;;
     *)
-        red "$base (unknown @boundary kind '$kind'; expected runs|rejects|panics)"
+        red "$base (unknown @boundary kind '$kind'; expected runs|rejects|panics|warns)"
         ;;
     esac
 done
+
+if [ -n "$PENDING_LIST" ]; then
+    echo
+    echo "  PENDING — these probes pin behaviour that is known to differ from intent."
+    echo "  They pass today BY DESIGN; each breaks when its ticket is fixed, which is the signal"
+    echo "  to rewrite it to assert the intent instead:"
+    printf '%s' "$PENDING_LIST" | sed 's/^/    /'
+fi
 
 echo
 echo "  uncovered by this suite (see docs/boundary_triage.md for the full list and why):"

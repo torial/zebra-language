@@ -15,6 +15,9 @@
 #   bash tools/gates.sh --full       # FULL   (~50 min) — before committing codegen
 #   bash tools/gates.sh --list       # what each tier runs, and what it cannot see
 #
+# QUICK also carries the A3 boundary suite — the one gate whose expectations were
+#         written from intent rather than recorded, and therefore the only one that can
+#         find behaviour that was wrong from day one rather than newly broken.
 # QUICK = the static lints (instant), smoke (emits + runs fixtures), round-trip
 #         (self-consistency), check-mode (the -c vs --check-full contract, incl.
 #         proof the documented asymmetry is real), runtime-module (small
@@ -144,6 +147,13 @@ run "bug-fixture"    "gate PASS" python tools/bug_fixture_check.py --gate
 # gate here runs Debug, where it traps cleanly — so this hazard is invisible to all of
 # them and live only in what users distribute. A static lint is the only witness.
 run "oom-unreachable" "0 hazard" python tools/lint_oom_unreachable.py
+# A3: the boundary-value suite. The ONLY gate here whose expectations were written from
+# INTENT rather than recorded from behaviour — output_sweep is a golden baseline and so
+# can never find something that was wrong on day one. Twelve probes, ~30s, and it found
+# BUG-230/231/232 on its first run. Probes marked @boundary-pending pin known-broken
+# behaviour deliberately and will FAIL when their ticket is fixed; that is the signal to
+# rewrite them, not to re-baseline.
+run "boundary"       "0 fail"   bash tools/boundary_check.sh
 
 if [[ "$MODE" == "full" ]]; then
     run "compile_check" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh

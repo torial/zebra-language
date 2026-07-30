@@ -46,11 +46,20 @@ def main()
 
     # One element is the other interesting boundary: join must emit NO separator,
     # and the quantifiers must now follow the single element.
-    var one: List(int) = [7]
+    #
+    # NOTE the constructor form. This was written as `var one: List(int) = [7]`,
+    # which does not compile — an ANNOTATED, NON-EMPTY list literal is emitted as a
+    # Zig `const` whose own generated `append` calls then fail. That is BUG-230,
+    # found by this probe; it is pinned in bv_list_literal_annotated.zbr. The
+    # rows below are about the ONE-ELEMENT boundary, so they use a form that
+    # works rather than dying on an unrelated bug.
+    var one = List(int)()
+    one.add(7)
     print("oneCount=${one.count()}")
     print("oneAny=${one.any(def(x) = x > 0)}")
     print("oneAll=${one.all(def(x) = x > 0)}")
-    var os: List(str) = ["only"]
+    var os = List(str)()
+    os.add("only")
     print("oneJoin=[${os.join(sep)}]")
 
     # Adding to an empty list and removing the only element returns it to empty.

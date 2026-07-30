@@ -14,6 +14,17 @@ struct Point
     var x: int
     var label: str?
 
+    # CORRECTED AFTER THE FIRST RUN. Written first without this constructor, and
+    # `Point(1, nil)` was then rejected with a raw Zig diagnostic ("type 'Point'
+    # does not support array initialization syntax"). That is correct behaviour
+    # per QUICKSTART section 6 — POSITIONAL construction needs a `cue init`, and a
+    # field-only struct is built with named arguments. My expectation was wrong.
+    # The finding kept from it is the DIAGNOSTIC, which leaks Zig's vocabulary for
+    # a plain Zebra-level mistake; recorded in docs/boundary_triage.md.
+    cue init(x: int, label: str? = nil)
+        .x = x
+        .label = label
+
 class Node
     var value: int
     var next: Node?
