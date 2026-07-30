@@ -61,6 +61,13 @@ workaround is to bind the call to a local first.
 Same family as BUG-232 — both are the interpolation sub-parser being a weaker path
 than the ordinary expression parser. Worth fixing together.
 
+**Expect TWO probes to go red from ONE fix.** `bv_named_arg_interp.zbr` and
+`bv_arity_interp_unchecked.zbr` both pin interpolation-path behaviour, so whoever
+fixes this family will very likely break both at once (and may also free the
+hoisted `named` row in `bv_arity_ok.zbr` to be written inline again). That is the
+`@boundary-pending` tripwire working as designed, not a regression — rewrite both
+probes to assert the intent rather than re-baselining them.
+
 Pinned by `test/boundary/bv_named_arg_interp.zbr`, which carries the statement-form
 call as a control so the failure is attributable to the interpolation and nothing
 else.
@@ -112,6 +119,11 @@ by A3 rather than by accident.
 **Likely fix:** treat a literal's generated element-appends as mutations when
 deciding `const` vs `var` (or emit the literal through the same path the
 un-annotated form already uses, which is correct today).
+
+**Open question, NOT part of this bug's claim:** `nums.sort()` — a *mutating*
+method — also fails to mark the binding mutated, while `nums.add(4)` does. That
+suggests a second gap in the same analysis, but it was not investigated and
+BUG-230 stands without it. Recorded so it is not lost, not asserted.
 
 Pinned by `test/boundary/bv_list_literal_annotated.zbr`.
 
