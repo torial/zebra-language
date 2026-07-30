@@ -322,13 +322,32 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
     `.load(slice)` (offset 0) unchanged. Benchmark rewritten to it — byte-identical, four one-line
     loads for four eight-arg constructors. **All three SIMD-data-bridge tiers complete; BUG-197
     fully resolved.**
-- [ ] **§28e — STRING LAYER COHERENCE (scope expanded 2026-07-29).** Was "a
-  borrows-vs-owns doc table"; now the one pass that makes Zebra's string layer tell the
-  truth, so strings are touched once before 0.9 rather than three times. Three parts:
+- [ ] **§28e — STRING LAYER COHERENCE (scope expanded 2026-07-29; parts 1 and 3 DONE,
+  part 2 awaiting one API call).** Was "a borrows-vs-owns doc table"; now the one pass
+  that makes Zebra's string layer tell the truth, so strings are touched once before 0.9
+  rather than three times. Three parts:
 
-  1. **The ownership table** (the original §28e): per-stdlib-call borrows-vs-owns, in
-     the spec/QUICKSTART. Documentation, not a new type. Grounds the 1.5 `str_view`
-     design.
+  1. **The ownership table** — **DONE 2026-07-29** (`a0a8664`). `docs/str_ownership.md`,
+     28 operations, **derived from real compiler emit** by
+     `tools/str_ownership_extract.py` rather than read off `genStdlibMethod`; every row
+     carries the emitted Zig it was classified from. Gated via `--check` in the QUICK
+     tier plus `gate_selfcheck.sh`, so it cannot drift from the compiler silently.
+     The classifier asserts six known-opposite CONTROLS before printing and refuses to
+     emit a table it cannot vouch for — which caught three defects in itself during
+     development.
+
+     **The substantive finding, which grounds the 1.5 `str_view` design better than a
+     plain table would have:** ownership is not one property but two.
+     `split`/`lines`/`tokenize` return an **owned container of borrowed elements** — a
+     `List(str)` the caller owns whose elements are subslices of the receiver. Under the
+     program arena that is invisible; inside an `allocate` scope that owns the receiver
+     it is a use-after-free wearing an owned wrapper. Holding the container is not
+     enough; the receiver's lifetime is what governs. Documented in QUICKSTART with the
+     wrong/right pair.
+
+     Also surfaced and fixed en route: **BUG-224**, `format()` with 2+ arguments emitted
+     invalid Zig (one `.{ }` tuple per argument instead of one tuple). Every existing
+     call in the corpus passes exactly one argument, which is why no gate caught it.
   2. **Byte-vs-codepoint honesty.** `char` STAYS — Sean's call after review, and the
      data backs it: 559 `c'x'` literals, and the compiler's own lexer is built on
      `branch c on c'a'..c'z'` range matching, so it is the opposite of islanded.
@@ -343,15 +362,41 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
 
      Only the third is honest. Adopt Go's model explicitly — `str` is bytes, `char`
      is the decoded codepoint — and make the byte-oriented accessors SAY byte.
-  3. **State the ceiling in QUICKSTART.** A codepoint is not a user-perceived
-     character: `é` can be two codepoints, emoji families are many. Swift made
-     `Character` a grapheme cluster for exactly this reason; Rust and Go chose
-     codepoint and documented the limit. Zebra chooses codepoint, so the limit
-     belongs in the docs rather than being discovered by whoever first calls
-     `.chars()` on an emoji.
 
-  **Closes BUG-223 as part of the pass** (`charAt` → `byte`), which is why that bug is
-  filed with a recommendation instead of a patch. → *Open detail §28e.*
+     **Measured 2026-07-29, and the two rows have wildly different costs — they should
+     be decided separately, not as one "fix the string types" item:**
+
+     * `charAt(i)` → **BUG-223, free.** It is not merely mistyped, it is *unusable*:
+       every way of consuming the result is a compile error (`print` → "expected type
+       'str', found 'u8'"; `.concat` → "no field or member function named 'concat' in
+       'u8'"). `grep -rn '\.charAt(' --include='*.zbr'` over the whole repo returns
+       **zero callers**, and it is absent from QUICKSTART. Retyping to `byte` cannot
+       regress a caller because no caller can compile, and `byte` already exists.
+     * `s[i]` → **BUG-225, expensive.** Typed `char`, holds a raw byte, so it is
+       *silently wrong* for non-ASCII: `"eéx"[1].toString()` prints `Ã`. The selfhost
+       lexer is built on it (`Lexer.zbr:116` `def peek(): char` → `src[pos]`; ~60
+       subscript sites in that file, ~104 across `selfhost/`), and the 559 `c'x'`
+       literals compare against the result — so retyping requires deciding `byte`/`char`
+       comparison rules. That is language design competing directly with the pre-0.9
+       churn freeze.
+
+     **Recommended split: fix BUG-223 now, document BUG-225 for 0.9 and retype in 1.x.**
+     Go and Rust both expose a byte layer and neither pretends an index yields a
+     character; documenting the limit is most of the value and none of the churn.
+     BUG-223 is worth doing regardless of BUG-225, because it leaves users an *honest*
+     byte accessor, which `s[i]` currently is not.
+  3. **State the ceiling in QUICKSTART** — **DONE 2026-07-29.** A codepoint is not a
+     user-perceived character: `é` can be two codepoints, emoji families are many. Swift
+     made `Character` a grapheme cluster for exactly this reason; Rust and Go chose
+     codepoint and documented the limit. Zebra chooses codepoint, so the limit belongs in
+     the docs rather than being discovered by whoever first calls `.chars()` on an emoji.
+     QUICKSTART now has a "Bytes, codepoints, and graphemes" section stating the Go
+     model, the grapheme ceiling, and that grapheme segmentation is *not* provided —
+     plus the BUG-225 gap with the "index for bytes, iterate for characters" guidance.
+
+  **BUG-223 (`charAt` → `byte`) is the one open decision in §28e** — a user-facing API
+  change, so it waits on Sean rather than being slid in. Everything else in the pass is
+  landed. → *Open detail §28e.*
 - [x] **§28f — generic `Set(T)` DONE (2026-07-24).** Distinct `Type_.set_` variant
   emitting `AutoHashMap(T, void)` / `StringHashMap(void)` (str). API: `add`/`contains`/
   `remove`/`len`/`count`/`items`→`List(T)`/`clear`, `for x in set`, `x in set`. Works as
@@ -1000,6 +1045,18 @@ return-path detection if the bootstrap is kept longer.
 `File.read`) — invisible under the program arena, load-bearing inside `allocate`
 scopes and threads. Pre-1.0 task = a per-call borrows-vs-owns table in the
 spec/QUICKSTART, so the 1.5 `str_view` design has defined ground.
+
+**Landed 2026-07-29.** `docs/str_ownership.md` (generated, gated) + QUICKSTART rules.
+The table is DERIVED from emit, not read off codegen, because ~28 near-identical
+classification judgements is precisely the work that drifts — and the derivation found
+two things a reading would have flattened: the owned-container-of-borrowed-elements
+split for `split`/`lines`/`tokenize`, and that `charAt` is a byte VALUE that belongs in
+neither class. Regenerate with `--write` after any string codegen change; `--check` is
+gated so a flip cannot ship silently.
+
+**Ground this hands to the 1.5 `str_view` design:** a view type needs to express *two*
+lifetimes, not one — the container's and the elements'. A `str_view` that only models
+"points into something else" still cannot type `split`'s result correctly.
 
 ## §28f — generic `Set(T)` [DONE — 2026-07-24], from scratch
 

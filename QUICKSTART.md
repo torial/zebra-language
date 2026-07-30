@@ -1127,6 +1127,78 @@ var result = sb.build()              # str (drains the builder)
 | `chars()` | *iterator* | Unicode codepoints (`u21`). **`for`-only** — `for c in s.chars()` works; binding it (`var cs = s.chars()`) does not compile. |
 | `bytes()` | *iterator* | Bytes (`u8` as `int`). **`for`-only** — same restriction as `chars()`. |
 
+### Bytes, codepoints, and graphemes
+
+Zebra follows **Go's string model**, and it is worth stating explicitly because the
+alternative (Swift's) leads to different expectations:
+
+* **`str` is a sequence of bytes** holding UTF-8. `s.len` is a **byte** count.
+* **`char` is a decoded Unicode codepoint** (`u21`), which is what `for c in s.chars()`
+  yields and what a `c'x'` literal denotes.
+* **`byte` is a single `u8`**, which is what `for b in s.bytes()` yields.
+
+The two layers are deliberately distinct: byte operations are O(1) and codepoint
+operations require decoding. Use `.len` when you mean storage, `.codePointCount()` when
+you mean characters, and `.chars()` when you need to look at characters one at a time.
+
+> **A codepoint is not a user-perceived character.** `é` may be one codepoint (U+00E9)
+> or two (`e` + U+0301) depending on normalisation; a flag or a family emoji is several.
+> Neither form is "wrong" — they are different encodings of the same text. So
+> `.codePointCount()` is a codepoint count, **not** a count of what a reader would call
+> characters, and `.chars()` can split a grapheme cluster in half.
+>
+> Zebra makes the same choice as Go and Rust here: expose codepoints, and document the
+> limit rather than hide it. Swift went the other way and made its `Character` a
+> grapheme cluster, which is friendlier for display code and costlier for everything
+> else. If you are measuring text for *layout*, neither `.len` nor `.codePointCount()`
+> is the number you want — you need grapheme segmentation, which Zebra does not provide.
+
+**Known gap (BUG-225):** `s[i]` is currently typed `char` but yields a raw **byte**, so
+for non-ASCII input it produces a codepoint that is not in the string —
+`"eéx"[1].toString()` prints `Ã`, silently. Until that is retyped, **index for bytes and
+iterate for characters**: use `for c in s.chars()` whenever the text may be non-ASCII.
+`.len`, `.codePointCount()`, and `.chars()` are all honest today.
+
+### String ownership: what borrows and what owns
+
+Every `str` in Zebra is a slice. Some operations hand back a slice **pointing into the
+receiver**, and others hand back a **freshly allocated** copy. Under the default program
+arena the difference is invisible, because nothing is freed until the program ends. It
+becomes load-bearing in exactly two places: inside an `allocate` scope, and across
+threads.
+
+* **BORROW** — the result aliases the receiver's bytes. It dies when the receiver does.
+  Never store one past the lifetime of what it points into. `trim`, `substring`, `s[a..b]`.
+* **OWN** — freshly allocated in the program arena, independent of the receiver.
+  `upper`, `lower`, `replace`, `concat`, `repeat`, `format`, `join`, the pad family.
+
+**The case that catches people: an owned container of borrowed elements.** `split`,
+`lines`, and `tokenize` return a `List(str)` that *you own*, whose elements are
+subslices *borrowed from the receiver*:
+
+```zebra
+# WRONG — parts survives the scope; the bytes it points into do not.
+var parts: List(str) = List(str)()
+allocate
+    var line: str = readLine()
+    parts = line.split(",")     # the List is yours; every element points into `line`
+
+# RIGHT — copy the elements you intend to keep.
+allocate
+    var line: str = readLine()
+    for p in line.split(",")
+        parts.add(p.concat(""))  # concat OWNs, so the copy outlives the scope
+```
+
+Holding the container is not enough; the lifetime that matters is that of the
+**receiver**, not of the list.
+
+**The authoritative per-operation table is [`docs/str_ownership.md`](docs/str_ownership.md).**
+It is *generated from real compiler output* by `tools/str_ownership_extract.py` — each row
+carries the emitted Zig it was classified from — and gated, so it cannot drift from the
+compiler without failing a build gate. Consult it rather than a copy; a second hand-maintained
+table is exactly how this kind of documentation goes stale.
+
 ### Raw strings (`r'…'` / `r"…"`)
 
 The `r` prefix makes backslashes literal and disables `${…}` interpolation.

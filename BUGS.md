@@ -1,6 +1,71 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-223. Next new bug: BUG-224.**
+**Last bug number generated: BUG-225. Next new bug: BUG-226.**
+
+---
+
+### BUG-225: indexing a `str` yields a byte typed as `char` — silently wrong for non-ASCII ⬜ OPEN
+Found 2026-07-29 by the §28e derivation. `s[i]` is typed `char` (u21) but holds a raw
+UTF-8 **byte**, so for any multi-byte codepoint it produces a character that is not in
+the string — and it does so silently, with no error at any stage.
+
+```zebra
+def main()
+    var s: str = "eéx"
+    print(s.len.toString())              # 4  — bytes, honest
+    print(s.codePointCount().toString()) # 3  — codepoints, honest
+    print(s[1].toString())               # Ã  — WRONG. byte 0xC3 widened to U+00C3
+    for c in s.chars()
+        print(c.toString())              # e é x — correct
+```
+
+Emitted: `const a_index: u21 = s[@as(usize, @intCast(0))];` — the byte is widened to
+u21, so `.toString()` UTF-8-encodes 0xC3 as the codepoint U+00C3 (`Ã`). Only `chars()`
+is honest, because only `chars()` decodes.
+
+**This is the one string incoherence with a real blast radius, and it is a language
+design call, not a bug fix.** The selfhost compiler's own lexer is built on it —
+`Lexer.zbr:116` is `def peek(): char` returning `src[pos]`, ~60 subscript sites in
+that file alone, ~104 across `selfhost/`, and the 559 `c'x'` literals compare against
+the result. Retyping `s[i]` to `byte` therefore requires deciding how `byte` and `char`
+compare, which is design work.
+
+Options, in ascending cost: (a) **document the limit for 0.9** and retype in 1.x —
+Go and Rust both chose codepoint-with-a-documented-byte-layer and neither pretends an
+index yields a character; (b) retype `s[i]` to `byte` and define `byte`/`char`
+comparison; (c) make `s[i]` on a `str` an error and force `byteAt(i)` or `chars()`,
+which is clearest and most disruptive. **Recommended: (a) for 0.9**, since the fix
+competes directly with the pre-0.9 churn freeze and the honest documentation is most of
+the value. Cross-ref [[§28e]] and BUG-223, which is the same incoherence at zero cost.
+
+---
+
+### BUG-224: `format()` with 2+ arguments emitted invalid Zig ✅ FIXED 2026-07-29
+Found while deriving the §28e ownership table. Both `format` dispatch sites emitted a
+**separate** `.{ x }` tuple per argument, but `std.fmt.allocPrint` takes exactly three
+arguments — `(allocator, fmt, args_tuple)`:
+
+```zebra
+var r = "{} and {}".format(1, 2)
+```
+```zig
+// before — 4 arguments, does not compile
+(std.fmt.allocPrint(_zbr_rt._allocator, "{} and {}", .{ 1 }, .{ 2 }) catch unreachable)
+```
+```
+f1.zbr:2: error: expected 3 argument(s), found 4
+```
+
+The 1-argument case emitted `.{ 1 }` and worked by coincidence, which is why nothing
+caught this: **every existing call in the corpus passes exactly one argument.** A
+0-argument call emitted no tuple at all and passed only 2, so it was equally broken at
+the other end.
+
+Fixed in `selfhost/CodeGen.zbr` at both dispatch sites (~12420 and ~13697): one tuple,
+comma-separated, always emitted — which also fixes the 0-arg case (`.{ }` is a valid
+empty tuple). Regression fixture: `test/bug224_format_multiarg_test.zbr`, which
+deliberately keeps 2-, 3-, mixed-type and computed-argument calls, since a regression
+here is a compile failure rather than a wrong value.
 
 ---
 
@@ -37,6 +102,52 @@ types plus a `bytes()` iterator. Recommendation: make it `byte` — that matches
 implementation and `bytes()`, costs no codegen change, and `s[i..j]`/`chars()` already
 cover the other two intents. Whichever is chosen, it then belongs in the QUICKSTART
 table so the arity checker picks it up.
+
+**Blast radius measured 2026-07-29 (§28e): ZERO, and the method is not merely mistyped
+— it is unusable.** Every way of consuming the result is a compile error today, so no
+working program can contain a call:
+
+```
+print(s.charAt(0))          -> error: expected type 'str', found 'u8'
+s.charAt(0).concat("!")     -> error: no field or member function named 'concat' in 'u8'
+```
+
+`grep -rn '\.charAt(' --include='*.zbr'` across the whole repo — `test/`, `selfhost/`,
+`examples/`, `IDE/` — returns **no callers**, and it is absent from QUICKSTART. There is
+therefore nothing to break: retyping it to `byte` cannot regress a caller, because a
+caller cannot currently compile. `byte` already exists as a documented type (`u8`,
+QUICKSTART line 242), so this needs no new type either.
+
+Note the asymmetry with BUG-225, which is the *same* byte-vs-codepoint incoherence in
+`s[i]`: that one is silently WRONG (it compiles and prints a character not in the
+string) and expensive to fix, while this one is loudly broken and free to fix. Fixing
+BUG-223 also leaves users an honest byte accessor, which `s[i]` is not.
+
+**The exact change, ready to apply on approval.** `selfhost/TypeChecker.zbr` ~1340 —
+`byte` resolves to `Type_.uint_n(8)` (see the same file ~593), so no new type is needed
+and codegen is already correct:
+
+```diff
+-    if name == "substring" or name == "charAt"
++    if name == "substring"
+         return Type_.string_
++    # BUG-223: charAt emits `s[i]`, and indexing a []const u8 yields u8 — a BYTE, not a
++    # str. Grouping it with substring typed it `str`, which made every use of the result
++    # a compile error and left the method with zero callers repo-wide.
++    if name == "charAt"
++        return Type_.uint_n(8)
+```
+
+Four things ship with it, or the fix is half-done:
+1. Guard the emit site. It is `if mname == "charAt" and args.len > 0`, so a 0-arg
+   `s.charAt()` still falls through to an unrelated path — the BUG-222 family.
+2. Add it to QUICKSTART's method tables (it is absent today). There is no "Returns
+   `byte`" table yet, so one is needed — which is also the honest place to say that
+   `bytes()` and `charAt()` are the byte-level pair.
+3. Regenerate `tools/stdlib_signatures.tsv` from QUICKSTART, which then gives arity
+   checking for free and closes item 1 from the other side.
+4. A fixture asserting the result is usable as a byte (arithmetic, comparison to a
+   `byte`), since "it compiles at all" is the entire regression risk here.
 
 ---
 

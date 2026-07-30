@@ -1,0 +1,24 @@
+# BUG-224: `format()` emitted one `.{ x }` tuple PER argument, so allocPrint received
+# N+2 arguments instead of 3. Any call with 2+ args failed to compile with
+# "expected 3 argument(s), found 4"; the 1-arg case worked by coincidence, which is why
+# nothing in the corpus caught it — every existing use passes exactly one argument.
+#
+# This fixture exists to make the arity of the emitted call observable, so keep the
+# multi-argument lines: a regression here is a compile failure, not a wrong value.
+def main()
+    # 1 arg — the case that already worked
+    print("one {}".format(1))
+
+    # 2+ args — the case that did not compile at all
+    print("{} and {}".format(1, 2))
+    print("{} {} {}".format("a", "b", "c"))
+
+    # mixed types in one tuple
+    print("{} is {}".format("answer", 42))
+
+    # a computed argument, to confirm the tuple is built from expressions and not
+    # just literals
+    var n: int = 20
+    print("n doubled is {}".format(n * 2))
+
+    print("bug224_format_multiarg_test: OK")
