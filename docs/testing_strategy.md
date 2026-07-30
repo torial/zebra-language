@@ -125,6 +125,31 @@ in for it.
   and `--turbo` to strip them — SQLite's `assert()` discipline, except ours is a language
   feature. The compiler uses them sparsely. Dogfooding here tests the feature *and* the
   compiler.
+
+  **PILOT RUN 2026-07-30 — feasibility proven, zero bugs found, and the null result is
+  the useful part.** Measured dogfooding gap first: **~733 defs across `selfhost/*.zbr`,
+  7 `require`, 0 `ensure`, 1 `invariant`.** `Parser.zbr` (97 defs) and `TypeChecker.zbr`
+  (129 defs) had none at all. Added a class `invariant` plus `require`/`ensure` to the
+  Parser cursor (`peek`, `peekAt`, `advance`), then rebuilt and ran the corpus.
+
+  * **Feasibility: proven.** The compiler rebuilt itself with contracts live on its own
+    parser; contracts survive regeneration through the bootstrap; QUICK tier 9/9 with
+    smoke 262/262 and a byte-identical round-trip.
+  * **Bugs found: zero.** No contract fired anywhere in the corpus.
+  * **Cost: real but bounded.** Smoke went ~178s → ~210s (~15–20%, and run-to-run
+    variance is wide enough that this is an observation, not a benchmark). `--turbo`
+    strips them, so release builds are unaffected — but our gates run with them ON.
+
+  **The lesson is a correction to the pilot's own design.** I deliberately chose clauses
+  I was *certain* already held, to avoid manufacturing false failures. That choice
+  guaranteed the null result: **a contract you are certain holds is documentation; a
+  contract you are only fairly sure holds is a test.** The productive zone is the
+  uncomfortable middle — properties you *believe* hold but have never checked.
+
+  So the next aim is not "more contracts", it is contracts pointed somewhere invariants
+  are genuinely unverified: `TypeChecker` (129 defs, zero contracts, and the phase whose
+  wrong beliefs produced BUG-215/218/222/223), and CodeGen's index arithmetic. The Parser
+  cursor was the *safest* target and therefore the least informative one.
 - **C3 · Sanitizer runs** of the corpus (ReleaseSafe + UBSan) as a periodic sweep.
 - **C4 · Release checklist**, written once, followed every release.
 

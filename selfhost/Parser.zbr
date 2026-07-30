@@ -711,20 +711,50 @@ class Parser
         .source = source
         .expr_depth = 0
 
+    # Contracts pilot (2026-07-30). Every clause here is a property that is ALREADY
+    # true — the point is to state it so a violation is reported at the point of
+    # breakage instead of surfacing later as a wrong parse or an index panic. Nothing
+    # here is aspirational; an aspirational contract would just be a false failure.
+    #
+    # `--turbo` strips all of this, so release builds are unaffected.
+    invariant
+        .pos >= 0
+        .pos <= .tokens.len
+        .expr_depth >= 0
+
     # -- Cursor ----------------------------------------------------------------
 
     def peek(): Token.Token
+        # The fallback indexes `.tokens.len - 1`, which is at(-1) on an empty list.
+        # The Lexer always emits an EOF token (Lexer.zbr ~948) so this holds for any
+        # lexed input — stating it names the dependency, and catches a hand-built
+        # Parser given an empty token list.
+        require
+            .tokens.len > 0
         if .pos < .tokens.len
             return .tokens.at(.pos)
         return .tokens.at(.tokens.len - 1)
 
     def peekAt(offset: int): Token.Token
+        # `.pos + offset` is used as an index without a lower-bound check, so a
+        # sufficiently negative offset would index at(-n). Every call site today
+        # passes 1 or 2; Lexer.peekAt already carries the sibling guard. Asserting the
+        # SUM rather than the offset states the actual safety condition.
+        require
+            .tokens.len > 0
+            .pos + offset >= 0
         var idx = .pos + offset
         if idx < .tokens.len
             return .tokens.at(idx)
         return .tokens.at(.tokens.len - 1)
 
     def advance()
+        # The cursor only ever moves forward, and never past the end. A parser loop
+        # that fails to advance is the BUG-199 shape (an 18-byte infinite loop), so
+        # monotonicity is worth stating even though it cannot catch that case alone.
+        ensure
+            .pos >= old .pos
+            .pos <= .tokens.len
         if .pos < .tokens.len
             .pos = .pos + 1
 

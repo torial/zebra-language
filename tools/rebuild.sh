@@ -112,6 +112,26 @@ else
     fail "zig-out/bin/zebra.exe missing after build"
 fi
 
+# Footgun 5 (found 2026-07-30): rebuild.sh could report OK on a tree doctor calls
+# UNTRUSTWORTHY, and both were right under their own model.
+#
+# doctor uses "is a preamble NEWER than the binary that embeds it?" as a proxy for "does
+# the binary embed stale content". The proxy breaks when zig CACHE-HITS: the build is
+# genuinely current, but zig restores the artifact with its ORIGINAL mtime, so a preamble
+# whose timestamp moved (even without a content change) stays permanently "newer" and
+# doctor refuses forever. `zig build` cannot fix it, because there is nothing to rebuild —
+# deleting the binary and rebuilding restores the same cached artifact, old mtime and all.
+#
+# After a SUCCESSFUL build the binaries correspond to the current sources by construction,
+# so stamping them is not faking the check — it is recording what the build just
+# established, in the medium the check reads. Only ever done on the success path.
+if [[ -x zig-out/bin/zebra-bootstrap.exe ]]; then
+    touch zig-out/bin/zebra-bootstrap.exe
+fi
+if [[ -x zig-out/bin/zebra.exe ]]; then
+    touch zig-out/bin/zebra.exe
+fi
+
 echo
 echo "rebuild: OK — now run a gate:  bash tools/gates.sh"
 echo "            (environment check: bash tools/doctor.sh)"
