@@ -4,7 +4,42 @@
 
 ---
 
-### BUG-229: TUI apps SEGFAULT at startup — selfhost emit never assigns `_tui_env` ⬜ OPEN
+### BUG-229: TUI apps SEGFAULT at startup — selfhost emit never assigns `_tui_env` ✅ FIXED 2026-07-30
+
+**Fixed** in `selfhost/CodeGen.zbr` (root-`main` injection block): added the
+`if _gui_backend == "tui"` → `_tui_env = _zinit.environ_map;` emit, placed in the
+**bootstrap's position** — after the arena defer, before dep propagation — so the two
+injection blocks stay diffable. This bug existed *because* they drifted; keeping them
+alignable is most of the defence against a fifth instance.
+
+Verified end to end: the scaffolded `main.zig` now assigns `_tui_env` (line ~3934) before
+`Terminal.init` dereferences it, and the built app gets **past** the crash site — it now
+reaches `enableRawMode` and fails cleanly with `GetConsoleFailed` when run with no
+console, which is correct behaviour rather than a segfault.
+
+**Regression guard: `tools/gui_scaffold_check.sh`** — the first check in this repo that
+looks at a GUI path at all. Deliberately aimed at the *class*, not the symbol:
+
+* **Leg 1 (static, and the one that gates):** every global the scaffold declares as
+  `= undefined` must be assigned somewhere in the same file. Naming only `_tui_env` would
+  let the next sibling through silently. Falsified on a doctored scaffold.
+* **Leg 2 (runtime, best-effort):** classify by the FAULT, not the exit code and not the
+  word "panic". A healthy headless tui app panics with `gui init failed` and exits 3 —
+  correct. The BUG-229 signature is a *memory* fault (`memcpy` at `0x0`). The first
+  version of this leg called the healthy case a crash and would have reported this very
+  fix as still broken.
+
+Still uncovered, and printed in the tool's own output so it cannot be forgotten:
+rendering, input, layout, resize, colours. Those need a human. What changed is the line —
+from "no gate touches a GUI" to "no gate touches a GUI **beyond startup**", and all four
+GUI crashes to date lived at startup.
+
+*Diagnosis by Fable (dossier, root cause, and fix sketch); implementation and guard by
+Opus. The dossier was accurate in every particular.*
+
+---
+
+<details><summary>Original report (Fable)</summary>
 Found 2026-07-30 by Sean running `--gui-backend=tui examples/tears_of_the_tuon.zbr`
 (the fourth GUI crash to sit under green gates, per house prophecy: no gate runs a GUI).
 
@@ -55,6 +90,8 @@ then immediate q) would be the regression guard this class has never had.
 **Assigned:** Opus — with Fable's compliments: diagnosis complete, fix located,
 one four-line edit + the rebuild drill, and the honor of closing the fourth
 GUI crash. (Repro: any `--gui-backend=tui` run of any example.)
+
+</details>
 
 ---
 

@@ -4353,6 +4353,18 @@ struct Generator
                 if not .library_mode
                     ei.writeIndent()
                     ei.w.emit("defer _arena.deinit();\n")
+                # BUG-229: the tui scaffold DECLARES `var _tui_env: *std.process.Environ.Map
+                # = undefined;` and passes it to `zz.Terminal.init(_io, _tui_env, …)`, but
+                # nothing assigned it here — so `environ_map.get(name)` dereferenced an
+                # undefined pointer and every tui app segfaulted at 0x0 on startup.
+                # The bootstrap has had this line all along (src/CodeGen.zig ~6431); the
+                # selfhost mirror was written without it, and it only started mattering
+                # when GUI scaffolding moved to selfhost emission. Kept in the bootstrap's
+                # position — after the arena defer, before the dep propagation — so the two
+                # injection blocks stay diffable.
+                if _gui_backend == "tui"
+                    ei.writeIndent()
+                    ei.w.emit("_tui_env = _zinit.environ_map;\n")
                 # Runtime-module: _allocator/_io live in the runtime and are already
                 # shared by every module at every depth, so there is nothing to
                 # propagate — `_initAllocator`/`_initIo` are not even declared per
