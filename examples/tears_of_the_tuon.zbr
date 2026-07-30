@@ -126,10 +126,49 @@ def playerFirst(diff: int, playerAgiSum: int, enemyAgiSum: int): bool
     return playerAgiSum >= enemyAgiSum
 
 # ---------------------------------------------------------------------------
+# Story layer (scene data as pure functions — the episode-authoring surface)
+# ---------------------------------------------------------------------------
+# Ported from TearsOfTheTuon.Story/MapCreationHelper.cs Scene ID=1 (the Intro):
+# four SceneTexts, then the single choice "Get the Cubs". Pages are one string
+# each; "|" separates display lines (the TUI renders one g.text per line).
+# Page 5 is port-added connective tissue (marked); the C# original walks the
+# ArnaThas tile map between the intro and its combats, which the TUI slice
+# does not yet carry.
+
+def introPageCount(): int
+    return 5
+
+def introPage(i: int): str
+    if i == 0
+        return "[ Namal, prince of the maeuws ]||\"I want you to go capture some Tuon cubs so that|they will be slaves to work on my palace.\""
+    if i == 1
+        return "Chief Gratta was roasting a squirrel over a camp fire|when he heard his name being shouted.||\"Chief Gratta! Chief Gratta!\" yelled a young Tuon|warrior running toward him.||\"What is it?\" asked Gratta as he turned the squirrel|over the spit.||\"Someone has stolen the cubs from Arna!\"||Gratta stood when he heard this. \"I will go there at|once. Muster the Tuons in this area.\""
+    if i == 2
+        return "An hour later, Chief Gratta arrived at Arna. The|village was mostly abandoned, but in the distance|Gratta heard the sorrowful pleas to Yah Elyon. The|parents had gone up the hill to Yah Elyon's altar to|plead their case.||Gratta circled the cubs' pen, sniffing. At the edge|of the village he found what he feared.||\"Maeuwan! Those accursed troublemakers! Those|accursed cats!\" Gratta thought as he growled."
+    if i == 3
+        return "The loud crashing sound of tuons approaching caused|Gratta to look up. Two tuons stopped before him.|\"We came as soon as we heard the muster.\"||\"What are your names? I am Chief Gratta.\"||\"I am Gor!\" said one.|\"I am Kav!\" said the other.||\"I have found the scent of Maeuwan. They have done|this. Follow me as we search for the cubs.\"||\"Yes, sir!\" they said in unison."
+    # Port-added bridge (not in the C# scene data): links the intro to the
+    # mountain-road battle the combat slice carries.
+    return "[ The road to Thas ]||Word of the muster ran ahead of the hunters, and the|mountain road emptied of honest folk. Yehu, carrying|news of the stolen cubs down to Thas, walked it alone.||Where the road bends under the cliffs, two ruffians|stepped from the rocks."
+
+# The epilogue is the first Fable-composed material in this world — a coda in
+# the story's own tone, and the hook where authored episodes will attach.
+def epiloguePageCount(): int
+    return 3
+
+def epiloguePage(i: int): str
+    if i == 0
+        return "The ruffians fled or fell, and the road lay quiet.|Yehu cleaned his blade on the mountain grass and|looked back the way he had come.||Smoke stood over Arna, thin and far. Below, the roofs|of Thas caught the late sun."
+    if i == 1
+        return "He thought of the cubs, and of the mothers on the|hill at Yah Elyon's altar.||\"A man cannot carry news slower than his feet,\" he|said to no one, \"but grief runs faster than both.\"||He shouldered his bow and took the downhill road."
+    return "[ Here ends the road-slice of Episode One. ]||Gratta's hunt follows the scent westward. Gor and Kav|keep his flanks. And in Thas, word is about to arrive|that will pull Yehu into the tuons' war.||EPISODE II awaits its composing."
+
+# ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
 # Phases: 0 title  1 chooseWeapon  2 chooseTarget  3 enemyTurn
 #         4 won    5 lost          6 fled
+#         7 story (intro pages)    8 epilogue (post-victory pages)
 
 struct GameModel
     var phase: int
@@ -140,6 +179,7 @@ struct GameModel
     var selWeapon: int
     var round: int
     var xp: int
+    var story: int
     var rngSeed: int
     var log: List(str)
 
@@ -154,10 +194,13 @@ union Msg
     doFlee
     enemyTurn
     restart
+    pageNext
+    getCubs
+    contTale
 
 def init(): GameModel
     var seed = Random.randInt(1, 2000000000)
-    return GameModel(phase: 0, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, rngSeed: seed, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
+    return GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, rngSeed: seed, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
 
 # ---------------------------------------------------------------------------
 # Update helpers (deterministic given the model's seed — testable)
@@ -268,6 +311,25 @@ def attemptFlee(model: GameModel): GameModel
 # Update
 # ---------------------------------------------------------------------------
 
+# "Get the Cubs" (the intro scene's one choice, per the C# original) jumps to
+# the port-added bridge page; from the bridge it enters the difficulty title.
+def chooseGetCubs(model: GameModel): GameModel
+    if model.story < 4
+        return model except story = 4
+    return model except phase = 0, story = 0
+
+# Advance a story/epilogue page (phase 7 or 8). In the intro, pageNext stops
+# at the choice page (the muster) — only Msg.getCubs passes it, so the scene's
+# choice is required by the FSM itself, not just by which buttons the view
+# happens to draw. The last epilogue page likewise holds (restart is the exit).
+def nextPage(model: GameModel): GameModel
+    var last = introPageCount() - 1
+    if model.phase == 8
+        last = epiloguePageCount()
+    if model.story + 1 < last
+        return model except story = model.story + 1
+    return model
+
 def update(model: GameModel, msg: Msg): GameModel
     branch msg
         on Msg.selEasy    return beginBattle(model, 0)
@@ -280,6 +342,9 @@ def update(model: GameModel, msg: Msg): GameModel
         on Msg.doFlee     return attemptFlee(model)
         on Msg.enemyTurn  return runEnemyTurn(model)
         on Msg.restart    return init()
+        on Msg.pageNext   return nextPage(model)
+        on Msg.getCubs    return chooseGetCubs(model)
+        on Msg.contTale   return model except phase = 8, story = 0
 
 # ---------------------------------------------------------------------------
 # View
@@ -355,9 +420,38 @@ def viewWon(g: Gui, model: GameModel)
     g.text("VICTORY — the road is clear.")
     g.text("Yehu earned " + model.xp.toString() + " experience.")
     g.separator()
+    if g.button("Continue the tale")
+        g.send(Msg.contTale)
     if g.button("Play again")
         g.send(Msg.restart)
     drawLog(g, model)
+
+# Render a story page: one g.text per "|"-separated line.
+def drawPage(g: Gui, page: str)
+    for ln in page.split("|")
+        g.text(ln)
+    g.separator()
+
+def viewStory(g: Gui, model: GameModel)
+    drawPage(g, introPage(model.story))
+    if model.story < 3
+        if g.button("Continue")
+            g.send(Msg.pageNext)
+    if model.story == 3
+        if g.button("Get the Cubs")
+            g.send(Msg.getCubs)
+    if model.story == 4
+        if g.button("Stand your ground")
+            g.send(Msg.getCubs)
+
+def viewEpilogue(g: Gui, model: GameModel)
+    drawPage(g, epiloguePage(model.story))
+    if model.story + 1 < epiloguePageCount()
+        if g.button("Continue")
+            g.send(Msg.pageNext)
+    else
+        if g.button("Begin the tale anew")
+            g.send(Msg.restart)
 
 def viewLost(g: Gui, model: GameModel)
     g.text("DEFEAT — Yehu falls on the mountain road.")
@@ -390,6 +484,10 @@ def view(g: Gui, model: GameModel)
         viewLost(g, model)
     if model.phase == 6
         viewFled(g, model)
+    if model.phase == 7
+        viewStory(g, model)
+    if model.phase == 8
+        viewEpilogue(g, model)
 
 def main()
     Gui.run("Tears of the Tuon", 640, 480, init, update, view)

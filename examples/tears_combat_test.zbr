@@ -84,7 +84,7 @@ def main()
     # Fixed-seed model (bypasses init()'s entropy) so the playthrough is
     # reproducible. On Easy, Yehu (35 HP, +2 rolls) should beat two 20-HP
     # Ruffians. We auto-pick the sword and target the first standing enemy.
-    var m = GameModel(phase: 1, diff: 0, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, rngSeed: 12345, log: ["start"])
+    var m = GameModel(phase: 1, diff: 0, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, rngSeed: 12345, log: ["start"])
     var steps = 0
     while m.phase != 4 and m.phase != 5 and steps < 500
         if m.phase == 1
@@ -102,4 +102,26 @@ def main()
     assert m.e0Hp <= 0 and m.e1Hp <= 0, "both Ruffians defeated"
     assert m.pHp > 0, "Yehu survives on Easy"
 
-    print("tears_combat_test: OK  (" + hits.toString() + " hits / " + misses.toString() + " misses; easy " + easyHits.toString() + " vs hard " + hardHits.toString() + "; won in " + steps.toString() + " steps, Yehu " + m.pHp.toString() + " HP)")
+    # --- story FSM: intro pages -> Get the Cubs -> bridge -> title;
+    #     victory -> epilogue pages -> last page holds ---
+    var sm = GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, rngSeed: 1, log: ["start"])
+    sm = update(sm, Msg.pageNext)
+    sm = update(sm, Msg.pageNext)
+    sm = update(sm, Msg.pageNext)
+    assert sm.phase == 7 and sm.story == 3, "three page-turns reach the muster page"
+    sm = update(sm, Msg.pageNext)
+    assert sm.story == 3, "pageNext holds at the choice page (choice required)"
+    sm = update(sm, Msg.getCubs)
+    assert sm.phase == 7 and sm.story == 4, "Get the Cubs jumps to the bridge page"
+    sm = update(sm, Msg.getCubs)
+    assert sm.phase == 0, "the bridge leads to the difficulty title"
+    var em = m
+    em = update(em, Msg.contTale)
+    assert em.phase == 8 and em.story == 0, "victory continues into the epilogue"
+    em = update(em, Msg.pageNext)
+    em = update(em, Msg.pageNext)
+    assert em.story == 2, "two page-turns reach the last epilogue page"
+    em = update(em, Msg.pageNext)
+    assert em.story == 2, "the last epilogue page holds (restart is the exit)"
+
+    print("tears_combat_test: OK  (" + hits.toString() + " hits / " + misses.toString() + " misses; easy " + easyHits.toString() + " vs hard " + hardHits.toString() + "; won in " + steps.toString() + " steps, Yehu " + m.pHp.toString() + " HP; story FSM OK)")

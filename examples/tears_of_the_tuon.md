@@ -14,16 +14,41 @@ zig-out/bin/zebra.exe --gui-backend=tui examples/tears_of_the_tuon.zbr
 # q / Q / Esc to quit.
 ```
 
-`--gui-backend=stub examples/tears_of_the_tuon.zbr` (or plain `zebra run …`)
-renders one frame non-interactively — useful for smoke-checking, not for playing.
+Plain `zebra run …` renders one frame non-interactively — useful for
+smoke-checking, not for playing. (**Not** `--gui-backend=stub`: as of
+2026-07-30 that flag still delegates the build to `zebra-bootstrap.exe`, whose
+older parser rejects this file's return-position `except` — the BUG-204 form
+the selfhost accepts. `zebra run` and the test path go through the selfhost.)
 
 ## What it is
 
-Yehu (the hero) faces two Ruffians on the mountain road — the roster from the
-original story map (`EnemiesList = "Ruffian,Ruffian"`). Each combatant attacks
-with one of **two weapons**; the difficulty you pick (Easy/Medium/Hard) changes
-initiative, hit odds, enemy AI, and flee odds. Win to earn experience; flee to
-bail. It is turn-based: pick a weapon, pick a target, then step the enemies.
+The game now carries **story + combat**. It opens on the ported intro scene
+from the original story project (Namal's order, Chief Gratta at Arna, Gor and
+Kav mustering — `MapCreationHelper.cs` Scene ID=1, text faithful), through the
+scene's one choice ("Get the Cubs"), across a marked port-added bridge page to
+the mountain road, where Yehu (the hero) faces two Ruffians — the roster from
+the original story map (`EnemiesList = "Ruffian,Ruffian"`). Each combatant
+attacks with one of **two weapons**; the difficulty you pick (Easy/Medium/Hard)
+changes initiative, hit odds, enemy AI, and flee odds. Win to earn experience
+and continue into a three-page epilogue (the first **Fable-composed** material
+in this world — the attachment point for authored episodes); flee to bail.
+
+## Story layer (added 2026-07-30)
+
+- **Scene data are pure functions** — `introPage(i)` / `epiloguePage(i)` return
+  one string per page, `|`-separated display lines. This is the episode-
+  authoring surface: adding an episode means adding page functions and an FSM
+  hook, no engine work.
+- **Phases 7 (intro) and 8 (epilogue)** extend the FSM; all pre-existing phase
+  numbers and the pure combat core are untouched.
+- **The choice is structural:** `pageNext` stops at the muster page — only
+  `Msg.getCubs` passes it. The FSM requires the scene's choice; the view's
+  buttons merely reflect that.
+- **Faithfulness note:** intro text is the C# scene's text lightly re-wrapped
+  for the TUI; the image callouts (`namalBW.jpg`) become bracketed captions.
+  The ArnaThas tile-map walk between intro and combats is **not yet ported**
+  (the original plays these scenes at map locations); the bridge page stands
+  in for it and is marked as port-added in the source.
 
 ## Faithful mechanics (ported from `CombatEngine.cs`)
 
@@ -81,8 +106,12 @@ zig-out/bin/zebra.exe run examples/tears_combat_test.zbr
 numbers with fixed seeds: weapon/entity data, `weaponScore`, the enemy weapon AI,
 determinism of `resolveAttack`, the damage floor, "Easy lands ≥ Hard hits" (the
 difficulty bonus), initiative, and an **end-to-end FSM run** that drives `update`
-through a full Easy battle to victory. It is co-located in `examples/` (not the
+through a full Easy battle to victory — plus a **story-FSM walk**: intro pages →
+choice-page hold (`pageNext` can't skip it) → "Get the Cubs" → bridge → title,
+and victory → epilogue → last-page hold. It is co-located in `examples/` (not the
 gated `test/` suite) so it can resolve the app by module name; run it manually.
+The 2026-07-30 story additions left every combat number identical (140/60 hits,
+victory in 4 steps on the fixed seed) — the pure core is untouched.
 
 ## Compiler gaps found — now dissolved
 
