@@ -295,6 +295,77 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
 > invites re-litigating decisions already shipped.
 
 
+## HARDENING PROGRAMME — adopted 2026-07-30, ahead of 0.9
+
+**Sean's framing, verbatim (2026-07-30):** *"I'd much rather a system that has no
+surprises for anyone (or as little as possible) rather than more new features (not that
+I don't want features!)"* — and **0.9 may slip as far as needed** to buy real quality
+information. That reorders the queue: the items below come BEFORE the 0.9 ship.
+
+Full reasoning, including what we deliberately do NOT copy from SQLite and why, is in
+**`docs/testing_strategy.md`**. Summary of the ranked plan:
+
+- [x] **A1 — bug-fixture gate. DONE 2026-07-30.** Every FIXED `BUG-NNN` must be pinned by
+  a test that actually RUNS. `tools/bug_fixture_check.py`, gated in the QUICK tier and
+  falsified in `gate_selfcheck.sh`. **First measurement: 175 fixed bugs, only 64 pinned by
+  a test that runs, 104 with no fixture, 7 with a fixture nothing executes.** Debt is
+  baselined (111) so the gate fails on NEW debt only; the count prints every run so it
+  cannot become invisible. "Exercised" deliberately includes fixtures driven by another
+  tool or imported by a registered test — a gate that cries wolf gets switched off.
+- [x] **A4 — OOM policy. DONE 2026-07-30.** `unreachable` is **undefined behaviour** in
+  ReleaseFast, and `zebra --release` builds with `-OReleaseFast` — so an out-of-memory
+  condition in a *user's shipped program* was UB, not a clean failure. **21 allocation
+  sites fixed** (20 emit sites in `CodeGen.zbr` + 1 in `stdlib_preamble.zig`) to
+  `catch @panic("OOM")`, which aborts cleanly with a message in every build mode and is
+  already what ~148 sibling sites do. Verified end-to-end: an emitted user program now
+  carries `allocUpperString(...) catch @panic("OOM")`.
+
+  **Why no gate could ever have caught this, which is the transferable part:** every gate
+  runs the DEFAULT build, and the default is Debug (self-hosted backend, no `-O`), where
+  `unreachable` traps cleanly. The hazard was invisible in testing and live only in the
+  artifact users distribute. Works in test, undefined in production. A static lint is the
+  only possible witness → `tools/lint_oom_unreachable.py`, gated in QUICK and falsified in
+  `gate_selfcheck.sh`. Two `std.fmt.bufPrint` sites keep `catch unreachable` deliberately:
+  the buffer is sized exactly, so the error is impossible rather than merely unlikely, and
+  the exemption list is kept narrow on purpose.
+
+  *Build-mode note (Sean, 2026-07-30 — "whichever is fastest for our tests"): no tradeoff
+  exists. The default fast backend (`-fno-llvm -fno-lld`, Debug) is both the fastest to
+  compile (~6×) and the mode where `unreachable` traps. Tests are already on it.*
+- [ ] **A2 — behaviour differential across emit modes.** runtime-module vs
+  `--no-runtime-module`, fast backend vs LLVM, `--turbo` vs normal, `zebra run` vs a built
+  exe: all must behave IDENTICALLY, and we currently compare only compilability.
+  `tools/output_sweep.sh` makes this nearly free. `--turbo` (strips contracts) is the
+  least-tested path we ship.
+- [ ] **A3 — boundary-value suite, written from INTENT not recorded.** 0/1/N args, empty
+  string, min/max int, empty collections, deep nesting, long identifiers, non-ASCII, nil
+  at every position. BUG-224 and BUG-223 were both boundary bugs found by accident; we
+  have never looked systematically. This is also the antidote to the golden-baseline
+  limitation — recorded baselines cannot find day-one wrongness.
+- [ ] **B2 spike (1 day) — is branch coverage feasible on Windows/Zig at all?** Decide
+  B1-vs-B2 on evidence. One option worth the look: teaching Zebra itself to emit coverage
+  counters, which would serve users too.
+- [ ] **B1 — mutation testing of the compiler.** Perturb `CodeGen.zbr`/`TypeChecker.zbr`,
+  rebuild, see whether ANY gate notices. Yields *"our gates catch N% of changes to the
+  compiler"* — the honest substitute for a coverage number, and the only item that
+  measures what we are NOT testing. Overnight tool, ~2 days to build.
+- [ ] **C tier, post-0.9** — mutation fuzzing of valid programs (dbsqlfuzz's actual
+  trick; gramgen *generates*, nothing *mutates*), contract density inside the compiler,
+  periodic sanitizer sweeps, a release checklist.
+
+**Known and not addressed by any of this: no gate clicks a GUI.** Doing it properly needs
+per-target-OS build and test infrastructure Sean does not have available (his call,
+2026-07-30). Six green gates once sat on top of three real GUI crashes; that remains a
+human job and should not be papered over by how thorough the rest looks.
+
+**Supporting infrastructure landed 2026-07-29/30 (see `docs/testing_strategy.md` §2):**
+`tools/output_sweep.sh` — THE BEHAVIOUR GATE. Every other heavy gate asks "does the
+emitted Zig compile?"; none of them ran anything, so valid Zig producing WRONG OUTPUT was
+invisible to all of them (BUG-226). 327 corpus programs golden-baselined; nondeterminism
+is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
+
+---
+
 - [ ] **§28a step 4 — inference-or-error language flip (selfhost).** Phase 1 (measure)
   DONE 2026-07-15: instrumented the 3 selfhost guess sites; 80 unique sites but ~0 genuine
   ambiguity — the gap is selfhost *inference strength*, not a flip. **Step 2 open: close the

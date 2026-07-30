@@ -10137,7 +10137,7 @@ pub const Generator = struct {
             }
         }
 // zbr:selfhost/CodeGen.zbr:3480
-        self.w.emit("}) catch unreachable;\n");
+        self.w.emit("}) catch @panic(\"OOM\");\n");
 // zbr:selfhost/CodeGen.zbr:3481
         self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:3482
@@ -26744,7 +26744,7 @@ pub const Generator = struct {
                             self.genExpr(a.value);
                         }
 // zbr:selfhost/CodeGen.zbr:12085
-                        self.w.emit(" }) catch unreachable)");
+                        self.w.emit(" }) catch @panic(\"OOM\"))");
 // zbr:selfhost/CodeGen.zbr:12086
                         return;
                     }
@@ -26863,7 +26863,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:12147
                         self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:12148
-                        self.w.emit(") catch unreachable)");
+                        self.w.emit(") catch @panic(\"OOM\"))");
 // zbr:selfhost/CodeGen.zbr:12149
                         return;
                     }
@@ -26874,7 +26874,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:12152
                         self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:12153
-                        self.w.emit(") catch unreachable)");
+                        self.w.emit(") catch @panic(\"OOM\"))");
 // zbr:selfhost/CodeGen.zbr:12154
                         return;
                     }
@@ -26973,7 +26973,7 @@ pub const Generator = struct {
                             self.genExpr(a.value);
                         }
 // zbr:selfhost/CodeGen.zbr:12202
-                        self.w.emit(") catch unreachable)");
+                        self.w.emit(") catch @panic(\"OOM\"))");
 // zbr:selfhost/CodeGen.zbr:12203
                         return;
                     }
@@ -26988,7 +26988,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:12208
                         self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:12209
-                        self.w.emit(") catch unreachable; break :blk_rep std.mem.concat(_allocator, u8, _rep.items) catch unreachable; })");
+                        self.w.emit(") catch @panic(\"OOM\"); break :blk_rep std.mem.concat(_allocator, u8, _rep.items) catch @panic(\"OOM\"); })");
 // zbr:selfhost/CodeGen.zbr:12210
                         return;
                     }
@@ -27331,7 +27331,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:12369
                         self.genExpr(args.items[@as(usize, @intCast(0))].value);
 // zbr:selfhost/CodeGen.zbr:12370
-                        self.w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })");
+                        self.w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })");
 // zbr:selfhost/CodeGen.zbr:12371
                         return;
                     }
@@ -27461,7 +27461,7 @@ pub const Generator = struct {
                             fmt_first = false;
                         }
 // zbr:selfhost/CodeGen.zbr:12434
-                        self.w.emit(" }) catch unreachable)");
+                        self.w.emit(" }) catch @panic(\"OOM\"))");
 // zbr:selfhost/CodeGen.zbr:12435
                         return;
                     }
@@ -28743,7 +28743,7 @@ pub const Generator = struct {
                 self.genExpr(a.value);
             }
 // zbr:selfhost/CodeGen.zbr:13077
-            self.w.emit(" }) catch unreachable)");
+            self.w.emit(" }) catch @panic(\"OOM\"))");
 // zbr:selfhost/CodeGen.zbr:13078
             return;
         }
@@ -28883,7 +28883,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:13146
             self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:13147
-            self.w.emit(") catch unreachable)");
+            self.w.emit(") catch @panic(\"OOM\"))");
 // zbr:selfhost/CodeGen.zbr:13148
             return;
         }
@@ -28894,7 +28894,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:13151
             self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:13152
-            self.w.emit(") catch unreachable)");
+            self.w.emit(") catch @panic(\"OOM\"))");
 // zbr:selfhost/CodeGen.zbr:13153
             return;
         }
@@ -28946,7 +28946,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:13178
                     self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:13179
-                    self.w.emit("}) catch unreachable)");
+                    self.w.emit("}) catch @panic(\"OOM\"))");
                 }
 // zbr:selfhost/CodeGen.zbr:13180
                 return;
@@ -29567,7 +29567,7 @@ pub const Generator = struct {
                 self.genExpr(a.value);
             }
 // zbr:selfhost/CodeGen.zbr:13486
-            self.w.emit(") catch unreachable)");
+            self.w.emit(") catch @panic(\"OOM\"))");
 // zbr:selfhost/CodeGen.zbr:13487
             return;
         }
@@ -29582,7 +29582,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:13492
             self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:13493
-            self.w.emit(") catch unreachable; break :blk_rep std.mem.concat(_allocator, u8, _rep.items) catch unreachable; })");
+            self.w.emit(") catch @panic(\"OOM\"); break :blk_rep std.mem.concat(_allocator, u8, _rep.items) catch @panic(\"OOM\"); })");
 // zbr:selfhost/CodeGen.zbr:13494
             return;
         }
@@ -29925,7 +29925,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:13653
             self.genExpr(args.items[@as(usize, @intCast(0))].value);
 // zbr:selfhost/CodeGen.zbr:13654
-            self.w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })");
+            self.w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })");
 // zbr:selfhost/CodeGen.zbr:13655
             return;
         }
@@ -30055,7 +30055,7 @@ pub const Generator = struct {
                 fmt2_first = false;
             }
 // zbr:selfhost/CodeGen.zbr:13715
-            self.w.emit(" }) catch unreachable)");
+            self.w.emit(" }) catch @panic(\"OOM\"))");
 // zbr:selfhost/CodeGen.zbr:13716
             return;
         }
@@ -32034,7 +32034,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:14698
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:14699
-            self.w.emit("    while (_fl_it.next()) |_fl_line| { _fl_list.append(_allocator, _fl_line) catch unreachable; }\n");
+            self.w.emit("    while (_fl_it.next()) |_fl_line| { _fl_list.append(_allocator, _fl_line) catch @panic(\"OOM\"); }\n");
 // zbr:selfhost/CodeGen.zbr:14700
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:14701
@@ -32430,7 +32430,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:14900
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:14901
-            self.w.emit("    for (_sa_raw) |_sa_arg| _sa_list.append(_allocator, _sa_arg) catch unreachable;\n");
+            self.w.emit("    for (_sa_raw) |_sa_arg| _sa_list.append(_allocator, _sa_arg) catch @panic(\"OOM\");\n");
 // zbr:selfhost/CodeGen.zbr:14902
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:14903

@@ -3477,7 +3477,7 @@ struct Generator
                 first_arg = false
                 w.emit("self.")
                 w.emit(fld.name)
-        w.emit("}) catch unreachable;\n")
+        w.emit("}) catch @panic(\"OOM\");\n")
         writeIndent()
         w.emit("}\n")
 
@@ -12082,7 +12082,7 @@ struct Generator
                         for a in args
                             w.emit(", ")
                             genExpr(a.value)
-                        w.emit(" }) catch unreachable)")
+                        w.emit(" }) catch @panic(\"OOM\"))")
                         return
                     if mname == "startsWith"
                         w.emit("std.mem.startsWith(u8, ")
@@ -12145,12 +12145,12 @@ struct Generator
                     if mname == "upper"
                         w.emit("(std.ascii.allocUpperString(_allocator, ")
                         genExpr(m.object)
-                        w.emit(") catch unreachable)")
+                        w.emit(") catch @panic(\"OOM\"))")
                         return
                     if mname == "lower"
                         w.emit("(std.ascii.allocLowerString(_allocator, ")
                         genExpr(m.object)
-                        w.emit(") catch unreachable)")
+                        w.emit(") catch @panic(\"OOM\"))")
                         return
                     if mname == "toString"
                         # BUG-178: str.toString() is identity — the receiver is already a
@@ -12199,14 +12199,14 @@ struct Generator
                         for a in args
                             w.emit(", ")
                             genExpr(a.value)
-                        w.emit(") catch unreachable)")
+                        w.emit(") catch @panic(\"OOM\"))")
                         return
                     if mname == "repeat" and args.len > 0
                         w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
                         genExpr(args.at(0).value)
                         w.emit(") : (_ri += 1) _rep.append(_allocator, ")
                         genExpr(m.object)
-                        w.emit(") catch unreachable; break :blk_rep std.mem.concat(_allocator, u8, _rep.items) catch unreachable; })")
+                        w.emit(") catch @panic(\"OOM\"); break :blk_rep std.mem.concat(_allocator, u8, _rep.items) catch @panic(\"OOM\"); })")
                         return
                     if mname == "trimLeft"
                         w.emit("std.mem.trimStart(u8, ")
@@ -12367,7 +12367,7 @@ struct Generator
                         genExpr(m.object)
                         w.emit(", ")
                         genExpr(args.at(0).value)
-                        w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })")
+                        w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })")
                         return
                     if mname == "encodeBase64"
                         w.emit("_base64_encode(")
@@ -12431,7 +12431,7 @@ struct Generator
                                 w.emit(", ")
                             genExpr(a.value)
                             fmt_first = false
-                        w.emit(" }) catch unreachable)")
+                        w.emit(" }) catch @panic(\"OOM\"))")
                         return
                 else
                     pass
@@ -13074,7 +13074,7 @@ struct Generator
             for a in args
                 w.emit(", ")
                 genExpr(a.value)
-            w.emit(" }) catch unreachable)")
+            w.emit(" }) catch @panic(\"OOM\"))")
             return
         if mname == "startsWith"
             w.emit("std.mem.startsWith(u8, ")
@@ -13144,12 +13144,12 @@ struct Generator
         if mname == "upper"
             w.emit("(std.ascii.allocUpperString(_allocator, ")
             genExpr(m.object)
-            w.emit(") catch unreachable)")
+            w.emit(") catch @panic(\"OOM\"))")
             return
         if mname == "lower"
             w.emit("(std.ascii.allocLowerString(_allocator, ")
             genExpr(m.object)
-            w.emit(") catch unreachable)")
+            w.emit(") catch @panic(\"OOM\"))")
             return
         if mname == "toString"
             # Types with a real toString() method (user-defined or @derive(Debug)) — don't intercept.
@@ -13176,7 +13176,7 @@ struct Generator
                 else
                     w.emit("(std.fmt.allocPrint(_allocator, \"{}\", .{")
                     genExpr(m.object)
-                    w.emit("}) catch unreachable)")
+                    w.emit("}) catch @panic(\"OOM\"))")
                 return
         if mname == "toFloat"
             # Mirror `toInt`'s str-vs-numeric dispatch: a string parses
@@ -13483,14 +13483,14 @@ struct Generator
             for a in args
                 w.emit(", ")
                 genExpr(a.value)
-            w.emit(") catch unreachable)")
+            w.emit(") catch @panic(\"OOM\"))")
             return
         if mname == "repeat" and args.len > 0
             w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
             genExpr(args.at(0).value)
             w.emit(") : (_ri += 1) _rep.append(_allocator, ")
             genExpr(m.object)
-            w.emit(") catch unreachable; break :blk_rep std.mem.concat(_allocator, u8, _rep.items) catch unreachable; })")
+            w.emit(") catch @panic(\"OOM\"); break :blk_rep std.mem.concat(_allocator, u8, _rep.items) catch @panic(\"OOM\"); })")
             return
         if mname == "trimLeft"
             w.emit("std.mem.trimStart(u8, ")
@@ -13651,7 +13651,7 @@ struct Generator
             genExpr(m.object)
             w.emit(", ")
             genExpr(args.at(0).value)
-            w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch unreachable; } break :blk_tok _tok_list; })")
+            w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })")
             return
         if mname == "encodeBase64"
             w.emit("_base64_encode(")
@@ -13712,7 +13712,7 @@ struct Generator
                     w.emit(", ")
                 genExpr(a.value)
                 fmt2_first = false
-            w.emit(" }) catch unreachable)")
+            w.emit(" }) catch @panic(\"OOM\"))")
             return
         # BUG-027: expression-position chain fix — f().method(args) must materialise
         # the temporary as a mutable var so the pointer-receiver method can take *T.
@@ -14696,7 +14696,7 @@ struct Generator
             writeIndent()
             w.emit("    var _fl_it = std.mem.splitScalar(u8, _fl_content, '\\n');\n")
             writeIndent()
-            w.emit("    while (_fl_it.next()) |_fl_line| { _fl_list.append(_allocator, _fl_line) catch unreachable; }\n")
+            w.emit("    while (_fl_it.next()) |_fl_line| { _fl_list.append(_allocator, _fl_line) catch @panic(\"OOM\"); }\n")
             writeIndent()
             w.emit("    break :blk_frl _fl_list;\n")
             writeIndent()
@@ -14898,7 +14898,7 @@ struct Generator
             writeIndent()
             w.emit("    var _sa_list = std.ArrayList([]const u8).empty;\n")
             writeIndent()
-            w.emit("    for (_sa_raw) |_sa_arg| _sa_list.append(_allocator, _sa_arg) catch unreachable;\n")
+            w.emit("    for (_sa_raw) |_sa_arg| _sa_list.append(_allocator, _sa_arg) catch @panic(\"OOM\");\n")
             writeIndent()
             w.emit("    break :blk_sa _sa_list;\n")
             writeIndent()

@@ -177,6 +177,28 @@ JOBS=3 bash tools/compile_check.sh --no-runtime-module  # the SAME corpus with t
                                 #   otherwise go unwatched — and it stays live via the opt-out
                                 #   and as the fallback for --single-file / node-addon / every
                                 #   --gui-backend. 217/0/1, identical to the default. FULL tier.
+bash tools/output_sweep.sh --gate  # THE BEHAVIOUR WITNESS — the only heavy gate that
+                                #   RUNS the corpus and reads what it PRINTED. Everything
+                                #   else in the FULL tier asks "does the emitted Zig
+                                #   compile?", so valid Zig producing WRONG OUTPUT is
+                                #   invisible to all of them at any corpus size (BUG-226:
+                                #   a for-header `tokenize` emitted {any} and printed
+                                #   `{ 97 }` for `a` — perfectly good Zig).
+                                #   327 of the 335 compile-clean files, golden-baselined.
+                                #   NONDETERMINISM IS DERIVED, never hand-listed:
+                                #   --update-baseline runs every file TWICE and auto-
+                                #   excludes any whose output differs, recording the
+                                #   reason (8 today: clocks, timings, racy panics, and 3
+                                #   server fixtures that never terminate). A hand-written
+                                #   skip list rots and silently shrinks coverage.
+                                #   LIMIT: golden baseline = catches REGRESSIONS, not
+                                #   existing wrongness — same limit full_sweep_baseline
+                                #   has. It refuses to write a baseline that is >25%
+                                #   empty, so a broken capture cannot become a gate that
+                                #   is green forever while measuring silence.
+                                #   Sequential by design (parallel fixtures interfere).
+                                #   --update-baseline to re-record, --only for a tight
+                                #   loop, --show to see what is being captured.
 JOBS=2 bash tools/full_sweep.sh --gate   # THE FULL-CORPUS WITNESS: emits + zig-
                                 #   typechecks EVERY test/*.zbr (403), not just the ~210
                                 #   compile_check covers. --gate fails on REGRESSION vs
@@ -207,6 +229,29 @@ valid Zig. It would have survived every tier indefinitely. What catches this cla
 **run-and-compare fixture** — a `smoke_run` with expected output — which is why a
 rendering or semantics fix should always land with one, and why "compile_check is the
 independent witness" means *witness to compilability*, not to correctness of behaviour.
+
+**`tools/output_sweep.sh` (added 2026-07-30) closes most of that gap** — see its entry
+below. Behaviour coverage went from 126 files to 327. It does not remove the need for a
+`smoke_run` on a new fix: the sweep is a *golden* baseline, so it can only tell you
+behaviour CHANGED, never that it was right to begin with.
+
+### Which property does each gate actually assert?
+
+Worth keeping straight, because "how many gates are green" answers a different question
+than "what do we know":
+
+| property | asserted by | corpus coverage |
+|---|---|---|
+| front end doesn't error | `smoke` (bare helper — emit only, does **not** compile) | 101 |
+| emitted Zig compiles | `compile_check`, `full_sweep`, `divergence` | 335 |
+| compiler is self-consistent | `bootstrap_check` (round-trip) | selfhost only |
+| **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **327** |
+| parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
+| static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
+| generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
+| **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
+
+The last row is the one that keeps the rest honest; see its header for why.
 
 ## What the gates do NOT cover — and when it was last checked
 

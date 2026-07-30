@@ -200,6 +200,90 @@ else
     note "str-ownership: skipped (no generated table)"
 fi
 
+# ── oom-unreachable: an allocation with `catch unreachable` must be caught ───
+# The hazard is UB in ReleaseFast only, so no runtime gate can see it — this lint is the
+# sole witness, which makes proving it still fires more than usually important.
+r=$(run_checker $PY tools/lint_oom_unreachable.py)
+case "$r" in
+    CRASH*)       bad "oom-unreachable lint CRASHED: ${r#CRASH }" ;;
+    *"0 hazard"*) : ;;   # clean baseline as expected; the planted leg is below
+    *)            bad "oom-unreachable lint is NOT clean on an unperturbed tree: $r" ;;
+esac
+if printf '%s' "$r" | grep -q '0 hazard'; then
+    cp selfhost/CodeGen.zbr "$OUT/cg.bak"
+    printf '\ndef _selfcheckProbe()\n    w.emit("_allocator.alloc(u8, 4) catch unreachable")\n' \
+        >> selfhost/CodeGen.zbr
+    r2=$(run_checker $PY tools/lint_oom_unreachable.py)
+    cp "$OUT/cg.bak" selfhost/CodeGen.zbr
+    case "$r2" in
+        CRASH*)       bad "oom-unreachable lint CRASHED on the planted hazard: ${r2#CRASH }" ;;
+        *"1 hazard"*) pass "oom-unreachable lint fires on a planted allocation (clean 0 -> 1)" ;;
+        *)            bad "oom-unreachable lint did NOT fire on a planted allocation: $r2" ;;
+    esac
+fi
+
+# ── bug-fixture: a newly FIXED bug with no test must be caught ───────────────
+# Plants a synthetic FIXED bug in BUGS.md that no fixture covers. Restored immediately.
+if [ -f tools/bug_fixture_baseline.txt ]; then
+    base=$(run_rc $PY tools/bug_fixture_check.py --gate)
+    if [ "$base" -ne 0 ]; then
+        note "bug-fixture: skipped (--gate already fails rc=$base on the UNPERTURBED tree)"
+    else
+        cp BUGS.md "$OUT/BUGS.bak"
+        $PY - <<'PYEOF'
+import pathlib
+p = pathlib.Path("BUGS.md"); s = p.read_text(encoding="utf-8")
+i = s.index("\n---\n") + 5
+p.write_text(s[:i] + "\n### BUG-901: planted by gate_selfcheck, no fixture FIXED\nSynthetic.\n\n---\n" + s[i:],
+             encoding="utf-8", newline="\n")
+PYEOF
+        got=$(run_rc $PY tools/bug_fixture_check.py --gate)
+        cp "$OUT/BUGS.bak" BUGS.md
+        # rc alone is ambiguous — a crash also exits 1 — so require the planted bug be NAMED.
+        if [ "$got" -eq 1 ] && printf '%s' "$LAST_OUT" | grep -q 'BUG-901'; then
+            pass "bug-fixture catches a newly FIXED bug with no test (and names it)"
+        elif [ "$got" -eq 0 ]; then
+            bad "bug-fixture accepted a FIXED bug with NO fixture"
+        else
+            bad "bug-fixture rc=$got without naming BUG-901 — crash, not a verdict: $LAST_OUT"
+        fi
+    fi
+else
+    note "bug-fixture: skipped (no baseline — run --update-baseline)"
+fi
+
+# ── output-sweep: a perturbed RECORDED OUTPUT must be caught ─────────────────
+# The behaviour gate compares what each corpus program PRINTS against a golden baseline.
+# Perturbing one recorded output stands in for a codegen change that alters behaviour.
+# Scoped with --only so this stays a few seconds rather than a full corpus run.
+if [ -f tools/output_baseline.txt ]; then
+    base=$(run_rc bash tools/output_sweep.sh --gate --only any_all_test)
+    if [ "$base" -ne 0 ]; then
+        note "output-sweep: skipped (--gate already fails rc=$base on the UNPERTURBED"
+        note "        baseline, so catching a planted change would prove nothing)"
+    else
+        cp tools/output_baseline.txt "$OUT/outbase.bak"
+        $PY - <<'PYEOF'
+import pathlib
+p = pathlib.Path("tools/output_baseline.txt")
+s = p.read_text(encoding="utf-8")
+i = s.index("=== any_all_test ")
+j = s.index("=== ", i + 10)
+p.write_text(s[:i] + s[i:j].replace("true", "false", 1) + s[j:],
+             encoding="utf-8", newline="\n")
+PYEOF
+        got=$(run_rc bash tools/output_sweep.sh --gate --only any_all_test)
+        cp "$OUT/outbase.bak" tools/output_baseline.txt
+        case "$got" in
+            1) pass "output-sweep catches a changed program output (clean 0 -> planted 1)" ;;
+            0) bad "output-sweep accepted a PERTURBED recorded output" ;;
+            *) bad "output-sweep CRASHED (rc=$got) instead of reporting: $LAST_OUT" ;;
+        esac
+    fi
+else
+    note "output-sweep: skipped (no behaviour baseline — run --update-baseline)"
+fi
+
 # ── round-trip: the freshness property whose absence made it vacuous ─────────
 # The emits compared must be FRESH selfhost output, not copies of the committed
 # bootstrap-emitted files. Checkable only if a prior full run left the dirs.
@@ -216,7 +300,7 @@ fi
 # ── honest inventory of what is NOT self-checked ─────────────────────────────
 echo
 echo "  NOT self-checked (no cheap falsification — do not read the above as full coverage):"
-echo "    smoke            — 260 fixtures; a planted failure means editing the suite"
+echo "    smoke            — 262 fixtures; a planted failure means editing the suite"
 echo "    full_sweep       — falsifying it means corrupting the baseline (25+ min to re-run)"
 echo "    divergence       — needs both compilers over the whole corpus (~20 min)"
 echo "    runtime-module   — its own size/BUG-221 assertions are already adversarial"

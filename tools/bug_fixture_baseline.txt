@@ -1,0 +1,115 @@
+# DERIVED by tools/bug_fixture_check.py --update-baseline.
+# Fixed bugs that are NOT pinned by a test that actually runs. This is DEBT,
+# recorded so the gate can fail on NEW debt without failing on the backlog.
+# Shrinking this list is good; it should never grow.
+1	Static method calling static method emits `self.` prefix — FIXED
+2	`guard` + `try_postfix` runtime error propagation — CLOSED (test quali
+3	HTTP `serve` fails on Windows with "comptime call of extern function" 
+4	`padLeft/padRight/center` — fill char `'*'` passed as string to `u8` p
+5	`{d:0>N}` format adds `+` prefix to positive `i64` in Zig 0.15 — FIXED
+6	`zig"..."` expression statement emits double semicolon — FIXED both si
+7	`String + String` string concatenation not handled — FIXED
+8	Mutation scanner — `.unknown` TC type caused spurious `var` — FIXED
+9	(a): Escape analysis — field writes not propagated — FIXED
+10	Partial class — duplicate method silently appended — FIXED
+11	`tcTypeAnnotation` — comprehensive type annotation for `var` locals
+12	`_type_id` uninitialized for classes without explicit `cue init` — FIX
+13	`collectEnumMembers` — blank-line leaf detection used structural compa
+15	`scanMutationsInto` missing `.assert` case — FIXED
+16	`inferMember` didn't unwrap optional type before member lookup — FIXED
+18	Top-level `def` referenced inside class method set `uses_self = true` 
+19	`fn_ref` assignment missing `&` prefix in selfhost codegen — FIXED
+20	`branch/on` call-expr pattern emitted wrong Zig — FIXED
+21	Struct `cue init` stamped `_type_tag` (class-only field) — FIXED
+22	`boxed_variants` not cloned in `cloneInterface` — FIXED
+23	Multi-line `cue init` blocked by indentation validator — FIXED
+24	`throws` auto-propagation missing — FIXED
+25	`scanMutationsInExpr` didn't recurse into `.try_` nodes — FIXED
+28	Zebra (Zig-backend) emits pointer addresses into identifier names — FI
+31	Selfhost `except` codegen emits `.*` on value-typed subject — FIXED
+32	Selfhost codegen.zbr emits `.remove` unconditionally as `.orderedRemov
+33	Selfhost `.contains()` on class-field HashMap emits `List.contains` fo
+34	Selfhost emits cross-module union construction as struct call — FIXED
+35	Selfhost parser has no atom handler for `doc_string_line` (`"""..."""`
+36	Selfhost HashMap field `[key]` subscript emits array-index with bogus 
+37	Selfhost corpus-failure triage — RESOLVED 2026-04-19
+38	Selfhost emits `int.toString()` as codepoint-to-UTF8 encode, not integ
+39	Selfhost mutation scanner marks string-method receiver as `var` — FIXE
+40	Selfhost `print` emits `{}` instead of `{s}` for strings — FIXED 2026-
+42	Selfhost cross-module struct ctor missing `.init` — FIXED 2026-04-19
+43	Selfhost `Mod.Union.variant(v)` emits fn-call not struct-init — FIXED 
+44	Selfhost cross-module branch pattern collapses variant tag to union ty
+46	Selfhost partial-class sibling file merge — FIXED 2026-04-19
+47	Field-read + field-assign on `^Class?` emitted stale boxing after BUG-
+48	Selfhost resolver does not register enum names — FIXED
+49	Selfhost parser drops field initializers — FIXED
+50	Selfhost branch-on drops multi-pattern lists and inline-else — FIXED
+51	Selfhost genRaise drops the 2-arg `raise msg, details` form — FIXED (p
+52	Selfhost parseUnary drops the `try expr` prefix form — FIXED
+53	Selfhost parseAtom rejects the `zig"..."` / `zig'...'` backend literal
+55	Selfhost parsePostfix drops `expr.get(args)` / `expr.post(args)` metho
+56	Selfhost parser rejects `r"..."` / `r'...'` raw string literals — FIXE
+57	Selfhost parseStmt rejects `arena` scope blocks — FIXED
+58	Selfhost parseStmt rejects `with target` contextual-self blocks — FIXE
+59	Selfhost parseStmt rejects `guard ... else` blocks — FIXED
+60	a: Selfhost parseOr drops the `orelse` binary op — FIXED
+61	Selfhost `genMemberCall` rewrites `ClassName.add(...)` to List.append 
+62	Selfhost parseTopDecl rejects the `namespace` keyword — FIXED
+63	Selfhost parseWhileStmt rejects `while var id = init, cond` bind-and-g
+64	Selfhost parseTopDecl rejects the `interface` keyword — FIXED
+65	Selfhost parseTopDecl rejects the `extend Type` keyword — FIXED
+66	Selfhost eatTypeName rejects sized numeric type names (int32/uint8/flo
+67	Selfhost parseMemberDecl rejects the `get name as T` computed-property
+68	Selfhost parser rejects generic-arg `?` suffix and `name:` labeled cal
+69	Selfhost parser missing `expr is TypeName` type-check — FIXED
+70	Selfhost parser missing `var {x, y} = expr` struct/tuple destructuring
+71	Selfhost TypeChecker misses string-method return types; str.count(subs
+72	Tokenizer suppresses EOL/INDENT/DEDENT inside parens — statement-body 
+74	`Result.ok` / `Result.err` constructor syntax — REMOVED 2026-04-19
+75	`String + str` concat not routed through `_str_concat` in selfhost Typ
+76	`if x is Union.variant |r|` capture binding not in TypeChecker `narrow
+77	TC doesn't record inferred type for `?`-propagated throws-call assignm
+80	`^T?` field assignment — CLOSED NOT REPRODUCING
+82	Selfhost `inferExpr` returns `unknown_` for cross-module constructor c
+95	class field defaults aren't auto-applied — `cue init` left fields as Z
+98	`name in some_list` always routed to `std.mem.indexOf(u8, …)` — FIXED
+100	✅ FIXED (side-effect of BUG-099, 2026-05-05)
+102	Selfhost typechecker `to!` force-unwrap audit — FIXED 2026-05-06
+105	✅ FIXED 2026-05-05 — enum_member/union_variant resolve to parent type
+106	✅ FIXED (partial) 2026-05-05 — literal homogeneity check shipped
+107	✅ VERIFIED 2026-05-18 — codegen never runs on a diagnosed tree
+108	✅ FIXED (partial) 2026-05-05 — `this` outside class diagnostic shipped
+109	✅ FIXED 2026-05-05 — `.reuse_address` flipped to `false`
+110	✅ FIXED 2026-05-05 — bind error prints clean message instead of panic
+111	✅ NOT-A-BUG 2026-05-05 — compound assign already works
+112	✅ FIXED 2026-05-05 — no-paren shorthand removed
+113	✅ NOT-REPRODUCED 2026-05-05 — slice TC works correctly
+114	`0 - x` / `0.0 - x` instead of `-x` — ✅ SWEPT 2026-05-06
+115	✅ FIXED 2026-05-14 — `private` / `internal` visibility keywords shippe
+120	selfhost — `.add()` → `.append()` rewrite fires on user class method c
+174	`str.indexOf` signature divergence ✅ RESOLVED (verified closed 2026-07
+175	`zebra.exe` panics `File.read error` when run outside the repo dir ✅ F
+179	selfhost-ahead constructs the bootstrap rejects — WON'T-FIX on bootstr
+183	single-quoted string literals with embedded `"` emit unescaped Zig (sy
+184	preamble `_zebra_list_reduce` parameter `init` shadows a user top-leve
+185	chained string methods miscompile — `s.concat(a).concat(b)` emits `_mc
+186	`Http.get(url)` emits undeclared `Http` — HashMap `.get` heuristic sha
+187	`if x != nil` now AUTO-NARROWS `x` (feature implemented) ✅ FIXED (2026
+188	method on an optional/narrowed receiver doesn't dispatch — `conn.write
+189	DateTime instance methods not dispatched — `dt.toEpoch()/addDays()/bef
+190	DateTime completion round 2 — comparisons over-marked `var`, `toIso860
+191	`var`/`const` mutation scan guessed from the method NAME → spurious "n
+192	`^T` field assigned a value in `cue init` not auto-boxed (D4 `*T`-vs-`
+194	`Math.log` missing in the selfhost ✅ FIXED (2026-07-18, divergence bur
+197	SIMD `f32x8` islanded — cannot ingest computed / collection data ✅ FIX
+208	`zebra run` hangs when the program prints more than ~4 KB ✅ FIXED 2026
+209	`uses_sqlite` false-positive disabled the fast run path + linked sqlit
+210	`zig build update-selfhost` can skip regeneration after a `.zbr`-only 
+211	selfhost `nameUsedInStmt` ignored `using` blocks → spurious param disc
+213	selfhost `typeFromName` missing `SysProcess` → `proc.isRunning()` mis-
+215	two-argument `str.indexOf(sub, from)` silently dropped the offset ✅ FI
+216	`\"` inside an INTERPOLATED string is double-escaped by the bootstrap 
+217	`CodeEditor.setText` handed Scintilla a non-NUL-terminated buffer → se
+218	`str + int` is diagnosed in an annotated context but LEAKS to Zig in a
+219	`sys.run` DEADLOCKS when a child writes more than a pipe buffer to std
+222	stdlib calls accept TOO FEW arguments — `s.count()` compiles and panic

@@ -3015,7 +3015,7 @@ pub fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anyty
 // ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
 pub const _CodeEditor = struct { text: []const u8, read_only: bool };
 pub fn _code_editor_new() *_CodeEditor {
-    const _ed = _allocator.create(_CodeEditor) catch unreachable;
+    const _ed = _allocator.create(_CodeEditor) catch @panic("OOM");
     _ed.* = .{ .text = "", .read_only = false };
     return _ed;
 }

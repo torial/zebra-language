@@ -1,0 +1,1425 @@
+=== allocate_copyout_deep_test sha1=3f63f860be03 ===
+allocate_copyout_deep: OK
+=== allocate_debug_stats_test sha1=9956bc24539d ===
+[allocate Debug] 4 allocations, 817 bytes requested, 681 bytes peak live
+allocate_debug_stats: OK
+=== allocate_slice4_test sha1=331542f1a957 ===
+[allocate Debug] 0 allocations, 0 bytes requested, 0 bytes peak live
+Debug: OK
+FixedBuffer: OK
+StackFallback: OK
+Page: OK
+Smp: OK
+C: OK
+allocate Slice 4: all OK
+=== allocate_slice5_test sha1=89d01144953b ===
+[allocate Debug] 0 allocations, 0 bytes requested, 0 bytes peak live
+allocate Slice 5: all OK
+=== any_all_test sha1=3e9f4d1e7f42 ===
+true
+false
+true
+false
+false
+true
+true
+false
+true
+false
+true
+false
+false
+true
+=== arena_scope_test sha1=5008d5d284cf ===
+allocate Arena() scope OK
+=== arg_count_ok_test sha1=5517f5b514c4 ===
+Hello, World
+Hi, World
+42
+=== arg_count_test sha1=bb28309124e7 ===
+test/arg_count_test.zbr:7:11: warning: too few arguments to 'add': expected 2, found 1
+    print(add(1).toString())
+          ^
+
+1
+=== arg_test sha1=482ab5c393e5 ===
+flag absent: OK
+contains absent: OK
+option default: OK
+optionInt default: OK
+positional absent: OK
+usage: OK
+All arg tests passed.
+=== array_in_test sha1=8fca1f73e90f ===
+is regex method
+not found
+=== atomic_test sha1=f3a9591a020a ===
+5
+5
+8
+8
+0
+true
+42
+true
+atomic_test OK
+=== backed_enum_test sha1=b14ed055b6f3 ===
+backed_enum: OK
+=== bench_zebra sha1=272aae8b37b6 ===
+102334155
+4999999950000000
+=== branch_edge_test sha1=061c992bf566 ===
+42
+7
+=== branch_exhaustive_else_test sha1=9cb0ec88f7df ===
+branch_exhaustive_else: OK
+=== branch_exhaustive_test sha1=f45d7506a03c ===
+3.14
+3.14
+42
+branch_exhaustive: OK
+=== branch_guard_test sha1=2b355ca9bd98 ===
+seven big
+seven ok
+big circle
+small circle
+big square
+small square
+point
+=== branch_inline_return_test sha1=a1f53bb89b98 ===
+matched mul
+branch inline return OK
+=== branch_range_test sha1=d8e6d7968516 ===
+branch_range_test: all OK
+=== branch_struct_test sha1=58aed0e51dfb ===
+origin
+on y-axis
+hello alice
+3
+=== bug082_test sha1=545085aa1cd8 ===
+{ 66, 117, 105, 108, 100, 101, 114, 40, 49, 48, 44, 32, 117, 112, 100, 97, 116, 101, 100, 41 }
+{ 66, 117, 105, 108, 100, 101, 114, 40, 57, 57, 44, 32, 115, 116, 97, 114, 116, 41 }
+bug082 OK
+=== bug088_try_return_test sha1=89c3ac38837b ===
+bug088_try_return_test: ok
+=== bug089_mixin_method_test sha1=7fafe4d3de1e ===
+hi
+ok
+=== bug090_reflect_fieldnames_test sha1=7a85f4764bbd ===
+ok
+=== bug091_dispatch_test sha1=7a85f4764bbd ===
+ok
+=== bug091_list_param_test sha1=7a85f4764bbd ===
+ok
+=== bug092_split_to_list_test sha1=7a85f4764bbd ===
+ok
+=== bug093_strlen_test sha1=7a85f4764bbd ===
+ok
+=== bug094_hashmap_kv_test sha1=7a85f4764bbd ===
+ok
+=== bug096_list_class_ctor_test sha1=7a85f4764bbd ===
+ok
+=== bug097_ptr_param_chain_test sha1=7a85f4764bbd ===
+ok
+=== bug105_enum_member_positive_test sha1=78988010b890 ===
+red
+=== bug116_char_methods_test sha1=79cafc7841e3 ===
+bug116_char_methods_test: ok
+=== bug117_list_join_test sha1=e1309fa4273b ===
+bug117_list_join_test: ok
+=== bug118_struct_ctor_test sha1=2bc61242f2b6 ===
+bug118_struct_ctor_test: ok
+=== bug119_list_field_param_test sha1=9f2f7e446a93 ===
+bug119_list_field_param: OK
+=== bug119_once_method_test sha1=22af727301da ===
+BUG-119 @once: OK
+=== bug120_sys_readline_test sha1=49e95b95e4da ===
+BUG-120 sys.readLine: OK
+=== bug121_arena_copyout_test sha1=26639c0fd94d ===
+BUG-121 <<- arena copy-out: OK
+BUG-121 <<- outside arena: OK
+=== bug168_crossmod_prim_return_test sha1=97642600109c ===
+hi zebra!|pre-hi x|hi ahi b|42|5
+bug168: OK
+=== bug172_list_char_test sha1=1e91a24fdc6b ===
+bug172: OK
+=== bug173_string_coerce_test sha1=c359ef9f73b5 ===
+bug173: OK
+=== bug176_split_list_test sha1=6d0470b4a257 ===
+bug176: OK
+=== bug177_178_index_tostring_test sha1=0898dff887ac ===
+bug177_178: OK
+=== bug193_listdir_test sha1=a1bb699d6554 ===
+bug193: OK
+=== bug195_map_param_test sha1=c896cc89e446 ===
+bug195: 62
+=== bug196_nested_list_test sha1=5ddfabfec0d7 ===
+bug196: 43
+=== bug198_union_optional_field_test sha1=e0c79ae45b07 ===
+bug198: OK
+=== bug221_transitive_init_test sha1=5a013c495082 ===
+missing
+=== build_declarative_test sha1=6859218cdc5a ===
+build declarative: ok
+=== build_smoke_test sha1=8bfb8015d704 ===
+build api: ok
+=== capture_boundary sha1=450cf1188b32 ===
+14
+15
+=== capture_error sha1=da39a3ee5e6b ===
+
+=== catch_inline_test sha1=c26c7a51eeae ===
+catch_inline: OK
+=== chained_cmp_test sha1=631fba74481c ===
+chained_cmp tests passed
+=== chan_smoke_test sha1=c549313460de ===
+chan: OK
+=== chan_thread_test sha1=ac8cb4618fd0 ===
+chan_thread: OK
+=== char_literal_test sha1=a91b4cd12ea7 ===
+char_literal: OK
+=== char_tostring_test sha1=44fd4991d816 ===
+a
+b
+c
+5
+a
+b
+c
+1
+λόγος
+=== closure_factory_test sha1=5041d5e4c6b2 ===
+closure_factory: OK
+=== compress_test sha1=e366d5d642f7 ===
+gzip produces output: OK
+gzip round-trip: OK
+gzip compressible data round-trip: OK
+gunzip bad input: OK
+All compress tests passed.
+=== contract_ensure_falloff_test sha1=4797dabe0e19 ===
+contract_ensure_falloff_test OK
+=== contract_ensure_test sha1=310b86e0b62b ===
+100
+=== contract_ident_test sha1=bd307a3ec329 ===
+13
+=== contract_invariant sha1=7a85f4764bbd ===
+ok
+=== contract_old_compound_test sha1=88918139de06 ===
+contract_old_compound: OK
+=== contract_old_test sha1=310b86e0b62b ===
+100
+=== contract_require sha1=7a85f4764bbd ===
+ok
+=== contract_result_member_test sha1=88ed66ba8e54 ===
+contract_result_member_test OK
+=== contract_result_test sha1=66da7f01291f ===
+contract_result_test OK
+=== contract_result_throws_test sha1=ec8a58563e00 ===
+ok=5
+ok=7
+caught
+contract_result_throws_test OK
+=== crossmod_arith_test sha1=c14bacd9f842 ===
+19
+20
+36
+=== crossmod_hatopt_test sha1=f6e25d9bc2c0 ===
+crossmod_hatopt: OK
+=== crossmod_infer_test sha1=380c94487657 ===
+14
+16
+14
+100
+=== crossmod_modvar_test sha1=a6aa65a70f49 ===
+crossmod_modvar: all OK
+=== crossmod_optret_test sha1=b6ba054db87a ===
+crossmod_optret: OK
+=== crossmod_struct_pat_test sha1=130f5442ee7f ===
+crossmod_struct_pat_test OK
+=== crossmod_types_test sha1=3bc9bb344972 ===
+crossmod_types_test OK
+=== crypto_test sha1=babd3ce421e0 ===
+Hello, Zebra!
+bad ciphertext rejected
+crypto_test OK
+=== ctor_arg_ref_test sha1=432458fa5e5f ===
+ctor_arg_ref_test OK
+=== datetime_inzone_test sha1=00f146c2ede7 ===
+1970
+1
+1
+0
+1969
+12
+31
+19
+1970
+1
+1
+9
+14
+13
+8
+1970
+0
+=== datetime_test sha1=df5c212157ba ===
+1970
+1
+1
+4
+2024
+3
+15
+14
+30
+45
+0
+1970-01-01T00:00:00Z
+2024-03-15T14:30:45Z
+2024-03-15 14:30:45
+15 March 2024
+Fri, 15 Mar 2024
+25
+2
+29
+28
+2025
+28
+2
+0
+true
+false
+true
+true
+false
+366
+-366
+30
+2024
+3
+15
+5
+{ 77, 97, 114, 99, 104 }
+{  }
+true
+=== derive_eql_explicit_test sha1=7358ac413551 ===
+derive_eql_explicit: OK
+=== derive_test sha1=7b8f35a8f470 ===
+Point(x=3, y=4)
+p1 == p2: true
+p1 != p3: true
+Greeting(name=Alice, count=5)
+hash consistent: ok
+hash distinct: ok
+=== dict_literal_test sha1=a91cc4572ffa ===
+dict_literal: OK
+=== dir_walk_test sha1=962154b0d00d ===
+dir_walk_test: ok (1900 files found)
+=== discard_var_test sha1=c444690b73ed ===
+3
+discard_var_test OK
+=== dispatch_collision_test sha1=da8bd2725cd5 ===
+dispatch_collision: OK
+=== dispatch_diag sha1=92cfceb39d57 ===
+42
+=== dns_test sha1=b90de743ada5 ===
+Resolving localhost:
+Resolving: localhost
+Resolving: 127.0.0.1
+  -> 127.0.0.1
+Attempting to resolve invalid host:
+Got 0 results
+=== dynlib_export_class_test sha1=c7b6b9ac19bf ===
+dynlib_export_class OK
+=== dynlib_export_def_test sha1=92cfceb39d57 ===
+42
+=== dynlib_iface_test sha1=0a0a9f2a6772 ===
+Hello, World!
+=== dynlib_iface_throws_test sha1=e026d210c11c ===
+dynlib_iface_throws: OK
+=== enum_branch_test sha1=6c006691e7d3 ===
+north
+horizontal
+not north
+=== error_prop sha1=92cfceb39d57 ===
+42
+=== escape_field_test sha1=71dfafc5a770 ===
+alpha
+test
+escape_field_test: all assertions passed
+=== except_inline_test sha1=aba2d6fb10ad ===
+except_inline: OK
+=== except_local_test sha1=5522b422d0a0 ===
+BUG-031 verification: OK
+=== except_reassign_test sha1=b79477fccdc7 ===
+except_reassign_test: OK
+=== exposing_test sha1=7ec4ace08f60 ===
+green
+exposing_test: all OK
+=== expressiveness_test sha1=589edef0126f ===
+Hello, Alice!
+Hey, Bob!
+Hi, Carol!
+true
+true
+false
+true
+====================
+-----
+true
+false
+=== extend_test sha1=d926aec99a21 ===
+HELLO!
+false
+Hello, world!
+=== features sha1=160cf01a3828 ===
+42
+3
+10
+99
+=== field_name_collision_test sha1=f547e3f3fbeb ===
+text=5 list=3
+=== field_order_test sha1=48e2ce01eacf ===
+field_order: OK
+=== file_io_test sha1=70f8147c3ab4 ===
+line1
+line2
+line3
+true
+true
+true
+false
+false
+true
+false
+report.txt
+/home/user/documents
+.txt
+report
+true
+false
+=== file_rename_test sha1=f30ac3912636 ===
+file_rename OK
+=== float_suffix_test sha1=c64dfa219e69 ===
+1.5
+2.5
+0.5
+3
+=== fn_ref_test sha1=86db991de7f9 ===
+fn_ref_test: all OK
+=== fn_type_annotation_test sha1=5cd26b8ef565 ===
+fn_type_annotation: OK
+=== fn_type_infer_test sha1=e93315968486 ===
+fn_type_infer: OK
+=== fn_type_nested_test sha1=9b45119c94d4 ===
+fn_type_nested: OK
+=== for_else_test sha1=b3260a1f49a3 ===
+0
+2
+42
+0
+3
+default
+world
+42
+104
+ok
+=== for_in_elem_test sha1=91af15630aec ===
+for_in_elem: OK
+=== for_in_guard_test sha1=7a85f4764bbd ===
+ok
+=== for_indexed_test sha1=bd2349d9c262 ===
+for_indexed: OK
+=== for_tuple_test sha1=856f112c4ca8 ===
+1:one
+2:two
+3:three
+big 2
+big 3
+10 ten true
+20 twenty false
+a=1
+done
+=== forgot_parens_test sha1=63a15402ee9c ===
+test/forgot_parens_test.zbr:7:5: warning: 'greet' is a function used as a value — did you mean to call it: 'greet()'?
+    greet
+    ^
+=== forin_throws_test sha1=5108449fdb08 ===
+forin_throws_test: run with 'zebra test'
+=== fuzz_f1_primitive_names_test sha1=f19f64457d63 ===
+i8=7 f32=1.5 usize=3 c_int=abc r=10.5
+fuzz_f1: OK
+=== fuzz_f11_unused_capture_ternary_test sha1=8a8ca1cb6b8d ===
+x=10
+a=7
+y=2
+y=2
+fuzz_f11: OK
+=== fuzz_f2_unused_local_test sha1=693203703cf7 ===
+w=3 bump=11
+fuzz_f2: OK
+=== fuzz_f3_comptime_local_test sha1=29133ec38f7d ===
+fuzz_f3: OK
+=== fuzz_f4_interp_fmt_test sha1=68189be05263 ===
+f=2.5
+xs=.{ .items = { 7 }, .capacity = 17 }
+fuzz_f4: OK
+=== fuzz_f6_unused_capture_test sha1=5a2f147a8a52 ===
+main hit
+helper hit
+no self here
+n=20 poke=3 lvl=3
+fuzz_f6: OK
+=== fuzz_f7_precedence_test sha1=9526df5573f1 ===
+a=-3 b=12 c=14
+fuzz_f7: OK
+=== fuzz_f8_ternary_test sha1=c61994b96706 ===
+lit=7 vv=14 fl=2.5 nested=20 s=yes
+fuzz_f8: OK
+=== fuzz_f9_range_test sha1=6e6e461b5bb0 ===
+a=6 b=6 c=18 d=-2 e=0 f=9
+fuzz_f9: OK
+=== fuzzy_match sha1=c9ba1de01507 ===
+Mark: 10 verses
+Mat: 10 verses
+Mat ngrams cached: 10
+MAR[9] ~ MAT[9] inter=64 total=182
+=== fuzzy_selfhost sha1=1ecea4dbf2e4 ===
+Mark verses: 
+10
+Mat verses: 
+10
+Mat ngrams cached: 
+10
+MAR~MAT match
+9
+9
+=== generic_constrained_test sha1=6f2f805e1304 ===
+42
+constrained generics OK
+=== generic_fn_test sha1=06f6b86916b3 ===
+42
+hi
+5
+0
+10
+7
+a
+8
+generic functions: OK
+=== generic_iface_test sha1=debb7abb902b ===
+42
+generic_iface OK
+=== generic_infer_test sha1=2fca71088d8c ===
+generic_infer_test: all OK
+=== generic_invariant_test sha1=5ca468886d5b ===
+false
+ok
+=== generic_is_test sha1=e33d3d8130b6 ===
+true
+false
+true
+=== generic_stack_test sha1=74471e1a13bd ===
+30
+20
+1
+false
+{ 119, 111, 114, 108, 100 }
+{ 104, 101, 108, 108, 111 }
+=== generic_tostring_test sha1=13d29b530d11 ===
+Box
+Box
+Pair
+42
+1.5
+7
+{ 104, 105 }
+=== greet sha1=7c211433f020 ===
+world
+=== guard_test sha1=c485d8e489e3 ===
+42
+h
+?
+guard raised: expected positive number
+ok
+=== hash_test sha1=852dc9e7be88 ===
+sha256 empty: OK
+sha256 hello: OK
+sha512 length: OK
+md5 hello: OK
+blake3 length: OK
+hmac256 length: OK
+All hash tests passed.
+=== hashmap_dispatch_collision_test sha1=1d43af04568f ===
+hashmap_dispatch_collision: OK
+=== hashmap_entries_test sha1=6cb23d3ba893 ===
+hashmap_entries: OK
+=== hashmap_fetch_chain_test sha1=37e0a5e25a76 ===
+hashmap_fetch_chain_test: run with 'zebra test'
+=== hashmap_field_collision_test sha1=1146985d1d71 ===
+list_first=42
+list_size=1
+map_get=7
+map_size=1
+=== hashmap_init_patterns_test sha1=bebcb6939572 ===
+hashmap_init_patterns: all OK
+=== hashmap_iter sha1=22d200f8670d ===
+30
+=== hashmap_kv_test sha1=5f75cc5bdb78 ===
+hashmap_kv: OK
+=== hashmap_param_field_test sha1=9093155f6e66 ===
+true
+false
+ok
+=== hashmap_remove_test sha1=7a85f4764bbd ===
+ok
+=== hashmap_set_test sha1=d90f92157107 ===
+42
+95
+87
+ok
+=== hashmap_this_field_test sha1=637e66e9817c ===
+world
+ok
+=== hostkind_test sha1=b5ad7ca93060 ===
+{ 105, 110, 116 }
+{ 102, 108, 111, 97, 116 }
+{ 115, 116, 114, 105, 110, 103 }
+{ 98, 111, 111, 108 }
+{ 114, 101, 102 }
+{ 114, 101, 102 }
+hostKind: OK
+=== if_is_capture_test sha1=a33813481b11 ===
+3.14
+is rect
+10
+true
+false
+7
+empty
+=== if_unwrap_test sha1=5b40fd5bda78 ===
+got: 42
+none
+b: 42
+str: hello
+empty
+wrap: 99
+no wrap
+hot: 1
+hot2: 1
+plain-elseif: 42
+ok
+=== iface_print_test sha1=910ea39b7a1b ===
+Hello, World!
+1
+2
+iface_print: OK
+=== implicit_capture_test sha1=fae23a0e42ad ===
+15
+12
+93
+25
+=== in_operator_test sha1=56489495595f ===
+in_operator: OK
+=== in_scope_test sha1=1768d89055de ===
+inside both
+in_scope_test PASS
+=== inline_if_test sha1=cead352b3cde ===
+big
+big
+yes
+B
+pos
+neg
+zero
+positive
+inline_if: OK
+=== interface_coerce_arg_test sha1=666bfc3943fc ===
+interface_coerce_arg: OK
+=== interface_coerce_ctor_test sha1=1d87d4b008b3 ===
+interface_coerce_ctor: OK
+=== interface_is_test sha1=e5115547e424 ===
+interface_is: OK
+=== interface_rtti_test sha1=05a9c3bb2004 ===
+interface_rtti: OK
+=== interface_test sha1=babf2d9822ac ===
+Hello
+Hola
+Hello, Alice
+Hola, Bob
+3
+=== interp_test sha1=9fc73d25bfbd ===
+hello world!
+n = 42
+result: 42 and world
+=== interp_tostring_test sha1=df7c0141f993 ===
+point: (3, 4)
+location is (3, 4)
+color: rgb(255, 128, 0)
+n = 42
+s = hi
+=== is_not_class_test sha1=9d3a4670d7e7 ===
+true
+false
+true
+false
+cat is not a dog
+true
+is_not_class: OK
+=== is_not_precedence_test sha1=4e72dfed1980 ===
+false
+true
+true
+true
+true
+false
+is_not_precedence: OK
+=== is_not_test sha1=70dbf6959456 ===
+not blue
+non-red
+red
+not a circle
+true
+is green
+is_not: OK
+=== iter_collision_test sha1=020c0d9de531 ===
+abc xyz 2 1
+=== json_parse_strict_tc_test sha1=5746140e27ac ===
+json_parse_strict_tc_test OK
+=== json_parse_strict_test sha1=ad0e9d183ef6 ===
+json_parse_strict_test OK
+=== json_test sha1=fcfaa524beda ===
+json_test: all assertions passed
+=== keyword_ident_test sha1=9c236722832d ===
+keyword_ident OK
+=== len_size_test sha1=c1b6b66da7d2 ===
+len_size_test: run with 'zebra test'
+=== list_direct_iter sha1=9e17c0764566 ===
+1
+2
+3
+=== list_functional_test sha1=e90db9ae57a6 ===
+list_functional: OK
+=== list_index_test sha1=de33e181220c ===
+local=20
+field=99
+str=e
+=== list_iter sha1=2e04c575a903 ===
+10
+20
+30
+=== list_literal_map_test sha1=35a0a8844cb0 ===
+list_literal_map: OK
+=== list_ref_autobox_test sha1=61ea2674ce49 ===
+list_ref_autobox_test OK
+=== list_setter_parse_test sha1=e6a13eafe777 ===
+list_setter_parse_test OK
+=== list_sort_comparator_test sha1=893a3e4b3962 ===
+list_sort: OK
+=== log_test sha1=1eac72c44c0d ===
+[INFO ] starting test
+[WARN ] this is a warning
+[ERR  ] this is an error
+[DEBUG] debug now visible
+[ERR  ] only error visible
+[INFO ] writing to stdout now
+All log tests passed.
+=== lowlevel_smoke_test sha1=7dfed2f1b037 ===
+[gui] text: inside group
+[gui] sameLine
+[gui] text: after sameLine
+[gui] text: win pos: 0 0
+[gui] text: win size: 800 600
+[gui] text: cursor: 0 0
+[gui] text: mouse: 0 0
+[gui] text: pos.0=0 pos.1=0
+=== marker_struct_test sha1=4c0e64204354 ===
+marker: OK
+=== math_test sha1=59340d7dfb35 ===
+true
+true
+true
+false
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+=== mem_stats_test sha1=c54ddfbc0381 ===
+mem_stats: OK
+=== method_chain_test sha1=887fd043652d ===
+109
+42
+20
+30
+7
+ok
+=== method_chain_throws_test sha1=85103d1ae6d0 ===
+hello
+ok
+world
+ok
+=== mime_test sha1=2777ce9d5f1d ===
+fromExt png: OK
+fromExt html: OK
+fromExt json: OK
+fromExt js: OK
+fromExt mp4: OK
+fromExt unknown: OK
+toExt html: OK
+toExt png: OK
+toExt json: OK
+toExt unknown: OK
+All MIME tests passed.
+=== modtime_optional_test sha1=6fd78ac6434f ===
+modtime int? OK
+=== module_global_class_instance_test sha1=bcea054c2b37 ===
+module_global_class_instance_test OK
+=== module_global_container_test sha1=3721b8e787f7 ===
+module_global_container_test OK
+=== module_var_collision_test sha1=4674ba3cef94 ===
+local=5
+module=7 count=100
+module_var_collision_test: OK
+=== module_var_shadow_test sha1=2eb6bde9dd33 ===
+loopSum=6
+numLoop=6
+captured=7
+item=100 idx=50
+module_var_shadow_test: OK
+=== module_var_test sha1=fc2134d56feb ===
+module_var: counter=3 max=100
+module_var_test: OK
+=== mutating_capture_test sha1=9109dc49f115 ===
+mutating_capture: OK
+=== mvu_mixed_union_test sha1=c2befcf4b5ab ===
+[gui] text: count=0 label=none
+update: bump -> 1
+update: set_label -> hello
+=== named_args_infer_test sha1=9387dbff7271 ===
+(5, 3)
+(2, 10)
+=== named_default_test sha1=a9be9fec44fb ===
+Hello, World!
+Hello, Alice!
+Hello, Bob!
+Hello, Bob!
+Hello, Carol!
+Hello, Carol!
+Hello, Carol!
+15
+25
+10
+ok
+=== namespace_main sha1=ce4bd70b5711 ===
+from namespace
+=== nested_namespace_dotted_test sha1=c22b5f917834 ===
+hi
+=== nested_namespace_nested_test sha1=c22b5f917834 ===
+hi
+=== nil_narrow_tc_test sha1=3410f2875b73 ===
+n=5
+n=7
+in branch
+n=5
+c is nil in else
+n=1 n=2
+n=1
+n=9
+n=9
+nil_narrow_tc_test: OK
+=== nil_simple sha1=92cfceb39d57 ===
+42
+=== nil_tracking_test sha1=c10463aae470 ===
+Alice
+got nil
+hello
+42
+=== nilable_test sha1=8cb19f8fb4b8 ===
+5
+b is nil
+5
+99
+=== numeric_types_test sha1=9b1e3b9117c2 ===
+42
+255
+3.14
+200
+9000000000
+100
+1024
+127
+65000
+=== object_pool_test sha1=5ac69fa5c599 ===
+object_pool: OK
+=== opt_chain_test sha1=f8dc7dd822a7 ===
+opt_chain: OK
+=== opt_ptr_local_var_test sha1=52d7ecab7d74 ===
+opt_ptr_local_var: OK
+=== optional_ann_test sha1=ae08f6ca7cda ===
+found
+correctly nil
+optional_ann_test: done
+=== optional_union_is_test sha1=c1f9e896030a ===
+optional_union_is: OK
+=== partial_shared_test sha1=d8a7349e31df ===
+Hello, world
+PartialSharedTest v1
+partial_shared_test: done
+=== partial_test sha1=896f3d06cd1f ===
+partial_test: all assertions passed
+=== pipeline sha1=9c1b94d963aa ===
+26
+21
+=== postfix_bang_test sha1=d6a2ebaf2e3a ===
+42
+7
+10
+99
+postfix_bang_test PASS
+=== profile_attr_test sha1=6f025d106efb ===
+── Profile report ───────────────────────────────────────────────
+  Calc.add                                         1  <TIME> ms
+  Calc.mul                                         1  <TIME> ms
+  helper                                           1  <TIME> ms
+profile_attr OK
+=== raise_auto sha1=b1d5781111d8 ===
+10
+=== random_instance_test sha1=7bf5be3167b7 ===
+random_instance_test: run with 'zebra test'
+=== random_test sha1=debdeb71ce71 ===
+randInt in range: OK
+randFloat in range: OK
+false
+randBool: OK
+bytes length: OK
+{ 98, 97, 110, 97, 110, 97 }
+choice: OK
+shuffle: OK
+All random tests passed.
+=== raw_string_test sha1=f1559293a9f9 ===
+true
+false
+true
+true
+false
+word
+
+hello
+=== recursive_type_test sha1=c3e25712cf45 ===
+recursive_type_test OK
+=== ref_struct_test sha1=df49d22a1f7a ===
+ref_struct_test OK
+=== refinement_type_test sha1=9e69a2292499 ===
+85
+-20
+37
+0
+=== reflect_test sha1=084a7179b612 ===
+reflect_test: all assertions passed
+=== regex_anchors_test sha1=7b906638b980 ===
+true
+false
+42
+
+true
+false
+true
+true
+false
+true
+true
+=== regex_flags_test sha1=beb3c5a7ffb4 ===
+true
+true
+false
+true
+false
+hello
+hello
+<a>
+<a><b>
+a
+aaa
+true
+
+cat
+cat
+
+true
+true
+=== regex_groups_test sha1=a4d201c1e519 ===
+hello
+world
+2026
+04
+06
+=== regex_test sha1=4dbc6efd65a1 ===
+true
+false
+true
+true
+false
+true
+false
+true
+true
+false
+42
+
+true
+false
+1
+22
+333
+abc NUM def NUM
+no digits here
+=== return_lambda_test sha1=0d8fb4b971a1 ===
+return_lambda: OK
+=== selfhost_probe sha1=a7525af94f9e ===
+self-hosting probe OK
+=== selfhost_probe2 sha1=a7525af94f9e ===
+self-hosting probe OK
+=== selfhost_probe3 sha1=a7525af94f9e ===
+self-hosting probe OK
+=== selfhost_probe4 sha1=a7525af94f9e ===
+self-hosting probe OK
+=== selfhost_probe5 sha1=2fb5fb0f8074 ===
+1. unit variants OK
+2. payload variants OK
+3. recursive ^T OK
+4. doubly nested OK
+5. tuple (List inside union) OK
+6. cross_module struct payload OK
+7. HashMap(str, Type) OK
+8. Type.eql OK
+9. mutual recursion + throws OK
+selfhost_probe5: all OK
+=== selfhost_probe6 sha1=9966d5ab0131 ===
+1. multiline """: OK
+2. struct except copy: OK
+3. StringBuilder: OK
+4. branch many variants: OK
+5. dispatch chain: OK
+6. struct method chain: OK
+7. nested struct ctx: OK
+selfhost_probe6: all OK
+=== selfhost_probe7 sha1=169ec122d57f ===
+test1 OK
+test2 OK
+test3 OK
+test4 OK
+selfhost_probe7: all OK
+=== set_advanced_test sha1=2f8cd1776df5 ===
+set_advanced: OK
+=== set_basic_test sha1=f983271c02f2 ===
+set_basic: OK
+=== set_literal_test sha1=88e4f4f9ab93 ===
+set_literal: OK
+=== shared_field sha1=da4b9237bacc ===
+2
+=== shared_var_test sha1=d0d34ef0a08b ===
+shared_var: OK
+=== sig_test sha1=4fa2478bb5ca ===
+sig_test: all OK
+=== simd_test sha1=2dfcb065e19f ===
+simd_test: ok
+=== sort_test sha1=7e0151b7aeb3 ===
+1
+2
+5
+8
+9
+apple
+banana
+cherry
+5
+4
+3
+1
+1
+Bob
+Alice
+Carol
+1
+1
+2
+3
+3
+cat
+bat
+ant
+0
+42
+1
+2
+3
+1
+2
+3
+5
+1.41
+2.71
+3.14
+Apple
+Banana
+apple
+Bob: 90
+Alice: 90
+Charlie: 85
+=== sqlite_test sha1=18273eb0d2c0 ===
+1 alice
+2 bob
+1 alice
+2 bob
+3 carol
+row[1] = 2 bob
+sqlite_test OK
+=== stdlib_additions_test sha1=8eceff2c01e6 ===
+stdlib_additions OK
+=== stdlib_base64_test sha1=bc79d6c80561 ===
+stdlib_base64 OK
+=== stdlib_file_test sha1=5a3250943d00 ===
+stdlib_file OK
+=== stdlib_hash_test sha1=ba503bf6523a ===
+stdlib_hash OK
+=== stdlib_math_test sha1=0a7cac40dbf5 ===
+stdlib_math OK
+=== stdlib_path_test sha1=2b037211e1bd ===
+path tests passed
+=== stdlib_str_test sha1=6b2c40ee798e ===
+stdlib_str OK
+=== stdlib_test sha1=73fb8a414cd7 ===
+3
+20
+2
+true
+95
+2
+true
+true
+true
+hello world
+=== stop_method_test sha1=af76418c3ff1 ===
+stop-method: OK
+=== str_method_chain_test sha1=60069e1bd5fc ===
+str_method_chain: OK
+=== string_branch_test sha1=cf919d4e75f8 ===
+start command
+start command
+stop command
+stop command
+help command
+unknown command
+Zebra is the best
+=== string_builder_test sha1=8d08abf35c14 ===
+hello, world
+0
+0
+one, two, three
+abc!
+=== string_format_test sha1=6204d4fc9fe6 ===
+000000ff
+3.14
+               hello
+ok-------------
+      hi
+hi      
+   hi   
+a
+b
+=== string_index_test sha1=3c5d228b30dd ===
+h
+el
+5
+=== string_methods sha1=3e2debbef283 ===
+HELLO WORLD
+hello world
+6
+-1
+Hello Zebra
+11
+Hello
+World
+=== string_methods_test sha1=f71ca58863c5 ===
+5
+hi  
+  hi
+true
+false
+2
+one, two, three
+line1
+line2
+line3
+olleh
+6869
+***hello
+hello---
+true
+false
+true
+false
+=== struct_destruct_func_test sha1=3ca7d4e47718 ===
+Bob
+25
+=== struct_destruct_test sha1=d68df6c9e9eb ===
+10
+20
+Alice
+30
+99
+=== struct_simd_name_method_test sha1=fec7ff5fae16 ===
+struct_simd_name_method: OK
+=== sys_run_test sha1=6ed7ddab659c ===
+true
+true
+true
+true
+=== sys_sleep_test sha1=941fc2a5224b ===
+sys_sleep_test OK
+=== sys_spawn_test sha1=351e6a19fbd8 ===
+sys_spawn_test: ok
+=== sys_test sha1=c8354fbb23b6 ===
+1
+hello stderr
+=== tc_call_match_test sha1=3496d56c3152 ===
+Hello world
+42
+=== tc_iface_generic_match_test sha1=239ca5767afa ===
+Box
+=== tc_iface_i2i_match_test sha1=356a192b7913 ===
+1
+=== tc_iface_match_test sha1=3323916fc339 ===
+Woof
+=== tc_iface_transitive_match_test sha1=92cfceb39d57 ===
+42
+=== tc_scope_test sha1=027ba030a128 ===
+1. empty scope OK
+2. push/pop depth OK
+3. define/hasLocal OK
+4. getLocal OK
+5. cross-frame lookup OK
+6. shadowing OK
+7. pop removes symbols OK
+8. reuse after pop OK
+tc_scope_test: all OK
+=== tc_smoke_main sha1=fb5bb81f37ff ===
+multi-file selfhost smoke: OK
+=== tc_stdlib_test sha1=71802efcb089 ===
+1. string_builder memberType OK
+2. http_response memberType OK
+3. http_request memberType OK
+4. json_value memberType OK
+5. date_time memberType OK
+6. uri_result memberType OK
+7. timer_handle memberType OK
+8. csv_table/csv_row memberType OK
+9. arg_result memberType OK
+10. unknown fallthrough OK
+11. Http staticCall OK
+12. Csv staticCall OK
+13. Json staticCall OK
+14. Regex staticCall OK
+15. Arg staticCall OK
+16. Uri staticCall OK
+17. Timer staticCall OK
+18. Random staticCall OK
+19. DateTime staticCall OK
+20. Math staticCall OK
+21. Compress staticCall OK
+22. unknown class staticCall OK
+tc_stdlib_test: all OK
+=== tco_test sha1=7a5532a18341 ===
+Stack overflow (no address available)
+=== terminal_test sha1=9635f949eab8 ===
+false
+isTty: OK
+width: OK
+height: OK
+hello world
+bold text
+Terminal.write: OK
+All terminal tests passed.
+=== test_capture_simple sha1=ac3478d69a3c ===
+5
+=== test_elif sha1=686cce273c7f ===
+1
+1
+1
+=== test_gui_simple sha1=12b368335aff ===
+[gui] text: Hello from GUI
+=== test_module_test sha1=4748f915370c ===
+test_module_test: run with 'zebra test'
+=== thread_alloc_stress_test sha1=854694715d76 ===
+thread_alloc_stress: OK
+=== thread_pool_test sha1=c59f07c00ef2 ===
+8
+thread_pool_test OK
+=== threadpool_nocapture_test sha1=55ad3e6ed224 ===
+worker done acc=149997
+worker done acc=149997
+worker done acc=149997
+worker done acc=149997
+threadpool_nocapture_test OK
+=== throws_autoprop_test sha1=1447ef176f4e ===
+caught: OK
+throws_autoprop_test: passed
+=== throws_nested_test sha1=4ee7f46072c2 ===
+throws_nested_test: passed
+=== throws_raise sha1=dbf243abfadb ===
+throws annotation compiles
+=== timer_test sha1=dd1213769eb8 ===
+elapsed: OK
+elapsedMicros: OK
+reset: OK
+independent timers: OK
+All timer tests passed.
+=== toplevel_main_test sha1=d0a5e641d8dc ===
+toplevel_main: OK
+=== toplevel_name_collision_test sha1=81e9b214aa0c ===
+2
+5
+payload
+8
+<x>
+red
+9
+k
+7
+5
+12
+toplevel_name_collision_test: OK
+=== tostring_test sha1=9813325ee296 ===
+42
+3.14
+-100
+=== transitive_list_param_test sha1=2326fb2eb5d7 ===
+transitive_list_param_test: run with 'zebra test'
+=== transitive_test sha1=870ec43cabf9 ===
+6
+hello!
+=== try_catch_err sha1=1ca05d113ee7 ===
+caught an error
+after try
+=== try_catch_full sha1=45b843c264ea ===
+10
+after try
+=== try_outer_vars sha1=716375211178 ===
+60
+10
+=== try_parse_test sha1=94c1093bef18 ===
+try_parse_test: run with 'zebra test'
+=== try_postfix_test sha1=bf1f9a369ced ===
+5
+caught: division by zero
+ok
+=== tuple_smoke_test sha1=6be4e4dc9803 ===
+3
+7
+14
+6
+1
+9
+42
+99
+hello!
+10
+done
+=== tuple_test sha1=0951407ea6d9 ===
+10
+20
+10
+17
+42
+3
+tuple_test: OK
+=== turbo_test sha1=069aead48f88 ===
+turbo: OK
+=== type_alias_test sha1=816b7322f077 ===
+{ 104, 101, 108, 108, 111 }
+hello world
+84
+-7
+=== type_check_test sha1=2e806878ce02 ===
+d is Dog: true
+c is Cat: true
+d is not Cat: correct
+c is not Dog: correct
+=== type_infer_chain_test sha1=35fc1cea4987 ===
+type_infer_chain: OK
+=== typed_collections_test sha1=4e1969e331e3 ===
+3
+10
+20
+40
+60
+3
+true
+95
+2
+true
+OK
+=== unicode_test sha1=4f89a9b46e23 ===
+true
+5
+a
+b
+c
+true
+false
+true
+false
+true
+true
+true
+97
+90
+=== union_types sha1=983b34771fb7 ===
+3.14
+=== unless_until_test sha1=32948c7748a9 ===
+if-not/while-not OK
+=== uri_test sha1=e1240933c076 ===
+scheme: OK
+host: OK
+path: OK
+query: OK
+port absent: OK
+port present: OK
+file uri: OK
+All URI tests passed.
+=== use_test sha1=9dd985018305 ===
+14
+16
+=== val_test sha1=ba672e1a7939 ===
+val_test: OK
+=== visibility_test sha1=4d1aa4a9a5e7 ===
+150
+Alice
+125
+75
+3
+=== while_var_test sha1=cb6475b88cb3 ===
+while_var_test: all OK
+=== with_call_test sha1=091414891a13 ===
+with_call_test PASS
+=== with_test sha1=5a0146c21abd ===
+10
+20
+=== ziglit_param_test sha1=87ebdb611c1f ===
+ziglit_param: OK

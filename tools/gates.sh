@@ -28,6 +28,11 @@
 #                                runtime is the DEFAULT now, so the INLINE shape is
 #                                the one that would go unwatched — and it stays live
 #                                via the opt-out and the GUI/node-addon fallbacks
+#         output_sweep     — RUNS 327 corpus programs and compares what they PRINTED
+#                            against a golden baseline. The only heavy gate that runs
+#                            anything: the rest ask "does it compile?", so wrong OUTPUT
+#                            from valid Zig is invisible to them (BUG-226). Catches
+#                            regressions, not existing wrongness.
 #         full_sweep       — emits + typechecks the WHOLE corpus, gated on regression
 #         divergence       — emits with BOTH compilers, gated on selfhost gaps
 #
@@ -131,6 +136,14 @@ run "check-mode"     "all checks pass" bash tools/check_mode_check.sh
 # a borrow into an own (or the reverse) makes the shipped table wrong while it still
 # carries a "GENERATED" banner vouching for it. One emit; cheap.
 run "str-ownership"  "is current" python tools/str_ownership_extract.py --check
+# A1 (testing_strategy.md): SQLite's "a regression test for every reported bug", as a lint
+# rather than a habit. Fails only on NEW debt — the backlog is baselined — and counts a
+# fixture as real only if something actually RUNS it. Static; instant.
+run "bug-fixture"    "gate PASS" python tools/bug_fixture_check.py --gate
+# A4: `unreachable` is UB in ReleaseFast, which is what `zebra --release` ships. Every
+# gate here runs Debug, where it traps cleanly — so this hazard is invisible to all of
+# them and live only in what users distribute. A static lint is the only witness.
+run "oom-unreachable" "0 hazard" python tools/lint_oom_unreachable.py
 
 if [[ "$MODE" == "full" ]]; then
     run "compile_check" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh
@@ -139,6 +152,13 @@ if [[ "$MODE" == "full" ]]; then
     # still live: --no-runtime-module selects it, and the GUI and node-addon paths
     # fall back to it.
     run "compile_check-inline" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh --no-runtime-module
+    # THE BEHAVIOUR GATE, and the only heavy one that RUNS anything. Every other gate in
+    # this tier asks "does the emitted Zig compile?", so valid Zig producing the WRONG
+    # OUTPUT is invisible to all of them at any corpus size — BUG-226 is the receipt.
+    # Golden baseline: it catches REGRESSIONS against recorded behaviour, not existing
+    # wrongness. Sequential by design; parallel runs would let fixtures interfere and a
+    # flaky behaviour gate is one people learn to re-baseline without reading.
+    run "output_sweep"  "identical to baseline" bash tools/output_sweep.sh --gate
     run "full_sweep"    "gate PASS" env JOBS="$JOBS" bash tools/full_sweep.sh --gate
     run "divergence"    "gate PASS" env JOBS="$JOBS" bash tools/divergence_check.sh --gate
 fi
