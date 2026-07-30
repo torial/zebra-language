@@ -268,6 +268,13 @@ def main() -> int:
     unbindable_controls = [k for k in CONTROLS if k in missing]
     if unbindable_controls:
         errs.append("no emitted binding for control(s): " + ", ".join(unbindable_controls))
+    # An undetermined element ownership must never render as a "?" cell in a doc carrying
+    # a GENERATED banner. No row reaches this today; it is fatal so that it cannot start
+    # doing so silently after a codegen change.
+    undetermined = [label for label, _, _, _, _, elem in rows if elem == "?"]
+    if undetermined:
+        errs.append("element ownership undetermined for: " + ", ".join(undetermined) +
+                    " — extend SPLIT_HELPERS or element_class rather than shipping a '?'")
     if errs:
         sys.stderr.write("CLASSIFIER FAILED ITS OWN CONTROLS:\n")
         for e in errs:

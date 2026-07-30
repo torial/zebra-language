@@ -60,6 +60,19 @@ run_checker() { # $@ = command; echoes combined output, prefixes a crash
     if [ "$rc" -gt 1 ]; then printf 'CRASH rc=%s :: %s' "$rc" "$out"; else printf '%s' "$out"; fi
 }
 
+# For exit-code-driven checks, `if ! cmd; then pass` is NOT a falsification test: every
+# non-zero exit reads as success, so a missing compiler or a crash inside the checker
+# reports that the gate works. Reviewed 2026-07-29 and found in three checks here — the
+# vacuity pattern this file exists for, inside this file, again.
+#
+# The fix is two-legged and applies to all of them: establish the BASELINE first and
+# require silence, then plant the defect and require exactly the failure code. A rc the
+# check does not expect is reported as a CRASH, never as a verdict.
+LAST_OUT=""
+run_rc() { # $@ = command; sets LAST_OUT to combined output; echoes the exit code
+    LAST_OUT=$("$@" 2>&1); echo $?
+}
+
 echo "gate self-check — can each gate still fail?"
 echo
 
@@ -67,13 +80,20 @@ echo
 # Perturbs an mtime only; content is untouched, and the mtime is restored from a
 # sibling file afterwards.
 if [ -f selfhost/stdlib_preamble.zig ] && [ -f zig-out/bin/zebra-bootstrap.exe ]; then
-    touch selfhost/stdlib_preamble.zig
-    if bash tools/doctor.sh >/dev/null 2>&1; then
-        bad "doctor did NOT flag a preamble newer than the bootstrap that embeds it"
+    base=$(run_rc bash tools/doctor.sh)
+    if [ "$base" -ne 0 ]; then
+        note "doctor: skipped (already exits $base on the UNPERTURBED tree, so a failure"
+        note "        after planting would prove nothing — clear that first)"
     else
-        pass "doctor flags a stale bootstrap (exit 1)"
+        touch selfhost/stdlib_preamble.zig
+        got=$(run_rc bash tools/doctor.sh)
+        touch -r selfhost/napi_preamble.zig selfhost/stdlib_preamble.zig
+        case "$got" in
+            1) pass "doctor flags a stale bootstrap (clean 0 -> planted 1)" ;;
+            0) bad "doctor did NOT flag a preamble newer than the bootstrap that embeds it" ;;
+            *) bad "doctor CRASHED (rc=$got) instead of reporting: $LAST_OUT" ;;
+        esac
     fi
-    touch -r selfhost/napi_preamble.zig selfhost/stdlib_preamble.zig
 else
     note "doctor: skipped (no built bootstrap to compare against)"
 fi
@@ -128,6 +148,18 @@ fi
 # Claims trim takes an argument. The positive leg compiles `s.trim("x")`, which the
 # #5a checker now rejects, so the row must FAIL.
 if [ -f tools/stdlib_signatures.tsv ]; then
+    base=$(run_rc $PY tools/stdlib_sig_check.py --only trim)
+    if [ "$base" -ne 0 ]; then
+        note "stdlib_sig_check: skipped (--only trim already fails rc=$base on the CLEAN"
+        note "        table, so rejecting a corrupted row would prove nothing)"
+        sig_ok=0
+    else
+        sig_ok=1
+    fi
+else
+    sig_ok=0
+fi
+if [ "$sig_ok" = 1 ]; then
     cp tools/stdlib_signatures.tsv "$OUT/sig.bak"
     $PY - <<'PYEOF'
 import pathlib
@@ -135,14 +167,13 @@ p = pathlib.Path("tools/stdlib_signatures.tsv")
 s = p.read_text(encoding="utf-8")
 p.write_text(s.replace("str\ttrim\t0", "str\ttrim\t1\tstr"), encoding="utf-8", newline="\n")
 PYEOF
-    if $PY tools/stdlib_sig_check.py --only trim 2>/dev/null | grep -q 'FAILED: *0\|0 FAILED'; then
-        bad "stdlib_sig_check accepted a CORRUPTED arity row"
-    else
-        pass "stdlib_sig_check rejects a corrupted arity row"
-    fi
+    got=$(run_rc $PY tools/stdlib_sig_check.py --only trim)
     cp "$OUT/sig.bak" tools/stdlib_signatures.tsv
-else
-    note "stdlib_sig_check: skipped (no signature table)"
+    case "$got" in
+        1) pass "stdlib_sig_check rejects a corrupted arity row (clean 0 -> planted 1)" ;;
+        0) bad "stdlib_sig_check accepted a CORRUPTED arity row" ;;
+        *) bad "stdlib_sig_check CRASHED (rc=$got) instead of reporting: $LAST_OUT" ;;
+    esac
 fi
 
 # ── str-ownership: a perturbed generated table must be caught ────────────────
@@ -150,14 +181,21 @@ fi
 # while still carrying a GENERATED banner. Appending a bogus row stands in for a codegen
 # change that flips an ownership.
 if [ -f docs/str_ownership.md ]; then
-    cp docs/str_ownership.md "$OUT/own.bak"
-    printf '\n| `s.bogus()` | **BORROW** | | | |\n' >> docs/str_ownership.md
-    if $PY tools/str_ownership_extract.py --check >/dev/null 2>&1; then
-        bad "str-ownership accepted a PERTURBED generated table"
+    base=$(run_rc $PY tools/str_ownership_extract.py --check)
+    if [ "$base" -ne 0 ]; then
+        note "str-ownership: skipped (--check already fails rc=$base on the UNPERTURBED"
+        note "        doc, so rejecting a planted row would prove nothing)"
     else
-        pass "str-ownership rejects a stale/perturbed table"
+        cp docs/str_ownership.md "$OUT/own.bak"
+        printf '\n| `s.bogus()` | **BORROW** | | | |\n' >> docs/str_ownership.md
+        got=$(run_rc $PY tools/str_ownership_extract.py --check)
+        cp "$OUT/own.bak" docs/str_ownership.md
+        case "$got" in
+            1) pass "str-ownership rejects a perturbed table (clean 0 -> planted 1)" ;;
+            0) bad "str-ownership accepted a PERTURBED generated table" ;;
+            *) bad "str-ownership CRASHED (rc=$got) instead of reporting: $LAST_OUT" ;;
+        esac
     fi
-    cp "$OUT/own.bak" docs/str_ownership.md
 else
     note "str-ownership: skipped (no generated table)"
 fi
