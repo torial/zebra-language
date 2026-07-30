@@ -39,6 +39,7 @@ Exit status: 0 = clean, 1 = at least one hazard.
 """
 import re
 import sys
+import pathlib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -61,7 +62,24 @@ def hazards_in(path: Path):
 
 
 def main() -> int:
-    targets = sorted(REPO.glob("selfhost/*.zbr")) + sorted(REPO.glob("IDE/*.zbr"))
+    # Optional path patterns, matching lint_fallthrough.py. Not for normal use — it
+    # exists so tools/gate_selfcheck.sh can point the lint at a fixture containing a
+    # KNOWN hazard and confirm it still reports one. A lint that cannot be shown to
+    # fire is indistinguishable from a lint that has stopped firing.
+    pats = sys.argv[1:] or ["selfhost/*.zbr", "IDE/*.zbr"]
+    targets = []
+    for pat in pats:
+        # An existing path is used directly; anything else is globbed relative to the
+        # repo. Checking existence FIRST matters on Windows, where a POSIX-style
+        # "/tmp/x.zbr" is not `is_absolute()` and would fall through to REPO.glob(),
+        # which raises NotImplementedError on a leading slash.
+        direct = pathlib.Path(pat)
+        if direct.exists():
+            # resolve(): the report line does `relative_to(REPO)`, which raises on a
+            # relative path. Absolute-ise here so a caller may pass either form.
+            targets.append(direct.resolve())
+        else:
+            targets.extend(sorted(REPO.glob(pat)))
     total = 0
     for path in targets:
         for n, lit in hazards_in(path):
