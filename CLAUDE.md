@@ -194,6 +194,20 @@ intended) is the only gate that checks correctness of arbitrary emitted programs
 latent miscompile hid behind green round-trip + smoke once (see the §28a selfhost notes);
 `compile_check.sh` is how you avoid rediscovering that class the hard way.
 
+**But note the ceiling on that sentence, because it is easy to over-read (BUG-226,
+2026-07-29).** `compile_check`, `full_sweep` and `divergence` all ask *"does the emitted
+Zig compile?"* — none of them **runs** it. Only `selfhost_smoke.sh` (for its registered
+fixtures) and `runtime_module_check.sh` execute anything. So a bug whose symptom is
+**correct-compiling code that produces the wrong output** is invisible to the three
+heaviest gates by construction, no matter how much corpus you throw at them.
+
+BUG-226 is the receipt: `for t in s.tokenize(",")` typed its loop element wrongly and
+emitted `{any}` instead of `{s}`, so it printed `{ 97 }` where `a` was meant. Perfectly
+valid Zig. It would have survived every tier indefinitely. What catches this class is a
+**run-and-compare fixture** — a `smoke_run` with expected output — which is why a
+rendering or semantics fix should always land with one, and why "compile_check is the
+independent witness" means *witness to compilability*, not to correctness of behaviour.
+
 ## What the gates do NOT cover — and when it was last checked
 
 `gates.sh` deliberately excludes three things so that "gates green" keeps a precise
