@@ -169,6 +169,7 @@ def epiloguePage(i: int): str
 # Phases: 0 title  1 chooseWeapon  2 chooseTarget  3 enemyTurn
 #         4 won    5 lost          6 fled
 #         7 story (intro pages)    8 epilogue (post-victory pages)
+#         9 mission: The Cubs of Thas (model.story = scene id)
 
 struct GameModel
     var phase: int
@@ -180,6 +181,7 @@ struct GameModel
     var round: int
     var xp: int
     var story: int
+    var states: List(str)
     var rngSeed: int
     var log: List(str)
 
@@ -197,10 +199,135 @@ union Msg
     pageNext
     getCubs
     contTale
+    startMission
+    mA
+    mB
 
 def init(): GameModel
     var seed = Random.randInt(1, 2000000000)
-    return GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, rngSeed: seed, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
+    var noFlags: List(str) = []
+    return GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags, rngSeed: seed, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
+
+# ---------------------------------------------------------------------------
+# MISSION: The Cubs of Thas (phase 9) — the untold interior of Episode I.
+# ---------------------------------------------------------------------------
+# The novella (Episode 1, ch. 5-6) sends Commander Yehu's score into Thas by
+# the slave-ruse and then follows Gratta; the infiltration itself happens
+# offstage ("the Torialites have freed the cubs but will be overwhelmed").
+# This mission composes that interior, contradicting nothing: the sale at the
+# gate (Aidden's haggling, Lamek, one hundred shekels), the split of the
+# score, the pen with its fifty guards, the barel's judgment, Gratta at the
+# gate-beam, and Namal's flaming spear at the bridge. Its moral spine is
+# Keanna's rebuke: the battle is won by waiting for Yah Elyon's sign, not by
+# the strength of the score. Scene data are pure functions; the player's
+# flags ride model.states (the DecisionEngine criteria idea, ported small).
+
+def hasFlag(model: GameModel, f: str): bool
+    var i = 0
+    while i < model.states.len
+        if model.states.at(i) == f
+            return true
+        i = i + 1
+    return false
+
+def withFlag(m: GameModel, f: str): GameModel
+    var st = m.states
+    st.add(f)
+    return m except states = st
+
+def missionPage(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "[ The camp before Thas -- night ]||Aidden: 'Commander Yehu -- gather a score of your|mightiest men. We have a mission with need of great|deeds of valor.'||The plan is madness dressed as commerce: sell Chief|Gratta at the market of Thas, walk in as slavers, and|be inside the walls when the hour comes. Gratta bears|Arphad's wound -- the gift of truth."
+    if id == 1
+        return "[ The gates of Thas -- early dawn ]||A maeuw soldier prods Gratta with a spear. 'His|sickness is not fatal. You may sell him at the|market.'||Aidden haggles like a bandit born; Lamek of the gold|robes pays one hundred shekels. The gates of Thas|stand open, and your score walks in with the crowd --|spears low, eyes lower."
+    if id == 2
+        return "[ The streets of Thas ]||Perfume and torchlight. The cub-pen lies north by the|old cave; the gate-house south. A patrol rounds the|corner ahead: helmeted maeuw, spears slung, bored and|dangerous."
+    if id == 3
+        if hasFlag(model, "Alarm")
+            return "[ The cub-pen -- north quarter ]||Horns still sound behind you from the bluff gone|wrong. Behind iron bars, tuon cubs huddle leashed|neck to neck. You count the guards twice and twice|despair: fifty maeuw, whips and spears -- and now|they are awake."
+        return "[ The cub-pen -- north quarter ]||Behind iron bars, tuon cubs huddle in the dark,|leashed neck to neck. You count the guards twice and|twice despair: fifty maeuw, whips and spears, and the|pen in torchlight.||Ten men cannot do this. Nor twenty."
+    if id == 4
+        if hasFlag(model, "Struck")
+            return "[ Blood at the pen ]||Your men take down six guards before the horns sound|the quarter awake -- and still the fifty come on.||Then the light comes down the road anyway, unasked. A|wind where no wind should be; the guards fall|convulsing. You live because heaven outran your plan.|Around you, three of your own lie still."
+        return "[ The turning of the hour ]||A wind rises inside the walls where no wind should|be. Down the main road walks a light in the shape of|a maeuw, and the torches gutter before it.||The guards nearest the pen crouch and convulse. A|voice that is not a sound says: FREE THE CUBS. I WILL|BE YOUR WALL."
+    if id == 5
+        return "[ The south gate ]||Cubs at your back; the gate-team at the beam. Chief|Gratta comes leaping the crouching guards, tosses the|cross-beam aside and hauls the doors wide.||'I WILL NOW ASSIST MY COMPANION IN JUDGMENT. HURRY.'||Keanna the Judge runs beside you toward the bridge."
+    if id == 6
+        return "[ The bridge over the Yellow Snake ]||Hooves behind: fifty riders, and at their head a|maeuw in brilliant robes. Namal.||He levels a spear at Keanna: 'I call down fiery wrath|upon you!' -- and the spear takes fire in the air as|it flies."
+    # id 7 — endings by flags
+    if hasFlag(model, "SavedKeanna")
+        if hasFlag(model, "Waited")
+            return "[ Morning on the far bank ]||The spear splits the planks where Keanna stood; you|taste smoke and river fog. Namal falls before Gratta|and Aidden, and the riders break.||Keanna finds you after. 'El Roi saw you wait, and saw|you dive. Tell your children, human: the battle was|never yours to win -- only yours to be faithful in.'||[ ENDING: The Faithful Score ]"
+        return "[ Morning on the far bank ]||Namal falls; the riders break; the cubs are counted|twice and all are living. But three cairns stand by|the road for the men the pen took.||Keanna binds your arm in silence, then: 'Valor is a|good servant and a poor master. Next time, wait for|the wall.'||[ ENDING: Valor and Graves ]"
+    return "[ Morning on the far bank ]||You held the line and the line held -- but it was a|blazing hand from heaven that turned the spear, not|yours. Keanna rises from the planks unaided and looks|at you a long moment, saying nothing at all.||The cubs are safe. The song, when they sing it, will|not carry your name.||[ ENDING: The Unbent Line ]"
+
+# Choice labels per scene ("" = no second choice).
+def missionChoiceA(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "March at dawn"
+    if id == 1
+        return "Split the score -- ten to the pen, ten to the gates"
+    if id == 2
+        return "Melt into an alley and let the patrol pass"
+    if id == 3
+        return "Strike now, while surprise is yours"
+    if id == 4
+        return "Break the pen"
+    if id == 5
+        return "To the bridge"
+    if id == 6
+        return "Dive -- knock her clear"
+    return "Sing the song of the day"
+
+def missionChoiceB(model: GameModel): str
+    var id = model.story
+    if id == 1
+        return "Keep the score together"
+    if id == 2
+        return "Bluff as slavers seeking the market"
+    if id == 3
+        return "Hold. Watch. The tuon say Yah Elyon sees"
+    if id == 6
+        return "Hold your line at the beam"
+    return ""
+
+# The mission FSM: pure, deterministic, testable.
+def missionStep(model: GameModel, pickB: bool): GameModel
+    var id = model.story
+    if id == 0
+        return model except story = 1
+    if id == 1
+        var m1 = model
+        if not pickB
+            m1 = withFlag(m1, "Split")
+        return m1 except story = 2
+    if id == 2
+        # Bluffing works only with the papers-of-sale story a split team
+        # keeps straight; a bunched score bluffing raises the alarm.
+        var m2 = model
+        if pickB and not hasFlag(m2, "Split")
+            m2 = withFlag(m2, "Alarm")
+        return m2 except story = 3
+    if id == 3
+        var m3 = model
+        if pickB
+            m3 = withFlag(m3, "Waited")
+        else
+            m3 = withFlag(m3, "Struck")
+        return m3 except story = 4
+    if id == 4
+        var m4 = withFlag(model, "CubsFree")
+        return m4 except story = 5
+    if id == 5
+        return model except story = 6
+    if id == 6
+        var m6 = model
+        if not pickB
+            m6 = withFlag(m6, "SavedKeanna")
+        return m6 except story = 7
+    return init()
 
 # ---------------------------------------------------------------------------
 # Update helpers (deterministic given the model's seed — testable)
@@ -345,6 +472,9 @@ def update(model: GameModel, msg: Msg): GameModel
         on Msg.pageNext   return nextPage(model)
         on Msg.getCubs    return chooseGetCubs(model)
         on Msg.contTale   return model except phase = 8, story = 0
+        on Msg.startMission  return model except phase = 9, story = 0
+        on Msg.mA         return missionStep(model, false)
+        on Msg.mB         return missionStep(model, true)
 
 # ---------------------------------------------------------------------------
 # View
@@ -450,6 +580,8 @@ def viewEpilogue(g: Gui, model: GameModel)
         if g.button("Continue")
             g.send(Msg.pageNext)
     else
+        if g.button("Play the finale -- The Cubs of Thas")
+            g.send(Msg.startMission)
         if g.button("Begin the tale anew")
             g.send(Msg.restart)
 
@@ -466,6 +598,16 @@ def viewFled(g: Gui, model: GameModel)
     if g.button("Face them again")
         g.send(Msg.restart)
     drawLog(g, model)
+
+def viewMission(g: Gui, model: GameModel)
+    drawPage(g, missionPage(model))
+    var a = missionChoiceA(model)
+    var b = missionChoiceB(model)
+    if g.button(a)
+        g.send(Msg.mA)
+    if b != ""
+        if g.button(b)
+            g.send(Msg.mB)
 
 def view(g: Gui, model: GameModel)
     g.text("=== Tears of the Tuon ===")
@@ -488,6 +630,8 @@ def view(g: Gui, model: GameModel)
         viewStory(g, model)
     if model.phase == 8
         viewEpilogue(g, model)
+    if model.phase == 9
+        viewMission(g, model)
 
 def main()
     Gui.run("Tears of the Tuon", 640, 480, init, update, view)

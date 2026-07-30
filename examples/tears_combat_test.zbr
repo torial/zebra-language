@@ -5,7 +5,7 @@
 # seed — no GUI backend involved. This is the payoff of keeping `update`'s
 # combat logic in seed-in / result-out pure functions.
 
-use tears_of_the_tuon exposing Weapon, swordW, bowW, daggerW, AttackOutcome, resolveAttack, weaponScore, chooseEnemyWeapon, tryFlee, playerFirst, GameModel, Msg, update
+use tears_of_the_tuon exposing Weapon, swordW, bowW, daggerW, AttackOutcome, resolveAttack, weaponScore, chooseEnemyWeapon, tryFlee, playerFirst, GameModel, Msg, update, hasFlag
 
 def main()
     # --- weapon data matches the original JSON ---
@@ -84,7 +84,8 @@ def main()
     # Fixed-seed model (bypasses init()'s entropy) so the playthrough is
     # reproducible. On Easy, Yehu (35 HP, +2 rolls) should beat two 20-HP
     # Ruffians. We auto-pick the sword and target the first standing enemy.
-    var m = GameModel(phase: 1, diff: 0, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, rngSeed: 12345, log: ["start"])
+    var noFlags: List(str) = []
+    var m = GameModel(phase: 1, diff: 0, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags, rngSeed: 12345, log: ["start"])
     var steps = 0
     while m.phase != 4 and m.phase != 5 and steps < 500
         if m.phase == 1
@@ -104,7 +105,8 @@ def main()
 
     # --- story FSM: intro pages -> Get the Cubs -> bridge -> title;
     #     victory -> epilogue pages -> last page holds ---
-    var sm = GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, rngSeed: 1, log: ["start"])
+    var noFlags2: List(str) = []
+    var sm = GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags2, rngSeed: 1, log: ["start"])
     sm = update(sm, Msg.pageNext)
     sm = update(sm, Msg.pageNext)
     sm = update(sm, Msg.pageNext)
@@ -123,5 +125,29 @@ def main()
     assert em.story == 2, "two page-turns reach the last epilogue page"
     em = update(em, Msg.pageNext)
     assert em.story == 2, "the last epilogue page holds (restart is the exit)"
+
+    # --- mission FSM: The Cubs of Thas — canonical path and valor path ---
+    var cm = update(em, Msg.startMission)
+    assert cm.phase == 9 and cm.story == 0, "epilogue offers the mission"
+    cm = update(cm, Msg.mA)                       # march at dawn
+    cm = update(cm, Msg.mA)                       # split the score
+    assert hasFlag(cm, "Split"), "splitting sets the Split flag"
+    cm = update(cm, Msg.mB)                       # bluff (works when split)
+    assert not hasFlag(cm, "Alarm"), "split team bluffs without alarm"
+    cm = update(cm, Msg.mB)                       # wait for the sign
+    assert hasFlag(cm, "Waited"), "waiting sets Waited"
+    cm = update(cm, Msg.mA)                       # break the pen
+    assert hasFlag(cm, "CubsFree"), "the cubs are freed"
+    cm = update(cm, Msg.mA)                       # to the bridge
+    cm = update(cm, Msg.mA)                       # dive
+    assert hasFlag(cm, "SavedKeanna") and cm.story == 7, "canonical ending reached"
+    # valor path: bunched score, bluff raises alarm; strike costs lives
+    var vm = update(em, Msg.startMission)
+    vm = update(vm, Msg.mA)
+    vm = update(vm, Msg.mB)                       # keep the score together
+    vm = update(vm, Msg.mB)                       # bluff -> alarm
+    assert hasFlag(vm, "Alarm"), "bunched bluff raises the alarm"
+    vm = update(vm, Msg.mA)                       # strike now
+    assert hasFlag(vm, "Struck"), "striking sets Struck"
 
     print("tears_combat_test: OK  (" + hits.toString() + " hits / " + misses.toString() + " misses; easy " + easyHits.toString() + " vs hard " + hardHits.toString() + "; won in " + steps.toString() + " steps, Yehu " + m.pHp.toString() + " HP; story FSM OK)")

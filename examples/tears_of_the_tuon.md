@@ -113,6 +113,29 @@ gated `test/` suite) so it can resolve the app by module name; run it manually.
 The 2026-07-30 story additions left every combat number identical (140/60 hits,
 victory in 4 steps on the fixed seed) — the pure core is untouched.
 
+## Mission: The Cubs of Thas (added 2026-07-30)
+
+The first **composed** mission — the untold interior of Episode I. The novella
+(ch. 5–6) sends Commander Yehu's score into Thas by the slave-ruse and then
+follows Gratta; the infiltration happens offstage. The mission plays that
+interior, contradicting nothing: Aidden's haggling at the gate, the split of
+the score, the pen with its fifty guards, the barel's judgment, Gratta at the
+gate-beam, Namal's flaming spear at the bridge. Its moral spine is Keanna's
+rebuke — the battle is won by *waiting for the sign*, not by the strength of
+the score.
+
+- Entry: the epilogue's last page → "Play the finale — The Cubs of Thas"
+  (phase 9; `model.story` = scene id).
+- **Flags ride `model.states`** (`hasFlag`/`withFlag`) — the DecisionEngine
+  criteria idea, ported small: Split, Alarm, Waited/Struck, CubsFree,
+  SavedKeanna select among **three endings** (The Faithful Score / Valor and
+  Graves / The Unbent Line).
+- Deterministic and pure (`missionStep`); the test walks both the canonical
+  path and the valor path.
+- Zebra note: an empty-list literal in a constructor argument emits a
+  never-mutated Zig temp (compile error) — hoist it
+  (`var noFlags: List(str) = []`) and pass the variable.
+
 ## Compiler gaps found — now dissolved
 
 Dogfooding this port surfaced three **bootstrap-lags-selfhost** gaps
