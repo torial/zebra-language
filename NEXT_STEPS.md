@@ -365,8 +365,15 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   compiler"* — the honest substitute for a coverage number, and the only item that
   measures what we are NOT testing. Overnight tool, ~2 days to build.
 - [ ] **C tier, post-0.9** — mutation fuzzing of valid programs (dbsqlfuzz's actual
-  trick; gramgen *generates*, nothing *mutates*), contract density inside the compiler,
-  periodic sanitizer sweeps, a release checklist.
+  trick; gramgen *generates*, nothing *mutates*), periodic sanitizer sweeps, a release
+  checklist. **C2 (contracts) PILOTED 2026-07-30 (`2f377c0`)** — feasibility proven
+  (compiler rebuilt itself with contracts live on its own parser; they survive regen;
+  QUICK 9/9), **zero bugs found**, cost ~15–20% on smoke with contracts on. The null
+  result is the finding: I chose clauses I was *certain* held, which guaranteed it.
+  **A contract you are certain holds is documentation; one you are only fairly sure holds
+  is a test.** Next aim is TypeChecker (129 defs, zero contracts, and the phase whose
+  wrong beliefs produced BUG-215/218/222/223), not more of the Parser. Detail in
+  `docs/testing_strategy.md`.
 
 **Known and not addressed by any of this: no gate clicks a GUI.** Doing it properly needs
 per-target-OS build and test infrastructure Sean does not have available (his call,
