@@ -1,6 +1,60 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-228. Next new bug: BUG-229.**
+**Last bug number generated: BUG-229. Next new bug: BUG-230.**
+
+---
+
+### BUG-229: TUI apps SEGFAULT at startup — selfhost emit never assigns `_tui_env` ⬜ OPEN
+Found 2026-07-30 by Sean running `--gui-backend=tui examples/tears_of_the_tuon.zbr`
+(the fourth GUI crash to sit under green gates, per house prophecy: no gate runs a GUI).
+
+**Symptom:** immediate `Segmentation fault at address 0x0` in `memcpy`, reached from
+zigzag `terminal.zig:1801 envVarExists` → `environ_map.get(name)` during
+`Terminal.init` → `setup()` → `detectUnicodeWidthCapabilities()` →
+`looksLikeKittyTerminal(self.environ_map)`. Reproduces headlessly too (the earlier
+"run exe app failure" in scripted runs was THIS, misread as no-console).
+
+**Root cause (diagnosed, high confidence):** the scaffolded app's `main.zig` declares
+`var _tui_env: *std.process.Environ.Map = undefined;` (template line — scaffold
+main.zig:3038) and passes it to `zz.Terminal.init(_io, _tui_env, …)` (:3046) but
+**never assigns it**. The bootstrap's CodeGen has the assignment — `src/CodeGen.zig`
+~:6431, inside the root-`main` injection block:
+
+```zig
+if (g.gui_backend == .tui) {
+    … writeAll("_tui_env = _zinit.environ_map;
+");
+}
+```
+
+— but the **selfhost** mirror of that injection block (`selfhost/CodeGen.zbr` ~:4346,
+"Root entry point (Zig 0.16): inject _io/_args/_allocator init", which emits
+`_io = _zinit.io;` / `_args = _zinit.minimal.args;` / `_allocator = _prog_alloc();`)
+is MISSING the tui-conditional line. Since GUI scaffolding moved to selfhost emission
+(NEXT_STEPS "GUI builds via selfhost emission"), every tui app gets the undefined
+pointer. A selfhost-lags-bootstrap gap — same family as BUG-204/205/206, opposite era.
+
+**Fix sketch (four lines):** in `selfhost/CodeGen.zbr` inside the `owner == "" and
+m.name == "main"` injection block (~:4346), after the `_allocator` emit, add the
+equivalent of:
+
+```
+if <gui_backend is tui>          # selfhost carries it as `_gui_backend: str` (~:1299)
+    ei.writeIndent()
+    ei.w.emit("_tui_env = _zinit.environ_map;
+")
+```
+
+Check how `_gui_backend` reaches CodeGen (module var, set ~:1303) — the condition
+should match however the tui section-inclusion already branches. Then the full drill:
+`bash tools/rebuild.sh` (this is a selfhost/*.zbr edit → regen matters), re-scaffold a
+tui example, and RUN the app (`doctor.sh` first per house law). A `smoke_run`-style
+check that the scaffolded app at least *starts* headlessly (init past Terminal.init,
+then immediate q) would be the regression guard this class has never had.
+
+**Assigned:** Opus — with Fable's compliments: diagnosis complete, fix located,
+one four-line edit + the rebuild drill, and the honor of closing the fourth
+GUI crash. (Repro: any `--gui-backend=tui` run of any example.)
 
 ---
 
