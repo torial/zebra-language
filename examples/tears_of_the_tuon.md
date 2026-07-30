@@ -136,6 +136,18 @@ the score.
   never-mutated Zig temp (compile error) — hoist it
   (`var noFlags: List(str) = []`) and pass the variable.
 
+## Playthrough driver
+
+`examples/tears_playthrough.zbr` — a headless full playthrough that drives the
+real `update()` FSM from intro to mission ending, printing every page, choice,
+and battle-log line (deterministic per its seed, with a try-again loop on
+defeat). First run of record, 2026-07-30: Fable lost the Medium road-battle on
+the first attempt and won on the second, finishing the mission on the faithful
+path — Split/Waited/CubsFree/SavedKeanna all true, ENDING: The Faithful Score.
+(The TUI itself is mouse-driven — `_tui_selectable` fires on a left-click at
+the widget's row; scripted SGR mouse-injection via winpty is untried, and a
+human clicking remains the only proof of rendering.)
+
 ## Compiler gaps found — now dissolved
 
 Dogfooding this port surfaced three **bootstrap-lags-selfhost** gaps

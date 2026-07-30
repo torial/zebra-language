@@ -1,0 +1,125 @@
+# Headless full playthrough of Tears of the Tuon — Fable at the controls.
+# Drives the real update() FSM from title to mission ending, printing every
+# page and battle-log line. Deterministic given the hardcoded seed.
+
+use tears_of_the_tuon exposing GameModel, Msg, update, introPage, epiloguePage, missionPage, missionChoiceA, missionChoiceB, hasFlag
+
+def showPage(page: str)
+    for ln in page.split("|")
+        print("  " + ln)
+
+def showNewLog(m: GameModel, since: int): int
+    var i = since
+    while i < m.log.len
+        print("  > " + m.log.at(i))
+        i = i + 1
+    return m.log.len
+
+def choose(label: str)
+    print("")
+    print("  [Fable chooses: " + label + "]")
+    print("")
+
+def main()
+    var noFlags: List(str) = []
+    var m = GameModel(phase: 7, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlags, rngSeed: 20260730, log: ["Two Ruffians block the mountain road. Yehu draws his blade."])
+    print("==== TEARS OF THE TUON — a playthrough by Fable ====")
+    print("")
+    # intro pages
+    while m.phase == 7
+        showPage(introPage(m.story))
+        if m.story < 3
+            choose("Continue")
+            m = update(m, Msg.pageNext)
+        else
+            if m.story == 3
+                choose("Get the Cubs")
+            else
+                choose("Stand your ground")
+            m = update(m, Msg.getCubs)
+    # difficulty
+    print("  A pair of Ruffians blocks the road. Choose your trial.")
+    choose("Medium -- a fair fight")
+    var logAt = m.log.len
+    m = update(m, Msg.selMedium)
+    logAt = showNewLog(m, logAt)
+    # battle loop: sword, first standing target
+    var steps = 0
+    while m.phase != 4 and m.phase != 5 and m.phase != 6 and steps < 200
+        if m.phase == 1
+            choose("Attack with Sword")
+            m = update(m, Msg.atkSword)
+        if m.phase == 2
+            if m.e0Hp > 0
+                choose("Target Ruffian A")
+                m = update(m, Msg.tgt0)
+            else
+                choose("Target Ruffian B")
+                m = update(m, Msg.tgt1)
+        if m.phase == 3
+            m = update(m, Msg.enemyTurn)
+        logAt = showNewLog(m, logAt)
+        steps = steps + 1
+    var attempt = 1
+    while m.phase == 5 and attempt < 6
+        print("")
+        print("  DEFEAT -- Yehu falls on the mountain road.")
+        choose("Try again (attempt " + (attempt + 1).toString() + ")")
+        var noFlagsR: List(str) = []
+        m = GameModel(phase: 1, diff: 1, pHp: 35, e0Hp: 20, e1Hp: 20, selWeapon: 0, round: 1, xp: 0, story: 0, states: noFlagsR, rngSeed: 20260730 + attempt * 7919, log: ["Yehu rises, spits blood, and takes up his blade again."])
+        logAt = showNewLog(m, 0)
+        steps = 0
+        while m.phase != 4 and m.phase != 5 and steps < 200
+            if m.phase == 1
+                choose("Attack with Sword")
+                m = update(m, Msg.atkSword)
+            if m.phase == 2
+                if m.e0Hp > 0
+                    choose("Target Ruffian A")
+                    m = update(m, Msg.tgt0)
+                else
+                    choose("Target Ruffian B")
+                    m = update(m, Msg.tgt1)
+            if m.phase == 3
+                m = update(m, Msg.enemyTurn)
+            logAt = showNewLog(m, logAt)
+            steps = steps + 1
+        attempt = attempt + 1
+    if m.phase != 4
+        print("  (The road kept its toll five times. The tale waits for a better swordsman.)")
+        return
+    print("")
+    print("  VICTORY -- Yehu earned " + m.xp.toString() + " experience.")
+    choose("Continue the tale")
+    m = update(m, Msg.contTale)
+    while m.phase == 8
+        showPage(epiloguePage(m.story))
+        if m.story + 1 < 3
+            choose("Continue")
+            m = update(m, Msg.pageNext)
+        else
+            choose("Play the finale -- The Cubs of Thas")
+            m = update(m, Msg.startMission)
+    # the mission — Fable plays the faithful path
+    while m.phase == 9 and m.story < 7
+        showPage(missionPage(m))
+        var a = missionChoiceA(m)
+        var b = missionChoiceB(m)
+        # policy: split the score; pass quietly; wait for the sign; dive.
+        if m.story == 1 or m.story == 6
+            choose(a)
+            m = update(m, Msg.mA)
+        else
+            if b != ""
+                if m.story == 3
+                    choose(b)
+                    m = update(m, Msg.mB)
+                else
+                    choose(a)
+                    m = update(m, Msg.mA)
+            else
+                choose(a)
+                m = update(m, Msg.mA)
+    showPage(missionPage(m))
+    print("")
+    print("==== The playthrough ends. Flags: Split=" + hasFlag(m, "Split").toString() + " Waited=" + hasFlag(m, "Waited").toString() + " CubsFree=" + hasFlag(m, "CubsFree").toString() + " SavedKeanna=" + hasFlag(m, "SavedKeanna").toString() + " ====")
