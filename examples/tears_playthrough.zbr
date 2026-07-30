@@ -2,7 +2,7 @@
 # Drives the real update() FSM from title to mission ending, printing every
 # page and battle-log line. Deterministic given the hardcoded seed.
 
-use tears_of_the_tuon exposing GameModel, Msg, update, introPage, epiloguePage, missionPage, missionChoiceA, missionChoiceB, hasFlag
+use tears_of_the_tuon exposing GameModel, Msg, update, introPage, epiloguePage, missionPage, missionChoiceA, missionChoiceB, disputePage, disputeChoiceA, disputeChoiceC, hasFlag
 
 def showPage(page: str)
     for ln in page.split("|")
@@ -121,5 +121,16 @@ def main()
                 choose(a)
                 m = update(m, Msg.mA)
     showPage(missionPage(m))
+    choose("Sing the song of the day")
+    m = update(m, Msg.mA)
+    # the feast: hear the whole dispute, then crown neither -- the Third Voice
+    while m.phase == 10 and m.story < 3
+        showPage(disputePage(m))
+        choose(disputeChoiceA(m))
+        m = update(m, Msg.mA)
+    showPage(disputePage(m))
+    choose(disputeChoiceC(m))
+    m = update(m, Msg.mC)
+    showPage(disputePage(m))
     print("")
-    print("==== The playthrough ends. Flags: Split=" + hasFlag(m, "Split").toString() + " Waited=" + hasFlag(m, "Waited").toString() + " CubsFree=" + hasFlag(m, "CubsFree").toString() + " SavedKeanna=" + hasFlag(m, "SavedKeanna").toString() + " ====")
+    print("==== The playthrough ends. Flags: Split=" + hasFlag(m, "Split").toString() + " Waited=" + hasFlag(m, "Waited").toString() + " CubsFree=" + hasFlag(m, "CubsFree").toString() + " SavedKeanna=" + hasFlag(m, "SavedKeanna").toString() + " ThirdVoice=" + hasFlag(m, "CrownGiver").toString() + " ====")

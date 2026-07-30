@@ -136,6 +136,20 @@ the score.
   never-mutated Zig temp (compile error) — hoist it
   (`var noFlags: List(str) = []`) and pass the variable.
 
+## The Dispute of Sword and Bow (added 2026-07-30)
+
+After the mission's ending, the victory feast hosts a **playable
+dispute-poem** (phase 10) — the oldest literary genre on record (the
+Mesopotamian precedence-contest: Hoe vs Plough, Sheep vs Grain), carried by
+Syriac into the church (Ephrem's Death-and-Satan debates) and by the church
+into Europe (The Owl and the Nightingale). Composed by Fable in the tale's own
+idiom: the Sword and the Bow trade boasts **citing the game's real mechanics**
+(15 dmg / crit 1-in-5 for 25 vs 12 dmg / crit ~1-in-7 for 25), and the player
+holds the genre's load-bearing slot — **the verdict**. Crown the Sword or the
+Bow (the Sumerian ending: one crowned, one bowed) or take the third voice the
+tradition's own history offers: crown neither boaster, and honor the Giver of
+the day. The test walks the boasts to the Third Voice verdict.
+
 ## Playthrough driver
 
 `examples/tears_playthrough.zbr` — a headless full playthrough that drives the

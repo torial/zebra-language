@@ -141,6 +141,14 @@ def main()
     cm = update(cm, Msg.mA)                       # to the bridge
     cm = update(cm, Msg.mA)                       # dive
     assert hasFlag(cm, "SavedKeanna") and cm.story == 7, "canonical ending reached"
+    cm = update(cm, Msg.mA)                       # sing the song of the day
+    assert cm.phase == 10 and cm.story == 0, "the mission ends at the feast"
+    cm = update(cm, Msg.mA)
+    cm = update(cm, Msg.mA)
+    cm = update(cm, Msg.mA)
+    assert cm.story == 3, "three pages of boasts reach the verdict"
+    cm = update(cm, Msg.mC)                       # crown neither -- the Third Voice
+    assert hasFlag(cm, "CrownGiver") and cm.story == 4, "the Third Voice verdict"
     # valor path: bunched score, bluff raises alarm; strike costs lives
     var vm = update(em, Msg.startMission)
     vm = update(vm, Msg.mA)

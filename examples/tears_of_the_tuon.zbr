@@ -202,6 +202,7 @@ union Msg
     startMission
     mA
     mB
+    mC
 
 def init(): GameModel
     var seed = Random.randInt(1, 2000000000)
@@ -327,7 +328,68 @@ def missionStep(model: GameModel, pickB: bool): GameModel
         if not pickB
             m6 = withFlag(m6, "SavedKeanna")
         return m6 except story = 7
+    # the mission's last page leads to the victory feast and its singers
+    return model except phase = 10, story = 0
+
+# ---------------------------------------------------------------------------
+# THE DISPUTE OF SWORD AND BOW (phase 10) -- a playable dispute-poem.
+# ---------------------------------------------------------------------------
+# The oldest literary genre on record: the Mesopotamian precedence-contest
+# (Hoe vs Plough, Sheep vs Grain), carried by Syriac into the church (Ephrem's
+# Death and Satan, Carmina Nisibena 52) and by the church into Europe (The Owl
+# and the Nightingale). Composed here by Fable in the tale's own world: sung
+# at the victory feast, the boasts cite the game's REAL mechanics, and the
+# player holds the genre's load-bearing slot -- THE VERDICT. Three crowns:
+# Sword or Bow (a god's verdict: one contestant wins), or the third voice the
+# refrain taught us: neither boaster, but the Giver of the day.
+
+def disputePage(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "[ The victory feast, on the far bank ]||Fires and roast squirrels; cubs asleep in a heap of|fur. A tuon singer rises, strikes a rib-bone drum,|and calls in the old meter:||'I HEARD THE SWORD AND THE BOW DISPUTING|WHICH WAS STRONGER THAN THE OTHER IN THE HAND|OF YEHU.'"
+    if id == 1
+        return "[ The Sword's boast ]||'Sister, I am your better; I take precedence over|you. Fifteen wounds ride every blow of mine, and one|stroke in five finds the vital and deals twenty-five.|I end what I begin. At my length there is no doubt,|no wind, no mercy of distance. The bridge remembers|me; ask Namal if the far hill saved him.'"
+    if id == 2
+        return "[ The Bow's answer ]||'Brother, your reach is an arm and a boast. I answer|quarrels before they arrive: twelve wounds from the|far hill, and my sharpest one in seven strikes for|twenty-five. I kept watch when the score walked the|streets of Thas; I am the wall a coward calls|cowardice. You drink blood at spear-length -- I|decline the invitation.'"
+    if id == 3
+        return "[ The second round ]||Sword: 'The wind owns half your arrows; my edge pays|no tax to weather.'||Bow: 'And the night owns all your reach. When the|riders came four abreast, who thinned them before|they were upon us?'||The singer lifts a paw: the boasts are spent. 'WHO|SHALL JUDGE BETWEEN THEM?' -- and the feast looks|at YOU."
+    if hasFlag(model, "CrownSword")
+        return "[ The verdict of the feast ]||'The SWORD takes precedence,' you say, and the tuon|roar approval, for the tuon love the close red work.|The singer crowns the hilt with a wreath of river|reeds.||But the Bow unstrings itself in silence, and out on|the dark road, distance keeps its own opinion.||[ The song ends as songs of Sumer ended: one crowned,|one bowed. The feast is content. ]"
+    if hasFlag(model, "CrownBow")
+        return "[ The verdict of the feast ]||'The BOW takes precedence,' you say, and the cubs|cheer, for it was arrows that watched over their|leashes. The singer nets the bow in a wreath of|hawk-feathers.||The Sword says nothing, being a sword; but at the|next bridge there will be work no feather reaches.||[ The song ends as songs of Sumer ended: one crowned,|one bowed. The feast is content. ]"
+    return "[ The verdict of the feast ]||'Neither,' you say, and the fires gutter as if a wind|crossed them. 'The Sword missed four times on the|road, and the Bow hung idle at the pen. The day was|not won at any length of arm.'||You lift the cup instead: 'TO YOU BE GLORY, YAH|ELYON, SHEPHERD OF ALL -- who saved the flock from|the hidden wolves that had swallowed it.'||The singer is quiet a long moment. Then: 'The wisest|verdict is the oldest one made new. Neither blade nor|string -- the Hand above the hand.'||[ ENDING: The Third Voice -- and the feast sings the|refrain until the stars change watch. ]"
+
+def disputeChoiceA(model: GameModel): str
+    if model.story < 3
+        return "Hear more"
+    if model.story == 3
+        return "Crown the Sword"
+    return "Let the feast burn low"
+
+def disputeChoiceB(model: GameModel): str
+    if model.story == 3
+        return "Crown the Bow"
+    return ""
+
+def disputeChoiceC(model: GameModel): str
+    if model.story == 3
+        return "Crown neither -- honor the Giver of the day"
+    return ""
+
+def disputeStep(model: GameModel, pick: int): GameModel
+    if model.story < 3
+        return model except story = model.story + 1
+    if model.story == 3
+        var m = model
+        if pick == 0
+            m = withFlag(m, "CrownSword")
+        if pick == 1
+            m = withFlag(m, "CrownBow")
+        if pick == 2
+            m = withFlag(m, "CrownGiver")
+        return m except story = 4
     return init()
+
 
 # ---------------------------------------------------------------------------
 # Update helpers (deterministic given the model's seed — testable)
@@ -457,6 +519,18 @@ def nextPage(model: GameModel): GameModel
         return model except story = model.story + 1
     return model
 
+# Choice routers: mA/mB serve both the mission (phase 9) and the dispute
+# (phase 10); mC is the dispute's third crown only.
+def pickA(model: GameModel): GameModel
+    if model.phase == 10
+        return disputeStep(model, 0)
+    return missionStep(model, false)
+
+def pickB(model: GameModel): GameModel
+    if model.phase == 10
+        return disputeStep(model, 1)
+    return missionStep(model, true)
+
 def update(model: GameModel, msg: Msg): GameModel
     branch msg
         on Msg.selEasy    return beginBattle(model, 0)
@@ -473,8 +547,9 @@ def update(model: GameModel, msg: Msg): GameModel
         on Msg.getCubs    return chooseGetCubs(model)
         on Msg.contTale   return model except phase = 8, story = 0
         on Msg.startMission  return model except phase = 9, story = 0
-        on Msg.mA         return missionStep(model, false)
-        on Msg.mB         return missionStep(model, true)
+        on Msg.mA         return pickA(model)
+        on Msg.mB         return pickB(model)
+        on Msg.mC         return disputeStep(model, 2)
 
 # ---------------------------------------------------------------------------
 # View
@@ -609,6 +684,19 @@ def viewMission(g: Gui, model: GameModel)
         if g.button(b)
             g.send(Msg.mB)
 
+def viewDispute(g: Gui, model: GameModel)
+    drawPage(g, disputePage(model))
+    if g.button(disputeChoiceA(model))
+        g.send(Msg.mA)
+    var b = disputeChoiceB(model)
+    if b != ""
+        if g.button(b)
+            g.send(Msg.mB)
+    var c = disputeChoiceC(model)
+    if c != ""
+        if g.button(c)
+            g.send(Msg.mC)
+
 def view(g: Gui, model: GameModel)
     g.text("=== Tears of the Tuon ===")
     g.separator()
@@ -632,6 +720,8 @@ def view(g: Gui, model: GameModel)
         viewEpilogue(g, model)
     if model.phase == 9
         viewMission(g, model)
+    if model.phase == 10
+        viewDispute(g, model)
 
 def main()
     Gui.run("Tears of the Tuon", 640, 480, init, update, view)
