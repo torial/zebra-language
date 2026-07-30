@@ -395,6 +395,24 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   a known wrong behaviour deferred to 1.x by §28e), `charAt` (BUG-223 is an open decision
   awaiting Sean). **Open tail:** deep nesting, very long identifiers, non-ASCII in string
   *operations* — none blocked, just not yet written.
+- [ ] **A5 (NEW, surfaced by A3 on 2026-07-30) — NO GATE SWEEPS `examples/`.** Every heavy
+  gate globs `test/*.zbr`: `compile_check`, `full_sweep`, `divergence`, `output_sweep`. The
+  `examples/` directory — the first thing a person evaluating the language opens — has
+  **zero coverage**, and it is already shipping something broken:
+  `examples/widget_smoke.zbr` uses `var items: List(str) = ["Apple", ...]` and does not
+  compile (BUG-230). Verified by emitting it and running `zig build-exe` on the result.
+
+  **Why it went unnoticed is worth keeping:** `zebra -c examples/widget_smoke.zbr` exits
+  **0**, correctly — `-c` is front-end-only by design (#4 above). So the obvious way to
+  spot-check an example cannot see this class at all, and the directory is otherwise
+  unswept. Both halves had to be true.
+
+  Cheap fix: point `full_sweep`/`compile_check` at `examples/*.zbr` as a second corpus, or
+  add an `examples_check.sh` on the same shape. The GUI examples need care (they scaffold
+  their own build), so the honest first version may be "every non-GUI example must emit and
+  compile", with the GUI ones listed as excluded rather than silently skipped. **For a 0.9
+  whose whole claim is ready-for-others, this ranks near A2/A3 rather than below them.**
+
 - [ ] **B2 spike (1 day) — is branch coverage feasible on Windows/Zig at all?** Decide
   B1-vs-B2 on evidence. One option worth the look: teaching Zebra itself to emit coverage
   counters, which would serve users too.

@@ -347,6 +347,50 @@ if [ -d test/boundary ]; then
     fi
 fi
 
+# ── boundary suite: the PENDING TRIPWIRE must actually fire ─────────────────
+# Five of the twelve probes assert via `rejects`/`warns`, which are DIFFERENT branches of
+# the runner from the diff path falsified above — and they carry the property the design
+# leans on hardest: a probe pinning a known bug must FAIL once that bug is fixed, so the
+# gap cannot be silently suppressed. That claim was documented and unproven.
+#
+# The direct test is a `rejects` probe over a program that compiles fine, which is exactly
+# what a pending probe becomes the day its bug is fixed. If the runner passed that, every
+# @boundary-pending probe in the suite would be a permanent green lie.
+if [ -d test/boundary ]; then
+    cat > test/boundary/_selfcheck_tripwire.zbr <<'ZEOF'
+# @boundary rejects this program is fine and must not be rejected
+def main()
+    print("ok")
+ZEOF
+    got=$(run_rc bash tools/boundary_check.sh --only _selfcheck_tripwire)
+    rm -f test/boundary/_selfcheck_tripwire.zbr
+    if [ "$got" -eq 1 ] && grep -q 'but it built and ran' "$LAST_OUT_FILE"; then
+        pass "boundary pending-tripwire fires when a 'rejects' probe starts compiling"
+    elif [ "$got" -eq 0 ]; then
+        bad "boundary PASSED a 'rejects' probe that compiled cleanly — every @boundary-pending probe is a green lie"
+    else
+        bad "boundary rc=$got without reporting the unexpected success: $(last_out)"
+    fi
+
+    # The `warns` branch, same argument: a probe asserting a warning must fail when the
+    # warning is absent, or bv_arity_too_few/too_many would pass on a compiler that had
+    # silently stopped checking arity anywhere at all.
+    cat > test/boundary/_selfcheck_warn.zbr <<'ZEOF'
+# @boundary warns a warning that is never emitted
+def main()
+    print("ok")
+ZEOF
+    got=$(run_rc bash tools/boundary_check.sh --only _selfcheck_warn)
+    rm -f test/boundary/_selfcheck_warn.zbr
+    if [ "$got" -eq 1 ] && grep -q 'intended warning is MISSING' "$LAST_OUT_FILE"; then
+        pass "boundary reports a 'warns' probe whose warning never appears"
+    elif [ "$got" -eq 0 ]; then
+        bad "boundary PASSED a 'warns' probe that emitted no warning"
+    else
+        bad "boundary rc=$got without reporting the missing warning: $(last_out)"
+    fi
+fi
+
 # ── round-trip: the freshness property whose absence made it vacuous ─────────
 # The emits compared must be FRESH selfhost output, not copies of the committed
 # bootstrap-emitted files. Checkable only if a prior full run left the dirs.
