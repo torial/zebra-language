@@ -68,7 +68,52 @@ have been false and is the one to watch.
 
 ---
 
-### BUG-235: the Luau-translated corpus went 1482 -> 849 compiling, cause unconfirmed ⚠ OPEN
+### BUG-235: the Luau-translated corpus went 1482 -> 849 compiling ✅ RESOLVED 2026-07-31 — STALE CORPUS
+
+**RESOLVED — the corpus on disk was five weeks stale. Nothing was broken.**
+
+Regenerated with the CURRENT translator (`--all --write-zbr`):
+
+```
+before (2026-06-16 corpus, measured today):   849 / 1780   47.7%
+after  (regenerated today):                  1446 / 1581   91%
+recorded in June for reference:              1482 / 1780   83%
+```
+
+The compile RATE is now well above June's, though the absolute count is slightly lower:
+dedup removed 199 duplicate scripts, so the corpus is 1581 unique files, not 1780.
+
+*(A 250-script sample of that run reported 100% and I briefly believed it. The sample
+was the head of a sorted list and the easy scripts sort early — sampling a sorted corpus
+by prefix is not sampling. The full-corpus number is the one above.)*
+
+135 files still fail, dominated by 477 `resolver:undefined_ident` — Roblox APIs the shim
+does not cover yet. Ongoing translator work, not a regression.
+
+**Against 47.7% for the files that were sitting in `ported_scripts/`.** The regression was
+never in the compiler and never in the translator — it was that `ported_scripts/` was
+generated **2026-06-16** and the translator learned to emit `exposing` on **2026-06-20**,
+with the robloxglobals shim injection following on **2026-06-30**. The corpus predates
+its own fix by five weeks.
+
+So the chain is: Zebra correctly tightened `use` to match its documented behaviour;
+the June corpus depended on the old leniency; the translator was fixed four days later;
+nobody regenerated. Every link is individually reasonable, which is exactly how a
+633-file regression sits unnoticed for five weeks.
+
+Corpus regenerated 2026-07-31 (`--all --write-zbr`). Sean's standing note: *"The corpus
+is not intended to be locked in yet (as we are iterating toward a solution)."*
+
+**THE LESSON IS THE ONE THAT SURVIVES, and it is not about `use`.** A generated artefact
+was checked in, its generator improved four days later, and nothing connected the two.
+There was no gate on the corpus and no staleness check on the generator — so a directory
+of 1,780 files silently stopped representing what the toolchain produces.
+
+That is the same shape as A5 (`examples/` ungated, shipping a broken file) and as the
+`str_ownership.md` gate (a DERIVED doc that goes stale when codegen changes — and which
+caught exactly that, twice, this week). The pattern worth generalising: **every generated
+artefact under version control needs either a regeneration gate or a staleness check.**
+`ported_scripts/` had neither; `str_ownership.md` has one and it works.
 
 **Severity:** high if it is a compiler regression, none if it is deliberate — which is
 exactly why it needs answering rather than filing away.
