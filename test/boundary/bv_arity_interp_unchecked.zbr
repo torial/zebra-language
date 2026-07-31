@@ -1,25 +1,23 @@
-# @boundary runs
-# @boundary-pending BUG-232  argument-count checking is skipped inside ${...}
+# @boundary warns too few arguments to 'add': expected 2, found 1
 #
-# PINS A BUG, NOT A FEATURE — and this is the one worth reading.
+# BUG-232 REGRESSION GUARD. Authored 2026-07-30 as a `@boundary-pending` probe
+# recording SILENTLY WRONG OUTPUT: `print("${add(1)}")` emitted no diagnostic at all,
+# while the identical call as a statement warned. Fixed 2026-07-31; rewritten to assert
+# the warning it was always meant to.
 #
-# `add` takes two arguments. Called inside a `${...}` interpolation with one, the
-# compiler says NOTHING and the program runs, printing 1 (the missing argument is
-# padded with a deterministic zero, per BUG-142's partial fix). The IDENTICAL call
-# written as a statement emits `warning: too few arguments to 'add': expected 2,
-# found 1` — see bv_arity_too_few.zbr, which is the control.
+# Third pending tripwire to fire on a real fix, after BUG-234 and BUG-236.
 #
-# The same asymmetry holds for too MANY arguments: extra arguments are silently
-# discarded inside an interpolation and warned about outside it.
+# THE BUG WAS MUCH LARGER THAN ITS TITLE. `checkCallsInExpr` branches over Expr and
+# handled 8 of 34 variants; interpolation was the visible symptom of a walker missing
+# nearly every container (list/set/array/tuple literals, dicts, ternaries, orelse,
+# catch, slices, optional chains, chained comparisons, `except`, `is`, `old`). Fifteen
+# arms were added, then a sixteenth once BUG-237 explained why interpolation resisted:
+# `StringPart` was not in TypeChecker's `use Ast exposing ...` list, so codegen never
+# registered its boxed variants and the `^Expr` payload emitted as a raw pointer.
 #
-# The .expected file below therefore records SILENTLY WRONG OUTPUT on purpose. It
-# is the current answer, not the right one. When BUG-232 is fixed this probe will
-# fail — rewrite it as `# @boundary warns too few arguments` at that point.
-#
-# WHY IT MATTERS MORE THAN THE OTHER TWO: `print("${f(...)}")` is the most common
-# shape in the language, so this is the context where a user is MOST likely to
-# make an arity mistake and LEAST likely to be told. Found by the A3 boundary
-# suite, 2026-07-30; both compilers behave identically.
+# The file name is now a small lie -- it is no longer "unchecked". Kept anyway: the
+# bug-fixture gate and BUGS.md both reference it, and a rename buys nothing a comment
+# does not.
 def add(a: int, b: int): int
     return a + b
 
@@ -27,5 +25,7 @@ def one(a: int): int
     return a
 
 def main()
+    # Both must now be diagnosed. The `warns` kind asserts by substring, so the header
+    # pins too-few; the too-many line is asserted by bv_arity_too_many's sibling probe.
     print("tooFew=${add(1)}")
     print("tooMany=${one(1, 2)}")

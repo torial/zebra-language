@@ -1,14 +1,116 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-237. Next new bug: BUG-238.**
+**Last bug number generated: BUG-238. Next new bug: BUG-239.**
 
 ---
 
-### BUG-237: a `^T` bound out of a UNION payload does not auto-deref when passed ⚠ OPEN
+### BUG-238: import-parser rejects `except` inside enum-dotted `branch` arms — "syntax error near 'except'" ⚠ OPEN
 
-**Severity:** medium (valid-looking Zebra emits Zig that fails to compile; the error
-names generated types, not the user's).
-**Found:** 2026-07-31 while fixing BUG-232, which it partially blocked.
+**Symptom.** A module that parses and runs clean STANDALONE fails when loaded
+via `use`: every `except` from the first enum-dotted arm onward reports
+`syntax error near 'except'`. This re-broke the committed-green tears game
+(last green at 1fa2b21): `zebra run examples/tears_combat_test.zbr` now emits
+19 such errors from `tears_of_the_tuon.zbr`, first at the update() dispatcher.
+
+**Minimal repro** (two files in examples/):
+
+```
+# lib_b238.zbr
+struct P
+    var a: int
+
+enum Msg
+    go
+    stay
+
+def update(m: P, msg: Msg): P
+    branch msg
+        on Msg.go    return m except a = 8
+        on Msg.stay  return m except a = 9
+    return m
+```
+```
+# main_b238.zbr
+use lib_b238 exposing P, Msg, update
+
+def main()
+    print(update(P(a: 1), Msg.go).a.toString())
+```
+`zebra run main_b238.zbr` → `lib_b238.zbr:11:31: syntax error near 'except'`.
+
+**Controls (all verified 2026-07-31, zebra.exe of 07-31 14:47):**
+- Same lib code with `def main()` appended, run STANDALONE → prints 8. PASS.
+- Same shape with INTEGER arms (`branch k / on 0 ...`) under import → parses
+  fine (fails later only if emit-cache is cold-deleted mid-run; unrelated).
+- Multi-field vs single-field except: irrelevant — both fail on enum arms.
+- Return-position except, forward-declared struct types, list-field except,
+  top-level multi-field except: all PASS under import. The trigger is
+  exactly: `on Enum.value    return expr except ...` in an imported module.
+
+**Suspicion.** The import path retains (or falls back to) an arm-grammar
+older than the main parser's — the dotted-value `on` arm seems to consume
+the trailing return-expression with a reduced expression grammar that lacks
+postfix `except` (BUG-204's old shape, resurrected inside `use`-loading).
+Likely a second parse entry-point for imported modules that didn't get the
+B12-era except productions, or a divergent copy of the arm parser in the
+selfhost import loader touched by the recent TypeChecker/CodeGen merge.
+
+**Two secondary observations from the same hunt (not filed separately):**
+1. **Emit-cache staleness masks errors**: artifacts in `%TMP%` keyed by
+   module basename (`<name>.zig`, `<name>.zig.fast.exe`) can serve stale
+   results after the source changes — during diagnosis the same compile
+   alternated pass/fail depending on leftover artifacts (cousin of
+   BUG-235's stale-corpus lesson). A content-hash in the cache key would
+   end the class.
+2. **`spawn failed` when run outside the repo root**: zebra.exe appears to
+   locate its zig/helper relative to CWD; from any other directory every
+   compile dies with the bare message `spawn failed`. Worth an explicit
+   error ("cannot find zig at <path>") and an exe-relative lookup.
+
+**Assigned: Opus — with Fable's compliments; the tears game is the live
+victim and its working tree (scribe-mission changes, uncommitted) is
+waiting on this to go green.**
+
+---
+
+### BUG-237: a union used WITHOUT being `exposing`-imported silently mis-emits `^T` payloads ⚠ OPEN
+
+**ROOT CAUSE FOUND 2026-07-31** — it is not about union payloads in general. It is that
+**referencing a union that is not in the module's `use X exposing ...` list silently
+skips its boxed-variant registration.**
+
+```zebra
+use Ast exposing Expr              # StringPart NOT exposed
+if part is StringPart.expr_ as e   # still RESOLVES and compiles the front end
+    someFn(e)                      # emits `someFn(e)` -- a raw *Expr. Zig rejects it.
+
+use Ast exposing StringPart, Expr  # exposed
+if part is StringPart.expr_ as e   # emits `const e_ptr = ...; const e = e_ptr.*;`
+    someFn(e)                      # correct
+```
+
+`selfhost/CodeGen.zbr:6917` gates the deref on
+`boxed_variants.contains_(union + "." + variant)`, and `boxed_variants` is populated
+from same-module unions plus `populateBoxedVariants(..., deps_mt)` on each `use` — which
+evidently follows the **exposed** names. So an unexposed union is still *referenceable*
+(the front end resolves `StringPart.expr_` fine) but codegen has no record that its
+payload is boxed.
+
+**That combination — resolves, compiles the front end, emits wrong Zig — is the defect.**
+Either the reference should be rejected ("StringPart is not exposed in this module"), or
+the registration should follow reachability rather than the exposing list. The current
+behaviour fails in the worst available way: a Zig type error naming `Ast.Expr` vs
+`*Ast.Expr`, in generated code, for a mistake that is really a missing import clause.
+
+**Cost of the ambiguity, measured:** six spellings tried before the import list was
+suspected — bare binding, renamed binding, annotated local, pointer-typed parameter,
+direct payload access, and a call in condition position. Every one emitted the pointer,
+because none of them was the actual variable. `CgHelpers.zbr` "mysteriously" worked for
+exactly one reason: it exposes `StringPart` and `TypeChecker` did not.
+
+**Severity:** medium (silent mis-emit; the diagnostic points at generated types, and the
+real fix is a missing name in an import list).
+**Found:** 2026-07-31 while fixing BUG-232, which it blocked until the cause was found.
 
 ```zebra
 union StringPart
@@ -45,10 +147,11 @@ Whatever the discriminator is, it is worth finding: it means the same source lin
 different code in two places, which is the kind of thing that makes a codegen bug look
 like a user error.
 
-**Consequence, recorded so it is not mistaken for a choice:** the `string_interp` arm of
-`checkCallsInExpr` is deliberately absent, so BUG-232 is fixed for every container
-EXCEPT interpolation — which is the one users hit most. `test/boundary/
-bv_arity_interp_unchecked.zbr` stays `@boundary-pending` on BUG-232 until this is fixed.
+**BUG-232 is no longer blocked** — adding `StringPart` to the exposing list fixed it, and
+`bv_arity_interp_unchecked.zbr` now asserts the warning instead of pinning the silence.
+This entry remains open on its own merits: the next person to reference an unexposed
+union will lose the same hours, and a compiler that silently emits wrong code for a
+missing import clause is a poor trade for the convenience of not writing the name.
 
 ---
 
@@ -414,7 +517,7 @@ the sweep prints on every run.
 
 ---
 
-### BUG-232: argument-count checking is SKIPPED inside containers ⚠ PARTIAL 2026-07-31
+### BUG-232: argument-count checking is SKIPPED inside containers ✅ FIXED 2026-07-31
 
 **PARTIAL FIX 2026-07-31 — and the bug turned out to be much larger than reported.**
 
@@ -429,8 +532,14 @@ silent in a list literal, an orelse and a tuple.
 **Fixed for all of those** (15 new arms). Confirmed: list literal, tuple literal,
 `orelse`, dict literal and slice all now warn where they were silent.
 
-**NOT fixed for `${...}` itself**, which is the case originally reported and the one
-users meet most. `StringPart.expr_` carries a `^Expr`, and a `^T` bound from a union
+**FULLY FIXED, including `${...}`.** The interpolation arm resisted six spellings until
+the cause turned out to be an **import list**: `StringPart` was missing from this
+module's `use Ast exposing ...`. See BUG-237 — without it, codegen never registers the
+union's boxed variants, so the `^Expr` payload emits as a raw pointer. Adding
+`StringPart` to the exposing list produced the deref immediately.
+
+*(Original note, kept because the hunt is the useful part:)* it was not fixed for
+`${...}`, the case originally reported and the one `StringPart.expr_` carries a `^Expr`, and a `^T` bound from a union
 payload does not auto-deref when passed — six spellings tried, all emitting a pointer
 Zig rejects. Filed as **BUG-237**; that blocks the last arm. The pending probe stays.
 

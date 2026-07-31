@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
+use Ast exposing StringPart, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -3002,69 +3002,15 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
         # leaf variants (int_lit, ident, this_, nil_, ...) are correctly absent: they
         # hold no sub-expression. `lambda` is also deliberately absent -- its body is
         # STATEMENTS, which checkStmts already walks on its own.
-        # string_interp is DELIBERATELY ABSENT, and it is the one case BUG-232 was
-        # reported for -- so this is a gap, not an oversight. `StringPart.expr_`
-        # carries a `^Expr`, and a branch-bound `^T` from a UNION payload does not
-        # auto-deref when passed to a function; six spellings were tried (bare
-        # binding, renamed binding, annotated local, pointer-typed parameter, direct
-        # `part.expr_` payload access, and a call in condition position) and every one
-        # emitted the POINTER, which Zig rejects with
-        #   expected type 'Ast.Expr', found '*Ast.Expr'
-        # A `^Expr` STRUCT FIELD derefs fine -- `cm.object` two arms up emits
-        # `cm.object.*` -- so the gap is specific to union payloads. Filed as BUG-237
-        # with the full attempt list; interpolation stays covered by the
-        # @boundary-pending probe on BUG-232 until that is fixed.
-        on Expr.list_lit as ll
-            for el in ll.elems
-                checkCallsInExpr(el, file, line, ctx)
-        on Expr.set_lit as sl
-            for el in sl.elems
-                checkCallsInExpr(el, file, line, ctx)
-        on Expr.array_lit as al
-            for el in al.elems
-                checkCallsInExpr(el, file, line, ctx)
-        on Expr.tuple_lit as tl
-            for el in tl.elems
-                checkCallsInExpr(el, file, line, ctx)
-        on Expr.dict_lit as dl
-            for en in dl.entries
-                checkCallsInExpr(en.key, file, line, ctx)
-                checkCallsInExpr(en.value, file, line, ctx)
-        on Expr.if_expr as ife
-            checkCallsInExpr(ife.cond, file, line, ctx)
-            checkCallsInExpr(ife.then_expr, file, line, ctx)
-            checkCallsInExpr(ife.else_expr, file, line, ctx)
-        on Expr.orelse_ as oe
-            checkCallsInExpr(oe.expr, file, line, ctx)
-            checkCallsInExpr(oe.fallback, file, line, ctx)
-        on Expr.catch_ as ce
-            checkCallsInExpr(ce.expr, file, line, ctx)
-            checkCallsInExpr(ce.fallback, file, line, ctx)
-        on Expr.slice as sx
-            # start/stop_ are `^Expr?` -- OPTIONAL, because `s[..n]` and `s[n..]` omit
-            # one end. They must be nil-checked before unwrapping; passing the
-            # optional straight through is a type error the emit only reveals at
-            # link time.
-            checkCallsInExpr(sx.object, file, line, ctx)
-            if sx.start != nil
-                checkCallsInExpr(sx.start!, file, line, ctx)
-            if sx.stop_ != nil
-                checkCallsInExpr(sx.stop_!, file, line, ctx)
-        on Expr.opt_chain as oc
-            checkCallsInExpr(oc.base, file, line, ctx)
-            for a in oc.args
-                checkCallsInExpr(a.value, file, line, ctx)
-        on Expr.chained_cmp as cc
-            for op in cc.operands
-                checkCallsInExpr(op, file, line, ctx)
-        on Expr.except_ as ex
-            checkCallsInExpr(ex.base, file, line, ctx)
-            for f in ex.fields
-                checkCallsInExpr(f.value, file, line, ctx)
-        on Expr.type_check as tc
-            checkCallsInExpr(tc.expr, file, line, ctx)
-        on Expr.old_ as ol
-            checkCallsInExpr(ol.operand, file, line, ctx)
+        on Expr.string_interp as si
+            # Requires `StringPart` in this module's `use Ast exposing ...` list --
+            # see BUG-237. Without it the union is still REFERENCEABLE, but codegen
+            # never registers its boxed variants, so `^Expr` payloads emit as raw
+            # pointers and Zig rejects them. That silent dependency cost six attempted
+            # spellings before the exposing list turned out to be the difference.
+            for part in si.parts
+                if part is StringPart.expr_ as se
+                    checkCallsInExpr(se, file, line, ctx)
         else
             pass
 
