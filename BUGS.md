@@ -1,6 +1,54 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-236. Next new bug: BUG-237.**
+**Last bug number generated: BUG-237. Next new bug: BUG-238.**
+
+---
+
+### BUG-237: a `^T` bound out of a UNION payload does not auto-deref when passed ⚠ OPEN
+
+**Severity:** medium (valid-looking Zebra emits Zig that fails to compile; the error
+names generated types, not the user's).
+**Found:** 2026-07-31 while fixing BUG-232, which it partially blocked.
+
+```zebra
+union StringPart
+    literal: String
+    expr_: ^Expr
+
+# inside a walker taking `Expr`:
+if part is StringPart.expr_ as e
+    someFn(e)          # emits `someFn(e)` where e is *Expr
+                       # -> error: expected type 'Ast.Expr', found '*Ast.Expr'
+```
+
+A `^T` **struct field** derefs correctly — `cm.object` two lines away emits
+`cm.object.*`, and `sx.start` (a `^Expr?`) emits `sx.start.?.*`. The gap is specific to
+a `^T` reached through a **union payload binding**.
+
+**Six spellings were tried, all emitting the bare pointer:**
+
+1. bare binding as an argument — `someFn(e)`
+2. renamed binding (matching a working precedent's names exactly) — `someFn(se)`
+3. annotated local — `var pex: Expr = pe` emitted `const pex: Expr = pe;`, no deref
+4. pointer-typed parameter — a `def f(be: ^Expr)` wrapper, which passed it on unchanged
+5. direct payload access without a binding — `someFn(part.expr_)`
+6. call in CONDITION position — `if boolReturningWrapper(e)`
+
+**What makes it genuinely odd:** `selfhost/CgHelpers.zbr:268-269` does *the same thing*
+and emits the deref (`const e_ptr = part.expr_; const e = e_ptr.*;`) — verified against a
+FRESH emit from today's bootstrap, so it is not a stale artefact. The two source sites
+are structurally identical down to the loop shape. Reduced probes of the same shape (bare
+argument, void statement call, interpolated call, over a `union Part { expr_: ^Node }`)
+all compile fine, so the trigger is not the construct alone and was not isolated.
+
+Whatever the discriminator is, it is worth finding: it means the same source line emits
+different code in two places, which is the kind of thing that makes a codegen bug look
+like a user error.
+
+**Consequence, recorded so it is not mistaken for a choice:** the `string_interp` arm of
+`checkCallsInExpr` is deliberately absent, so BUG-232 is fixed for every container
+EXCEPT interpolation — which is the one users hit most. `test/boundary/
+bv_arity_interp_unchecked.zbr` stays `@boundary-pending` on BUG-232 until this is fixed.
 
 ---
 
@@ -366,7 +414,25 @@ the sweep prints on every run.
 
 ---
 
-### BUG-232: argument-count checking is SKIPPED inside `${...}` interpolation ⚠ OPEN
+### BUG-232: argument-count checking is SKIPPED inside containers ⚠ PARTIAL 2026-07-31
+
+**PARTIAL FIX 2026-07-31 — and the bug turned out to be much larger than reported.**
+
+It was filed as "arity checking is skipped inside `${...}`". Enumerating `Expr`'s **34
+variants** against `checkCallsInExpr`'s arms showed it handled **eight**. Interpolation
+was the visible symptom of a walker that was missing nearly every container: list, set,
+array and tuple literals, dict literals, `orelse`, `catch`, slices, optional chains,
+chained comparisons, `except` updates, `is` checks, and `old()` were ALL unchecked.
+Verified before fixing rather than assumed — `add(1)` warned as a statement and was
+silent in a list literal, an orelse and a tuple.
+
+**Fixed for all of those** (15 new arms). Confirmed: list literal, tuple literal,
+`orelse`, dict literal and slice all now warn where they were silent.
+
+**NOT fixed for `${...}` itself**, which is the case originally reported and the one
+users meet most. `StringPart.expr_` carries a `^Expr`, and a `^T` bound from a union
+payload does not auto-deref when passed — six spellings tried, all emitting a pointer
+Zig rejects. Filed as **BUG-237**; that blocks the last arm. The pending probe stays.
 
 **Severity:** high (silent wrong behaviour, in the language's most common idiom).
 **Found:** 2026-07-30 by the A3 boundary suite (`test/boundary/`), from the

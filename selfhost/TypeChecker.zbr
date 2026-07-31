@@ -2952,6 +2952,13 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
 # itself, calls in its arguments, and calls in compound sub-expressions). This is
 # what reaches nested calls like `print(add(1))` that the statement-level
 # checkCallExpr never visited.
+# `StringPart.expr_` carries a `^Expr`, and a branch-bound `^T` passed straight to a
+# free function as a STATEMENT argument emits the pointer rather than the value --
+# Zig rejects it with "expected type 'Ast.Expr', found '*Ast.Expr'". The same binding
+# used in a CONDITION (`if exprHasTry(e)`, CgHelpers.zbr:269) does get the deref, and
+# a `^Expr` FIELD does too (`cm.object` emits `cm.object.*` right below). So the gap
+# is narrow and specific to this position; this wrapper takes the pointer as a
+# PARAMETER, where the deref is applied reliably.
 def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
     branch e
         on Expr.call as c
@@ -2977,6 +2984,87 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
             checkCallsInExpr(tr.expr, file, line, ctx)
         on Expr.cast as cst
             checkCallsInExpr(cst.expr, file, line, ctx)
+        # BUG-232.  Everything below was falling into the `else: pass` arm, so a call
+        # inside ANY of these containers was never arity-checked at all.
+        #
+        # The bug was reported as "arity checking is skipped inside ${...}", because
+        # that is where a user meets it -- `print("${add(1)}")` is the most common shape
+        # in the language and it was silent where `var r = add(1)` warns. But
+        # interpolation was only the visible symptom. Enumerating Expr's 34 variants
+        # against this walker's arms showed it handled EIGHT; every other container
+        # -- list/set/array/tuple/dict literals, ternaries, orelse, catch, slices,
+        # optional chains, chained comparisons, `except` updates, `is` checks, `old()`
+        # -- was equally unchecked. Verified empirically before fixing, not assumed:
+        # add(1) warns as a statement and is silent in a list literal, a ternary, an
+        # orelse and a tuple.
+        #
+        # So this is a whole-walker completion rather than an interpolation patch. The
+        # leaf variants (int_lit, ident, this_, nil_, ...) are correctly absent: they
+        # hold no sub-expression. `lambda` is also deliberately absent -- its body is
+        # STATEMENTS, which checkStmts already walks on its own.
+        # string_interp is DELIBERATELY ABSENT, and it is the one case BUG-232 was
+        # reported for -- so this is a gap, not an oversight. `StringPart.expr_`
+        # carries a `^Expr`, and a branch-bound `^T` from a UNION payload does not
+        # auto-deref when passed to a function; six spellings were tried (bare
+        # binding, renamed binding, annotated local, pointer-typed parameter, direct
+        # `part.expr_` payload access, and a call in condition position) and every one
+        # emitted the POINTER, which Zig rejects with
+        #   expected type 'Ast.Expr', found '*Ast.Expr'
+        # A `^Expr` STRUCT FIELD derefs fine -- `cm.object` two arms up emits
+        # `cm.object.*` -- so the gap is specific to union payloads. Filed as BUG-237
+        # with the full attempt list; interpolation stays covered by the
+        # @boundary-pending probe on BUG-232 until that is fixed.
+        on Expr.list_lit as ll
+            for el in ll.elems
+                checkCallsInExpr(el, file, line, ctx)
+        on Expr.set_lit as sl
+            for el in sl.elems
+                checkCallsInExpr(el, file, line, ctx)
+        on Expr.array_lit as al
+            for el in al.elems
+                checkCallsInExpr(el, file, line, ctx)
+        on Expr.tuple_lit as tl
+            for el in tl.elems
+                checkCallsInExpr(el, file, line, ctx)
+        on Expr.dict_lit as dl
+            for en in dl.entries
+                checkCallsInExpr(en.key, file, line, ctx)
+                checkCallsInExpr(en.value, file, line, ctx)
+        on Expr.if_expr as ife
+            checkCallsInExpr(ife.cond, file, line, ctx)
+            checkCallsInExpr(ife.then_expr, file, line, ctx)
+            checkCallsInExpr(ife.else_expr, file, line, ctx)
+        on Expr.orelse_ as oe
+            checkCallsInExpr(oe.expr, file, line, ctx)
+            checkCallsInExpr(oe.fallback, file, line, ctx)
+        on Expr.catch_ as ce
+            checkCallsInExpr(ce.expr, file, line, ctx)
+            checkCallsInExpr(ce.fallback, file, line, ctx)
+        on Expr.slice as sx
+            # start/stop_ are `^Expr?` -- OPTIONAL, because `s[..n]` and `s[n..]` omit
+            # one end. They must be nil-checked before unwrapping; passing the
+            # optional straight through is a type error the emit only reveals at
+            # link time.
+            checkCallsInExpr(sx.object, file, line, ctx)
+            if sx.start != nil
+                checkCallsInExpr(sx.start!, file, line, ctx)
+            if sx.stop_ != nil
+                checkCallsInExpr(sx.stop_!, file, line, ctx)
+        on Expr.opt_chain as oc
+            checkCallsInExpr(oc.base, file, line, ctx)
+            for a in oc.args
+                checkCallsInExpr(a.value, file, line, ctx)
+        on Expr.chained_cmp as cc
+            for op in cc.operands
+                checkCallsInExpr(op, file, line, ctx)
+        on Expr.except_ as ex
+            checkCallsInExpr(ex.base, file, line, ctx)
+            for f in ex.fields
+                checkCallsInExpr(f.value, file, line, ctx)
+        on Expr.type_check as tc
+            checkCallsInExpr(tc.expr, file, line, ctx)
+        on Expr.old_ as ol
+            checkCallsInExpr(ol.operand, file, line, ctx)
         else
             pass
 
