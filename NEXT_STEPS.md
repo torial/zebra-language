@@ -393,8 +393,13 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   coverage:** min/max int and float extremes (build-mode dependent — blocked on BUG-228,
   or the expectations pin a mode that is about to change), `s[i]` on non-ASCII (BUG-225 is
   a known wrong behaviour deferred to 1.x by §28e), `charAt` (BUG-223 is an open decision
-  awaiting Sean). **Open tail:** deep nesting, very long identifiers, non-ASCII in string
-  *operations* — none blocked, just not yet written.
+  awaiting Sean). **Open tail CLOSED 2026-07-31** (`cf35d85` + follow-up): deep nesting and long
+  identifiers both **matched intent on every row first try**; non-ASCII string
+  operations found **BUG-234** — `reverse()` byte-reverses, so `"世界".reverse()` is
+  invalid UTF-8 rather than `"界世"` (every multi-byte codepoint; ASCII unaffected,
+  which is why nothing noticed). Suite is now **16 probes, 5 pending tripwires**.
+  Remaining uncovered: min/max int + float extremes (blocked on BUG-228), `s[i]` on
+  non-ASCII (BUG-225, deferred to 1.x), `charAt` (BUG-223, Sean's call).
 - [x] **A5 — gate `examples/`. DONE 2026-07-30.** `bash tools/full_sweep.sh --examples`, in the FULL tier, falsified in `gate_selfcheck.sh`. **First run: 18 examples — 14 pass, 2 genuinely broken, 1 harness-limited, 1 library.** It found **BUG-233** (a lambda parameter shadowing an enclosing one emits invalid Zig — `panel_smoke`) and confirmed `plugin_host` is broken by a Zig 0.16 `DynLib` stdlib change. `widget_smoke` was fixed by the BUG-230 fix and is baselined. Implemented by extending `full_sweep.sh` with a `--examples` corpus rather than adding a sixth near-identical script, so the emit → build-exe → baseline → regress-only-gate logic cannot drift from its sibling. A `DEPMISS` bucket was added because `lsystem` **runs correctly** but its search-path dependency is not emitted by `--output-dir` — a gate that libels a working file is one people learn to disbelieve. Original entry: Every heavy
   gate globs `test/*.zbr`: `compile_check`, `full_sweep`, `divergence`, `output_sweep`. The
   `examples/` directory — the first thing a person evaluating the language opens — has

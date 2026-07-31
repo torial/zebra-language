@@ -61,14 +61,9 @@ def main()
     print("accentUpper=[${e.upper()}]")
     print("greekUpper=[${g.upper()}]")
 
-    # Reversal is the sharpest probe here. A BYTE reverse of multi-byte UTF-8
-    # produces invalid UTF-8; a codepoint-aware reverse does not. Intent asserts
-    # the string stays valid text, because a stdlib operation that can silently
-    # manufacture invalid UTF-8 out of valid input is a surprise by any standard.
-    var rev = c.reverse()
-    print("cjkRevValid=${rev.isValidUtf8()}")
-    print("cjkRevCps=${rev.codePointCount()}")
-    print("cjkRev=[${rev}]")
+    # reverse() moved to bv_reverse_nonascii.zbr — it is BROKEN (BUG-234, found by
+    # this probe) and pinning a bug belongs in its own file, so one known defect
+    # cannot mask the rest of this dimension.
 
     # Validity is preserved by the operations that merely move text around.
     print("origValid=${e.isValidUtf8()}")

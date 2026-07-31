@@ -132,7 +132,14 @@ for zbr in "$DIR"/*.zbr; do
         red "$base (TIMED OUT after ${TIMEOUT_SECS}s — a hang, not a wrong answer)"
         continue
     fi
-    grep -vE '^wrote |^compiling:|^ *parsing\.\.\.|^ *parsed OK|^ *resolved OK' \
+    # -a is load-bearing, not defensive. A probe whose output is deliberately INVALID
+    # UTF-8 (bv_reverse_nonascii, which pins BUG-234) makes grep treat the stream as
+    # binary: it prints "Binary file ... matches" and DROPS the content. The offending
+    # row vanished from the diff while every row around it stayed, which reads as
+    # "that line was never printed" rather than "the harness ate it" — and the harness
+    # eating evidence is the worse of the two by far. A boundary suite whose whole job
+    # is odd inputs must not be blinded by an odd input.
+    grep -avE '^wrote |^compiling:|^ *parsing\.\.\.|^ *parsed OK|^ *resolved OK' \
         "$OUT/both.txt" > "$OUT/out.txt" || true
 
     if [ "$SHOW" = 1 ]; then

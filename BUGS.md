@@ -1,6 +1,56 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-233. Next new bug: BUG-234.**
+**Last bug number generated: BUG-234. Next new bug: BUG-235.**
+
+---
+
+### BUG-234: `str.reverse()` byte-reverses, turning valid UTF-8 into invalid ⚠ OPEN
+
+**Severity:** high (a stdlib call silently converts valid text into non-text).
+**Found:** 2026-07-31 by the A3 non-ASCII dimension, from a row written specifically
+because a byte reverse and a codepoint reverse differ exactly here.
+
+```zebra
+var c = "世界"                 # valid UTF-8, 2 codepoints, 6 bytes
+var rev = c.reverse()          # expected "界世"
+rev.isValidUtf8()              # -> false
+rev.codePointCount()           # -> 0      (from input that had 2)
+rev.len                        # -> 6      (bytes preserved, order shredded)
+```
+
+Not a CJK-only or 3-byte-only edge — `"é".reverse()` is invalid too, so it is
+**every multi-byte codepoint**. ASCII is unaffected (`"abc".reverse()` is `"cba"`,
+valid), which is exactly why nothing noticed: the corpus reverses ASCII.
+
+**Why no gate saw it.** `output_sweep` compares what programs PRINT against a golden
+baseline, and no corpus program reverses non-ASCII — so there was nothing to record
+and nothing to regress from. This is the golden-baseline limitation in its purest
+form: it can only ever tell you behaviour CHANGED, never that it was wrong on day
+one. Only an expectation written from the reference could find it, which is the
+argument A3 exists to make.
+
+**TWO LEGITIMATE RESOLUTIONS, and they are different decisions — Sean's call:**
+
+* **(a) Make `reverse()` codepoint-aware**, so it cannot produce invalid UTF-8.
+* **(b) Declare it a BYTE operation and say so**, as was done for the ASCII-only
+  `is…` predicates (also found this week, also a doc-vs-implementation gap).
+
+What is **not** defensible is the current state: documented as "Reverse the string",
+implemented as a byte operation, and silently manufacturing invalid UTF-8. Note that
+(b) still leaves a stdlib call that turns valid text into invalid text with no
+warning, which sits badly in a language whose headline feature is contracts. My
+recommendation is (a), with (b) acceptable if reverse() is meant to be a
+byte-layer primitive — in which case it should arguably be named for that.
+
+Pinned by `test/boundary/bv_reverse_nonascii.zbr`, a `@boundary-pending` probe that
+records today's broken output and will FAIL when this is fixed — the signal to
+rewrite it to assert `cjkRevValid=true` / `cjkRevCps=2` / `cjkRev=[界世]`.
+
+**It also caught a bug in the boundary harness itself:** a probe whose output is
+invalid UTF-8 made `grep` treat the stream as binary, print `Binary file ... matches`
+and DROP the row — which read as "that line was never printed" rather than "the
+harness ate it". Fixed with `grep -a`. A suite whose whole job is odd inputs must not
+be blinded by an odd input.
 
 ---
 

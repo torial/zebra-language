@@ -1061,7 +1061,7 @@ var result = sb.build()              # str (drains the builder)
 | `trim()` | `(): str` | Strip leading and trailing whitespace |
 | `trimLeft()` | `(): str` | Strip leading whitespace |
 | `trimRight()` | `(): str` | Strip trailing whitespace |
-| `reverse()` | `(): str` | Reverse the string |
+| `reverse()` | `(): str` | Reverse the string. **ASCII-safe only — see BUG-234** |
 | `replace(from, to)` | `(str, str): str` | Replace all occurrences of `from` with `to` |
 | `repeat(n)` | `(int): str` | Repeat the string `n` times |
 | `padLeft(width, fill)` | `(int, str): str` | Pad on the left to `width` characters with `fill` |
@@ -1113,6 +1113,13 @@ var result = sb.build()              # str (drains the builder)
 | `isAlphanumeric()` | `(): bool` | **ASCII** letters or digits only |
 | `isPrintable()` | `(): bool` | **ASCII** printable characters only |
 | `isValidUtf8()` | `(): bool` | Valid UTF-8 byte sequence |
+
+> **`reverse()` currently corrupts non-ASCII text (BUG-234, open).** It reverses
+> BYTES, so every multi-byte codepoint is shredded: `"世界".reverse()` is not
+> `"界世"` — it is invalid UTF-8, with `isValidUtf8()` false and
+> `codePointCount()` 0. ASCII is unaffected. Until this is resolved, do not call
+> `reverse()` on text that may contain non-ASCII; reverse a `List` of `.chars()`
+> instead if you need character order.
 
 > **The four `is…` predicates are ASCII-only, and the empty string is `false`.**
 > Corrected 2026-07-30 after the boundary suite found the documentation and the

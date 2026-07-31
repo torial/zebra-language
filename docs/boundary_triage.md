@@ -160,6 +160,44 @@ visible, and when the bug is fixed the assertion **breaks** — which is the sig
 rewrite the probe to assert the intent it was always meant to. A pending probe is a
 tripwire on a known gap, not a suppression of it.
 
+## 3A. Second pass — the open tail (2026-07-31)
+
+The three dimensions `NEXT_STEPS` listed as A3's unblocked tail, authored under the same
+seam (probes + intent committed unrun in `cf35d85`, results after).
+
+| probe | rows | result |
+|---|---|---|
+| `bv_deep_nesting` | 10 | **every row matched intent first try** |
+| `bv_long_identifiers` | 10 | **every row matched intent first try** |
+| `bv_nonascii_ops` | 22 | 2 of my own arithmetic errors; 1 real bug (split out) |
+
+**BUG-234 — `reverse()` byte-reverses, turning valid UTF-8 into invalid.** `"世界".reverse()`
+is not `"界世"`; it is not text at all (`isValidUtf8()` false, `codePointCount()` 0, from
+input that had 2). Every multi-byte codepoint is affected — `"é"` too — while ASCII is fine,
+which is precisely why nothing noticed: the corpus reverses ASCII.
+
+That row existed because a byte reverse and a codepoint reverse differ *exactly* there.
+It is the clearest single vindication of the intent-first method so far: `output_sweep`
+could never have found it, because no corpus program reverses non-ASCII, so there was
+nothing recorded to regress from.
+
+**Where my expectations were wrong again, recorded per the rule:** I asserted
+`"Ωmega"` had 6 codepoints and 7 bytes. It has **5 and 6** — I counted the ASCII tail as
+five characters instead of four. The `concat` rows inherited the same error. Two rows,
+one mistake, entirely mine.
+
+**Where intent was right and worth keeping:** `upper()` leaves non-ASCII unchanged
+(`"héllo".upper()` is `"HéLLO"`), which I predicted from the `is…` predicates being
+ASCII-only. The model is at least *consistent*, even where it is under-documented.
+
+**A harness bug the probe exposed.** `bv_reverse_nonascii` prints deliberately invalid
+UTF-8, which made `grep` treat the stream as binary: it printed `Binary file ... matches`
+and DROPPED the row. The row's absence read as "never printed" rather than "the harness
+ate it" — the more dangerous of the two readings. Fixed with `grep -a`. A suite whose
+whole job is odd inputs must not be blinded by an odd input, and this is the second time
+this session that a checker of mine failed on its own subject matter (the first being a
+run that measured nothing and reported success).
+
 ## 4. Not covered, and why — no silent caps
 
 The suite covers four dimensions completely rather than nine partially. What is **not**
@@ -172,8 +210,8 @@ quietly be mistaken for coverage.
 | **float extremes** (inf, nan, -0.0, denormals) | Same reason, plus float **formatting** is a second unpinned variable. |
 | **non-ASCII indexing** (`s[i]`) | **BUG-225** — typed `char`, holds a raw byte, silently wrong for non-ASCII. §28e decided this is **documented for 0.9 and retyped in 1.x**. A probe asserting codepoint semantics would fail forever by design; a probe asserting today's byte behaviour would enshrine a known bug. |
 | **`charAt`** | **BUG-223** is an open decision awaiting Sean. Encoding either answer would be this suite legislating a user-facing API change. |
-| **deep nesting, very long identifiers** | Genuinely open work, not blocked on anything — the next extension of this suite. |
-| **non-ASCII in string *operations*** (not indexing) | Partially reachable today (`codePointCount`, `chars()`) and worth adding; excluded from the first pass only for scope. |
+| ~~deep nesting, very long identifiers~~ | **DONE 2026-07-31.** Both clean — every row matched intent on the first run. |
+| ~~non-ASCII in string *operations*~~ | **DONE 2026-07-31**, and it found **BUG-234**. |
 
 The four dimensions covered — empty string, empty collections, nil at every position, and
 argument arity — were chosen because **BUG-223 and BUG-224 both came from exactly there**,
