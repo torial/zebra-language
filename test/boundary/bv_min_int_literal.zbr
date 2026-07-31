@@ -1,0 +1,21 @@
+# @boundary runs
+#
+# BOUNDARY: the most negative i64, -9223372036854775808.
+#
+# Its own file because it is the one integer row most likely to fail outright. The
+# asymmetry is the point: i64's minimum has NO positive counterpart, so a lexer that
+# reads the digits first and applies the sign second must briefly hold 9223372036854775808
+# — a value that does not fit — and only becomes representable once negated. Languages
+# get this wrong routinely, and when they do it is usually a silent wrap rather than an
+# error.
+def main()
+    var mn = -9223372036854775808
+    print("min=${mn}")
+    print("minStr=${mn.toString()}")
+
+    var mns = "-9223372036854775808"
+    print("minParse=${mns.tryInt() orelse 0}")
+    print("minRoundTrips=${(mns.tryInt() orelse 0) == mn}")
+
+    # One below the minimum must not parse.
+    print("underIsNil=${"-9223372036854775809".tryInt() == nil}")

@@ -1,0 +1,5 @@
+min=-9223372036854775808
+minStr=-9223372036854775808
+minParse=-9223372036854775808
+minRoundTrips=true
+underIsNil=true

@@ -198,6 +198,43 @@ whole job is odd inputs must not be blinded by an odd input, and this is the sec
 this session that a checker of mine failed on its own subject matter (the first being a
 run that measured nothing and reported success).
 
+## 3B. Third pass — integer boundaries (2026-07-31)
+
+The first pass deferred the ENTIRE integer dimension behind BUG-228. That was too broad,
+and re-examining it is the reason two more bugs exist on the record. **Only arithmetic
+OVERFLOW is build-mode dependent.** Parsing, formatting, the representability of the
+extreme literals, and the rounding conventions of `/` and `%` are defined identically in
+every mode, so they were probed now.
+
+| probe | rows | result |
+|---|---|---|
+| `bv_int_boundaries` | 21 | **every row matched intent first try** |
+| `bv_min_int_literal` | 5 | **every row matched intent first try** |
+| `bv_signed_division` | 10 | **BUG-236** |
+
+`bv_min_int_literal` is split out deliberately: `-9223372036854775808` has no positive
+counterpart, so a lexer that reads digits before applying the sign must briefly hold a
+value that does not fit. It handles it correctly — but it was the likeliest single row
+to fail outright, and a compile failure would have taken 21 other rows with it.
+
+**BUG-236 — `/` and `%` use mismatched conventions.** `/` emits `@divTrunc` (truncate
+toward zero) and `%` emits `@mod` (floor). Only two pairings are coherent
+(`@divTrunc`+`@rem`, or `@divFloor`+`@mod`) and Zebra uses neither, so
+`(a/b)*b + (a%b) == a` — the *definition* of integer division and remainder — is FALSE
+for negative operands.
+
+Positive operands agree under every convention, which is exactly why the corpus is
+silent: `output_sweep` had nothing recorded to regress from, because no corpus program
+takes a modulo of a negative. That is the same shape as BUG-234 (`reverse()` on
+non-ASCII) — both found by the same method, both invisible to a golden baseline by
+construction, and both cases where a single hand-written row aimed at a known fork in
+the semantics paid for the whole dimension.
+
+**A note on what "deferred" should mean.** Deferring the int dimension wholesale cost
+two bugs five weeks of invisibility. The lesson is not "defer less" — BUG-228 really
+does make overflow unmeasurable — it is that a deferral should name the *specific*
+property that is blocked, not the whole dimension that contains it.
+
 ## 4. Not covered, and why — no silent caps
 
 The suite covers four dimensions completely rather than nine partially. What is **not**
@@ -206,7 +243,7 @@ quietly be mistaken for coverage.
 
 | dimension | why not |
 |---|---|
-| **min/max int, overflow, division by zero** | Behaviour is **build-mode dependent** and the modes are currently in flux: the default is Debug on the self-hosted backend (where overflow traps), while **BUG-228** records that `--release` does not actually pass an optimize flag, and Sean's direction is to make ReleaseFast good enough and A/B it. Authoring expectations now would pin one mode's answers as the language's, and they would flip when BUG-228 lands. Do this dimension *after* BUG-228. |
+| **overflow, division by zero** (min/max literals + parsing + `/`,`%` rounding now COVERED, see 3B) | Behaviour is **build-mode dependent** and the modes are currently in flux: the default is Debug on the self-hosted backend (where overflow traps), while **BUG-228** records that `--release` does not actually pass an optimize flag, and Sean's direction is to make ReleaseFast good enough and A/B it. Authoring expectations now would pin one mode's answers as the language's, and they would flip when BUG-228 lands. Do this dimension *after* BUG-228. |
 | **float extremes** (inf, nan, -0.0, denormals) | Same reason, plus float **formatting** is a second unpinned variable. |
 | **non-ASCII indexing** (`s[i]`) | **BUG-225** — typed `char`, holds a raw byte, silently wrong for non-ASCII. §28e decided this is **documented for 0.9 and retyped in 1.x**. A probe asserting codepoint semantics would fail forever by design; a probe asserting today's byte behaviour would enshrine a known bug. |
 | **`charAt`** | **BUG-223** is an open decision awaiting Sean. Encoding either answer would be this suite legislating a user-facing API change. |

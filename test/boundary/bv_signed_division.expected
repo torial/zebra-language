@@ -1,0 +1,10 @@
+posPos=3
+negPos=-3
+posNeg=-3
+negNeg=3
+modPosPos=1
+modNegPos=1
+modPosNeg=-1
+exactNeg=-3
+exactNegMod=0
+identity=false

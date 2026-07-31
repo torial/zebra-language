@@ -1,0 +1,60 @@
+# @boundary runs
+#
+# BOUNDARY: integer extremes that are NOT build-mode dependent.
+#
+# The A3 first pass deferred the whole int dimension behind BUG-228, and that was
+# too broad. Only ARITHMETIC OVERFLOW is mode-dependent (it traps in Debug, and its
+# ReleaseFast behaviour is exactly what BUG-228 is about). Parsing, formatting, and
+# the representability of the extreme literals themselves are defined the same way
+# in every mode, so they can be pinned now and are pinned here.
+#
+# `int` is i64: max 9223372036854775807, min -9223372036854775808. The asymmetry is
+# the interesting part — the min literal has no positive counterpart, so a lexer that
+# parses the digits first and negates second has to handle a value that does not fit
+# until the sign is applied.
+def main()
+    # The MIN literal lives in bv_min_int_literal.zbr, on purpose: it is the single
+    # likeliest row here to fail outright (a lexer that reads the digits before
+    # applying the sign must hold a value that does not fit until it is negated), and
+    # a compile failure would take all 25 rows below it with it.
+    var mx = 9223372036854775807
+    print("max=${mx}")
+    print("maxStr=${mx.toString()}")
+
+    # Round-tripping the max through text must be lossless.
+    var mxs = "9223372036854775807"
+    print("maxParse=${mxs.tryInt() orelse 0}")
+    print("maxRoundTrips=${(mxs.tryInt() orelse 0) == mx}")
+
+    # ONE PAST THE END, in both directions, is the row that matters: a parser that
+    # silently wraps is far worse than one that reports nil, because the caller has
+    # no way to tell a real value from a wrapped one.
+    var over = "9223372036854775808"
+    var wayOver = "99999999999999999999999999"
+    print("overIsNil=${over.tryInt() == nil}")
+    print("wayOverIsNil=${wayOver.tryInt() == nil}")
+
+    # toInt() cannot signal failure and is documented to yield 0 on bad input.
+    print("overToInt=${over.toInt()}")
+
+    # Ordinary parse edges around zero and sign.
+    print("zero=${"0".tryInt() orelse -1}")
+    print("negZero=${"-0".tryInt() orelse -1}")
+    print("plusFive=${"+5".tryInt() orelse -1}")
+    print("negFive=${"-5".tryInt() orelse -1}")
+
+    # Non-numeric tails and whitespace must not parse as a partial number.
+    print("trailingJunkIsNil=${"5x".tryInt() == nil}")
+    print("leadingSpaceIsNil=${" 5".tryInt() == nil}")
+    print("innerSpaceIsNil=${"1 2".tryInt() == nil}")
+    print("dashOnlyIsNil=${"-".tryInt() == nil}")
+
+    # Base conversion at its own edges.
+    print("hexFF=${"ff".toIntBase(16)}")
+    print("bin1111=${"1111".toIntBase(2)}")
+    print("octal777=${"777".toIntBase(8)}")
+
+    # Zero and one, the two values most likely to be special-cased somewhere.
+    print("zeroStr=${0.toString()}")
+    print("oneStr=${1.toString()}")
+    print("negOneStr=${(0 - 1).toString()}")

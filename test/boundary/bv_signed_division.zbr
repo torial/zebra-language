@@ -1,0 +1,41 @@
+# @boundary runs
+# @boundary-pending BUG-236  `/` uses @divTrunc but `%` uses @mod; identity fails
+#
+# BOUNDARY: integer division and modulo with NEGATIVE operands.
+#
+# Under-specified today: QUICKSTART says only "use `%` for modulo" and never states
+# which way division truncates. That silence is the reason to probe it — two
+# defensible conventions exist and they disagree on every negative case:
+#
+#   truncate toward zero (C, Zig @divTrunc):  -7 / 2 == -3,  -7 % 2 == -1
+#   floor toward -inf    (Python, @divFloor): -7 / 2 == -4,  -7 % 2 ==  1
+#
+# Intent asserted TRUNCATION TOWARD ZERO for both. Division does exactly that. MODULO
+# DOES NOT -- it floors -- so the two operators disagree and the identity
+# `(a/b)*b + (a%b) == a` is FALSE. That is BUG-236, found by this probe, and the
+# .expected file below now records the BROKEN behaviour so the gate stays honest.
+# When BUG-236 is fixed this probe FAILS: rewrite modNegPos to -1, modPosNeg to 1,
+# identity to true, and drop the pending line.
+# Its own file: signed division is also the row most likely not to compile at all, as
+# Zig REFUSES a bare `/` on signed integers precisely because the convention is
+# ambiguous, and requires @divTrunc/@divFloor to be named explicitly.
+#
+# Whatever the answer is, it should be WRITTEN DOWN — that is the finding either way.
+def main()
+    print("posPos=${7 / 2}")
+    print("negPos=${(0 - 7) / 2}")
+    print("posNeg=${7 / (0 - 2)}")
+    print("negNeg=${(0 - 7) / (0 - 2)}")
+
+    print("modPosPos=${7 % 2}")
+    print("modNegPos=${(0 - 7) % 2}")
+    print("modPosNeg=${7 % (0 - 2)}")
+
+    # Exact division of a negative leaves no remainder either way.
+    print("exactNeg=${(0 - 6) / 2}")
+    print("exactNegMod=${(0 - 6) % 2}")
+
+    # The identity that must hold whichever convention is chosen.
+    var a = 0 - 7
+    var b = 2
+    print("identity=${(a / b) * b + (a % b) == a}")

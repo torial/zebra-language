@@ -2022,8 +2022,14 @@ fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are 
 | Float-to-int         | `x.toInt()`                    | explicit conversion (drops fraction)     |
 | Number-to-string     | `x.toString()`                 | on int/float/bool; or `"${x}"` interp    |
 | String-to-number     | `s.toInt()` / `s.toFloat()`    | 0 on bad input; `tryInt`/`tryFloat` to detect |
-| Divide integers      | `int` division                 | use `%` for modulo                       |
+| Divide integers      | `int` division (truncates toward zero) | `%` — **but see the warning below** |
 | Field access (self)  | `.field`                       | leading-dot shorthand; shadow-resilient  |
+
+> **`/` and `%` disagree on negative operands today (BUG-236, open).** `/` truncates
+> toward zero (`-7 / 2` is `-3`) but `%` floors (`-7 % 2` is `1`, not `-1`), so the
+> division identity **`(a/b)*b + (a%b) == a` is false** for negative operands. Positive
+> operands are unaffected. Until this is resolved, do not mix `/` and `%` on values
+> that may be negative — the two operators are not describing the same division.
 
 ---
 

@@ -1,6 +1,115 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-234. Next new bug: BUG-235.**
+**Last bug number generated: BUG-236. Next new bug: BUG-237.**
+
+---
+
+### BUG-236: signed `/` and `%` use MISMATCHED conventions; the division identity fails ⚠ OPEN
+
+**Severity:** high (silent wrong arithmetic on negative operands, no diagnostic).
+**Found:** 2026-07-31 by the A3 integer dimension. Confirmed at the emit level.
+
+```zebra
+(0 - 7) / 2      #  -3   (truncates toward zero)
+(0 - 7) % 2      #   1   (floors -- sign of the DIVISOR)
+7 % (0 - 2)      #  -1
+
+var a = 0 - 7
+var b = 2
+(a / b) * b + (a % b) == a     # -> FALSE.  (-3)*2 + 1 = -5, not -7
+```
+
+**The division identity `(a/b)*b + (a%b) == a` does not hold.** That identity is not a
+nicety; it is the definition of integer division and remainder, and essentially every
+algorithm that mixes `/` and `%` on possibly-negative values silently assumes it.
+
+**Root cause, straight from the emitted Zig** — codegen picks one convention for each
+operator and they are not the same one:
+
+```
+6  @divTrunc     # `/`  -> truncate toward zero   (sign of the DIVIDEND)
+5  @mod          # `%`  -> floor                  (sign of the DIVISOR)
+```
+
+Only two pairings are coherent, and Zebra is using neither:
+
+| `/` | `%` | `-7/2` | `-7%2` | identity |
+|---|---|---|---|---|
+| `@divTrunc` | `@rem` | -3 | -1 | holds (C, Zig, Java, Go) |
+| `@divFloor` | `@mod` | -4 | 1 | holds (Python) |
+| **`@divTrunc`** | **`@mod`** | **-3** | **1** | **BROKEN — current** |
+
+**Recommended fix: change `%` to emit `@rem`.** It is a one-builtin change, it keeps
+`/` as it is (so no existing division changes behaviour), and it matches the language
+Zebra compiles to. Switching `/` to `@divFloor` instead would also be coherent but
+changes far more code and diverges from Zig for no stated reason.
+
+Positive operands are unaffected — `7/2` and `7%2` agree under every convention — which
+is why the whole corpus is silent on it. `output_sweep` could not have caught this
+either: no corpus program takes a modulo of a negative, so there is nothing recorded to
+regress from. Same shape as BUG-234, found by the same method for the same reason.
+
+**QUICKSTART says nothing about either convention**, which is its own defect: the docs
+mention `%` only as "use `%` for modulo". Whichever way this is resolved, the rounding
+behaviour of both operators on negatives should be written down.
+
+Pinned by `test/boundary/bv_signed_division.zbr`, a `@boundary-pending` probe recording
+today's broken output — including `identity=false`, which is the row that should never
+have been false and is the one to watch.
+
+---
+
+### BUG-235: the Luau-translated corpus went 1482 -> 849 compiling, cause unconfirmed ⚠ OPEN
+
+**Severity:** high if it is a compiler regression, none if it is deliberate — which is
+exactly why it needs answering rather than filing away.
+**Found:** 2026-07-31, incidentally, while trying to measure BUG-142's blast radius.
+**Needs Sean**, because the resolution depends on project intent, not on code reading.
+
+**The measurement, made with GameEngine's OWN harness so it is comparable to the
+number on record** (`python tools/measure_corpus_compile.py 2000`):
+
+| when | compiling | source |
+|---|---|---|
+| 2026-06-23 | **1482** / 1780 | recorded in BUG-142 above |
+| **2026-07-31** | **849** / 1780 (47.7%) | measured today |
+
+**~633 files that used to compile no longer do.**
+
+**What has been ruled out, so this is not a guess about where to look:**
+
+* **Corpus drift** — no. `git diff` of `ported_scripts/` between the June commit and
+  HEAD is **empty**; the last regeneration was 2026-06-16, a week BEFORE the 1482
+  reading. Same bytes in, different result out.
+* **Corpus size** — no. 1780 files in June, 1780 now.
+* **A different harness** — no. Same script, same `--emit-zig`, same cwd. Three
+  independent instruments (that harness, a `-c` sweep, an `--emit-zig` sweep) all
+  agree on **849** today.
+* **Module resolution** — no, and this is the one worth recording because it was the
+  obvious suspect. The dominant failure is `undefined name: 'RunService'` and friends,
+  which looks exactly like a missing search path. It is not: copying **all 69**
+  `zbra/*.zbr` modules next to the script reproduces the identical error. The scripts
+  reference Roblox service globals **without importing the `robloxglobals` shim** —
+  the translator commit that injects it (`401e0b3`) postdates the corpus regeneration.
+
+**Leading hypothesis, NOT established:** the Resolver became stricter about undefined
+names sometime after 2026-06-23, turning a previously-tolerated condition into a hard
+error. If so it is probably *correct* hardening — but with a 633-file blast radius that
+nobody measured, because nothing gates this corpus.
+
+**Confirming it means bisecting the Zebra compiler across ~5 weeks against this corpus.**
+That is a real job and it was not started tonight; the point of this entry is that the
+number on record is stale and must not be used as a baseline until it is explained.
+
+**Immediate consequence — BUG-142 is blocked on this.** The 1482 figure is the baseline
+the too-many/too-few promotion was to be judged against, and it no longer describes
+reality. See BUG-142 for what was and was not measurable in the meantime.
+
+**The structural point, which is the third instance of it in two days:** this is another
+corpus that **no gate watches**. `examples/` was the first (A5, and it was already
+shipping a broken file); this is the same shape at 100x the size and in a different repo.
+The A5 pattern applies directly — a baselined, regress-only gate — and would have caught
+this the week it happened instead of five weeks later.
 
 ---
 
