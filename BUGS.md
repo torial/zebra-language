@@ -92,7 +92,63 @@ number on record** (`python tools/measure_corpus_compile.py 2000`):
   reference Roblox service globals **without importing the `robloxglobals` shim** —
   the translator commit that injects it (`401e0b3`) postdates the corpus regeneration.
 
-**Leading hypothesis, NOT established:** the Resolver became stricter about undefined
+**IDENTIFIED 2026-07-31 (Sean's question about the `RunSvc` shim led straight to it).**
+The cause is **`use` no longer bringing a module's names into scope without `exposing`**.
+
+```zebra
+use run_service                      # what the translator emits
+RunService.Heartbeat.Connect(cb)     # -> error: undefined name: 'RunService'
+
+use run_service exposing RunService  # add ONE clause
+RunService.Heartbeat.Connect(cb)     # -> compiles clean
+```
+
+Verified on a real failing corpus file: `0145_Script_Dancing_Shelly.zbr` goes from
+`undefined name: 'RunService'` to **rc=0** with nothing changed but that clause.
+Qualifying instead (`run_service.RunService()`) works too.
+
+**The numbers line up.** **983** corpus files use a bare `use` with no `exposing`,
+against **931** failures today. In June, 1780-1482 = 298 failed — so roughly 685 of
+those bare-`use` files compiled *then* and do not *now*. Bare `use` used to expose
+names and no longer does.
+
+**RESOLVED IN ZEBRA'S FAVOUR — the compiler is behaving as DOCUMENTED.** QUICKSTART
+§ module system spells out both forms, and has all along:
+
+> `use math_utils exposing square, Vec2` → `square(5)` directly
+> **"Without exposing — qualified access:"** `use math_utils` → `math_utils.square(5)`
+
+So a bare `use` never *promised* to bind names, the June behaviour was leniency rather
+than contract, and tightening it was correct. **The translator is the thing to fix**, and
+this is not a Zebra bug so much as a Zebra bug-fix that nothing warned the corpus about.
+
+Remaining decision is only about sequencing and blast radius:
+
+* **(a) The translator is wrong.** `zbra/signal.zbr` — hand-written, not generated —
+  already uses `use signal exposing SignalF, Signal`, so `exposing` is evidently the
+  intended idiom and the translator was relying on leniency. Fix: emit `exposing`
+  (or qualify). One place in `luau2zebra_ast.py`; likely recovers most of the 633.
+* **(b) The change still shipped silently.** Even though the new behaviour is the
+  documented one, a tightening that invalidates ~685 files in a sibling repo deserved a
+  CHANGELOG line and a heads-up. That is the process gap worth keeping, separate from
+  the code: **we hardened a semantic and had no way to see who was relying on the old
+  one**, because that corpus is ungated. A5's shape (baselined, regress-only) applied to
+  `ported_scripts` would have said so the same week.
+
+Either way the corpus is the victim, and **nothing gates it**, which is why five weeks
+passed. QUICKSTART should state the rule explicitly whichever way it is resolved — it
+currently documents `use module_name` only in terms of module *resolution*, never
+scoping.
+
+**On the `RunSvc` shim in `robloxglobals.zbr` specifically** (Sean asked whether it
+would help): the *shape* is right — a signal-with-connect — but it is not the useful
+one, and renaming it would not have fixed this. `zbra/run_service.zbr` already defines
+`class RunService` with PascalCase `Heartbeat`/`Stepped`/`RenderStepped`, matching the
+corpus exactly, and the scripts already import it. `RunSvc` duplicates that with
+lowercase fields and `connect`, so it matches the corpus *less* well than what is
+already there. The missing piece was never the class shape; it was the import clause.
+
+~~**Leading hypothesis, NOT established:** the Resolver became stricter about undefined~~
 names sometime after 2026-06-23, turning a previously-tolerated condition into a hard
 error. If so it is probably *correct* hardening — but with a 633-file blast radius that
 nobody measured, because nothing gates this corpus.
@@ -150,6 +206,45 @@ implemented as a byte operation, and silently manufacturing invalid UTF-8. Note 
 warning, which sits badly in a language whose headline feature is contracts. My
 recommendation is (a), with (b) acceptable if reverse() is meant to be a
 byte-layer primitive — in which case it should arguably be named for that.
+
+**IS THE CODEPOINT LAYER LOAD-BEARING? Measured 2026-07-31, because Sean asked the
+right question — whether anything needs codepoints, or whether the code merely takes
+what the API hands it. It is the second, and that decides how risky a fix is.**
+
+| layer | uses across `*.zbr` (boundary probes excluded) |
+|---|---|
+| codepoint: `.chars()` | 27 — and several are *codegen implementing* it, not consuming it |
+| codepoint: `.codePointCount()` | 15 |
+| byte: `c'x'` literals | **559** |
+| byte: `.len` in `selfhost/` alone | **1056** |
+
+And every consumer that was read is doing **ASCII** work:
+
+* `main.zbr:682` — `diagAllDigits`: compares against `'0'`..`'9'`
+* `main.zbr:950` — counts `'\n'` to size an LSP edit range
+* `AstBuilder.zbr:1125` — matches `c'('` / `c')'` to track paren depth
+
+None of those need decoding; each would behave identically over bytes, and decoding
+UTF-8 to count newlines is strictly slower for no gain. **The compiler reaches for
+`.chars()` because it is the API for "walk the characters", not because the task is
+Unicode.**
+
+**Two consequences, and they point the same way:**
+
+1. **Fixing `reverse()` is nearly risk-free for us.** Nothing in the compiler reverses
+   non-ASCII — nothing in the compiler reverses much of anything — so a codepoint-aware
+   `reverse()` cannot regress the codebase that would have to live with it. The usual
+   argument against touching string semantics (a 559-site rewrite, per §28e's reasoning
+   about `char`) **does not apply here**: that argument is about the `char` TYPE, which
+   this does not touch.
+2. **The beneficiaries are downstream, not us.** The people a correct `reverse()`
+   protects are those processing real text — names with accents, the Greek NT stylometry
+   work, game dialogue. Zebra's own corpus is the *least* representative sample of that,
+   which is exactly why an intent-written probe found this and 335 corpus files did not.
+
+So the recommendation above (make `reverse()` codepoint-aware) is not merely the tidier
+option; it is the one whose cost falls almost entirely on a code path nobody uses, and
+whose benefit falls on the users 0.9 is meant to be ready for.
 
 Pinned by `test/boundary/bv_reverse_nonascii.zbr`, a `@boundary-pending` probe that
 records today's broken output and will FAIL when this is fixed — the signal to
