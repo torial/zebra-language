@@ -1,29 +1,57 @@
-# @boundary rejects expected type '*T', found '*const T'
-# @boundary-pending BUG-230  annotated non-empty list literal fails to compile
+# @boundary runs
 #
-# PINS A BUG, NOT A FEATURE. This program is VALID Zebra and should print 3. It
-# does not compile. The assertion above therefore records the compiler's current
-# WRONG answer so the gate stays honest and green; when BUG-230 is fixed this
-# probe will start failing, which is the signal to rewrite it as
-# `# @boundary runs` with an .expected of `3`.
+# BUG-230 REGRESSION GUARD. This file began life as a `@boundary-pending` probe
+# asserting that the compiler REJECTED this valid program, and it was rewritten to
+# assert the intent — `runs`, printing 3 — the moment the bug was fixed, on
+# 2026-07-30, the same day it was found.
 #
-# Found by the A3 boundary suite (2026-07-30), from the one-element List boundary.
+# That transition is the first real firing of the pending-tripwire design (every
+# prior demonstration was a planted defect in gate_selfcheck.sh): the fix landed,
+# the probe went red on its own, and the red demanded a rewrite rather than a
+# re-baseline. Recorded because a mechanism that has actually fired once is worth
+# more than one that has only been argued for.
 #
 # THE SHAPE, which is narrow and is why nothing else caught it:
-#     var nums = [1, 2, 3]              # inferred    -> compiles
-#     var nums: List(int) = []          # empty       -> compiles
-#     var nums: List(int) = [1, 2, 3]   # ANNOTATED + NON-EMPTY -> does NOT compile
+#     var nums = [1, 2, 3]              # inferred            -> always compiled
+#     var nums: List(int) = []          # annotated, empty     -> always compiled
+#     var nums: List(int) = [1, 2, 3]   # ANNOTATED + NON-EMPTY -> did NOT compile
 #
-# ROOT CAUSE, from the emitted Zig: a list literal lowers to `.empty` followed by
-# one generated `append` per element. The const-vs-var decision does not count
-# those GENERATED appends as mutations, so a binding the user never mutates is
-# emitted `const` — and its own initialisation then fails, because `append` needs
-# `*ArrayList`. Adding any user mutation (`nums.add(4)`) makes it compile, which
-# is why the failure looks like it is about `.count()` and is not.
+# ROOT CAUSE: a list literal lowers to `.empty` plus one generated `append` per
+# element. Emitted INLINE against the binding, those appends need a Zig `var` — but
+# the const-vs-var analysis does not count codegen's OWN generated appends as
+# mutations, so a binding the user never mutates became `const` and its own
+# initialisation failed. Adding any user mutation (`nums.add(4)`) made the identical
+# program compile, which is why the failure looked like it was about whichever
+# read-only method followed (`.count()`, `.sort()`, `.map()`) and was not.
 #
-# WHY NO EXISTING GATE SEES IT: both compilers do the identical wrong thing, so
-# divergence_check cannot see it by construction; and no corpus file happens to
-# use the annotated non-empty form, so compile_check and full_sweep never emit it.
+# FIX: emit through a labeled block, so the appends mutate a BLOCK-LOCAL var and the
+# binding merely receives the result — const and var both work. Fixed by
+# construction rather than by teaching the analysis about generated code. Landed in
+# BOTH compilers (selfhost/CodeGen.zbr and src/CodeGen.zig), because the bootstrap
+# is still the regen authority and --gui-backend=glfw delegates its whole build to it.
+#
+# WHY NO OTHER GATE SAW IT: both compilers did the identical wrong thing, so
+# divergence_check could not see it by construction; and the test/*.zbr corpus the
+# heavy gates sweep does not use the form. The one file that did was
+# examples/widget_smoke.zbr — and no gate swept examples/ until A5.
 def main()
     var nums: List(int) = [1, 2, 3]
     print(nums.count())
+
+    # The element type must come from the ANNOTATION, not from inferring on
+    # elems.at(0) — otherwise `List(float)` of integer literals mistypes. This row
+    # is why the fix keeps the annotated path instead of deferring to genExpr.
+    var fs: List(float) = [1, 2]
+    print(fs.count())
+
+    # A single element, and a string element (different Zig element type).
+    var one: List(int) = [7]
+    print(one.at(0))
+    var ss: List(str) = ["a", "b"]
+    print(ss.at(1))
+
+    # Still mutable afterwards: the binding receives the block's result, so a later
+    # user mutation must still promote it to a Zig `var` rather than conflicting.
+    var m: List(int) = [1]
+    m.add(2)
+    print(m.count())

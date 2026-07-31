@@ -5769,25 +5769,63 @@ struct Generator
                 return
             # `var x: List(T) = [a, b, c]` (or `[]`) — the LHS annotation
             # provides the element type, which the literal's expression-
-            # position emit can't see.  We emit the var with its declared
-            # type, then a chain of `.append(...)` calls.
+            # position emit can't see.
             if n.type_ != nil
                 if (n.type_!) is TypeRef.generic as gtll
                     if gtll.name == "List"
                         if ie is Expr.list_lit as ll_init
+                            # EMPTY: just the typed init.  No appends, so no
+                            # const/var hazard — and this is the shape the
+                            # selfhost's own sources use everywhere, so it is
+                            # left byte-for-byte as it was.
+                            if ll_init.elems.len == 0
+                                w.emit(": ")
+                                genType(n.type_!)
+                                w.emit(" = ")
+                                genType(n.type_!)
+                                w.emit(".empty;\n")
+                                return
+                            # NON-EMPTY: BUG-230.  This used to emit the appends
+                            # INLINE, against the binding itself — which required
+                            # `x` to be a Zig `var`, while the const/var analysis
+                            # does not count codegen's OWN generated appends as
+                            # mutations.  So `var x: List(int) = [1,2,3]` with no
+                            # later mutation was emitted `const` and its own
+                            # initialisation failed to compile: a valid three-line
+                            # program the compiler rejected.
+                            #
+                            # A labeled block fixes it by construction rather than
+                            # by teaching the analysis about generated code: the
+                            # appends now mutate a BLOCK-LOCAL var and the binding
+                            # merely receives the result, so const and var both
+                            # work.  Exactly what the sibling HashMap arm below
+                            # relies on for non-empty dict literals, and what
+                            # BUG-092 does for split()/lines().  The LHS
+                            # annotation is still what types the list, which is
+                            # why this is not simply deferred to genExpr — that
+                            # path infers the element type from elems.at(0) and
+                            # would mistype `var xs: List(float) = [1, 2]`.
+                            var uid230 = w.nextUid()
+                            var lbl230: str = "blk230_${uid230.toString()}"
+                            var lname230: str = "_ll230_${uid230.toString()}"
+                            w.emit(": ")
+                            genType(n.type_!)
+                            w.emit(" = ")
+                            w.emit(lbl230)
+                            w.emit(": { var ")
+                            w.emit(lname230)
                             w.emit(": ")
                             genType(n.type_!)
                             w.emit(" = ")
                             genType(n.type_!)
-                            w.emit(".empty;\n")
+                            w.emit(".empty; ")
                             var lli = 0
                             while lli < ll_init.elems.len
-                                writeIndent()
-                                var zn_ll: str = zigSafeName(n.name)
-                                w.emit(zn_ll + ".append(_allocator, ")
+                                w.emit(lname230 + ".append(_allocator, ")
                                 genExpr(ll_init.elems.at(lli))
-                                w.emit(") catch @panic(\"OOM\");\n")
+                                w.emit(") catch @panic(\"OOM\"); ")
                                 lli += 1
+                            w.emit("break :" + lbl230 + " " + lname230 + "; };\n")
                             return
                     if gtll.name == "HashMap"
                         # §28f: `var m: HashMap(K,V) = {}` — only the annotation can type an

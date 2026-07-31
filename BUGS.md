@@ -3171,6 +3171,41 @@ pervasive translator outputs as errors is too aggressive. As a warning, the
 corpus is unaffected (warnings are non-fatal → 0 arg-count failures, baseline
 restored) while the issue is surfaced.
 
+### DECISION (Sean, 2026-07-30): promote to a hard ERROR — both directions
+
+Asked directly during the A3 boundary work, which had pinned the warning behaviour
+and flagged the promotion as the one open question it refused to legislate. Sean's
+answer: *"I think too few / too many should be an error and not a warning."*
+
+**This unblocks the follow-up below, but does not make it free — the blocker is
+cross-repo and still real.** The cost, restated against today's tree:
+
+* The constraint is `GameEngine/tools/luau2zebra_ast.py` and its translated corpus,
+  both of which still exist (translator last touched 2026-07-01). Luau permits
+  calling with fewer arguments (missing become `nil`), so the translator pervasively
+  emits too-few-arg calls. Promotion alone regressed that corpus 1482 → 1454.
+* The severity split proposed below (error same-module, warn cross-module) does
+  **not** dodge this: BUG-142's own investigation confirmed **all ~28 cases are
+  same-module**, so the split still regresses by the full 28.
+
+**Recommended landing order, given the decision is now made:**
+
+1. **`too many` first, on its own.** The Luau rationale is entirely about too FEW
+   (nil-defaulting). Nothing about the translator requires passing *extra*
+   arguments, so this half should be promotable at zero corpus risk — **measure
+   before assuming**, but it is the obvious clean split and delivers half the
+   decision immediately.
+2. **`too few` with the translator change**, per steps 1+2 below. That prototype
+   already exists and took the corpus 1454 → 1458; two known gaps remain (the
+   capture-extraction path reusing the param string as call arguments, and method
+   `Invoke` forms the walk skips).
+
+**Fixture consequences when this lands** (they are tripwires, not regressions):
+`test/arg_count_test.zbr` moves `smoke_warn` → `smoke_tc_fail`, and the two A3
+probes `test/boundary/bv_arity_too_few.zbr` / `bv_arity_too_many.zbr` flip from
+`# @boundary warns` to `# @boundary rejects` and drop their
+`@boundary-pending BUG-142` line. They are *designed* to fail at that moment.
+
 ### Follow-up to fully close (promote warning → error) — de-risked 2026-06-23
 
 Investigated in depth (prototyped both sides, then reverted to the clean warning

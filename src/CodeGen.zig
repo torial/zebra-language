@@ -7204,16 +7204,43 @@ const Generator = struct {
                     try g.w.writeAll(": ");
                     try g.genType(tr);
                     try g.w.writeAll(" = ");
-                    try g.genType(tr);
+                    // EMPTY: just the typed init. No appends, so no const/var hazard —
+                    // and this is the shape the selfhost's own sources use everywhere,
+                    // so it is left byte-for-byte as it was.
                     // Zig 0.16: ArrayList has no default field values — `.empty`, not `{}`.
-                    try g.w.writeAll(".empty;\n");
-                    for (e.list_lit.elems) |el| {
-                        try g.writeIndent();
-                        try g.emitName(n.name);
-                        try g.w.writeAll(".append(_allocator, ");
-                        try g.genExpr(el);
-                        try g.w.writeAll(") catch @panic(\"OOM\");\n");
+                    if (e.list_lit.elems.len == 0) {
+                        try g.genType(tr);
+                        try g.w.writeAll(".empty;\n");
+                        return;
                     }
+                    // NON-EMPTY: BUG-230. The appends used to be emitted INLINE against
+                    // the binding itself, which requires `x` to be a Zig `var` — while
+                    // the const/var analysis does not count codegen's OWN generated
+                    // appends as mutations. So `var x: List(int) = [1,2,3]` with no later
+                    // mutation was emitted `const` and its own initialisation failed to
+                    // compile: a valid three-line program the compiler rejected.
+                    //
+                    // A labeled block fixes it by construction rather than by teaching the
+                    // analysis about generated code — the appends mutate a BLOCK-LOCAL var
+                    // and the binding merely receives the result, so const and var both
+                    // work. Same technique BUG-092 uses below for split()/lines().
+                    //
+                    // Mirrors selfhost/CodeGen.zbr. Kept in parity deliberately even
+                    // though the bootstrap is sunsetting: it is still the regen authority,
+                    // and --gui-backend=glfw still delegates its whole build here, so a
+                    // selfhost-only fix would leave the bug live on that path.
+                    const uid230 = g.nextUid();
+                    try g.w.print("blk230_{x}: {{ var _ll230_{x}: ", .{ uid230, uid230 });
+                    try g.genType(tr);
+                    try g.w.writeAll(" = ");
+                    try g.genType(tr);
+                    try g.w.writeAll(".empty; ");
+                    for (e.list_lit.elems) |el| {
+                        try g.w.print("_ll230_{x}.append(_allocator, ", .{uid230});
+                        try g.genExpr(el);
+                        try g.w.writeAll(") catch @panic(\"OOM\"); ");
+                    }
+                    try g.w.print("break :blk230_{x} _ll230_{x}; }};\n", .{ uid230, uid230 });
                     return;
                 }
             }
