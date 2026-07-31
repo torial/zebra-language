@@ -1,0 +1,45 @@
+# @boundary runs
+#
+# BOUNDARY: size in the SOURCE rather than in the data — long identifiers, a long
+# string literal, many parameters, a long expression chain.
+#
+# Worth probing because these are the inputs most likely to meet a fixed-size buffer
+# or a truncating format somewhere in lexing or emit, and because a mangled long name
+# fails in a way that looks like an unrelated symbol error. BUG-220 already showed
+# that emitted NAMES are a live hazard class in this compiler.
+#
+# The long identifier below is 104 characters and is used as a variable, a function
+# name, and a parameter — three different emit paths for the same name.
+def aVeryLongFunctionNameThatKeepsGoingWellPastAnyReasonableLimitAndStillHasToSurviveTheEmitterIntactOkay(x: int): int
+    return x + 1
+
+def eight(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int): int
+    return a + b + c + d + e + f + g + h
+
+def main()
+    var aVeryLongLocalVariableNameThatAlsoKeepsGoingWellPastAnythingSensibleAndMustRoundTripThroughCodegen = 41
+    print("longIdent=${aVeryLongFunctionNameThatKeepsGoingWellPastAnyReasonableLimitAndStillHasToSurviveTheEmitterIntactOkay(aVeryLongLocalVariableNameThatAlsoKeepsGoingWellPastAnythingSensibleAndMustRoundTripThroughCodegen)}")
+
+    # Eight parameters — well past the 0/1/N arity probe's three.
+    print("eightParams=${eight(1, 2, 3, 4, 5, 6, 7, 8)}")
+
+    # A 100-character literal: "abcdefghij" ten times over. Byte length, a slice of
+    # it, and a count of the repeating unit all have to agree.
+    var s100 = "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
+    print("longLen=${s100.len}")
+    print("longHead=[${s100.substring(0, 10)}]")
+    print("longTail=[${s100.substring(90, 100)}]")
+    print("longCount=${s100.count("abcdefghij")}")
+    print("longValid=${s100.isValidUtf8()}")
+
+    # A long concatenation chain — 10 operands in one expression.
+    var one = "1"
+    var chain = one + one + one + one + one + one + one + one + one + one
+    print("chainLen=${chain.len}")
+
+    # A long arithmetic chain, to make the expression tree deep rather than the data.
+    print("arith=${1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15}")
+
+    # An interpolation with many segments in one string.
+    var p = "x"
+    print("manySegments=[${p}${p}${p}${p}${p}${p}${p}${p}]")

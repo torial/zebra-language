@@ -1,0 +1,10 @@
+parens=3
+nestedCalls=45
+nestedIf=8
+tripleLoop=27
+fact10=3628800
+fib15=610
+gridRows=2
+gridCell=3
+gridSum=10
+mixed=17

@@ -1,0 +1,76 @@
+# @boundary runs
+#
+# BOUNDARY: depth. Parser recursion, codegen recursion, and runtime recursion are
+# three different limits and a program can hit any of them; the dimension is in the
+# A3 plan precisely because nobody has looked.
+#
+# Sizes are deliberately modest (tens, not thousands). The question here is
+# "does depth work AT ALL and give the right answer", not "where does it break" —
+# a stack-limit hunt belongs in the fuzzer, which already generates hostile input.
+# A probe that sits near a real limit would be a flaky gate, which is worse than
+# no gate.
+def add3(a: int, b: int, c: int): int
+    return a + b + c
+
+def fact(n: int): int
+    if n <= 1
+        return 1
+    return n * fact(n - 1)
+
+def fib(n: int): int
+    if n < 2
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+def main()
+    # Deeply parenthesised arithmetic — pure parser depth, one value.
+    print("parens=${((((((((((1 + 2))))))))))}")
+
+    # Nested calls: the result threads through 5 frames of the same function.
+    print("nestedCalls=${add3(add3(1, 2, 3), add3(4, 5, 6), add3(7, 8, 9))}")
+
+    # Nested if, 8 deep, only the innermost printing.
+    var d = 0
+    if true
+        if true
+            if true
+                if true
+                    if true
+                        if true
+                            if true
+                                if true
+                                    d = 8
+    print("nestedIf=${d}")
+
+    # Nested loops, 3 deep — the product must be exact.
+    var total = 0
+    for i in 0..3
+        for j in 0..3
+            for k in 0..3
+                total += 1
+    print("tripleLoop=${total}")
+
+    # Recursion: a linear one and an exponential one. fib(15) makes 1973 calls,
+    # which exercises call depth AND repeated frame setup without being slow.
+    print("fact10=${fact(10)}")
+    print("fib15=${fib(15)}")
+
+    # Nested collections. List(List(int)) is the shape a matrix takes, and the
+    # element type has to survive one level of generic nesting.
+    var row1: List(int) = [1, 2]
+    var row2: List(int) = [3, 4]
+    var grid = List(List(int))()
+    grid.add(row1)
+    grid.add(row2)
+    print("gridRows=${grid.count()}")
+    print("gridCell=${grid.at(1).at(0)}")
+
+    var sum = 0
+    for r in grid
+        for v in r
+            sum += v
+    print("gridSum=${sum}")
+
+    # Deeply nested interpolation-in-expression: an interpolation whose expression
+    # itself contains a call whose argument is an expression.
+    print("mixed=${add3(1, 2, fact(3)) + fib(6)}")

@@ -1,0 +1,77 @@
+# @boundary runs
+#
+# BOUNDARY: non-ASCII text through the string OPERATIONS (not indexing).
+#
+# Byte INDEXING of non-ASCII is deliberately out of scope: `s[i]` is typed `char`
+# but holds a raw byte (BUG-225), which §28e decided to document for 0.9 and retype
+# in 1.x. Asserting the right answer there would fail forever and asserting the
+# wrong one would enshrine a known bug. Everything below is an operation whose
+# behaviour is supposed to be settled.
+#
+# The model QUICKSTART states is Go's: `str` is UTF-8 BYTES, `.len` is a byte count,
+# `.codePointCount()` counts codepoints, `.chars()` decodes. So the pairs below are
+# not redundant — len vs codePointCount differing IS the model working.
+#
+# `é` is U+00E9, 2 bytes. `Ω` is U+03A9, 2 bytes. `世` is U+4E16, 3 bytes.
+def main()
+    var e = "héllo"
+    var g = "Ωmega"
+    var c = "世界"
+    var a = "hello"
+
+    # Byte length vs codepoint count — the core of the Go model.
+    print("accentLen=${e.len}")
+    print("accentCps=${e.codePointCount()}")
+    print("greekLen=${g.len}")
+    print("greekCps=${g.codePointCount()}")
+    print("cjkLen=${c.len}")
+    print("cjkCps=${c.codePointCount()}")
+    print("asciiLenEqCps=${a.len == a.codePointCount()}")
+
+    # Iterating decodes: one step per CODEPOINT, not per byte.
+    var nc = 0
+    for ch in e.chars()
+        nc += 1
+    print("accentCharsIter=${nc}")
+    var nb = 0
+    for b in e.bytes()
+        nb += 1
+    print("accentBytesIter=${nb}")
+
+    # Searching for a non-ASCII needle must work on whole characters.
+    var acc = "é"
+    print("containsAccent=${e.contains(acc)}")
+    print("indexOfAccent=${e.indexOf(acc)}")
+    print("startsWithH=${e.startsWith("h")}")
+
+    # Splitting on a non-ASCII separator.
+    var parts: List(str) = c.split("界")
+    print("cjkSplitCount=${parts.count()}")
+
+    # Concatenation must not corrupt either side.
+    var joined = e + g
+    print("concatLen=${joined.len}")
+    print("concatCps=${joined.codePointCount()}")
+    print("concatValid=${joined.isValidUtf8()}")
+
+    # Case mapping. The `is…` predicates are ASCII-only (verified 2026-07-30), so
+    # upper/lower are asserted to be ASCII-only too — non-ASCII passes through
+    # unchanged. This is the INTENT most likely to be wrong; if it is, that is a
+    # finding either way, because a partial case-mapping is worse than a stated one.
+    print("accentUpper=[${e.upper()}]")
+    print("greekUpper=[${g.upper()}]")
+
+    # Reversal is the sharpest probe here. A BYTE reverse of multi-byte UTF-8
+    # produces invalid UTF-8; a codepoint-aware reverse does not. Intent asserts
+    # the string stays valid text, because a stdlib operation that can silently
+    # manufacture invalid UTF-8 out of valid input is a surprise by any standard.
+    var rev = c.reverse()
+    print("cjkRevValid=${rev.isValidUtf8()}")
+    print("cjkRevCps=${rev.codePointCount()}")
+    print("cjkRev=[${rev}]")
+
+    # Validity is preserved by the operations that merely move text around.
+    print("origValid=${e.isValidUtf8()}")
+    print("trimValid=${e.trim().isValidUtf8()}")
+    print("repeatValid=${c.repeat(2).isValidUtf8()}")
+    print("repeatCps=${c.repeat(2).codePointCount()}")

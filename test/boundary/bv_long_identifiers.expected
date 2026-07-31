@@ -1,0 +1,10 @@
+longIdent=42
+eightParams=36
+longLen=100
+longHead=[abcdefghij]
+longTail=[abcdefghij]
+longCount=10
+longValid=true
+chainLen=10
+arith=120
+manySegments=[xxxxxxxx]
