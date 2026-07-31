@@ -225,6 +225,20 @@ bash tools/output_sweep.sh --gate  # THE BEHAVIOUR WITNESS — the only heavy ga
                                 #   Sequential by design (parallel fixtures interfere).
                                 #   --update-baseline to re-record, --only for a tight
                                 #   loop, --show to see what is being captured.
+JOBS=2 bash tools/full_sweep.sh --examples --gate  # A5 — THE SAME SWEEP OVER examples/.
+                                #   Until 2026-07-30 NO gate touched examples/ at all: every
+                                #   heavy gate globs test/*.zbr. That was not theoretical —
+                                #   examples/widget_smoke.zbr SHIPPED BROKEN on BUG-230, and
+                                #   `zebra -c` exits 0 on it (check mode is front-end-only),
+                                #   so the obvious spot-check could not see it either. BOTH
+                                #   had to be true for it to go unnoticed.
+                                #   First run: 18 examples, 14 baselined, and it found BUG-233
+                                #   on the spot. Small (~90s) → FULL tier. Non-passing entries
+                                #   are NAMED in its output, not just counted, because on this
+                                #   corpus each one is a question worth answering.
+                                #   `DEPMISS` ≠ broken: a search-path dep that --output-dir
+                                #   never emitted (lsystem RUNS fine). A gate that libels a
+                                #   working file is one people learn to disbelieve.
 JOBS=2 bash tools/full_sweep.sh --gate   # THE FULL-CORPUS WITNESS: emits + zig-
                                 #   typechecks EVERY test/*.zbr (403), not just the ~210
                                 #   compile_check covers. --gate fails on REGRESSION vs

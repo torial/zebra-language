@@ -1,6 +1,47 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-232. Next new bug: BUG-233.**
+**Last bug number generated: BUG-233. Next new bug: BUG-234.**
+
+---
+
+### BUG-233: a lambda parameter that shadows an enclosing one emits invalid Zig ⚠ OPEN
+
+**Severity:** medium (valid Zebra rejected; the error is a raw Zig one).
+**Found:** 2026-07-30 by the **A5 examples sweep on its very first run** — the gate
+that had never existed. `examples/panel_smoke.zbr` has been shipping broken.
+
+```zebra
+def view(g: Gui, model: Model)
+    g.panel("Controls", def(g: Gui)      # lambda param deliberately named `g`
+        if g.button("+1")
+            ...
+```
+
+Emits a nested container whose `call` reuses the enclosing parameter name:
+
+```zig
+pub fn _zbr_fn_view(g: Gui, model: Model) void {
+    g.panel("Controls", struct { pub fn call(g: Gui) void {   // <-- Zig: shadowing
+```
+
+```
+panel_smoke.zig:45:46: error: function parameter 'g' shadows function parameter from outer scope
+```
+
+Shadowing an outer name in a nested lambda is ordinary in Zebra (and in Python,
+which Zebra draws from). **Zig forbids it**, so codegen has to rename — it does not.
+Re-using the receiver's name inside a UI callback is about as natural as Zebra
+lambda code gets, which is why an example does it.
+
+**Same family as BUG-220** (user names colliding with emitted names), and the fix is
+probably the same shape: give the lambda parameter a reserved prefix, or rename only
+on detected collision. BUG-220 chose `_zbr_fn_` for top-level defs for exactly this
+class of reason.
+
+**Why nothing caught it:** it is not in `test/*.zbr`, and every heavy gate globs
+that. `examples/` had no gate until A5 (`tools/full_sweep.sh --examples`), which is
+now in the FULL tier. Not baselined — it is one of the two named non-passing entries
+the sweep prints on every run.
 
 ---
 

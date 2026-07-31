@@ -170,6 +170,13 @@ if [[ "$MODE" == "full" ]]; then
     # flaky behaviour gate is one people learn to re-baseline without reading.
     run "output_sweep"  "identical to baseline" bash tools/output_sweep.sh --gate
     run "full_sweep"    "gate PASS" env JOBS="$JOBS" bash tools/full_sweep.sh --gate
+    # A5: the SAME sweep over examples/*.zbr, which no gate touched until 2026-07-30.
+    # examples/widget_smoke.zbr shipped BROKEN on BUG-230 and nothing noticed, because
+    # every other heavy gate globs test/*.zbr and `zebra -c` is front-end-only so the
+    # obvious spot-check exits 0. Small corpus, ~90s. Buckets that are NOT gated are
+    # NAMED in its output rather than counted, because on examples/ each one is a
+    # question worth answering.
+    run "examples_sweep" "gate PASS" env JOBS="$JOBS" bash tools/full_sweep.sh --examples --gate
     run "divergence"    "gate PASS" env JOBS="$JOBS" bash tools/divergence_check.sh --gate
 fi
 

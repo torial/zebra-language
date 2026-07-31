@@ -395,7 +395,7 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   a known wrong behaviour deferred to 1.x by §28e), `charAt` (BUG-223 is an open decision
   awaiting Sean). **Open tail:** deep nesting, very long identifiers, non-ASCII in string
   *operations* — none blocked, just not yet written.
-- [ ] **A5 (NEW, surfaced by A3 on 2026-07-30) — NO GATE SWEEPS `examples/`.** Every heavy
+- [x] **A5 — gate `examples/`. DONE 2026-07-30.** `bash tools/full_sweep.sh --examples`, in the FULL tier, falsified in `gate_selfcheck.sh`. **First run: 18 examples — 14 pass, 2 genuinely broken, 1 harness-limited, 1 library.** It found **BUG-233** (a lambda parameter shadowing an enclosing one emits invalid Zig — `panel_smoke`) and confirmed `plugin_host` is broken by a Zig 0.16 `DynLib` stdlib change. `widget_smoke` was fixed by the BUG-230 fix and is baselined. Implemented by extending `full_sweep.sh` with a `--examples` corpus rather than adding a sixth near-identical script, so the emit → build-exe → baseline → regress-only-gate logic cannot drift from its sibling. A `DEPMISS` bucket was added because `lsystem` **runs correctly** but its search-path dependency is not emitted by `--output-dir` — a gate that libels a working file is one people learn to disbelieve. Original entry: Every heavy
   gate globs `test/*.zbr`: `compile_check`, `full_sweep`, `divergence`, `output_sweep`. The
   `examples/` directory — the first thing a person evaluating the language opens — has
   **zero coverage**, and it is already shipping something broken:

@@ -391,6 +391,35 @@ ZEOF
     fi
 fi
 
+# ── examples sweep (A5): a baselined example that regresses must be caught ────
+# full_sweep over test/ is listed below as NOT self-checked, because falsifying it means
+# corrupting a 331-entry baseline and re-running for 25 minutes. The EXAMPLES corpus is
+# 18 files and ~90s, so the same mechanism CAN be falsified cheaply here -- and it is the
+# same code path, so this covers the gate logic for both corpora.
+#
+# Planting an entry that cannot pass is the realistic defect: it stands in for an example
+# that regressed, which is precisely what shipped unnoticed with widget_smoke (BUG-230).
+if [ -f tools/examples_sweep_baseline.txt ]; then
+    base=$(run_rc env JOBS=2 bash tools/full_sweep.sh --examples --gate)
+    if [ "$base" -ne 0 ]; then
+        note "examples-sweep: skipped (--gate already fails rc=$base on the UNPERTURBED"
+        note "        baseline, so catching a planted regression would prove nothing)"
+    else
+        cp -p tools/examples_sweep_baseline.txt "$OUT/exbase.bak"
+        printf '_selfcheck_absent_example\n' >> tools/examples_sweep_baseline.txt
+        sort -o tools/examples_sweep_baseline.txt tools/examples_sweep_baseline.txt
+        got=$(run_rc env JOBS=2 bash tools/full_sweep.sh --examples --gate)
+        cp -p "$OUT/exbase.bak" tools/examples_sweep_baseline.txt
+        case "$got" in
+            1) pass "examples-sweep catches a baselined example that stops passing" ;;
+            0) bad "examples-sweep accepted a baseline entry that does NOT pass" ;;
+            *) bad "examples-sweep CRASHED (rc=$got) instead of reporting: $(last_out)" ;;
+        esac
+    fi
+else
+    note "examples-sweep: skipped (no baseline -- run --examples --update-baseline)"
+fi
+
 # ── round-trip: the freshness property whose absence made it vacuous ─────────
 # The emits compared must be FRESH selfhost output, not copies of the committed
 # bootstrap-emitted files. Checkable only if a prior full run left the dirs.
@@ -408,7 +437,8 @@ fi
 echo
 echo "  NOT self-checked (no cheap falsification — do not read the above as full coverage):"
 echo "    smoke            — 262 fixtures; a planted failure means editing the suite"
-echo "    full_sweep       — falsifying it means corrupting the baseline (25+ min to re-run)"
+echo "    full_sweep       — falsifying it means corrupting the baseline (25+ min to re-run);"
+echo "                       its EXAMPLES sibling IS falsified above and shares the code path"
 echo "    divergence       — needs both compilers over the whole corpus (~20 min)"
 echo "    runtime-module   — its own size/BUG-221 assertions are already adversarial"
 echo "    check-mode       — carries a built-in failure when no asymmetry witness survives"
