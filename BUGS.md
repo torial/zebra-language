@@ -3229,6 +3229,55 @@ cross-repo and still real.** The cost, restated against today's tree:
   **not** dodge this: BUG-142's own investigation confirmed **all ~28 cases are
   same-module**, so the split still regresses by the full 28.
 
+**MEASUREMENT ATTEMPT 2026-07-30 — INCONCLUSIVE, AND THE WAY IT FAILED IS THE
+USEFUL PART. Do not treat its numbers as evidence.**
+
+I scanned all 1,780 files in `GameEngine/ported_scripts` with the warning-era
+compiler using `-c` (front-end-only, so arity is visible without invoking Zig —
+~1.2 s/file). Raw result:
+
+```
+files scanned:            1780
+TOO FEW  warning lines:   0
+TOO MANY warning lines:   0
+files that did NOT check cleanly (arity NOT measurable): 931   <-- 52%
+```
+
+**Zero too-few is the tell that the instrument was wrong, not that the corpus is
+clean.** This very bug documents ~28 known too-few sites, and the translator fix
+that would have removed them never landed — verified: `_collect_call_arity` and
+`optional_from` do not exist in `tools/luau2zebra_ast.py`, so the prototype is
+still reverted. Finding 0 where 28 are known to exist means the measurement
+under-counted; had I only looked at the too-many row I would have read a broken
+instrument as a green light.
+
+**Why it under-counted:** 52% of the corpus never reaches the TypeChecker. The
+scripts `use workspace / math / players / instance / ...`, which live in
+`GameEngine/zbra/`, and module resolution searches the input file's directory then
+Zebra's own `selfhost/`, `test/` and stdlib paths — never `zbra/`. So they fail at
+resolution with `cannot find module` or `undefined name: 'RunService'`, and a
+front end that stops there cannot report an arity diagnostic. `measure_corpus_
+compile.py` has a dedicated `missing module import` bucket for exactly this.
+
+**The tempting argument, and why it is not sufficient:** *a file that already fails
+cannot be regressed by adding a new error, so the at-risk population is only the
+~849 that check cleanly, where too-many is 0.* That is probably right, but it does
+not reconcile with this bug's own figure of **1482** compiling files — 849 and 1482
+cannot both describe the same success set, so at least one of the two instruments is
+measuring something other than what it is being read as. Landing a promotion on an
+argument with an unexplained factor-of-two in it would be exactly the mistake this
+entry already warns about.
+
+**The measurement that WOULD settle it** is an A/B with the project's own harness,
+which is the instrument that produced 1482 in the first place: run
+`GameEngine/tools/measure_corpus_compile.py` before the change, rebuild with the
+promotion, run it again, diff the buckets. Same tool, same corpus, same cwd — so the
+number is comparable to the one on record instead of a new number of my own.
+
+**The compiler change itself is written and lint-clean** (`ctx.addWarn` →
+`ctx.addErr` on the too-many arm of `checkArgCount`, selfhost only — the bootstrap
+never had this check). It is deliberately NOT landed pending that A/B.
+
 **Recommended landing order, given the decision is now made:**
 
 1. **`too many` first, on its own.** The Luau rationale is entirely about too FEW
