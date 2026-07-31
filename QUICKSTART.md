@@ -179,6 +179,52 @@ struct Bar
 
 ---
 
+## 1.5 Coming from Python — what looks valid but isn't
+
+Zebra draws on Python, so Python habits mostly transfer. The cases below are where they
+do **not**, split by how the mistake announces itself. Everything in this section was
+verified against the compiler, not recalled.
+
+### Loud — these are compile errors, so the compiler catches them for you
+
+| Python | Zebra | what you get if you write the Python |
+|---|---|---|
+| `1 if c else 2` | **`if(c, 1, 2)`** — call form | `error: expected ':', got 'else'` |
+| `len(s)` | `s.len` (a **field**, not a call) | `error: undefined name: 'len'` |
+| `elif` | `else if` | `error: unexpected end of input while parsing an expression` |
+| `range(3)` | `0..3` (stop is **exclusive**) | `error: undefined name: 'range'` |
+| `None` / `True` / `False` | `nil` / `true` / `false` | `error: undefined name: 'None'` |
+| `f"{x}"` | `"${x}"` | no `f` prefix exists |
+| `s[::-1]` | `s.reverse()` | no step syntax |
+| `s[1:3]` | `s[1..3]` | `..` not `:` |
+
+The ternary is the one worth memorising, because `1 if c else 2` *reads* like it should
+work. Zebra's form is **`if(cond, then_value, else_value)`** — an expression, usable
+anywhere a value is.
+
+### SILENT — these compile and give a DIFFERENT ANSWER
+
+These are the dangerous ones. No error, no warning, just a different number.
+
+| expression | Zebra | Python | why |
+|---|---|---|---|
+| `-7 / 2` | **-3** | `-7 // 2` is **-4** | Zebra **truncates toward zero**; Python **floors** |
+| `-7 % 2` | **-1** | **1** | remainder takes the sign of the **dividend**; Python's takes the **divisor** |
+| `s[0]` | a **byte** (`97`-ish) | `'a'`, a 1-char `str` | Zebra indexes **bytes**; see below |
+
+**Division and modulo** follow C, Zig, Java and Go rather than Python. The pair is
+self-consistent — `(a/b)*b + (a%b) == a` holds — but it disagrees with Python on every
+negative operand. If you are porting arithmetic that relies on Python's floor behaviour,
+that is the line to check. (Until 2026-07-31 Zebra's `%` floored while `/` truncated, so
+the identity was false for negatives — BUG-236.)
+
+**Indexing** looks identical for ASCII and diverges for everything else: `s[i]` yields a
+**byte**, so on non-ASCII text it hands you half a character. Iterate `.chars()` when you
+mean characters, and see "Bytes, codepoints, and graphemes" below. (`s[i]` is currently
+typed `char` while holding a byte — BUG-225, deferred to 1.x.)
+
+---
+
 ## 2. Variables
 
 ```zebra
