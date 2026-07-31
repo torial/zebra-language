@@ -235,6 +235,39 @@ two bugs five weeks of invisibility. The lesson is not "defer less" — BUG-228 
 does make overflow unmeasurable — it is that a deferral should name the *specific*
 property that is blocked, not the whole dimension that contains it.
 
+## 3C. The tripwires fired — both of them, on real fixes (2026-07-31)
+
+Sean took the recommendations on BUG-234 and BUG-236, and both were fixed the same day
+they were found. What is worth recording is not the fixes but **what the suite did when
+they landed**:
+
+| probe | authored | went pending | rewritten to intent |
+|---|---|---|---|
+| `bv_reverse_nonascii` | asserting reverse keeps text valid | found it did not | asserts the intent again |
+| `bv_signed_division` | asserting the division identity holds | found it did not | asserts the intent again |
+
+Both probes went **red on their own** when the fix landed, and the red demanded a
+rewrite rather than a re-baseline. That is the full lifecycle of a `@boundary-pending`
+tripwire, start to finish, twice — and it is the first time the mechanism has been
+exercised end-to-end on anything other than a defect planted by `gate_selfcheck.sh`.
+
+The pending count went 6 → 4. The two that closed are the two Sean decided; the four
+that remain (BUG-142 ×2, BUG-231, BUG-232) are all still open decisions or unfixed
+bugs, which is exactly what pending is for.
+
+**A third fix rode along: BUG-223** (`charAt` typed `str` while emitting `u8`).
+Delegated by Sean and taken as recommended — retype to `byte` rather than remove, so
+users keep an honest byte accessor. Provably free: the old typing made every consumer a
+compile error, so there were zero callers to break. Now guarded by `bv_char_at.zbr`,
+which checks that arithmetic on the result works, since being a number is the point.
+
+**What the three fixes have in common, and it is the session's thesis in one line:**
+every one was a place where two defensible conventions existed and nobody had written
+down which was chosen. Not one was a hard bug in a complicated algorithm. The compiler
+is solid where it is complicated and wrong where it is *unspecified* — which is an
+argument for writing the spec down, and for a suite whose expectations come from the
+spec rather than from the implementation.
+
 ## 4. Not covered, and why — no silent caps
 
 The suite covers four dimensions completely rather than nine partially. What is **not**

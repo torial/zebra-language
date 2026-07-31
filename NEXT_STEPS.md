@@ -402,8 +402,12 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   is genuinely mode-dependent — and found **BUG-236**: `/` emits `@divTrunc` while `%`
   emits `@mod`, so `(a/b)*b + (a%b) == a` is FALSE for negatives. Max/min literals,
   parsing and base conversion all matched intent first try.
-  Remaining uncovered: min/max int + float extremes (blocked on BUG-228), `s[i]` on
-  non-ASCII (BUG-225, deferred to 1.x), `charAt` (BUG-223, Sean's call).
+  **BUG-234, BUG-236 and BUG-223 all FIXED 2026-07-31** on Sean's decisions —
+  codepoint-aware `reverse()`, `%` emitting `@rem` so the division identity holds, and
+  `charAt` retyped to `byte`. Both pending tripwires fired on their own when the fixes
+  landed and were rewritten to assert intent; pending count 6 → 4.
+  Remaining uncovered: float extremes + integer OVERFLOW only (blocked on BUG-228), and
+  `s[i]` on non-ASCII (BUG-225, deferred to 1.x by §28e).
 - [x] **A5 — gate `examples/`. DONE 2026-07-30.** `bash tools/full_sweep.sh --examples`, in the FULL tier, falsified in `gate_selfcheck.sh`. **First run: 18 examples — 14 pass, 2 genuinely broken, 1 harness-limited, 1 library.** It found **BUG-233** (a lambda parameter shadowing an enclosing one emits invalid Zig — `panel_smoke`) and confirmed `plugin_host` is broken by a Zig 0.16 `DynLib` stdlib change. `widget_smoke` was fixed by the BUG-230 fix and is baselined. Implemented by extending `full_sweep.sh` with a `--examples` corpus rather than adding a sixth near-identical script, so the emit → build-exe → baseline → regress-only-gate logic cannot drift from its sibling. A `DEPMISS` bucket was added because `lsystem` **runs correctly** but its search-path dependency is not emitted by `--output-dir` — a gate that libels a working file is one people learn to disbelieve. Original entry: Every heavy
   gate globs `test/*.zbr`: `compile_check`, `full_sweep`, `divergence`, `output_sweep`. The
   `examples/` directory — the first thing a person evaluating the language opens — has

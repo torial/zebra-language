@@ -1337,8 +1337,21 @@ def stringMethodReturn(name: str): Type_?
         return Type_.string_
     if name == "toHex" or name == "padLeft" or name == "padRight" or name == "center"
         return Type_.string_
-    if name == "substring" or name == "charAt"
+    if name == "substring"
         return Type_.string_
+    # BUG-223: charAt EMITS `s[i]`, which is a u8 — but it was typed `str`, so every
+    # way of consuming the result was a compile error (`print` -> "expected type 'str',
+    # found 'u8'"; `.concat` -> "no field or member function named 'concat' in 'u8'").
+    # It was not merely mistyped, it was UNUSABLE, which is why retyping it cannot
+    # break anyone: `grep -rn '\.charAt('` over the whole repo returns ZERO callers and
+    # it is absent from QUICKSTART. Now says what it is — a byte.
+    #
+    # Sean's call, 2026-07-31, on the recommendation that this is the free half of the
+    # 28e byte/codepoint split: BUG-225 (`s[i]` typed `char` but holding a byte) is the
+    # expensive half and stays deferred to 1.x. Fixing this one leaves users an HONEST
+    # byte accessor, which `s[i]` currently is not.
+    if name == "charAt"
+        return Type_.uint_n(8)
     if name == "join" or name == "toString"
         return Type_.string_
     if name == "tokenize"

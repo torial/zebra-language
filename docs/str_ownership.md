@@ -30,7 +30,7 @@
 | `s.repeat(2)` | **OWN** | — | `(blk_rep: { var _rep = std.ArrayList([]const u8).empty; defer _rep....` |  |
 | `s.replace("l", "L")` | **OWN** | — | `(std.mem.replaceOwned(u8, _zbr_rt._allocator, s, "l", "L") catch @p...` |  |
 | `s.replaceAll("l", "L")` | **OWN** | — | `(std.mem.replaceOwned(u8, _zbr_rt._allocator, s, "l", "L") catch @p...` |  |
-| `s.reverse()` | **OWN** | — | `(blk_rev: { const _rbuf = _zbr_rt._allocator.alloc(u8, s.len) catch...` |  |
+| `s.reverse()` | **OWN** | — | `_str_reverse(s, _zbr_rt._allocator)` |  |
 | `s.split(",")` | **OWN** | **BORROW** | `blk_sl_3: { var _ll_3: std.ArrayList([]const u8) = std.ArrayList([]...` |  |
 | `s.toHex()` | **OWN** | — | `(blk_hex: { const _hx_s = s; const _hx_buf = _zbr_rt._allocator.all...` |  |
 | `s.tokenize(",")` | **OWN** | **BORROW** | `(blk_tok: { var _tok_it = std.mem.tokenizeSequence(u8, s, ","); var...` |  |

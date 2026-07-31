@@ -10220,7 +10220,24 @@ struct Generator
                 w.emit(", _allocator)")
                 return
         if b.op == BinaryOp.mod
-            w.emit("@mod(")
+            # BUG-236: @rem, NOT @mod.  `/` emits @divTrunc (truncate toward zero),
+            # and @mod floors (sign of the DIVISOR), so the two operators were
+            # describing different divisions and the identity that DEFINES them --
+            #     (a / b) * b + (a % b) == a
+            # -- was FALSE for negative operands:  (-7/2)*2 + (-7%2) = -6 + 1 = -5.
+            #
+            # Only two pairings are coherent: @divTrunc+@rem (C, Zig, Java, Go) or
+            # @divFloor+@mod (Python).  @rem is the one-builtin fix because it leaves
+            # `/` untouched, so no existing division changes behaviour, and it matches
+            # the language we compile to.
+            #
+            # Positive operands are identical under both, which is why the entire
+            # corpus was silent on it -- and why output_sweep could not have caught it
+            # (nothing recorded takes a modulo of a negative).
+            #
+            # The gcd/lcm helpers below keep @mod deliberately: they run Euclid's
+            # algorithm over already-positive values, where the two agree.
+            w.emit("@rem(")
             genExpr(b.left)
             w.emit(", ")
             genExpr(b.right)
@@ -12324,11 +12341,12 @@ struct Generator
                         w.emit(", '\\n')")
                         return
                     if mname == "reverse"
-                        w.emit("(blk_rev: { const _rbuf = _allocator.alloc(u8, ")
+                        # BUG-234: was an inline byte reverse (std.mem.reverse over the bytes),
+                        # which turned valid UTF-8 into invalid. Now a preamble helper that
+                        # reverses by CODEPOINT — one helper rather than this blob twice.
+                        w.emit("_str_reverse(")
                         genExpr(m.object)
-                        w.emit(".len) catch @panic(\"OOM\"); @memcpy(_rbuf, ")
-                        genExpr(m.object)
-                        w.emit("); std.mem.reverse(u8, _rbuf); break :blk_rev _rbuf; })")
+                        w.emit(", _allocator)")
                         return
                     if mname == "charAt" and args.len > 0
                         genExpr(m.object)
@@ -13608,11 +13626,10 @@ struct Generator
             w.emit(", '\\n')")
             return
         if mname == "reverse"
-            w.emit("(blk_rev: { const _rbuf = _allocator.alloc(u8, ")
+            # BUG-234: codepoint-aware reverse (see the sibling site above).
+            w.emit("_str_reverse(")
             genExpr(m.object)
-            w.emit(".len) catch @panic(\"OOM\"); @memcpy(_rbuf, ")
-            genExpr(m.object)
-            w.emit("); std.mem.reverse(u8, _rbuf); break :blk_rev _rbuf; })")
+            w.emit(", _allocator)")
             return
         if mname == "charAt" and args.len > 0
             genExpr(m.object)

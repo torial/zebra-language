@@ -10696,12 +10696,14 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "reverse")) {
-            // str.reverse() → allocate copy and reverse it
-            try g.w.writeAll("(blk: { const _rbuf = _allocator.alloc(u8, ");
+            // BUG-234: this used to be an inline `std.mem.reverse(u8, ...)` — a BYTE
+            // reverse, which shredded every multi-byte codepoint and returned invalid
+            // UTF-8 from valid input. Now delegates to the preamble's _str_reverse,
+            // which reverses by codepoint. Kept in parity with the selfhost because the
+            // bootstrap is still the regen authority and still builds every --gui-backend.
+            try g.w.writeAll("_str_reverse(");
             try g.genExpr(obj);
-            try g.w.writeAll(".len) catch @panic(\"OOM\"); @memcpy(_rbuf, ");
-            try g.genExpr(obj);
-            try g.w.writeAll("); std.mem.reverse(u8, _rbuf); break :blk _rbuf; })");
+            try g.w.writeAll(", _allocator)");
             return true;
         }
         if (std.mem.eql(u8, method, "toHex")) {
@@ -16421,9 +16423,19 @@ const Generator = struct {
             },
             .mod => {
                 // Zig's `%` operator on signed integers requires explicit @rem or @mod.
-                // Use @mod (mathematical modulo, result has sign of divisor) which matches
-                // Zebra's `%` semantics and works for both signed and float types.
-                try g.w.writeAll("@mod(");
+                //
+                // BUG-236 (2026-07-31): this used to pick @mod, reasoning that
+                // "mathematical modulo, result has sign of divisor" matched Zebra's
+                // `%`. That was decided in isolation from `/`, which emits @divTrunc
+                // (truncate toward zero) -- so the two operators described DIFFERENT
+                // divisions and the identity that defines them,
+                //     (a / b) * b + (a % b) == a
+                // was FALSE for negatives: (-7/2)*2 + (-7%2) = -6 + 1 = -5, not -7.
+                //
+                // Only @divTrunc+@rem or @divFloor+@mod are coherent. @rem is the
+                // one-builtin fix: `/` is untouched, so no existing division changes,
+                // and it matches the language we compile to. Works on floats too.
+                try g.w.writeAll("@rem(");
                 try g.genExpr(e.left);
                 try g.w.writeAll(", ");
                 try g.genExpr(e.right);

@@ -226,8 +226,8 @@ fi
 echo
 echo "  uncovered by this suite (see docs/boundary_triage.md for the full list and why):"
 echo "    float extremes, min/max int overflow  — build-mode dependent; blocked on BUG-228"
-echo "    non-ASCII indexing                    — BUG-225 is a KNOWN wrong behaviour, deferred to 1.x"
-echo "    charAt                                — BUG-223 is an open decision awaiting Sean"
+echo "    non-ASCII byte INDEXING (s[i])        — BUG-225, a KNOWN wrong behaviour"
+echo "                                             deliberately deferred to 1.x by §28e"
 
 echo
 # A run that measured NOTHING must not report success. `--only typo` would otherwise

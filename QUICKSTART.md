@@ -1061,7 +1061,7 @@ var result = sb.build()              # str (drains the builder)
 | `trim()` | `(): str` | Strip leading and trailing whitespace |
 | `trimLeft()` | `(): str` | Strip leading whitespace |
 | `trimRight()` | `(): str` | Strip trailing whitespace |
-| `reverse()` | `(): str` | Reverse the string. **ASCII-safe only — see BUG-234** |
+| `reverse()` | `(): str` | Reverse the string **by codepoint** (UTF-8 safe) |
 | `replace(from, to)` | `(str, str): str` | Replace all occurrences of `from` with `to` |
 | `repeat(n)` | `(int): str` | Repeat the string `n` times |
 | `padLeft(width, fill)` | `(int, str): str` | Pad on the left to `width` characters with `fill` |
@@ -1084,6 +1084,7 @@ var result = sb.build()              # str (drains the builder)
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `len` | (field) | Byte length |
+| `charAt(i)` | `(int): byte` | The **byte** at index `i`. Returns `byte`, not `str` — it was typed `str` (and so unusable) until BUG-223. For characters, iterate `.chars()`. |
 | `indexOf(sub)` | `(str): int` | First occurrence index; `-1` if not found |
 | `lastIndexOf(sub)` | `(str): int` | Last occurrence index; `-1` if not found |
 | `indexOfFrom(sub, from)` | `(str, int): int?` | Search starting at `from` |
@@ -1114,12 +1115,12 @@ var result = sb.build()              # str (drains the builder)
 | `isPrintable()` | `(): bool` | **ASCII** printable characters only |
 | `isValidUtf8()` | `(): bool` | Valid UTF-8 byte sequence |
 
-> **`reverse()` currently corrupts non-ASCII text (BUG-234, open).** It reverses
-> BYTES, so every multi-byte codepoint is shredded: `"世界".reverse()` is not
-> `"界世"` — it is invalid UTF-8, with `isValidUtf8()` false and
-> `codePointCount()` 0. ASCII is unaffected. Until this is resolved, do not call
-> `reverse()` on text that may contain non-ASCII; reverse a `List` of `.chars()`
-> instead if you need character order.
+> **`reverse()` operates on CODEPOINTS, not bytes.** `"世界".reverse()` is `"界世"`,
+> and the result is always valid UTF-8 if the input was — byte order *within* a
+> codepoint is preserved while codepoint order reverses. (It reversed bytes until
+> 2026-07-31, which silently produced invalid UTF-8; BUG-234.) Note that a codepoint
+> is still not a grapheme, so a combining accent reverses away from its base letter —
+> see "Bytes, codepoints, and graphemes" below.
 
 > **The four `is…` predicates are ASCII-only, and the empty string is `false`.**
 > Corrected 2026-07-30 after the boundary suite found the documentation and the
@@ -2022,14 +2023,15 @@ fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are 
 | Float-to-int         | `x.toInt()`                    | explicit conversion (drops fraction)     |
 | Number-to-string     | `x.toString()`                 | on int/float/bool; or `"${x}"` interp    |
 | String-to-number     | `s.toInt()` / `s.toFloat()`    | 0 on bad input; `tryInt`/`tryFloat` to detect |
-| Divide integers      | `int` division (truncates toward zero) | `%` — **but see the warning below** |
+| Divide integers      | `int` division (truncates toward zero) | `%` — remainder, sign of the DIVIDEND |
 | Field access (self)  | `.field`                       | leading-dot shorthand; shadow-resilient  |
 
-> **`/` and `%` disagree on negative operands today (BUG-236, open).** `/` truncates
-> toward zero (`-7 / 2` is `-3`) but `%` floors (`-7 % 2` is `1`, not `-1`), so the
-> division identity **`(a/b)*b + (a%b) == a` is false** for negative operands. Positive
-> operands are unaffected. Until this is resolved, do not mix `/` and `%` on values
-> that may be negative — the two operators are not describing the same division.
+> **`/` and `%` both truncate toward zero, and the division identity holds.**
+> `-7 / 2` is `-3`, `-7 % 2` is `-1`, `7 % -2` is `1`, and
+> **`(a/b)*b + (a%b) == a`** is true for every pair. This matches C, Zig, Java and Go;
+> it is *not* Python's convention (Python floors, giving `-4` and `1`). Until
+> 2026-07-31 `%` floored while `/` truncated, so the identity was false for negatives
+> — BUG-236.
 
 ---
 

@@ -4,7 +4,16 @@
 
 ---
 
-### BUG-236: signed `/` and `%` use MISMATCHED conventions; the division identity fails ⚠ OPEN
+### BUG-236: signed `/` and `%` use MISMATCHED conventions; the division identity fails ✅ FIXED 2026-07-31
+
+**FIXED 2026-07-31** (Sean took the recommendation). `%` now emits `@rem` instead of
+`@mod`, in both compilers. One builtin: `/` is untouched, so no existing division
+changes behaviour, and the pair now matches the language we compile to.
+
+Verified: `(0-7) % 2` is `-1`, `7 % (0-2)` is `1`, and **`(a/b)*b + (a%b) == a` is
+TRUE**. The gcd/lcm helpers keep `@mod` deliberately — they run Euclid's algorithm over
+already-positive values, where the two agree. Guarded by
+`test/boundary/bv_signed_division.zbr`, rewritten from pending to intent.
 
 **Severity:** high (silent wrong arithmetic on negative operands, no diagnostic).
 **Found:** 2026-07-31 by the A3 integer dimension. Confirmed at the emit level.
@@ -169,7 +178,20 @@ this the week it happened instead of five weeks later.
 
 ---
 
-### BUG-234: `str.reverse()` byte-reverses, turning valid UTF-8 into invalid ⚠ OPEN
+### BUG-234: `str.reverse()` byte-reverses, turning valid UTF-8 into invalid ✅ FIXED 2026-07-31
+
+**FIXED 2026-07-31** (Sean took the recommendation — option (a), codepoint-aware).
+New preamble helper `_str_reverse` walks the string codepoint by codepoint and copies
+each one's bytes intact into descending slots, so byte order WITHIN a codepoint is
+preserved while codepoint order reverses. Invalid UTF-8 input falls back to a byte
+reverse instead of panicking: `reverse()` has no way to report an error, and
+garbage-in-garbage-out beats aborting a user's program over a string we were only asked
+to turn around. Both compilers call the same helper — one helper, not the old inline
+blob duplicated at two emit sites each.
+
+Verified: `"世界".reverse()` is now `"界世"`, valid, 2 codepoints; `"aé中b"` reverses to
+`"b中éa"`; ASCII unchanged. Guarded by `test/boundary/bv_reverse_nonascii.zbr`, which
+was rewritten from its pending form to assert the intent it was authored with.
 
 **Severity:** high (a stdlib call silently converts valid text into non-text).
 **Found:** 2026-07-31 by the A3 non-ASCII dimension, from a row written specifically
@@ -686,7 +708,24 @@ here is a compile failure rather than a wrong value.
 
 ---
 
-### BUG-223: `str.charAt` is typed `str` but emits `u8` ⬜ OPEN
+### BUG-223: `str.charAt` is typed `str` but emits `u8` ✅ FIXED 2026-07-31
+
+**FIXED** — `charAt` now types as `byte` (`Type_.uint_n(8)`), which is what it has always
+emitted. Sean delegated the call ("I'm not sure what to suggest") and took the
+recommendation: retype rather than remove, because it leaves users an **honest byte
+accessor**, which `s[i]` currently is not.
+
+It was free, and provably so: the old typing made every consumer a compile error, so
+`grep -rn '\.charAt('` returned **zero callers** repo-wide and it was absent from
+QUICKSTART. Nothing could regress because nothing could compile.
+
+This is the CHEAP half of §28e's byte/codepoint split. **BUG-225** (`s[i]` typed `char`
+while holding a byte) is the expensive half — ~104 subscript sites in `selfhost/` and
+559 `c'x'` literals comparing against the result — and stays deferred to 1.x.
+
+Guarded by `test/boundary/bv_char_at.zbr`, which asserts the byte values and that
+arithmetic on the result works, since being a number is the point of the retype.
+
 Found 2026-07-29 while closing #5a's doc gaps. The TypeChecker and codegen disagree:
 
 * `TypeChecker.stringMethodReturn` (~1340) groups `charAt` with `substring` and returns

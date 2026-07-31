@@ -80,7 +80,13 @@ def main() -> int:
                          "is broken or the files moved. Refusing to report all-clear.\n")
         return 2
 
-    tests = sorted((REPO / "test").glob("*.zbr"))
+    # test/boundary/*.zbr counts too. A1 (this gate) and A3 (the boundary suite) were
+    # built a day apart and did not know about each other: a boundary probe pinning
+    # BUG-NNN is a real, running fixture, but this glob was non-recursive so three
+    # genuinely-guarded bugs were reported as "no fixture at all" the moment they were
+    # marked FIXED. A gate that cries wolf gets switched off, and this one is supposed
+    # to make fixes stick.
+    tests = sorted((REPO / "test").glob("*.zbr")) + sorted((REPO / "test/boundary").glob("*.zbr"))
     by_name, mentions = {}, {}
     for t in tests:
         m = re.match(r"^bug0*(\d+)[_.]", t.name)
@@ -114,6 +120,17 @@ def main() -> int:
             except OSError:
                 pass
     driven = set(re.findall(r"test/([A-Za-z0-9_]+)\.zbr", tool_text))
+
+    # Boundary probes are driven as a DIRECTORY, not by name: boundary_check.sh globs
+    # test/boundary/*.zbr and runs every one. So the per-name regex above can never see
+    # them, and matching on the directory is the honest encoding of how they run --
+    # exactly the "a different tool drives it deliberately" case in the list above.
+    # Guarded rather than assumed: only counted if that glob is really in the runner,
+    # so deleting or narrowing it does not silently leave these looking exercised.
+    boundary_runner = (REPO / "tools" / "boundary_check.sh")
+    if boundary_runner.exists() and 'test/boundary' in boundary_runner.read_text(
+            encoding="utf-8", errors="replace"):
+        driven |= {t.stem for t in (REPO / "test/boundary").glob("*.zbr")}
 
     # Transitive: a module imported by something already exercised is itself exercised.
     stems = {t.stem for t in tests}

@@ -1,0 +1,26 @@
+# @boundary runs
+#
+# BUG-223 REGRESSION GUARD. `charAt` EMITS `s[i]` — a u8 — but was TYPED `str`, so
+# every way of consuming it was a compile error: `print` gave "expected type 'str',
+# found 'u8'", `.concat` gave "no field or member function named 'concat' in 'u8'".
+# It was not merely mistyped, it was UNUSABLE, which is why retyping it to `byte`
+# could not break anyone — `grep -rn '\.charAt('` returned ZERO callers repo-wide and
+# it was absent from QUICKSTART.
+#
+# Fixed 2026-07-31 on Sean's delegation. This is the CHEAP half of the §28e
+# byte/codepoint split; BUG-225 (`s[i]` typed `char` while holding a byte) is the
+# expensive half and stays deferred to 1.x. Fixing this one leaves users an HONEST
+# byte accessor, which `s[i]` currently is not.
+#
+# There is no probe here for `charAt` on a multi-byte codepoint returning a partial
+# byte — that is BUG-225's territory, and asserting it either way would legislate a
+# decision that has not been made.
+def main()
+    var s = "abc"
+    print("first=${s.charAt(0)}")
+    print("last=${s.charAt(2)}")
+    print("isByte=${s.charAt(0) == 97}")
+    print("agreesWithIndex=${s.charAt(1) == 98}")
+
+    # Arithmetic works because it is a number now — the whole point of the retype.
+    print("plusOne=${s.charAt(0) + 1}")

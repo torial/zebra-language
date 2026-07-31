@@ -1,5 +1,4 @@
 # @boundary runs
-# @boundary-pending BUG-236  `/` uses @divTrunc but `%` uses @mod; identity fails
 #
 # BOUNDARY: integer division and modulo with NEGATIVE operands.
 #
@@ -10,12 +9,16 @@
 #   truncate toward zero (C, Zig @divTrunc):  -7 / 2 == -3,  -7 % 2 == -1
 #   floor toward -inf    (Python, @divFloor): -7 / 2 == -4,  -7 % 2 ==  1
 #
-# Intent asserted TRUNCATION TOWARD ZERO for both. Division does exactly that. MODULO
-# DOES NOT -- it floors -- so the two operators disagree and the identity
-# `(a/b)*b + (a%b) == a` is FALSE. That is BUG-236, found by this probe, and the
-# .expected file below now records the BROKEN behaviour so the gate stays honest.
-# When BUG-236 is fixed this probe FAILS: rewrite modNegPos to -1, modPosNeg to 1,
-# identity to true, and drop the pending line.
+# BUG-236 REGRESSION GUARD. This probe found the bug and then, hours later, went red
+# on its own when the fix landed -- which is how a @boundary-pending tripwire is
+# supposed to end. Rewritten to assert the intent it was authored with.
+#
+# Intent asserts TRUNCATION TOWARD ZERO for both operators. Division always did that
+# (@divTrunc); modulo used to FLOOR (@mod), so the two described different divisions
+# and `(a/b)*b + (a%b) == a` -- the identity that DEFINES them -- was false for
+# negatives. Fixed 2026-07-31 by emitting @rem: one builtin, `/` untouched.
+#
+# The `identity` row is the one to watch. It is not a nicety; it is the definition.
 # Its own file: signed division is also the row most likely not to compile at all, as
 # Zig REFUSES a bare `/` on signed integers precisely because the convention is
 # ambiguous, and requires @divTrunc/@divFloor to be named explicitly.

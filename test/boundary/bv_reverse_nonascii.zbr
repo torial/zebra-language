@@ -1,51 +1,54 @@
 # @boundary runs
-# @boundary-pending BUG-234  reverse() byte-reverses, corrupting multi-byte UTF-8
 #
-# PINS A BUG, NOT A FEATURE. `"世界".reverse()` should be `"界世"`. It is instead a
-# BYTE reversal, which shreds every multi-byte codepoint: the result is not merely
-# the wrong text, it is **not text at all** — `isValidUtf8()` is false and
-# `codePointCount()` is 0, from input that was perfectly valid UTF-8.
+# BUG-234 REGRESSION GUARD. Authored 2026-07-31 asserting that reverse() keeps text
+# valid, found that it did not, spent a few hours as a `@boundary-pending` probe
+# recording the broken output, and was rewritten to its original intent the moment the
+# fix landed. That is the whole lifecycle of a pending tripwire, start to finish.
 #
-# The .expected file therefore records BROKEN behaviour on purpose. When BUG-234 is
-# fixed this probe will FAIL — rewrite it to assert `cjkRevValid=true`,
-# `cjkRevCps=2`, `cjkRev=[界世]`, and drop the pending line.
+# THE BUG: reverse() reversed BYTES, so every multi-byte codepoint was shredded.
+# `"世界".reverse()` came back as invalid UTF-8 with codePointCount 0, from input that
+# had 2. ASCII was unaffected — `"abc".reverse()` is `"cba"` either way — which is
+# exactly why the corpus never noticed and why output_sweep could not have caught it:
+# nothing recorded reverses non-ASCII, so there was nothing to regress from.
 #
-# Found 2026-07-30 by the A3 non-ASCII dimension, from a row written specifically
-# because a byte reverse and a codepoint reverse differ exactly here. ASCII is
-# unaffected, which is why nothing noticed: `"abc".reverse()` is `"cba"` either way,
-# and the corpus reverses ASCII.
+# THE FIX: `_str_reverse` in stdlib_preamble.zig walks the string codepoint by
+# codepoint and copies each one's bytes intact into descending slots, so byte order
+# WITHIN a codepoint is preserved while codepoint order reverses. Invalid UTF-8 input
+# falls back to a byte reverse rather than panicking — reverse() has no way to report
+# an error, and garbage-in-garbage-out beats aborting a user's program.
 #
-# NOTE FOR WHOEVER FIXES IT — there are two legitimate resolutions and they are not
-# the same decision:
-#   (a) make reverse() codepoint-aware, so it cannot produce invalid UTF-8; or
-#   (b) declare it a BYTE operation and say so in QUICKSTART, as was done for the
-#       ASCII-only is-predicates.
-# What is NOT defensible is the current state: documented as "Reverse the string",
-# behaving as a byte operation, and silently manufacturing invalid UTF-8. Note that
-# (b) still leaves a stdlib call that turns valid text into invalid text with no
-# warning, which is a poor fit for a language whose headline is contracts.
-#
-# The output of this probe is deliberately invalid UTF-8. That broke the runner
-# until `grep -a` was added — it treated the stream as binary and DROPPED the row,
-# which read as "never printed" rather than "harness ate it". See boundary_check.sh.
+# Both compilers call the same helper: the bootstrap is still the regen authority and
+# still builds every --gui-backend, so a selfhost-only fix would leave it live there.
 def main()
     var c = "世界"
     var a = "abc"
+    var e = "é"
 
-    # ASCII round-trips correctly under either implementation — the control that
-    # shows reverse() is not simply broken for everything.
+    # ASCII is the control: it behaved correctly before the fix and must still.
     print("asciiRev=[${a.reverse()}]")
     print("asciiRevValid=${a.reverse().isValidUtf8()}")
 
-    # The bug. Valid input, invalid output.
+    # The bug, now fixed: valid in, valid out, and the RIGHT text.
     var rev = c.reverse()
     print("cjkOrigValid=${c.isValidUtf8()}")
     print("cjkOrigCps=${c.codePointCount()}")
     print("cjkRevValid=${rev.isValidUtf8()}")
     print("cjkRevCps=${rev.codePointCount()}")
     print("cjkRevLen=${rev.len}")
+    print("cjkRev=[${rev}]")
 
-    # Two-byte Latin-1 range corrupts the same way — this is not a CJK-only or
-    # 3-byte-only edge, it is every multi-byte codepoint.
-    var e = "é"
+    # Two-byte Latin-1 corrupts the same way a 3-byte CJK codepoint did, so it is
+    # checked separately — this was never a CJK-only or 3-byte-only edge.
     print("accentRevValid=${e.reverse().isValidUtf8()}")
+    print("accentRevCps=${e.reverse().codePointCount()}")
+
+    # Reversing twice is the identity, which is the property a byte reverse also
+    # satisfied — included precisely so it cannot stand in as proof on its own.
+    print("doubleReverse=${c.reverse().reverse() == c}")
+
+    # Mixed ASCII and non-ASCII in one string, where a byte reverse would have put
+    # the multi-byte codepoint's bytes back-to-front in the middle of valid ASCII.
+    var m = "aé中b"
+    print("mixedRevValid=${m.reverse().isValidUtf8()}")
+    print("mixedRevCps=${m.reverse().codePointCount()}")
+    print("mixedRev=[${m.reverse()}]")

@@ -179,6 +179,34 @@ pub fn _str_repeat(s: []const u8, n: anytype, alloc: std.mem.Allocator) []const 
     for (0..count) |i| @memcpy(buf[i * s.len ..][0..s.len], s);
     return buf;
 }
+/// BUG-236's sibling, BUG-234: reverse a string by CODEPOINT, not by byte.
+///
+/// The old emit was `std.mem.reverse(u8, buf)`, which shreds every multi-byte
+/// codepoint: `"世界"` came back as invalid UTF-8 with codePointCount 0, from input
+/// that had 2. ASCII was unaffected, which is why the whole corpus was silent.
+///
+/// Walks the input codepoint by codepoint and copies each one's bytes, intact and in
+/// order, into descending slots of the output — so byte order within a codepoint is
+/// preserved while codepoint order is reversed. Invalid UTF-8 in DOES fall back to a
+/// byte reverse rather than panicking: reverse() has no way to report an error, and
+/// garbage-in-garbage-out beats aborting a user's program over a string we were only
+/// asked to turn around.
+pub fn _str_reverse(s: []const u8, alloc: std.mem.Allocator) []const u8 {
+    if (s.len == 0) return "";
+    const buf = alloc.alloc(u8, s.len) catch @panic("OOM");
+    const view = std.unicode.Utf8View.init(s) catch {
+        @memcpy(buf, s);
+        std.mem.reverse(u8, buf);
+        return buf;
+    };
+    var it = view.iterator();
+    var end: usize = s.len;
+    while (it.nextCodepointSlice()) |cp| {
+        end -= cp.len;
+        @memcpy(buf[end..][0..cp.len], cp);
+    }
+    return buf;
+}
 /// FNV-1a 32-bit hash — used as the type-arg component of _type_tag.
 /// Low 32 bits of _ttag_ClassName hold the class hash; high 32 bits
 /// hold the combined type-arg hash for generic instantiations (Phase 3).
@@ -4049,7 +4077,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:207
         if (_zebra_gt(spaces, 0)) {
 // zbr:selfhost/Lexer.zbr:208
-            if ((@mod(spaces, 4) != 0)) {
+            if ((@rem(spaces, 4) != 0)) {
 // zbr:selfhost/Lexer.zbr:209
                 _error_ctx = .{ .message = "SpaceIndentNotMultipleOfFour", .details = null };
                 return error.ZebraError;
