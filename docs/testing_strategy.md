@@ -272,11 +272,88 @@ the same claim as "that code is exercised."**
 QUICKSTART before running, per the A3 discipline, and passing first time, so the compiler
 was right and the hole was purely in what we were asking it. **Verified rather than assumed:** re-running that exact mutation with `--site selfhost/CodeGen.zbr:9714` now reports **DETECTED by boundary** (103 s). The probe kills the mutant. That is the full cycle working end to end for the first time — a survivor found, a test written, and the test *proven* to close it rather than assumed to.
 
-**What this run does *not* establish.** Five mutants is five mutants. "Gates caught 40%"
-is not a coverage figure and should not be quoted as one; the three survivors are findings
-regardless of what the denominator turns out to be. And two of the three are in code the
-corpus barely touches, which is the population random site-selection over-samples — B1 v2's
-targeting change is still the right next step.
+### SECOND VALID RUN, 2026-08-01 — 20 mutants, and the split is the finding
+
+```
+mutants: 20   detected: 7   survived: 9   no-effect: 4        (50 min)
+```
+
+Combined with the five above: **25 mutants, 21 live, 9 caught, 12 survivors.** But the
+aggregate is the least interesting cut of it. Split by module:
+
+| module | live mutations | caught | survivors |
+|---|---|---|---|
+| `selfhost/TypeChecker.zbr` | 5 | **5 (100%)** | **0** |
+| `selfhost/CodeGen.zbr` | 16 | 4 (25%) | **12** |
+
+**Every survivor across both runs is in CodeGen. Not one is in TypeChecker.** Four of the
+five TypeChecker detections were by the A3 boundary suite, which is the loop paying off
+exactly as designed — probes written from the language reference catch changes to the
+phase that decides what the language *means*. Codegen's stdlib-emission surface has no
+equivalent.
+
+At n=21 the percentages are soft; the **direction** is not. A 100%/25% split with a clean
+zero on one side is not a sampling artefact you talk yourself out of.
+
+### The survivor inventory — 12 places the compiler can change unnoticed
+
+Grouped by what they actually say, because four of these are one problem:
+
+**(a) `genStdlibMethod` branches with no run-and-compare fixture** — the largest family,
+and the one with an obvious fix:
+
+| site | mutation | what stops being emitted |
+|---|---|---|
+| `CodeGen.zbr:15348` | `mname == "serve"` → `<>` | `Ws.serve` |
+| `CodeGen.zbr:15635` | `"writeln" or "write"` → `and` | `Term.write` / `Term.writeln` |
+| `CodeGen.zbr:15893` | `args.len > 0` → `> 1` | `Uri.parse`'s argument |
+| `CodeGen.zbr:16013` | `Type_.int_ or Expr.int_lit` → `and` | int elements in a `Value` literal |
+
+Each is one `if` guarding one stdlib operation's emission, and none is exercised by
+anything that checks output. `Ws.serve` has a partial excuse — the server fixtures never
+terminate and are excluded from `output_sweep` by its nondeterminism detector — which is
+a good reminder that a deliberate exclusion is still an exclusion.
+
+**(b) The bare-constructor special cases, now with two witnesses:**
+
+| site | mutation |
+|---|---|
+| `CodeGen.zbr:11166` | `c.args.len == 0` → `== 1` (bare `HashMap()`) |
+| `CodeGen.zbr:6075` | `c.args.len == 0` → `== 1` (`isStrSetCtor`) |
+
+Twelve corpus files use bare `HashMap()` and none broke when the branch was disabled.
+Two independent sites behaving identically strengthens the reading: these are **redundant**,
+not untested. Adding tests here would pin duplicated behaviour — the work is to find what
+already handles the shape.
+
+**(c) Real semantic boundaries, each worth a fixture on its own:**
+
+| site | mutation | the untested case |
+|---|---|---|
+| `CodeGen.zbr:12608` | `args.len < um_params!.len` → `<=` | a call whose arity **exactly matches** a parameter list with defaults — the fill logic runs when it should not, and nothing notices |
+| `CodeGen.zbr:733` | `i > 0` → `>=` | the comma-join over `g.args` emits a **leading `", "`**, i.e. `f(, a, b)`, and no gate compiles the result |
+| `CodeGen.zbr:7524` | `i == 1` → `i == 0` | the **value** position of a string-keyed HashMap parameter; mutating it double-counts the key position |
+| `CodeGen.zbr:9714` | `elems.len > 0` → `> 1` | **CLOSED** — `bv_list_literal_inferred.zbr`, verified to kill it |
+
+**(d) AstBuilder-only predicates** — `CodeGen.zbr:330` and `:341` (`nm == "left_expr" or
+…` → `and`; `cm.member == "buildExpr" or …` → `and`). Both turn a disjunction into an
+always-false conjunction, so their true branch is never taken. These guard emission
+specific to compiling `AstBuilder.zbr`, which the corpus does not compile — lower priority
+than (a)–(c), and honestly might be dead.
+
+**The generalisable lesson from the inventory**, separate from any individual fix: every
+survivor is a **predicate**, and eleven of twelve are guards on *emission of one specific
+construct*. That is what an untested code generator looks like from the inside — not
+subtly wrong logic, but a long tail of one-line `if`s nobody has ever caused to be false.
+The fix is not "more tests"; it is **run-and-compare fixtures for stdlib emission**, which
+is a bounded, enumerable piece of work.
+
+**What this run does *not* establish.** Twenty-five mutants is twenty-five mutants. "Gates caught 40%"
+is not a coverage figure and should not be quoted as one; the survivors are findings
+regardless of what the denominator turns out to be. Random site-selection also over-samples
+code the corpus barely touches — family (d) is exactly that — so B1 v2's targeting change
+is still the right next step. What has changed is that targeting is now an efficiency
+improvement rather than a precondition: the harness produces real findings as it stands.
 
 **What it does establish, finally:** the harness measures something. `--site FILE:LINE`
 now re-runs a single mutation, so the loop closes properly — find a survivor, add a test,
