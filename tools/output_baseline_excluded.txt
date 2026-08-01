@@ -1,16 +1,16 @@
 # DERIVED by tools/output_sweep.sh --update-baseline — do not hand-edit.
 # Files whose output differed between two consecutive runs, with the reason.
 # Regenerated on every re-baseline, so it cannot silently rot.
-arena_concurrency_hazard_test	< thread 15844 panic: attempt to use null value
+arena_concurrency_hazard_test	< thread 21812 panic: attempt to use null value
 bug193_listdir_test	(filesystem enumeration: counts files that change as the repo does)
 dir_walk_test	(filesystem enumeration: counts files that change as the repo does)
 http_serve_test	(network: contacts a remote host — outcome not ours to control)
 http_test	(network: contacts a remote host — outcome not ours to control)
 https_test	(network: contacts a remote host — outcome not ours to control)
-log_json_test	< {"ts":1785544453,"level":"info","msg":"hello world"}
-profile_test	< outer;inner 8
+log_json_test	< {"ts":1785549579,"level":"info","msg":"hello world"}
+profile_test	< outer;inner 11
 server_test	(network: contacts a remote host — outcome not ours to control)
-stdlib_misc_test	< thread 31268 panic: reached unreachable code
+stdlib_misc_test	< thread 27040 panic: reached unreachable code
 tcp_advanced_test	(network: contacts a remote host — outcome not ours to control)
 tcp_serve_test	(network: contacts a remote host — outcome not ours to control)
 tcp_test	(network: contacts a remote host — outcome not ours to control)

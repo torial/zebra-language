@@ -36,10 +36,6 @@ allocate Arena() scope OK
 Hello, World
 Hi, World
 42
-=== arg_count_test sha1=69c8f2a9d0a3 ===
-test/arg_count_test.zbr:9:11: error: too few arguments to 'add': expected 2, found 1
-    print(add(1).toString())
-          ^
 === arg_test sha1=482ab5c393e5 ===
 flag absent: OK
 contains absent: OK
@@ -155,6 +151,29 @@ bug196: 43
 bug198: OK
 === bug221_transitive_init_test sha1=5a013c495082 ===
 missing
+=== bug224_format_multiarg_test sha1=b178570153bd ===
+one 1
+1 and 2
+a b c
+answer is 42
+n doubled is 40
+bug224_format_multiarg_test: OK
+=== bug226_tokenize_forheader_test sha1=92e030db0b3f ===
+-- inline in the for-header (the regressing form) --
+a
+b
+c
+-- bound first, then iterated (always worked) --
+a
+b
+c
+-- split, the sibling that was already correct --
+a
+b
+c
+-- lines, the other sibling --
+x
+bug226_tokenize_forheader_test: OK
 === build_declarative_test sha1=6859218cdc5a ===
 build declarative: ok
 === build_smoke_test sha1=8bfb8015d704 ===
@@ -1086,6 +1105,22 @@ row[1] = 2 bob
 sqlite_test OK
 === stdlib_additions_test sha1=8eceff2c01e6 ===
 stdlib_additions OK
+=== stdlib_arity_ok_test sha1=d86a5375e602 ===
+HELLO WORLD
+hello world
+false
+4
+true
+heLLo worLd
+hello
+7
+         hello world
+.........hello world
+     hello world     
+-----hello world-----
+a, b
+1
+stdlib_arity_ok_test: OK
 === stdlib_base64_test sha1=bc79d6c80561 ===
 stdlib_base64 OK
 === stdlib_file_test sha1=5a3250943d00 ===
