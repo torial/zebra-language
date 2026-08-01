@@ -18,6 +18,8 @@
 # QUICK also carries the A3 boundary suite — the one gate whose expectations were
 #         written from intent rather than recorded, and therefore the only one that can
 #         find behaviour that was wrong from day one rather than newly broken.
+# QUICK's static lints look at Zebra code, EXCEPT hazard-lint, which looks at the tools
+# in this directory -- the place the 2026-07/08 wrong numbers actually came from.
 # QUICK = the static lints (instant), smoke (emits + runs fixtures), round-trip
 #         (self-consistency), check-mode (the -c vs --check-full contract, incl.
 #         proof the documented asymmetry is real), runtime-module (small
@@ -124,6 +126,12 @@ echo
 
 run "interp-escape"  "0 hazard"  python tools/lint_interp_escape.py
 run "fallthrough"    "0 hazard"  python tools/lint_fallthrough.py
+# The only gate aimed at OUR OWN TOOLING rather than at Zebra code. Five bugs in
+# tools/mutation_check.py in two days, none of which crashed or exited non-zero -- every
+# one produced a plausible wrong number and two were published. It refuses to report
+# clean if its own controls stop firing, and `--rev <sha>` re-derives what it would have
+# said on the commit that shipped the bugs.
+run "hazard-lint"    "0 hazard"  python tools/hazard_lint.py
 run "smoke"          "passed"    bash tools/selfhost_smoke.sh
 run "round-trip"     "PASS"      bash tools/bootstrap_check.sh
 # The only gate that RUNS emitted output, hence the only one that can see BUG-221 —

@@ -151,6 +151,28 @@ python tools/lint_interp_escape.py # THE INTERP-ESCAPE GATE (static, instant, no
                                 #   all 3 genCopyOut `<<-`/`<-` diagnostics (they emitted a Zig
                                 #   PARSE error instead of their message) until 2026-07-27.
                                 #   BUG-216. 0 = clean. Retire when the bootstrap is fixed/gone.
+python tools/hazard_lint.py        # THE TOOLING GATE (static, instant, no build) — the
+                                #   only gate pointed at `tools/` rather than at Zebra code.
+                                #   Five bugs were found in tools/mutation_check.py between
+                                #   2026-07-31 and 08-01 and NOT ONE crashed, warned, or
+                                #   exited non-zero: each produced a confident wrong NUMBER,
+                                #   and two were published before being caught (241 fake
+                                #   "regen detections" from a CRLF restore; a "0 survivors"
+                                #   headline from a fingerprint that was a constant).
+                                #   Hazards with receipts, each citing its incident: H1 a
+                                #   .zbr text-write without newline="\n"; H2 bare `bash`
+                                #   (resolves to WSL here) or a wsl-prefixed command; H3 a
+                                #   constant sentinel on a path feeding a comparison —
+                                #   always biases toward "nothing changed"; H4 a
+                                #   compiler-SPECIFIC emit header (two compilers, two
+                                #   headers); H5 `git checkout -- .`. Suppress with
+                                #   `# hazard-ok:<code> <reason>` — a reason is REQUIRED,
+                                #   because an unexplained suppression is how a gate goes
+                                #   quiet. It runs its own positive controls before every
+                                #   scan and REFUSES to report clean if any stopped firing.
+                                #   `--rev 7156d3e` is the non-circular proof: it re-derives
+                                #   3 of the 5 real bugs on the commit that shipped them.
+                                #   0 = clean. QUICK tier.
 python tools/lint_fallthrough.py   # THE FALL-THROUGH GATE (static, instant, no build):
                                 #   flags a value-returning fn whose TAIL `branch` has a
                                 #   value-producing arm that can fall through without
@@ -307,6 +329,7 @@ than "what do we know":
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 54 scripts |
 
 The last row is the one that keeps the rest honest; see its header for why.
 
