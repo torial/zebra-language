@@ -13,7 +13,8 @@ discipline* is the argument; this file is the inventory.
 ## 1. Why this, and why now
 
 The commission was proposed after a week of QA work that produced, alongside the real
-results, **five bugs in a single measurement harness in two days**:
+results, **six bugs in a single measurement harness in two days** — the sixth found while
+this file was being written:
 
 | # | bug | what it reported |
 |---|---|---|
@@ -50,7 +51,7 @@ A second rule follows from it, and is the one to apply to any new tool here:
 ### `tools/hazard_lint.py` — a gate pointed at our own tooling
 
 Every other lint in `tools/` reads Zebra code. This one reads the scripts we measure
-Zebra *with*. Six checks, each citing the incident that earned it:
+Zebra *with*. Each check cites the incident that earned it:
 
 | code | hazard | receipt |
 |---|---|---|
@@ -162,6 +163,11 @@ reach is narrower than the sentence, the sentence loses.
 claimed "seven gates" against twelve registered, and "Twelve probes" against twenty. A
 bare number has no referent to resolve, so `doc_lint` lists this in its uncovered set;
 the header now names the oracle (`grep -c '^run "' tools/gates.sh`) beside the number.
+
+This document did it too, within an hour of saying so: it opened with "five bugs" above a
+six-row table and "six checks" above seven. The practical lesson is not to try harder —
+it is to **avoid writing the count at all** where the list is right there, which is why the
+hazard table no longer announces its own length.
 
 ---
 
