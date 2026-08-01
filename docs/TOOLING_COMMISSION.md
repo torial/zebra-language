@@ -193,11 +193,14 @@ compilers outside the repo root.
 
 ## 5. Concerns, honestly
 
-* **The QUICK tier has not been run end-to-end since `hazard-lint` and `doc-lint` were
-  registered.** Both gates pass individually and `gates.sh --list` parses, but the tier
-  composition is unverified: `doctor.sh` refuses to preflight because a parallel session
-  has `selfhost/CodeGen.zbr` mid-edit, and `gates.sh` correctly declines to report on an
-  untrustworthy tree. This needs one clean run when the tree settles.
+* ~~**The QUICK tier has not been run end-to-end.**~~ **CLOSED 2026-08-01: 12/12 PASS**,
+  ~6.5 min, once the parallel session's work landed and `doctor.sh` went green. Worth
+  recording that the blockage was the system behaving correctly, not an obstacle: `doctor`
+  refused to preflight a tree with stale generated Zig, and `gates.sh` refused to report
+  on an untrustworthy preflight. A green gate that measured the wrong compiler would have
+  been worse than no gate. `boundary` reports **21** probes, not 20 — the extra one is
+  `bv_list_literal_inferred`, produced by a mutation survivor and now running as a
+  first-class gate.
 * **`hazard_lint` is pattern-based and will miss the next hazard class** until that class
   has produced a receipt. That is deliberate, but it means a green run says "none of the
   five known hazards", not "no hazards".
@@ -219,7 +222,9 @@ compilers outside the repo root.
 
 ## 6. Still open
 
-* One clean `gates.sh` QUICK run once the tree settles.
+* **The twelve mutation survivors** — ranked into four families in `NEXT_STEPS.md`, with
+  run-and-compare fixtures for `genStdlibMethod` as the biggest win. One is closed and
+  `--site`-verified.
 * B1 v2: sample until *N live* mutants rather than N total; bias site selection toward
   code the corpus executes; widen the emit fingerprint (regenerating `selfhost/*.zig` with
   the mutated compiler would fingerprint the largest Zebra program we have).
