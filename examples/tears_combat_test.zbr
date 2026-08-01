@@ -5,7 +5,7 @@
 # seed — no GUI backend involved. This is the payoff of keeping `update`'s
 # combat logic in seed-in / result-out pure functions.
 
-use tears_of_the_tuon exposing Weapon, swordW, bowW, daggerW, AttackOutcome, resolveAttack, weaponScore, chooseEnemyWeapon, tryFlee, playerFirst, GameModel, Msg, update, hasFlag, tileAt, applyExperience, expLevelMax, levelAgi, levelMaxHp, saveGame, loadGame, arnaOutcome, arnaStep, arnaRegion, yehuQualities, arnaWhoName
+use tears_of_the_tuon exposing Weapon, swordW, bowW, daggerW, AttackOutcome, resolveAttack, weaponScore, chooseEnemyWeapon, tryFlee, playerFirst, GameModel, Msg, update, hasFlag, tileAt, applyExperience, expLevelMax, levelAgi, levelMaxHp, saveGame, loadGame, arnaOutcome, arnaStep, arnaRegion, yehuQualities, arnaWhoName, arnaPage
 
 def arnaMan(flags: List(str)): GameModel
     return GameModel(phase: 16, diff: 1, pHp: 35, e0Hp: 0, e1Hp: 0, selWeapon: 0, round: 1, xp: 0, level: 2, story: 0, states: flags, px: 5, py: 25, rngSeed: 7, log: ["at Arna"])
@@ -392,6 +392,17 @@ def main()
     assert hasFlag(gatePaid, "ArnaPaid") and gatePaid.story == 1, "coin at the gate is noticed and priced"
     var gateFree = arnaStep(gateM, false)
     assert not hasFlag(gateFree, "ArnaPaid") and gateFree.story == 1, "walking in costs nothing"
+
+    # The PAGE, not just the outcome: the prose is the only surface a player
+    # actually reads, and a green gate cannot catch a pronoun. Old Sera was
+    # called "he" all the way to the road until this was fixed.
+    var seraPage = arnaPage(arnaMan(hardF) except story = 4)
+    assert seraPage.contains("She "), "old Sera is a woman on every line, not just the refusal"
+    assert not seraPage.contains("He "), "and is never called he"
+    var cubPage = arnaPage(arnaMan(keptF) except story = 3)
+    assert cubPage.contains("The cub"), "the cub is a child whose sex the player never learns"
+    var kirPage = arnaPage(arnaMan(keptF) except story = 1)
+    assert kirPage.contains("He "), "Kir is a man"
 
     # The door INTO the village: the scribe's colophon sends Yehu home through Arna.
     var doorM = GameModel(phase: 15, diff: 1, pHp: 35, e0Hp: 0, e1Hp: 0, selWeapon: 0, round: 1, xp: 0, level: 2, story: 7, states: plainF, px: 5, py: 25, rngSeed: 7, log: ["letter"])
