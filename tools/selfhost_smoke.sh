@@ -580,7 +580,10 @@ smoke_tc_fail test/diag_undefined_name_test.zbr "undefined name:"
 # BUG-142: calling a function with too few args emits a (non-fatal) warning
 # instead of silently padding with `undefined`. Warning, not error, because the
 # Luau translator pervasively produces too-few-arg calls (nil-default pattern).
-smoke_warn test/arg_count_test.zbr "too few arguments"
+# BUG-142 CLOSED 2026-07-31: too few/too many arguments are ERRORS now, not warnings
+# (Sean's call). This moved smoke_warn -> smoke_tc_fail in the same commit as the
+# promotion, because a fixture asserting the old severity would fail the moment it landed.
+smoke_tc_fail test/arg_count_test.zbr "too few arguments"
 smoke_run test/arg_count_ok_test.zbr "Hello, World"
 # Audit #2: a bare function name as a statement warns (forgotten call) instead of
 # a cryptic Zig "value ignored" error.

@@ -1,9 +1,14 @@
-# @boundary warns too few arguments to 'add': expected 2, found 1
+# @boundary rejects too few arguments to 'add': expected 2, found 1
 #
 # BUG-232 REGRESSION GUARD. Authored 2026-07-30 as a `@boundary-pending` probe
 # recording SILENTLY WRONG OUTPUT: `print("${add(1)}")` emitted no diagnostic at all,
-# while the identical call as a statement warned. Fixed 2026-07-31; rewritten to assert
-# the warning it was always meant to.
+# while the identical call as a statement warned.
+#
+# It has since changed severity TWICE in one day, and caught both moves itself:
+#   silent  -> warns    when BUG-232 was fixed (the walker reached interpolation)
+#   warns   -> rejects  when BUG-142 promoted arity to a hard error
+# The second was not anticipated when the first was written. A probe that pins a
+# diagnostic's TEXT also pins its SEVERITY, which is worth knowing before you write one.
 #
 # Third pending tripwire to fire on a real fix, after BUG-234 and BUG-236.
 #
@@ -25,7 +30,7 @@ def one(a: int): int
     return a
 
 def main()
-    # Both must now be diagnosed. The `warns` kind asserts by substring, so the header
-    # pins too-few; the too-many line is asserted by bv_arity_too_many's sibling probe.
+    # Both are now hard errors. The `rejects` kind asserts by substring, so the header
+    # pins too-few; too-many is pinned by the sibling bv_arity_too_many probe.
     print("tooFew=${add(1)}")
     print("tooMany=${one(1, 2)}")

@@ -242,6 +242,14 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
   at `0:0`; the only reproducible case is a two-literal concat), so this is a cap on how good
   diagnostics can get, not a present emergency. Do it when it blocks something.
 
+- [x] **BUG-142 — arity is a hard ERROR. CLOSED 2026-07-31 (Sean's call).** Too few AND
+  too many arguments now reject instead of warning. Unblocked by BUG-235: the promotion
+  was gated on a corpus baseline that turned out to be five weeks stale, and two scans
+  returned a confident "0 too-few" that was a broken instrument rather than a clean
+  corpus. Regenerating the corpus and adding a control produced the real number — 28
+  too-few lines / 19 files, and exactly **1** too-many site in 1,581 files, which is why
+  splitting the promotion by direction was worth doing even though both landed together.
+
 - [ ] **#2 — Typed error sets. STRATEGY DECIDED 2026-07-29: declared-only, opt-in.**
   `def parse(s: str) throws ParseError` declares an explicit set; a bare `throws` keeps
   meaning "anything". Migration is therefore per-function and nothing breaks on day one.

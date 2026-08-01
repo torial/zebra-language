@@ -36,12 +36,10 @@ allocate Arena() scope OK
 Hello, World
 Hi, World
 42
-=== arg_count_test sha1=bb28309124e7 ===
-test/arg_count_test.zbr:7:11: warning: too few arguments to 'add': expected 2, found 1
+=== arg_count_test sha1=69c8f2a9d0a3 ===
+test/arg_count_test.zbr:9:11: error: too few arguments to 'add': expected 2, found 1
     print(add(1).toString())
           ^
-
-1
 === arg_test sha1=482ab5c393e5 ===
 flag absent: OK
 contains absent: OK
@@ -149,8 +147,6 @@ bug173: OK
 bug176: OK
 === bug177_178_index_tostring_test sha1=0898dff887ac ===
 bug177_178: OK
-=== bug193_listdir_test sha1=a1bb699d6554 ===
-bug193: OK
 === bug195_map_param_test sha1=c896cc89e446 ===
 bug195: 62
 === bug196_nested_list_test sha1=5ddfabfec0d7 ===
@@ -313,8 +309,6 @@ hash consistent: ok
 hash distinct: ok
 === dict_literal_test sha1=a91cc4572ffa ===
 dict_literal: OK
-=== dir_walk_test sha1=962154b0d00d ===
-dir_walk_test: ok (1900 files found)
 === discard_var_test sha1=c444690b73ed ===
 3
 discard_var_test OK

@@ -1,6 +1,8 @@
-# BUG-142: calling a function with too few arguments emits a (non-fatal) warning
-# — "too few arguments to 'add'" — instead of silently padding the missing arg
-# with `undefined`. Compiles (exit 0); the smoke harness asserts the warning.
+# BUG-142 (CLOSED 2026-07-31): calling a function with too few arguments is a hard
+# ERROR — "too few arguments to 'add': expected 2, found 1". It was a non-fatal warning
+# from 2026-06-23 until then, because the Luau translator emitted too-few calls
+# pervasively; measuring the regenerated corpus put the cost at 19 files, and Sean took
+# it. Does NOT compile; the smoke harness asserts the rejection via smoke_tc_fail.
 def add(a: int, b: int): int
     return a + b
 def main()

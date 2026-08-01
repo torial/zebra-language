@@ -1,18 +1,19 @@
-# @boundary warns too few arguments to 'add': expected 2, found 1
-# @boundary-pending BUG-142  too-few arguments warns instead of erroring
+# @boundary rejects too few arguments to 'add': expected 2, found 1
 #
-# BOUNDARY: FEWER arguments than the function declares, with no default to cover
-# the gap. Written in STATEMENT position deliberately — this is the control that
-# proves arity checking exists at all, which is what makes bv_arity_interp_
-# unchecked.zbr's silence attributable to the interpolation context.
+# BUG-142 REGRESSION GUARD. This probe was authored 2026-07-30 asserting exactly this
+# rejection, was corrected to `warns` because that is what the compiler did, carried
+# `@boundary-pending BUG-142` while the question sat with Sean, and is now back to the
+# assertion it started with. The round trip is the point: the suite recorded the gap
+# between intent and behaviour, kept it visible, and closed it when the decision came.
 #
-# INTENT vs TODAY, recorded rather than legislated: this probe was first written to
-# assert a hard REJECTION. The compiler warns and compiles, padding the missing
-# argument with a deterministic zero. That is not an oversight — BUG-142 chose it
-# deliberately, and its own text names "promoting the warning to a hard error" as
-# the remaining work. A boundary suite does not get to overturn a deliberate
-# decision by asserting its own opinion, so this pins the warning and carries the
-# ticket. If the promotion happens, this probe fails and becomes `rejects`.
+# Sean's decision (2026-07-31): "I think too few / too many should be an error and not
+# a warning." Landed the same day, after a measurement whose control finally passed:
+# 28 too-few lines across 19 files in the regenerated 1,581-file Luau corpus, matching
+# BUG-142's historical figure almost exactly.
+#
+# WHY IT IS AN ERROR AND NOT A STYLE PREFERENCE: codegen pads the missing argument with
+# std.mem.zeroes, so the callee reads a silent zero. The old warning left a program that
+# compiled, ran, and gave a wrong answer.
 def add(a: int, b: int): int
     return a + b
 

@@ -2940,13 +2940,28 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
         if p.default_ == nil
             required = required + 1
     var provided: int = call.args.len
+    # BUG-142 CLOSED 2026-07-31. Sean's decision: "I think too few / too many should be
+    # an error and not a warning." Both are now hard errors.
+    #
+    # It stayed a warning since 2026-06-23 for one reason: the Luau translator emitted
+    # too-few calls pervasively (Luau lets you omit trailing arguments and they become
+    # nil), so promoting regressed that corpus by 28. Measured again 2026-07-31 against
+    # the REGENERATED corpus, with an instrument whose control finally passed -- 28
+    # too-few lines across 19 files, matching the historical figure almost exactly, and
+    # exactly ONE too-many site in 1,581 files.
+    #
+    # So the two directions were never the same decision. Nothing in Luau's semantics
+    # needs EXTRA arguments; that half cost one file. The too-few half costs 19, and
+    # those calls are genuinely unsafe here rather than merely untidy: codegen pads the
+    # missing argument with std.mem.zeroes, so the callee reads a silent zero. Turning
+    # that into an error is the point of the change, not a side effect of it.
     if provided < required
         if required == total
-            ctx.addWarn(file, cline, ccol, "too few arguments to '" + lookup_method + "': expected " + total.toString() + ", found " + provided.toString())
+            ctx.addErr(file, cline, ccol, "too few arguments to '" + lookup_method + "': expected " + total.toString() + ", found " + provided.toString())
         else
-            ctx.addWarn(file, cline, ccol, "too few arguments to '" + lookup_method + "': expected at least " + required.toString() + ", found " + provided.toString())
+            ctx.addErr(file, cline, ccol, "too few arguments to '" + lookup_method + "': expected at least " + required.toString() + ", found " + provided.toString())
     else if provided > total
-        ctx.addWarn(file, cline, ccol, "too many arguments to '" + lookup_method + "': expected at most " + total.toString() + ", found " + provided.toString())
+        ctx.addErr(file, cline, ccol, "too many arguments to '" + lookup_method + "': expected at most " + total.toString() + ", found " + provided.toString())
 
 # Walk an expression and run checkArgCount on every call it contains (the call
 # itself, calls in its arguments, and calls in compound sub-expressions). This is

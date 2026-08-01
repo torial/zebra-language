@@ -6,7 +6,6 @@ any_all_test
 arena_concurrency_hazard_test
 arena_scope_test
 arg_count_ok_test
-arg_count_test
 arg_test
 array_in_test
 atomic_test
@@ -48,6 +47,8 @@ bug195_map_param_test
 bug196_nested_list_test
 bug198_union_optional_field_test
 bug221_transitive_init_test
+bug224_format_multiarg_test
+bug226_tokenize_forheader_test
 build_declarative_test
 build_smoke_test
 capture_boundary
@@ -256,6 +257,7 @@ simd_test
 sort_test
 sqlite_test
 stdlib_additions_test
+stdlib_arity_ok_test
 stdlib_base64_test
 stdlib_file_test
 stdlib_hash_test

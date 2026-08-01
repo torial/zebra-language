@@ -3689,7 +3689,52 @@ against compiler-internal usage first). Target: `--bootstrap` reaches the same
 141/0 as the selfhost, restoring full equivalence. Then wire `--bootstrap` into the
 parity gate so this can't silently regress again.
 
-## BUG-142: missing required argument compiles + runs with garbage
+## BUG-142: missing required argument compiles + runs with garbage ✅ CLOSED 2026-07-31
+
+**CLOSED 2026-07-31 — both directions are now hard ERRORS.** Sean's decision, taken
+after the measurement below finally produced a trustworthy number.
+
+**The measurement that unblocked it, and why it took three attempts.** The promotion was
+gated on not regressing the Luau corpus, and the recorded baseline (1482) turned out to
+be five weeks stale — see BUG-235. Two earlier scans returned "0 too-few", which looked
+like good news and was actually a broken instrument: this entry documents ~28 too-few
+sites, so **zero was the tell**. After the corpus was regenerated, a third scan with a
+built-in control produced:
+
+```
+files scanned:   1581      (regenerated corpus, deduped)
+files EMITTING:  1446
+TOO FEW:         28 lines / 19 distinct files   <-- control PASSES, matches the ~28 on record
+TOO MANY:         1 line  /  1 distinct file
+```
+
+The control passing is what made the rest believable. An instrument that cannot find a
+thing you know is there has not told you the thing is absent.
+
+**The two directions were never one decision, and the numbers prove it.** Luau lets you
+omit trailing arguments (they become nil), so the translator emitted too-few calls
+pervasively — 19 files. **Nothing in Luau needs EXTRA arguments**, and the whole corpus
+held exactly ONE too-many site. Splitting the promotion by direction turned a 19-file
+decision into a 1-file one for half the value; that split is what Sean approved.
+
+**Both landed together anyway**, because the corpus is explicitly not frozen (Sean:
+*"The corpus is not intended to be locked in yet"*) and because the too-few calls are
+genuinely unsafe rather than merely untidy: codegen pads the missing argument with
+`std.mem.zeroes`, so the callee reads a silent zero. The old warning left a program that
+compiled, ran, and gave a wrong answer — which is the exact failure mode this tracker
+exists for.
+
+**Known cost, stated rather than discovered:** 19 of the 1,446 compiling corpus files
+(1.3%) now fail. Each has a real bug. The proper fix is the translator emitting `= nil`
+defaults for under-supplied trailing params — step 2 below, which already has a
+prototype — not the compiler tolerating them. The 19 are listed in the session log.
+
+**Fixtures moved in the same commit**, because a fixture asserting the old severity
+fails the instant the promotion lands: `test/arg_count_test.zbr` `smoke_warn` →
+`smoke_tc_fail`, and three boundary probes `warns` → `rejects`. Two of those had been
+carrying `@boundary-pending BUG-142` since 2026-07-30 and had been authored asserting
+this very rejection — they went red, and were rewritten back to the assertion they
+started with. Pending count 3 → 1.
 
 **Severity:** high (correctness/safety — silent wrong behavior).
 **Status:** PARTIAL ✅ 2026-06-23 — (a) emits a non-fatal **warning**

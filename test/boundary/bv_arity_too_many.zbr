@@ -1,14 +1,14 @@
-# @boundary warns too many arguments to 'one': expected at most 1, found 2
-# @boundary-pending BUG-142  too-many arguments warns instead of erroring
+# @boundary rejects too many arguments to 'one': expected at most 1, found 2
 #
-# BOUNDARY: MORE arguments than the function declares. The extra argument has
-# nowhere to go and is discarded.
+# BUG-142 REGRESSION GUARD, the cheap half. Same round trip as its too-few sibling:
+# authored as a rejection, corrected to `warns`, pending, now back to the assertion.
 #
-# Same intent-vs-today split as bv_arity_too_few.zbr: written first as a hard
-# rejection, corrected to pin the warning the compiler actually emits. The cost of
-# silent discard is on the record — BUG-215 was exactly that, where
-# `str.indexOf(sub, from)` dropped its second argument and turned a typo into a
-# runtime panic three frames away.
+# The two directions were never one decision, and the measurement proved it. The reason
+# too-few stayed a warning is that Luau lets you omit trailing arguments (they become
+# nil), so the translator emitted them pervasively — 19 files. NOTHING in Luau needs
+# EXTRA arguments, and the regenerated 1,581-file corpus contained exactly ONE too-many
+# site. Splitting the promotion by direction turned a 19-file decision into a 1-file one
+# for half the value.
 def one(a: int): int
     return a
 
