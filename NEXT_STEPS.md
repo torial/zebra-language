@@ -437,14 +437,16 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
 - [ ] **B2 spike (1 day) — is branch coverage feasible on Windows/Zig at all?** Decide
   B1-vs-B2 on evidence. One option worth the look: teaching Zebra itself to emit coverage
   counters, which would serve users too.
-- [x] **B1 — mutation testing of the compiler. HARNESS BUILT + FIRST VALID RUN
-  2026-08-01** (`tools/mutation_check.py`). 60 mutants: **0 survivors, 13/13 live
-  mutations caught** (10 by the A3 boundary suite, 3 by hello-world). Full result and
-  caveats in `docs/testing_strategy.md` §B1 — read them, the headline is more flattering
-  than the evidence: the gate figure rests on **n=13**, and **47/60 (78%) were NO-EFFECT**
-  (byte-identical emit), so the run largely measured *reachability*, not gate quality.
-  A 300-mutant run published earlier the same day was **retracted** — a CRLF bug in the
-  harness's restore path fabricated 241 "detections"; postmortem is in the same section.
+- [ ] **B1 — mutation testing of the compiler. HARNESS BUILT; NO VALID FULL RUN YET**
+  (`tools/mutation_check.py`). Two runs published and both partly retracted on 2026-08-01:
+  a 300-mutant run whose 241 "regen detections" were a CRLF bug in the harness's own
+  restore path, and a 60-mutant run whose `emit_fingerprint()` searched for the
+  *bootstrap's* header while running the *selfhost*, hashed a sentinel when it did not
+  find it, and so returned a **constant** — filing all 47 non-detections as NO-EFFECT and
+  never running `smoke` on any mutant. **What stands from both: 13 real detections**
+  (10 A3 boundary, 3 hello-world). **What is withdrawn: "0 survivors".** Postmortems in
+  `docs/testing_strategy.md` §B1. Harness now has a positive control that refuses to start
+  on a blind fingerprint; corrected rerun in flight.
 - [ ] **B1 v2 — a design change, not more samples.** The cost that matters is **per LIVE
   mutant (~310 s)**, not per mutant. Two fixes: (a) sample until N *live* mutants rather
   than N total; (b) bias site selection toward code the corpus demonstrably executes, or
