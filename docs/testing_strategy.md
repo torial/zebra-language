@@ -278,8 +278,20 @@ was right and the hole was purely in what we were asking it. **Verified rather t
 mutants: 20   detected: 7   survived: 9   no-effect: 4        (50 min)
 ```
 
-Combined with the five above: **25 mutants, 21 live, 9 caught, 12 survivors.** But the
-aggregate is the least interesting cut of it. Split by module:
+Combined with the five above: **25 mutants, 21 live, 9 caught, 12 survivors** — and that
+aggregate needed checking before it could be stated, because the two runs shuffle the
+**same ~4,300-site pool** independently and nothing dedups across runs. Verified: the two
+site sets have **zero overlap**, so the 25 are 25 distinct sites.
+
+That check was nearly impossible to make. `mutation_report.json` was a single mutable file,
+so the second run had already destroyed the first run's detail; only the seed-11 report
+still existed on disk, and the seed-7 sites had to be recovered from a scrollback buffer.
+It came out clean, which is luck rather than method. Reports are now written per run
+(`mutation_report_seed7_n5.json`, `mutation_report_seed11_n20.json`, …) — aggregating runs
+is the normal way to use this tool, so the evidence for an aggregate has to outlive the run
+that produced it.
+
+The aggregate is in any case the least interesting cut. Split by module:
 
 | module | live mutations | caught | survivors |
 |---|---|---|---|

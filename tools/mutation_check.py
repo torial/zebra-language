@@ -472,7 +472,19 @@ def main():
     if not sur:
         print("  (none in this sample)")
 
-    out = REPO / "tools" / "mutation_report.json"
+    # ONE FILE PER RUN. This was a single mutable `mutation_report.json`, so each run
+    # DESTROYED the previous run's evidence. Two runs were aggregated on 2026-08-01
+    # ("25 mutants, 21 live, 12 survivors") and by then only the second report existed on
+    # disk -- the first survived solely in a scrollback buffer. Whether any site had been
+    # double-counted could not be answered from anything durable.
+    #
+    # It turned out clean (zero overlap between the two site sets), which is luck, not
+    # method: both runs shuffle the SAME ~4,300-site pool independently and nothing
+    # dedups across runs. Aggregating runs is the normal way to use this tool, so the
+    # evidence for an aggregate has to outlive the run that produced it.
+    tag = args.site.replace("/", "_").replace(":", "-") if args.site \
+        else f"seed{args.seed}_n{args.limit}"
+    out = REPO / "tools" / f"mutation_report_{tag}.json"
     out.write_text(json.dumps(results, indent=1), encoding="utf-8", newline="\n")
     print(f"\nreport: {out}")
     return 0

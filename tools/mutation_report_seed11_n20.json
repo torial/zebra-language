@@ -1,0 +1,222 @@
+[
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 733,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "SURVIVED",
+  "by": "-",
+  "why": "",
+  "secs": 411.4
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 16013,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "SURVIVED",
+  "by": "-",
+  "why": "",
+  "secs": 312.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1672,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "why": "",
+  "secs": 52.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 330,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "SURVIVED",
+  "by": "-",
+  "why": "",
+  "secs": 240.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1556,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "why": "",
+  "secs": 43.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 341,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "SURVIVED",
+  "by": "-",
+  "why": "",
+  "secs": 229.5
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2479,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "why": "",
+  "secs": 40.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15635,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "SURVIVED",
+  "by": "-",
+  "why": "",
+  "secs": 232.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6075,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "SURVIVED",
+  "by": "-",
+  "why": "",
+  "secs": 218.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2480,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "why": "",
+  "secs": 40.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15689,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "smoke",
+  "why": "",
+  "secs": 219.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15348,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "SURVIVED",
+  "by": "-",
+  "why": "",
+  "secs": 229.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13119,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "why": "",
+  "secs": 55.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 859,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "why": "",
+  "secs": 40.2
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2158,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "why": "",
+  "secs": 39.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1423,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "why": "",
+  "secs": 34.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12608,
+  "op": "cmp",
+  "old": "<",
+  "new": "<=",
+  "verdict": "SURVIVED",
+  "by": "-",
+  "why": "",
+  "secs": 225.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1470,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "why": "",
+  "secs": 32.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 5357,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "why": "",
+  "secs": 54.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 7524,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "SURVIVED",
+  "by": "-",
+  "why": "",
+  "secs": 228.5
+ }
+]
