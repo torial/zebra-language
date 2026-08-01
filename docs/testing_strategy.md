@@ -146,6 +146,44 @@ coverage percentage when coverage tooling is awkward.
 highest of anything here, because it is the only item that measures what we are NOT
 testing rather than adding more of what we are.*
 
+**BUILT 2026-08-01 — `tools/mutation_check.py`. Three things the plan got wrong.**
+
+1. **The cost estimate was off by an order of magnitude.** "Each mutant needs a rebuild"
+   assumed the full `rebuild.sh` cycle. Mutating ONE module and regenerating only that
+   module is **22 s**, and `zig build` on one changed module is **3 s**. A no-effect
+   mutant now costs ~45 s end to end, so a few hundred is an evening, not a weekend.
+
+2. **A raw survived/detected split is misleading, and would have produced a false
+   headline.** The first 5-mutant sample reported *0 detected, 5 survived* — i.e.
+   "gates catch 0% of compiler mutations". That was wrong: all five mutations left the
+   emitted code **byte-identical**, because CodeGen has 3,559 mutable sites and much of
+   it (GUI backends, node-addon, rarely-used stdlib methods) is unreachable from
+   anything the corpus compiles. The tool now fingerprints the emit and reports a third
+   verdict, **NO-EFFECT**, so the percentage is computed only over mutations that
+   actually changed generated code. Without that split the number is dominated by dead
+   code and means nothing.
+
+3. **Isolation is mandatory, not tidy.** A run leaves the compiler broken for seconds at
+   a time, hundreds of times over; a session sharing the checkout would be handed a
+   compiler that is not what it thinks it is — exactly the hazard behind BUG-238. Runs
+   happen in a git worktree, which must be a **sibling** of the repo because `build.zig`
+   has a path dependency on `../earley`.
+
+**Pilot results (13 mutants, two samples).** CodeGen 5/5 no-effect. TypeChecker 8: two
+detected, six no-effect, **zero survivors** — and both detections came from the **A3
+boundary suite**, which is a satisfying loop: the intent-written probes catch compiler
+mutations that no golden baseline would.
+
+**What is NOT yet established, and the sample is far too small to claim otherwise:** the
+headline "gates catch N%" needs a few hundred mutants, not thirteen. What the pilot DOES
+establish is that the harness reports both verdicts on real mutations, that its baseline
+check refuses to run on a red tree, and that its cost per mutant is affordable. Two of
+its own bugs were caught by that baseline check — a worktree that could not build, and a
+detector silently broken by WSL path translation, either of which would have produced a
+confident, meaningless score.
+
+**Next run:** `python tools/mutation_check.py --limit 300 --seed 1` (~4 h).
+
 **B2 · Real coverage measurement — spike first, commit second.** Determine whether we can
 get branch coverage of the compiler on Windows (Zig's fuzz instrumentation, kcov under
 WSL, or — the interesting option — teaching Zebra itself to emit coverage counters, which

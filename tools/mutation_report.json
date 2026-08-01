@@ -1,0 +1,82 @@
+[
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2069,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 47.3
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1332,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 44.3
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1984,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 50.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1671,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 42.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1859,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 47.0
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 669,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 42.6
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2038,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 48.3
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1554,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 44.2
+ }
+]
