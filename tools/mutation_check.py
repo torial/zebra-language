@@ -281,6 +281,11 @@ def main():
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--module", default=None,
                     help="substring filter on the target file (e.g. TypeChecker)")
+    ap.add_argument("--site", default=None,
+                    help="re-run ONE mutation, as FILE:LINE (e.g. "
+                         "selfhost/CodeGen.zbr:9714). The point of this is to close the "
+                         "loop on a survivor: add a test, then prove it KILLS the mutant "
+                         "rather than assuming it would.")
     args = ap.parse_args()
 
     # THE WORKTREE MUST EXIST BEFORE SITES ARE CHOSEN.
@@ -319,8 +324,21 @@ def main():
             print(f"  {rel}: {sum(c.values())}  {dict(c)}")
         return 0
 
-    random.Random(args.seed).shuffle(sites)
-    sites = sites[: args.limit]
+    if args.site:
+        want_file, _, want_line = args.site.rpartition(":")
+        want_line = int(want_line)
+        want_file = want_file.replace("\\", "/")
+        sites = [st for st in sites
+                 if st[0].replace("\\", "/").endswith(want_file.split("/")[-1])
+                 and st[1] + 1 == want_line]
+        if not sites:
+            sys.exit(f"--site {args.site}: no mutable site on that line of the WORKTREE "
+                     f"copy. Line numbers here are the worktree's, not this checkout's "
+                     f"-- they are different files (see the note above ensure_worktree).")
+        print(f"--site: {len(sites)} mutation(s) on {args.site}")
+    else:
+        random.Random(args.seed).shuffle(sites)
+        sites = sites[: args.limit]
     print(f"worktree: {wt}")
 
     print("baseline build...", flush=True)

@@ -1,0 +1,55 @@
+# @boundary runs
+#
+# THE ONE-ELEMENT INFERRED LIST LITERAL. Found by mutation testing (B1), 2026-08-01 —
+# the first survivor the harness ever produced, and it points at a real hole rather
+# than at a quirk of the harness.
+#
+# The surviving mutation was `selfhost/CodeGen.zbr:9714`:
+#
+#     else if ll.elems.len > 0 and .infer_ctx != nil     ->     ll.elems.len > 1
+#
+# That is the branch that infers a list literal's element type from `elems.at(0)` when
+# there is NO annotation to take it from. Changing `> 0` to `> 1` disables it for
+# exactly one input shape — a literal with a single element — and every gate stayed
+# green.
+#
+# WHY: corpus-wide, across test/, examples/, selfhost/ and IDE/, there are ZERO
+# one-element inferred list literals and three multi-element ones. A mutation whose only
+# observable effect is at length 1 therefore cannot be observed. The sibling probe
+# bv_list_literal_annotated.zbr does contain `var one: List(int) = [7]`, which looks like
+# coverage and is not: the annotation sends it down the *other* branch, where the element
+# type comes from the annotation and inference is never consulted.
+#
+# EXPECTATIONS BELOW WERE WRITTEN FROM QUICKSTART BEFORE RUNNING THIS FILE, as the A3
+# discipline requires. `[7]` is a list of one int; its element type is int because 7 is an
+# int, by the same rule that makes `[7, 8]` a list of int. Nothing about the count enters
+# into it.
+def main()
+    # The failing shape, minimally: one element, no annotation.
+    var one = [7]
+    print(one.count())
+    print(one.at(0))
+
+    # The element type must come from the element, not from a default. If inference is
+    # skipped, the emitted element type falls back to a string-shaped default and this
+    # row is where that shows up as arithmetic on the wrong type.
+    var n = one.at(0) + 1
+    print(n)
+
+    # A single STRING element — a different Zig element type, so a fallback that happens
+    # to be string-shaped would pass the int rows above and fail here only if the two are
+    # checked together. Both are checked.
+    var s = ["hi"]
+    print(s.at(0))
+    print(s.count())
+
+    # Length one is the boundary; its neighbours must keep working. Zero elements has no
+    # element to infer from and is covered by bv_empty_list.zbr; two is the smallest case
+    # the corpus already exercises.
+    var two = [7, 8]
+    print(two.count())
+
+    # Still mutable afterwards, as with the annotated form.
+    var m = [1]
+    m.add(2)
+    print(m.count())
