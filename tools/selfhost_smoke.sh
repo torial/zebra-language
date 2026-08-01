@@ -606,6 +606,12 @@ smoke_tc_fail test/diag_undefined_name_test.zbr "undefined name:"
 # promotion, because a fixture asserting the old severity would fail the moment it landed.
 smoke_tc_fail test/arg_count_test.zbr "too few arguments"
 
+# BUG-239: an empty list literal `[]` in expression position (argument, struct field,
+# return value). Registered as a RUNNING guard because the failure was a Zig-level
+# "local variable is never mutated" on the emitted labeled block — emit-only would
+# still catch it, but running also pins that the callee actually receives an empty list.
+smoke_run test/bug239_empty_list_literal_test.zbr "bug239_empty_list_literal_test: ok"
+
 # BUG-238: `except` in an enum-dotted branch arm, reached through `use`. Reported as a
 # regression that did not reproduce; registered as a RUNNING guard (smoke_run, not
 # smoke) because the failure was a parse error in the DEP, which only a real import

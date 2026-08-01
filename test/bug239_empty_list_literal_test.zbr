@@ -1,0 +1,52 @@
+# BUG-239: an empty list literal `[]` in EXPRESSION position (argument, struct
+# field, return value) failed to compile.  The selfhost lowers `[a, b]` to a
+# labeled block — `(blk_ll_N: { var _ll_N = ...empty; _ll_N.append(...); break ... })`
+# — and hardcoded `var`.  With zero elements no `.append` is emitted, so the
+# binding is never mutated and Zig hard-errors:
+#
+#     error: local variable is never mutated
+#
+# The reported line pointed at the callee's definition, not the `[]`, which made
+# it read like an unrelated failure.  Fix: choose the keyword from the element
+# count, so an empty literal emits `const`.
+#
+# Note `var x: List(T) = []` always worked — annotated locals are handled in
+# genLocalVar, which never reaches the literal lowering.  Only the expression
+# position was broken.
+
+struct Holder
+    var items: List(str)
+
+def countOf(xs: List(str)): int
+    return xs.len
+
+def firstOr(xs: List(str), dflt: str): str
+    if xs.len == 0
+        return dflt
+    return xs.at(0)
+
+# empty literal as a RETURN value
+def noneAtAll(): List(str)
+    return []
+
+def main()
+    # the case that failed: `[]` as a call argument
+    assert countOf([]) == 0, "empty list literal as an argument"
+    assert countOf(["a", "b"]) == 2, "non-empty literal still works"
+    assert firstOr([], "fallback") == "fallback", "empty literal reaches the callee empty"
+
+    # `[]` as a struct field initialiser
+    var h = Holder(items: [])
+    assert h.items.len == 0, "empty list literal as a struct field"
+
+    # `[]` as a return value
+    assert noneAtAll().len == 0, "empty list literal in return position"
+
+    # the annotated-local form, which never broke — pinned so a fix here
+    # cannot regress it
+    var annotated: List(str) = []
+    assert annotated.len == 0, "annotated empty local"
+    annotated.add("x")
+    assert annotated.len == 1, "annotated empty local is still mutable"
+
+    print("bug239_empty_list_literal_test: ok")

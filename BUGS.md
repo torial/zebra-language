@@ -1,6 +1,52 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-238. Next new bug: BUG-239.**
+**Last bug number generated: BUG-239. Next new bug: BUG-240.**
+
+---
+
+### BUG-239: empty list literal `[]` in expression position — ✅ FIXED 2026-08-01
+
+**Symptom.** Any `[]` used as a call argument, struct-field initialiser, or return
+value failed to compile with a Zig-level error that named the *callee's* definition
+line rather than the literal:
+
+```
+def take(xs: List(str)): int
+    return xs.len          # <- error reported HERE
+def main()
+    print(take([]).toString())
+```
+```
+error: local variable is never mutated
+```
+
+**Cause.** The selfhost lowers a list literal to a labeled block —
+`(blk_ll_N: { var _ll_N: std.ArrayList(T) = .empty; _ll_N.append(...); break :blk_ll_N _ll_N; })`
+— with the keyword hardcoded to `var`. With zero elements no `.append` is emitted,
+so the binding is never mutated and Zig hard-errors. The misleading line number is
+why this survived: it reads as a fault in the function being called.
+
+**Fix.** `selfhost/CodeGen.zbr`, `Expr.list_lit` — choose the keyword from
+`ll.elems.len`, emitting `const` for an empty literal. This matches the house idiom
+already documented in the bootstrap (`src/CodeGen.zig:1645`: "a sort-only list must
+stay `const`, else Zig rejects it as never mutated"). The same guard was applied to
+`Expr.dict_lit`, which a bare `{}` actually reaches.
+
+**Scope notes for whoever touches this next:**
+
+- `var x: List(T) = []` was **never** affected — annotated locals are handled in
+  `genLocalVar`, which never reaches the literal lowering. Only expression position
+  was broken, which is why the corpus did not catch it.
+- A bare `{}` parses as a **dict** literal, not a set. The set-literal branch has no
+  zero-element guard because no source syntax can reach it; a comment there records
+  what to do if an empty-set syntax is ever added.
+- The **bootstrap does not have this bug** — `src/CodeGen.zig:14341` emits a bare
+  `std.ArrayList([]const u8).empty` for the empty case with no block at all. Checked
+  because BUG-238 turned on exactly this bootstrap/selfhost distinction.
+
+**Regression:** `test/bug239_empty_list_literal_test.zbr`, registered `smoke_run` in
+`tools/selfhost_smoke.sh`. Found by dogfooding — writing a village demo for
+`examples/tears_of_the_tuon.zbr` and passing `log: []`.
 
 ---
 

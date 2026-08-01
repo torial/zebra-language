@@ -9702,7 +9702,13 @@ struct Generator
                 var ll_uid = w.nextUid()
                 var ll_label: str = "blk_ll_" + ll_uid.toString()
                 var ll_var:   str = "_ll_" + ll_uid.toString()
-                w.emit("(" + ll_label + ": { var " + ll_var + ": std.ArrayList(")
+                # An empty literal emits no `.append`, so the binding is never
+                # mutated and Zig hard-errors on `var`.  The keyword has to be
+                # chosen from the element count, not fixed at `var`.
+                var ll_kw: str = "var "
+                if ll.elems.len == 0
+                    ll_kw = "const "
+                w.emit("(" + ll_label + ": { " + ll_kw + ll_var + ": std.ArrayList(")
                 var elem_zig: str = "[]const u8"
                 if ll.elem_type != nil
                     # honoured for future explicit-typed list literal
@@ -9756,6 +9762,11 @@ struct Generator
                 else if sl.elems.len > 0 and .infer_ctx != nil
                     sl_elem_t = inferExpr(sl.elems.at(0), .infer_ctx!)
                 var sl_is_str = sl_elem_t is Type_.string_
+                # No `const` guard here (cf. the list and dict literals): a bare
+                # `{}` parses as a *dict* literal, so a zero-element set literal
+                # is not reachable from source and the branch cannot be tested.
+                # If a distinct empty-set syntax is ever added, this needs the
+                # same treatment or Zig will reject the never-mutated binding.
                 w.emit("(" + sl_label + ": { var " + sl_var + " = ")
                 if sl_is_str
                     w.emit("std.StringHashMap(void)")
@@ -9809,7 +9820,14 @@ struct Generator
                         dv_zig = dvs
                 else
                     dv_zig = zigTypeForListElem(dv_t)
-                w.emit("(" + dl_label + ": { var " + dl_var + " = ")
+                # As with the list literal: no entries means no `.put`, so the
+                # binding is never mutated.  A bare `{}` parses as a *dict*
+                # literal (not a set), so this is the site an empty `{}` in
+                # expression position actually reaches.
+                var dl_kw: str = "var "
+                if dl.entries.len == 0
+                    dl_kw = "const "
+                w.emit("(" + dl_label + ": { " + dl_kw + dl_var + " = ")
                 if dk_is_str
                     w.emit("std.StringHashMap(" + dv_zig + ")")
                 else
