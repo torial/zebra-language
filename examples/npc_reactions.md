@@ -76,6 +76,40 @@ should show high wisdom and perception weights with faith and kindness
 inverted. Learned, long-lived, and cruel — arrived at from the mechanism
 instead of asserted.
 
+## Reviewing the regional values
+
+The overlay records in `regionOverlay()` are compact (`"105-"` = Priest ×
+humility → slight inverse) so the engine can scan them quickly. Nobody can
+review that, so the engine generates the same values as sentences:
+
+```
+zebra run examples/npc_reactions.zbr        # prints the review sheet first
+```
+
+Current proposals, as generated:
+
+**Pilisia** — 7 cells changed; virtue index +62 against Torial's +76
+- Priest weighs humility: strong → slight inverse
+- Priest weighs kindness: strong → slight inverse
+- Farmer weighs humility: strong → nothing
+- Merchant weighs honor: strong → slight inverse
+- King weighs prowess: slight → strong
+- Children weighs kindness: overwhelming → strong
+- Elderly weighs faith: slight → slight inverse
+
+**The Tuon Tribes** — 6 cells changed; virtue index +76, equal to Torial's
+- Farmer weighs courage: nothing → slight
+- Merchant weighs honor: strong → overwhelming
+- Soldier weighs honor: strong → overwhelming
+- Children weighs courage: slight → strong
+- Elderly weighs honor: slight → strong
+- Criminal weighs kindness: slight → strong inverse
+
+To change one: edit the record in `regionOverlay()` (`examples/npc_reactions.zbr`,
+around line 505), re-run, and the harness will report any characterization
+scene whose feel moved. The table above is generated from the data, so
+regenerate it rather than editing it by hand.
+
 ## Status
 
 All values in the shipped overlays are **proposals grounded in canon**, not

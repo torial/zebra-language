@@ -760,7 +760,60 @@ def describeOutcome(t: int, p: Pressures): str
         s = s + " [governed by fear of " + o.governedBy + "]"
     return s + " -- " + o.why
 
+
+# ---------------------------------------------------------------------------
+# A readable report of what each region changes, generated from the data
+# itself.  The overlay records are compact so the machine can index them
+# quickly; nobody can review "105-", so this renders the same values as
+# sentences.  Regenerate it whenever the values move -- a static table would
+# drift away from the code, which is the failure this exists to prevent.
+# ---------------------------------------------------------------------------
+
+def weightWord(w: int): str
+    if w == 3
+        return "overwhelming"
+    if w == 2
+        return "strong"
+    if w == 1
+        return "slight"
+    if w == 0
+        return "nothing"
+    if w == 0 - 1
+        return "slight inverse"
+    if w == 0 - 2
+        return "strong inverse"
+    return "overwhelming inverse"
+
+def regionReport(r: int): str
+    var out = regionName(r) + ":"
+    if r == 0
+        return out + " the base table -- every other land is described as its departures from this one."
+    var o = regionOverlay(r)
+    var i = 0
+    while i < o.len
+        var rec = o.at(i)
+        var rt = digitOf(rec[0..1]) * 10 + digitOf(rec[1..2])
+        var rq = digitOf(rec[2..3])
+        var was = npcWeight(rt, rq)
+        var now = weightChar(rec[3..4])
+        out = out + "\n    " + npcName(rt) + " weighs " + qualName(rq) + ": " + weightWord(was) + " -> " + weightWord(now)
+        i = i + 1
+    out = out + "\n    (" + regionDrift(r).toString() + " cells changed; virtue index " + signed(virtueIndex(r)) + " against Torial's " + signed(virtueIndex(0)) + ")"
+    return out
+
+def printAllRegions()
+    print("=== REGIONAL VALUES FOR REVIEW ===")
+    print("Each line reads: this kind of person, in this land, weighs this quality thus.")
+    print("All values are PROPOSALS grounded in canon, not rulings.")
+    print("")
+    var r = 0
+    while r < 3
+        print(regionReport(r))
+        print("")
+        r = r + 1
+
 def main()
+    printAllRegions()
     var soldierly = Qualities(wis: 2, faith: 2, ldr: 4, loyalty: 4, perception: 2, humility: 1, honor: 4, courage: 5, kindness: 2, prowess: 5)
     var gentle = Qualities(wis: 4, faith: 4, ldr: 2, loyalty: 3, perception: 4, humility: 5, honor: 4, courage: 2, kindness: 5, prowess: 1)
     var i = 0
