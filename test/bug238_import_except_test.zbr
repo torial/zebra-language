@@ -1,0 +1,20 @@
+# BUG-238: `except` in an enum-dotted `branch` arm, reached through `use`.
+#
+# Reported 2026-07-31 as a REGRESSION that re-broke the committed-green tears game:
+# a module parsing clean standalone failed on import with "syntax error near 'except'".
+#
+# DOES NOT REPRODUCE as of 2026-07-31 20:xx — this fixture is the guard, not the repro.
+# It was built from the ticket's own minimal case, deliberately NOT from the game files
+# (which the parallel session has modified in the working tree), so it is independent of
+# those edits. It prints 8 and 9.
+#
+# WHAT FIXED IT IS NOT ESTABLISHED. Seven compiler changes landed the same day, and the
+# report also lands inside a window where two of my regenerations FAILED and restored
+# selfhost/*.zig from a snapshot — a tree state that can produce exactly this kind of
+# confusing cross-module parse error. Either explanation fits; neither is proven. The
+# honest response to a regression that stops reproducing is a fixture, not a claim.
+use bug238_except_lib exposing P, Msg, update
+
+def main()
+    print(update(P(a: 1), Msg.go).a.toString())
+    print(update(P(a: 1), Msg.stay).a.toString())

@@ -584,6 +584,12 @@ smoke_tc_fail test/diag_undefined_name_test.zbr "undefined name:"
 # (Sean's call). This moved smoke_warn -> smoke_tc_fail in the same commit as the
 # promotion, because a fixture asserting the old severity would fail the moment it landed.
 smoke_tc_fail test/arg_count_test.zbr "too few arguments"
+
+# BUG-238: `except` in an enum-dotted branch arm, reached through `use`. Reported as a
+# regression that did not reproduce; registered as a RUNNING guard (smoke_run, not
+# smoke) because the failure was a parse error in the DEP, which only a real import
+# exercises. Prints 8 then 9.
+smoke_run test/bug238_import_except_test.zbr "8"
 smoke_run test/arg_count_ok_test.zbr "Hello, World"
 # Audit #2: a bare function name as a statement warns (forgotten call) instead of
 # a cryptic Zig "value ignored" error.

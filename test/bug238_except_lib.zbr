@@ -1,0 +1,17 @@
+# BUG-238 fixture (library half). Imported by bug238_import_except_test.zbr.
+#
+# The reported failure: `except` inside an ENUM-DOTTED branch arm parsed fine
+# STANDALONE but failed when this module was loaded via `use`, reporting
+# "syntax error near 'except'" from the first such arm onward.
+struct P
+    var a: int
+
+enum Msg
+    go
+    stay
+
+def update(m: P, msg: Msg): P
+    branch msg
+        on Msg.go    return m except a = 8
+        on Msg.stay  return m except a = 9
+    return m

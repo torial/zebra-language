@@ -4,7 +4,45 @@
 
 ---
 
-### BUG-238: import-parser rejects `except` inside enum-dotted `branch` arms — "syntax error near 'except'" ⚠ OPEN
+### BUG-238: import-parser rejects `except` inside enum-dotted `branch` arms — DOES NOT REPRODUCE 2026-07-31, guarded
+
+**DOES NOT REPRODUCE as of 2026-07-31 ~20:30, and the fixture is the response.**
+
+The ticket's own minimal repro prints **8**. Built fresh from the text above and
+deliberately NOT from the game files — the parallel session has
+`examples/tears_of_the_tuon.zbr` and `tears_combat_test.zbr` modified in the working
+tree, so anything derived from them would confound their edits with a compiler change.
+The minimal case is independent of that.
+
+`zebra run examples/tears_combat_test.zbr` now yields **zero** `except` errors. It fails
+later, at `tears_combat_test.zbr:205`, on a GAME assertion:
+`assert cm.phase == 15 and cm.story == 0, "the token seeks its reader"` — in-flight work
+by whoever is editing those files, not a compiler fault, and not mine to touch.
+
+**WHAT FIXED IT IS NOT ESTABLISHED, and I am not claiming it.** Two explanations fit and
+neither is proven:
+
+1. One of the seven compiler changes that landed the same day (BUG-230, 234, 236, 223,
+   232, 142, 231). Nothing in that list obviously touches cross-module parsing, which
+   makes this the weaker candidate.
+2. **A transient tree state, which I would own.** The report cites a `zebra.exe` of
+   07-31 14:47, and that window contains two of my regenerations that FAILED and
+   restored `selfhost/*.zig` from a pre-run snapshot. A compiler built from a
+   partially-updated tree can produce exactly this shape of confusing cross-module
+   parse error, and `doctor.sh` exists precisely because that state makes results lie.
+   Note the symptom fits it: the error text `syntax error near` appears **only in
+   `src/`** — the bootstrap — so the failing parse was the bootstrap's, which is
+   consistent with a mismatched selfhost/bootstrap pair mid-rebuild.
+
+Explanation 2 is the one I would bet on, and it is a caution worth keeping: while a
+rebuild cycle is in flight, this tree can hand another session a compiler that is not
+what either of us thinks it is.
+
+**GUARDED rather than closed.** `test/bug238_import_except_test.zbr` +
+`test/bug238_except_lib.zbr`, registered `smoke_run` (not `smoke` — the failure was a
+parse error in the DEP, which only a real import exercises). Smoke 262 → 263. Left OPEN
+rather than marked FIXED, because a regression that stops reproducing without a known
+cause has not been fixed; it has stopped being visible, and those are different.
 
 **Symptom.** A module that parses and runs clean STANDALONE fails when loaded
 via `use`: every `except` from the first enum-dotted arm onward reports
