@@ -4,8 +4,12 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# There are seven gates with genuinely different blind spots (CLAUDE.md explains
-# each). Running them meant assembling an ad-hoc command line every time and
+# There are 12 gates in the QUICK tier alone, with genuinely different blind spots
+# (CLAUDE.md explains each), plus four heavy witnesses in FULL. The count in this
+# sentence has been wrong before: it said "seven" while twelve were registered, and
+# doc_lint cannot catch that class -- a number in prose has no referent to resolve.
+# If you add a `run` line, fix the number here; `grep -c '^run "' tools/gates.sh` is
+# the oracle. Running them meant assembling an ad-hoc command line every time and
 # remembering which set matters after which kind of change — which is precisely
 # the sort of repetitive minutiae a script is better at than a person. The risk
 # is not tedium, it is SKIPPING one: the gates that catch the most are the ones
@@ -162,7 +166,7 @@ run "bug-fixture"    "gate PASS" python tools/bug_fixture_check.py --gate
 run "oom-unreachable" "0 hazard" python tools/lint_oom_unreachable.py
 # A3: the boundary-value suite. The ONLY gate here whose expectations were written from
 # INTENT rather than recorded from behaviour — output_sweep is a golden baseline and so
-# can never find something that was wrong on day one. Twelve probes, ~30s, and it found
+# can never find something that was wrong on day one. 20 probes, ~30s, and it found
 # BUG-230/231/232 on its first run. Probes marked @boundary-pending pin known-broken
 # behaviour deliberately and will FAIL when their ticket is fixed; that is the signal to
 # rewrite them, not to re-baseline.
