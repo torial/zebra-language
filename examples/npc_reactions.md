@@ -112,10 +112,14 @@ regenerate it rather than editing it by hand.
 
 ## Status
 
-All values in the shipped overlays are **proposals grounded in canon**, not
-rulings. Pilisia is drawn from the child-sacrifice to Ikral and the judgment
-that its people were "not noble, nor worthy of any praise"; the Tuon from
-song, honour, and the defence of cubs. The machinery does not care what the
+The regional values were **ratified by the author 2026-08-01**, with a
+grounding worth recording: the priests of Pilisia are of the **Baal or
+Druid type rather than the Levitical** — a learned caste serving a god's
+appetite, not a covenant that also binds the priest. That is why their
+humility and kindness weights invert while their weight on *wisdom* stays
+high: Pilisia is learned and cruel, not stupid, which puts its priesthood
+with the Senas sorcerers rather than with the Fool. The Tuon values come
+from song, honour, and the defence of cubs. The machinery does not care what the
 numbers are — it only insists that each region actually differ, that
 overlays stay surgical, and that an ordinary stranger stays neutral
 everywhere.
