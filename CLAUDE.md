@@ -203,6 +203,12 @@ bash tools/boundary_check.sh    # THE INTENT WITNESS (A3, QUICK tier, ~30s): the
                                 #   behaviour on purpose — they pass today, print their ticket
                                 #   every run, and FAIL when the bug is fixed. That failure is
                                 #   the signal to rewrite the probe, NOT to re-baseline.
+RE-BASELINE ORDER (learned 2026-07-31): output_sweep derives its CANDIDATE set from
+the FULL_SWEEP baseline. When a corpus file changes compile status, re-baseline
+**full_sweep FIRST, then output_sweep** — the other order leaves an output_sweep entry
+whose file is no longer a candidate, and the gate correctly reports it as "stopped being
+measured", which is a coverage loss rather than a behaviour change.
+
 bash tools/output_sweep.sh --gate  # THE BEHAVIOUR WITNESS — the only heavy gate that
                                 #   RUNS the corpus and reads what it PRINTED. Everything
                                 #   else in the FULL tier asks "does the emitted Zig
