@@ -808,6 +808,10 @@ def ep3ChoiceB(model: GameModel): str
         if hasFlag(model, "SpyFriend") and hasFlag(model, "Warned")
             return "Ask, as courtesy, to greet the king in his own hall"
         return ""
+    if id == 7
+        if hasFlag(model, "FeatherHeld")
+            return "Bring the token to the scriptorium of Rhea"
+        return ""
     return ""
 
 def ep3Step(model: GameModel, tookB: bool): GameModel
@@ -835,6 +839,12 @@ def ep3Step(model: GameModel, tookB: bool): GameModel
     if id == 6
         var m6 = withFlag(model, "FeatherHeld")
         return m6 except story = 7
+    if id == 7
+        # The Feather Carried ending offers the token to a reader: choosing
+        # the scriptorium opens THE SCRIBE OF RHEA (phase 15).
+        if tookB and hasFlag(model, "FeatherHeld")
+            return model except phase = 15, story = 0
+        return init()
     return init()
 
 # ---------------------------------------------------------------------------
@@ -958,6 +968,123 @@ def itlStep(model: GameModel, choseB: bool): GameModel
         return m7 except story = 8
     # the Appointed Ford: the interlude flows into Episode II's commission
     return model except phase = 12, story = 0
+
+# ---------------------------------------------------------------------------
+# THE SCRIBE OF RHEA (phase 15) -- played as SAFRA, a young temple scribe.
+# ---------------------------------------------------------------------------
+# Sean asked where a scribe makes sense in an RPG; the canon had already set
+# the table: Nathan deposited the last Muzite Scriptures of El Roi at Rhea
+# (Ikral ch.5), taught Yosef to read them, and Yehu has just carried home a
+# PICTOGRAPH TOKEN no one in Torial can read (The Road of Wings). Yosef is
+# north; the reading falls to the young safra (Aramaic: "scribe") who copied
+# Nathan's teaching-notes. The mechanics are philology itself: collation of
+# disagreeing copies (kethiv/qere as a choice), a polysemous gloss (the
+# qanani dilemma, in Muzite), a gloss quoted as doctrine (the monopoly of a
+# translation, caught live), and the scribal colophon. Spine of the whole
+# tetralogy completed: patience -> candor -> sight -> FIDELITY: carry, don't
+# own. Like the qinah, the reading choices are honest crafts, not scores --
+# but here the endings DO diverge, because a scribe's choices outlive him.
+
+def scrPage(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "[ The scriptorium of Rhea ]||Commander Yehu stands among the copy-desks like an|ox in a pottery stall, holding out a grey feather|and a small incised token.||Zechariyah turns to you -- the young safra who sat|copying in the corner through every one of Nathan's|reading-lessons. 'Yosef is north. What the commander|carries, only you can read. Fetch your notes.'"
+    if id == 1
+        return "[ Nathan's notes ]||The Muzite hand winds in columns, sign chasing sign.|Nathan's rule, in your own copied script: THE EYE|READS THE COLUMN; THE HEART READS THE MARGIN.||The first sign on the token is the eye-glyph. Your|notes gloss it EL ROI -- but the note beside it is|smudged, and it was YOUR pen that smudged it, two|years ago, hurrying."
+    if id == 2
+        return "[ The two scrolls ]||Nathan's Scriptures are TWO scrolls, and at the|verse the token cites, they disagree. One reads:|EL ROI SEES THE LOWLY. The other carries one glyph|more: EL ROI SEES -- AND REMEMBERS -- THE LOWLY.||A thousand years of hidden copying, and somewhere a|hand added memory, or dropped it. Your copy must now|say something."
+    if id == 3
+        return "[ The stubborn sign ]||The token's first line turns on one sign your notes|render three ways: BOUGHT. MADE. BOUND-TO. The line|reads: 'The king was ___ by the Senas.'||A slave-king? A puppet made? A soul in thrall? The|sign will not choose for you. Muzite, like every|tongue, keeps some doors unlocked on purpose."
+    if id == 4
+        return "[ The young priest's sermon ]||Two days later you hear your own gloss in the outer|court, preached hot: 'The Muzite king was BOUGHT --|a slave-king, sold by his own! So say the very|scrolls in our temple!'||The crowd stirs with easy pity. Your dotted mark,|your careful maybe -- gone. A gloss, once loose,|runs faster than its scribe."
+    if id == 5
+        return "[ The second line ]||It yields at dusk, sign by sign: REMEMBER THE|COVENANT OF THE FIRST TEMPLE. And the seal beneath|is written in OLD signs -- not Moriedhadu's name. An|ancestor's.||The cold walks up your arms as you understand: the|token is itself a COPY -- a text carried a thousand|years through the dark, hand to hidden hand, by|scribes exactly like you."
+    if id == 6
+        return "[ The letter north ]||Yosef travels toward Muze and must know what the|token says. Your letter will ride faster than he|walks; it may be read by others on the road.||What does a scribe send: the clean reading that will|survive a courier -- or the whole truth, doubts|dotted, variants margined, heavier and honester?"
+    # id 7 -- the colophon, assembled from the scribe's day
+    var s = "[ The colophon ]||Night. The copy is done, and at its foot you write|the scribe's close, as Nathan taught:|I HAVE CARRIED WHAT I RECEIVED."
+    if hasFlag(model, "VariantsKept")
+        s = s + "||In your margin, both readings stand -- SEES, and|SEES-AND-REMEMBERS -- each in its own ink, neither|erased. Some later hand will bless you for it."
+    else
+        s = s + "||Your text reads smooth and single. It will be easy|to copy and easy to trust -- and no one will ever|know there was a second reading, until it matters."
+    if hasFlag(model, "GlossHumble")
+        s = s + "|The stubborn sign wears its dotted mark still:|BOUGHT-or-MADE-or-BOUND, the door left unlocked, as|the tongue itself left it."
+    else
+        s = s + "|The stubborn sign stands glossed and certain in|your hand. May you have guessed well."
+    if hasFlag(model, "CorrectedGloss")
+        s = s + "||And in the outer court they now preach the harder,|truer sentence -- THE KING IS BOUND, AND THE BINDING|IS NOT HIS SHAME -- because one scribe stood up in|public and unsaid his own pen."
+    if hasFlag(model, "SentWhole")
+        s = s + "||The letter north went heavy: doubts dotted, margins|margined. Somewhere on the road, Yosef will read not|just an answer but an honest page -- and know exactly|how far to lean on it."
+        s = s + "||[ ENDING: The Faithful Hand ]||A people is its remembered. A scripture is its|carried. Carry, don't own."
+    else
+        s = s + "||The letter north went light and clean. It will read|well. It claims more than you know.||[ ENDING: The Smooth Text ]||Smooth texts travel far. So do their errors."
+    return s
+
+def scrChoiceA(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "Fetch the notes and take the token"
+    if id == 1
+        return "Trust your old gloss -- EL ROI, and onward"
+    if id == 2
+        return "Harmonize: keep the fuller reading, silently"
+    if id == 3
+        return "Choose BOUGHT, and write it plainly"
+    if id == 4
+        return "Stand in the court and unsay your own pen"
+    if id == 5
+        return "Copy the seal exactly, old signs and all"
+    if id == 6
+        return "Send the whole truth, dotted and margined"
+    return "Snuff the lamp"
+
+def scrChoiceB(model: GameModel): str
+    var id = model.story
+    if id == 1
+        return "Test the gloss against the Scriptures first"
+    if id == 2
+        return "Keep BOTH readings, each margined in its ink"
+    if id == 3
+        return "Write it with the dotted mark: uncertain"
+    if id == 4
+        return "Let it stand -- pity for Muze serves peace"
+    if id == 6
+        return "Send only the clean, certain reading"
+    return ""
+
+def scrStep(model: GameModel, choseB: bool): GameModel
+    var id = model.story
+    if id == 0
+        return model except story = 1
+    if id == 1
+        var m1 = model
+        if choseB
+            m1 = withFlag(m1, "CheckedFirst")
+            m1 = withLog(m1, "The Scriptures confirm the eye-glyph: EL ROI. The smudge forgiven.")
+        return m1 except story = 2
+    if id == 2
+        var m2 = model
+        if choseB
+            m2 = withFlag(m2, "VariantsKept")
+        return m2 except story = 3
+    if id == 3
+        var m3 = model
+        if choseB
+            m3 = withFlag(m3, "GlossHumble")
+        return m3 except story = 4
+    if id == 4
+        var m4 = model
+        if not choseB
+            m4 = withFlag(m4, "CorrectedGloss")
+        return m4 except story = 5
+    if id == 5
+        return model except story = 6
+    if id == 6
+        var m6 = model
+        if not choseB
+            m6 = withFlag(m6, "SentWhole")
+        return m6 except story = 7
+    return init()
 
 # ---------------------------------------------------------------------------
 # Update helpers (deterministic given the model's seed — testable)
@@ -1127,6 +1254,8 @@ def pickA(model: GameModel): GameModel
         return ep3Step(model, false)
     if model.phase == 14
         return itlStep(model, false)
+    if model.phase == 15
+        return scrStep(model, false)
     return missionStep(model, false)
 
 def pickB(model: GameModel): GameModel
@@ -1138,6 +1267,8 @@ def pickB(model: GameModel): GameModel
         return ep3Step(model, true)
     if model.phase == 14
         return itlStep(model, true)
+    if model.phase == 15
+        return scrStep(model, true)
     return missionStep(model, true)
 
 def update(model: GameModel, msg: Msg): GameModel
@@ -1336,6 +1467,15 @@ def viewInterlude(g: Gui, model: GameModel)
         if g.button(b)
             g.send(Msg.mB)
 
+def viewScribe(g: Gui, model: GameModel)
+    drawPage(g, scrPage(model))
+    if g.button(scrChoiceA(model))
+        g.send(Msg.mA)
+    var b = scrChoiceB(model)
+    if b != ""
+        if g.button(b)
+            g.send(Msg.mB)
+
 def viewMap(g: Gui, model: GameModel)
     g.text("The Valley of ArnasThas   Yehu Lv" + model.level.toString() + " HP " + model.pHp.toString() + "/" + levelMaxHp(model).toString() + " XP " + model.xp.toString() + "   (" + diffName(model.diff) + ")")
     g.separator()
@@ -1411,6 +1551,8 @@ def view(g: Gui, model: GameModel)
         viewEp3(g, model)
     if model.phase == 14
         viewInterlude(g, model)
+    if model.phase == 15
+        viewScribe(g, model)
 
 def main()
     Gui.run("Tears of the Tuon", 640, 480, init, update, view)

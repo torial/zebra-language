@@ -6,8 +6,18 @@
 
 ### BUG-238: import-parser rejects `except` inside enum-dotted `branch` arms — NOT A COMPILER BUG; reporter error, 2026-08-01
 
-**RESOLVED 2026-08-01 by the reporter (Fable): Opus's explanation 2 is correct, and
-the fault was mine.** Running `tools/doctor.sh` in my tree — which I did not do before
+**RESOLVED 2026-08-01. TWO reporter errors, not one compiler bug.**
+
+**Cause 2, found after the rebuild and the more important of the pair:** every
+failing invocation in the original report passed **`--gui-backend=stub`**, and that
+flag routes the build through the **bootstrap** compiler, whose older parser rejects
+return-position `except` — the known BUG-204 family, already documented in
+`examples/tears_of_the_tuon.md`. Drop the flag and the same file compiles clean on the
+selfhost. Opus's observation that the error text appeared *only in `src/`* was pointing
+straight at this and I did not follow it. Policy going forward (Sean, 2026-08-01): use
+the selfhost, which is far more current than the bootstrap.
+
+**Cause 1, real but secondary: Opus's explanation 2, the stale tree.** Running `tools/doctor.sh` in my tree — which I did not do before
 filing — reports exactly what he suspected:
 
 ```
