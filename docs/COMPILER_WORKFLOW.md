@@ -103,6 +103,42 @@ bash tools/bootstrap_check.sh --update
 
 ---
 
+## Before you write it: grep here first
+
+Three times in two days I built machinery the compiler already had, and each time the
+existing version was better than what I was writing. The pattern is consistent enough to
+be worth a checklist: **when you find yourself adding state to a walker, or a counter, or
+a naming scheme for emitted temporaries, grep before you type.** The compiler is ~40k
+lines of Zebra; the thing you need has usually already been needed.
+
+| you are about to add | it already exists as | where |
+|---|---|---|
+| a counter tracking `(` / `)` nesting while scanning | `parenDepth`, maintained by `scanToken` | `selfhost/Lexer.zbr:70` (decl), `:349` (maintenance) |
+| a scheme for naming a temporary in emitted Zig | `w.nextUid()` + a `blk_*` / `_*_` label pair — **37 call sites** | `selfhost/CodeGen.zbr:2330` (def), `:3656`, `:5808`, … |
+| a set of "which union variants carry a `^T` payload" | `g.boxed_variants: StrSet`, keyed `"Union.variant"`, populated by `populateBoxedVariants` | `selfhost/CodeGen.zbr:2358` (field), `:863`, `:880` |
+
+The receipts, because the failure is more instructive than the rule:
+
+* **`parenDepth`.** Fixing BUG-231 (a `:` inside `${f(a, b)}` being read as a format
+  spec) I wrote *three separate counters* across two attempts before noticing the lexer
+  had tracked paren nesting since it was written. The tell I ignored: `scanToken()`
+  consumes `f(` in one step, so any counter I maintained in the interpolation scanner was
+  always going to be counting a different thing than the one that mattered.
+* **The labeled-block emit idiom.** Fixing BUG-230 (an annotated non-empty list literal)
+  I designed a label/variable naming scheme from scratch. There were already 37 uses of
+  the identical shape a few hundred lines away, including the `uid`/`label`/`var` triple
+  and the `break :label value;` terminator.
+* **`boxed_variants`.** Re-derived "which variants need boxing" from the AST when the
+  answer was a populated `StrSet` on the generator.
+
+**Why this keeps happening, and the cheap defence.** The compiler's helpers are named for
+what they *are* (`parenDepth`, `boxed_variants`), while you arrive knowing what you
+*want* ("track nesting", "is this payload heap-indirected"). Those vocabularies do not
+meet. So grep the **noun**, not the verb: `grep -n "Depth\|depth" selfhost/Lexer.zbr`
+beats searching for "nesting". And when a fix feels like it needs new bookkeeping, that
+is precisely the moment to look — new bookkeeping in a mature compiler is the unusual
+case, not the normal one.
+
 ## Known traps
 
 ### Dep-mode vs root-mode emit
