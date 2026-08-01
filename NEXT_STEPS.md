@@ -458,19 +458,38 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   `docs/testing_strategy.md` §B1; follow-ups are the two items directly below.
   **"Gates caught 40%" is not a coverage figure — do not quote it.** `--site FILE:LINE`
   re-runs one mutation, which is how a new test is PROVEN to kill a survivor.
-- [ ] **B1 survivor follow-ups — two concrete items, from the first valid run
-  (2026-08-01).** Survivor 1 is closed (`test/boundary/bv_list_literal_inferred.zbr`,
-  verified to kill the mutant via `--site`). These two are open:
-  - [ ] **`selfhost/CodeGen.zbr:11166` — the bare-`HashMap()`/`StrSet()` branch looks
-    REDUNDANT.** Mutating `c.args.len == 0` → `== 1` disables the special case, and
-    **twelve corpus files use bare `HashMap()` without any of them breaking**. So
-    something downstream already handles the shape. This is a dead-code question, not a
-    coverage one: find what handles it, and either delete the branch or document why both
-    exist. (Do NOT just add a test — a test would pin behaviour that may be duplicated.)
-  - [ ] **`selfhost/CodeGen.zbr:15893` — `Uri.parse` argument emission is untested.**
-    Mutating `args.len > 0` → `> 1` makes `Uri.parse(x)` emit `_uri_parse()` with no
-    argument, and nothing noticed; one corpus file mentions `Uri.parse` at all. Needs a
-    run-and-compare fixture, not just a compile check.
+- [ ] **B1 SURVIVOR WORK — 12 named places the compiler can change with no gate noticing**
+  (25 mutants over two runs, 2026-08-01). Full inventory + reasoning in
+  `docs/testing_strategy.md` §B1. **Every survivor is in `CodeGen.zbr`; TypeChecker had
+  five live mutations and caught all five** (four by the A3 boundary suite). Ranked:
+  - [ ] **(a) Run-and-compare fixtures for `genStdlibMethod` — the biggest win and a
+    bounded job.** Four survivors are one `if` guarding one stdlib operation's emission,
+    with nothing checking the output: `Ws.serve` (`:15348`), `Term.write`/`writeln`
+    (`:15635`), `Uri.parse`'s argument (`:15893`), int elements in a `Value` literal
+    (`:16013`). A compile check cannot see these — they need `smoke_run`-style fixtures
+    with expected output. Worth enumerating `genStdlibMethod`'s branches and covering the
+    set rather than these four, since these four are just the ones randomly sampled.
+    *Note `Ws.serve`'s partial excuse: server fixtures never terminate and are excluded by
+    `output_sweep`'s nondeterminism detector — a deliberate exclusion is still an
+    exclusion.*
+  - [ ] **(b) The bare-constructor special cases are probably REDUNDANT, not untested —
+    two independent witnesses now.** `:11166` (bare `HashMap()`) and `:6075`
+    (`isStrSetCtor`) both survive `args.len == 0` → `== 1`, and **twelve corpus files use
+    bare `HashMap()` without breaking**. Something downstream already handles the shape.
+    **Do NOT just add a test** — that pins behaviour that may be duplicated. Find what
+    handles it, then delete the branch or document why both exist.
+  - [ ] **(c) Three real semantic boundaries, one fixture each.**
+    `:12608` — a call whose arity EXACTLY matches a defaulted parameter list (`args.len <
+    params.len` → `<=` runs the fill logic when it should not).
+    `:733` — the comma-join over `g.args` can emit a LEADING `", "`, i.e. `f(, a, b)`,
+    and no gate compiles the result.
+    `:7524` — the VALUE position of a string-keyed HashMap parameter (`i == 1` → `i == 0`
+    double-counts the key).
+  - [ ] **(d) `:330` / `:341` — AstBuilder-only predicates the corpus never compiles.**
+    Lowest priority; check whether they are dead before writing anything.
+  - [x] **CLOSED: `:9714`**, the one-element inferred list literal —
+    `test/boundary/bv_list_literal_inferred.zbr`, and `--site` verified it turns the
+    mutant from SURVIVED to DETECTED.
 - [ ] **B1 v2 — a design change, not more samples.** The cost that matters is **per LIVE
   mutant (~310 s)**, not per mutant. Two fixes: (a) sample until N *live* mutants rather
   than N total; (b) bias site selection toward code the corpus demonstrably executes, or
