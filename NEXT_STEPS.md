@@ -449,7 +449,10 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   mutant (~310 s)**, not per mutant. Two fixes: (a) sample until N *live* mutants rather
   than N total; (b) bias site selection toward code the corpus demonstrably executes, or
   toward rarely-taken branches (error paths, fallbacks) — uniform selection over
-  CodeGen's ~3,559 sites spends four fifths of its budget on dead code. ~100 live mutants
+  CodeGen's ~3,559 sites spends four fifths of its budget on dead code; and (c) **widen
+  the emit fingerprint** — it covers 3 canaries today, which is too narrow to support the
+  word "unreachable"; regenerating `selfhost/*.zig` with the mutated compiler (22 s)
+  would fingerprint the largest Zebra program we have. ~100 live mutants
   ≈ 8.6 h at today's hit rate; the fixes should cut that substantially.
 - [ ] **C tier, post-0.9** — mutation fuzzing of valid programs (dbsqlfuzz's actual
   trick; gramgen *generates*, nothing *mutates*), periodic sanitizer sweeps, a release

@@ -202,12 +202,27 @@ plainly, because the headline is more flattering than the evidence.**
    and is *not* the "our gates catch N%" figure the plan asked for. On thirteen samples
    the honest statement is **"no survivors yet"**, nothing stronger.
 
-2. **78% of mutations never reach a gate at all.** They leave the emitted Zig
-   byte-identical, so there is nothing for any gate to notice. `CodeGen.zbr` has ~3,559
-   mutable sites and much of it — GUI backends, node-addon, rarely-used stdlib methods —
-   is unreachable from anything the corpus compiles. **So this run mostly measured
-   reachability, not gate quality.** Without the NO-EFFECT verdict it would have read as
-   "gates catch 22%", which would have been a lie in the other direction.
+2. **78% were NO-EFFECT — and that verdict is narrower than "unreachable".** Be precise
+   about what those 47 mutants were actually put through, because the loose reading is
+   the one that flatters us:
+
+   > they regenerated, rebuilt, passed `hello-world`, passed **all 20 boundary probes**,
+   > and then emitted **byte-identical Zig for the three canaries** — at which point the
+   > harness stops and skips `smoke` (263 fixtures).
+
+   So NO-EFFECT means *"changed nothing in the three fingerprinted programs, and nothing
+   the two cheap detectors run"*. It does **not** mean "unreachable from anything the
+   corpus compiles" — a mutation that alters emit for some smoke fixture while leaving
+   the canaries alone is filed NO-EFFECT when it was arguably live. `CodeGen.zbr` has
+   ~3,559 mutable sites and much of it (GUI backends, node-addon, rarely-used stdlib
+   methods) genuinely is unreachable, but this run cannot tell that population apart
+   from the merely-unfingerprinted one. **So the run mostly measured reachability *of
+   three programs*, not gate quality.** Without the NO-EFFECT verdict at all it would
+   have read as "gates catch 22%", a lie in the other direction; with it, the honest
+   caption is the block-quote above rather than the word "unreachable".
+
+   Worth flagging alongside: **the post-fingerprint `SURVIVED` path has never fired in
+   any run.** The verdict that matters most is the one code path never exercised.
 
 3. **It was not all boundary.** 10 of 13 came from the A3 probes, but `hello-world` — the
    cheapest canary in the harness — caught 3 on its own, including
@@ -228,6 +243,11 @@ both cheap:
 
 * **Sample until N live, not N total.** The harness counts total attempts; it should
   count NO-EFFECTs as free retries and stop at a target live count.
+* **Widen the fingerprint, and say what it covers.** Three canaries is too narrow for
+  the sentence "unreachable". Two candidate replacements, both already affordable: hash
+  the emit of all 20 boundary probes, or — stronger — regenerate `selfhost/*.zig` *with
+  the mutated compiler* (22 s) and hash that, which fingerprints the largest and most
+  demanding Zebra program in the repo instead of three small ones.
 * **Mutate where the corpus demonstrably goes.** Prefer sites in functions the canaries
   actually execute — or, better, invert it: rarely-taken branches (error paths,
   fallbacks, edge cases) are exactly where a real compiler bug hides *and* exactly what
