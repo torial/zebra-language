@@ -293,7 +293,7 @@ def traceOf(t: int, q: Qualities): str
             out = out + lvl + " " + qualName(best) + " (" + signed(termOf(t, q, best)) + ")"
         n = n + 1
     if out == ""
-        return "nothing about this person moves him"
+        return "nothing about this person moves them"
     return out
 
 def reactionOf(t: int, q: Qualities, bias: int): Reaction
@@ -464,7 +464,7 @@ def dispositionOf(t: int, q: Qualities, s: Standing): Disposition
     if bias != 0
         tr = tr + "; standing " + signed(bias)
     if fr >= 6
-        tr = tr + "; and you frighten him"
+        tr = tr + "; and you frighten them"
     return Disposition(score: sc, band: bd, tone: toneOf(bd, fr), willHelp: helpLevelOf(bd, fr), candor: candorOf(bd, fr), fear: fr, why: tr)
 
 def describeDisposition(t: int, q: Qualities, s: Standing): str
@@ -746,10 +746,10 @@ def resolveOutcome(p: Pressures): Outcome
         if p.fearOfYou >= 6
             if why != ""
                 why = why + "; "
-            why = why + "you are the thing he fears most"
+            why = why + "you are the thing they fear most"
 
     if why == ""
-        why = "nothing constrains him"
+        why = "nothing constrains them"
     return Outcome(band: bd, willing: w, mode: mode, candor: cand, governedBy: gov, why: why)
 
 def describeOutcome(t: int, p: Pressures): str

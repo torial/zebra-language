@@ -260,6 +260,54 @@ does not rescue him; that is Yosef's, and Sean's. The game makes Yehu the
 - Tests walk the merciful path and assert the veils hold against the
   unwarned; the driver now plays **all three episodes** end to end.
 
+## The Scribe of Rhea (wired 2026-07-30 — ⚠ verification pending, see below)
+
+Sean asked where a scribe makes sense in an RPG; the canon had already set the
+table. Nathan deposited the last **Muzite Scriptures of El Roi** at Rhea
+(*Ikral* ch. 5) and taught Yosef to read them — and Episode III ends with Yehu
+carrying home a **pictograph token nobody in Torial can read**. Yosef is north;
+the reading falls to **Safra** (Aramaic: *scribe*), the young temple copyist
+who sat in on Nathan's lessons. Second non-Yehu playable, phase 15, entered
+from the **Feather Carried** ending (choice B: bring the token to the
+scriptorium).
+
+The mechanics are philology itself — the session's mosaic instruments made
+playable:
+
+- **The two scrolls** — the Scriptures are *plural* in canon, and at the cited
+  verse they disagree by one memory-glyph. Choice: harmonize silently, or keep
+  both readings margined in their own ink (`VariantsKept` — **kethiv/qere as a
+  game verb**).
+- **The stubborn sign** — one pictograph glosses three ways
+  (BOUGHT / MADE / BOUND-TO): the *qanani* dilemma transposed into Muzite.
+  Choice: assert a gloss, or write it with the dotted uncertainty mark
+  (`GlossHumble`).
+- **The young priest's sermon** — two days later the safra hears their own
+  gloss preached hot as settled doctrine ("a slave-king!"): the monopoly of a
+  translation, caught live. Choice: stand up and unsay your own pen
+  (`CorrectedGloss`) or let a useful error run.
+- **The second line** — REMEMBER THE COVENANT OF THE FIRST TEMPLE, sealed with
+  an *ancestor's* name in old signs: the token is itself a copy, carried a
+  thousand years by hidden scribes. (Enriches the Muze backdrop; plots nothing
+  of Sean's Episode III.)
+- **The letter north** — send Yosef the whole truth, doubts dotted
+  (`SentWhole`), or only the clean certain reading.
+- Endings assembled from the flags: **The Faithful Hand** vs **The Smooth
+  Text** ("Smooth texts travel far. So do their errors."). Moral spine
+  completes the tetralogy: patience → candor → sight → **fidelity: carry,
+  don't own**.
+
+> **⚠ Verification pending (2026-07-30 afternoon):** the code, tests, and
+> driver extensions are applied but **not yet compiled green**. The repo's
+> `zig-out/bin` compilers were rebuilt at 13:57 from a working tree with
+> unresolved merge conflicts (`selfhost/CodeGen.zbr`, `selfhost/TypeChecker.zig`
+> in `UU` state — Opus mid-QA), and that binary rejects *even the last
+> committed, previously-green version* of this game (`syntax error near
+> 'except'` on every occurrence). Nothing here should be trusted or committed
+> until a compiler built from a clean tree runs
+> `examples/tears_combat_test.zbr` and `tears_playthrough.zbr` green. The
+> machine was under day-job + QA load, so no clean rebuild was attempted.
+
 ## Playthrough driver
 
 `examples/tears_playthrough.zbr` — a headless full playthrough that drives the
@@ -275,6 +323,90 @@ of Thas, the faithful mission, and the feast's Third Voice: every flag true.
 the widget's row; scripted SGR mouse-injection via winpty is untried, and a
 human clicking remains the only proof of rendering.)
 
+## The Village of Arna (wired 2026-08-01 — the reaction engine on the road)
+
+The valley Yehu walks is **ArnasThas**, and the 2015 map names both of its ends:
+the *Village of Arna* in the west, the *City of Thas* in the east. The valley is
+named for both, so the road always passed a village nobody had written. Phase 16
+is that village, and it is where `npc_reactions.zbr` stops being a demo.
+
+**Nothing in Arna is authored per-villager.** Every reception is computed from
+two inputs:
+
+1. **Who Yehu has become** — `yehuQualities(model)` derives all ten notebook
+   qualities from the flags the playthrough actually set. Waiting for the sign
+   raises humility and wisdom; striking first trades humility for courage;
+   shading the truth at the Pyrran court costs honour; pouring the cup costs two
+   points of faith; blood on the Herald's Road buys prowess and costs kindness.
+   This is the 2001 notebook's cross-mission accumulation, arriving at last —
+   the village reacts to the *record*, not to a stat sheet.
+2. **What has passed between him and this villager** — `arnaStanding` weighs
+   service done in the valley above coin opened at the gate, per the notebook's
+   own ordering of obligation over payment.
+
+Arna is Tuon country, so it is scored with **region 2**, where a merchant weighs
+honour *overwhelmingly*. A man who shaded the truth at a Pyrran court finds that
+out here, from a trader who was never at court.
+
+### The four at the door
+
+| Page | Villager | Type | What complicates them |
+|---|---|---|---|
+| 1 | Kir the herdsman | Farmer | — |
+| 2 | Ganna, who trades down the river | Merchant | bound by the river-traders' word until Yehu disclaims the trade |
+| 3 | a cub with a sling | Children | — |
+| 4 | old Sera at the well | Elderly | optionally weighed against *the men who came before you* |
+
+### The result worth knowing
+
+The engine discriminates through **candor** far more than through willingness.
+An intimidating, dishonest Yehu is not refused — he is answered, and lied to.
+His help-count stays middling (3 of 4) while his candor collapses from *confides*
+to *shades the truth*, and from the child to *tells you what you want to hear*.
+That was not written; it fell out of fear being modelled as a separate axis that
+buys compliance and costs truth. The result is a village that is helpful and
+useless at once, which is a better model of a frightened place than a cold one.
+
+Coin at the gate is deliberately weak: it moves a villager at most one band and
+never buys what keeping faith earns. The harness asserts exactly that
+(`a purse never outbuys a record`).
+
+### Entering and leaving
+
+Every ending of the arc now comes home through the village, not just one branch:
+
+- the scribe's colophon at Rhea (`scrStep` story 7 → phase 16), and
+- the Episode III endings that never reach the scriptorium (`ep3Step` id 7).
+
+Both previously called `init()` and dropped the player at the title screen. Past
+the well, Yehu steps out onto the valley map at Arna's own tile `(5, 25)` — the
+`A` the map already had.
+
+### Two defects this surfaced
+
+- **Qualities escaped their range.** `yehuQualities` clamped only `prowess` at
+  the top, so a merciful run reached `kindness = 6`. The scoring measures
+  *deviation from 3* across a 0..5 domain, so an out-of-range quality silently
+  over-weights its whole column. All ten are now clamped both ends via
+  `clamp05`, and the harness pins it.
+- **The engine called every NPC "he".** Its generated reasons are written for a
+  generic person whose sex it does not know, so they now read *them*/*they*.
+  Arna's own prose knows its four villagers and carries the right pronoun per
+  villager (`arnaSubj`/`arnaObj`), which the refusal branch had always done and
+  the rest of the lines had not — old Sera was called "he" all the way to the road.
+
+### Seeing it
+
+```
+zebra run examples/tears_village_demo.zbr
+```
+
+walks three men through the same village: one who kept faith, one who took the
+shorter way, and the second man again with coin at the gate. Same four
+villagers, same table, three different receptions — and every page prints the
+trace (`She reads you: …`) so the reason is reviewable, not just the score.
+
+
 ## Compiler gaps found — now dissolved
 
 Dogfooding this port surfaced three **bootstrap-lags-selfhost** gaps
@@ -289,6 +421,16 @@ These are **gone for this example**: `--gui-backend=tui` now emits + scaffolds
 through the **selfhost itself** (no bootstrap delegation), so the natural forms
 compile directly. The workarounds have been removed — the code above is written
 plainly. (See NEXT_STEPS "GUI builds via selfhost emission" for the mechanism.)
+
+A fourth gap was found by writing the village itself and is **fixed**, not
+worked around:
+
+- **BUG-239** — an empty list literal `[]` in *expression* position (a call
+  argument, struct field, or return value) failed to compile, because the
+  literal lowering hardcoded `var` on a binding that an empty literal never
+  mutates. `var x: List(T) = []` was never affected, which is why the corpus
+  missed it. Fixed in `selfhost/CodeGen.zbr`; regression at
+  `test/bug239_empty_list_literal_test.zbr`.
 
 Two language notes worth keeping:
 

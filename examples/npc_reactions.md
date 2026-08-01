@@ -124,8 +124,22 @@ numbers are — it only insists that each region actually differ, that
 overlays stay surgical, and that an ordinary stranger stays neutral
 everywhere.
 
-Not yet built: perception (NPCs misjudging your qualities — nuance lives in
-imperfect reading), memory of past encounters, the accumulation sweep across
-a full playthrough, and place-times as above. The sweep is also the fitness
-function any tuning search (genetic or otherwise) would need before it could
-exist.
+**Wired into play 2026-08-01.** The engine is no longer a demo: the Village of
+Arna (phase 16 of `tears_of_the_tuon.zbr`) computes every villager's reception
+from the player's accumulated record. See that example's *Village of Arna*
+section. Two things the wiring taught:
+
+- The engine discriminates through **candor** far more than through
+  willingness. An intimidating, dishonest player is not refused — he is
+  answered, and lied to. That falls out of fear buying compliance while costing
+  truth, and it is the most lifelike behaviour the table has produced.
+- Its generated reasons are written for a person whose sex it does not know, so
+  they read *them*/*they*. Callers that know their NPC (as Arna does) supply the
+  pronoun themselves.
+
+Still not built: perception (NPCs misjudging your qualities — nuance lives in
+imperfect reading), memory of past encounters, and place-times as above. The
+**accumulation sweep now exists in one direction only** — Arna reads the whole
+playthrough at a single stop. A sweep that scores *every* stop across a full
+run is still missing, and it remains the fitness function any tuning search
+(genetic or otherwise) would need before it could exist.

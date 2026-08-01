@@ -1,0 +1,52 @@
+# Two different Yehus walk into the same village.
+#
+# Nothing in Arna is scripted per-player.  Both men meet the same four
+# villagers, in Tuon country, using the same table; the difference in what
+# they are told is computed from what each of them DID across the missions.
+
+use tears_of_the_tuon exposing GameModel, Msg, update, init, hasFlag, arnaPage, arnaChoiceA, arnaChoiceB, arnaOutcome, arnaWhoName, yehuQualities
+use npc_reactions exposing Outcome
+
+def yehuWith(flags: List(str)): GameModel
+    return GameModel(phase: 16, diff: 1, pHp: 35, e0Hp: 0, e1Hp: 0, selWeapon: 0, round: 1, xp: 0, level: 2, story: 0, states: flags, px: 5, py: 25, rngSeed: 7, log: ["arna"])
+
+def walkArna(label: str, flags: List(str), payAtGate: bool)
+    print("")
+    print("=== " + label + " ===")
+    var m = yehuWith(flags)
+    if payAtGate
+        m = update(m, Msg.mB)
+    else
+        m = update(m, Msg.mA)
+    var n = 0
+    while n < 4
+        var o = arnaOutcome(m, m.story)
+        print("  " + arnaWhoName(m.story) + ": " + o.band + ", helps " + o.willing.toString() + " " + o.mode + " (" + o.candor + ")")
+        print("      " + o.why)
+        m = update(m, Msg.mA)
+        n = n + 1
+
+def main()
+    # The man who waited for the sign, freed the cubs, carried Keanna out,
+    # told the Prince the whole truth, and kept a Muzite's feather.
+    var kept: List(str) = []
+    kept.add("Waited")
+    kept.add("CubsFree")
+    kept.add("SavedKeanna")
+    kept.add("TruthTold")
+    kept.add("SpyFriend")
+    kept.add("FeatherHeld")
+    kept.add("LamentTrust")
+    walkArna("Yehu who kept faith", kept, false)
+
+    # The man who struck first, shaded the truth at court, poured the cup,
+    # and left blood on the Herald's Road.
+    var hard: List(str) = []
+    hard.add("Struck")
+    hard.add("TruthShaded")
+    hard.add("Bowed")
+    hard.add("RoadBlood")
+    walkArna("Yehu who took the shorter way", hard, false)
+
+    # And the same hard man, buying his welcome at the gate.
+    walkArna("Yehu who took the shorter way, with coin at the gate", hard, true)

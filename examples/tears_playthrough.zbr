@@ -2,7 +2,7 @@
 # Drives the real update() FSM from title to mission ending, printing every
 # page and battle-log line. Deterministic given the hardcoded seed.
 
-use tears_of_the_tuon exposing GameModel, Msg, update, introPage, epiloguePage, missionPage, missionChoiceA, missionChoiceB, disputePage, disputeChoiceA, disputeChoiceC, itlPage, itlChoiceA, itlChoiceB, ep2Page, ep2ChoiceA, ep2ChoiceB, ep3Page, ep3ChoiceA, ep3ChoiceB, hasFlag
+use tears_of_the_tuon exposing GameModel, Msg, update, introPage, epiloguePage, missionPage, missionChoiceA, missionChoiceB, disputePage, disputeChoiceA, disputeChoiceC, itlPage, itlChoiceA, itlChoiceB, ep2Page, ep2ChoiceA, ep2ChoiceB, ep3Page, ep3ChoiceA, ep3ChoiceB, scrPage, scrChoiceA, scrChoiceB, hasFlag, arnaPage, arnaChoiceA, arnaChoiceB
 
 def showPage(page: str)
     for ln in page.split("|")
@@ -205,5 +205,26 @@ def main()
             choose(ep3ChoiceA(m))
             m = update(m, Msg.mA)
     showPage(ep3Page(m))
+    choose(ep3ChoiceB(m))
+    m = update(m, Msg.mB)
+    # THE SCRIBE OF RHEA -- carry, don't own
+    while m.phase == 15 and m.story < 7
+        showPage(scrPage(m))
+        if m.story == 1 or m.story == 2 or m.story == 3
+            choose(scrChoiceB(m))
+            m = update(m, Msg.mB)
+        else
+            choose(scrChoiceA(m))
+            m = update(m, Msg.mA)
+    showPage(scrPage(m))
+    # THE VILLAGE OF ARNA -- the road home, and the first place that reads him
+    m = update(m, Msg.mA)
     print("")
-    print("==== The playthrough ends. Flags: Split=" + hasFlag(m, "Split").toString() + " Waited=" + hasFlag(m, "Waited").toString() + " CubsFree=" + hasFlag(m, "CubsFree").toString() + " SavedKeanna=" + hasFlag(m, "SavedKeanna").toString() + " ThirdVoice=" + hasFlag(m, "CrownGiver").toString() + " OpenDoor=" + hasFlag(m, "PrinceHeart").toString() + " FeatherHeld=" + hasFlag(m, "FeatherHeld").toString() + " LamentTrust=" + hasFlag(m, "LamentTrust").toString() + " ====")
+    print("  ==== The village of Arna. Nothing here is scripted: every")
+    print("       reception below is computed from the record above. ====")
+    while m.phase == 16
+        showPage(arnaPage(m))
+        choose(arnaChoiceA(m))
+        m = update(m, Msg.mA)
+    print("")
+    print("==== The playthrough ends. Flags: Split=" + hasFlag(m, "Split").toString() + " Waited=" + hasFlag(m, "Waited").toString() + " CubsFree=" + hasFlag(m, "CubsFree").toString() + " SavedKeanna=" + hasFlag(m, "SavedKeanna").toString() + " ThirdVoice=" + hasFlag(m, "CrownGiver").toString() + " OpenDoor=" + hasFlag(m, "PrinceHeart").toString() + " FeatherHeld=" + hasFlag(m, "FeatherHeld").toString() + " LamentTrust=" + hasFlag(m, "LamentTrust").toString() + " FaithfulHand=" + hasFlag(m, "SentWhole").toString() + " ====")

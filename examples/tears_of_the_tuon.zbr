@@ -1,3 +1,5 @@
+use npc_reactions exposing Qualities, Standing, noStanding, npcIndex, npcName, pressuresOf, withRival, withConstraint, resolveOutcome, Outcome, traceOf, regionName
+
 # Tears of the Tuon — a faithful port of Sean's C# interview RPG.
 #
 # Original brief: "Make a console based RPG that allows the characters to
@@ -844,8 +846,10 @@ def ep3Step(model: GameModel, tookB: bool): GameModel
         # the scriptorium opens THE SCRIBE OF RHEA (phase 15).
         if tookB and hasFlag(model, "FeatherHeld")
             return model except phase = 15, story = 0
-        return init()
-    return init()
+        # Every ending comes home the same way -- through the village, which
+        # reads whatever record the player actually built.
+        return model except phase = 16, story = 0
+    return model except phase = 16, story = 0
 
 # ---------------------------------------------------------------------------
 # INTERLUDE: THE JUDGE OF THE ASHES (phase 14) -- played as KEANNA.
@@ -1084,7 +1088,259 @@ def scrStep(model: GameModel, choseB: bool): GameModel
         if not choseB
             m6 = withFlag(m6, "SentWhole")
         return m6 except story = 7
-    return init()
+    # The colophon is sealed and the letter is away; the road home from Rhea
+    # runs west down the valley, and the first roof on it is Arna.
+    return model except phase = 16, story = 0
+
+
+# ---------------------------------------------------------------------------
+# THE VILLAGE OF ARNA (phase 16) -- where the reaction table meets the road.
+# ---------------------------------------------------------------------------
+# The valley the player walks is ARNASTHAS, and Sean's 2015 map names both
+# ends of it: the Village of Arna in the west, the City of Thas in the east.
+# So the road to Thas passes Arna, and this is the stop.
+#
+# Nothing here is scripted per-villager.  Every reception is computed by the
+# reaction engine from (a) who Yehu has BECOME across the missions and (b)
+# what has passed between him and this particular villager.  Arna is Tuon
+# country, so it uses the Tuon weighting -- where a merchant weighs honour
+# overwhelmingly, and a man who shaded the truth at a Pyrran court will find
+# that out here.
+
+# Yehu's qualities are not authored: they are read off the record of his
+# choices.  This is the notebook's accumulation, arriving at last -- the
+# village reacts to the whole playthrough, not to a stat sheet.
+def clamp05(v: int): int
+    if v < 0
+        return 0
+    if v > 5
+        return 5
+    return v
+
+def yehuQualities(model: GameModel): Qualities
+    var wis = 3
+    var faith = 3
+    var ldr = 3
+    var loyalty = 3
+    var perception = 3
+    var humility = 3
+    var honor = 3
+    var courage = 3
+    var kindness = 3
+    var prowess = 2 + model.level
+
+    if hasFlag(model, "Waited")
+        humility = humility + 1
+        wis = wis + 1
+    if hasFlag(model, "Struck")
+        humility = humility - 1
+        courage = courage + 1
+    if hasFlag(model, "CubsFree")
+        kindness = kindness + 1
+    if hasFlag(model, "SavedKeanna")
+        kindness = kindness + 1
+        honor = honor + 1
+    if hasFlag(model, "Split")
+        ldr = ldr + 1
+    if hasFlag(model, "Watched")
+        perception = perception + 1
+    if hasFlag(model, "TruthTold")
+        honor = honor + 1
+        faith = faith + 1
+    if hasFlag(model, "TruthShaded")
+        honor = honor - 1
+    if hasFlag(model, "Bowed")
+        faith = faith - 2
+    if hasFlag(model, "PrinceHeart")
+        wis = wis + 1
+    if hasFlag(model, "SpyFriend")
+        kindness = kindness + 1
+    if hasFlag(model, "Warned")
+        perception = perception + 1
+    if hasFlag(model, "FeatherHeld")
+        faith = faith + 1
+    if hasFlag(model, "MercyFoe")
+        kindness = kindness + 1
+    if hasFlag(model, "LamentTrust")
+        wis = wis + 1
+        humility = humility + 1
+    if hasFlag(model, "RoadBlood")
+        prowess = prowess + 1
+        kindness = kindness - 1
+    if hasFlag(model, "ThirdVoice")
+        wis = wis + 1
+
+    # The engine's domain is 0..5 with 3 as ordinary, and the scoring measures
+    # DEVIATION from 3 -- so a quality that escapes the range does not merely
+    # look odd, it weights that column beyond anything the table was built for.
+    # Clamping only `prowess` at the top (as this did) let a merciful run reach
+    # kindness 6.  Every quality is clamped on both ends now.
+    return Qualities(wis: clamp05(wis), faith: clamp05(faith), ldr: clamp05(ldr), loyalty: clamp05(loyalty), perception: clamp05(perception), humility: clamp05(humility), honor: clamp05(honor), courage: clamp05(courage), kindness: clamp05(kindness), prowess: clamp05(prowess))
+
+# Arna is Tuon country.
+def arnaRegion(): int
+    return 2
+
+# Which villager is at the door on this page.
+def arnaWho(id: int): int
+    if id == 1
+        return npcIndex("Farmer")
+    if id == 2
+        return npcIndex("Merchant")
+    if id == 3
+        return npcIndex("Children")
+    if id == 4
+        return npcIndex("Elderly")
+    return npcIndex("Farmer")
+
+def arnaWhoName(id: int): str
+    if id == 1
+        return "Kir the herdsman"
+    if id == 2
+        return "Ganna, who trades down the river"
+    if id == 3
+        return "a cub with a sling"
+    if id == 4
+        return "old Sera at the well"
+    return "someone"
+
+# Standing: what this villager already has from Yehu.  Service rendered in
+# the valley reaches Arna before he does; a purse opened at the gate is
+# payment and is weighed as such.
+def arnaStanding(model: GameModel, id: int): Standing
+    var service = 0
+    var gifts = 0
+    if hasFlag(model, "CubsFree")
+        service = service + 2
+    if hasFlag(model, "SavedKeanna")
+        service = service + 1
+    if hasFlag(model, "ArnaPaid")
+        gifts = gifts + 3
+    return Standing(favorsOwed: 0, service: service, gifts: gifts, allegiance: 0, allegianceStrength: 0)
+
+# The reception, computed rather than written.
+def arnaOutcome(model: GameModel, id: int): Outcome
+    var who = arnaWho(id)
+    var p = pressuresOf(arnaRegion(), who, yehuQualities(model), arnaStanding(model, id))
+    if id == 2
+        if hasFlag(model, "ArnaGuild") == false
+            p = withConstraint(p, "the river-traders' word", 5)
+    if id == 4
+        if hasFlag(model, "ArnaFear")
+            p = withRival(p, "the men who came before you", 10)
+    return resolveOutcome(p)
+
+# Kir and Ganna are men, Sera is a woman, and the cub is a child whose sex the
+# player never learns.  The refusal branch always knew that; the rest of the
+# lines did not, and called old Sera "he" all the way to the road.
+def arnaSubj(id: int): str
+    if id == 3
+        return "The cub"
+    if id == 4
+        return "She"
+    return "He"
+
+def arnaObj(id: int): str
+    if id == 3
+        return "the cub"
+    if id == 4
+        return "she"
+    return "he"
+
+def arnaPoss(id: int): str
+    if id == 4
+        return "she knows"
+    return "he knows"
+
+def arnaLine(o: Outcome, id: int): str
+    var s = ""
+    var subj = arnaSubj(id)
+    var obj = arnaObj(id)
+    if o.willing == 0
+        s = subj + " will not help you."
+        if id == 3
+            s = "The cub will not come out from behind the wall."
+        if id == 4
+            s = "She looks at the ground until you go."
+    if o.willing == 1
+        s = "You get the shortest answer that is still an answer."
+    if o.willing == 2
+        s = subj + " tells you what any traveller could learn."
+    if o.willing == 3
+        s = subj + " tells you what " + arnaPoss(id) + ", and waits to see what you do with it."
+    if o.willing >= 4
+        s = subj + " tells you everything, and then walks you to the road."
+    if o.mode == "in hiding"
+        s = s + " Not here, though -- " + obj + " takes you behind the byre first."
+    if o.mode == "not at all"
+        s = "Whatever " + arnaPoss(id) + ", " + obj + " keeps."
+    return s
+
+def arnaPage(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "[ The village of Arna ]||The valley you have been walking is named for both its|ends: Arna behind, Thas ahead. Smoke, a byre, a well,|and forty people who have already heard that soldiers|are on the road.||Nobody runs. Nobody greets you either. What they will|give you, you will have to be worth."
+    var who = arnaWho(id)
+    var o = arnaOutcome(model, id)
+    var head = "[ Arna -- " + arnaWhoName(id) + " (" + npcName(who) + ") ]"
+    var body = "||" + arnaSubj(id) + " is " + o.band + ". " + arnaLine(o, id)
+    var why = "||( " + o.why + " )"
+    var seen = "||" + arnaSubj(id) + " reads you: " + traceOf(who, yehuQualities(model))
+    return head + body + seen + why
+
+def arnaChoiceA(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "Walk in and speak with the herdsman"
+    if id == 1
+        return "Go on to the trader"
+    if id == 2
+        return "Go on to the children"
+    if id == 3
+        return "Go on to the well"
+    return "Take the road to Thas"
+
+def arnaChoiceB(model: GameModel): str
+    var id = model.story
+    if id == 0
+        return "Open your purse at the gate first"
+    if id == 2
+        if hasFlag(model, "ArnaGuild") == false
+            return "Swear you are no rival of the river-traders"
+        return ""
+    if id == 4
+        if hasFlag(model, "ArnaFear") == false
+            return "Ask who came through before you"
+        return ""
+    return ""
+
+def arnaStep(model: GameModel, tookB: bool): GameModel
+    var id = model.story
+    if id == 0
+        var m0 = model
+        if tookB
+            m0 = withFlag(m0, "ArnaPaid")
+            m0 = withLog(m0, "Coin at the gate. Arna notices, and prices it.")
+        return m0 except story = 1
+    if id == 1
+        return model except story = 2
+    if id == 2
+        var m2 = model
+        if tookB
+            m2 = withFlag(m2, "ArnaGuild")
+            m2 = withLog(m2, "You disclaim the river trade; Ganna's oath stops binding him.")
+            return m2 except story = 2
+        return m2 except story = 3
+    if id == 3
+        return model except story = 4
+    if id == 4
+        var m4 = model
+        if tookB
+            m4 = withFlag(m4, "ArnaFear")
+            m4 = withLog(m4, "Others came through Arna before you, and were worse.")
+            return m4 except story = 4
+        return m4 except phase = 11
+    return model except phase = 11
 
 # ---------------------------------------------------------------------------
 # Update helpers (deterministic given the model's seed — testable)
@@ -1256,6 +1512,8 @@ def pickA(model: GameModel): GameModel
         return itlStep(model, false)
     if model.phase == 15
         return scrStep(model, false)
+    if model.phase == 16
+        return arnaStep(model, false)
     return missionStep(model, false)
 
 def pickB(model: GameModel): GameModel
@@ -1269,6 +1527,8 @@ def pickB(model: GameModel): GameModel
         return itlStep(model, true)
     if model.phase == 15
         return scrStep(model, true)
+    if model.phase == 16
+        return arnaStep(model, true)
     return missionStep(model, true)
 
 def update(model: GameModel, msg: Msg): GameModel
@@ -1476,6 +1736,15 @@ def viewScribe(g: Gui, model: GameModel)
         if g.button(b)
             g.send(Msg.mB)
 
+def viewArna(g: Gui, model: GameModel)
+    drawPage(g, arnaPage(model))
+    if g.button(arnaChoiceA(model))
+        g.send(Msg.mA)
+    var b = arnaChoiceB(model)
+    if b != ""
+        if g.button(b)
+            g.send(Msg.mB)
+
 def viewMap(g: Gui, model: GameModel)
     g.text("The Valley of ArnasThas   Yehu Lv" + model.level.toString() + " HP " + model.pHp.toString() + "/" + levelMaxHp(model).toString() + " XP " + model.xp.toString() + "   (" + diffName(model.diff) + ")")
     g.separator()
@@ -1553,6 +1822,8 @@ def view(g: Gui, model: GameModel)
         viewInterlude(g, model)
     if model.phase == 15
         viewScribe(g, model)
+    if model.phase == 16
+        viewArna(g, model)
 
 def main()
     Gui.run("Tears of the Tuon", 640, 480, init, update, view)
