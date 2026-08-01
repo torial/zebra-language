@@ -1,6 +1,70 @@
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-239. Next new bug: BUG-240.**
+**Last bug number generated: BUG-240. Next new bug: BUG-241.**
+
+---
+
+### BUG-240: `var s: Set(T) = {}` — annotated EMPTY set literal does not compile — OPEN
+
+**Symptom.** An empty set literal with a type annotation fails; the same
+annotation with a non-empty literal is fine, and the `HashMap` equivalent is fine.
+
+```
+def main()
+    var s: Set(str) = {}          # <- FAILS
+    print(s.len.toString())
+```
+```
+error: expected type 'hash_map.HashMap(str,void,hash_map.StringContext,80)',
+         found 'hash_map.HashMap(str,str,hash_map.AutoContext(str),80)'
+```
+
+Controls, both of which **pass** — this is narrow, not a general set failure:
+
+| Form | Result |
+|---|---|
+| `var s: Set(str) = {"a"}` | ✅ works |
+| `var d: HashMap(str, int) = {}` | ✅ works |
+| `var s: Set(str) = {}` | ❌ the error above |
+
+**Cause.** A bare `{}` is ambiguous (empty set vs empty dict) and the parser
+resolves it to **`dict_lit`** unconditionally — only the annotation can say
+which was meant. `genLocalVar` already knows this and special-cases it, but
+**only for `HashMap`**:
+
+```
+selfhost/CodeGen.zbr:5830
+    if gtll.name == "HashMap"
+        # §28f: `var m: HashMap(K,V) = {}` — only the annotation can type an
+        # EMPTY dict literal, so handle it here ...
+        if ie is Expr.dict_lit as dl_init
+            if dl_init.entries.len == 0
+```
+
+There is no sibling branch for `Set`, so an annotated empty set falls through
+to the generic `dict_lit` lowering and emits
+`std.AutoHashMap([]const u8, []const u8)` against a declared
+`std.StringHashMap(void)`. Generated line:
+
+```zig
+const s: std.StringHashMap(void) = (blk_dl_1: { const _dl_1 = std.AutoHashMap([]const u8, []const u8).init(...); ... });
+```
+
+**Suggested fix.** Add the `Set` sibling next to the `HashMap` branch at
+`CodeGen.zbr:5830`, emitting the annotated type's `.init(_allocator)` directly —
+the same shape, and like that branch it needs no `const`/`var` mutation guard
+because no `.put` is emitted.
+
+**Relationship to BUG-239.** Found while verifying a claim made in the BUG-239
+commit message (that no source syntax reaches a zero-element `set_lit`). That
+claim **holds** — this path proves it, since even the annotated set form lowers
+through `dict_lit`, never `set_lit`. BUG-239's `const` guard already applies
+here, so the *never-mutated* half is fixed; what remains is purely the type
+selection. The comment left in the `set_lit` branch stays accurate.
+
+**Not fixed here deliberately:** found during a session working elsewhere in the
+tree while a concurrent mutation-testing run was in progress; logged rather than
+patched to avoid colliding with it.
 
 ---
 
