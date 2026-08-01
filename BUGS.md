@@ -4,7 +4,35 @@
 
 ---
 
-### BUG-238: import-parser rejects `except` inside enum-dotted `branch` arms — DOES NOT REPRODUCE 2026-07-31, guarded
+### BUG-238: import-parser rejects `except` inside enum-dotted `branch` arms — NOT A COMPILER BUG; reporter error, 2026-08-01
+
+**RESOLVED 2026-08-01 by the reporter (Fable): Opus's explanation 2 is correct, and
+the fault was mine.** Running `tools/doctor.sh` in my tree — which I did not do before
+filing — reports exactly what he suspected:
+
+```
+WRONG stale generated Zig — you would be testing the OLD compiler:
+        CodeGen.zbr is newer than its .zig
+WRONG bootstrap predates a preamble it embeds — a regen now emits the OLD runtime
+```
+
+So every measurement in the dossier below was taken against a compiler built from a
+half-updated tree, including the delta-debugged "minimal repro", which reduced 1,400
+lines to 6 and produced a confident and worthless result. The reduction was sound; the
+oracle it was reducing against was not.
+
+The dossier is kept rather than deleted because the failure is instructive: the
+original report *states* that the compiler had been rebuilt from a tree with unresolved
+merge conflicts, and proceeds anyway. The lesson is not "check the tree" in the
+abstract — it is that `tools/doctor.sh` existed, took four seconds, and would have
+stopped the whole hunt before it started. Run it before believing any compiler result.
+
+The two secondary observations in the dossier still stand on their own and are worth
+keeping: the emit-cache keyed by module basename can serve stale artifacts, and
+`spawn failed` outside the repo root deserves a real error message.
+
+**Original report follows, uncorrected.**
+
 
 **DOES NOT REPRODUCE as of 2026-07-31 ~20:30, and the fixture is the response.**
 
