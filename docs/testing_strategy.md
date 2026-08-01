@@ -227,14 +227,60 @@ Its verdicts (18 regen, 18 NO-EFFECT, 6 boundary, 1 build) are **not** recorded 
 because the only honest thing to say about them is that the harness was editing lines it
 had not chosen.
 
-**Current status of B1: the harness has been fixed three times and has never produced a
-valid full run.** What survives all three attempts is small and worth stating exactly:
+---
 
-* mutations that break the compiler badly are caught — by `hello-world` and by the A3
-  boundary suite, both upstream of everything that has gone wrong;
-* **the SURVIVED path has never once executed.** Not in any run. The verdict the tool
-  exists to produce has never been reached, and until it is, "0 survivors" is a statement
-  about the harness, not about the gates.
+### FIRST VALID RUN, 2026-08-01 — and it inverts the headline
+
+Five mutants, `--seed 7`, after the fourth round of harness fixes (worktree-sourced sites,
+per-mutant site control, live fingerprint, and the fingerprint widened to include
+`selfhost/CodeGen.zbr`).
+
+```
+mutants: 5   detected: 2   survived: 3   no-effect: 0
+
+  SURVIVED                      3        <- the verdict path, executing for the FIRST time
+  detected by smoke             2        <- smoke, reached for the FIRST time
+  no-effect (identical emit)    0
+```
+
+**Every number in that block is new.** Under the three-canary fingerprint, all five of
+these would have been filed NO-EFFECT and the run would have reported, once again, zero
+survivors and nothing to look at. Widening the fingerprint to one large real program did
+not improve the measurement at the margin; it is the difference between measuring and not.
+
+**Cost:** ~370 s/mutant against ~60 s before. Sixty mutants is now ~6 h, not ~1 h. That is
+the price of the emit that makes the verdict reachable, and it is worth paying — an hour
+that cannot produce a survivor is not cheaper than six that can.
+
+**The survivors are the product, not the percentage.** All three are off-by-one on an
+emptiness guard, and each was corroborated *without trusting anything the harness said*:
+
+| site | mutation | why no gate saw it |
+|---|---|---|
+| `CodeGen.zbr:9714` | `ll.elems.len > 0` → `> 1` | the element-type inference branch for an **unannotated** list literal. Corpus-wide — `test/`, `examples/`, `selfhost/`, `IDE/` — there are **zero** one-element inferred list literals and three multi-element ones, so a change observable only at length 1 cannot be observed. |
+| `CodeGen.zbr:11166` | `c.args.len == 0` → `== 1` | the bare-`HashMap()`/`StrSet()` constructor special case. **12 corpus files use bare `HashMap()`** and none broke — so this is not a coverage gap, it is evidence the branch is **redundant**: something downstream already handles the shape. A different and more interesting finding than a missing test. |
+| `CodeGen.zbr:15893` | `args.len > 0` → `> 1` | argument emission for `Uri.parse`. One corpus file mentions it. A genuine coverage gap in a stdlib corner. |
+
+The first one carries a trap worth remembering. `bv_list_literal_annotated.zbr` already
+contains `var one: List(int) = [7]`, which *looks* like coverage of exactly this case and
+is not: the annotation routes it down the other branch, where the element type comes from
+the annotation and inference is never consulted. Two paths, one tested, and the difference
+is invisible unless you read the branch. **"There is a test with that shape in it" is not
+the same claim as "that code is exercised."**
+
+`test/boundary/bv_list_literal_inferred.zbr` now covers it — expectations authored from
+QUICKSTART before running, per the A3 discipline, and passing first time, so the compiler
+was right and the hole was purely in what we were asking it. *(Verification of whether the probe actually kills this mutant was in flight when this was written — `--site selfhost/CodeGen.zbr:9714`.)*
+
+**What this run does *not* establish.** Five mutants is five mutants. "Gates caught 40%"
+is not a coverage figure and should not be quoted as one; the three survivors are findings
+regardless of what the denominator turns out to be. And two of the three are in code the
+corpus barely touches, which is the population random site-selection over-samples — B1 v2's
+targeting change is still the right next step.
+
+**What it does establish, finally:** the harness measures something. `--site FILE:LINE`
+now re-runs a single mutation, so the loop closes properly — find a survivor, add a test,
+*prove* the test kills it.
 
 ---
 
