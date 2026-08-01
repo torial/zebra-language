@@ -256,13 +256,35 @@ def main():
                     help="substring filter on the target file (e.g. TypeChecker)")
     args = ap.parse_args()
 
+    # THE WORKTREE MUST EXIST BEFORE SITES ARE CHOSEN.
+    #
+    # This block used to read candidate_sites(REPO / rel) -- the MAIN checkout -- and then
+    # apply the resulting (line, col_start, col_end) to the WORKTREE copy. Those are two
+    # different files. The worktree sits at whatever commit it was created from; the main
+    # checkout carries uncommitted work, and this repo regularly has a parallel session
+    # editing selfhost/*.zbr.
+    #
+    # Observed 2026-08-01: CodeGen.zbr was 16,539 lines here and 16,521 there. Line 14831
+    # was `if args.len > 0` in one and `else` in the other, so a mutation described as
+    # "cmp '>' -> '>='" was applied at those columns to a completely unrelated line --
+    # corrupting the source. The bootstrap then refused it, and the harness scored that as
+    # "the bootstrap refused this mutant". 18 of the first 43 mutants were fabricated that
+    # way, and hand-checking three of them at the worktree's own commit found all three
+    # emit cleanly.
+    #
+    # This is the SECOND time this harness has manufactured "regen refusals" by corrupting
+    # the source it was supposed to be mutating (the first was a CRLF restore). Both times
+    # the fabricated verdict was the reassuring-looking one.
+    ensure_worktree()
+    wt = WORKTREE
+
     sites = []
     for rel in TARGETS:
         if args.module and args.module.lower() not in rel.lower():
             continue
-        for st in candidate_sites(REPO / rel):
+        for st in candidate_sites(wt / rel):
             sites.append((rel,) + st)
-    print(f"mutable sites: {len(sites)} across {len(TARGETS)} modules")
+    print(f"mutable sites: {len(sites)} across {len(TARGETS)} modules (read from {wt})")
     if args.list:
         from collections import Counter
         for rel in TARGETS:
@@ -272,9 +294,6 @@ def main():
 
     random.Random(args.seed).shuffle(sites)
     sites = sites[: args.limit]
-
-    ensure_worktree()
-    wt = WORKTREE
     print(f"worktree: {wt}")
 
     print("baseline build...", flush=True)
@@ -313,6 +332,15 @@ def main():
         original = src.read_text(encoding="utf-8")
         lines = original.splitlines(keepends=True)
         line = lines[ln]
+        # PER-MUTANT POSITIVE CONTROL. Cheap, and it is the check that would have caught
+        # the repo-vs-worktree coordinate drift on the FIRST mutant instead of after 43.
+        # If the text at (line, col) is not what the site said it was, we are about to
+        # corrupt the file and score the resulting refusal as a result.
+        if line[c0:c1] != old:
+            sys.exit(f"SITE CONTROL FAILED at {rel}:{ln+1} cols {c0}:{c1} -- expected "
+                     f"{old!r}, found {line[c0:c1]!r}. The mutation coordinates do not "
+                     f"match the file being mutated; every verdict from here would be a "
+                     f"lie about a corrupted source.")
         lines[ln] = line[:c0] + new + line[c1:]
         src.write_text("".join(lines), encoding="utf-8", newline="\n")
 

@@ -22,6 +22,7 @@ results, **five bugs in a single measurement harness in two days**:
 | 3 | restore wrote CRLF, corrupting the source after mutant 1 | 241 "regen refusals" |
 | 4 | NO-EFFECT described as "unreachable"; it covered 3 canaries | 78% unreachable |
 | 5 | fingerprint matched the wrong compiler's header, then hashed a sentinel | 0 survivors |
+| 6 | mutation sites read from `REPO/rel`, applied to `wt/rel` | 18 of 43 "regen refusals" |
 
 **None of them crashed, warned, timed out, or exited non-zero.** Every one produced a
 confident, plausible, wrong number, and two were published before being caught.
@@ -58,6 +59,7 @@ Zebra *with*. Six checks, each citing the incident that earned it:
 | H3 | a constant sentinel on a path that feeds a comparison | bug 5 — the "0 survivors" headline |
 | H4 | a compiler-**specific** emit header — two compilers, two headers | bug 5's root cause |
 | H5 | `git checkout -- .` | the standing sweep-WIP hazard |
+| H6 | the same relative path resolved against **two different roots** | bug 6 — 18 fabricated refusals |
 | H9 | a `# hazard-ok` with **no reason** | an unexplained suppression is how a gate goes quiet |
 
 H3 is the one worth internalising beyond this repo. A silent constant fallback on a
@@ -70,8 +72,10 @@ exits **2 — not 0** — if any check stops firing on its own control.
 
 **Self-tests are circular**, so `--rev <sha>` supplies the non-circular control: lint a
 past revision and see what the tool *would have said* on the day the bug shipped. On
-`7156d3e` it reports H1 at :301, H3 at :185, H4 at :184 — three of the five real bugs,
-statically, in milliseconds, on the commit that published them.
+`7156d3e` it reports H1 at :301, H3 at :185, H4 at :184 — three of the then-five real
+bugs, statically, in milliseconds, on the commit that published them. H6 was added hours
+later and passes the same test: on `0d5494d` it reports *"`rel` is resolved against 2
+different roots — REPO (line 251), wt (line 283)"*, which is bug 6 exactly.
 
 ### `tools/doc_lint.py` — the docs' checkable claims
 
@@ -198,6 +202,12 @@ compilers outside the repo root.
   has ever reached `smoke`. With a *working* fingerprint, three canaries still absorb
   every non-detected mutant into NO-EFFECT — so widening the fingerprint is **required**,
   not optional. Recorded in NEXT_STEPS as B1 v2.
+* **This harness has now been fixed three times and has never produced a valid full run.**
+  That is worth sitting with rather than explaining away. Every fix was correct and every
+  one revealed the next layer, which is what a tool measuring something genuinely hard
+  looks like — but it also means B1's headline is not "0 survivors", it is *"the verdict
+  this tool exists to produce has never been reached."* The gates are not what has been
+  measured so far; the harness is.
 
 ---
 

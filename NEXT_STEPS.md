@@ -443,10 +443,14 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   restore path, and a 60-mutant run whose `emit_fingerprint()` searched for the
   *bootstrap's* header while running the *selfhost*, hashed a sentinel when it did not
   find it, and so returned a **constant** — filing all 47 non-detections as NO-EFFECT and
-  never running `smoke` on any mutant. **What stands from both: 13 real detections**
-  (10 A3 boundary, 3 hello-world). **What is withdrawn: "0 survivors".** Postmortems in
-  `docs/testing_strategy.md` §B1. Harness now has a positive control that refuses to start
-  on a blind fingerprint; corrected rerun in flight.
+  never running `smoke` on any mutant; and a third, stopped at 43/60, whose mutation
+  coordinates came from `REPO/rel` while the edits went to `wt/rel` — **two different
+  files**, 18 lines apart — so it corrupted the source and scored the bootstrap's correct
+  refusal as a detection. **What stands: 13 real detections** (10 A3 boundary, 3
+  hello-world). **What is withdrawn: "0 survivors"** — and note the SURVIVED path has
+  never executed in any run. Postmortems in `docs/testing_strategy.md` §B1 and §3b.
+  Harness now refuses to start on a blind fingerprint AND verifies per-mutant that the
+  text at the coordinates is what the site claimed.
 - [ ] **B1 v2 — a design change, not more samples.** The cost that matters is **per LIVE
   mutant (~310 s)**, not per mutant. Two fixes: (a) sample until N *live* mutants rather
   than N total; (b) bias site selection toward code the corpus demonstrably executes, or
