@@ -6,7 +6,7 @@
 # disagree), and drift (a tuning change silently alters a scene).  Each
 # section below fences off one of them.
 
-use npc_reactions exposing Qualities, npcWeight, npcIndex, npcName, qualName, reactionScore, bandOf, reactionOf, describe, traceOf, ordinaryLevel
+use npc_reactions exposing Qualities, npcWeight, npcIndex, npcName, qualName, reactionScore, bandOf, reactionOf, describe, traceOf, ordinaryLevel, Standing, noStanding, standingBias, Disposition, dispositionOf, describeDisposition, intimidability, menaceOf, fearOf, netFearOf
 
 # ---------------------------------------------------------------------------
 # 1. Integrity: the code's table must equal the transcribed notebook page.
@@ -222,11 +222,63 @@ def checkDiscrimination()
         assert why != "", npcName(t) + " explains himself"
         t = t + 1
 
+
+# ---------------------------------------------------------------------------
+# 5. Standing and fear -- the two axes a scene can actually move.
+# ---------------------------------------------------------------------------
+
+def checkStandingAndFear()
+    # (a) Standing is orderly: doing more for a man never makes him colder.
+    var f = npcIndex("Farmer")
+    var none = noStanding()
+    var some = Standing(favorsOwed: 0, service: 2, gifts: 0, allegiance: 0, allegianceStrength: 0)
+    var much = Standing(favorsOwed: 2, service: 2, gifts: 1, allegiance: 1, allegianceStrength: 2)
+    assert standingBias(none) == 0, "no standing is no bias"
+    assert standingBias(some) < standingBias(much), "standing accumulates"
+    var d0 = dispositionOf(f, theProudSoldier(), none)
+    var d1 = dispositionOf(f, theProudSoldier(), some)
+    var d2 = dispositionOf(f, theProudSoldier(), much)
+    assert d0.score < d1.score, "service warms him"
+    assert d1.score < d2.score, "favours owed warm him further"
+    # The notebook's own promise: standing can carry a cold reception into a
+    # workable one.
+    assert d0.band == "cold", "cold on first meeting"
+    assert d2.band == "warm", "and warm once he owes you"
+
+    # (b) A favour owed outranks a gift of the same size, per the notebook's
+    #     example of obligation rather than payment.
+    var favour = Standing(favorsOwed: 1, service: 0, gifts: 0, allegiance: 0, allegianceStrength: 0)
+    var gift = Standing(favorsOwed: 0, service: 0, gifts: 1, allegiance: 0, allegianceStrength: 0)
+    assert standingBias(favour) > standingBias(gift), "obligation outweighs payment"
+
+    # (c) Fear is a SEPARATE axis from warmth: prophets and kings do not
+    #     frighten, children and servants do.
+    assert intimidability(npcIndex("Prophet")) == 0, "prophets say hard things to thrones"
+    assert intimidability(npcIndex("King")) == 0, "kings are not cowed"
+    assert intimidability(npcIndex("Children")) == 3, "children are easily frightened"
+    assert menaceOf(theGentleScribe()) == 0, "a gentle scribe menaces no one"
+    assert menaceOf(theProudSoldier()) > 0, "an armed proud man does"
+
+    # (d) The interesting consequence: intimidation buys words, not truth.
+    var frightening = Qualities(wis: 2, faith: 1, ldr: 4, loyalty: 3, perception: 2, humility: 1, honor: 2, courage: 5, kindness: 0, prowess: 5)
+    var child = dispositionOf(npcIndex("Children"), frightening, noStanding())
+    assert child.fear >= 12, "a child is terrified of him"
+    assert child.candor == "tells you what you want to hear", "terror produces agreeable lies"
+    assert child.willHelp > 0, "and produces compliance"
+    var prophet = dispositionOf(npcIndex("Prophet"), frightening, noStanding())
+    assert prophet.fear == 0, "the prophet is unafraid"
+    assert prophet.candor == "refuses", "and simply refuses"
+
+    # (e) Warmth mitigates fear: a man who owes you two favours stops shading.
+    assert d0.candor == "shades the truth", "frightened stranger shades"
+    assert d2.candor == "straight", "a friend under obligation speaks straight"
+
 def main()
     checkTable()
     checkProperties()
     checkScenes()
     checkDiscrimination()
+    checkStandingAndFear()
     print("npc_reactions_test: OK")
     print("  distinct receptions -- proud soldier: " + countDistinctBands(theProudSoldier()).toString() + ", gentle scribe: " + countDistinctBands(theGentleScribe()).toString())
     print("")

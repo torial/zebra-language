@@ -226,12 +226,15 @@ def rawScore(t: int, q: Qualities): int
 def reactionScore(t: int, q: Qualities, bias: int): int
     return rawScore(t, q) - baselineFor(t) + bias
 
+# Thresholds are a feel knob, not a truth: +/-6 and +/-12 per Sean's ruling
+# (2026-07-31), chosen to make "neutral" the ordinary case.  Widen the inner
+# band if the world feels swingy, narrow it if it feels flat.
 def bandOf(score: int): str
     if score <= 0 - 12
         return "hostile"
-    if score <= 0 - 4
+    if score <= 0 - 6
         return "cold"
-    if score < 4
+    if score < 6
         return "neutral"
     if score < 12
         return "warm"
@@ -305,6 +308,169 @@ def describe(t: int, q: Qualities, bias: int): str
     var r = reactionOf(t, q, bias)
     return npcName(t) + ": " + r.band + " (" + signed(r.score) + ") -- " + r.why
 
+
+# ---------------------------------------------------------------------------
+# Standing -- what the player has done for (or owes) this person.  The
+# notebook keeps these separate from character qualities, and so do we: a
+# quality is who you are, standing is what has passed between you.  This is
+# the lever a player can actually pull in the moment.
+#
+# Weights are deliberately unequal.  A favour owed outranks a gift, because
+# the notebook's own example is about obligation ("I don't think it's a good
+# idea, but since I owe Joe -- I'll do it"), not payment.
+# ---------------------------------------------------------------------------
+
+struct Standing
+    var favorsOwed: int       # times this NPC owes you
+    var service: int          # help rendered to him or his people
+    var gifts: int            # goods, coin, hospitality
+    var allegiance: int       # -1 opposed, 0 none, +1 aligned (per the notebook)
+    var allegianceStrength: int
+
+def noStanding(): Standing
+    return Standing(favorsOwed: 0, service: 0, gifts: 0, allegiance: 0, allegianceStrength: 0)
+
+def standingBias(s: Standing): int
+    return s.favorsOwed * 4 + s.service * 2 + s.gifts * 1 + s.allegiance * s.allegianceStrength * 3
+
+# ---------------------------------------------------------------------------
+# Fear.  Sean's observation: what someone will TELL you is not the same as
+# how much they like you.  A frightened man is more compliant and less
+# truthful, which is a different axis from warmth -- so we score it
+# separately and let the two interact.
+#
+# Susceptibility per NPC type, 0 (unshakeable) .. 3 (easily cowed).  Prophets
+# and kings are 0 on purpose: this world's prophets say hard things to
+# thrones.
+# ---------------------------------------------------------------------------
+
+def fearTable(): str
+    return "232110021210032211"
+
+def intimidability(t: int): int
+    if t < 0
+        return 0
+    if t >= 18
+        return 0
+    var row = fearTable()
+    var c = row[t..t + 1]
+    if c == "3"
+        return 3
+    if c == "2"
+        return 2
+    if c == "1"
+        return 1
+    return 0
+
+# How threatening this player reads: prowess and courage above the ordinary,
+# less whatever kindness softens.
+def menaceOf(q: Qualities): int
+    var m = (q.prowess - ordinaryLevel()) + (q.courage - ordinaryLevel()) - (q.kindness - ordinaryLevel())
+    if m < 0
+        return 0
+    return m
+
+def fearOf(t: int, q: Qualities): int
+    return intimidability(t) * menaceOf(q)
+
+# Fear that survives the relationship.  Someone who genuinely likes you is
+# less governed by being afraid of you -- without this, a farmer who owes you
+# two favours still lies to your face because you carry a sword, which reads
+# as a bug even though every term in it is correct.
+def netFearOf(t: int, q: Qualities, s: Standing): int
+    var f = fearOf(t, q)
+    var sc = reactionScore(t, q, standingBias(s))
+    if sc > 0
+        f = f - sc / 2
+    if f < 0
+        return 0
+    return f
+
+# ---------------------------------------------------------------------------
+# Disposition -- the plumbing a scene actually consumes.  Content (the words
+# themselves) stays with the author; this decides register, willingness, and
+# truthfulness, and hands the scene a reason it can print.
+# ---------------------------------------------------------------------------
+
+struct Disposition
+    var score: int
+    var band: str
+    var tone: str
+    var willHelp: int         # 0 refuses .. 4 goes out of his way
+    var candor: str
+    var fear: int
+    var why: str
+
+def toneOf(band: str, fear: int): str
+    if band == "hostile"
+        if fear >= 6
+            return "afraid and hostile"
+        return "hostile"
+    if band == "cold"
+        if fear >= 6
+            return "wary"
+        return "curt"
+    if band == "neutral"
+        if fear >= 6
+            return "careful"
+        return "plain"
+    if band == "warm"
+        return "friendly"
+    return "eager"
+
+def helpLevelOf(band: str, fear: int): int
+    var h = 2
+    if band == "hostile"
+        h = 0
+    if band == "cold"
+        h = 1
+    if band == "warm"
+        h = 3
+    if band == "devoted"
+        h = 4
+    # Fear buys compliance, but only from someone not already willing.
+    if fear >= 6
+        if h < 3
+            h = h + 1
+    return h
+
+# Candor is where fear and warmth pull apart: frightened people answer, and
+# frightened people shade.  Intimidation gets you words, not truth.
+def candorOf(band: str, fear: int): str
+    if fear >= 12
+        return "tells you what you want to hear"
+    if fear >= 6
+        if band == "warm"
+            return "straight, but choosing words"
+        if band == "devoted"
+            return "straight, but choosing words"
+        return "shades the truth"
+    if band == "hostile"
+        return "refuses"
+    if band == "cold"
+        return "guarded"
+    if band == "neutral"
+        return "answers what is asked"
+    if band == "warm"
+        return "straight"
+    return "confides"
+
+def dispositionOf(t: int, q: Qualities, s: Standing): Disposition
+    var bias = standingBias(s)
+    var sc = reactionScore(t, q, bias)
+    var bd = bandOf(sc)
+    var fr = netFearOf(t, q, s)
+    var tr = traceOf(t, q)
+    if bias != 0
+        tr = tr + "; standing " + signed(bias)
+    if fr >= 6
+        tr = tr + "; and you frighten him"
+    return Disposition(score: sc, band: bd, tone: toneOf(bd, fr), willHelp: helpLevelOf(bd, fr), candor: candorOf(bd, fr), fear: fr, why: tr)
+
+def describeDisposition(t: int, q: Qualities, s: Standing): str
+    var d = dispositionOf(t, q, s)
+    return npcName(t) + ": " + d.tone + " (" + signed(d.score) + ", help " + d.willHelp.toString() + ", " + d.candor + ") -- " + d.why
+
 def main()
     var soldierly = Qualities(wis: 2, faith: 2, ldr: 4, loyalty: 4, perception: 2, humility: 1, honor: 4, courage: 5, kindness: 2, prowess: 5)
     var gentle = Qualities(wis: 4, faith: 4, ldr: 2, loyalty: 3, perception: 4, humility: 5, honor: 4, courage: 2, kindness: 5, prowess: 1)
@@ -317,3 +483,15 @@ def main()
     while i < 18
         print(describe(i, gentle, 0))
         i = i + 1
+    print("")
+    print("-- the same farmer, as the player changes what has passed between them --")
+    var farmer = 0
+    print(describeDisposition(farmer, soldierly, noStanding()))
+    print(describeDisposition(farmer, soldierly, Standing(favorsOwed: 0, service: 2, gifts: 0, allegiance: 0, allegianceStrength: 0)))
+    print(describeDisposition(farmer, soldierly, Standing(favorsOwed: 2, service: 2, gifts: 1, allegiance: 1, allegianceStrength: 2)))
+    print("")
+    print("-- fear and warmth are different axes --")
+    var frightening = Qualities(wis: 2, faith: 1, ldr: 4, loyalty: 3, perception: 2, humility: 1, honor: 2, courage: 5, kindness: 0, prowess: 5)
+    print(describeDisposition(13, frightening, noStanding()))
+    print(describeDisposition(12, frightening, noStanding()))
+    print(describeDisposition(3, frightening, noStanding()))
