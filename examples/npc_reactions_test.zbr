@@ -6,7 +6,7 @@
 # disagree), and drift (a tuning change silently alters a scene).  Each
 # section below fences off one of them.
 
-use npc_reactions exposing Qualities, npcWeight, npcIndex, npcName, qualName, reactionScore, bandOf, reactionOf, describe, traceOf, ordinaryLevel, Standing, noStanding, standingBias, Disposition, dispositionOf, describeDisposition, intimidability, menaceOf, fearOf, netFearOf, regionName, regionWeight, regionScore, regionOverlay, virtueIndex, regionDrift
+use npc_reactions exposing Qualities, npcWeight, npcIndex, npcName, qualName, reactionScore, bandOf, reactionOf, describe, traceOf, ordinaryLevel, Standing, noStanding, standingBias, Disposition, dispositionOf, describeDisposition, intimidability, menaceOf, fearOf, netFearOf, regionName, regionWeight, regionScore, regionOverlay, virtueIndex, regionDrift, Pressures, pressuresOf, withRival, withConstraint, projectScore, Outcome, resolveOutcome, governingFear, describeOutcome
 
 # ---------------------------------------------------------------------------
 # 1. Integrity: the code's table must equal the transcribed notebook page.
@@ -325,6 +325,71 @@ def checkRegions()
     assert regionDrift(2) > 0, "the Tuon weigh things differently"
     assert virtueIndex(2) == virtueIndex(0), "but not less virtuously overall"
 
+
+# ---------------------------------------------------------------------------
+# 7. Pressures -- the vector, and the behaviours a scalar cannot express.
+# ---------------------------------------------------------------------------
+
+def theBuyer(): Qualities
+    return Qualities(wis: 3, faith: 3, ldr: 3, loyalty: 3, perception: 4, humility: 3, honor: 3, courage: 3, kindness: 3, prowess: 3)
+
+def checkPressures()
+    var smith = npcIndex("Merchant")
+    var paid = Standing(favorsOwed: 0, service: 0, gifts: 4, allegiance: 0, allegianceStrength: 0)
+    var base = pressuresOf(0, smith, theBuyer(), paid)
+
+    # (a) The scalar survives as a projection: the vector explains the old
+    #     number, it does not replace it.
+    assert projectScore(base) == regionScore(0, smith, theBuyer(), standingBias(paid)), "the score is a projection of the vector"
+
+    # (b) Sources stay distinct.  Two men equally warm can be warm for
+    #     different reasons, and the vector remembers which.
+    # (A merchant, note, is NOT warmer to the gentle scribe -- he discounts
+    #  faith and kindness and prices perception.  Use a priest, who does value
+    #  that character, to show warmth arriving by a different road.)
+    var priest = npcIndex("Priest")
+    var paidPriest = pressuresOf(0, priest, theBuyer(), paid)
+    var fondPriest = pressuresOf(0, priest, theGentleScribe(), noStanding())
+    assert base.payment > 0, "the buyer paid the smith"
+    assert fondPriest.payment == 0, "the scribe paid nobody"
+    assert fondPriest.affinity > paidPriest.affinity, "and is liked for himself instead"
+    assert paidPriest.payment > fondPriest.payment, "while the other bought his welcome"
+
+    # (c) A constraint gates rather than cools: the guild smith is just as
+    #     willing and helps IN HIDING.  This is the case a sum cannot state.
+    var open1 = resolveOutcome(base)
+    var guilded = resolveOutcome(withConstraint(base, "his guild oath", 6))
+    assert open1.mode == "openly", "a village smith helps openly"
+    assert guilded.mode == "in hiding", "a guild smith helps in hiding"
+    assert guilded.willing == open1.willing, "and is no less willing for it"
+
+    # A constraint heavy enough to outweigh every reason he has stops him.
+    var bound = resolveOutcome(withConstraint(base, "a temple oath", 40))
+    assert bound.mode == "not at all", "an oath he will not break stops him"
+    assert bound.willing == 0, "and refusal means no help, not partial help"
+
+    # (d) Rival fears compete rather than add, and the winner has a NAME --
+    #     a man hides from the power he fears, not from the one before him.
+    var hardMan = Qualities(wis: 2, faith: 2, ldr: 4, loyalty: 3, perception: 2, humility: 1, honor: 2, courage: 5, kindness: 1, prowess: 5)
+    var scary = pressuresOf(0, smith, hardMan, noStanding())
+    assert governingFear(scary) == "you", "you are the worst thing in the room"
+    var warlord = withRival(scary, "the warlord", 14)
+    assert governingFear(warlord) == "the warlord", "until someone worse is named"
+    var underWarlord = resolveOutcome(warlord)
+    assert underWarlord.mode == "not at all", "and then he will not help at all"
+    assert underWarlord.candor == "will not speak of it", "nor speak of it"
+
+    # A lesser rival power drives the help into hiding instead of ending it.
+    var lesser = resolveOutcome(withRival(base, "the reeve", 8))
+    assert lesser.mode == "in hiding", "a lesser rival power buys concealment"
+    assert lesser.governedBy == "the reeve", "and names whom he is hiding from"
+
+    # (e) The two axes still pull apart: frightened of YOU means compliance
+    #     with poor truth, which is a different failure from refusal.
+    var scared = resolveOutcome(scary)
+    assert scared.willing > 0, "fear of you produces compliance"
+    assert scared.candor == "tells you what you want to hear", "and not accuracy"
+
 def main()
     checkTable()
     checkProperties()
@@ -332,6 +397,7 @@ def main()
     checkDiscrimination()
     checkStandingAndFear()
     checkRegions()
+    checkPressures()
     print("npc_reactions_test: OK")
     print("  distinct receptions -- proud soldier: " + countDistinctBands(theProudSoldier()).toString() + ", gentle scribe: " + countDistinctBands(theGentleScribe()).toString())
     print("")

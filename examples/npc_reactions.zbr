@@ -620,6 +620,146 @@ def regionDrift(r: int): int
         t = t + 1
     return n
 
+
+# ---------------------------------------------------------------------------
+# Pressures -- the reaction as a VECTOR rather than a sum.
+#
+# Sean's observation (2026-08-01), by way of the ABC software metric: a single
+# score cannot hold what actually decides behaviour, because different forces
+# of equal size are not interchangeable.
+#
+#   * A scalar loses the SOURCE.  +5 because he admires your humility and +5
+#     because you paid him produce the same number and should not produce the
+#     same man: the fond one defends you behind your back, the paid one does
+#     not.
+#   * A constraint is not a preference.  A guild blacksmith is not lukewarm --
+#     he is willing and GATED, which produces help in hiding.  That is a mode,
+#     not a degree, and no sum can express it.
+#   * Rival fears do not add, they COMPETE.  Your menace and the local
+#     strongman's do not combine into "very afraid": the stronger governs, and
+#     its identity decides whom he is hiding from.  That is an argmax.
+#
+# The scalar is not discarded -- it becomes a PROJECTION of the vector, so
+# every earlier result and test still holds.
+# ---------------------------------------------------------------------------
+
+struct Pressures
+    var affinity: int       # what he thinks of your character (the table)
+    var obligation: int     # favours owed, service rendered
+    var payment: int        # goods, coin, hospitality
+    var ideology: int       # allegiance for or against
+    var fearOfYou: int      # how much you frighten him
+    var fearOfOther: int    # what else he is more afraid of
+    var otherName: str      # who that is -- concealment needs a target
+    var constraint: int     # oath, guild rule, law: wants to, may not
+    var constraintName: str
+
+def noPressureExtras(): Pressures
+    return Pressures(affinity: 0, obligation: 0, payment: 0, ideology: 0, fearOfYou: 0, fearOfOther: 0, otherName: "", constraint: 0, constraintName: "")
+
+# Build the vector from the parts the engine already knows, then let the
+# caller add the world's own pressures (a guild, a warlord, a debt to someone
+# else) before resolving.
+def pressuresOf(r: int, t: int, q: Qualities, s: Standing): Pressures
+    var aff = regionScore(r, t, q, 0)
+    var obl = s.favorsOwed * 4 + s.service * 2
+    var pay = s.gifts * 1
+    var ide = s.allegiance * s.allegianceStrength * 3
+    var fear = fearOf(t, q)
+    var warm = aff + obl + pay + ide
+    if warm > 0
+        fear = fear - warm / 2
+    if fear < 0
+        fear = 0
+    return Pressures(affinity: aff, obligation: obl, payment: pay, ideology: ide, fearOfYou: fear, fearOfOther: 0, otherName: "", constraint: 0, constraintName: "")
+
+def withRival(p: Pressures, name: str, strength: int): Pressures
+    return p except fearOfOther = strength, otherName = name
+
+def withConstraint(p: Pressures, name: str, strength: int): Pressures
+    return p except constraint = strength, constraintName = name
+
+# The old scalar, recovered as a projection of the vector.
+def projectScore(p: Pressures): int
+    return p.affinity + p.obligation + p.payment + p.ideology
+
+# ---------------------------------------------------------------------------
+# Resolution.  Behaviour is read off the whole vector, not off its sum.
+# ---------------------------------------------------------------------------
+
+struct Outcome
+    var band: str
+    var willing: int        # 0 refuses .. 4 goes out of his way
+    var mode: str           # "openly", "in hiding", "not at all"
+    var candor: str
+    var governedBy: str     # which pressure actually decided it
+    var why: str
+
+# Who is he most afraid of?  The stronger fear governs, and it matters WHO it
+# is: a man hides from the power he fears, not from the one he is talking to.
+def governingFear(p: Pressures): str
+    if p.fearOfOther > p.fearOfYou
+        return p.otherName
+    if p.fearOfYou > 0
+        return "you"
+    return ""
+
+def resolveOutcome(p: Pressures): Outcome
+    var warm = projectScore(p)
+    var bd = bandOf(warm)
+    var w = helpLevelOf(bd, p.fearOfYou)
+    var gov = governingFear(p)
+    var mode = "openly"
+    var cand = candorOf(bd, p.fearOfYou)
+    var why = ""
+
+    # A constraint gates rather than cools: it can turn open help into hidden
+    # help, or -- if it outweighs every reason he has to help you -- into none.
+    if p.constraint > 0
+        if w == 0
+            mode = "not at all"
+        if w > 0
+            if p.constraint >= w * 3
+                mode = "not at all"
+                w = 0
+            if p.constraint < w * 3
+                mode = "in hiding"
+        why = why + "bound by " + p.constraintName + " (" + p.constraint.toString() + ")"
+
+    # A rival power he fears more than you does the same thing, but the
+    # concealment has a name attached.
+    if p.fearOfOther > p.fearOfYou
+        if p.fearOfOther >= 12
+            w = 0
+            mode = "not at all"
+            cand = "will not speak of it"
+        if p.fearOfOther < 12
+            if mode == "openly"
+                mode = "in hiding"
+        if why != ""
+            why = why + "; "
+        why = why + "fears " + p.otherName + " more than you"
+
+    # And when YOU are the greatest fear in the room, compliance rises and
+    # truth falls -- intimidation buys words, not accuracy.
+    if p.fearOfYou > p.fearOfOther
+        if p.fearOfYou >= 6
+            if why != ""
+                why = why + "; "
+            why = why + "you are the thing he fears most"
+
+    if why == ""
+        why = "nothing constrains him"
+    return Outcome(band: bd, willing: w, mode: mode, candor: cand, governedBy: gov, why: why)
+
+def describeOutcome(t: int, p: Pressures): str
+    var o = resolveOutcome(p)
+    var s = npcName(t) + ": " + o.band + ", helps " + o.willing.toString() + " " + o.mode
+    s = s + " (" + o.candor + ")"
+    if o.governedBy != ""
+        s = s + " [governed by fear of " + o.governedBy + "]"
+    return s + " -- " + o.why
+
 def main()
     var soldierly = Qualities(wis: 2, faith: 2, ldr: 4, loyalty: 4, perception: 2, humility: 1, honor: 4, courage: 5, kindness: 2, prowess: 5)
     var gentle = Qualities(wis: 4, faith: 4, ldr: 2, loyalty: 3, perception: 4, humility: 5, honor: 4, courage: 2, kindness: 5, prowess: 1)
@@ -656,3 +796,18 @@ def main()
     while r < 3
         print("  " + regionName(r) + ": virtue index " + signed(virtueIndex(r)) + ", cells differing from Torial: " + regionDrift(r).toString())
         r = r + 1
+    print("")
+    print("-- the same blacksmith, differently placed --")
+    var buyer = Qualities(wis: 3, faith: 3, ldr: 3, loyalty: 3, perception: 4, humility: 3, honor: 3, courage: 3, kindness: 3, prowess: 3)
+    var paid = Standing(favorsOwed: 0, service: 0, gifts: 4, allegiance: 0, allegianceStrength: 0)
+    var smith = 2
+    var base = pressuresOf(0, smith, buyer, paid)
+    print("  village smith:  " + describeOutcome(smith, base))
+    print("  guild smith:    " + describeOutcome(smith, withConstraint(base, "his guild oath", 6)))
+    print("  under a warlord:" + describeOutcome(smith, withRival(base, "the warlord", 9)))
+    print("")
+    print("-- two fears in one room --")
+    var hardMan = Qualities(wis: 2, faith: 2, ldr: 4, loyalty: 3, perception: 2, humility: 1, honor: 2, courage: 5, kindness: 1, prowess: 5)
+    var p2 = pressuresOf(0, smith, hardMan, noStanding())
+    print("  you are the worst thing here: " + describeOutcome(smith, p2))
+    print("  the warlord is worse:         " + describeOutcome(smith, withRival(p2, "the warlord", 14)))
