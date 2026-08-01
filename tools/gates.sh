@@ -105,6 +105,14 @@ run() {
     fi
     local last
     last="$(echo "$out" | grep -vE '^[[:space:]]*$' | tail -1)"
+    # THE rc CONJUNCT IS LOAD-BEARING, not belt-and-braces. `grep -qF "0 hazard"` also
+    # matches "10 hazard(s)" -- and "0 stale" matches "10 stale", "20 stale", and so on.
+    # Every count-shaped expectation here has that property. It is sound today only
+    # because each of those tools exits non-zero when its count is non-zero.
+    #
+    # So: a NEW gate whose tool reports a count but exits 0 regardless would pass this
+    # matcher while reporting failures. If you add one, either make it exit non-zero or
+    # give it an expectation that is not a count prefix.
     if [[ $rc -eq 0 ]] && { [[ -z "$expect" ]] || echo "$out" | grep -qF "$expect"; }; then
         printf '\033[32mPASS\033[0m  %-58s %ss\n' "${last:0:58}" "$t1"
         PASSED=$((PASSED + 1))
