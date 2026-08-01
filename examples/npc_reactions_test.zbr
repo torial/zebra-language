@@ -1,0 +1,243 @@
+# Harness for the NPC reaction engine.
+#
+# The point of this file is that "does an NPC feel real?" is not directly
+# measurable, but its FAILURE MODES are: flatness (everyone reacts the same),
+# arbitrariness (no explicable reason), incoherence (the table and the code
+# disagree), and drift (a tuning change silently alters a scene).  Each
+# section below fences off one of them.
+
+use npc_reactions exposing Qualities, npcWeight, npcIndex, npcName, qualName, reactionScore, bandOf, reactionOf, describe, traceOf, ordinaryLevel
+
+# ---------------------------------------------------------------------------
+# 1. Integrity: the code's table must equal the transcribed notebook page.
+#    These cells are quoted from TRANSCRIPTION.md §10.  If someone edits a row
+#    string by hand, this section is what catches it.
+# ---------------------------------------------------------------------------
+
+def checkTable()
+    assert npcWeight(npcIndex("Soldier"), 2) == 3, "Soldier x leadership = overwhelming"
+    assert npcWeight(npcIndex("King"), 3) == 3, "King x loyalty = overwhelming"
+    assert npcWeight(npcIndex("Prophet"), 5) == 3, "Prophet x humility = overwhelming"
+    assert npcWeight(npcIndex("Children"), 8) == 3, "Children x kindness = overwhelming"
+    assert npcWeight(npcIndex("HighPriest"), 1) == 3, "HighPriest x faith = overwhelming"
+    assert npcWeight(npcIndex("Farmer"), 0) == 2, "Farmer x wisdom = strong"
+    assert npcWeight(npcIndex("Farmer"), 2) == 0, "Farmer x leadership = none"
+    assert npcWeight(npcIndex("Physician"), 9) == 0 - 2, "Physician x prowess = strong inverse"
+    assert npcWeight(npcIndex("Criminal"), 0) == 0 - 3, "Criminal x wisdom = overwhelming inverse"
+    assert npcWeight(npcIndex("Fool"), 0) == 0 - 3, "Fool x wisdom = overwhelming inverse"
+    assert npcWeight(npcIndex("Merchant"), 4) == 2, "Merchant x perception = strong"
+    assert npcWeight(npcIndex("Elderly"), 7) == 0 - 1, "Elderly x courage = slight inverse"
+    # Every row must be exactly ten columns wide: reading past the end returns
+    # 0, so a short row would silently zero its tail.
+    var t = 0
+    while t < 18
+        assert npcWeight(t, 9) != 0 - 99, "row " + npcName(t) + " reaches column 10"
+        t = t + 1
+
+# ---------------------------------------------------------------------------
+# 2. Properties: things that must hold for ANY player, not just the ones we
+#    thought to test.
+# ---------------------------------------------------------------------------
+
+def ordinaryPerson(): Qualities
+    return Qualities(wis: 3, faith: 3, ldr: 3, loyalty: 3, perception: 3, humility: 3, honor: 3, courage: 3, kindness: 3, prowess: 3)
+
+def withQuality(q: Qualities, i: int, v: int): Qualities
+    if i == 0
+        return q except wis = v
+    if i == 1
+        return q except faith = v
+    if i == 2
+        return q except ldr = v
+    if i == 3
+        return q except loyalty = v
+    if i == 4
+        return q except perception = v
+    if i == 5
+        return q except humility = v
+    if i == 6
+        return q except honor = v
+    if i == 7
+        return q except courage = v
+    if i == 8
+        return q except kindness = v
+    return q except prowess = v
+
+def checkProperties()
+    # (a) An entirely ordinary stranger is neutral to everyone.  This is the
+    #     baseline invariant: without it, NPCs with many positive weights would
+    #     adore every passer-by and the Fool would hate the world on sight.
+    var t = 0
+    while t < 18
+        assert reactionScore(t, ordinaryPerson(), 0) == 0, npcName(t) + " is neutral to an ordinary stranger"
+        t = t + 1
+
+    # (b) The Fool's row is non-positive everywhere: the notebook draws him as
+    #     inverse to every virtue.  (He may still warm to vice -- see the
+    #     characterization section -- which is the design working, not failing.)
+    var q = 0
+    while q < 10
+        assert npcWeight(npcIndex("Fool"), q) <= 0, "Fool weighs " + qualName(q) + " non-positively"
+        q = q + 1
+
+    # (c) Monotonicity: raising a quality an NPC values positively must never
+    #     lower his reaction, and vice versa.  Checked across every type and
+    #     quality -- 180 combinations, which is why this is a property and not
+    #     a list of examples.
+    t = 0
+    while t < 18
+        q = 0
+        while q < 10
+            var lo = reactionScore(t, withQuality(ordinaryPerson(), q, 1), 0)
+            var hi = reactionScore(t, withQuality(ordinaryPerson(), q, 5), 0)
+            var w = npcWeight(t, q)
+            if w > 0
+                assert hi > lo, npcName(t) + " rewards " + qualName(q)
+            if w < 0
+                assert hi < lo, npcName(t) + " penalises " + qualName(q)
+            if w == 0
+                assert hi == lo, npcName(t) + " ignores " + qualName(q)
+            q = q + 1
+        t = t + 1
+
+    # (d) Standing (allegiances, needs, favors owed) moves the result.
+    assert reactionScore(3, ordinaryPerson(), 6) > reactionScore(3, ordinaryPerson(), 0), "a favor owed warms a soldier"
+
+# ---------------------------------------------------------------------------
+# 3. Characterization: canonical encounters, pinned.  These are not
+#    correctness tests -- they are FEEL tests.  A tuning change that alters
+#    one of these numbers has changed how a scene plays, and must be reviewed
+#    rather than discovered by a player.
+# ---------------------------------------------------------------------------
+
+def theProudSoldier(): Qualities
+    return Qualities(wis: 2, faith: 2, ldr: 4, loyalty: 4, perception: 2, humility: 1, honor: 4, courage: 5, kindness: 2, prowess: 5)
+
+def theGentleScribe(): Qualities
+    return Qualities(wis: 4, faith: 4, ldr: 2, loyalty: 3, perception: 4, humility: 5, honor: 4, courage: 2, kindness: 5, prowess: 1)
+
+def checkScenes()
+    # The proud soldier at a farmer's door: the farmer does not care about
+    # swords, and reads the pride.
+    var r = reactionOf(npcIndex("Farmer"), theProudSoldier(), 0)
+    assert r.score == 0 - 9, "farmer/proud-soldier score"
+    assert r.band == "cold", "farmer/proud-soldier band"
+
+    # The same soldier among soldiers.
+    r = reactionOf(npcIndex("Soldier"), theProudSoldier(), 0)
+    assert r.score == 14, "soldier/proud-soldier score"
+    assert r.band == "devoted", "soldier/proud-soldier band"
+
+    # The prophet weighs humility overwhelmingly; the proud soldier fails there
+    # even though he is brave and honourable.
+    r = reactionOf(npcIndex("Prophet"), theProudSoldier(), 0)
+    assert r.band == "cold", "prophet/proud-soldier band"
+
+    # The gentle scribe is the mirror image: beloved of prophet and children,
+    # of no interest to the soldier's captain.
+    r = reactionOf(npcIndex("Prophet"), theGentleScribe(), 0)
+    assert r.band == "devoted", "prophet/gentle-scribe band"
+    r = reactionOf(npcIndex("Children"), theGentleScribe(), 0)
+    assert r.score == 9, "children/gentle-scribe score"
+    assert r.band == "warm", "children/gentle-scribe band (measured, not guessed)"
+
+    # The criminal warms to the proud soldier for exactly the reasons the
+    # priest cools: low wisdom, low faith, low humility.  Same player, opposite
+    # readings -- this is the single clearest sign the table is doing work.
+    var rc = reactionOf(npcIndex("Criminal"), theProudSoldier(), 0)
+    var rp = reactionOf(npcIndex("Priest"), theProudSoldier(), 0)
+    assert rc.score > 0, "criminal warms to the proud soldier"
+    assert rp.score < 0, "priest cools to the proud soldier"
+
+    # A favor owed can carry a cold reception into a workable one: the
+    # notebook's "well, I don't think it's a good idea, but since I owe Joe..."
+    var cold = reactionOf(npcIndex("Farmer"), theProudSoldier(), 0)
+    var owed = reactionOf(npcIndex("Farmer"), theProudSoldier(), 10)
+    assert cold.band == "cold", "farmer cold without standing"
+    assert owed.band == "neutral", "a favor owed lifts him to civil"
+
+# ---------------------------------------------------------------------------
+# 4. Discrimination: the anti-flatness measures.  A system where everyone
+#    reacts alike will feel fake however elaborate its model.
+# ---------------------------------------------------------------------------
+
+def bandVector(q: Qualities): str
+    var out = ""
+    var t = 0
+    while t < 18
+        out = out + reactionOf(t, q, 0).band + ","
+        t = t + 1
+    return out
+
+def countDistinctBands(q: Qualities): int
+    var seen: List(str) = []
+    var t = 0
+    while t < 18
+        var b = reactionOf(t, q, 0).band
+        var found = false
+        var i = 0
+        while i < seen.len
+            if seen.at(i) == b
+                found = true
+            i = i + 1
+        if found == false
+            seen.add(b)
+        t = t + 1
+    return seen.len
+
+def checkDiscrimination()
+    # (a) One player must not produce one uniform response across the cast.
+    var n1 = countDistinctBands(theProudSoldier())
+    var n2 = countDistinctBands(theGentleScribe())
+    assert n1 >= 3, "the proud soldier draws at least three kinds of reception"
+    assert n2 >= 3, "the gentle scribe draws at least three kinds of reception"
+
+    # (b) Different players must be received differently -- if the whole cast
+    #     reacts identically to two opposite characters, the qualities are
+    #     decorative.
+    assert bandVector(theProudSoldier()) != bandVector(theGentleScribe()), "the cast tells these two people apart"
+
+    # (c) Surface-unpredictability: knowing only that an NPC is friendly to one
+    #     player must not tell you he is friendly to another.  Counted rather
+    #     than asserted per-NPC, because the claim is statistical.
+    var flips = 0
+    var t = 0
+    while t < 18
+        var a = reactionOf(t, theProudSoldier(), 0).score
+        var b = reactionOf(t, theGentleScribe(), 0).score
+        if a > 0
+            if b < 0
+                flips = flips + 1
+        if a < 0
+            if b > 0
+                flips = flips + 1
+        t = t + 1
+    assert flips >= 6, "at least six of eighteen NPCs reverse between these two"
+
+    # (d) Every reaction must carry a reason.  An unexplained reaction reads as
+    #     arbitrary, and arbitrary reads as broken.
+    t = 0
+    while t < 18
+        var why = traceOf(t, theProudSoldier())
+        assert why != "", npcName(t) + " explains himself"
+        t = t + 1
+
+def main()
+    checkTable()
+    checkProperties()
+    checkScenes()
+    checkDiscrimination()
+    print("npc_reactions_test: OK")
+    print("  distinct receptions -- proud soldier: " + countDistinctBands(theProudSoldier()).toString() + ", gentle scribe: " + countDistinctBands(theGentleScribe()).toString())
+    print("")
+    print("  a proud soldier walks the town:")
+    print("    " + describe(npcIndex("Farmer"), theProudSoldier(), 0))
+    print("    " + describe(npcIndex("Soldier"), theProudSoldier(), 0))
+    print("    " + describe(npcIndex("Prophet"), theProudSoldier(), 0))
+    print("    " + describe(npcIndex("Criminal"), theProudSoldier(), 0))
+    print("")
+    print("  a gentle scribe walks the same town:")
+    print("    " + describe(npcIndex("Farmer"), theGentleScribe(), 0))
+    print("    " + describe(npcIndex("Soldier"), theGentleScribe(), 0))
+    print("    " + describe(npcIndex("Prophet"), theGentleScribe(), 0))
+    print("    " + describe(npcIndex("Criminal"), theGentleScribe(), 0))

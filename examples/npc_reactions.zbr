@@ -1,0 +1,319 @@
+# NPC reactions — the 12/19/01 notebook's reaction table, made executable.
+#
+# Sean's notebook (writings/torial_game_notes/TRANSCRIPTION.md, §10) holds an
+# 18x10 table: how each kind of NPC reacts to each visible quality of the
+# player character, in the notebook's own arrow notation.  This file is that
+# table as DATA plus a pure scoring function over it.  Nothing here has
+# state; everything is testable.
+#
+# The table is stored one row per NPC type, one character per quality, so the
+# source keeps the shape of the page it came from:
+#
+#     @ = +3 overwhelming      . =  0 none
+#     # = +2 strong            - = -1 slight   (inverse)
+#     + = +1 slight            = = -2 strong   (inverse)
+#                              ~ = -3 overwhelming (inverse)
+#
+# Column order is the notebook's:
+#   0 wisdom  1 faith  2 leadership  3 loyalty  4 perception
+#   5 humility  6 honor  7 courage  8 kindness  9 prowess
+
+struct Qualities
+    var wis: int
+    var faith: int
+    var ldr: int
+    var loyalty: int
+    var perception: int
+    var humility: int
+    var honor: int
+    var courage: int
+    var kindness: int
+    var prowess: int
+
+# A reaction, with the reasoning that produced it.  The trace is the point:
+# a number alone cannot be reviewed, but "cold because he weighs humility
+# double and yours reads low" can.
+struct Reaction
+    var score: int
+    var band: str
+    var why: str
+
+# ---------------------------------------------------------------------------
+# The table.  One row per NPC type, in notebook order.
+# ---------------------------------------------------------------------------
+
+def rxnTable(): List(str)
+    var t: List(str) = []
+    t.add("#+...#..#.")     #  0 Farmer
+    t.add(".+++-#.+#+")     #  1 Servant
+    t.add(".-..#.#--+")     #  2 Merchant
+    t.add(".+@#.-####")     #  3 Soldier
+    t.add("#.+##.#+##")     #  4 Captain
+    t.add("+..#+.#+.#")     #  5 General
+    t.add("#..@++#+.+")     #  6 King/Chief
+    t.add("++....+-#.")     #  7 Elderly
+    t.add("~=++--+++.")     #  8 Criminal
+    t.add("#+.+.++.#-")     #  9 Levite
+    t.add("##.#.#+.#.")     # 10 Priest
+    t.add("+@.@.#++#+")     # 11 High Priest
+    t.add("+@.+#@##+.")     # 12 Prophet
+    t.add("+++..#++@+")     # 13 Children
+    t.add("+-..+..-#=")     # 14 Physician
+    t.add("#-.+#.#.++")     # 15 Advisor
+    t.add("#+.#+##.++")     # 16 Town-elder
+    t.add("~~~~~~==-.")     # 17 Fool
+    return t
+
+def npcName(i: int): str
+    if i == 0
+        return "Farmer"
+    if i == 1
+        return "Servant"
+    if i == 2
+        return "Merchant"
+    if i == 3
+        return "Soldier"
+    if i == 4
+        return "Captain"
+    if i == 5
+        return "General"
+    if i == 6
+        return "King"
+    if i == 7
+        return "Elderly"
+    if i == 8
+        return "Criminal"
+    if i == 9
+        return "Levite"
+    if i == 10
+        return "Priest"
+    if i == 11
+        return "HighPriest"
+    if i == 12
+        return "Prophet"
+    if i == 13
+        return "Children"
+    if i == 14
+        return "Physician"
+    if i == 15
+        return "Advisor"
+    if i == 16
+        return "TownElder"
+    if i == 17
+        return "Fool"
+    return "?"
+
+def npcIndex(name: str): int
+    var i = 0
+    while i < 18
+        if npcName(i) == name
+            return i
+        i = i + 1
+    return 0 - 1
+
+def qualName(i: int): str
+    if i == 0
+        return "wisdom"
+    if i == 1
+        return "faith"
+    if i == 2
+        return "leadership"
+    if i == 3
+        return "loyalty"
+    if i == 4
+        return "perception"
+    if i == 5
+        return "humility"
+    if i == 6
+        return "honor"
+    if i == 7
+        return "courage"
+    if i == 8
+        return "kindness"
+    if i == 9
+        return "prowess"
+    return "?"
+
+def qualAt(q: Qualities, i: int): int
+    if i == 0
+        return q.wis
+    if i == 1
+        return q.faith
+    if i == 2
+        return q.ldr
+    if i == 3
+        return q.loyalty
+    if i == 4
+        return q.perception
+    if i == 5
+        return q.humility
+    if i == 6
+        return q.honor
+    if i == 7
+        return q.courage
+    if i == 8
+        return q.kindness
+    if i == 9
+        return q.prowess
+    return 0
+
+# ---------------------------------------------------------------------------
+# Weights
+# ---------------------------------------------------------------------------
+
+def weightChar(c: str): int
+    if c == "@"
+        return 3
+    if c == "#"
+        return 2
+    if c == "+"
+        return 1
+    if c == "-"
+        return 0 - 1
+    if c == "="
+        return 0 - 2
+    if c == "~"
+        return 0 - 3
+    return 0
+
+# The weight NPC type `t` puts on quality `q`, straight off the notebook page.
+def npcWeight(t: int, q: int): int
+    var tbl = rxnTable()
+    if t < 0
+        return 0
+    if t >= tbl.len
+        return 0
+    if q < 0
+        return 0
+    if q >= 10
+        return 0
+    var row = tbl.at(t)
+    return weightChar(row[q..q + 1])
+
+# ---------------------------------------------------------------------------
+# Scoring
+#
+# Qualities run 0..5 with 3 as ordinary.  A reaction is measured as DEVIATION
+# from how this NPC would read a wholly ordinary person, so an average
+# stranger is neutral to everyone and the table expresses what each kind of
+# person actually notices.  Without that baseline, NPC types with many
+# positive weights would love everyone and the Fool would hate everyone
+# regardless of who walked in.
+# ---------------------------------------------------------------------------
+
+def ordinaryLevel(): int
+    return 3
+
+def baselineFor(t: int): int
+    var total = 0
+    var i = 0
+    while i < 10
+        total = total + npcWeight(t, i) * ordinaryLevel()
+        i = i + 1
+    return total
+
+def rawScore(t: int, q: Qualities): int
+    var total = 0
+    var i = 0
+    while i < 10
+        total = total + npcWeight(t, i) * qualAt(q, i)
+        i = i + 1
+    return total
+
+# `bias` carries the notebook's other modifiers (special allegiances, needs,
+# favors owed) already summed by the caller: modifier * strength, per the
+# notebook's "Determine Modifiers" block.
+def reactionScore(t: int, q: Qualities, bias: int): int
+    return rawScore(t, q) - baselineFor(t) + bias
+
+def bandOf(score: int): str
+    if score <= 0 - 12
+        return "hostile"
+    if score <= 0 - 4
+        return "cold"
+    if score < 4
+        return "neutral"
+    if score < 12
+        return "warm"
+    return "devoted"
+
+# ---------------------------------------------------------------------------
+# The trace: why this reaction, in terms a reviewer can judge.
+# ---------------------------------------------------------------------------
+
+def termOf(t: int, q: Qualities, i: int): int
+    return npcWeight(t, i) * (qualAt(q, i) - ordinaryLevel())
+
+def absOf(v: int): int
+    if v < 0
+        return 0 - v
+    return v
+
+def signed(v: int): str
+    if v < 0
+        return v.toString()
+    return "+" + v.toString()
+
+# The three terms that moved this reaction furthest from neutral, largest
+# first.  Ties break toward the notebook's column order, which keeps the
+# output stable for characterization tests.
+def traceOf(t: int, q: Qualities): str
+    var out = ""
+    var used: List(int) = []
+    var n = 0
+    while n < 3
+        var best = 0 - 1
+        var bestMag = 0
+        var i = 0
+        while i < 10
+            var taken = false
+            var u = 0
+            while u < used.len
+                if used.at(u) == i
+                    taken = true
+                u = u + 1
+            if taken == false
+                var mag = absOf(termOf(t, q, i))
+                if mag > bestMag
+                    bestMag = mag
+                    best = i
+            i = i + 1
+        if best >= 0
+            used.add(best)
+            if out != ""
+                out = out + "; "
+            var lvl = "level"
+            if qualAt(q, best) > ordinaryLevel()
+                lvl = "high"
+            if qualAt(q, best) < ordinaryLevel()
+                lvl = "low"
+            out = out + lvl + " " + qualName(best) + " (" + signed(termOf(t, q, best)) + ")"
+        n = n + 1
+    if out == ""
+        return "nothing about this person moves him"
+    return out
+
+def reactionOf(t: int, q: Qualities, bias: int): Reaction
+    var s = reactionScore(t, q, bias)
+    var tr = traceOf(t, q)
+    if bias != 0
+        tr = tr + "; standing " + signed(bias)
+    return Reaction(score: s, band: bandOf(s), why: tr)
+
+# A one-line report, for eyeballing a cast or a scene.
+def describe(t: int, q: Qualities, bias: int): str
+    var r = reactionOf(t, q, bias)
+    return npcName(t) + ": " + r.band + " (" + signed(r.score) + ") -- " + r.why
+
+def main()
+    var soldierly = Qualities(wis: 2, faith: 2, ldr: 4, loyalty: 4, perception: 2, humility: 1, honor: 4, courage: 5, kindness: 2, prowess: 5)
+    var gentle = Qualities(wis: 4, faith: 4, ldr: 2, loyalty: 3, perception: 4, humility: 5, honor: 4, courage: 2, kindness: 5, prowess: 1)
+    var i = 0
+    while i < 18
+        print(describe(i, soldierly, 0))
+        i = i + 1
+    print("")
+    i = 0
+    while i < 18
+        print(describe(i, gentle, 0))
+        i = i + 1
