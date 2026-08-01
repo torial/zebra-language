@@ -1,0 +1,15 @@
+# BUG-235 (positive half): the two documented ways to reach a dep's names.
+#
+# QUICKSTART's module section states both forms and has all along:
+#   `use m exposing Name`  -> `Name` directly in scope
+#   `use m`                -> qualified access only, `m.Name`
+#
+# This pins the WORKING directions. Its sibling bug235_bare_use_test.zbr pins the
+# direction that actually rotted, which is the one that matters.
+use bug235_use_lib exposing Widget
+
+def main()
+    var a = Widget(7)
+    print(a.value().toString())
+    var b = bug235_use_lib.Widget(9)
+    print(b.value().toString())

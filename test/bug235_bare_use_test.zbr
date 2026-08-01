@@ -1,0 +1,14 @@
+# BUG-235 (NEGATIVE half) — this is the guard that matters.
+#
+# A bare `use` must NOT bind the dep's names. That is what QUICKSTART documents, and a
+# period when it silently DID bind them is what rotted the Luau corpus: 1,780 translated
+# scripts written against the lenient behaviour went from 1482 compiling to 849 when it
+# was tightened, and nobody noticed for five weeks because nothing pinned the semantic.
+#
+# A positive test cannot catch a return to leniency — only this direction can. If this
+# file ever compiles, `use` has started binding names again and the corpus rot is back.
+use bug235_use_lib
+
+def main()
+    var a = Widget(7)
+    print(a.value().toString())

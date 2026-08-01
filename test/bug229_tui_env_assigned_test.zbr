@@ -1,0 +1,25 @@
+# BUG-229: TUI apps SEGFAULTED at startup because the selfhost emit declared
+# `var _tui_env: *std.process.Environ.Map = undefined;` and NEVER ASSIGNED IT, then
+# passed it to zz.Terminal.init — a memory fault at 0xffffffffffffffff.
+#
+# It was the FOURTH GUI crash to sit underneath a full set of green gates, and it went
+# unpinned because "GUI bug" reads as "needs a human with a terminal". Most of it does.
+# THIS part does not: the assignment either appears in the emitted Zig or it does not,
+# which is a STATIC fact about text, checkable in about a second with no build, no
+# terminal and no display.
+#
+# Registered with smoke_gui_emit_contains, asserting `_tui_env = ` appears in the emit.
+# That is narrower than tools/gui_scaffold_check.sh (which builds a real app and checks
+# every `= undefined` global, and remains the better tool) but unlike that one it is
+# CHEAP enough to gate, so BUG-229 stops being a fixed bug with nothing watching it.
+#
+# What this does NOT cover, stated so it is not mistaken for GUI coverage: rendering,
+# input, layout, resize, colours. Those still need Sean running the thing.
+struct Model
+    var n: int
+
+def view(g: Gui, m: Model)
+    g.text("bug229")
+
+def main()
+    Gui.run(Model(n: 0), def(g: Gui, m: Model) = view(g, m))

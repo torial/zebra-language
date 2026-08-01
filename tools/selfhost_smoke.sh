@@ -78,6 +78,27 @@ smoke_turbo() {
     rm -f "$TMPDIR_OUT"/*.zig
 }
 
+
+# Emit with a GUI backend and assert a substring in the generated Zig. Exists for
+# BUG-229: the tui scaffold declares `_tui_env` and must ASSIGN it, and that is a static
+# fact about emitted text — no build, no terminal, no human. The GUI paths are otherwise
+# ungated, so the cheap half is worth taking.
+smoke_gui_emit_contains() {
+    local zbr="$1"; local backend="$2"; local expected="$3"
+    local label; label="$(basename "$zbr" .zbr)_${backend}emit"
+    local zig_out="$TMPDIR_OUT/$(basename "$zbr" .zbr).zig"
+    if "$ZEBRA" --emit-zig --gui-backend="$backend" "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>&1; then
+        if grep -qF "$expected" "$zig_out" 2>/dev/null; then
+            echo "  PASS: $label"; PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $label (emitted Zig lacks '$expected')" >&2; FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "  FAIL: $label (emit failed)" >&2; FAIL=$((FAIL + 1))
+    fi
+    rm -f "$TMPDIR_OUT"/*.zig
+}
+
 # Run `zebra test` and check all tests pass (exit 0, no FAIL lines in output).
 smoke_test() {
     local zbr="$1"
@@ -590,6 +611,16 @@ smoke_tc_fail test/arg_count_test.zbr "too few arguments"
 # smoke) because the failure was a parse error in the DEP, which only a real import
 # exercises. Prints 8 then 9.
 smoke_run test/bug238_import_except_test.zbr "8"
+
+# BUG-235: the `use` contract, both directions. The NEGATIVE one is the guard that
+# matters — a bare `use` must not bind the dep's names. A period when it silently DID
+# is what took the Luau corpus from 1482 compiling to 849 for five weeks, and only this
+# direction can catch a return to that leniency.
+smoke_run test/bug235_exposing_test.zbr "7"
+
+# BUG-229: the tui emit must ASSIGN _tui_env, not merely declare it.
+smoke_gui_emit_contains test/bug229_tui_env_assigned_test.zbr tui "_tui_env = "
+smoke_tc_fail test/bug235_bare_use_test.zbr "undefined name: 'Widget'"
 smoke_run test/arg_count_ok_test.zbr "Hello, World"
 # Audit #2: a bare function name as a statement warns (forgotten call) instead of
 # a cryptic Zig "value ignored" error.

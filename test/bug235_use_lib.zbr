@@ -1,0 +1,8 @@
+# BUG-235 fixture (library half). See bug235_bare_use_test.zbr and
+# bug235_exposing_test.zbr for the two halves of the documented `use` contract.
+class Widget
+    var n: int
+    cue init(n: int)
+        .n = n
+    def value(): int
+        return .n
