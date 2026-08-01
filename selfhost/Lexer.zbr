@@ -470,6 +470,23 @@ class Lexer
 
     def scanInterpExpr() throws
         var depth = 1
+        # BUG-231: a `:` inside `${...}` is a FORMAT SPEC only at the outermost brace
+        # level and outside any bracketing. Without this counter, `${f(1, c: 7)}` had
+        # its named-argument colon swallowed: the scan below runs forward to the next
+        # `}`, finds one, and emits `": 7)"` as a format spec — leaving the parser an
+        # unclosed `f(1, c` and the baffling message "unexpected expression token:
+        # ': 7)'". Named arguments are QUICKSTART section 4 and interpolation is
+        # section 3; both documented, and they could not be used together.
+        #
+        # Counted at the character level, which is safe because scanToken() consumes a
+        # whole string literal in one step — so a `(` or `:` inside `"a:b"` never
+        # reaches this loop.
+        # The lexer ALREADY tracks paren nesting in `parenDepth`, maintained by
+        # scanToken() itself. Recording it on entry and comparing is more reliable than
+        # a second counter here: scanToken() consumes `f(` in one step when a call
+        # follows an identifier, so anything counting characters in THIS loop misses
+        # that paren (`${(f(1, b: 7))}` worked while `${f(1, b: 7)}` did not).
+        var baseParen = parenDepth
         while depth > 0
             if pos >= src.len
                 raise "UnterminatedInterpolation"
@@ -494,7 +511,9 @@ class Lexer
                 else
                     emit(TokenKind.rcurly(), "}", ln, cl)
                 continue
-            if c == c':'
+            # `depth == 1` keeps a dict/set literal's `:` out of this too: `{` bumps
+            # depth, so `${ {k: v} }` sees its colon at depth 2, not 1.
+            if c == c':' and depth == 1 and parenDepth == baseParen
                 var specStart = pos
                 var specLn    = line
                 var specCl    = col()
@@ -505,6 +524,13 @@ class Lexer
                     emit(TokenKind.string_part_format(), src[specStart..pos], specLn, specCl)
                     continue
                 pos = specStart
+            # Count brackets from the TOKENS scanToken emits, not from the character
+            # under the cursor. The character-level version looked right and silently
+            # failed on the exact case it was written for: scanToken() consumes `f(` in
+            # one step when a call follows an identifier, so the `(` never came back
+            # round the loop. `${(f(1, b: 7))}` worked while `${f(1, b: 7)}` did not —
+            # a two-character difference that isolated it. Reading what was EMITTED
+            # cannot miss a token however many characters produced it.
             scanToken()?
 
     # -- Doc strings  """...""" ----------------------------------------------

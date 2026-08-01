@@ -1,23 +1,55 @@
-# @boundary rejects unexpected expression token
-# @boundary-pending BUG-231  named arguments do not parse inside ${...}
+# @boundary runs
 #
-# PINS A BUG, NOT A FEATURE. Both halves of this program are documented Zebra:
-# named arguments are QUICKSTART section 4, and `${...}` interpolation is section 3.
-# The call parses as a statement and is a syntax error inside an interpolation.
-# When BUG-231 is fixed this probe starts failing — rewrite it to `runs` with an
-# .expected of `outside=127` / `inside=127`.
+# BUG-231 REGRESSION GUARD, and the LAST of the six pending tripwires to close.
 #
-# Found by the A3 boundary suite (2026-07-30), from the argument-arity dimension.
-# Both compilers reject it, with different messages:
-#     selfhost : unexpected expression token: ': 7)'
-#     bootstrap: syntax error near ': 7)'
+# Authored 2026-07-30 as `@boundary-pending`, recording that a named argument inside
+# `${...}` was a syntax error. Fixed 2026-07-31; rewritten to assert what it was
+# authored to assert. Pending count is now zero.
 #
-# The `outside` line below is the control: it proves the call itself is valid, so
-# the failure is attributable to the interpolation context and nothing else.
+# THE BUG: inside `${...}` the lexer scans a `:` forward to the next `}` and, finding
+# one, emits everything between as a FORMAT SPEC (`${v:08x}`). In `${f(1, c: 7)}` that
+# swallowed the named-argument colon as `": 7)"`, leaving the parser an unclosed
+# `f(1, c` and the baffling message "unexpected expression token: ': 7)'".
+#
+# THE FIX: a `:` is a format spec only at the OUTERMOST brace level (`depth == 1`, so a
+# nested dict literal's colon is excluded) and at the paren nesting the interpolation
+# STARTED at — compared against the lexer's own `parenDepth`, recorded on entry.
+#
+# WHY parenDepth AND NOT A NEW COUNTER, which is the part worth remembering: two
+# hand-rolled counters in this loop failed, one counting characters and one counting
+# emitted tokens. `scanToken()` consumes `f(` in a single step when a call follows an
+# identifier, so the `(` never comes back round the loop to be counted. The tell was
+# that `${(f(1, b: 7))}` worked while `${f(1, b: 7)}` did not — a two-character
+# difference. The lexer already tracked paren nesting correctly; the fix was to USE
+# that rather than build a third counter beside it.
 def defaulted(a: int, b: int = 2, c: int = 3): int
     return a * 100 + b * 10 + c
 
+def two(a: int, b: int): int
+    return a + b
+
 def main()
-    var outside = defaulted(1, c: 7)
-    print("outside=${outside}")
-    print("inside=${defaulted(1, c: 7)}")
+    var n = 255
+    var f = 3.14159
+    var s = "a:b"
+
+    # The bug: named arguments inside an interpolation.
+    print("named=${defaulted(1, c: 7)}")
+    print("named2=${defaulted(1, b: 5, c: 9)}")
+    print("nested=${two(1, defaulted(1, c: 7))}")
+
+    # Format specs must STILL work — they are what the `:` rule exists for, and a fix
+    # that broke them would trade one bug for a worse one.
+    print("hex=${n:x}")
+    print("pi=${f:.2f}")
+
+    # A colon inside a string literal is untouched: scanToken consumes the whole
+    # literal, so the inner `:` never reaches the interpolation loop.
+    print("colonStr=${s}")
+
+    # Both in one string, which is where a naive fix would get the state wrong.
+    print("both=${defaulted(1, c: 7)} and ${n:x}")
+
+    # The control from the diagnosis: a leading paren worked even when broken, so it
+    # stays as the row that distinguishes "parens counted" from "parens counted right".
+    print("leading=${(defaulted(1, c: 7))}")

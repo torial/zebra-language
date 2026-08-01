@@ -80,7 +80,9 @@ results=$(printf '%s' "$worklist" | grep -v '^$' \
 
 # classify
 self_gap=""; boot_gap=""; agree_fail=""; multi_selffail=""
-np=0; naf=0; nsg=0; nbg=0; nnomain=0; nmulti=0
+np=0; naf=0; nsg=0; nbg=0; nnomain=0; nmulti=0; nexpected=0
+# Names the smoke suite registers as "the selfhost must REJECT this" (smoke_tc_fail).
+MUST_REJECT="$(grep -oE '^smoke_tc_fail +test/[A-Za-z0-9_]+\.zbr' "$REPO/tools/selfhost_smoke.sh" 2>/dev/null                | sed -E 's#^smoke_tc_fail +test/##; s#\.zbr$##')"
 while IFS='|' read -r name b s; do
   [ -z "$name" ] && continue
   if [ "$b" = MULTI ]; then
@@ -90,6 +92,22 @@ while IFS='|' read -r name b s; do
   fi
   # normalize NOMAIN (library) — skip from divergence accounting
   if [ "$b" = NOMAIN ] || [ "$s" = NOMAIN ]; then nnomain=$((nnomain+1)); continue; fi
+  # A file the SELFHOST IS SUPPOSED TO REJECT is not a gap when it rejects it.
+  #
+  # This gate reads "bootstrap OK, selfhost fails" as "the selfhost regressed against
+  # the reference", which was true while the selfhost only ever lagged. BUG-142 broke
+  # that assumption: too-few/too-many arguments are now a hard ERROR in the selfhost and
+  # the bootstrap never had the check at all, so arg_count_test — a NEGATIVE test —
+  # showed up as a selfhost gap for doing exactly what it is registered to do.
+  #
+  # DERIVED, not hand-listed: the names come from `smoke_tc_fail` registrations in
+  # selfhost_smoke.sh, which is where the suite already declares "the selfhost must
+  # reject this". A hand-maintained skip list would rot and silently shrink coverage —
+  # the same argument output_sweep.sh makes for deriving its exclusions.
+  if [ "$s" != CPASS ] && printf '%s
+' "$MUST_REJECT" | grep -qx "$name"; then
+    nexpected=$((nexpected+1)); continue
+  fi
   b_ok=0; s_ok=0
   [ "$b" = CPASS ] && b_ok=1
   [ "$s" = CPASS ] && s_ok=1
@@ -101,7 +119,7 @@ while IFS='|' read -r name b s; do
 done <<< "$results"
 
 echo "═══ selfhost ↔ bootstrap divergence ═══ (jobs=$JOBS${ONLY:+, only=$ONLY})"
-echo "single-module files: $np agree-pass · $naf agree-fail · $nnomain library(no-main)"
+echo "single-module files: $np agree-pass · $naf agree-fail · $nnomain library(no-main) · $nexpected selfhost-rejects-by-design"
 echo "multi-module (selfhost-only, bootstrap N/A): $nmulti"
 echo
 echo "▶ SELFHOST GAPS ($nsg) — bootstrap OK, selfhost fails (selfhost lags):"
