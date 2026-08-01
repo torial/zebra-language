@@ -42,7 +42,8 @@ USAGE
     python tools/mutation_check.py --limit 10             # a short validation run
     python tools/mutation_check.py --limit 200 --seed 7   # an overnight run
 """
-import argparse, json, os, pathlib, random, re, shutil, subprocess, sys, time
+import argparse
+import atexit, json, os, pathlib, random, re, shutil, subprocess, sys, time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 ZIG = r"C:\Users\Sean\.zvm\bin\zig.exe"
@@ -179,9 +180,35 @@ def regen(wt, rel):
 # Programs whose EMITTED Zig is fingerprinted before and after each mutation. Chosen to
 # span the common paths rather than to be clever: a struct/branch/except program, a
 # string+interpolation program, and a collections program.
+#
+# WIDENED 2026-08-01. Three small probes were far too narrow: across three runs, EVERY
+# mutant that reached the fingerprint hashed identical and was filed NO-EFFECT, so the
+# SURVIVED verdict -- the one this tool exists to produce -- never executed once. Three
+# hand-written probes simply do not exercise enough of a 16,000-line code generator.
+#
+# selfhost/CodeGen.zbr is the largest and most demanding Zebra program in the repo, and
+# emitting it with the MUTATED compiler costs ~20s -- against the ~6s the three probes
+# cost, and against the ~200s of smoke that a false NO-EFFECT was skipping. The small
+# probes stay because they are cheap and they localise a difference when one appears.
 CANARIES = ["test/boundary/bv_nil_positions.zbr",
             "test/boundary/bv_empty_string.zbr",
-            "test/boundary/bv_empty_list.zbr"]
+            "test/boundary/bv_empty_list.zbr",
+            "selfhost/CodeGen.zbr"]
+
+
+def _restore_once(src, original):
+    """Idempotent restore, safe to call from both the loop and atexit.
+
+    Idempotence comes from comparing content rather than from a flag: if the file already
+    matches, there is nothing to do. The explicit newline is load-bearing here for the
+    same reason it is at every other write site in this file -- see the note in the loop.
+    """
+    try:
+        if src.read_text(encoding="utf-8") == original:
+            return
+    except OSError:
+        pass
+    src.write_text(original, encoding="utf-8", newline="\n")
 
 
 def emit_fingerprint(wt, files=None):
@@ -330,6 +357,14 @@ def main():
     for n, (rel, ln, c0, c1, op, old, new) in enumerate(sites, 1):
         src = wt / rel
         original = src.read_text(encoding="utf-8")
+        # RESTORE ON THE WAY OUT, WHATEVER HAPPENS. Observed 2026-08-01: a run stopped
+        # mid-mutant (deliberately, once its results were shown to be fabricated) left the
+        # mutation in selfhost/TypeChecker.zbr plus .zig files regenerated from a mutated
+        # compiler. The next run's baseline detector correctly went red and it refused to
+        # start -- the control worked -- but a harness that poisons its own worktree when
+        # interrupted is a trap for whoever runs it next, and an interrupted run is the
+        # normal case, not the exception.
+        atexit.register(_restore_once, src, original)
         lines = original.splitlines(keepends=True)
         line = lines[ln]
         # PER-MUTANT POSITIVE CONTROL. Cheap, and it is the check that would have caught
@@ -390,7 +425,8 @@ def main():
         # error: error.UnexpectedCharacter". The apply site above had it; this one did
         # not. CLAUDE.md documents this exact trap in a section of its own, which did
         # not stop me walking into it.
-        src.write_text(original, encoding="utf-8", newline="\n")
+        _restore_once(src, original)
+        atexit.unregister(_restore_once)
         results.append(dict(file=rel, line=ln + 1, op=op, old=old, new=new,
                             verdict=verdict, by=by, why=why,
                             secs=round(time.time() - t0, 1)))
