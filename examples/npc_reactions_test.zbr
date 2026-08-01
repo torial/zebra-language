@@ -6,7 +6,7 @@
 # disagree), and drift (a tuning change silently alters a scene).  Each
 # section below fences off one of them.
 
-use npc_reactions exposing Qualities, npcWeight, npcIndex, npcName, qualName, reactionScore, bandOf, reactionOf, describe, traceOf, ordinaryLevel, Standing, noStanding, standingBias, Disposition, dispositionOf, describeDisposition, intimidability, menaceOf, fearOf, netFearOf
+use npc_reactions exposing Qualities, npcWeight, npcIndex, npcName, qualName, reactionScore, bandOf, reactionOf, describe, traceOf, ordinaryLevel, Standing, noStanding, standingBias, Disposition, dispositionOf, describeDisposition, intimidability, menaceOf, fearOf, netFearOf, regionName, regionWeight, regionScore, regionOverlay, virtueIndex, regionDrift
 
 # ---------------------------------------------------------------------------
 # 1. Integrity: the code's table must equal the transcribed notebook page.
@@ -273,12 +273,65 @@ def checkStandingAndFear()
     assert d0.candor == "shades the truth", "frightened stranger shades"
     assert d2.candor == "straight", "a friend under obligation speaks straight"
 
+
+# ---------------------------------------------------------------------------
+# 6. Regions -- the same person, weighed differently in different lands.
+# ---------------------------------------------------------------------------
+
+def checkRegions()
+    # (a) Torial is the base table: an overlay of nothing.
+    assert regionDrift(0) == 0, "Torial is the base"
+    assert regionOverlay(0).len == 0, "Torial overlays nothing"
+
+    # (b) A region that changes nothing is not a region.  Every other land
+    #     must actually differ, or it is scenery with a name.
+    var r = 1
+    while r < 3
+        assert regionDrift(r) > 0, regionName(r) + " differs from the base"
+        assert regionOverlay(r).len > 0, regionName(r) + " has values of its own"
+        r = r + 1
+
+    # (c) Overlays are surgical: cells not named keep the base weight.
+    assert regionWeight(1, npcIndex("Priest"), 5) != npcWeight(npcIndex("Priest"), 5), "Pilisia rewrites priestly humility"
+    assert regionWeight(1, npcIndex("Soldier"), 9) == npcWeight(npcIndex("Soldier"), 9), "and leaves soldiers' prowess alone"
+
+    # (d) The baseline invariant must survive regionalisation: an ordinary
+    #     stranger is neutral everywhere, in every land.  Otherwise a region
+    #     would silently make its whole population hostile or fond.
+    r = 0
+    while r < 3
+        var t = 0
+        while t < 18
+            assert regionScore(r, t, ordinaryPerson(), 0) == 0, regionName(r) + " is neutral to an ordinary stranger"
+            t = t + 1
+        r = r + 1
+
+    # (e) Culture shock: what earns welcome in one land must not earn the same
+    #     welcome everywhere, or regions are decoration.
+    var homePriest = regionScore(0, npcIndex("Priest"), theGentleScribe(), 0)
+    var awayPriest = regionScore(1, npcIndex("Priest"), theGentleScribe(), 0)
+    assert homePriest > awayPriest, "a gentle scribe is less prized among Pilisian priests"
+    assert homePriest - awayPriest >= 6, "and the difference is large enough to feel"
+
+    # (f) A nation's character, read out of what its people reward.  Pilisia
+    #     fed its firstborn to Ikral; its table should reward virtue less than
+    #     Torial's does.  This is a claim about the world that the data has to
+    #     keep making, not a comment in a design document.
+    assert virtueIndex(1) < virtueIndex(0), "Pilisia rewards virtue less than Torial"
+
+    # The Tuon differ without being more or less virtuous in total: they move
+    # honour up and mercy for criminals down.  Same sum, different shape --
+    # which is a better model of a foreign people than a better/worse axis.
+    assert regionDrift(2) > 0, "the Tuon weigh things differently"
+    assert virtueIndex(2) == virtueIndex(0), "but not less virtuously overall"
+
 def main()
     checkTable()
     checkProperties()
     checkScenes()
     checkDiscrimination()
     checkStandingAndFear()
+    checkRegions()
     print("npc_reactions_test: OK")
     print("  distinct receptions -- proud soldier: " + countDistinctBands(theProudSoldier()).toString() + ", gentle scribe: " + countDistinctBands(theGentleScribe()).toString())
     print("")

@@ -471,6 +471,155 @@ def describeDisposition(t: int, q: Qualities, s: Standing): str
     var d = dispositionOf(t, q, s)
     return npcName(t) + ": " + d.tone + " (" + signed(d.score) + ", help " + d.willHelp.toString() + ", " + d.candor + ") -- " + d.why
 
+
+# ---------------------------------------------------------------------------
+# Regions.  Sean's idea (2026-07-31): the same kind of person does not weigh
+# the same things in Torial, in Pilisia, and among the Tuon Tribes.
+#
+# Rather than eighteen-by-ten tables per nation -- an authoring burden that
+# would never be finished, and impossible to review -- a region is stored as
+# an OVERLAY on the base table: only the cells where that culture differs.
+# The consequence is that a nation is legible as its deviations.  You can
+# read what a people has become by reading the short list of places its
+# table departs from the ordinary.
+#
+# An overlay record is four characters: two digits of NPC type, one digit of
+# quality, one weight character.  "035~" = Soldier (03) weighs humility (5)
+# as overwhelming inverse (~).
+#
+# The overlays below are PROPOSALS grounded in canon, not rulings: Pilisia
+# from its child-sacrifice to Ikral and the judgment that its people were
+# "not noble, nor worthy of any praise"; the Tuon from song, honour, and the
+# defence of cubs.  Sean owns the values; the machinery does not care.
+# ---------------------------------------------------------------------------
+
+def regionName(r: int): str
+    if r == 0
+        return "Torial"
+    if r == 1
+        return "Pilisia"
+    if r == 2
+        return "TuonTribes"
+    return "?"
+
+def regionOverlay(r: int): List(str)
+    var o: List(str) = []
+    if r == 1
+        # Pilisia: a land that fed its firstborn to a bull-headed god.
+        o.add("105-")   # Priest x humility: strong -> slight inverse
+        o.add("108-")   # Priest x kindness: strong -> slight inverse
+        o.add("005.")   # Farmer x humility: strong -> none
+        o.add("026-")   # Merchant x honor: strong -> slight inverse
+        o.add("069#")   # King x prowess: slight -> strong
+        o.add("138#")   # Children x kindness: overwhelming -> strong
+        o.add("071-")   # Elderly x faith: slight -> slight inverse
+    if r == 2
+        # The Tuon Tribes: song, honour, and the cubs.
+        o.add("007+")   # Farmer x courage: none -> slight
+        o.add("026@")   # Merchant x honor: strong -> overwhelming
+        o.add("036@")   # Soldier x honor: strong -> overwhelming
+        o.add("137#")   # Children x courage: slight -> strong
+        o.add("076#")   # Elderly x honor: slight -> strong
+        o.add("088=")   # Criminal x kindness: slight -> strong inverse
+    return o
+
+def digitOf(c: str): int
+    if c == "1"
+        return 1
+    if c == "2"
+        return 2
+    if c == "3"
+        return 3
+    if c == "4"
+        return 4
+    if c == "5"
+        return 5
+    if c == "6"
+        return 6
+    if c == "7"
+        return 7
+    if c == "8"
+        return 8
+    if c == "9"
+        return 9
+    return 0
+
+# The weight this NPC type puts on this quality, in this part of the world.
+def regionWeight(r: int, t: int, q: int): int
+    var o = regionOverlay(r)
+    var i = 0
+    while i < o.len
+        var rec = o.at(i)
+        var rt = digitOf(rec[0..1]) * 10 + digitOf(rec[1..2])
+        var rq = digitOf(rec[2..3])
+        if rt == t
+            if rq == q
+                return weightChar(rec[3..4])
+        i = i + 1
+    return npcWeight(t, q)
+
+def regionBaseline(r: int, t: int): int
+    var total = 0
+    var i = 0
+    while i < 10
+        total = total + regionWeight(r, t, i) * ordinaryLevel()
+        i = i + 1
+    return total
+
+def regionScore(r: int, t: int, q: Qualities, bias: int): int
+    var total = 0
+    var i = 0
+    while i < 10
+        total = total + regionWeight(r, t, i) * qualAt(q, i)
+        i = i + 1
+    return total - regionBaseline(r, t) + bias
+
+# --- Reading a nation's character out of what its people reward ------------
+#
+# Five of the ten qualities are virtues in this world's own terms: wisdom,
+# faith, humility, kindness, honour.  A culture that rewards them scores
+# positive; one that punishes them scores negative.  The Fool's row is
+# inverse to every virtue, so a nation drifting toward the Fool is a nation
+# becoming foolish -- which is a thing this world says in prose and can now
+# say in a number.
+
+def virtueSign(q: int): int
+    if q == 0
+        return 1        # wisdom
+    if q == 1
+        return 1        # faith
+    if q == 5
+        return 1        # humility
+    if q == 6
+        return 1        # honor
+    if q == 8
+        return 1        # kindness
+    return 0
+
+def virtueIndex(r: int): int
+    var total = 0
+    var t = 0
+    while t < 18
+        var q = 0
+        while q < 10
+            total = total + regionWeight(r, t, q) * virtueSign(q)
+            q = q + 1
+        t = t + 1
+    return total
+
+# How far this region's table has moved from the base one, in cells.
+def regionDrift(r: int): int
+    var n = 0
+    var t = 0
+    while t < 18
+        var q = 0
+        while q < 10
+            if regionWeight(r, t, q) != npcWeight(t, q)
+                n = n + 1
+            q = q + 1
+        t = t + 1
+    return n
+
 def main()
     var soldierly = Qualities(wis: 2, faith: 2, ldr: 4, loyalty: 4, perception: 2, humility: 1, honor: 4, courage: 5, kindness: 2, prowess: 5)
     var gentle = Qualities(wis: 4, faith: 4, ldr: 2, loyalty: 3, perception: 4, humility: 5, honor: 4, courage: 2, kindness: 5, prowess: 1)
@@ -495,3 +644,15 @@ def main()
     print(describeDisposition(13, frightening, noStanding()))
     print(describeDisposition(12, frightening, noStanding()))
     print(describeDisposition(3, frightening, noStanding()))
+    print("")
+    print("-- the same gentle scribe, in three parts of the world --")
+    var r = 0
+    while r < 3
+        print("  " + regionName(r) + ": priest " + signed(regionScore(r, 10, gentle, 0)) + ", farmer " + signed(regionScore(r, 0, gentle, 0)) + ", children " + signed(regionScore(r, 13, gentle, 0)))
+        r = r + 1
+    print("")
+    print("-- what each people rewards, totalled over virtue --")
+    r = 0
+    while r < 3
+        print("  " + regionName(r) + ": virtue index " + signed(virtueIndex(r)) + ", cells differing from Torial: " + regionDrift(r).toString())
+        r = r + 1
