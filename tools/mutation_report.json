@@ -1,23 +1,1543 @@
 [
  {
-  "file": "selfhost/TypeChecker.zbr",
-  "line": 2069,
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12166,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 59.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 4422,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 59.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11531,
   "op": "cmp",
   "old": "==",
   "new": "<>",
   "verdict": "NO-EFFECT",
   "by": "identical-emit",
-  "secs": 47.3
+  "secs": 65.1
  },
  {
   "file": "selfhost/TypeChecker.zbr",
-  "line": 1332,
+  "line": 776,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 41.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15776,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 19.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11654,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 22.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 67,
   "op": "bool",
   "old": "or",
   "new": "and",
   "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 22.3
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6340,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 26.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 7672,
+  "op": "ret",
+  "old": "return false",
+  "new": "return true",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 26.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15989,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 26.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 8220,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 23.3
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13365,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 26.4
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15929,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 27.3
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13466,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 27.5
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 2725,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 23.3
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6946,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 20.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6314,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 20.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 9756,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 20.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 5699,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.4
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13975,
+  "op": "ret",
+  "old": "return false",
+  "new": "return true",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1881,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 42.5
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 9899,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 21.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13973,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 23.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2144,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 42.3
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 5507,
+  "op": "cmp",
+  "old": "<",
+  "new": "<=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 24.4
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6242,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 22.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13723,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 24.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3075,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 22.0
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 826,
+  "op": "cmp",
+  "old": "<",
+  "new": "<=",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 39.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1512,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 23.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1392,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 38.0
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1420,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
   "by": "boundary",
-  "secs": 44.3
+  "secs": 30.5
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 16432,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 24.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11039,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 22.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3562,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11490,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14996,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14236,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 17.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11210,
+  "op": "cmp",
+  "old": "<",
+  "new": "<=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 327,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 4065,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 10252,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 16145,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 8017,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1420,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.3
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6236,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1396,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14838,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14106,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6165,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 91,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.5
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 4692,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13982,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12297,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15828,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14096,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15003,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1626,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.5
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14162,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 9123,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13884,
+  "op": "cmp",
+  "old": "<",
+  "new": "<=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 291,
+  "op": "ret",
+  "old": "return false",
+  "new": "return true",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12997,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1976,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14398,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 17.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12834,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1671,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 33.5
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 974,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.5
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 3127,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 32.3
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 9132,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 129,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 542,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 31.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14976,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13095,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6055,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12944,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13380,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11136,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 17.0
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2607,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 4046,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15938,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11671,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12050,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 104,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.5
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 9514,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 17.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 7635,
+  "op": "ret",
+  "old": "return false",
+  "new": "return true",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2154,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 31.1
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 640,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 33.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1479,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 31.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13031,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6846,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12014,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 8263,
+  "op": "cmp",
+  "old": "<",
+  "new": "<=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13752,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 10729,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 17.0
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 953,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.4
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13222,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 7948,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 104,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3107,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 832,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1099,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.4
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13700,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.5
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 7927,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1309,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1460,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 33.4
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13065,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11358,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 239,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 8409,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12722,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 4072,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13556,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15013,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1535,
+  "op": "cmp",
+  "old": "<",
+  "new": "<=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14208,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.4
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3097,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 308,
+  "op": "ret",
+  "old": "return false",
+  "new": "return true",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 246,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1355,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 36.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14819,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13298,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12545,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1477,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12969,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15024,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14910,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 18.5
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3019,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 9095,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2833,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 28.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 4478,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15786,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15278,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 16444,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 9917,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13065,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 334,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11089,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.3
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 239,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1535,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1504,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3662,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3649,
+  "op": "cmp",
+  "old": "<",
+  "new": "<=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13119,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 4491,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 3220,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.6
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2255,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1390,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 33.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11560,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1854,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1336,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 37.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15871,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11863,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1666,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.5
  },
  {
   "file": "selfhost/TypeChecker.zbr",
@@ -27,56 +1547,1456 @@
   "new": "and",
   "verdict": "NO-EFFECT",
   "by": "identical-emit",
-  "secs": 50.7
+  "secs": 32.0
  },
  {
   "file": "selfhost/TypeChecker.zbr",
-  "line": 1671,
-  "op": "bool",
-  "old": "or",
-  "new": "and",
-  "verdict": "NO-EFFECT",
-  "by": "identical-emit",
-  "secs": 42.9
- },
- {
-  "file": "selfhost/TypeChecker.zbr",
-  "line": 1859,
-  "op": "cmp",
-  "old": "==",
-  "new": "<>",
-  "verdict": "NO-EFFECT",
-  "by": "identical-emit",
-  "secs": 47.0
- },
- {
-  "file": "selfhost/TypeChecker.zbr",
-  "line": 669,
-  "op": "const",
-  "old": "0",
-  "new": "1",
-  "verdict": "NO-EFFECT",
-  "by": "identical-emit",
-  "secs": 42.6
- },
- {
-  "file": "selfhost/TypeChecker.zbr",
-  "line": 2038,
-  "op": "cmp",
-  "old": "==",
-  "new": "<>",
-  "verdict": "DETECTED",
-  "by": "boundary",
-  "secs": 48.3
- },
- {
-  "file": "selfhost/TypeChecker.zbr",
-  "line": 1554,
+  "line": 1617,
   "op": "ret",
   "old": "return true",
   "new": "return false",
   "verdict": "NO-EFFECT",
   "by": "identical-emit",
-  "secs": 44.2
+  "secs": 34.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6247,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1148,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15350,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1470,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 487,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15086,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 8854,
+  "op": "ret",
+  "old": "return false",
+  "new": "return true",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11626,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3427,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3455,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13968,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14889,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15397,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13139,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1436,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2012,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 33.0
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2489,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 31.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 171,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6808,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11461,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 61,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 314,
+  "op": "ret",
+  "old": "return false",
+  "new": "return true",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13667,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1529,
+  "op": "cmp",
+  "old": "<",
+  "new": "<=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13477,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11209,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13539,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 10556,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11774,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1905,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 10559,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.5
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2156,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 34.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11119,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15581,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1390,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 34.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3229,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 4345,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12637,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13648,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 67,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1440,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 27.3
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 10429,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 17.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11857,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11880,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6155,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2255,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.5
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1768,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 33.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15487,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13693,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 7745,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 4693,
+  "op": "cmp",
+  "old": "<",
+  "new": "<=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 668,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.1
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 664,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 32.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12737,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12670,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 336,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 324,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2455,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 34.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3753,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1695,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15876,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15868,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 17.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13119,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 17.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12396,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 17.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 61,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15069,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13374,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 9847,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1453,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 28.4
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 7089,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14160,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12005,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1447,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 28.5
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12417,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 3079,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 34.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 2331,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14134,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 10831,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11711,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 2569,
+  "op": "ret",
+  "old": "return false",
+  "new": "return true",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 620,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 36.4
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15427,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 7632,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12609,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 2022,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15536,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13905,
+  "op": "cmp",
+  "old": "<",
+  "new": "<=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15726,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 16271,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14851,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13655,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11174,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 10088,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 4473,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1009,
+  "op": "cmp",
+  "old": "<",
+  "new": "<=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1905,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 35.4
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13407,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14363,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 598,
+  "op": "ret",
+  "old": "return false",
+  "new": "return true",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 243,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15724,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 5716,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15052,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 10429,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12924,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 671,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 33.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 9876,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14932,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2475,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 34.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 2701,
+  "op": "ret",
+  "old": "return false",
+  "new": "return true",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 14192,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13047,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 9529,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 581,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 35.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13315,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.5
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 16245,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13598,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 5370,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15300,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 16148,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.6
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12054,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 12414,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1340,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "boundary",
+  "secs": 39.4
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3011,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1336,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 32.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3557,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 17.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 4155,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 5853,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15369,
+  "op": "cmp",
+  "old": ">",
+  "new": ">=",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15589,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.2
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 9440,
+  "op": "bool",
+  "old": "or",
+  "new": "and",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.0
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 2686,
+  "op": "ret",
+  "old": "return true",
+  "new": "return false",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 6447,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 4697,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 13001,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3041,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1854,
+  "op": "bool",
+  "old": "and",
+  "new": "or",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 35.1
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 11039,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.1
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 1467,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 31.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 7843,
+  "op": "const",
+  "old": "0",
+  "new": "1",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 16.7
+ },
+ {
+  "file": "selfhost/TypeChecker.zbr",
+  "line": 2032,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "NO-EFFECT",
+  "by": "identical-emit",
+  "secs": 34.8
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 3621,
+  "op": "const",
+  "old": "1",
+  "new": "0",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.9
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 2989,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
+ },
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 1977,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "regen",
+  "secs": 15.7
  }
 ]

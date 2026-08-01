@@ -734,6 +734,18 @@ rendering, input, layout, resize, colours. Those need a human. What changed is t
 from "no gate touches a GUI" to "no gate touches a GUI **beyond startup**", and all four
 GUI crashes to date lived at startup.
 
+**RE-CONFIRMED BY SEAN 2026-08-01, and this one covers the whole week.** After eight
+compiler changes landed (BUG-230/234/236/223/232/142/231 + the walker completion), Sean
+ran BOTH selfhost GUI backends and reported they "looked good and behaved like I'd
+expect": `--gui-backend=tui`, and `--gui-backend=libui_ng` on `counter.zbr` and
+`widget_smoke.zbr`.
+
+`widget_smoke` is the one that mattered: it is the file BUG-230 was silently breaking
+(`var items: List(str) = ["Apple", ...]` feeding a combobox), so this is the fix
+verified on a RENDERED CONTROL rather than merely compiling. Three of the week's changes
+touch what GUI code leans on — annotated list literals, string-interpolation lexing, and
+arity severity — and none of them is provable by any gate at the pixel level.
+
 **CONFIRMED BY SEAN 2026-07-30**: `--gui-backend=tui examples/counter.zbr` runs and
 renders correctly. That is the only verification that can close a GUI bug — the gate
 proves it starts, a human proves it works.

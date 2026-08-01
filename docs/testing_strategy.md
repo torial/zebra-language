@@ -182,7 +182,50 @@ its own bugs were caught by that baseline check — a worktree that could not bu
 detector silently broken by WSL path translation, either of which would have produced a
 confident, meaningless score.
 
-**Next run:** `python tools/mutation_check.py --limit 300 --seed 1` (~4 h).
+**300-MUTANT RUN, 2026-08-01 (1.7 h, median 16 s/mutant). The headline number is real
+but nearly vacuous, and the breakdown is the actual finding.**
+
+```
+mutants: 300   detected: 256   survived: 0   no-effect: 44
+
+  detected by regen           241  (80%)   the BOOTSTRAP refused to compile the mutant
+  no-effect (identical emit)   44  (15%)   changed nothing we compile
+  detected by boundary         15  ( 5%)   OUR GATES
+  detected by hello / smoke     0  ( 0%)   never reached
+```
+
+**"Gates caught 100% of live mutations" is true and misleading.** Only **15 of 300**
+mutations ever reached a gate. The other 241 never got that far because a mutated
+compiler *cannot compile itself* — the regeneration step rejects it. So this run mostly
+measured the **self-hosting property**, not the test suite.
+
+**Three things worth keeping from that:**
+
+1. **Self-hosting is doing enormous, largely unremarked defensive work.** Four in five
+   random perturbations of CodeGen/TypeChecker are fatal to the compiler's own
+   regeneration. That is a safety net nobody designed as one, and it is far stronger
+   than any gate here. It is also the strongest argument yet for finishing the
+   self-hosting effort rather than keeping a Zig fallback indefinitely.
+
+2. **The gate measurement rests on n=15, not n=300.** 15/15 caught is encouraging and
+   is *not* the "our gates catch N%" number the plan wanted. The confidence interval on
+   fifteen samples is wide enough that the honest statement is "no survivors yet".
+
+3. **All 15 were caught by the A3 boundary suite** — written two days earlier — while
+   `hello-world` and `smoke` (263 fixtures) caught **zero**. Not because smoke is weak:
+   boundary simply runs earlier in the cascade and got there first. But it does mean the
+   intent-written probes are, so far, the only thing demonstrably catching compiler
+   mutations that survive self-compilation.
+
+**What B1 v2 needs, and it is a design change not more samples:** mutations that survive
+regeneration. Random operator flips are mostly *too destructive* — they break the
+compiler before it can produce a differently-behaving compiler. Targeting is the fix:
+mutate only within functions the canaries demonstrably execute, or prefer edits on
+rarely-taken branches (error paths, fallbacks, edge cases) which are exactly where a
+compiler bug hides and exactly what survives self-compilation. That is the run that
+would produce a real coverage number.
+
+**Reproduce:** `python tools/mutation_check.py --limit 300 --seed 1`
 
 **B2 · Real coverage measurement — spike first, commit second.** Determine whether we can
 get branch coverage of the compiler on Windows (Zig's fuzz instrumentation, kcov under
