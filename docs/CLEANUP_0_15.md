@@ -148,7 +148,7 @@ remove `isHashMapTypeRef`.
 The shadow-set cleanup uncovered a recurring problem: code accumulates dead arms
 (union variant match branches that can never fire) and the compiler doesn't flag them.
 
-**Proposed lint tool (`tools/zbr_dead_code.py` or a Zebra stdlib pass):**
+**Proposed lint tool (`tools/zbr_dead_code.py` or a Zebra stdlib pass):** <!-- doc-lint-ok: proposed, not built -->
 
 1. **Union variant reachability:** For each `Type_` (or user) union, collect all
    variant construction sites (`Type_.list_(...)`, `Type_.hashmap_(...)`, etc.) and

@@ -1,6 +1,6 @@
 ﻿# Zebra Style Guide
 
-> **Status:** canonical (promoted from `docs/STYLE_GUIDE_DRAFT.md` on
+> **Status:** canonical (promoted from `docs/STYLE_GUIDE_DRAFT.md` on <!-- doc-lint-ok: names the pre-promotion path; the file IS this one -->
 > 2026-05-05 after the Phase 13 sweep cluster shipped).  This file is the
 > authoritative reference for what to *prefer* when authoring `.zbr` code.
 > For what's *possible* at all, read [QUICKSTART.md](QUICKSTART.md) first —
@@ -1253,7 +1253,7 @@ This section documents how the guide was promoted to canonical, for
 reference if a future major-version rewrite needs to repeat the process.
 
 **Phase 1 — Draft (2026-05-04, last session):**
-- `docs/STYLE_GUIDE_DRAFT.md` written from QUICKSTART + selfhost code +
+- `docs/STYLE_GUIDE_DRAFT.md` written from QUICKSTART + selfhost code + <!-- doc-lint-ok: history of this file's own promotion -->
   user feedback on three foundational decisions (§1 Q1/Q2/Q3) and four
   smaller calls (§21 Q-a/Q-b/Q-c/Q-d).
 - BUGS.md entries BUG-111..115 filed as "compiler-limit-driven"
@@ -1273,7 +1273,7 @@ reference if a future major-version rewrite needs to repeat the process.
   works correctly.
 
 **Phase 3 — Promote (2026-05-05):**
-- `docs/STYLE_GUIDE_DRAFT.md` → `STYLE_GUIDE.md` at repo root.
+- `docs/STYLE_GUIDE_DRAFT.md` → `STYLE_GUIDE.md` at repo root. <!-- doc-lint-ok: history of this file's own promotion -->
 - §13 rewritten to reflect "verify before filing" lesson + Phase 13
   outcomes table.
 - §20 anti-patterns updated with sweep status column.

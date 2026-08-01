@@ -132,6 +132,11 @@ run "fallthrough"    "0 hazard"  python tools/lint_fallthrough.py
 # clean if its own controls stop firing, and `--rev <sha>` re-derives what it would have
 # said on the commit that shipped the bugs.
 run "hazard-lint"    "0 hazard"  python tools/hazard_lint.py
+# The docs' CHECKABLE claims. Most of what they assert needs a human; the machine-checkable
+# minority is the part that rots fastest, because it is exactly what changes when a tool is
+# renamed or retired. Append-only records (BUGS.md, the journal) are reported but not gated
+# -- an old entry naming a since-deleted tool is accurate history, not a defect.
+run "doc-lint"       "0 stale"   python tools/doc_lint.py --quiet
 run "smoke"          "passed"    bash tools/selfhost_smoke.sh
 run "round-trip"     "PASS"      bash tools/bootstrap_check.sh
 # The only gate that RUNS emitted output, hence the only one that can see BUG-221 —

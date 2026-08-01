@@ -202,6 +202,24 @@ python tools/hazard_lint.py        # THE TOOLING GATE (static, instant, no build
                                 #   `--rev 7156d3e` is the non-circular proof: it re-derives
                                 #   3 of the 5 real bugs on the commit that shipped them.
                                 #   0 = clean. QUICK tier.
+python tools/doc_lint.py           # THE DOC-DRIFT GATE (static, instant, no build) — checks
+                                #   the CHECKABLE claims only. D1 a `tools/x.sh` named in a
+                                #   .md exists; D2 a repo path linked from a .md exists;
+                                #   D3 every gate registered in gates.sh is DESCRIBED here
+                                #   in CLAUDE.md (an undocumented gate is how a tier's
+                                #   meaning drifts — it found 3 on the day it was written);
+                                #   D4 a cited BUG-NNN exists in one of the two ledgers.
+                                #   Append-only records (BUGS.md, BUGS_FIXED.md, the journal,
+                                #   CHANGELOG, dated audits) are REPORTED but not gated: an
+                                #   entry naming a tool deleted three months later is accurate
+                                #   history, and "fixing" it would falsify the record.
+                                #   Suppress a deliberate dangling reference (a PROPOSED tool,
+                                #   a promotion history) with `<!-- doc-lint-ok: reason -->`;
+                                #   the reason is required. It prints its own uncovered set
+                                #   every run — behaviour claims, coverage counts, and
+                                #   anything inferred from a gate's SILENCE are NOT checked,
+                                #   and a clean run must not be read as "the docs are
+                                #   accurate". 0 = clean. QUICK tier.
 python tools/lint_fallthrough.py   # THE FALL-THROUGH GATE (static, instant, no build):
                                 #   flags a value-returning fn whose TAIL `branch` has a
                                 #   value-producing arm that can fall through without
@@ -260,6 +278,30 @@ the FULL_SWEEP baseline. When a corpus file changes compile status, re-baseline
 whose file is no longer a candidate, and the gate correctly reports it as "stopped being
 measured", which is a coverage loss rather than a behaviour change.
 
+bash tools/check_mode_check.sh     # THE CHECK-MODE CONTRACT GATE: `-c` is front-end-only
+                                #   and deliberately incomplete, so what needs gating is the
+                                #   CONTRACT, not the coverage — valid code passes both modes,
+                                #   a front-end error fails both, and the asymmetry `--help`
+                                #   promises ACTUALLY EXISTS (it requires witnesses that pass
+                                #   `-c` and fail `--check-full`). It also guards the SPEED,
+                                #   so `-c` silently starting to invoke zig again fails here.
+                                #   Carries a built-in failure when no asymmetry witness
+                                #   survives, which is why gate_selfcheck lists it as
+                                #   self-falsifying. QUICK tier.
+python tools/bug_fixture_check.py --gate  # THE REGRESSION-FIXTURE GATE (A1): SQLite's "a
+                                #   regression test for every reported bug", as a lint rather
+                                #   than a habit. Fails only on NEW debt — the existing
+                                #   backlog is baselined — and counts a fixture as real only
+                                #   if something actually RUNS it, since an orphaned .zbr
+                                #   nobody executes is the shape this class of debt takes.
+                                #   Also globs test/boundary/*.zbr. Static; instant. QUICK.
+python tools/lint_oom_unreachable.py  # THE RELEASE-ONLY-UB GATE (A4): `unreachable` is
+                                #   undefined behaviour in ReleaseFast, which is what
+                                #   `zebra --release` ships. Every gate here runs Debug,
+                                #   where it TRAPS cleanly — so this hazard is invisible to
+                                #   all of them and live only in what users distribute.
+                                #   A static lint is the only witness that can see it at all.
+                                #   0 = clean. QUICK tier.
 bash tools/output_sweep.sh --gate  # THE BEHAVIOUR WITNESS — the only heavy gate that
                                 #   RUNS the corpus and reads what it PRINTED. Everything
                                 #   else in the FULL tier asks "does the emitted Zig
@@ -358,7 +400,8 @@ than "what do we know":
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 54 scripts |
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 55 scripts |
+| docs' checkable claims still resolve | `doc_lint` | 43 documents |
 
 The last row is the one that keeps the rest honest; see its header for why.
 

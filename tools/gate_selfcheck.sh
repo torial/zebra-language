@@ -433,6 +433,79 @@ else
     note "round-trip: skipped (run bootstrap_check.sh first to populate /tmp/bs-A)"
 fi
 
+# ── hazard-lint: fires on a planted tooling hazard, and REFUSES when blinded ──
+# Two legs, because this gate has two failure modes and only one of them is the usual one.
+#
+# Leg A is the ordinary falsification: plant a hazard, require rc=1.
+#
+# Leg B is the one specific to this tool. hazard_lint runs positive controls before every
+# scan and is supposed to exit 2 — not 0 — if a check has stopped firing on its own
+# control. That refusal is the whole reason to trust a clean report from it, and a refusal
+# path that is never exercised is exactly the kind of thing this file exists to catch. So
+# we blind a check on purpose and require the refusal.
+if [ -f tools/hazard_lint.py ]; then
+    base=$(run_rc $PY tools/hazard_lint.py)
+    if [ "$base" -ne 0 ]; then
+        note "hazard-lint: skipped (already reports rc=$base on the UNPERTURBED tree,"
+        note "        so catching a planted hazard would prove nothing)"
+    else
+        # Leg A — a realistic defect: the CRLF restore that fabricated 241 detections.
+        mkdir -p "$OUT/hz"
+        printf 'import pathlib\np = pathlib.Path("selfhost/CodeGen.zbr")\np.write_text("x", encoding="utf-8")\n' \
+            > "$OUT/hz/planted.py"
+        got=$(run_rc $PY tools/hazard_lint.py ".selfcheck_tmp/hz/*.py")
+        case "$got" in
+            1) pass "hazard-lint fires on a planted .zbr CRLF write (clean 0 -> planted 1)" ;;
+            0) bad "hazard-lint did NOT fire on a planted hazard: $(last_out)" ;;
+            *) bad "hazard-lint CRASHED (rc=$got) instead of reporting: $(last_out)" ;;
+        esac
+
+        # Leg B — blind one check and require a REFUSAL (rc=2), not a clean report.
+        cp -p tools/hazard_lint.py "$OUT/hz.bak"
+        $PY - <<'PYEOF'
+import pathlib
+p = pathlib.Path("tools/hazard_lint.py")
+s = p.read_text(encoding="utf-8")
+# Disable H1 by making its file-level guard unsatisfiable. This is what a real
+# regression looks like: the check still exists, still runs, and finds nothing.
+s = s.replace('    if ".zbr" not in text:\n        return []',
+              '    if True:\n        return []', 1)
+p.write_text(s, encoding="utf-8", newline="\n")
+PYEOF
+        got=$(run_rc $PY tools/hazard_lint.py)
+        cp -p "$OUT/hz.bak" tools/hazard_lint.py
+        case "$got" in
+            2) pass "hazard-lint REFUSES to report when a check stops firing (blinded -> 2)" ;;
+            0) bad "hazard-lint reported CLEAN with H1 disabled — its controls are not wired" ;;
+            *) bad "hazard-lint gave rc=$got when blinded; expected 2 (refusal): $(last_out)" ;;
+        esac
+    fi
+else
+    note "hazard-lint: skipped (tools/hazard_lint.py not present)"
+fi
+
+# ── doc-lint: fires on a planted dangling reference ───────────────────────
+# The realistic defect is a doc naming a tool that was renamed or deleted -- which is what
+# D1 found five times in the append-only records on the day it was written.
+if [ -f tools/doc_lint.py ]; then
+    base=$(run_rc $PY tools/doc_lint.py --quiet)
+    if [ "$base" -ne 0 ]; then
+        note "doc-lint: skipped (already reports rc=$base on the UNPERTURBED tree)"
+    else
+        cp -p CLAUDE.md "$OUT/claude.bak"
+        printf '\nSee `tools/planted_by_selfcheck.sh` for details.\n' >> CLAUDE.md
+        got=$(run_rc $PY tools/doc_lint.py --quiet)
+        cp -p "$OUT/claude.bak" CLAUDE.md
+        case "$got" in
+            1) pass "doc-lint catches a planted dangling tool reference (clean 0 -> 1)" ;;
+            0) bad "doc-lint did NOT catch a planted dangling reference: $(last_out)" ;;
+            *) bad "doc-lint CRASHED (rc=$got) instead of reporting: $(last_out)" ;;
+        esac
+    fi
+else
+    note "doc-lint: skipped (tools/doc_lint.py not present)"
+fi
+
 # ── honest inventory of what is NOT self-checked ─────────────────────────────
 echo
 echo "  NOT self-checked (no cheap falsification — do not read the above as full coverage):"
@@ -442,6 +515,8 @@ echo "                       its EXAMPLES sibling IS falsified above and shares 
 echo "    divergence       — needs both compilers over the whole corpus (~20 min)"
 echo "    runtime-module   — its own size/BUG-221 assertions are already adversarial"
 echo "    check-mode       — carries a built-in failure when no asymmetry witness survives"
+echo "    mutation_check   — hours per run; its OWN baseline control is the falsification"
+echo "                       (it refuses to start on a red detector or a blind fingerprint)"
 
 echo
 if [ "$FAIL" -gt 0 ]; then
