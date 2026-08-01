@@ -437,10 +437,20 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
 - [ ] **B2 spike (1 day) — is branch coverage feasible on Windows/Zig at all?** Decide
   B1-vs-B2 on evidence. One option worth the look: teaching Zebra itself to emit coverage
   counters, which would serve users too.
-- [ ] **B1 — mutation testing of the compiler.** Perturb `CodeGen.zbr`/`TypeChecker.zbr`,
-  rebuild, see whether ANY gate notices. Yields *"our gates catch N% of changes to the
-  compiler"* — the honest substitute for a coverage number, and the only item that
-  measures what we are NOT testing. Overnight tool, ~2 days to build.
+- [x] **B1 — mutation testing of the compiler. HARNESS BUILT + FIRST VALID RUN
+  2026-08-01** (`tools/mutation_check.py`). 60 mutants: **0 survivors, 13/13 live
+  mutations caught** (10 by the A3 boundary suite, 3 by hello-world). Full result and
+  caveats in `docs/testing_strategy.md` §B1 — read them, the headline is more flattering
+  than the evidence: the gate figure rests on **n=13**, and **47/60 (78%) were NO-EFFECT**
+  (byte-identical emit), so the run largely measured *reachability*, not gate quality.
+  A 300-mutant run published earlier the same day was **retracted** — a CRLF bug in the
+  harness's restore path fabricated 241 "detections"; postmortem is in the same section.
+- [ ] **B1 v2 — a design change, not more samples.** The cost that matters is **per LIVE
+  mutant (~310 s)**, not per mutant. Two fixes: (a) sample until N *live* mutants rather
+  than N total; (b) bias site selection toward code the corpus demonstrably executes, or
+  toward rarely-taken branches (error paths, fallbacks) — uniform selection over
+  CodeGen's ~3,559 sites spends four fifths of its budget on dead code. ~100 live mutants
+  ≈ 8.6 h at today's hit rate; the fixes should cut that substantially.
 - [ ] **C tier, post-0.9** — mutation fuzzing of valid programs (dbsqlfuzz's actual
   trick; gramgen *generates*, nothing *mutates*), periodic sanitizer sweeps, a release
   checklist. **C2 (contracts) PILOTED 2026-07-30 (`2f377c0`)** — feasibility proven

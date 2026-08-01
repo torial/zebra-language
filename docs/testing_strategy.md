@@ -182,90 +182,96 @@ its own bugs were caught by that baseline check — a worktree that could not bu
 detector silently broken by WSL path translation, either of which would have produced a
 confident, meaningless score.
 
-**⚠ RETRACTED 2026-08-01 — THE 300-MUTANT RUN BELOW IS INVALID. Read this first.**
+**60-MUTANT RUN, 2026-08-01 (68 min, median 68 s/mutant). This is the valid run; a
+300-mutant run published earlier the same day was retracted — see the postmortem below.**
 
-The run reported *"241 of 300 detected by regen — the bootstrap refused to compile the
-mutant"*, and I drew a confident conclusion from it: that self-hosting is a powerful
-unremarked safety net, four in five perturbations being fatal to the compiler's own
-regeneration. **That conclusion was wrong, and the data behind it was manufactured by a
-bug in the harness.**
+```
+mutants: 60   detected: 13   survived: 0   no-effect: 47
+
+  no-effect (identical emit)   47  (78%)   changed nothing we compile
+  detected by boundary         10  (17%)   A3 probes
+  detected by hello-world       3  ( 5%)   the canary
+  detected by regen             0  ( 0%)   the bootstrap refused nothing
+  SURVIVED                      0  ( 0%)
+```
+
+**Zero survivors. 13/13 live mutations caught. Both numbers need their caveats stated
+plainly, because the headline is more flattering than the evidence.**
+
+1. **The gate measurement rests on n=13, not n=60.** Thirteen of thirteen is encouraging
+   and is *not* the "our gates catch N%" figure the plan asked for. On thirteen samples
+   the honest statement is **"no survivors yet"**, nothing stronger.
+
+2. **78% of mutations never reach a gate at all.** They leave the emitted Zig
+   byte-identical, so there is nothing for any gate to notice. `CodeGen.zbr` has ~3,559
+   mutable sites and much of it — GUI backends, node-addon, rarely-used stdlib methods —
+   is unreachable from anything the corpus compiles. **So this run mostly measured
+   reachability, not gate quality.** Without the NO-EFFECT verdict it would have read as
+   "gates catch 22%", which would have been a lie in the other direction.
+
+3. **It was not all boundary.** 10 of 13 came from the A3 probes, but `hello-world` — the
+   cheapest canary in the harness — caught 3 on its own, including
+   `CodeGen.zbr:1512` (`rtIsIdentStart(c) and not rtIsFieldAccess(...)` → `or`) and two
+   `TypeChecker` string-method dispatch comparisons. A mutation that breaks the compiler
+   badly enough shows up in the first program you run.
+
+4. **Nothing here says anything about self-hosting as a safety net.** Zero regen
+   refusals in 60. The retracted run's central claim (80% of mutants fatal to
+   regeneration) was not merely overstated — it was **inverted**, and the true figure in
+   this sample is zero.
+
+**What B1 v2 needs is a design change, not more samples.** The cost that matters is not
+per mutant, it is **per *live* mutant**: 4,050 s for 13 of them, i.e. **~310 s each**. A
+hundred live mutants — enough to make a percentage mean something — is about 8.6 hours at
+this hit rate, most of it spent rebuilding compilers that emit identical code. Two fixes,
+both cheap:
+
+* **Sample until N live, not N total.** The harness counts total attempts; it should
+  count NO-EFFECTs as free retries and stop at a target live count.
+* **Mutate where the corpus demonstrably goes.** Prefer sites in functions the canaries
+  actually execute — or, better, invert it: rarely-taken branches (error paths,
+  fallbacks, edge cases) are exactly where a real compiler bug hides *and* exactly what
+  survives self-compilation. Random uniform selection over 3,559 sites spends four fifths
+  of its budget on dead code.
+
+**Reproduce:** `python tools/mutation_check.py --limit 60 --seed 1`
+
+---
+
+#### Postmortem — the retracted 300-mutant run
+
+The first run of this item reported *"241 of 300 detected by regen — the bootstrap
+refused to compile the mutant"*, and I drew a confident conclusion from it: that
+self-hosting is a powerful unremarked safety net, four in five perturbations being fatal
+to the compiler's own regeneration. **That conclusion was wrong, and the data behind it
+was manufactured by a bug in the harness.** It is recorded here rather than deleted
+because the failure is more instructive than the result would have been.
 
 The harness restored the mutated source after each mutant with
 
     src.write_text(original, encoding="utf-8")      # no newline="\n"
 
 On Windows Python rewrites that file with **CRLF**, and the Zebra tokenizer rejects a
-lone `\r` — `error: unexpected '\r' (CRLF line endings — convert to LF)`. So mutant 1
-restored, corrupted `CodeGen.zbr`, and **every later regen failed for that reason
-alone**. The harness scored each as "the bootstrap refused this mutant". Running those
-same mutants by hand, the bootstrap emits them without complaint.
+lone `\r`. So mutant 1 restored, corrupted `CodeGen.zbr`, and **every later regen failed
+for that reason alone**. The harness scored each as "the bootstrap refused this mutant".
+Run by hand, the bootstrap emits those same mutants without complaint — lines 15776,
+11654 and 67 were the three I reproduced, and all three flipped to NO-EFFECT once the
+restore was fixed.
 
 The apply site had `newline="\n"`. The restore site did not. CLAUDE.md documents this
 trap in a section of its own, which did not prevent it.
 
 **The tell I had and ignored:** regen "detections" completed in ~20 s while every other
-outcome took 45–270 s. A detection that is *faster than the work it claims to have done*
-deserves a look. It is the same shape as the two earlier harness bugs the baseline check
-caught (a worktree that could not build; a detector broken by WSL path translation) —
-all three produce confident results from an instrument that is not measuring.
+outcome took 45–270 s. *A detection faster than the work it claims to have done deserves
+a look.* It is the same shape as the two earlier harness bugs the baseline check caught
+(a worktree that could not build; a detector broken by WSL path translation) — all three
+produce confident results from an instrument that is not measuring. That is now three of
+three: **every bug in this harness produced a plausible number rather than an error.**
 
-**What survives the retraction:**
-
-* the cost measurements (22 s regen, 3 s build) — unaffected, independently verified;
-* the NO-EFFECT classification and why it is necessary — unaffected;
-* that 15 mutations were caught by the A3 boundary suite — those required regen to
-  SUCCEED, so they are real detections;
-* **nothing about self-hosting.** That claim is withdrawn entirely, not weakened.
-
-The corrected run is below the retracted block.
-
----
-
-**RETRACTED — 300-MUTANT RUN, 2026-08-01 (1.7 h, median 16 s/mutant). Kept for the
-record because the failure is more instructive than the result would have been.**
-
-```
-mutants: 300   detected: 256   survived: 0   no-effect: 44
-
-  detected by regen           241  (80%)   the BOOTSTRAP refused to compile the mutant
-  no-effect (identical emit)   44  (15%)   changed nothing we compile
-  detected by boundary         15  ( 5%)   OUR GATES
-  detected by hello / smoke     0  ( 0%)   never reached
-```
-
-**"Gates caught 100% of live mutations" is true and misleading.** Only **15 of 300**
-mutations ever reached a gate. The other 241 never got that far because a mutated
-compiler *cannot compile itself* — the regeneration step rejects it. So this run mostly
-measured the **self-hosting property**, not the test suite.
-
-**Three things worth keeping from that:**
-
-1. ~~**Self-hosting is doing enormous, largely unremarked defensive work.**~~
-   **WITHDRAWN.** The 241 "regen refusals" were a CRLF bug in the harness, not the
-   bootstrap rejecting anything. Nothing in this run says anything about self-hosting
-   as a safety net, in either direction. Establishing that would need a run where the
-   source is not being corrupted between mutants — which is what the corrected harness
-   now does.
-
-2. **The gate measurement rests on n=15, not n=300.** 15/15 caught is encouraging and
-   is *not* the "our gates catch N%" number the plan wanted. The confidence interval on
-   fifteen samples is wide enough that the honest statement is "no survivors yet".
-
-3. **All 15 were caught by the A3 boundary suite** — written two days earlier — while
-   `hello-world` and `smoke` (263 fixtures) caught **zero**. Not because smoke is weak:
-   boundary simply runs earlier in the cascade and got there first. But it does mean the
-   intent-written probes are, so far, the only thing demonstrably catching compiler
-   mutations that survive self-compilation.
-
-**What B1 v2 needs, and it is a design change not more samples:** mutations that survive
-regeneration. Random operator flips are mostly *too destructive* — they break the
-compiler before it can produce a differently-behaving compiler. Targeting is the fix:
-mutate only within functions the canaries demonstrably execute, or prefer edits on
-rarely-taken branches (error paths, fallbacks, edge cases) which are exactly where a
-compiler bug hides and exactly what survives self-compilation. That is the run that
-would produce a real coverage number.
-
-**Reproduce:** `python tools/mutation_check.py --limit 300 --seed 1`
+What survived the retraction: the cost measurements (22 s regen, 3 s build), the
+NO-EFFECT classification and why it is necessary, and the boundary-suite detections
+(those required regen to SUCCEED, so they were always real). What did not: everything
+the run said about self-hosting, withdrawn entirely rather than weakened.
 
 **B2 · Real coverage measurement — spike first, commit second.** Determine whether we can
 get branch coverage of the compiler on Windows (Zig's fuzz instrumentation, kcov under
