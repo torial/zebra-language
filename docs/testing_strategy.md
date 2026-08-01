@@ -182,8 +182,47 @@ its own bugs were caught by that baseline check — a worktree that could not bu
 detector silently broken by WSL path translation, either of which would have produced a
 confident, meaningless score.
 
-**300-MUTANT RUN, 2026-08-01 (1.7 h, median 16 s/mutant). The headline number is real
-but nearly vacuous, and the breakdown is the actual finding.**
+**⚠ RETRACTED 2026-08-01 — THE 300-MUTANT RUN BELOW IS INVALID. Read this first.**
+
+The run reported *"241 of 300 detected by regen — the bootstrap refused to compile the
+mutant"*, and I drew a confident conclusion from it: that self-hosting is a powerful
+unremarked safety net, four in five perturbations being fatal to the compiler's own
+regeneration. **That conclusion was wrong, and the data behind it was manufactured by a
+bug in the harness.**
+
+The harness restored the mutated source after each mutant with
+
+    src.write_text(original, encoding="utf-8")      # no newline="\n"
+
+On Windows Python rewrites that file with **CRLF**, and the Zebra tokenizer rejects a
+lone `\r` — `error: unexpected '\r' (CRLF line endings — convert to LF)`. So mutant 1
+restored, corrupted `CodeGen.zbr`, and **every later regen failed for that reason
+alone**. The harness scored each as "the bootstrap refused this mutant". Running those
+same mutants by hand, the bootstrap emits them without complaint.
+
+The apply site had `newline="\n"`. The restore site did not. CLAUDE.md documents this
+trap in a section of its own, which did not prevent it.
+
+**The tell I had and ignored:** regen "detections" completed in ~20 s while every other
+outcome took 45–270 s. A detection that is *faster than the work it claims to have done*
+deserves a look. It is the same shape as the two earlier harness bugs the baseline check
+caught (a worktree that could not build; a detector broken by WSL path translation) —
+all three produce confident results from an instrument that is not measuring.
+
+**What survives the retraction:**
+
+* the cost measurements (22 s regen, 3 s build) — unaffected, independently verified;
+* the NO-EFFECT classification and why it is necessary — unaffected;
+* that 15 mutations were caught by the A3 boundary suite — those required regen to
+  SUCCEED, so they are real detections;
+* **nothing about self-hosting.** That claim is withdrawn entirely, not weakened.
+
+The corrected run is below the retracted block.
+
+---
+
+**RETRACTED — 300-MUTANT RUN, 2026-08-01 (1.7 h, median 16 s/mutant). Kept for the
+record because the failure is more instructive than the result would have been.**
 
 ```
 mutants: 300   detected: 256   survived: 0   no-effect: 44
@@ -201,11 +240,12 @@ measured the **self-hosting property**, not the test suite.
 
 **Three things worth keeping from that:**
 
-1. **Self-hosting is doing enormous, largely unremarked defensive work.** Four in five
-   random perturbations of CodeGen/TypeChecker are fatal to the compiler's own
-   regeneration. That is a safety net nobody designed as one, and it is far stronger
-   than any gate here. It is also the strongest argument yet for finishing the
-   self-hosting effort rather than keeping a Zig fallback indefinitely.
+1. ~~**Self-hosting is doing enormous, largely unremarked defensive work.**~~
+   **WITHDRAWN.** The 241 "regen refusals" were a CRLF bug in the harness, not the
+   bootstrap rejecting anything. Nothing in this run says anything about self-hosting
+   as a safety net, in either direction. Establishing that would need a run where the
+   source is not being corrupted between mutants — which is what the corrected harness
+   now does.
 
 2. **The gate measurement rests on n=15, not n=300.** 15/15 caught is encouraging and
    is *not* the "our gates catch N%" number the plan wanted. The confidence interval on
