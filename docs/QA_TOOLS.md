@@ -30,6 +30,15 @@ tool is sufficient — each has a blind spot the next one covers:
 | Inference | `check_inference_guess.sh` | no type-dispatch site emits a **guess** Zig might reject | narrow — one bug class |
 | Feature | `fmt_safety.py`, `lsp_*_smoke` | one subsystem behaves + preserves semantics | scoped to that subsystem |
 | Style/discipline | `check_explicit_try.sh`, `escape_hatches_check.sh` | corpus stays on the intended idiom / memory model | prevents regressions, not new bugs |
+| Intent | `boundary_check.sh` | edge cases behave as the language INTENDS (written from intent, not recorded) | only the 20 probes written so far |
+| **The tools themselves** | `hazard_lint.py` | our own scripts do not carry the hazards that have already produced wrong numbers | text patterns only; a NEW hazard class needs a receipt first |
+| **The docs** | `doc_lint.py` | the docs' *checkable* references still resolve | cannot check prose claims, counts, or anything inferred from a gate's silence |
+| **The gates** | `gate_selfcheck.sh` | every covered gate demonstrably FAILS on a planted defect | lists what it cannot cheaply falsify |
+
+There is a row above the others in importance, and it is the last three. Everything else
+in this table answers *"is the compiler right?"*. Those answer *"is the thing that told
+you the compiler is right actually looking?"* — and in this repo, that question has had
+the more embarrassing answers. See [`testing_strategy.md`](testing_strategy.md) §3b.
 
 The single most important idea: **the round-trip gate structurally cannot catch a
 bug that only manifests on user-code shapes absent from the compiler's own
