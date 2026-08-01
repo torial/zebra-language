@@ -85,15 +85,15 @@ fi
 
 # ── 2. orphaned compilers holding locks ──────────────────────────────────────
 orph=0
-for p in zebra.exe zebra-bootstrap.exe zebra-selfhost.exe zebra-selfhost-B.exe zig.exe; do
-    n=$(tasklist //FI "IMAGENAME eq $p" 2>/dev/null | grep -c "$p" || true)
-    if [[ "$n" -gt 0 ]]; then
-        orph=$((orph + n))
-        if [[ $FIX -eq 1 ]]; then
-            taskkill //F //IM "$p" >/dev/null 2>&1 && printf '           killed %s x%s\n' "$p" "$n"
-        fi
-    fi
-done
+# Counting and killing are both scoped to THIS tree. The old code counted every
+# zebra.exe/zig.exe on the machine and, under --fix, killed them all — which on
+# 2026-08-01 meant a mutation run in a sibling worktree and the shared zvm zig.exe.
+# A process in another checkout is not an orphan of ours and is not a reason to
+# call this tree untrustworthy.
+orph_out=$(bash "$SCRIPT_DIR/kill_orphans.sh" $([[ $FIX -eq 1 ]] || echo --count) 2>/dev/null)
+orph=$(echo "$orph_out" | grep -c "killed orphaned\|would kill" || true)
+echo "$orph_out" | grep "leaving alone" | sed 's/^/           /' || true
+[[ $FIX -eq 1 ]] && echo "$orph_out" | grep "killed orphaned" | sed 's/^/          /' || true
 if [[ $orph -gt 0 ]]; then
     if [[ $FIX -eq 1 ]]; then
         ok "cleared $orph orphaned compiler process(es)"

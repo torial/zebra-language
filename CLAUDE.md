@@ -61,6 +61,7 @@ bash tools/doctor.sh           # is this tree in a state where results can be TR
 bash tools/doctor.sh --fix     # ...and clear what is safely clearable
 bash tools/rebuild.sh          # make a selfhost/*.zbr edit REAL (regen + build)
 bash tools/rebuild.sh --no-regen   # build only (no .zbr changed)
+bash tools/rebuild.sh --module CodeGen   # THE INNER LOOP: regen ONE module + build, ~10s
 bash tools/gates.sh            # QUICK tier (~6 min): lints + smoke + round-trip
 bash tools/gates.sh --full     # FULL tier (~50 min): + compile_check, full_sweep, divergence
 bash tools/gates.sh --list     # what each tier runs and what it cannot see
@@ -85,6 +86,34 @@ distinct traps, one at each end:
   2026-07-28: a preamble edit followed by `rebuild.sh` reported OK and changed zero
   generated files. The order is `zig build` → regen → `zig build`; `rebuild.sh` now
   does the leading build itself when a preamble file is newer than the binary.
+
+**`--module NAME` is the inner loop, and it is ~10 s against several minutes.** The full
+regen re-emits every selfhost module and rebuilds the intermediate compilers first; when
+you have edited one `.zbr` and want to see whether the change took, that is almost all
+waste. It is sound because the regeneration is done by the **bootstrap**, whose output for
+the other modules your edit cannot have changed — verified by regenerating an untouched
+module and getting a byte-identical file. (Extracted from `mutation_check.py`'s `regen()`,
+which had already run this path thousands of times; two details carried over deliberately —
+redirect to a **file**, never a pipe, and check the emit header is actually present rather
+than trusting `rc=0`.)
+
+What it does **not** do is prove the regenerated set is self-consistent — only the full
+`rebuild.sh` runs the round-trip. So `--module` is for the edit/see/edit loop, and the full
+sequence before gating or committing. It **refuses** if a `selfhost/*.zbr` is modified and
+not named in `--module` (`--force` overrides): regenerating a subset leaves the tree
+half-updated, and every gate downstream then measures a compiler that is partly old.
+
+**Orphan-killing is scoped to this tree (`tools/kill_orphans.sh`), and that matters more
+than it sounds.** `rebuild.sh` and `doctor.sh --fix` used to run `taskkill //F //IM
+zebra.exe` — machine-wide. On 2026-08-01 that killed a mutation run's bootstrap in the
+sibling worktree, mid-mutant, from a `rebuild.sh` in the main checkout. The victim of such
+a kill does not see "someone killed me"; it sees a regeneration that failed for no visible
+reason, and a harness scores that as a *result*. This repo regularly has two agents working
+in it at once, plus isolated worktrees whose entire purpose is not to be affected from
+outside. The lock being cleared (`AccessDenied` on `zig-out/bin`) is only ever held by a
+process running from *this* tree, so path-scoping loses nothing — and the tool now prints
+what it is leaving alone, because silence is what made the old behaviour look like an
+unrelated failure.
 
 `doctor.sh` checks the failure modes this environment actually produces, every one of
 which has bitten us: **stale generated `.zig`** (you would be testing the OLD compiler —

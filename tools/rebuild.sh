@@ -27,8 +27,21 @@
 #
 # Encoding the sequence once beats remembering it every time.
 #
-#   bash tools/rebuild.sh            # regen + build
-#   bash tools/rebuild.sh --no-regen # build only (for a .zig / preamble edit)
+#   bash tools/rebuild.sh                    # regen + build (all modules)
+#   bash tools/rebuild.sh --no-regen         # build only (for a .zig / preamble edit)
+#   bash tools/rebuild.sh --module CodeGen   # regen ONE module + build  (the inner loop)
+#
+# --module is the fast inner loop: ~25 s against several minutes, because the full regen
+# re-emits every selfhost module and rebuilds the intermediate compilers first. It is
+# sound for the common case (you edited one .zbr) because the regeneration is done by the
+# BOOTSTRAP, whose output for the other modules your edit cannot have changed.
+#
+# The footgun it guards is not speed, it is SCOPE: editing two modules and regenerating
+# one leaves the tree half-updated, and every gate downstream then measures a compiler
+# that is partly old. So --module compares its argument against the .zbr files actually
+# modified in the working tree and REFUSES if any changed module was left out. `--force`
+# overrides, for the case where an unrelated .zbr has long-standing uncommitted work in it
+# (a parallel session, a WIP experiment).
 #
 # NOTE: a `selfhost/stdlib_preamble.zig` edit needs the FULL sequence too. The
 # preamble is inlined into each emitted program at emit time, so the compiler
@@ -46,7 +59,21 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO"
 
 REGEN=1
-[[ "${1:-}" == "--no-regen" ]] && REGEN=0
+MODULES=""
+FORCE=0
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --no-regen) REGEN=0 ;;
+        --module)   MODULES="${MODULES}${MODULES:+ }${2:?--module needs a module name, e.g. CodeGen}"; shift ;;
+        --module=*) MODULES="${MODULES}${MODULES:+ }${1#--module=}" ;;
+        --force)    FORCE=1 ;;
+        -h|--help)
+            echo "usage: $0 [--no-regen] [--module NAME]... [--force]" >&2
+            exit 0 ;;
+        *) echo "rebuild: unknown argument '$1'" >&2; exit 2 ;;
+    esac
+    shift
+done
 
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 
@@ -58,11 +85,12 @@ bash "$SCRIPT_DIR/sysload.sh" 2>/dev/null || echo "(sysload unavailable)"
 
 # Footgun 3: an orphaned compiler from a killed/timed-out run holds a lock on
 # zig-out/bin and the install step fails with AccessDenied.
-step "clearing orphaned processes"
-for p in zebra.exe zebra-bootstrap.exe zebra-selfhost.exe zebra-selfhost-B.exe; do
-    taskkill //F //IM "$p" >/dev/null 2>&1 && echo "  killed orphaned $p"
-done
-true
+step "clearing orphaned processes (this tree only)"
+# Was `taskkill //F //IM zebra.exe` — MACHINE-WIDE, and it killed a mutation run's
+# bootstrap in the sibling worktree on 2026-08-01, mid-mutant. The victim scores that as
+# "regeneration failed", i.e. as a RESULT. The lock this clears is only ever held by a
+# process running from THIS tree, so path-scoping loses nothing. See tools/kill_orphans.sh.
+bash "$SCRIPT_DIR/kill_orphans.sh" || true
 
 if [[ $REGEN -eq 1 ]]; then
     # Footgun 4: the regen below runs zebra-bootstrap.exe, and build.zig EMBEDS
@@ -83,6 +111,64 @@ if [[ $REGEN -eq 1 ]]; then
         fi
     done
 
+    if [[ -n "$MODULES" ]]; then
+        # ---- single-module regen -------------------------------------------------
+        # Extracted from tools/mutation_check.py's regen(), which has run this path
+        # thousands of times. Two details are load-bearing and both are documented there:
+        #   * redirect to a FILE, never a pipe. The bootstrap's emit is large and a
+        #     blocked pipe looks exactly like a compiler that refused the input — that
+        #     confusion produced 80% of a published, later-retracted result.
+        #   * the emitted text is written with LF only. Python is not the only thing that
+        #     can put a CR in a .zig; be explicit anyway.
+        BOOT=zig-out/bin/zebra-bootstrap.exe
+        [[ -x "$BOOT" ]] || fail "$BOOT missing — run a full 'bash tools/rebuild.sh' first"
+
+        # SCOPE CHECK. A half-regenerated tree is the failure this guards.
+        if [[ $FORCE -eq 0 ]]; then
+            changed=$( { git diff --name-only -- 'selfhost/*.zbr'
+                         git diff --name-only --cached -- 'selfhost/*.zbr'
+                         git ls-files --others --exclude-standard -- 'selfhost/*.zbr'
+                       } | sort -u )
+            missing=""
+            for c in $changed; do
+                base="$(basename "$c" .zbr)"
+                echo " $MODULES " | grep -qF " $base " || missing="$missing $base"
+            done
+            if [[ -n "$missing" ]]; then
+                echo
+                printf '\033[31mrebuild: these selfhost modules are MODIFIED but not in --module:\033[0m\n' >&2
+                for m in $missing; do echo "    $m" >&2; done
+                echo >&2
+                echo "  Regenerating a subset would leave selfhost/*.zig half-updated, and every" >&2
+                echo "  gate downstream would then measure a compiler that is partly old." >&2
+                echo "  Either add them (--module NAME each), run the full 'bash tools/rebuild.sh'," >&2
+                echo "  or pass --force if their changes are unrelated to what you are testing." >&2
+                exit 1
+            fi
+        fi
+
+        for m in $MODULES; do
+            [[ -f "selfhost/$m.zbr" ]] || fail "selfhost/$m.zbr does not exist"
+            step "regenerating selfhost/$m.zig via the bootstrap (regen authority)"
+            tmp="$(mktemp)"
+            if ! "$BOOT" --emit-zig "selfhost/$m.zbr" > "$tmp" 2>/tmp/_rebuild_mod_err; then
+                tail -5 /tmp/_rebuild_mod_err >&2
+                rm -f "$tmp"
+                fail "the bootstrap refused selfhost/$m.zbr — selfhost/$m.zig left untouched"
+            fi
+            # The bootstrap prints progress chatter before the emitted source; the header
+            # is where the actual Zig starts. Its ABSENCE with rc=0 is the silent-failure
+            # case, so it is checked rather than assumed.
+            if ! grep -qF "// Generated by" "$tmp"; then
+                rm -f "$tmp"
+                fail "the bootstrap emitted no source for $m despite rc=0 — refusing to write a truncated selfhost/$m.zig"
+            fi
+            sed -n '/\/\/ Generated by/,$p' "$tmp" | tr -d '\r' > "selfhost/$m.zig"
+            rm -f "$tmp"
+            echo "  selfhost/$m.zig  ($(wc -l < "selfhost/$m.zig") lines)"
+        done
+    else
+
     # Footgun 2: stale state from a killed run.
     step "clearing stale /tmp/bs-zig"
     rm -rf /tmp/bs-zig
@@ -91,6 +177,7 @@ if [[ $REGEN -eq 1 ]]; then
     step "regenerating selfhost/*.zig via the bootstrap (regen authority)"
     if ! bash "$SCRIPT_DIR/bootstrap_check.sh" --update 2>&1 | tail -3; then
         fail "regeneration failed — selfhost/*.zig was restored from the pre-run snapshot"
+    fi
     fi
 fi
 
@@ -133,5 +220,15 @@ if [[ -x zig-out/bin/zebra.exe ]]; then
 fi
 
 echo
+if [[ -n "$MODULES" ]]; then
+    echo
+    echo "rebuild: OK (single-module: $MODULES)"
+    echo "  This is the inner loop. Before gating or committing, run the FULL"
+    echo "  'bash tools/rebuild.sh' — the round-trip check it performs is the only thing"
+    echo "  that proves the regenerated set is self-consistent."
+    echo "  (environment check: bash tools/doctor.sh)"
+    exit 0
+fi
+
 echo "rebuild: OK — now run a gate:  bash tools/gates.sh"
 echo "            (environment check: bash tools/doctor.sh)"
