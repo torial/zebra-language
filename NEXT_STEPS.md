@@ -451,6 +451,26 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   never executed in any run. Postmortems in `docs/testing_strategy.md` §B1 and §3b.
   Harness now refuses to start on a blind fingerprint AND verifies per-mutant that the
   text at the coordinates is what the site claimed.
+  **FIRST VALID RUN 2026-08-01** (5 mutants, seed 7): 2 detected by smoke, **3 SURVIVORS**,
+  0 no-effect — the SURVIVED path and `smoke` both reached for the first time, after the
+  fingerprint was widened to include `selfhost/CodeGen.zbr`. Cost rose to ~370 s/mutant
+  (60 mutants ≈ 6 h). Survivors and their corroboration are in
+  `docs/testing_strategy.md` §B1; follow-ups are the two items directly below.
+  **"Gates caught 40%" is not a coverage figure — do not quote it.** `--site FILE:LINE`
+  re-runs one mutation, which is how a new test is PROVEN to kill a survivor.
+- [ ] **B1 survivor follow-ups — two concrete items, from the first valid run
+  (2026-08-01).** Survivor 1 is closed (`test/boundary/bv_list_literal_inferred.zbr`,
+  verified to kill the mutant via `--site`). These two are open:
+  - [ ] **`selfhost/CodeGen.zbr:11166` — the bare-`HashMap()`/`StrSet()` branch looks
+    REDUNDANT.** Mutating `c.args.len == 0` → `== 1` disables the special case, and
+    **twelve corpus files use bare `HashMap()` without any of them breaking**. So
+    something downstream already handles the shape. This is a dead-code question, not a
+    coverage one: find what handles it, and either delete the branch or document why both
+    exist. (Do NOT just add a test — a test would pin behaviour that may be duplicated.)
+  - [ ] **`selfhost/CodeGen.zbr:15893` — `Uri.parse` argument emission is untested.**
+    Mutating `args.len > 0` → `> 1` makes `Uri.parse(x)` emit `_uri_parse()` with no
+    argument, and nothing noticed; one corpus file mentions `Uri.parse` at all. Needs a
+    run-and-compare fixture, not just a compile check.
 - [ ] **B1 v2 — a design change, not more samples.** The cost that matters is **per LIVE
   mutant (~310 s)**, not per mutant. Two fixes: (a) sample until N *live* mutants rather
   than N total; (b) bias site selection toward code the corpus demonstrably executes, or
