@@ -270,7 +270,7 @@ the same claim as "that code is exercised."**
 
 `test/boundary/bv_list_literal_inferred.zbr` now covers it — expectations authored from
 QUICKSTART before running, per the A3 discipline, and passing first time, so the compiler
-was right and the hole was purely in what we were asking it. *(Verification of whether the probe actually kills this mutant was in flight when this was written — `--site selfhost/CodeGen.zbr:9714`.)*
+was right and the hole was purely in what we were asking it. **Verified rather than assumed:** re-running that exact mutation with `--site selfhost/CodeGen.zbr:9714` now reports **DETECTED by boundary** (103 s). The probe kills the mutant. That is the full cycle working end to end for the first time — a survivor found, a test written, and the test *proven* to close it rather than assumed to.
 
 **What this run does *not* establish.** Five mutants is five mutants. "Gates caught 40%"
 is not a coverage figure and should not be quoted as one; the three survivors are findings
