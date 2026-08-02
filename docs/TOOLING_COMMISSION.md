@@ -136,6 +136,47 @@ The new gates are not taken on trust:
   reason to trust a clean report from it, and it had never been exercised;
 * doc-lint catches a planted dangling tool reference.
 
+### Round 2 — correctness, then scanning cost (2026-08-01, same day)
+
+**`tools/corpus_ls.sh` — the corpus is what git TRACKS.** Four gates enumerated with a
+filesystem glob, so their results depended on untracked scratch. Live instance:
+`examples/zz_red_main.zbr` in a directory `full_sweep --examples --gate` sweeps (tracked
+21, glob 22). The worst site was `bug_fixture_check.py`, where an untracked
+`test/bug<N>_*.zbr` could turn the gate **GREEN** by appearing to supply a fixture nobody
+else has — the sweeps could only add noise, that one could hide debt. `gate_selfcheck`
+carries the inverse of its usual leg: plant an untracked file and require it to be
+**ignored**, having first confirmed a glob *would* have seen it.
+
+**`tools/tidy.sh`** reports strays; `--clean` removes **only** known-scratch patterns and
+lists everything else. An untracked `.zbr` might be an abandoned probe or a fixture
+someone is three minutes from committing — the tool cannot tell, so it does not guess. A
+cleanup tool that deletes unfinished work once will never be run again.
+
+**D6, the count oracle** — `<!-- doc-gen: 12 = grep -c '^run "' tools/gates.sh -->`.
+Counts rot because a bare number has no referent; three rotted in one day. **It found a
+vacuous check on its first use:** the oracle said 12 gates while D3's parser said 13, and
+that one-digit disagreement exposed D3's regex as `[a-z0-9\-]+` — no underscore — so
+`compile_check`, `output_sweep`, `full_sweep`, `examples_sweep` and `compile_check-inline`
+had been exempt from the "is this documented?" check while D3 reported clean. Five of
+eighteen. It has since caught two more counts on the day they were written, one of them in
+this file.
+
+**D7, `<!-- doc-status: ... -->` on line 1 of every document.** `live` / `historical` /
+`design` / `generated`. **12 of 44 are `historical` or `generated`** — skippable with
+confidence rather than by guess. It also replaced `doc_lint`'s hardcoded list of four
+archival filenames, which was itself the hazard it guarded against: it would have gone
+silently wrong the first time someone added an append-only document.
+
+**`tools/attic/`** — five finished one-shot migrations out of `tools/`, dropping the scan
+surface 58 → 53. Criteria checked rather than assumed; two scripts that *looked* retired
+stayed, because a live citation outranks a retired-sounding name.
+
+**The round's own receipt.** Three of these changes were caught being wrong by the others,
+within minutes, without my noticing unaided: `hazard_lint` H2 flagged a bare `bash` in
+D6's own subprocess call; D6 flagged the first version of D7's count; and `doc_lint` D1
+flagged four paths broken by the attic move. That is the tools working on their author,
+which is the only test of this approach that means anything.
+
 ---
 
 ## 3. Decisions a maintainer should know about
