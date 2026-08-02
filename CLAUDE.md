@@ -453,7 +453,7 @@ than "what do we know":
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 58 scripts | <!-- doc-gen: 58 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 53 scripts | <!-- doc-gen: 53 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 44 documents | <!-- doc-gen: 44 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
 
 The last row is the one that keeps the rest honest; see its header for why.

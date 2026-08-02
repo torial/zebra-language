@@ -1,6 +1,10 @@
 <!-- doc-status: live -->
 # Zebra — Scripting Tools Catalog
 
+> Entries under `tools/attic/` are **finished one-shot migrations** — kept as the
+> executable record of a change the corpus went through, never run again. See
+> [`../tools/attic/README.md`](../tools/attic/README.md) for the criteria.
+
 All scripts written in service of the Zebra compiler, book, or toolchain.
 Python is the interim language; Zebra is the target once the readiness gate
 (see bottom of this file) is met.
@@ -54,7 +58,7 @@ runs automatically on `git merge`.
 **Zebra port:** Needs `File.write` + `sys.run("chmod")`.
 `File.write` exists; `chmod` via `sys.run` would work.
 
-### `tools/branch_to_if_is.py` / `tools/branch_to_if_is.zbr`
+### `tools/attic/branch_to_if_is.py` / `tools/branch_to_if_is.zbr`
 **Language:** Python → ✅ Zebra port DONE 2026-05-08  
 **Purpose:** Converts single-arm `branch X on V as B … else pass` to the
 idiomatic `if X is V as B` form.  Multi-line state machine: tracks indentation,
@@ -65,7 +69,7 @@ old branch style.  Skips `as _` discard bindings (Zig 0.15 rejects `_` as an id)
 avoids method chaining on `List.at()` returns (uses temp vars).  Applied 1
 conversion to `selfhost/codegen.zbr` on first run.
 
-### `tools/migrate_colon_syntax.py` / `tools/migrate_colon_syntax.zbr`
+### `tools/attic/migrate_colon_syntax.py` / `tools/migrate_colon_syntax.zbr`
 **Language:** Python → ✅ Zebra port DONE 2026-05-08  
 **Purpose:** Migrates `def name(params) as Type` annotation syntax to
 `def name(params): Type`.  Preserves `on X as y` branch bindings and
@@ -74,7 +78,7 @@ conversion to `selfhost/codegen.zbr` on first run.
 **Zebra port notes:** Splits on ` as `, replaces only when next char is uppercase
 or `^`/`!`/`?` — makes it safe for corpora that already have `if x as n` bindings.
 
-### `tools/sweep_class_main.py`
+### `tools/attic/sweep_class_main.py`
 **Language:** Python  
 **Purpose:** Converts `class Main { static { def main ... } }` to top-level
 `def main()`.  Lifts all static helper methods; rewrites `Main.helper(` calls.
@@ -111,7 +115,7 @@ implemented in Zebra, this logic can be ported directly."
 These operate on `C:/Projects/zebra-language-book/` (the companion book repo).
 Paths are hard-coded to that root; adjust if the book repo moves.
 
-### `tools/book_deindent_main.py`
+### `tools/attic/book_deindent_main.py`
 **Language:** Python  
 **Origin:** `C:/tmp/deindent_main.py`  
 **Purpose:** In book markdown, fixes `def main()` body indentation inside
