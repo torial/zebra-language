@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Compiler Workflow — Steps and Gotchas
 
 A reference for doing compiler fixes and feature additions in the Zebra

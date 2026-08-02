@@ -1,3 +1,4 @@
+<!-- doc-status: historical -->
 # Full-corpus sweep triage (2026-07-24)
 
 The independent witness (`compile_check.sh`) only checks the ~210 smoke-registered

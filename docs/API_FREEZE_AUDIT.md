@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Stdlib API freeze-regret audit
 
 *Drafted 2026-06-24, ahead of the 1.0 API freeze. The freeze rule is "add but

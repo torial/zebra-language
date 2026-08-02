@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Language-feature coverage & the risk surface
 
 *Where the QA net has holes. Started 2026-07-12. This is the map of which language

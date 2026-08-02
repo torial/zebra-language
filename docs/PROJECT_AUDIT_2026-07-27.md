@@ -1,3 +1,4 @@
+<!-- doc-status: historical -->
 # Four-Project Audit — Zebra, Book, libui-ng fork, GameEngine
 
 **Date:** 2026-07-27

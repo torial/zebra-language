@@ -1,3 +1,4 @@
+<!-- doc-status: design -->
 # Dynamic-language interop in Zebra
 
 Status: **`Reflect.hostKind` shipped (2026-06-19); runtime-dynamic layer designed, deferred.**

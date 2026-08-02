@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Zebra → 1.0: a clear-eyed roadmap
 
 *Drafted 2026-06-23. A strategy view, not a feature list — `NEXT_STEPS.md`

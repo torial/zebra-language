@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Boundary-value suite — method, findings, and what is deliberately not covered
 
 *Tier A3 of `docs/testing_strategy.md`. Probes live in `test/boundary/`, runner is

@@ -21,6 +21,7 @@ WHAT IT CHECKS
   D4  a BUG-NNN cited in the docs exists in BUGS.md
   D5  a fenced `bash`/`sh` block invoking `tools/...` names a script that exists
   D6  a number carrying a `<!-- doc-gen: N = <command> -->` oracle still equals N
+  D7  every document declares `<!-- doc-status: live|historical|design|generated -->`
 
 Suppress a deliberate reference to something that does not exist -- a PROPOSED tool, a
 historical note -- with `<!-- doc-lint-ok: <reason> -->` on the same line. A reason is
@@ -76,15 +77,43 @@ IGNORE_PREFIX = ("test/boundary/bv_",)   # probes are enumerated by the runner, 
 # reference, and flagging it teaches people to ignore the tool.
 PLACEHOLDER_STEMS = {"foo", "bar", "baz", "qux", "x", "y", "n", "name", "file", "module"}
 
-# APPEND-ONLY RECORDS. A bug entry from March that cites a tool deleted in June is not
-# stale -- it is an accurate record of what was true when it was written, and "fixing" it
-# would be falsifying history. Findings here are reported as INFO and do not fail the
-# gate. Everything else is a LIVE document, where a dangling reference is a defect.
-HISTORICAL = {"BUGS.md", "BUGS_FIXED.md", "SELFHOST_JOURNAL.md", "CHANGELOG.md"}
+# EVERY DOCUMENT DECLARES WHAT IT IS, on line 1:
+#
+#     <!-- doc-status: live | historical | design | generated -->
+#
+#   live       describes CURRENT state; trust it, and keep it true
+#   historical append-only record or dated snapshot; accurate as of its entries. A March
+#              bug entry citing a tool deleted in June is not stale -- "fixing" it would
+#              falsify the record. Findings are reported as INFO, not gated.
+#   design     a design/decision note; may describe INTENT that is not built. Each
+#              carries its own Status: line saying where it got to.
+#   generated  produced by a tool -- edit the tool, not the file.
+#
+# This replaced a hardcoded list of four filenames. That list was itself the hazard it was
+# guarding against: it would have gone silently wrong the first time someone added an
+# append-only document, and nothing would have said so. A declaration cannot drift out of
+# sync with the file it is written in.
+#
+# The point for a reader arriving cold: `historical` and `generated` can be SKIPPED with
+# confidence rather than by guess -- roughly a quarter of this repo's documentation.
+DOC_STATUS = re.compile(r"<!--\s*doc-status:\s*(live|historical|design|generated)\s*-->")
+VALID_STATUS = ("live", "historical", "design", "generated")
 
 
-def is_historical(rel):
-    return rel in HISTORICAL or rel.startswith("docs/PROJECT_AUDIT_")
+def status_of(text):
+    m = DOC_STATUS.search(text[:400])
+    return m.group(1) if m else None
+
+
+def check_status(path, text):
+    """D7 -- every scanned document declares what it is."""
+    rel = path.relative_to(REPO).as_posix()
+    if status_of(text) is None:
+        return [Finding("D7", rel, 1,
+                        "no `<!-- doc-status: ... -->` on line 1. A reader arriving cold "
+                        f"cannot tell whether to trust this file. One of: "
+                        f"{', '.join(VALID_STATUS)}")]
+    return []
 
 
 class Finding:
@@ -237,11 +266,15 @@ def check_gen(path, text):
 # --------------------------------------------------------------- positive controls
 # Same discipline as tools/hazard_lint.py: a checker that has stopped checking must not
 # look like a checker that found nothing.
+# Each control carries a valid doc-status so it exercises ONE check, except D7's, whose
+# defect IS the missing marker.
+_OK = "<!-- doc-status: live -->\n"
 CONTROLS = {
-    "D1": "see `tools/definitely_not_a_real_tool.sh` for details\n",
-    "D2": "described in `docs/definitely_not_a_real_doc.md`\n",
-    "D4": "this was fixed in BUG-9997\n",
-    "D6": "There are 99 gates <!-- doc-gen: 99 = echo 3 -->\n",
+    "D1": _OK + "see `tools/definitely_not_a_real_tool.sh` for details\n",
+    "D2": _OK + "described in `docs/definitely_not_a_real_doc.md`\n",
+    "D4": _OK + "this was fixed in BUG-9997\n",
+    "D6": _OK + "There are 99 gates <!-- doc-gen: 99 = echo 3 -->\n",
+    "D7": "# A document with no status marker at all\n",
 }
 
 
@@ -250,7 +283,8 @@ def selftest(verbose=False):
     known = {"1"}
     for code, text in CONTROLS.items():
         fake = REPO / "CONTROL.md"
-        hits = check_refs(fake, text) + check_bugs(fake, text, known) + check_gen(fake, text)
+        hits = (check_refs(fake, text) + check_bugs(fake, text, known)
+                + check_gen(fake, text) + check_status(fake, text))
         fired = {h.code for h in hits}
         if code not in fired:
             dead.add(code)
@@ -309,8 +343,15 @@ def main():
 
     hits = []
     files = docs()
+    archival = {}
     for f in files:
         text = f.read_text(encoding="utf-8", errors="replace")
+        # `historical` and `generated` are both "accurate for what they are" -- a stale
+        # reference in either is a fact about the past or about the generator, not a defect
+        # in the document.
+        archival[f.relative_to(REPO).as_posix()] = status_of(text) in ("historical",
+                                                                       "generated")
+        hits.extend(check_status(f, text))
         hits.extend(check_refs(f, text))
         hits.extend(check_bugs(f, text, known))
         hits.extend(check_gen(f, text))
@@ -324,16 +365,17 @@ def main():
         hits.extend(check_gen(f, f.read_text(encoding="utf-8", errors="replace")))
     hits.extend(check_gates(claude_text))
 
-    live = [h for h in hits if not is_historical(h.doc)]
-    hist = [h for h in hits if is_historical(h.doc)]
+    live = [h for h in hits if not archival.get(h.doc)]
+    hist = [h for h in hits if archival.get(h.doc)]
 
     for h in sorted(live, key=lambda h: (h.code, h.doc, h.line)):
         print(h)
     if hist:
-        print(f"\n  ({len(hist)} more in append-only records "
-              f"({', '.join(sorted(HISTORICAL))}, dated audits) -- NOT counted. A bug entry "
-              f"citing a tool deleted months later is accurate history, and rewriting it "
-              f"would be falsifying the record. `--all` lists them.)")
+        n_arch = sum(1 for v in archival.values() if v)
+        print(f"\n  ({len(hist)} more in the {n_arch} document(s) declaring "
+              f"doc-status: historical | generated -- NOT counted. A bug entry citing a "
+              f"tool deleted months later is accurate history, and rewriting it would be "
+              f"falsifying the record. `--all` lists them.)")
         if "--all" in argv:
             for h in sorted(hist, key=lambda h: (h.code, h.doc, h.line)):
                 print(f"    info {h}")

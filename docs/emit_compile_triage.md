@@ -1,3 +1,4 @@
+<!-- doc-status: historical -->
 # Emit compile-check triage — full-corpus independent-witness sweep (2026-07-16)
 
 **What this is.** A one-time broad sweep compiled EVERY `test/*.zbr` + `examples/*.zbr`

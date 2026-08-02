@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Zebra GUI — libui-ng Backend Quick Reference
 
 This document is agent-facing. It covers how to write Zebra programs that use

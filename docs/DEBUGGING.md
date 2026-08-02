@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Debugging Zebra programs
 
 Zebra ships a DAP (Debug Adapter Protocol) proxy in the `zebra debug` subcommand.

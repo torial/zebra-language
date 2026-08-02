@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Zebra — Scripting Tools Catalog
 
 All scripts written in service of the Zebra compiler, book, or toolchain.

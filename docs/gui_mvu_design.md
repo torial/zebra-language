@@ -1,3 +1,4 @@
+<!-- doc-status: design -->
 # GUI MVU Design Document
 
 Status: **both backends complete** — ZigZag TUI (2026-05-21) + libui-ng native (2026-05-22).

@@ -1,3 +1,4 @@
+<!-- doc-status: historical -->
 # Zebra — Changelog
 
 All notable changes to Zebra from 0.1 through the current 0.15 development

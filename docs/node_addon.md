@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Node.js native addons — `zebra --target node-addon`
 
 Compile a Zebra source file to a Node.js native addon (`.node`) plus a `.js`

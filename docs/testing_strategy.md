@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Testing strategy — adopting what works from SQLite
 
 *Written 2026-07-30, at Sean's request, after the behaviour-gate work. Premise he set:

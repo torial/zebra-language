@@ -1,3 +1,4 @@
+<!-- doc-status: design -->
 # `allocate` block — design document
 
 **Status:** All slices complete (Slices 1–4: 2026-05-12; Slice 5: 2026-05-17; Slice 6: 2026-05-17)  

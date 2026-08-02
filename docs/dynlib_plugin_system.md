@@ -1,3 +1,4 @@
+<!-- doc-status: design -->
 # DynLib Plugin System
 
 **Status:** Complete (2026-05-16). Both the bootstrap Zig compiler and the selfhost Zebra compiler emit correct code. Integration test `dynlib_iface_test` passes via `zig build test`.

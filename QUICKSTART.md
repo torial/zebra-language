@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Zebra Language Quick Reference
 
 This file is the **agent-facing quick reference** for the Zebra language (.zbr files).

@@ -1,3 +1,4 @@
+<!-- doc-status: design -->
 # Single-file emission — design note
 
 **Status:** design / spike complete, implementation not started (2026-07-21).

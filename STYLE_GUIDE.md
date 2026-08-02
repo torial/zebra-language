@@ -1,4 +1,5 @@
-﻿# Zebra Style Guide
+﻿<!-- doc-status: live -->
+# Zebra Style Guide
 
 > **Status:** canonical (promoted from `docs/STYLE_GUIDE_DRAFT.md` on <!-- doc-lint-ok: names the pre-promotion path; the file IS this one -->
 > 2026-05-05 after the Phase 13 sweep cluster shipped).  This file is the

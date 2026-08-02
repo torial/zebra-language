@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Verification & QA Tools — a field guide
 
 *How to prove a Zebra compiler change is correct, which tool proves what, and how

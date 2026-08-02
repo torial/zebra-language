@@ -1,3 +1,4 @@
+<!-- doc-status: historical -->
 # Error-experience audit (2026-06-22)
 
 A snapshot of what the **selfhost** compiler (`zebra.exe`) reports for the

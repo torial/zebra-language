@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Zebra Stdlib Roadmap — Batteries Included
 
 Decided 2026-04-10. Modules to implement in priority order, all backed by Zig stdlib.

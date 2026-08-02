@@ -1,3 +1,4 @@
+<!-- doc-status: design -->
 # Concurrency & allocation strategies — design research for §28j
 
 **Status:** research / direction-finding (2026-07-23). Not a commitment. Written to

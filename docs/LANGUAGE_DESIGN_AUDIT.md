@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Zebra language-design audit
 
 *Drafted 2026-06-24, pre-1.0. A critical eye on the language surface itself

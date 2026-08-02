@@ -1,3 +1,4 @@
+<!-- doc-status: historical -->
 # libui_ng GUI backend — verified-state audit
 
 **Date:** 2026-07-27  **Auditor:** Opus 4.8 (Claude Code)

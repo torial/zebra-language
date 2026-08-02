@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Zebra — Next Steps
 
 Authoritative priority queue for the project. **Update this file rather than

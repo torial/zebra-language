@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Zebra
 
 A programming language in the Python / Cobra / Eiffel family, with a Zig

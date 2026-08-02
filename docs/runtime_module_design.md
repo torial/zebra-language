@@ -1,3 +1,4 @@
+<!-- doc-status: design -->
 # Runtime module emission — design note (#1)
 
 **Status:** designed and **spiked end-to-end**; implementation not started.

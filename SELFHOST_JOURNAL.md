@@ -1,3 +1,4 @@
+<!-- doc-status: historical -->
 # Zebra Self-Hosting Journal
 
 The goal: write the Zebra compiler in Zebra. This file records qualitative observations

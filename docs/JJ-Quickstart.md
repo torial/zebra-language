@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # JJ Quickstart — Zebra project (jj 0.40+)
 
 Working notes for jj (Jujutsu) on the Zebra repo, written for both Sean and Claude. The

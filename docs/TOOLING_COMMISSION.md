@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Tooling commission — making this environment trustworthy to work in
 
 *Started 2026-08-01, at Sean's standing invitation to "rework all the tools /

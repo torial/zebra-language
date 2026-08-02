@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # CLAUDE.md
 
 Guidance for Claude Code (claude.ai/code) in this repository.
@@ -134,6 +135,28 @@ RENDERING, but startup is now covered** by `tools/gui_scaffold_check.sh` (BUG-22
 GUI crashes have sat under fully green gates, and all four were at *startup* — which
 needs neither a human nor a terminal to detect. Rendering, input, layout, resize and
 colours still require Sean running it.
+
+## Every document says what it is (read this before reading the docs)
+
+Line 1 of each `.md` carries `<!-- doc-status: ... -->`, one of four values. It exists so
+a session arriving cold can tell what to *skip* rather than guessing:
+
+| status | meaning | what to do |
+|---|---|---|
+| `live` | describes CURRENT state | trust it — and keep it true when you change things |
+| `historical` | append-only record or dated snapshot | **skip unless you want the history.** Accurate as of its entries; do NOT "fix" a stale reference — that falsifies the record |
+| `design` | a design/decision note | read only when touching that subsystem; may describe intent that is not built. Each carries its own `Status:` line |
+| `generated` | produced by a tool | **skip.** Edit the tool, not the file |
+
+**12 of the 44 documents are `historical` or `generated`** <!-- doc-gen: 12 = for f in *.md docs/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
+i.e. skippable with confidence. That is the point: the surface area of this repo's
+documentation is what let one wrong claim live in four files at once, and "which of these
+is current?" was previously answerable only by reading them.
+
+`doc_lint` D7 enforces the declaration, and its own archival-vs-live split now READS it.
+It used to hardcode four filenames — a list that was itself the hazard it guarded against,
+since it would have gone silently wrong the first time someone added an append-only
+document. A declaration cannot drift out of sync with the file it is written in.
 
 ## The corpus is what git TRACKS, not what is on disk
 

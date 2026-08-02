@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Walker discipline — structural lessons from the 2026-07-02 fuzz campaign
 
 Ten bugs were fixed in one day (BUG-159..168, two-faced BUG-166), all found

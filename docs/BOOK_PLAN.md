@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Zebra Book Plan — Master TOC and Gap Tracker
 
 Working document for the documentation effort. Each row tracks one chapter/section

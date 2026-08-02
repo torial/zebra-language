@@ -1,3 +1,4 @@
+<!-- doc-status: historical -->
 # Zebra Compiler — Fixed / Closed Bugs
 
 Bugs that have been resolved, implemented, or closed as "not reproduced".

@@ -1,3 +1,4 @@
+<!-- doc-status: historical -->
 # Compile-check status (emitted-Zig type-checking)
 
 *Started 2026-06-25. `tools/compile_check.sh` emits every positive-smoke test and

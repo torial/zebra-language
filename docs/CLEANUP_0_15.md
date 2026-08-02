@@ -1,3 +1,4 @@
+<!-- doc-status: live -->
 # Cleanup Tracker — Zebra 0.15
 
 This file tracks accumulated hacks, workarounds, and technical debt that should

@@ -1,3 +1,4 @@
+<!-- doc-status: historical -->
 # Selfhost ↔ bootstrap divergence audit (2026-07-18)
 
 **Tool:** `tools/divergence_check.sh` — the independent witness for *drift* between

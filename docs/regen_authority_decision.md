@@ -1,3 +1,4 @@
+<!-- doc-status: design -->
 # Decision: keep the bootstrap as the independent regen authority
 
 **Status:** accepted (2026-07-22)

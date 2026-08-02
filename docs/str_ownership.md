@@ -1,3 +1,4 @@
+<!-- doc-status: generated -->
 # `str` ownership per operation (§28e)
 
 **GENERATED** by `tools/str_ownership_extract.py` from real compiler emit — do not hand-edit. Regenerate after any change to string codegen; a flipped ownership shows up as a changed snippet.
