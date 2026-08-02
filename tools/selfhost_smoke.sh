@@ -88,7 +88,7 @@ smoke_gui_emit_contains() {
     local label; label="$(basename "$zbr" .zbr)_${backend}emit"
     local zig_out="$TMPDIR_OUT/$(basename "$zbr" .zbr).zig"
     if "$ZEBRA" --emit-zig --gui-backend="$backend" "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>&1; then
-        if grep -qF "$expected" "$zig_out" 2>/dev/null; then
+        if grep -qF -- "$expected" "$zig_out" 2>/dev/null; then
             echo "  PASS: $label"; PASS=$((PASS + 1))
         else
             echo "  FAIL: $label (emitted Zig lacks '$expected')" >&2; FAIL=$((FAIL + 1))
@@ -133,7 +133,7 @@ smoke_emit_contains() {
     label="$(basename "$zbr" .zbr)_emit"
     local zig_out="$TMPDIR_OUT/$(basename "$zbr" .zbr).zig"
     if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>&1; then
-        if grep -qF "$expected" "$zig_out"; then
+        if grep -qF -- "$expected" "$zig_out"; then
             echo "  PASS: $label"
             PASS=$((PASS + 1))
         else
@@ -155,7 +155,7 @@ smoke_warn() {
     local label
     label="$(basename "$zbr" .zbr)_warn"
     if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
-        if grep -qF "$expected_msg" "$TMPDIR_OUT/smoke-err"; then
+        if grep -qF -- "$expected_msg" "$TMPDIR_OUT/smoke-err"; then
             echo "  PASS: $label"
             PASS=$((PASS + 1))
         else
@@ -182,7 +182,7 @@ smoke_run_fail() {
         echo "  FAIL: $label (expected failure, got exit 0)" >&2
         FAIL=$((FAIL + 1))
     else
-        if echo "$got" | grep -qF "$expected_msg" && ! echo "$got" | grep -q "\.zig:"; then
+        if echo "$got" | grep -qF -- "$expected_msg" && ! echo "$got" | grep -q "\.zig:"; then
             echo "  PASS: $label"
             PASS=$((PASS + 1))
         else
@@ -203,7 +203,7 @@ smoke_tc_fail() {
         echo "  FAIL: $label (expected TC failure, got exit 0)" >&2
         FAIL=$((FAIL + 1))
     else
-        if grep -qF "$expected_msg" "$TMPDIR_OUT/smoke-err"; then
+        if grep -qF -- "$expected_msg" "$TMPDIR_OUT/smoke-err"; then
             echo "  PASS: $label"
             PASS=$((PASS + 1))
         else
@@ -229,11 +229,11 @@ smoke_multi_parse_fail() {
         FAIL=$((FAIL + 1))
     else
         local ok=1
-        if ! grep -qF "$expected1" "$TMPDIR_OUT/smoke-err"; then
+        if ! grep -qF -- "$expected1" "$TMPDIR_OUT/smoke-err"; then
             echo "  FAIL: $label (first parse error missing: $expected1)" >&2
             ok=0
         fi
-        if ! grep -qF "$expected2" "$TMPDIR_OUT/smoke-err"; then
+        if ! grep -qF -- "$expected2" "$TMPDIR_OUT/smoke-err"; then
             echo "  FAIL: $label (second parse error missing: $expected2)" >&2
             ok=0
         fi
@@ -541,7 +541,7 @@ smoke_run() {
     label="$(basename "$zbr" .zbr)_run"
     local got
     if got=$("$ZEBRA" "$zbr" 2>&1); then
-        if echo "$got" | grep -qF "$expected"; then
+        if echo "$got" | grep -qF -- "$expected"; then
             echo "  PASS: $label"
             PASS=$((PASS + 1))
         else
@@ -563,7 +563,7 @@ smoke_run_bootstrap() {
     label="$(basename "$zbr" .zbr)_run"
     local got
     if got=$("$BOOTSTRAP" "$zbr" 2>&1); then
-        if echo "$got" | grep -qF "$expected"; then
+        if echo "$got" | grep -qF -- "$expected"; then
             echo "  PASS: $label"
             PASS=$((PASS + 1))
         else
