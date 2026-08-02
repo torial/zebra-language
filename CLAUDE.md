@@ -271,7 +271,8 @@ bash tools/runtime_module_check.sh # THE ONLY GATE THAT RUNS EMITTED OUTPUT: sma
                                 #   default, so this is the only one that would notice a silent
                                 #   revert. It deliberately passes NO flag where it can.
                                 #   Cheap → QUICK tier. Pair with:
-JOBS=3 bash tools/compile_check.sh --no-runtime-module  # the SAME corpus with the INLINE
+JOBS=3 bash tools/compile_check.sh --no-runtime-module  # gate label: `compile_check-inline`
+                                #   the SAME corpus with the INLINE
                                 #   runtime. Runtime-module emission is the DEFAULT as of
                                 #   2026-07-28, so the INLINE shape is the one that would
                                 #   otherwise go unwatched — and it stays live via the opt-out
@@ -352,7 +353,8 @@ bash tools/output_sweep.sh --gate  # THE BEHAVIOUR WITNESS — the only heavy ga
                                 #   Sequential by design (parallel fixtures interfere).
                                 #   --update-baseline to re-record, --only for a tight
                                 #   loop, --show to see what is being captured.
-JOBS=2 bash tools/full_sweep.sh --examples --gate  # A5 — THE SAME SWEEP OVER examples/.
+JOBS=2 bash tools/full_sweep.sh --examples --gate  # gate label: `examples_sweep`
+                                #   A5 — THE SAME SWEEP OVER examples/.
                                 #   Until 2026-07-30 NO gate touched examples/ at all: every
                                 #   heavy gate globs test/*.zbr. That was not theoretical —
                                 #   examples/widget_smoke.zbr SHIPPED BROKEN on BUG-230, and
@@ -428,8 +430,8 @@ than "what do we know":
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 55 scripts |
-| docs' checkable claims still resolve | `doc_lint` | 43 documents |
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 58 scripts | <!-- doc-gen: 58 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| docs' checkable claims still resolve | `doc_lint` | 44 documents | <!-- doc-gen: 44 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
 

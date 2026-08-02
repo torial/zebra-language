@@ -140,13 +140,40 @@ def check_h1(path, text, lines, tree):
 # detected.  Caught by the harness's own baseline check -- i.e. by a positive control,
 # which is the only reason it was not a third published wrong number.
 # Also: CLAUDE.md/memory record that wsl-prefixed commands prompt Sean interactively.
+def prose_lines(text):
+    """1-based line numbers spanned by a MULTI-LINE string literal.
+
+    Prose EXPLAINING a hazard must not be reported AS the hazard -- the same reasoning
+    that makes H4 skip `#` comments. A checker that punishes the documentation teaches
+    people to delete the documentation, and the docstring is where the receipt lives.
+    Found when H2 flagged its own explanation inside tools/doc_lint.py.
+
+    Only MULTI-line strings are skipped, so a real single-line `["bash", ...]` argument
+    list is still checked. tokenize rather than a delimiter scanner: it gets raw strings,
+    f-strings and nesting right, and it cannot be confused by a quote inside a comment.
+    """
+    import io
+    import tokenize
+    inside = set()
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.STRING and tok.end[0] > tok.start[0]:
+                inside.update(range(tok.start[0], tok.end[0] + 1))
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        pass          # an unparseable file is H0's problem, not this helper's
+    return inside
+
+
 BASH_CONST = re.compile(r"""["'](?:bash|sh)["']""")
 WSL_CALL = re.compile(r"""(^|[\s"'\[(=])wsl(\.exe)?[\s"']""")
 
 
 def check_h2(path, text, lines, tree=None):
     hits = []
+    prose = prose_lines(text) if path.endswith(".py") else set()
     for i, ln in enumerate(lines, 1):
+        if i in prose:
+            continue
         stripped = ln.split("#")[0]
         if BASH_CONST.search(stripped) and ("subprocess" in text or "run(" in text):
             hits.append(Hazard("H2", path, i,

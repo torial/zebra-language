@@ -20,6 +20,7 @@ WHAT IT CHECKS
   D3  every gate registered in tools/gates.sh is described in CLAUDE.md
   D4  a BUG-NNN cited in the docs exists in BUGS.md
   D5  a fenced `bash`/`sh` block invoking `tools/...` names a script that exists
+  D6  a number carrying a `<!-- doc-gen: N = <command> -->` oracle still equals N
 
 Suppress a deliberate reference to something that does not exist -- a PROPOSED tool, a
 historical note -- with `<!-- doc-lint-ok: <reason> -->` on the same line. A reason is
@@ -27,7 +28,10 @@ required.
 
 WHAT IT DELIBERATELY DOES NOT CHECK
 -----------------------------------
-Prose claims about behaviour, coverage numbers, and "blind to" statements.  Those need a
+Prose claims about behaviour and "blind to" statements. Counts USED to be uncheckable
+too; D6 fixes that for any count you can express as a command, and a count you cannot
+express as a command probably should not be in the document — name the list instead.
+The rest:  Those need a
 human or an experiment; pretending otherwise would make this tool a source of false
 assurance, which is the failure mode the rest of the tooling work this week was about.
 The uncovered set is printed on every run so it cannot quietly be forgotten.
@@ -47,7 +51,13 @@ TOOL_REF = re.compile(r"\btools/([A-Za-z0-9_.\-]+\.(?:sh|py))")
 # A markdown link or bare mention of a repo-relative doc path.
 DOC_REF = re.compile(r"\b((?:docs|test|selfhost|src|fuzz|examples|IDE)/[A-Za-z0-9_./\-]+\.[a-z]{2,4})\b")
 BUG_REF = re.compile(r"\bBUG-(\d{2,4})\b")
-GATE_REG = re.compile(r'^\s*run\s+"([a-z0-9\-]+)"', re.M)
+# The character class MUST include '_'. It did not, so D3 silently skipped every gate
+# whose name has an underscore -- compile_check, compile_check-inline, output_sweep,
+# full_sweep, examples_sweep. Five of eighteen registered gates were exempt from the
+# "is this documented?" check, and D3 reported clean the whole time. Found 2026-08-01 by
+# a D6 count oracle disagreeing with D3's own parse (12 vs 13), which is the entire
+# argument for pinning counts: the discrepancy is the signal.
+GATE_REG = re.compile(r'^\s*run\s+"([a-z0-9_\-]+)"', re.M)
 
 # Same suppression discipline as tools/hazard_lint.py: an HTML comment on the flagged
 # line, and a REASON is required. The commonest legitimate case is a PROPOSED tool
@@ -166,6 +176,64 @@ def check_gates(claude_text):
     return hits
 
 
+
+# --------------------------------------------------------------------------- D6
+# RECEIPT: three in one day, 2026-08-01. gates.sh's header said "seven gates" against
+# twelve registered; its boundary comment said "Twelve probes" against twenty; and
+# TOOLING_COMMISSION.md opened with "five bugs" above a six-row table and "six checks"
+# above seven -- written within an hour of a paragraph explaining that counts rot.
+#
+# Trying harder does not work. A bare number has no referent, so nothing can check it and
+# nobody notices when the thing it counted grew. Give it a referent:
+#
+#     There are 12 gates <!-- doc-gen: 12 = grep -c '^run "' tools/gates.sh -->
+#
+# and this check runs the command and compares. The number stays in readable prose; the
+# oracle sits beside it. If you cannot express the count as a command, that is a signal
+# the number should not be in the document at all -- prefer naming the list.
+def _bash():
+    """Git Bash by absolute path, never a bare `bash`.
+
+    Caught by tools/hazard_lint.py H2 minutes after this function was written -- a bare
+    "bash" resolves to WSL on this machine, which translates paths to /mnt/c and would run
+    these oracles against a different view of the filesystem. It happened to work while
+    being developed, because the PATH inherited from Git Bash resolved it correctly; from
+    PowerShell or a scheduled task it would not have. That is the whole reason H2 exists,
+    and the lint found it in the tool written to find stale claims.
+    """
+    for c in (r"C:\Program Files\Git\bin\bash.exe",
+              r"C:\Program Files (x86)\Git\bin\bash.exe"):
+        if pathlib.Path(c).exists():
+            return c
+    return "bash"      # hazard-ok:H2 last-resort fallback on a non-Windows host, where a bare `bash` is correct and WSL does not exist
+
+
+DOC_GEN = re.compile(r"<!--\s*doc-gen:\s*(.+?)\s*=\s*(.+?)\s*-->")
+
+
+def check_gen(path, text):
+    """D6 -- a number carrying a doc-gen oracle must equal what the oracle returns."""
+    import subprocess
+    rel = path.relative_to(REPO).as_posix()
+    hits = []
+    for i, ln in enumerate(text.splitlines(), 1):
+        m = DOC_GEN.search(ln)
+        if not m:
+            continue
+        claimed, cmd = m.group(1).strip(), m.group(2).strip()
+        try:
+            got = subprocess.run([_bash(), "-c", cmd], cwd=str(REPO), capture_output=True,
+                                 timeout=60).stdout.decode("utf-8", "replace").strip()
+        except (OSError, subprocess.SubprocessError) as e:
+            hits.append(Finding("D6", rel, i, f"doc-gen command failed to run ({e}): {cmd}"))
+            continue
+        if got != claimed:
+            hits.append(Finding("D6", rel, i,
+                                f"stale count: document says {claimed!r}, "
+                                f"`{cmd}` says {got!r}"))
+    return hits
+
+
 # --------------------------------------------------------------- positive controls
 # Same discipline as tools/hazard_lint.py: a checker that has stopped checking must not
 # look like a checker that found nothing.
@@ -173,6 +241,7 @@ CONTROLS = {
     "D1": "see `tools/definitely_not_a_real_tool.sh` for details\n",
     "D2": "described in `docs/definitely_not_a_real_doc.md`\n",
     "D4": "this was fixed in BUG-9997\n",
+    "D6": "There are 99 gates <!-- doc-gen: 99 = echo 3 -->\n",
 }
 
 
@@ -181,7 +250,7 @@ def selftest(verbose=False):
     known = {"1"}
     for code, text in CONTROLS.items():
         fake = REPO / "CONTROL.md"
-        hits = check_refs(fake, text) + check_bugs(fake, text, known)
+        hits = check_refs(fake, text) + check_bugs(fake, text, known) + check_gen(fake, text)
         fired = {h.code for h in hits}
         if code not in fired:
             dead.add(code)
@@ -203,7 +272,7 @@ def selftest(verbose=False):
 
 UNCOVERED = [
     "prose claims about BEHAVIOUR ('this gate is blind to X') -- needs an experiment",
-    "coverage counts in prose ('327 of 335 files') -- drift silently, no cheap oracle",
+    "coverage counts with NO doc-gen oracle -- add one, or name the list instead (D6)",
     "whether a described workflow still WORKS -- only running it proves that",
     "claims inferred from a gate's SILENCE -- the 2026-07-31 receipt above was one",
 ]
@@ -244,6 +313,15 @@ def main():
         text = f.read_text(encoding="utf-8", errors="replace")
         hits.extend(check_refs(f, text))
         hits.extend(check_bugs(f, text, known))
+        hits.extend(check_gen(f, text))
+
+    # D6 ALSO scans the tooling. The three stale counts that motivated it were in
+    # tools/gates.sh, not in a document -- a comment describing a script's own contents
+    # rots exactly like prose does, and is read exactly as often.
+    for f in sorted(REPO.glob("tools/*.sh")) + sorted(REPO.glob("tools/*.py")):
+        if f.name == "doc_lint.py":
+            continue      # our own docstring example and control data are not claims
+        hits.extend(check_gen(f, f.read_text(encoding="utf-8", errors="replace")))
     hits.extend(check_gates(claude_text))
 
     live = [h for h in hits if not is_historical(h.doc)]
