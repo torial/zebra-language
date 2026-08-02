@@ -454,7 +454,7 @@ than "what do we know":
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **our own tools are not lying** | `hazard_lint` (+ its controls) | 54 scripts | <!-- doc-gen: 54 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
-| docs' checkable claims still resolve | `doc_lint` | 44 documents | <!-- doc-gen: 44 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
+| docs' checkable claims still resolve | `doc_lint` | 45 documents | <!-- doc-gen: 45 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
 
