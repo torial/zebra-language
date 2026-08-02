@@ -628,6 +628,33 @@ smoke_run test/bug235_exposing_test.zbr "7"
 smoke_gui_emit_contains test/bug229_tui_env_assigned_test.zbr tui "_tui_env = "
 smoke_tc_fail test/bug235_bare_use_test.zbr "undefined name: 'Widget'"
 smoke_run test/arg_count_ok_test.zbr "Hello, World"
+
+# ── stdlib run-and-compare coverage (B1 survivor follow-up, 2026-08-01) ──────────
+# Four of the twelve B1 mutation survivors were in stdlib emitters, and
+# tools/stdlib_run_coverage.py then found that 19 of 30 namespaces had NO fixture whose
+# OUTPUT is checked. The tests below ALREADY EXISTED and were simply never registered with
+# a helper that reads what they printed -- the gap was not missing tests and not missing
+# gates, it was tests and gates never introduced to each other.
+#
+# Every expected string below was taken from a real run, not guessed.
+#
+# THE ONE THAT MATTERS MOST is terminal_test: "hello world" appears on ONE line because
+# Terminal.write does not add a newline and Terminal.writeln does. Mutation survivor
+# CodeGen.zbr:15635 flips `var is_println = mname == "writeln"`, swapping the two -- the
+# output becomes "hello\n world" and this assertion is what notices. Do not "simplify"
+# it to a marker line; the substring IS the test.
+smoke_run test/terminal_test.zbr "hello world"
+smoke_run test/arg_test.zbr "All arg tests passed."
+smoke_run test/compress_test.zbr "All compress tests passed."
+smoke_run test/hash_test.zbr "All hash tests passed."
+smoke_run test/mime_test.zbr "All MIME tests passed."
+smoke_run test/timer_test.zbr "All timer tests passed."
+smoke_run test/uri_test.zbr "All URI tests passed."
+smoke_run test/json_test.zbr "json_test: all assertions passed"
+smoke_run test/stdlib_additions_test.zbr "stdlib_additions OK"
+smoke_run test/profile_test.zbr "profile OK"
+# Dir: the trailing "(N files found)" is machine-dependent, so the prefix is the assertion.
+smoke_run test/dir_walk_test.zbr "dir_walk_test: ok"
 # Audit #2: a bare function name as a statement warns (forgotten call) instead of
 # a cryptic Zig "value ignored" error.
 smoke_warn test/forgot_parens_test.zbr "did you mean to call it"

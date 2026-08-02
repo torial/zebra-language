@@ -1,9 +1,58 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-240. Next new bug: BUG-241.**
+**Last bug number generated: BUG-242. Next new bug: BUG-243.**
 
 ---
+
+### BUG-241: `test/progress_test.zbr` has not compiled since Zig 0.16, and nothing noticed
+
+**Found 2026-08-01** while registering stdlib run-fixtures (the B1 survivor follow-up).
+
+`selfhost/stdlib_preamble.zig:3617` calls
+
+    _progress_root = std.Progress.start(.{});
+
+but Zig 0.16's signature is `pub fn start(io: Io, options: Options) Node` — two
+parameters. Every program using `Progress.` fails to build:
+
+    error: member function expected 1 argument(s), found 0
+    note: function declared here: pub fn start(io: Io, options: Options) Node
+
+**Why nothing caught it.** `test/progress_test.zbr` was registered with **no** smoke
+helper at all — not even one that emits it — so no gate ever touched the file. The heavy
+sweeps glob `test/*.zbr` and would have compiled it, but they gate against a **baseline**,
+and a file that has never passed is simply not in the pass set. A permanently-broken file
+looks identical to a file that is intentionally negative.
+
+**Fix**: pass the `Io` argument through in the preamble, then register
+`test/progress_test.zbr` with `smoke_run`. `Progress` is one of the 7 stdlib namespaces
+still without run coverage (`tools/stdlib_run_coverage.py`).
+
+---
+
+### BUG-242: `test/csv_test.zbr` references an undeclared `CsvWriter`
+
+**Found 2026-08-01**, same sweep as BUG-241.
+
+    test/csv_test.zbr:95: error: use of undeclared identifier 'CsvWriter'
+
+Line 95 is `var writer = CsvWriter()`. Either the type was never implemented, or it was
+renamed and the test not updated. `Csv.` reading appears to work; it is the writer half
+that has no implementation behind it.
+
+**Why nothing caught it**: identical to BUG-241 — the file carries no smoke registration,
+so nothing ever ran or compiled it as a gated unit, and the baseline-driven sweeps cannot
+distinguish "never worked" from "intentionally negative".
+
+**Fix**: implement or rename `CsvWriter`, or correct the test to the current API; then
+register with `smoke_run`. `Csv` is one of the 7 namespaces still without run coverage.
+
+**The shared lesson, which is the more valuable half of both tickets:** a test file that is
+registered with NO helper is invisible to every gate in the repo. `tools/bug_fixture_check.py`
+catches this shape for *bug* fixtures specifically ("counts a fixture as real only if
+something actually RUNS it"). Nothing catches it for ordinary feature tests. Two have now
+been sitting broken — one since the Zig 0.16 migration.
 
 ### BUG-240: `var s: Set(T) = {}` — annotated EMPTY set literal does not compile — OPEN
 

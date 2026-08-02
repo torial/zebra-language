@@ -73,13 +73,30 @@ def main():
         hits = [f.name for f, t in blobs if re.search(rf"\b{re.escape(ns)}\.", t)]
         (covered if hits else uncovered)[ns] = (fn, hits)
 
-    # POSITIVE CONTROL. `Terminal` must come out UNCOVERED: mutation survivor 15635 proved
-    # nothing catches a Term.write/writeln swap. If this tool calls it covered, the tool
-    # is measuring the wrong thing and its whole output is worthless.
-    if "Terminal" in ns_map and "Terminal" not in uncovered:
-        print("CONTROL FAILED: `Terminal` reports COVERED, but mutation survivor 15635 "
-              "(Term.write/writeln swap) proves no run-fixture catches it. This tool is "
-              "not measuring what it claims. Refusing to report.")
+    # CONTROLS -- they test the MECHANISM, not a particular answer.
+    #
+    # The first version asserted `Terminal` must report UNCOVERED, citing mutation survivor
+    # 15635. That was true when written and FIRED THE DAY Terminal was covered -- correct
+    # tripwire behaviour, and the same shape as an `@boundary-pending` probe going red when
+    # its bug is fixed. But a control pinned to a specific gap rots every time the gap is
+    # closed, which is precisely when you least want to be editing your instrument.
+    #
+    # So: a namespace no fixture could possibly mention must classify UNCOVERED, and a
+    # token that demonstrably appears in a fixture must classify COVERED. Both are derived
+    # from the corpus at runtime, so they stay valid however coverage moves.
+    def classify(token):
+        return any(re.search(rf"\b{re.escape(token)}\.", t) for _, t in blobs)
+
+    if classify("ZzNoSuchNamespaceZz"):
+        print("CONTROL FAILED: a namespace that appears nowhere classified as COVERED. "
+              "The matcher is matching everything; refusing to report.")
+        return 2
+    witness = next((m.group(1) for _, t in blobs
+                    for m in [re.search(r"\b([A-Z][A-Za-z0-9_]{2,})\.", t)] if m), None)
+    if witness is None or not classify(witness):
+        print(f"CONTROL FAILED: could not find a namespace-shaped token in the fixtures, "
+              f"or failed to match one that is there ({witness!r}). The matcher is not "
+              f"working; refusing to report.")
         return 2
 
     print(f"stdlib run-and-compare coverage — {len(covered)}/{len(ns_map)} namespaces "
