@@ -316,6 +316,11 @@ def main() -> int:
     if "--write" in sys.argv or "--check" in sys.argv:
         dest = REPO / "docs" / "str_ownership.md"
         body = (
+            # doc-status is emitted HERE, not added to the file, because the file is
+            # generated: anything hand-added to it makes --check report the doc as stale
+            # and blame string codegen. (Which is exactly what happened on 2026-08-01
+            # when the doc-status convention was rolled out across all 44 documents.)
+            "<!-- doc-status: generated -->\n"
             "# `str` ownership per operation (§28e)\n\n"
             "**GENERATED** by `tools/str_ownership_extract.py` from real compiler emit — "
             "do not hand-edit. Regenerate after any change to string codegen; a flipped "
@@ -339,11 +344,17 @@ def main() -> int:
             current = dest.read_text(encoding="utf-8") if dest.exists() else ""
             if current != body:
                 sys.stderr.write(
-                    f"{dest.relative_to(REPO)} is STALE — string codegen changed an "
-                    f"ownership since it was generated.\n"
+                    f"{dest.relative_to(REPO)} DIFFERS from what this tool generates.\n"
+                    f"Two causes, and the diff tells you which:\n"
+                    f"  1. string codegen changed an ownership — a SEMANTIC change; read\n"
+                    f"     the flipped row and understand it before regenerating.\n"
+                    f"  2. the file was hand-edited — it is generated; put the change in\n"
+                    f"     this script instead.\n"
                     f"Regenerate with: python tools/str_ownership_extract.py --write\n"
-                    f"then read the diff: an ownership FLIP is a semantic change, not a "
-                    f"doc chore.\n")
+                    f"(This message used to assert cause 1. It cannot know that: it\n"
+                    f" compares text. On 2026-08-01 the cause was 2, and the confident\n"
+                    f" wording sent the reader looking at string codegen for a change\n"
+                    f" they had made to the document.)\n")
                 return 1
             print(f"{dest.relative_to(REPO)} is current")
             return 0
