@@ -459,6 +459,13 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   `docs/testing_strategy.md` §B1; follow-ups are the two items directly below.
   **"Gates caught 40%" is not a coverage figure — do not quote it.** `--site FILE:LINE`
   re-runs one mutation, which is how a new test is PROVEN to kill a survivor.
+- [ ] **→ SEE [`docs/INSTRUMENT_PASS_PLAN.md`](docs/INSTRUMENT_PASS_PLAN.md) — the ordered
+  plan for "passing all the instruments" (next week's focus, agreed 2026-08-01).** It
+  frames the bar correctly: green is achievable by re-baselining, so the target is that a
+  NEWLY BUILT instrument finds nothing new. Highest-value item is not the survivor list —
+  it is the **57 corpus files in no known category** (84 of 421 are not emit+compile
+  clean; 27 are registered negatives). BUG-241 and BUG-242 were both found in exactly that
+  blind spot. Order: run FULL first (cheap, may change everything), then triage the 57.
 - [ ] **B1 SURVIVOR WORK — 12 named places the compiler can change with no gate noticing**
   (25 mutants over two runs, 2026-08-01). Full inventory + reasoning in
   `docs/testing_strategy.md` §B1. **Every survivor is in `CodeGen.zbr`; TypeChecker had
