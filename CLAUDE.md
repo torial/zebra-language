@@ -135,6 +135,34 @@ GUI crashes have sat under fully green gates, and all four were at *startup* —
 needs neither a human nor a terminal to detect. Rendering, input, layout, resize and
 colours still require Sean running it.
 
+## The corpus is what git TRACKS, not what is on disk
+
+Every heavy gate used to enumerate its corpus with a filesystem glob (`ls test/*.zbr`),
+which made its result depend on whatever untracked scratch happened to be in the
+directory. Found 2026-08-01: `examples/zz_red_main.zbr`, a scratch probe, untracked, in a
+directory `full_sweep --examples --gate` sweeps — invisible to anyone reading the commit
+and not reproducible anywhere else.
+
+The worst instance was not a sweep. `bug_fixture_check.py` decides whether a reported bug
+has a regression fixture by looking for `test/bug<N>_*.zbr`, so an **untracked** file could
+turn that gate **GREEN** by appearing to supply a fixture that exists for nobody else. The
+sweeps could only add noise; that one could hide debt.
+
+`tools/corpus_ls.sh` is now the single enumerator — `full_sweep`, `divergence_check`,
+`boundary_check` and `bug_fixture_check` all go through it. It reads `git ls-files`, so
+**staged counts**: staging is the point at which a file stops being scratch and becomes
+something you are asking others to have. It **refuses** to fall back to a glob outside a
+git worktree, because a silent fallback would reintroduce exactly the bug it exists to
+remove. `gate_selfcheck` carries the inverse of its usual leg here: it plants an untracked
+file and requires it to be **ignored** (having first confirmed a glob *would* have seen
+it, so the control cannot pass vacuously).
+
+`bash tools/tidy.sh` reports strays; `--clean` removes **only** known-scratch patterns
+(`zz_*`, `_mut_*`, `probe_*`) and merely lists everything else. An untracked `.zbr` in
+`test/` might be an abandoned probe or a fixture someone is three minutes from committing,
+and the tool cannot tell — so it does not guess. **Name throwaway files `zz_*`** and they
+become one command to clear.
+
 ## Verification gates (and what each one CANNOT catch)
 
 Three complementary checks. They have **different blind spots** — running one is

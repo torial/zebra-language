@@ -61,6 +61,24 @@ def fixed_bugs() -> dict:
     return out
 
 
+def tracked(subdir, ext="zbr"):
+    """Files git TRACKS directly in `subdir` -- not whatever is on disk.
+
+    This gate decides whether a reported bug has a regression fixture by looking for
+    test/bug<N>_*.zbr. With a filesystem glob, an UNTRACKED file could satisfy that and
+    turn the gate GREEN by appearing to supply a fixture that exists for nobody else.
+    That is the worst shape in the family: the other globbing sites could only add noise,
+    this one could hide debt. See tools/corpus_ls.sh.
+    """
+    import subprocess
+    out = subprocess.run(["git", "-C", str(REPO), "ls-files", "--", subdir],
+                         capture_output=True, check=True).stdout.decode("utf-8", "replace")
+    pre = subdir.rstrip("/") + "/"
+    names = [ln for ln in out.split("\n")
+             if ln.startswith(pre) and "/" not in ln[len(pre):] and ln.endswith("." + ext)]
+    return sorted((REPO / n) for n in names if (REPO / n).is_file())
+
+
 def main() -> int:
     # Windows defaults stdout to cp1252 when it is REDIRECTED, so printing a check mark —
     # or echoing a bug title containing the ✅ status emoji — raises UnicodeEncodeError and
@@ -86,7 +104,7 @@ def main() -> int:
     # genuinely-guarded bugs were reported as "no fixture at all" the moment they were
     # marked FIXED. A gate that cries wolf gets switched off, and this one is supposed
     # to make fixes stick.
-    tests = sorted((REPO / "test").glob("*.zbr")) + sorted((REPO / "test/boundary").glob("*.zbr"))
+    tests = tracked("test") + tracked("test/boundary")
     by_name, mentions = {}, {}
     for t in tests:
         m = re.match(r"^bug0*(\d+)[_.]", t.name)
@@ -130,7 +148,7 @@ def main() -> int:
     boundary_runner = (REPO / "tools" / "boundary_check.sh")
     if boundary_runner.exists() and 'test/boundary' in boundary_runner.read_text(
             encoding="utf-8", errors="replace"):
-        driven |= {t.stem for t in (REPO / "test/boundary").glob("*.zbr")}
+        driven |= {t.stem for t in tracked("test/boundary")}
 
     # Transitive: a module imported by something already exercised is itself exercised.
     stems = {t.stem for t in tests}

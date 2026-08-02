@@ -506,6 +506,32 @@ else
     note "doc-lint: skipped (tools/doc_lint.py not present)"
 fi
 
+# ── corpus enumeration: an UNTRACKED file must not enter a gate's corpus ──────
+# The realistic defect is a scratch probe left in test/ or examples/. Before 2026-08-01
+# every heavy gate globbed the filesystem, so one such file changed what the gate
+# measured -- and in bug_fixture_check's case an untracked test/bug<N>_*.zbr could make
+# the gate PASS by appearing to supply a fixture that existed for nobody else.
+#
+# This is the inverse of every other leg here: the others plant a defect and require a
+# FAILURE. Here we plant a file and require it to be IGNORED.
+if [ -f tools/corpus_ls.sh ]; then
+    planted="test/zz_selfcheck_planted.zbr"
+    printf 'def main()\n    print("planted")\n' > "$planted"
+    listed=$(bash tools/corpus_ls.sh test | grep -cF "zz_selfcheck_planted" || true)
+    globbed=$(ls test/*.zbr 2>/dev/null | grep -cF "zz_selfcheck_planted" || true)
+    rm -f "$planted"
+    if [ "$globbed" -ne 1 ]; then
+        bad "corpus control INVALID: the planted file was not even visible to a glob, so"
+        bad "        this leg proves nothing (planted at $planted)"
+    elif [ "$listed" -eq 0 ]; then
+        pass "corpus_ls excludes an untracked file a glob would have swept"
+    else
+        bad "corpus_ls INCLUDED an untracked file -- gates depend on local scratch again"
+    fi
+else
+    note "corpus enumeration: skipped (tools/corpus_ls.sh not present)"
+fi
+
 # ── honest inventory of what is NOT self-checked ─────────────────────────────
 echo
 echo "  NOT self-checked (no cheap falsification — do not read the above as full coverage):"

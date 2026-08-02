@@ -81,7 +81,11 @@ check_one() {
 }
 export -f check_one; export ZEBRA OUT REPO
 
-ls "$REPO"/$CORPUS_DIR/*.zbr | sed "s#$REPO/##" \
+# TRACKED files only -- a filesystem glob makes this gate's result depend on whatever
+# untracked scratch is lying around (see tools/corpus_ls.sh). Found 2026-08-01 with
+# examples/zz_red_main.zbr sitting in the swept directory, untracked and invisible to
+# anyone reading the commit.
+bash "$REPO/tools/corpus_ls.sh" "$CORPUS_DIR" \
   | xargs -P "${JOBS:-2}" -I{} bash -c 'check_one "$@"' _ {} > "$OUT/results.txt" 2>/dev/null
 
 grep '^PASS ' "$OUT/results.txt" | awk '{print $2}' | sort > "$OUT/pass.txt"

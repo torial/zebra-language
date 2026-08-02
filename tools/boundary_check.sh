@@ -101,7 +101,9 @@ echo "boundary-value suite (test/boundary) — expectations authored from intent
 echo
 
 shopt -s nullglob
-for zbr in "$DIR"/*.zbr; do
+# TRACKED probes only. A boundary probe that is not committed is not a shared
+# expectation, and letting one run would make this suite's result local to one machine.
+for zbr in $(bash "$SCRIPT_DIR/corpus_ls.sh" --abs "test/boundary"); do
     base="$(basename "$zbr" .zbr)"
     [ -n "$ONLY" ] && case "$base" in *"$ONLY"*) ;; *) continue ;; esac
 

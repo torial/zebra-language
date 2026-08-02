@@ -67,7 +67,8 @@ while [ $# -gt 0 ]; do case "$1" in
 esac; done
 JOBS="${JOBS:-4}"; mkdir -p "$OUT"
 
-files=$(ls "$REPO"/test/*.zbr "$REPO"/examples/*.zbr 2>/dev/null | sort -u)
+# TRACKED files only; see tools/corpus_ls.sh for why a glob is wrong here.
+files=$(bash "$REPO/tools/corpus_ls.sh" --abs test examples)
 worklist=""
 for f in $files; do
   name=$(basename "$f" .zbr)
