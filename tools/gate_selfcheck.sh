@@ -326,14 +326,28 @@ else
     note "boundary: skipped (no boundary suite present)"
 fi
 
+# A PLANTED BOUNDARY PROBE MUST BE STAGED, or the suite cannot see it.
+#
+# boundary_check now enumerates via tools/corpus_ls.sh, which lists files git TRACKS --
+# deliberately, so a stray probe cannot change what a gate measures. That change silently
+# disabled the three legs below: they plant an UNTRACKED probe, corpus_ls correctly
+# ignores it, `--only` then matches nothing, and boundary_check refuses to report on an
+# empty run (rc=2). Three verification legs stopped verifying and only this file noticed.
+#
+# `git add -N` (intent-to-add) registers the path in the index without staging content, so
+# `git ls-files` lists it and the plant is visible -- while keeping the property that a
+# file nobody has told git about cannot influence a gate. Unstaged again on removal.
+plant_probe() { : > "$1"; cat >> "$1"; git add -N "$1" >/dev/null 2>&1 || true; }
+unplant_probe() { git rm -q --cached --force "$1" >/dev/null 2>&1 || true; rm -f "$1"; }
+
 # ── boundary suite: a probe with no directive must be reported, not skipped ──
 # The runner is directive-driven, so the dangerous silent failure is a probe the loop
 # does not know how to assert and quietly passes over — coverage lost while the count
 # still looks healthy. A directive-less file must FAIL rather than vanish.
 if [ -d test/boundary ]; then
-    printf 'def main()\n    print("x")\n' > test/boundary/_selfcheck_nodirective.zbr
+    printf 'def main()\n    print("x")\n' | plant_probe test/boundary/_selfcheck_nodirective.zbr
     got=$(run_rc bash tools/boundary_check.sh --only _selfcheck_nodirective)
-    rm -f test/boundary/_selfcheck_nodirective.zbr
+    unplant_probe test/boundary/_selfcheck_nodirective.zbr
     # Grep the CAPTURE FILE, not last_out(): last_out truncates to 400 chars and the
     # relevant line sits below the runner's banner, so the assertion would have failed
     # for a reason unrelated to the gate — the exact "wrong assertion cancels out"
@@ -357,13 +371,13 @@ fi
 # what a pending probe becomes the day its bug is fixed. If the runner passed that, every
 # @boundary-pending probe in the suite would be a permanent green lie.
 if [ -d test/boundary ]; then
-    cat > test/boundary/_selfcheck_tripwire.zbr <<'ZEOF'
+    plant_probe test/boundary/_selfcheck_tripwire.zbr <<'ZEOF'
 # @boundary rejects this program is fine and must not be rejected
 def main()
     print("ok")
 ZEOF
     got=$(run_rc bash tools/boundary_check.sh --only _selfcheck_tripwire)
-    rm -f test/boundary/_selfcheck_tripwire.zbr
+    unplant_probe test/boundary/_selfcheck_tripwire.zbr
     if [ "$got" -eq 1 ] && grep -q 'but it built and ran' "$LAST_OUT_FILE"; then
         pass "boundary pending-tripwire fires when a 'rejects' probe starts compiling"
     elif [ "$got" -eq 0 ]; then
@@ -375,13 +389,13 @@ ZEOF
     # The `warns` branch, same argument: a probe asserting a warning must fail when the
     # warning is absent, or bv_arity_too_few/too_many would pass on a compiler that had
     # silently stopped checking arity anywhere at all.
-    cat > test/boundary/_selfcheck_warn.zbr <<'ZEOF'
+    plant_probe test/boundary/_selfcheck_warn.zbr <<'ZEOF'
 # @boundary warns a warning that is never emitted
 def main()
     print("ok")
 ZEOF
     got=$(run_rc bash tools/boundary_check.sh --only _selfcheck_warn)
-    rm -f test/boundary/_selfcheck_warn.zbr
+    unplant_probe test/boundary/_selfcheck_warn.zbr
     if [ "$got" -eq 1 ] && grep -q 'intended warning is MISSING' "$LAST_OUT_FILE"; then
         pass "boundary reports a 'warns' probe whose warning never appears"
     elif [ "$got" -eq 0 ]; then
