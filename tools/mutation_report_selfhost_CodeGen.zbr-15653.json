@@ -1,0 +1,13 @@
+[
+ {
+  "file": "selfhost/CodeGen.zbr",
+  "line": 15653,
+  "op": "cmp",
+  "old": "==",
+  "new": "<>",
+  "verdict": "DETECTED",
+  "by": "smoke",
+  "why": "",
+  "secs": 434.3
+ }
+]

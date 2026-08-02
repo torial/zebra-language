@@ -332,9 +332,33 @@ def main():
                  if st[0].replace("\\", "/").endswith(want_file.split("/")[-1])
                  and st[1] + 1 == want_line]
         if not sites:
-            sys.exit(f"--site {args.site}: no mutable site on that line of the WORKTREE "
-                     f"copy. Line numbers here are the worktree's, not this checkout's "
-                     f"-- they are different files (see the note above ensure_worktree).")
+            # DON'T just say no. Line numbers drift -- that is the normal case, not an
+            # error, since a survivor is recorded against whatever the worktree looked
+            # like on the day it ran. Show the neighbourhood so the caller can re-aim in
+            # one step instead of hand-diffing two trees.
+            src = (wt / want_file).read_text(encoding="utf-8").splitlines() \
+                if (wt / want_file).exists() else []
+            near = {}
+            for st in candidate_sites(wt / want_file) if src else []:
+                near.setdefault(st[0] + 1, []).append(f"{st[3]} {st[4]!r}->{st[5]!r}")
+            lo, hi = max(1, want_line - 6), min(len(src), want_line + 6)
+            print(f"--site {args.site}: no mutable site on that line of the WORKTREE copy "
+                  f"({wt}).", file=sys.stderr)
+            print(f"Line numbers belong to a TREE, and this one has moved since the "
+                  f"survivor was recorded. Nearby lines:\n", file=sys.stderr)
+            for i in range(lo, hi + 1):
+                mark = "  <-- you asked for this" if i == want_line else ""
+                muts = ("   [" + "; ".join(near[i]) + "]") if i in near else ""
+                # ASCII-fold the source line. These are Zebra sources with box-drawing
+                # characters in their section banners, and this console is cp1252: a
+                # UnicodeEncodeError here would crash the tool at the exact moment it is
+                # trying to help someone recover from a miss. (A stray checkmark in a
+                # print killed a 68-minute run earlier the same day.)
+                safe = src[i-1].rstrip()[:64].encode("ascii", "replace").decode("ascii")
+                print(f"  {i:>6}  {safe:<64}{muts}{mark}", file=sys.stderr)
+            print(f"\nRe-run --site with a line above that carries a [mutation].",
+                  file=sys.stderr)
+            sys.exit(2)
         print(f"--site: {len(sites)} mutation(s) on {args.site}")
     else:
         random.Random(args.seed).shuffle(sites)
