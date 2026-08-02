@@ -464,15 +464,26 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
-**Swept 2026-07-29, all clean** — after runtime-module emission became the default,
-because that change made GUI and node-addon take a *new* fallback branch that no gate
-exercises:
+**Swept 2026-08-02, all clean** — run together with the FULL tier as §3 of
+`docs/INSTRUMENT_PASS_PLAN.md`. Sequential, not parallel: two heavy jobs at once on this
+machine is how a RAM-bound gate reports contention as a failure.
 
 | path | result |
 |---|---|
-| `bash tools/node_addon_test.sh` | PASS — math + strings, and the negative case still rejected |
+| `bash tools/gates.sh --full` | **18/18 PASS** — compile_check 231/0, output_sweep 322 identical, full_sweep 0 regressions vs 337, examples_sweep 0 vs 14, divergence 0 selfhost gaps |
 | `python fuzz/gramgen.py --gate` | PASS — 960 derived programs, 0 hangs, 0 crashes |
-| `--gui-backend=tui` (counter.zbr) | scaffolds, builds, links `zig-out/bin/app.exe` |
+| `bash tools/node_addon_test.sh` | PASS |
+| `bash tools/gui_scaffold_check.sh` | PASS — scaffold globals assigned, app got PAST the BUG-229 crash site and refused a non-tty cleanly (rc=3) |
+
+**What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
+**337** while the corpus is **421**. 27 of the difference are registered negative tests;
+**57 are in no known category** — not passing, not asserted-to-fail, not ticketed. A
+baseline defines the pass set, so files outside it cannot make the gate red no matter how
+broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
+and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.
+
+**Previous sweep 2026-07-29** — after runtime-module emission became the default, because
+that change made GUI and node-addon take a *new* fallback branch that no gate exercises.
 
 The GUI check is the one that mattered: it confirmed the fallback does what it claims
 — the emitted `src/main.zig` is the INLINE shape (3,947 lines, **zero** `zebra_rt.zig`

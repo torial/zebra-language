@@ -114,7 +114,19 @@ investigations.*
 
 ---
 
-## 3. Run the instruments that have not run
+## 3. Run the instruments that have not run — ✅ DONE 2026-08-02, ALL GREEN
+
+Ran sequentially overnight. **FULL tier 18/18**, `gramgen` 0 hangs / 0 crashes,
+`node_addon_test` PASS, `gui_scaffold_check` PASS (startup only). Recorded in CLAUDE.md
+with the date, which is the only thing that makes the "deliberately excluded" note honest.
+
+**The plan does not change — and the reason is the interesting part.** A fully green
+FULL tier is *entirely compatible* with §2's 57 unexplained files, because `full_sweep`
+gates against a **baseline of 337** while the corpus is **421**. Files outside a baseline
+cannot make a gate red however broken they are. So the green board raises no doubt about
+§2; it is simply silent on it. Proceed to §2 as ordered.
+
+<details><summary>original §3 checklist</summary>
 
 Cheap, and it is the part most likely to be skipped.
 
@@ -130,6 +142,8 @@ Cheap, and it is the part most likely to be skipped.
   - `bash tools/gui_scaffold_check.sh` — startup only; **rendering still needs a human**
 - **`bash tools/tidy.sh`** — clears scratch; confirms no untracked file is influencing a
   gate (it no longer can, but the report is worth reading).
+
+</details>
 
 ---
 
