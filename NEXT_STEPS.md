@@ -463,8 +463,27 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   (25 mutants over two runs, 2026-08-01). Full inventory + reasoning in
   `docs/testing_strategy.md` §B1. **Every survivor is in `CodeGen.zbr`; TypeChecker had
   five live mutations and caught all five** (four by the A3 boundary suite). Ranked:
-  - [ ] **(a) Run-and-compare fixtures for the stdlib emitters — the biggest win and a
-    bounded job.** Four survivors, each in a `gen<Thing>Call` emitter with nothing checking
+  - [x] **(a) DONE 2026-08-01 — stdlib run coverage 11/30 → 26/30, almost entirely by
+    REGISTRATION.** `tools/stdlib_run_coverage.py` is the meter. The tests already
+    existed; nobody had wired them to `smoke_run`, the helper that reads what a program
+    printed. smoke 267 → 281. Two tests were found broken in the process — **BUG-241**
+    (`progress_test.zbr`, uncompilable since the Zig 0.16 migration) and **BUG-242**
+    (`csv_test.zbr`, undeclared `CsvWriter`) — both invisible because they carried no
+    smoke registration at all, and the baseline-driven sweeps cannot tell "never worked"
+    from "intentionally negative".
+    Four remain uncovered, each for a stated reason rather than an oversight:
+    `Csv` (BUG-242), `Progress` (BUG-241), `Ws` (a server; `ws_smoke_test` does not
+    terminate, so it needs a client+server fixture with a bounded wait), and `Shell`
+    (the only user is `test/zebra_ide.zbr`, an IDE harness that is not a unit test).
+  - [ ] **(a2) The four remaining namespaces**, in the order the blockers clear: fix
+    BUG-241 and BUG-242 (then registration is a one-liner each), write a bounded
+    client+server fixture for `Ws`, and a `Shell` test that does not depend on which
+    utilities the host happens to have.
+  - [ ] **(a3) The coverage figure is an UPPER BOUND** and should not be read as done.
+    "Covered" means one run-fixture *mentions* the namespace, not that it exercises the
+    emitter's branches — `genSqliteCall` has many branches and one `Sqlite.` mention. The
+    honest next measurement is per-BRANCH, not per-namespace.
+  - [ ] **(a-old) Original framing, kept for the reasoning:** Four survivors, each in a `gen<Thing>Call` emitter with nothing checking
     its output. Line numbers as `worktree → main`:
     - `15348 → 15366` `genWsCall` — `if mname == "serve"`; `Ws.serve` stops being
       recognised. Partial excuse: server fixtures never terminate and are excluded by

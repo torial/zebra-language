@@ -655,6 +655,23 @@ smoke_run test/stdlib_additions_test.zbr "stdlib_additions OK"
 smoke_run test/profile_test.zbr "profile OK"
 # Dir: the trailing "(N files found)" is machine-dependent, so the prefix is the assertion.
 smoke_run test/dir_walk_test.zbr "dir_walk_test: ok"
+smoke_run test/build_declarative_test.zbr "build declarative: ok"
+smoke_run test/regex_test.zbr "abc NUM def NUM"
+# Net: resolving the LOOPBACK literal needs no network and no DNS server, so this is
+# deterministic on a disconnected machine. The test's other half (an invalid hostname
+# returning 0 results) is deliberately NOT asserted -- an ISP with wildcard DNS hijacking
+# returns a result for anything, and a fixture that fails on someone's home network is a
+# fixture people learn to ignore.
+smoke_run test/dns_test.zbr "-> 127.0.0.1"
+
+# STILL UNCOVERED, with reasons -- see tools/stdlib_run_coverage.py:
+#   Csv       BUG-242: csv_test.zbr references an undeclared CsvWriter (does not compile)
+#   Progress  BUG-241: broken since the Zig 0.16 migration (std.Progress.start signature)
+#   Ws        ws_smoke_test.zbr is a SERVER and does not terminate -- smoke_run would hang.
+#             Needs a client+server fixture with a bounded wait, not a registration.
+#   Shell     its only user is test/zebra_ide.zbr, an IDE harness rather than a unit
+#             test. Needs a purpose-built test,
+#             and one that does not depend on which shell utilities the host happens to have.
 # Audit #2: a bare function name as a statement warns (forgotten call) instead of
 # a cryptic Zig "value ignored" error.
 smoke_warn test/forgot_parens_test.zbr "did you mean to call it"
