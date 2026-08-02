@@ -463,32 +463,41 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   (25 mutants over two runs, 2026-08-01). Full inventory + reasoning in
   `docs/testing_strategy.md` §B1. **Every survivor is in `CodeGen.zbr`; TypeChecker had
   five live mutations and caught all five** (four by the A3 boundary suite). Ranked:
-  - [ ] **(a) Run-and-compare fixtures for `genStdlibMethod` — the biggest win and a
-    bounded job.** Four survivors are one `if` guarding one stdlib operation's emission,
-    with nothing checking the output: `Ws.serve` (`:15348`), `Term.write`/`writeln`
-    (`:15635`), `Uri.parse`'s argument (`:15893`), int elements in a `Value` literal
-    (`:16013`). A compile check cannot see these — they need `smoke_run`-style fixtures
-    with expected output. Worth enumerating `genStdlibMethod`'s branches and covering the
-    set rather than these four, since these four are just the ones randomly sampled.
-    *Note `Ws.serve`'s partial excuse: server fixtures never terminate and are excluded by
-    `output_sweep`'s nondeterminism detector — a deliberate exclusion is still an
-    exclusion.*
+  - [ ] **(a) Run-and-compare fixtures for the stdlib emitters — the biggest win and a
+    bounded job.** Four survivors, each in a `gen<Thing>Call` emitter with nothing checking
+    its output. Line numbers as `worktree → main`:
+    - `15348 → 15366` `genWsCall` — `if mname == "serve"`; `Ws.serve` stops being
+      recognised. Partial excuse: server fixtures never terminate and are excluded by
+      `output_sweep`'s nondeterminism detector — a deliberate exclusion is still one.
+    - `15635 → 15653` `genTerminalCall` — `var is_println = mname == "writeln"`. Mutating
+      it **SWAPS `Term.write` and `Term.writeln`**, so the newline goes to the wrong one.
+      The sharpest illustration in the set of why compile-checking is not enough: the
+      result is perfectly valid Zig that prints on the wrong lines.
+    - `15893 → ~15889` `genUriCall` — `genExpr(args.at(0).value)` → `at(1)`; `Uri.parse`
+      binds the **wrong argument**.
+    - `16013 → 16031` `genSqliteParams` — `et is Type_.int_ or elem is Expr.int_lit`;
+      **SQLite integer parameter binding** takes the wrong branch.
+
+    A compile check cannot see any of these — they need `smoke_run`-style fixtures with
+    expected output. Worth enumerating the stdlib emitters and covering the set rather
+    than just these four, since these four are only the ones randomly sampled.
   - [ ] **(b) The bare-constructor special cases are probably REDUNDANT, not untested —
-    two independent witnesses now.** `:11166` (bare `HashMap()`) and `:6075`
-    (`isStrSetCtor`) both survive `args.len == 0` → `== 1`, and **twelve corpus files use
+    two independent witnesses now.** `11166 → 11184` (bare `HashMap()`) and `6075`
+    (`isStrSetCtor`, same line in both trees) both survive `args.len == 0` → `== 1`, and **twelve corpus files use
     bare `HashMap()` without breaking**. Something downstream already handles the shape.
     **Do NOT just add a test** — that pins behaviour that may be duplicated. Find what
     handles it, then delete the branch or document why both exist.
   - [ ] **(c) Three real semantic boundaries, one fixture each.**
-    `:12608` — a call whose arity EXACTLY matches a defaulted parameter list (`args.len <
-    params.len` → `<=` runs the fill logic when it should not).
-    `:733` — the comma-join over `g.args` can emit a LEADING `", "`, i.e. `f(, a, b)`,
-    and no gate compiles the result.
-    `:7524` — the VALUE position of a string-keyed HashMap parameter (`i == 1` → `i == 0`
-    double-counts the key).
-  - [ ] **(d) `:330` / `:341` — AstBuilder-only predicates the corpus never compiles.**
+    `12608 → 12626` — a call whose arity EXACTLY matches a defaulted parameter list
+    (`um_needs_fill = args.len < um_params!.len` → `<=` runs the fill when it should not).
+    `733` (both trees) — `TypeRef.generic` rendering: `if i > 0` → `>=` makes a **generic
+    type with arguments** render a leading comma, `Name(, T, U)`.
+    `7524` (both trees) — the VALUE position of a string-keyed HashMap parameter
+    (`if i == 1 and direct_val_str` → `i == 0` counts the key position twice).
+  - [ ] **(d) `330` / `341` (same in both trees) — AstBuilder-only predicates the corpus
+    never compiles.**
     Lowest priority; check whether they are dead before writing anything.
-  - [x] **CLOSED: `:9714`**, the one-element inferred list literal —
+  - [x] **CLOSED: `9714 → 9720`**, the one-element inferred list literal —
     `test/boundary/bv_list_literal_inferred.zbr`, and `--site` verified it turns the
     mutant from SURVIVED to DETECTED.
 - [ ] **B1 v2 — a design change, not more samples.** The cost that matters is **per LIVE

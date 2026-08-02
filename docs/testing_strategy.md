@@ -312,27 +312,32 @@ zero on one side is not a sampling artefact you talk yourself out of.
 
 Grouped by what they actually say, because four of these are one problem:
 
-**(a) `genStdlibMethod` branches with no run-and-compare fixture** — the largest family,
-and the one with an obvious fix:
+**(a) stdlib emitters with no run-and-compare fixture** — the largest family, and the one
+with an obvious fix. Line numbers are given for BOTH trees, because the mutation worktree
+sits at `890fd2c` and the main checkout has moved (bug 6's lesson: a line number belongs to
+a tree):
 
-| site | mutation | what stops being emitted |
-|---|---|---|
-| `CodeGen.zbr:15348` | `mname == "serve"` → `<>` | `Ws.serve` |
-| `CodeGen.zbr:15635` | `"writeln" or "write"` → `and` | `Term.write` / `Term.writeln` |
-| `CodeGen.zbr:15893` | `args.len > 0` → `> 1` | `Uri.parse`'s argument |
-| `CodeGen.zbr:16013` | `Type_.int_ or Expr.int_lit` → `and` | int elements in a `Value` literal |
+| wt → main | in | the mutated line | effect |
+|---|---|---|---|
+| 15348 → 15366 | `genWsCall` | `if mname == "serve"` → `<>` | `Ws.serve` stops being recognised |
+| 15635 → 15653 | `genTerminalCall` | `var is_println = mname == "writeln"` → `<>` | **`Term.write` and `Term.writeln` SWAP** — the newline goes to the wrong one |
+| 15893 → ~15889 | `genUriCall` | `genExpr(args.at(0).value)` → `at(1)` | `Uri.parse` binds the **wrong argument** |
+| 16013 → 16031 | `genSqliteParams` | `et is Type_.int_ or elem is Expr.int_lit` → `and` | **SQLite integer parameter binding** takes the wrong branch |
 
-Each is one `if` guarding one stdlib operation's emission, and none is exercised by
-anything that checks output. `Ws.serve` has a partial excuse — the server fixtures never
-terminate and are excluded from `output_sweep` by its nondeterminism detector — which is
-a good reminder that a deliberate exclusion is still an exclusion.
+None is exercised by anything that checks output. The `Term` one is the sharpest
+illustration of why compile-checking is not enough: swapping `write` and `writeln`
+produces perfectly valid Zig that prints everything on the wrong lines.
+
+`Ws.serve` has a partial excuse — the server fixtures never terminate and are excluded from
+`output_sweep` by its nondeterminism detector — a good reminder that a deliberate exclusion
+is still an exclusion.
 
 **(b) The bare-constructor special cases, now with two witnesses:**
 
-| site | mutation |
+| wt → main | the mutated line |
 |---|---|
-| `CodeGen.zbr:11166` | `c.args.len == 0` → `== 1` (bare `HashMap()`) |
-| `CodeGen.zbr:6075` | `c.args.len == 0` → `== 1` (`isStrSetCtor`) |
+| 11166 → 11184 | `if id.name == "HashMap" and c.args.len == 0` → `== 1` |
+| 6075 → 6075 | `isStrSetCtor`: `if c.args.len == 0` → `== 1` |
 
 Twelve corpus files use bare `HashMap()` and none broke when the branch was disabled.
 Two independent sites behaving identically strengthens the reading: these are **redundant**,
@@ -341,18 +346,26 @@ already handles the shape.
 
 **(c) Real semantic boundaries, each worth a fixture on its own:**
 
-| site | mutation | the untested case |
-|---|---|---|
-| `CodeGen.zbr:12608` | `args.len < um_params!.len` → `<=` | a call whose arity **exactly matches** a parameter list with defaults — the fill logic runs when it should not, and nothing notices |
-| `CodeGen.zbr:733` | `i > 0` → `>=` | the comma-join over `g.args` emits a **leading `", "`**, i.e. `f(, a, b)`, and no gate compiles the result |
-| `CodeGen.zbr:7524` | `i == 1` → `i == 0` | the **value** position of a string-keyed HashMap parameter; mutating it double-counts the key position |
-| `CodeGen.zbr:9714` | `elems.len > 0` → `> 1` | **CLOSED** — `bv_list_literal_inferred.zbr`, verified to kill it |
+| wt → main | in | the mutated line | the untested case |
+|---|---|---|---|
+| 12608 → 12626 | named/default args | `um_needs_fill = args.len < um_params!.len` → `<=` | a call whose arity **exactly matches** a defaulted parameter list — the fill logic runs when it should not |
+| 733 → 733 | `TypeRef.generic` rendering | `if i > 0` → `>=` | a **generic type with arguments** renders a leading comma — `Name(, T, U)` |
+| 7524 → 7524 | HashMap str-params | `if i == 1 and direct_val_str` → `i == 0` | the **value** position of a string-keyed HashMap parameter; the key position gets counted twice |
+| 9714 → 9720 | inferred list literal | `elems.len > 0` → `> 1` | **CLOSED** — `bv_list_literal_inferred.zbr`, `--site`-verified to kill it |
 
-**(d) AstBuilder-only predicates** — `CodeGen.zbr:330` and `:341` (`nm == "left_expr" or
-…` → `and`; `cm.member == "buildExpr" or …` → `and`). Both turn a disjunction into an
-always-false conjunction, so their true branch is never taken. These guard emission
+**(d) AstBuilder-only predicates** — `330` and `341` (both trees). `if nm == "left_expr"
+or nm == "right_expr" or nm == "operand_expr"` → `and` (always false); and
+`if cm.member == "buildExpr" or cm.member == "buildStmt"` → `<>` on the first comparison. These guard emission
 specific to compiling `AstBuilder.zbr`, which the corpus does not compile — lower priority
 than (a)–(c), and honestly might be dead.
+
+**Correction, 2026-08-01.** The first version of this table described three of these from
+the lines *around* the mutation rather than the mutated line itself, and got them wrong:
+`15635` is the `is_println` flag (write/writeln **swap**), not the guard above it;
+`15893` is `args.at(0)` → `at(1)` (**wrong argument**), not `args.len > 0`; and `16013`
+is **SQLite parameter binding** (`genSqliteParams`), not a `Value` literal. Re-derived by
+printing each mutated line with its enclosing `def`. The corrected versions are sharper
+findings than the originals, which is usually how this goes.
 
 **The generalisable lesson from the inventory**, separate from any individual fix: every
 survivor is a **predicate**, and eleven of twelve are guards on *emission of one specific
