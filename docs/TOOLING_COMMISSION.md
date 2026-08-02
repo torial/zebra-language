@@ -262,6 +262,35 @@ compilers outside the repo root.
 
 ---
 
+## 5b. The stdlib run-coverage finding (2026-08-01)
+
+Four of the twelve B1 survivors landed in four *different* stdlib emitters. That is not a
+coincidence, so `tools/stdlib_run_coverage.py` measured the subsystem rather than fixing
+the four:
+
+> **11 of 30 stdlib namespaces have ANY output-checked fixture.** Uncovered: `Arg` `Build`
+> `Compress` `Csv` `DateTime` `Dir` `Hash` `Json` `Mime` `Net` `Path` `Profile` `Progress`
+> `Regex` `Shell` `Terminal` `Timer` `Uri` `Ws`.
+
+Json, Regex, Path, DateTime. Every `--emit-zig` gate is blind here by construction: all
+four survivors produce Zig that COMPILES and behaves wrongly. And it is an upper bound —
+"covered" means a fixture *mentions* the namespace, not that it exercises the emitter.
+
+**Then the second measurement changed the job entirely.** Every one of those 19 namespaces
+**already has at least one test file**, and **not one of them is registered with
+`smoke_run`/`smoke_test`** — the helpers that compare OUTPUT. Several are not registered
+at all. `test/terminal_test.zbr` exercises `Terminal.write` and `Terminal.writeln` on the
+same line, which is precisely what survivor 15635 breaks; it has simply never been run.
+
+So this is not "write 19 test suites". It is mostly **registration** — wiring existing
+tests to a helper that reads what they printed — plus strengthening the ones whose current
+output would not distinguish the mutation. The tests were written years into this project;
+nobody connected them to an assertion.
+
+That is worth stating as its own lesson, because it is not the shape anyone predicts: the
+gap was not missing tests, and not missing gates. It was **tests and gates that were never
+introduced to each other.**
+
 ## 6. Still open
 
 * **The twelve mutation survivors** — ranked into four families in `NEXT_STEPS.md`, with
