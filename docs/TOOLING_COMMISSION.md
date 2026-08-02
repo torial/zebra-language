@@ -291,6 +291,29 @@ That is worth stating as its own lesson, because it is not the shape anyone pred
 gap was not missing tests, and not missing gates. It was **tests and gates that were never
 introduced to each other.**
 
+**Outcome: 11/30 → 26/30, smoke 267 → 281**, almost entirely by registration. Four remain,
+each with a stated reason rather than an oversight — `Csv` (BUG-242), `Progress`
+(BUG-241), `Ws` (a server; verified not to terminate, so it needs a client+server fixture
+with a bounded wait), `Shell` (no unit test uses it).
+
+**Two tests were found broken in the process**, both invisible for months:
+`progress_test.zbr` has not compiled since the **Zig 0.16 migration**, and `csv_test.zbr`
+references an undeclared `CsvWriter`. Neither carried any smoke registration, so no gate
+ever touched them — and the heavy sweeps gate against a *baseline*, which cannot
+distinguish "never worked" from "intentionally negative". That blind spot is the more
+valuable half of both tickets, and nothing currently covers it for ordinary feature tests
+(`bug_fixture_check.py` covers it only for bug fixtures).
+
+**A harness bug surfaced too, and it is the inverse of a vacuous gate.** `grep -qF
+"$expected"` parses an expected string beginning with `-` as an *option*, so
+`smoke_run test/dns_test.zbr "-> 127.0.0.1"` failed a test that printed exactly that.
+Nine call sites; all now `grep -qF -- "$expected"`. A false RED cannot ship a bug, but it
+teaches people the suite is flaky, and that ends with a real failure being waved through.
+
+**Read 26/30 as an upper bound, not as done.** "Covered" means one fixture *mentions* the
+namespace — `genSqliteCall` has many branches and one `Sqlite.` mention. The honest next
+measurement is per-branch.
+
 ## 6. Still open
 
 * **The twelve mutation survivors** — ranked into four families in `NEXT_STEPS.md`, with
