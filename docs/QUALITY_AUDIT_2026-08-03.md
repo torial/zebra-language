@@ -194,6 +194,55 @@ measurable risk for a cosmetic one.
 
 ---
 
+## 5b. The front-end gap — measured, at Sean's suggestion
+
+Prompted by an observation on 2026-08-03: all four BUG-243 files spot-checked exit **0**
+under `zebra -c` and then fail to build. `-c` is documented as front-end-only and
+deliberately incomplete — but *"incomplete"* is not a size, and every case where `zig`
+delivers a diagnosis that Zebra's own front end could have delivered is precisely the work
+named by NEXT_STEPS' organizing goal, **"move checking INTO Zebra"**.
+
+Measured across the corpus (`scratchpad/frontend_gap.py`): for every tracked
+`test/*.zbr` **not** in the `full_sweep` baseline, does `-c` catch what `zig` rejects?
+
+| of 63 corpus programs that do not compile | |
+|---|---|
+| `-c` catches it | **31** |
+| **`-c` misses it** | **23 (43%)** |
+| compiled after all | 9 |
+
+**The first number was 49, and it was wrong.** 26 of those are library modules whose only
+failure is `root source file struct 'MathUtils' has no member named 'main'` — they are not
+programs, `-c` is right to accept them, and the harness was at fault for running them as
+executables. All 26 were confirmed to pass `-c`, so the correction is exact rather than
+estimated. Same lesson as every other instrument here: the first number a new probe
+produces is a hypothesis.
+
+**Where the 23 sit**, as candidate checks to add rather than as symptoms:
+
+| class | note |
+|---|---|
+| undeclared identifier / scope | e.g. `self` used outside a class — the Resolver owns scopes and has the information |
+| unhandled error union | this is the §28b explicit-`?` rule; the TypeChecker knows what throws |
+| type mismatch | heterogeneous list literals, enum/int confusion — inference gaps |
+| generics (`expected 'T', found '*T'`) | genuinely harder; not low-hanging |
+
+**A tension to resolve before acting.** Three of the 23 — `bug099_unresolved_test`,
+`bug106_heterogeneous_list_test`, `c_interop_test` — are the **deliberate asymmetry
+witnesses** `check_mode_check.sh` requires, to prove that the `-c` vs `--check-full` split
+`--help` promises actually exists. That gate **fails by design when no witness survives**.
+So closing the gap is not simply "add checks until the number is zero": each check moved
+into the front end must be accompanied by a decision about whether the asymmetry is still
+a promise worth keeping, and the witness set updated deliberately rather than discovered
+broken.
+
+**Why this is worth doing beyond tidiness.** A miss is not just a late error — it is an
+error delivered *in Zig's vocabulary, about emitted code the user never wrote*. `expected
+type 'i64', found '*const [3:0]u8'` is a fine message for someone reading generated Zig and
+an unhelpful one for someone who wrote a list literal. Every check moved inward converts a
+leaked diagnostic into a Zebra one, which is the same argument that motivated the error-
+experience work in 2026-06.
+
 ## 6. The finding that should outlive this document
 
 Three bugs were closed today — BUG-241 (`Progress`), BUG-242 (`Csv`), BUG-245 (`Shell`) —
