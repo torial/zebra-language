@@ -1,0 +1,31 @@
+# BUG-242 regression fixture — the whole Csv namespace was dead in the selfhost.
+#
+# Pins the two halves separately, because they failed for different reasons and the
+# original ticket only knew about the second:
+#   READER  — the preamble's parser still reassigned `.{}` to unmanaged ArrayLists after
+#             the Zig 0.16 migration, so `Csv.parse` did not compile at all.
+#   WRITER  — the selfhost emitted `CsvWriter()` verbatim into Zig (no constructor), and
+#             once that worked, `build()` was typed as a raw slice rather than str, so it
+#             printed `{ 97, 44, 98 }` instead of text. That one compiled CLEANLY — valid
+#             Zig producing wrong output — so only running it can catch a return.
+def main()
+    var t = Csv.parse("name,city\nAlice,Boston")
+    assert t.rowCount() == 2, "reader: rowCount"
+    assert t.colCount() == 2, "reader: colCount"
+
+    var h = t.header()
+    assert h.at(0) == "name", "reader: header cell"
+
+    var r = t.row(1)
+    assert t.get(r, "city") == "Boston", "reader: lookup by column name"
+
+    var w = CsvWriter()
+    w.writeRow(h)
+    w.writeRow(r)
+    var out = w.build()
+
+    # If build() regresses to a byte array these fail, which is the whole point.
+    assert out.contains("name,city"), "writer: header text, not bytes"
+    assert out.contains("Alice"), "writer: data row text, not bytes"
+
+    print("bug242: OK")

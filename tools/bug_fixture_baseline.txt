@@ -108,7 +108,6 @@
 211	selfhost `nameUsedInStmt` ignored `using` blocks → spurious param disc
 213	selfhost `typeFromName` missing `SysProcess` → `proc.isRunning()` mis-
 215	two-argument `str.indexOf(sub, from)` silently dropped the offset ✅ FI
-216	`\"` inside an INTERPOLATED string is double-escaped by the bootstrap 
 217	`CodeEditor.setText` handed Scintilla a non-NUL-terminated buffer → se
 218	`str + int` is diagnosed in an annotated context but LEAKS to Zig in a
 219	`sys.run` DEADLOCKS when a child writes more than a pipe buffer to std

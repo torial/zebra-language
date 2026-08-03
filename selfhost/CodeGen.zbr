@@ -2831,6 +2831,12 @@ struct Generator
                 if n.name == "StringBuilder"
                     w.emit("std.ArrayList(u8)")
                     return
+                if n.name == "CsvWriter"
+                    w.emit("_CsvWriter")
+                    return
+                if n.name == "CsvTable"
+                    w.emit("_CsvTable")
+                    return
                 if n.name == "SysProcess"
                     w.emit("*_SysProcess")
                     return
@@ -11192,6 +11198,13 @@ struct Generator
             if id.name == "StringBuilder" and c.args.len == 0
                 w.emit("std.ArrayList(u8).empty")
                 return
+            # BUG-242. The bootstrap has carried CsvWriter since Builtins.zig; the selfhost
+            # knew only the NAME (Resolver treats it as a builtin so it does not error as
+            # unknown) and emitted the identifier straight through into Zig. `Csv.parse` /
+            # `parseFile` worked, so only the WRITER half was missing.
+            if id.name == "CsvWriter" and c.args.len == 0
+                w.emit("_csv_writer_init()")
+                return
             if id.name == "ThreadPool"
                 w.emit("_thread_pool_create(")
                 if c.args.len > 0
@@ -11860,6 +11873,60 @@ struct Generator
                         genExpr(m.object)
                         w.emit(".clearRetainingCapacity()")
                         return
+                # BUG-242. CsvWriter has no dedicated Type_ variant in the selfhost (the
+                # bootstrap uses `.csv_writer`); a bare `CsvWriter()` ctor and a `CsvWriter`
+                # annotation both infer to named("CsvWriter"), so dispatch by name here
+                # rather than adding an enum variant that 950+ reference sites would have
+                # to account for. Receiver is taken by POINTER, matching the preamble's
+                # `_csv_write_row(w: *_CsvWriter, …)` — CgHelpers already lists writeRow in
+                # isMutatingMethod, so the local is emitted `var`.
+                on Type_.named as cw_nm
+                    # CsvTable readers. Taken BY VALUE, matching the preamble
+                    # (`_csv_row_count(t: _CsvTable)`) — only the writer takes a pointer.
+                    if cw_nm == "CsvTable"
+                        var ct_fn: str = ""
+                        if mname == "rowCount":   ct_fn = "_csv_row_count"
+                        else if mname == "colCount": ct_fn = "_csv_col_count"
+                        else if mname == "header":   ct_fn = "_csv_header"
+                        else if mname == "row":      ct_fn = "_csv_row"
+                        else if mname == "rows":     ct_fn = "_csv_rows"
+                        else if mname == "dataRows": ct_fn = "_csv_data_rows"
+                        else if mname == "get":      ct_fn = "_csv_get"
+                        if ct_fn != ""
+                            w.emit(ct_fn)
+                            w.emit("(")
+                            genExpr(m.object)
+                            for a in args
+                                w.emit(", ")
+                                genExpr(a.value)
+                            w.emit(")")
+                            return
+                    # HttpResponse.withHeader — by value, returns a NEW response.
+                    if cw_nm == "HttpResponse"
+                        if mname == "withHeader"
+                            w.emit("_http_with_header(")
+                            genExpr(m.object)
+                            for a in args
+                                w.emit(", ")
+                                genExpr(a.value)
+                            w.emit(")")
+                            return
+                    if cw_nm == "CsvWriter"
+                        if mname == "writeRow"
+                            w.emit("_csv_write_row(&")
+                            genExpr(m.object)
+                            w.emit(", ")
+                            if args.len > 0
+                                genExpr(args.at(0).value)
+                            else
+                                w.emit("undefined")
+                            w.emit(")")
+                            return
+                        if mname == "build"
+                            w.emit("_csv_build(&")
+                            genExpr(m.object)
+                            w.emit(")")
+                            return
                 on Type_.hashmap_ as hmt
                     var hm_key_is_str = hmt.key_t is Type_.string_
                     var hm_val_is_str = hmt.val_t is Type_.string_

@@ -1796,6 +1796,15 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     # .sum()/.dot() (which require a provably-SIMD receiver).
                     if isSimdTypeName(cname)
                         return Type_.named(cname)
+                    # BUG-242. CsvWriter has no dedicated Type_ variant here (the bootstrap
+                    # uses `.csv_writer`), so typeFromName falls through to named(...) —
+                    # which the branch below deliberately does NOT return, leaving an
+                    # un-annotated `var w = CsvWriter()` as `unresolved` and its methods
+                    # undispatchable. Short-circuit like the SIMD ctor above. Sibling
+                    # builders escape this only because they own an enum variant:
+                    # typeFromName("StrSet") returns Type_.str_set, so the branch returns.
+                    if cname == "CsvWriter"
+                        return Type_.named(cname)
                     if ctx.hasClassAny(cname)
                         return Type_.named(cname)
                     # Primitive-name ctors like `int(x)` cast to that primitive.
@@ -1909,6 +1918,19 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if mem.member == "stringify"
                                 return Type_.string_
                             return Type_.unresolved
+                        # BUG-242. `_csv_parse`/`_csv_parse_file` both return `_CsvTable`
+                        # (never optional), so the result is a plain named type. The
+                        # bootstrap uses a dedicated `.csv_table` variant; naming it keeps
+                        # the selfhost's Type_ enum untouched — see the CsvWriter note in
+                        # the ctor branch above for why that matters here.
+                        if bname == "Csv"
+                            return Type_.named("CsvTable")
+                        # The HttpResponse.ok/notFound/serverError/status factories all
+                        # emit a `HttpResponse` struct literal (genHttpResponseFactory), so
+                        # the result is that named type — needed for `.withHeader()` below
+                        # to have a receiver type to dispatch on at all.
+                        if bname == "HttpResponse"
+                            return Type_.named("HttpResponse")
                     # ── Json static-method TC inference ──
                     #
                     # `Json.parse`, `Json.stringify`, `Json.parseStrict(T, src)`
@@ -1953,6 +1975,37 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             var rt: Type_? = ctx.methodReturnAny(tn, mem.member)
                             if rt as rt_v
                                 return rt_v
+                            # BUG-242. Csv instance methods. A row is NOT a distinct type
+                            # here: `_csv_header`/`_csv_row` return `std.ArrayList([]const
+                            # u8)`, which is exactly how List(str) is represented, so typing
+                            # rows as List(str) makes `.at()`/`.len` dispatch through the
+                            # existing list_ arm instead of needing a CsvRow concept.
+                            # Likewise dataRows()/rows() → List(List(str)), so for-in over
+                            # them yields a row that already behaves correctly.
+                            if tn == "CsvTable"
+                                if mem.member == "rowCount" or mem.member == "colCount"
+                                    return Type_.int_
+                                if mem.member == "header" or mem.member == "row"
+                                    return Type_.list_(Type_.string_)
+                                if mem.member == "dataRows" or mem.member == "rows"
+                                    return Type_.list_(Type_.list_(Type_.string_))
+                                if mem.member == "get"
+                                    return Type_.string_
+                            # `build()` must be str, not the raw []const u8 slice: without
+                            # this it prints as a BYTE ARRAY (`{ 97, 44, 98 }`) — valid Zig
+                            # producing wrong output, the BUG-226 class that no
+                            # compile-only gate can see.
+                            if tn == "CsvWriter"
+                                if mem.member == "build"
+                                    return Type_.string_
+                                if mem.member == "writeRow"
+                                    return Type_.void_
+                            # `withHeader` is an IMMUTABLE update: it returns a new
+                            # HttpResponse, so chains (`r.withHeader(a,b).withHeader(c,d)`)
+                            # need the result to type as HttpResponse again.
+                            if tn == "HttpResponse"
+                                if mem.member == "withHeader"
+                                    return Type_.named("HttpResponse")
                         on Type_.string_
                             var srt: Type_? = stringMethodReturn(mem.member)
                             if srt as srt_v

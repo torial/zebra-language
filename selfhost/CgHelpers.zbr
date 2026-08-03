@@ -1432,6 +1432,18 @@ def isByValueHandleType(t: Type_): bool
         # `never mutated`); the bootstrap already marks these const.
         on Type_.build_ctx       return true
         on Type_.build_target    return true
+        # BUG-242. A parsed CSV table is a by-value handle exactly like the above:
+        # every reader emits `_csv_<op>(t, …)` taking `_CsvTable` BY VALUE, so the local
+        # never needs `var` and Zig rejects it with "local variable is never mutated".
+        # It has no Type_ variant of its own (see the CsvWriter note in CodeGen), hence
+        # the name test. Returning false for every OTHER named type preserves the
+        # previous `else` behaviour for user classes.
+        # CsvWriter is deliberately NOT here: `_csv_write_row` takes a POINTER, so its
+        # local must stay `var`, which the name-based path already gets right.
+        on Type_.named as hn
+            # HttpResponse likewise: `_http_with_header(resp: HttpResponse, …)` takes the
+            # receiver by value and returns a NEW one, so the local stays `const`.
+            return hn == "CsvTable" or hn == "HttpResponse"
         else
             return false
 

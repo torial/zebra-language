@@ -56,29 +56,6 @@ look like coverage.
 an unregistered, unexplained `test/*.zbr` a gate failure instead of a silence.
 
 
-### BUG-242: `test/csv_test.zbr` references an undeclared `CsvWriter`
-
-**Found 2026-08-01**, same sweep as BUG-241.
-
-    test/csv_test.zbr:95: error: use of undeclared identifier 'CsvWriter'
-
-Line 95 is `var writer = CsvWriter()`. Either the type was never implemented, or it was
-renamed and the test not updated. `Csv.` reading appears to work; it is the writer half
-that has no implementation behind it.
-
-**Why nothing caught it**: identical to BUG-241 — the file carries no smoke registration,
-so nothing ever ran or compiled it as a gated unit, and the baseline-driven sweeps cannot
-distinguish "never worked" from "intentionally negative".
-
-**Fix**: implement or rename `CsvWriter`, or correct the test to the current API; then
-register with `smoke_run`. `Csv` is one of the 7 namespaces still without run coverage.
-
-**The shared lesson, which is the more valuable half of both tickets:** a test file that is
-registered with NO helper is invisible to every gate in the repo. `tools/bug_fixture_check.py`
-catches this shape for *bug* fixtures specifically ("counts a fixture as real only if
-something actually RUNS it"). Nothing catches it for ordinary feature tests. Two have now
-been sitting broken — one since the Zig 0.16 migration.
-
 ### BUG-240: `var s: Set(T) = {}` — annotated EMPTY set literal does not compile — OPEN
 
 **Symptom.** An empty set literal with a type annotation fails; the same

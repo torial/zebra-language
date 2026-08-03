@@ -1,0 +1,16 @@
+# BUG-241 regression fixture.
+#
+# std.Progress.start gained an `Io` parameter in Zig 0.16; the preamble still called it
+# with one argument, so EVERY program touching `Progress.` failed to build. It went unseen
+# for months because test/progress_test.zbr carried no registration, and a file that has
+# never passed cannot regress a baseline.
+#
+# There is nothing to assert about a progress bar's rendering here on purpose:
+# std.Progress detects a non-tty and draws nothing under a gate runner. Compiling and
+# running to completion IS the regression check.
+def main()
+    var pb = Progress.bar(3, "work")
+    for n in 0:3
+        pb.tick()
+    pb.done()
+    print("bug241: OK")

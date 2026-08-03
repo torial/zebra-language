@@ -6,6 +6,68 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-242: the entire `Csv` namespace was dead in the selfhost — FIXED 2026-08-03
+- **Status:** Fixed. `csv_test` passes end to end; registered with `smoke_run`.
+- **The ticket understated it.** It read "`Csv.` reading appears to work; it is the writer
+  half that has no implementation". Reading did **not** work. `csv_test` failed at line
+  **6** — `rowCount` — before it ever reached the writer at line 95. Nothing in the
+  namespace worked; the two symptoms had different causes and had to be peeled in order:
+
+  | # | fault | where |
+  |---|---|---|
+  | 1 | `CsvWriter()` emitted **verbatim** into Zig — no constructor | `CodeGen` bare-stdlib-ctor branch |
+  | 2 | `_csv_writer_init` returned `.{ .buf = .{} }` — missing `capacity` | preamble, Zig 0.16 migration |
+  | 3 | `Csv.parse` result had **no type**, so no method dispatched | `TypeChecker` namespace arm |
+  | 4 | `build()` printed a **byte array** (`{ 97, 44, 98 }`) not a string | `TypeChecker` return type |
+  | 5 | table local emitted `var`, never mutated → Zig error | `CgHelpers.isByValueHandleType` |
+  | 6 | `_csv_parse` reassigned `.{}` to unmanaged ArrayLists (5 sites) | preamble, Zig 0.16 migration |
+  | 7 | `HttpResponse.withHeader` missing entirely (csv_test uses it) | `TypeChecker` + `CodeGen` |
+
+- **Fault 4 is the one worth remembering.** It produced *valid Zig that compiled cleanly*
+  and printed the wrong thing — the BUG-226 class. `compile_check`, `full_sweep` and
+  `divergence` would all have passed it at any corpus size. Only running the program shows
+  it, which is why this landed with a `smoke_run` rather than a registration alone.
+- **Faults 2 and 6 are the same missed migration**, and they explain the ticket's wrong
+  reading: the Csv parser's *declarations* were updated to `.empty` but its in-loop
+  *reassignments* were left as `.{}`. Nothing could reach the code to discover it, so a
+  half-finished migration sat there looking complete. A scan of the rest of the preamble
+  found no other instance.
+- **The two halves have DIFFERENT histories** — established from `git log -S`, not inferred:
+
+  | half | status | evidence |
+  |---|---|---|
+  | reader | **regression**, 2026-05-19 | `aef05d1 wip: partial Zig 0.16 upgrade (incomplete — 6 errors remain)` |
+  | writer | **never worked in the selfhost** | `git log -S "_csv_writer_init" -- selfhost/CodeGen.zbr` returns NOTHING; the bootstrap has had it since `0e71d45` |
+
+  Before `aef05d1`, `.{}` was correct and used *consistently* — declarations and
+  reassignments alike. The migration converted the declarations and missed the
+  assignments, and the reason is mechanical rather than careless: **`var x: T = .{}`
+  carries its type and `x = .{}` does not**, so a migration keyed on the type annotation
+  cannot see the assignment. Worth remembering the next time a Zig upgrade is done by
+  pattern.
+
+  The commit *announced* itself as unfinished. What was missing was not honesty but any
+  instrument that would later ask whether the remaining errors ever got closed —
+  `csv_test` would have answered on day one, and nothing ran it. Same root as BUG-243,
+  reached from the other direction: the work was unfinished **in the open**.
+- **The writer half is a class, not a one-off**, and it is now enumerable. A runtime helper
+  that exists in the preamble and in `src/CodeGen.zig` but that no selfhost source ever
+  emits is unreachable from selfhost-compiled programs — which is *also* why its migration
+  never happened. Validated non-circularly: run against the commit before this fix, the
+  scan lists exactly `_csv_writer_init` / `_csv_write_row` / `_csv_build`; run after, zero.
+- **Design note — no new `Type_` variant.** The bootstrap has `.csv_table` / `.csv_row` /
+  `.csv_writer`. The selfhost has none, and `Type_` is referenced 950+ times, so adding
+  variants means auditing every exhaustive `branch`. Instead these dispatch on
+  `Type_.named("CsvTable")` / `named("CsvWriter")`, which the type system already produces
+  for unknown names. **CsvRow needed nothing at all**: `_csv_header`/`_csv_row` return
+  `std.ArrayList([]const u8)`, which is exactly how `List(str)` is represented, so rows are
+  typed `List(str)` and inherit `.at()`/`.len` from the existing list arm.
+- **Test:** `smoke_run test/csv_test.zbr "csv_test: all assertions passed"` — a behaviour
+  check, not a compile check: it writes a comma-bearing field, re-parses the output and
+  compares, so RFC 4180 quoting is exercised round-trip.
+
+---
+
 ### BUG-241: `Progress.` has not compiled since Zig 0.16, and nothing noticed — FIXED 2026-08-03
 - **Status:** Fixed. Smoke 282/282 (adds `progress_test_run`).
 - **Was:** `selfhost/stdlib_preamble.zig` called `std.Progress.start(.{})`, but Zig 0.16's

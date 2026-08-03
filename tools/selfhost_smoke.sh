@@ -1091,6 +1091,21 @@ smoke_run test/nil_narrow_tc_test.zbr "nil_narrow_tc_test: OK"
 # match.
 smoke_run test/progress_test.zbr "done"
 
+# BUG-242. Same shape as BUG-241 above: no registration, so nothing ever ran it, and it
+# could not regress a baseline it had never been in. The whole Csv namespace was dead in
+# the selfhost — the READER too, contrary to the original ticket ("Csv. reading appears to
+# work"): the preamble's parser still reassigned `.{}` to unmanaged ArrayLists, a Zig 0.16
+# migration missed because nothing could reach the code to find out.
+# Exercises RFC 4180 round-tripping (write a comma-bearing field, re-parse, compare), so it
+# is a behaviour check and not just a compile check.
+smoke_run test/csv_test.zbr "csv_test: all assertions passed"
+
+# Regression fixtures for the two above. progress_test/csv_test are the FEATURE tests;
+# these pin the specific defects, which is what bug_fixture_check asks for — it found
+# BUG-241 marked fixed with no fixture at all, within minutes of the fix landing.
+smoke_run test/bug241_progress_io_test.zbr "bug241: OK"
+smoke_run test/bug242_csv_roundtrip_test.zbr "bug242: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

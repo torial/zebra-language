@@ -1935,13 +1935,13 @@ pub fn _csv_parse(src: []const u8) _CsvTable {
                 '"'  => { _st = .q; },
                 ','  => { _row.append(_pa, "") catch {}; },
                 '\r' => {},
-                '\n' => { if (_row.items.len > 0) { _rows.append(_pa, _row.toOwnedSlice(_pa) catch &.{}) catch {}; _row = .{}; } },
+                '\n' => { if (_row.items.len > 0) { _rows.append(_pa, _row.toOwnedSlice(_pa) catch &.{}) catch {}; _row = .empty; } },
                 else => { _f.append(_pa, c) catch {}; _st = .fld; },
             },
             .fld => switch (c) {
-                ',' => { _row.append(_pa, _f.toOwnedSlice(_pa) catch "") catch {}; _f = .{}; _st = .s; },
+                ',' => { _row.append(_pa, _f.toOwnedSlice(_pa) catch "") catch {}; _f = .empty; _st = .s; },
                 '\r' => {},
-                '\n' => { _row.append(_pa, _f.toOwnedSlice(_pa) catch "") catch {}; _f = .{}; _rows.append(_pa, _row.toOwnedSlice(_pa) catch &.{}) catch {}; _row = .{}; _st = .s; },
+                '\n' => { _row.append(_pa, _f.toOwnedSlice(_pa) catch "") catch {}; _f = .empty; _rows.append(_pa, _row.toOwnedSlice(_pa) catch &.{}) catch {}; _row = .empty; _st = .s; },
                 else => { _f.append(_pa, c) catch {}; },
             },
             .q  => switch (c) {
@@ -1950,9 +1950,9 @@ pub fn _csv_parse(src: []const u8) _CsvTable {
             },
             .aq => switch (c) {
                 '"' => { _f.append(_pa, '"') catch {}; _st = .q; },
-                ',' => { _row.append(_pa, _f.toOwnedSlice(_pa) catch "") catch {}; _f = .{}; _st = .s; },
+                ',' => { _row.append(_pa, _f.toOwnedSlice(_pa) catch "") catch {}; _f = .empty; _st = .s; },
                 '\r' => {},
-                '\n' => { _row.append(_pa, _f.toOwnedSlice(_pa) catch "") catch {}; _f = .{}; _rows.append(_pa, _row.toOwnedSlice(_pa) catch &.{}) catch {}; _row = .{}; _st = .s; },
+                '\n' => { _row.append(_pa, _f.toOwnedSlice(_pa) catch "") catch {}; _f = .empty; _rows.append(_pa, _row.toOwnedSlice(_pa) catch &.{}) catch {}; _row = .empty; _st = .s; },
                 else => { _st = .s; },
             },
         }
@@ -1999,7 +1999,11 @@ pub fn _csv_get(t: _CsvTable, row: std.ArrayList([]const u8), col: []const u8) [
     return "";
 }
 pub const _CsvWriter = struct { buf: std.ArrayList(u8) };
-pub fn _csv_writer_init() _CsvWriter { return .{ .buf = .{} }; }
+// BUG-242. `.buf = .{}` predates the Zig 0.16 unmanaged-ArrayList migration: the struct
+// literal no longer fills `capacity`, so this failed to compile with "missing struct
+// field: capacity". Nothing noticed because no program could reach the CsvWriter path at
+// all — the selfhost never emitted a constructor for it.
+pub fn _csv_writer_init() _CsvWriter { return .{ .buf = .empty }; }
 pub fn _csv_write_row(w: *_CsvWriter, row: std.ArrayList([]const u8)) void {
     const _pa = std.heap.page_allocator;
     for (row.items, 0..) |field, i| {
