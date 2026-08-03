@@ -501,7 +501,7 @@ than "what do we know":
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **our own tools are not lying** | `hazard_lint` (+ its controls) | 58 scripts | <!-- doc-gen: 58 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 documents |
-| **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 45 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
+| **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 46 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
 
