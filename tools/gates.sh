@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# There are 13 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 13 = grep -c '^run "' tools/gates.sh -->
+# There are 14 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 14 = grep -c '^run "' tools/gates.sh -->
 # (CLAUDE.md explains each), plus four heavy witnesses in FULL. The count in this
 # sentence has been wrong before: it said "seven" while twelve were registered, and
 # doc_lint cannot catch that class -- a number in prose has no referent to resolve.
@@ -154,6 +154,7 @@ run "hazard-lint"    "0 hazard"  python tools/hazard_lint.py
 # renamed or retired. Append-only records (BUGS.md, the journal) are reported but not gated
 # -- an old entry naming a since-deleted tool is accurate history, not a defect.
 run "doc-lint"       "0 stale"   python tools/doc_lint.py --quiet
+run "doc-example"    "0 NEW"     python tools/doc_example_check.py --quiet
 run "smoke"          "passed"    bash tools/selfhost_smoke.sh
 run "round-trip"     "PASS"      bash tools/bootstrap_check.sh
 # The only gate that RUNS emitted output, hence the only one that can see BUG-221 —

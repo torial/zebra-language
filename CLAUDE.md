@@ -272,6 +272,36 @@ python tools/doc_lint.py           # THE DOC-DRIFT GATE (static, instant, no bui
                                 #   anything inferred from a gate's SILENCE are NOT checked,
                                 #   and a clean run must not be read as "the docs are
                                 #   accurate". 0 = clean. QUICK tier.
+python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
+                                #   READER is told, rather than at what the compiler does.
+                                #   224 fenced `zebra` blocks existed and NOTHING verified
+                                #   one of them until 2026-08-03. That is not abstract debt:
+                                #   QUICKSTART — the file whose header calls it the
+                                #   authoritative reference — documented thread spawning as
+                                #   `sys.go(lambda …)` in five blocks, and `lambda` is NOT A
+                                #   ZEBRA KEYWORD. None had ever compiled. It was found by
+                                #   trying to follow the doc and failing twice (BUG-245).
+                                #   Scoped by `doc-status`: only `live` docs are checked —
+                                #   BUGS.md is 24 blocks of deliberately-broken repros, and
+                                #   "fixing" those would falsify the record.
+                                #   SIGNAL vs ARTIFACT is what makes it usable. Checking
+                                #   every block naively yields ~100 failures, ~90% noise
+                                #   (fragments referring to prose: "undefined name: 'data'").
+                                #   A gate at that ratio gets suppressed wholesale. So an
+                                #   "undefined name" is an ARTIFACT and NOT gated, while
+                                #   "the parser could not READ this construct" is SIGNAL and
+                                #   IS. Elision (`...`), counterexamples (`# error:`) and
+                                #   `<!-- doc-example-ok: reason -->` are skipped.
+                                #   FRONT END ONLY (`zebra -c`) — a doc fragment has no
+                                #   modules around it, so a full compile would drown syntax
+                                #   errors in missing-dependency noise.
+                                #   Baselined at 27, so it fails only on NEW breakage. That
+                                #   baseline is REAL DEBT a reader hits, in three families:
+                                #   `print` WITHOUT PARENS (pre-`()`-mandatory Cobra syntax),
+                                #   the REMOVED `to!` operator, and assorted stale forms.
+                                #   Shrink it; do not grow it. Runs its own good/bad controls
+                                #   every invocation and exits 2 if either stops
+                                #   discriminating. 0 = clean. QUICK tier.
 python tools/lint_fallthrough.py   # THE FALL-THROUGH GATE (static, instant, no build):
                                 #   flags a value-returning fn whose TAIL `branch` has a
                                 #   value-producing arm that can fall through without
@@ -469,8 +499,9 @@ than "what do we know":
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 57 scripts | <!-- doc-gen: 57 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
-| docs' checkable claims still resolve | `doc_lint` | 45 documents | <!-- doc-gen: 45 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 58 scripts | <!-- doc-gen: 58 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| docs' checkable claims still resolve | `doc_lint` | 45 documents |
+| **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 45 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
 
