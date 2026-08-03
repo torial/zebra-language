@@ -54,7 +54,7 @@ var output = args.option("--output", default: "a.out")   # str
 var input = args.positional(0)                     # str?
 var count = args.optionInt("--count", default: 1)  # int
 if args.contains("--help")
-    print args.usage()
+    print(args.usage())
 ```
 
 Codegen: `Arg` struct backed by `std.process.args()` slice; flag/option lookups are linear scans
@@ -115,10 +115,10 @@ Test: `test/log_test.zbr`
 **Zig backing:** `std.Uri`
 ```zebra
 var u = Uri.parse("https://api.example.com/v1/users?page=2")
-print u.scheme    # "https"
-print u.host      # "api.example.com"
-print u.path      # "/v1/users"
-print u.query     # "page=2"
+print(u.scheme)    # "https"
+print(u.host)      # "api.example.com"
+print(u.path)      # "/v1/users"
+print(u.query)     # "page=2"
 ```
 Implemented: `UriResult{scheme, host, path, query, port}`; backed by `std.Uri` Component union.
 
@@ -171,8 +171,8 @@ This is a LANGUAGE FEATURE not just a stdlib module — needs grammar, AST, TC, 
 ### 11. `Test` — Built-in test runner
 ```zebra
 def test_addition
-    assert_eq(add(2, 3), 5)
-    assert_eq(add(-1, 1), 0)
+    assert_eq add(2, 3), 5
+    assert_eq add(-1, 1), 0
 
 def test_throws_on_null
     assert_raises

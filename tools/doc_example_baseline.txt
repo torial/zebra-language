@@ -1,30 +1,14 @@
 # Doc examples in LIVE docs whose SYNTAX does not parse -- existing debt,
 # recorded so the gate fails only on NEW breakage. Shrink this; do not grow
 # it. Each line is <doc>#<block index>. See tools/doc_example_check.py.
-COMPILER_WORKFLOW.md#3
 COMPILER_WORKFLOW.md#5
 QUICKSTART.md#114
-QUICKSTART.md#21
-QUICKSTART.md#29
 QUICKSTART.md#55
 QUICKSTART.md#66
 QUICKSTART.md#7
-QUICKSTART.md#78
 QUICKSTART.md#8
 QUICKSTART.md#86
 QUICKSTART.md#98
-STDLIB_ROADMAP.md#10
-STDLIB_ROADMAP.md#2
-STDLIB_ROADMAP.md#5
 STDLIB_ROADMAP.md#9
 STYLE_GUIDE.md#0
-STYLE_GUIDE.md#1
-STYLE_GUIDE.md#15
-STYLE_GUIDE.md#16
-STYLE_GUIDE.md#17
-STYLE_GUIDE.md#19
-STYLE_GUIDE.md#21
-STYLE_GUIDE.md#25
-STYLE_GUIDE.md#31
-STYLE_GUIDE.md#7
 UI_QUICKSTART.md#1

@@ -51,8 +51,8 @@ class Counter
     def increment()
         var count = 99           # local shadows field — fine
         .count = .count + 1      # still reaches the field
-        print count              # prints 99  (the local)
-        print .count             # prints the incremented field
+        print(count)              # prints 99  (the local)
+        print(.count)             # prints the incremented field
 
 # Constructor disambiguation:
 cue init(count: int)
@@ -313,7 +313,7 @@ def add(a: int, b: int): int
     return a + b
 
 def greet(name: str)              # no return type → void
-    print "hello, ${name}"
+    print("hello, ${name}")
 ```
 
 - Always-required: parens at the **call** site (`add(1, 2)`).
@@ -527,7 +527,7 @@ var n = node?.next?.value                # propagates nil
 # ✓ When LHS is optional and you want to downcast:
 var maybeUser: User? = lookup()
 if maybeUser is User as u
-    print u.name
+    print(u.name)
 ```
 
 ---
@@ -560,9 +560,9 @@ def runOne(src: str)
     var p = Parser(src)
     p.start()?
     var ast = p.parseExpr(0)?
-    print "  ${src}  =  ${formatExpr(ast)}"
+    print("  ${src}  =  ${formatExpr(ast)}")
 catch |e|
-    print "  ${src}  -> error: ${e.message}"
+    print("  ${src}  -> error: ${e.message}")
 ```
 
 The `catch` clauses sit at the same indent as `def`, **after the body**.
@@ -656,11 +656,11 @@ fallback handles the remainder. Choose `else pass` (on its own line — see QS
 ```zebra
 branch p
     on Point(x: 0, y: 0)
-        print "origin"
+        print("origin")
     on Point(x: 0)
-        print "on Y axis"
+        print("on Y axis")
     else
-        print "elsewhere"
+        print("elsewhere")
 ```
 
 Use sparingly — these are useful for small, finite-shape structs (Point,
@@ -777,6 +777,7 @@ This is a Zig `u8` literal. Don't compare a `char` against a 1-char string.
 
 ### 12.2 Iteration ✅ ESTABLISHED (QS §13)
 
+<!-- doc-example-ok: a syntax MENU — bodyless `for` headers listed as a catalogue of forms, not a program. -->
 ```zebra
 for item in items                # plain
 for i, item in items             # with index

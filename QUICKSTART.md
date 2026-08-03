@@ -2553,6 +2553,7 @@ file (e.g. `myapp_gui_libui_ng/`, `myapp_gui_tui/`, `myapp_gui/`) and invokes
 
 ### `Gui.run` — MVU form (recommended)
 
+<!-- doc-example-ok: an API SIGNATURE, not a call — `title: str` names parameter TYPES. Not runnable by design. -->
 ```zebra
 Gui.run(title: str, width: int, height: int, init, update, view)
 ```
@@ -3138,7 +3139,7 @@ while not done.load()
 
 ```zebra
 var pool = ThreadPool(4)
-pool.submit(def() doWork())
+pool.submit(def() = doWork())   # single-line lambda body needs `=`
 pool.wait()                    # blocks until all submitted tasks complete
 ```
 

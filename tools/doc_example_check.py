@@ -81,11 +81,30 @@ SUPPRESS = re.compile(r'<!--\s*doc-example-ok:\s*(.+?)\s*-->')
 # that -- 12 fake failures.
 TOPLEVEL = ("use", "namespace", "class", "struct", "interface", "mixin", "extend",
             "union", "enum", "sig", "type", "static", "export", "def", "var")
-TOPDECL = re.compile(r'^(' + '|'.join(TOPLEVEL) + r')\b')
+# `var` is deliberately EXCLUDED from hoisting even though it is a legal top-level form.
+# Hoisting reorders the block, and reordering manufactures failures: a doc block that reads
+#     try
+#     var r = ...
+#     catch |e|
+# had its `var` lifted above the loose statements, which SPLIT the `try` from its `catch`
+# and reported a syntax error in a block that was never wrong. A `var` left in place lands
+# inside the synthesized `main`, which is valid; the worst case is an "undefined name"
+# artifact, and those are not gated.
+HOISTABLE = tuple(k for k in TOPLEVEL if k != "var")
+TOPDECL = re.compile(r'^(' + '|'.join(HOISTABLE) + r')\b')
+# Clauses written at COLUMN 0 that CONTINUE the declaration above them rather than starting
+# a new one. Zebra's method-level `catch`/`ensure` are the load-bearing case.
+CONTINUATION = re.compile(r'^(catch|ensure|require|finally)\b')
 
 ELISION = re.compile(r'\.\.\.|^\s*\.\.\s*$|…', re.M)
+# A block advertising that its contents are NOT to be copied. Two conventions are in use:
+# an inline `# error:` / `# fails`, and STYLE_GUIDE's `# ✗ Non-canonical (sweep target)`,
+# which marks 15 blocks of deliberately-legacy form. Missing the second made the gate
+# report a style guide's own counterexamples as breakage -- the loudest possible way to be
+# wrong, since those blocks are wrong ON PURPOSE and saying so is their entire job.
 COUNTER = re.compile(r'#\s*(error|fails|compile error|does not compile|WRONG|rejected|'
-                     r'not allowed|invalid)', re.I)
+                     r'not allowed|invalid)|✗|non-canonical|sweep target|'
+                     r'#\s*(avoid|do not|don.t)\b', re.I)
 ARTIFACT = re.compile(r"undefined name|unexpected end of input|"
                       r"must have at least one variant|unknown type|not found|"
                       r"no such module|undeclared|cannot find", re.I)
@@ -126,10 +145,25 @@ def assemble(body):
         if TOPDECL.match(ln):
             decls.append(ln)
             i += 1
-            # its indented body
-            while i < len(lines) and (not lines[i].strip() or lines[i][:1] in (" ", "\t")):
-                decls.append(lines[i])
-                i += 1
+            # Its indented body, PLUS any method-level continuation clause. `catch` and
+            # `ensure` are written at COLUMN 0 and belong to the `def` above them:
+            #     def risky()
+            #         var r = divide(10, 0)
+            #     catch |e|
+            #         print("Error")
+            # Verified valid by compiling it. Treating that `catch` as a loose statement
+            # moved it into the synthesized main, SPLITTING it from its def, and reported a
+            # syntax error in two docs that were both correct.
+            while i < len(lines):
+                cur = lines[i]
+                if not cur.strip() or cur[:1] in (" ", "\t"):
+                    decls.append(cur)
+                    i += 1
+                elif CONTINUATION.match(cur):
+                    decls.append(cur)
+                    i += 1
+                else:
+                    break
             continue
         loose.append(ln)
         i += 1
@@ -249,6 +283,18 @@ def main():
     known = baselined()
     new = [(k, msg) for k, msg in signals if k not in known]
     fixed = sorted(known - set(keys))
+
+    # `--show` lists the WHOLE signal set with messages, baselined or not. Without it the
+    # only way to see what the baseline contains is to delete it and re-run, which is how
+    # a baseline quietly becomes a list nobody can read.
+    if "--show" in argv:
+        for k, msg in sorted(signals):
+            mark = "known" if k in known else " NEW "
+            print(f"  [{mark}] {k}: {msg}")
+        if artifacts:
+            print(f"\n  ({len(artifacts)} fragment artifact(s) not gated:)")
+            for k, msg in sorted(artifacts)[:8]:
+                print(f"      {k}: {msg}")
 
     for k, msg in new:
         print(f"  BROKEN EXAMPLE  {k}: {msg}")
