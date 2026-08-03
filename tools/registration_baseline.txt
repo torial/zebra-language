@@ -15,7 +15,6 @@ expose_dotted_test
 generic_pair_test
 gui_test
 json_parse_typed_test
-progress_test
 raise_details_test
 tc_check_test
 tc_infer_test

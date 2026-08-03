@@ -6,6 +6,31 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-241: `Progress.` has not compiled since Zig 0.16, and nothing noticed — FIXED 2026-08-03
+- **Status:** Fixed. Smoke 282/282 (adds `progress_test_run`).
+- **Was:** `selfhost/stdlib_preamble.zig` called `std.Progress.start(.{})`, but Zig 0.16's
+  signature is `pub fn start(io: Io, options: Options) Node` — verified against
+  `lib/std/Progress.zig:588`, not inferred. Every program touching `Progress.` failed to
+  build with `member function expected 1 argument(s), found 0`.
+- **Fix:** `std.Progress.start(_io, .{})`. `_io` is already a preamble global used
+  throughout (`std.Io.Timestamp.now(_io, .awake)`), so this is a one-argument change with
+  no plumbing. `Node.start(name, estimated_total_items)` was unchanged, so
+  `_progress_root.start(label, _total_u)` needed no edit.
+- **Why nothing caught it:** `test/progress_test.zbr` carried **no** smoke registration of
+  any kind, so no gate ever touched it. The heavy sweeps gate against a **baseline**, and a
+  file that has never passed is not in the pass set — so it could not go red however broken
+  it was. This is the BUG-243 class; `tools/registration_check.py` now makes it a gate
+  failure rather than a silence.
+- **Test:** `smoke_run test/progress_test.zbr "done"` — asserts the deterministic **print**,
+  not bar rendering: `std.Progress` detects a non-tty and renders nothing under the gate
+  runner, so an expectation written against bar output would never match.
+- **Verification:** the fix was confirmed in the **emitted artifact** (`zebra_rt.zig:3621`
+  contains `std.Progress.start(_io, .{})`), not from `rebuild.sh` reporting OK — the
+  preamble is embedded into the bootstrap at *build* time, so a regen that runs before the
+  rebuild emits the old runtime and every gate downstream measures it.
+
+---
+
 ### BUG-120: selfhost — `.add()` → `.append()` rewrite fires on user class method calls via lowercase vars — FIXED 2026-05-07
 - **Status:** Fixed. Bootstrap 5/5, smoke 64/64.
 - **Was:** `selfhost/codegen.zbr` `.add()` heuristic only guarded on `isUpperCase(receiver_name)` (BUG-061). Lowercase instance variables (`c: Calc`) passed the guard, so `c.add(2, 3)` was incorrectly emitted as `c.append(_allocator, 2)`.

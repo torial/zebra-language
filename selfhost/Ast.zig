@@ -3572,7 +3572,11 @@ pub fn _timer_start() TimerHandle { return .{ ._start_ns = std.Io.Timestamp.now(
 pub var _progress_root_started: bool = false;
 pub var _progress_root: std.Progress.Node = undefined;
 pub fn _progress_ensure_root() void {
-    if (!_progress_root_started) { _progress_root = std.Progress.start(.{}); _progress_root_started = true; }
+    // Zig 0.16: `pub fn start(io: Io, options: Options) Node` — the Io parameter is not
+    // optional. Omitting it made every program that touches `Progress.` fail to build,
+    // and nothing noticed for months because test/progress_test.zbr carried no smoke
+    // registration and a never-passing file cannot regress a baseline (BUG-241).
+    if (!_progress_root_started) { _progress_root = std.Progress.start(_io, .{}); _progress_root_started = true; }
 }
 pub const ProgressBar = struct {
     _node: std.Progress.Node,

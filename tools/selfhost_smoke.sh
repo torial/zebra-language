@@ -1082,6 +1082,15 @@ smoke_run test/toplevel_name_collision_test.zbr "toplevel_name_collision_test: O
 # errors if the restore leaked.
 smoke_run test/nil_narrow_tc_test.zbr "nil_narrow_tc_test: OK"
 
+# BUG-241. This file had NO registration of any kind, so no gate ever touched it, and it
+# had not compiled since the Zig 0.16 migration (`std.Progress.start` gained an `Io`
+# parameter). A never-passing file cannot regress a baseline, so full_sweep could not see
+# it either — it was indistinguishable from an intentionally-negative test.
+# Asserts the deterministic PRINT, not the bar: std.Progress detects a non-tty and renders
+# nothing under the gate runner, so an expectation written against bar output would never
+# match.
+smoke_run test/progress_test.zbr "done"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

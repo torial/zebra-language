@@ -55,31 +55,6 @@ look like coverage.
 (delete/quarantine). Then close the class — see `tools/registration_check.py`, which makes
 an unregistered, unexplained `test/*.zbr` a gate failure instead of a silence.
 
-### BUG-241: `test/progress_test.zbr` has not compiled since Zig 0.16, and nothing noticed
-
-**Found 2026-08-01** while registering stdlib run-fixtures (the B1 survivor follow-up).
-
-`selfhost/stdlib_preamble.zig:3617` calls
-
-    _progress_root = std.Progress.start(.{});
-
-but Zig 0.16's signature is `pub fn start(io: Io, options: Options) Node` — two
-parameters. Every program using `Progress.` fails to build:
-
-    error: member function expected 1 argument(s), found 0
-    note: function declared here: pub fn start(io: Io, options: Options) Node
-
-**Why nothing caught it.** `test/progress_test.zbr` was registered with **no** smoke
-helper at all — not even one that emits it — so no gate ever touched the file. The heavy
-sweeps glob `test/*.zbr` and would have compiled it, but they gate against a **baseline**,
-and a file that has never passed is simply not in the pass set. A permanently-broken file
-looks identical to a file that is intentionally negative.
-
-**Fix**: pass the `Io` argument through in the preamble, then register
-`test/progress_test.zbr` with `smoke_run`. `Progress` is one of the 7 stdlib namespaces
-still without run coverage (`tools/stdlib_run_coverage.py`).
-
----
 
 ### BUG-242: `test/csv_test.zbr` references an undeclared `CsvWriter`
 
