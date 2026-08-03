@@ -3112,22 +3112,27 @@ to call Zig's `@atomicRmw` directly.
 | Ordering | Implicit seq-cst | Message order preserved |
 
 ```zebra
-# Shared counter across threads:
-var total = Atomic(int)(0)
-sys.go(lambda  var _ = total.add(1) )
-sys.go(lambda  var _ = total.add(1) )
-sys.sleep(50)
-print(total.load())   # 2 (both increments visible)
-
-# One-shot "done" flag:
+# One-shot "done" flag — VERIFIED WORKING 2026-08-03:
 var done = Atomic(bool)(false)
-sys.go(lambda
+sys.go(def()
+    capture
+        var done: Atomic(bool) = done
     doWork()
     done.store(true)
 )
 while not done.load()
     sys.sleep(10)
 ```
+
+> **Corrected 2026-08-03.** These examples were written as `sys.go(lambda …)`; `lambda`
+> is **not a Zebra keyword** and none of them compiled. The form is `def(params)`, and
+> captures must be declared in an explicit `capture` block — see the `sys.go()` section
+> below for the full correction.
+>
+> A **shared-counter** example using `total.add(1)` was removed rather than repaired: an
+> `Atomic(T)` captured into a thread currently mis-resolves `.add()` to `.append()`
+> (**BUG-246**). `store`/`load` are unaffected, which is why the flag example above stands.
+> For accumulating across threads, use `Chan(T)` and sum on the receiving side.
 
 ### `ThreadPool(n)` — bounded worker pool
 
@@ -3493,26 +3498,51 @@ v <- ch           # recv: v = ch.recv()
 
 ### sys.go()
 
-`sys.go(lambda)` spawns a fire-and-forget background thread:
+`sys.go(def() …)` spawns a fire-and-forget background thread.
+
+> **Corrected 2026-08-03.** This section previously wrote every example as
+> `sys.go(lambda …)`. **`lambda` is not a Zebra keyword** and none of these compiled —
+> `sys.go(lambda  var _ = t.add(1))` fails with *"'var' is a statement keyword and can't
+> be used as an expression here"*, and the block form fails at `lambda` itself. The
+> anonymous-function syntax is `def(params)`. Verified by running each form; the working
+> shape is also what `test/chan_thread_test.zbr` has always used.
 
 ```zebra
-sys.go(lambda
-    # runs on a new thread; captures surrounding vars
+sys.go(def()
+    capture
+        var ch: Chan(int) = ch
     ch.send(1)
     ch.send(2)
     ch.close()
 )
 ```
 
-The lambda can capture variables from the enclosing scope. Captured variables
-are copied into the thread closure at spawn time.
+**Captures must be declared explicitly** in a `capture` block, contrary to what this
+section used to claim. Implicit capture is a compile error here:
+
+```zebra
+var t = Atomic(int)(0)
+sys.go(def()
+    var _ = t.add(1)      # error: 't' not accessible from inner function
+)
+```
+
+Captured variables are copied into the thread closure at spawn time. Re-declaring with
+the same name (`var ch: Chan(int) = ch`) is the standard idiom.
+
+> **Known bug:** an `Atomic(T)` captured this way mis-resolves `.add()` to `.append()`
+> (`no field or member function named 'append' in '_Atomic(i64)'`) — the BUG-120 rewrite
+> heuristic firing inside a `capture` block. See **BUG-246**. Use `Chan(T)` for
+> thread-to-thread values until it is fixed, as the producer/consumer example below does.
 
 ### Producer / consumer pattern
 
 ```zebra
 var ch: Chan(int) = Chan(int)(4)
 
-sys.go(lambda
+sys.go(def()
+    capture
+        var ch: Chan(int) = ch
     for i in 1..5
         ch.send(i)
     ch.close()

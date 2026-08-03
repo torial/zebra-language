@@ -1,0 +1,23 @@
+# Shell.run — the one method the namespace has.
+#
+# PORTABILITY IS THE WHOLE DESIGN HERE. `Shell.run` shells out via `cmd /c` on Windows and
+# `sh -c` elsewhere, so a fixture must not assume any installed utility. `echo` is the only
+# safe choice: it is a BUILTIN of both interpreters, present even on a machine with nothing
+# else on PATH.
+#
+# WHY `&&` AND NOT A BARE ECHO: `Shell.run("echo x")` returning "x" would also be satisfied
+# by an implementation that simply handed the argument back without running anything. `&&`
+# is command-sequencing syntax in BOTH cmd and sh, so requiring two outputs from one string
+# proves an interpreter PARSED it -- and asserting the literal "&&" is absent proves we are
+# reading the shell's output rather than an echo of our own input.
+#
+# Output is compared with `contains`, never equality: cmd terminates lines with CRLF and sh
+# with LF, and Shell.run concatenates stdout+stderr.
+def main()
+    var out = Shell.run("echo alpha && echo beta")
+
+    assert out.contains("alpha"), "shell ran the first command"
+    assert out.contains("beta"),  "shell ran the second command"
+    assert not out.contains("&&"), "shell PARSED the operator rather than echoing the input"
+
+    print("shell_test: OK")

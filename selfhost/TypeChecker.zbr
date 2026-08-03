@@ -1925,6 +1925,15 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # the ctor branch above for why that matters here.
                         if bname == "Csv"
                             return Type_.named("CsvTable")
+                        # BUG-245. `Shell.run` returns the child's stdout+stderr as a
+                        # string. Without this arm it typed as unresolved, so `.contains`
+                        # and every other str method were undispatchable — the same shape
+                        # as Csv.parse above. Mirrors src/TypeChecker.zig ("Shell.* static
+                        # methods"), which returns .string.
+                        if bname == "Shell"
+                            if mem.member == "run"
+                                return Type_.string_
+                            return Type_.void_
                         # The HttpResponse.ok/notFound/serverError/status factories all
                         # emit a `HttpResponse` struct literal (genHttpResponseFactory), so
                         # the result is that named type — needed for `.withHeader()` below

@@ -1,0 +1,26 @@
+# BUG-245 regression fixture — the Shell.run CODE defect (the doc half is in QUICKSTART).
+#
+# Two independent faults, both pinned here because either alone breaks the namespace:
+#
+#   1. The emitter called `std.process.Child.run(.{...})`, removed in Zig 0.16. The
+#      allocator and Io are POSITIONAL now (`std.process.run(_allocator, _io, .{...})`) and
+#      `max_output_bytes` no longer exists. If that regresses, this file will not compile.
+#
+#   2. `Shell.run` had no TypeChecker arm, so its result typed as unresolved and NO str
+#      method would dispatch on it -- `.contains` failed with "no field or member function
+#      named 'contains' in 'str'" even though the value was a string. Calling a str method
+#      on the result is therefore the assertion, not incidental style.
+#
+# Third instance of the BUG-241/242 pattern: a namespace with no run coverage was never
+# exercised, so its Zig 0.16 migration never happened and nothing could find out.
+def main()
+    var out = Shell.run("echo bug245")
+
+    # Fault 2: a str method must DISPATCH on the result at all.
+    assert out.contains("bug245"), "Shell.run result is a usable str"
+
+    # Fault 1 is pinned by this file compiling and the child actually running: a stale
+    # std.process.Child.run would fail the Zig build before reaching any assertion.
+    assert out.len > 0, "child process produced output"
+
+    print("bug245: OK")

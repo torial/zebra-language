@@ -118,10 +118,31 @@ numbers drift; on a miss the tool now prints the neighbourhood so you can re-aim
 > same caution the mutation percentages carry (§B1: *"not a coverage figure and should not
 > be quoted as one"*) applies here verbatim.
 >
-> For the two closed below, the honest evidence is not the meter but the fixtures: both
-> are `smoke_run` registrations asserting **printed output**, and `csv` additionally
-> round-trips a comma-bearing field through RFC 4180 quoting and re-parses it. That is a
-> behaviour claim. "28/30" is not.
+> For the four closed below, the honest evidence is not the meter but the fixtures: each is
+> a registration asserting **printed output**, `csv` round-trips a comma-bearing field
+> through RFC 4180 quoting, and `ws` completes a real client↔server echo. Those are
+> behaviour claims. "30/30" is not.
+>
+> **A NAMED INSTANCE, so the caveat is not abstract (found 2026-08-03).** The meter credits
+> **`Tcp`** and **`Http`** with run coverage on the strength of fixtures whose stdlib call
+> sits in a function **nothing ever calls**:
+> ```
+> def startServer()
+>     Tcp.serve(19876, handleConn)   # the corpus's only Tcp.serve
+> def main()
+>     print("tcp_serve_test OK")     # startServer() is never called
+> ```
+> Both are registered with `smoke_run`, both pass, and neither ever binds a socket.
+> `http_serve_test.zbr` is the same shape and says so in its own comment ("exercises
+> Http.serve codegen path without starting a server"). **The fixtures are honest; the meter
+> is not** — it cannot tell a compile smoke from a run fixture. So the real count of
+> namespaces with genuine runtime exercise is **at most 28, not 30**.
+>
+> Scanned with `scratchpad/dead_fixture_fns.py` (a `def` whose name appears nowhere else).
+> It initially also flagged `random_instance_test`'s five `test_*` functions — a **false
+> positive**: `smoke_test` invokes `zebra test`, which discovers them by name convention.
+> Recorded because the correction is the useful part: "uncalled" depends on which runner
+> you assume, and the scan assumed one.
 
 - **`Csv`** — ✅ **CLOSED 2026-08-03** (BUG-242). The ticket said only the writer was
   missing; in fact the whole namespace was dead — seven faults, including one that emitted
@@ -132,11 +153,32 @@ numbers drift; on a miss the tool now prints the neighbourhood so you can re-aim
   `bug241_progress_io_test`. The expectation asserts the deterministic **print**, not bar
   rendering — `std.Progress` goes quiet on a non-tty, so a bar-shaped expectation could
   never match under the runner.
-- **`Ws`** — needs a **client+server fixture with a bounded wait**. `ws_smoke_test.zbr` is
-  a server and does not terminate (verified: SIGTERM at 45 s), so it cannot be registered
-  as-is.
-- **`Shell`** — needs a **purpose-built test**. Its only user is `test/zebra_ide.zbr`, an
-  IDE harness. Must not depend on which utilities the host happens to have.
+- **`Ws`** — ✅ **CLOSED 2026-08-03**. `test/ws_echo_test.zbr` does a real client↔server
+  round trip: server on a `sys.go` thread, **bounded connect retry** rather than a
+  `sys.sleep` timing assumption, payload echoed and compared. Verified 6/6 consecutive
+  before registration, and both assertions shown to fire independently — a wrong payload
+  and an unreachable port produce **different** messages, so a port collision cannot read
+  as a broken echo. Process exit with the server thread still blocked in `accept` was
+  **verified, not assumed**.
+- **`Shell`** — ✅ **CLOSED 2026-08-03**. `test/shell_test.zbr` uses `echo`, the only
+  command that is a builtin of *both* `cmd` and `sh`, so it assumes nothing about the host.
+  It runs `echo alpha && echo beta` and asserts both outputs appear **and that `&&` does
+  not** — which discriminates a real shell from an implementation that merely echoes its
+  argument back. Comparison is `contains`, never equality, since `cmd` emits CRLF and `sh`
+  LF. Closing it required fixing **BUG-245**: the emitter still called
+  `std.process.Child.run`, removed in Zig 0.16.
+
+**The prerequisite neither item could be done without.** `smoke_run` has **no timeout**, so
+a fixture that fails to terminate hangs the entire tier rather than failing it — and both
+of these spawn external work. `smoke_run_bounded` was added first, and **proved able to go
+red** against a deliberate `while true` probe before either fixture was written. It reports
+a hang as an explicit `TIMEOUT` verdict, distinct from a wrong answer, because otherwise a
+hang prints "expected '…' in output" and sends the next session hunting a codegen bug that
+does not exist.
+
+**The model that could not be copied.** `tcp_serve_test.zbr` looks like the precedent for a
+server fixture and is not one — its `main` only prints (see the meter note above). There
+was no working example of a bounded server test in this repo before `ws_echo_test`.
 
 ---
 

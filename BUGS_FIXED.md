@@ -6,6 +6,48 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-245: QUICKSTART's `sys.go` examples never compiled, and `Shell.run` was unmigrated — FIXED 2026-08-03
+- **Status:** Fixed. Smoke 288/288. Pinned by `test/bug245_shell_process_run_test.zbr`.
+
+**Found 2026-08-03** while writing the §1b fixtures — by trying to follow the doc.
+
+`QUICKSTART.md` is the **authoritative agent-facing reference**, and its entire
+concurrency section wrote thread spawning as `sys.go(lambda …)`. Five code blocks, plus a
+prose claim that "the lambda can capture variables from the enclosing scope". **None of it
+compiled.**
+
+| form, verbatim from the doc | result |
+|---|---|
+| `sys.go(lambda  var _ = total.add(1) )` | `'var' is a statement keyword and can't be used as an expression here` |
+| `sys.go(lambda` + block | parse error **at `lambda`** |
+| `sys.go(lambda t.add(1))` | parse error at `lambda` |
+| implicit capture of an outer var | `'t' not accessible from inner function` |
+
+`lambda` is **not a Zebra keyword at all**. Every occurrence of the word in the corpus is
+in a *comment* describing lambdas conceptually; the syntax is `def(params)`, and captures
+need an explicit `capture` block. `test/chan_thread_test.zbr` has always had it right.
+
+**Why no gate could see it.** `doc_lint` checks that referenced *paths* and *tools* exist,
+and prints its own uncovered list — the first entry of which is "prose claims about
+BEHAVIOUR … needs an experiment". A code block that does not compile is exactly that. The
+only instrument that finds this is someone running the examples.
+
+**Fixed**: the concurrency sections now show `def()` + `capture`, each form verified by
+running it. The shared-counter example was removed rather than translated, because it hits
+**BUG-246**.
+
+**Also fixed, same investigation — a real code defect** (`Shell.run`, gated by
+`test/shell_test.zbr`): the selfhost emitted `std.process.Child.run(.{...})`, which does
+not exist in Zig 0.16 — the allocator and `Io` are positional
+(`std.process.run(_allocator, _io, .{...})`) and `max_output_bytes` is gone. Additionally
+`Shell.run` had no TypeChecker arm, so its result typed as unresolved and no `str` method
+would dispatch on it. **Third instance of the same pattern as BUG-241/242**: a namespace
+with no run coverage was never exercised, so its Zig 0.16 migration never happened and
+nothing could find out. The bootstrap still emits the stale form; not fixed there, per the
+selfhost-may-lead policy — `Shell` is not used by any selfhost source.
+
+---
+
 ### BUG-242: the entire `Csv` namespace was dead in the selfhost — FIXED 2026-08-03
 - **Status:** Fixed. `csv_test` passes end to end; registered with `smoke_run`.
 - **The ticket understated it.** It read "`Csv.` reading appears to work; it is the writer

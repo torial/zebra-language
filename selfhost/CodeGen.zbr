@@ -16262,13 +16262,14 @@ struct Generator
             writeIndent()
             w.emit("        @as([]const []const u8, &[_][]const u8{ \"sh\", \"-c\", _sh_cmd });\n")
             writeIndent()
-            w.emit("    const _sh_res = std.process.Child.run(.{\n")
-            writeIndent()
-            w.emit("        .allocator = _allocator,\n")
+            # BUG-245. Zig 0.16 moved this: `std.process.Child.run` no longer exists, the
+            # allocator and Io are POSITIONAL, and `max_output_bytes` was replaced by
+            # `stdout_limit` (defaulted, so it is simply dropped here). Mirrors the
+            # preamble's own `_sys_run`, which was migrated correctly because something
+            # actually calls it. Nothing called Shell.run, so nothing found this.
+            w.emit("    const _sh_res = std.process.run(_allocator, _io, .{\n")
             writeIndent()
             w.emit("        .argv = _sh_argv,\n")
-            writeIndent()
-            w.emit("        .max_output_bytes = 1024 * 1024,\n")
             writeIndent()
             w.emit("    }) catch @panic(\"Shell.run error\");\n")
             writeIndent()

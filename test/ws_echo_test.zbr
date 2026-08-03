@@ -1,0 +1,55 @@
+# Ws — a REAL client+server round trip, bounded so it can never hang a gate.
+#
+# `test/ws_smoke_test.zbr` is emit-only and deliberately never runs: its last statement is
+# `Ws.serve(...)`, which blocks forever (SIGTERM at 45 s), so it is excluded from
+# output_sweep as non-terminating. This file is the runtime counterpart, and every way it
+# could hang has been closed:
+#
+#  * The server runs on a `sys.go` thread; main returns while it is still blocked in
+#    accept, and the process exits cleanly (verified rc=0, not assumed — Zig's
+#    main-returns-exits behaviour had to be shown to survive Zebra's runtime).
+#  * Connecting uses a BOUNDED RETRY, not `sys.sleep(N)` then hope. A fixed sleep is a
+#    timing assumption, and this machine produced a 10x timing swing in one day. Ws.connect
+#    returns nil promptly on a closed port (verified), so the retry is a real loop with a
+#    hard ceiling rather than a disguised wait.
+#  * Registered with `smoke_run_bounded`, which fails with an explicit TIMEOUT verdict
+#    rather than hanging the tier.
+#
+# Failure to bind reports AS failure to bind: `connected` is asserted separately from the
+# payload, so a port collision cannot masquerade as a broken echo.
+#
+# NOTE: a handful of `error.Unexpected NTSTATUS=...CONNECTION_REFUSED` lines on stderr are
+# EXPECTED while the server is still binding — that is the retry loop working.
+
+def echoHandler(ws: WsConn)
+    var m = ws.recv()
+    if m as msg
+        ws.send("ECHO:" + msg)
+    ws.close()
+
+def main()
+    sys.go(def()
+        Ws.serve(19913, echoHandler)
+    )
+
+    var reply: str = ""
+    var attempts: int = 0
+    var connected: bool = false
+
+    while attempts < 20 and not connected
+        var c = Ws.connect("ws://127.0.0.1:19913/")
+        if c as ws
+            connected = true
+            ws.send("ping")
+            var r = ws.recv()
+            if r as got
+                reply = got
+            ws.close()
+        else
+            sys.sleep(50)
+        attempts = attempts + 1
+
+    assert connected, "client reached the in-process server within 20 attempts"
+    assert reply == "ECHO:ping", "server received the payload and echoed it back"
+
+    print("ws_test: OK")

@@ -11,10 +11,18 @@ There are 38 `gen<Thing>Call` emitters. This answers "how many of them does anyt
 actually RUN and check the output of?"
 
 WHAT "COVERED" MEANS HERE, precisely, because the word does a lot of work:
-a namespace is COVERED if some test registered with `smoke_run` or `smoke_test` (i.e. one
-whose OUTPUT is compared, not merely compiled) mentions `Namespace.` in its source. That
-is a generous definition -- mentioning `Sqlite.` once does not exercise every branch of
-`genSqliteCall`. So this tool gives an UPPER BOUND on coverage; the real figure is worse.
+a namespace is COVERED if some test registered with `smoke_run`, `smoke_run_bounded` or
+`smoke_test` (i.e. one whose OUTPUT is compared, not merely compiled) mentions
+`Namespace.` in its source. That is a generous definition -- mentioning `Sqlite.` once does
+not exercise every branch of `genSqliteCall`. So this tool gives an UPPER BOUND on
+coverage; the real figure is worse.
+
+HOW MUCH WORSE, with a receipt (2026-08-03): `Tcp` and `Http` are counted as covered on
+the strength of `tcp_serve_test.zbr` / `http_serve_test.zbr`, whose `main` only prints a
+string -- the `Tcp.serve` / `Http.serve` calls sit in a `startServer()` that NOTHING EVER
+CALLS. Both fixtures pass; neither binds a socket. The fixtures are honest (their comments
+say "compile smoke"); this tool cannot tell a compile smoke from a run fixture. Read every
+figure below with that in mind.
 It is still the right first cut, because a namespace with ZERO run-fixtures cannot have
 any of its emitter's branches checked, and that set is what to work through first.
 
@@ -35,7 +43,15 @@ SMOKE = REPO / "tools" / "selfhost_smoke.sh"
 
 DISPATCH = re.compile(
     r'if\s+id\.name\s*==\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*\n\s*(gen[A-Za-z]*Call)\(')
-RUN_REG = re.compile(r'^(?:smoke_run|smoke_test)\s+(\S+)', re.M)
+# ORDER IS LOAD-BEARING: `smoke_run_bounded` must precede `smoke_run`. Alternation is
+# first-match-wins, so `smoke_run` would match the prefix and then the `\s+` would fail
+# against `_bounded`, silently dropping every bounded registration. That is exactly what
+# happened when smoke_run_bounded was added on 2026-08-03: the meter kept reporting 28/30
+# while the two new fixtures sat registered and passing. A meter that misses a whole
+# REGISTRATION HELPER under-reports without any error, which is the failure mode this
+# repo cares about most -- so any new smoke_* helper whose output is compared must be
+# added here in the same change that introduces it.
+RUN_REG = re.compile(r'^(?:smoke_run_bounded|smoke_run|smoke_test)\s+(\S+)', re.M)
 
 
 def namespaces():

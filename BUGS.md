@@ -1,7 +1,43 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-244. Next new bug: BUG-245.**
+**Last bug number generated: BUG-246. Next new bug: BUG-247.**
+
+---
+
+### BUG-246: `Atomic(T).add()` inside a `capture` block mis-resolves to `.append()` — OPEN
+
+**Found 2026-08-03**, writing the §1b `Ws` fixture.
+
+```zebra
+var t = Atomic(int)(0)
+sys.go(def()
+    capture
+        var t: Atomic(int) = t
+    var _ = t.add(1)
+)
+```
+```
+error: no field or member function named 'append' in 'zebra_rt._Atomic(i64)'
+```
+
+This is the **BUG-120 family** — the `.add()` → `.append()` List rewrite firing on a
+receiver that is not a List. BUG-120 fixed the case of a lowercase class instance by
+consulting `InferCtx` at the call site; a variable re-declared inside a `capture` block
+evidently does not get the same treatment, so the heuristic wins again.
+
+**Narrow, and the boundary is known:** `store` and `load` on a captured `Atomic` work
+(verified). Only `add` is affected, because only `add` collides with the List method name.
+
+**Impact is larger than it looks** — this is the documented idiom for a shared counter
+across threads, and it cannot be written. `Chan(T)` is the workaround (sum on the
+receiving side), which is what `test/chan_thread_test.zbr` does.
+
+**QUICKSTART's shared-counter example was removed rather than repaired** when the
+surrounding `lambda` errors were fixed (BUG-245's note); restore it when this is fixed.
+
+---
+
 
 ---
 

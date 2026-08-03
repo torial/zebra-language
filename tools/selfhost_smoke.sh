@@ -556,6 +556,48 @@ smoke_run() {
     fi
 }
 
+# smoke_run_bounded <zbr> <expected> [secs] — smoke_run with a HARD wall-clock ceiling.
+#
+# WHY THIS EXISTS: no other helper here has a timeout, so a fixture that fails to
+# terminate hangs the entire tier rather than failing it. That is not hypothetical --
+# `ws_smoke_test.zbr` calls `Ws.serve` and never returns (SIGTERM at 45 s), and
+# `output_sweep` auto-excludes three server fixtures for the same reason. Any fixture
+# that binds a socket, spawns a thread, or waits on I/O belongs here rather than in
+# `smoke_run`.
+#
+# TIMEOUT IS REPORTED AS ITS OWN VERDICT, and that distinction is the point. `timeout`
+# exits 124; without special-casing it, a hang would print "FAIL (expected '...' in
+# output)" -- which reads as a behaviour regression and sends the next session hunting a
+# codegen bug that does not exist. A hang and a wrong answer are different findings.
+smoke_run_bounded() {
+    local zbr="$1"
+    local expected="$2"
+    local secs="${3:-30}"
+    local label
+    label="$(basename "$zbr" .zbr)_run"
+    local got rc
+    got=$(timeout "$secs" "$ZEBRA" "$zbr" 2>&1); rc=$?
+    if [[ $rc -eq 124 ]]; then
+        echo "  FAIL: $label (TIMEOUT after ${secs}s — did not terminate)" >&2
+        echo "    NOTE: this is a HANG, not a wrong answer. Do not read it as a" >&2
+        echo "          behaviour regression until you have ruled out a blocked" >&2
+        echo "          accept()/recv() or a server thread outliving main." >&2
+        echo "$got" >&2
+        FAIL=$((FAIL + 1))
+    elif [[ $rc -ne 0 ]]; then
+        echo "  FAIL: $label (non-zero exit $rc)" >&2
+        echo "$got" >&2
+        FAIL=$((FAIL + 1))
+    elif echo "$got" | grep -qF -- "$expected"; then
+        echo "  PASS: $label"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $label (expected '$expected' in output)" >&2
+        echo "    got: $got" >&2
+        FAIL=$((FAIL + 1))
+    fi
+}
+
 smoke_run_bootstrap() {
     local zbr="$1"
     local expected="$2"
@@ -1105,6 +1147,20 @@ smoke_run test/csv_test.zbr "csv_test: all assertions passed"
 # BUG-241 marked fixed with no fixture at all, within minutes of the fix landing.
 smoke_run test/bug241_progress_io_test.zbr "bug241: OK"
 smoke_run test/bug242_csv_roundtrip_test.zbr "bug242: OK"
+
+# §1b — the last two stdlib namespaces with no run coverage. BOTH use the BOUNDED helper:
+# shell_test spawns a child process and ws_echo_test binds a socket and spawns a thread, so
+# each has a way to not come back that a plain smoke_run would turn into a hung tier rather
+# than a failed test.
+#
+# ws_echo_test was verified 6/6 consecutive before registration, and both its assertions
+# were shown to fire independently — a wrong payload and an unreachable port produce
+# DIFFERENT messages, so a port collision cannot read as a broken echo. A flaky fixture in
+# the QUICK tier is worse than an uncovered namespace: it teaches people to re-run gates
+# until they pass, which costs the whole tier its meaning.
+smoke_run_bounded test/shell_test.zbr    "shell_test: OK" 90
+smoke_run_bounded test/ws_echo_test.zbr  "ws_test: OK"    90
+smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then
