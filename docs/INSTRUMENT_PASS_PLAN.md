@@ -78,22 +78,46 @@ numbers drift; on a miss the tool now prints the neighbourhood so you can re-aim
 
 ---
 
-## 2. The unexplained 57 — the highest-value item on this list
+## 2. The unexplained set — the highest-value item on this list
 
-**84 of 421 corpus files are not in the emit+compile-clean baseline. 27 are registered
-negative tests. That leaves 57 files in no known category.**
+**CORRECTION 2026-08-02: it is 25, not 57.** The original figure came from `comm`-ing the
+corpus against the pass baseline and subtracting only registered negatives — a crude
+method that counted library files and documented cases as mysteries. `full_sweep` already
+buckets every file, so the honest cut is its own classification cross-referenced against
+what each file is registered with:
 
-Reproduce:
+| bucket | meaning | count | status |
+|---|---|---|---|
+| `EMITFAIL` | the compiler refused to emit | **27** | ✅ registered negative tests — asserted |
+| `NOMAIN` | no `main()`; a library/fixture | **27** | ✅ legitimately not runnable |
+| `DEPMISS` | search-path dep `--output-dir` skipped | **2** | ✅ documented as not-broken |
+| **`CFAIL`** | **emitted Zig does not compile** | **21** | 🔴 3 registered, **18 unregistered** |
+| **`EMITFAIL`** | **refuses to emit, nobody asserts it** | **4** | ⚠ unexplained |
+
+**25 files, of which 18 CFAIL carry no registration at all** — and two of those were
+already filed as BUG-241/242 the day before, which is what makes the rest worth checking.
+
+Reproduce (results come from `full_sweep`'s own run, so no re-derivation):
 
 ```bash
-comm -23 <(bash tools/corpus_ls.sh test | sed 's#test/##;s#\.zbr$##' | sort) \
-         <(sort tools/full_sweep_baseline.txt)
+bash tools/full_sweep.sh          # leaves $TMPDIR/zebra_full_sweep/results.txt
+grep -v '^PASS ' $TMPDIR/zebra_full_sweep/results.txt
 ```
+
+**`CFAIL` does not mean broken.** The sweep uses a multi-module `--output-dir` shape, and
+a program can run perfectly via `zebra file.zbr` while failing that path — `DEPMISS` is
+the documented case of exactly this. So each file resolves to one of:
+
+| finding | action |
+|---|---|
+| RUNS via `zebra file.zbr` | the sweep's shape is the problem, not the file — register it (`smoke_run`) |
+| genuinely BROKEN | file a bug; it has never worked and nobody knew |
+| library / fixture | mis-bucketed; exempt it explicitly |
 
 **Why this is the priority.** BUG-241 and BUG-242 were both in exactly this state —
 uncompilable for months, invisible because a baseline-driven sweep cannot distinguish
-*"never worked"* from *"intentionally negative"*. Fifty-seven files sit in that blind
-spot right now, and finding two broken ones in the first sample of it is not encouraging.
+*"never worked"* from *"intentionally negative"*. Sixteen more unregistered `CFAIL` files
+sit in that blind spot, and the first two anyone looked at were both broken.
 
 **Triage each into one of three buckets**, and record the bucket so the set cannot re-form:
 
@@ -109,8 +133,8 @@ unexplained again. `bug_fixture_check.py` already enforces this shape for *bug* 
 cover ordinary feature tests. That check is the durable outcome of this item — the triage
 is one-time, the gate is not.
 
-*Sizing: ~1–2 days, and the least predictable item here, because the answer is 57 small
-investigations.*
+*Sizing: under a day now that the number is 25 rather than 57, and most of the work is
+running each file and reading one line of output.*
 
 ---
 

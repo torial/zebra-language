@@ -347,6 +347,21 @@ python tools/bug_fixture_check.py --gate  # THE REGRESSION-FIXTURE GATE (A1): SQ
                                 #   if something actually RUNS it, since an orphaned .zbr
                                 #   nobody executes is the shape this class of debt takes.
                                 #   Also globs test/boundary/*.zbr. Static; instant. QUICK.
+python tools/registration_check.py # THE UNASSERTED-FILE GATE (BUG-243, static, instant):
+                                #   every tracked test/*.zbr must have its status asserted by
+                                #   SOMETHING — a smoke* registration, presence in the
+                                #   full_sweep pass baseline, or an entry in
+                                #   tools/registration_exempt.txt WITH A REASON.
+                                #   Why: full_sweep gates against a BASELINE, so a file that
+                                #   has NEVER passed cannot make it red however broken it is;
+                                #   and with no registration nothing asserts it should fail
+                                #   either. A permanently-broken file is then indistinguishable
+                                #   from an intentionally-negative one. Fifteen were found in
+                                #   exactly that state on 2026-08-02 — including the regression
+                                #   fixtures for BUG-106 and BUG-108, which had NEVER RUN, so
+                                #   those fixes were unverified. Baselined like bug-fixture:
+                                #   fails only on NEW debt (24 known). Shrink it, never grow it.
+                                #   QUICK tier.
 python tools/lint_oom_unreachable.py  # THE RELEASE-ONLY-UB GATE (A4): `unreachable` is
                                 #   undefined behaviour in ReleaseFast, which is what
                                 #   `zebra --release` ships. Every gate here runs Debug,
@@ -453,7 +468,7 @@ than "what do we know":
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 54 scripts | <!-- doc-gen: 54 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 56 scripts | <!-- doc-gen: 56 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 documents | <!-- doc-gen: 45 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
 
 The last row is the one that keeps the rest honest; see its header for why.

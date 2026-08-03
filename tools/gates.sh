@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# There are 12 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 12 = grep -c '^run "' tools/gates.sh -->
+# There are 13 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 13 = grep -c '^run "' tools/gates.sh -->
 # (CLAUDE.md explains each), plus four heavy witnesses in FULL. The count in this
 # sentence has been wrong before: it said "seven" while twelve were registered, and
 # doc_lint cannot catch that class -- a number in prose has no referent to resolve.
@@ -168,6 +168,11 @@ run "str-ownership"  "is current" python tools/str_ownership_extract.py --check
 # rather than a habit. Fails only on NEW debt — the backlog is baselined — and counts a
 # fixture as real only if something actually RUNS it. Static; instant.
 run "bug-fixture"    "gate PASS" python tools/bug_fixture_check.py --gate
+# BUG-243: a corpus file that nothing registers AND that has never been sweep-clean
+# is invisible to every gate -- full_sweep baselines the pass set, so a file that has
+# never passed cannot make it red. Fifteen files were found in that state, two of them
+# regression fixtures that had never run. Baselined like bug-fixture: fails on NEW debt.
+run "registration"   "0 NEW"    python tools/registration_check.py
 # A4: `unreachable` is UB in ReleaseFast, which is what `zebra --release` ships. Every
 # gate here runs Debug, where it traps cleanly — so this hazard is invisible to all of
 # them and live only in what users distribute. A static lint is the only witness.

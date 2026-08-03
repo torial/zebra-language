@@ -1,0 +1,33 @@
+# Corpus files whose status is legitimately NOT asserted by a smoke helper.
+# Format:  <name>  # <reason>      -- a reason is REQUIRED (tools/registration_check.py).
+#
+# These are MODULES, not tests: they have no main() and are exercised through whatever
+# imports them. Demanding a registration for each would be noise, and noise is how a
+# gate gets ignored. Anything NOT here and not registered is real debt -- see BUG-243.
+
+MathUtils  # helper module imported by other tests; has no main()
+StringHelper  # helper module imported by other tests; has no main()
+bug082_lib  # helper module imported by other tests; has no main()
+bug168_crossmod_prim_return_lib  # helper module imported by other tests; has no main()
+bug221_transitive_init_leaf  # support module for a bug fixture; exercised through its importer
+bug221_transitive_init_mid  # support module for a bug fixture; exercised through its importer
+bug235_use_lib  # helper module imported by other tests; has no main()
+bug238_except_lib  # helper module imported by other tests; has no main()
+crossmod_expose_lib  # helper module imported by other tests; has no main()
+crossmod_hatopt_lib  # helper module imported by other tests; has no main()
+crossmod_modvar_lib  # helper module imported by other tests; has no main()
+crossmod_optret_geom  # cross-module test support; exercised through its importer
+crossmod_optret_lib  # helper module imported by other tests; has no main()
+crossmod_types_lib  # helper module imported by other tests; has no main()
+expose_lib  # helper module imported by other tests; has no main()
+partial_shared_test.extra  # partial of test/partial_shared_test.zbr — auto-loaded by the compiler, not a test
+partial_test.math  # partial of test/partial_test.zbr — auto-loaded by the compiler, not a test
+partial_test.meta  # partial of test/partial_test.zbr — auto-loaded by the compiler, not a test
+tc_check  # module of the tc_* typechecker experiment; imported, not run directly
+tc_infer  # module of the tc_* typechecker experiment; imported, not run directly
+tc_scope  # module of the tc_* typechecker experiment; imported, not run directly
+tc_smoke_types  # module of the tc_* typechecker experiment; imported, not run directly
+tc_stdlib  # module of the tc_* typechecker experiment; imported, not run directly
+tc_types  # module of the tc_* typechecker experiment; imported, not run directly
+typechecker  # module of the tc_* typechecker experiment; imported, not run directly
+val_lib  # helper module imported by other tests; has no main()

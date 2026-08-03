@@ -152,7 +152,7 @@ lists everything else. An untracked `.zbr` might be an abandoned probe or a fixt
 someone is three minutes from committing — the tool cannot tell, so it does not guess. A
 cleanup tool that deletes unfinished work once will never be run again.
 
-**D6, the count oracle** — `<!-- doc-gen: 12 = grep -c '^run "' tools/gates.sh -->`.
+**D6, the count oracle** — `<!-- doc-gen: 13 = grep -c '^run "' tools/gates.sh -->`.
 Counts rot because a bare number has no referent; three rotted in one day. **It found a
 vacuous check on its first use:** the oracle said 12 gates while D3's parser said 13, and
 that one-digit disagreement exposed D3's regex as `[a-z0-9\-]+` — no underscore — so

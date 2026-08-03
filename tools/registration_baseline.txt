@@ -1,0 +1,26 @@
+# Files whose status nothing asserts -- existing debt, recorded so the gate
+# fails only on NEW debt. Shrink this; do not grow it. See BUG-243.
+branch_infer_miss_test
+branch_missing_test
+bug099_unresolved_test
+bug105_enum_member_test
+bug105_union_variant_test
+bug106_cast_test
+bug106_heterogeneous_list_test
+bug108_this_outside_class_test
+c_interop_test
+crossmod_expose_test
+csv_test
+expose_dotted_test
+generic_pair_test
+gui_test
+json_parse_typed_test
+progress_test
+raise_details_test
+tc_check_test
+tc_infer_test
+tc_merge_fixture
+tc_types_test
+typechecker_test
+zebra_ide
+zig_interop_test

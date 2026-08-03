@@ -1,9 +1,59 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-242. Next new bug: BUG-243.**
+**Last bug number generated: BUG-243. Next new bug: BUG-244.**
 
 ---
+
+### BUG-243: fifteen corpus files have never compiled, and no gate could say so
+
+**Found 2026-08-02**, working §2 of `docs/INSTRUMENT_PASS_PLAN.md`. An umbrella ticket:
+these are not one defect, they are fifteen — but they were found by one method, they share
+one cause of invisibility, and the inventory is more useful in one place than scattered.
+
+**How they hid.** `full_sweep` gates against a **baseline** (337 of 421 files). A file
+that has *never* passed is not in the baseline, so it cannot make the gate red however
+broken it is. And none of these carries a `smoke*` registration, so nothing asserts they
+should fail either. **A permanently-broken file is indistinguishable from an intentionally
+negative one**, and both look like a green board.
+
+Every one was verified by running `zebra <file>` directly — not inferred from the sweep.
+
+| file | error | class |
+|---|---|---|
+| `expose_dotted_test` | emitted Zig: `expected ';' after declaration` | **codegen emits invalid Zig** |
+| `typechecker_test` | emitted Zig: `unused function parameter` | **codegen** |
+| `tc_check_test` | emitted Zig: `expected type '*tc_infer.TcExpr'` | **codegen** |
+| `tc_infer_test` | emitted Zig: `struct 'tc_types.TcTypes' has no member` | **codegen** |
+| `zebra_ide` | emitted Zig: `use of undeclared identifier 'Lis…'` | **codegen** |
+| `progress_test` | `zebra_rt.zig:3617: expected 2 argument(s), found 1` | **BUG-241** (filed) |
+| `gui_test` | `local variable is never mutated` | the BUG-230 const/var family |
+| `csv_test` | `use of undeclared identifier 'CsvWriter'` | **BUG-242** (filed) |
+| `bug106_heterogeneous_list_test` | `expected type 'i64'` | **regression fixture that does not run** |
+| `bug108_this_outside_class_test` | `use of undeclared identifier` | **regression fixture that does not run** |
+| `crossmod_expose_test` | `type 'array_list.Aligned(…)'` | cross-module expose |
+| `generic_pair_test` | `expected type 'T', found '*T'` | generics |
+| `json_parse_typed_test` | `no field or member function named …` | stdlib/typing |
+| `raise_details_test` | `error union is ignored` | error model |
+| `tc_types_test` | `struct 'tc_types.TcTypes' has no member` | (tc_* family) |
+
+**The two rows that matter most are the regression fixtures.** `bug106_*` and `bug108_*`
+exist to prove BUG-106 and BUG-108 stay fixed. Neither has ever run. **Those two fixes are
+unverified**, and have been for as long as the fixtures have existed.
+
+**Second-most: five files fail inside EMITTED Zig**, not at the Zebra source. Those are
+codegen defects — the compiler producing invalid or ill-typed Zig — which is the class
+`compile_check` exists to catch, and it does not sweep these because they are not in its
+smoke-derived worklist.
+
+**The `tc_*` / `typechecker_test` / `zebra_ide` group** looks like an earlier
+self-hosting/IDE experiment. They may be legitimately stale rather than defects — decide
+per file, and if stale, **delete or quarantine explicitly** rather than leaving them to
+look like coverage.
+
+**Disposition:** triage each into runs-but-sweep-shape (register), broken (fix), or stale
+(delete/quarantine). Then close the class — see `tools/registration_check.py`, which makes
+an unregistered, unexplained `test/*.zbr` a gate failure instead of a silence.
 
 ### BUG-241: `test/progress_test.zbr` has not compiled since Zig 0.16, and nothing noticed
 
