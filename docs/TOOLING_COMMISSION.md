@@ -140,7 +140,7 @@ The new gates are not taken on trust:
 
 **`tools/corpus_ls.sh` — the corpus is what git TRACKS.** Four gates enumerated with a
 filesystem glob, so their results depended on untracked scratch. Live instance:
-`examples/zz_red_main.zbr` in a directory `full_sweep --examples --gate` sweeps (tracked
+`examples/zz_red_main.zbr` in a directory `full_sweep --examples --gate` sweeps (tracked <!-- doc-lint-ok: the 2026-08-01 stray, named as the concrete instance; cleared by tidy.sh --clean 2026-08-03, so the dangling name is the tool having WORKED -->
 21, glob 22). The worst site was `bug_fixture_check.py`, where an untracked
 `test/bug<N>_*.zbr` could turn the gate **GREEN** by appearing to supply a fixture nobody
 else has — the sweeps could only add noise, that one could hide debt. `gate_selfcheck`

@@ -162,9 +162,10 @@ document. A declaration cannot drift out of sync with the file it is written in.
 
 Every heavy gate used to enumerate its corpus with a filesystem glob (`ls test/*.zbr`),
 which made its result depend on whatever untracked scratch happened to be in the
-directory. Found 2026-08-01: `examples/zz_red_main.zbr`, a scratch probe, untracked, in a
+directory. Found 2026-08-01: `examples/zz_red_main.zbr`, a scratch probe, untracked, in a <!-- doc-lint-ok: the 2026-08-01 stray, named because a concrete instance is what makes the hazard real; cleared by tidy.sh --clean 2026-08-03, so a dangling name here is the tool having WORKED, not a broken link -->
 directory `full_sweep --examples --gate` sweeps — invisible to anyone reading the commit
 and not reproducible anywhere else.
+
 
 The worst instance was not a sweep. `bug_fixture_check.py` decides whether a reported bug
 has a regression fixture by looking for `test/bug<N>_*.zbr`, so an **untracked** file could

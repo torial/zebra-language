@@ -1,7 +1,54 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-243. Next new bug: BUG-244.**
+**Last bug number generated: BUG-244. Next new bug: BUG-245.**
+
+---
+
+### BUG-244: `zebra <file>` leaks a ~20 MB executable into TMPDIR on every run — OPEN
+
+**Found 2026-08-03**, while Sean was freeing disk space; the machine had reached 40 GB free
+on a 953 GB volume.
+
+**Measured, not estimated.** One invocation of `zebra test/bug241_progress_io_test.zbr`
+(no `--output-dir`) leaves behind:
+
+    C:\Presolved\tmp\bug241_progress_io_test.zig            1 KB
+    C:\Presolved\tmp\bug241_progress_io_test.zig.fast.exe   20,119,552 bytes
+
+Neither is ever removed. **6,413 executables totalling 120 GB** had accumulated.
+
+**The binary is not a cache.** Its mtime changes on every run, so it is re-linked each
+time and nothing is reused — deleting it costs nothing. (Checked before proposing a fix,
+because "clean up the temp files" is a bad idea if they are a warm cache.)
+
+**Scale.** `selfhost_smoke.sh` runs 285 fixtures through this path, so a single smoke run
+leaks ~5.7 GB, and smoke is in **both** the QUICK and FULL tiers.
+
+**The heavy sweeps are NOT the culprit and need no change.** `full_sweep.sh` and
+`compile_check.sh` emit into a scoped `$OUT/w-$name` subdirectory and `rm -rf` it on every
+path including their failure paths. This is specifically the compiler's own run path
+(`zbrToZig`'s temp-dir branch, the one `runtime_module_check.sh` describes as "temp dir,
+not --output-dir").
+
+**Why it went unnoticed for so long:** a temp directory is where nobody looks, nothing
+warns, and no gate asserts. It is the same shape as BUG-241/243 in a different medium — an
+unmeasured quantity that only becomes visible when it hits a hard limit.
+
+**Fix (proposed).** Remove the emitted `.zig`/`.exe` after the child process exits on the
+run path. Two things to decide first, which is why this is filed rather than patched:
+1. **Keep artifacts on failure.** If the program crashes or the Zig build fails, the
+   emitted source is the debugging evidence — delete only on a clean exit.
+2. **An opt-out.** A `--keep-temp` flag (or honouring an existing debug flag) so anyone
+   inspecting emitted output does not have to fight the cleanup.
+
+**Interim mitigation, already landed:** `bash tools/tidy.sh` now reports the leak and
+`--clean` clears it. Note the trap that cost a first attempt: `zebra.exe` is a **Windows**
+binary reading `TMP`/`TEMP`, while Git Bash sets `TMPDIR` to the MSYS mount `/tmp`. A tool
+that reads `$TMPDIR` looks at the wrong directory and cheerfully reports ~20 MB while
+120 GB sits elsewhere.
+
+---
 
 ---
 

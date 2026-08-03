@@ -95,6 +95,44 @@ else
     dim "none"
 fi
 
+hdr "leaked build artifacts in TMPDIR"
+# `zebra <file>` (no --output-dir) emits its .zig and LINKS a ~20 MB executable into
+# TMPDIR, and never removes either. Measured 2026-08-03: one invocation = one 20 MB .exe,
+# and the binary is RE-LINKED on every run rather than reused, so nothing is lost by
+# clearing it. The smoke suite alone is 285 invocations per gate tier -- roughly 5.7 GB,
+# in both the QUICK and FULL tiers. 6,413 of them had accumulated to 120 GB before anyone
+# noticed, because a temp directory is exactly where nobody looks.
+#
+# The heavy sweeps are NOT the culprit and need no change: full_sweep and compile_check
+# emit into a scoped subdirectory and `rm -rf` it on every path, including their failure
+# paths. This is the compiler's run path -- see BUG-244 for the proper fix.
+#
+# Scoped deliberately: only the two generated shapes in the TMPDIR ROOT, never
+# subdirectories (task logs and the per-tool scratch dirs live there).
+# THE DIRECTORY MUST BE THE ONE THE COMPILER USES, not the one this shell has.
+# `zebra.exe` is a WINDOWS binary and reads TMP/TEMP (C:\Presolved\tmp here); Git Bash
+# sets TMPDIR to the MSYS mount /tmp. They are different directories. Written first with
+# ${TMPDIR:-/tmp}, this reported "1 executable (20M)" while 6,413 sat in the other one --
+# a tidy-looking answer from a tool pointed at the wrong place.
+SCRATCH_ROOT="$(cygpath -u "${TMP:-${TEMP:-}}" 2>/dev/null || true)"
+[[ -z "$SCRATCH_ROOT" || ! -d "$SCRATCH_ROOT" ]] && SCRATCH_ROOT="${TMPDIR:-/tmp}"
+n_exe=$(ls -1 "$SCRATCH_ROOT"/*.zig.fast.exe "$SCRATCH_ROOT"/*.exe 2>/dev/null | sort -u | wc -l)
+n_pdb=$(ls -1 "$SCRATCH_ROOT"/*.pdb 2>/dev/null | wc -l)
+if [[ "$n_exe" -gt 0 || "$n_pdb" -gt 0 ]]; then
+    sz=$(du -ch "$SCRATCH_ROOT"/*.exe "$SCRATCH_ROOT"/*.pdb 2>/dev/null | tail -1 | cut -f1)
+    if [[ $CLEAN -eq 1 ]]; then
+        rm -f "$SCRATCH_ROOT"/*.exe "$SCRATCH_ROOT"/*.pdb 2>/dev/null
+        printf '  removed  %s executable(s) + %s pdb(s) from %s  (%s)\n' \
+               "$n_exe" "$n_pdb" "$SCRATCH_ROOT" "${sz:-?}"
+    else
+        printf '  leaked   %s executable(s) + %s pdb(s) in %s  (%s)\n' \
+               "$n_exe" "$n_pdb" "$SCRATCH_ROOT" "${sz:-?}"
+        dim "clear with --clean; they are re-linked on every run, so nothing is cached here"
+    fi
+else
+    dim "none"
+fi
+
 hdr "summary"
 if [[ $CLEAN -eq 1 ]]; then
     printf '  removed %s known-scratch file(s)\n' "$removed"
