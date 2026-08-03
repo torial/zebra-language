@@ -104,7 +104,12 @@ run() {
         return
     fi
     local last
-    last="$(echo "$out" | grep -vE '^[[:space:]]*$' | tail -1)"
+    # `grep -a` is load-bearing. Several tools print a UTF-8 em-dash, which Windows
+    # mangles into a byte grep treats as binary -- it then prints "Binary file (standard
+    # input) matches" INSTEAD of the summary, and that is what the `registration` gate's
+    # line said on the board for its whole life. A gate whose result is unreadable is one
+    # step from a gate nobody reads.
+    last="$(echo "$out" | grep -a -vE '^[[:space:]]*$' | tail -1)"
     # THE rc CONJUNCT IS LOAD-BEARING, not belt-and-braces. `grep -qF "0 hazard"` also
     # matches "10 hazard(s)" -- and "0 stale" matches "10 stale", "20 stale", and so on.
     # Every count-shaped expectation here has that property. It is sound today only

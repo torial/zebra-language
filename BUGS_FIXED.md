@@ -50,11 +50,19 @@ Open bugs live in `BUGS.md`.
   instrument that would later ask whether the remaining errors ever got closed —
   `csv_test` would have answered on day one, and nothing ran it. Same root as BUG-243,
   reached from the other direction: the work was unfinished **in the open**.
-- **The writer half is a class, not a one-off**, and it is now enumerable. A runtime helper
-  that exists in the preamble and in `src/CodeGen.zig` but that no selfhost source ever
-  emits is unreachable from selfhost-compiled programs — which is *also* why its migration
-  never happened. Validated non-circularly: run against the commit before this fix, the
-  scan lists exactly `_csv_writer_init` / `_csv_write_row` / `_csv_build`; run after, zero.
+- **The writer half is a class, not a one-off — and the class is now enumerated**, by
+  `tools/unreachable_runtime.sh`. A runtime helper present in the preamble and emitted by
+  `src/CodeGen.zig`, but emitted by *no* selfhost source, is unreachable from
+  selfhost-compiled programs — which is also why its migration never happened. Validated
+  non-circularly: run against the commit before this fix it lists exactly
+  `_csv_writer_init` / `_csv_write_row` / `_csv_build`; run after, zero.
+
+  **Result: 73 helpers, 72 of them `_stub_*`/`_gui_*`** — expected, not a finding, since
+  `--gui-backend=*` delegates to the bootstrap by design. **Exactly one real entry
+  remains: `_build_auto_run`**, which the bootstrap appends to the end of top-level `main`
+  in build-script mode (`src/CodeGen.zig:4775`, `:6549`) and no selfhost source emits.
+  Narrow, but the same shape — recorded here rather than fixed, since it needs its own
+  look at whether the selfhost has a `build_mode` at all.
 - **Design note — no new `Type_` variant.** The bootstrap has `.csv_table` / `.csv_row` /
   `.csv_writer`. The selfhost has none, and `Type_` is referenced 950+ times, so adding
   variants means auditing every exhaustive `branch`. Instead these dispatch on

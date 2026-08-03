@@ -50,12 +50,57 @@ these ten are open.
 - **(c) three semantic boundaries — a fixture each.** `12608→12626` (a call whose arity
   exactly matches a defaulted parameter list), `733` (`TypeRef.generic` renders
   `Name(, T, U)`), `7524` (value position of a string-keyed HashMap parameter).
-- **(b) two bare-constructor branches — INVESTIGATE, do not test.** `11166→11184` and
-  `6075`. Twelve corpus files use bare `HashMap()` and none broke when the branch was
-  disabled, so something downstream already handles the shape. Find what, then delete the
-  branch or document why both exist. **A test here would pin duplicated behaviour.**
-- **(d) two AstBuilder-only predicates — check whether they are dead** before writing
-  anything. `330`, `341`.
+- **(b) two bare-constructor branches — ✅ INVESTIGATED 2026-08-03. The hypothesis below
+  was WRONG; read this before acting on it.** `11166→11184` and `6075`.
+
+  > The original reading — *"these are **redundant**, not untested … adding tests here
+  > would pin duplicated behaviour"* — does not survive contact with the code.
+  > `genLocalVar` handles the **annotated** form early: `var m: HashMap(K,V) = HashMap()`
+  > goes through `isGenericStdlibCtor` → `genGenericCtorExpr(ie, n.type_)` at
+  > `CodeGen.zbr:5764` and **returns before 11184 is ever reached**. So 11184 is not a
+  > duplicate path — it is the **complementary** one, firing only for an *unannotated*
+  > bare `HashMap()` in expression position, where it deliberately emits
+  > `std.StringHashMap(anytype)` so that Zig's error points at the missing annotation.
+  >
+  > **It is a diagnostic, and that is why the mutation survived**: disabling it makes the
+  > call fall through to a different path that *also* fails to compile, and no gate
+  > asserts *which* error a bad program produces. The twelve corpus files that "use bare
+  > `HashMap()`" all carry annotations, so none of them reach this branch at all.
+  >
+  > **Do NOT delete it** — that was the original plan's suggestion and it would remove a
+  > deliberate error message. The real resolution is either a negative fixture asserting
+  > the *diagnostic text*, or accepting an error-message path as legitimately ungated.
+  > **No `--site` receipt applies here; the resolution is not a test.** That is a
+  > decision, not an omission.
+
+- **(d) two AstBuilder-only predicates — ✅ INVESTIGATED 2026-08-03. `330` is provably
+  DEAD**, not "might be".
+
+  > `CodeGen.zbr:323` already returns true for anything ending `_expr`/`_stmt`:
+  > ```
+  > if nm.endsWith("_expr") or nm.endsWith("_stmt")
+  >     return true
+  > ```
+  > Every name guarded at **328** (`this_expr`/`callee_expr`/`base_expr`), **330**
+  > (`left_expr`/`right_expr`/`operand_expr`), **332** (`target_expr`/`value_expr`/
+  > `obj_expr`) and **334** (`idx_expr`/`subject_expr`/`iter_expr`) ends in `_expr`, so
+  > none of those four blocks is reachable. Mutating 330 to always-false changed nothing
+  > because control never arrives there. Line 326 keeps live names (`rval`, `msg`, `cond`)
+  > and 336 (`initval`, `type_ref`) is live — neither suffix matches.
+  >
+  > **Resolution is deletion of 328–335, not a test**, which removes the survivor by
+  > removing the site. Deliberately NOT done on 2026-08-03: the tree was at a clean,
+  > gated, pushed state and deleting four unreachable `if`s would have re-entered a
+  > rebuild + FULL-gate cycle for no behavioural gain. Do it in a session already
+  > touching `CodeGen.zbr`, and prove it with the experiment below rather than by reading.
+  >
+  > **The falsifiable check, if you want one:** emit `selfhost/AstBuilder.zbr` before and
+  > after the deletion — byte-identical output proves the lines were dead. The control
+  > that makes that meaningful is disabling **323** instead, which MUST change the output;
+  > without it, "identical" could just mean the emit command was broken.
+  >
+  > `341` (`buildExpr`/`buildStmt`) is a different case and is **not** shown dead —
+  > mutating it makes the predicate over-fire rather than never-fire.
 - **(a) three remaining stdlib emitters** — covered by §1b below.
 
 **Each closes with a receipt, not an assumption:** `python tools/mutation_check.py --site
@@ -64,12 +109,29 @@ numbers drift; on a miss the tool now prints the neighbourhood so you can re-aim
 
 ### 1b. Four stdlib namespaces *(~half a day, two are blocked)*
 
-`tools/stdlib_run_coverage.py` is the meter — currently **26/30**.
+`tools/stdlib_run_coverage.py` is the meter — **26/30 → 28/30 as of 2026-08-03**.
 
-- **`Csv`** — blocked on **BUG-242** (`csv_test.zbr` references an undeclared `CsvWriter`).
-  Fix, then registration is one line.
-- **`Progress`** — blocked on **BUG-241** (`std.Progress.start` gained an `Io` parameter in
-  Zig 0.16; the preamble still calls it with one argument). Fix, then one line.
+> **The meter is an UPPER BOUND and must not be quoted as a coverage figure.** It counts a
+> namespace as covered when some fixture *mentions* it, not when anything exercises the
+> emitter's branches — the tool prints this disclaimer itself, and the real number is
+> worse. It is a checklist of which namespaces have *any* run fixture, nothing more. The
+> same caution the mutation percentages carry (§B1: *"not a coverage figure and should not
+> be quoted as one"*) applies here verbatim.
+>
+> For the two closed below, the honest evidence is not the meter but the fixtures: both
+> are `smoke_run` registrations asserting **printed output**, and `csv` additionally
+> round-trips a comma-bearing field through RFC 4180 quoting and re-parses it. That is a
+> behaviour claim. "28/30" is not.
+
+- **`Csv`** — ✅ **CLOSED 2026-08-03** (BUG-242). The ticket said only the writer was
+  missing; in fact the whole namespace was dead — seven faults, including one that emitted
+  *valid Zig printing a byte array*. Registered via `test/csv_test.zbr` plus the
+  `bug242_csv_roundtrip_test` fixture.
+- **`Progress`** — ✅ **CLOSED 2026-08-03** (BUG-241). `std.Progress.start` gained an `Io`
+  parameter in Zig 0.16. Registered via `test/progress_test.zbr` plus
+  `bug241_progress_io_test`. The expectation asserts the deterministic **print**, not bar
+  rendering — `std.Progress` goes quiet on a non-tty, so a bar-shaped expectation could
+  never match under the runner.
 - **`Ws`** — needs a **client+server fixture with a bounded wait**. `ws_smoke_test.zbr` is
   a server and does not terminate (verified: SIGTERM at 45 s), so it cannot be registered
   as-is.

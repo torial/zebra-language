@@ -10,7 +10,6 @@ bug106_heterogeneous_list_test
 bug108_this_outside_class_test
 c_interop_test
 crossmod_expose_test
-csv_test
 expose_dotted_test
 generic_pair_test
 gui_test
