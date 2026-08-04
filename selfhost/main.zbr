@@ -2310,10 +2310,16 @@ def main()
     #
     # THE ASYMMETRY IS REAL AND MUST STAY DOCUMENTED. A fast check can pass on a program
     # that `zebra run` then fails to build, because some errors only `zig` can see.
-    # Demonstrated by three corpus files today — bug099_unresolved_test,
-    # bug106_heterogeneous_list_test, c_interop_test — each of which emits cleanly and is
-    # then rejected by zig. `tools/check_mode_check.sh` gates exactly that, so the claim
-    # cannot quietly stop being true. A check whose limits are undocumented is the same
+    # Demonstrated by `test/witness_zig_backend_literal.zbr`, whose asymmetry is PERMANENT:
+    # a `zig"…"` backend literal is passed through to the emitted Zig UNPARSED by design, so
+    # the front end cannot judge it even in principle. `tools/check_mode_check.sh` gates
+    # exactly that, so the claim cannot quietly stop being true.
+    #
+    # This comment used to name three BUG FIXTURES instead. Two of them were not evidence of
+    # a limit at all — the bootstrap rejects bug099_unresolved_test and
+    # bug106_heterogeneous_list_test, so a Zebra front end demonstrably CAN catch them and
+    # the selfhost had merely not been given the checks. Citing missing features as proof of
+    # a boundary is circular. BUG-106's check was ported 2026-08-04; BUG-099's is BUG-252. A check whose limits are undocumented is the same
     # class of problem as a gate that cannot fail.
     var check_full           = args.contains("--check-full")
     var mode_emit            = args.contains("--emit-zig")

@@ -2445,6 +2445,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             if ll.elem_type != nil
                 return Type_.list_(typeFromRef(ll.elem_type!))
             if ll.elems.len > 0
+                checkLiteralHomogeneity(ll.elems, "list", ctx)
                 var elem_t: Type_ = inferExpr(ll.elems.at(0), ctx)
                 return Type_.list_(elem_t)
             return Type_.list_(Type_.unknown_)
@@ -2921,6 +2922,48 @@ def isPrimitive(t: Type_): bool
             return true
         else
             return false
+
+# BUG-106. Element-type homogeneity for `[a, b, c]` / array literals.
+#
+# The bootstrap has had this since May 2026 (src/TypeChecker.zig, `.list_lit`/`.array_lit`);
+# the selfhost never received it, so `zebra.exe` — the compiler that ships — accepted
+# `[1, "two", 3]` through the whole front end and let Zig deliver
+# `expected type 'i64', found '*const [3:0]u8'`, a message about generated code.
+#
+# Found 2026-08-04 because the regression fixture for BUG-106 had NEVER RUN (BUG-243): the
+# fix was not merely unverified, it was ABSENT.
+#
+# THE RULE, copied from the bootstrap so the two compilers agree: take the first
+# NON-ABSTRACT element as the anchor; every later non-abstract element must be compatible
+# with it in either direction. Numeric mixes like `[1, 2.0]` pass, because int and float are
+# mutually assignable — the untyped-numeric-literal principle. Abstract elements (nil,
+# context-dependent, unknown) are skipped rather than treated as conflicts, or every literal
+# containing a `nil` would be reported.
+#
+# Reports at most ONE error per literal (returns after the first), matching the bootstrap's
+# `break`: a five-element mixed literal is one mistake, not four.
+#
+# LIST LITERALS ONLY, and that is a real gap rather than an oversight. The bootstrap applies
+# the same rule to `array_lit`; the selfhost's inferExpr has NO array_lit branch at all, so
+# wiring this in there would mean ADDING inference for that node as well — a behaviour change
+# well beyond restoring a missing check. Written as a helper precisely so the array case is
+# one call once that branch exists. Recorded in BUG-106's entry rather than left implicit.
+def checkLiteralHomogeneity(elems: List(Expr), kind: str, ctx: InferCtx)
+    var anchor: Type_? = nil
+    var i: int = 0
+    while i < elems.len
+        var el: Expr = elems.at(i)
+        var t: Type_ = inferExpr(el, ctx)
+        if not isAbstractType(t)
+            if anchor as a
+                if not typesCompatible(t, a) and not typesCompatible(a, t)
+                    ctx.addErr(ctx.file, exprSpanLine(el), exprSpanCol(el),
+                               kind + " literal has heterogeneous element types: '"
+                               + typeTag(t) + "' is not compatible with '" + typeTag(a) + "'")
+                    return
+            else
+                anchor = t
+        i = i + 1
 
 def typesCompatible(declared: Type_, inferred: Type_): bool
     if not isPrimitive(declared)

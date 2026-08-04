@@ -1,0 +1,26 @@
+# ASYMMETRY WITNESS for tools/check_mode_check.sh — a PERMANENT, INTENTIONAL one.
+#
+# `zebra -c` is front-end-only, and `--help` promises that some errors only `zig` can see.
+# check_mode_check gates that promise by requiring a witness: a program the front end
+# ACCEPTS and a full compile REJECTS. If no witness survives, the gate fails on purpose —
+# the claim would have quietly stopped being true.
+#
+# WHY THIS FILE EXISTS (2026-08-04). The witness set used to be three BUG FIXTURES, and two
+# of them were not demonstrating a design limit at all — they were SELFHOST GAPS. The
+# bootstrap rejected both `bug099_unresolved_test` and `bug106_heterogeneous_list_test`,
+# which means a Zebra front end demonstrably COULD catch them; the selfhost just had not
+# been given the check. Using those as evidence that "`-c` cannot see everything" was
+# circular: it proved a missing feature, not a boundary. BUG-106's check has since been
+# ported, and the fixture no longer passes `-c` at all.
+#
+# A `zig'…'` / `zig"…"` backend literal is the honest article. Zebra passes its contents
+# through to the emitted Zig UNPARSED — that is the entire point of the construct — so the
+# front end cannot judge it even in principle, no matter how good the TypeChecker becomes.
+# The asymmetry here can never be "fixed", which is exactly what a witness should rest on.
+#
+# EXPECTED: `zebra -c` exits 0. `zebra --check-full` fails inside zig.
+# Do NOT "fix" this file. If it ever starts failing `-c`, the front end has begun parsing
+# backend literals, which would be a language change worth discussing rather than patching.
+def main()
+    var x: int = zig"@compileError(\"witness: this literal is deliberately invalid Zig\")"
+    print(x.toString())

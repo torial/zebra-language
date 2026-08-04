@@ -60,7 +60,27 @@ else pass "--check-full rejects a front-end error"; fi
 # ── 3. THE ASYMMETRY: emits clean, zig rejects ───────────────────────────────
 # Each of these passes the front end and is then rejected by zig. That is exactly what
 # --help promises, so at least one must still behave that way.
-WITNESSES="bug099_unresolved_test bug106_heterogeneous_list_test c_interop_test"
+# WITNESS SELECTION CRITERION, adopted 2026-08-04 (Sean): a witness must demonstrate a
+# GENUINE LIMIT of front-end checking -- something `zig` can see that no Zebra front end
+# could -- NOT a check the selfhost happens to be missing.
+#
+# The original three were audited against that criterion and two FAILED it. The bootstrap
+# rejects both bug099_unresolved_test and bug106_heterogeneous_list_test, which proves a
+# Zebra front end CAN catch them; the selfhost simply had not been given the checks. Using
+# those as evidence that "-c cannot see everything" was circular -- it demonstrated missing
+# features, not a boundary. BUG-106's check has since been ported and that file no longer
+# passes -c at all.
+#
+#   witness_zig_backend_literal  PERMANENT. A `zig"..."` literal is passed through to the
+#                                emitted Zig UNPARSED by design, so the front end cannot
+#                                judge it even in principle. This asymmetry can never be
+#                                "fixed", which is what a witness should rest on.
+#   c_interop_test               genuine: a missing C source file is a link-time fact.
+#   bug099_unresolved_test       ON NOTICE -- still passes -c only because the selfhost
+#                                lacks the check the bootstrap has. Retire it when BUG-099
+#                                is ported (BUG-252); it is listed so the set never drops
+#                                to one, not because it is good evidence.
+WITNESSES="witness_zig_backend_literal c_interop_test bug099_unresolved_test"
 found=0
 for w in $WITNESSES; do
     f="test/$w.zbr"

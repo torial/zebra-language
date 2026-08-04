@@ -1,9 +1,80 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-251. Next new bug: BUG-252.**
+**Last bug number generated: BUG-253. Next new bug: BUG-254.**
 
 ---
+
+### BUG-253: the selfhost TypeChecker has roughly HALF the bootstrap's diagnostics — OPEN (umbrella)
+
+**Found 2026-08-04**, by asking the question BUG-252 raised: *"which other bootstrap
+diagnostics never reached the selfhost?"* Three had already been found by accident
+(BUG-106, BUG-108/248, BUG-099/252). Three accidents is a class, not a coincidence.
+
+Enumerated by `tools/diagnostic_parity.py`:
+
+    bootstrap src/TypeChecker.zig   37 diagnostics
+    selfhost  TypeChecker.zbr       19 diagnostics
+    no counterpart found            26 candidates
+
+**VERIFIED BY EXPERIMENT, not by the matcher.** Three candidates were tested directly
+against both compilers; the tool is fuzzy by construction and its number means nothing on
+its own:
+
+| probe | bootstrap | selfhost `-c` | verdict |
+|---|---|---|---|
+| `var b = a - 1` where `a: str` | rejects | **accepts** | **gap confirmed** |
+| `def f(): int` with a bare `return` | rejects | **accepts** | **gap confirmed** |
+| `var b = a & 2` where `a: float` | accepts | rejects | **false positive** — the selfhost LEADS here |
+
+So the hit rate on a 3-sample is 2/3, and the one miss errs in the harmless direction. The
+26 are **candidates for triage**, not 26 defects.
+
+**Impact is diagnostic quality, not silent wrongness.** Both confirmed gaps still FAIL to
+compile — Zig catches them:
+
+    p3.zbr:2: error: expected type 'i64', found 'void'
+
+That is a message in **Zig's vocabulary, about emitted code the user never wrote**, for a
+mistake (`return` with no value from a function declared `: int`) the front end could name
+exactly. This is the same programme as `tools/frontend_gap.py`, which measured `-c` missing
+**43%** of what `zig` rejects — and this ticket explains a large part of *why*.
+
+**The missing set is substantive**, not cosmetic. Among the candidates: arithmetic operand
+type mismatches, bitwise-on-non-integer, `if x as n` requiring an optional, destructuring
+arity, `return` without a value, SIMD operand types, `raise` details lacking `toString`.
+
+**Not made a gate, deliberately.** "Absent" is a candidate: a diagnostic may be legitimately
+unported because it guards a bootstrap-only feature, or reworded past the matcher. Gating it
+would demand a suppression list nobody maintains. It reports; a person decides.
+
+**Suggested order:** the ones a beginner hits first — arithmetic/type-mismatch operands, and
+`return` without a value. Each is a small port from a known-good reference implementation,
+and each converts a leaked Zig error into a Zebra one.
+
+### BUG-252: BUG-099's check is missing from the selfhost, same class as BUG-106/248 — OPEN
+
+**Found 2026-08-04** by auditing the `check_mode_check` witness set against a new criterion
+(Sean): a witness must show a genuine LIMIT of front-end checking, not a check the selfhost
+happens to lack. Two of the three failed that test.
+
+    test/bug099_unresolved_test.zbr
+      bootstrap  -> error: use of undeclared identifier 'Math'
+      selfhost   -> `-c` exits 0
+
+**Third instance of the pattern** (BUG-248 = BUG-108, BUG-106, now BUG-099): a check shipped
+in the bootstrap in May 2026 and never ported to the compiler that ships. All three were
+found the same way — by asking what the *reference implementation* does with a file the
+selfhost accepts.
+
+**It is currently load-bearing as a witness**, which is why it is filed rather than fixed on
+the spot: retiring it drops the set to two. `witness_zig_backend_literal` was added first so
+the set never falls below that. Port the check, then remove this file from `WITNESSES` in
+`tools/check_mode_check.sh` and from the note in `selfhost/main.zbr`.
+
+**Worth a sweep, not just a fix.** Three confirmed instances suggests the right question is
+not "port this one" but *"which other bootstrap diagnostics never reached the selfhost?"* —
+enumerable by diffing the two compilers' error strings.
 
 ### BUG-251: a request/response `Tcp` server DEADLOCKS — `conn.read()` appears to block until EOF — OPEN
 
@@ -52,6 +123,55 @@ never opened a socket.
 
 **Needed:** a decision on `read()`'s contract (chunk vs to-EOF), then either a documented
 framing idiom or a `readSome`/`readLine`. Until then Tcp has no honest run coverage.
+
+---
+
+### BUG-250: `HttpResponse(status, body)` — the 2-arg constructor fails a full compile — OPEN
+
+**Found 2026-08-04**, writing the Http run fixture.
+
+```zebra
+var a = HttpResponse(200, "x")     # error: type 'type' not a function
+var b = HttpResponse.ok("x")       # fine
+```
+
+`-c` **accepts both**; only a full compile rejects the constructor form — so this is also an
+instance of the front-end gap measured in `tools/frontend_gap.py` (23 of 54 failures are
+invisible to `-c`).
+
+**It is not hypothetical: `test/http_serve_test.zbr` uses the broken form**, in a
+`handleRequest` that returns `HttpResponse(200, "Hello, World!")`.
+
+QUICKSTART documents the factories (`HttpResponse.ok(body)` / `.notFound(body)`) and those
+work; the 2-arg constructor is documented nowhere but is what the corpus reached for, which
+suggests it is expected to exist. **Decide: implement it, or remove it from the corpus and
+say the factories are the API.**
+
+The new `test/http_echo_test.zbr` uses the factory form and passes 5/5.
+
+
+### BUG-249: `Expr.this_` (and friends) carry a PLACEHOLDER span, so diagnostics report 0:0 — OPEN
+
+**Found 2026-08-04** while porting BUG-108's check (BUG-248). The selfhost reports
+
+    test/bug108_this_outside_class_test.zbr:0:0: error: 'this' used outside a class/…
+
+where the bootstrap reports `6:13`. The message is right; the location is a placeholder.
+
+**Cause.** `AstBuilder.zbr` builds these nodes with `zspan()`, which is literally
+`Span(0, 0, 0, 0)`. It has no choice: `PNode.expr_this` is a **payload-less** parser
+variant, so the token position never reaches the AST. Same for `expr_nil` / `expr_result`
+and any other payload-less PNode.
+
+**Fix is structural, not local:** give the PNode variant a position payload and thread it
+through, which touches every construction and match site for that variant. Related to
+**BUG-121** (TC diagnostics report col 0) but distinct — this is line AND col, and the
+cause is upstream in the parser rather than in span resolution.
+
+**Not urgent, but it caps diagnostic quality.** Every future front-end check anchored on one
+of these nodes inherits the 0:0. That matters more now than it did, because the whole
+front-end-gap programme (`tools/frontend_gap.py`) is about MOVING checks inward — and a
+check that cannot say where is a check delivered half-finished.
 
 ---
 

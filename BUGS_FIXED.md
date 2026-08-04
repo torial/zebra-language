@@ -4689,6 +4689,31 @@ Property holds. No code change needed.
 
 ---
 
+### BUG-106: heterogeneous list literals silently typechecked in the SELFHOST — FIXED 2026-08-04
+- **Status:** Fixed in the selfhost (the bootstrap has had it since 2026-05-05). The
+  regression fixture now runs — as a **negative** test, which it never was before.
+- **Was:** `var xs = [1, "two", 3]` passed the selfhost front end entirely and failed inside
+  emitted Zig with `expected type 'i64', found '*const [3:0]u8'` — a message about generated
+  code. `zebra.exe` **is** the selfhost, so the shipping compiler had no check.
+- **How it was found:** BUG-243 flagged that `bug106_heterogeneous_list_test.zbr` had never
+  run. It had not merely gone unverified — **the fix was absent**.
+- **Fix:** `checkLiteralHomogeneity`, ported from `src/TypeChecker.zig`. First non-abstract
+  element is the anchor; every later non-abstract element must be compatible in either
+  direction. **Numeric mixes still pass** (`[1, 2.0, 3]` — the untyped-numeric principle),
+  verified as a false-positive guard. One error per literal, matching the bootstrap's
+  `break`: a five-element mixed literal is one mistake, not four.
+- **Scope limit, stated rather than implied:** LIST literals only. The bootstrap applies the
+  same rule to `array_lit`; the selfhost's `inferExpr` has **no array_lit branch at all**, so
+  covering it means adding inference for that node — a behaviour change beyond restoring a
+  missing check. Written as a helper so the array case is one call once that branch exists.
+- **The fixture stopped being an asymmetry witness, which was the real tangle.** It served
+  two contradictory roles: the regression test needs it REJECTED, the witness needs it to
+  PASS `-c`. Resolved per Sean's criterion — a witness must demonstrate a genuine limit of
+  front-end checking, not a missing check — by adding
+  `test/witness_zig_backend_literal.zbr`, whose asymmetry is permanent by construction.
+
+---
+
 ### BUG-248: BUG-108's check was ABSENT from the selfhost, not merely unverified — FIXED 2026-08-04
 - **Status:** Fixed. Pinned by `smoke_tc_fail test/bug108_this_outside_class_test.zbr`.
 - **How it was found:** BUG-243 recorded that `bug108_this_outside_class_test.zbr` had

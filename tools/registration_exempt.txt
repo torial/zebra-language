@@ -31,3 +31,4 @@ tc_stdlib  # module of the tc_* typechecker experiment; imported, not run direct
 tc_types  # module of the tc_* typechecker experiment; imported, not run directly
 typechecker  # module of the tc_* typechecker experiment; imported, not run directly
 val_lib  # helper module imported by other tests; has no main()
+witness_zig_backend_literal  # asymmetry witness — asserted by tools/check_mode_check.sh, which REQUIRES it to pass -c and fail --check-full; a smoke registration would contradict that
