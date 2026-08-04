@@ -64,21 +64,38 @@ are entries already marked FIXED or NOT-A-BUG that were never moved to `BUGS_FIX
 That is ledger hygiene, not debt — but it makes the open count look eight times worse than
 it is, and a stale blocker list invites re-litigating decisions already shipped.)
 
-### Class 1 — SILENTLY WRONG. These are the 0.9 blockers.
+### Class 1 — SILENTLY WRONG
 
-| bug | what happens |
+> **REVISED 2026-08-03, same day, on starting the sweep. This section originally listed
+> three bugs and called all three 0.9 blockers. That was wrong in two of the three, and
+> the headline built on it (§5, *"blocked on three bugs plus `--release`"*) was wrong with
+> it.** Reading each ticket properly before acting is what corrected it — which is an
+> argument for triaging from the tickets rather than from a classification made over them.
+>
+> - **BUG-237 was MISCLASSIFIED.** It emits wrong Zig and **`zig` rejects it**
+>   (`expected type 'Ast.Expr', found '*Ast.Expr'`). The program does not compile. The
+>   "silently" in that ticket means the *front end* does not warn — not that a user gets a
+>   wrong answer. It is **Class 4** with a poor diagnostic, and its better home is the
+>   front-end gap in §5b: *"referencing a union that is not `exposing`-imported should be
+>   an error"* is exactly a check that belongs in the Resolver.
+> - **BUG-225 is genuine Class 1 but is NOT a sweep item.** Its own ticket measured the
+>   blast radius: `s[i]` returning `char` is what the selfhost lexer is built on — ~104
+>   subscript sites across `selfhost/`, 559 `c'x'` literals compared against the result.
+>   Retyping it means deciding how `byte` and `char` compare. **That is a language design
+>   decision, not a bug fix**, and it is Sean's call — see §5c.
+> - **BUG-227 was the one real, actionable Class 1 item, and it is FIXED** (2026-08-03).
+
+| bug | status |
 |---|---|
-| **BUG-237** | a union used without an `exposing` import **silently mis-emits `^T` payloads** |
-| **BUG-227** | `str.tokenize(seps)` splits on the delimiter **sequence**, not on any character in it |
-| **BUG-225** | indexing a `str` yields a byte typed `char` — **silently wrong for any non-ASCII text** |
+| **BUG-227** | `tokenize` split on the sequence, not any character | ✅ **FIXED** — `tokenizeAny`, pinned by `bug227_tokenize_any_test` |
+| **BUG-225** | `str` indexing is silently wrong for non-ASCII | ⬜ open — **design decision, §5c** |
+| ~~BUG-237~~ | reclassified to Class 4 / front-end gap | |
 
-All three compile cleanly, run, and produce a wrong answer. **No gate we have can find this
-class by construction** — `compile_check`, `full_sweep` and `divergence` all ask "does it
+The structural point stands regardless of the count: **no gate we have can find this class
+by construction.** `compile_check`, `full_sweep` and `divergence` all ask "does it
 compile?", and `output_sweep` is a *golden* baseline, so it locks in whatever the behaviour
-already was. BUG-226 is the precedent: valid Zig printing `{ 97 }` for `a`.
-
-BUG-225 deserves separate emphasis: it is a **correctness bug in text handling**, and the
-first thing many users do is process text that is not ASCII.
+already was. BUG-226 is the precedent — valid Zig printing `{ 97 }` for `a`. BUG-227 sat
+open for five days in a corpus of 426 files and 19 green gates.
 
 ### Class 2 — ships the wrong artifact
 
@@ -157,10 +174,14 @@ illustration of why an audit needs a date attached and a re-run, not a re-read.
 it does. Three independent heavy witnesses, a 322-file behaviour baseline, an intent-authored
 suite, and a self-consistency proof. For a team that knows the sharp edges, this is solid.
 
-**External 0.9 — not yet, and the gap is small and specific.** The blocker is not breadth,
-it is the **three silent-wrongness bugs plus `--release`**. A user who gets a wrong answer
-with no error does not file a bug; they conclude the language is not trustworthy, and they
-are not wrong to. Everything else on this page is either self-announcing or ours to absorb.
+**External 0.9 — closer than this document first claimed.** ~~The blocker is the three
+silent-wrongness bugs plus `--release`.~~ **Revised the same day:** one of those three was
+misclassified, one is a design decision rather than a defect, and the third is now fixed.
+The remaining hard blocker is **`--release` (BUG-228)** plus **a decision on BUG-225**.
+
+The reasoning that made silent wrongness the bar is unchanged and still right: a user who
+gets a wrong answer with no error does not file a bug — they conclude the language is not
+trustworthy, and they are not wrong to. What changed is the count, not the principle.
 
 ### A falsifiable definition of ready
 
@@ -168,8 +189,9 @@ Not a feeling — each item is checkable, and two are deliberately about *instru
 than defects, because the recurring lesson of this repo is that the unmeasured is where the
 damage lives:
 
-1. **BUG-225, BUG-227, BUG-237 fixed**, each with a **run-and-compare** fixture (a compile
-   check cannot witness this class).
+1. ~~**BUG-225, BUG-227, BUG-237 fixed**~~ → **BUG-227 fixed ✅**; BUG-237 reclassified;
+   **BUG-225 needs a DECISION, not a fix** (§5c). Each Class 1 fix carries a
+   **run-and-compare** fixture, because a compile check cannot witness this class.
 2. **BUG-228 fixed**, plus one gate that actually runs a `--release` build.
 3. **The BUG-243 fifteen resolved** — fixed, or deleted with a reason. In particular the
    BUG-106/BUG-108 fixtures must actually run, or those fixes stay unverified.
@@ -242,6 +264,48 @@ type 'i64', found '*const [3:0]u8'` is a fine message for someone reading genera
 an unhelpful one for someone who wrote a list literal. Every check moved inward converts a
 leaked diagnostic into a Zebra one, which is the same argument that motivated the error-
 experience work in 2026-06.
+
+## 5c. BUG-225 — a decision for Sean, not a sweep item
+
+`s[i]` on a `str` yields a raw UTF-8 **byte** typed as `char` (u21). For any multi-byte
+codepoint it produces a character that is not in the string, silently:
+
+```zebra
+var s: str = "eéx"
+print(s[1].toString())     # Ã  — byte 0xC3 widened to U+00C3. WRONG.
+for c in s.chars()
+    print(c.toString())    # e é x — correct; chars() decodes
+```
+
+**Why this is not a sweep item.** The ticket measured the blast radius before recommending
+anything: `s[i]` returning `char` is what the **selfhost compiler's own lexer** is built on
+— `Lexer.zbr:116` is `def peek(): char` returning `src[pos]`, ~60 subscript sites in that
+file, **~104 across `selfhost/`**, and **559 `c'x'` literals** compared against the result.
+Retyping `s[i]` means deciding how `byte` and `char` compare. That is language design.
+
+**The options, and what each costs:**
+
+| | option | cost | precedent |
+|---|---|---|---|
+| **a** | **Document the limit for 0.9**, retype in 1.x | ~zero code; honest docs + a `byteAt()` alias | closest to **Go** — indexing yields a byte, and Go never pretends otherwise |
+| **b** | Retype `s[i]` to `byte`, define `byte`/`char` comparison | ~104 sites + a comparison rule, mid-freeze | Go, done properly |
+| **c** | Make `s[i]` on a `str` an **error**; force `byteAt(i)` / `chars()` | clearest semantics, most disruptive | **Rust**, which forbids `str` indexing outright |
+
+**The conflict worth being explicit about.** The ticket recommends **(a)** — it competes
+directly with the pre-0.9 churn freeze, and honest documentation captures most of the
+value. This audit's §2 ranks silent wrongness as the top trust cost, which argues for
+**(c)**. Both readings are defensible and they point different ways.
+
+**My read, offered as a recommendation rather than a decision:** the specific defect is not
+that indexing yields a byte — Go does that and nobody is surprised. It is that **the type
+says `char`**, which is the language asserting something false. So (a) is acceptable *only*
+if the documentation is blunt: "`s[i]` yields a byte, typed `char` for historical reasons;
+use `chars()` for characters and `byteAt()` when you mean bytes." If we are not willing to
+write that sentence, we should do (c) instead — and the fact that we would wince at writing
+it is the useful test of whether (a) is really acceptable.
+
+**This is Sean's call.** It changes what 0.9 promises about text handling, which is not a
+decision to take inside a sweep.
 
 ## 6. The finding that should outlive this document
 

@@ -6,6 +6,27 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-227: `str.tokenize(seps)` split on the SEQUENCE, not on any character — FIXED 2026-08-03
+- **Status:** Fixed. Pinned by `test/bug227_tokenize_any_test.zbr`.
+- **Was:** codegen emitted `std.mem.tokenizeSequence`, so `"a,b;c".tokenize(",;")` returned
+  **one** token — the entire string — with no error at any stage. QUICKSTART documents
+  "split on ANY character in `seps`".
+- **Fix:** `tokenizeAny` at both selfhost dispatch sites. The implementation was changed to
+  match the documentation rather than the reverse, because the documented behaviour is what
+  makes `tokenize` distinct from `split` — `split` already covers the whole-sequence case
+  and **deliberately keeps `splitSequence`** (verified unchanged: `"a<>b<>c".split("<>")`
+  → 3, `"a,b;c".split(",;")` → 1).
+- **Blast radius zero, as the ticket predicted:** no `.zbr` in the repo calls `str.tokenize`
+  (the only `.tokenize(` hits are `Lexer.tokenize(src)`, an unrelated user method).
+- **Bootstrap deliberately left on the old emit** — no selfhost source calls `str.tokenize`,
+  so the selfhost-leads policy applies (same call as `Shell` earlier today).
+- **The fixture uses MULTI-CHARACTER separators throughout**, which is the only input that
+  distinguishes the two implementations: with a single-char `seps` they agree, so a test
+  using `","` would have passed under the bug. Confirmed to FAIL against the unfixed
+  compiler before being registered.
+
+---
+
 ### BUG-245: QUICKSTART's `sys.go` examples never compiled, and `Shell.run` was unmigrated — FIXED 2026-08-03
 - **Status:** Fixed. Smoke 288/288. Pinned by `test/bug245_shell_process_run_test.zbr`.
 

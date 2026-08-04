@@ -1161,6 +1161,10 @@ smoke_run test/bug242_csv_roundtrip_test.zbr "bug242: OK"
 smoke_run_bounded test/shell_test.zbr    "shell_test: OK" 90
 smoke_run_bounded test/ws_echo_test.zbr  "ws_test: OK"    90
 smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
+# BUG-227. Verified to FAIL against the unfixed compiler before being registered — the
+# separators are multi-character on purpose, since tokenizeSequence and tokenizeAny agree
+# on a single-char `seps` and a fixture using "," would have passed under the bug.
+smoke_run test/bug227_tokenize_any_test.zbr "bug227: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

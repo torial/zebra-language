@@ -12516,7 +12516,13 @@ struct Generator
                         w.emit(", _tib_base) catch 0); })")
                         return
                     if mname == "tokenize" and args.len > 0
-                        w.emit("(blk_tok: { var _tok_it = std.mem.tokenizeSequence(u8, ")
+                        # BUG-227. `tokenizeAny`, not `tokenizeSequence`: QUICKSTART
+                        # documents "split on ANY character in seps", and that is what
+                        # makes `tokenize` distinct from `split` — `split` already covers
+                        # the whole-sequence case (and keeps splitSequence, deliberately).
+                        # With Sequence, `"a,b;c".tokenize(",;")` returned ONE token, the
+                        # entire string, with no error at any stage.
+                        w.emit("(blk_tok: { var _tok_it = std.mem.tokenizeAny(u8, ")
                         genExpr(m.object)
                         w.emit(", ")
                         genExpr(args.at(0).value)
@@ -13799,7 +13805,8 @@ struct Generator
             w.emit(", _tib_base) catch 0); })")
             return
         if mname == "tokenize" and args.len > 0 and isStringBoth(m.object, "tokenize")
-            w.emit("(blk_tok: { var _tok_it = std.mem.tokenizeSequence(u8, ")
+            # BUG-227 — the second of the two tokenize dispatch sites. See the note above.
+            w.emit("(blk_tok: { var _tok_it = std.mem.tokenizeAny(u8, ")
             genExpr(m.object)
             w.emit(", ")
             genExpr(args.at(0).value)

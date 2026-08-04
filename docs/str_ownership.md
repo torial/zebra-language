@@ -34,7 +34,7 @@
 | `s.reverse()` | **OWN** | — | `_str_reverse(s, _zbr_rt._allocator)` |  |
 | `s.split(",")` | **OWN** | **BORROW** | `blk_sl_3: { var _ll_3: std.ArrayList([]const u8) = std.ArrayList([]...` |  |
 | `s.toHex()` | **OWN** | — | `(blk_hex: { const _hx_s = s; const _hx_buf = _zbr_rt._allocator.all...` |  |
-| `s.tokenize(",")` | **OWN** | **BORROW** | `(blk_tok: { var _tok_it = std.mem.tokenizeSequence(u8, s, ","); var...` |  |
+| `s.tokenize(",")` | **OWN** | **BORROW** | `(blk_tok: { var _tok_it = std.mem.tokenizeAny(u8, s, ","); var _tok...` |  |
 | `s.upper()` | **OWN** | — | `(std.ascii.allocUpperString(_zbr_rt._allocator, s) catch @panic("OO...` |  |
 | `s.bytes()` | **UNKNOWN** | — | `s.bytes()` | for-only; binding emits invalid Zig |
 | `s.chars()` | **UNKNOWN** | — | `s.chars()` | for-only; binding emits invalid Zig |
