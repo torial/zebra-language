@@ -538,16 +538,19 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
-**Swept 2026-08-02, all clean** — run together with the FULL tier as §3 of
-`docs/INSTRUMENT_PASS_PLAN.md`. Sequential, not parallel: two heavy jobs at once on this
-machine is how a RAM-bound gate reports contention as a failure.
+**Swept 2026-08-04, all clean** — run overnight with the machine otherwise idle, so no
+gate measured contention as a failure. Sequential, not parallel.
 
 | path | result |
 |---|---|
-| `bash tools/gates.sh --full` | **18/18 PASS** — compile_check 231/0, output_sweep 322 identical, full_sweep 0 regressions vs 337, examples_sweep 0 vs 14, divergence 0 selfhost gaps |
+| `bash tools/gates.sh --full` | **21/21 PASS** — smoke 293/293, compile_check 237/0, output_sweep 322 identical, full_sweep 0 regressions vs 337, examples_sweep 0 vs 14, divergence 0 selfhost gaps |
 | `python fuzz/gramgen.py --gate` | PASS — 960 derived programs, 0 hangs, 0 crashes |
 | `bash tools/node_addon_test.sh` | PASS |
 | `bash tools/gui_scaffold_check.sh` | PASS — scaffold globals assigned, app got PAST the BUG-229 crash site and refused a non-tty cleanly (rc=3) |
+
+The tier grew 19 → 21 that night: `doc-example` (QUICK) and `release-mode` (FULL).
+
+**Previous sweep 2026-08-02** — 18/18, before those two gates existed.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **337** while the corpus is **421**. 27 of the difference are registered negative tests;

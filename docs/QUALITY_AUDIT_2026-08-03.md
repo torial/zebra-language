@@ -324,3 +324,80 @@ nothing execute?* Today that question was pointed at stdlib namespaces (now 0 un
 runtime helpers (`unreachable_runtime.sh` — 1 remaining, `_build_auto_run`) and doc examples
 (now gated). The surfaces where it has **not** yet been asked are §3's list — and that list,
 not the bug count, is the honest measure of how much we do not know.
+
+---
+
+## 7. Overnight addendum — 2026-08-04
+
+Sean handed the machine over with no contention. What changed, and what it means for §5's
+exit criteria.
+
+### 7.1 Criterion 3 (the BUG-243 fifteen) produced the night's real finding
+
+The two rows the ticket called "the ones that matter most" — the regression fixtures for
+BUG-106 and BUG-108 that had never run — were **worse than unverified**:
+
+| | bootstrap | selfhost (`zebra.exe`, what ships) |
+|---|---|---|
+| BUG-106 heterogeneous list literal | ✅ rejects | ❌ `-c` exits 0 |
+| BUG-108 `this` outside a class | ✅ rejects | ❌ `-c` exits 0 |
+
+**Both fixes were absent from the shipping compiler**, claimed as shipped since May 2026.
+BUG-108's is now ported (**BUG-248**, fixed, pinned by a fires-and-does-not-over-fire pair).
+
+**BUG-106 was deliberately NOT fixed** — its fixture is simultaneously the regression test
+(must be *rejected*) and one of three asymmetry witnesses `check_mode_check` requires (must
+*pass* `-c`). Those are contradictory; it needs a decision, not a patch. Recommendation in
+`BUGS.md`: split the file, because a witness should not be load-bearing for a bug fixture.
+
+**Generalisation worth keeping:** *"a regression fixture exists"* and *"a regression fixture
+runs"* are different claims, and only the second is worth anything. `bug_fixture_check`
+already encodes this ("counts a fixture as real only if something actually RUNS it") — this
+is the first time the distinction paid out at full value.
+
+### 7.2 Criterion 4 (Tcp/Http run fixtures) — half done, and the other half is a design gap
+
+* **Http: closed.** `test/http_echo_test.zbr` is a real client↔server round trip, 5/5 stable.
+* **Tcp: NOT closed, and the fixture was WITHDRAWN rather than registered.** **BUG-251** — a
+  request/response server deadlocks. Isolated: client-connect works, server-writes-first
+  works, server-*reads*-first hangs, so `conn.read()` appears to read to EOF and both sides
+  wait. If that is the intended semantic, `Tcp` cannot express request/response at all
+  without framing or half-close — a **design gap**, not an implementation bug.
+
+  Registering it would have put a hang in the QUICK tier, which teaches people to re-run
+  gates until they pass. An uncovered namespace is the lesser harm.
+
+Also filed: **BUG-250** — `HttpResponse(status, body)` passes `-c` and fails a full compile,
+and `test/http_serve_test.zbr` uses that exact form.
+
+### 7.3 Ledger hygiene — the debt count got HONEST, not better
+
+`BUGS.md` 84 entries → **29**. 44 were already marked fixed; 11 existed in *both* ledgers.
+`bug_fixture_check` consequently moved 110 → 128 unpinned: those fixes always lacked
+fixtures, they were merely filed where the gate could not see them. **Nothing got worse.**
+
+### 7.4 A wrong turn, recorded because the method matters more than the outcome
+
+When BUG-248's new check appeared to reject `with` blocks, the reflex was to weaken it — and
+a fix was written before the reference compiler was consulted. **The bootstrap rejects the
+same program.** The original port was correct; the "correction" was making the selfhost more
+permissive than the reference. Reverted, with the lesson in the code:
+
+> *"My new check rejects something" is not evidence the check is wrong. Ask the reference
+> implementation first.*
+
+Had it shipped, the fix would have been gutted while still looking present — the exact shape
+this audit exists to catch, arrived at from the inside.
+
+### 7.5 Net effect on §5
+
+| criterion | before | after |
+|---|---|---|
+| 1. Class 1 bugs fixed | BUG-227 ✅ | unchanged |
+| 2. `--release` + a gate | ✅ | unchanged |
+| 3. the BUG-243 fifteen | open | **2 of 15 resolved; 1 needs a decision** |
+| 4. Tcp/Http run fixtures | open | **Http ✅, Tcp blocked on BUG-251** |
+| 5. a fresh A3 round finds nothing | 1 dimension clean | unchanged |
+
+Excluded set swept clean the same night (`gramgen`, `node_addon`, `gui_scaffold`), recorded
+in CLAUDE.md. FULL tier 21/21.
