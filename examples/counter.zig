@@ -7,56 +7,93 @@ var _io: std.Io = undefined;
 var _args: std.process.Args = undefined;
 
 var _arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-var _allocator: std.mem.Allocator = _arena.allocator();
+const _TsAlloc = struct {
+    child: std.mem.Allocator,
+    mutex: std.Io.Mutex = .init,
+    const _vt: std.mem.Allocator.VTable = .{ .alloc = _a, .resize = _r, .remap = _m, .free = _f };
+    fn allocator(self: *_TsAlloc) std.mem.Allocator { return .{ .ptr = self, .vtable = &_vt }; }
+    fn _a(ctx: *anyopaque, len: usize, al: std.mem.Alignment, ra: usize) ?[*]u8 { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.alloc(self.child.ptr, len, al, ra); }
+    fn _r(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) bool { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.resize(self.child.ptr, mem, al, new_len, ra); }
+    fn _m(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) ?[*]u8 { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.remap(self.child.ptr, mem, al, new_len, ra); }
+    fn _f(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, ra: usize) void { const self: *_TsAlloc = @ptrCast(@alignCast(ctx)); self.mutex.lockUncancelable(_io); defer self.mutex.unlock(_io); return self.child.vtable.free(self.child.ptr, mem, al, ra); }
+};
+var _ts_alloc: _TsAlloc = .{ .child = _arena.allocator() };
+fn _prog_alloc() std.mem.Allocator { return if (@import("builtin").single_threaded) _arena.allocator() else _ts_alloc.allocator(); }
+var _allocator: std.mem.Allocator = _prog_alloc();
 var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
 }
 pub fn _initIo(io: std.Io) void {
     _io = io;
+    _initModuleVars();
+}
+var _module_vars_inited: bool = false;
+pub fn _initModuleVars() void {
+    if (_module_vars_inited) return;
+    _module_vars_inited = true;
 }
 // === STDLIB_PREAMBLE_HELPERS_START ===
-fn _intern(s: []const u8) []const u8 {
+// sys.sleep(ms): Zig 0.16 removed std.Thread.sleep; sleeping now goes through the
+// Io interface.  Cancellation is benign here (we only sleep to pace/poll), so swallow it.
+pub fn _sysSleep(ms: i64) void {
+    // `.awake` is 0.16's monotonic clock (the old CLOCK_MONOTONIC).
+    std.Io.sleep(_io, std.Io.Duration.fromMilliseconds(ms), .awake) catch {};
+}
+pub fn _intern(s: []const u8) []const u8 {
     if (_str_pool.get(s)) |existing| return existing;
     const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
     _str_pool.put(owned, owned) catch @panic("OOM");
     return owned;
 }
 
-const _Stringable = struct {
+// Normalize a filesystem path for the host OS.  On Windows, std.Io.Dir's
+// createFile rejects an absolute path containing backslashes mixed with
+// forward slashes (OBJECT_NAME_INVALID) — e.g. an output dir like
+// "C:\dir" joined with "/name.zig".  Forward-slash absolute paths work
+// everywhere, so collapse backslashes to forward slashes.  Returns the
+// input unchanged when there is nothing to normalize.
+pub fn _zbr_norm_path(p: []const u8) []const u8 {
+    if (std.mem.indexOfScalar(u8, p, '\\') == null) return p;
+    const buf = _allocator.alloc(u8, p.len) catch return p;
+    for (p, 0..) |c, i| buf[i] = if (c == '\\') '/' else c;
+    return buf;
+}
+
+pub const _Stringable = struct {
     ptr:         *anyopaque,
     toString_fn: *const fn (*anyopaque) []const u8,
     pub fn toString(self: _Stringable) []const u8 {
         return self.toString_fn(self.ptr);
     }
 };
-const _ZebraErrorCtx = struct { message: []const u8 = "", details: ?_Stringable = null };
+pub const _ZebraErrorCtx = struct { message: []const u8 = "", details: ?_Stringable = null };
 pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
-fn _zebra_lt(a: anytype, b: anytype) bool {
+pub fn _zebra_lt(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.lessThan(u8, a, b);
     return a < b;
 }
-fn _zebra_le(a: anytype, b: anytype) bool {
+pub fn _zebra_le(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .gt;
     return a <= b;
 }
-fn _zebra_gt(a: anytype, b: anytype) bool {
+pub fn _zebra_gt(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) == .gt;
     return a > b;
 }
-fn _zebra_ge(a: anytype, b: anytype) bool {
+pub fn _zebra_ge(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .lt;
     return a >= b;
 }
-fn _zebra_eq(a: anytype, b: anytype) bool {
+pub fn _zebra_eq(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.eql(u8, a, b);
     return a == b;
 }
-fn _zebra_ne(a: anytype, b: anytype) bool {
+pub fn _zebra_ne(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return !std.mem.eql(u8, a, b);
     return a != b;
 }
-fn _zbr_is_u8_like(comptime T: type) bool {
+pub fn _zbr_is_u8_like(comptime T: type) bool {
     if (T == []const u8 or T == []u8) return true;
     const ai = @typeInfo(T);
     if (ai == .pointer) {
@@ -66,7 +103,7 @@ fn _zbr_is_u8_like(comptime T: type) bool {
     }
     return false;
 }
-fn _zebra_assert_cmp(a: anytype, b: anytype, expect_eq: bool) anyerror!void {
+pub fn _zebra_assert_cmp(a: anytype, b: anytype, expect_eq: bool) anyerror!void {
     const is_str = comptime _zbr_is_u8_like(@TypeOf(a));
     const ok = if (comptime is_str)
         std.mem.eql(u8, @as([]const u8, a), @as([]const u8, b))
@@ -89,14 +126,14 @@ fn _zebra_assert_cmp(a: anytype, b: anytype, expect_eq: bool) anyerror!void {
         return error.ZebraError;
     }
 }
-fn _zebra_assert_bool(val: bool, expect_true: bool) anyerror!void {
+pub fn _zebra_assert_bool(val: bool, expect_true: bool) anyerror!void {
     if (val != expect_true) {
         _error_ctx = .{ .message = if (expect_true) "assert_true failed: got false" else "assert_false failed: got true" };
         return error.ZebraError;
     }
 }
 /// `item in container` — membership test for List, string (substring), HashMap, or @[...] tuple.
-fn _zebra_in(item: anytype, container: anytype) bool {
+pub fn _zebra_in(item: anytype, container: anytype) bool {
     const C = @TypeOf(container);
     const I = @TypeOf(item);
     // Tuple/anonymous struct (from @[...] array literal) — inline iterate.
@@ -129,22 +166,50 @@ fn _zebra_in(item: anytype, container: anytype) bool {
     return std.mem.indexOf(u8, @as([]const u8, container), @as([]const u8, item)) != null;
 }
 /// `s + t` — string concatenation.
-fn _str_concat(a: []const u8, b: []const u8, alloc: std.mem.Allocator) []const u8 {
+pub fn _str_concat(a: []const u8, b: []const u8, alloc: std.mem.Allocator) []const u8 {
     return std.mem.concat(alloc, u8, &.{ a, b }) catch @panic("OOM");
 }
 /// `s * n` — repeat string s n times.
-fn _str_repeat(s: []const u8, n: anytype, alloc: std.mem.Allocator) []const u8 {
+pub fn _str_repeat(s: []const u8, n: anytype, alloc: std.mem.Allocator) []const u8 {
     const count: usize = @intCast(n);
     if (count == 0 or s.len == 0) return "";
     const buf = alloc.alloc(u8, s.len * count) catch @panic("OOM");
     for (0..count) |i| @memcpy(buf[i * s.len ..][0..s.len], s);
     return buf;
 }
+/// BUG-236's sibling, BUG-234: reverse a string by CODEPOINT, not by byte.
+///
+/// The old emit was `std.mem.reverse(u8, buf)`, which shreds every multi-byte
+/// codepoint: `"世界"` came back as invalid UTF-8 with codePointCount 0, from input
+/// that had 2. ASCII was unaffected, which is why the whole corpus was silent.
+///
+/// Walks the input codepoint by codepoint and copies each one's bytes, intact and in
+/// order, into descending slots of the output — so byte order within a codepoint is
+/// preserved while codepoint order is reversed. Invalid UTF-8 in DOES fall back to a
+/// byte reverse rather than panicking: reverse() has no way to report an error, and
+/// garbage-in-garbage-out beats aborting a user's program over a string we were only
+/// asked to turn around.
+pub fn _str_reverse(s: []const u8, alloc: std.mem.Allocator) []const u8 {
+    if (s.len == 0) return "";
+    const buf = alloc.alloc(u8, s.len) catch @panic("OOM");
+    const view = std.unicode.Utf8View.init(s) catch {
+        @memcpy(buf, s);
+        std.mem.reverse(u8, buf);
+        return buf;
+    };
+    var it = view.iterator();
+    var end: usize = s.len;
+    while (it.nextCodepointSlice()) |cp| {
+        end -= cp.len;
+        @memcpy(buf[end..][0..cp.len], cp);
+    }
+    return buf;
+}
 /// FNV-1a 32-bit hash — used as the type-arg component of _type_tag.
 /// Low 32 bits of _ttag_ClassName hold the class hash; high 32 bits
 /// hold the combined type-arg hash for generic instantiations (Phase 3).
 /// Also usable as Symbol.hash for fast string identity comparison.
-fn _zbr_hash(comptime s: []const u8) u32 {
+pub fn _zbr_hash(comptime s: []const u8) u32 {
     comptime var h: u32 = 2166136261;
     comptime for (s) |c| { h ^= c; h *%= 16777619; };
     return h;
@@ -189,25 +254,25 @@ fn _zbr_hash(comptime s: []const u8) u32 {
         }
     };
 }
-fn _pad_fill(fill: anytype) u8 {
+pub fn _pad_fill(fill: anytype) u8 {
     if (comptime @typeInfo(@TypeOf(fill)) == .pointer) return fill[0];
     return @as(u8, @intCast(fill));
 }
-fn _pad_left(s: []const u8, width: usize, fill: anytype, alloc: std.mem.Allocator) []const u8 {
+pub fn _pad_left(s: []const u8, width: usize, fill: anytype, alloc: std.mem.Allocator) []const u8 {
     if (s.len >= width) return s;
     const buf = alloc.alloc(u8, width) catch @panic("OOM");
     @memset(buf[0 .. width - s.len], _pad_fill(fill));
     @memcpy(buf[width - s.len ..], s);
     return buf;
 }
-fn _pad_right(s: []const u8, width: usize, fill: anytype, alloc: std.mem.Allocator) []const u8 {
+pub fn _pad_right(s: []const u8, width: usize, fill: anytype, alloc: std.mem.Allocator) []const u8 {
     if (s.len >= width) return s;
     const buf = alloc.alloc(u8, width) catch @panic("OOM");
     @memcpy(buf[0 .. s.len], s);
     @memset(buf[s.len ..], _pad_fill(fill));
     return buf;
 }
-fn _pad_center(s: []const u8, width: usize, fill: anytype, alloc: std.mem.Allocator) []const u8 {
+pub fn _pad_center(s: []const u8, width: usize, fill: anytype, alloc: std.mem.Allocator) []const u8 {
     if (s.len >= width) return s;
     const pad = width - s.len;
     const lpad = pad / 2;
@@ -217,7 +282,7 @@ fn _pad_center(s: []const u8, width: usize, fill: anytype, alloc: std.mem.Alloca
     @memset(buf[lpad + s.len ..], _pad_fill(fill));
     return buf;
 }
-fn _zebra_sort_natural(comptime T: type, items: []T) void {
+pub fn _zebra_sort_natural(comptime T: type, items: []T) void {
     const _I = struct {
         fn less(_: void, a: T, b: T) bool {
             if (comptime T == []const u8) return std.mem.lessThan(u8, a, b);
@@ -226,7 +291,7 @@ fn _zebra_sort_natural(comptime T: type, items: []T) void {
     };
     std.mem.sort(T, items, {}, _I.less);
 }
-fn _zebra_sort_by(comptime T: type, comptime cmp: anytype, items: []T) void {
+pub fn _zebra_sort_by(comptime T: type, comptime cmp: anytype, items: []T) void {
     const _I = struct {
         fn less(_: void, a: T, b: T) bool {
             return cmp(a, b);
@@ -234,46 +299,173 @@ fn _zebra_sort_by(comptime T: type, comptime cmp: anytype, items: []T) void {
     };
     std.mem.sort(T, items, {}, _I.less);
 }
-fn _zebra_list_any(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
+pub fn _zebra_list_any(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
     for (list.items) |item| { if (pred(item)) return true; }
     return false;
 }
-fn _zebra_list_all(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
+pub fn _zebra_list_all(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
     for (list.items) |item| { if (!pred(item)) return false; }
     return true;
 }
-fn _zebra_list_find(comptime T: type, pred: anytype, list: std.ArrayList(T)) ?T {
+pub fn _zebra_list_find(comptime T: type, pred: anytype, list: std.ArrayList(T)) ?T {
     for (list.items) |item| { if (pred(item)) return item; }
     return null;
 }
-const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
-fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
-    var child = std.process.spawn(_io, .{
-        .argv   = argv.items,
-        .stdin  = .ignore,
-        .stdout = .pipe,
-        .stderr = .pipe,
-    }) catch return SysRunResult{ .exit_code = -1, .stdout = "", .stderr = "spawn failed" };
-    var stdout_bytes: []const u8 = "";
-    var stderr_bytes: []const u8 = "";
-    if (child.stdout) |f| {
-        var buf: [65536]u8 = undefined;
-        var rdr = f.readerStreaming(_io, &buf);
-        stdout_bytes = rdr.interface.allocRemaining(_allocator, .limited(16*1024*1024)) catch "";
-    }
-    if (child.stderr) |f| {
-        var buf: [65536]u8 = undefined;
-        var rdr = f.readerStreaming(_io, &buf);
-        stderr_bytes = rdr.interface.allocRemaining(_allocator, .limited(16*1024*1024)) catch "";
-    }
-    const term = child.wait(_io) catch return SysRunResult{ .exit_code = -1, .stdout = stdout_bytes, .stderr = stderr_bytes };
-    const _ec: i64 = switch (term) {
-        .exited => |code| @intCast(code),
-        else    => -1,
-    };
-    return .{ .exit_code = _ec, .stdout = stdout_bytes, .stderr = stderr_bytes };
+pub fn _zebra_list_map(comptime T: type, pred: anytype, list: std.ArrayList(T)) std.ArrayList(@TypeOf(pred(@as(T, undefined)))) {
+    var out: std.ArrayList(@TypeOf(pred(@as(T, undefined)))) = .empty;
+    for (list.items) |item| out.append(_allocator, pred(item)) catch @panic("OOM");
+    return out;
 }
-fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
+pub fn _zebra_list_filter(comptime T: type, pred: anytype, list: std.ArrayList(T)) std.ArrayList(T) {
+    var out: std.ArrayList(T) = .empty;
+    for (list.items) |item| { if (pred(item)) out.append(_allocator, item) catch @panic("OOM"); }
+    return out;
+}
+pub fn _zebra_list_reduce(comptime T: type, init_val: anytype, f: anytype, list: std.ArrayList(T)) @TypeOf(f(init_val, @as(T, undefined))) {
+    // Accumulator type = the fold function's result type (concrete, since it
+    // combines with the runtime element T), so a `comptime_int` init like `0`
+    // coerces to it instead of leaving the return type comptime-only.
+    // (Param named `init_val`, not `init`, so it never shadows a user-emitted
+    // top-level `pub fn init` — e.g. an MVU GUI model's `init()` — BUG-184.)
+    var acc: @TypeOf(f(init_val, @as(T, undefined))) = init_val;
+    for (list.items) |item| acc = f(acc, item);
+    return acc;
+}
+// §28f: HashMap.keys()/values() — snapshot the map's keys/values into a new List.
+// Generic over StringHashMap(V)/AutoHashMap(K,V); the K/V types come from the
+// map's KV entry struct so no explicit type args are needed at the call site.
+// BUG-195: a HashMap passed as a fn PARAMETER arrives as `*HashMap` (Zebra hashmaps are
+// pointer-typed), and `.KV` is not a decl on the pointer type — so keys()/values()/
+// entries() failed on a map param though they worked on a local. Normalize to the
+// underlying map type (deref if pointer) before reading `.KV`.
+pub fn _MapKV(comptime T: type) type {
+    return if (@typeInfo(T) == .pointer) @typeInfo(T).pointer.child.KV else T.KV;
+}
+pub fn _zebra_map_keys(map: anytype) std.ArrayList(@FieldType(_MapKV(@TypeOf(map)), "key")) {
+    var out: std.ArrayList(@FieldType(_MapKV(@TypeOf(map)),"key")) = .empty;
+    var it = map.keyIterator();
+    while (it.next()) |k| out.append(_allocator, k.*) catch @panic("OOM");
+    return out;
+}
+pub fn _zebra_map_values(map: anytype) std.ArrayList(@FieldType(_MapKV(@TypeOf(map)),"value")) {
+    var out: std.ArrayList(@FieldType(_MapKV(@TypeOf(map)),"value")) = .empty;
+    var it = map.valueIterator();
+    while (it.next()) |v| out.append(_allocator, v.*) catch @panic("OOM");
+    return out;
+}
+// map.entries() → List((K, V)): a materialized, sortable snapshot of the map's
+// pairs (unlike `for k, v in map`, which can't be sorted).  Element type is the
+// same anonymous 2-tuple Zebra emits for `(K, V)`.  Because each `struct { K, V }`
+// is a distinct Zig type, the result is meant to be used via inference
+// (`var e = map.entries()`), not an explicit `List((K,V))` annotation.
+pub fn _zebra_map_entries(map: anytype) std.ArrayList(struct { @FieldType(_MapKV(@TypeOf(map)),"key"), @FieldType(_MapKV(@TypeOf(map)),"value") }) {
+    var out: std.ArrayList(struct { @FieldType(_MapKV(@TypeOf(map)),"key"), @FieldType(_MapKV(@TypeOf(map)),"value") }) = .empty;
+    var it = map.iterator();
+    while (it.next()) |e| out.append(_allocator, .{ e.key_ptr.*, e.value_ptr.* }) catch @panic("OOM");
+    return out;
+}
+// §28i: sys.memStats() → current program-arena footprint (bytes the arena
+// holds from the OS).  Because the arena bump-allocates and only grows until an
+// arena_scope reset, this is the high-water mark for the main allocator.  A
+// struct (not a bare int) so fields can be added later without breaking callers.
+pub const MemStats = struct { arenaBytes: i64 };
+pub fn _mem_stats() MemStats {
+    return .{ .arenaBytes = @as(i64, @intCast(_arena.queryCapacity())) };
+}
+
+// `allocate Debug()` allocation-stats reporter.  Wraps a real allocator and
+// records, for the lexical block, how many allocations occurred, the cumulative
+// bytes requested, and the peak simultaneously-live bytes.  At block exit
+// `report()` prints those to stderr.  (Under the arena model, per-allocation
+// leak detection — Debug()'s old role — is not meaningful; this profiling view
+// is.)  Every op delegates to `parent`, so allocation behavior is unchanged.
+pub const _AllocStats = struct {
+    parent: std.mem.Allocator,
+    count: usize = 0, // number of successful allocations
+    bytes: usize = 0, // cumulative bytes requested (allocs + grow-resizes)
+    live: usize = 0,  // currently-live bytes
+    peak: usize = 0,  // high-water mark of `live`
+
+    pub fn allocator(self: *_AllocStats) std.mem.Allocator {
+        return .{ .ptr = self, .vtable = &_alloc_stats_vtable };
+    }
+    pub fn grow(self: *_AllocStats, delta: usize) void {
+        self.bytes += delta;
+        self.live += delta;
+        if (self.live > self.peak) self.peak = self.live;
+    }
+    pub fn report(self: *_AllocStats) void {
+        std.debug.print(
+            "[allocate Debug] {d} allocations, {d} bytes requested, {d} bytes peak live\n",
+            .{ self.count, self.bytes, self.peak },
+        );
+    }
+};
+pub fn _alloc_stats_alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
+    const self: *_AllocStats = @ptrCast(@alignCast(ctx));
+    const p = self.parent.vtable.alloc(self.parent.ptr, len, alignment, ret_addr);
+    if (p != null) {
+        self.count += 1;
+        self.grow(len);
+    }
+    return p;
+}
+pub fn _alloc_stats_resize(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
+    const self: *_AllocStats = @ptrCast(@alignCast(ctx));
+    const ok = self.parent.vtable.resize(self.parent.ptr, memory, alignment, new_len, ret_addr);
+    if (ok) {
+        if (new_len > memory.len) self.grow(new_len - memory.len)
+        else self.live -= (memory.len - new_len);
+    }
+    return ok;
+}
+pub fn _alloc_stats_remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+    const self: *_AllocStats = @ptrCast(@alignCast(ctx));
+    const p = self.parent.vtable.remap(self.parent.ptr, memory, alignment, new_len, ret_addr);
+    if (p != null) {
+        if (new_len > memory.len) self.grow(new_len - memory.len)
+        else self.live -= (memory.len - new_len);
+    }
+    return p;
+}
+pub fn _alloc_stats_free(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
+    const self: *_AllocStats = @ptrCast(@alignCast(ctx));
+    self.parent.vtable.free(self.parent.ptr, memory, alignment, ret_addr);
+    self.live -= memory.len;
+}
+pub const _alloc_stats_vtable = std.mem.Allocator.VTable{
+    .alloc = _alloc_stats_alloc,
+    .resize = _alloc_stats_resize,
+    .remap = _alloc_stats_remap,
+    .free = _alloc_stats_free,
+};
+pub const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
+pub fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
+    // BUG-219: this used to spawn with two pipes and drain them SEQUENTIALLY —
+    // stdout to EOF first, then stderr. A child that fills its stderr buffer blocks
+    // writing; blocked, it never exits; so its stdout never reaches EOF; so the
+    // parent never finishes read #1 and never starts read #2. Deadlock, with both
+    // sides idle. `zebra -c` hit it on any program whose emitted Zig produced more
+    // than a pipe buffer of errors — i.e. exactly when check mode had something to
+    // report — and that is what the IDE's Check button runs.
+    //
+    // std.process.run drains both streams concurrently via Io.File.MultiReader, so
+    // delegate rather than hand-roll it. Same contract (both streams + exit code),
+    // deadlock-free by construction, and maintained upstream.
+    const r = std.process.run(_allocator, _io, .{
+        .argv = argv.items,
+    }) catch |e| return SysRunResult{
+        .exit_code = -1,
+        .stdout = "",
+        .stderr = if (e == error.FileNotFound) "spawn failed" else @errorName(e),
+    };
+    const _ec: i64 = switch (r.term) {
+        .exited => |code| @intCast(code),
+        else => -1,
+    };
+    return .{ .exit_code = _ec, .stdout = r.stdout, .stderr = r.stderr };
+}
+pub fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
     var child = std.process.spawn(_io, .{
         .argv   = argv.items,
         .stdin  = .inherit,
@@ -286,12 +478,12 @@ fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
         else    => -1,
     };
 }
-const _SysProcess = struct {
+pub const _SysProcess = struct {
     child: std.process.Child,
     alive: bool,
     pid: i64,
 };
-fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
+pub fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
     const p = _allocator.create(_SysProcess) catch @panic("OOM");
     p.* = .{ .child = undefined, .alive = false, .pid = -1 };
     p.child = std.process.spawn(_io, .{
@@ -307,12 +499,12 @@ fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
     }
     return p;
 }
-fn _sys_process_kill(p: *_SysProcess) void {
+pub fn _sys_process_kill(p: *_SysProcess) void {
     if (!p.alive) return;
     p.child.kill(_io);
     p.alive = false;
 }
-fn _sys_process_is_running(p: *_SysProcess) bool {
+pub fn _sys_process_is_running(p: *_SysProcess) bool {
     if (!p.alive) return false;
     if (comptime builtin.os.tag == .windows) {
         const handle = p.child.id orelse { p.alive = false; return false; };
@@ -328,7 +520,7 @@ fn _sys_process_is_running(p: *_SysProcess) bool {
         return true;
     }
 }
-fn _sys_readline() ?[]const u8 {
+pub fn _sys_readline() ?[]const u8 {
     const stdin = std.Io.File.stdin();
     var buf: [256]u8 = undefined;
     var rdr = stdin.readerStreaming(_io, &buf);
@@ -343,21 +535,39 @@ fn _sys_readline() ?[]const u8 {
     }
     return line.items;
 }
+// Read EXACTLY `count` bytes from stdin (byte-at-a-time, no read-ahead so
+// consecutive reads stay aligned — used for LSP Content-Length framing).
+// Returns null at clean EOF; a short read at EOF returns what was read.
+pub fn _sys_read_bytes(count: i64) ?[]const u8 {
+    if (count <= 0) return "";
+    const stdin = std.Io.File.stdin();
+    var buf: [256]u8 = undefined;
+    var rdr = stdin.readerStreaming(_io, &buf);
+    var out: std.ArrayList(u8) = .empty;
+    var byte_buf: [1]u8 = undefined;
+    var i: i64 = 0;
+    while (i < count) : (i += 1) {
+        const n = rdr.interface.readSliceShort(&byte_buf) catch return if (out.items.len > 0) out.items else null;
+        if (n == 0) return if (out.items.len > 0) out.items else null;
+        out.append(_allocator, byte_buf[0]) catch return null;
+    }
+    return out.items;
+}
 // ── DynLib — platform plugin loader ───────────────────────────────────────────
-const _DynLib = struct {
+pub const _DynLib = struct {
     lib: std.DynLib,
 };
-fn _dynlib_open(path: []const u8) anyerror!*_DynLib {
+pub fn _dynlib_open(path: []const u8) anyerror!*_DynLib {
     const dl = _allocator.create(_DynLib) catch @panic("OOM");
     errdefer _allocator.destroy(dl);
     dl.lib = try std.DynLib.open(path);
     return dl;
 }
-fn _dynlib_close(dl: *_DynLib) void {
+pub fn _dynlib_close(dl: *_DynLib) void {
     dl.lib.close();
 }
 // ── Chan(T) — thread-safe channel (buffered or rendezvous) ────────────────────
-fn _Chan(comptime T: type) type {
+pub fn _Chan(comptime T: type) type {
     return struct {
         mutex:     std.Io.Mutex = .init,
         not_empty: std.Io.Condition = .init,
@@ -402,6 +612,42 @@ fn _Chan(comptime T: type) type {
             return val;
         }
 
+        // Non-blocking receive: a value if one is ready right now, else null.
+        pub fn tryRecv(self: *Self) ?T {
+            self.mutex.lockUncancelable(_dio);
+            defer self.mutex.unlock(_dio);
+            if (self.buf.items.len == 0) return null;
+            const val = self.buf.orderedRemove(0);
+            self.not_full.signal(_dio);
+            return val;
+        }
+
+        // Timed receive: a value if one arrives within `seconds`, else null (also
+        // null if the channel is closed and drained).  Poll-based so it is
+        // correct-by-construction — no lock-ordering or lost-wakeup subtlety —
+        // at ~2ms granularity, which is fine for timeouts/debounce.  A future
+        // upgrade could use a futex timed-wait (std.Io futexWaitTimeout) to remove
+        // the polling entirely; the observable semantics would be unchanged.
+        pub fn recvTimeout(self: *Self, seconds: f64) ?T {
+            const start: i128 = @intCast(std.Io.Timestamp.now(_io, .awake).nanoseconds);
+            const budget: i128 = @intFromFloat(@max(seconds, 0.0) * @as(f64, @floatFromInt(std.time.ns_per_s)));
+            while (true) {
+                self.mutex.lockUncancelable(_dio);
+                if (self.buf.items.len > 0) {
+                    const val = self.buf.orderedRemove(0);
+                    self.not_full.signal(_dio);
+                    self.mutex.unlock(_dio);
+                    return val;
+                }
+                const is_closed = self.closed;
+                self.mutex.unlock(_dio);
+                if (is_closed) return null;
+                const now: i128 = @intCast(std.Io.Timestamp.now(_io, .awake).nanoseconds);
+                if (now - start >= budget) return null;
+                _sysSleep(2);
+            }
+        }
+
         pub fn close(self: *Self) void {
             self.mutex.lockUncancelable(_dio);
             defer self.mutex.unlock(_dio);
@@ -411,16 +657,218 @@ fn _Chan(comptime T: type) type {
         }
     };
 }
-fn _chan_create(comptime T: type, cap: i64) *_Chan(T) {
+pub fn _chan_create(comptime T: type, cap: i64) *_Chan(T) {
     const ch = std.heap.page_allocator.create(_Chan(T)) catch @panic("OOM");
     ch.* = _Chan(T).init(@intCast(@max(cap, 0)));
     return ch;
 }
+// ── ObjectPool(T) — fixed-capacity recycling pool (§28h) ──────────────────────
+// For a class Bullet, T is the instance type `*Bullet` (Zebra classes are
+// pointer-typed).  init() pre-allocates `cap` objects; take() hands out a free
+// one (null when exhausted); give(obj) returns it.  Objects are RECYCLED — a
+// taken object keeps its previous field values, so callers re-initialize on
+// take.  Contract-guarded: give() panics on a double-release or an object not
+// owned by this pool.  Pooling only makes sense for heap objects (classes);
+// `ObjectPool(int)` fails to compile (@typeInfo(T).pointer), which is intended.
+pub fn _ObjectPool(comptime T: type) type {
+    return struct {
+        slots:  []T,
+        in_use: []bool,
+        const Self = @This();
+        const _alloc = std.heap.page_allocator;
+
+        pub fn init(cap: usize) Self {
+            const slots  = _alloc.alloc(T, cap) catch @panic("OOM");
+            const in_use = _alloc.alloc(bool, cap) catch @panic("OOM");
+            for (slots) |*s| s.* = _alloc.create(@typeInfo(T).pointer.child) catch @panic("OOM");
+            @memset(in_use, false);
+            return .{ .slots = slots, .in_use = in_use };
+        }
+
+        pub fn take(self: *Self) ?T {
+            for (self.in_use, 0..) |used, i| {
+                if (!used) { self.in_use[i] = true; return self.slots[i]; }
+            }
+            return null; // pool exhausted — every object is checked out
+        }
+
+        pub fn give(self: *Self, obj: T) void {
+            for (self.slots, 0..) |s, i| {
+                if (s == obj) {
+                    if (!self.in_use[i])
+                        @panic("ObjectPool.give: double release (object was not taken)");
+                    self.in_use[i] = false;
+                    return;
+                }
+            }
+            @panic("ObjectPool.give: object not owned by this pool");
+        }
+
+        pub fn inUse(self: *Self) i64 { // number currently checked out
+            var n: i64 = 0;
+            for (self.in_use) |used| { if (used) n += 1; }
+            return n;
+        }
+    };
+}
+pub fn _objpool_create(comptime T: type, cap: i64) *_ObjectPool(T) {
+    const p = std.heap.page_allocator.create(_ObjectPool(T)) catch @panic("OOM");
+    p.* = _ObjectPool(T).init(@intCast(@max(cap, 0)));
+    return p;
+}
+// File.append(path, content): Zig 0.16 removed File.seekFromEnd, so append is
+// read-existing + concat + rewrite (creates the file if absent).
+pub fn _file_append(path: []const u8, content: []const u8) void {
+    const p = _zbr_norm_path(path);
+    const existing: []const u8 = std.Io.Dir.cwd().readFileAlloc(_io, p, _allocator, .unlimited) catch "";
+    const combined = _str_concat(existing, content, _allocator);
+    const wf = std.Io.Dir.cwd().createFile(_io, p, .{}) catch @panic("File.append error");
+    defer wf.close(_io);
+    wf.writeStreamingAll(_io, combined) catch @panic("File.append write error");
+}
+// ── Atomic(T) — lock-free atomic counter / flag ───────────────────────────────
+pub fn _Atomic(comptime T: type) type {
+    return struct {
+        val: std.atomic.Value(T),
+
+        pub fn load(self: *@This()) T {
+            return self.val.load(.seq_cst);
+        }
+        pub fn store(self: *@This(), v: T) void {
+            self.val.store(v, .seq_cst);
+        }
+        pub fn add(self: *@This(), delta: T) T {
+            return self.val.fetchAdd(delta, .seq_cst);
+        }
+        pub fn sub(self: *@This(), delta: T) T {
+            return self.val.fetchSub(delta, .seq_cst);
+        }
+        pub fn swap(self: *@This(), v: T) T {
+            return self.val.swap(v, .seq_cst);
+        }
+        pub fn cas(self: *@This(), expected: T, desired: T) bool {
+            return self.val.cmpxchgStrong(expected, desired, .seq_cst, .seq_cst) == null;
+        }
+    };
+}
+pub fn _atomic_create(comptime T: type, v: T) *_Atomic(T) {
+    const ptr = std.heap.page_allocator.create(_Atomic(T)) catch @panic("OOM");
+    ptr.* = .{ .val = std.atomic.Value(T).init(v) };
+    return ptr;
+}
+// ── ThreadPool(n) — bounded worker pool ──────────────────────────────────────
+// ── ThreadPool(n) — bounded worker pool ──────────────────────────────────────
+pub const _ThreadTask = struct {
+    invoke:   *const fn (*anyopaque) void,
+    ctx:      *anyopaque,
+    free_ctx: *const fn (*anyopaque) void,
+    next:     ?*_ThreadTask = null,
+};
+pub fn _tp_noop_free(ctx: *anyopaque) void { _ = ctx; }
+pub const _ThreadPool = struct {
+    mutex:     std.Io.Mutex,
+    has_work:  std.Io.Condition,
+    all_done:  std.Io.Condition,
+    head:      ?*_ThreadTask,
+    in_flight: usize,
+    shutdown:  bool,
+
+    // submit accepts both plain fn()void and Zebra lambda structs (anytype dispatch).
+    pub fn submit(self: *_ThreadPool, f: anytype) void {
+        const T = @TypeOf(f);
+        const pa = std.heap.page_allocator;
+        const task = pa.create(_ThreadTask) catch @panic("OOM");
+        if (comptime @typeInfo(T) == .@"fn") {
+            // A by-value `fn() void` is a comptime-only type, so it can't live in a
+            // heap FnBox.  Coerce to the fn-pointer type first (mirrors _ws/_http/_tcp_serve).
+            const FnPtr = *const T;
+            const fp: FnPtr = f;
+            const FnBox = struct { func: FnPtr };
+            const box = pa.create(FnBox) catch @panic("OOM");
+            box.* = .{ .func = fp };
+            const Inv = struct {
+                fn invoke(ctx: *anyopaque) void { @as(*FnBox, @ptrCast(@alignCast(ctx))).func(); }
+                fn free(ctx: *anyopaque) void { pa.destroy(@as(*FnBox, @ptrCast(@alignCast(ctx)))); }
+            };
+            task.* = .{ .invoke = Inv.invoke, .ctx = @ptrCast(box), .free_ctx = Inv.free };
+        } else {
+            const cap = pa.create(T) catch @panic("OOM");
+            cap.* = f;
+            const Inv = struct {
+                fn invoke(ctx: *anyopaque) void { @as(*T, @ptrCast(@alignCast(ctx))).call(); }
+                fn free(ctx: *anyopaque) void { pa.destroy(@as(*T, @ptrCast(@alignCast(ctx)))); }
+            };
+            task.* = .{ .invoke = Inv.invoke, .ctx = @ptrCast(cap), .free_ctx = Inv.free };
+        }
+        self.mutex.lockUncancelable(_io);
+        if (self.head == null) {
+            self.head = task;
+        } else {
+            var t = self.head.?;
+            while (t.next) |n| t = n;
+            t.next = task;
+        }
+        self.in_flight += 1;
+        self.mutex.unlock(_io);
+        self.has_work.signal(_io);
+    }
+
+    pub fn wait(self: *_ThreadPool) void {
+        self.mutex.lockUncancelable(_io);
+        defer self.mutex.unlock(_io);
+        while (self.in_flight > 0) {
+            self.all_done.waitUncancelable(_io, &self.mutex);
+        }
+    }
+
+    pub fn worker(self: *_ThreadPool) void {
+        const pa = std.heap.page_allocator;
+        while (true) {
+            self.mutex.lockUncancelable(_io);
+            while (self.head == null and !self.shutdown) {
+                self.has_work.waitUncancelable(_io, &self.mutex);
+            }
+            if (self.head == null) {
+                self.mutex.unlock(_io);
+                return;
+            }
+            const task = self.head.?;
+            self.head = task.next;
+            self.mutex.unlock(_io);
+            task.invoke(task.ctx);
+            task.free_ctx(task.ctx);
+            pa.destroy(task);
+            self.mutex.lockUncancelable(_io);
+            self.in_flight -= 1;
+            const was_last = self.in_flight == 0;
+            self.mutex.unlock(_io);
+            if (was_last) self.all_done.broadcast(_io);
+        }
+    }
+};
+pub fn _thread_pool_create(n: i64) *_ThreadPool {
+    const pool = std.heap.page_allocator.create(_ThreadPool) catch @panic("OOM");
+    pool.* = .{
+        .mutex     = .init,
+        .has_work  = .init,
+        .all_done  = .init,
+        .head      = null,
+        .in_flight = 0,
+        .shutdown  = false,
+    };
+    const n_threads: usize = @intCast(@max(n, 1));
+    for (0..n_threads) |_| {
+        const t = std.Thread.spawn(.{}, _ThreadPool.worker, .{pool}) catch @panic("ThreadPool: spawn failed");
+        t.detach();
+    }
+    return pool;
+}
+
 // sys.go(lambda) — fire-and-forget thread spawn.
 // Accepts either a plain fn() void (no-capture lambda) or a struct with a
 // call(self) void method (captured lambda).  Both patterns are produced by
 // Zebra's lambda codegen; comptime dispatch selects the right Thread.spawn form.
-fn _sys_go(f: anytype) void {
+pub fn _sys_go(f: anytype) void {
     const T = @TypeOf(f);
     const _t = if (comptime @typeInfo(T) == .@"fn")
         std.Thread.spawn(.{}, f, .{}) catch @panic("sys.go: thread spawn failed")
@@ -430,48 +878,48 @@ fn _sys_go(f: anytype) void {
 }
 
 // ── Build system ──────────────────────────────────────────────────────────────
-const _Build_Kind = enum { exe, lib, test_ };
-const _BuildTarget = struct {
+pub const _Build_Kind = enum { exe, lib, test_ };
+pub const _BuildTarget = struct {
     kind:     _Build_Kind,
     name:     []const u8,
     entry:    []const u8,
     platform: ?[]const u8 = null,
     linked:   ?*_BuildTarget = null,
 };
-const _Build = struct { targets: std.ArrayList(*_BuildTarget) };
-var _global_build: ?*_Build = null;
-var _build_ran: bool = false;
-var _list_targets_mode: bool = false;
-fn _build_new(alloc: std.mem.Allocator) *_Build {
+pub const _Build = struct { targets: std.ArrayList(*_BuildTarget) };
+pub var _global_build: ?*_Build = null;
+pub var _build_ran: bool = false;
+pub var _list_targets_mode: bool = false;
+pub fn _build_new(alloc: std.mem.Allocator) *_Build {
     const b = alloc.create(_Build) catch @panic("OOM");
     b.* = .{ .targets = .empty };
     _global_build = b;
     return b;
 }
-fn _build_add(b: *_Build, kind: _Build_Kind, name: []const u8, entry: []const u8) *_BuildTarget {
+pub fn _build_add(b: *_Build, kind: _Build_Kind, name: []const u8, entry: []const u8) *_BuildTarget {
     const t = _allocator.create(_BuildTarget) catch @panic("OOM");
     t.* = .{ .kind = kind, .name = name, .entry = entry };
     b.targets.append(_allocator, t) catch @panic("OOM");
     return t;
 }
-fn _build_target_link_lib(t: *_BuildTarget, dep: *_BuildTarget) *_BuildTarget {
+pub fn _build_target_link_lib(t: *_BuildTarget, dep: *_BuildTarget) *_BuildTarget {
     t.linked = dep; return t;
 }
-fn _build_target_platform(t: *_BuildTarget, p: []const u8) *_BuildTarget {
+pub fn _build_target_platform(t: *_BuildTarget, p: []const u8) *_BuildTarget {
     t.platform = p; return t;
 }
-fn _build_target_option(t: *_BuildTarget, _k: []const u8, _v: []const u8) *_BuildTarget {
+pub fn _build_target_option(t: *_BuildTarget, _k: []const u8, _v: []const u8) *_BuildTarget {
     _ = _k; _ = _v; return t;
 }
-fn _build_dep_stub(_n: []const u8, _v: []const u8) void { _ = _n; _ = _v; }
-fn _build_target_by_name(b: *_Build, name: []const u8) *_BuildTarget {
+pub fn _build_dep_stub(_n: []const u8, _v: []const u8) void { _ = _n; _ = _v; }
+pub fn _build_target_by_name(b: *_Build, name: []const u8) *_BuildTarget {
     for (b.targets.items) |t| {
         if (std.mem.eql(u8, t.name, name)) return t;
     }
     std.debug.print("build: no target named '{s}'\n", .{name});
     std.process.exit(1);
 }
-fn _build_list_targets(b: *_Build) void {
+pub fn _build_list_targets(b: *_Build) void {
     const _stdout = std.Io.File.stdout();
     _stdout.writeStreamingAll(_io, "{\"targets\":[") catch {};
     for (b.targets.items, 0..) |t, i| {
@@ -487,12 +935,12 @@ fn _build_list_targets(b: *_Build) void {
     }
     _stdout.writeStreamingAll(_io, "]}\n") catch {};
 }
-fn _build_auto_run() void {
+pub fn _build_auto_run() void {
     if (!_build_ran) {
         if (_global_build) |b| _build_run(b);
     }
 }
-fn _build_run(b: *_Build) void {
+pub fn _build_run(b: *_Build) void {
     _build_ran = true;
     if (_list_targets_mode) { _build_list_targets(b); return; }
     const self_exe = std.fs.selfExePathAlloc(_allocator) catch @panic("build: selfExePath failed");
@@ -530,21 +978,21 @@ fn _build_run(b: *_Build) void {
         }
     }
 }
-const _DateTime = struct { epoch_ms: i64 };
-const _CalendarView = struct {
+pub const _DateTime = struct { epoch_ms: i64 };
+pub const _CalendarView = struct {
     year: i64, month: i64, day: i64, weekday: i64,
     monthName: []const u8, era: []const u8,
 };
-const _DtG = struct { year: i64, month: i64, day: i64, hour: i64, minute: i64, second: i64 };
-fn _dt_is_leap(year: i64) bool {
+pub const _DtG = struct { year: i64, month: i64, day: i64, hour: i64, minute: i64, second: i64 };
+pub fn _dt_is_leap(year: i64) bool {
     return @mod(year, 4) == 0 and (@mod(year, 100) != 0 or @mod(year, 400) == 0);
 }
-fn _dt_days_in_month(year: i64, month: i64) i64 {
+pub fn _dt_days_in_month(year: i64, month: i64) i64 {
     const _d = [12]i64{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
     if (month == 2 and _dt_is_leap(year)) return 29;
     return _d[@intCast(month - 1)];
 }
-fn _dt_to_gregorian(epoch_ms: i64) _DtG {
+pub fn _dt_to_gregorian(epoch_ms: i64) _DtG {
     const epoch_s   = @divFloor(epoch_ms, 1000);
     const epoch_days = @divFloor(epoch_s, 86400);
     const time_rem  = @mod(epoch_s, 86400);
@@ -567,7 +1015,7 @@ fn _dt_to_gregorian(epoch_ms: i64) _DtG {
         .second = @mod(time_rem, 60),
     };
 }
-fn _dt_from_gregorian(year: i64, month: i64, day: i64, hour: i64, minute: i64, second: i64) _DateTime {
+pub fn _dt_from_gregorian(year: i64, month: i64, day: i64, hour: i64, minute: i64, second: i64) _DateTime {
     // Richards algorithm: civil date → JDN
     const a   = @divFloor(14 - month, 12);
     const y   = year + 4800 - a;
@@ -578,17 +1026,17 @@ fn _dt_from_gregorian(year: i64, month: i64, day: i64, hour: i64, minute: i64, s
     const epoch_s    = epoch_days * 86400 + hour * 3600 + minute * 60 + second;
     return .{ .epoch_ms = epoch_s * 1000 };
 }
-fn _dt_now() _DateTime { return .{ .epoch_ms = std.time.milliTimestamp() }; }
-fn _dt_weekday(dt: _DateTime) i64 {
+pub fn _dt_now() _DateTime { return .{ .epoch_ms = @intCast(@divTrunc(std.Io.Timestamp.now(_io, .real).nanoseconds, std.time.ns_per_ms)) }; }
+pub fn _dt_weekday(dt: _DateTime) i64 {
     // epoch_days=0 is Thursday (ISO 4); Monday=1 … Sunday=7
     const epoch_days = @divFloor(dt.epoch_ms, 86400000);
     return @mod(epoch_days + 3, 7) + 1;
 }
-fn _dt_add_days(dt: _DateTime, n: i64) _DateTime    { return .{ .epoch_ms = dt.epoch_ms + n * 86400000 }; }
-fn _dt_add_hours(dt: _DateTime, n: i64) _DateTime   { return .{ .epoch_ms = dt.epoch_ms + n * 3600000 }; }
-fn _dt_add_minutes(dt: _DateTime, n: i64) _DateTime { return .{ .epoch_ms = dt.epoch_ms + n * 60000 }; }
-fn _dt_add_seconds(dt: _DateTime, n: i64) _DateTime { return .{ .epoch_ms = dt.epoch_ms + n * 1000 }; }
-fn _dt_add_months(dt: _DateTime, months: i64) _DateTime {
+pub fn _dt_add_days(dt: _DateTime, n: i64) _DateTime    { return .{ .epoch_ms = dt.epoch_ms + n * 86400000 }; }
+pub fn _dt_add_hours(dt: _DateTime, n: i64) _DateTime   { return .{ .epoch_ms = dt.epoch_ms + n * 3600000 }; }
+pub fn _dt_add_minutes(dt: _DateTime, n: i64) _DateTime { return .{ .epoch_ms = dt.epoch_ms + n * 60000 }; }
+pub fn _dt_add_seconds(dt: _DateTime, n: i64) _DateTime { return .{ .epoch_ms = dt.epoch_ms + n * 1000 }; }
+pub fn _dt_add_months(dt: _DateTime, months: i64) _DateTime {
     const g      = _dt_to_gregorian(dt.epoch_ms);
     const total  = (g.month - 1) + months;
     const ny     = g.year + @divFloor(total, 12);
@@ -597,27 +1045,27 @@ fn _dt_add_months(dt: _DateTime, months: i64) _DateTime {
     const nd     = if (g.day > max_d) max_d else g.day;
     return _dt_from_gregorian(ny, nm, nd, g.hour, g.minute, g.second);
 }
-fn _dt_add_years(dt: _DateTime, years: i64) _DateTime {
+pub fn _dt_add_years(dt: _DateTime, years: i64) _DateTime {
     const g     = _dt_to_gregorian(dt.epoch_ms);
     const ny    = g.year + years;
     const max_d = _dt_days_in_month(ny, g.month);
     const nd    = if (g.day > max_d) max_d else g.day;
     return _dt_from_gregorian(ny, g.month, nd, g.hour, g.minute, g.second);
 }
-fn _dt_to_iso8601(dt: _DateTime) []const u8 {
+pub fn _dt_to_iso8601(dt: _DateTime) []const u8 {
     const g = _dt_to_gregorian(dt.epoch_ms);
     return std.fmt.allocPrint(_allocator,
         "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z",
         .{ @as(u32, @intCast(g.year)), @as(u8, @intCast(g.month)), @as(u8, @intCast(g.day)),
            @as(u8, @intCast(g.hour)),  @as(u8, @intCast(g.minute)), @as(u8, @intCast(g.second)) }) catch "";
 }
-fn _dt_format(dt: _DateTime, pattern: []const u8) []const u8 {
+pub fn _dt_format(dt: _DateTime, pattern: []const u8) []const u8 {
     const g = _dt_to_gregorian(dt.epoch_ms);
     const _sm = [_][]const u8{"","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
     const _lm = [_][]const u8{"","January","February","March","April","May","June","July","August","September","October","November","December"};
     const _sw = [_][]const u8{"","Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
     const _lw = [_][]const u8{"","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"};
-    var out: std.ArrayListUnmanaged(u8) = .{};
+    var out: std.ArrayList(u8) = .empty;
     var tmp: [32]u8 = undefined;
     var i: usize = 0;
     while (i < pattern.len) {
@@ -649,9 +1097,9 @@ fn _dt_format(dt: _DateTime, pattern: []const u8) []const u8 {
     }
     return out.toOwnedSlice(_allocator) catch "";
 }
-fn _dt_days_between(a: _DateTime, b: _DateTime) i64    { return @divFloor(b.epoch_ms - a.epoch_ms, 86400000); }
-fn _dt_seconds_between(a: _DateTime, b: _DateTime) i64 { return @divFloor(b.epoch_ms - a.epoch_ms, 1000); }
-fn _dt_in_calendar(dt: _DateTime, cal: []const u8) _CalendarView {
+pub fn _dt_days_between(a: _DateTime, b: _DateTime) i64    { return @divFloor(b.epoch_ms - a.epoch_ms, 86400000); }
+pub fn _dt_seconds_between(a: _DateTime, b: _DateTime) i64 { return @divFloor(b.epoch_ms - a.epoch_ms, 1000); }
+pub fn _dt_in_calendar(dt: _DateTime, cal: []const u8) _CalendarView {
     _ = cal; // only Gregorian implemented; future: dispatch on cal
     const g  = _dt_to_gregorian(dt.epoch_ms);
     const _lm2 = [_][]const u8{"","January","February","March","April","May","June","July","August","September","October","November","December"};
@@ -662,86 +1110,289 @@ fn _dt_in_calendar(dt: _DateTime, cal: []const u8) _CalendarView {
         .era       = "",
     };
 }
-const Calendar = struct {
+pub const Calendar = struct {
     pub const Gregorian = "gregorian";
     pub const Hebrew    = "hebrew";
     pub const Islamic   = "islamic";
     pub const Persian   = "persian";
     pub const Julian    = "julian";
 };
-const JsonValue = std.json.Value;
-fn _json_parse(src: []const u8) ?JsonValue {
+
+// ── IANA Timezone support ─────────────────────────────────────────────────────
+// Common IANA zones: UTC offset in minutes (std/dst) and DST rule index.
+// DST rules: 0=none, 1=US (2nd Sun Mar → 1st Sun Nov), 2=EU (last Sun Mar → last Sun Oct),
+//            3=AU East (1st Sun Oct → 1st Sun Apr), 4=NZ (last Sun Sep → 1st Sun Apr).
+// Dead-stripped by the linker when DateTime.inZone() is never called — zero size if unused.
+pub const _TzEntry = struct { name: []const u8, std: i16, dst: i16, rule: u8 };
+pub const _tz_table = [_]_TzEntry{
+    .{ .name = "UTC",                         .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "Etc/UTC",                     .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "Etc/GMT",                     .std = 0,    .dst = 0,    .rule = 0 },
+    .{ .name = "America/New_York",            .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Detroit",             .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Indiana/Indianapolis",.std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Kentucky/Louisville", .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Toronto",             .std = -300, .dst = -240, .rule = 1 },
+    .{ .name = "America/Chicago",             .std = -360, .dst = -300, .rule = 1 },
+    .{ .name = "America/Winnipeg",            .std = -360, .dst = -300, .rule = 1 },
+    .{ .name = "America/Mexico_City",         .std = -360, .dst = -360, .rule = 0 },
+    .{ .name = "America/Denver",              .std = -420, .dst = -360, .rule = 1 },
+    .{ .name = "America/Phoenix",             .std = -420, .dst = -420, .rule = 0 },
+    .{ .name = "America/Los_Angeles",         .std = -480, .dst = -420, .rule = 1 },
+    .{ .name = "America/Vancouver",           .std = -480, .dst = -420, .rule = 1 },
+    .{ .name = "America/Anchorage",           .std = -540, .dst = -480, .rule = 1 },
+    .{ .name = "America/Adak",               .std = -600, .dst = -540, .rule = 1 },
+    .{ .name = "Pacific/Honolulu",            .std = -600, .dst = -600, .rule = 0 },
+    .{ .name = "America/Bogota",              .std = -300, .dst = -300, .rule = 0 },
+    .{ .name = "America/Lima",                .std = -300, .dst = -300, .rule = 0 },
+    .{ .name = "America/Sao_Paulo",           .std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "America/Argentina/Buenos_Aires",.std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "America/Santiago",            .std = -180, .dst = -180, .rule = 0 },
+    .{ .name = "Europe/London",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Dublin",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Lisbon",               .std = 0,    .dst = 60,   .rule = 2 },
+    .{ .name = "Europe/Paris",                .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Berlin",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Amsterdam",            .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Rome",                 .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Madrid",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Brussels",             .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Vienna",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Warsaw",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Prague",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Stockholm",            .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Oslo",                 .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Copenhagen",           .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Zurich",               .std = 60,   .dst = 120,  .rule = 2 },
+    .{ .name = "Europe/Athens",               .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Helsinki",             .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Bucharest",            .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Kyiv",                 .std = 120,  .dst = 180,  .rule = 2 },
+    .{ .name = "Europe/Istanbul",             .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Europe/Moscow",               .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Europe/Minsk",                .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Asia/Dubai",                  .std = 240,  .dst = 240,  .rule = 0 },
+    .{ .name = "Asia/Tehran",                 .std = 210,  .dst = 210,  .rule = 0 },
+    .{ .name = "Asia/Kabul",                  .std = 270,  .dst = 270,  .rule = 0 },
+    .{ .name = "Asia/Karachi",                .std = 300,  .dst = 300,  .rule = 0 },
+    .{ .name = "Asia/Kolkata",                .std = 330,  .dst = 330,  .rule = 0 },
+    .{ .name = "Asia/Colombo",                .std = 330,  .dst = 330,  .rule = 0 },
+    .{ .name = "Asia/Kathmandu",              .std = 345,  .dst = 345,  .rule = 0 },
+    .{ .name = "Asia/Dhaka",                  .std = 360,  .dst = 360,  .rule = 0 },
+    .{ .name = "Asia/Almaty",                 .std = 360,  .dst = 360,  .rule = 0 },
+    .{ .name = "Asia/Yangon",                 .std = 390,  .dst = 390,  .rule = 0 },
+    .{ .name = "Asia/Bangkok",                .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Ho_Chi_Minh",            .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Jakarta",                .std = 420,  .dst = 420,  .rule = 0 },
+    .{ .name = "Asia/Shanghai",               .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Hong_Kong",              .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Singapore",              .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Taipei",                 .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Kuala_Lumpur",           .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Asia/Seoul",                  .std = 540,  .dst = 540,  .rule = 0 },
+    .{ .name = "Asia/Tokyo",                  .std = 540,  .dst = 540,  .rule = 0 },
+    .{ .name = "Australia/Darwin",            .std = 570,  .dst = 570,  .rule = 0 },
+    .{ .name = "Australia/Adelaide",          .std = 570,  .dst = 630,  .rule = 3 },
+    .{ .name = "Australia/Perth",             .std = 480,  .dst = 480,  .rule = 0 },
+    .{ .name = "Australia/Brisbane",          .std = 600,  .dst = 600,  .rule = 0 },
+    .{ .name = "Australia/Sydney",            .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Australia/Melbourne",         .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Australia/Hobart",            .std = 600,  .dst = 660,  .rule = 3 },
+    .{ .name = "Pacific/Auckland",            .std = 720,  .dst = 780,  .rule = 4 },
+    .{ .name = "Pacific/Fiji",                .std = 720,  .dst = 720,  .rule = 0 },
+    .{ .name = "Pacific/Guam",                .std = 600,  .dst = 600,  .rule = 0 },
+    .{ .name = "Africa/Cairo",                .std = 120,  .dst = 120,  .rule = 0 },
+    .{ .name = "Africa/Nairobi",              .std = 180,  .dst = 180,  .rule = 0 },
+    .{ .name = "Africa/Johannesburg",         .std = 120,  .dst = 120,  .rule = 0 },
+    .{ .name = "Africa/Lagos",                .std = 60,   .dst = 60,   .rule = 0 },
+    .{ .name = "Atlantic/Azores",             .std = -60,  .dst = 0,    .rule = 2 },
+    .{ .name = "Atlantic/Cape_Verde",         .std = -60,  .dst = -60,  .rule = 0 },
+};
+
+// First Sunday on or after epoch_days D (Sundays: epoch_days % 7 == 3).
+pub fn _tz_first_sun_on_or_after(d: i64) i64 {
+    return d + @mod(3 - d, 7);
+}
+
+// Last Sunday on or before epoch_days D.
+pub fn _tz_last_sun_on_or_before(d: i64) i64 {
+    return d - @mod(d - 3, 7);
+}
+
+pub fn _tz_us_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // US DST (since 2007): 2nd Sunday March 02:00 LST → 1st Sunday November 02:00 LDT
+    const g = _dt_to_gregorian(epoch_ms);
+    if (g.year < 2007) return false;
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    const mar1 = @divFloor(_dt_from_gregorian(g.year, 3, 1, 0, 0, 0).epoch_ms, 86400000);
+    const sun1_mar = _tz_first_sun_on_or_after(mar1);
+    const sun2_mar = sun1_mar + 7;
+    // 02:00 local standard → UTC: subtract std offset (std_ms is negative for West)
+    const dst_start = sun2_mar * 86400000 + 7200000 - std_ms;
+
+    const nov1 = @divFloor(_dt_from_gregorian(g.year, 11, 1, 0, 0, 0).epoch_ms, 86400000);
+    const sun1_nov = _tz_first_sun_on_or_after(nov1);
+    // 02:00 local DST → UTC: subtract dst offset
+    const dst_end = sun1_nov * 86400000 + 7200000 - dst_ms;
+
+    return epoch_ms >= dst_start and epoch_ms < dst_end;
+}
+
+pub fn _tz_eu_dst_active(epoch_ms: i64) bool {
+    // EU DST: last Sunday March 01:00 UTC → last Sunday October 01:00 UTC
+    const g = _dt_to_gregorian(epoch_ms);
+
+    const mar31 = @divFloor(_dt_from_gregorian(g.year, 3, 31, 0, 0, 0).epoch_ms, 86400000);
+    const last_sun_mar = _tz_last_sun_on_or_before(mar31);
+    const dst_start = last_sun_mar * 86400000 + 3600000; // 01:00 UTC
+
+    const oct31 = @divFloor(_dt_from_gregorian(g.year, 10, 31, 0, 0, 0).epoch_ms, 86400000);
+    const last_sun_oct = _tz_last_sun_on_or_before(oct31);
+    const dst_end = last_sun_oct * 86400000 + 3600000; // 01:00 UTC
+
+    return epoch_ms >= dst_start and epoch_ms < dst_end;
+}
+
+pub fn _tz_au_east_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // AU Eastern DST: 1st Sunday October 02:00 LST → 1st Sunday April 03:00 LDT
+    const g = _dt_to_gregorian(epoch_ms);
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    // May–September: always standard time
+    if (g.month >= 5 and g.month <= 9) return false;
+
+    if (g.month >= 10) {
+        const oct1 = @divFloor(_dt_from_gregorian(g.year, 10, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_oct = _tz_first_sun_on_or_after(oct1);
+        const dst_start = sun1_oct * 86400000 + 7200000 - std_ms;
+        return epoch_ms >= dst_start;
+    } else {
+        // January–April: DST started last October; check if before 1st Sunday April 03:00 LDT
+        const apr1 = @divFloor(_dt_from_gregorian(g.year, 4, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_apr = _tz_first_sun_on_or_after(apr1);
+        const dst_end = sun1_apr * 86400000 + 10800000 - dst_ms; // 03:00 LDT → UTC
+        return epoch_ms < dst_end;
+    }
+}
+
+pub fn _tz_nz_dst_active(epoch_ms: i64, std_min: i16) bool {
+    // NZ DST: last Sunday September 02:00 NZST → 1st Sunday April 03:00 NZDT
+    const g = _dt_to_gregorian(epoch_ms);
+    const std_ms: i64 = @as(i64, std_min) * 60000;
+    const dst_ms: i64 = std_ms + 3600000;
+
+    // May–August: always standard time
+    if (g.month >= 5 and g.month <= 8) return false;
+
+    if (g.month >= 9) {
+        const sep30 = @divFloor(_dt_from_gregorian(g.year, 9, 30, 0, 0, 0).epoch_ms, 86400000);
+        const last_sun_sep = _tz_last_sun_on_or_before(sep30);
+        const dst_start = last_sun_sep * 86400000 + 7200000 - std_ms;
+        return epoch_ms >= dst_start;
+    } else {
+        const apr1 = @divFloor(_dt_from_gregorian(g.year, 4, 1, 0, 0, 0).epoch_ms, 86400000);
+        const sun1_apr = _tz_first_sun_on_or_after(apr1);
+        const dst_end = sun1_apr * 86400000 + 10800000 - dst_ms;
+        return epoch_ms < dst_end;
+    }
+}
+
+pub fn _dt_in_zone(dt: _DateTime, zone: []const u8) _DateTime {
+    for (&_tz_table) |*entry| {
+        if (std.mem.eql(u8, entry.name, zone)) {
+            const std_ms: i64 = @as(i64, entry.std) * 60000;
+            if (entry.std == entry.dst or entry.rule == 0) {
+                return .{ .epoch_ms = dt.epoch_ms + std_ms };
+            }
+            const dst_ms: i64 = @as(i64, entry.dst) * 60000;
+            const in_dst = switch (entry.rule) {
+                1 => _tz_us_dst_active(dt.epoch_ms, entry.std),
+                2 => _tz_eu_dst_active(dt.epoch_ms),
+                3 => _tz_au_east_dst_active(dt.epoch_ms, entry.std),
+                4 => _tz_nz_dst_active(dt.epoch_ms, entry.std),
+                else => false,
+            };
+            return .{ .epoch_ms = dt.epoch_ms + (if (in_dst) dst_ms else std_ms) };
+        }
+    }
+    return dt; // Unknown zone: return as-is (UTC)
+}
+pub const JsonValue = std.json.Value;
+pub fn _json_parse(src: []const u8) ?JsonValue {
     // parseFromSliceLeaky uses allocator directly (no arena), intentionally leaked.
     return std.json.parseFromSliceLeaky(JsonValue, std.heap.page_allocator, src, .{}) catch return null;
 }
-fn _json_stringify(v: JsonValue) []const u8 {
+pub fn _json_stringify(v: JsonValue) []const u8 {
     return std.json.Stringify.valueAlloc(std.heap.page_allocator, v, .{}) catch "{}";
 }
-fn _json_object() JsonValue { return .{ .object = std.json.ObjectMap.init(std.heap.page_allocator) }; }
-fn _json_array() JsonValue  { return .{ .array = std.json.Array.init(std.heap.page_allocator) }; }
-fn _json_get_str(v: JsonValue, key: []const u8) []const u8 {
+pub fn _json_object() JsonValue { return .{ .object = std.json.ObjectMap.empty }; }
+pub fn _json_array() JsonValue  { return .{ .array = std.json.Array.init(std.heap.page_allocator) }; }
+pub fn _json_get_str(v: JsonValue, key: []const u8) []const u8 {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .string => |s| return s, else => {} }, else => {} }
     return "";
 }
-fn _json_get_int(v: JsonValue, key: []const u8) i64 {
+pub fn _json_get_int(v: JsonValue, key: []const u8) i64 {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .integer => |n| return n, else => {} }, else => {} }
     return 0;
 }
-fn _json_get_float(v: JsonValue, key: []const u8) f64 {
+pub fn _json_get_float(v: JsonValue, key: []const u8) f64 {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) {
         .float => |f| return f, .integer => |n| return @floatFromInt(n), else => {} }, else => {} }
     return 0.0;
 }
-fn _json_get_bool(v: JsonValue, key: []const u8) bool {
+pub fn _json_get_bool(v: JsonValue, key: []const u8) bool {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .bool => |b| return b, else => {} }, else => {} }
     return false;
 }
-fn _json_get_obj(v: JsonValue, key: []const u8) JsonValue {
+pub fn _json_get_obj(v: JsonValue, key: []const u8) JsonValue {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .object => return it, else => {} }, else => {} }
-    return .{ .object = std.json.ObjectMap.init(std.heap.page_allocator) };
+    return .{ .object = std.json.ObjectMap.empty };
 }
-fn _json_get_list(v: JsonValue, key: []const u8) []JsonValue {
+pub fn _json_get_list(v: JsonValue, key: []const u8) []JsonValue {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .array => |a| return a.items, else => {} }, else => {} }
     return &[_]JsonValue{};
 }
-fn _json_is_null(v: JsonValue) bool   { return v == .null; }
-fn _json_is_object(v: JsonValue) bool  { return switch (v) { .object => true, else => false }; }
-fn _json_is_array(v: JsonValue) bool   { return switch (v) { .array  => true, else => false }; }
-fn _json_put_str(v: *JsonValue, key: []const u8, val: []const u8) void {
+pub fn _json_is_null(v: JsonValue) bool   { return v == .null; }
+pub fn _json_is_object(v: JsonValue) bool  { return switch (v) { .object => true, else => false }; }
+pub fn _json_is_array(v: JsonValue) bool   { return switch (v) { .array  => true, else => false }; }
+pub fn _json_put_str(v: *JsonValue, key: []const u8, val: []const u8) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .string = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .string = val }) catch {};
 }
-fn _json_put_int(v: *JsonValue, key: []const u8, val: i64) void {
+pub fn _json_put_int(v: *JsonValue, key: []const u8, val: i64) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .integer = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .integer = val }) catch {};
 }
-fn _json_put_float(v: *JsonValue, key: []const u8, val: f64) void {
+pub fn _json_put_float(v: *JsonValue, key: []const u8, val: f64) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .float = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .float = val }) catch {};
 }
-fn _json_put_bool(v: *JsonValue, key: []const u8, val: bool) void {
+pub fn _json_put_bool(v: *JsonValue, key: []const u8, val: bool) void {
     if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator.dupe(u8, key) catch return, .{ .bool = val }) catch {};
+    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .bool = val }) catch {};
 }
-fn _json_arr_str(v: *JsonValue, val: []const u8) void {
+pub fn _json_arr_str(v: *JsonValue, val: []const u8) void {
     if (v.* != .array) return;
     v.array.append(.{ .string = val }) catch {};
 }
-fn _json_arr_int(v: *JsonValue, val: i64) void {
+pub fn _json_arr_int(v: *JsonValue, val: i64) void {
     if (v.* != .array) return;
     v.array.append(.{ .integer = val }) catch {};
 }
-fn _json_arr_float(v: *JsonValue, val: f64) void {
+pub fn _json_arr_float(v: *JsonValue, val: f64) void {
     if (v.* != .array) return;
     v.array.append(.{ .float = val }) catch {};
 }
-fn _json_arr_bool(v: *JsonValue, val: bool) void {
+pub fn _json_arr_bool(v: *JsonValue, val: bool) void {
     if (v.* != .array) return;
     v.array.append(.{ .bool = val }) catch {};
 }
-const HttpResponse = struct { status: u16, text: []const u8, headers: []const [2][]const u8 = &.{} };
-fn _http_request(method: std.http.Method, url: []const u8, payload: ?[]const u8) ?HttpResponse {
-    var _hc = std.http.Client{ .allocator = _allocator };
+pub const HttpResponse = struct { status: u16, text: []const u8, headers: []const [2][]const u8 = &.{} };
+pub fn _http_request(method: std.http.Method, url: []const u8, payload: ?[]const u8) ?HttpResponse {
+    var _hc = std.http.Client{ .allocator = _allocator, .io = _io };
     defer _hc.deinit();
     var out_list: std.ArrayList(u8) = .empty;
     var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
@@ -749,11 +1400,11 @@ fn _http_request(method: std.http.Method, url: []const u8, payload: ?[]const u8)
     out_list = out_aw.toArrayList();
     return .{ .status = @intFromEnum(_hr.status), .text = out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM") };
 }
-fn _http_get(url: []const u8) ?HttpResponse { return _http_request(.GET, url, null); }
-fn _http_post(url: []const u8, payload: []const u8) ?HttpResponse { return _http_request(.POST, url, payload); }
-fn _http_json_get(url: []const u8) ?JsonValue { const _r = _http_request(.GET, url, null) orelse return null; return _json_parse(_r.text); }
-fn _http_json_post(url: []const u8, body: []const u8) ?JsonValue {
-    var _hc = std.http.Client{ .allocator = _allocator };
+pub fn _http_get(url: []const u8) ?HttpResponse { return _http_request(.GET, url, null); }
+pub fn _http_post(url: []const u8, payload: []const u8) ?HttpResponse { return _http_request(.POST, url, payload); }
+pub fn _http_json_get(url: []const u8) ?JsonValue { const _r = _http_request(.GET, url, null) orelse return null; return _json_parse(_r.text); }
+pub fn _http_json_post(url: []const u8, body: []const u8) ?JsonValue {
+    var _hc = std.http.Client{ .allocator = _allocator, .io = _io };
     defer _hc.deinit();
     var out_list: std.ArrayList(u8) = .empty;
     var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
@@ -763,35 +1414,35 @@ fn _http_json_post(url: []const u8, body: []const u8) ?JsonValue {
     out_list = out_aw.toArrayList();
     return _json_parse(out_list.items);
 }
-fn _http_with_header(resp: HttpResponse, key: []const u8, val: []const u8) HttpResponse {
+pub fn _http_with_header(resp: HttpResponse, key: []const u8, val: []const u8) HttpResponse {
     var _new = std.heap.page_allocator.alloc([2][]const u8, resp.headers.len + 1) catch return resp;
     @memcpy(_new[0..resp.headers.len], resp.headers);
     _new[resp.headers.len] = .{ key, val };
     return .{ .status = resp.status, .text = resp.text, .headers = _new };
 }
-const HttpRequest = struct { method: []const u8, path: []const u8, content: []const u8 };
-fn _http_serve(port: u16, handler: anytype) void {
+pub const HttpRequest = struct { method: []const u8, path: []const u8, content: []const u8 };
+pub fn _http_serve(port: u16, handler: anytype) void {
     const _HFn = *const fn(HttpRequest) HttpResponse;
     const _fn: _HFn = handler;
     const _Ctx = struct {
-        conn: std.net.Server.Connection,
+        conn: std.Io.net.Stream,
         handler_fn: _HFn,
         fn run(ctx: *@This()) void {
             defer std.heap.page_allocator.destroy(ctx);
-            defer ctx.conn.stream.close();
+            defer ctx.conn.close(_io);
             const _alloc = std.heap.page_allocator;
-            // Read request headers (scan for \r\n\r\n).
+            var _srv_rbuf: [4096]u8 = undefined;
+            var _srv_rd = ctx.conn.reader(_io, &_srv_rbuf);
+            // Read request headers byte-by-byte until \r\n\r\n.
             var _hd: [16384]u8 = undefined;
             var _hl: usize = 0;
-            while (_hl < _hd.len - 4096) {
-                const _n = std.posix.recv(ctx.conn.stream.handle, _hd[_hl..@min(_hl+4096, _hd.len)], 0) catch break;
-                if (_n == 0) break;
-                _hl += _n;
-                if (std.mem.indexOf(u8, _hd[0.._hl], "\r\n\r\n") != null) break;
+            while (_hl < _hd.len - 1) {
+                const _b = _srv_rd.interface.takeByte() catch break;
+                _hd[_hl] = _b;
+                _hl += 1;
+                if (_hl >= 4 and _hd[_hl-4] == '\r' and _hd[_hl-3] == '\n' and _hd[_hl-2] == '\r' and _hd[_hl-1] == '\n') break;
             }
-            const _hdrs_end = (std.mem.indexOf(u8, _hd[0.._hl], "\r\n\r\n") orelse (_hl -| 4)) + 4;
-            const _head = _hd[0.._hdrs_end];
-            var _peeked: usize = if (_hl > _hdrs_end) _hl - _hdrs_end else 0;
+            const _head = _hd[0.._hl];
             // Parse request line: METHOD PATH VERSION
             const _rl_end = std.mem.indexOf(u8, _head, "\r\n") orelse _hl;
             var _rp = std.mem.splitScalar(u8, _head[0.._rl_end], ' ');
@@ -813,16 +1464,14 @@ fn _http_serve(port: u16, handler: anytype) void {
             var _body: []const u8 = "";
             if (_cl > 0) {
                 const _bb = _alloc.alloc(u8, _cl) catch @panic("OOM");
-                const _pre = @min(_peeked, _cl);
-                if (_pre > 0) @memcpy(_bb[0.._pre], _hd[_hdrs_end.._hdrs_end+_pre]);
-                var _bi: usize = _pre;
+                var _bi: usize = 0;
                 while (_bi < _cl) {
-                    const _rn = std.posix.recv(ctx.conn.stream.handle, _bb[_bi..], 0) catch break;
+                    var _slices: [1][]u8 = .{_bb[_bi..]};
+                    const _rn = _srv_rd.interface.readVec(&_slices) catch break;
                     if (_rn == 0) break;
                     _bi += _rn;
                 }
                 _body = _bb[0.._bi];
-                _ = &_peeked;
             }
             const _req = HttpRequest{ .method = _method, .path = _path, .content = _body };
             const _resp = ctx.handler_fn(_req);
@@ -839,22 +1488,26 @@ fn _http_serve(port: u16, handler: anytype) void {
             const _out = std.fmt.allocPrint(_alloc,
                 "HTTP/1.1 {d} {s}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {d}\r\nConnection: close\r\n{s}\r\n{s}",
                 .{ _resp.status, _st, _resp.text.len, _xh.items, _resp.text }) catch @panic("OOM");
-            ctx.conn.stream.writeAll(_out) catch {};
+            var _srv_wbuf: [4096]u8 = undefined;
+            var _srv_wr = ctx.conn.writer(_io, &_srv_wbuf);
+            _srv_wr.interface.writeAll(_out) catch {};
+            _srv_wr.interface.flush() catch {};
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+    var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _srv = _addr.listen(_io, .{}) catch |e| {
         std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
-    defer _srv.deinit();
+    defer _srv.deinit(_io);
     while (true) {
-        const _conn = _srv.accept() catch continue;
-        const _ctx = _alloc.create(_Ctx) catch { _conn.stream.close(); continue; };
+        const _conn = _srv.accept(_io) catch continue;
+        const _ctx = _alloc.create(_Ctx) catch { _conn.close(_io); continue; };
         _ctx.* = .{ .conn = _conn, .handler_fn = _fn };
         _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch {
             _alloc.destroy(_ctx);
-            _conn.stream.close();
+            _conn.close(_io);
         };
     }
 }
@@ -862,16 +1515,16 @@ fn _http_serve(port: u16, handler: anytype) void {
 // ─────────────────────────────────────────────────────────────────────────────
 // WebSocket (RFC 6455) — Ws.connect/send/recv/close + Ws.serve
 // ─────────────────────────────────────────────────────────────────────────────
-const _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B24";
-const _WS_TLS_BUF = std.crypto.tls.Client.min_buffer_len;
+pub const _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B24";
+pub const _WS_TLS_BUF = std.crypto.tls.Client.min_buffer_len;
 
 // Heap-allocated TLS state — must not move after _ws_tls_init() is called.
 // Internal pointers: tls_client.input = &stream_reader.interface_state,
 //                   tls_client.output = &stream_writer.interface.
-const _WsTlsState = struct {
-    stream: std.net.Stream,
-    stream_reader: std.net.Stream.Reader,
-    stream_writer: std.net.Stream.Writer,
+pub const _WsTlsState = struct {
+    stream: std.Io.net.Stream,
+    stream_reader: std.Io.net.Stream.Reader,
+    stream_writer: std.Io.net.Stream.Writer,
     tls_client: std.crypto.tls.Client,
     rbuf:     [_WS_TLS_BUF]u8,
     wbuf:     [_WS_TLS_BUF]u8,
@@ -879,22 +1532,32 @@ const _WsTlsState = struct {
     sock_wbuf: [4096]u8,
 };
 
-const _WsConn = struct {
+// Plain-socket state for WebSocket — must live at a stable heap address
+// so that the stream reader's @fieldParentPtr vtable calls remain valid.
+pub const _WsPlain = struct {
+    stream: std.Io.net.Stream,
+    rbuf: [4096]u8,
+    wbuf: [4096]u8,
+    rd: std.Io.net.Stream.Reader,
+    wr: std.Io.net.Stream.Writer,
+};
+
+pub const _WsConn = struct {
     impl: union(enum) {
-        plain: std.net.Stream,
+        plain: _WsPlain,
         tls:   *_WsTlsState,
     },
     server_side: bool,
     closed: bool,
 
-    fn readExact(self: *_WsConn, buf: []u8) !void {
+    pub fn readExact(self: *_WsConn, buf: []u8) !void {
         switch (self.impl) {
-            .plain => |s| {
-                var n: usize = 0;
-                while (n < buf.len) {
-                    const r = s.read(buf[n..]) catch return error.ConnectionResetByPeer;
-                    if (r == 0) return error.ConnectionResetByPeer;
-                    n += r;
+            .plain => |*p| {
+                var remaining = buf;
+                while (remaining.len > 0) {
+                    var slices: [1][]u8 = .{remaining};
+                    const n = p.rd.interface.readVec(&slices) catch return error.ConnectionResetByPeer;
+                    remaining = remaining[n..];
                 }
             },
             .tls => |t| {
@@ -904,9 +1567,12 @@ const _WsConn = struct {
         }
     }
 
-    fn writeAll(self: *_WsConn, buf: []const u8) !void {
+    pub fn writeAll(self: *_WsConn, buf: []const u8) !void {
         switch (self.impl) {
-            .plain => |s| try s.writeAll(buf),
+            .plain => |*p| {
+                p.wr.interface.writeAll(buf) catch return error.BrokenPipe;
+                p.wr.interface.flush() catch return error.BrokenPipe;
+            },
             .tls   => |t| {
                 try t.tls_client.writer.writeAll(buf);
                 try t.tls_client.writer.flush();
@@ -914,43 +1580,57 @@ const _WsConn = struct {
         }
     }
 
-    fn closeStream(self: *_WsConn) void {
+    pub fn closeStream(self: *_WsConn) void {
         switch (self.impl) {
-            .plain => |s| s.close(),
+            .plain => |p| p.stream.close(_io),
             .tls   => |t| {
                 t.tls_client.end() catch {};
-                t.stream.close();
+                t.stream.close(_io);
                 std.heap.page_allocator.destroy(t);
             },
         }
     }
 };
 
-fn _ws_tls_init(state: *_WsTlsState, stream: std.net.Stream, host: []const u8) !void {
+pub fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []const u8) !void {
     state.stream = stream;
-    state.stream_reader = stream.reader(&state.sock_rbuf);
-    state.stream_writer = stream.writer(&state.sock_wbuf);
-    var ca = std.crypto.Certificate.Bundle{};
+    state.stream_reader = stream.reader(_io, &state.sock_rbuf);
+    state.stream_writer = stream.writer(_io, &state.sock_wbuf);
+    var ca = std.crypto.Certificate.Bundle.empty;
     defer ca.deinit(std.heap.page_allocator);
-    ca.rescan(std.heap.page_allocator) catch {};
+    ca.rescan(std.heap.page_allocator, _io, std.Io.Timestamp.now(_io, .real)) catch {};
+    // 0.16 TLS Options: `ca` became a tagged union whose `.bundle` variant carries the
+    // allocator/io/lock alongside the bundle; `entropy` + `realtime_now` are now caller-
+    // supplied. The bundle/lock/entropy are only read during the handshake (init), so
+    // these locals are sufficient (matches the defer-deinit-after-init lifetime).
+    var _ca_lock: std.Io.RwLock = .init;
+    var _tls_entropy: [std.crypto.tls.Client.Options.entropy_len]u8 = undefined;
+    _io.random(&_tls_entropy);
     state.tls_client = try std.crypto.tls.Client.init(
-        state.stream_reader.interface(),
+        &state.stream_reader.interface,
         &state.stream_writer.interface,
         .{
             .host        = .{ .explicit = host },
-            .ca          = .{ .bundle = ca },
+            .ca          = .{ .bundle = .{
+                .gpa = std.heap.page_allocator,
+                .io = _io,
+                .lock = &_ca_lock,
+                .bundle = &ca,
+            } },
             .read_buffer = &state.rbuf,
             .write_buffer = &state.wbuf,
+            .entropy = &_tls_entropy,
+            .realtime_now = std.Io.Timestamp.now(_io, .real),
             .allow_truncation_attacks = true,
         },
     );
 }
 
-fn _ws_send_close_frame(conn: *_WsConn) void {
+pub fn _ws_send_close_frame(conn: *_WsConn) void {
     const close_code = [2]u8{ 0x03, 0xe8 }; // 1000 normal closure
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
-        std.crypto.random.bytes(&mk);
+        _io.randomSecure(&mk) catch @panic("entropy unavailable");
         const frame = [8]u8{ 0x88, 0x82, mk[0], mk[1], mk[2], mk[3],
             close_code[0] ^ mk[0], close_code[1] ^ mk[1] };
         conn.writeAll(&frame) catch {};
@@ -960,11 +1640,11 @@ fn _ws_send_close_frame(conn: *_WsConn) void {
     }
 }
 
-fn _ws_send_pong(conn: *_WsConn, payload: []const u8) void {
+pub fn _ws_send_pong(conn: *_WsConn, payload: []const u8) void {
     const plen: u8 = @intCast(@min(payload.len, 125));
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
-        std.crypto.random.bytes(&mk);
+        _io.randomSecure(&mk) catch @panic("entropy unavailable");
         const hdr = [6]u8{ 0x8a, 0x80 | plen, mk[0], mk[1], mk[2], mk[3] };
         conn.writeAll(&hdr) catch return;
         if (plen > 0) {
@@ -981,7 +1661,7 @@ fn _ws_send_pong(conn: *_WsConn, payload: []const u8) void {
     }
 }
 
-fn _ws_connect(url: []const u8) ?*_WsConn {
+pub fn _ws_connect(url: []const u8) ?*_WsConn {
     const _pa = std.heap.page_allocator;
     // Parse scheme
     const is_tls = std.mem.startsWith(u8, url, "wss://");
@@ -996,20 +1676,32 @@ fn _ws_connect(url: []const u8) ?*_WsConn {
         std.fmt.parseInt(u16, host_port[c+1..], 10) catch default_port else default_port;
 
     // TCP connect
-    const stream = std.net.tcpConnectToHost(_pa, host, port) catch return null;
-    const conn: *_WsConn = _pa.create(_WsConn) catch { stream.close(); return null; };
+    const stream = blk: {
+        if (std.Io.net.IpAddress.parse(host, port)) |addr| {
+            break :blk addr.connect(_io, .{ .mode = .stream }) catch return null;
+        } else |_| {}
+        const hn = std.Io.net.HostName.init(host) catch return null;
+        break :blk hn.connect(_io, port, .{ .mode = .stream }) catch return null;
+    };
+    const conn: *_WsConn = _pa.create(_WsConn) catch { stream.close(_io); return null; };
 
     if (is_tls) {
-        const ts: *_WsTlsState = _pa.create(_WsTlsState) catch { stream.close(); _pa.destroy(conn); return null; };
-        _ws_tls_init(ts, stream, host) catch { stream.close(); _pa.destroy(ts); _pa.destroy(conn); return null; };
+        const ts: *_WsTlsState = _pa.create(_WsTlsState) catch { stream.close(_io); _pa.destroy(conn); return null; };
+        _ws_tls_init(ts, stream, host) catch { stream.close(_io); _pa.destroy(ts); _pa.destroy(conn); return null; };
         conn.* = .{ .impl = .{ .tls = ts }, .server_side = false, .closed = false };
     } else {
-        conn.* = .{ .impl = .{ .plain = stream }, .server_side = false, .closed = false };
+        // Initialize _WsPlain at its final heap address before setting up reader/writer,
+        // because Stream.Reader/Writer use @fieldParentPtr and need a stable address.
+        conn.server_side = false;
+        conn.closed = false;
+        conn.impl = .{ .plain = .{ .stream = stream, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
+        conn.impl.plain.rd = conn.impl.plain.stream.reader(_io, &conn.impl.plain.rbuf);
+        conn.impl.plain.wr = conn.impl.plain.stream.writer(_io, &conn.impl.plain.wbuf);
     }
 
     // Build WebSocket upgrade request
     var key_bytes: [16]u8 = undefined;
-    std.crypto.random.bytes(&key_bytes);
+    _io.randomSecure(&key_bytes) catch @panic("entropy unavailable");
     var key_b64: [24]u8 = undefined;
     _ = std.base64.standard.Encoder.encode(&key_b64, &key_bytes);
 
@@ -1042,7 +1734,7 @@ fn _ws_connect(url: []const u8) ?*_WsConn {
     return conn;
 }
 
-fn _ws_send(conn: *_WsConn, msg: []const u8) void {
+pub fn _ws_send(conn: *_WsConn, msg: []const u8) void {
     const len = msg.len;
     var hdr: [14]u8 = undefined;
     hdr[0] = 0x81; // FIN=1, opcode=1 (text)
@@ -1062,7 +1754,7 @@ fn _ws_send(conn: *_WsConn, msg: []const u8) void {
     }
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
-        std.crypto.random.bytes(&mk);
+        _io.randomSecure(&mk) catch @panic("entropy unavailable");
         hdr[h] = mk[0]; h += 1; hdr[h] = mk[1]; h += 1;
         hdr[h] = mk[2]; h += 1; hdr[h] = mk[3]; h += 1;
         conn.writeAll(hdr[0..h]) catch return;
@@ -1081,7 +1773,7 @@ fn _ws_send(conn: *_WsConn, msg: []const u8) void {
     }
 }
 
-fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
+pub fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
     var msg: std.ArrayList(u8) = .empty;
     defer msg.deinit(alloc);
     while (true) {
@@ -1122,7 +1814,7 @@ fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
     }
 }
 
-fn _ws_close(conn: *_WsConn) void {
+pub fn _ws_close(conn: *_WsConn) void {
     if (!conn.closed) {
         conn.closed = true;
         _ws_send_close_frame(conn);
@@ -1133,7 +1825,7 @@ fn _ws_close(conn: *_WsConn) void {
 
 // Supports both void-returning and anyerror!void-returning handlers by coercing
 // via an anyerror!void wrapper, which lets a void return succeed silently.
-inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
+pub inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
     const _Wrap = struct {
         fn call(hh: @TypeOf(h), wws: *_WsConn) anyerror!void { return hh(wws); }
     };
@@ -1141,21 +1833,23 @@ inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
 }
 
 // Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
-fn _ws_serve(port: u16, handler: anytype) void {
+pub fn _ws_serve(port: u16, handler: anytype) void {
+    const _HFn = *const fn(*_WsConn) void;
+    const _fn: _HFn = handler;
     const _Ctx = struct {
-        conn: std.net.Server.Connection,
-        handler_fn: @TypeOf(handler),
+        conn: std.Io.net.Stream,
+        handler_fn: _HFn,
         fn run(ctx: *@This()) void {
             const _pa = std.heap.page_allocator;
             defer _pa.destroy(ctx);
-            // Read HTTP upgrade headers
+            // Read HTTP upgrade headers byte-by-byte
+            var hdr_rbuf: [64]u8 = undefined;
+            var hdr_rd = ctx.conn.reader(_io, &hdr_rbuf);
             var hdr_buf: [8192]u8 = undefined;
             var hdr_len: usize = 0;
             while (hdr_len + 1 < hdr_buf.len) {
-                var b: [1]u8 = undefined;
-                const n = ctx.conn.stream.read(&b) catch break;
-                if (n == 0) break;
-                hdr_buf[hdr_len] = b[0]; hdr_len += 1;
+                const b = hdr_rd.interface.takeByte() catch break;
+                hdr_buf[hdr_len] = b; hdr_len += 1;
                 if (hdr_len >= 4 and
                     hdr_buf[hdr_len-4] == '\r' and hdr_buf[hdr_len-3] == '\n' and
                     hdr_buf[hdr_len-2] == '\r' and hdr_buf[hdr_len-1] == '\n') break;
@@ -1163,9 +1857,9 @@ fn _ws_serve(port: u16, handler: anytype) void {
             const headers = hdr_buf[0..hdr_len];
             // Extract Sec-WebSocket-Key
             const key_marker = "Sec-WebSocket-Key: ";
-            const k0 = std.ascii.indexOfIgnoreCase(headers, key_marker) orelse { ctx.conn.stream.close(); return; };
+            const k0 = std.ascii.indexOfIgnoreCase(headers, key_marker) orelse { ctx.conn.close(_io); return; };
             const k1 = k0 + key_marker.len;
-            const k2 = std.mem.indexOfScalarPos(u8, headers, k1, '\r') orelse { ctx.conn.stream.close(); return; };
+            const k2 = std.mem.indexOfScalarPos(u8, headers, k1, '\r') orelse { ctx.conn.close(_io); return; };
             const client_key = headers[k1..k2];
             // Compute Sec-WebSocket-Accept = base64(SHA1(key + GUID))
             var sha = std.crypto.hash.Sha1.init(.{});
@@ -1180,12 +1874,21 @@ fn _ws_serve(port: u16, handler: anytype) void {
             const resp = std.fmt.bufPrint(&resp_buf,
                 "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {s}\r\n\r\n",
                 .{accept_buf},
-            ) catch { ctx.conn.stream.close(); return; };
-            ctx.conn.stream.writeAll(resp) catch { ctx.conn.stream.close(); return; };
+            ) catch { ctx.conn.close(_io); return; };
+            {
+                var wr_wbuf: [512]u8 = undefined;
+                var wr = ctx.conn.writer(_io, &wr_wbuf);
+                wr.interface.writeAll(resp) catch { ctx.conn.close(_io); return; };
+                wr.interface.flush() catch { ctx.conn.close(_io); return; };
+            }
             // Create WsConn and call handler
-            const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.stream.close(); return; };
+            const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.close(_io); return; };
             defer _pa.destroy(ws);
-            ws.* = .{ .impl = .{ .plain = ctx.conn.stream }, .server_side = true, .closed = false };
+            ws.server_side = true;
+            ws.closed = false;
+            ws.impl = .{ .plain = .{ .stream = ctx.conn, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
+            ws.impl.plain.rd = ws.impl.plain.stream.reader(_io, &ws.impl.plain.rbuf);
+            ws.impl.plain.wr = ws.impl.plain.stream.writer(_io, &ws.impl.plain.wbuf);
             _ws_invoke(ctx.handler_fn, ws);
             // Close if handler didn't (or errored out)
             if (!ws.closed) {
@@ -1196,21 +1899,22 @@ fn _ws_serve(port: u16, handler: anytype) void {
         }
     };
     const _pa = std.heap.page_allocator;
-    var _srv = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, port).listen(.{ .reuse_address = false }) catch |e| {
+    var _waddr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _srv = _waddr.listen(_io, .{}) catch |e| {
         std.debug.print("Ws.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
         return;
     };
-    defer _srv.deinit();
+    defer _srv.deinit(_io);
     while (true) {
-        const _c = _srv.accept() catch continue;
-        const _ctx = _pa.create(_Ctx) catch { _c.stream.close(); continue; };
-        _ctx.* = .{ .conn = _c, .handler_fn = handler };
-        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.stream.close(); };
+        const _c = _srv.accept(_io) catch continue;
+        const _ctx = _pa.create(_Ctx) catch { _c.close(_io); continue; };
+        _ctx.* = .{ .conn = _c, .handler_fn = _fn };
+        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.close(_io); };
     }
 }
 
-const _CsvTable = struct { rows: []const []const []const u8 };
-fn _csv_parse(src: []const u8) _CsvTable {
+pub const _CsvTable = struct { rows: []const []const []const u8 };
+pub fn _csv_parse(src: []const u8) _CsvTable {
     const _pa = std.heap.page_allocator;
     var _rows: std.ArrayList([]const []const u8) = .empty;
     var _row:  std.ArrayList([]const u8) = .empty;
@@ -1253,42 +1957,42 @@ fn _csv_parse(src: []const u8) _CsvTable {
     if (_row.items.len > 0) _rows.append(_pa, _row.toOwnedSlice(_pa) catch &.{}) catch {};
     return .{ .rows = _rows.toOwnedSlice(_pa) catch &.{} };
 }
-fn _csv_parse_file(path: []const u8) _CsvTable {
+pub fn _csv_parse_file(path: []const u8) _CsvTable {
     const src = std.Io.Dir.cwd().readFileAlloc(_io, path, std.heap.page_allocator, .unlimited) catch return .{ .rows = &.{} };
     return _csv_parse(src);
 }
-fn _csv_row_count(t: _CsvTable) i64 { return @as(i64, @intCast(t.rows.len)); }
-fn _csv_col_count(t: _CsvTable) i64 { return if (t.rows.len > 0) @as(i64, @intCast(t.rows[0].len)) else 0; }
-fn _csv_header(t: _CsvTable) std.ArrayList([]const u8) {
+pub fn _csv_row_count(t: _CsvTable) i64 { return @as(i64, @intCast(t.rows.len)); }
+pub fn _csv_col_count(t: _CsvTable) i64 { return if (t.rows.len > 0) @as(i64, @intCast(t.rows[0].len)) else 0; }
+pub fn _csv_header(t: _CsvTable) std.ArrayList([]const u8) {
     var _r: std.ArrayList([]const u8) = .empty;
     if (t.rows.len > 0) for (t.rows[0]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
-fn _csv_row(t: _CsvTable, n: i64) std.ArrayList([]const u8) {
+pub fn _csv_row(t: _CsvTable, n: i64) std.ArrayList([]const u8) {
     var _r: std.ArrayList([]const u8) = .empty;
     const _i: usize = @intCast(@max(0, n));
     if (_i < t.rows.len) for (t.rows[_i]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
-fn _csv_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
+pub fn _csv_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
     var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
     for (t.rows) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
-fn _csv_data_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
+pub fn _csv_data_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
     var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
     const _s: usize = if (t.rows.len > 0) 1 else 0;
     for (t.rows[_s..]) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
-fn _csv_get(t: _CsvTable, row: std.ArrayList([]const u8), col: []const u8) []const u8 {
+pub fn _csv_get(t: _CsvTable, row: std.ArrayList([]const u8), col: []const u8) []const u8 {
     if (t.rows.len == 0) return "";
     for (t.rows[0], 0..) |h, i| { if (std.mem.eql(u8, h, col)) return if (i < row.items.len) row.items[i] else ""; }
     return "";
 }
-const _CsvWriter = struct { buf: std.ArrayList(u8) };
-fn _csv_writer_init() _CsvWriter { return .{ .buf = .{} }; }
-fn _csv_write_row(w: *_CsvWriter, row: std.ArrayList([]const u8)) void {
+pub const _CsvWriter = struct { buf: std.ArrayList(u8) };
+pub fn _csv_writer_init() _CsvWriter { return .{ .buf = .{} }; }
+pub fn _csv_write_row(w: *_CsvWriter, row: std.ArrayList([]const u8)) void {
     const _pa = std.heap.page_allocator;
     for (row.items, 0..) |field, i| {
         if (i > 0) w.buf.append(_pa, ',') catch {};
@@ -1301,125 +2005,174 @@ fn _csv_write_row(w: *_CsvWriter, row: std.ArrayList([]const u8)) void {
     }
     w.buf.appendSlice(_pa, "\r\n") catch {};
 }
-fn _csv_build(w: *const _CsvWriter) []const u8 { return w.buf.items; }
-const TcpConn = struct { stream: std.net.Stream };
-fn _tcp_connect(host: []const u8, port: u16) ?TcpConn {
-    const s = std.net.tcpConnectToHost(_allocator, host, port) catch return null;
-    return .{ .stream = s };
+pub fn _csv_build(w: *const _CsvWriter) []const u8 { return w.buf.items; }
+pub const TcpConn = struct { stream: std.Io.net.Stream };
+pub fn _tcp_connect(host: []const u8, port: u16) ?TcpConn {
+    const stream = blk: {
+        if (std.Io.net.IpAddress.parse(host, port)) |addr| {
+            break :blk addr.connect(_io, .{ .mode = .stream }) catch return null;
+        } else |_| {}
+        const hn = std.Io.net.HostName.init(host) catch return null;
+        break :blk hn.connect(_io, port, .{ .mode = .stream }) catch return null;
+    };
+    return .{ .stream = stream };
 }
-fn _tcp_write(conn: TcpConn, data: []const u8) void {
-    conn.stream.writeAll(data) catch |e| @panic(@errorName(e));
+pub fn _tcp_write(conn: TcpConn, data: []const u8) void {
+    var _wb: [4096]u8 = undefined;
+    var _wt = conn.stream.writer(_io, &_wb);
+    _wt.interface.writeAll(data) catch |e| @panic(@errorName(e));
+    _wt.interface.flush() catch |e| @panic(@errorName(e));
 }
-fn _tcp_read(conn: TcpConn) []const u8 {
+pub fn _tcp_read(conn: TcpConn) []const u8 {
     var _rb: [65536]u8 = undefined;
-    var _rd = conn.stream.reader(&_rb);
+    var _rd = conn.stream.reader(_io, &_rb);
     var out_list: std.ArrayList(u8) = .empty;
     var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
-    _ = _rd.interface().streamRemaining(&out_aw.writer) catch |e| @panic(@errorName(e));
+    _ = _rd.interface.streamRemaining(&out_aw.writer) catch |e| @panic(@errorName(e));
     out_list = out_aw.toArrayList();
     return out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM");
 }
-fn _tcp_read_line(conn: TcpConn) []const u8 {
+pub fn _tcp_read_line(conn: TcpConn) []const u8 {
     var _buf: std.ArrayList(u8) = .empty;
+    var _rb: [1]u8 = undefined;
+    var _rd = conn.stream.reader(_io, &_rb);
     while (true) {
-        var _b: [1]u8 = undefined;
-        const _n = std.posix.recv(conn.stream.handle, &_b, 0) catch break;
-        if (_n == 0) break;
-        if (_b[0] == '\n') break;
-        if (_b[0] != '\r') _buf.append(std.heap.page_allocator, _b[0]) catch break;
+        const _b = _rd.interface.takeByte() catch break;
+        if (_b == '\n') break;
+        if (_b != '\r') _buf.append(std.heap.page_allocator, _b) catch break;
     }
     return _buf.items;
 }
-fn _tcp_read_bytes(conn: TcpConn, n: usize) []const u8 {
+pub fn _tcp_read_bytes(conn: TcpConn, n: usize) []const u8 {
     const _buf = std.heap.page_allocator.alloc(u8, n) catch @panic("OOM");
+    var _rb: [4096]u8 = undefined;
+    var _rd = conn.stream.reader(_io, &_rb);
     var _total: usize = 0;
     while (_total < n) {
-        const _got = std.posix.recv(conn.stream.handle, _buf[_total..], 0) catch break;
+        var _slices: [1][]u8 = .{_buf[_total..]};
+        const _got = _rd.interface.readVec(&_slices) catch break;
         if (_got == 0) break;
         _total += _got;
     }
     return _buf[0.._total];
 }
-fn _tcp_close(conn: TcpConn) void { conn.stream.close(); }
-
-const UdpSocket = struct { handle: std.posix.socket_t };
-fn _udp_socket() UdpSocket {
-    const s = std.posix.socket(std.posix.AF.INET, std.posix.SOCK.DGRAM, 0) catch |e| @panic(@errorName(e));
-    return .{ .handle = s };
-}
-fn _udp_send(sock: UdpSocket, host: []const u8, port: u16, data: []const u8) void {
-    const dest = blk: {
-        if (std.net.Address.parseIp(host, port)) |a| break :blk a else |_| {}
-        const _list = std.net.getAddressList(std.heap.page_allocator, host, port) catch |e| @panic(@errorName(e));
-        defer _list.deinit();
-        if (_list.addrs.len == 0) @panic("UDP send: hostname resolution failed");
-        break :blk _list.addrs[0];
+pub fn _tcp_close(conn: TcpConn) void { conn.stream.close(_io); }
+pub fn _tcp_serve(port: u16, handler: anytype) void {
+    const _HFn = *const fn(TcpConn) void;
+    const _fn: _HFn = handler;
+    const _Ctx = struct {
+        conn: std.Io.net.Stream,
+        handler_fn: _HFn,
+        fn run(ctx: *@This()) void {
+            defer std.heap.page_allocator.destroy(ctx);
+            ctx.handler_fn(.{ .stream = ctx.conn });
+        }
     };
-    _ = std.posix.sendto(sock.handle, data, 0, &dest.any, dest.getOsSockLen()) catch |e| @panic(@errorName(e));
-}
-fn _udp_recv(sock: UdpSocket, max_bytes: usize) []const u8 {
-    const buf = std.heap.page_allocator.alloc(u8, max_bytes) catch @panic("OOM");
-    const n = std.posix.recv(sock.handle, buf, 0) catch |e| @panic(@errorName(e));
-    return buf[0..n];
-}
-fn _udp_close(sock: UdpSocket) void { std.posix.close(sock.handle); }
-
-fn _net_resolve(host: []const u8) []const []const u8 {
-    var _result: std.ArrayList([]const u8) = .empty;
-    const _list = std.net.getAddressList(std.heap.page_allocator, host, 0) catch return &.{};
-    defer _list.deinit();
-    for (_list.addrs) |_addr| {
-        var _buf: [64]u8 = undefined;
-        const _full = std.fmt.bufPrint(&_buf, "{f}", .{_addr}) catch continue;
-        const _col = std.mem.lastIndexOfScalar(u8, _full, ':') orelse _full.len;
-        var _ip = _full[0.._col];
-        if (_ip.len >= 2 and _ip[0] == '[') _ip = _ip[1 .. _ip.len - 1];
-        const _owned = std.heap.page_allocator.dupe(u8, _ip) catch continue;
-        _result.append(std.heap.page_allocator, _owned) catch {};
+    const _alloc = std.heap.page_allocator;
+    var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _srv = _addr.listen(_io, .{}) catch |e| {
+        std.debug.print("Tcp.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        return;
+    };
+    defer _srv.deinit(_io);
+    while (true) {
+        const _conn = _srv.accept(_io) catch continue;
+        const _ctx = _alloc.create(_Ctx) catch { _conn.close(_io); continue; };
+        _ctx.* = .{ .conn = _conn, .handler_fn = _fn };
+        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch {
+            _alloc.destroy(_ctx);
+            _conn.close(_io);
+        };
     }
-    return _result.toOwnedSlice(std.heap.page_allocator) catch &.{};
+}
+
+pub const _UdpSocketInner = struct {
+    inner: std.Io.net.Socket,
+    pub fn send_(self: *_UdpSocketInner, host: []const u8, port: u16, data: []const u8) void {
+        const dest = std.Io.net.IpAddress.parse(host, port) catch {
+            std.debug.print("UDP send: '{s}' is not an IP literal — use an IP address\n", .{host});
+            return;
+        };
+        self.inner.send(_io, &dest, data) catch |e| {
+            std.debug.print("UDP send error: {}\n", .{e});
+        };
+    }
+    pub fn recv_(self: *_UdpSocketInner, max_bytes: usize) []const u8 {
+        const buf = std.heap.page_allocator.alloc(u8, max_bytes) catch @panic("OOM");
+        const msg = self.inner.receive(_io, buf) catch return buf[0..0];
+        return msg.data;
+    }
+    pub fn close_(self: *_UdpSocketInner) void { self.inner.close(_io); }
+};
+pub const UdpSocket = *_UdpSocketInner;
+pub fn _udp_socket() UdpSocket {
+    const s = _allocator.create(_UdpSocketInner) catch @panic("OOM");
+    const addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{0,0,0,0}, .port = 0 } };
+    s.* = .{ .inner = std.Io.net.IpAddress.bind(&addr, _io, .{ .mode = .dgram }) catch @panic("Udp.socket: bind failed") };
+    return s;
+}
+pub fn _udp_bind(port: u16) UdpSocket {
+    const s = _allocator.create(_UdpSocketInner) catch @panic("OOM");
+    const addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{0,0,0,0}, .port = port } };
+    s.* = .{ .inner = std.Io.net.IpAddress.bind(&addr, _io, .{ .mode = .dgram }) catch @panic("Udp.bind: bind failed") };
+    return s;
+}
+
+pub fn _net_resolve(host: []const u8) std.ArrayList([]const u8) {
+    // A1 (1.0 API freeze): returns List(str), not a raw []str slice, so it shares
+    // the .count()/.at()/iterate API with every other string-sequence stdlib call.
+    var _result: std.ArrayList([]const u8) = .empty;
+    const addr = std.Io.net.IpAddress.resolve(_io, host, 0) catch return _result;
+    switch (addr) {
+        .ip4 => |a| {
+            const _ip = std.fmt.allocPrint(std.heap.page_allocator, "{d}.{d}.{d}.{d}", .{ a.bytes[0], a.bytes[1], a.bytes[2], a.bytes[3] }) catch return _result;
+            _result.append(std.heap.page_allocator, _ip) catch return _result;
+        },
+        .ip6 => {},
+    }
+    return _result;
 }
 // ─── Thompson NFA regex engine ───────────────────────────────────────────────
-const _RNodeKind = enum(u8) { match, lit, dot, cls, split, save, bol, eol_a, wb };
-const _RNode = struct {
+pub const _RNodeKind = enum(u8) { match, lit, dot, cls, split, save, bol, eol_a, wb };
+pub const _RNode = struct {
     kind: _RNodeKind, c: u8 = 0, bits: [32]u8 = [_]u8{0} ** 32,
     neg: bool = false, slot: u8 = 0, out1: u32 = 0xFFFF_FFFF, out2: u32 = 0xFFFF_FFFF,
 };
-const _RFlags = struct {
+pub const _RFlags = struct {
     ignore_case: bool = false, multiline: bool = false, dot_all: bool = false, unlimited: bool = false,
     lazy_match: bool = false, // set when any *? +? ?? is parsed
 };
-const _RFrag = struct {
+pub const _RFrag = struct {
     start: u32, outs: [64]u32 = [_]u32{0xFFFF_FFFF} ** 64, n: u8 = 0,
-    fn one(s: u32, d: u32) _RFrag { var f = _RFrag{ .start = s }; f.outs[0] = d; f.n = 1; return f; }
-    fn two(s: u32, d1: u32, d2: u32) _RFrag { var f = _RFrag{ .start = s }; f.outs[0] = d1; f.outs[1] = d2; f.n = 2; return f; }
-    fn merge(a: _RFrag, b: _RFrag) _RFrag {
+    pub fn one(s: u32, d: u32) _RFrag { var f = _RFrag{ .start = s }; f.outs[0] = d; f.n = 1; return f; }
+    pub fn two(s: u32, d1: u32, d2: u32) _RFrag { var f = _RFrag{ .start = s }; f.outs[0] = d1; f.outs[1] = d2; f.n = 2; return f; }
+    pub fn merge(a: _RFrag, b: _RFrag) _RFrag {
         var f = _RFrag{ .start = a.start }; var i: u8 = 0;
         for (a.outs[0..a.n]) |o| { f.outs[i] = o; i += 1; }
         for (b.outs[0..b.n]) |o| { f.outs[i] = o; i += 1; }
         f.n = i; return f;
     }
 };
-const _RC = struct {
+pub const _RC = struct {
     pat: []const u8, pos: usize = 0,
-    nodes: std.ArrayListUnmanaged(_RNode) = .{}, alloc: std.mem.Allocator, n_caps: u8 = 0, flags: _RFlags = .{},
-    fn addNode(c: *_RC, n: _RNode) error{OutOfMemory}!u32 {
+    nodes: std.ArrayListUnmanaged(_RNode) = .{ .items = &.{}, .capacity = 0 }, alloc: std.mem.Allocator, n_caps: u8 = 0, flags: _RFlags = .{},
+    pub fn addNode(c: *_RC, n: _RNode) error{OutOfMemory}!u32 {
         const idx: u32 = @intCast(c.nodes.items.len);
         try c.nodes.append(c.alloc, n); return idx;
     }
-    fn patch(c: *_RC, f: _RFrag, t: u32) void {
+    pub fn patch(c: *_RC, f: _RFrag, t: u32) void {
         for (f.outs[0..f.n]) |i| c.nodes.items[i & 0x7FFF_FFFF].out1 = t;
     }
-    fn patchFrag(c: *_RC, f: _RFrag, t: u32) void {
+    pub fn patchFrag(c: *_RC, f: _RFrag, t: u32) void {
         for (f.outs[0..f.n]) |i| {
             if (i & 0x8000_0000 != 0) c.nodes.items[i & 0x7FFF_FFFF].out2 = t
             else c.nodes.items[i].out1 = t;
         }
     }
-    fn peek(c: *_RC) ?u8 { return if (c.pos < c.pat.len) c.pat[c.pos] else null; }
-    fn eat(c: *_RC) ?u8 { if (c.pos < c.pat.len) { defer c.pos += 1; return c.pat[c.pos]; } return null; }
-    fn expect(c: *_RC, ch: u8) bool { if (c.peek() == ch) { c.pos += 1; return true; } return false; }
-    fn parseClass(c: *_RC) error{OutOfMemory}![32]u8 {
+    pub fn peek(c: *_RC) ?u8 { return if (c.pos < c.pat.len) c.pat[c.pos] else null; }
+    pub fn eat(c: *_RC) ?u8 { if (c.pos < c.pat.len) { defer c.pos += 1; return c.pat[c.pos]; } return null; }
+    pub fn expect(c: *_RC, ch: u8) bool { if (c.peek() == ch) { c.pos += 1; return true; } return false; }
+    pub fn parseClass(c: *_RC) error{OutOfMemory}![32]u8 {
         var bits = [_]u8{0} ** 32;
         while (c.peek()) |ch| {
             if (ch == ']') break; _ = c.eat();
@@ -1430,7 +2183,7 @@ const _RC = struct {
             } else _rSetBit(&bits, ch);
         } return bits;
     }
-    fn parseAtom(c: *_RC) error{OutOfMemory}!?_RFrag {
+    pub fn parseAtom(c: *_RC) error{OutOfMemory}!?_RFrag {
         const ch = c.peek() orelse return null;
         switch (ch) {
             '^' => { _ = c.eat(); const idx = try c.addNode(.{ .kind = .bol }); return _RFrag.one(idx, idx); },
@@ -1480,7 +2233,7 @@ const _RC = struct {
             else => { _ = c.eat(); const idx = try c.addNode(.{ .kind = .lit, .c = ch }); return _RFrag.one(idx, idx); },
         }
     }
-    fn parsePieceFixed(c: *_RC) error{OutOfMemory}!?_RFrag {
+    pub fn parsePieceFixed(c: *_RC) error{OutOfMemory}!?_RFrag {
         const atom_pos = c.pos;
         const atom = try c.parseAtom() orelse return null;
         const q = c.peek() orelse return atom;
@@ -1557,8 +2310,8 @@ const _RC = struct {
             else => return atom,
         }
     }
-    fn parsePiece(c: *_RC) error{OutOfMemory}!?_RFrag { return c.parsePieceFixed(); }
-    fn parseCat(c: *_RC) error{OutOfMemory}!?_RFrag {
+    pub fn parsePiece(c: *_RC) error{OutOfMemory}!?_RFrag { return c.parsePieceFixed(); }
+    pub fn parseCat(c: *_RC) error{OutOfMemory}!?_RFrag {
         var result: ?_RFrag = try c.parsePiece();
         while (result != null) {
             const next = try c.parsePiece() orelse break;
@@ -1567,7 +2320,7 @@ const _RC = struct {
         }
         return result;
     }
-    fn parseAlt(c: *_RC) error{OutOfMemory}!?_RFrag {
+    pub fn parseAlt(c: *_RC) error{OutOfMemory}!?_RFrag {
         const left = try c.parseCat() orelse return null;
         if (c.peek() != '|') return left;
         _ = c.eat();
@@ -1576,9 +2329,9 @@ const _RC = struct {
         return _RFrag.merge(_RFrag{ .start = sp, .outs = left.outs, .n = left.n }, right);
     }
 };
-const Regex = struct {
+pub const Regex = struct {
     nodes: []_RNode, start: u32, alloc: std.mem.Allocator, flags: _RFlags = .{},
-    fn closure(re: *const Regex, cur: *std.ArrayListUnmanaged(u32), vis: []bool, alloc: std.mem.Allocator, idx: u32, pos: usize, input: []const u8) error{OutOfMemory}!void {
+    pub fn closure(re: *const Regex, cur: *std.ArrayListUnmanaged(u32), vis: []bool, alloc: std.mem.Allocator, idx: u32, pos: usize, input: []const u8) error{OutOfMemory}!void {
         if (idx == 0xFFFF_FFFF or idx >= re.nodes.len or vis[idx]) return;
         vis[idx] = true;
         const nd = &re.nodes[idx];
@@ -1601,9 +2354,9 @@ const Regex = struct {
             else => try cur.append(alloc, idx),
         }
     }
-    fn matchAt(re: *const Regex, input: []const u8, from: usize, shortest: bool) error{OutOfMemory}!?usize {
+    pub fn matchAt(re: *const Regex, input: []const u8, from: usize, shortest: bool) error{OutOfMemory}!?usize {
         const alloc = re.alloc;
-        var cur: std.ArrayListUnmanaged(u32) = .{}; var nxt: std.ArrayListUnmanaged(u32) = .{};
+        var cur: std.ArrayListUnmanaged(u32) = .{ .items = &.{}, .capacity = 0 }; var nxt: std.ArrayListUnmanaged(u32) = .{ .items = &.{}, .capacity = 0 };
         defer cur.deinit(alloc); defer nxt.deinit(alloc);
         const vis = try alloc.alloc(bool, re.nodes.len); defer alloc.free(vis);
         @memset(vis, false); try re.closure(&cur, vis, alloc, re.start, from, input);
@@ -1628,11 +2381,11 @@ const Regex = struct {
         return last;
     }
 };
-fn _rSetBit(bits: *[32]u8, c: u8) void { bits[c >> 3] |= @as(u8, 1) << @intCast(c & 7); }
-fn _rGetBit(bits: *const [32]u8, c: u8) bool { return (bits[c >> 3] >> @intCast(c & 7)) & 1 != 0; }
-fn _rClsMatch(nd: *const _RNode, c: u8) bool { const h = _rGetBit(&nd.bits, c); return if (nd.neg) !h else h; }
-fn _rIsWord(c: u8) bool { return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '_'; }
-fn _rSetEsc(bits: *[32]u8, esc: u8) void {
+pub fn _rSetBit(bits: *[32]u8, c: u8) void { bits[c >> 3] |= @as(u8, 1) << @intCast(c & 7); }
+pub fn _rGetBit(bits: *const [32]u8, c: u8) bool { return (bits[c >> 3] >> @intCast(c & 7)) & 1 != 0; }
+pub fn _rClsMatch(nd: *const _RNode, c: u8) bool { const h = _rGetBit(&nd.bits, c); return if (nd.neg) !h else h; }
+pub fn _rIsWord(c: u8) bool { return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '_'; }
+pub fn _rSetEsc(bits: *[32]u8, esc: u8) void {
     switch (std.ascii.toLower(esc)) {
         'd' => { var i: u16 = '0'; while (i <= '9') : (i += 1) _rSetBit(bits, @intCast(i)); },
         'w' => { var i: u16 = 'a'; while (i <= 'z') : (i += 1) _rSetBit(bits, @intCast(i)); i = 'A'; while (i <= 'Z') : (i += 1) _rSetBit(bits, @intCast(i)); i = '0'; while (i <= '9') : (i += 1) _rSetBit(bits, @intCast(i)); _rSetBit(bits, '_'); },
@@ -1641,7 +2394,7 @@ fn _rSetEsc(bits: *[32]u8, esc: u8) void {
         else => _rSetBit(bits, esc),
     }
 }
-fn _regex_compile(pattern: []const u8, flags_str: []const u8) Regex {
+pub fn _regex_compile(pattern: []const u8, flags_str: []const u8) Regex {
     const alloc = std.heap.page_allocator;
     var flags = _RFlags{};
     for (flags_str) |f| switch (f) {
@@ -1658,19 +2411,20 @@ fn _regex_compile(pattern: []const u8, flags_str: []const u8) Regex {
     }
     return .{ .nodes = c.nodes.toOwnedSlice(alloc) catch @panic("regex OOM"), .start = match_idx, .alloc = alloc, .flags = c.flags };
 }
-fn _regex_match(re: Regex, input: []const u8) bool {
+pub fn _regex_match(re: Regex, input: []const u8) bool {
     const end = re.matchAt(input, 0, false) catch return false;
     return end != null and end.? == input.len;
 }
-fn _regex_find(re: Regex, input: []const u8) []const u8 {
+pub fn _regex_find(re: Regex, input: []const u8) []const u8 {
     var i: usize = 0;
     while (i <= input.len) : (i += 1) {
         if (re.matchAt(input, i, re.flags.lazy_match) catch null) |e| return input[i..e];
     }
     return "";
 }
-fn _regex_find_all(re: Regex, input: []const u8) []const []const u8 {
-    var out: std.ArrayListUnmanaged([]const u8) = .{};
+pub fn _regex_find_all(re: Regex, input: []const u8) std.ArrayList([]const u8) {
+    // A1: returns List(str) (see _net_resolve note).
+    var out: std.ArrayList([]const u8) = .empty;
     var i: usize = 0;
     while (i < input.len) {
         if (re.matchAt(input, i, re.flags.lazy_match) catch null) |e| {
@@ -1678,10 +2432,10 @@ fn _regex_find_all(re: Regex, input: []const u8) []const []const u8 {
             i = if (e > i) e else i + 1;
         } else i += 1;
     }
-    return out.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM");
+    return out;
 }
-fn _regex_replace(re: Regex, input: []const u8, sub: []const u8) []const u8 {
-    var out: std.ArrayListUnmanaged(u8) = .{};
+pub fn _regex_replace(re: Regex, input: []const u8, sub: []const u8) []const u8 {
+    var out: std.ArrayList(u8) = .empty;
     var i: usize = 0;
     while (i < input.len) {
         if (re.matchAt(input, i, re.flags.lazy_match) catch null) |e| {
@@ -1694,12 +2448,12 @@ fn _regex_replace(re: Regex, input: []const u8, sub: []const u8) []const u8 {
     }
     return out.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM");
 }
-const _MAX_SAVE_SLOTS: usize = 20; // 10 capture groups (open+close slots each)
-const _RegThread = struct { state: u32, saves: [_MAX_SAVE_SLOTS]usize };
+pub const _MAX_SAVE_SLOTS: usize = 20; // 10 capture groups (open+close slots each)
+pub const _RegThread = struct { state: u32, saves: [_MAX_SAVE_SLOTS]usize };
 // Epsilon closure that threads per-state save vectors through the NFA.
 // First-wins: if a state is already in cur, later paths are ignored
 // (leftmost-greedy semantics).
-fn _re_eclosure_s(
+pub fn _re_eclosure_s(
     re: *const Regex, cur: *std.ArrayListUnmanaged(_RegThread),
     vis: []bool, alloc: std.mem.Allocator,
     state: u32, saves: [_MAX_SAVE_SLOTS]usize, pos: usize, input: []const u8,
@@ -1734,12 +2488,12 @@ fn _re_eclosure_s(
         else => try cur.append(alloc, .{ .state = state, .saves = saves }),
     }
 }
-fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[_MAX_SAVE_SLOTS]usize {
+pub fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[_MAX_SAVE_SLOTS]usize {
     const alloc = std.heap.page_allocator;
     const empty: [_MAX_SAVE_SLOTS]usize = [_]usize{0xFFFF_FFFF_FFFF_FFFF} ** _MAX_SAVE_SLOTS;
-    var cur: std.ArrayListUnmanaged(_RegThread) = .{};
+    var cur: std.ArrayListUnmanaged(_RegThread) = .{ .items = &.{}, .capacity = 0 };
     defer cur.deinit(alloc);
-    var nxt: std.ArrayListUnmanaged(_RegThread) = .{};
+    var nxt: std.ArrayListUnmanaged(_RegThread) = .{ .items = &.{}, .capacity = 0 };
     defer nxt.deinit(alloc);
     const vis = alloc.alloc(bool, re.nodes.len) catch return null;
     defer alloc.free(vis);
@@ -1765,31 +2519,32 @@ fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[_MAX
     }
     return last;
 }
-fn _regex_groups(re: Regex, input: []const u8) []const []const u8 {
+pub fn _regex_groups(re: Regex, input: []const u8) std.ArrayList([]const u8) {
+    // A1: returns List(str) (see _net_resolve note).
     const alloc = std.heap.page_allocator;
     var start: usize = 0;
     while (start <= input.len) : (start += 1) {
         if (_re_match_with_saves(&re, input, start)) |saves| {
-            var out: std.ArrayListUnmanaged([]const u8) = .{};
+            var out: std.ArrayList([]const u8) = .empty;
             var i: usize = 0;
             while (i + 1 < _MAX_SAVE_SLOTS) : (i += 2) {
                 const s = saves[i]; const e = saves[i + 1];
                 if (s == 0xFFFF_FFFF_FFFF_FFFF) break;
                 if (e != 0xFFFF_FFFF_FFFF_FFFF and e >= s) out.append(alloc, input[s..e]) catch {};
             }
-            return out.toOwnedSlice(alloc) catch &.{};
+            return out;
         }
     }
-    return &.{};
+    return .empty;
 }
 // ── Deep copy-out: `lhs <- rhs` inside `allocate` blocks ────────────────────
 // Detects ArrayList by method presence, not field names, to avoid false-positives
 // on user structs that happen to have `items`/`capacity` fields.
-fn _zbr_is_arraylist(comptime T: type) bool {
+pub fn _zbr_is_arraylist(comptime T: type) bool {
     return @hasDecl(T, "initCapacity") and @hasDecl(T, "append");
 }
 
-fn _zbr_deep_copy(comptime T: type, alloc: std.mem.Allocator, src: T, depth: u8) anyerror!T {
+pub fn _zbr_deep_copy(comptime T: type, alloc: std.mem.Allocator, src: T, depth: u8) anyerror!T {
     if (depth > 64) @panic("_zbr_deep_copy: cycle or excessive depth (>64)");
     if (comptime T == []const u8) return try alloc.dupe(u8, src);
     if (comptime std.mem.containsAtLeast(u8, @typeName(T), 1, "HashMap")) {
@@ -1827,6 +2582,181 @@ fn _zbr_deep_copy(comptime T: type, alloc: std.mem.Allocator, src: T, depth: u8)
         },
         else => return src,
     }
+}
+
+// ─── SQLite ───────────────────────────────────────────────────────────────────
+pub const _sqlite3      = opaque {};
+pub const _sqlite3_stmt = opaque {};
+pub const _SQLITE_OK      = 0;
+pub const _SQLITE_ROW     = 100;
+pub const _SQLITE_DONE    = 101;
+pub const _SQLITE_INTEGER = 1;
+pub const _SQLITE_FLOAT   = 2;
+pub const _SQLITE_TEXT    = 3;
+pub const _SQLITE_NULL    = 5;
+// SQLITE_TRANSIENT (-1 cast to ptr) — tells SQLite to copy strings before use
+pub const _SQLITE_TRANSIENT: ?*anyopaque = @ptrFromInt(@as(usize, @bitCast(@as(isize, -1))));
+
+extern fn sqlite3_open(filename: [*:0]const u8, ppDb: **_sqlite3) c_int;
+extern fn sqlite3_close_v2(db: *_sqlite3) c_int;
+extern fn sqlite3_errmsg(db: *_sqlite3) [*:0]const u8;
+extern fn sqlite3_prepare_v2(db: *_sqlite3, sql: [*:0]const u8, nByte: c_int, ppStmt: **_sqlite3_stmt, pzTail: ?*?[*:0]const u8) c_int;
+extern fn sqlite3_step(stmt: *_sqlite3_stmt) c_int;
+extern fn sqlite3_finalize(stmt: *_sqlite3_stmt) c_int;
+extern fn sqlite3_column_count(stmt: *_sqlite3_stmt) c_int;
+extern fn sqlite3_column_name(stmt: *_sqlite3_stmt, N: c_int) [*:0]const u8;
+extern fn sqlite3_column_type(stmt: *_sqlite3_stmt, iCol: c_int) c_int;
+extern fn sqlite3_column_int64(stmt: *_sqlite3_stmt, iCol: c_int) i64;
+extern fn sqlite3_column_double(stmt: *_sqlite3_stmt, iCol: c_int) f64;
+extern fn sqlite3_column_text(stmt: *_sqlite3_stmt, iCol: c_int) ?[*:0]const u8;
+extern fn sqlite3_bind_int64(stmt: *_sqlite3_stmt, idx: c_int, val: i64) c_int;
+extern fn sqlite3_bind_double(stmt: *_sqlite3_stmt, idx: c_int, val: f64) c_int;
+extern fn sqlite3_bind_text(stmt: *_sqlite3_stmt, idx: c_int, txt: [*:0]const u8, n: c_int, destructor: ?*anyopaque) c_int;
+extern fn sqlite3_bind_null(stmt: *_sqlite3_stmt, idx: c_int) c_int;
+
+pub const _SqliteParam = union(enum) {
+    int:   i64,
+    float: f64,
+    text:  []const u8,
+    null_: void,
+};
+pub const _SqliteVal = _SqliteParam;
+
+pub const _SqliteRow = struct {
+    names: []const []const u8,
+    vals:  []const _SqliteVal,
+    pub fn int_(self: _SqliteRow, name: []const u8) i64 {
+        for (self.names, self.vals) |n, v| {
+            if (!std.mem.eql(u8, n, name)) continue;
+            return switch (v) {
+                .int   => |i| i,
+                .float => |f| @as(i64, @intFromFloat(f)),
+                .text  => |t| std.fmt.parseInt(i64, t, 10) catch 0,
+                .null_ => 0,
+            };
+        }
+        return 0;
+    }
+    pub fn str_(self: _SqliteRow, name: []const u8) []const u8 {
+        for (self.names, self.vals) |n, v| {
+            if (!std.mem.eql(u8, n, name)) continue;
+            return switch (v) {
+                .text  => |t| t,
+                .int   => |i| std.fmt.allocPrint(_allocator, "{d}", .{i})   catch "",
+                .float => |f| std.fmt.allocPrint(_allocator, "{d}", .{f})   catch "",
+                .null_ => "",
+            };
+        }
+        return "";
+    }
+    pub fn float_(self: _SqliteRow, name: []const u8) f64 {
+        for (self.names, self.vals) |n, v| {
+            if (!std.mem.eql(u8, n, name)) continue;
+            return switch (v) {
+                .float => |f| f,
+                .int   => |i| @as(f64, @floatFromInt(i)),
+                .text  => |t| std.fmt.parseFloat(f64, t) catch 0.0,
+                .null_ => 0.0,
+            };
+        }
+        return 0.0;
+    }
+    pub fn bool_(self: _SqliteRow, name: []const u8) bool { return self.int_(name) != 0; }
+};
+
+pub const _SqliteDbInner = struct {
+    db: *_sqlite3,
+
+    pub fn _bind(stmt: *_sqlite3_stmt, params: []const _SqliteParam) void {
+        for (params, 0..) |p, i| {
+            const idx: c_int = @as(c_int, @intCast(i)) + 1;
+            switch (p) {
+                .int   => |v| _ = sqlite3_bind_int64(stmt, idx, v),
+                .float => |v| _ = sqlite3_bind_double(stmt, idx, v),
+                .text  => |v| {
+                    const cz = _allocator.dupeZ(u8, v) catch return;
+                    defer _allocator.free(cz);
+                    _ = sqlite3_bind_text(stmt, idx, cz, -1, _SQLITE_TRANSIENT);
+                },
+                .null_ => _ = sqlite3_bind_null(stmt, idx),
+            }
+        }
+    }
+    pub fn _run(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void {
+        const csql = _allocator.dupeZ(u8, sql) catch return;
+        defer _allocator.free(csql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
+            std.debug.print("SQLite exec error: {s}\n", .{sqlite3_errmsg(self.db)});
+            return;
+        }
+        defer _ = sqlite3_finalize(stmt);
+        _bind(stmt, params);
+        _ = sqlite3_step(stmt);
+    }
+    pub fn _fetch(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) std.ArrayList(_SqliteRow) {
+        var rows = std.ArrayList(_SqliteRow).empty;
+        const csql = _allocator.dupeZ(u8, sql) catch return rows;
+        defer _allocator.free(csql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
+            std.debug.print("SQLite query error: {s}\n", .{sqlite3_errmsg(self.db)});
+            return rows;
+        }
+        defer _ = sqlite3_finalize(stmt);
+        _bind(stmt, params);
+        const ncols = sqlite3_column_count(stmt);
+        while (sqlite3_step(stmt) == _SQLITE_ROW) {
+            var names = std.ArrayList([]const u8).empty;
+            var vals  = std.ArrayList(_SqliteVal).empty;
+            var ci: c_int = 0;
+            while (ci < ncols) : (ci += 1) {
+                const col_name = std.mem.sliceTo(sqlite3_column_name(stmt, ci), 0);
+                names.append(_allocator, _allocator.dupe(u8, col_name) catch col_name) catch {};
+                const val: _SqliteVal = switch (sqlite3_column_type(stmt, ci)) {
+                    _SQLITE_INTEGER => .{ .int   = sqlite3_column_int64(stmt, ci) },
+                    _SQLITE_FLOAT   => .{ .float = sqlite3_column_double(stmt, ci) },
+                    _SQLITE_TEXT    => blk: {
+                        const raw = sqlite3_column_text(stmt, ci) orelse break :blk .null_;
+                        const s = std.mem.sliceTo(raw, 0);
+                        break :blk .{ .text = _allocator.dupe(u8, s) catch s };
+                    },
+                    else => .null_,
+                };
+                vals.append(_allocator, val) catch {};
+            }
+            rows.append(_allocator, .{ .names = names.items, .vals = vals.items }) catch {};
+        }
+        return rows;
+    }
+    pub fn exec_(self: *_SqliteDbInner, sql: []const u8) void { self._run(sql, &.{}); }
+    pub fn exec_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void { self._run(sql, params); }
+    pub fn query_(self: *_SqliteDbInner, sql: []const u8) std.ArrayList(_SqliteRow) { return self._fetch(sql, &.{}); }
+    pub fn query_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) std.ArrayList(_SqliteRow) { return self._fetch(sql, params); }
+    pub fn begin_(self: *_SqliteDbInner) void    { self._run("BEGIN",    &.{}); }
+    pub fn commit_(self: *_SqliteDbInner) void   { self._run("COMMIT",   &.{}); }
+    pub fn rollback_(self: *_SqliteDbInner) void { self._run("ROLLBACK", &.{}); }
+    pub fn close_(self: *_SqliteDbInner) void    { _ = sqlite3_close_v2(self.db); }
+};
+
+pub const SqliteDb  = *_SqliteDbInner;
+pub const SqliteRow = _SqliteRow;
+
+pub fn _sqlite_open(path: []const u8) ?SqliteDb {
+    const cpath = _allocator.dupeZ(u8, path) catch return null;
+    defer _allocator.free(cpath);
+    var db_raw: *_sqlite3 = undefined;
+    if (sqlite3_open(cpath, &db_raw) != _SQLITE_OK) {
+        std.debug.print("Sqlite.open error: {s}\n", .{sqlite3_errmsg(db_raw)});
+        _ = sqlite3_close_v2(db_raw);
+        return null;
+    }
+    const s = _allocator.create(_SqliteDbInner) catch {
+        _ = sqlite3_close_v2(db_raw);
+        return null;
+    };
+    s.* = .{ .db = db_raw };
+    return s;
 }
 
 pub fn _zbr_error_msg() []const u8 {
@@ -1891,6 +2821,14 @@ const _GuiBackend = struct {
     endHBoxFn:   *const fn () void,
     beginVBoxFn: *const fn (id: []const u8, stretch: bool) void,
     endVBoxFn:   *const fn () void,
+    progressBarFn: *const fn (label: []const u8, value: f64) void,
+    comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64) i64,
+    spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64) i64,
+    openFileFn:    *const fn () ?[]const u8,
+    saveFileFn:    *const fn () ?[]const u8,
+    openFolderFn:  *const fn () ?[]const u8,
+    msgBoxFn:      *const fn (title: []const u8, description: []const u8) void,
+    msgBoxErrorFn: *const fn (title: []const u8, description: []const u8) void,
 };
 const _LowLevel = struct {
     _b: *const _GuiBackend,
@@ -1988,6 +2926,30 @@ const GuiContext = struct {
     pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
     pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
     pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
+    pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
+    pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
+    pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
+    pub fn combobox(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64) i64 { return self._b.comboboxFn(label, items.items, selected); }
+    pub fn spinbox(self: GuiContext, label: []const u8, value: i64, min: i64, max: i64) i64 { return self._b.spinboxFn(label, value, min, max); }
+    pub fn openFile(self: GuiContext) ?[]const u8 { return self._b.openFileFn(); }
+    pub fn saveFile(self: GuiContext) ?[]const u8 { return self._b.saveFileFn(); }
+    pub fn openFolder(self: GuiContext) ?[]const u8 { return self._b.openFolderFn(); }
+    pub fn msgBox(self: GuiContext, title: []const u8, description: []const u8) void { self._b.msgBoxFn(title, description); }
+    pub fn msgBoxError(self: GuiContext, title: []const u8, description: []const u8) void { self._b.msgBoxErrorFn(title, description); }
+};
+const _GuiVBox = struct {
+    _b: *const _GuiBackend,
+    _id: []const u8,
+    _stretch: bool,
+    pub fn begin(self: _GuiVBox) void { self._b.beginVBoxFn(self._id, self._stretch); }
+    pub fn end(self: _GuiVBox) void { self._b.endVBoxFn(); }
+};
+const _GuiHBox = struct {
+    _b: *const _GuiBackend,
+    _id: []const u8,
+    _stretch: bool,
+    pub fn begin(self: _GuiHBox) void { self._b.beginHBoxFn(self._id, self._stretch); }
+    pub fn end(self: _GuiHBox) void { self._b.endHBoxFn(); }
 };
 const Gui = GuiContext;
 fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
@@ -2037,319 +2999,689 @@ fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, 
         _gui_active_backend.endFrameFn();
     }
 }
-// ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
-const _CodeEditor = struct { text: []const u8, read_only: bool };
+// ─── CodeEditor widget — Scintilla via libui-scintilla ───────────────────────
+const sci = @import("sci");
+const _CodeEditor = struct {
+    scint: ?*sci.Scintilla = null,
+    read_only: bool = false,
+    text: []u8 = &.{},
+};
 fn _code_editor_new() *_CodeEditor {
     const _ed = _allocator.create(_CodeEditor) catch unreachable;
-    _ed.* = .{ .text = "", .read_only = false };
+    _ed.* = .{};
     return _ed;
 }
-fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
-fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
-fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
-fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
-    const _r = _g.inputMultiline(id, _ed.text, w, h);
-    if (!_ed.read_only) { _ed.text = _r; }
+fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void {
+    _allocator.free(_ed.text);
+    _ed.text = _allocator.dupe(u8, text) catch &.{};
+    if (_ed.scint) |_s| _s.setText(_ed.text);
+}
+fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 {
+    if (_ed.scint) |_s| {
+        const _len = _s.getLength();
+        if (_len > _ed.text.len) {
+            _allocator.free(_ed.text);
+            _ed.text = _allocator.alloc(u8, _len + 1) catch return _ed.text;
+        }
+        if (_len > 0) _s.getRange(0, _len, _ed.text.ptr);
+        _ed.text = _ed.text[0.._len];
+    }
+    return _ed.text;
+}
+fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void {
+    _ed.read_only = v;
+    if (_ed.scint) |_s| _ = _s.sendMessage(2171, @intFromBool(v), 0);
+}
+fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, _w: f64, _h: f64) void {
+    _ = id; _ = _w; _ = _h; _ = _g;
+    if (_ed.scint == null) {
+        _ed.scint = sci.Scintilla.new() catch return;
+        if (_ed.text.len > 0) _ed.scint.?.setText(_ed.text);
+        if (_ed.read_only) _ = _ed.scint.?.sendMessage(2171, 1, 0);
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _ed.scint.?.as_control(), .stretch);
+    }
 }
 fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
-fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
-fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
-fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
-// ─── ZigZag TUI backend ──────────────────────────────────────────────────────
-const zz = @import("zigzag");
-var _tui_env: *std.process.Environ.Map = undefined;
-var _tui_terminal: ?zz.Terminal = null;
-var _tui_current_row: u16 = 0;
-var _tui_click_y: i32 = -1;
-var _tui_quit: bool = false;
-var _tui_indent_level: u16 = 0;
-fn _tui_init(title: []const u8, width: i64, height: i64) anyerror!void {
-    _ = width; _ = height;
-    var _t = try zz.Terminal.init(_io, _tui_env, .{
-        .alt_screen = true,
-        .mouse = true,
-        .hide_cursor = true,
-        .bracketed_paste = false,
-    });
-    try _t.setTitle(title);
-    _tui_terminal = _t;
+fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 {
+    const _s = _ed.scint orelse return 1;
+    const _pos = _s.sendMessage(2008, 0, 0);
+    return @intCast(_s.sendMessage(2166, _pos, 0) + 1);
 }
-fn _tui_deinit() void {
-    if (_tui_terminal) |*_t| _t.deinit();
-    _tui_terminal = null;
+fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 {
+    const _s = _ed.scint orelse return 1;
+    const _pos = _s.sendMessage(2008, 0, 0);
+    return @intCast(_s.sendMessage(2129, _pos, 0) + 1);
 }
-fn _tui_new_frame() bool {
-    if (_tui_quit) return false;
-    const _t = &(_tui_terminal orelse return false);
-    _tui_click_y = -1;
-    _tui_indent_level = 0;
-    var _buf: [256]u8 = undefined;
-    const _n = _t.readInput(&_buf, 16) catch 0;
-    if (_n > 0) {
-        const _evs = zz.input.keyboard.parseAll(_allocator, _buf[0.._n]) catch &.{};
-        for (_evs) |_ev| {
-            switch (_ev) {
-                .key => |_k| switch (_k.key) {
-                    .char => |_c| { if (_c == 'q' or _c == 'Q') _tui_quit = true; },
-                    .escape => { _tui_quit = true; },
-                    else => {},
-                },
-                .mouse => |_m| {
-                    if (_m.event_type == .press and _m.button == .left)
-                        _tui_click_y = @as(i32, _m.y);
-                },
-                .none => {},
-            }
+fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void {
+    _ = col;
+    const _s = _ed.scint orelse return;
+    _ = _s.sendMessage(2024, @intCast(@max(0, line - 1)), 0);
+}
+// ─── libui-ng retained-mode adapter ──────────────────────────────────────────
+const ui = @import("ui");
+const _LuiMut = struct {
+    ctrl: ?*ui.Control = null,
+    lbl: ?*ui.Label = null,
+    clicked: bool = false,
+    checked: bool = false,
+    text_buf: [1024]u8 = undefined,
+    text_len: usize = 0,
+    sval: c_int = 0,
+    smin: f64 = 0,
+    smax: f64 = 1,
+    pb: ?*ui.ProgressBar = null,
+};
+const _LuiPanel = struct { inner: *ui.Box };
+var _lui_icache: std.StringHashMap(*_LuiMut) = undefined;
+var _lui_dcache: std.ArrayList(*_LuiMut) = undefined;
+var _lui_didx: usize = 0;
+var _lui_frame: u32 = 0;
+var _lui_quit: bool = false;
+var _lui_win_w: i64 = 800;
+var _lui_win_h: i64 = 600;
+var _lui_window: ?*ui.Window = null;
+var _lui_root_box: ?*ui.Box = null;
+var _lui_box_stack: [32]?*ui.Box = [_]?*ui.Box{null} ** 32;
+var _lui_box_depth: usize = 0;
+var _lui_box_icache: std.StringHashMap(*ui.Box) = undefined;
+var _lui_grp_cache: std.StringHashMap(_LuiPanel) = undefined;
+fn _lui_cur_box() ?*ui.Box {
+    if (_lui_box_depth == 0) return null;
+    return _lui_box_stack[_lui_box_depth - 1];
+}
+fn _lui_push_box(_b: *ui.Box) void {
+    if (_lui_box_depth < 32) { _lui_box_stack[_lui_box_depth] = _b; _lui_box_depth += 1; }
+}
+fn _lui_pop_box() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
+fn _lui_on_close(_w: *ui.Window, _q: ?*bool) anyerror!ui.Window.ClosingAction {
+    _ = _w;
+    if (_q) |p| p.* = true;
+    ui.Quit();
+    return .should_close;
+}
+fn _lui_btn_cb(_btn: *ui.Button, _m: ?*_LuiMut) anyerror!void {
+    _ = _btn;
+    if (_m) |p| p.clicked = true;
+}
+fn _lui_chk_cb(_chk: *ui.Checkbox, _m: ?*_LuiMut) void {
+    if (_m) |p| p.checked = _chk.Checked();
+}
+fn _lui_entry_cb(_ent: *ui.Entry, _m: ?*_LuiMut) anyerror!void {
+    if (_m) |p| {
+        const _s = std.mem.span(_ent.Text());
+        const _n = @min(_s.len, 1023);
+        @memcpy(p.text_buf[0.._n], _s[0.._n]);
+        p.text_len = _n;
+    }
+}
+fn _lui_mle_cb(_mle: *ui.MultilineEntry, _m: ?*_LuiMut) anyerror!void {
+    if (_m) |p| {
+        const _s = std.mem.span(_mle.Text());
+        const _n = @min(_s.len, 1023);
+        @memcpy(p.text_buf[0.._n], _s[0.._n]);
+        p.text_len = _n;
+    }
+}
+fn _lui_slider_cb(_sld: *ui.Slider, _m: ?*_LuiMut) anyerror!void {
+    if (_m) |p| p.sval = _sld.Value();
+}
+fn _lui_cmb_cb(_c: *ui.Combobox, _m: ?*_LuiMut) anyerror!void {
+    if (_m) |p| p.sval = _c.Selected();
+}
+fn _lui_spn_cb(_s: *ui.Spinbox, _m: ?*_LuiMut) anyerror!void {
+    if (_m) |p| p.sval = _s.Value();
+}
+fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
+    _lui_win_w = _width; _lui_win_h = _height;
+    var _d = ui.InitData{ .options = .{ .Size = @sizeOf(ui.InitOptions) } };
+    try ui.Init(&_d);
+    _lui_icache = std.StringHashMap(*_LuiMut).init(_allocator);
+    _lui_dcache = .empty;
+    _lui_box_icache = std.StringHashMap(*ui.Box).init(_allocator);
+    _lui_grp_cache = std.StringHashMap(_LuiPanel).init(_allocator);
+    _lui_box_depth = 0;
+    var _tbuf: [256]u8 = undefined;
+    const _tz: [:0]u8 = try std.fmt.bufPrintZ(&_tbuf, "{s}", .{_title});
+    _lui_window = try ui.Window.New(_tz, @intCast(_width), @intCast(_height), .hide_menubar);
+    ui.Window.OnClosing(_lui_window.?, bool, anyerror, _lui_on_close, &_lui_quit);
+    _lui_root_box = try ui.Box.New(.Vertical);
+    _lui_root_box.?.SetPadded(true);
+    _lui_push_box(_lui_root_box.?);
+    ui.Timer(anyopaque, anyerror, 100, _lui_poll_tick, null);
+    _lui_frame = 0; _lui_quit = false;
+}
+fn _lui_poll_tick(_: ?*anyopaque) anyerror!ui.TimerAction { return .rearm; }
+fn _lui_deinit() void {
+    _lui_icache.deinit();
+    _lui_dcache.deinit(_allocator);
+    _lui_box_icache.deinit();
+    _lui_grp_cache.deinit();
+    ui.Uninit();
+}
+fn _lui_newframe() bool {
+    _lui_didx = 0;
+    if (_lui_frame == 0) return true;
+    if (_lui_quit) return false;
+    return ui.MainStep(.blocking) == .running and !_lui_quit;
+}
+fn _lui_endframe() void {
+    _lui_box_depth = 1; // reset to root box only
+    if (_lui_frame == 0) {
+        _lui_frame = 1;
+        if (_lui_window) |_w| {
+            if (_lui_root_box) |_vb| _w.SetChild(_vb.as_control());
+            _w.SetMargined(true);
+            _w.as_control().Show();
         }
     }
-    _t.clear() catch return false;
-    _tui_current_row = 0;
-    return !_tui_quit;
 }
-fn _tui_end_frame() void {
-    if (_tui_terminal) |*_t| _t.flush() catch {};
+const _LuiIR = struct { m: *_LuiMut, fresh: bool };
+fn _lui_iget(_label: []const u8) _LuiIR {
+    if (_lui_icache.get(_label)) |_m| return .{ .m = _m, .fresh = false };
+    const _m = _allocator.create(_LuiMut) catch unreachable;
+    _m.* = .{};
+    _lui_icache.put(_label, _m) catch unreachable;
+    return .{ .m = _m, .fresh = true };
 }
-fn _tui_text(s: []const u8) void {
-    if (_tui_terminal) |*_t| {
-        _t.writeAt(_tui_current_row, _tui_indent_level * 2, s) catch {};
-        _tui_current_row += 1;
+fn _lui_dget() _LuiIR {
+    if (_lui_didx < _lui_dcache.items.len) {
+        const _m = _lui_dcache.items[_lui_didx];
+        _lui_didx += 1;
+        return .{ .m = _m, .fresh = false };
+    }
+    const _m = _allocator.create(_LuiMut) catch unreachable;
+    _m.* = .{};
+    _lui_dcache.append(_allocator, _m) catch unreachable;
+    _lui_didx += 1;
+    return .{ .m = _m, .fresh = true };
+}
+fn _lui_text(_s: []const u8) void {
+    const _r = _lui_dget();
+    const _n = @min(_s.len, 510);
+    var _tb: [512]u8 = undefined;
+    @memcpy(_tb[0.._n], _s[0.._n]);
+    _tb[_n] = 0;
+    const _tz: [:0]u8 = _tb[0.._n :0];
+    if (_r.fresh) {
+        const _lbl = ui.Label.New(_tz) catch return;
+        _r.m.lbl = _lbl;
+        _r.m.ctrl = _lbl.as_control();
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _lbl.as_control(), .dont_stretch);
+    } else {
+        if (_r.m.lbl) |_lb| _lb.SetText(_tz);
     }
 }
-fn _tui_separator() void {
-    if (_tui_terminal) |*_t| {
-        _t.writeAt(_tui_current_row, 0, "──────────────────────────────") catch {};
-        _tui_current_row += 1;
+fn _lui_sep() void {
+    const _r = _lui_dget();
+    if (_r.fresh) {
+        const _sep = ui.Separator.New(.Horizontal) catch return;
+        _r.m.ctrl = _sep.as_control();
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _sep.as_control(), .dont_stretch);
     }
 }
-fn _tui_same_line() void {}
-fn _tui_spacing() void { _tui_current_row += 1; }
-fn _tui_indent() void { _tui_indent_level += 1; }
-fn _tui_unindent() void { if (_tui_indent_level > 0) _tui_indent_level -= 1; }
-fn _tui_button(label: []const u8) bool {
-    const _row = _tui_current_row;
-    _tui_current_row += 1;
-    if (_tui_terminal) |*_t| {
-        const _col = _tui_indent_level * 2;
-        const _clicked = (_tui_click_y == @as(i32, _row));
-        var _buf: [256]u8 = undefined;
-        const _s = std.fmt.bufPrint(&_buf, "[ {s} ]", .{label}) catch label;
-        if (_clicked) {
-            var _sb: [320]u8 = undefined;
-            const _rs = std.fmt.bufPrint(&_sb, "\x1b[7m{s}\x1b[27m", .{_s}) catch _s;
-            _t.writeAt(_row, _col, _rs) catch {};
-        } else {
-            _t.writeAt(_row, _col, _s) catch {};
+fn _lui_noop_void() void {}
+fn _lui_noop_bool(_l: []const u8) bool { _ = _l; return true; }
+fn _lui_selectable(_l: []const u8) bool { _ = _l; return false; }
+fn _lui_text_colored(_rv: f32, _gv: f32, _bv: f32, _av: f32, _s: []const u8) void {
+    _ = _rv; _ = _gv; _ = _bv; _ = _av; _lui_text(_s);
+}
+fn _lui_begin_table(_id: []const u8, _cols: i64) bool { _ = _id; _ = _cols; return true; }
+fn _lui_table_setup_col(_l: []const u8) void { _ = _l; }
+fn _lui_table_next_col() bool { return true; }
+fn _lui_begin_child(_id: []const u8, _cw: f64, _ch: f64) bool {
+    _ = _id; _ = _cw; _ = _ch; return true;
+}
+fn _lui_set_color(_role: []const u8, _rv: f32, _gv: f32, _bv: f32, _av: f32) void {
+    _ = _role; _ = _rv; _ = _gv; _ = _bv; _ = _av;
+}
+fn _lui_set_style_float(_name: []const u8, _v: f32) void { _ = _name; _ = _v; }
+fn _lui_set_vec2(_name: []const u8, _xv: f32, _yv: f32) void { _ = _name; _ = _xv; _ = _yv; }
+fn _lui_scale_all(_sc: f32) void { _ = _sc; }
+fn _lui_get_dpi() f32 { return 1.0; }
+fn _lui_ll_noop_line(_x1: f64, _y1: f64, _x2: f64, _y2: f64, _c: i64, _t: f64) void {
+    _ = _x1; _ = _y1; _ = _x2; _ = _y2; _ = _c; _ = _t;
+}
+fn _lui_ll_noop_rect(_x1: f64, _y1: f64, _x2: f64, _y2: f64, _c: i64, _t: f64) void {
+    _ = _x1; _ = _y1; _ = _x2; _ = _y2; _ = _c; _ = _t;
+}
+fn _lui_ll_noop_rectfill(_x1: f64, _y1: f64, _x2: f64, _y2: f64, _c: i64) void {
+    _ = _x1; _ = _y1; _ = _x2; _ = _y2; _ = _c;
+}
+fn _lui_ll_noop_circle(_cx: f64, _cy: f64, _r: f64, _c: i64, _t: f64) void {
+    _ = _cx; _ = _cy; _ = _r; _ = _c; _ = _t;
+}
+fn _lui_ll_noop_circlefill(_cx: f64, _cy: f64, _r: f64, _c: i64) void {
+    _ = _cx; _ = _cy; _ = _r; _ = _c;
+}
+fn _lui_ll_noop_text(_x: f64, _y: f64, _c: i64, _s: []const u8) void {
+    _ = _x; _ = _y; _ = _c; _ = _s;
+}
+fn _lui_ll_get_win_pos() _GuiVec2 { return .{ 0, 0 }; }
+fn _lui_ll_get_win_size() _GuiVec2 {
+    return .{ @floatFromInt(_lui_win_w), @floatFromInt(_lui_win_h) };
+}
+fn _lui_ll_get_cursor_pos() _GuiVec2 { return .{ 0, 0 }; }
+fn _lui_ll_get_mouse_pos() _GuiVec2 { return .{ -1, -1 }; }
+fn _lui_button(_label: []const u8) bool {
+    const _r = _lui_iget(_label);
+    if (_r.fresh) {
+        const _n = @min(_label.len, 255);
+        var _lb: [256]u8 = undefined;
+        @memcpy(_lb[0.._n], _label[0.._n]);
+        _lb[_n] = 0;
+        const _lz: [:0]u8 = _lb[0.._n :0];
+        const _btn = ui.Button.New(_lz) catch return false;
+        ui.Button.OnClicked(_btn, _LuiMut, anyerror, _lui_btn_cb, _r.m);
+        _r.m.ctrl = _btn.as_control();
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _btn.as_control(), .dont_stretch);
+    }
+    const _clicked = _r.m.clicked;
+    _r.m.clicked = false;
+    return _clicked;
+}
+fn _lui_checkbox(_label: []const u8, _value: bool) bool {
+    const _r = _lui_iget(_label);
+    if (_r.fresh) {
+        const _n = @min(_label.len, 255);
+        var _lb: [256]u8 = undefined;
+        @memcpy(_lb[0.._n], _label[0.._n]);
+        _lb[_n] = 0;
+        const _lz: [:0]u8 = _lb[0.._n :0];
+        const _chk = ui.Checkbox.New(_lz) catch return _value;
+        _chk.SetChecked(_value);
+        _r.m.checked = _value;
+        ui.Checkbox.OnToggled(_chk, _LuiMut, _lui_chk_cb, _r.m);
+        _r.m.ctrl = _chk.as_control();
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _chk.as_control(), .dont_stretch);
+    }
+    return _r.m.checked;
+}
+fn _lui_slider(_label: []const u8, _value: f64, _min: f64, _max: f64) f64 {
+    const _r = _lui_iget(_label);
+    if (_r.fresh) {
+        const _n = @min(_label.len, 255);
+        var _lb: [256]u8 = undefined;
+        @memcpy(_lb[0.._n], _label[0.._n]);
+        _lb[_n] = 0;
+        const _lz: [:0]u8 = _lb[0.._n :0];
+        const _sllbl = ui.Label.New(_lz) catch return _value;
+        const _sld = ui.Slider.New(0, 1000) catch return _value;
+        const _raw: c_int = @intFromFloat((_value - _min) / (_max - _min) * 1000.0);
+        const _init: c_int = if (_raw < 0) 0 else if (_raw > 1000) 1000 else _raw;
+        _sld.SetValue(_init);
+        _r.m.sval = _init; _r.m.smin = _min; _r.m.smax = _max;
+        ui.Slider.OnChanged(_sld, _LuiMut, anyerror, _lui_slider_cb, _r.m);
+        _r.m.ctrl = _sld.as_control();
+        _r.m.lbl = _sllbl;
+        if (_lui_cur_box()) |_vb| {
+            ui.Box.Append(_vb, _sllbl.as_control(), .dont_stretch);
+            ui.Box.Append(_vb, _sld.as_control(), .dont_stretch);
         }
-        return _clicked;
     }
-    return false;
+    const _t = @as(f64, @floatFromInt(_r.m.sval)) / 1000.0;
+    return _r.m.smin + _t * (_r.m.smax - _r.m.smin);
 }
-fn _tui_checkbox(label: []const u8, value: bool) bool {
-    const _row = _tui_current_row;
-    _tui_current_row += 1;
-    if (_tui_terminal) |*_t| {
-        const _col = _tui_indent_level * 2;
-        var _buf: [256]u8 = undefined;
-        const _s = std.fmt.bufPrint(&_buf, "[{s}] {s}", .{ if (value) "x" else " ", label }) catch label;
-        _t.writeAt(_row, _col, _s) catch {};
-        if (_tui_click_y == @as(i32, _row)) return !value;
+fn _lui_input(_label: []const u8, _value: []const u8) []const u8 {
+    const _r = _lui_iget(_label);
+    if (_r.fresh) {
+        const _n = @min(_label.len, 255);
+        var _lb: [256]u8 = undefined;
+        @memcpy(_lb[0.._n], _label[0.._n]);
+        _lb[_n] = 0;
+        const _lz: [:0]u8 = _lb[0.._n :0];
+        const _enlbl = ui.Label.New(_lz) catch return _value;
+        const _ent = ui.Entry.New(.Entry) catch return _value;
+        const _vn = @min(_value.len, 1022);
+        var _vtb: [1024]u8 = undefined;
+        @memcpy(_vtb[0.._vn], _value[0.._vn]);
+        _vtb[_vn] = 0;
+        _ent.SetText(_vtb[0.._vn :0]);
+        @memcpy(_r.m.text_buf[0.._vn], _value[0.._vn]);
+        _r.m.text_len = _vn;
+        ui.Entry.OnChanged(_ent, _LuiMut, anyerror, _lui_entry_cb, _r.m);
+        _r.m.ctrl = _ent.as_control();
+        _r.m.lbl = _enlbl;
+        if (_lui_cur_box()) |_vb| {
+            ui.Box.Append(_vb, _enlbl.as_control(), .dont_stretch);
+            ui.Box.Append(_vb, _ent.as_control(), .dont_stretch);
+        }
     }
-    return value;
+    return _r.m.text_buf[0.._r.m.text_len];
 }
-fn _tui_slider(label: []const u8, value: f64, min: f64, max: f64) f64 {
-    _ = min; _ = max;
-    if (_tui_terminal) |*_t| {
-        const _col = _tui_indent_level * 2;
-        var _buf: [256]u8 = undefined;
-        const _s = std.fmt.bufPrint(&_buf, "{s}: {d:.2}", .{ label, value }) catch label;
-        _t.writeAt(_tui_current_row, _col, _s) catch {};
-        _tui_current_row += 1;
+fn _lui_input_ml(_label: []const u8, _value: []const u8, _mw: f64, _mh: f64) []const u8 {
+    _ = _mw; _ = _mh;
+    const _r = _lui_iget(_label);
+    if (_r.fresh) {
+        const _n = @min(_label.len, 255);
+        var _lb: [256]u8 = undefined;
+        @memcpy(_lb[0.._n], _label[0.._n]);
+        _lb[_n] = 0;
+        const _lz: [:0]u8 = _lb[0.._n :0];
+        const _mllbl = ui.Label.New(_lz) catch return _value;
+        const _mle = ui.MultilineEntry.New(.Wrapping) catch return _value;
+        const _vn = @min(_value.len, 1022);
+        var _vtb: [1024]u8 = undefined;
+        @memcpy(_vtb[0.._vn], _value[0.._vn]);
+        _vtb[_vn] = 0;
+        _mle.SetText(_vtb[0.._vn :0]);
+        @memcpy(_r.m.text_buf[0.._vn], _value[0.._vn]);
+        _r.m.text_len = _vn;
+        ui.MultilineEntry.OnChanged(_mle, _LuiMut, anyerror, _lui_mle_cb, _r.m);
+        _r.m.ctrl = _mle.as_control();
+        _r.m.lbl = _mllbl;
+        if (_lui_cur_box()) |_vb| {
+            ui.Box.Append(_vb, _mllbl.as_control(), .dont_stretch);
+            ui.Box.Append(_vb, _mle.as_control(), .stretch);
+        }
     }
-    return value;
+    return _r.m.text_buf[0.._r.m.text_len];
 }
-fn _tui_input(label: []const u8, value: []const u8) []const u8 {
-    if (_tui_terminal) |*_t| {
-        const _col = _tui_indent_level * 2;
-        var _buf: [256]u8 = undefined;
-        const _s = std.fmt.bufPrint(&_buf, "{s}: {s}", .{ label, value }) catch label;
-        _t.writeAt(_tui_current_row, _col, _s) catch {};
-        _tui_current_row += 1;
+fn _lui_begin_hbox(_id: []const u8, _stretch: bool) void {
+    const _e = _lui_box_icache.getOrPut(_id) catch return;
+    if (!_e.found_existing) {
+        const _hb = ui.Box.New(.Horizontal) catch return;
+        _hb.SetPadded(true);
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _hb.as_control(), if (_stretch) ui.Stretchy.stretch else ui.Stretchy.dont_stretch);
+        _e.value_ptr.* = _hb;
     }
-    return value;
+    _lui_push_box(_e.value_ptr.*);
 }
-fn _tui_input_multiline(label: []const u8, value: []const u8, w: f64, h: f64) []const u8 {
-    _ = w; _ = h;
-    return _tui_input(label, value);
-}
-fn _tui_begin_panel(label: []const u8) bool {
-    if (_tui_terminal) |*_t| {
-        const _col = _tui_indent_level * 2;
-        var _buf: [256]u8 = undefined;
-        const _s = std.fmt.bufPrint(&_buf, "\x1b[1m\u{25b6} {s}\x1b[22m", .{label}) catch label;
-        _t.writeAt(_tui_current_row, _col, _s) catch {};
-        _tui_current_row += 1;
-        _tui_indent_level += 1;
+fn _lui_end_hbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
+fn _lui_begin_vbox(_id: []const u8, _stretch: bool) void {
+    const _e = _lui_box_icache.getOrPut(_id) catch return;
+    if (!_e.found_existing) {
+        const _vb2 = ui.Box.New(.Vertical) catch return;
+        _vb2.SetPadded(false);
+        if (_lui_cur_box()) |_pvb| ui.Box.Append(_pvb, _vb2.as_control(), if (_stretch) ui.Stretchy.stretch else ui.Stretchy.dont_stretch);
+        _e.value_ptr.* = _vb2;
     }
+    _lui_push_box(_e.value_ptr.*);
+}
+fn _lui_end_vbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
+fn _lui_begin_panel(_label: []const u8) bool {
+    if (_lui_grp_cache.get(_label)) |_p| {
+        _lui_push_box(_p.inner);
+        return true;
+    }
+    const _n = @min(_label.len, 255);
+    var _lb: [256]u8 = undefined;
+    @memcpy(_lb[0.._n], _label[0.._n]);
+    _lb[_n] = 0;
+    const _lz: [:0]u8 = _lb[0.._n :0];
+    const _grp = ui.Group.New(_lz) catch return true;
+    const _inner = ui.Box.New(.Vertical) catch return true;
+    _inner.SetPadded(true);
+    _grp.SetChild(_inner.as_control());
+    _grp.SetMargined(true);
+    if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _grp.as_control(), .dont_stretch);
+    _lui_grp_cache.put(_label, .{ .inner = _inner }) catch {};
+    _lui_push_box(_inner);
     return true;
 }
-fn _tui_end_panel() void { if (_tui_indent_level > 0) _tui_indent_level -= 1; }
-fn _tui_begin_window(label: []const u8) bool { return _tui_begin_panel(label); }
-fn _tui_end_window() void { _tui_end_panel(); }
-fn _tui_selectable(label: []const u8) bool {
-    const _row = _tui_current_row;
-    _tui_text(label);
-    return _tui_click_y == @as(i32, _row);
+fn _lui_end_panel() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
+fn _lui_progressbar(_label: []const u8, _value: f64) void {
+    _ = _label;
+    const _r = _lui_dget();
+    const _pct: c_int = @intFromFloat(_value * 100.0);
+    const _clamped: c_int = if (_pct < 0) 0 else if (_pct > 100) 100 else _pct;
+    if (_r.fresh) {
+        const _pb = ui.ProgressBar.New() catch return;
+        _pb.SetValue(_clamped);
+        _r.m.pb = _pb;
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _pb.as_control(), .dont_stretch);
+    } else {
+        if (_r.m.pb) |_pb| _pb.SetValue(_clamped);
+    }
 }
-fn _tui_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void {
-    _ = r; _ = gv; _ = b_; _ = a;
-    _tui_text(s);
+fn _lui_combobox(_label: []const u8, _items: []const []const u8, _sel: i64) i64 {
+    const _r = _lui_iget(_label);
+    if (_r.fresh) {
+        const _cmb = ui.Combobox.New() catch return _sel;
+        for (_items) |_it| {
+            const _n = @min(_it.len, 255);
+            var _lb: [256]u8 = undefined;
+            @memcpy(_lb[0.._n], _it[0.._n]);
+            _lb[_n] = 0;
+            const _lz: [:0]u8 = _lb[0.._n :0];
+            ui.Combobox.Append(_cmb, _lz);
+        }
+        const _init: c_int = @intCast(_sel);
+        _cmb.SetSelected(_init);
+        _r.m.sval = _init;
+        ui.Combobox.OnSelected(_cmb, _LuiMut, anyerror, _lui_cmb_cb, _r.m);
+        _r.m.ctrl = _cmb.as_control();
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _cmb.as_control(), .dont_stretch);
+    }
+    return @as(i64, @intCast(_r.m.sval));
 }
-fn _tui_begin_table(id: []const u8, cols: i64) bool { _ = id; _ = cols; return true; }
-fn _tui_table_setup_column(label: []const u8) void { _ = label; }
-fn _tui_table_headers_row() void {}
-fn _tui_table_next_row() void { _tui_current_row += 1; }
-fn _tui_table_next_column() bool { return true; }
-fn _tui_end_table() void {}
-fn _tui_begin_child(id: []const u8, w: f64, h: f64) bool { _ = id; _ = w; _ = h; return true; }
-fn _tui_end_child() void {}
-fn _tui_tree_node(label: []const u8) bool { return _tui_begin_panel(label); }
-fn _tui_tree_pop() void { _tui_end_panel(); }
-fn _tui_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void { _ = role; _ = r; _ = g; _ = b; _ = a; }
-fn _tui_set_colors_dark() void {}
-fn _tui_set_style_float(name: []const u8, value: f32) void { _ = name; _ = value; }
-fn _tui_set_vec2(name: []const u8, x: f32, y: f32) void { _ = name; _ = x; _ = y; }
-fn _tui_scale_all_sizes(scale: f32) void { _ = scale; }
-fn _tui_get_dpi() f32 { return 1.0; }
-fn _tui_ll_add_line(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
-fn _tui_ll_add_rect(x1: f64, y1: f64, x2: f64, y2: f64, col: i64, thickness: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; _ = thickness; }
-fn _tui_ll_add_rect_filled(x1: f64, y1: f64, x2: f64, y2: f64, col: i64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = col; }
-fn _tui_ll_add_circle(cx: f64, cy: f64, r: f64, col: i64, thickness: f64) void { _ = cx; _ = cy; _ = r; _ = col; _ = thickness; }
-fn _tui_ll_add_circle_filled(cx: f64, cy: f64, r: f64, col: i64) void { _ = cx; _ = cy; _ = r; _ = col; }
-fn _tui_ll_add_text(x: f64, y: f64, col: i64, text: []const u8) void { _ = x; _ = y; _ = col; _ = text; }
-fn _tui_ll_get_window_pos() _GuiVec2 { return .{ 0, 0 }; }
-fn _tui_ll_get_window_size() _GuiVec2 { return .{ 80, 24 }; }
-fn _tui_ll_get_cursor_pos() _GuiVec2 { return .{ 0, @floatFromInt(_tui_current_row) }; }
-fn _tui_ll_get_mouse_pos() _GuiVec2 {
-    return .{ 0, if (_tui_click_y >= 0) @floatFromInt(_tui_click_y) else -1 };
+fn _lui_spinbox(_label: []const u8, _value: i64, _min: i64, _max: i64) i64 {
+    const _r = _lui_iget(_label);
+    if (_r.fresh) {
+        const _spn = ui.Spinbox.New(.{ .Integer = .{ .min = @intCast(_min), .max = @intCast(_max) } }) catch return _value;
+        _spn.SetValue(@intCast(_value));
+        _r.m.sval = @intCast(_value);
+        ui.Spinbox.OnChanged(_spn, _LuiMut, anyerror, _lui_spn_cb, _r.m);
+        _r.m.ctrl = _spn.as_control();
+        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _spn.as_control(), .dont_stretch);
+    }
+    return @as(i64, @intCast(_r.m.sval));
 }
-fn _tui_ll_begin_group() void {}
-fn _tui_ll_end_group() void {}
-fn _tui_begin_hbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
-fn _tui_end_hbox() void {}
-fn _tui_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
-fn _tui_end_vbox() void {}
-const _gui_tui_backend = _GuiBackend{
-    .initFn             = _tui_init,
-    .deinitFn           = _tui_deinit,
-    .newFrameFn         = _tui_new_frame,
-    .endFrameFn         = _tui_end_frame,
-    .textFn             = _tui_text,
-    .separatorFn        = _tui_separator,
-    .sameLineFn         = _tui_same_line,
-    .spacingFn          = _tui_spacing,
-    .indentFn           = _tui_indent,
-    .unindentFn         = _tui_unindent,
-    .buttonFn           = _tui_button,
-    .checkboxFn         = _tui_checkbox,
-    .sliderFn           = _tui_slider,
-    .inputFn            = _tui_input,
-    .inputMultilineFn   = _tui_input_multiline,
-    .beginPanelFn       = _tui_begin_panel,
-    .endPanelFn         = _tui_end_panel,
-    .beginWindowFn      = _tui_begin_window,
-    .endWindowFn        = _tui_end_window,
-    .selectableFn       = _tui_selectable,
-    .textColoredFn      = _tui_text_colored,
-    .beginTableFn       = _tui_begin_table,
-    .tableSetupColumnFn = _tui_table_setup_column,
-    .tableHeadersRowFn  = _tui_table_headers_row,
-    .tableNextRowFn     = _tui_table_next_row,
-    .tableNextColumnFn  = _tui_table_next_column,
-    .endTableFn         = _tui_end_table,
-    .beginChildFn       = _tui_begin_child,
-    .endChildFn         = _tui_end_child,
-    .treeNodeFn         = _tui_tree_node,
-    .treePopFn          = _tui_tree_pop,
-    .setColorFn         = _tui_set_color,
-    .setColorsDarkFn    = _tui_set_colors_dark,
-    .setStyleFloatFn    = _tui_set_style_float,
-    .setVec2Fn          = _tui_set_vec2,
-    .scaleAllSizesFn    = _tui_scale_all_sizes,
-    .getDpiFn           = _tui_get_dpi,
-    .ll_addLineFn         = _tui_ll_add_line,
-    .ll_addRectFn         = _tui_ll_add_rect,
-    .ll_addRectFilledFn   = _tui_ll_add_rect_filled,
-    .ll_addCircleFn       = _tui_ll_add_circle,
-    .ll_addCircleFilledFn = _tui_ll_add_circle_filled,
-    .ll_addTextFn         = _tui_ll_add_text,
-    .ll_getWindowPosFn    = _tui_ll_get_window_pos,
-    .ll_getWindowSizeFn   = _tui_ll_get_window_size,
-    .ll_getCursorPosFn    = _tui_ll_get_cursor_pos,
-    .ll_getMousePosFn     = _tui_ll_get_mouse_pos,
-    .ll_beginGroupFn      = _tui_ll_begin_group,
-    .ll_endGroupFn        = _tui_ll_end_group,
-    .beginHBoxFn = _tui_begin_hbox,
-    .endHBoxFn   = _tui_end_hbox,
-    .beginVBoxFn = _tui_begin_vbox,
-    .endVBoxFn   = _tui_end_vbox,
+fn _lui_open_file() ?[]const u8 {
+    const _cpath = ui.Window.OpenFile(_lui_window.?) orelse return null;
+    defer ui.FreeText(_cpath);
+    const _s = std.mem.span(_cpath);
+    return _allocator.dupe(u8, _s) catch null;
+}
+fn _lui_save_file() ?[]const u8 {
+    const _cpath = ui.Window.SaveFile(_lui_window.?) orelse return null;
+    defer ui.FreeText(_cpath);
+    const _s = std.mem.span(_cpath);
+    return _allocator.dupe(u8, _s) catch null;
+}
+fn _lui_open_folder() ?[]const u8 {
+    const _cpath = ui.Window.OpenFolder(_lui_window.?) orelse return null;
+    defer ui.FreeText(_cpath);
+    const _s = std.mem.span(_cpath);
+    return _allocator.dupe(u8, _s) catch null;
+}
+fn _lui_msg_box(_title: []const u8, _desc: []const u8) void {
+    const _tz = _allocator.dupeZ(u8, _title) catch return;
+    const _mz = _allocator.dupeZ(u8, _desc) catch return;
+    ui.Window.MsgBox(_lui_window.?, _tz, _mz);
+}
+fn _lui_msg_box_error(_title: []const u8, _desc: []const u8) void {
+    const _tz = _allocator.dupeZ(u8, _title) catch return;
+    const _mz = _allocator.dupeZ(u8, _desc) catch return;
+    ui.Window.MsgBoxError(_lui_window.?, _tz, _mz);
+}
+const _gui_lui_backend = _GuiBackend{
+    .initFn             = _lui_init,
+    .deinitFn           = _lui_deinit,
+    .newFrameFn         = _lui_newframe,
+    .endFrameFn         = _lui_endframe,
+    .textFn             = _lui_text,
+    .separatorFn        = _lui_sep,
+    .sameLineFn         = _lui_noop_void,
+    .spacingFn          = _lui_noop_void,
+    .indentFn           = _lui_noop_void,
+    .unindentFn         = _lui_noop_void,
+    .buttonFn           = _lui_button,
+    .checkboxFn         = _lui_checkbox,
+    .sliderFn           = _lui_slider,
+    .inputFn            = _lui_input,
+    .inputMultilineFn   = _lui_input_ml,
+    .beginPanelFn       = _lui_begin_panel,
+    .endPanelFn         = _lui_end_panel,
+    .beginWindowFn      = _lui_noop_bool,
+    .endWindowFn        = _lui_noop_void,
+    .selectableFn       = _lui_selectable,
+    .textColoredFn      = _lui_text_colored,
+    .beginTableFn       = _lui_begin_table,
+    .tableSetupColumnFn = _lui_table_setup_col,
+    .tableHeadersRowFn  = _lui_noop_void,
+    .tableNextRowFn     = _lui_noop_void,
+    .tableNextColumnFn  = _lui_table_next_col,
+    .endTableFn         = _lui_noop_void,
+    .beginChildFn       = _lui_begin_child,
+    .endChildFn         = _lui_noop_void,
+    .treeNodeFn         = _lui_noop_bool,
+    .treePopFn          = _lui_noop_void,
+    .setColorFn         = _lui_set_color,
+    .setColorsDarkFn    = _lui_noop_void,
+    .setStyleFloatFn    = _lui_set_style_float,
+    .setVec2Fn          = _lui_set_vec2,
+    .scaleAllSizesFn    = _lui_scale_all,
+    .getDpiFn           = _lui_get_dpi,
+    .ll_addLineFn         = _lui_ll_noop_line,
+    .ll_addRectFn         = _lui_ll_noop_rect,
+    .ll_addRectFilledFn   = _lui_ll_noop_rectfill,
+    .ll_addCircleFn       = _lui_ll_noop_circle,
+    .ll_addCircleFilledFn = _lui_ll_noop_circlefill,
+    .ll_addTextFn         = _lui_ll_noop_text,
+    .ll_getWindowPosFn    = _lui_ll_get_win_pos,
+    .ll_getWindowSizeFn   = _lui_ll_get_win_size,
+    .ll_getCursorPosFn    = _lui_ll_get_cursor_pos,
+    .ll_getMousePosFn     = _lui_ll_get_mouse_pos,
+    .ll_beginGroupFn      = _lui_noop_void,
+    .ll_endGroupFn        = _lui_noop_void,
+    .beginHBoxFn = _lui_begin_hbox,
+    .endHBoxFn   = _lui_end_hbox,
+    .beginVBoxFn   = _lui_begin_vbox,
+    .endVBoxFn     = _lui_end_vbox,
+    .progressBarFn = _lui_progressbar,
+    .comboboxFn    = _lui_combobox,
+    .spinboxFn     = _lui_spinbox,
+    .openFileFn    = _lui_open_file,
+    .saveFileFn    = _lui_save_file,
+    .openFolderFn  = _lui_open_folder,
+    .msgBoxFn      = _lui_msg_box,
+    .msgBoxErrorFn = _lui_msg_box_error,
 };
-const _gui_active_backend: _GuiBackend = _gui_tui_backend;
-fn _hex_encode(bytes: []const u8) []const u8 {
+const _gui_active_backend: _GuiBackend = _gui_lui_backend;
+pub fn _hex_encode(bytes: []const u8) []const u8 {
     const _hx = "0123456789abcdef";
     var out = _allocator.alloc(u8, bytes.len * 2) catch return "";
     for (bytes, 0..) |b, i| { out[i*2] = _hx[b >> 4]; out[i*2+1] = _hx[b & 0xf]; }
     return out;
 }
-fn _hash_sha256(data: []const u8) []const u8 {
+pub fn _hash_sha256(data: []const u8) []const u8 {
     var out: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(data, &out, .{});
     return _hex_encode(&out);
 }
-fn _hash_sha512(data: []const u8) []const u8 {
+pub fn _hash_sha512(data: []const u8) []const u8 {
     var out: [std.crypto.hash.sha2.Sha512.digest_length]u8 = undefined;
     std.crypto.hash.sha2.Sha512.hash(data, &out, .{});
     return _hex_encode(&out);
 }
-fn _hash_md5(data: []const u8) []const u8 {
+pub fn _hash_md5(data: []const u8) []const u8 {
     var out: [std.crypto.hash.Md5.digest_length]u8 = undefined;
     std.crypto.hash.Md5.hash(data, &out, .{});
     return _hex_encode(&out);
 }
-fn _hash_blake3(data: []const u8) []const u8 {
+pub fn _hash_blake3(data: []const u8) []const u8 {
     var out: [std.crypto.hash.Blake3.digest_length]u8 = undefined;
     std.crypto.hash.Blake3.hash(data, &out, .{});
     return _hex_encode(&out);
 }
-fn _hash_hmac256(key: []const u8, data: []const u8) []const u8 {
+pub fn _hash_hmac256(key: []const u8, data: []const u8) []const u8 {
     var out: [std.crypto.auth.hmac.sha2.HmacSha256.mac_length]u8 = undefined;
     std.crypto.auth.hmac.sha2.HmacSha256.create(&out, data, key);
     return _hex_encode(&out);
 }
-var _rng_inst: std.Random.DefaultPrng = undefined;
-var _rng_ready: bool = false;
-fn _rng() std.Random {
+// thread-local: each thread lazily seeds its own PRNG, so concurrent
+// Random.* calls from sys.go / ThreadPool tasks can't data-race the shared
+// state (A3, pre-1.0 API audit). Single-threaded behavior is unchanged.
+pub threadlocal var _rng_inst: std.Random.DefaultPrng = undefined;
+pub threadlocal var _rng_ready: bool = false;
+pub fn _rng() std.Random {
     if (!_rng_ready) {
         var seed: u64 = 0;
-        std.crypto.random.bytes(std.mem.asBytes(&seed));
+        _io.randomSecure(std.mem.asBytes(&seed)) catch @panic("entropy unavailable");
         _rng_inst = std.Random.DefaultPrng.init(seed);
         _rng_ready = true;
     }
     return _rng_inst.random();
 }
-fn _random_int(mn: i64, mx: i64) i64 { return _rng().intRangeAtMost(i64, mn, mx); }
-fn _random_float() f64               { return _rng().float(f64); }
-fn _random_bool() bool               { return _rng().boolean(); }
-fn _random_bytes(n: i64) []const u8 {
+pub fn _random_int(mn: i64, mx: i64) i64 { return _rng().intRangeAtMost(i64, mn, mx); }
+pub fn _random_float() f64               { return _rng().float(f64); }
+pub fn _random_bool() bool               { return _rng().boolean(); }
+pub fn _random_bytes(n: i64) []const u8 {
     const len: usize = @intCast(if (n < 0) 0 else n);
     const buf = _allocator.alloc(u8, len) catch return "";
     _rng().bytes(buf);
     return _hex_encode(buf);
 }
-fn _random_seed(s: i64) void {
+pub fn _random_seed(s: i64) void {
     _rng_inst = std.Random.DefaultPrng.init(@bitCast(s));
     _rng_ready = true;
 }
-const ArgResult = struct {
+// Random instance form (A3): `var rng = Random.new(seed)` → an independent,
+// seedable PRNG stream that doesn't touch the process-global state. The PRNG
+// lives behind a pointer so methods take `self` by value (a pointer copy) yet
+// still advance the stream — this keeps `const rng = Random.new(..)` legal
+// (no `&rng` needed at the call site).
+pub const _Random = struct {
+    prng: *std.Random.DefaultPrng,
+    pub fn init(seed: i64) _Random {
+        const p = _allocator.create(std.Random.DefaultPrng) catch @panic("OOM");
+        p.* = std.Random.DefaultPrng.init(@bitCast(seed));
+        return .{ .prng = p };
+    }
+    pub fn nextInt(self: _Random, mn: i64, mx: i64) i64 { return self.prng.random().intRangeAtMost(i64, mn, mx); }
+    pub fn nextFloat(self: _Random) f64 { return self.prng.random().float(f64); }
+    pub fn nextBool(self: _Random) bool { return self.prng.random().boolean(); }
+    pub fn bytes(self: _Random, n: i64) []const u8 {
+        const len: usize = @intCast(if (n < 0) 0 else n);
+        const buf = _allocator.alloc(u8, len) catch return "";
+        self.prng.random().bytes(buf);
+        return _hex_encode(buf);
+    }
+};
+// ── Crypto.encrypt / Crypto.decrypt — AES-256-GCM ────────────────────────────
+// Wire format (hex-encoded): 12-byte nonce | 16-byte tag | N-byte ciphertext
+pub const _AESGCM = std.crypto.aead.aes_gcm.Aes256Gcm;
+pub fn _crypto_key32(password: []const u8) [32]u8 {
+    var k: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(password, &k, .{});
+    return k;
+}
+pub fn _crypto_encrypt(password: []const u8, plaintext: []const u8) []const u8 {
+    var nonce: [_AESGCM.nonce_length]u8 = undefined;
+    _io.randomSecure(&nonce) catch @panic("entropy unavailable");
+    const key = _crypto_key32(password);
+    const ct_buf = _allocator.alloc(u8, plaintext.len) catch return "";
+    defer _allocator.free(ct_buf);
+    var tag: [_AESGCM.tag_length]u8 = undefined;
+    _AESGCM.encrypt(ct_buf, &tag, plaintext, "", nonce, key);
+    // encode: nonce + tag + ciphertext → hex
+    const raw_len = nonce.len + tag.len + ct_buf.len;
+    const raw = _allocator.alloc(u8, raw_len) catch return "";
+    defer _allocator.free(raw);
+    @memcpy(raw[0..nonce.len], &nonce);
+    @memcpy(raw[nonce.len .. nonce.len + tag.len], &tag);
+    @memcpy(raw[nonce.len + tag.len ..], ct_buf);
+    return _hex_encode(raw);
+}
+pub fn _crypto_decrypt(password: []const u8, hex_ciphertext: []const u8) ?[]const u8 {
+    const min_hex = (_AESGCM.nonce_length + _AESGCM.tag_length) * 2;
+    if (hex_ciphertext.len < min_hex or hex_ciphertext.len % 2 != 0) return null;
+    const raw_len = hex_ciphertext.len / 2;
+    const raw = _allocator.alloc(u8, raw_len) catch return null;
+    defer _allocator.free(raw);
+    _ = std.fmt.hexToBytes(raw, hex_ciphertext) catch return null;
+    const nonce = raw[0.._AESGCM.nonce_length].*;
+    const tag   = raw[_AESGCM.nonce_length .. _AESGCM.nonce_length + _AESGCM.tag_length].*;
+    const ct    = raw[_AESGCM.nonce_length + _AESGCM.tag_length ..];
+    const key = _crypto_key32(password);
+    const pt_buf = _allocator.alloc(u8, ct.len) catch return null;
+    _AESGCM.decrypt(pt_buf, ct, tag, "", nonce, key) catch {
+        _allocator.free(pt_buf);
+        return null;
+    };
+    return pt_buf;
+}
+pub const ArgResult = struct {
     _raw: []const []const u8,
     pub fn flag(self: ArgResult, long: []const u8, short: []const u8) bool {
         for (self._raw) |a| { if (std.mem.eql(u8, a, long)) return true; if (std.mem.eql(u8, a, short)) return true; }
@@ -2390,19 +3722,19 @@ const ArgResult = struct {
     }
     pub fn usage(_: ArgResult) []const u8 { return "Usage: program [options]"; }
 };
-fn _arg_parse() ArgResult {
+pub fn _arg_parse() ArgResult {
     const _argv = _args.toSlice(_allocator) catch return ArgResult{ ._raw = &.{} };
     const _raw_slice = if (_argv.len > 1) _argv[1..] else _argv[0..0];
     var _out = _allocator.alloc([]const u8, _raw_slice.len) catch return ArgResult{ ._raw = &.{} };
     for (_raw_slice, 0..) |a, i| _out[i] = a;
     return ArgResult{ ._raw = _out };
 }
-fn _term_is_tty() bool {
+pub fn _term_is_tty() bool {
     return std.Io.File.stdout().isTty(_io) catch false;
 }
-fn _term_width() i64 { return 80; }
-fn _term_height() i64 { return 24; }
-fn _term_ansi(color: []const u8) []const u8 {
+pub fn _term_width() i64 { return 80; }
+pub fn _term_height() i64 { return 24; }
+pub fn _term_ansi(color: []const u8) []const u8 {
     if (std.mem.eql(u8, color, "red"))     return "\x1b[31m";
     if (std.mem.eql(u8, color, "green"))   return "\x1b[32m";
     if (std.mem.eql(u8, color, "yellow"))  return "\x1b[33m";
@@ -2414,7 +3746,7 @@ fn _term_ansi(color: []const u8) []const u8 {
     if (std.mem.eql(u8, color, "bold"))    return "\x1b[1m";
     return "";
 }
-fn _term_print(msg: []const u8, color: []const u8, newline: bool) void {
+pub fn _term_print(msg: []const u8, color: []const u8, newline: bool) void {
     const _f = std.Io.File.stdout();
     if (_term_is_tty() and color.len > 0) {
         const _s = std.fmt.allocPrint(_allocator, "{s}{s}\x1b[0m", .{ _term_ansi(color), msg }) catch return;
@@ -2425,16 +3757,16 @@ fn _term_print(msg: []const u8, color: []const u8, newline: bool) void {
     }
     if (newline) _f.writeStreamingAll(_io, "\n") catch {};
 }
-var _log_level: u8 = 1;        // default: info
-var _log_timestamps: bool = true;
-var _log_to_stderr: bool = true;
-fn _log_ts() []const u8 {
-    const sec = @divFloor(std.time.milliTimestamp(), 1000);
+pub var _log_level: u8 = 1;        // default: info
+pub var _log_timestamps: bool = true;
+pub var _log_to_stderr: bool = true;
+pub fn _log_ts() []const u8 {
+    const sec: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(_io, .real).nanoseconds, std.time.ns_per_s));
     const s = sec - 62135596800; // offset from Unix epoch to .NET epoch (unused here)
     _ = s;
     return std.fmt.allocPrint(_allocator, "{d}", .{sec}) catch "?";
 }
-fn _log_emit(level_str: []const u8, level_num: u8, msg: []const u8) void {
+pub fn _log_emit(level_str: []const u8, level_num: u8, msg: []const u8) void {
     if (level_num < _log_level) return;
     const _f = if (_log_to_stderr) std.Io.File.stderr() else std.Io.File.stdout();
     if (_log_timestamps) {
@@ -2447,21 +3779,61 @@ fn _log_emit(level_str: []const u8, level_num: u8, msg: []const u8) void {
         _f.writeStreamingAll(_io, _s) catch {};
     }
 }
-fn _log_debug(msg: []const u8) void { _log_emit("DEBUG", 0, msg); }
-fn _log_info(msg: []const u8) void  { _log_emit("INFO",  1, msg); }
-fn _log_warn(msg: []const u8) void  { _log_emit("WARN",  2, msg); }
-fn _log_err(msg: []const u8) void   { _log_emit("ERR",   3, msg); }
-fn _log_set_level(l: u8) void { _log_level = l; }
-fn _log_set_output_stderr(v: bool) void { _log_to_stderr = v; }
-fn _log_timestamp(v: bool) void { _log_timestamps = v; }
-const UriResult = struct {
+pub fn _log_debug(msg: []const u8) void { _log_emit("DEBUG", 0, msg); }
+pub fn _log_info(msg: []const u8) void  { _log_emit("INFO",  1, msg); }
+pub fn _log_warn(msg: []const u8) void  { _log_emit("WARN",  2, msg); }
+pub fn _log_err(msg: []const u8) void   { _log_emit("ERR",   3, msg); }
+pub fn _log_set_level(l: u8) void { _log_level = l; }
+pub fn _log_set_output_stderr(v: bool) void { _log_to_stderr = v; }
+pub fn _log_timestamp(v: bool) void { _log_timestamps = v; }
+// Log.setFile / Log.json — file sink + JSON lines format
+pub var _log_file_opt: ?std.Io.File = null;
+pub fn _log_set_file(path: []const u8) void {
+    if (_log_file_opt) |old| { old.close(_io); _log_file_opt = null; }
+    if (path.len == 0) return;
+    _log_file_opt = std.Io.Dir.cwd().createFile(_io, path, .{ .truncate = false }) catch return;
+}
+pub fn _log_json_esc(s: []const u8, out: *std.ArrayList(u8)) void {
+    for (s) |c| switch (c) {
+        '"'  => out.appendSlice(_allocator, "\\\"") catch {},
+        '\\' => out.appendSlice(_allocator, "\\\\") catch {},
+        '\n' => out.appendSlice(_allocator, "\\n")  catch {},
+        '\r' => out.appendSlice(_allocator, "\\r")  catch {},
+        '\t' => out.appendSlice(_allocator, "\\t")  catch {},
+        else => out.append(_allocator, c)            catch {},
+    };
+}
+pub fn _log_json(level: []const u8, msg: []const u8, data: []const u8) void {
+    const ts: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(_io, .real).nanoseconds, std.time.ns_per_s));
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(_allocator);
+    const ts_s = std.fmt.allocPrint(_allocator, "{d}", .{ts}) catch return;
+    defer _allocator.free(ts_s);
+    buf.appendSlice(_allocator, "{\"ts\":") catch return;
+    buf.appendSlice(_allocator, ts_s) catch return;
+    buf.appendSlice(_allocator, ",\"level\":\"") catch return;
+    buf.appendSlice(_allocator, level) catch return;
+    buf.appendSlice(_allocator, "\",\"msg\":\"") catch return;
+    _log_json_esc(msg, &buf);
+    if (data.len > 0) {
+        buf.appendSlice(_allocator, "\",\"data\":\"") catch return;
+        _log_json_esc(data, &buf);
+    }
+    buf.appendSlice(_allocator, "\"}\n") catch return;
+    if (_log_file_opt) |f| {
+        const st = f.stat(_io) catch return;
+        f.writePositionalAll(_io, buf.items, st.size) catch {};
+    }
+    std.Io.File.stderr().writeStreamingAll(_io, buf.items) catch {};
+}
+pub const UriResult = struct {
     scheme: []const u8,
     host:   []const u8,
     path:   []const u8,
     query:  []const u8,
     port:   i64,
 };
-fn _uri_parse(url: []const u8) UriResult {
+pub fn _uri_parse(url: []const u8) UriResult {
     const _u = std.Uri.parse(url) catch return UriResult{ .scheme="", .host="", .path="", .query="", .port=0 };
     const _host: []const u8 = if (_u.host) |h| switch (h) {
         .raw => |r| r, .percent_encoded => |p| p,
@@ -2480,7 +3852,7 @@ fn _uri_parse(url: []const u8) UriResult {
         .port   = if (_u.port) |p| @intCast(p) else 0,
     };
 }
-fn _compress_gzip(data: []const u8) []const u8 {
+pub fn _compress_gzip(data: []const u8) []const u8 {
     // Upper bound: gzip header(10) + footer(8) + ~0.03% per-block overhead for incompressible data.
     const out_capacity = data.len + data.len / 100 + 100;
     const out_buf = _allocator.alloc(u8, out_capacity) catch return "";
@@ -2502,13 +3874,13 @@ fn _compress_gzip(data: []const u8) []const u8 {
     const result = _allocator.realloc(out_buf, written) catch return out_buf[0..written];
     return result;
 }
-fn _compress_gunzip(data: []const u8) ?[]const u8 {
+pub fn _compress_gunzip(data: []const u8) ?[]const u8 {
     var _in = std.Io.Reader.fixed(data);
     var _window: [std.compress.flate.max_window_len]u8 = undefined;
     var _decomp = std.compress.flate.Decompress.init(&_in, .gzip, &_window);
     return _decomp.reader.allocRemaining(_allocator, .unlimited) catch null;
 }
-fn _mime_from_ext(ext: []const u8) []const u8 {
+pub fn _mime_from_ext(ext: []const u8) []const u8 {
     const _map = [_]struct { []const u8, []const u8 }{
         .{ ".html",  "text/html" },          .{ ".htm",   "text/html" },
         .{ ".css",   "text/css" },
@@ -2542,7 +3914,7 @@ fn _mime_from_ext(ext: []const u8) []const u8 {
     for (_map) |e| if (std.mem.eql(u8, e[0], ext)) return e[1];
     return "application/octet-stream";
 }
-fn _mime_to_ext(mime: []const u8) []const u8 {
+pub fn _mime_to_ext(mime: []const u8) []const u8 {
     const _map = [_]struct { []const u8, []const u8 }{
         .{ "text/html",        ".html" },
         .{ "text/css",         ".css"  },
@@ -2568,49 +3940,49 @@ fn _mime_to_ext(mime: []const u8) []const u8 {
     for (_map) |e| if (std.mem.eql(u8, e[0], mime)) return e[1];
     return "";
 }
-const TimerHandle = struct {
+pub const TimerHandle = struct {
     _start_ns: i128,
     pub fn elapsed(self: *const TimerHandle) f64 {
-        const _ns: i128 = std.time.nanoTimestamp() - self._start_ns;
+        const _ns: i128 = std.Io.Timestamp.now(_io, .awake).nanoseconds - self._start_ns;
         return @as(f64, @floatFromInt(_ns)) / 1_000_000.0;
     }
     pub fn elapsedMicros(self: *const TimerHandle) i64 {
-        const _ns: i128 = std.time.nanoTimestamp() - self._start_ns;
+        const _ns: i128 = std.Io.Timestamp.now(_io, .awake).nanoseconds - self._start_ns;
         return @intCast(@divFloor(_ns, 1000));
     }
     pub fn reset(self: *TimerHandle) void {
-        self._start_ns = std.time.nanoTimestamp();
+        self._start_ns = std.Io.Timestamp.now(_io, .awake).nanoseconds;
     }
 };
-fn _timer_start() TimerHandle { return .{ ._start_ns = std.time.nanoTimestamp() }; }
+pub fn _timer_start() TimerHandle { return .{ ._start_ns = std.Io.Timestamp.now(_io, .awake).nanoseconds }; }
 // ── Progress stdlib ──────────────────────────────────────────────────────────
-var _progress_root_started: bool = false;
-var _progress_root: std.Progress.Node = undefined;
-fn _progress_ensure_root() void {
+pub var _progress_root_started: bool = false;
+pub var _progress_root: std.Progress.Node = undefined;
+pub fn _progress_ensure_root() void {
     if (!_progress_root_started) { _progress_root = std.Progress.start(.{}); _progress_root_started = true; }
 }
-const ProgressBar = struct {
+pub const ProgressBar = struct {
     _node: std.Progress.Node,
     pub fn tick(self: ProgressBar) void { self._node.completeOne(); }
     pub fn done(self: ProgressBar) void { self._node.end(); }
 };
-fn _progress_bar(total: i64, label: []const u8) ProgressBar {
+pub fn _progress_bar(total: i64, label: []const u8) ProgressBar {
     _progress_ensure_root();
     const _total_u: usize = @intCast(if (total < 0) @as(i64, 0) else total);
     return ProgressBar{ ._node = _progress_root.start(label, _total_u) };
 }
 // ── Profile stdlib ────────────────────────────────────────────────────────────
-const _ProfileEntry = struct { total_ns: i128, call_count: u64 };
-var _profile_entries = std.StringHashMap(_ProfileEntry).init(std.heap.page_allocator);
-var _profile_name_stack: std.ArrayList([]const u8) = .empty;
-var _profile_time_stack: std.ArrayList(i128) = .empty;
-fn _profile_start(name: []const u8) void {
+pub const _ProfileEntry = struct { total_ns: i128, call_count: u64 };
+pub var _profile_entries = std.StringHashMap(_ProfileEntry).init(std.heap.page_allocator);
+pub var _profile_name_stack: std.ArrayList([]const u8) = .empty;
+pub var _profile_time_stack: std.ArrayList(i128) = .empty;
+pub fn _profile_start(name: []const u8) void {
     _profile_name_stack.append(std.heap.page_allocator, name) catch @panic("OOM");
-    _profile_time_stack.append(std.heap.page_allocator, std.time.nanoTimestamp()) catch @panic("OOM");
+    _profile_time_stack.append(std.heap.page_allocator, std.Io.Timestamp.now(_io, .awake).nanoseconds) catch @panic("OOM");
 }
-fn _profile_end() void {
+pub fn _profile_end() void {
     const start_ns = _profile_time_stack.pop() orelse return;
-    const elapsed_ns = std.time.nanoTimestamp() - start_ns;
+    const elapsed_ns = std.Io.Timestamp.now(_io, .awake).nanoseconds - start_ns;
     var key_buf: std.ArrayList(u8) = .empty;
     defer key_buf.deinit(std.heap.page_allocator);
     for (_profile_name_stack.items, 0..) |n, i| {
@@ -2626,7 +3998,7 @@ fn _profile_end() void {
         _profile_entries.put(owned_key, .{ .total_ns = elapsed_ns, .call_count = 1 }) catch @panic("OOM");
     }
 }
-fn _profile_report() void {
+pub fn _profile_report() void {
     const _ProfEntry = struct { key: []const u8, total_ns: i128, calls: u64 };
     var list: std.ArrayList(_ProfEntry) = .empty;
     defer list.deinit(std.heap.page_allocator);
@@ -2647,7 +4019,7 @@ fn _profile_report() void {
         _stdout.writeStreamingAll(_io, _s) catch {};
     }
 }
-fn _profile_dump_folded() void {
+pub fn _profile_dump_folded() void {
     const _stdout = std.Io.File.stdout();
     var it = _profile_entries.iterator();
     while (it.next()) |e| {
@@ -2657,37 +4029,37 @@ fn _profile_dump_folded() void {
         _stdout.writeStreamingAll(_io, _s) catch {};
     }
 }
-fn _profile_reset() void {
+pub fn _profile_reset() void {
     _profile_entries.clearRetainingCapacity();
     _profile_name_stack.clearRetainingCapacity();
     _profile_time_stack.clearRetainingCapacity();
 }
 // ── Base64 stdlib ─────────────────────────────────────────────────────────────
-fn _base64_encode(s: []const u8) []const u8 {
+pub fn _base64_encode(s: []const u8) []const u8 {
     const enc = std.base64.standard.Encoder;
     const out = _allocator.alloc(u8, enc.calcSize(s.len)) catch @panic("OOM");
     return enc.encode(out, s);
 }
-fn _base64_decode(s: []const u8) ?[]const u8 {
+pub fn _base64_decode(s: []const u8) ?[]const u8 {
     const dec = std.base64.standard.Decoder;
     const out_len = dec.calcSizeForSlice(s) catch return null;
     const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
     dec.decode(out, s) catch return null;
     return out;
 }
-fn _base64_decode_str(s: []const u8) []const u8 {
+pub fn _base64_decode_str(s: []const u8) []const u8 {
     const dec = std.base64.standard.Decoder;
     const out_len = dec.calcSizeForSlice(s) catch @panic("invalid base64");
     const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
     dec.decode(out, s) catch @panic("invalid base64");
     return out;
 }
-fn _base64_encode_url(s: []const u8) []const u8 {
+pub fn _base64_encode_url(s: []const u8) []const u8 {
     const enc = std.base64.url_safe_no_pad.Encoder;
     const out = _allocator.alloc(u8, enc.calcSize(s.len)) catch @panic("OOM");
     return enc.encode(out, s);
 }
-fn _base64_decode_url(s: []const u8) ?[]const u8 {
+pub fn _base64_decode_url(s: []const u8) ?[]const u8 {
     const dec = std.base64.url_safe_no_pad.Decoder;
     const out_len = dec.calcSizeForSlice(s) catch return null;
     const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
@@ -2695,28 +4067,28 @@ fn _base64_decode_url(s: []const u8) ?[]const u8 {
     return out;
 }
 // ── Hash fast (non-crypto) hashes ────────────────────────────────────────────
-fn _hash_crc32(s: []const u8) i64 {
+pub fn _hash_crc32(s: []const u8) i64 {
     return @as(i64, @intCast(std.hash.crc.Crc32.hash(s)));
 }
-fn _hash_fnv64(s: []const u8) i64 {
+pub fn _hash_fnv64(s: []const u8) i64 {
     return @as(i64, @bitCast(std.hash.Fnv1a_64.hash(s)));
 }
-fn _hash_xxhash64(s: []const u8) i64 {
+pub fn _hash_xxhash64(s: []const u8) i64 {
     return @as(i64, @bitCast(std.hash.XxHash64.hash(0, s)));
 }
-fn _hash_hmac512(key: []const u8, data: []const u8) []const u8 {
+pub fn _hash_hmac512(key: []const u8, data: []const u8) []const u8 {
     var out: [std.crypto.auth.hmac.sha2.HmacSha512.mac_length]u8 = undefined;
     std.crypto.auth.hmac.sha2.HmacSha512.create(&out, data, key);
     return _hex_encode(&out);
 }
 // ── Random extended ───────────────────────────────────────────────────────────
-fn _random_gaussian(mean: f64, stddev: f64) f64 {
+pub fn _random_gaussian(mean: f64, stddev: f64) f64 {
     const _gu1 = _rng().float(f64);
     const _gu2 = _rng().float(f64);
     const _gz = @sqrt(-2.0 * @log(_gu1)) * @cos(2.0 * std.math.pi * _gu2);
     return mean + stddev * _gz;
 }
-fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList(f64)) []const u8 {
+pub fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList(f64)) []const u8 {
     if (items.items.len == 0) return "";
     var total: f64 = 0.0;
     for (weights.items) |w| total += w;
@@ -2728,7 +4100,7 @@ fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList(f64
     return items.items[items.items.len - 1];
 }
 // ── File extended ─────────────────────────────────────────────────────────────
-fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
+pub fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
     var content = std.ArrayList(u8).empty;
     defer content.deinit(_allocator);
     for (lines.items) |line| {
@@ -2740,23 +4112,31 @@ fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
     _f.writeStreamingAll(_io, content.items) catch {};
 }
 // ── sys extended ──────────────────────────────────────────────────────────────
-fn _sys_setenv(key: []const u8, val: []const u8) void {
+pub fn _sys_setenv(key: []const u8, val: []const u8) void {
     if (comptime builtin.os.tag == .windows) {
         const key_w = std.unicode.utf8ToUtf16LeAllocZ(_allocator, key) catch return;
         defer _allocator.free(key_w);
         const val_w = std.unicode.utf8ToUtf16LeAllocZ(_allocator, val) catch return;
         defer _allocator.free(val_w);
-        _ = std.os.windows.kernel32.SetEnvironmentVariableW(key_w.ptr, val_w.ptr);
+        const _k32 = struct {
+            // 0.16 dropped SetEnvironmentVariableW from std.os.windows.kernel32 — declare it.
+            extern "kernel32" fn SetEnvironmentVariableW(name: [*:0]const u16, value: ?[*:0]const u16) callconv(.winapi) std.os.windows.BOOL;
+        };
+        _ = _k32.SetEnvironmentVariableW(key_w.ptr, val_w.ptr);
     } else {
         std.posix.setenv(key, val) catch {};
     }
 }
-fn _sys_getenv(key: []const u8) ?[]const u8 {
+pub fn _sys_getenv(key: []const u8) ?[]const u8 {
     if (comptime builtin.os.tag == .windows) {
-        return std.process.getEnvVarOwned(_allocator, key) catch return null;
+        const environ: std.process.Environ = .{ .block = .global };
+        return environ.getAlloc(_allocator, key) catch null;
     } else {
         return std.posix.getenv(key);
     }
+}
+pub fn _sys_self_exe() []const u8 {
+    return std.process.executablePathAlloc(_io, _allocator) catch "";
 }
 pub const Counter = struct {
     count: i64 = undefined,
@@ -2824,9 +4204,9 @@ pub fn view(g: GuiContext, model: Counter) void {
 pub fn main(_zinit: std.process.Init) void {
     _io = _zinit.io;
     _args = _zinit.minimal.args;
-    _allocator = _arena.allocator();
+    _allocator = _prog_alloc();
     defer _arena.deinit();
-    _tui_env = _zinit.environ_map;
+    _initModuleVars();
 // zbr:examples/counter.zbr:37
     _gui_mvu_run("Counter", 400, 200, init, update, view);
 }
