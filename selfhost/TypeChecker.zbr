@@ -2484,8 +2484,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.bool_
                 on UnaryOp.bit_not
                     return un_t
-                else
-                    return Type_.unknown_
+            # No `else` arm: UnaryOp has exactly neg | not_ | bit_not, so one is unreachable
+            # and Zig rejects it outright ("unreachable else prong; all cases already
+            # handled"). Every arm above returns, so this is exhaustive rather than a
+            # fall-through -- which matters here, because a value-returning fn is TCO-wrapped
+            # in `while(true)` and an arm that fell through would HANG instead of erroring.
         on Expr.index as ei
             # s[i] — element type depends on receiver type.
             var idx_recv: Type_ = inferExpr(ei.object, ctx)
