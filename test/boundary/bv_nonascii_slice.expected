@@ -1,0 +1,9 @@
+head=e
+headLen=1
+accent=é
+accentLen=2
+tail=x
+splitLen=2
+wholeLen=4
+emptyLen=0
+accentCpc=1

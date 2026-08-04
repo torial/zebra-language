@@ -1,0 +1,48 @@
+# @boundary runs
+#
+# BOUNDARY: `s[i]` on non-ASCII text — byte semantics.
+#
+# THIS DIMENSION WAS DEFERRED BY THE FIRST PASS, and §4 of docs/boundary_triage.md said
+# exactly why: "a probe asserting codepoint semantics would fail forever by design; a probe
+# asserting today's byte behaviour would enshrine a known bug."
+#
+# That reasoning expired on 2026-08-03. Sean DECIDED the semantics: `s[i]` IS a byte,
+# deliberately, matching Go (indexes to a byte, never pretends otherwise) and Rust (forbids
+# str indexing outright). QUICKSTART now leads with the rule. So asserting byte behaviour is
+# no longer enshrining a bug — it is asserting INTENT, which is what this suite is for.
+#
+# WHAT IS ASSERTED HERE, AND WHY IT IS SHAPED THIS WAY: `s[i]` is typed `char` (BUG-225, a
+# 1.x retype), so INTERPOLATING it prints a character rather than a number — and how a raw
+# byte renders as text is NOT defined by the reference. Asserting a rendering would be
+# inventing an answer. So every row below is a LENGTH or a COMPARISON, both of which the
+# reference defines.
+#
+# The string is "eéx": bytes 0x65 | 0xC3 0xA9 | 0x78 — 4 bytes, 3 codepoints. The middle
+# character is the whole point: it is the one that makes byte and codepoint indexing differ.
+def main()
+    var s = "eéx"
+
+    # QUICKSTART: `.len` is BYTES, `.codePointCount()` is characters. Both "honest today".
+    print("len=${s.len}")
+    print("cpc=${s.codePointCount()}")
+
+    # An ASCII byte compares equal to the corresponding ASCII char literal. This is the
+    # property the selfhost lexer is built on (~104 subscript sites, 559 `c'x'` literals).
+    print("asciiEq=${s[0] == c'e'}")
+
+    # THE DOCUMENTED DIVERGENCE, asserted positively rather than lamented: s[1] is the LEAD
+    # BYTE of é (0xC3), not é (U+00E9). QUICKSTART: "on non-ASCII text it hands you half a
+    # character." So this comparison must be FALSE. If it ever becomes true, `s[i]` has been
+    # retyped to codepoints and this probe should be rewritten, not patched.
+    print("nonAsciiEq=${s[1] == c'é'}")
+
+    # ...and the last byte is ASCII again, so indexing past the multi-byte character still
+    # lands on a byte boundary rather than drifting.
+    print("lastEq=${s[3] == c'x'}")
+
+    # `.chars()` DECODES — it is the honest way to read characters, and the reference says
+    # so. Three codepoints out of four bytes.
+    var joined = ""
+    for c in s.chars()
+        joined = joined + c.toString() + "|"
+    print("chars=${joined}")

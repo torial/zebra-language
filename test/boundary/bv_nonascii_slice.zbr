@@ -1,0 +1,35 @@
+# @boundary runs
+#
+# BOUNDARY: slicing `s[a..b]` around a multi-byte character.
+#
+# Companion to bv_nonascii_index.zbr, unblocked by the same 2026-08-03 decision: indexing
+# is BYTE-based, so slicing is byte-based, and the interesting cases are the ones that land
+# ON and ACROSS a codepoint boundary.
+#
+# "eéx" is bytes 0x65 | 0xC3 0xA9 | 0x78 — so byte 0 is `e`, bytes 1-2 are `é`, byte 3 is
+# `x`. Ranges are STOP-EXCLUSIVE (QUICKSTART: `0..3`, "stop is exclusive").
+#
+# THE CROSS-BOUNDARY ROW IS ASSERTED BY LENGTH, NOT BY VALUE, AND THAT IS DELIBERATE.
+# `s[0..2]` is `e` plus the LEAD BYTE of é — invalid UTF-8. What invalid UTF-8 does when
+# printed is NOT defined by the language reference, and this suite's whole premise is that
+# expectations come from the reference. Asserting a rendering would be inventing one. The
+# length is defined, so the length is what is asserted.
+def main()
+    var s = "eéx"
+
+    # Slices that land exactly on codepoint boundaries produce valid text.
+    print("head=${s[0..1]}")
+    print("headLen=${s[0..1].len}")
+    print("accent=${s[1..3]}")
+    print("accentLen=${s[1..3].len}")
+    print("tail=${s[3..4]}")
+
+    # Crossing the boundary: 2 BYTES, and deliberately not printed (see the note above).
+    print("splitLen=${s[0..2].len}")
+
+    # Whole-string and empty slices — the two range extremes.
+    print("wholeLen=${s[0..4].len}")
+    print("emptyLen=${s[2..2].len}")
+
+    # A slice is still a str, so byte-length and codepoint-count stay distinguishable on it.
+    print("accentCpc=${s[1..3].codePointCount()}")

@@ -1,0 +1,6 @@
+len=4
+cpc=3
+asciiEq=true
+nonAsciiEq=false
+lastEq=true
+chars=e|é|x|
