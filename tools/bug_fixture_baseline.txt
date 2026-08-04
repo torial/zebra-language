@@ -71,25 +71,42 @@
 77	TC doesn't record inferred type for `?`-propagated throws-call assignm
 80	`^T?` field assignment — CLOSED NOT REPRODUCING
 82	Selfhost `inferExpr` returns `unknown_` for cross-module constructor c
+86	struct pattern — cross-module type names not supported
 95	class field defaults aren't auto-applied — `cue init` left fields as Z
 98	`name in some_list` always routed to `std.mem.indexOf(u8, …)` — FIXED
 100	✅ FIXED (side-effect of BUG-099, 2026-05-05)
 102	Selfhost typechecker `to!` force-unwrap audit — FIXED 2026-05-06
-105	✅ FIXED 2026-05-05 — enum_member/union_variant resolve to parent type
-106	✅ FIXED (partial) 2026-05-05 — literal homogeneity check shipped
+105	`Color.red` infers to `.unknown` instead of `.named(Color)` — FIXED 20
+106	Heterogeneous list literals `[1, "two"]` silently typecheck — FIXED (p
 107	✅ VERIFIED 2026-05-18 — codegen never runs on a diagnosed tree
-108	✅ FIXED (partial) 2026-05-05 — `this` outside class diagnostic shipped
+108	Silent `.unknown` at `this` outside class — FIXED (partial) 2026-05-05
 109	✅ FIXED 2026-05-05 — `.reuse_address` flipped to `false`
 110	✅ FIXED 2026-05-05 — bind error prints clean message instead of panic
-111	✅ NOT-A-BUG 2026-05-05 — compound assign already works
-112	✅ FIXED 2026-05-05 — no-paren shorthand removed
-113	✅ NOT-REPRODUCED 2026-05-05 — slice TC works correctly
+111	Compound assign `.field += 1` — NOT-A-BUG 2026-05-05
+112	`def name: T` no-paren shorthand removed from grammar — FIXED 2026-05-
+113	Slice TC loses `str` type through `var` binding — NOT-REPRODUCED 2026-
 114	`0 - x` / `0.0 - x` instead of `-x` — ✅ SWEPT 2026-05-06
 115	✅ FIXED 2026-05-14 — `private` / `internal` visibility keywords shippe
 120	selfhost — `.add()` → `.append()` rewrite fires on user class method c
+125	selfhost --emit-zig user-script mode emits cross-module union ctors as
+126	Gap 1 closure-via-sig thunk uses per-call-site state slot (last-wins)
+127	selfhost emits negative-literal `var` initializer without type annotat
+128	Gap 1 thunk path over-applies to `sys.go` / `ThreadPool.submit`
+129	bare `Atomic.add(...)` statement misses the `_ =` discard (bootstrap T
+130	~~methodMutatesSelf marks some non-mutating methods `*self`~~ NOT-A-BU
+131	inline capture-lambda to a `sig` param triple-emits the anon struct
+135	non-deterministic source-path markers in emitted .zig
+136	`zebra file.zbr` run path captures child stdout instead of streaming
+139	selfhost doesn't fill default `cue init` params at omitting call sites
+143	bootstrap (`src/`) codegen lags the selfhost — 14 user-program emit di
+147	bootstrap (`src/`) miscompiles `examples/lisp.zbr` (3 emit divergences
+149	`.len` property on a HashMap `.fetch(k)` result (local-inited map) not
+154	`Tcp.serve` spawns a thread per connection, but no synchronization is 
 174	`str.indexOf` signature divergence ✅ RESOLVED (verified closed 2026-07
 175	`zebra.exe` panics `File.read error` when run outside the repo dir ✅ F
 179	selfhost-ahead constructs the bootstrap rejects — WON'T-FIX on bootstr
+180	bootstrap does not fill omitted constructor defaults on emit ⚠️ OPEN (
+181	selfhost `zebra.exe` cannot self-compile `selfhost/main.zbr` — RESOLVE
 183	single-quoted string literals with embedded `"` emit unescaped Zig (sy
 184	preamble `_zebra_list_reduce` parameter `init` shadows a user top-leve
 185	chained string methods miscompile — `s.concat(a).concat(b)` emits `_mc
@@ -102,6 +119,7 @@
 192	`^T` field assigned a value in `cue init` not auto-boxed (D4 `*T`-vs-`
 194	`Math.log` missing in the selfhost ✅ FIXED (2026-07-18, divergence bur
 197	SIMD `f32x8` islanded — cannot ingest computed / collection data ✅ FIX
+204	/205/206: bootstrap (LLVM) lags the selfhost on `except` — blocks GUI/
 208	`zebra run` hangs when the program prints more than ~4 KB ✅ FIXED 2026
 209	`uses_sqlite` false-positive disabled the fast run path + linked sqlit
 210	`zig build update-selfhost` can skip regeneration after a `.zbr`-only 
