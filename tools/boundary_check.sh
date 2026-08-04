@@ -227,9 +227,15 @@ fi
 
 echo
 echo "  uncovered by this suite (see docs/boundary_triage.md for the full list and why):"
-echo "    float extremes, min/max int overflow  — build-mode dependent; blocked on BUG-228"
-echo "    non-ASCII byte INDEXING (s[i])        — BUG-225, a KNOWN wrong behaviour"
-echo "                                             deliberately deferred to 1.x by §28e"
+echo "    integer overflow, division by zero    — THE REFERENCE DOES NOT DEFINE IT."
+echo "                                             Was blocked on BUG-228 (fixed 2026-08-03);"
+echo "                                             the real blocker turned out to be that"
+echo "                                             QUICKSTART documents no behaviour to assert."
+echo "                                             Decide + document first, then probe."
+echo "    float extremes (inf/nan/-0.0)         — same, plus float FORMATTING is a second"
+echo "                                             unpinned variable"
+echo "    str.charAt()                          — returns \`byte\`; comparing a byte to a char"
+echo "                                             is exactly what BUG-225 leaves undefined"
 
 echo
 # A run that measured NOTHING must not report success. `--only typo` would otherwise

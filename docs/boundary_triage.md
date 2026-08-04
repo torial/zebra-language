@@ -269,6 +269,72 @@ is solid where it is complicated and wrong where it is *unspecified* — which i
 argument for writing the spec down, and for a suite whose expectations come from the
 spec rather than from the implementation.
 
+## 3D. Round 2 — the non-ASCII byte dimension (2026-08-03): CLEAN
+
+**Result: 2 probes, 15 assertions, 0 findings.** Every hand-authored expectation matched the
+compiler on the first run. Suite went 21 -> 23 probes.
+
+**A clean round is a real result here, and it is worth saying why.** Everywhere else in this
+repo a green gate mostly means "nothing changed". In THIS suite the expectations were
+written from QUICKSTART before the compiler was invoked, so a pass means something stronger:
+**the implementation and the documentation independently agree.** Round 1 found three bugs
+(BUG-230/231/232) from twelve probes, so the method demonstrably finds things when they are
+there. It found nothing here.
+
+That is direct evidence for the decision Sean made the same day — `s[i]` is a byte, matching
+Go and Rust. The byte semantics are not merely tolerable; they are implemented
+**consistently** across indexing, slicing, `.len`, `.codePointCount()` and `.chars()`.
+
+**Why this dimension, and why now.** Not invented scope — §4 below listed it as uncovered
+with a specific blocker, and the blocker expired:
+
+| §4 said | what changed 2026-08-03 |
+|---|---|
+| non-ASCII indexing: *"a probe asserting today's byte behaviour would enshrine a known bug"* | Sean **decided** byte semantics are intended. Asserting them is now asserting INTENT |
+| charAt: *"BUG-223 is an open decision awaiting Sean"* | BUG-223 fixed 2026-07-31, documented `(int): byte` |
+| overflow: *"Do this dimension after BUG-228"* | BUG-228 fixed 2026-08-03 |
+
+### 3D.1 The finding that arrived BEFORE any probe ran
+
+**QUICKSTART does not document integer overflow or division-by-zero behaviour at all.** The
+only matches in the whole reference are user code raising its own `"division by zero"`.
+
+This suite's premise is that expectations come from the reference. An undefined behaviour
+therefore **cannot be probed without inventing the answer** — and a probe encoding an
+invented answer is worse than no probe, because it looks like a specification.
+
+So the overflow dimension stays uncovered, but the reason has changed and sharpened: it was
+recorded as *"build modes are in flux"*, which is now resolved. The real blocker is that
+**there is nothing written down to assert**. Deciding the semantics and documenting them is
+the prerequisite, not more probing. That is a docs/design task, not a testing one.
+
+### 3D.2 Two assertions deliberately shaped around what is NOT defined
+
+Recorded because the shape is the reusable part, not the rows:
+
+* **`s[i]` is asserted by COMPARISON, never by rendering.** It is typed `char` (BUG-225), so
+  interpolating it prints a *character*, not a number — and how a raw byte renders as text
+  is not defined anywhere. Every row is a length or an equality. The load-bearing row is
+  `s[1] == c'é'` asserted **false**: `s[1]` is é's lead byte, which is precisely the
+  documented divergence, asserted positively rather than lamented.
+* **`s[0..2]` is asserted by LENGTH only.** It crosses a codepoint, so it is invalid UTF-8,
+  and what invalid UTF-8 does when printed is undefined. The length is defined; the
+  rendering is not.
+
+**`charAt` was NOT probed**, despite being unblocked. It returns `byte`, and comparing a
+`byte` to a `char` is exactly the question BUG-225 leaves undefined — probing it would
+require inventing that answer as well. Added to §4 rather than quietly skipped.
+
+### 3D.3 What a clean round does NOT license
+
+**One dimension, two probes, fifteen assertions.** The quality audit's exit criterion — *"a
+round of new A3 probes finds nothing"* — is **not** met by this. It is one dimension of one
+round coming back clean. The dimensions with the strongest remaining prior are the ones §4
+still lists, and the honest reading is: the region we just probed is sound, and we have said
+nothing about the regions we have not.
+
+---
+
 ## 4. Not covered, and why — no silent caps
 
 The suite covers four dimensions completely rather than nine partially. What is **not**

@@ -185,7 +185,7 @@ run "registration"   "0 NEW"    python tools/registration_check.py
 run "oom-unreachable" "0 hazard" python tools/lint_oom_unreachable.py
 # A3: the boundary-value suite. The ONLY gate here whose expectations were written from
 # INTENT rather than recorded from behaviour — output_sweep is a golden baseline and so
-# can never find something that was wrong on day one. 21 probes, ~30s, and it found  <!-- doc-gen: 21 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' -->
+# can never find something that was wrong on day one. 23 probes, ~30s, and it found  <!-- doc-gen: 23 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' -->
 # BUG-230/231/232 on its first run. Probes marked @boundary-pending pin known-broken
 # behaviour deliberately and will FAIL when their ticket is fixed; that is the signal to
 # rewrite them, not to re-baseline.
