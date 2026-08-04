@@ -37,4 +37,15 @@ def main()
     assert ("ab" * 3) == "ababab", "str * int is repetition, not an arithmetic mistake"
     assert ("x" + "y") == "xy", "str + str is concatenation"
 
+    # Compound assignment on numerics must keep working. NOTE: Zebra has no `/=` -- that is
+    # a parse error, not a type error, and a guard written with it tests nothing.
+    var n = 1
+    n += 2
+    n -= 1
+    n *= 3
+    assert n == 6, "numeric compound assignment still works"
+    var fl = 1.5
+    fl += 0.5
+    assert fl > 1.9, "float compound assignment still works"
+
     print("bug253: OK")

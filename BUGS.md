@@ -81,6 +81,39 @@ arity, `return` without a value, SIMD operand types, `raise` details lacking `to
 unported because it guards a bootstrap-only feature, or reworded past the matcher. Gating it
 would demand a suppression list nobody maintains. It reports; a person decides.
 
+### Triage, 2026-08-04 — 9 probes run against BOTH compilers
+
+The matcher lists messages, not programs, so each candidate needed a minimal repro and a
+run against both compilers. `scratchpad/triage_253.py`.
+
+| candidate | verdict | action |
+|---|---|---|
+| bare `return` from `def f(): int` | real gap | ✅ **PORTED** |
+| `"x" - 1` (non-numeric arithmetic operand) | real gap | ✅ **PORTED** |
+| compound assignment on a non-numeric | real gap | ✅ **PORTED** |
+| `if x as n` on a non-optional | real gap | open |
+| destructuring arity mismatch | real gap | open |
+| destructuring a non-tuple | real gap | open |
+| tuple index out of bounds | real gap | open |
+| `unary '-' requires numeric type` | real gap | **blocked — see below** |
+| `arithmetic operands must have the same type` | *selfhost is RIGHT* | ❌ **DO NOT PORT** — BUG-254 |
+
+**Two candidates were BAD PROBES, not evidence.** `bitwise operator requires integer type`
+and `bitwise 'not' …` both came back "rejected by both" — but the error was
+`unexpected expression token: '&'`, a **parse** error. `&` and `~` are not Zebra syntax, so
+the probes never reached the TypeChecker. Recorded because the same trap bit a guard later
+in the session: a "guard" written with `/=` proved nothing, because Zebra has no `/=`
+either. **A probe using syntax the language lacks tests nothing and looks like a result.**
+
+**`unary '-'` is blocked for a structural reason, not effort.** `inferExpr` has NO
+`Expr.unary` arm at all — unary expressions fall through to unknown. Porting the check means
+ADDING inference for that node, which is a behaviour change well beyond restoring a
+diagnostic. Identical situation to `array_lit` under BUG-106. Both are one call away once
+the arm exists.
+
+**Hit rate so far: 7 real gaps of 9 probed**, one of which must not be ported. That ratio is
+why the tool reports candidates and does not gate.
+
 **Suggested order:** the ones a beginner hits first — arithmetic/type-mismatch operands, and
 `return` without a value. Each is a small port from a known-good reference implementation,
 and each converts a leaked Zig error into a Zebra one.

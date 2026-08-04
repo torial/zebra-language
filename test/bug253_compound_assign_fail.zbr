@@ -1,0 +1,9 @@
+# BUG-253 negative fixture: compound assignment on a non-numeric.
+# Was accepted by the selfhost front end and died in emitted Zig with
+# `invalid operands to binary expression: 'pointer' and 'pointer'`.
+# Verified before porting that `str +=` is not a supported idiom being taken away --
+# BOTH compilers already rejected it; this only replaces the message.
+def main()
+    var s = "a"
+    s += 1
+    print(s)

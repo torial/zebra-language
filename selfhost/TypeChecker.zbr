@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing StringPart, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause
+use Ast exposing StringPart, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -2452,6 +2452,40 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.bool_
                 else
                     return Type_.unknown_
+        # BUG-253. INFERENCE ONLY — no diagnostics in this change, deliberately.
+        #
+        # `inferExpr` had NO `Expr.unary` arm, so `-x`, `not x` and `~x` all fell through to
+        # the else and inferred as unknown. That is why the bootstrap's three unary
+        # diagnostics could not be ported: there was no type to check against.
+        #
+        # THE RISK HERE IS NOT THE ARM, IT IS WHAT ELSE STARTS SEEING A TYPE. A great deal
+        # of selfhost code is tuned around weak inference -- the BUG-218 note is explicit
+        # that erroring on `unknown` turns every inference gap into a false compile error.
+        # Once `not x` returns bool_ instead of unknown_, checks that were silently skipping
+        # unary expressions begin firing on them, and a regression would look like it came
+        # from somewhere else entirely.
+        #
+        # So the operand CHECKS (unary '-' requires numeric, `not` requires bool, bitwise
+        # requires integer) land in a SEPARATE commit. If something breaks, that separation
+        # is what tells us whether it was the inference or the new errors.
+        #
+        # Return types mirror src/TypeChecker.zig inferUnary exactly:
+        #   neg      operand type when numeric, else unknown_ (no claim without evidence)
+        #   not_     always bool_
+        #   bit_not  operand type, preserved
+        on Expr.unary as eun
+            var un_t: Type_ = inferExpr(eun.operand, ctx)
+            branch eun.op
+                on UnaryOp.neg
+                    if isNumeric(un_t)
+                        return un_t
+                    return Type_.unknown_
+                on UnaryOp.not_
+                    return Type_.bool_
+                on UnaryOp.bit_not
+                    return un_t
+                else
+                    return Type_.unknown_
         on Expr.index as ei
             # s[i] — element type depends on receiver type.
             var idx_recv: Type_ = inferExpr(ei.object, ctx)
@@ -2512,6 +2546,22 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 var elem_t: Type_ = inferExpr(ll.elems.at(0), ctx)
                 return Type_.list_(elem_t)
             return Type_.list_(Type_.unknown_)
+        # BUG-106's deferred half. `inferExpr` had no array_lit arm, so array literals fell
+        # through to the else and the homogeneity check could not reach them.
+        #
+        # Returns context_dependent, matching src/TypeChecker.zig exactly — NOT a concrete
+        # element type. That is what makes this arm low-risk: context_dependent is ABSTRACT,
+        # and the else-fallthrough it replaces was abstract too, so every downstream check
+        # (all of which skip abstract types) behaves exactly as before. The only new
+        # behaviour is the diagnostic.
+        #
+        # Note the deliberate asymmetry with list_lit above, which returns a concrete
+        # `list_(elem_t)`: the selfhost is MORE specific than the bootstrap there, and this
+        # arm does not disturb that.
+        on Expr.array_lit as al
+            if al.elems.len > 0
+                checkLiteralHomogeneity(al.elems, "array", ctx)
+            return Type_.context_dependent
         on Expr.set_lit as sl
             # §28f: {a, b, c} → Set(T); element type from annotation or first elem.
             if sl.elem_type != nil
@@ -2878,6 +2928,30 @@ def walkStmt(s: Stmt, ctx: InferCtx)
         on Stmt.assign as sasn
             walkExpr(sasn.target, ctx)
             walkExpr(sasn.value, ctx)
+            # BUG-253. Compound assignment (`+=`, `-=`, …) requires a numeric LHS. The
+            # bootstrap has diagnosed this since May 2026; the selfhost -- the compiler that
+            # ships -- did not, so `var s = "a"` then `s += "b"` reached codegen and the user
+            # read `invalid operands to binary expression: 'pointer' and 'pointer'` — Zig
+            # talking about generated code, for a plain type mistake.
+            #
+            # Verified before porting that `str +=` is not a supported idiom being taken
+            # away: BOTH compilers already reject it, this only replaces the message.
+            #
+            # KNOWN-bad types only (isArithmeticMistake), never unknown_ -- selfhost
+            # inference is weaker than the bootstrap's (§28a) and erroring on unknown would
+            # turn every inference gap into a false compile error.
+            var is_compound: bool = true
+            branch sasn.op
+                on AssignOp.assign
+                    is_compound = false
+                else
+                    pass
+            if is_compound
+                var lhs_t: Type_ = inferExpr(sasn.target, ctx)
+                if isArithmeticMistake(lhs_t)
+                    ctx.addErr(ctx.file, sasn.span.line, sasn.span.col,
+                               "compound assignment requires numeric type, got '"
+                               + typeTag(lhs_t) + "'")
         on Stmt.var_ as dv
             # Bind local name to declared type, or to init_expr's inferred type
             # when the declaration omits the type annotation.
