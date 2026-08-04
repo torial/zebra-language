@@ -272,6 +272,33 @@ python tools/doc_lint.py           # THE DOC-DRIFT GATE (static, instant, no bui
                                 #   anything inferred from a gate's SILENCE are NOT checked,
                                 #   and a clean run must not be read as "the docs are
                                 #   accurate". 0 = clean. QUICK tier.
+bash tools/release_mode_check.sh   # THE ONLY GATE THAT BUILDS WITH `--release` (FULL tier).
+                                #   Every other gate in every tier is DEBUG. That is exactly
+                                #   how BUG-228 survived 19 green gates for four days:
+                                #   `--release` switched the backend to LLVM (a visible
+                                #   20 MB -> 2 MB change) while the branch that emits the
+                                #   executable passed no optimize flag at all, so Zig
+                                #   defaulted to Debug. Everyone shipping with the flag
+                                #   shipped Debug believing otherwise — the flag's whole
+                                #   purpose. No gate could see it because none used it.
+                                #   Asserts (1) a --release build RUNS and prints the right
+                                #   answer — optimisation must not change behaviour, the
+                                #   half that matters most — and (2) the release binary is
+                                #   materially smaller than the same program built without.
+                                #   THE SIZE CHECK IS SELF-CALIBRATING: it compares two
+                                #   binaries built in the same run rather than a recorded
+                                #   number, because a hardcoded size rots on the next Zig
+                                #   release and then passes or fails for no reason. What it
+                                #   really asks is "did the -O flag reach zig", and the
+                                #   regression it exists to catch makes the two builds
+                                #   IDENTICAL in size. Verified red against that exact case
+                                #   (812 KB vs 812 KB -> FAIL). 25% margin, not an exact
+                                #   figure. Observed: 812 KB vs 19,072 KB.
+                                #   A SKIPPED size check is a FAILURE, not a pass — the
+                                #   first version could not find the binaries and printed
+                                #   "all checks pass" with its only real assertion never
+                                #   having run.
+                                #   Runs a full LLVM build → FULL tier, not QUICK.
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
                                 #   224 fenced `zebra` blocks existed and NOTHING verified
@@ -499,7 +526,7 @@ than "what do we know":
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 59 scripts | <!-- doc-gen: 59 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 60 scripts | <!-- doc-gen: 60 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 documents |
 | **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 46 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
 

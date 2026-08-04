@@ -6,6 +6,41 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-228: `--release` produced an UNOPTIMIZED binary — FIXED 2026-08-03
+- **Status:** Fixed. Gated by `tools/release_mode_check.sh` (FULL tier).
+- **Was:** `zebra --release` switched the backend to LLVM — a real, visible change (20 MB
+  to 2 MB) — but the branch that actually emits an executable passed **no optimize flag**,
+  so Zig defaulted to **Debug**. `release` was consumed in three places; the other two (the
+  node-addon build, and a `mode_c` branch carrying `-fno-emit-bin`) were fine. The ordinary
+  exe path was not among them. **Anyone shipping with the flag shipped Debug believing
+  otherwise** — the flag's entire purpose.
+- **Fix:** `-OReleaseFast` on that branch. **ReleaseFast, not ReleaseSafe**, per Sean's
+  2026-07-30 direction: make ReleaseFast good enough that ReleaseSafe does not buy much,
+  and settle it by A/B testing with users rather than by argument. That is the
+  Design-by-Contract position — contracts are checked in development and stripped for
+  release *because* they established the property, so a release build should not re-check
+  at runtime what the contracts already proved.
+- **ORDERING WAS LOAD-BEARING and the ticket said so.** The flag also enables
+  `unreachable`-is-UB, which A4 removed on 2026-07-30. Adding it earlier would have turned
+  an unoptimised-but-safe build directly into an optimised one with UB on OOM.
+  `tools/lint_oom_unreachable.py` was confirmed clean (0 hazards) **before** the line was
+  written.
+- **Verified by SIZE, not timing** (a shared machine makes timings worthless): the same
+  emitted `.zig` built three ways — `zebra --release` **813 KB**, reference Debug
+  **1872 KB**, reference `-OReleaseFast` **800 KB**. `--release` lands on the ReleaseFast
+  figure.
+- **Gated, because nothing else in any tier uses the flag.** `release_mode_check.sh`
+  asserts the release build RUNS and prints the right answer, and that its binary is
+  materially smaller than the same program built without. The size check is
+  **self-calibrating** — two binaries built in the same run, not a recorded number, since a
+  hardcoded size rots on the next Zig release. Verified RED against the exact regression it
+  guards (compare release against itself → `812 KB vs 812 KB → FAIL`).
+- **A skipped size check counts as a FAILURE.** The first version of the gate could not
+  locate either binary and printed "all checks pass" with its only real assertion never
+  having run — caught before it shipped.
+
+---
+
 ### BUG-247: a non-ASCII byte was reported as a character that is not in the source — FIXED 2026-08-03
 - **Status:** Fixed. Pinned by `test/bug247_nonascii_diag_test.zbr` (`smoke_run_fail`).
 - **Found by Sean**, 2026-08-03, reasoning from BUG-225: *"`Lexer.zbr:116` is `def peek():

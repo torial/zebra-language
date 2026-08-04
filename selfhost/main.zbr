@@ -2590,6 +2590,27 @@ def main()
             argv2.add("build-exe")
             argv2.add(zig_path)
             argv2.add("-femit-bin=" + llvm_exe)
+            # BUG-228. THIS is the branch that actually emits an executable, and it was the
+            # only one of the three `release` consumers that never passed an optimize flag —
+            # so `zebra --release` switched to LLVM (20 MB -> 2 MB, a real change) while Zig
+            # silently defaulted to **Debug**. Anyone shipping with the flag shipped an
+            # unoptimised build believing otherwise, which is the flag's entire purpose.
+            # The sibling `mode_c` branch above already had it; that one emits no binary.
+            #
+            # ReleaseFast rather than ReleaseSafe, per Sean's 2026-07-30 direction: make
+            # ReleaseFast good enough that ReleaseSafe does not buy much, and settle the
+            # question by A/B testing with users rather than by argument. That is the
+            # Design-by-Contract position — contracts are checked in development and
+            # stripped for release BECAUSE they established the property, so a release build
+            # should not re-check at runtime what the contracts already proved.
+            #
+            # ORDERING WAS LOAD-BEARING: this flag also turns on `unreachable`-is-UB, which
+            # A4 removed on 2026-07-30. Adding it earlier would have converted an
+            # unoptimised-but-safe build straight into an optimised one with UB on OOM.
+            # `tools/lint_oom_unreachable.py` was confirmed clean (0 hazards) before this
+            # line was written, and it stays in the QUICK tier to keep it that way.
+            if release
+                argv2.add("-OReleaseFast")
         if single_threaded
             argv2.add("-fsingle-threaded")
 

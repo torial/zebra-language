@@ -192,6 +192,10 @@ run "oom-unreachable" "0 hazard" python tools/lint_oom_unreachable.py
 run "boundary"       "0 fail"   bash tools/boundary_check.sh
 
 if [[ "$MODE" == "full" ]]; then
+    # THE ONLY GATE THAT BUILDS WITH --release. Every other gate here is Debug, which is
+    # how BUG-228 survived 19 green gates: `--release` switched backend but never passed
+    # an optimize flag, so users shipped Debug believing otherwise.
+    run "release-mode"   "all checks pass" bash tools/release_mode_check.sh
     run "compile_check" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh
     # The same corpus with the INLINE runtime. Since 2026-07-28 the split runtime is
     # the DEFAULT, so this is the mode that would otherwise go unwatched — and it is

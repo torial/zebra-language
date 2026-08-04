@@ -101,7 +101,7 @@ open for five days in a corpus of 426 files and 19 green gates.
 
 | bug | what happens |
 |---|---|
-| **BUG-228** | `zebra --release` produces an **unoptimized** binary |
+| ~~**BUG-228**~~ | ✅ **FIXED 2026-08-03** — `-OReleaseFast` now reaches the exe branch, and a gate builds with the flag |
 
 Everything a user distributes is built with this flag. Related: every gate we run is Debug,
 so `unreachable` (UB in ReleaseFast) is exercised by nobody — `lint_oom_unreachable` is a
@@ -192,7 +192,9 @@ damage lives:
 1. ~~**BUG-225, BUG-227, BUG-237 fixed**~~ → **BUG-227 fixed ✅**; BUG-237 reclassified;
    **BUG-225 needs a DECISION, not a fix** (§5c). Each Class 1 fix carries a
    **run-and-compare** fixture, because a compile check cannot witness this class.
-2. **BUG-228 fixed**, plus one gate that actually runs a `--release` build.
+2. ✅ **DONE 2026-08-03.** BUG-228 fixed (`-OReleaseFast` reached the exe branch), and
+   `tools/release_mode_check.sh` added to the FULL tier — **the only gate in any tier that
+   builds with `--release`**. Verified by size, not timing: 813 KB vs 1872 KB Debug.
 3. **The BUG-243 fifteen resolved** — fixed, or deleted with a reason. In particular the
    BUG-106/BUG-108 fixtures must actually run, or those fixes stay unverified.
 4. **`Tcp` and `Http` given real run fixtures**, on the `ws_echo_test` pattern (bounded
