@@ -22,9 +22,16 @@ SCOPE, AND WHY IT IS NARROW ON PURPOSE
 --------------------------------------
 TypeChecker only. `emitError` appears in exactly one bootstrap file (src/TypeChecker.zig,
 38 sites) and `addErr` in exactly one selfhost file (selfhost/TypeChecker.zbr, 21 sites),
-so the two sets are directly comparable. The Parser/Resolver phases report errors through
-different mechanisms in each compiler and would need separate, differently-shaped
-extraction; pretending otherwise would produce a number rather than a finding.
+so the two sets are directly comparable.
+
+THE PARSER PHASE IS NOT COMPARABLE, AND NOT BECAUSE OF EXTRACTION DIFFICULTY -- checked
+2026-08-04. The two compilers parse by different strategies: the bootstrap is Earley-based
+and reports a single `"parse error near token {}"`, while selfhost/Parser.zbr is recursive
+descent with 24 `.errorAt(` sites naming specific expectations. There is no like-for-like
+mapping to compute; a diff would report ~24 "missing from the bootstrap" and mean nothing.
+So the TypeChecker is not merely where this started -- it is the ONLY phase where this
+question is well-posed. Do not "extend" this tool to the parser without first deciding what
+parity would even mean there.
 
 MATCHING IS BY SKELETON, NOT BY EXACT TEXT
 ------------------------------------------
