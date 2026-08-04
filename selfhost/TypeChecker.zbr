@@ -1609,6 +1609,61 @@ def nilCheckedName(cond: Expr): str?
                     return nrid.name
     return nil
 
+# BUG-253. True iff `t` is a type that is DEFINITELY wrong as an operand of `-`, `*`, `/`.
+#
+# Deliberately the mirror image of isConcatMistake, and deliberately narrow for the same
+# reason its comment gives: fire only on a KNOWN-bad type. `unknown_` means inference never
+# reached the operand, and selfhost inference is weaker than the bootstrap's (§28a), so
+# erroring on unknown would convert every inference gap into a false compile error. That is
+# a worse failure than the gap: rejecting valid code costs more trust than missing a
+# diagnosis, and it is the exact mistake made and reverted on 2026-08-04 with the `with`
+# blocks.
+#
+# `char_` is excluded via isNumeric's exclusion, matching the concat rule, and `str` is
+# handled per-operator: `str * int` is legal repetition, so `mul` checks only the RIGHT
+# operand once the string case has been taken.
+# BUG-253. Report a definitely-non-numeric operand of `-`, `*`, `/`.
+#
+# NOT ported from the bootstrap: its "arithmetic operands must have the same type" rule,
+# which rejects `1 + 2.0`. Sean's call 2026-08-04 -- keep numeric mixing, because in a
+# Python-adjacent language forbidding it "would cause a lot of headaches". So the SELFHOST
+# is right there and the BOOTSTRAP is over-strict; see BUG-254. This helper checks only that
+# each operand is numeric AT ALL, which is unambiguous under either reading.
+#
+# Spans: `b.span` is zero for binary nodes (AstBuilder uses zspan() for 95 node kinds), so
+# fall back to the operands' borrowed spans exactly as the BUG-218 concat check does.
+def arithOperandCheck(lt: Type_, rt: Type_, b: ExprBinary, opname: str, ctx: InferCtx)
+    var bad: Type_? = nil
+    if isArithmeticMistake(lt)
+        bad = lt
+    else if isArithmeticMistake(rt)
+        bad = rt
+    if bad as bad_t
+        var eln: int = b.span.line
+        var ecl: int = b.span.col
+        if eln == 0
+            eln = exprSpanLine(b.left)
+            ecl = exprSpanCol(b.left)
+        if eln == 0
+            eln = exprSpanLine(b.right)
+            ecl = exprSpanCol(b.right)
+        ctx.addErr(ctx.file, eln, ecl,
+                   "arithmetic '" + opname + "' requires numeric operands, got '"
+                   + typeTag(bad_t) + "'")
+
+def isArithmeticMistake(t: Type_): bool
+    if isNumeric(t)
+        return false
+    if isAbstractType(t)
+        return false
+    branch t
+        on Type_.string_
+            return true
+        on Type_.bool_
+            return true
+        else
+            return false
+
 def isConcatMistake(t: Type_): bool
     if isNumeric(t)
         return true
@@ -2354,6 +2409,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         return rt
                     return Type_.unknown_
                 on BinaryOp.sub
+                    # BUG-253. `"x" - 1` used to pass the front end entirely and die in
+                    # emitted Zig with `incompatible types: 'str' and 'comptime_int'`.
+                    # The bootstrap has diagnosed this since May 2026; the selfhost -- the
+                    # compiler that ships -- did not. Only KNOWN-bad operand types fire; see
+                    # isArithmeticMistake for why unknown_ must not.
+                    arithOperandCheck(lt, rt, b, "-", ctx)
                     if isNumeric(lt)
                         return lt
                     return rt
@@ -2362,10 +2423,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     # genBinary's _str_repeat emit); else numeric.
                     if isString(lt)
                         return Type_.string_
+                    arithOperandCheck(lt, rt, b, "*", ctx)
                     if isNumeric(lt)
                         return lt
                     return rt
                 on BinaryOp.div
+                    arithOperandCheck(lt, rt, b, "/", ctx)
                     if isNumeric(lt)
                         return lt
                     return rt
@@ -2766,6 +2829,32 @@ def walkStmt(s: Stmt, ctx: InferCtx)
         on Stmt.return_ as sr
             if sr.value != nil
                 walkExpr(sr.value!, ctx)
+            else
+                # BUG-253. A bare `return` from a function declared to return something.
+                # The bootstrap has diagnosed this since May 2026 (src/TypeChecker.zig
+                # checkReturn); the selfhost -- the compiler that ships -- did not, so
+                # `def f(): int` with a bare `return` passed the front end and died in
+                # emitted Zig with `expected type 'i64', found 'void'`: Zig's vocabulary,
+                # about generated code, for a mistake nameable in one line here.
+                #
+                # `current_return_type` is nil for a void method (withReturnType is only
+                # called when a return type was DECLARED), so a non-nil value already means
+                # non-void. The explicit void_ arm still guards `def f(): void`, which
+                # declares one.
+                #
+                # Abstract types are skipped for the same reason the bootstrap skips them:
+                # an unresolved/context-dependent return type means we do not know enough to
+                # accuse anyone, and a false rejection is worse than a missing check.
+                if ctx.current_return_type as crt
+                    var ret_is_void: bool = false
+                    branch crt
+                        on Type_.void_
+                            ret_is_void = true
+                        else
+                            pass
+                    if not ret_is_void and not isAbstractType(crt)
+                        ctx.addErr(ctx.file, sr.span.line, sr.span.col,
+                                   "return without value in non-void method")
         on Stmt.assert_ as sa
             walkExpr(sa.cond, ctx)
             if sa.message != nil

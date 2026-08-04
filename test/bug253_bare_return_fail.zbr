@@ -1,0 +1,9 @@
+# BUG-253 negative fixture: a bare `return` from a value-returning function.
+# Its own file because a rejection aborts the run — bundling negatives hides all but the
+# first. Was accepted by the selfhost front end and died in emitted Zig with
+# `expected type 'i64', found 'void'`.
+def f(): int
+    return
+
+def main()
+    print(f().toString())

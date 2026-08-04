@@ -1,0 +1,7 @@
+# BUG-253 negative fixture: a definitely-non-numeric operand of `-`.
+# Was accepted by the selfhost front end and died in emitted Zig with
+# `incompatible types: 'str' and 'comptime_int'`.
+def main()
+    var a = "x"
+    var b = a - 1
+    print(b.toString())

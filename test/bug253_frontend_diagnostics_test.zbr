@@ -1,0 +1,40 @@
+# BUG-253 regression fixture — the POSITIVE half of two ported diagnostics.
+#
+# Two checks were ported from the bootstrap on 2026-08-04, each of which the selfhost (the
+# compiler that SHIPS) had been missing:
+#   * a bare `return` from a function declared to return something
+#   * a definitely-non-numeric operand of `-`, `*`, `/`
+#
+# The negative cases live in their own files, because a rejection aborts the run and would
+# hide every later case. THIS file pins what must KEEP WORKING — which is where the risk
+# actually is. Both checks reject valid code if written carelessly, and rejecting valid code
+# costs more trust than missing a diagnosis.
+def voidBare()
+    print("void-bare")
+    return
+
+def voidDeclared(): void
+    return
+
+def valued(): int
+    return 7
+
+def main()
+    voidBare()
+    voidDeclared()
+    assert valued() == 7, "explicit return from a value-returning function"
+
+    # SEAN'S RULE (2026-08-04): mixed numeric arithmetic STAYS. The bootstrap rejects this
+    # -- it demands exact type equality -- and that is the bootstrap being wrong, not the
+    # selfhost. See BUG-254. Forbidding it "would cause a lot of headaches for something in
+    # the python-like space of languages."
+    var a: int = 1
+    var b: float = 2.0
+    assert (a + b) > 2.9, "int + float still compiles and computes"
+    assert (1 + 2.0) > 2.9, "literal numeric mixing still compiles"
+
+    # The arithmetic check must not touch the legal string operators.
+    assert ("ab" * 3) == "ababab", "str * int is repetition, not an arithmetic mistake"
+    assert ("x" + "y") == "xy", "str + str is concatenation"
+
+    print("bug253: OK")

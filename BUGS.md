@@ -1,9 +1,42 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-253. Next new bug: BUG-254.**
+**Last bug number generated: BUG-254. Next new bug: BUG-255.**
 
 ---
+
+### BUG-254: the BOOTSTRAP is over-strict on mixed numeric arithmetic — `1 + 2.0` is rejected — OPEN
+
+**Found 2026-08-04** while porting BUG-253's arithmetic diagnostics, and notable because it
+runs the OTHER WAY: here the **selfhost is right and the bootstrap is wrong**.
+
+```zebra
+var a: int = 1
+var b: float = 2.0
+var c = a + b        # bootstrap: error: arithmetic operands must have the same type: 'int' vs 'float'
+var d = 1 + 2.0      # bootstrap: same error
+```
+The selfhost accepts both. `src/TypeChecker.zig` requires `Type.eql(lt, rt)` — exact
+equality — for `+ - * / // % **`.
+
+**Sean's decision, 2026-08-04:** *"I'd prefer to keep `1 + 2.0` … I think not supporting it
+would cause a lot of headaches for something in the python-like space of languages."* So the
+permissive behaviour is the intended semantic and the strict rule is the defect.
+
+**It also contradicts the language's own stated principle.** QUICKSTART's untyped-numeric
+rule is why `[1, 2.0, 3]` is a legal list literal — `int` and `float` are mutually
+assignable. Arithmetic demanding exact equality is inconsistent with that.
+
+**Consequence for BUG-253's triage, and this is the useful part:** "present in the bootstrap,
+missing from the selfhost" is **NOT automatically a defect**. This is the first confirmed
+case where the missing diagnostic *should* stay missing. `tools/diagnostic_parity.py`
+reports candidates rather than gating precisely because this judgement cannot be automated —
+and this ticket is the evidence that the caution was warranted rather than decorative.
+
+**Fix:** relax `src/TypeChecker.zig` to mutual assignability (the rule `isAssignable`
+already implements, and which the list-literal check uses) instead of `Type.eql`. Low
+urgency — the bootstrap is the regen authority, not the shipping compiler, so this affects
+`--zig-backend` users and the GUI paths rather than ordinary builds.
 
 ### BUG-253: the selfhost TypeChecker has roughly HALF the bootstrap's diagnostics — OPEN (umbrella)
 

@@ -1194,6 +1194,12 @@ smoke_run_bounded test/http_echo_test.zbr "http_test: OK" 120
 # check (the bootstrap has had one since May 2026).
 smoke_tc_fail test/bug106_heterogeneous_list_test.zbr "heterogeneous element types"
 
+# BUG-253: two diagnostics ported from the bootstrap. Negatives in separate files -- a
+# rejection aborts the run, so bundling them would hide all but the first.
+smoke_tc_fail test/bug253_bare_return_fail.zbr "return without value in non-void method"
+smoke_tc_fail test/bug253_arith_operand_fail.zbr "requires numeric operands"
+smoke_run     test/bug253_frontend_diagnostics_test.zbr "bug253: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"
