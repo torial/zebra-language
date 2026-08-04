@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-246. Next new bug: BUG-247.**
+**Last bug number generated: BUG-247. Next new bug: BUG-248.**
 
 ---
 

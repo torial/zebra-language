@@ -1,0 +1,16 @@
+# BUG-247 regression fixture — a non-ASCII byte must NOT be reported as a character.
+#
+# The identifier below is `café`. Zebra identifiers are ASCII-only, so this is correctly
+# REJECTED — that part was never the bug and there is no silent corruption here.
+#
+# The bug was the MESSAGE. `lexErr` receives `src[pos]`, a raw byte typed `char` (BUG-225),
+# and rendered it with `.toString()` — widening lead byte 0xC3 to U+00C3 and reporting
+#     unexpected character 'Ã'
+# for a source file containing no `Ã`. The column was right; the character was fiction, and
+# it sends a reader looking for a character they never typed.
+#
+# Registered with smoke_run_fail, which also asserts no `.zig:` path leaks into the
+# diagnostic — this must stay a Zebra error, not a Zig one.
+def main()
+    var café = 1
+    print(café.toString())

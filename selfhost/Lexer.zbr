@@ -106,6 +106,19 @@ class Lexer
     def lexErr(b: char, ln: int, cl: int): str
         if b == c'\r'
             return ln.toString() + ":" + cl.toString() + ": unexpected '\\r' (CRLF line endings — convert to LF)"
+        # BUG-247. A byte above 0x7F is part of a multi-byte UTF-8 sequence, NOT a
+        # character. `b` here is `src[pos]` — a raw byte typed `char` (BUG-225) — so
+        # `b.toString()` widens it to a codepoint and names a character that IS NOT IN THE
+        # SOURCE FILE: someone who typed `é` was told the problem was `Ã`, its lead byte
+        # 0xC3 read as U+00C3. The column was right and the character was fiction.
+        # The bootstrap already avoids this (it reports `(byte 0xC3)`), despite the comment
+        # above claiming this mirrors it. No char->int conversion exists anywhere in the
+        # selfhost — every classification is a range comparison — so rather than introduce
+        # one for a diagnostic, this says what is wrong and what to do instead.
+        # Compared against 0x7F, not 0x80: `c'\x80'` is not a writable char literal,
+        # because a continuation byte is not a valid Unicode scalar.
+        if b > c'\x7F'
+            return ln.toString() + ":" + cl.toString() + ": unexpected non-ASCII byte — identifiers and operators must be ASCII (non-ASCII text is fine inside a string literal or a comment)"
         return ln.toString() + ":" + cl.toString() + ": unexpected character '" + b.toString() + "'"
 
     # -- Low-level helpers ---------------------------------------------------

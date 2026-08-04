@@ -1166,6 +1166,11 @@ smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
 # on a single-char `seps` and a fixture using "," would have passed under the bug.
 smoke_run test/bug227_tokenize_any_test.zbr "bug227: OK"
 
+# BUG-247. Uses smoke_run_fail, which additionally asserts no `.zig:` path leaks -- this
+# must stay a ZEBRA diagnostic. The fixture's identifier is deliberately non-ASCII; the
+# rejection was never the bug, the fictional character in the message was.
+smoke_run_fail test/bug247_nonascii_diag_test.zbr "unexpected non-ASCII byte"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

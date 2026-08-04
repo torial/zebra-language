@@ -6,6 +6,47 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-247: a non-ASCII byte was reported as a character that is not in the source — FIXED 2026-08-03
+- **Status:** Fixed. Pinned by `test/bug247_nonascii_diag_test.zbr` (`smoke_run_fail`).
+- **Found by Sean**, 2026-08-03, reasoning from BUG-225: *"`Lexer.zbr:116` is `def peek():
+  char` returning `src[pos]` — if we had unicode source files, we'd run into a risk here."*
+  The hypothesis was right; the shape was not what either of us expected.
+- **What was NOT wrong** (established first, by experiment):
+
+  | case | result |
+  |---|---|
+  | non-ASCII in a **string literal** | ✅ `"café naïve"` round-trips, 12 bytes |
+  | non-ASCII in a **comment** | ✅ works |
+  | non-ASCII **char literal** `c'é'` | ✅ works, prints `é` |
+  | non-ASCII **identifier** | ❌ rejected — correct, Zebra identifiers are ASCII |
+
+  **There is no silent corruption of Unicode source.** The lexer copies bytes through
+  strings and comments transparently, and every classification is an ASCII range
+  comparison, so a high byte simply matches nothing and is rejected.
+- **Was:** the rejection MESSAGE. `lexErr` renders `src[pos]` — a raw byte typed `char`
+  (BUG-225's pathology) — with `.toString()`, widening lead byte `0xC3` to U+00C3. A user
+  who typed `café` was told:
+
+      2:12: unexpected character 'Ã'
+
+  The column was right and **the character was fiction** — there is no `Ã` in the file.
+  A reader then hunts for a character they never typed.
+- **The bootstrap already had this right** (`unexpected character (byte 0xC3)`), despite
+  the selfhost's comment claiming it "Mirrors src/Tokenizer.zig's diag handling". A
+  selfhost-lags-bootstrap divergence in diagnostic quality.
+- **Fix:** bytes above 0x7F get a message that is honest AND actionable —
+  `unexpected non-ASCII byte — identifiers and operators must be ASCII (non-ASCII text is
+  fine inside a string literal or a comment)`. No char→int conversion was introduced:
+  none exists anywhere in the selfhost (every classification is a range comparison), and
+  adding one for a diagnostic would be the wrong trade. Compared against `0x7F` rather
+  than `0x80` because **`c''` is not a writable char literal** — a UTF-8 continuation
+  byte is not a valid Unicode scalar.
+- **Relationship to BUG-225:** this is that bug surfacing in the compiler's own UX. Fixing
+  it does not fix BUG-225, which remains a language design decision (§5c of the quality
+  audit) — but it removes the one place where the incoherence actively misleads a user.
+
+---
+
 ### BUG-227: `str.tokenize(seps)` split on the SEQUENCE, not on any character — FIXED 2026-08-03
 - **Status:** Fixed. Pinned by `test/bug227_tokenize_any_test.zbr`.
 - **Was:** codegen emitted `std.mem.tokenizeSequence`, so `"a,b;c".tokenize(",;")` returned
