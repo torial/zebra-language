@@ -124,7 +124,15 @@ COUNTER = re.compile(r'#\s*(error|fails|compile error|does not compile|WRONG|rej
                      r'#\s*(avoid|do not|don.t)\b', re.I)
 ARTIFACT = re.compile(r"undefined name|unexpected end of input|"
                       r"must have at least one variant|unknown type|not found|"
-                      r"no such module|undeclared|cannot find", re.I)
+                      r"no such module|undeclared|cannot find|"
+                      # A METHOD EXCERPT. Docs routinely show a single `def` lifted out of
+                      # its class -- STYLE_GUIDE's `def withOwner(...)  var c = this except`
+                      # is one -- where `this` is perfectly valid in context. Compiled
+                      # standalone it is outside a class by construction. Same category as
+                      # "undefined name": the fragment refers to context the prose supplies.
+                      # Added 2026-08-04, when BUG-248 gave the compiler this diagnostic for
+                      # the first time and it immediately surfaced here.
+                      r"used outside a class", re.I)
 
 
 def assemble(body):

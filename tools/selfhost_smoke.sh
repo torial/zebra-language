@@ -1171,6 +1171,24 @@ smoke_run test/bug227_tokenize_any_test.zbr "bug227: OK"
 # rejection was never the bug, the fictional character in the message was.
 smoke_run_fail test/bug247_nonascii_diag_test.zbr "unexpected non-ASCII byte"
 
+# BUG-248. This fixture existed since May 2026 and had NEVER RUN (BUG-243) -- so nobody
+# noticed that BUG-108's fix was not merely unverified but ABSENT from the selfhost, which
+# is the compiler that ships. It is a NEGATIVE test: `var x = this` at top level must be
+# rejected by the FRONT END, not by zig complaining about generated code.
+smoke_tc_fail test/bug108_this_outside_class_test.zbr "'this' used outside a class/struct method or 'with' block"
+
+# BUG-248's POSITIVE half. The negative fixture above proves the check FIRES; this proves it
+# does not over-fire on bare `this`, implicit `.field`, or `this except`. Both halves matter:
+# when the check first landed it appeared to reject `with` blocks and the reflex was to
+# weaken it -- wrong, because the BOOTSTRAP rejects the same program. Weakening on the
+# strength of one probe would have gutted the fix while leaving it looking present.
+smoke_run test/bug248_this_check_scope_test.zbr "bug248: OK"
+
+# Http gets REAL run coverage at last. tcp_echo_test.zbr is deliberately NOT registered
+# alongside it: it deadlocks (BUG-251), and a hanging fixture in the QUICK tier is worse
+# than an uncovered namespace -- it teaches people to re-run gates until they pass.
+smoke_run_bounded test/http_echo_test.zbr "http_test: OK" 120
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

@@ -1,9 +1,147 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-247. Next new bug: BUG-248.**
+**Last bug number generated: BUG-251. Next new bug: BUG-252.**
 
 ---
+
+### BUG-251: a request/response `Tcp` server DEADLOCKS — `conn.read()` appears to block until EOF — OPEN
+
+**Found 2026-08-04** while giving `Tcp` its first real run fixture. The fixture had to be
+**withdrawn rather than registered**, because a hanging fixture in the QUICK tier is worse
+than an uncovered namespace: it teaches people to re-run gates until they pass.
+
+**Repro** (server reads first, then replies — the ordinary request/response shape):
+
+```zebra
+def echoHandler(conn: TcpConn)
+    var data = conn.read()          # <- blocks
+    conn.write("ECHO:" + data)
+    conn.close()
+
+def main()
+    sys.go(def()
+        Tcp.serve(19921, echoHandler)
+    )
+    var c = Tcp.connect("127.0.0.1", 19921)
+    if c as conn
+        conn.write("ping")
+        var reply = conn.read()     # <- and so does this
+        conn.close()
+```
+Hangs. Killed at 200 s.
+
+**Isolated — both halves work SEPARATELY**, which is what makes the diagnosis specific:
+
+| probe | result |
+|---|---|
+| client connects, no read | ✅ `connected=true`, exits 0 |
+| server WRITES first, client reads | ✅ `got=SERVER-HELLO`, exits 0 |
+| **server READS first, then replies** | ❌ **hangs** |
+
+**Reading:** `TcpConn.read()` appears to read **to EOF** rather than returning the first
+available chunk. A server that reads before replying therefore waits for the client to
+close, while the client waits for the reply — a deadlock, not a slow path. If that is the
+intended semantic then `Tcp` cannot express request/response at all without a framing or
+half-close mechanism, and **that is a design gap rather than an implementation bug**.
+
+**Why this went unnoticed:** `test/tcp_serve_test.zbr` is the only Tcp fixture and its
+`main` merely prints a string — the `Tcp.serve` call sits in a `startServer()` that nothing
+calls (quality audit §1). `stdlib_run_coverage` counts Tcp as covered on that basis. It has
+never opened a socket.
+
+**Needed:** a decision on `read()`'s contract (chunk vs to-EOF), then either a documented
+framing idiom or a `readSome`/`readLine`. Until then Tcp has no honest run coverage.
+
+---
+
+### BUG-250: `HttpResponse(status, body)` — the 2-arg constructor fails a full compile — OPEN
+
+**Found 2026-08-04**, writing the Http run fixture.
+
+```zebra
+var a = HttpResponse(200, "x")     # error: type 'type' not a function
+var b = HttpResponse.ok("x")       # fine
+```
+
+`-c` **accepts both**; only a full compile rejects the constructor form — so this is also an
+instance of the front-end gap measured in `tools/frontend_gap.py` (23 of 54 failures are
+invisible to `-c`).
+
+**It is not hypothetical: `test/http_serve_test.zbr` uses the broken form**, in a
+`handleRequest` that returns `HttpResponse(200, "Hello, World!")`.
+
+QUICKSTART documents the factories (`HttpResponse.ok(body)` / `.notFound(body)`) and those
+work; the 2-arg constructor is documented nowhere but is what the corpus reached for, which
+suggests it is expected to exist. **Decide: implement it, or remove it from the corpus and
+say the factories are the API.**
+
+The new `test/http_echo_test.zbr` uses the factory form and passes 5/5.
+
+
+### BUG-249: `Expr.this_` (and friends) carry a PLACEHOLDER span, so diagnostics report 0:0 — OPEN
+
+**Found 2026-08-04** while porting BUG-108's check (BUG-248). The selfhost reports
+
+    test/bug108_this_outside_class_test.zbr:0:0: error: 'this' used outside a class/…
+
+where the bootstrap reports `6:13`. The message is right; the location is a placeholder.
+
+**Cause.** `AstBuilder.zbr` builds these nodes with `zspan()`, which is literally
+`Span(0, 0, 0, 0)`. It has no choice: `PNode.expr_this` is a **payload-less** parser
+variant, so the token position never reaches the AST. Same for `expr_nil` / `expr_result`
+and any other payload-less PNode.
+
+**Fix is structural, not local:** give the PNode variant a position payload and thread it
+through, which touches every construction and match site for that variant. Related to
+**BUG-121** (TC diagnostics report col 0) but distinct — this is line AND col, and the
+cause is upstream in the parser rather than in span resolution.
+
+**Not urgent, but it caps diagnostic quality.** Every future front-end check anchored on one
+of these nodes inherits the 0:0. That matters more now than it did, because the whole
+front-end-gap programme (`tools/frontend_gap.py`) is about MOVING checks inward — and a
+check that cannot say where is a check delivered half-finished.
+
+---
+
+### BUG-106 (front-end check) — CONFLICT: the fixture serves two incompatible roles — NEEDS A DECISION
+
+**Not a new defect. A collision, surfaced 2026-08-04**, and recorded because acting on it
+without a decision would silently break a gate.
+
+The selfhost does **not** implement BUG-106's heterogeneous-literal check. Verified:
+
+| compiler | `var xs = [1, "two", 3]` |
+|---|---|
+| bootstrap | ✅ `error: list literal has heterogeneous element types: 'String' is not compatible with 'int'` |
+| **selfhost** (`zebra.exe`, what ships) | ❌ `-c` exits **0**; fails later inside emitted Zig |
+
+By the selfhost-equivalence rule that gap should simply be closed — as BUG-248 was, the
+same night, for BUG-108. **It cannot be, without a decision**, because
+`test/bug106_heterogeneous_list_test.zbr` is simultaneously:
+
+1. **the regression fixture for BUG-106** — it must be REJECTED by the front end; and
+2. **one of three asymmetry witnesses** named in `selfhost/main.zbr` and required by
+   `tools/check_mode_check.sh` — it must PASS `-c` and fail `--check-full`, proving the
+   documented `-c` limitation is real.
+
+Those are contradictory. Porting the check satisfies (1) and destroys (2) for this file.
+
+**It is survivable but not free:** `check_mode_check` fails only when *no* witness
+survives, and there are three, so fixing this leaves two. What it costs is a **witness**,
+and the comment in `selfhost/main.zbr` naming all three would go stale with it.
+
+**The options:**
+- **a.** Port the check; retire this file as a witness; pick a replacement witness first so
+  the set never drops below two; update the `main.zbr` comment.
+- **b.** Port the check and split the file: a new negative fixture for the check, and leave
+  a *different* construct here as the witness.
+- **c.** Leave the gap, and record explicitly that the selfhost does not implement it — the
+  worst option, because the two compilers then disagree on what is a valid program.
+
+**Recommend (b)** — a witness should not be load-bearing for a bug fixture, and the
+coupling is what made this invisible. Sean's call.
+
 
 ### BUG-246: `Atomic(T).add()` inside a `capture` block mis-resolves to `.append()` — OPEN
 

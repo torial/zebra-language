@@ -4689,6 +4689,27 @@ Property holds. No code change needed.
 
 ---
 
+### BUG-248: BUG-108's check was ABSENT from the selfhost, not merely unverified — FIXED 2026-08-04
+- **Status:** Fixed. Pinned by `smoke_tc_fail test/bug108_this_outside_class_test.zbr`.
+- **How it was found:** BUG-243 recorded that `bug108_this_outside_class_test.zbr` had
+  **never run**. Running it showed the fix was not just unverified — it **was not there**.
+- **Was:** the selfhost's `Expr.this_` branch returned `Type_.unknown_` in silence when
+  `current_class` was empty. That is exactly the pre-BUG-108 behaviour the bootstrap fixed
+  in May 2026. Since `zebra.exe` **is** the selfhost, the shipping compiler had no check:
+  `var x = this` at top level passed `-c` cleanly and then failed inside emitted Zig with
+  `use of undeclared identifier 'self'` — a Zig error, about generated code, for a mistake
+  the front end could name exactly.
+- **Fix:** emit the diagnostic, message copied **verbatim** from `src/TypeChecker.zig` so
+  both compilers report identically (selfhost-equivalence rule).
+- **Known shortfall, filed not hidden:** the span is `0:0` where the bootstrap says `6:13`.
+  `Expr.this_` carries `zspan()`, the placeholder `Span(0,0,0,0)`, because
+  `PNode.expr_this` is payload-less. Structural to fix — **BUG-249**.
+- **The general lesson:** "regression fixture exists" and "regression fixture runs" are
+  different claims, and only the second is worth anything. This one existed for three
+  months while the thing it guarded was missing.
+
+---
+
 ### BUG-247: a non-ASCII byte was reported as a character that is not in the source — FIXED 2026-08-03
 - **Status:** Fixed. Pinned by `test/bug247_nonascii_diag_test.zbr` (`smoke_run_fail`).
 - **Found by Sean**, 2026-08-03, reasoning from BUG-225: *"`Lexer.zbr:116` is `def peek():

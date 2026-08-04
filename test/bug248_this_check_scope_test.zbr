@@ -1,0 +1,56 @@
+# BUG-248 regression fixture — the POSITIVE half.
+#
+# `test/bug108_this_outside_class_test.zbr` pins that `this` outside a class is REJECTED.
+# This file pins the other side: that the check does not OVER-fire on the places `this` is
+# legitimate. Both are needed, and this one exists because the over-firing case is where I
+# nearly went wrong.
+#
+# When the check first landed it appeared to reject `with` blocks, and the reflex was to
+# weaken it. That reflex was wrong -- the BOOTSTRAP rejects the same program, so `with x`
+# outside a class method is unsupported by both compilers and the selfhost was simply
+# agreeing with the reference. Had the check been weakened on the strength of one probe,
+# the fix would have been silently gutted while still looking present.
+#
+# So: if someone later reports this check over-firing, this fixture is the record of which
+# cases must keep working. Add to it rather than weakening the check.
+class Config
+    var owner: str
+    var level: int
+
+    cue init(o: str, l: int)
+        owner = o
+        level = l
+
+    # `this` as a bare expression inside a method.
+    def self_(): Config
+        return this
+
+    # implicit `.field` -- AstBuilder desugars this to Expr.member(Expr.this_(), ...),
+    # so it travels the SAME code path as a bare `this` and would break identically.
+    def describe(): str
+        return .owner + "/" + .level.toString()
+
+# `this except` is the immutable-update idiom for STRUCTS (QUICKSTART), and it is built on
+# Expr.this_ too, so it must keep working. Deliberately a struct, not the class above: on a
+# class the same expression fails with `expected type '*T', found 'T'`, because a class
+# receiver is pointer-typed. That is out of scope here -- this fixture guards the `this`
+# CHECK, not the except/class interaction.
+struct Point
+    var x: int
+    var y: int
+    def movedX(nx: int): Point
+        return this except
+            x = nx
+
+def main()
+    var c = Config("alice", 3)
+    assert c.describe() == "alice/3", "implicit .field access inside a method"
+    assert c.self_().owner == "alice", "bare `this` inside a method"
+
+    var p = Point(x: 1, y: 2)
+    var q = p.movedX(9)
+    assert q.x == 9, "`this except` produced an updated copy"
+    assert q.y == 2, "`this except` carried the untouched field over"
+    assert p.x == 1, "`this except` did not mutate the original"
+
+    print("bug248: OK")

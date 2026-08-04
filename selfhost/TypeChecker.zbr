@@ -1693,12 +1693,36 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             # resolves the inner type from context (e.g. the declared field type).
             var inner_unk: Type_ = Type_.context_dependent
             return Type_.optional(inner_unk)
-        on Expr.this_ as _
+        on Expr.this_ as this_sp
             # `extend T` on a primitive: `this` is that primitive (str/int/…),
             # not a named class — see self_type_override.
             if ctx.self_type_override as _sto
                 return _sto
             if ctx.current_class == ""
+                # BUG-248. This branch used to `return Type_.unknown_` in silence — which
+                # is EXACTLY the pre-BUG-108 behaviour the bootstrap fixed in May 2026 and
+                # the selfhost never received. `zebra.exe` IS the selfhost, so the shipping
+                # compiler had no check at all: `var x = this` at top level passed `-c`
+                # cleanly and then failed inside emitted Zig with `use of undeclared
+                # identifier 'self'` — a Zig error, about generated code, for a mistake the
+                # front end could name precisely.
+                #
+                # Found 2026-08-04 because BUG-243 flagged that this bug's regression
+                # fixture had NEVER RUN. It had not merely gone unverified; the fix was
+                # absent. Message copied verbatim from src/TypeChecker.zig so the two
+                # compilers report identically (the selfhost-equivalence rule).
+                #
+                # THE SPAN IS 0:0 AND THAT IS A KNOWN SHORTFALL, not an oversight. The
+                # bootstrap reports 6:13. `Expr.this_` carries `zspan()` — the literal
+                # placeholder `Span(0,0,0,0)` — because `PNode.expr_this` is payload-less,
+                # so the parser's token position never reaches the AST. Fixing that means
+                # adding a payload to the PNode variant and touching every construction and
+                # match site: a structural change, filed as BUG-249 rather than smuggled in
+                # here. A correct diagnosis with a weak location still beats what this did
+                # before, which was to emit invalid Zig and let the user read
+                # `use of undeclared identifier 'self'` about code they never wrote.
+                ctx.addErr(ctx.file, this_sp.line, this_sp.col,
+                           "'this' used outside a class/struct method or 'with' block")
                 return Type_.unknown_
             return Type_.named(ctx.current_class)
         on Expr.result_ as _
@@ -2780,6 +2804,21 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             walkStmt(sd.stmt, ctx)
         on Stmt.with_ as sw2
             walkExpr(sw2.target, ctx)
+            # BUG-248, and a wrong turn worth recording. A first attempt seeded
+            # self_type_override from the `with` target here, on the theory that the new
+            # `this`-outside-class diagnostic was falsely rejecting `with` blocks written
+            # outside a class method.
+            #
+            # It is not a false rejection. THE BOOTSTRAP REJECTS THE SAME PROGRAM:
+            #     a.zbr:8:15: error: 'this' used outside a class/struct method or 'with' block
+            # `with x` at top level is unsupported by BOTH compilers, and the selfhost now
+            # agrees with the reference. Seeding the type here made the selfhost MORE
+            # PERMISSIVE than the bootstrap — a divergence in the wrong direction — and the
+            # program then died in emitted Zig with `use of undeclared identifier 'self'`,
+            # which is the failure the diagnostic exists to replace.
+            #
+            # The lesson is the method, not the outcome: "my new check rejects something"
+            # is not evidence the check is wrong. Ask the reference implementation first.
             walkStmts(sw2.stmts, ctx)
         on Stmt.in_scope as si2
             walkExpr(si2.expr, ctx)

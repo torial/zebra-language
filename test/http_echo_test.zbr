@@ -1,0 +1,44 @@
+# Http — a REAL client+server round trip, bounded so it can never hang a gate.
+#
+# `test/http_serve_test.zbr` is a compile smoke and says so in its own comment ("exercises
+# Http.serve codegen path without starting a server") — its `startServer()` is never called.
+# It nonetheless makes `stdlib_run_coverage` count Http as covered. This file is the real
+# exercise; see docs/QUALITY_AUDIT_2026-08-03.md §1 for why that distinction matters.
+#
+# Bounded retry rather than a fixed sleep, and reachability asserted separately from the
+# payload — same reasoning as tcp_echo_test.zbr and ws_echo_test.zbr.
+#
+# USES THE FACTORY FORM DELIBERATELY. `HttpResponse(200, body)` -- the 2-arg
+# constructor that test/http_serve_test.zbr uses -- passes `-c` and then FAILS a full
+# compile with `type 'type' not a function`. Filed as BUG-250. `HttpResponse.ok()` /
+# `.notFound()` are the documented factories and they work.
+def handleRequest(req: HttpRequest): HttpResponse
+    if req.path == "/hello"
+        return HttpResponse.ok("hello-from-zebra")
+    return HttpResponse.notFound("not found")
+
+def main()
+    sys.go(def()
+        Http.serve(19922, handleRequest)
+    )
+
+    var body: str = ""
+    var status: int = 0
+    var attempts: int = 0
+    var reached: bool = false
+
+    while attempts < 20 and not reached
+        var r = Http.get("http://127.0.0.1:19922/hello")
+        if r as resp
+            reached = true
+            status = resp.status
+            body = resp.text
+        else
+            sys.sleep(50)
+        attempts = attempts + 1
+
+    assert reached, "client reached the in-process Http server within 20 attempts"
+    assert status == 200, "handler returned 200 for a routed path"
+    assert body.contains("hello-from-zebra"), "response body came from the handler"
+
+    print("http_test: OK")
