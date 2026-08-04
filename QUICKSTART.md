@@ -1056,7 +1056,7 @@ var s = "hello"
 var t = "world"
 var u = s + ", " + t                 # concatenation
 var n = s.len                        # length (int)
-var c = s[0]                         # char at index
+var c = s[0]                         # the BYTE at index 0 (see BUG-225 below)
 var sub = s[1..3]                    # substring slice
 var up = s.upper()
 var lo = s.lower()
@@ -1218,11 +1218,35 @@ you mean characters, and `.chars()` when you need to look at characters one at a
 > else. If you are measuring text for *layout*, neither `.len` nor `.codePointCount()`
 > is the number you want — you need grapheme segmentation, which Zebra does not provide.
 
-**Known gap (BUG-225):** `s[i]` is currently typed `char` but yields a raw **byte**, so
-for non-ASCII input it produces a codepoint that is not in the string —
-`"eéx"[1].toString()` prints `Ã`, silently. Until that is retyped, **index for bytes and
-iterate for characters**: use `for c in s.chars()` whenever the text may be non-ASCII.
-`.len`, `.codePointCount()`, and `.chars()` are all honest today.
+### `s[i]` yields a BYTE — the rule, and why
+
+**`s[i]` returns the byte at offset `i`, not the character.** This is a deliberate
+commitment as of 2026-08-03, not an accident, and it puts Zebra in the same company as
+most systems languages: **Go** indexes a string to a byte and never pretends otherwise;
+**Rust** forbids `str` indexing entirely for exactly this reason. A UTF-8 string has no
+O(1) "i-th character", so any language offering one is either lying or copying.
+
+```zebra
+var s = "eéx"
+print(s.len.toString())              # 4  — BYTES
+print(s.codePointCount().toString()) # 3  — characters
+print(s[1].toString())               # NOT "é" — s[1] is the first byte of é
+for c in s.chars()                   # e é x — the honest way to read characters
+    print(c.toString())
+```
+
+**The rule: index for bytes, iterate for characters.** Use `for c in s.chars()` whenever
+the text may be non-ASCII. `.len`, `.codePointCount()`, `.chars()` and `.charAt()` are all
+honest today.
+
+**Known wart (BUG-225):** the *value* is right but the *type* is not — `s[i]` is typed
+`char` (u21) while holding a byte. Nothing in the language converts that byte to a
+character, so it cannot silently become one; but `.toString()` on it will UTF-8-encode the
+byte as though it were a codepoint, so `"eéx"[1].toString()` prints `Ã`. **Retyping it to
+`byte` is a 1.x change** — `s[i]` returning `char` is what the selfhost compiler's own
+lexer is built on (~104 subscript sites, 559 `c'x'` literals), so the retype requires
+defining `byte`/`char` comparison and is not worth the churn before the 0.9 freeze.
+See `docs/QUALITY_AUDIT_2026-08-03.md` §5c for the options that were weighed.
 
 ### String ownership: what borrows and what owns
 

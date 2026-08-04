@@ -1168,7 +1168,20 @@ Fixed by adding `tokenize` to the predicate. Independent of BUG-227: this is the
 
 ---
 
-### BUG-225: indexing a `str` yields a byte typed as `char` — silently wrong for non-ASCII ⬜ OPEN
+### BUG-225: `s[i]` is typed `char` but yields a byte — ⬜ OPEN (1.x retype; 0.9 SEMANTICS DECIDED 2026-08-03)
+
+> **DECIDED 2026-08-03 (Sean):** `s[i]` **is a byte**, and the documentation now says so
+> plainly rather than hedging. This puts Zebra with **Go** (indexes to a byte, never
+> pretends otherwise) and **Rust** (forbids `str` indexing outright) — good company, and
+> the honest position: a UTF-8 string has no O(1) i-th character, so any language offering
+> one is lying or copying.
+>
+> **This is NO LONGER A 0.9 BLOCKER.** What remains is the *type* (`char` holding a byte),
+> which is a 1.x retype — see the blast radius below. QUICKSTART now leads with the rule
+> ("index for bytes, iterate for characters") instead of burying it in a known-gap note.
+>
+> **BUG-247** (fixed) removed the one place the incoherence actively misled a user: the
+> lexer reported a non-ASCII byte as a character that was not in the source file.
 Found 2026-07-29 by the §28e derivation. `s[i]` is typed `char` (u21) but holds a raw
 UTF-8 **byte**, so for any multi-byte codepoint it produces a character that is not in
 the string — and it does so silently, with no error at any stage.

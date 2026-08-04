@@ -57,10 +57,27 @@ learn to ignore. Shrink the baseline; do not grow it.
 
 Exit: 0 clean, 1 new signal failure(s), 2 the checker itself is not working.
 """
+import hashlib
 import pathlib
 import re
 import subprocess
 import sys
+
+
+def block_key(doc_name, body):
+    """Identify a block by its CONTENT, never by its position.
+
+    The first version keyed on `doc#<index>`. Inserting one code block into QUICKSTART
+    shifted every later index by one, so five untouched, already-baselined blocks were
+    reported as NEW breakage. A block index belongs to a *version of the file*; the
+    baseline outlives that version.
+
+    Content hashing has the properties wanted here: moving a block keeps its key (it is
+    the same example), and EDITING one changes its key — which is correct, since an edited
+    example should be re-judged rather than inheriting a pass.
+    """
+    h = hashlib.sha1(body.strip().encode("utf-8", "replace")).hexdigest()[:10]
+    return f"{doc_name}#{h}"
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 ZEBRA = REPO / "zig-out" / "bin" / "zebra.exe"
@@ -266,9 +283,9 @@ def main():
             if res is None:
                 passed += 1
             elif ARTIFACT.search(res):
-                artifacts.append((f"{d.name}#{i}", res))
+                artifacts.append((block_key(d.name, body), res))
             else:
-                signals.append((f"{d.name}#{i}", res))
+                signals.append((block_key(d.name, body), res))
 
     keys = sorted(k for k, _ in signals)
     if "--update-baseline" in argv:
