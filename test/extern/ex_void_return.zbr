@@ -1,0 +1,7 @@
+# @extern accepts
+# No return type. `void` is the common shape for C side-effect functions and
+# must not require a dummy return.
+extern def zebra_probe_noop()
+
+def main()
+    print("declared")

@@ -1,0 +1,8 @@
+# @extern rejects extern
+# Same reasoning for a class. Zebra classes are not `extern struct` and have no
+# defined C layout.
+extern class Foreign
+    var x: int32 = 0
+
+def main()
+    print("should not compile")

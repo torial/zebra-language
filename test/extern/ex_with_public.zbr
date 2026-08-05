@@ -1,0 +1,7 @@
+# @extern accepts
+# Modifier composition. `public extern` is meaningful: the Zebra-side symbol is
+# visible to other modules even though the implementation is foreign.
+public extern def zebra_probe_pub(): int32
+
+def main()
+    print("declared")

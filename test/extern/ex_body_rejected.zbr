@@ -1,0 +1,10 @@
+# @extern rejects extern
+# An extern declaration names a symbol defined ELSEWHERE. A body is therefore
+# meaningless, and accepting one would leave the reader unsure which wins.
+# Zig makes this a compile error too, so silence here would mean the Zebra front
+# end passes a program that the backend then rejects in Zig's vocabulary.
+extern def zebra_probe_answer(): int32
+    return 42
+
+def main()
+    print("should not compile")

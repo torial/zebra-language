@@ -1,0 +1,25 @@
+# @extern runs
+# REGRESSION GUARD, and the single most important probe in this directory.
+#
+# The bootstrap emits `unreachable; // abstract` for ANY bodyless method
+# (src/CodeGen.zig:6141). The extern implementation changes that same site. If
+# it keys off "has no body" rather than off the extern MODIFIER, every abstract
+# method in the language silently becomes an extern declaration and fails to
+# link -- or worse, links to an unrelated symbol of the same name.
+#
+# So: an abstract method must still behave as an abstract method.
+interface Shape
+    def area(): int32
+
+class Square implements Shape
+    var side: int32 = 0
+
+    cue init(side: int32)
+        .side = side
+
+    def area(): int32
+        return .side * .side
+
+def main()
+    var s = Square(4)
+    print(s.area())

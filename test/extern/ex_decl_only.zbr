@@ -1,0 +1,7 @@
+# @extern accepts
+# The base case: a declaration with no body. Must compile. Not called, so no
+# link step is required -- this probe isolates "can the front end express it".
+extern def zebra_probe_answer(): int32
+
+def main()
+    print("declared")

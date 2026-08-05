@@ -1,0 +1,9 @@
+# @extern rejects extern
+# `extern` on a variable is out of scope (docs/extern_ffi_design.md sec 5).
+# Out of scope must mean REFUSED. A modifier that is silently ignored is how
+# BUG-258 happened in the first place: the bootstrap accepted `extern def`,
+# dropped the modifier, and emitted something that compiled.
+extern var zebra_probe_global: int32 = 0
+
+def main()
+    print("should not compile")

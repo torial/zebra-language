@@ -1,0 +1,7 @@
+# @extern runs
+# REGRESSION GUARD. An ordinary function, with a body, must be untouched.
+def ordinary(a: int32): int32
+    return a + 1
+
+def main()
+    print(ordinary(41))

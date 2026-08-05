@@ -1,0 +1,6 @@
+# @extern accepts
+# Several parameters, all C-ABI-sized. This is the shape real bindings take.
+extern def zebra_probe_add3(a: int32, b: int32, c: int32): int32
+
+def main()
+    print("declared")

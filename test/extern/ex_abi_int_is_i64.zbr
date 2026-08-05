@@ -1,0 +1,15 @@
+# @extern accepts
+# ABI HAZARD, INTENTIONALLY ACCEPTED -- this probe documents a sharp edge rather
+# than asserting a diagnostic.
+#
+# Zebra `int` is i64. C `int` is 32-bit. So `extern def f(n: int)` against a C
+# `int` parameter is an ABI MISMATCH THAT LINKS CLEANLY and corrupts the stack.
+# The chosen design (docs/extern_ffi_design.md, decision A) does not warn: the
+# compiler cannot know which C type is meant.
+#
+# If a later version DOES warn, this probe fails, and that failure is the signal
+# to rewrite it -- a warning here would be an improvement, not a regression.
+extern def zebra_probe_wide(n: int): int
+
+def main()
+    print("declared")

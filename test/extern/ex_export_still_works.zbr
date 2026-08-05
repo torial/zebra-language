@@ -1,0 +1,9 @@
+# @extern runs
+# REGRESSION GUARD. `export` and `extern` sit adjacent in the modifier list and
+# in the token table (kw_export, kw_extern). `export` WORKS today -- verified
+# 2026-08-05, it emits `pub export fn`. Adding `extern` must not disturb it.
+export def zebra_probe_exported(): int32
+    return 7
+
+def main()
+    print(zebra_probe_exported())
