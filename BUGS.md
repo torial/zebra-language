@@ -207,6 +207,19 @@
 > resolution is to implement it, not to remove it from the grammar. Reclassified from a
 > parser gap to an unimplemented feature; see the implementation notes below.
 >
+> **Design written 2026-08-05: `docs/extern_ffi_design.md`.** Two of the three pieces
+> already exist — C-ABI-sized types (`int32` → `i32`, so the ABI is expressible without new
+> syntax) and `BuildTarget.linkLib` for linking. What is missing is the declaration itself.
+> The plan is the minimal form: `extern def name(params): ret` with no body emits
+> `extern fn name(params) ret;`, no symbol renaming and no C-type aliases, because neither
+> is needed to unblock the sprocket work. **The bootstrap must be fixed in the same change**
+> (`src/CodeGen.zig:6141`): if the selfhost starts accepting `extern` while the bootstrap
+> still emits `unreachable`, the regen authority and the `--gui-backend` path silently
+> miscompile a supported keyword, which is strictly worse than today.
+>
+> Also recorded there: there is **no** top-level `zig"…"` escape hatch — both compilers
+> reject it — so the reported sprocket blockage is real and has no workaround.
+>
 > The report's central recommendation — *sweep the grammar rather than fix whatever
 > someone trips over next* — is accepted and is now tracked separately. `~` and `extern`
 > are two specimens; the sweep is what says whether there is a third.
