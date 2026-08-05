@@ -1,0 +1,13 @@
+# BUG-253 (selfhost-lags-bootstrap): `var l: List(int)` with no initializer at
+# LOCAL scope. Without an `=` the collection is left unset and the declaration
+# reads like a constructor call that is not one. Ported from
+# src/TypeChecker.zig:1516.
+#
+# The check lives at the checkStmts call site rather than inside checkVarDecl,
+# because checkVarDecl also serves `Decl.var_` — and a CLASS FIELD may be
+# legitimately uninitialized, since it gets its value in `cue init()`.
+# test/bug253_uninit_collection_field_test.zbr pins that exemption.
+
+def main()
+    var l: List(int)
+    print(l.len)

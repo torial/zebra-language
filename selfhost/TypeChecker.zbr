@@ -3136,6 +3136,12 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 # why this fires on fewer types than the bootstrap's version.
                 if not sds.is_struct and isConcretePrimitive(destruct_recv_t)
                     ctx.addErr(ctx.file, sds.span.line, sds.span.col, "destructuring requires a tuple, got '" + typeTag(destruct_recv_t) + "'")
+                # And the mirror: `var {a, b} = x` where x is not a class/struct.
+                # Ported from src/TypeChecker.zig:2064. Individual field names are
+                # deliberately NOT validated here — the bootstrap leaves that to
+                # Zig, and so does this.
+                if sds.is_struct and isConcretePrimitive(destruct_recv_t)
+                    ctx.addErr(ctx.file, sds.span.line, sds.span.col, "struct destructuring requires a class or struct, got '" + typeTag(destruct_recv_t) + "'")
                 # Struct destructuring: var {x, y} = struct_expr
                 var destruct_class: str = ""
                 if destruct_recv_t is Type_.named as dtn
@@ -3550,6 +3556,22 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
     for s in stmts
         branch s
             on Stmt.var_ as dv
+                # `var l: List(int)` with no `=` at LOCAL scope. Ported from
+                # src/TypeChecker.zig:1516. Without an initializer the field is
+                # left unset, and the declaration reads like a constructor call
+                # that isn't one — the footgun the bootstrap's comment names.
+                #
+                # Done HERE rather than in checkVarDecl because checkVarDecl also
+                # serves `Decl.var_` (class fields and module-level decls), and
+                # class fields are legitimately uninitialized — they get their
+                # values in `cue init()`. The bootstrap carries an `is_local`
+                # flag for the same reason; this call site IS the local one, so
+                # the distinction is structural rather than a flag to keep true.
+                if dv.init_expr == nil
+                    if dv.type_ as dv_tr
+                        if dv_tr is TypeRef.generic as dv_gen
+                            if dv_gen.name == "List" or dv_gen.name == "HashMap"
+                                ctx.addErr(file, dv.span.line, dv.span.col, "'" + dv_gen.name + "(...)' requires explicit initialization; use 'var " + dv.name + " = " + dv_gen.name + "()()'")
                 checkVarDecl(dv, file, ctx)
                 # Check arg counts + arg types over the whole init expression
                 # (checkCallsInExpr reaches nested calls; audit #3).

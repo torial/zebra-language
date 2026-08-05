@@ -291,6 +291,49 @@ evidence, and an earlier run of exactly this sweep silently checked **0 files** 
 `AstBuilder` constructs `StmtDestruct` with `Span(pd.line, 0, pd.line, 0)`. The line is
 correct. Same span-plumbing class as BUG-249.
 
+### Triage round 2, 2026-08-05 — the remaining candidates
+
+With the first nine done, `diagnostic_parity.py` reports **37 bootstrap / 29 selfhost, 10
+candidates** (down from 26). Two of the ten were already settled: `arithmetic operands must
+have the same type` is BUG-254 (**do not port** — the selfhost is right) and `cannot
+determine type for value assigned to` is BUG-252 (present, disabled, blocked on §28a).
+
+The rest, each probed against BOTH compilers:
+
+| candidate | bootstrap | selfhost | verdict |
+|---|---|---|---|
+| `'List(...)' requires explicit initialization` | rejects | accepted | ✅ **PORTED** |
+| `struct destructuring requires a class or struct` | rejects | accepted | ✅ **PORTED** |
+| `raise details must implement 'toString as str'` | rejects | accepted | real gap — **open** |
+| `type alias constraint must be 'bool'` | rejects | accepted | real gap — **open**, see caveat |
+| `type argument does not implement …` | not probed | — | open |
+| `SIMD operands must have the same type` | **untestable this way** | — | see below |
+
+**The uninitialized-collection check needed a locality distinction the selfhost did not
+have.** The bootstrap guards it with an `is_local` flag, because a *class field* declared
+`var items: List(int)` is correct Zebra — it gets its value in `cue init()`. The selfhost's
+`checkVarDecl` serves both statement-scope `Stmt.var_` and declaration-scope `Decl.var_`, so
+putting the check inside it would have rejected every class field in the language. It lives
+at the `checkStmts` call site instead, which *is* the local one — the distinction is
+structural rather than a flag someone has to keep true. `bug253_uninit_collection_field_test`
+pins the exemption as a run-and-compare fixture so a later tightening cannot quietly break it.
+
+**SIMD cannot be triaged by differential probe, and the reason is worth recording.** The
+bootstrap rejects `f32x8` as *"not defined"* — including in `test/simd_test.zbr`, the
+corpus's own SIMD test, which the selfhost compiles and runs. SIMD is a selfhost-LEADS
+feature, so **the bootstrap is not a usable reference for it**, and a candidate that exists
+only in the bootstrap says nothing about what the selfhost should do. Whether the selfhost
+wants an operand-type check here is an *intent* question — `boundary_check`'s department,
+not this one's. (Noticed in passing: `QUICKSTART.md` documents `f32x4`, which the bootstrap
+also calls undefined. Unresolved; the selfhost's support is what matters and it is
+untested at that width.)
+
+**Caveat on the type-alias row.** The bootstrap rejects `type Even = int where value % 2`,
+but with `expected type 'bool', found 'i64'` — *not* the candidate string. So a gap is
+confirmed (the selfhost accepts a non-bool refinement predicate) while the specific
+diagnostic that fired is a different one. Recorded honestly rather than counted as a match:
+the probe proves the behaviour gap, not the provenance.
+
 ### BUG-252: BUG-099's check is present but disabled by default — OPEN (blocked on §28a)
 
 > **Heading corrected 2026-08-05.** It read *"BUG-099's check is missing from the selfhost,

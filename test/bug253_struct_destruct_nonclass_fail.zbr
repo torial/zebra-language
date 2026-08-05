@@ -1,0 +1,8 @@
+# BUG-253 (selfhost-lags-bootstrap): `var {a, b} = x` where x is not a class or
+# struct. Ported from src/TypeChecker.zig:2064. Individual field names are
+# deliberately NOT validated — the bootstrap leaves that to Zig, and so do we.
+
+def main()
+    var x: int = 5
+    var {a, b} = x
+    print(a)

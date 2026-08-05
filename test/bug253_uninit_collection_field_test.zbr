@@ -1,0 +1,20 @@
+# The exemption for BUG-253's uninitialized-collection check: a CLASS FIELD
+# declared `var items: List(int)` with no initializer is correct Zebra — it is
+# initialized in `cue init()`. This fixture exists so that tightening the local
+# check can never quietly start rejecting fields; it is the positive control
+# for that diagnostic, and it must keep COMPILING AND RUNNING.
+
+class Bag
+    var items: List(int)
+
+    cue init()
+        .items = List(int)()
+
+    def add(v: int)
+        .items.add(v)
+
+def main()
+    var b = Bag()
+    b.add(7)
+    print(b.items.len)
+    print("bug253-uninit: OK")
