@@ -1,0 +1,5 @@
+# BUG-253 negative fixture: unary `-` on a non-numeric.
+# Own file -- a rejection aborts the run, so bundling negatives hides all but the first.
+def main()
+    var s = "a"
+    print((-s).toString())

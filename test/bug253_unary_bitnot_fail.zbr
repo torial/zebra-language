@@ -1,0 +1,6 @@
+# BUG-253 negative fixture: `~` on a non-integer.
+# Only testable because BUG-256 made `~` parseable by the selfhost at all -- before that,
+# this file died at the PARSER and could never have reached the type check it pins.
+def main()
+    var f = 1.5
+    print((~f).toString())

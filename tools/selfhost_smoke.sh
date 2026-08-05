@@ -1196,6 +1196,13 @@ smoke_run test/bug255_unfuzzed_constructs_test.zbr "bug255: OK"
 # BUG-256: `~` was in the grammar, the lexer, and CodeGen -- only the PARSER lacked it.
 smoke_run test/bug256_bitwise_not_test.zbr "bug256: OK"
 
+# BUG-253: the three UNARY operand checks, unblocked by the Expr.unary inference arm. The
+# bit_not one is additionally unblocked by BUG-256 -- before `~` parsed, that file died at
+# the parser and could never reach the type check it now pins.
+smoke_tc_fail test/bug253_unary_neg_fail.zbr    "unary '-' requires numeric type"
+smoke_tc_fail test/bug253_unary_not_fail.zbr    "'not' requires bool type"
+smoke_tc_fail test/bug253_unary_bitnot_fail.zbr "bitwise 'not' requires integer type"
+
 # BUG-106's fixture is a NEGATIVE test and always was -- `[1, "two", 3]` must be REJECTED.
 # It spent three months unregistered, which is how nobody noticed the selfhost had no such
 # check (the bootstrap has had one since May 2026).

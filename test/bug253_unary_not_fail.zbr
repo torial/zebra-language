@@ -1,0 +1,4 @@
+# BUG-253 negative fixture: `not` on a non-bool.
+def main()
+    var n = 5
+    print((not n).toString())

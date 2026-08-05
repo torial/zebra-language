@@ -1,9 +1,53 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-256. Next new bug: BUG-257.**
+**Last bug number generated: BUG-257. Next new bug: BUG-258.**
 
 ---
+
+### BUG-257: contracts and asserts are NOT stripped in `--release`, contrary to the stated design — OPEN
+
+**Found 2026-08-04**, answering a question from Fable about whether a SQLite hazard
+reproduces in Zebra. Measured, not inferred:
+
+| construct | debug | `--release` |
+|---|---|---|
+| `assert cond, "msg"` | fires | **fires** |
+| `require` / `ensure` contracts | fires | **fires** |
+
+**The repo's own rationale says the opposite.** From BUG-228's fix note, recording Sean's
+2026-07-30 direction verbatim: *"contracts are checked in development and stripped for
+release BECAUSE they established the property, so a release build should not re-check at
+runtime what the contracts already proved."* That is the Design-by-Contract position and it
+is the stated reason ReleaseFast was chosen over ReleaseSafe. **It is not what the compiler
+does.**
+
+**This was not observable until today.** `zebra --release` produced an *unoptimized Debug*
+binary until BUG-228 was fixed this morning — the flag switched the backend to LLVM but
+passed no `-O` at all. So no one had ever run a genuine release build, and "are contracts
+stripped in release?" had no answerable form. Fixing BUG-228 is what made this measurable.
+
+**Three ways to resolve, and it is a decision rather than a defect:**
+
+1. **Strip contracts in release, keep `assert`.** Matches the stated rationale and the
+   DbC argument. `assert` is a user-written runtime check, not a proof obligation, so
+   conflating them is probably wrong.
+2. **Strip both.** Maximum ReleaseFast performance; means a release build silently
+   continues past a violated precondition, which is the hazard class Fable's phase 3
+   removes structurally on the SQLite side.
+3. **Strip neither, and correct the documentation.** Cheapest, and defensible: contracts
+   that survive are a safety net, and the performance argument for stripping is unmeasured.
+
+**Recommend (3) until (1) is measured.** The stated reason for stripping is performance, and
+nobody has measured what contracts actually cost. Stripping a working safety net on an
+unmeasured assumption is the wrong direction for a language whose current bar is "no
+surprises". But the documentation must stop claiming behaviour the compiler does not have.
+
+**Cross-project note:** Tack (Zebra's ORM) has an S2 path whose ordering convention is
+guarded by an assertion, and POC 2 reportedly measured ~98% child-row loss in release
+builds. Given the above, that guard is currently **live** in release — so either the loss
+had a different cause, or it was measured on a build that was not actually a release build
+(everything before 2026-08-04 was Debug). Worth re-deriving before designing against it.
 
 ### BUG-256: `~` (bitwise NOT) was unparseable by the SHIPPING compiler — FIXED 2026-08-04
 

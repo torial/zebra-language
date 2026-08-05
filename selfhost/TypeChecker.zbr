@@ -1651,6 +1651,35 @@ def arithOperandCheck(lt: Type_, rt: Type_, b: ExprBinary, opname: str, ctx: Inf
                    "arithmetic '" + opname + "' requires numeric operands, got '"
                    + typeTag(bad_t) + "'")
 
+# BUG-253. Operand predicates for the three unary operators, each answering only
+# "is this DEFINITELY wrong here?" -- never "is this right?". They must return false for
+# unknown_/context_dependent, because selfhost inference is weaker than the bootstrap's
+# (§28a) and erroring on unknown converts every inference gap into a false compile error.
+# That is the BUG-218 precedent and the mistake reverted on 2026-08-04 with the `with`
+# blocks: rejecting valid code costs more trust than missing a diagnosis.
+
+# `not x` wants a bool. A string or a number definitely is not one.
+def isNotOperandMistake(t: Type_): bool
+    if isAbstractType(t)
+        return false
+    if isString(t)
+        return true
+    return isNumeric(t)
+
+# `~x` wants an integer. Float, string and bool definitely are not.
+def isBitNotOperandMistake(t: Type_): bool
+    if isAbstractType(t)
+        return false
+    if isString(t)
+        return true
+    branch t
+        on Type_.bool_
+            return true
+        on Type_.float_
+            return true
+        else
+            return false
+
 def isArithmeticMistake(t: Type_): bool
     if isNumeric(t)
         return false
@@ -2475,14 +2504,25 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
         #   bit_not  operand type, preserved
         on Expr.unary as eun
             var un_t: Type_ = inferExpr(eun.operand, ctx)
+            var un_ln: int = exprSpanLine(eun.operand)
+            var un_cl: int = exprSpanCol(eun.operand)
             branch eun.op
                 on UnaryOp.neg
+                    if isArithmeticMistake(un_t)
+                        ctx.addErr(ctx.file, un_ln, un_cl,
+                                   "unary '-' requires numeric type, got '" + typeTag(un_t) + "'")
                     if isNumeric(un_t)
                         return un_t
                     return Type_.unknown_
                 on UnaryOp.not_
+                    if isNotOperandMistake(un_t)
+                        ctx.addErr(ctx.file, un_ln, un_cl,
+                                   "'not' requires bool type, got '" + typeTag(un_t) + "'")
                     return Type_.bool_
                 on UnaryOp.bit_not
+                    if isBitNotOperandMistake(un_t)
+                        ctx.addErr(ctx.file, un_ln, un_cl,
+                                   "bitwise 'not' requires integer type, got '" + typeTag(un_t) + "'")
                     return un_t
             # No `else` arm: UnaryOp has exactly neg | not_ | bit_not, so one is unreachable
             # and Zig rejects it outright ("unreachable else prong; all cases already

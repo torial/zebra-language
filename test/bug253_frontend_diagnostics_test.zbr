@@ -48,4 +48,14 @@ def main()
     fl += 0.5
     assert fl > 1.9, "float compound assignment still works"
 
+    # The three UNARY forms must keep working on their correct operand types. `~` is here
+    # only because BUG-256 made it parseable by the shipping compiler at all.
+    var un = 5
+    assert (-un) == -5, "unary minus on int"
+    var uf = -2.5
+    assert (-uf) > 2.4, "unary minus on float"
+    assert (not true) == false, "not on bool"
+    var ui: int = 12
+    assert (~ui) == -13, "bitwise not on int"
+
     print("bug253: OK")
