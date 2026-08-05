@@ -1100,6 +1100,11 @@ class ASTBuilder
             return UnaryOp.neg
         if op == "not"
             return UnaryOp.not_
+        # BUG-256: `~` (bitwise NOT). UnaryOp.bit_not existed in the AST and CodeGen emitted
+        # it, but nothing could ever construct one — Parser.parseUnary had no `~` case, so
+        # the variant was unreachable from selfhost source while the bootstrap parsed it fine.
+        if op == "~"
+            return UnaryOp.bit_not
         raise "toUnaryOp: unknown op: " + op
 
     # ── Type reference parsing ────────────────────────────────────────────────

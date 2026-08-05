@@ -2770,6 +2770,22 @@ class Parser
             var ops = List(PNode)()
             ops.add(operand)
             return PNode.expr_unary(PUnary("-", ops))
+        if .textIs("~")
+            # BUG-256. Bitwise NOT. The grammar has had `Expr8 → tilde Expr9` all along, the
+            # LEXER already produces the token (the old error named it: "unexpected
+            # expression token: '~'"), CodeGen.zbr:10537 already emits it, and the bootstrap
+            # accepts `~a` and emits valid Zig. Only THIS function and toUnaryOp were
+            # missing, so `~` was a language feature the SHIPPING compiler could not parse.
+            #
+            # Found 2026-08-04 by checking the generated grammar before writing a probe --
+            # exactly the habit adopted after three probes that session were written in
+            # syntax Zebra does not have. Here the grammar said the syntax was real and the
+            # compiler disagreed, which is the opposite and more interesting failure.
+            .advance()
+            const bnot_operand = .parseUnary()?
+            var bnot_ops = List(PNode)()
+            bnot_ops.add(bnot_operand)
+            return PNode.expr_unary(PUnary("~", bnot_ops))
         if .isKwOld()
             # `old expr` — pre-call value in `ensure` contracts (Expr8 → kw_old Expr9).
             .advance()

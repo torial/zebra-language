@@ -1,0 +1,23 @@
+# BUG-256 regression fixture — `~` (bitwise NOT) in the SHIPPING compiler.
+#
+# Everything except the parser already supported it: the grammar has `Expr8 → tilde Expr9`,
+# the lexer produced the token (the old error NAMED it — "unexpected expression token: '~'"),
+# CodeGen.zbr:10537 emitted it, and the bootstrap accepted `~a` and emitted valid Zig.
+# `UnaryOp.bit_not` sat in the AST unreachable, because Parser.parseUnary had no `~` case.
+#
+# So this was not a missing diagnostic like the rest of BUG-253 — it was a LANGUAGE FEATURE
+# the compiler that ships could not parse, while the grammar said it was valid syntax.
+def main()
+    var a: int = 12
+    assert (~a) == -13, "~12 is -13 in two's complement"
+
+    var z: int = 0
+    assert (~z) == -1, "~0 is -1"
+
+    # Double application is identity.
+    assert (~(~a)) == 12, "~~x == x"
+
+    # Binds tighter than arithmetic: ~12 + 1 is (-13) + 1, not ~(13).
+    assert (~a + 1) == -12, "unary ~ binds tighter than +"
+
+    print("bug256: OK")

@@ -1,9 +1,36 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-255. Next new bug: BUG-256.**
+**Last bug number generated: BUG-256. Next new bug: BUG-257.**
 
 ---
+
+### BUG-256: `~` (bitwise NOT) was unparseable by the SHIPPING compiler — FIXED 2026-08-04
+
+**Not a missing diagnostic — a missing language feature.** Everything except the parser
+already supported it:
+
+| layer | state |
+|---|---|
+| grammar (`ZebraGrammar.zig`) | `Expr8 → tilde Expr9` — valid syntax |
+| lexer | produced the token (the error NAMED it: `unexpected expression token: '~'`) |
+| `UnaryOp.bit_not` in the AST | present, **unreachable** — nothing could construct one |
+| `CodeGen.zbr:10537` | already emitted `(~expr)` |
+| bootstrap | accepted `~a`, emitted valid Zig (rc=0, 3778 lines) |
+| **selfhost parser** | **no `~` case in `parseUnary`** |
+
+**How it was found, which is the part worth keeping.** BUG-255 made `grammar.txt` generated
+from the parser's rule table. The habit that came out of it — *check the grammar before
+writing a probe* — was adopted after three probes in one session were written in syntax
+Zebra does not have. Here the habit inverted: **the grammar said the syntax was real and the
+compiler disagreed.** Without a trustworthy grammar the `~` parse error would have looked
+like one more invented-syntax mistake and been dropped.
+
+**Fix:** a `~` case in `Parser.parseUnary` mirroring `-`, and `"~" → UnaryOp.bit_not` in
+`AstBuilder.toUnaryOp`. Two places; every other layer was already waiting.
+
+**Verified:** `~12 == -13`, `~0 == -1`, `~~x == x`, and `~a + 1 == -12` (precedence — unary
+binds tighter than `+`). full_sweep 0 regressions vs 337.
 
 ### BUG-255: `grammar.txt` had drifted from the parser, so the FUZZER was exploring a language that partly does not exist — FIXED 2026-08-04
 

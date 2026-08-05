@@ -1193,6 +1193,8 @@ smoke_run_bounded test/http_echo_test.zbr "http_test: OK" 120
 # grammar.txt, so fuzz/gramgen.py had NEVER generated a program using them. The drift is
 # gated by grammar_export.py --check; this pins the constructs themselves.
 smoke_run test/bug255_unfuzzed_constructs_test.zbr "bug255: OK"
+# BUG-256: `~` was in the grammar, the lexer, and CodeGen -- only the PARSER lacked it.
+smoke_run test/bug256_bitwise_not_test.zbr "bug256: OK"
 
 # BUG-106's fixture is a NEGATIVE test and always was -- `[1, "two", 3]` must be REJECTED.
 # It spent three months unregistered, which is how nobody noticed the selfhost had no such
