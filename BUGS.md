@@ -5,7 +5,45 @@
 
 ---
 
-### BUG-257: contracts and asserts are NOT stripped in `--release`, contrary to the stated design — OPEN
+### BUG-257: contracts are not stripped in `--release` — RESOLVED 2026-08-05, it was the docs
+
+> **Resolved: the compiler was right and every document was wrong.** Sean's ruling
+> (2026-08-05): contracts should strip **only** with `--turbo`, Cobra-style, so a shipping
+> build is `--release --turbo` — no contracts, optimised. Measured against the compiler,
+> **that is already exactly what it does.** No code change was required.
+>
+> | | `require`/`ensure`/`invariant` | `assert` | binary |
+> |---|---|---|---|
+> | *(default)* | fire | fires | 19.99 MB |
+> | `--release` | **fire** | fires | 830 KB |
+> | `--turbo` | stripped **at emit** | **fires** | 19.99 MB |
+> | `--release --turbo` | stripped **at emit** | **fires** | 831 KB |
+>
+> Stripping is removal at **emit** time, not an optimiser dropping a branch — the string
+> `require failed` appears in the emitted Zig without `--turbo` and is absent with it. That
+> distinction matters: an optimiser-dependent guarantee could come back at any Zig release.
+>
+> `assert` surviving `--turbo` is correct and is now pinned as a gate leg. A contract is a
+> proof obligation on the caller; an `assert` is a check the author wrote to run. Stripping
+> the second along with the first removes checks nobody asked to have removed.
+>
+> **What was actually broken was every description of it.** `docs/testing_strategy.md` said
+> release builds were unaffected by contracts (fixed earlier the same day); `QUICKSTART.md`
+> called `--turbo` *"equivalent to release mode"*, which invites exactly the conflation that
+> produced this ticket. Both now carry the matrix.
+>
+> **Gated so it cannot drift back:** `tools/contract_mode_check.sh`, FULL tier. It is the
+> only gate that passes `--turbo`, and `--turbo` had been named in our own testing-strategy
+> doc as "a genuinely under-tested path" while no tier touched it. Verified red against both
+> realistic regressions before being registered.
+>
+> **The general lesson, and it is the third instance this week.** Nobody had measured this.
+> The ticket, the architecture note Fable read, and two shipped documents all described
+> behaviour that no test asserted — and they agreed with each other, which is what made it
+> feel settled. Cross-document agreement is not evidence; it is often just one unchecked
+> claim with copies. The measurement took four builds.
+
+<details><summary>Original ticket, kept for the reasoning</summary>
 
 **Found 2026-08-04**, answering a question from Fable about whether a SQLite hazard
 reproduces in Zebra. Measured, not inferred:
@@ -56,6 +94,8 @@ the repo states the stripping intent. It does — but the doc I reached for whil
 said something stronger and false. **The check was on my own claim; the bug was in the
 thing I checked it against.** Verifying a statement you are confident in is how you find
 the ones nobody was suspicious of.
+
+</details>
 
 **Cross-project note:** Tack (Zebra's ORM) has an S2 path whose ordering convention is
 guarded by an assertion, and POC 2 reportedly measured ~98% child-row loss in release

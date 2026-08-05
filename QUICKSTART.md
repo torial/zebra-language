@@ -3704,7 +3704,24 @@ The check fires at runtime when the variable is initialized, not when the alias 
 
 ### --turbo strips checks
 
-Pass `--turbo` to compile with contracts and type-alias checks stripped. Equivalent to release mode for constraint-heavy code.
+Pass `--turbo` to compile with contracts and type-alias checks stripped.
+
+`--turbo` and `--release` are **independent and compose**. `--turbo` removes the contract
+code at emit time; `--release` optimises. Neither implies the other:
+
+| | `require`/`ensure`/`invariant` | `assert` | binary (hello-scale) |
+|---|---|---|---|
+| *(default)* | fire | fires | ~20 MB |
+| `--release` | **fire** | fires | ~830 KB |
+| `--turbo` | stripped | **fires** | ~20 MB |
+| `--release --turbo` | stripped | **fires** | ~830 KB |
+
+So a shipping build is `--release --turbo`. A plain `--release` build keeps every contract
+and pays for them — that is deliberate, not an oversight (BUG-257).
+
+`assert` survives `--turbo` on purpose: a contract is a proof obligation the caller must
+meet, while an `assert` is a runtime check the author wrote to run. Stripping the second
+along with the first would silently remove checks nobody asked to have removed.
 
 ### Notes
 

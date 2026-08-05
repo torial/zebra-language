@@ -299,6 +299,39 @@ bash tools/release_mode_check.sh   # THE ONLY GATE THAT BUILDS WITH `--release` 
                                 #   "all checks pass" with its only real assertion never
                                 #   having run.
                                 #   Runs a full LLVM build → FULL tier, not QUICK.
+bash tools/contract_mode_check.sh  # THE CONTRACT-STRIPPING CONTRACT (FULL tier, ~55s):
+                                #   the ONLY gate that passes `--turbo`, and the only one
+                                #   asserting what the two shipping flags DO. Matrix:
+                                #     (none)            contracts fire   assert fires
+                                #     --release         contracts FIRE   assert fires
+                                #     --turbo           stripped         assert FIRES
+                                #     --release --turbo stripped         assert FIRES
+                                #   `--turbo` and `--release` are INDEPENDENT and compose;
+                                #   a shipping build is `--release --turbo`. `assert`
+                                #   deliberately survives `--turbo`: a contract is a proof
+                                #   obligation on the caller, an assert is a check the
+                                #   author wrote to RUN.
+                                #   THE ASYMMETRIC LEGS ARE THE POINT. It would be easy to
+                                #   assert "contracts off in release" and pass — that was the
+                                #   documented and WRONG belief (BUG-257: docs claimed
+                                #   "--turbo strips them, so release builds are unaffected",
+                                #   which does not follow). What is gated is that --release
+                                #   ALONE still fires them, and that --turbo does NOT touch
+                                #   assert. Both are what a plausible "optimisation" breaks.
+                                #   Precedent for the regression: BUG-228 shipped Debug from
+                                #   `--release` for four days under 19 green gates, because
+                                #   NO gate passed the flag. A flag no gate passes is
+                                #   unverified by construction — docs/testing_strategy.md
+                                #   had already named --turbo "a genuinely under-tested path".
+                                #   Classifies on a SENTINEL the program prints past the
+                                #   check, never on exit code alone — a build failure also
+                                #   exits non-zero, and scoring that as "the contract fired"
+                                #   would make a broken compiler look like a working guard.
+                                #   Verified red against both realistic regressions
+                                #   (--release stripping contracts; --turbo stripping
+                                #   assert): each mutant failed exactly one leg.
+                                #   A vacuous run is a FAILURE — it refuses to report unless
+                                #   all 8 checks ran.
 python tools/grammar_export.py --check  # THE GRAMMAR-DRIFT GATE (static, instant).
                                 #   `grammar.txt` is now GENERATED from the Earley parser's
                                 #   own rule table (src/ZebraGrammar.zig, 474 comptime rule
@@ -553,9 +586,9 @@ than "what do we know":
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 63 scripts | <!-- doc-gen: 63 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 64 scripts | <!-- doc-gen: 64 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 documents |
-| **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 46 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
+| **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 47 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
 
