@@ -327,11 +327,28 @@ bash tools/contract_mode_check.sh  # THE CONTRACT-STRIPPING CONTRACT (FULL tier,
                                 #   check, never on exit code alone — a build failure also
                                 #   exits non-zero, and scoring that as "the contract fired"
                                 #   would make a broken compiler look like a working guard.
-                                #   Verified red against both realistic regressions
-                                #   (--release stripping contracts; --turbo stripping
-                                #   assert): each mutant failed exactly one leg.
+                                #   THE RUNTIME LEGS ALONE FAIL OPEN on --release, though:
+                                #   non-zero + no sentinel scores `fired`, so a binary that
+                                #   crashed for an unrelated reason would pass while
+                                #   contracts were being stripped. That is why the mechanism
+                                #   legs cover ALL FOUR combos at EMIT level rather than
+                                #   just plain-vs-turbo — the claim carrying the most weight
+                                #   (a plain --release build KEEPS its contracts) must not
+                                #   rest on a panic.
+                                #   COVERS BOTH COMPILERS. `--gui-backend=*` delegates to
+                                #   zebra-bootstrap, so a GUI app built --release --turbo
+                                #   takes a path the selfhost legs never touch. The
+                                #   bootstrap DOES honour --turbo (verified); it takes
+                                #   --emit-zig, not --output-dir, so those legs cost no
+                                #   build. Asserting this for one of two compilers under the
+                                #   title "the contract-stripping contract" would be the
+                                #   same over-read that let BUG-228 sit under green gates.
+                                #   Verified red against four realistic regressions
+                                #   (--release stripping contracts, at runtime AND at emit;
+                                #   --turbo stripping assert; the bootstrap ignoring
+                                #   --turbo): each mutant failed exactly one leg.
                                 #   A vacuous run is a FAILURE — it refuses to report unless
-                                #   all 8 checks ran.
+                                #   all 13 checks ran.
 python tools/grammar_export.py --check  # THE GRAMMAR-DRIFT GATE (static, instant).
                                 #   `grammar.txt` is now GENERATED from the Earley parser's
                                 #   own rule table (src/ZebraGrammar.zig, 474 comptime rule

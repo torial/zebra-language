@@ -119,38 +119,90 @@ check "default"           fired "$(run_mode "$WORK/assert.zbr" NO-ASSERT)"
 check "--turbo"           fired "$(run_mode "$WORK/assert.zbr" NO-ASSERT --turbo)"
 check "--release --turbo" fired "$(run_mode "$WORK/assert.zbr" NO-ASSERT --release --turbo)"
 
-# Emit-level confirmation. The runtime legs above prove the OBSERVABLE behaviour;
-# this proves the mechanism is removal-at-emit rather than an optimiser happening
-# to drop a branch -- which would be a much weaker guarantee and could come back
-# at any Zig release.
-echo "── mechanism: stripping happens at EMIT, not in the optimiser"
-mkdir -p "$WORK/e1" "$WORK/e2"
-"$ZEBRA" --output-dir "$WORK/e1" "$WORK/contract.zbr" >/dev/null 2>&1
-"$ZEBRA" --turbo --output-dir "$WORK/e2" "$WORK/contract.zbr" >/dev/null 2>&1
-# NOTE: no `|| echo 0` here. `grep -c` ALREADY prints 0 when it matches nothing,
-# and also exits 1 -- so the fallback appended a SECOND zero and the value became
-# the two-line string "0\n0", which `[` then rejected as not-an-integer. A
-# fallback on a path feeding a comparison is the H3 hazard; here it did not even
-# have the decency to be silent.
-n_plain=$(grep -c 'require failed' "$WORK/e1"/contract.zig 2>/dev/null); n_plain=${n_plain:-0}
-n_turbo=$(grep -c 'require failed' "$WORK/e2"/contract.zig 2>/dev/null); n_turbo=${n_turbo:-0}
-CHECKS=$((CHECKS + 1))
-if [ "$n_plain" -gt 0 ] && [ "$n_turbo" -eq 0 ]; then
-    printf '  ok    %-34s plain=%s turbo=%s\n' "emitted zig contains contract" "$n_plain" "$n_turbo"
+# ── Emit-level legs ──────────────────────────────────────────────────────────
+#
+# The runtime legs above prove OBSERVABLE behaviour; these prove the MECHANISM is
+# removal at emit rather than an optimiser happening to drop a branch. That is a
+# much stronger guarantee: an optimiser-dependent one could come back at any Zig
+# release.
+#
+# ALL FOUR COMBOS, not just plain-vs-turbo. The first version checked only the
+# two that made the point most easily, which left the leg carrying the most
+# weight in Sean's ruling -- that a plain `--release` build KEEPS its contracts --
+# asserted by a panic alone. And the runtime classifier fails OPEN there: a
+# non-zero exit with no sentinel is scored `fired`, so a release binary that
+# crashed for an unrelated reason would pass while contracts were being stripped.
+# The emit check is what closes that, so it has to cover the release legs too.
+#
+# `emit_count SRC OUT FLAGS...` -> occurrences of the contract string.
+# Prints nothing on failure and returns non-zero: never a fallback VALUE, because
+# a fallback on a path feeding a comparison always biases toward "nothing
+# changed" (hazard H3).
+emit_count() {
+    local out="$1"; shift
+    mkdir -p "$out" || return 1
+    "$ZEBRA" "$@" --output-dir "$out" "$WORK/contract.zbr" >/dev/null 2>&1
+    local f="$out/contract.zig"
+    [ -f "$f" ] || return 1
+    # `grep -c` already prints 0 for no-match AND exits 1, so `|| echo 0` would
+    # append a SECOND zero -- the value became "0\n0" and `[` rejected it as
+    # not-an-integer. Take the count, ignore the exit status.
+    grep -c 'require failed' "$f" 2>/dev/null || true
+}
+
+emit_check() {
+    local label="$1" want="$2" n="$3"
+    CHECKS=$((CHECKS + 1))
+    if [ -z "$n" ]; then
+        printf '  FAIL  %-34s emit produced no .zig -- check is blind\n' "$label"
+        FAILED=$((FAILED + 1)); return
+    fi
+    if { [ "$want" = present ] && [ "$n" -gt 0 ]; } || { [ "$want" = absent ] && [ "$n" -eq 0 ]; }; then
+        printf '  ok    %-34s %s (n=%s)\n' "$label" "$want" "$n"
+    else
+        printf '  FAIL  %-34s want=%s got n=%s\n' "$label" "$want" "$n"
+        FAILED=$((FAILED + 1))
+    fi
+}
+
+echo "── mechanism: stripping happens at EMIT, not in the optimiser (selfhost)"
+emit_check "default"           present "$(emit_count "$WORK/e1")"
+emit_check "--release"         present "$(emit_count "$WORK/e2" --release)"
+emit_check "--turbo"           absent  "$(emit_count "$WORK/e3" --turbo)"
+emit_check "--release --turbo" absent  "$(emit_count "$WORK/e4" --release --turbo)"
+
+# ── The OTHER compiler ───────────────────────────────────────────────────────
+#
+# Everything above drives zig-out/bin/zebra.exe. But `--gui-backend=*` DELEGATES
+# to zebra-bootstrap.exe, so a GUI app built `--release --turbo` takes a path
+# none of the legs above touch. Titling this file "the contract-stripping
+# contract" while asserting it for one of two compilers is the same over-read
+# that let BUG-228 sit under green gates.
+#
+# The bootstrap does NOT accept --output-dir (and does not list --turbo in
+# --help), so these go through --emit-zig to stdout, which is also why they cost
+# no build at all.
+BOOT="zig-out/bin/zebra-bootstrap.exe"
+boot_count() {
+    local f="$WORK/boot.$CHECKS.zig"
+    "$BOOT" --emit-zig "$@" "$WORK/contract.zbr" > "$f" 2>/dev/null || return 1
+    [ -s "$f" ] || return 1
+    grep -c 'require failed' "$f" 2>/dev/null || true
+}
+if [ -x "$BOOT" ]; then
+    echo "── mechanism: the BOOTSTRAP honours --turbo too (the --gui-backend path)"
+    emit_check "bootstrap default" present "$(boot_count)"
+    emit_check "bootstrap --turbo" absent  "$(boot_count --turbo)"
 else
-    # n_plain==0 means the POSITIVE CONTROL failed: we could not find the contract
-    # even without --turbo, so a zero under --turbo proves nothing.
-    printf '  FAIL  %-34s plain=%s turbo=%s%s\n' "emitted zig contains contract" \
-           "$n_plain" "$n_turbo" \
-           "$([ "$n_plain" -eq 0 ] && printf '  (positive control did not fire -- check is blind)')"
-    FAILED=$((FAILED + 1))
+    echo "  FAIL  bootstrap not built -- cannot assert the --gui-backend path"
+    FAILED=$((FAILED + 1)); CHECKS=$((CHECKS + 2))
 fi
 
 echo
 # A skipped or vacuous run is a FAILURE, not a pass -- release_mode_check.sh
 # shipped once printing "all checks pass" with its only real assertion never
 # having run.
-EXPECTED=8
+EXPECTED=13
 if [ "$CHECKS" -ne "$EXPECTED" ]; then
     printf 'contract-mode: RAN %d OF %d checks -- refusing to report\n' "$CHECKS" "$EXPECTED"
     exit 1
