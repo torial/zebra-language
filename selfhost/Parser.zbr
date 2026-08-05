@@ -359,9 +359,14 @@ struct PMethod
     var type_params: List(str)
     var is_pure: bool
     var is_node_export: bool
+    # BUG-258. Defaulted, and declared AFTER every existing positional parameter,
+    # so no current call site shifts. Ast.Modifiers takes 15 positional booleans
+    # and nothing type-errors if one is inserted mid-list -- the same hazard lives
+    # here, so new flags go on the end.
+    var is_extern: bool
     var line: int
     var col: int
-    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool, type_params: List(str), is_pure: bool = false, is_node_export: bool = false, line: int = 0, col: int = 0)
+    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool, type_params: List(str), is_pure: bool = false, is_node_export: bool = false, line: int = 0, col: int = 0, is_extern: bool = false)
         .name = name
         .is_static = is_static
         .is_private = is_private
@@ -377,6 +382,7 @@ struct PMethod
         .type_params = type_params
         .is_pure = is_pure
         .is_node_export = is_node_export
+        .is_extern = is_extern
         .line = line
         .col = col
 
@@ -1402,10 +1408,25 @@ class Parser
             return .parseTypeAliasDecl()?
         else if .textIs("static")
             .advance()
+            if .textIs("extern")
+                .advance()
+                if not .textIs("def")
+                    raise .errorAt("`extern` may only precede `def` — extern declarations name a foreign FUNCTION")
+                return .parseMethodDecl(true, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export, true)?
             return .parseMethodDecl(true, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export)?
         else if .textIs("export")
             .advance()
             return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, true, pending_pure, pending_node_export)?
+        # BUG-258: `extern def f(...)` declares a foreign symbol. Only `def` may
+        # follow — `extern var` / `extern class` are out of scope, and out of
+        # scope has to mean REFUSED. A silently-dropped modifier is exactly how
+        # this bug existed in the first place: the bootstrap accepted `extern def`,
+        # discarded the flag, and emitted something that compiled.
+        else if .textIs("extern")
+            .advance()
+            if not .textIs("def")
+                raise .errorAt("`extern` may only precede `def` — extern declarations name a foreign FUNCTION")
+            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export, true)?
         else if .textIs("def")
             return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export)?
         else if .textIs("var")
@@ -1895,7 +1916,7 @@ class Parser
             stmts = .parseBlock()?
         return PNode.init_(PInit(params, stmts))
 
-    def parseMethodDecl(is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: List(str), is_export: bool, is_pure: bool = false, is_node_export: bool = false): PNode throws
+    def parseMethodDecl(is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: List(str), is_export: bool, is_pure: bool = false, is_node_export: bool = false, is_extern: bool = false): PNode throws
         const line = .peek().line
         .expectText("def")?
         const _dl = .peek().line
@@ -1983,7 +2004,7 @@ class Parser
                 var wrapped = List(PNode)()
                 wrapped.add(PNode.stmt_try_catch(PTryCatch(stmts, catch_binding, catch_stmts, line)))
                 stmts = wrapped
-        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export, _dl, _dc))
+        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export, _dl, _dc, is_extern))
 
     # -- Block and statements --------------------------------------------------
 

@@ -407,6 +407,11 @@ class ASTBuilder
         mods.is_export = m.is_export
         mods.is_pure = m.is_pure
         mods.is_node_export = m.is_node_export
+        # BUG-258. Assigned by FIELD, not position — Modifiers takes 15 positional
+        # booleans and an inserted argument shifts every later one with nothing
+        # type-erroring. `is_extern` was already declared on Modifiers and simply
+        # never set by anything.
+        mods.is_extern = m.is_extern
         return Decl.method(DeclMethod(nameSpan(m.line, m.col, m.name), mods, m.name, m.type_params, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags))
 
     # ── Init (cue init) ───────────────────────────────────────────────────────

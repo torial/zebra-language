@@ -4224,7 +4224,11 @@ struct Generator
         # prefix so it cannot collide with a preamble parameter/local.  Methods are
         # inside a struct namespace and cannot collide, so they keep their names.
         var fn_name: str = m.name
-        if owner == "" and not in_namespace
+        # BUG-258: an extern declaration must keep its EXACT name -- it is the
+        # linker symbol. The `_zbr_fn_` prefix below (BUG-220) prevents collision
+        # with preamble symbols for functions we DEFINE; applying it to one we
+        # merely declare would point the linker at a name nothing exports.
+        if owner == "" and not in_namespace and not m.mods.is_extern
             fn_name = topLevelFnZigName(m.name)
         if m.mods.is_once
             # Cache field (skipped when genClass already emitted it in the fields pass).
@@ -4270,6 +4274,12 @@ struct Generator
         writeIndent()
         if m.mods.is_once
             w.emit("fn ")
+        else if m.mods.is_extern
+            # BUG-258. `extern fn` takes Zig's C calling convention and must carry
+            # NO body -- the symbol lives in another object. Deliberately not `pub`:
+            # an extern declaration binds a foreign symbol locally, and re-exporting
+            # it would let two modules declare the same symbol.
+            w.emit("extern fn ")
         else if m.mods.is_export
             w.emit("pub export fn ")
         else
@@ -4335,7 +4345,13 @@ struct Generator
             genType(m.return_type!)
         else
             w.emit("void")
-        if m.stmts as mstmts
+        # BUG-258: extern is decided FIRST. An extern decl carries an empty
+        # statement list, not a nil one, so the has-a-body arm below would
+        # otherwise win and emit `{ _ = a; }` -- a DEFINITION of the symbol we
+        # meant to import, which links and shadows the real one.
+        if m.mods.is_extern
+            w.emit(";\n\n")
+        else if m.stmts as mstmts
             var rs = analyzeEscapes(mstmts)
             var ps = StrSet()
             var sp = StrSet()
@@ -4513,6 +4529,11 @@ struct Generator
             writeIndent()
             w.emit("}\n\n")
         else
+            # Abstract: bodyless but NOT extern. Keyed off the MODIFIER, never off
+            # "has no body" -- the two are indistinguishable here, and conflating
+            # them would silently turn every abstract method in the language into a
+            # foreign declaration. test/extern/ex_abstract_still_unreachable.zbr
+            # guards exactly that.
             w.emit(" {\n")
             var ig = indented()
             ig.line("unreachable; // abstract")

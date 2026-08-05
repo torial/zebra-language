@@ -1,7 +1,18 @@
 # @extern accepts
-# Modifier composition. `public extern` is meaningful: the Zebra-side symbol is
-# visible to other modules even though the implementation is foreign.
-public extern def zebra_probe_pub(): int32
+# Modifier composition. `extern` must compose with the modifiers top level
+# actually HAS.
+#
+# Originally written as `public extern def`. That was a PROBE BUG, not a finding:
+# top-level `public` is unsupported in Zebra at all
+# (`unexpected top-level token: 'public'`), so `public extern` could never have
+# worked, and asserting it would have blamed `extern` for a pre-existing limit.
+# Caught by checking before implementing — which is the only reason it did not
+# become a spurious requirement that someone later "fixed".
+#
+# `static` and `export` are the two the top-level dispatcher takes. `export extern`
+# is a contradiction — a symbol cannot be both defined here for others and defined
+# elsewhere — so `static extern` is the only composition worth asserting.
+static extern def zebra_probe_static(): int32
 
 def main()
     print("declared")
