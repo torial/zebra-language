@@ -1,7 +1,215 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-257. Next new bug: BUG-258.**
+**Last bug number generated: BUG-260. Next new bug: BUG-261.**
+
+---
+
+### BUG-260: a parameter used only inside a query's param-list literal is emitted as unused, producing uncompilable Zig
+
+> A `def` parameter referenced *only* inside the `[...]` bind list of
+> `d.query(sql, [...])` is not counted as used. Zebra emits the unused-parameter
+> discard **and** the use, and Zig rejects the pair.
+>
+> **Source:**
+> ```
+> def pwc(d: SqliteDb, pid: int): List(PwcRow)
+>     var out: List(PwcRow) = []
+>     var rows = d.query("CALL pwc(?)", [pid])
+> ```
+>
+> **Emitted:**
+> ```zig
+> pub fn _zbr_fn_pwc(d: SqliteDb, pid: i64) std.ArrayList(PwcRow) {
+>     _ = pid;                                     // <- treated as unused
+>     const rows = d.query_p_("CALL pwc(?)",
+>         &[_]_SqliteParam{.{ .int = @as(i64, @intCast(pid)) }});   // <- used
+> ```
+>
+> **Result:**
+> ```
+> error: pointless discard of function parameter
+>     _ = pid;
+> ```
+>
+> **Repro:** `zebra-sprocket/gen_check.zbr`.
+>
+> **Why it matters beyond the one case:** this is the shape *generated* code
+> takes. A generator emits a function per procedure whose parameters exist
+> solely to be bound, so every generated binding with a parameter hits this.
+> Hand-written code tends to use a parameter somewhere else too, which is
+> probably why it has not been seen.
+>
+> **The analysis, not the discard, is the bug.** Suppressing `_ = x;` when a
+> param-list literal mentions the name would fix the symptom; the underlying
+> issue is that the usage walk does not descend into that literal, and anything
+> else asking "is this used?" will be wrong in the same place.
+>
+> **Control when fixing:** a `def` whose parameter appears *only* inside a query
+> bind list must compile; and one whose parameter is genuinely unused must still
+> emit the discard. Both directions, or it is not a fix — the easy wrong fix is
+> to stop emitting the discard entirely.
+>
+> *(Filed by Fable, 2026-08-05, from `zebra-sprocket`. The generated Zebra is
+> correct; the compiler mistranslates it.)*
+
+### BUG-259: `zebra.exe run` exits 0 after a compile error AND after a runtime assertion failure
+
+> **Any build gate hung on `errorlevel` reads a failed compile as success.** Filed
+> ahead of BUG-258 because it is the smaller fix and the larger consequence.
+>
+> ```
+> > zebra.exe run probe_extern.zbr & echo EXIT=%ERRORLEVEL%
+> probe_extern.zbr:5:1: error: unexpected top-level token: 'extern'
+> EXIT=0
+> ```
+>
+> The diagnostic is correct, well-formed and pointed at the right line. The process
+> then returns success. A caller that checks the exit code — a gate script, CI, a
+> `Makefile`, another tool driving the compiler — is told the build worked.
+>
+> **ESCALATED, same day: it is not only compile errors. A RUNTIME ASSERTION
+> FAILURE also returns 0.**
+>
+> ```
+> thread 22192 panic: expected 2 parents, got 2
+> EXIT=0
+> ```
+>
+> The program panicked, printed the assertion message, and `zebra.exe run`
+> returned success. **This matters far more than the compile-error case**, because
+> `test/*.zbr` is built on `assert` — a corpus of tests whose failures are
+> invisible to any caller reading the exit code.
+>
+> `tools/gates.sh:97` does capture it (`timeout ... "$@"; rc=$?`). Whether any
+> gate leg's `rc` comes from `zebra.exe run` rather than from a separately
+> compiled binary is for someone with the tree to check — I am reporting the
+> mechanism, not the blast radius.
+>
+> **Suggested control when fixing:** a `.zbr` that asserts something false, run
+> through whatever path the gates use, must produce non-zero. Watch it go red
+> before trusting it green — a fix to an exit code is exactly the kind that
+> reports success while changing nothing.
+>
+> **Repro:** any `.zbr` that fails to parse. `zebra-sprocket/probe_extern.zbr` is one.
+>
+> **Expected:** non-zero on any diagnostic that prevented a run.
+>
+> **Why this is worth the interruption.** It is the third instance this week of one
+> failure shape, in three unrelated toolchains: `nmake` printing `BUILD_OK` after a
+> failed compile, a missing `compiler_rt.dll` exiting 0 having printed nothing, and
+> now this. Two of those were caught only because the *count* of what should have
+> reported was wrong, not because anything went red. A gate that cannot distinguish
+> "compiled" from "failed to compile" is not a gate, and gates are being built right
+> now. See `wiki/pages/concepts/concept_false-green-taxonomy.md`.
+>
+> *(Filed by Fable, 2026-08-05, from outside the tree — found while probing whether
+> Zebra could reach the sprocket SQLite fork.)*
+> ---
+>
+> **VERIFICATION 2026-08-05 (Opus 5, in the tree): DOES NOT REPRODUCE. The compiler's
+> exit codes are correct; the probe was misreading them.**
+>
+> In `cmd.exe`, `%ERRORLEVEL%` on a single command line is expanded **before the line
+> executes**, so `A & echo EXIT=%ERRORLEVEL%` prints the errorlevel from *before* `A`
+> ran — always `0` in a fresh shell. It is the delayed-expansion trap, not a compiler
+> behaviour.
+>
+> | probe | result |
+> |---|---|
+> | bash, compile error (`extern` at top level) | `rc=1` |
+> | bash, runtime `assert` failure | `rc=1` |
+> | cmd, the filed form `& echo EXIT=%ERRORLEVEL%` | `EXIT=0` ← the artifact |
+> | cmd, `& if errorlevel 1` (evaluated at RUNTIME, not expanded) | `COMPILER_REALLY_FAILED` |
+> | control: `cmd /c "echo BEFORE_ANY_COMMAND=%ERRORLEVEL%"` | `0` — confirms early expansion |
+>
+> Run with the reported file shape (`extern` at top level, the exact diagnostic quoted
+> above) and with a failing `assert`, through both `zebra.exe run` and plain
+> `zebra.exe`. All four return 1.
+>
+> **No fix should be attempted.** A change to these exit codes would alter behaviour that
+> is already correct — and per this ticket's own warning, an exit-code fix is exactly the
+> kind that reports success while changing nothing. The suggested control (a `.zbr` that
+> asserts something false must produce non-zero) **already passes today**.
+>
+> The report's wider point stands and is worth keeping: this was the third instance that
+> week of a caller reading a failure as success. It is simply that on this occasion the
+> instrument was the one at fault, which is the same lesson pointed at the observer —
+> see `concept_false-green-taxonomy` Part 4, where a zero that is the *expected* answer is
+> the hardest kind to doubt.
+>
+> **STATUS: closed, not-reproducible.** Filed in good faith from outside the tree; the
+> reporter explicitly flagged the blast radius as unverified and asked someone with the
+> tree to check. This is that check.
+
+### BUG-258: `extern` is in the grammar and rejected by the parser — second instance of a known class
+
+> `grammar.txt` lists `extern` as a modifier (lines 41 and 51). Nothing under `test/`
+> or `examples/` uses it. The parser rejects it:
+>
+> ```
+> probe_extern.zbr:5:1: error: unexpected top-level token: 'extern'
+>   — expected a declaration (def, class, struct, enum, union, use, var, const)
+> ```
+>
+> **This is the same shape as the `~` operator (2026-08-04):** present in grammar,
+> lexer, AST and codegen, missing only from the parser. Two specimens of one class
+> suggests the grammar and the parser have drifted in **more than one place**, and
+> that the useful work is a *sweep* — enumerate every production `grammar.txt`
+> declares, attempt each, and record which ones the parser will not take — rather
+> than fixing whichever one somebody trips over next.
+>
+> That sweep is also the thing that makes the grammar trustworthy as a reference,
+> which is what let the `~` discovery land at all: without a grammar you believe,
+> a parse error reads as your own mistake and gets silently discarded. Being wrong
+> about the system leaves a bug report; being wrong about yourself leaves nothing.
+>
+> **Decide before fixing:** whether `extern` is *meant* to exist. If Zebra has no
+> FFI story yet, the honest fix may be removing it from `grammar.txt` rather than
+> implementing it — a grammar that promises what the language does not have is the
+> same defect pointed the other way.
+>
+> **Consequence noted, not urgent:** with no FFI escape hatch, `zebra-sprocket`
+> cannot reach `sqlite3_proc_next_resultset()` from outside the tree, so the
+> multi-set-proc (S4) path stays blocked until Zebra takes the change. The folded
+> JSON path works today and is unaffected.
+>
+> *(Filed by Fable, 2026-08-05.)*
+> ---
+>
+> **VERIFICATION 2026-08-05 (Opus 5, in the tree): confirmed, but the diagnosis is the
+> wrong way round — and the state is worse than "rejected".**
+>
+> It is not grammar-vs-parser drift, and it is not the selfhost-lags-bootstrap class:
+>
+> | | `extern def foo(): int` |
+> |---|---|
+> | **selfhost** (`zebra.exe`) | rejects with the quoted error — **correct behaviour** |
+> | **bootstrap** (`zebra-bootstrap.exe`) | **accepts it**, drops the modifier, emits `unreachable; // abstract` |
+>
+> The bootstrap's output **compiles**; it was built to an `.exe` to confirm. So today an
+> `extern` declaration silently becomes an abstract method that traps in Debug and is
+> **undefined behaviour under `zebra --release`** (ReleaseFast), which is the hazard
+> `tools/lint_oom_unreachable.py` exists for. An accepted declaration compiling to UB is
+> worse than a clean rejection, so **on this one the selfhost is right and the bootstrap
+> is wrong** — the same inversion as BUG-254.
+>
+> Consequence for the suggested fix: porting the bootstrap's handling into the selfhost
+> would replace a correct error with a silent trap. Do not do that.
+>
+> Two corrections to details, both minor and neither affecting the conclusion:
+> - `export` is **not** affected. It works in both compilers (emits `pub export fn`) and is
+>   exercised by `test/dynlib_export_def_test.zbr` and `examples/hello_plugin.zbr`.
+> - `grammar.txt` is **generated** from the Earley rule table as of 2026-08-04, so it cannot
+>   be edited directly; the declarations live at `src/ZebraGrammar.zig:348,351,370`.
+>
+> **DECIDED 2026-08-05 (Sean): `extern` is meant to exist, to enable the FFI work.** So the
+> resolution is to implement it, not to remove it from the grammar. Reclassified from a
+> parser gap to an unimplemented feature; see the implementation notes below.
+>
+> The report's central recommendation — *sweep the grammar rather than fix whatever
+> someone trips over next* — is accepted and is now tracked separately. `~` and `extern`
+> are two specimens; the sweep is what says whether there is a third.
 
 ---
 
