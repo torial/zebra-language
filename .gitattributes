@@ -9,3 +9,12 @@
 # `-diff` keeps that noise out of diffs/logs (use `git diff --text` to see it);
 # `linguist-generated` keeps it out of GitHub review and language stats.
 selfhost/*.zig linguist-generated=true -diff
+
+# Documentation. Not a correctness hazard the way .zbr is (nothing tokenizes a
+# .md), but a CRLF rewrite of a large ledger produces a diff in which EVERY line
+# has changed -- BUGS.md turned up on 2026-08-05 as 1,597 insertions and 1,508
+# deletions for what was a 90-line addition. That is not cosmetic: it makes the
+# real change unreviewable, and review is the only control on an append-only
+# record. Normalising here fixes it for whoever writes next, rather than asking
+# every tool and every author to remember.
+*.md text eol=lf
