@@ -874,7 +874,18 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 # references to it.  A StrSet (not a scan of module_decls) because
                 # genIdentRaw runs on EVERY identifier in the program.
                 g.toplevel_fns.add(tlm.name)
-                if tlm.mods.is_export or tlm.mods.is_node_export
+                # BUG-258: `extern` belongs in this set for the same reason `export`
+                # does -- both mean "this symbol keeps its REAL name". Registering it
+                # here fixes the CALL SITE, not just the declaration: the declaration
+                # was already emitted unmangled by genMethod, so `extern fn abs(...)`
+                # looked correct while every reference to it still emitted
+                # `_zbr_fn_abs`, and the program failed to compile with
+                # `use of undeclared identifier '_zbr_fn_abs'`.
+                #
+                # That asymmetry is invisible to a declaration-only fixture -- which is
+                # exactly why the design note said a compile-only test would pass while
+                # the feature was broken. It took a probe that CALLS the function.
+                if tlm.mods.is_export or tlm.mods.is_node_export or tlm.mods.is_extern
                     g.toplevel_export_fns.add(tlm.name)
             on Decl.use_ as imp
                 populateBoxedVariants(g.boxed_variants, deps_mt)

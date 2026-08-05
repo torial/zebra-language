@@ -1,7 +1,8 @@
 <!-- doc-status: design -->
 # `extern` — declaring foreign symbols (BUG-258)
 
-**Status:** designed, not implemented. Findings below are measured; the plan is not built.
+**Status:** DECLARATION implemented in both compilers; LINKING not solved. See section 6
+for the current state — do not read sections 1-3 as future tense.
 **Decided by Sean 2026-08-05:** `extern` is meant to exist, to enable the FFI work.
 **Written 2026-08-05 by Opus 5** after verifying BUG-258 in the tree.
 
@@ -158,3 +159,50 @@ Deliberately out, and each would be its own decision:
 - Callbacks from C into Zebra (needs `export` plus a stable calling convention; `export`
   already works, so this is closer than the rest).
 - Any `zebra build` change. `BuildTarget.linkLib` is assumed sufficient and **unverified**.
+
+---
+
+## 6. Status 2026-08-05 — declaration DONE, linking NOT
+
+Implemented in both compilers. The emit is correct and verified:
+
+    extern def GetCurrentProcessId(): uint32
+      ->  extern fn GetCurrentProcessId() u32;
+          const pid: u32 = GetCurrentProcessId();
+
+**Red-team: 20/23.** The 3 remaining are all bootstrap PERMISSIVENESS (it accepts a body
+on an extern decl, and `extern var` / `extern class`, where the selfhost correctly
+refuses). The shipping compiler rejects all three with a clear message.
+
+### The call-site bug, which only a CALLING probe could find
+
+The declaration emitted unmangled while every REFERENCE still emitted `_zbr_fn_abs`, so
+the program failed with `use of undeclared identifier '_zbr_fn_abs'`. Fixed by registering
+extern names in `toplevel_export_fns` — the set meaning *"this symbol keeps its real
+name"*, which is as true of `extern` as of `export`.
+
+This is precisely what §4 predicted: *"a compile-only fixture would pass while the feature
+is broken."* It did. Every declaration-shaped probe was green while no call could compile.
+
+### DECISION A IS INSUFFICIENT ON WINDOWS — measured, and it changes the plan
+
+A bare `extern fn` cannot reach a DLL symbol. `GetCurrentProcessId()` links and then
+**segfaults at the call**, with the emitted Zig visibly correct. Zig needs two things this
+design does not emit:
+
+    extern "kernel32" fn GetCurrentProcessId() callconv(.winapi) u32;
+                ^^^^^^^^^                      ^^^^^^^^^^^^^^^^
+                library name                   calling convention
+
+Both were deferred to "decision B" as *nice-to-have*. On the primary platform they are
+**required**, so B's library-name half is no longer optional. Zebra needs a way to say
+which library a symbol comes from — some form of `extern("kernel32") def ...` — and Win32
+needs its calling convention.
+
+**Not yet distinguished** (and worth an experiment before designing the syntax): whether a
+statically-linked C object works *today* with the bare form. If it does, this is precisely
+a DLL-import gap rather than a general FFI gap, and the fix is narrower than it looks.
+
+**So `extern` should not be described as working until a probe CALLS a foreign function and
+checks the value.** The declaration half is real and useful — it is what the sprocket work
+needs to express bindings — but nothing yet proves one resolves.
