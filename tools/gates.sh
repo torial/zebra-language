@@ -225,9 +225,43 @@ if [[ "$MODE" == "full" ]]; then
     run "divergence"    "gate PASS" env JOBS="$JOBS" bash tools/divergence_check.sh --gate
 fi
 
+# -- Did every gate actually RUN? ---------------------------------------------
+#
+# The summary used to print "$PASSED/$PASSED PASS" -- both numbers the same, which is a
+# tautology rather than a check. A gate that silently stopped running (a `run` line removed,
+# an early exit, a conditional that skipped it) produced "21/21 PASS" and looked healthy.
+#
+# Credit: found by applying Fable's false-green taxonomy (wiki concept_false-green-taxonomy,
+# 2026-08-04) to this file. Its finding is that every false green presents as an ABSENCE
+# rather than a wrong value, and its check is "count what SHOULD have reported, and
+# compare". A green result is a claim about what was FOUND; it is not a claim that anything
+# ran.
+#
+# SELF-CALIBRATING: the expectation comes from this script's own `run` lines, so adding or
+# removing a gate cannot leave a stale constant behind. Note the FULL-tier gates are
+# INDENTED inside the `if` block, so the pattern must allow leading whitespace -- counting
+# only `^run "` yields 15 for both tiers and would have made this check vacuous, which is
+# the same class of bug it exists to catch.
+# Anchor on the `if` that opens the FULL block, NOT on any line mentioning "full" -- the
+# option parser near the top matches that too, and using it yielded a QUICK expectation of
+# ZERO, which would have made this check pass vacuously forever.
+_full_at="$(grep -n 'MODE" == "full" \]\]; then$' "$0" | head -1 | cut -d: -f1)"
+_expected_full="$(grep -cE '^[[:space:]]*run "' "$0")"
+_expected_quick="$(head -n "${_full_at:-999999}" "$0" | grep -cE '^[[:space:]]*run "')"
+if [[ "$MODE" == "full" ]]; then _expected="$_expected_full"; else _expected="$_expected_quick"; fi
+_actual=$(( PASSED + ${#FAILED[@]} ))
+if [[ "$_actual" -ne "$_expected" ]]; then
+    printf '\033[31mgates: RAN %d OF %d -- %d gate(s) never executed\033[0m\n' \
+           "$_actual" "$_expected" "$(( _expected - _actual ))" >&2
+    printf '  A gate that does not run reports nothing, and nothing looks like success.\n' >&2
+    printf '  Ran: %d passed, %d failed. Expected %d for the %s tier.\n' \
+           "$PASSED" "${#FAILED[@]}" "$_expected" "$MODE" >&2
+    exit 1
+fi
+
 echo
 if [[ ${#FAILED[@]} -eq 0 ]]; then
-    printf '\033[32mgates: %d/%d PASS (%s)\033[0m\n' "$PASSED" "$PASSED" "$MODE"
+    printf '\033[32mgates: %d/%d PASS (%s)\033[0m\n' "$PASSED" "$_expected" "$MODE"
     [[ "$MODE" == "quick" ]] && echo "  (quick tier — run --full before committing a codegen change)"
     exit 0
 else
