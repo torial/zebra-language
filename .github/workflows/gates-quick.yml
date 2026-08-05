@@ -1,0 +1,114 @@
+# QUICK tier on every push and PR. ~10-15 min.
+#
+# WHY THE REPO IS CHECKED OUT INTO A SUBDIRECTORY. build.zig.zon declares the
+# Earley parser as `.path = "../earley"` -- a SIBLING directory, not a package
+# URL. So the checkout must reproduce that layout:
+#
+#   $GITHUB_WORKSPACE/
+#     zebra-language/   <- this repo
+#     earley/           <- torial/earley, public
+#
+# Without the sibling the build fails at step one with
+# `unable to open '.../../earley': FileNotFound`. That is not a CI quirk: it is
+# why nobody but the author can currently build this project from a clean clone.
+# The real fix is the one build.zig.zon's own comment names -- "replace with a
+# URL + hash when published" -- and it is on the 0.9-beta checklist. This
+# workflow works either way, so migrating the dependency will not break it.
+name: gates (quick)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push makes an in-flight run pointless. Cancel it rather than pay for both.
+concurrency:
+  group: quick-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quick:
+    # Windows is the ONLY tested platform for this project (see the 0.9-beta
+    # checklist, section F). Running the gates on ubuntu would not be a cheaper
+    # version of this job -- it would be an untested configuration reporting on
+    # an untested configuration.
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out zebra-language
+        uses: actions/checkout@v4
+        with:
+          path: zebra-language
+
+      - name: Check out earley (sibling dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: torial/earley
+          path: earley
+
+      # Zig is downloaded directly rather than via a third-party action, and
+      # pinned by CHECKSUM as well as version. The URL and shasum were taken
+      # from ziglang.org/download/index.json, not guessed -- the filename format
+      # is `zig-x86_64-windows-0.16.0.zip`, which is NOT the older
+      # `zig-windows-x86_64-...` pattern that instinct suggests.
+      - name: Cache Zig
+        id: cache-zig
+        uses: actions/cache@v4
+        with:
+          path: zig-toolchain
+          key: zig-0.16.0-x86_64-windows
+
+      - name: Download Zig 0.16.0
+        if: steps.cache-zig.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          url=https://ziglang.org/download/0.16.0/zig-x86_64-windows-0.16.0.zip
+          want=68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e
+          curl -fsSL "$url" -o zig.zip
+          got=$(sha256sum zig.zip | cut -d' ' -f1)
+          # A checksum mismatch must STOP the job, not warn. A silently-wrong
+          # toolchain would make every gate below measure the wrong compiler,
+          # which is worse than no CI at all.
+          [ "$got" = "$want" ] || { echo "::error::Zig checksum mismatch: got $got want $want"; exit 1; }
+          unzip -q zig.zip
+          mv zig-x86_64-windows-0.16.0 zig-toolchain
+
+      - name: Put Zig on PATH and prove it runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "$GITHUB_WORKSPACE/zig-toolchain" >> "$GITHUB_PATH"
+          # Liveness, not presence: a binary that cannot start prints nothing and
+          # exits 0 in some failure modes. Make it say its version, and check it.
+          v="$("$GITHUB_WORKSPACE/zig-toolchain/zig.exe" version)"
+          echo "zig version: $v"
+          [ "$v" = "0.16.0" ] || { echo "::error::expected zig 0.16.0, got '$v'"; exit 1; }
+
+      - name: Python version (gates call bare `python`)
+        shell: bash
+        run: python --version
+
+      - name: Build
+        shell: bash
+        working-directory: zebra-language
+        run: zig build
+
+      # gates.sh runs tools/doctor.sh as a preflight and REFUSES to report on an
+      # untrustworthy tree, so this is not merely informational -- if it exits 1,
+      # the gate results below would have been lies.
+      - name: Doctor (tree trustworthy?)
+        shell: bash
+        working-directory: zebra-language
+        run: bash tools/doctor.sh
+
+      - name: Gates (QUICK tier)
+        shell: bash
+        working-directory: zebra-language
+        run: bash tools/gates.sh
+
+      # gates.sh already asserts that every registered gate RAN (it counts its own
+      # `run` lines), so a silently-skipped gate fails the step above rather than
+      # passing quietly. Nothing further is needed here.

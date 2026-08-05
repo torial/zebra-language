@@ -209,9 +209,28 @@ Also worth a human pass (advertised, thinly exercised):
 
 ## F. Environment and distribution
 
-- [ ] **There is no CI.** Every gate runs only when a human remembers. Decide whether
-      0.9-beta ships without it. *(This is the single highest-leverage automation item on
-      the list — everything else here is genuinely human work; this is not.)*
+- [x] ~~**There is no CI.**~~ **Added 2026-08-05**: `.github/workflows/gates-quick.yml`
+      (push/PR) and `gates-full.yml` (nightly + manual). Public repo, so Actions minutes
+      are free and unlimited, Windows runners included. Verified by building and running
+      the QUICK tier from a **fresh clone** with no machine-specific setup: **15/15 PASS**,
+      build 32 s. Still needs one real run on GitHub to confirm — see below
+
+- [ ] **Confirm the first CI run actually goes green on GitHub.** Everything was verified
+      locally against a clean clone; what cannot be verified locally is the runner itself.
+      If it fails, the two likeliest causes are the `torial/earley` checkout and Python
+      version drift on the image
+
+- [ ] **BLOCKER FOUND 2026-08-05: nobody but Sean can build this project.**
+      `build.zig.zon` declares the Earley parser as `.path = "../earley"` — a **sibling
+      directory**, not a package URL. A clean clone fails at step one with
+      `unable to open '.../../earley': FileNotFound`. This is not a CI quirk; it is the
+      literal first thing a stranger hits.
+      `torial/earley` is already public, and the file's own comment says *"replace with a
+      URL + hash when published."* The CI workflows work around it by checking out the
+      sibling, so **CI does not force the decision** — but a 0.9-beta that others are meant
+      to build does. Decide: migrate to URL + hash (pins a version; you lose live local
+      editing of earley), or document the sibling-clone requirement in the README as the
+      supported way to build
 - [ ] **Windows is the only tested platform.** Does 0.9-beta claim any other? If yes, build
       and run the corpus there. If no, say so in the README
 - [ ] A path with **spaces**, and a **non-ASCII** path, for input, `--output-dir`, and

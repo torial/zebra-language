@@ -1,0 +1,99 @@
+# FULL tier: nightly, and on demand. ~60-90 min on a runner.
+#
+# Kept separate from the QUICK workflow on purpose. The FULL tier's heavy gates
+# (compile_check x2, output_sweep, full_sweep, examples_sweep, divergence) are
+# minutes each and would make every push wait on them. The split is the same one
+# gates.sh already draws, so "gates green" keeps the same meaning in CI that it
+# has locally.
+#
+# See gates-quick.yml for why the repo is checked out into a subdirectory
+# alongside torial/earley.
+name: gates (full)
+
+on:
+  schedule:
+    # 09:00 UTC = ~02:00 America/Los_Angeles. Deliberately overnight: several
+    # gates are RAM-bound and one (release-mode) builds with LLVM.
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: full
+  cancel-in-progress: false
+
+jobs:
+  full:
+    runs-on: windows-latest
+    timeout-minutes: 150
+
+    steps:
+      - name: Check out zebra-language
+        uses: actions/checkout@v4
+        with:
+          path: zebra-language
+
+      - name: Check out earley (sibling dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: torial/earley
+          path: earley
+
+      - name: Cache Zig
+        id: cache-zig
+        uses: actions/cache@v4
+        with:
+          path: zig-toolchain
+          key: zig-0.16.0-x86_64-windows
+
+      - name: Download Zig 0.16.0
+        if: steps.cache-zig.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          url=https://ziglang.org/download/0.16.0/zig-x86_64-windows-0.16.0.zip
+          want=68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e
+          curl -fsSL "$url" -o zig.zip
+          got=$(sha256sum zig.zip | cut -d' ' -f1)
+          [ "$got" = "$want" ] || { echo "::error::Zig checksum mismatch: got $got want $want"; exit 1; }
+          unzip -q zig.zip
+          mv zig-x86_64-windows-0.16.0 zig-toolchain
+
+      - name: Put Zig on PATH and prove it runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "$GITHUB_WORKSPACE/zig-toolchain" >> "$GITHUB_PATH"
+          v="$("$GITHUB_WORKSPACE/zig-toolchain/zig.exe" version)"
+          echo "zig version: $v"
+          [ "$v" = "0.16.0" ] || { echo "::error::expected zig 0.16.0, got '$v'"; exit 1; }
+
+      - name: Build
+        shell: bash
+        working-directory: zebra-language
+        run: zig build
+
+      - name: Doctor (tree trustworthy?)
+        shell: bash
+        working-directory: zebra-language
+        run: bash tools/doctor.sh
+
+      # JOBS=2 matches the local convention: full_sweep is RAM-bound, and a
+      # windows-latest runner is 4 cores / 16 GB. Raising it trades a real risk
+      # of measuring memory pressure as a failure for a modest wall-clock win.
+      - name: Gates (FULL tier)
+        shell: bash
+        working-directory: zebra-language
+        env:
+          JOBS: '2'
+        run: bash tools/gates.sh --full
+
+      # Explicitly OUTSIDE the tier, exactly as documented: folding these in
+      # would change what "gates green" means. Run here because nightly is when
+      # we can afford them -- and `continue-on-error` because gramgen is a
+      # robustness sweep whose failures are worth seeing without turning the
+      # board red on a schedule nobody is watching at 02:00.
+      - name: Parser robustness fuzz (not part of any tier)
+        shell: bash
+        working-directory: zebra-language
+        continue-on-error: true
+        run: python fuzz/gramgen.py --gate
