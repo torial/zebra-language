@@ -6,8 +6,7 @@
 # gates.sh already draws, so "gates green" keeps the same meaning in CI that it
 # has locally.
 #
-# See gates-quick.yml for why the repo is checked out into a subdirectory
-# alongside torial/earley.
+# A plain checkout suffices; see gates-quick.yml.
 name: gates (full)
 
 on:
@@ -27,16 +26,8 @@ jobs:
     timeout-minutes: 150
 
     steps:
-      - name: Check out zebra-language
+      - name: Check out
         uses: actions/checkout@v4
-        with:
-          path: zebra-language
-
-      - name: Check out earley (sibling dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: torial/earley
-          path: earley
 
       - name: Cache Zig
         id: cache-zig
@@ -69,12 +60,10 @@ jobs:
 
       - name: Build
         shell: bash
-        working-directory: zebra-language
         run: zig build
 
       - name: Doctor (tree trustworthy?)
         shell: bash
-        working-directory: zebra-language
         run: bash tools/doctor.sh
 
       # JOBS=2 matches the local convention: full_sweep is RAM-bound, and a
@@ -82,7 +71,6 @@ jobs:
       # of measuring memory pressure as a failure for a modest wall-clock win.
       - name: Gates (FULL tier)
         shell: bash
-        working-directory: zebra-language
         env:
           JOBS: '2'
         run: bash tools/gates.sh --full
@@ -94,6 +82,5 @@ jobs:
       # board red on a schedule nobody is watching at 02:00.
       - name: Parser robustness fuzz (not part of any tier)
         shell: bash
-        working-directory: zebra-language
         continue-on-error: true
         run: python fuzz/gramgen.py --gate

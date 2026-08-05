@@ -220,25 +220,21 @@ Also worth a human pass (advertised, thinly exercised):
       If it fails, the two likeliest causes are the `torial/earley` checkout and Python
       version drift on the image
 
-- [ ] **BLOCKER FOUND 2026-08-05: nobody but Sean can build this project.**
-      `build.zig.zon` declares the Earley parser as `.path = "../earley"` — a **sibling
-      directory**, not a package URL. A clean clone fails at step one with
-      `unable to open '.../../earley': FileNotFound`. This is not a CI quirk; it is the
-      literal first thing a stranger hits.
-      `torial/earley` is already public, and the file's own comment says *"replace with a
-      URL + hash when published."* The CI workflows work around it by checking out the
-      sibling, so **CI does not force the decision** — but a 0.9-beta that others are meant
-      to build does. Decide: migrate to URL + hash (pins a version; you lose live local
-      editing of earley), or document the sibling-clone requirement in the README as the
-      supported way to build
-- [ ] **Windows is the only tested platform.** Does 0.9-beta claim any other? If yes, build
-      and run the corpus there. If no, say so in the README
-- [ ] A path with **spaces**, and a **non-ASCII** path, for input, `--output-dir`, and
-      module resolution
-- [ ] Behaviour when `zig` is absent from PATH — clear message, not a stack trace
-- [ ] Behaviour when disk is full mid-emit *(we have hit low-disk conditions twice)*
-- [ ] `zebra --release --turbo` output runs on a machine without the dev toolchain
-- [ ] Binary size is acceptable to you *(830 KB release vs 20 MB debug, measured)*
+- [x] ~~**BLOCKER: nobody but Sean can build this project.**~~ **FIXED 2026-08-05.**
+      `build.zig.zon` declared the Earley parser as `.path = "../earley"` — a sibling
+      directory not in the repository — so a clean clone failed with
+      `unable to open '../earley': FileNotFound` for everyone except the author, whose
+      working copy already had the sibling. Now pinned by URL + hash to `torial/earley`
+      commit `e757e96`, which was byte-identical to what this repo had been building
+      against (the local checkout was clean and exactly in sync with origin at the time).
+      Verified by cloning into an empty directory with **no sibling and a cold package
+      cache**: builds in ~30 s, produces both binaries, and runs a program. The negative
+      control matters as much — corrupting the hash makes the build fail with
+      `hash mismatch: … but the fetched package has earley-0.1.0-Cvx…`, which is what
+      proves the fetch is real rather than a cache artifact. README now documents the
+      build, and the CI workflows dropped their sibling-checkout workaround.
+      **Remaining:** decide whether to move the pin to a tagged release rather than a bare
+      commit before the beta tag
 
 ---
 

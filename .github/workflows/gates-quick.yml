@@ -1,19 +1,11 @@
 # QUICK tier on every push and PR. ~10-15 min.
 #
-# WHY THE REPO IS CHECKED OUT INTO A SUBDIRECTORY. build.zig.zon declares the
-# Earley parser as `.path = "../earley"` -- a SIBLING directory, not a package
-# URL. So the checkout must reproduce that layout:
-#
-#   $GITHUB_WORKSPACE/
-#     zebra-language/   <- this repo
-#     earley/           <- torial/earley, public
-#
-# Without the sibling the build fails at step one with
-# `unable to open '.../../earley': FileNotFound`. That is not a CI quirk: it is
-# why nobody but the author can currently build this project from a clean clone.
-# The real fix is the one build.zig.zon's own comment names -- "replace with a
-# URL + hash when published" -- and it is on the 0.9-beta checklist. This
-# workflow works either way, so migrating the dependency will not break it.
+# A plain checkout is all this needs. The Earley dependency is pinned in
+# build.zig.zon by URL + hash, so `zig build` fetches it. Until 2026-08-05 it was
+# `.path = "../earley"` -- a sibling directory not in the repo -- and these
+# workflows carried a second checkout step to fake that layout. Pinning the
+# dependency removed the need, and fixed the same problem for every human
+# cloning the repo, which was the larger half of it.
 name: gates (quick)
 
 on:
@@ -37,16 +29,8 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Check out zebra-language
+      - name: Check out
         uses: actions/checkout@v4
-        with:
-          path: zebra-language
-
-      - name: Check out earley (sibling dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: torial/earley
-          path: earley
 
       # Zig is downloaded directly rather than via a third-party action, and
       # pinned by CHECKSUM as well as version. The URL and shasum were taken
@@ -93,7 +77,6 @@ jobs:
 
       - name: Build
         shell: bash
-        working-directory: zebra-language
         run: zig build
 
       # gates.sh runs tools/doctor.sh as a preflight and REFUSES to report on an
@@ -101,12 +84,10 @@ jobs:
       # the gate results below would have been lies.
       - name: Doctor (tree trustworthy?)
         shell: bash
-        working-directory: zebra-language
         run: bash tools/doctor.sh
 
       - name: Gates (QUICK tier)
         shell: bash
-        working-directory: zebra-language
         run: bash tools/gates.sh
 
       # gates.sh already asserts that every registered gate RAN (it counts its own
