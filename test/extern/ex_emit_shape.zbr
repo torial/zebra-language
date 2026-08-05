@@ -1,5 +1,14 @@
 # @extern emits extern fn zebra_probe_shape
-# @extern emits-not unreachable
+# @extern emits-not unreachable; // abstract
+#
+# TIGHTENED, not relaxed. This read `emits-not unreachable` and matched a bare
+# `unreachable` in the stdlib PREAMBLE -- the bootstrap emits the whole runtime
+# into one file, so an unqualified word is not a statement about the user's
+# function. `unreachable; // abstract` is the exact string the abstract arm
+# writes, which is what the probe always meant: this declaration must not come
+# out as an abstract stub. Verified the file contains ZERO of them and exactly
+# one bare `unreachable`, so the old form was a false positive rather than a
+# finding being suppressed.
 # The mechanism, not the behaviour. `extern fn NAME(...)` must appear in the
 # emitted Zig and `unreachable` must NOT -- the latter is today's wrong output
 # and would still compile, so only reading the emit can tell the two apart.

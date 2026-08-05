@@ -6325,8 +6325,12 @@ const Generator = struct {
         try g.writeIndent();
         // @once impl is private (the wrapper above is the public API).
         if (!n.mods.once) {
-            if (n.mods.export_) try g.w.writeAll("pub export ")
-            else                try g.w.writeAll("pub ");
+            // BUG-258: `extern` binds a symbol defined in another object file.
+            // Not `pub`: it is a local binding to a foreign symbol, and
+            // re-exporting would let two modules declare the same symbol.
+            if (n.mods.extern_)      try g.w.writeAll("extern ")
+            else if (n.mods.export_) try g.w.writeAll("pub export ")
+            else                     try g.w.writeAll("pub ");
         }
         try g.w.print("fn {s}(", .{emit_name});
 
@@ -6392,7 +6396,13 @@ const Generator = struct {
             mg.current_closure_ret = try std.fmt.allocPrint(g.alloc, "_ZbrClosure_{s}", .{n.name});
         } else if (n.return_type) |rt| try g.genType(rt) else try g.w.writeAll("void");
 
-        if (n.body) |body| {
+        if (n.mods.extern_) {
+            // BUG-258: an extern declaration terminates with `;` and has no body.
+            // Decided BEFORE the has-a-body and abstract arms: `extern def` used to
+            // fall through to `unreachable; // abstract`, which COMPILES, so calling
+            // it in a --release build was undefined behaviour.
+            try g.w.writeAll(";\n\n");
+        } else if (n.body) |body| {
             // Pre-scan 1: which params / self are actually referenced?
             var refs = try collectRefs(body, g.resolve, g.alloc);
             defer refs.deinit();
