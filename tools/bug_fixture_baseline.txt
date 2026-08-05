@@ -77,9 +77,7 @@
 100	✅ FIXED (side-effect of BUG-099, 2026-05-05)
 102	Selfhost typechecker `to!` force-unwrap audit — FIXED 2026-05-06
 105	`Color.red` infers to `.unknown` instead of `.named(Color)` — FIXED 20
-106	Heterogeneous list literals `[1, "two"]` silently typecheck — FIXED (p
 107	✅ VERIFIED 2026-05-18 — codegen never runs on a diagnosed tree
-108	Silent `.unknown` at `this` outside class — FIXED (partial) 2026-05-05
 109	✅ FIXED 2026-05-05 — `.reuse_address` flipped to `false`
 110	✅ FIXED 2026-05-05 — bind error prints clean message instead of panic
 111	Compound assign `.field += 1` — NOT-A-BUG 2026-05-05

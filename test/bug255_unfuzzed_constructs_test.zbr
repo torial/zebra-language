@@ -1,0 +1,45 @@
+# BUG-255 regression fixture — constructs the grammar fuzzer could NEVER reach.
+#
+# The drift itself is guarded by `tools/grammar_export.py --check` (a QUICK-tier gate); a
+# .zbr cannot test whether two files agree. What a .zbr CAN pin is the thing the drift hid:
+# `grammar.txt` omitted 40 nonterminals, so `fuzz/gramgen.py` never generated a single
+# program using them. Among the missing were LambdaExpr, LambdaBlockExpr, CaptureBlock,
+# CaptureVar, CaptureVarList and ExceptField — i.e. LAMBDAS AND CAPTURE BLOCKS had never
+# been fuzzed, despite `def() ... capture` being the documented concurrency idiom.
+#
+# This exercises a representative few directly, so at least one asserted program uses them
+# even on days the fuzzer is not run.
+struct Point
+    var x: int
+    var y: int
+
+def main()
+    # LambdaExpr — expression-bodied anonymous function.
+    var double = def(v: int): int = v * 2
+    assert double(21) == 42, "expression-bodied lambda"
+
+    # LambdaBlockExpr — statement-bodied.
+    var describe = def(v: int): str
+        if v > 10
+            return "big"
+        return "small"
+    assert describe(50) == "big", "statement-bodied lambda"
+    assert describe(1) == "small", "statement-bodied lambda, second path"
+
+    # CaptureBlock / CaptureVar / CaptureVarList — the `capture` form.
+    var base: int = 100
+    var addBase = def(v: int): int
+        capture
+            var base: int = base
+        return v + base
+    assert addBase(5) == 105, "lambda with an explicit capture block"
+
+    # ExceptField — the immutable-update idiom on a struct.
+    var p = Point(x: 1, y: 2)
+    var q = p except
+        x = 9
+    assert q.x == 9, "except-update applied"
+    assert q.y == 2, "except-update carried the untouched field"
+    assert p.x == 1, "except-update did not mutate the original"
+
+    print("bug255: OK")

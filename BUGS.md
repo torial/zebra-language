@@ -1,9 +1,60 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-254. Next new bug: BUG-255.**
+**Last bug number generated: BUG-255. Next new bug: BUG-256.**
 
 ---
+
+### BUG-255: `grammar.txt` had drifted from the parser, so the FUZZER was exploring a language that partly does not exist — FIXED 2026-08-04
+
+**Sean's idea:** *"Can we have the grammar exported (I think it is possible to have the
+Earley parser generate an updated one)."* It was, and the drift it exposed was substantial.
+
+`grammar.txt` was 520 lines of hand-maintained BNF. The Earley parser's real grammar is
+`src/ZebraGrammar.zig` — **474 comptime rule literals**, compiled. Two copies of one thing,
+one of which is checked by the compiler and one of which is prose.
+
+| | |
+|---|---|
+| nonterminals in the **parser**, absent from the document | **40** |
+| in the **document**, absent from the parser | **9** |
+| nonterminals whose productions differed | **36** |
+
+**This was not a documentation nicety.** `fuzz/gramgen.py` reads `grammar.txt` as its source
+of truth (line 42). So the parser-robustness gate — 960 derived programs, run per session —
+was:
+
+* **generating 9 constructs the parser does not have** — `ProDecl`, `PropDecl`, `StmtUsing`,
+  `AllAnyExpr`, `MemberBlockOpt`, `StmtPostWhile`, `PropBody*`; and
+* **never once reaching 40 that it does** — `LambdaExpr`, `LambdaBlockExpr`, `CaptureBlock`,
+  `CaptureVar`, `CaptureVarList`, `ExceptField*`, `GenericConstruct`, `ForElseOpt`,
+  `DeclUnion`, `IdListNE`…
+
+**Lambdas and capture blocks had never been fuzzed.** Those are not corners; `sys.go(def() …
+capture …)` is the documented concurrency idiom.
+
+It also recasts the fuzzer's own standing caveat. Its docs say *"accept/reject divergences
+are expected, don't fail it"* — attributed to overgeneration. A grammar containing nine
+constructs the parser cannot parse is a much less innocent explanation, and it means that
+caveat was absorbing a real signal.
+
+**Fixed:** `tools/grammar_export.py` generates `grammar.txt` from the rule table, and
+`--check` is now a QUICK-tier gate so the two cannot drift again. Regenerated: 474 rules,
+149 nonterminals, and `gramgen` loads it with **0 undefined nonterminal references** (the
+old file had dangling ones).
+
+**Re-run after the fix: `gramgen --gate` still PASSES** — 960 programs, 0 hangs, 0 crashes.
+So the parser is robust against the *real* language too, which was not previously known. The
+coverage change was verified rather than assumed: the 40/9 sets above are computed by
+loading both the old and new files through `gramgen.load_grammar` and diffing.
+
+**What the gate cannot say:** that the grammar is CORRECT — only that the document matches
+the table. Precedence encoded via nonterminal layering, and anything the parser does outside
+the Earley table (notably the tokenizer's `indent`/`dedent` synthesis), remain invisible.
+
+**Follow-up worth doing:** now that the fuzzer can reach lambdas, captures and generics,
+a longer run than the 960-program gate is likely to be productive. The gate's seeds are
+fixed for determinism; an exploratory run with fresh seeds is a different instrument.
 
 ### BUG-254: the BOOTSTRAP is over-strict on mixed numeric arithmetic — `1 + 2.0` is rejected — OPEN
 

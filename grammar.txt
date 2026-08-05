@@ -2,6 +2,7 @@ Program              → TopDeclList eof
 
 TopDeclList          → ε
                      |  TopDeclList TopDecl
+                     |  TopDeclList eol
 
 TopDecl              → UseDecl
                      |  NamespaceDecl
@@ -11,12 +12,17 @@ TopDecl              → UseDecl
                      |  MixinDecl
                      |  EnumDecl
                      |  ExtendDecl
-                     |  TypeAliasDecl
                      |  AtDirective
                      |  AspectDecl
                      |  WeaveDecl
+                     |  DeclUnion
+                     |  SigDecl
+                     |  TypeAliasDecl
+                     |  MethodDecl
+                     |  VarMemberDecl
 
 UseDecl              → kw_use UsePath eol
+                     |  kw_use UsePath kw_exposing IdListNE eol
 
 UsePath              → id
                      |  UsePath dot id
@@ -29,6 +35,7 @@ ModList              → ε
                      |  ModList kw_protected
                      |  ModList kw_internal
                      |  ModList kw_abstract
+                     |  ModList kw_export
                      |  ModList kw_static
                      |  ModList kw_readonly
                      |  ModList kw_extern
@@ -60,7 +67,41 @@ HasAttrItem          → id
                      |  at_id lparen ArgList rparen
                      |  open_call ArgList rparen
 
-ClassDecl            → ModList kw_class id ClassHeader IsClauseOpt HasOpt WeavesOpt eol MemberBlockOpt
+TypeRef              → bang TypeRef
+                     |  caret TypeRef
+                     |  id
+                     |  kw_int
+                     |  kw_uint
+                     |  kw_float
+                     |  kw_bool
+                     |  kw_char
+                     |  kw_same
+                     |  int_size
+                     |  uint_size
+                     |  float_size
+                     |  kw_int lparen integer_lit rparen
+                     |  kw_uint lparen integer_lit rparen
+                     |  kw_float lparen integer_lit rparen
+                     |  TypeRef dot id
+                     |  TypeRef question
+                     |  TypeRef star
+                     |  open_call TypeRefListNE rparen
+                     |  lparen TypeRef comma TypeRefListNE rparen
+                     |  kw_def lparen rparen colon TypeRef
+                     |  kw_def lparen TypeRefListNE rparen colon TypeRef
+                     |  open_call ValueArgListNE rparen
+
+TypeRefListNE        → TypeRef
+                     |  TypeRefListNE comma TypeRef
+
+TypeParam            → id
+                     |  id kw_where id kw_implements id
+
+TypeParamListNE      → TypeParam
+                     |  TypeParamListNE comma TypeParam
+
+ClassDecl            → ModList kw_class id ClassHeader IsClauseOpt HasOpt WeavesOpt eol indent MemberDeclList dedent
+                     |  ModList kw_class open_call TypeParamListNE rparen ClassHeader IsClauseOpt HasOpt WeavesOpt eol indent MemberDeclList dedent
 
 ClassHeader          → ImplementsClauseOpt AddsClauseOpt
 
@@ -70,15 +111,12 @@ ImplementsClauseOpt  → ε
 AddsClauseOpt        → ε
                      |  kw_adds TypeRefListNE
 
-TypeRefListNE        → TypeRef
-                     |  TypeRefListNE comma TypeRef
-
 InterfaceDecl        → ModList kw_interface id InterfaceHeader IsClauseOpt HasOpt WeavesOpt eol indent MemberDeclList dedent
 
 InterfaceHeader      → ε
                      |  kw_implements TypeRefListNE
 
-StructDecl           → ModList kw_struct id StructHeader IsClauseOpt HasOpt WeavesOpt eol MemberBlockOpt
+StructDecl           → ModList kw_struct id StructHeader IsClauseOpt HasOpt WeavesOpt eol indent MemberDeclList dedent
 
 StructHeader         → ε
                      |  kw_implements TypeRefListNE
@@ -86,38 +124,23 @@ StructHeader         → ε
 MixinDecl            → ModList kw_mixin id IsClauseOpt HasOpt WeavesOpt eol indent MemberDeclList dedent
 
 EnumDecl             → ModList kw_enum id eol indent EnumMemberList dedent
+                     |  ModList kw_enum open_call TypeRef rparen eol indent EnumMemberList dedent
 
 EnumMemberList       → EnumMember
                      |  EnumMemberList EnumMember
+                     |  EnumMemberList eol
 
 EnumMember           → id eol
                      |  id assign Expr eol
                      |  open_call ParamList rparen eol
 
-ExtendDecl           → ModList kw_extend TypeRef IsClauseOpt HasOpt WeavesOpt eol indent MemberDeclList dedent
-
-AtDirective          → at_id eol
-                     |  at_id lparen ArgList rparen eol
-
 MemberDeclList       → ε
                      |  MemberDeclList MemberDecl
-
-# A `struct`/`class` declaration body is OPTIONAL: a body-less `struct Marker` is a legal
-# empty *marker* type — it emits an instantiable `struct {}` with an `init()`, verified
-# end-to-end. Decision 2026-07-23 (Sean). Scoped to struct+class (the instance types):
-# `interface`/`mixin`/`extend` keep mandatory bodies (empty interface currently miscompiles
-# its conformance stub; empty mixin/extend are no-ops), and `enum` needs ≥1 variant
-# (a zero-variant enum is degenerate). The Zig-implemented bootstrap does NOT yet accept
-# empty struct/class (rejects at parse) — a known bootstrap-lag, low priority as it sunsets;
-# the self-hosted compiler is the reference for this.
-MemberBlockOpt       → ε
-                     |  indent MemberDeclList dedent
+                     |  MemberDeclList eol
 
 MemberDecl           → MethodDecl
                      |  VarMemberDecl
                      |  InitDecl
-                     |  PropDecl
-                     |  ProDecl
                      |  SharedGroupDecl
                      |  TestMemberDecl
                      |  InvariantDecl
@@ -129,48 +152,16 @@ MethodDecl           → ModList kw_def open_call ParamList rparen ReturnAnnotOp
                      |  ModList kw_def open_call ParamList rparen ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol Block
                      |  ModList kw_def open_call ParamList rparen ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol Block CatchClauseList
                      |  ModList kw_def open_call ParamList rparen ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol ContractBlock
-                     |  ModList kw_def id ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol
-                     |  ModList kw_def id ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol Block
-                     |  ModList kw_def id ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol Block CatchClauseList
-                     |  ModList kw_def id ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol ContractBlock
+                     |  ModList kw_def id ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol
+                     |  ModList kw_def id ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol Block
+                     |  ModList kw_def id ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol Block CatchClauseList
+                     |  ModList kw_def id ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol ContractBlock
 
-CatchClauseList      → CatchClause
-                     |  CatchClauseList CatchClause
-
-CatchClause          → kw_catch eol Block
-                     |  kw_catch vertical_bar id vertical_bar eol Block
-                     |  kw_catch vertical_bar id colon TypeRef vertical_bar eol Block
-
-# Type annotations use `colon` (`def f(): int`, `var x: int`, `x: int`) — NOT `as`.
-# (`as` binds a name in nil-narrowing `if x as y`, a different construct.) Corrected
-# 2026-07-23: the grammar had drifted to `kw_as` here, VarTypeOpt, and Param; both
-# compilers reject `as` in these positions and accept `colon`.
 ReturnAnnotOpt       → ε
                      |  colon TypeRef
 
-PropDecl             → ModList kw_get id ReturnAnnotOpt IsClauseOpt HasOpt eol
-                     |  ModList kw_get id ReturnAnnotOpt IsClauseOpt HasOpt eol Block
-                     |  ModList kw_get id kw_from kw_var ReturnAnnotOpt eol
-                     |  ModList kw_get id kw_from id ReturnAnnotOpt eol
-                     |  ModList kw_set open_call Param rparen IsClauseOpt HasOpt eol
-                     |  ModList kw_set open_call Param rparen IsClauseOpt HasOpt eol Block
-                     |  ModList kw_set id IsClauseOpt HasOpt eol
-                     |  ModList kw_set id IsClauseOpt HasOpt eol Block
-                     |  ModList kw_set id kw_from id eol
-
-ProDecl              → ModList kw_pro id ReturnAnnotOpt IsClauseOpt HasOpt eol
-                     |  ModList kw_pro id ReturnAnnotOpt IsClauseOpt HasOpt eol PropBodyOpt
-                     |  ModList kw_pro id kw_from kw_var ReturnAnnotOpt eol
-                     |  ModList kw_pro id kw_from id ReturnAnnotOpt eol
-
-PropBodyOpt          → ε
-                     |  indent PropBodyListNE dedent
-
-PropBodyListNE       → PropBodyItem
-                     |  PropBodyListNE PropBodyItem
-
-PropBodyItem         → kw_get eol Block
-                     |  kw_set eol Block
+ThrowsOpt            → ε
+                     |  kw_throws
 
 VarMemberDecl        → ModList kw_var id VarTypeOpt VarInitOpt eol
                      |  ModList kw_const id VarTypeOpt assign Expr eol
@@ -183,6 +174,11 @@ VarInitOpt           → ε
 
 InitDecl             → ModList kw_cue open_call ParamList rparen eol
                      |  ModList kw_cue open_call ParamList rparen eol Block
+
+ExtendDecl           → ModList kw_extend TypeRef IsClauseOpt HasOpt WeavesOpt eol indent MemberDeclList dedent
+
+AtDirective          → at_id eol
+                     |  at_id lparen ArgList rparen eol
 
 SharedGroupDecl      → kw_static eol indent MemberDeclList dedent
 
@@ -197,8 +193,24 @@ ContractClauseListNE → ContractClause
 
 ContractClause       → kw_require eol Block
                      |  kw_ensure eol Block
-                     |  kw_body eol Block
                      |  kw_test eol Block
+
+AspectDecl           → kw_aspect id eol indent AspectBodyListNE dedent
+
+AspectBodyListNE     → AspectBodyItem
+                     |  AspectBodyListNE AspectBodyItem
+
+AspectBodyItem       → kw_on id eol Block
+                     |  kw_on open_call id rparen eol Block
+                     |  kw_on kw_error eol Block
+                     |  kw_on kw_error lparen id rparen eol Block
+
+WeavesOpt            → ε
+                     |  kw_weaves TypeRefListNE
+
+WeaveDecl            → kw_weaves TypeRef kw_to id kw_def Atom eol
+                     |  kw_weaves TypeRef kw_to id kw_class Atom eol
+                     |  kw_weaves TypeRef kw_to id kw_public kw_def Atom eol
 
 ParamList            → ε
                      |  ParamListNE
@@ -206,43 +218,19 @@ ParamList            → ε
 ParamListNE          → Param
                      |  ParamListNE comma Param
 
+ParamModeOpt         → ε
+                     |  kw_vari
+
 Param                → ParamModeOpt id
                      |  ParamModeOpt id colon TypeRef
                      |  ParamModeOpt id assign Expr
                      |  ParamModeOpt id colon TypeRef assign Expr
 
-ParamModeOpt         → ε
-                     |  kw_vari
-
-TypeRef              → bang TypeRef
-                     |  id
-                     |  kw_int
-                     |  kw_uint
-                     |  kw_float
-                     |  kw_bool
-                     |  kw_char
-                     |  kw_same
-                     |  int_size
-                     |  uint_size
-                     |  float_size
-                     |  open_call TypeRefListNE rparen
-                     |  open_call ValueArgListNE rparen
-                     |  TypeRef dot id
-                     |  TypeRef question
-                     |  TypeRef star
-
-# Type APPLICATION (the two `open_call …` alternatives above; `open_call` is the
-# glued `Name(` token). The parser (Parser.zbr eatTypeName) branches on the first
-# argument: TYPE args → generic application (`List(int)`, `HashMap(str, int)`); LITERAL
-# args (ValueArg) → a value-applied refinement alias (`Bounded(0, 99)`). The literal-vs-
-# type split is what keeps them unambiguous — hence ValueArg admits only literals.
-# (Grammar gaps still not modelled here, handled by eatTypeName's string encoding:
-# `^T` heap-indirection prefix and the `def(T1, T2): R` inline function-pointer type.)
-
 Block                → indent StmtList dedent
 
 StmtList             → Stmt
                      |  StmtList Stmt
+                     |  StmtList eol
 
 Stmt                 → StmtReturn
                      |  StmtPrint
@@ -250,24 +238,40 @@ Stmt                 → StmtReturn
                      |  StmtBreak
                      |  StmtContinue
                      |  StmtAssert
+                     |  StmtAssertEq
+                     |  StmtAssertNe
+                     |  StmtAssertTrue
+                     |  StmtAssertFalse
                      |  StmtIf
                      |  StmtWhile
-                     |  StmtPostWhile
                      |  StmtForIn
                      |  StmtForNum
                      |  StmtBranch
                      |  StmtLocalVar
+                     |  StmtLocalVarLambda
+                     |  StmtReturnLambda
+                     |  StmtDestruct
+                     |  StmtDestructStruct
                      |  StmtAssign
                      |  StmtExpr
                      |  StmtExpect
                      |  StmtLock
                      |  StmtDefer
-                     |  StmtUsing
+                     |  StmtWith
+                     |  StmtIn
+                     |  StmtArenaScope
+                     |  StmtAllocate
+                     |  StmtCopyOut
+                     |  StmtRaise
+                     |  StmtGuard
+                     |  StmtGuardInline
+                     |  StmtRequire
+                     |  StmtEnsure
 
 StmtReturn           → kw_return eol
                      |  kw_return Expr eol
 
-StmtPrint            → kw_print ExprList eol
+StmtPrint            → kw_print lparen ExprList rparen eol
 
 StmtPass             → kw_pass eol
 
@@ -277,6 +281,14 @@ StmtContinue         → kw_continue eol
 
 StmtAssert           → kw_assert Expr eol
                      |  kw_assert Expr comma Expr eol
+
+StmtAssertEq         → kw_assert_eq Expr comma Expr eol
+
+StmtAssertNe         → kw_assert_ne Expr comma Expr eol
+
+StmtAssertTrue       → kw_assert_true Expr eol
+
+StmtAssertFalse      → kw_assert_false Expr eol
 
 StmtIf               → kw_if Expr eol Block IfTail
                      |  kw_if Expr kw_as id eol Block IfTail
@@ -294,8 +306,10 @@ ElseClauseOpt        → ε
 
 InlineThen           → kw_return
                      |  kw_return Expr
-                     |  kw_print ExprList
-                     |  kw_pass | kw_break | kw_continue
+                     |  kw_print lparen ExprList rparen
+                     |  kw_pass
+                     |  kw_break
+                     |  kw_continue
                      |  kw_assert Expr
                      |  kw_assert Expr comma Expr
                      |  kw_var id VarTypeOpt VarInitOpt
@@ -310,31 +324,52 @@ InlineElse           → ε
                      |  eol kw_else kw_if Expr colon InlineThen InlineElse
 
 StmtWhile            → kw_while Expr eol Block
-                     |  kw_while Expr eol Block kw_post eol Block
+                     |  kw_while kw_var id assign Expr comma Expr eol Block
 
-StmtPostWhile        → kw_post kw_while Expr eol Block
-
-StmtForIn            → kw_for ForVarList kw_in Expr eol Block
-
-StmtForNum           → kw_for id kw_in Expr colon Expr eol Block
-                     |  kw_for id kw_in Expr colon Expr colon Expr eol Block
+StmtForIn            → kw_for ForVarList kw_in Expr eol Block ForElseOpt
+                     |  kw_for ForVarList kw_in Expr kw_if Expr eol Block ForElseOpt
 
 ForVarList           → id
                      |  ForVarList comma id
+
+ForElseOpt           → ε
+                     |  kw_else eol Block
+
+StmtForNum           → kw_for id kw_in Expr colon Expr eol Block ForElseOpt
+                     |  kw_for id kw_in Expr colon Expr colon Expr eol Block ForElseOpt
 
 StmtBranch           → kw_branch Expr eol indent BranchOnList BranchElseOpt dedent
 
 BranchOnList         → BranchOnClause
                      |  BranchOnList BranchOnClause
+                     |  BranchOnList eol
 
 BranchOnClause       → kw_on ExprListNE eol Block
                      |  kw_on ExprListNE comma Stmt
+                     |  kw_on Expr kw_return Expr eol
+                     |  kw_on Expr kw_as id eol Block
+                     |  kw_on Expr kw_as id kw_if Expr eol Block
+                     |  kw_on ExprListNE kw_if Expr eol Block
 
 BranchElseOpt        → ε
                      |  kw_else eol Block
                      |  kw_else comma Stmt
 
+StmtLocalVar         → kw_var id VarTypeOpt VarInitOpt eol
+                     |  kw_const id VarTypeOpt assign Expr eol
+                     |  kw_var id VarTypeOpt assign Expr kw_except eol indent ExceptFieldList dedent
+                     |  kw_var id VarTypeOpt assign Expr kw_except ExceptFieldInline eol
+
+StmtDestruct         → kw_var lparen IdListNE rparen assign Expr eol
+
+StmtDestructStruct   → kw_var lcurly IdListNE rcurly assign Expr eol
+
+IdListNE             → id
+                     |  IdListNE comma id
+
 StmtAssign           → Expr AssignOp Expr eol
+                     |  Expr AssignOp Expr kw_except eol indent ExceptFieldList dedent
+                     |  Expr AssignOp Expr kw_except ExceptFieldInline eol
 
 AssignOp             → assign
                      |  plus_equals
@@ -351,9 +386,6 @@ AssignOp             → assign
                      |  double_gt_equals
                      |  question_equals
 
-StmtLocalVar         → kw_var id VarTypeOpt VarInitOpt eol
-                     |  kw_const id VarTypeOpt assign Expr eol
-
 StmtExpr             → Expr eol
 
 StmtExpect           → kw_expect TypeRef comma Expr eol
@@ -363,13 +395,45 @@ StmtLock             → kw_lock Expr eol Block
 StmtDefer            → kw_defer Stmt
                      |  kw_errdefer Stmt
 
-StmtUsing            → kw_using Expr eol Block
+StmtWith             → kw_with Expr eol Block
 
-Expr                 → Expr kw_or Expr2
+StmtIn               → kw_using Expr eol Block
+
+StmtArenaScope       → kw_arena eol Block
+
+StmtAllocate         → kw_allocate Expr eol Block
+
+StmtCopyOut          → Expr left_arrow Expr eol
+                     |  Expr left_arrow_deep Expr eol
+
+StmtRequire          → kw_require eol Block
+
+StmtEnsure           → kw_ensure eol Block
+
+StmtGuard            → kw_guard Expr kw_else eol Block
+
+StmtGuardInline      → kw_guard Expr kw_else comma Stmt
+
+StmtRaise            → kw_raise eol
+                     |  kw_raise Expr eol
+                     |  kw_raise Expr comma Expr eol
+
+CatchClauseList      → CatchClause
+                     |  CatchClauseList CatchClause
+
+CatchClause          → kw_catch eol Block
+                     |  kw_catch vertical_bar id vertical_bar eol Block
+                     |  kw_catch vertical_bar id colon TypeRef vertical_bar eol Block
+
+Expr                 → Expr arrow PipelineCall
+                     |  Expr kw_or Expr2
                      |  Expr kw_orelse Expr2
                      |  Expr kw_catch Expr2
                      |  Expr kw_catch vertical_bar id vertical_bar Expr2
                      |  Expr2
+
+PipelineCall         → open_call ArgList rparen
+                     |  Expr9 dot open_call ArgList rparen
 
 Expr2                → Expr2 kw_and Expr3
                      |  Expr3
@@ -379,17 +443,20 @@ Expr3                → kw_not Expr3
 
 Expr4                → Expr4 eq Expr5
                      |  Expr4 ne Expr5
+                     |  Expr4 bang_equals Expr5
                      |  Expr4 lt Expr5
                      |  Expr4 gt Expr5
                      |  Expr4 le Expr5
                      |  Expr4 ge Expr5
                      |  Expr4 kw_is Expr5
+                     |  Expr4 kw_is kw_not Expr5
                      |  Expr4 kw_in Expr5
                      |  Expr4 kw_not kw_in Expr5
                      |  Expr5
 
 Expr5                → Expr5 plus Expr6
                      |  Expr5 minus Expr6
+                     |  Expr6 dotdot Expr6
                      |  Expr6
 
 Expr6                → Expr6 star Expr7
@@ -407,33 +474,46 @@ Expr8                → minus Expr9
                      |  Expr9
 
 Expr9                → Expr9 dot id
+                     |  Expr9 dot integer_lit
                      |  Expr9 dot open_call ArgList rparen
+                     |  Expr9 dot kw_to lparen ArgList rparen
                      |  Expr9 lbracket Expr rbracket
+                     |  Expr9 lbracket Expr dotdot Expr rbracket
                      |  Expr9 kw_to TypeRef
-                     |  Expr9 kw_to bang
+                     |  Expr9 bang
+                     |  Expr9 question
+                     |  Expr9 question_dot id
+                     |  Expr9 question_dot open_call ArgList rparen
                      |  Atom
 
-Atom                 → integer_lit
+Atom                 → LambdaExpr
+                     |  LambdaBlockExpr
+                     |  integer_lit
                      |  integer_lit_explicit
                      |  hex_lit
                      |  hex_lit_unsign
                      |  hex_lit_explicit
                      |  float_lit
-                     |  float_lit_exp
-                     |  fractional_lit
                      |  decimal_lit
                      |  number_lit
                      |  kw_true
                      |  kw_false
                      |  kw_nil
                      |  kw_this
+                     |  kw_result
                      |  id
                      |  dot id
                      |  dot open_call ArgList rparen
                      |  open_call ArgList rparen
+                     |  GenericConstruct
                      |  lparen Expr rparen
+                     |  lparen Expr comma ExprListNE rparen
                      |  kw_if lparen Expr comma Expr comma Expr rparen
                      |  at_lbracket ArgList rbracket
+                     |  lbracket rbracket
+                     |  lbracket ArgList rbracket
+                     |  char_lit_single
+                     |  char_lit_double
                      |  string_single
                      |  string_double
                      |  string_nosub_single
@@ -445,16 +525,33 @@ Atom                 → integer_lit
                      |  doc_string_line
                      |  string_start_single InterpBodyS string_stop_single
                      |  string_start_double InterpBodyD string_stop_double
-                     |  AllAnyExpr
 
-AllAnyExpr           → kw_all kw_for ForVarList kw_in Expr kw_get Expr
-                     |  kw_any kw_for ForVarList kw_in Expr kw_get Expr
+GenericConstruct     → open_call TypeRefListNE rparen lparen rparen
+                     |  open_call TypeRefListNE rparen lparen ArgList rparen
+
+InterpBodyS          → InterpExprS rcurly_special InterpRestS
+
+InterpRestS          → ε
+                     |  string_part_single InterpExprS rcurly_special InterpRestS
+
+InterpExprS          → Expr
+                     |  Expr string_part_format
+
+InterpBodyD          → InterpExprD rcurly_special InterpRestD
+
+InterpRestD          → ε
+                     |  string_part_double InterpExprD rcurly_special InterpRestD
+
+InterpExprD          → Expr
+                     |  Expr string_part_format
 
 ArgList              → ε
                      |  ArgListNE
 
 ArgListNE            → Expr
                      |  ArgListNE comma Expr
+                     |  id colon Expr
+                     |  ArgListNE comma id colon Expr
 
 ExprList             → ε
                      |  ExprListNE
@@ -462,19 +559,39 @@ ExprList             → ε
 ExprListNE           → Expr
                      |  ExprListNE comma Expr
 
-TypeAliasDecl        → kw_type id assign TypeRef eol
-                     |  kw_type id assign TypeRef kw_where Expr eol
-                     |  kw_type open_call AliasParamListNE rparen assign TypeRef eol
-                     |  kw_type open_call AliasParamListNE rparen assign TypeRef kw_where Expr eol
+LambdaExpr           → kw_def lparen ParamList rparen ReturnAnnotOpt assign Expr
+
+LambdaBlockExpr      → kw_def lparen ParamList rparen ReturnAnnotOpt eol indent CaptureOpt StmtList dedent
+
+CaptureOpt           → ε
+                     |  CaptureBlock
+
+CaptureBlock         → kw_capture eol indent CaptureVarList dedent
+
+CaptureVarList       → CaptureVar
+                     |  CaptureVarList CaptureVar
+
+CaptureVar           → kw_var id VarTypeOpt VarInitOpt eol
+                     |  kw_const id VarTypeOpt assign Expr eol
+
+StmtLocalVarLambda   → kw_var id VarTypeOpt assign kw_def lparen ParamList rparen ReturnAnnotOpt eol indent CaptureOpt StmtList dedent
+                     |  kw_const id VarTypeOpt assign kw_def lparen ParamList rparen ReturnAnnotOpt eol indent CaptureOpt StmtList dedent
+
+StmtReturnLambda     → kw_return kw_def lparen ParamList rparen ReturnAnnotOpt eol indent CaptureOpt StmtList dedent
+
+SigDecl              → kw_sig open_call ParamList rparen ReturnAnnotOpt eol
+
+TypeAliasDecl        → kw_type id assign TypeRef WhereClauseOpt eol
+                     |  kw_type open_call AliasParamListNE rparen assign TypeRef WhereClauseOpt eol
+
+WhereClauseOpt       → ε
+                     |  kw_where Expr
 
 AliasParamListNE     → AliasParam
                      |  AliasParamListNE comma AliasParam
 
 AliasParam           → id colon TypeRef
 
-# Value-applied alias args — referenced by `TypeRef → open_call ValueArgListNE rparen`
-# (e.g. `Bounded(0, 99)`). Only literal args (not identifiers) so the value form stays
-# unambiguous with generic type args, which are always TypeRef productions.
 ValueArgListNE       → ValueArg
                      |  ValueArgListNE comma ValueArg
 
@@ -485,36 +602,21 @@ ValueArg             → integer_lit
                      |  minus integer_lit
                      |  minus float_lit
 
-AspectDecl           → kw_aspect id eol indent AspectBodyListNE dedent
+DeclUnion            → ModList kw_union id eol indent UnionVariantList dedent
 
-AspectBodyListNE     → AspectBodyItem
-                     |  AspectBodyListNE AspectBodyItem
+UnionVariantList     → UnionVariant
+                     |  UnionVariantList UnionVariant
+                     |  UnionVariantList eol
 
-AspectBodyItem       → kw_on id eol Block
-                     |  kw_on open_call id rparen eol Block
-                     |  kw_on kw_error eol Block
-                     |  kw_on kw_error lparen id rparen eol Block
+UnionVariant         → id eol
+                     |  id colon TypeRef eol
 
-WeavesOpt            → ε
-                     |  kw_weaves TypeRefListNE
+ExceptFieldList      → ExceptField
+                     |  ExceptFieldList ExceptField
 
-WeaveDecl            → kw_weaves TypeRef kw_to kw_all kw_def Atom eol
-                     |  kw_weaves TypeRef kw_to kw_all kw_class Atom eol
-                     |  kw_weaves TypeRef kw_to kw_all kw_public kw_def Atom eol
+ExceptField          → id assign Expr eol
 
-InterpBodyS          → InterpExprS rbracket_special InterpRestS
+ExceptFieldInline    → ExceptFieldItem
+                     |  ExceptFieldInline comma ExceptFieldItem
 
-InterpBodyD          → InterpExprD rbracket_special InterpRestD
-
-InterpRestS          → ε
-                     |  string_part_single InterpExprS rbracket_special InterpRestS
-
-InterpRestD          → ε
-                     |  string_part_double InterpExprD rbracket_special InterpRestD
-
-InterpExprS          → Expr
-                     |  Expr string_part_format
-
-InterpExprD          → Expr
-                     |  Expr string_part_format
-
+ExceptFieldItem      → id assign Expr

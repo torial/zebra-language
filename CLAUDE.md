@@ -299,6 +299,33 @@ bash tools/release_mode_check.sh   # THE ONLY GATE THAT BUILDS WITH `--release` 
                                 #   "all checks pass" with its only real assertion never
                                 #   having run.
                                 #   Runs a full LLVM build → FULL tier, not QUICK.
+python tools/grammar_export.py --check  # THE GRAMMAR-DRIFT GATE (static, instant).
+                                #   `grammar.txt` is now GENERATED from the Earley parser's
+                                #   own rule table (src/ZebraGrammar.zig, 474 comptime rule
+                                #   literals). It used to be hand-maintained BNF alongside
+                                #   the table — two copies of one thing, one compiled and
+                                #   one prose.
+                                #   THE DRIFT WAS NOT COSMETIC. `fuzz/gramgen.py` derives
+                                #   its 960 programs FROM grammar.txt, so the
+                                #   parser-robustness gate was generating **9 constructs the
+                                #   parser does not have** (ProDecl, PropDecl, StmtUsing,
+                                #   AllAnyExpr, MemberBlockOpt…) and **never reaching 40 it
+                                #   does** — LambdaExpr, CaptureBlock, ExceptField*,
+                                #   GenericConstruct, DeclUnion. Lambdas and capture blocks
+                                #   had never been fuzzed. That also gives its standing
+                                #   caveat ("accept/reject divergences are expected") a much
+                                #   less innocent explanation than overgeneration.
+                                #   Regenerate with `--write`; the RULE TABLE is the
+                                #   authority, never the document.
+                                #   CANNOT say the grammar is CORRECT, only that the
+                                #   document matches the table. Precedence encoded via
+                                #   nonterminal layering, and anything the parser does
+                                #   outside the Earley table (the tokenizer's indent/dedent
+                                #   synthesis especially), are invisible to it.
+                                #   Refuses to report if it extracts <400 rules or cannot
+                                #   find the start rule — a regex that has stopped matching
+                                #   would otherwise blame the DOCUMENT for the extractor's
+                                #   failure. 0 = clean. QUICK tier.
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
                                 #   224 fenced `zebra` blocks existed and NOTHING verified
@@ -526,7 +553,7 @@ than "what do we know":
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 62 scripts | <!-- doc-gen: 62 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 63 scripts | <!-- doc-gen: 63 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 documents |
 | **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 46 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
 
