@@ -43,6 +43,20 @@ nobody has measured what contracts actually cost. Stripping a working safety net
 unmeasured assumption is the wrong direction for a language whose current bar is "no
 surprises". But the documentation must stop claiming behaviour the compiler does not have.
 
+**2026-08-05 — one instance of that documentation found and fixed.**
+`docs/testing_strategy.md` (a `live` doc) asserted *"`--turbo` strips them, so release
+builds are unaffected"*. The premise is true and the conclusion does not follow:
+`--release` and `--turbo` are independent flags — `selfhost/main.zbr` sets
+`strip_contracts = turbo` and nothing else assigns it — so a plain `--release` build pays
+the full contract cost. Corrected in place with a pointer here.
+
+Worth noting *how* it was found, because it is not how this ticket was written. The claim
+surfaced while checking a sentence I had just written to Fable, asserting from memory that
+the repo states the stripping intent. It does — but the doc I reached for while verifying
+said something stronger and false. **The check was on my own claim; the bug was in the
+thing I checked it against.** Verifying a statement you are confident in is how you find
+the ones nobody was suspicious of.
+
 **Cross-project note:** Tack (Zebra's ORM) has an S2 path whose ordering convention is
 guarded by an assertion, and POC 2 reportedly measured ~98% child-row loss in release
 builds. Given the above, that guard is currently **live** in release — so either the loss
@@ -277,7 +291,12 @@ evidence, and an earlier run of exactly this sweep silently checked **0 files** 
 `AstBuilder` constructs `StmtDestruct` with `Span(pd.line, 0, pd.line, 0)`. The line is
 correct. Same span-plumbing class as BUG-249.
 
-### BUG-252: BUG-099's check is missing from the selfhost, same class as BUG-106/248 — OPEN
+### BUG-252: BUG-099's check is present but disabled by default — OPEN (blocked on §28a)
+
+> **Heading corrected 2026-08-05.** It read *"BUG-099's check is missing from the selfhost,
+> same class as BUG-106/248"*. That was wrong on both counts — the check exists, and it is
+> not that class. The original text is kept below because the reasoning that produced the
+> wrong conclusion is the useful part; the correction is at the end of the entry.
 
 **Found 2026-08-04** by auditing the `check_mode_check` witness set against a new criterion
 (Sean): a witness must show a genuine LIMIT of front-end checking, not a check the selfhost
@@ -300,6 +319,60 @@ the set never falls below that. Port the check, then remove this file from `WITN
 **Worth a sweep, not just a fix.** Three confirmed instances suggests the right question is
 not "port this one" but *"which other bootstrap diagnostics never reached the selfhost?"* —
 enumerable by diffing the two compilers' error strings.
+
+### Correction 2026-08-05 — the check is NOT missing. It is present and switched off.
+
+**The title above is wrong and the classification with it.** `selfhost/TypeChecker.zbr`
+has this check. It lives in `checkVarDecl`, it is guarded by `ctx.strict`, and `strict` is
+set by exactly one caller: `selfhost/main.zbr:651`, the **LSP diagnostics** seam. Normal
+compilation constructs `InferCtx` with `.strict = false`, so `zebra -c` never runs it.
+
+    if ctx.strict and inferred is Type_.unresolved
+        ctx.addErr(…, "unresolved type for init expr of '" + dv.name + "' (TC gap)")
+
+This is why `diagnostic_parity.py` counted it absent: the tool matches error *strings*, and
+the selfhost's wording (`unresolved type for init expr of 'x' (TC gap)`) shares no phrase
+with the bootstrap's (`cannot determine type for value assigned to 'x: int'`). A fuzzy
+string matcher cannot distinguish "never ported" from "ported, reworded, and disabled" —
+worth remembering before reading its remaining candidates as a defect count.
+
+**So this is not a port. It is a decision about a default, and the measurement says no.**
+
+Flipping `.strict = true`, regenerating, and compiling all 487 tracked `test/` +
+`examples/` + `selfhost/*.zbr` files:
+
+| | files newly rejected |
+|---|---|
+| `test/` | 9 |
+| `examples/` | 6 |
+| **`selfhost/`** | **13** |
+| **total** | **28** |
+
+The selfhost 13 include `CodeGen.zbr`, `Resolver.zbr`, `TypeChecker.zbr`, `AstBuilder.zbr`
+and `main.zbr` — **the compiler could not compile itself.** The examples include
+`lisp.zbr`, `pratt_calc.zbr` and `kv_store.zbr`, which are working programs.
+
+Not one of those 28 is a bug in the program. Each is a place where selfhost inference
+returns `unresolved` for something it ought to have derived — §28a, the same gap that makes
+every diagnostic ported this week deliberately narrower than its bootstrap original. The
+flag is off for a reason, and the comment above it (*"alarm bell for TC gaps"*) is accurate:
+it is an instrument for finding inference gaps, not a user-facing check.
+
+**Reframed, therefore:** BUG-252 is not "port BUG-099's check". It is **"close enough of
+§28a that the alarm bell can be armed by default"**, and the 28-file list is a ready-made
+worklist for that, ordered by how much it would embarrass us (`selfhost/` first — a
+compiler that cannot compile itself under its own strictest setting is the honest measure
+of the gap). Until then the LSP-only default is correct, not an oversight.
+
+**Consequence for the witness set:** `test/bug099_unresolved_test.zbr` stays a valid
+`check_mode_check` witness, and for a *better* reason than it was filed under. It does not
+demonstrate a check the selfhost happens to lack; it demonstrates a genuine limit — the
+front end declines to assert a type it could not derive. That is the criterion Sean asked
+for. Nothing needs retiring.
+
+*Measured with a positive control: with strict on, the bug099 fixture MUST be rejected, and
+was; with the flip reverted it MUST be accepted again, and was. The tree was restored to
+byte-identical `.zbr` and generated `.zig` before this note was written.*
 
 ### BUG-251: a request/response `Tcp` server DEADLOCKS — `conn.read()` appears to block until EOF — OPEN
 

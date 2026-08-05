@@ -531,7 +531,14 @@ in for it.
   * **Bugs found: zero.** No contract fired anywhere in the corpus.
   * **Cost: real but bounded.** Smoke went ~178s → ~210s (~15–20%, and run-to-run
     variance is wide enough that this is an observation, not a benchmark). `--turbo`
-    strips them, so release builds are unaffected — but our gates run with them ON.
+    strips them — but our gates run with them ON.
+
+    *Corrected 2026-08-05: this line used to read "`--turbo` strips them, so release
+    builds are unaffected." That inference does not hold. `--release` and `--turbo` are
+    independent flags (`selfhost/main.zbr` sets `strip_contracts = turbo`, and nothing
+    else sets it), so a plain `--release` build pays the full contract cost. See
+    BUG-257, which records the same gap between stated design and actual behaviour and
+    is open pending a decision.*
 
   **The lesson is a correction to the pilot's own design.** I deliberately chose clauses
   I was *certain* already held, to avoid manufacturing false failures. That choice
