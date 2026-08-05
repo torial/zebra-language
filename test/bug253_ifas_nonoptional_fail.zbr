@@ -1,0 +1,9 @@
+# BUG-253 (selfhost-lags-bootstrap): `if x as n` on a non-optional was accepted.
+# The capture bound `n` to context_dependent and let the program through, so the
+# mistake either surfaced much later as a Zig type error or not at all.
+# Ported from src/TypeChecker.zig:2142.
+
+def main()
+    var x: int = 5
+    if x as n
+        print(n)

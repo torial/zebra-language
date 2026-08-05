@@ -1,0 +1,9 @@
+# BUG-253 (selfhost-lags-bootstrap): `var (a, b) = x` where x is not a tuple.
+# The selfhost fell through to the STRUCT destructuring path and bound both
+# names to unknown_. Ported from src/TypeChecker.zig:2054. The `is_struct` flag
+# on StmtDestruct is what separates this from the legitimate `var {x, y} = obj`.
+
+def main()
+    var x: int = 5
+    var (a, b) = x
+    print(a)

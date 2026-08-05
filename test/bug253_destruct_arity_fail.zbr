@@ -1,0 +1,12 @@
+# BUG-253 (selfhost-lags-bootstrap): a positional destructure whose name count
+# does not match the tuple's arity was accepted. A short list silently dropped
+# the trailing elements; a long one bound the surplus names to unknown_. Either
+# way the program compiled and the mistake only showed up downstream as a
+# confusing type. Ported from src/TypeChecker.zig:2041.
+
+def pair(): (int, int)
+    return (1, 2)
+
+def main()
+    var (a, b, c) = pair()
+    print(a)

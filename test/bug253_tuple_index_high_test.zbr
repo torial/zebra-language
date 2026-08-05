@@ -1,0 +1,14 @@
+# BUG-253: tuple indices above 3. The selfhost's member-access path recognised
+# only "0".."3", so `t.4` never reached the tuple branch at all. It is a
+# run-and-compare fixture rather than a compile check on purpose: the emitted
+# Zig compiled fine either way, so only the printed value distinguishes a
+# correctly-typed element from one that fell through to a generic member path.
+
+def five(): (int, int, int, int, str)
+    return (1, 2, 3, 4, "e")
+
+def main()
+    var t = five()
+    print(t.4)
+    print(t.3)
+    print("bug253-tuple: OK")

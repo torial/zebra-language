@@ -6,8 +6,6 @@ bug099_unresolved_test
 bug105_enum_member_test
 bug105_union_variant_test
 bug106_cast_test
-bug106_heterogeneous_list_test
-bug108_this_outside_class_test
 c_interop_test
 crossmod_expose_test
 expose_dotted_test

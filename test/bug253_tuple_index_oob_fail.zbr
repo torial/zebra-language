@@ -1,0 +1,12 @@
+# BUG-253 (selfhost-lags-bootstrap): `t.5` on a 2-tuple was accepted silently.
+# The selfhost enumerated the four literals "0".."3" instead of parsing the
+# index, so every out-of-range access fell through to the generic member paths
+# and inferred as something unrelated. Ported from src/TypeChecker.zig:2526,
+# which has reported this since the bootstrap was the only compiler.
+
+def pair(): (int, int)
+    return (1, 2)
+
+def main()
+    var t = pair()
+    print(t.5)

@@ -213,11 +213,11 @@ run against both compilers. `scratchpad/triage_253.py`.
 | bare `return` from `def f(): int` | real gap | ✅ **PORTED** |
 | `"x" - 1` (non-numeric arithmetic operand) | real gap | ✅ **PORTED** |
 | compound assignment on a non-numeric | real gap | ✅ **PORTED** |
-| `if x as n` on a non-optional | real gap | open |
-| destructuring arity mismatch | real gap | open |
-| destructuring a non-tuple | real gap | open |
-| tuple index out of bounds | real gap | open |
-| `unary '-' requires numeric type` | real gap | **blocked — see below** |
+| `if x as n` on a non-optional | real gap | ✅ **PORTED** |
+| destructuring arity mismatch | real gap | ✅ **PORTED** |
+| destructuring a non-tuple | real gap | ✅ **PORTED** |
+| tuple index out of bounds | real gap | ✅ **PORTED** |
+| `unary '-' requires numeric type` | real gap | ✅ **PORTED** (the `Expr.unary` arm was added) |
 | `arithmetic operands must have the same type` | *selfhost is RIGHT* | ❌ **DO NOT PORT** — BUG-254 |
 
 **Two candidates were BAD PROBES, not evidence.** `bitwise operator requires integer type`
@@ -239,6 +239,43 @@ why the tool reports candidates and does not gate.
 **Suggested order:** the ones a beginner hits first — arithmetic/type-mismatch operands, and
 `return` without a value. Each is a small port from a known-good reference implementation,
 and each converts a leaked Zig error into a Zebra one.
+
+### Status 2026-08-04 — all 8 portable candidates of the 9 probed are done
+
+The two structural blockers named above (`Expr.unary` and `array_lit` having no `inferExpr`
+arm) were resolved by adding the arms, so nothing from the triage remains open. Selfhost
+TypeChecker diagnostics: **19 → 25**. The one candidate that must NOT be ported is
+BUG-254, where the selfhost is right and the bootstrap is wrong.
+
+**Two things the last four ports pinned down that are worth carrying forward:**
+
+*The tuple index check was not only missing, the access itself was arity-capped.* The
+selfhost tested `m.member` against the four string literals `"0".."3"` rather than parsing
+it, so `t.4` on a 5-tuple never reached the tuple branch at all — it fell through to the
+generic member paths and inferred as something unrelated. The emitted Zig still compiled,
+which is why no gate saw it: this is the BUG-226 class, where valid Zig produces the wrong
+answer. `test/bug253_tuple_index_high_test.zbr` is therefore a **run-and-compare** fixture,
+not a compile check — only the printed value distinguishes the two.
+
+*Every one of these ports is DELIBERATELY NARROWER than the bootstrap it came from.* The
+bootstrap guards these diagnostics with `!isAbstract()`; the selfhost versions go through
+`isConcretePrimitive`, which fires on `int`/`float`/`str`/`bool` and nothing else. The
+reason is BUG-218: `isAbstractType` knows about `unknown_`/`unresolved`/`context_dependent`
+but *not* about the places selfhost inference is simply weaker than the bootstrap's (§28a).
+An expression that really is optional, or really is a tuple, but that the selfhost typed as
+`named` would draw a false compile error on correct code. The cost of being narrow is a
+missed diagnostic; the cost of being wide is rejecting a working program. Widen when
+inference closes the gap — not before.
+
+**False-positive evidence:** all 482 tracked `test/` + `examples/` files and every
+`selfhost/*.zbr` were compiled with the new checks; 4 flags, all of them the deliberately
+planted controls. A sweep that reports zero without a control that must fire is not
+evidence, and an earlier run of exactly this sweep silently checked **0 files** because
+`corpus_ls.sh` was called without its DIR argument — the controls are what caught it.
+
+**Known shortfall, not chased:** the two destructuring diagnostics report column 0, because
+`AstBuilder` constructs `StmtDestruct` with `Span(pd.line, 0, pd.line, 0)`. The line is
+correct. Same span-plumbing class as BUG-249.
 
 ### BUG-252: BUG-099's check is missing from the selfhost, same class as BUG-106/248 — OPEN
 

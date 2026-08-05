@@ -1704,6 +1704,32 @@ def isConcatMistake(t: Type_): bool
 
 # Helper: true iff t is one of the three abstract/placeholder types.
 # Mirrors src/TypeChecker.zig isAbstract().
+# "This type is definitely a primitive" — the guard for diagnostics that need to
+# reject a type for being the WRONG SHAPE (not optional, not a tuple).
+#
+# DELIBERATELY NARROWER THAN THE BOOTSTRAP, which asks only `!isAbstract()`.
+# `isAbstractType` knows about unknown/unresolved/context_dependent but NOT about
+# the places selfhost inference is simply weaker than the bootstrap's (§28a): an
+# expression that really is optional, or really is a tuple, but that the selfhost
+# typed as `named` or `list_` would draw a false compile error on correct code.
+# Per BUG-218 a diagnostic fires on KNOWN-bad types only. The cost of being narrow
+# is a missed diagnostic; the cost of being wide is rejecting a working program —
+# so widen this when selfhost inference closes the gap, not before.
+def isConcretePrimitive(t: Type_): bool
+    if isAbstractType(t)
+        return false
+    branch t
+        on Type_.int_
+            return true
+        on Type_.float_
+            return true
+        on Type_.string_
+            return true
+        on Type_.bool_
+            return true
+        else
+            return false
+
 def isAbstractType(t: Type_): bool
     branch t
         on Type_.unknown_
@@ -1864,21 +1890,26 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         if ctx.current_class != tn
                             ctx.addErr(ctx.file, m.span.line, m.span.col, "'" + m.member + "' is private")
                     return ft_v
-            # Tuple element access: t.0, t.1, t.2, t.3
+            # Tuple element access: t.0, t.1, … — any index, parsed rather than
+            # enumerated. This used to test `m.member` against the four literals
+            # "0".."3", so `t.4` on a 5-tuple silently fell through to the generic
+            # member paths below and inferred as something unrelated. The arity
+            # limit was invisible: no diagnostic, just a wrong type.
             if obj_t is Type_.tuple_ as tupt
-                var tidx: int = -1
-                if m.member == "0"
-                    tidx = 0
-                if m.member == "1"
-                    tidx = 1
-                if m.member == "2"
-                    tidx = 2
-                if m.member == "3"
-                    tidx = 3
-                if tidx >= 0
+                var tidx_o: int? = m.member.tryInt()
+                if tidx_o as tidx
                     var te: Type_? = tupt.at(tidx)
                     if te as te_v
                         return te_v
+                    # Out of bounds. Ported from src/TypeChecker.zig:2526, which has
+                    # reported this since the bootstrap was the only compiler.
+                    # Guarded on `tupt.len > 0`: a zero-element tuple type is far more
+                    # likely an inference artifact than a real `()`, and per BUG-218 a
+                    # diagnostic must never fire on a type the front end failed to work
+                    # out — that turns every inference gap into a false compile error.
+                    if tupt.len > 0
+                        ctx.addErr(ctx.file, m.span.line, m.span.col, "tuple index " + tidx.toString() + " out of bounds (tuple has " + tupt.len.toString() + " elements)")
+                        return Type_.unknown_
             # Stdlib Shell.Result — its `stdout`/`stderr` fields are strings,
             # registered nowhere in user code but widely used as `r.stdout`
             # etc. Recognise by field name when the object type is unknown,
@@ -2775,8 +2806,17 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                     var cond_t: Type_ = inferExpr(si.cond, ctx)
                     if cond_t is Type_.ref_to as rt
                         cond_t = rt
+                    var unwrapped: bool = false
                     if cond_t is Type_.optional as inner
                         cap_t = inner
+                        unwrapped = true
+                    # Nothing to unwrap. Silence here bound `n` to
+                    # context_dependent and let the program through, so the
+                    # mistake surfaced later as a confusing Zig type error —
+                    # or not at all. See isOptionalBindMistake for why this
+                    # fires on fewer types than the bootstrap's version does.
+                    if not unwrapped and isConcretePrimitive(cond_t)
+                        ctx.addErr(ctx.file, exprSpanLine(si.cond), exprSpanCol(si.cond), "`if x as n` requires an optional type, got '" + typeTag(cond_t) + "'")
                 ctx.bind(cap_name, cap_t)
             # #3: narrow `x` to its non-optional type across the THEN branch of
             # `if x != nil`.  CodeGen already narrows here (it emits `x.?`), but the
@@ -3068,6 +3108,16 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 destruct_recv_t = dr
             # Tuple destructuring: var (a, b) = tuple_expr
             if destruct_recv_t is Type_.tuple_ as tupt
+                # Arity. Ported from src/TypeChecker.zig:2041. Without it a
+                # short name list silently dropped the trailing elements and a
+                # long one bound the surplus names to unknown_ — in both cases
+                # the program compiled and the extra/missing bindings only
+                # showed up as confusing downstream types. Guarded on
+                # `tupt.len > 0` for the same reason as the index check: a
+                # zero-element tuple type is an inference artifact, not a real
+                # arity to measure against.
+                if tupt.len > 0 and tupt.len != sds.names.len
+                    ctx.addErr(ctx.file, sds.span.line, sds.span.col, "destructuring expects " + sds.names.len.toString() + " names but tuple has " + tupt.len.toString() + " elements")
                 var tdi: int = 0
                 for nm in sds.names
                     var tde: Type_? = tupt.at(tdi)
@@ -3077,6 +3127,15 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                         ctx.bind(nm, Type_.unknown_)
                     tdi = tdi + 1
             else
+                # A positional destructure (`var (a, b) = …`) of something that
+                # is not a tuple at all. Ported from src/TypeChecker.zig:2054.
+                # `is_struct` is what separates this from `var {x, y} = obj`,
+                # which legitimately lands in the branch below — inferring the
+                # shape from the type instead would misread every case where
+                # selfhost inference came up short. See isConcretePrimitive for
+                # why this fires on fewer types than the bootstrap's version.
+                if not sds.is_struct and isConcretePrimitive(destruct_recv_t)
+                    ctx.addErr(ctx.file, sds.span.line, sds.span.col, "destructuring requires a tuple, got '" + typeTag(destruct_recv_t) + "'")
                 # Struct destructuring: var {x, y} = struct_expr
                 var destruct_class: str = ""
                 if destruct_recv_t is Type_.named as dtn
