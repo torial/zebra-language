@@ -1,11 +1,16 @@
 <!-- doc-status: design -->
 # `extern` — declaring foreign symbols (BUG-258)
 
-**Status:** DONE for static C linking, in both compilers — a `use` of a sibling `.c`
-compiles, links and calls in ONE command, gated by a fixture that checks the printed
-value. **DLL symbols also work, but only on the LLVM build path (section 8) — the earlier
-"unsupported" claim was wrong.** Do not read sections 1-3 as future tense; sections 7-8
-are the current state.
+**Status: DONE.** A `use` of a sibling `.c` **or of a prebuilt `.lib`/`.a`/`.so`/`.dylib`**
+compiles, links and calls in ONE command — verified end to end against a real MSVC-built
+`python311.dll`. DLL symbols work with no extra syntax; the earlier "unsupported" claim
+(sections 6-7) was wrong, and the actual fault was the build backend (BUG-265). Sections
+7-10 are the current state; **sections 1-6 are preserved as the record of what was
+believed at the time and are wrong in places ON PURPOSE — do not tidy them.**
+
+Remaining, none of it blocking: no `cstr` type (`str` is a slice and Zig *rejects* the
+mismatch rather than miscompiling it), BUG-267 (`zig"…"` is in neither the usage nor the
+mutation walk), BUG-262/263, and no system-library search path.
 **Decided by Sean 2026-08-05:** `extern` is meant to exist, to enable the FFI work.
 **Written 2026-08-05 by Opus 5** after verifying BUG-258 in the tree.
 
@@ -277,13 +282,22 @@ proof across two independently-written implementations says very little.
 |---|---|---|
 | `.c` with no header (`extern def` → `extern fn`) | `smoke_run test/extern_c_call_test.zbr "42"` | **gated** |
 | `.c` with a header (`@cImport` → `Alias.fn()`) | `smoke_run test/c_interop_test.zbr` | **gated** |
+| a PREBUILT library (`.lib`/`.a`/`.so`/`.dylib`) | `tools/ffi_lib_check.sh` (+ negative control) | **gated** |
+| an `extern` with NO dep at all (backend routing) | `smoke_run test/bug265_extern_no_deps_test.zbr "42"` | **gated** |
 | the emitted Zig type-checks | `compile_check`, `full_sweep` | gated, but see below |
-| DLL / shared-library symbol | — | **not supported** |
 | native `.zig` dep | — | **broken in the selfhost (BUG-262)** |
+
+**Note why the last two rows are SEPARATE gates rather than one.** `ffi_lib_check` links a
+library, and a non-empty `lib_sources` forces the LLVM backend on its own — so it would
+stay green even with the `emittedExtern()` half of the BUG-265 fix deleted. The case that
+actually exercises the backend routing is an `extern` with *nothing else* to push it off
+the fast path, which is what `bug265_extern_no_deps_test.zbr` is. The `bug-fixture` gate
+caught this: it reported BUG-265 as unpinned while the FFI board looked fully green, and
+it was right.
 
 **The compile-only gates cannot witness this feature.** They build with `-fno-emit-bin`,
 so nothing links; an `extern fn` that resolves to no symbol whatsoever passes them
-cleanly. Only the two `smoke_run` registrations exercise a real link. Do not read a green
+cleanly. Only the `smoke_run` registrations and `ffi_lib_check` exercise a real link. Do not read a green
 `compile_check` as evidence that FFI works — it is not evidence either way.
 
 **`c_interop_test` also had to be resurrected.** It and its `CUtils.c`/`CUtils.h` were
