@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-265. Next new bug: BUG-266.**
+**Last bug number generated: BUG-267. Next new bug: BUG-268.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -14,6 +14,60 @@
 > *somewhere*, so a duplicate satisfies it twice over.
 
 ---
+
+### BUG-267: `zig"…"` literals do not participate in usage or mutation analysis
+
+**Found 2026-08-05** probing a real third-party DLL. Same root class as BUG-260 (a
+parameter used only inside a query bind list), and worse-placed: `zig"…"` is the only way
+to touch a C pointer, so the escape hatch reserved for FFI is exactly the construct the
+analysis cannot see into.
+
+    var p = Py_GetVersion()                       # read ONLY inside the escape
+    zig"const _c: [*:0]const u8 = @ptrFromInt(p); out = std.mem.span(_c);"
+
+    error: pointless discard of local constant   ->  _ = p;   emitted alongside the use
+    error: cannot assign to constant             ->  `out` emitted const; escape assigns it
+
+Both walks stop at the literal: a variable **read** only inside it is treated as unused,
+and one **assigned** only inside it is treated as never mutated. Working around it needs
+two unrelated dummy statements (a fake comparison to use `p`, a dead branch to make `out`
+a var) — see `docs/extern_ffi_design.md` §9 for the full repro.
+
+**Control when fixing:** a var read only inside a `zig"…"` must NOT get a discard, and one
+assigned only inside it must be emitted `var`; a genuinely unused var must still get its
+discard, and a genuinely non-mutated one must still be `const`. Both directions.
+
+### BUG-266: no way to link an external library — `BuildTarget.linkLib` is the wrong shape
+
+**Found 2026-08-05** probing Python 3.11's MSVC-built DLL. **This is the actual blocker
+for third-party FFI**, and it was masked until now.
+
+The ABI works (BUG-265 §9: a bare `extern def` calls MSVC-built code correctly). What does
+not exist is any way to tell Zebra which library to link:
+
+- `BuildTarget.linkLib(other: BuildTarget)` takes **another Zebra build target**, not a
+  library name or path. It records a dependency edge between things `build.zbr` defines,
+  and `b.lib()` targets are themselves stubs printing "not yet implemented".
+- The CLI has no passthrough — no `-l`, no library path, no linker-argument escape.
+
+`docs/extern_ffi_design.md` §1 and §2 both assumed `linkLib` covered this ("linking the
+library from `build.zbr` via `BuildTarget.linkLib`"), and §5 recorded it as "assumed
+sufficient and **unverified**". It is now verified as insufficient.
+
+**Why it stayed hidden:** the kernel32 probes appeared to work end-to-end, but `-lc` drags
+kernel32 in for free — the one case that looked linked was the one case needing no linking
+mechanism. Every other successful foreign call so far was linked by hand with
+`zig build-exe`.
+
+**Fix direction:** extend the dep walk's candidate list (`.zbr`, `.c`) with `.lib`/`.dll`,
+reusing the native-use registry from BUG-261 — such a dep takes the same "emit a comment,
+bind nothing" genUse arm as `c_no_header`, and its path is appended to the zig argv beside
+`c_sources`. That reuses machinery that already exists rather than adding a build-system
+feature.
+
+**Control when fixing:** a program declaring `extern def Py_IsInitialized(): int32` beside
+a `python311.lib` must print `before=0 / after=1` across `Py_Initialize()` with NO manual
+zig invocation — the transition is the assertion, since an unlinked call cannot produce it.
 
 ### BUG-265: the fast backend silently produces a CRASHING binary for an `extern` DLL symbol — the "a backend gap is a compile error" assumption does not hold
 

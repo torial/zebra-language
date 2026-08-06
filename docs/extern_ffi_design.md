@@ -377,11 +377,87 @@ on a backend gap" safety net at `main.zbr:2536-2544` never fires. See BUG-265.
 1. **Route `extern`-declaring programs to LLVM** (BUG-265). Mirror the `uses_sqlite` flag
    with a `declares_extern` one and add it to the condition. Both compilers. This alone
    makes DLL calls work with no flags.
-2. **Naming a third-party library**, only if `use`-style ergonomics are wanted. The link
-   line already accepts it; the question is purely how the author says so. Cheapest route
-   is to extend the dep walk's candidate list (`.zbr`, `.c`) with `.lib`/`.dll`, reusing
-   the native-use registry added for BUG-261 — the genUse arm for such a dep is the same
-   "emit a comment, bind nothing" shape as `c_no_header`. `BuildTarget.linkLib` is the
-   alternative and already exists, though it is still unexercised.
+2. **Naming a third-party library — REQUIRED, not optional polish.** See §9: this was
+   understated when first written here, and `BuildTarget.linkLib` does not do it.
+   Cheapest route is to extend the dep walk's candidate list (`.zbr`, `.c`) with
+   `.lib`/`.dll`, reusing the native-use registry added for BUG-261 — the genUse arm for
+   such a dep is the same "emit a comment, bind nothing" shape as `c_no_header`.
 3. **`extern "lib"` / `callconv`** — measured unnecessary. Defer until a platform or a
    real use demands them.
+
+---
+
+## 9. Probe against a REAL third-party library (Python 3.11, MSVC-built) — 2026-08-05
+
+Everything in §8 was measured against Zig-built or system libraries, which left the most
+likely source of surprise untested: a library built by a different toolchain. Probed
+against `python311.dll` / `python311.lib` (MSVC v1938, x64), with `python.exe -c
+"import sys; print(sys.version)"` as ground truth.
+
+### The ABI is correct. That half needs nothing.
+
+    extern def Py_IsInitialized(): int32
+    extern def Py_Initialize()
+
+    before=0
+    after=1
+
+**The 0 -> 1 transition is the control** — an unlinked or garbage call cannot produce it,
+only a real one can. `void` returns, `int32` returns and pointer-sized returns are all
+correct against MSVC-built code, with a bare `extern def` and no calling-convention
+annotation. §8's conclusion holds against a foreign toolchain.
+
+### CORRECTION: there is NO route to link an external library today
+
+§8 listed "naming a third-party library" as optional ergonomics, on the strength of §1's
+claim that `BuildTarget.linkLib` covers it. **Both are wrong.**
+
+`linkLib(other: BuildTarget)` takes **another Zebra build target** — it records a
+dependency edge between things `build.zbr` defines. It cannot name `python311.lib`, and
+`b.lib()` targets are themselves stubs that print "not yet implemented". There is also no
+CLI passthrough: `zebra --help` offers no `-l`, no library path, no linker-argument
+escape.
+
+So every successful call in §8 and above was linked by hand with `zig build-exe`. The
+kernel32 result **masked this** — `-lc` drags kernel32 in for free, so the one case that
+appeared to work end-to-end was the one case that needed no linking mechanism at all.
+
+**This is the actual blocker for third-party FFI**, and it is item 1 for anyone continuing
+this work. Filed as BUG-266.
+
+### C strings have no first-class form — but they FAIL LOUDLY
+
+    extern def Py_GetVersion(): str
+      ->  extern fn Py_GetVersion() []const u8;
+      ->  error: return type '[]const u8' not allowed in function with calling
+          convention 'x86_64_win'; slices have no guaranteed in-memory representation
+
+This is the **good** outcome for the most likely FFI mistake in the language: Zebra's `str`
+is a slice (pointer + length) and C returns a bare pointer, so the naive declaration is an
+ABI mismatch — and Zig rejects it at compile time rather than miscompiling it. §4 worried
+that ABI errors would "link fine and corrupt the stack"; for the `str` case specifically,
+they do not.
+
+The cost is that a `char*` must be received as `uint` and converted by hand:
+
+    extern def Py_GetVersion(): uint
+    var p = Py_GetVersion()
+    zig"const _cp: [*:0]const u8 = @ptrFromInt(p); out = std.mem.span(_cp);"
+
+That works (verified: output matches ground truth exactly). It is also the strongest
+argument yet for a `cstr` type from decision B's rejected list — `sqlite3_errmsg`,
+`sqlite3_column_text` and most of a real C API return `char*`.
+
+### The `zig"…"` escape does not participate in flow analysis (BUG-267)
+
+The workaround above needs **two unrelated dummy statements** to compile, because neither
+the usage walk nor the mutation walk descends into a `zig"…"` literal:
+
+- a variable read only inside the escape is emitted as unused -> `pointless discard of
+  local constant`
+- a variable assigned only inside the escape is emitted `const` -> `cannot assign to
+  constant`
+
+This is the same root class as BUG-260 (a parameter used only inside a query bind list),
+and it matters more here: `zig"…"` is the ONLY way to touch a C pointer, so the escape
+hatch reserved for FFI is the construct the analysis cannot see into.
