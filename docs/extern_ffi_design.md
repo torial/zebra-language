@@ -233,7 +233,10 @@ design from than "FFI is broken".
 (`src/main.zig:446-453`) — but a plain `use zlib_probe` alongside the probe resolved to
 `zlib_probe.zig` and failed with `unable to load 'zlib_probe.zig': FileNotFound`. So the
 manual two-step (emit, then `zig build-exe p.zig lib.c`) works while the one-command path
-does not, at least from a temp emit directory. That is the next thing to look at, and it is
+does not, at least from a temp emit directory. **Root cause found the same day and filed as BUG-260:** the selfhost has NO
+C-dependency handling at all — `c_no_header` / `NativeUse` appear nowhere in
+`selfhost/*.zbr`. The BOOTSTRAP runs the whole chain in one command and prints 42.
+So FFI works in Zebra today; it does not work in the compiler that ships. That is
 what stands between this and a gated run-and-compare fixture.
 
 **So `extern` should not be described as working until a probe CALLS a foreign function and

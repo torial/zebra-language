@@ -53,6 +53,42 @@
 > *(Filed by Fable, 2026-08-05, from `zebra-sprocket`. The generated Zebra is
 > correct; the compiler mistranslates it.)*
 
+### BUG-260: the selfhost cannot link C dependencies at all — the last gap in FFI
+
+**Found 2026-08-05** while closing BUG-258. FFI in Zebra is **one command away from
+working**, and the missing piece is entirely in the shipping compiler.
+
+    use zlib_probe                                   # zlib_probe.c, no header
+    extern def zebra_probe_add3(a: int32, b: int32, c: int32): int32
+    def main()
+        print(zebra_probe_add3(20, 20, 2))
+
+| | result |
+|---|---|
+| `zebra-bootstrap.exe p2.zbr` | **42** — C source auto-linked, foreign call correct |
+| `zebra.exe p2.zbr` | `unable to load 'zlib_probe.zig': FileNotFound` |
+
+**The selfhost has no C-dependency handling whatsoever.** `c_no_header`, `c_with_header`
+and `NativeUse` appear nowhere in `selfhost/*.zbr`. The bootstrap discovers a `.c` beside
+the source (`src/main.zig:446-453`), routes it into `c_sources`, passes it to
+`zig build-exe`, and emits a comment instead of an `@import` (`src/CodeGen.zig:4914`). The
+selfhost skips all of that and emits `@import("zlib_probe.zig")` for a file that is not
+Zig.
+
+**Same class as BUG-106/108/248/252/253** — a capability that shipped in `src/` and never
+reached the compiler that ships. This one is larger than those: not a missing diagnostic
+but a missing *subsystem*, and it is the difference between "FFI works if you drive `zig`
+yourself" and "FFI works".
+
+**It is what blocks the run-and-compare fixture** that BUG-258's design note says `extern`
+is not done without. The manual two-step (`--output-dir`, then
+`zig build-exe p.zig lib.c -lc`) prints 42 and proves the declaration is sound; nothing
+gated can call a foreign function until the selfhost can drive the link itself.
+
+**Consequence for `zebra-sprocket`:** the blockage is narrower than reported. Bindings can
+be expressed today, and the bootstrap can already build and run them. What the selfhost
+cannot yet do is be the compiler that does it.
+
 ### BUG-259: `zebra.exe run` exits 0 after a compile error AND after a runtime assertion failure
 
 > **Any build gate hung on `errorlevel` reads a failed compile as success.** Filed
