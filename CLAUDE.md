@@ -655,6 +655,14 @@ gate measured contention as a failure. Sequential, not parallel.
 
 The tier grew 19 → 21 that night: `doc-example` (QUICK) and `release-mode` (FULL).
 
+**Tier update 2026-08-06 — now 24, and `gates.sh --full` was 24/24** (smoke 314/314,
+compile_check 244/0 in both runtime shapes, output_sweep 322 identical, full_sweep 0
+regressions vs 337, examples_sweep 0 vs 14, divergence 0 selfhost gaps). `ffi-lib` was
+added that day (QUICK); the other two new lines are `contract-mode` and
+`compile_check-inline`, which existed before but post-date the 21-gate count above.
+**The three excluded items were NOT re-run** — their last sweep is still 2026-08-04, so
+the table below stands unchanged.
+
 **Previous sweep 2026-08-02** — 18/18, before those two gates existed.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
