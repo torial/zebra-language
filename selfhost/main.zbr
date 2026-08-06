@@ -40,7 +40,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse, addNativeLibUse, emittedExtern
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -54,6 +54,7 @@ class MultiCompiler
     var preamble_path: str
     var output_dir: str
     var c_sources: List(str)   # paths to .c deps discovered via `use`
+    var lib_sources: List(str) # BUG-266: prebuilt .lib/.a/.so/.dylib deps to LINK
     var c_i_dirs: List(str)    # deduplicated -I dirs for C deps that have a .h
     var strip_contracts: bool  # --turbo: strip require/ensure/invariant from all output
     var library_mode: bool     # --library-mode: omit `defer _arena.deinit()` from main() (script linked into a host process)
@@ -81,6 +82,7 @@ class MultiCompiler
         .preamble_path = preamble_path
         .output_dir = output_dir
         .c_sources = List(str)()
+        .lib_sources = List(str)()
         .c_i_dirs = List(str)()
         .strip_contracts = false
         .library_mode = false
@@ -300,6 +302,46 @@ class MultiCompiler
                     dchk = dchk + 1
                 if not already_added
                     c_i_dirs.add(c_dir)
+            # A source dep is fully handled; do not fall through to the library scan
+            # below, so a `foo.c` beside a stale `foo.lib` keeps compiling the source.
+            return
+
+        # BUG-266: a PREBUILT library dep -- `use foo` where foo.lib / foo.a / foo.so /
+        # foo.dylib sits beside the source (or on --module-path). zig takes these as
+        # positional LINK inputs, so the whole mechanism is the same as the `.c` case
+        # one step up, minus the compiling: register it so genUse stops emitting an
+        # @import, and append the path to the zig command line.
+        #
+        # This is what made third-party FFI unreachable. The ABI was already correct
+        # against real MSVC-built code, but nothing could tell zig WHICH library to
+        # link: `BuildTarget.linkLib` takes another Zebra build target, not a path,
+        # and the CLI has no passthrough. Every foreign call before this had to be
+        # linked by hand. The kernel32 probes hid it, because `-lc` drags kernel32
+        # in for free.
+        #
+        # Checked AFTER .zbr and .c so a source dep always wins; a `foo.c` and a
+        # stale `foo.lib` side by side keeps compiling the source.
+        # Built with .add rather than an annotated literal: BUG-230 (an annotated,
+        # NON-EMPTY list literal does not compile) is still open, and this file must
+        # compile under both compilers.
+        var lib_exts: List(str) = List(str)()
+        lib_exts.add("lib")
+        lib_exts.add("a")
+        lib_exts.add("so")
+        lib_exts.add("dylib")
+        var lx: int = 0
+        while lx < lib_exts.len
+            var lib_name: str = dep_name + "." + lib_exts.at(lx)
+            var lib_path: str = lib_name
+            if src_dir != ""
+                lib_path = src_dir + "/" + lib_name
+            if not File.exists(lib_path) and module_path != ""
+                lib_path = module_path + "/" + lib_name
+            if File.exists(lib_path)
+                lib_sources.add(lib_path)
+                addNativeLibUse(u.path)
+                return
+            lx = lx + 1
 
     def alreadyTypeScanned(p: str): bool
         var i: int = 0
@@ -2547,7 +2589,17 @@ def main()
         # diagnostics, so it passes `-fno-emit-bin` and skips linking entirely —
         # measured as most of the cost (LLVM: 6.2 s with a binary vs 0.96 s without).
         # Verified that `-fno-emit-bin` reports the identical diagnostics.
-        if not release and mc.c_sources.len == 0 and not mc.uses_sqlite
+        # BUG-265: `emittedExtern()` and `lib_sources` join the exclusions here.
+        #
+        # The self-hosted backend does not resolve a DLL import correctly: it COMPILES
+        # CLEANLY and emits a binary that faults at the foreign call. The comment above
+        # justifies this fast path on the premise that "a pure-Zig backend gap is a real
+        # compile error, so falling through to the LLVM path stays safe" -- which is
+        # exactly the premise this case breaks, so the fallback never fires. Measured:
+        # `zig build-exe a.zig` works, `zig build-exe a.zig -fno-llvm -fno-lld` segfaults,
+        # on identical source. Any program declaring a foreign symbol therefore takes the
+        # authoritative LLVM path; everything else keeps the ~6x faster backend.
+        if not release and mc.c_sources.len == 0 and mc.lib_sources.len == 0 and not mc.uses_sqlite and not emittedExtern()
             var fast_exe: str = zig_path + ".fast.exe"
             var fargv = List(str)()
             fargv.add("zig")
@@ -2631,6 +2683,12 @@ def main()
         while csi < mc.c_sources.len
             argv2.add(mc.c_sources.at(csi))
             csi = csi + 1
+        # BUG-266: prebuilt libraries are positional link inputs, same as the .c files
+        # above -- zig distinguishes them by extension, so no flag is needed.
+        var lsi: int = 0
+        while lsi < mc.lib_sources.len
+            argv2.add(mc.lib_sources.at(lsi))
+            lsi = lsi + 1
         # -I flags for C deps that have a matching .h header
         var idi: int = 0
         while idi < mc.c_i_dirs.len

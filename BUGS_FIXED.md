@@ -6,6 +6,132 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-266: no way to link an external library — ✅ FIXED 2026-08-06
+
+**Found 2026-08-05** probing Python 3.11's MSVC-built DLL. **This is the actual blocker
+for third-party FFI**, and it was masked until now.
+
+The ABI works (BUG-265 §9: a bare `extern def` calls MSVC-built code correctly). What does
+not exist is any way to tell Zebra which library to link:
+
+- `BuildTarget.linkLib(other: BuildTarget)` takes **another Zebra build target**, not a
+  library name or path. It records a dependency edge between things `build.zbr` defines,
+  and `b.lib()` targets are themselves stubs printing "not yet implemented".
+- The CLI has no passthrough — no `-l`, no library path, no linker-argument escape.
+
+`docs/extern_ffi_design.md` §1 and §2 both assumed `linkLib` covered this ("linking the
+library from `build.zbr` via `BuildTarget.linkLib`"), and §5 recorded it as "assumed
+sufficient and **unverified**". It is now verified as insufficient.
+
+**Why it stayed hidden:** the kernel32 probes appeared to work end-to-end, but `-lc` drags
+kernel32 in for free — the one case that looked linked was the one case needing no linking
+mechanism. Every other successful foreign call so far was linked by hand with
+`zig build-exe`.
+
+**Fix direction:** extend the dep walk's candidate list (`.zbr`, `.c`) with `.lib`/`.dll`,
+reusing the native-use registry from BUG-261 — such a dep takes the same "emit a comment,
+bind nothing" genUse arm as `c_no_header`, and its path is appended to the zig argv beside
+`c_sources`. That reuses machinery that already exists rather than adding a build-system
+feature.
+
+**Control when fixing:** a program declaring `extern def Py_IsInitialized(): int32` beside
+a `python311.lib` must print `before=0 / after=1` across `Py_Initialize()` with NO manual
+zig invocation — the transition is the assertion, since an unlinked call cannot produce it.
+
+**FIXED 2026-08-06 (BUG-266).** `use foo` now resolves `foo.lib` / `foo.a` / `foo.so` /
+`foo.dylib` beside the source or on `--module-path`, registers it in the native-use
+registry added for BUG-261, and appends it to the zig command line as a positional link
+input. The genUse arm is the same "emit a comment, bind nothing" shape as `c_no_header` --
+a prebuilt library and a headerless `.c` differ only in whether zig COMPILES the input or
+merely LINKS it. A source dep wins: the `.c` branch now returns rather than falling
+through, so `foo.c` beside a stale `foo.lib` keeps compiling the source.
+
+**End-to-end, one command, against real MSVC-built code:**
+
+    use python311                        # python311.lib beside the source
+    extern def Py_IsInitialized(): int32
+    extern def Py_Initialize()
+    -> before=0
+       after=1
+
+**Gated by `tools/ffi_lib_check.sh`** (QUICK tier). It BUILDS its own library at check
+time rather than committing a binary to the corpus, uses an expected value that appears
+nowhere in the Zebra source, and carries a NEGATIVE CONTROL -- leg 2 removes the library
+and requires the value to stop appearing, so leg 1 cannot pass for an unrelated reason.
+No compile-only gate could have covered this: they build with `-fno-emit-bin` and never
+link, so an `extern fn` resolving to no symbol at all passes them cleanly.
+
+
+---
+
+### BUG-265: the fast backend silently produced a CRASHING binary for an `extern` DLL symbol — ✅ FIXED 2026-08-06
+
+**Found 2026-08-05** while scoping DLL support. The headline finding is that **DLL symbols
+already work** — just not on the default build path.
+
+    extern def GetCurrentProcessId(): uint32
+    def main()
+        if GetCurrentProcessId() > 0
+            print("dll-ok")
+
+| invocation | result |
+|---|---|
+| `zebra.exe p.zbr` (default) | **segfault** |
+| `zebra.exe --release p.zbr` | `dll-ok` |
+| `zebra.exe p.zbr` with any `.c` dep present | `dll-ok` |
+
+The last two both force the LLVM path. `selfhost/main.zbr:2550` takes the self-hosted
+backend when `not release and c_sources.len == 0 and not uses_sqlite`, so a program whose
+only foreign dependency is a DLL symbol is exactly the case that gets the fast backend.
+
+**Not Zebra's emit, and not `-lc`.** The emitted declaration is byte-identical to a
+hand-written Zig file that works, and LLVM **without** `-lc` also works. Isolated to the
+backend flags alone:
+
+| `zig build-exe a.zig …` | result |
+|---|---|
+| (default LLVM), no `-lc` | works |
+| `-fno-llvm -fno-lld`, no `-lc` | **segfault** |
+
+**The dangerous part is the silence.** The comment at `selfhost/main.zbr:2536-2544`
+justifies the fast path with *"A pure-Zig backend gap is a real compile error, so falling
+through to the LLVM path below stays safe."* That assumption is false here: the fast
+backend **compiles successfully** and emits a binary that faults at the call, so the
+fallback never triggers. Any other backend gap of this shape — builds clean, wrong at
+runtime — is equally invisible. The bootstrap has the same path (`src/main.zig:1458`).
+
+**Fix direction:** mirror `uses_sqlite` with a `declares_extern` flag set during the walk
+and add it to the condition at `selfhost/main.zbr:2550`, so an `extern`-declaring program
+takes LLVM. Both compilers.
+
+**Control when fixing:** the probe above must print `dll-ok` with NO flags; and a program
+with no `extern` must still take the fast path (otherwise the fix silently costs every
+program the ~6x build-time win).
+
+**Note for the DLL feature generally:** no new syntax is needed. `extern "kernel32"` and
+`callconv(.winapi)` are both unnecessary on x86-64 (measured — bare, library-named, and
+callconv variants all work), and an arbitrary third-party DLL links with a bare
+`extern fn` plus its import lib on the command line. See `docs/extern_ffi_design.md` §8.
+
+**FIXED 2026-08-06 (BUG-265).** `emittedExtern()` and a non-empty `lib_sources` now join
+`c_sources` and `uses_sqlite` in the fast-path exclusions at `selfhost/main.zbr`, so any
+program declaring a foreign symbol takes the authoritative LLVM path.
+
+**The detection is set AT THE EMIT SITE, deliberately.** The cheap version -- scan the
+generated Zig for `extern fn`, mirroring how `uses_sqlite` scans for `_sqlite_open` -- is
+wrong here: a hello-world's INLINE preamble carries **16** `extern fn` declarations of its
+own (measured), so every `--no-runtime-module` build would have matched. That is precisely
+the false positive BUG-209 hit for sqlite, and its comment is the warning that caught this
+one before it shipped.
+
+**Both control directions verified:** a program with `extern` no longer produces
+`<file>.zig.fast.exe` (LLVM taken, prints `dll-ok` with no flags, previously a segfault),
+and a plain program still does (the ~6x faster backend is preserved -- the fix costs
+nothing to programs that do not use FFI).
+
+
+---
+
 ### BUG-261: the selfhost could not link C dependencies — ✅ FIXED 2026-08-05
 
 *(Filed as "BUG-260" in commit `fcd9c7c`; renumbered to 261 because BUG-260 was

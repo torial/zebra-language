@@ -1965,6 +1965,31 @@ If the C file has a matching `.h`, the header is imported instead and its
 symbols are reached through the module name (`cprobe_add3.some_fn(...)`) — no
 `extern def` needed for those.
 
+### Linking a prebuilt library
+
+Most real dependencies are not source you can compile — they are a binary
+someone else built.  `use` finds those too: put `foo.lib` (or `.a`, `.so`,
+`.dylib`) beside your source, or on `--module-path`, and it is linked in.
+
+```zebra
+use python311                      # python311.lib beside the source
+
+extern def Py_IsInitialized(): int32
+extern def Py_Initialize()
+
+def main()
+    print(Py_IsInitialized())      # 0
+    Py_Initialize()
+    print(Py_IsInitialized())      # 1
+```
+
+That is a real, MSVC-built DLL being called from Zebra in one command.  No
+calling-convention annotation and no library-name syntax are needed: on x86-64
+the C convention is the platform convention.
+
+A source dep wins over a binary one — if both `foo.c` and `foo.lib` exist, the
+`.c` is compiled.
+
 ### The ABI rule — read this one, it fails silently
 
 **Zebra's `int` is 64-bit; C's `int` is not.**  Declaring a parameter as `int`
@@ -1983,10 +2008,23 @@ map straight onto the C ones:
 
 - The C symbol name **is** the Zebra name — there is no renaming, so a symbol
   that is not a legal Zebra identifier cannot be reached.
-- **Static linking only.**  A symbol in a shared library (a `.dll` / `.so`)
-  needs a library name and a calling convention that `extern def` does not yet
-  emit; on Windows a bare `extern def` against a DLL export links and then
-  crashes at the call.  See `docs/extern_ffi_design.md`.
+- **No C-string type.**  Zebra's `str` is a slice (pointer + length); C returns
+  a bare pointer, so `extern def f(): str` is an ABI mismatch.  The compiler
+  *rejects* it rather than miscompiling it — "slices have no guaranteed
+  in-memory representation" — so this fails loudly, not silently.  Receive a
+  `char*` as `uint` and convert:
+
+  ```zebra
+  extern def Py_GetVersion(): uint
+  ```
+  ```
+  zig"const _c: [*:0]const u8 = @ptrFromInt(p); out = std.mem.span(_c);"
+  ```
+
+  Note a variable used *only* inside a `zig"…"` escape is currently seen as
+  unused (BUG-267), so this needs a dummy reference to compile.
+- The library must sit beside the source or on `--module-path`; there is no
+  system-library search path and no `-l` flag.
 - `extern` applies to `def` only — not to variables, types, or classes.
 - No varargs, no struct-by-value across the boundary.
 

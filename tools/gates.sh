@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# There are 15 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 15 = grep -c '^run "' tools/gates.sh -->
+# There are 16 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 16 = grep -c '^run "' tools/gates.sh -->
 # (CLAUDE.md explains each), plus four heavy witnesses in FULL. The count in this
 # sentence has been wrong before: it said "seven" while twelve were registered, and
 # doc_lint cannot catch that class -- a number in prose has no referent to resolve.
@@ -171,6 +171,13 @@ run "runtime-module" "all checks pass" bash tools/runtime_module_check.sh
 # --help promises ACTUALLY EXISTS (witnesses that pass -c and fail --check-full).
 # It also guards the speed, so `-c` silently starting to invoke zig again fails here.
 run "check-mode"     "all checks pass" bash tools/check_mode_check.sh
+# BUG-266: the last link in the FFI chain — a `use` resolving to a PREBUILT library
+# (.lib/.a), which is the shape a real third-party dependency actually takes. No
+# compile-only gate can witness this: they build with -fno-emit-bin and never link, so
+# an extern that resolves to nothing passes them. Builds its own library at check time
+# rather than committing a binary to the corpus, and carries a negative control (remove
+# the library, the value must stop appearing) so a pass cannot be incidental.
+run "ffi-lib"        "checks pass"     bash tools/ffi_lib_check.sh
 # §28e: docs/str_ownership.md is DERIVED from real emit, so a codegen change that flips
 # a borrow into an own (or the reverse) makes the shipped table wrong while it still
 # carries a "GENERATED" banner vouching for it. One emit; cheap.

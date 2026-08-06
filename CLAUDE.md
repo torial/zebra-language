@@ -465,6 +465,33 @@ the FULL_SWEEP baseline. When a corpus file changes compile status, re-baseline
 whose file is no longer a candidate, and the gate correctly reports it as "stopped being
 measured", which is a coverage loss rather than a behaviour change.
 
+bash tools/ffi_lib_check.sh        # THE PREBUILT-LIBRARY GATE (BUG-266, QUICK tier):
+                                #   `use foo` resolving to a prebuilt `foo.lib`/`.a` must
+                                #   LINK and the foreign call must return the right value.
+                                #   This is the shape a REAL third-party dependency takes —
+                                #   a binary you did not build and cannot compile from
+                                #   source. BUG-261 covered the `.c` SOURCE case; this is
+                                #   the other half, and until 2026-08-06 there was NO route
+                                #   to it at all: `BuildTarget.linkLib` takes another Zebra
+                                #   build target rather than a path, and the CLI has no
+                                #   passthrough, so every foreign call had to be linked by
+                                #   hand with `zig build-exe`.
+                                #   NO COMPILE-ONLY GATE CAN WITNESS THIS. compile_check and
+                                #   full_sweep build with `-fno-emit-bin`, so they never
+                                #   link, and an `extern fn` resolving to NO SYMBOL AT ALL
+                                #   passes them cleanly. Only a gate that runs the binary
+                                #   can tell the difference.
+                                #   BUILDS ITS OWN LIBRARY at check time instead of
+                                #   committing a binary to the corpus — which also means the
+                                #   artifact under test cannot be a stale one passing for
+                                #   the wrong reason. The expected value appears NOWHERE in
+                                #   the Zebra source, so the program cannot print it without
+                                #   really calling in.
+                                #   CARRIES A NEGATIVE CONTROL: leg 2 removes the library
+                                #   and REQUIRES the value to stop appearing, so leg 1
+                                #   cannot pass for an unrelated reason. Classifies on
+                                #   PRINTED OUTPUT, never exit code (BUG-259). Refuses to
+                                #   report a pass if the library cannot be built.
 bash tools/check_mode_check.sh     # THE CHECK-MODE CONTRACT GATE: `-c` is front-end-only
                                 #   and deliberately incomplete, so what needs gating is the
                                 #   CONTRACT, not the coverage — valid code passes both modes,
@@ -599,11 +626,12 @@ than "what do we know":
 | compiler is self-consistent | `bootstrap_check` (round-trip) | selfhost only |
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **327** |
 | **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 12 probes / ~140 assertions |
+| **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 65 scripts | <!-- doc-gen: 65 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 66 scripts | <!-- doc-gen: 66 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 documents |
 | **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 49 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
 

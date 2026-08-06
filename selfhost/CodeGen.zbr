@@ -1273,7 +1273,7 @@ def generateErrorMsgHelperWith(dep_modules: List(str)): str
         # `_error_ctx` differently. The default-shape gates were all green; only
         # `compile_check-inline` saw it. If a third @import-of-a-dep site is ever added,
         # it needs this guard too.
-        if isCWithHeaderUse(dep_name) or isCNoHeaderUse(dep_name)
+        if isCWithHeaderUse(dep_name) or isCNoHeaderUse(dep_name) or isNativeLibUse(dep_name)
             di = di + 1
             continue
         # For cross-module _error_ctx, always use @import to access the module-level variable
@@ -2378,6 +2378,36 @@ def isCWithHeaderUse(path: str): bool
 def isCNoHeaderUse(path: str): bool
     return _hasNativeUse(_c_no_header_uses, path)
 
+# ── Prebuilt libraries (BUG-266) ──────────────────────────────────────────────
+# A `use foo` that resolved to `foo.lib` / `foo.a` / `foo.so` / `foo.dylib`: a
+# PREBUILT binary, not source. zig takes it as a positional link input, so like
+# `c_no_header` there is nothing to @import and the symbols must be declared with
+# `extern def`. Kept separate from the C sets because the two travel differently
+# on the command line — a `.c` is COMPILED, a `.lib` is LINKED — even though they
+# emit identically here.
+var _native_lib_uses: List(str) = List(str)()
+
+def addNativeLibUse(path: str)
+    _native_lib_uses.add(path)
+
+def isNativeLibUse(path: str): bool
+    return _hasNativeUse(_native_lib_uses, path)
+
+# True once a user `extern def` has actually been EMITTED (BUG-265). main.zbr uses
+# this to keep such a program off the self-hosted backend, which silently produces a
+# binary that faults at the foreign call.
+#
+# SET AT THE EMIT SITE ON PURPOSE. The tempting cheap version — scan the generated
+# Zig for "extern fn", the way `uses_sqlite` scans for `_sqlite_open` — is WRONG here:
+# the inline preamble carries 16 `extern fn` declarations of its own (measured on a
+# hello-world), so every program built with `--no-runtime-module` would match. That is
+# precisely the false-positive BUG-209 hit for sqlite, and the comment there is the
+# warning I nearly walked past.
+var _emitted_extern: bool = false
+
+def emittedExtern(): bool
+    return _emitted_extern
+
 # ── Writer ────────────────────────────────────────────────────────────────────
 # Reference-type output sink.  All Generator copies share the same Writer.
 
@@ -3247,6 +3277,14 @@ struct Generator
             w.emit("// ")
             w.emit(alias)
             w.emit(": C source compiled inline (use `extern def` for declarations)\n")
+            return
+        if isNativeLibUse(alias)
+            # BUG-266: a PREBUILT library (.lib/.a/.so/.dylib). Same emit as the
+            # headerless C case -- nothing to import, symbols come from `extern def` --
+            # but it reaches zig as a LINK input rather than a compiled one.
+            w.emit("// ")
+            w.emit(alias)
+            w.emit(": prebuilt library linked in (use `extern def` for declarations)\n")
             return
         # Anything else keeps the unconditional @import — which is ALSO how a
         # native `.zig` dep works.  main.zbr's dep walk has no `.zig` candidate at
@@ -4398,6 +4436,11 @@ struct Generator
             # NO body -- the symbol lives in another object. Deliberately not `pub`:
             # an extern declaration binds a foreign symbol locally, and re-exporting
             # it would let two modules declare the same symbol.
+            #
+            # BUG-265: record it. This is the ONLY place a user extern is emitted, so
+            # it is the only signal that cannot be confused with the preamble's own
+            # 16 `extern fn`s. main.zbr reads it to force the LLVM backend.
+            _emitted_extern = true
             w.emit("extern fn ")
         else if m.mods.is_export
             w.emit("pub export fn ")
