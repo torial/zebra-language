@@ -199,9 +199,42 @@ Both were deferred to "decision B" as *nice-to-have*. On the primary platform th
 which library a symbol comes from — some form of `extern("kernel32") def ...` — and Win32
 needs its calling convention.
 
-**Not yet distinguished** (and worth an experiment before designing the syntax): whether a
-statically-linked C object works *today* with the bare form. If it does, this is precisely
-a DLL-import gap rather than a general FFI gap, and the fix is narrower than it looks.
+### RESOLVED 2026-08-05 by experiment: it is a DLL-IMPORT gap, not an FFI gap
+
+The question above was run rather than reasoned about, and the answer changes the scope
+substantially.
+
+**A bare `extern def` WORKS TODAY against a statically-linked C object.**
+
+    /* zlib_probe.c */  int zebra_probe_add3(int a,int b,int c){return a+b+c;}
+
+    extern def zebra_probe_add3(a: int32, b: int32, c: int32): int32
+    def main()
+        print(zebra_probe_add3(20, 20, 2))
+
+    $ zig build-exe p.zig zlib_probe.c -lc  &&  ./p.exe
+    42
+
+Symbol resolves, ABI is correct (`int32` -> `i32` -> C `int`), value is right. **No new
+syntax is required for static C linking** — decision A is sufficient for exactly the case
+the sprocket work needs, since a SQLite fork is compiled in rather than loaded as a DLL.
+
+**What does NOT work is a DLL import.** `GetCurrentProcessId()` links and segfaults,
+because Zig needs `extern "kernel32" fn ... callconv(.winapi)` and we emit neither. So the
+gap is narrow and nameable: **symbols in a shared library**, not FFI generally.
+
+Consequence for the plan: the library-name syntax is no longer needed to unblock anything.
+It is a Win32/DLL feature, and can be designed when someone actually needs a DLL symbol —
+with the knowledge that the static path already works, which is a much better position to
+design from than "FFI is broken".
+
+**Known remaining friction, not yet chased.** Zebra *has* automatic C-source linking —
+`use foo` where `foo.c` exists routes it into `c_sources` and on to `zig build-exe`
+(`src/main.zig:446-453`) — but a plain `use zlib_probe` alongside the probe resolved to
+`zlib_probe.zig` and failed with `unable to load 'zlib_probe.zig': FileNotFound`. So the
+manual two-step (emit, then `zig build-exe p.zig lib.c`) works while the one-command path
+does not, at least from a temp emit directory. That is the next thing to look at, and it is
+what stands between this and a gated run-and-compare fixture.
 
 **So `extern` should not be described as working until a probe CALLS a foreign function and
 checks the value.** The declaration half is real and useful — it is what the sprocket work
