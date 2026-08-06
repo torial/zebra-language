@@ -2344,3 +2344,85 @@ passing on both compilers; debt 20 → 19.
 - **BUG-263** — `use foo exposing bar` binds nothing on a native dep, in **both**
   compilers.
 - DLL/shared-library symbols remain unsupported (`docs/extern_ffi_design.md` §7).
+
+---
+
+## Prebuilt-library deps and backend routing — FFI reaches the finish line (BUG-265/266, 2026-08-06)
+
+BUG-261 made a `.c` SOURCE dependency work. A real third-party dependency is not source —
+it is a binary someone else built — and that case turned out to be blocked twice over.
+
+    use python311                        # python311.lib beside the source
+    extern def Py_IsInitialized(): int32
+    extern def Py_Initialize()
+    ->  before=0
+        after=1
+
+MSVC-built, called from Zebra, one command, no new syntax.
+
+### The two blockers were independent, and one of them was invisible
+
+**BUG-266 — nothing could name a library.** The ABI had been correct the whole time; what
+did not exist was any way to tell zig *which* library to link. `BuildTarget.linkLib` takes
+another **Zebra build target** rather than a path (and `b.lib()` targets are themselves
+stubs), and the CLI has no passthrough. Every foreign call before this was linked by hand.
+
+The kernel32 probes **masked** it: `-lc` drags kernel32 in for free, so the one case that
+appeared to work end-to-end was the one case that needed no linking mechanism at all. This
+is worth remembering as a shape — *the example that works for a reason you did not
+control is the one that hides the gap.*
+
+**BUG-265 — the fast backend miscompiled it silently.** `-fno-llvm -fno-lld` produces a
+binary that faults at the foreign call, and it **compiles cleanly**, so the fast path's
+documented safety net ("a pure-Zig backend gap is a real compile error, so falling through
+to the LLVM path stays safe") never fired. The premise was reasonable and simply false for
+this class.
+
+### The detection nearly went in wrong, and the file said so
+
+The obvious way to spot an `extern`-declaring program is to scan the generated Zig for
+`extern fn`, mirroring how `uses_sqlite` scans for `_sqlite_open`. That is **wrong here**:
+a hello-world's INLINE preamble carries **16** `extern fn` declarations of its own. Every
+`--no-runtime-module` build would have matched, disabling the fast backend for the entire
+corpus — which is exactly what BUG-209 did for sqlite, and the comment left behind at that
+site is what stopped it happening twice. The flag is set at the emit site instead, the one
+place a *user* extern is written.
+
+**Both control directions were checked**, because half of this fix is invisible: an
+`extern` program must stop producing `<file>.zig.fast.exe`, *and* a plain program must
+still produce one. Only asserting the first would have silently cost every program in the
+language the ~6x build-time win.
+
+### A note on the change itself
+
+`.lib`/`.a`/`.so`/`.dylib` reuse the BUG-261 registry wholesale — a prebuilt library and a
+headerless `.c` emit identically (a comment, no binding) and differ only in whether zig
+COMPILES the input or merely LINKS it. The `.c` branch had to grow a `return` so a source
+dep wins over a stale sibling binary.
+
+Two footguns from this file's own documentation were live: **BUG-230** (an annotated
+non-empty list literal does not compile) made `var lib_exts: List(str) = ["lib", ...]`
+unusable — built with `.add` instead; and writing `.zbr` through a Python heredoc mangled
+a `\n` into a real newline, producing an unterminated string literal that cost a full
+regen cycle. `rebuild.sh` caught it and restored the tree from its pre-run snapshot, which
+is the behaviour that made the mistake cheap rather than confusing.
+
+### What gates it
+
+`tools/ffi_lib_check.sh`, QUICK tier, ~7s. **No compile-only gate can witness FFI** —
+`compile_check` and `full_sweep` build with `-fno-emit-bin`, never link, and an
+`extern fn` resolving to *no symbol at all* passes them cleanly. It builds its own library
+at check time rather than committing a binary to the corpus, which also means the artifact
+under test cannot be a stale one passing for the wrong reason; the expected value appears
+nowhere in the Zebra source; and leg 2 removes the library and requires the value to stop
+appearing, so leg 1 cannot pass incidentally.
+
+### Still open
+
+- **BUG-267** — `zig"…"` participates in neither the usage nor the mutation walk, which
+  matters because it is the only way to touch a C pointer.
+- **No C-string type.** `str` is a slice; Zig *rejects* the mismatch rather than
+  miscompiling it, so it fails loudly. A `cstr` type is the obvious next increment, since
+  most of a real C API returns `char*`.
+- No system-library search path: the library must sit beside the source or on
+  `--module-path`.

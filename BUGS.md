@@ -37,6 +37,53 @@ a var) — see `docs/extern_ffi_design.md` §9 for the full repro.
 assigned only inside it must be emitted `var`; a genuinely unused var must still get its
 discard, and a genuinely non-mutated one must still be `const`. Both directions.
 
+**Scoped 2026-08-06, not fixed — the naive fix is unsafe in BOTH directions, and the
+choice between the two real options is a language-design decision rather than a bug fix.**
+
+`Expr.zig_lit` (`selfhost/Ast.zbr:1252`) carries the escape's contents as one opaque
+`.text` string. Every walker therefore treats it as a leaf with no identifiers in it,
+which is structurally correct and semantically wrong. There is no AST to descend into;
+something has to interpret that text.
+
+*Why a plain identifier scan is not good enough.* Zig errors on **both** over- and
+under-approximation, so a heuristic that guesses wrong in either direction trades this bug
+for another:
+
+| the scan says | emitted | Zig says |
+|---|---|---|
+| name absent (today) | `_ = x;` beside a use | `pointless discard` |
+| name absent (today) | `const out` | `cannot assign to constant` |
+| name present when it is only inside a STRING or COMMENT in the escape | no discard | `unused local variable` |
+| assignment matched when the escape only reads | `var x` | `local variable is never mutated` |
+
+So a scan must at minimum skip string literals and comments within the Zig text, and
+distinguish `out =` from `out ==` and from `x.out = ...`. That is a small tokenizer for a
+foreign language, living in the walker.
+
+**Two real options, and they are not equivalent:**
+
+- **(A) Scan the text.** No syntax change, existing code keeps working, and it stays a
+  heuristic forever — with the failure modes tabulated above appearing as confusing Zig
+  errors in user code that looks fine.
+- **(B) Make the escape declare what it touches**, e.g. `zig"…"(reads: p, writes: out)`.
+  Exact rather than heuristic, and it makes the dependency visible at the call site — which
+  is arguably right for a construct whose whole purpose is to leave the language's
+  guarantees. Costs syntax, and breaks existing `zig"…"` uses unless the annotation is
+  optional (in which case unannotated escapes keep today's behaviour and the bug persists
+  for them).
+
+**My recommendation is B, with A as a fallback**, on the grounds that an escape hatch is
+exactly where an implicit, best-effort guess is least appropriate: the construct exists
+because the compiler cannot reason about the contents, and a scan is the compiler
+pretending it can. But this changes the language surface, so it wants Sean's call rather
+than an implementer's.
+
+**Related, and probably the same fix:** BUG-260 (a parameter used only inside a query's
+`[...]` bind list) is the same walker failing to descend into a different construct. Its
+filer noted "anything else asking 'is this used?' will be wrong in the same place" — this
+is that place. A fix that descends into both closes them together, and whichever option is
+chosen here should be checked against the bind-list case before it is built.
+
 ### BUG-264: the selfhost lowers a module-scope `StrSet.add` as `List.append`, so it cannot re-emit its own source
 
 **Found 2026-08-05** by the round-trip gate, while adding a module-scope `StrSet` to
