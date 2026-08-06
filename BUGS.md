@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-267. Next new bug: BUG-268.**
+**Last bug number generated: BUG-268. Next new bug: BUG-269.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -14,6 +14,55 @@
 > *somewhere*, so a duplicate satisfies it twice over.
 
 ---
+
+### BUG-268: `branch` on an INTEGER with no guarded arm emits enum-variant syntax and does not compile
+
+**Found 2026-08-06** while probing an unrelated `zig"…"` question. A basic construct;
+it does not compile in any context.
+
+```
+def main()
+    var x = 2
+    branch x
+        on 2
+            print("hit")
+        else
+            print("miss")
+```
+
+```
+error: expected '}', found '.'
+```
+
+**The emit shows it immediately** — an enum tag where an integer literal belongs:
+
+```zig
+switch (x) {
+    .2 => {          // <- should be `2 =>`
+```
+
+**A GUARD ON ANY ARM HIDES IT, and that is why it has never been seen.** A guarded arm
+routes the whole `branch` to an if-chain instead of a `switch`, and that path is correct:
+
+| arm | emitted | result |
+|---|---|---|
+| `on 2 if x > 1` | `if (!_bd_1 and (_bv_1 == 2))` | works |
+| `on 2` | `switch (x) { .2 => {` | **broken** |
+
+`branch` on a `char` also works (`test/branch_range_test.zbr` passes) — it takes the
+range/char path. So the break is specific to an integer scrutinee with plain literal arms.
+
+**Why no gate caught it.** Exactly one tracked file has integer arms —
+`test/branch_guard_test.zbr` — and every one of its arms is guarded, because guards are
+what it exists to test. So the corpus contains the construct only in the form that works.
+This is the `full_sweep`-baseline gap in miniature: not a file that fails unnoticed, but a
+*form* that is absent from the corpus entirely.
+
+**Control when fixing:** an unguarded integer arm must compile and select correctly; a
+guarded one must keep working (do not "fix" it by routing everything to the if-chain — that
+would drop the switch and its exhaustiveness behaviour); `char` and range arms must be
+unaffected. A fixture with NO guard anywhere is the one that matters — adding a guard to it
+would silently restore the passing path and the regression test would stop testing.
 
 ### BUG-267: `zig"…"` literals do not participate in usage or mutation analysis
 
