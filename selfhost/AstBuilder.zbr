@@ -760,6 +760,23 @@ class ASTBuilder
             else
                 return nil
 
+    # True when every character is a decimal digit (non-empty). Deliberately NOT
+    # accepting a sign, `0x`, `_` separators or a decimal point: each of those either
+    # cannot reach here (a `.` is consumed by the dotted-path branch in the caller) or
+    # would need a base/parse decision this function has no way to make. Anything it
+    # does not recognise falls through to the identifier case, i.e. to the previous
+    # behaviour — so an unhandled form is no worse than before, never wrong in a new way.
+    def isDecimalDigits(s: str): bool
+        if s.len == 0
+            return false
+        var i: int = 0
+        while i < s.len
+            var c = s[i]
+            if c < c'0' or c > c'9'
+                return false
+            i = i + 1
+        return true
+
     def patternToExpr(pat: str): Expr
         # Convert a branch pattern token to an Expr
         if pat.startsWith("c'")
@@ -767,6 +784,28 @@ class ASTBuilder
             return Expr.char_lit(ExprCharLit(zspan(), pat))
         if pat.startsWith("\"") or pat.startsWith("'")
             return Expr.string_lit(ExprStringLit(zspan(), StringKind.plain, stripStringQuotes(pat)))
+        # BUG-268: the parser stores on-clause patterns as STRINGS (`patterns:
+        # List(str)`), so everything that is not recognised here becomes an
+        # `Expr.ident` — and genSwitchTag prefixes every ident with `.` because for a
+        # union that is exactly right. An integer or bool pattern therefore emitted
+        # `.2 =>` / `.true =>`, enum-variant syntax against a non-enum scrutinee, and
+        # `branch` on an integer did not compile AT ALL.
+        #
+        # It hid because a GUARD on any arm routes the whole branch to genBranchGuarded
+        # (an if-chain, which is correct), and the one corpus file with integer arms —
+        # branch_guard_test.zbr — guards all of them, since guards are what it tests. The
+        # corpus held the construct only in the shape that worked.
+        #
+        # Fixed here rather than in genSwitchTag because the defect is that the AST is
+        # WRONG: `on 2` is an integer literal, and every later pass asking "what kind of
+        # value is this arm?" deserves a truthful answer. The bootstrap already emits
+        # `2 =>` for this, so this converges the selfhost onto the working reference.
+        if pat == "true"
+            return Expr.bool_lit(ExprBoolLit(zspan(), true))
+        if pat == "false"
+            return Expr.bool_lit(ExprBoolLit(zspan(), false))
+        if .isDecimalDigits(pat)
+            return Expr.int_lit(ExprIntLit(zspan(), pat, IntBase.decimal))
         return Expr.ident(ExprIdent(zspan(), pat))
 
     # ── Expressions ───────────────────────────────────────────────────────────

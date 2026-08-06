@@ -1,0 +1,64 @@
+# BUG-268 regression: `branch` on an integer or bool with PLAIN arms must compile.
+#
+# THE ARMS BELOW MUST STAY UNGUARDED. A guard on any arm routes the whole `branch`
+# to genBranchGuarded, which emits an if-chain and was never broken — so adding
+# `if <cond>` to any arm here would make this file pass without testing anything.
+# That is exactly how the bug survived: test/branch_guard_test.zbr is the only
+# tracked file with integer arms and it guards all of them, because guards are what
+# it exists to test. The guarded path is covered separately in classifyGuarded()
+# below, in its own branch, so the two cannot contaminate each other.
+#
+# Before the fix these emitted enum-variant syntax against a non-enum scrutinee --
+# `switch (x) { .2 => {` and `.true => {` -- and did not compile at all.
+
+def classifyInt(n: int): str
+    branch n
+        on 2
+            return "two"
+        on 3, 4
+            return "three-or-four"
+        else
+            return "other"
+
+def classifyBool(b: bool): str
+    branch b
+        on true
+            return "yes"
+        else
+            return "no"
+
+# The guarded path, in a SEPARATE branch so it cannot rescue the plain arms above.
+#
+# VOID, not value-returning, and that is forced rather than stylistic: a GUARDED branch
+# in a value-returning function fails exhaustiveness in BOTH compilers ("control flow
+# reaches end of body"), because the if-chain it lowers to carries no proof that some arm
+# ran. Pre-existing, shared, and therefore not a divergence gap — but it is why
+# branch_guard_test.zbr also prints instead of returning.
+def classifyGuarded(n: int)
+    branch n
+        on 7 if n > 5
+            print("seven-big")
+        on 7
+            print("seven-small")
+        else
+            print("other")
+
+# char arms take the range/char path, which was always correct — pinned here so a
+# fix that "converged" everything onto one path would be caught.
+def classifyChar(c: char): str
+    branch c
+        on c'a'
+            return "a"
+        else
+            return "not-a"
+
+def main()
+    print(classifyInt(2))
+    print(classifyInt(3))
+    print(classifyInt(4))
+    print(classifyInt(9))
+    print(classifyBool(true))
+    print(classifyBool(false))
+    classifyGuarded(7)
+    print(classifyChar(c'a'))
+    print("bug268: OK")

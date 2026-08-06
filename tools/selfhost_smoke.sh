@@ -1260,6 +1260,12 @@ smoke_run     test/c_interop_test.zbr "C interop tests completed"
 # `-fno-llvm -fno-lld` segfaults.
 smoke_run     test/bug265_extern_no_deps_test.zbr "42"
 
+# BUG-268: `branch` on an int/bool with UNGUARDED arms emitted enum-variant syntax
+# (`.2 =>`) and did not compile at all. The arms in that fixture must stay unguarded —
+# a guard routes the whole branch to the if-chain path, which was never broken, so
+# adding one would make it pass without testing anything.
+smoke_run     test/bug268_branch_int_test.zbr "bug268: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

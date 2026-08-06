@@ -149,52 +149,58 @@ a var) — see `docs/extern_ffi_design.md` §9 for the full repro.
 assigned only inside it must be emitted `var`; a genuinely unused var must still get its
 discard, and a genuinely non-mutated one must still be `const`. Both directions.
 
-**Scoped 2026-08-06, not fixed — the naive fix is unsafe in BOTH directions, and the
-choice between the two real options is a language-design decision rather than a bug fix.**
+**Re-scoped 2026-08-06 — the earlier scoping below was WRONG about the read half, and
+wrong in the expensive direction: it argued for new language syntax to solve a problem
+this codebase had already solved one walker over.**
 
-`Expr.zig_lit` (`selfhost/Ast.zbr:1252`) carries the escape's contents as one opaque
-`.text` string. Every walker therefore treats it as a leaf with no identifiers in it,
-which is structurally correct and semantically wrong. There is no AST to descend into;
-something has to interpret that text.
+**The read half is an INCONSISTENCY, not a missing capability.** `zigLitMentionsWord()`
+already exists in `selfhost/CgHelpers.zbr`, and its own comment states why: *"A param
+referenced from a `zig"…"` literal is used, so it must not be discarded."* There are two
+usage walkers, and only one of them learned that lesson:
 
-*Why a plain identifier scan is not good enough.* Zig errors on **both** over- and
-under-approximation, so a heuristic that guesses wrong in either direction trades this bug
-for another:
-
-| the scan says | emitted | Zig says |
+| walker | `zig_lit` case | used by |
 |---|---|---|
-| name absent (today) | `_ = x;` beside a use | `pointless discard` |
-| name absent (today) | `const out` | `cannot assign to constant` |
-| name present when it is only inside a STRING or COMMENT in the escape | no discard | `unused local variable` |
-| assignment matched when the escape only reads | `var x` | `local variable is never mutated` |
+| `nameUsedInExpr` | scans the text | parameter discards |
+| `mightUseNameInExpr` | falls into "no user idents" -> false | **local** discards |
 
-So a scan must at minimum skip string literals and comments within the Zig text, and
-distinguish `out =` from `out ==` and from `x.out = ...`. That is a small tokenizer for a
-foreign language, living in the walker.
+Measured, same construct both ways:
 
-**Two real options, and they are not equivalent:**
+    param used only in zig"…"  ->  no discard    (correct, long-standing)
+    local used only in zig"…"  ->  `_ = q;`      -> pointless discard of local constant
 
-- **(A) Scan the text.** No syntax change, existing code keeps working, and it stays a
-  heuristic forever — with the failure modes tabulated above appearing as confusing Zig
-  errors in user code that looks fine.
-- **(B) Make the escape declare what it touches**, e.g. `zig"…"(reads: p, writes: out)`.
-  Exact rather than heuristic, and it makes the dependency visible at the call site — which
-  is arguably right for a construct whose whole purpose is to leave the language's
-  guarantees. Costs syntax, and breaks existing `zig"…"` uses unless the annotation is
-  optional (in which case unannotated escapes keep today's behaviour and the bug persists
-  for them).
+So the fix is to give `mightUseNameInExpr` the same `zig_lit` case the sibling walker
+already has. No new syntax; it makes locals behave like parameters, which is what a reader
+would assume already happens.
 
-**My recommendation is B, with A as a fallback**, on the grounds that an escape hatch is
-exactly where an implicit, best-effort guess is least appropriate: the construct exists
-because the compiler cannot reason about the contents, and a scan is the compiler
-pretending it can. But this changes the language surface, so it wants Sean's call rather
-than an implementer's.
+**The scan does not skip Zig strings or comments**, so a name appearing only inside one
+counts as a use, the discard is suppressed, and Zig reports `unused local variable`. That
+is a real limit and it is stated here rather than hidden — but it is **already accepted for
+parameters**, has not bitten, and its failure direction is a compile error rather than a
+silent miscompile.
 
-**Related, and probably the same fix:** BUG-260 (a parameter used only inside a query's
-`[...]` bind list) is the same walker failing to descend into a different construct. Its
-filer noted "anything else asking 'is this used?' will be wrong in the same place" — this
-is that place. A fix that descends into both closes them together, and whichever option is
-chosen here should be checked against the bind-list case before it is built.
+**Two designs considered and NOT pursued, recorded so they are not re-derived:**
+
+- **`zig"…" reads a, b`** (an explicit read list). Exact rather than heuristic, and it was
+  the recommendation until `zigLitMentionsWord` turned up. Rejected because it adds
+  language surface to answer a question the compiler already answers elsewhere, and would
+  leave TWO mechanisms for "what does this escape touch" — the more likely long-term
+  hazard than the false-positive it prevents. Revisit only if the string/comment
+  false-positive is actually hit.
+- **A `zig` BLOCK form with `reads` / `writes` clauses** (mirroring `capture`). The more
+  complete design, and the only one that addresses the write half for multi-statement
+  escapes. Not pursued because **the need was never demonstrated**: every real case so far
+  is a value flowing OUT of C, which expression form already handles. Revisit when someone
+  hits a genuine multi-statement escape that must mutate an existing local.
+
+**The write half is separate and remains open.** No mutation walker scans `zig"…"` at all,
+so a local assigned only inside a statement-form escape is still emitted `const` and Zig
+rejects the assignment. Expression form (`var out = zig"…"`) avoids it entirely and is the
+recommended shape, so this is a documented limit rather than a blocker.
+
+**Related:** BUG-260 is the same walker question in a different construct (a parameter used
+only inside a query bind list). It is NOT fixed by this — that construct is a list literal,
+not a `zig_lit` — but it is worth checking against whatever fix lands here.
+
 
 ### BUG-264: the selfhost lowers a module-scope `StrSet.add` as `List.append`, so it cannot re-emit its own source
 
