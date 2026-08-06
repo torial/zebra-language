@@ -1928,6 +1928,68 @@ def rawMemset(ptr: uint, size: uint)
     zig"@memset(@as([*]u8, @ptrFromInt(ptr))[0..size], 0);"
 ```
 
+`zig"…"` is **statement-level only** — it cannot declare a top-level symbol.  To
+declare a foreign function, use `extern` (next section).
+
+---
+
+## 23a. `extern` — calling C (FFI)
+
+`extern def` declares a function that lives outside Zebra.  It has no body; the
+definition comes from a C file you link in.
+
+```zebra
+extern def zebra_probe_add3(a: int32, b: int32, c: int32): int32
+```
+
+To supply the definition, put a `.c` file beside your source and `use` it by
+name.  The compiler discovers it, hands it to `zig`, and links the result — one
+command, no build script:
+
+```zebra
+use cprobe_add3
+
+extern def zebra_probe_add3(a: int32, b: int32, c: int32): int32
+
+def main()
+    print(zebra_probe_add3(20, 20, 2))    # 42
+```
+
+with `cprobe_add3.c` alongside it:
+
+```c
+int zebra_probe_add3(int a, int b, int c) { return a + b + c; }
+```
+
+If the C file has a matching `.h`, the header is imported instead and its
+symbols are reached through the module name (`cprobe_add3.some_fn(...)`) — no
+`extern def` needed for those.
+
+### The ABI rule — read this one, it fails silently
+
+**Zebra's `int` is 64-bit; C's `int` is not.**  Declaring a parameter as `int`
+against a C `int` is a mismatch that links cleanly and corrupts the call: you
+get a green build and a wrong answer.  Use the explicitly-sized types, which
+map straight onto the C ones:
+
+| C | Zebra |
+|---|---|
+| `int` | `int32` |
+| `long long` | `int64` |
+| `unsigned char` | `uint8` |
+| `float` / `double` | `float32` / `float64` |
+
+### Limits
+
+- The C symbol name **is** the Zebra name — there is no renaming, so a symbol
+  that is not a legal Zebra identifier cannot be reached.
+- **Static linking only.**  A symbol in a shared library (a `.dll` / `.so`)
+  needs a library name and a calling convention that `extern def` does not yet
+  emit; on Windows a bare `extern def` against a DLL export links and then
+  crashes at the call.  See `docs/extern_ffi_design.md`.
+- `extern` applies to `def` only — not to variables, types, or classes.
+- No varargs, no struct-by-value across the boundary.
+
 ---
 
 ## 24. Contracts (`require` / `ensure` / `invariant`)

@@ -96,8 +96,14 @@ SUPPRESS = re.compile(r'<!--\s*doc-example-ok:\s*(.+?)\s*-->')
 # `def main()` and reports a syntax error that is the harness's fault. `type`, `namespace`,
 # `sig`, `static` and `export` were all absent from the first draft and produced exactly
 # that -- 12 fake failures.
+# `extern` added 2026-08-05: it became a top-level form when `extern def` shipped
+# (BUG-258), and this list did exactly what the paragraph above predicts -- it wrapped
+# two valid QUICKSTART blocks in `def main()` and reported 2 NEW syntax failures that
+# were the harness's fault. Confirmed against selfhost/Parser.zbr:892 rather than
+# assumed. A new top-level keyword must be added here in the same step that adds it
+# to the parser, or the first doc to use it gets blamed for the omission.
 TOPLEVEL = ("use", "namespace", "class", "struct", "interface", "mixin", "extend",
-            "union", "enum", "sig", "type", "static", "export", "def", "var")
+            "union", "enum", "sig", "type", "static", "export", "def", "var", "extern")
 # `var` is deliberately EXCLUDED from hoisting even though it is a legal top-level form.
 # Hoisting reorders the block, and reordering manufactures failures: a doc block that reads
 #     try

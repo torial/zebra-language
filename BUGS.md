@@ -1,9 +1,105 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-260. Next new bug: BUG-261.**
+**Last bug number generated: BUG-264. Next new bug: BUG-265.**
+
+> **Numbering correction 2026-08-05.** Two different bugs were both filed as
+> BUG-260 by sessions working in parallel. The query-param one below was filed
+> first (`5717d80`) and keeps the number; the C-dependency one was filed later
+> (`fcd9c7c`) and is **renumbered BUG-261**. Commit `fcd9c7c`'s message still
+> says "BUG-260" — that is the record of what was written at the time and is
+> left alone; look for BUG-261 in the ledgers.
+>
+> No gate could see this: `doc_lint` D4 only checks that a cited BUG-NNN exists
+> *somewhere*, so a duplicate satisfies it twice over.
 
 ---
+
+### BUG-264: the selfhost lowers a module-scope `StrSet.add` as `List.append`, so it cannot re-emit its own source
+
+**Found 2026-08-05** by the round-trip gate, while adding a module-scope `StrSet` to
+`selfhost/CodeGen.zbr` for BUG-261. Worked around there (`List(str)` instead); the
+underlying defect is untouched.
+
+A file-scope `var s: StrSet = StrSet()` followed by `s.add(x)`:
+
+| | emit |
+|---|---|
+| bootstrap | `pub var _zbr_mv_s: *StrSet = undefined;` … `_zbr_mv_s.add(path);` — **correct** |
+| selfhost | types it `StrSet`, then lowers the call as a List: `_zbr_mv_s.append(_zbr_rt._allocator, path)` |
+
+The selfhost's output does not compile:
+
+```
+error: method invocation only supports up to one level of implicit pointer dereferencing
+note: struct declared here -- pub const StrSet = struct {
+```
+
+So the type is resolved correctly and only the **method lowering** is wrong: `.add` on a
+module-scope var is treated as `List.add` unconditionally. `_implicit_try_sites` and
+`_inference_guess_sites`, the only pre-existing module-scope collections in that file, are
+both `List(str)` — so the wrong branch has always been the right answer until now, which
+is presumably why this has never fired.
+
+**A selfhost-LEADS-vs-LAGS inversion worth noting:** here the bootstrap is right and the
+shipping compiler is wrong, the same direction as BUG-254.
+
+**Only the round-trip gate can see this class.** `zig build` builds `zebra.exe` from the
+*bootstrap's* (correct) emit, so the compiler builds, runs, and passes all 313 smoke
+fixtures while being unable to emit valid Zig for its own source. Nothing before step 3 of
+`bootstrap_check` looks at what the selfhost emits for that file.
+
+**Control when fixing:** a module-scope `StrSet` with `.add`/`.contains_` must round-trip;
+a module-scope `List(str)` with `.add` must still emit `.append(allocator, …)`. Both
+directions — the easy wrong fix is to stop treating module-var `.add` as List at all.
+
+### BUG-263: `use foo exposing bar` emits no aliases when `foo` is a native dep
+
+**Found 2026-08-05** while fixing BUG-261, by reading the bootstrap branch being
+ported rather than by hitting it.
+
+Both compilers attach the exposed-name aliasing to the **Zebra-dep** branch of
+`genUse` only (`src/CodeGen.zig:4899-4930`, `selfhost/CodeGen.zbr` genUse). So on
+a dep that resolved to `.c` or `.zig`:
+
+    use CUtils exposing c_add          # c_add is never bound to anything
+
+The `use` itself still works — `CUtils.c_add(...)` resolves — so this is a missing
+convenience, not a miscompile. It fails at the Zig stage with an undefined
+identifier rather than silently, which is why it has gone unnoticed.
+
+**It is a SHARED hole, and that is the point.** Fixing it in the selfhost alone
+would open a selfhost gap in `divergence_check`, which is currently 0 and is the
+property the port exists to preserve. Either fix both compilers together or
+neither. Filed rather than fixed for that reason.
+
+### BUG-262: the selfhost never materializes a native `.zig` dep, so `use SomeZigModule` fails
+
+**Found 2026-08-05** while verifying that BUG-261's fix did not disturb the native
+`.zig` path. It did not — this is pre-existing and independent.
+
+`test/zig_interop_test.zbr` (`use ZigMath`, with a tracked `test/ZigMath.zig`):
+
+| | result |
+|---|---|
+| `zebra-bootstrap.exe test/zig_interop_test.zbr` | runs, prints its output |
+| `zebra.exe test/zig_interop_test.zbr` | `unable to load 'ZigMath.zig': FileNotFound` |
+
+`genUse` correctly emits `@import("ZigMath.zig")` — the emit is not the bug. The
+selfhost writes its generated Zig to a **temp directory** and never copies the
+native `.zig` dep beside it, so the import has nothing to resolve against. The
+`.c` case escapes this because a `.c` is passed to `zig build-exe` as an argument
+rather than resolved by path from the emitted file.
+
+Note `selfhost/main.zbr`'s dep walk has **no `.zig` candidate at all** (it tries
+`.zbr`, then `module_path/.zbr`, then `.c`); a native `.zig` dep falls through it
+silently and is never recorded anywhere. The fix is to detect it there and copy
+it into the output dir alongside the emitted `.zig`.
+
+**Same class as BUG-261** — native-dependency support that exists in `src/` and
+did not reach the shipping compiler. `zig_interop_test` is in
+`registration_baseline.txt` as known debt and in `compile_check`'s SKIP list, so
+nothing currently goes red on it.
 
 ### BUG-260: a parameter used only inside a query's param-list literal is emitted as unused, producing uncompilable Zig
 
@@ -52,42 +148,6 @@
 >
 > *(Filed by Fable, 2026-08-05, from `zebra-sprocket`. The generated Zebra is
 > correct; the compiler mistranslates it.)*
-
-### BUG-260: the selfhost cannot link C dependencies at all — the last gap in FFI
-
-**Found 2026-08-05** while closing BUG-258. FFI in Zebra is **one command away from
-working**, and the missing piece is entirely in the shipping compiler.
-
-    use zlib_probe                                   # zlib_probe.c, no header
-    extern def zebra_probe_add3(a: int32, b: int32, c: int32): int32
-    def main()
-        print(zebra_probe_add3(20, 20, 2))
-
-| | result |
-|---|---|
-| `zebra-bootstrap.exe p2.zbr` | **42** — C source auto-linked, foreign call correct |
-| `zebra.exe p2.zbr` | `unable to load 'zlib_probe.zig': FileNotFound` |
-
-**The selfhost has no C-dependency handling whatsoever.** `c_no_header`, `c_with_header`
-and `NativeUse` appear nowhere in `selfhost/*.zbr`. The bootstrap discovers a `.c` beside
-the source (`src/main.zig:446-453`), routes it into `c_sources`, passes it to
-`zig build-exe`, and emits a comment instead of an `@import` (`src/CodeGen.zig:4914`). The
-selfhost skips all of that and emits `@import("zlib_probe.zig")` for a file that is not
-Zig.
-
-**Same class as BUG-106/108/248/252/253** — a capability that shipped in `src/` and never
-reached the compiler that ships. This one is larger than those: not a missing diagnostic
-but a missing *subsystem*, and it is the difference between "FFI works if you drive `zig`
-yourself" and "FFI works".
-
-**It is what blocks the run-and-compare fixture** that BUG-258's design note says `extern`
-is not done without. The manual two-step (`--output-dir`, then
-`zig build-exe p.zig lib.c -lc`) prints 42 and proves the declaration is sound; nothing
-gated can call a foreign function until the selfhost can drive the link itself.
-
-**Consequence for `zebra-sprocket`:** the blockage is narrower than reported. Bindings can
-be expressed today, and the bootstrap can already build and run them. What the selfhost
-cannot yet do is be the compiler that does it.
 
 ### BUG-259: `zebra.exe run` exits 0 after a compile error AND after a runtime assertion failure
 

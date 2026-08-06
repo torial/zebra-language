@@ -1,0 +1,21 @@
+# BUG-261 regression: a `use` that resolves to a sibling .c must link and call.
+#
+# THIS FIXTURE MUST RUN, NOT MERELY COMPILE. The whole failure mode of FFI is a
+# declaration that resolves to nothing or to the wrong ABI, and both of those
+# produce Zig that passes semantic analysis. compile_check and full_sweep build
+# with `-fno-emit-bin`, so they never link this and cannot see either. Only the
+# smoke_run registration (asserting the printed 42) actually exercises it.
+#
+# It also pins the emit shape that BUG-261 got wrong: `use cprobe_add3` must
+# NOT become `@import("cprobe_add3.zig")`, because no such file exists.
+#
+# ABI note: the C side takes three `int`, so the Zebra declaration says `int32`.
+# Writing `int` would be an i64/c_int mismatch that links cleanly and corrupts
+# the call -- green build, wrong program.
+
+use cprobe_add3
+
+extern def zebra_probe_add3(a: int32, b: int32, c: int32): int32
+
+def main()
+    print(zebra_probe_add3(20, 20, 2))

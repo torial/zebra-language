@@ -2227,3 +2227,120 @@ and the CLI + `compileNodeAddon` into `selfhost/main.zbr`. This is the standard
 Regenerate (--update):  PASS
 Bootstrap round-trip:   PASS (selfhost-B byte-identical to selfhost-A)
 ```
+
+---
+
+## Native C dependencies (`use foo` → `foo.c`) — selfhost gap closed (BUG-261, 2026-08-05)
+
+The last piece of FFI. `extern def` had landed in both compilers a day earlier and the
+emitted declarations were already byte-identical; what did not work was **linking**. A
+program with a sibling `.c` ran under `zebra-bootstrap.exe` and failed under `zebra.exe`
+with `unable to load 'foo.zig': FileNotFound`.
+
+### The gap was one hand-off, not a subsystem
+
+The bug report said the selfhost had "no C-dependency handling whatsoever" — arrived at by
+grepping `selfhost/*.zbr` for the bootstrap's identifiers (`c_no_header`, `c_with_header`,
+`NativeUse`) and finding nothing. **That inference was wrong**, and it is the part of this
+worth remembering: two independently-written implementations do not share names, so a
+name-based absence proof across them establishes very little.
+
+`selfhost/main.zbr` already did four of the five things needed. It found the `.c` beside
+the source, appended it to `c_sources`, recorded the header's directory in `c_i_dirs`, and
+passed both to `zig build-exe` with `-lc`. The missing fifth: **nothing told the codegen**,
+so `genUse` took its default arm and emitted `@import("foo.zig")` for a file that is not
+Zig and does not exist.
+
+### Change
+
+- `selfhost/CodeGen.zbr` — `_c_no_header_uses` / `_c_with_header_uses` (file-scope
+  `StrSet`s, following the `setSingleFile`/`setGuiBackend` pattern already used for
+  options that every `generate*` path needs and none thread through), plus
+  `addNativeCUse`/`isNativeCUse`. Mirrors `CodeGen.native_uses` in `src/CodeGen.zig`.
+- `selfhost/CodeGen.zbr` `genUse` — two arms before the default, mirroring
+  `src/CodeGen.zig:4907-4916`: header → `@cImport(@cInclude("X.h"))`, no header → a
+  comment and no binding.
+- `selfhost/main.zbr` — `addNativeCUse(u.path, <has .h>)` at the point that already
+  tested for the sibling header. Keyed on the path **as written in the `use`**, which is
+  what `genUse` looks up — not the resolved filesystem path.
+
+Two non-changes are commented in place because both look like oversights: the default
+`@import` arm stays unconditional (it is also how a native `.zig` dep works — such a dep
+has no candidate in the dep walk and falls through to exactly this line), and neither
+native arm emits exposed-name aliases (the bootstrap does not either — BUG-263 — and
+fixing one side alone would open a `divergence_check` selfhost gap).
+
+### There were TWO `@import("<dep>.zig")` sites, and the second was only visible under the inline runtime
+
+Fixing `genUse` left the feature working in the default emit shape and broken in the other
+one. `generateErrorMsgHelperWith` emits a second `@import("<dep>.zig")._error_ctx` per
+`use` for cross-module error propagation, and a C dep has neither a `.zig` nor an
+`_error_ctx`. The bootstrap already skipped native uses there (`src/CodeGen.zig:2821`); the
+selfhost did not.
+
+It surfaced in exactly one place: **`compile_check-inline`**. The default runtime-module
+shape routes `_error_ctx` differently, so all 21 other gates in the FULL tier were green —
+including `compile_check` over the same corpus, differing only by `--no-runtime-module`.
+That pair exists precisely because the non-default shape is the one that goes unwatched,
+and this is the first time it has earned its place on a change of mine.
+
+Worth generalising: when a fix removes an `@import` of a dependency, grep for **every**
+site that emits one rather than fixing the one the repro pointed at.
+
+### The registry had to be `List(str)`, and finding out cost a round-trip (BUG-264)
+
+The obvious representation is a `StrSet`, and it was the first attempt. It builds, it runs,
+and **all 313 smoke fixtures pass** — because `zig build` builds `zebra.exe` from the
+*bootstrap's* emit, and the bootstrap gets a module-scope `StrSet` right (`*StrSet`,
+`.add`). What it cannot do is survive step 3 of `bootstrap_check`, where the selfhost is
+asked to re-emit its own source: it types the var as `StrSet` and then lowers the call as
+if it were a List —
+
+    _zbr_mv__c_with_header_uses.append(_zbr_rt._allocator, path)   // a List method on a StrSet
+
+— which does not compile. The compiler was therefore fully working and simultaneously
+unable to emit valid Zig for itself, and **the round-trip gate is the only thing in any
+tier that can see that state**. Filed as BUG-264 and worked around here with `List(str)` +
+a linear scan, which is the representation `_implicit_try_sites` (30 lines above) already
+uses and the one both compilers agree on.
+
+Note the direction: the bootstrap is right and the shipping compiler is wrong. The first
+draft of this journal entry, and the code comment with it, said the reverse — the failing
+build lives under `/tmp/bs-A/`, which reads like a bootstrap artifact and is in fact
+emitted by selfhost-A (`bootstrap_check.sh:219`). Worth checking which compiler wrote a
+file before attributing a bug to it.
+
+### Verification — and why the usual gates could not do it
+
+**No compile-only gate can witness FFI.** `compile_check` and `full_sweep` build with
+`-fno-emit-bin`, so they never link, and an `extern fn` resolving to no symbol at all
+passes them cleanly. `smoke_run` is the only helper that invokes the one-shot
+`zebra <file>` path — discovery, link, execute — and it classifies on printed text, which
+also sidesteps BUG-259 (the selfhost returned `rc=0` on the very FileNotFound being fixed).
+
+Controls were run before believing the pass, per the instrument-discipline rule:
+
+| control | expected | observed |
+|---|---|---|
+| C body changed to `a+b+c+1` | output follows the C | **43** |
+| `.c` removed | original failure, not a silent 42 | FileNotFound |
+| relative *and* absolute invocation | both link | 42 / 42 |
+
+The first is the one that matters: it proves the value is produced by that translation
+unit rather than being a constant arriving from somewhere else.
+
+### Side effect: a dead test came back
+
+`test/c_interop_test.zbr` + `CUtils.c`/`CUtils.h` were tracked in the repo, covered the
+`c_with_header` branch, and were registered in **nothing** — one of `registration_check`'s
+20 known-debt files. It could not have passed while this bug existed. Now registered and
+passing on both compilers; debt 20 → 19.
+
+### Still open
+
+- **BUG-262** — a native `.zig` dep is never copied into the selfhost's temp emit dir, so
+  `use SomeZigModule` fails there and works in the bootstrap. Same class as this bug;
+  found while confirming this fix did not disturb that path (it did not).
+- **BUG-263** — `use foo exposing bar` binds nothing on a native dep, in **both**
+  compilers.
+- DLL/shared-library symbols remain unsupported (`docs/extern_ffi_design.md` §7).

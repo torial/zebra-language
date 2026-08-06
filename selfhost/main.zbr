@@ -40,7 +40,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -282,6 +282,12 @@ class MultiCompiler
             var h_path: str = dep_name + ".h"
             if src_dir != ""
                 h_path = src_dir + "/" + dep_name + ".h"
+            # BUG-261: tell the codegen this `use` is native C.  Without this the
+            # path below records the -I dir and the .c file for zig, but genUse
+            # still emits `@import("<dep>.zig")` for a file that does not exist.
+            # Registered on `u.path` (the name as WRITTEN in the `use`), because
+            # that is the key genUse looks up — not the resolved filesystem path.
+            addNativeCUse(u.path, File.exists(h_path))
             if File.exists(h_path)
                 var c_dir: str = .dirOf(c_path)
                 if c_dir == ""

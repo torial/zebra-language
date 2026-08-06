@@ -1223,6 +1223,34 @@ smoke_run     test/bug253_uninit_collection_field_test.zbr "bug253-uninit: OK"
 smoke_run     test/bug253_tuple_index_high_test.zbr "bug253-tuple: OK"
 smoke_run     test/bug253_frontend_diagnostics_test.zbr "bug253: OK"
 
+# BUG-261: a `use` resolving to a sibling .c must LINK and CALL, not just emit.
+#
+# smoke_run is the only helper that can assert this, and the choice is load-bearing
+# rather than incidental. It invokes `zebra <file>` one-shot -- the path that runs
+# dep discovery, hands the .c to zig, links, and executes -- and it classifies on
+# the PRINTED TEXT. Both halves matter:
+#
+#   - The emit-only helpers (`smoke`, and compile_check/full_sweep) build with
+#     `-fno-emit-bin`, so they never link. An `extern def` that resolves to no
+#     symbol at all passes semantic analysis cleanly. They cannot see this bug.
+#   - Classifying on exit code would be worthless while BUG-259 is open: the
+#     selfhost returned rc=0 on the very FileNotFound this fixture pins.
+#
+# So "42" in the output is the assertion. Nothing weaker actually witnesses FFI.
+smoke_run     test/extern_c_call_test.zbr "42"
+
+# The OTHER native-C branch: a .c WITH a matching .h, which emits @cImport rather
+# than a comment and reaches its symbols as `CUtils.c_add(...)`. This fixture and
+# its CUtils.c/.h have been tracked in the repo all along but were never registered
+# anywhere -- one of registration_check's 20 known-debt files, and dead in the
+# shipping compiler for as long as BUG-261 existed (it emitted @import("CUtils.zig")
+# for a file that has never existed). Registering it here retires that debt and
+# gates the branch that is otherwise wrong-but-green: emitting the no-header comment
+# where a header exists compiles perfectly and silently kills every CUtils.* call.
+# compile_check already SKIPs it for the documented harness reason -- gates build
+# without -I, so the @cImport cannot find the header outside a real link.
+smoke_run     test/c_interop_test.zbr "C interop tests completed"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

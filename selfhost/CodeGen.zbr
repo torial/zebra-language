@@ -1265,6 +1265,17 @@ def generateErrorMsgHelperWith(dep_modules: List(str)): str
     var di: int = 0
     while di < dep_modules.len
         var dep_name = dep_modules.at(di)
+        # BUG-261: a native C dep has no `.zig` and no `_error_ctx` — skip it, exactly as
+        # the bootstrap does (`src/CodeGen.zig:2821`, which skips ALL native uses).
+        # THIS IS THE SECOND @import SITE, and missing it is how the fix was incomplete:
+        # genUse was fixed, this was not, and the result only appeared under the INLINE
+        # runtime (`--no-runtime-module`) because the runtime-module shape routes
+        # `_error_ctx` differently. The default-shape gates were all green; only
+        # `compile_check-inline` saw it. If a third @import-of-a-dep site is ever added,
+        # it needs this guard too.
+        if isCWithHeaderUse(dep_name) or isCNoHeaderUse(dep_name)
+            di = di + 1
+            continue
         # For cross-module _error_ctx, always use @import to access the module-level variable
         # (even when genUse unwraps same-named classes like Resolver.Resolver)
         sb.append("    if (@import(\"")
@@ -2308,6 +2319,65 @@ def setSingleFile(v: bool)
 def singleFile(): bool
     return _single_file
 
+# ── Native C dependencies (BUG-261) ───────────────────────────────────────────
+# A `use foo` whose dep resolved to `foo.c` rather than `foo.zbr` is NOT a Zebra
+# module: zig compiles it as a translation unit and links it in, so there is no
+# `foo.zig` to @import.  main.zbr's dep walk already discovers these (it routes
+# the path into `c_sources` and the header's dir into `c_i_dirs`); it just never
+# TOLD the codegen, so genUse emitted `@import("foo.zig")` for a file that does
+# not exist and every C dependency failed with FileNotFound.  File-scope for the
+# same reason as `_single_file` above — every generate* path needs it and none of
+# them thread options through.  Mirrors `CodeGen.native_uses` in src/CodeGen.zig.
+#
+# Two collections because the two cases emit DIFFERENTLY
+# (src/CodeGen.zig:4907-4916): with a header the symbols come from `@cImport`,
+# without one they must be declared by hand via `extern def`.
+#
+# LIMIT: process-lifetime, never cleared — same as `_single_file` and the gui
+# flags above, and fine for the one-program-per-invocation CLI.  The bootstrap
+# instead keeps a per-compile map (`native_uses` / `dep_native_uses`,
+# src/main.zig:410,997).  If a future `zebra build` compiles several targets in
+# ONE process, a `use foo` naming a Zebra module in target B would still be
+# treated as C because target A had a `foo.c`.  Clear these per target at that
+# point; there is no such caller today.
+#
+# `List(str)`, NOT `StrSet`, and that is forced rather than chosen — see BUG-264.
+# A module-scope `StrSet` is emitted correctly by the BOOTSTRAP (`*StrSet`, `.add`)
+# and WRONGLY BY THE SELFHOST, which types the var as `StrSet` and then lowers
+# `.add` as if it were a List: `.append(_zbr_rt._allocator, path)`.  That does not
+# compile, so the selfhost becomes unable to re-emit its own source — which is
+# exactly what the round-trip gate exists to catch, and the only gate that can:
+# `zig build` is fine (it builds from the BOOTSTRAP's correct emit), the compiler
+# runs, and every smoke fixture passes.  Nothing before step 3 of bootstrap_check
+# looks at what the selfhost emits for THIS file.
+#
+# `_implicit_try_sites` directly above is a module-scope `List(str)` for what is
+# probably the same underlying reason.  Membership is a linear scan, which costs
+# nothing here: one entry per C dependency, so realistically 0-3.
+var _c_no_header_uses: List(str) = List(str)()
+var _c_with_header_uses: List(str) = List(str)()
+
+def _hasNativeUse(xs: List(str), path: str): bool
+    var i: int = 0
+    while i < xs.len
+        if xs.at(i) == path
+            return true
+        i = i + 1
+    return false
+
+# Record that `path` resolved to a C source.  `has_header` selects the emit.
+def addNativeCUse(path: str, has_header: bool)
+    if has_header
+        _c_with_header_uses.add(path)
+    else
+        _c_no_header_uses.add(path)
+
+def isCWithHeaderUse(path: str): bool
+    return _hasNativeUse(_c_with_header_uses, path)
+
+def isCNoHeaderUse(path: str): bool
+    return _hasNativeUse(_c_no_header_uses, path)
+
 # ── Writer ────────────────────────────────────────────────────────────────────
 # Reference-type output sink.  All Generator copies share the same Writer.
 
@@ -3146,6 +3216,44 @@ struct Generator
         # If the module has a sole same-named class (e.g. `use Lexer` where Lexer.zbr
         # defines class Lexer), unwrap the class: const Lexer = @import("Lexer.zig").Lexer;
         var alias: str = n.path
+        # BUG-261: a dep that resolved to a `.c` is not a Zebra module and has no
+        # `.zig` to import — zig compiles and links the translation unit instead.
+        # Emitting the @import here is what made every C dependency fail with
+        # `unable to load 'foo.zig': FileNotFound`.  Both arms follow
+        # src/CodeGen.zig:4907-4916 (the bootstrap additionally splits a DOTTED path
+        # at the last dot and slash-converts it; the selfhost uses n.path verbatim
+        # here, as it does in the plain @import arm below — a pre-existing shared
+        # limit, not something these arms introduce), INCLUDING the fact that neither emits
+        # the exposed-name aliases below: in the bootstrap that aliasing lives in
+        # the Zebra-dep branch only, so `use foo exposing bar` on a C dep produces
+        # nothing in either compiler.  That is a real hole (filed as BUG-263), but
+        # it is a SHARED one — "fixing" it on this side alone would open a
+        # selfhost gap in divergence_check, which is the thing this port exists to
+        # keep at zero.
+        if isCWithHeaderUse(alias)
+            # C source + matching header: the symbols come from the header, so
+            # Zebra code calls them as `alias.some_fn(...)`.
+            w.emit("const ")
+            w.emit(alias)
+            w.emit(" = @cImport(@cInclude(\"")
+            w.emit(alias)
+            w.emit(".h\"));\n")
+            return
+        if isCNoHeaderUse(alias)
+            # C source, no header: nothing to import.  The author declares the
+            # symbols with `extern def`, which emits a file-scope `extern fn`.
+            # A comment rather than nothing so the emitted Zig still records that
+            # the dependency exists.
+            w.emit("// ")
+            w.emit(alias)
+            w.emit(": C source compiled inline (use `extern def` for declarations)\n")
+            return
+        # Anything else keeps the unconditional @import — which is ALSO how a
+        # native `.zig` dep works.  main.zbr's dep walk has no `.zig` candidate at
+        # all (it tries .zbr, then module_path/.zbr, then .c); a native Zig dep
+        # falls through it silently and lands here, where `@import("x.zig")` is
+        # accidentally the right answer.  Do not "fix" that fallthrough without
+        # replacing this emit — the accident is load-bearing.
         var has_same_named_class = class_names.contains_(alias)
         # Single-file (Phase 2): the dep is a file-scope `const _mod_X = struct {…}` in the
         # same file, so reference it directly instead of `@import("X.zig")`.  Multi-file keeps

@@ -1,8 +1,10 @@
 <!-- doc-status: design -->
 # `extern` — declaring foreign symbols (BUG-258)
 
-**Status:** DECLARATION implemented in both compilers; LINKING not solved. See section 6
-for the current state — do not read sections 1-3 as future tense.
+**Status:** DONE for static C linking, in both compilers — a `use` of a sibling `.c`
+compiles, links and calls in ONE command, gated by a fixture that checks the printed
+value. DLL/shared-library symbols remain unsupported (section 7). Do not read sections
+1-3 as future tense; section 7 is the current state.
 **Decided by Sean 2026-08-05:** `extern` is meant to exist, to enable the FFI work.
 **Written 2026-08-05 by Opus 5** after verifying BUG-258 in the tree.
 
@@ -242,3 +244,81 @@ what stands between this and a gated run-and-compare fixture.
 **So `extern` should not be described as working until a probe CALLS a foreign function and
 checks the value.** The declaration half is real and useful — it is what the sprocket work
 needs to express bindings — but nothing yet proves one resolves.
+
+---
+
+## 7. Status 2026-08-05 (later) — STATIC C LINKING WORKS, END TO END, GATED
+
+The remaining gap closed. `zebra.exe` now compiles, links and runs a C dependency in one
+command, and a fixture asserts the printed value rather than the exit code.
+
+    $ zebra.exe test/extern_c_call_test.zbr
+    42
+
+**The BUG-261 report above overstated the gap, and the overstatement was expensive** — it
+described "no C-dependency handling whatsoever" and "a missing *subsystem*". Reading the
+selfhost showed otherwise: the dep walk already found the `.c`, already put it in
+`c_sources`, already recorded the header dir in `c_i_dirs`, already passed both to
+`zig build-exe`, and already emitted an identical `extern fn` declaration. **One thing was
+missing: nothing told the codegen**, so `genUse` fell through to `@import("<dep>.zig")`.
+The fix was a native-use registry mirroring `CodeGen.native_uses`, and a branch in
+`genUse` — not a subsystem. Sections 1-6 are left unedited as the record of what was
+believed at the time; this section is the correction.
+
+Worth keeping as a general lesson: *"feature X appears nowhere in `selfhost/*.zbr`"* was
+established by grepping for the **bootstrap's identifier names** (`c_no_header`,
+`NativeUse`). The selfhost had the capability under different names. A name-based absence
+proof across two independently-written implementations says very little.
+
+### What is covered, and by what
+
+| | | |
+|---|---|---|
+| `.c` with no header (`extern def` → `extern fn`) | `smoke_run test/extern_c_call_test.zbr "42"` | **gated** |
+| `.c` with a header (`@cImport` → `Alias.fn()`) | `smoke_run test/c_interop_test.zbr` | **gated** |
+| the emitted Zig type-checks | `compile_check`, `full_sweep` | gated, but see below |
+| DLL / shared-library symbol | — | **not supported** |
+| native `.zig` dep | — | **broken in the selfhost (BUG-262)** |
+
+**The compile-only gates cannot witness this feature.** They build with `-fno-emit-bin`,
+so nothing links; an `extern fn` that resolves to no symbol whatsoever passes them
+cleanly. Only the two `smoke_run` registrations exercise a real link. Do not read a green
+`compile_check` as evidence that FFI works — it is not evidence either way.
+
+**`c_interop_test` also had to be resurrected.** It and its `CUtils.c`/`CUtils.h` were
+tracked in the repo, covered the header branch, and were registered in nothing — it could
+not have passed while BUG-261 existed. Registering it retired one of
+`registration_check`'s known-debt entries (20 → 19).
+
+### A dependency is `@import`ed from TWO places, not one
+
+`genUse` is the obvious site. `generateErrorMsgHelperWith` is the other — it emits
+`@import("<dep>.zig")._error_ctx` per `use` for cross-module error propagation, and a C dep
+has neither. Fixing only the first left the feature working in the default emit shape and
+broken under `--no-runtime-module`, caught by **`compile_check-inline`** and by nothing
+else in the FULL tier. The bootstrap had the guard already (`src/CodeGen.zig:2821`).
+
+If a third site that `@import`s a dependency is ever added, it needs the same skip.
+
+### One implementation note that cost a round-trip
+
+The native-use registry is `List(str)`, not `StrSet`. A module-scope `StrSet` is emitted
+correctly by the bootstrap and lowered by the **selfhost** as if it were a List
+(`.append(_zbr_rt._allocator, path)`), which does not compile — so the compiler builds,
+runs, and passes all 313 smoke fixtures while being unable to re-emit its own source. Only
+`bootstrap_check` sees that. Filed as **BUG-264**; worked around here with the `List(str)`
++ linear-scan shape that `_implicit_try_sites` already uses.
+
+### Still open
+
+- **BUG-264** — the module-scope `StrSet` lowering above, still unfixed and only
+  worked around.
+- **BUG-262** — a native `.zig` dep is never materialized into the selfhost's temp emit
+  dir, so `use SomeZigModule` fails there while working in the bootstrap. Same class as
+  BUG-261, found while checking that this fix did not disturb that path (it did not).
+- **BUG-263** — `use foo exposing bar` binds nothing when `foo` is native. A **shared**
+  hole; fixing it in the selfhost alone would open a `divergence_check` selfhost gap.
+- **DLL imports** remain unsupported, and the position on that is unchanged from section
+  6: it needs `extern "lib" fn … callconv(.winapi)`, it is a Win32/shared-library feature
+  rather than an FFI one, and the static path now working is a much better place to design
+  it from. Nothing needs it yet.

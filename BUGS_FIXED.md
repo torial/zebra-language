@@ -6,6 +6,83 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-261: the selfhost could not link C dependencies — ✅ FIXED 2026-08-05
+
+*(Filed as "BUG-260" in commit `fcd9c7c`; renumbered to 261 because BUG-260 was
+already taken by a bug filed earlier the same day in `5717d80`. See the numbering
+note at the top of `BUGS.md`.)*
+
+**Symptom.** A `use` resolving to a sibling `.c` failed in the shipping compiler
+while working in the bootstrap:
+
+    use cprobe_add3                                  # cprobe_add3.c, no header
+    extern def zebra_probe_add3(a: int32, b: int32, c: int32): int32
+    def main()
+        print(zebra_probe_add3(20, 20, 2))
+
+| | before |
+|---|---|
+| `zebra-bootstrap.exe` | **42** |
+| `zebra.exe` | `unable to load 'cprobe_add3.zig': FileNotFound` |
+
+**The original report said the selfhost had "no C-dependency handling whatsoever."
+That was not accurate, and the inaccuracy mattered** — it made the fix look like a
+missing subsystem when it was a missing *hand-off*. `selfhost/main.zbr`'s dep walk
+already discovered the `.c`, already routed it into `c_sources`, already recorded
+the header's directory in `c_i_dirs`, and already passed both to `zig build-exe`.
+Every part of the pipeline worked except that **nothing told the codegen**, so
+`genUse` fell through to its default and emitted `@import("cprobe_add3.zig")` for
+a file that is not Zig and does not exist.
+
+The two compilers' emitted declarations were already byte-identical. The entire
+defect was one line of the emit.
+
+**Fix.** Mirror `CodeGen.native_uses` from `src/CodeGen.zig`:
+
+- `selfhost/CodeGen.zbr` — two file-scope `StrSet`s (`_c_no_header_uses`,
+  `_c_with_header_uses`) plus `addNativeCUse`/`isNativeCUse`, following the
+  existing `setSingleFile`/`setGuiBackend` file-scope-flag pattern.
+- `selfhost/CodeGen.zbr` `genUse` — branch before the default `@import`:
+  a header dep emits `@cImport(@cInclude("X.h"))`, a headerless one emits a
+  comment and no binding. Both mirror `src/CodeGen.zig:4907-4916` exactly.
+- `selfhost/main.zbr` — call `addNativeCUse(u.path, <has .h>)` at the point that
+  already tests for the sibling header. Registered on the path **as written in
+  the `use`**, since that is the key `genUse` looks up.
+
+**Two things deliberately NOT changed**, both recorded in comments because each
+looks like an oversight:
+
+1. The default `@import` arm stays unconditional. That is also how a native
+   `.zig` dep works — the dep walk has no `.zig` candidate, so such a dep falls
+   through to `genUse` where the plain `@import` is accidentally correct.
+2. Neither native arm emits the exposed-name aliases. The bootstrap does not
+   either (BUG-263). Fixing one side alone would open a `divergence_check`
+   selfhost gap.
+
+**Verification — the fixture had to RUN, and the controls had to go red.**
+
+- `test/extern_c_call_test.zbr` + `test/cprobe_add3.c`, registered as
+  `smoke_run … "42"`. Asserted on **printed output**, never exit code: BUG-259
+  is open, and the selfhost returned `rc=0` on the very FileNotFound this pins.
+- Compile-only gates cannot witness this at all. `compile_check` and
+  `full_sweep` build with `-fno-emit-bin`, so they never link; an `extern fn`
+  resolving to no symbol passes their check cleanly.
+- Controls run before believing the pass: perturbing the C body to `a+b+c+1`
+  moved the output to **43** (proving the value comes from that translation unit
+  and is not a constant from somewhere else), and removing the `.c` restored the
+  original FileNotFound rather than silently printing 42.
+- Both invocation shapes checked — absolute path and repo-relative — because the
+  `.c` path is built from the source dir while the emit lands in a temp dir.
+
+**Side effect: `test/c_interop_test.zbr` came back from the dead.** It, plus
+`CUtils.c`/`CUtils.h`, had been tracked in the repo all along, exercised the
+`c_with_header` branch, and were registered in *nothing* — one of
+`registration_check`'s known-debt files. It could not have passed while this bug
+existed. It now runs on both compilers and is registered, shrinking that debt
+from 20 to 19.
+
+---
+
 ### BUG-239: empty list literal `[]` in expression position — ✅ FIXED 2026-08-01
 
 **Symptom.** Any `[]` used as a call argument, struct-field initialiser, or return
