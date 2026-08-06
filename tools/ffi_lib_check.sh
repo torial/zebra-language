@@ -23,6 +23,9 @@
 #   * A vacuous run. If the library cannot be built at all, this REFUSES to report a pass
 #     — a checker that has stopped checking must not look like a checker that found
 #     nothing.
+#
+# pins: BUG-266 this IS the regression test — the subject is a library built here, so
+# pins: BUG-266 there is no test/*.zbr for bug_fixture_check's file scan to find.
 set -u
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -68,8 +71,14 @@ def main()
 EOF
 
 # ── Leg 1: it links, and the foreign call returns the library's value ─────────
-got="$("$ZEBRA" "$WORK/zzprog.zbr" 2>&1)"
-if ! printf '%s' "$got" | grep -q "$EXPECT"; then
+# `grep -qx` on a \r-stripped stream, NOT a bare substring match. The compiler echoes
+# the output path, and $WORK contains the PID -- so a PID of e.g. 11337 would put the
+# expected value inside a "wrote ...\zbr-ffi-lib-11337\..." line and pass leg 1 without
+# anything having been linked. Matching a whole line closes that: the program prints the
+# number alone. (Found by re-reading this script rather than by it failing, which is the
+# only way this class ever gets found.)
+got="$("$ZEBRA" "$WORK/zzprog.zbr" 2>&1 | tr -d '\r')"
+if ! printf '%s\n' "$got" | grep -qx "$EXPECT"; then
     echo "FAIL: leg 1 — expected $EXPECT from the linked library" >&2
     printf '%s\n' "$got" | grep -v '^compiling:\|^ *parsing\|^ *parsed\|^ *resolved\|^wrote ' | tail -6 >&2
     exit 1
@@ -85,9 +94,9 @@ fi
 # ── Leg 2: NEGATIVE CONTROL — without the library, that value must not appear ──
 # Proves leg 1 is measuring the link rather than something incidental.
 mv "$LIB" "$WORK/hidden.$LIBEXT"
-got2="$("$ZEBRA" "$WORK/zzprog.zbr" 2>&1)"
+got2="$("$ZEBRA" "$WORK/zzprog.zbr" 2>&1 | tr -d '\r')"
 mv "$WORK/hidden.$LIBEXT" "$LIB"
-if printf '%s' "$got2" | grep -q "$EXPECT"; then
+if printf '%s\n' "$got2" | grep -qx "$EXPECT"; then
     fail "leg 2 — printed $EXPECT with the library REMOVED; leg 1 proves nothing"
 fi
 

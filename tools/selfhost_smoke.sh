@@ -1251,6 +1251,15 @@ smoke_run     test/extern_c_call_test.zbr "42"
 # without -I, so the @cImport cannot find the header outside a real link.
 smoke_run     test/c_interop_test.zbr "C interop tests completed"
 
+# BUG-265: an extern with NO C/library dep must still take the LLVM backend. The
+# self-hosted one COMPILES THIS CLEANLY and emits a binary that faults at the call,
+# so the failure is at run time and no compile-only gate can see it. ffi_lib_check
+# cannot stand in either: it links a library, and a non-empty lib_sources forces
+# LLVM on its own, so it would stay green with the emittedExtern() half deleted.
+# Verified to discriminate: the same declaration built `-lc` prints 42, built
+# `-fno-llvm -fno-lld` segfaults.
+smoke_run     test/bug265_extern_no_deps_test.zbr "42"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

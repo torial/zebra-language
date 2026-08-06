@@ -170,11 +170,55 @@ def main() -> int:
         exercised |= grew
     registered = exercised
 
+    # A fourth legitimate way a fix is pinned, added 2026-08-06: a SELF-CONTAINED gate
+    # script -- one that BUILDS its own subject instead of running a corpus file. There
+    # is no `test/*.zbr` for the regex above to find, because there is no test file at
+    # all. tools/ffi_lib_check.sh is the case: it compiles a library at check time
+    # precisely so a binary need not be committed to the corpus.
+    #
+    # THE DECLARATION IS EXPLICIT, AND THAT IS THE WHOLE POINT. Crediting any script that
+    # merely NAMES a bug would be far too loose in the long run -- a number in a comment
+    # is not a test, and a gate that accepts prose as evidence is how a gate goes quiet.
+    # So a script must claim it deliberately, in the form
+    #
+    #     # pins: BUG-266 <why this script is the regression test>
+    #
+    # and the claim only counts if the script is REGISTERED IN gates.sh, i.e. it actually
+    # runs. Same shape as `# hazard-ok:<code> <reason>` and `<!-- doc-lint-ok: reason -->`
+    # elsewhere in this repo: deliberate, attributable, and impossible to trip over by
+    # accident.
+    #
+    # Measured before adopting: 104 bugs are named somewhere in the 26 registered gate
+    # scripts, and crediting mere mentions would have flipped exactly ONE baseline entry
+    # -- so the loose version was not tempting for its yield, only for its convenience.
+    gates_text = (REPO / "tools" / "gates.sh").read_text(encoding="utf-8", errors="replace") \
+        if (REPO / "tools" / "gates.sh").exists() else ""
+    gate_scripts = set(re.findall(r"tools/([A-Za-z0-9_]+\.(?:sh|py))", gates_text))
+    script_pinned = {}
+    for name in sorted(gate_scripts):
+        f = REPO / "tools" / name
+        if not f.exists():
+            continue
+        try:
+            body = f.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        # int(), not the raw string: `bugs` is keyed by INT, so a str key here matches
+        # nothing and the whole mechanism silently does nothing — which is exactly what
+        # the first version did. It was caught only because the "does the real claim get
+        # credited?" control was run alongside the "is a bogus claim refused?" one.
+        # A one-sided control would have reported success: the bogus claim was correctly
+        # refused, because EVERY claim was being refused.
+        for num in re.findall(r"^\s*#\s*pins:\s*BUG-(\d+)\b", body, re.M):
+            script_pinned.setdefault(int(num), []).append(name)
+
     pinned, not_run, unpinned = [], [], []
     for num in sorted(bugs):
         files = by_name.get(num, []) + [f for f in mentions.get(num, [])
                                         if f not in by_name.get(num, [])]
-        if not files:
+        if num in script_pinned:
+            pinned.append(num)
+        elif not files:
             unpinned.append(num)
         elif any(f[:-4] in registered for f in files):
             pinned.append(num)

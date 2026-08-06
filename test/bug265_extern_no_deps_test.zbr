@@ -1,0 +1,25 @@
+# BUG-265 regression: an `extern def` with NO C or library dependency must still
+# take the LLVM backend, because the self-hosted one miscompiles a foreign call.
+#
+# THIS IS THE CASE ffi_lib_check.sh CANNOT COVER. That gate links a prebuilt
+# library, and a non-empty `lib_sources` forces LLVM on its own — so it would keep
+# passing even if the `emittedExtern()` half of the fix were deleted. The bug's
+# actual shape is a program whose ONLY foreign dependency is a symbol resolved at
+# link time, with nothing else to push it off the fast path. That is this file.
+#
+# WHY IT DISCRIMINATES (measured, not assumed). The same declaration built both
+# ways, on identical source:
+#     zig build-exe t.zig -lc                     -> abs=42
+#     zig build-exe t.zig -fno-llvm -fno-lld      -> Segmentation fault
+# So without the fix this fixture does not print 42 — it faults. The failure is at
+# RUN time, which is why no compile-only gate can stand in for it: the emitted Zig
+# is valid either way.
+#
+# `abs` rather than a Win32 export on purpose — it comes from libc, which the
+# compiler already links with `-lc` on every program, so this fixture needs no
+# sibling file and is not tied to Windows.
+
+extern def abs(n: int32): int32
+
+def main()
+    print(abs(0 - 42))
