@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-264. Next new bug: BUG-265.**
+**Last bug number generated: BUG-265. Next new bug: BUG-266.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -14,6 +14,55 @@
 > *somewhere*, so a duplicate satisfies it twice over.
 
 ---
+
+### BUG-265: the fast backend silently produces a CRASHING binary for an `extern` DLL symbol — the "a backend gap is a compile error" assumption does not hold
+
+**Found 2026-08-05** while scoping DLL support. The headline finding is that **DLL symbols
+already work** — just not on the default build path.
+
+    extern def GetCurrentProcessId(): uint32
+    def main()
+        if GetCurrentProcessId() > 0
+            print("dll-ok")
+
+| invocation | result |
+|---|---|
+| `zebra.exe p.zbr` (default) | **segfault** |
+| `zebra.exe --release p.zbr` | `dll-ok` |
+| `zebra.exe p.zbr` with any `.c` dep present | `dll-ok` |
+
+The last two both force the LLVM path. `selfhost/main.zbr:2550` takes the self-hosted
+backend when `not release and c_sources.len == 0 and not uses_sqlite`, so a program whose
+only foreign dependency is a DLL symbol is exactly the case that gets the fast backend.
+
+**Not Zebra's emit, and not `-lc`.** The emitted declaration is byte-identical to a
+hand-written Zig file that works, and LLVM **without** `-lc` also works. Isolated to the
+backend flags alone:
+
+| `zig build-exe a.zig …` | result |
+|---|---|
+| (default LLVM), no `-lc` | works |
+| `-fno-llvm -fno-lld`, no `-lc` | **segfault** |
+
+**The dangerous part is the silence.** The comment at `selfhost/main.zbr:2536-2544`
+justifies the fast path with *"A pure-Zig backend gap is a real compile error, so falling
+through to the LLVM path below stays safe."* That assumption is false here: the fast
+backend **compiles successfully** and emits a binary that faults at the call, so the
+fallback never triggers. Any other backend gap of this shape — builds clean, wrong at
+runtime — is equally invisible. The bootstrap has the same path (`src/main.zig:1458`).
+
+**Fix direction:** mirror `uses_sqlite` with a `declares_extern` flag set during the walk
+and add it to the condition at `selfhost/main.zbr:2550`, so an `extern`-declaring program
+takes LLVM. Both compilers.
+
+**Control when fixing:** the probe above must print `dll-ok` with NO flags; and a program
+with no `extern` must still take the fast path (otherwise the fix silently costs every
+program the ~6x build-time win).
+
+**Note for the DLL feature generally:** no new syntax is needed. `extern "kernel32"` and
+`callconv(.winapi)` are both unnecessary on x86-64 (measured — bare, library-named, and
+callconv variants all work), and an arbitrary third-party DLL links with a bare
+`extern fn` plus its import lib on the command line. See `docs/extern_ffi_design.md` §8.
 
 ### BUG-264: the selfhost lowers a module-scope `StrSet.add` as `List.append`, so it cannot re-emit its own source
 

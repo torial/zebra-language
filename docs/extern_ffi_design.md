@@ -3,8 +3,9 @@
 
 **Status:** DONE for static C linking, in both compilers — a `use` of a sibling `.c`
 compiles, links and calls in ONE command, gated by a fixture that checks the printed
-value. DLL/shared-library symbols remain unsupported (section 7). Do not read sections
-1-3 as future tense; section 7 is the current state.
+value. **DLL symbols also work, but only on the LLVM build path (section 8) — the earlier
+"unsupported" claim was wrong.** Do not read sections 1-3 as future tense; sections 7-8
+are the current state.
 **Decided by Sean 2026-08-05:** `extern` is meant to exist, to enable the FFI work.
 **Written 2026-08-05 by Opus 5** after verifying BUG-258 in the tree.
 
@@ -322,3 +323,65 @@ runs, and passes all 313 smoke fixtures while being unable to re-emit its own so
   6: it needs `extern "lib" fn … callconv(.winapi)`, it is a Win32/shared-library feature
   rather than an FFI one, and the static path now working is a much better place to design
   it from. Nothing needs it yet.
+
+---
+
+## 8. Status 2026-08-05 (later still) — DLL SYMBOLS ALREADY WORK; §6-7's "unsupported" was wrong
+
+Section 6 concluded that a DLL symbol needs `extern "kernel32" fn … callconv(.winapi)` and
+that Zebra emits neither, so shared-library FFI was "not supported". That conclusion was
+drawn from a segfault rather than from a controlled comparison, and **it is wrong on both
+counts**. Re-measured:
+
+### No new syntax is required. Any of these work.
+
+    extern fn GetCurrentProcessId() u32;                              -> works
+    extern "kernel32" fn GetCurrentProcessId() u32;                   -> works
+    extern "kernel32" fn GetCurrentProcessId() callconv(.winapi) u32; -> works
+
+On x86-64 `.winapi` **is** `.c`, so the calling convention is a no-op here; it would only
+matter on 32-bit x86, which Zebra does not target. The library name is likewise not needed
+for COFF import resolution.
+
+**A third-party DLL needs no syntax either** — a bare `extern fn` plus the import library
+on the link line is sufficient (verified against a purpose-built `mylib.dll`/`.lib`:
+`zig build-exe usr.zig -lc mylib.lib` → `triple=42`).
+
+So "decision B's library-name half is no longer optional", recorded in §6, does not follow.
+It remains optional, and nothing currently needs it.
+
+### What actually breaks is the BUILD PATH — BUG-265
+
+| invocation | result |
+|---|---|
+| `zebra.exe p.zbr` (default) | **segfault** |
+| `zebra.exe --release p.zbr` | `dll-ok` |
+| `zebra.exe p.zbr` with any `.c` dep present | `dll-ok` |
+
+`selfhost/main.zbr:2550` takes the self-hosted backend (`-fno-llvm -fno-lld`) when
+`not release and c_sources.len == 0 and not uses_sqlite`. A program whose only foreign
+dependency is a DLL symbol matches that exactly. Isolated to the backend flags — not to
+Zebra's emit (byte-identical to a working hand-written file) and not to `-lc` (LLVM
+without `-lc` works):
+
+| `zig build-exe a.zig …` | result |
+|---|---|
+| (default LLVM), no `-lc` | works |
+| `-fno-llvm -fno-lld`, no `-lc` | **segfault** |
+
+And it fails **silently**: the fast backend compiles cleanly, so the "fall through to LLVM
+on a backend gap" safety net at `main.zbr:2536-2544` never fires. See BUG-265.
+
+### Remaining work, if DLL support is to be a first-class feature
+
+1. **Route `extern`-declaring programs to LLVM** (BUG-265). Mirror the `uses_sqlite` flag
+   with a `declares_extern` one and add it to the condition. Both compilers. This alone
+   makes DLL calls work with no flags.
+2. **Naming a third-party library**, only if `use`-style ergonomics are wanted. The link
+   line already accepts it; the question is purely how the author says so. Cheapest route
+   is to extend the dep walk's candidate list (`.zbr`, `.c`) with `.lib`/`.dll`, reusing
+   the native-use registry added for BUG-261 — the genUse arm for such a dep is the same
+   "emit a comment, bind nothing" shape as `c_no_header`. `BuildTarget.linkLib` is the
+   alternative and already exists, though it is still unexercised.
+3. **`extern "lib"` / `callconv`** — measured unnecessary. Defer until a platform or a
+   real use demands them.
