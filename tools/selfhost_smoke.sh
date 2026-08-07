@@ -1266,6 +1266,21 @@ smoke_run     test/bug265_extern_no_deps_test.zbr "42"
 # adding one would make it pass without testing anything.
 smoke_run     test/bug268_branch_int_test.zbr "bug268: OK"
 
+# BUG-267: a LOCAL read only inside a `zig"…"` escape must not be auto-discarded —
+# the sibling walker has scanned escapes for PARAMETERS since B3, and the two
+# disagreed. The fixture pins BOTH directions: it also carries a genuinely unused
+# local that must still get its `_ =`, so an over-broad fix (one that stopped
+# discarding anything) fails here rather than passing.
+smoke_run     test/bug267_ziglit_local_use_test.zbr "bug267: OK"
+
+# BUG-260 (reported from zebra-sprocket): a PARAMETER referenced only inside a `[...]`
+# bind list must not be discarded. Same walker family as BUG-267, opposite walker: the
+# PARAM one defaults unmodelled forms to FALSE, so an omission there is silent. The
+# fixture also carries a genuinely unused parameter that must STILL be discarded — a fix
+# that stopped discarding parameters would otherwise pass while breaking every function
+# that legitimately has one.
+smoke_run     test/bug260_bindlist_param_test.zbr "bug260: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

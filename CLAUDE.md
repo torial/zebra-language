@@ -465,6 +465,48 @@ the FULL_SWEEP baseline. When a corpus file changes compile status, re-baseline
 whose file is no longer a candidate, and the gate correctly reports it as "stopped being
 measured", which is a coverage loss rather than a behaviour change.
 
+python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUICK tier).
+                                #   A function that searches the Expr tree for a name is
+                                #   correct only if it descends into every variant that
+                                #   CONTAINS expressions. Miss one and it silently answers
+                                #   "not used" for an entire construct — and because these
+                                #   walkers drive `_ = x;` discards, the symptom lands in
+                                #   the emitted Zig as a "pointless discard" against code
+                                #   the user wrote correctly.
+                                #   THIS CLASS WAS DECLARED RETIRED ONCE, BY HAND.
+                                #   `mightUseNameInExpr` carries the note "BUG-169
+                                #   retirement: model every remaining ident-bearing expr …
+                                #   Retires the walker-drift class (F2/F6/F11)". It came
+                                #   back twice anyway: BUG-267 (`zig_lit`) and BUG-260
+                                #   (`list_lit`/`array_lit`) — and note what those share.
+                                #   The variant was not FORGOTTEN, it was MISCLASSIFIED:
+                                #   someone wrote down that it holds no expressions.
+                                #   Modelling everything by hand does not prevent that; a
+                                #   machine comparison against the AST does.
+                                #   THE ORACLE IS Ast.zbr ITSELF — each variant's payload
+                                #   struct and field types are declared, so "does this hold
+                                #   expressions" is DERIVED, through one level of
+                                #   indirection (`List(DictPair)` -> `DictPair.key: Expr`).
+                                #   35 variants, 27 ident-bearing, 8 leaf.
+                                #   OPT-IN (`# expr-walker: exhaustive`), because 53
+                                #   functions branch over Expr and most legitimately care
+                                #   about two or three forms — `getVariantKey` wants
+                                #   `member` and nothing else. Blanket checking would be
+                                #   ~90% noise, and a gate at that ratio gets suppressed
+                                #   wholesale (the doc_example_check lesson). The count of
+                                #   NON-opted-in walkers prints every run so the gap stays
+                                #   visible. Waive a variant with `# expr-walker-ok: <v>
+                                #   <reason>`; a reason is required.
+                                #   TWO VARIANTS ARE HARDCODED because nothing can derive
+                                #   them: `zig_lit` (identifiers live in a STRING — exactly
+                                #   how BUG-267 hid from structural reasoning) and `ident`
+                                #   (structurally a leaf, yet a usage walker that skips it
+                                #   is broken by definition).
+                                #   CANNOT SEE: whether a handled variant is handled
+                                #   CORRECTLY, and names inside a zig"…" string. Refuses to
+                                #   report if <25 variants extract, if its list_lit/int_lit
+                                #   controls flip, or if NO walker opted in — a gate with
+                                #   nothing to check must not print clean. 0 = clean.
 bash tools/ffi_lib_check.sh        # THE PREBUILT-LIBRARY GATE (BUG-266, QUICK tier):
                                 #   `use foo` resolving to a prebuilt `foo.lib`/`.a` must
                                 #   LINK and the foreign call must return the right value.
@@ -627,11 +669,12 @@ than "what do we know":
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **327** |
 | **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 12 probes / ~140 assertions |
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
+| **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 2 of 53 walkers, opt-in |
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 66 scripts | <!-- doc-gen: 66 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 67 scripts | <!-- doc-gen: 67 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 documents |
 | **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 49 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
 
@@ -666,7 +709,7 @@ the table below stands unchanged.
 **Previous sweep 2026-08-02** — 18/18, before those two gates existed.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
-**337** while the tracked corpus is **451** <!-- doc-gen: 451 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+**337** while the tracked corpus is **453** <!-- doc-gen: 453 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

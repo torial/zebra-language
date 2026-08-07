@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# There are 16 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 16 = grep -c '^run "' tools/gates.sh -->
+# There are 17 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 17 = grep -c '^run "' tools/gates.sh -->
 # (CLAUDE.md explains each), plus four heavy witnesses in FULL. The count in this
 # sentence has been wrong before: it said "seven" while twelve were registered, and
 # doc_lint cannot catch that class -- a number in prose has no referent to resolve.
@@ -178,6 +178,16 @@ run "check-mode"     "all checks pass" bash tools/check_mode_check.sh
 # rather than committing a binary to the corpus, and carries a negative control (remove
 # the library, the value must stop appearing) so a pass cannot be incidental.
 run "ffi-lib"        "checks pass"     bash tools/ffi_lib_check.sh
+# The walker-drift gate. A function searching the Expr tree for a name is only correct
+# if it descends into every variant that HOLDS expressions; miss one and it silently
+# answers "not used" for a whole construct, which surfaces as a Zig error in code the
+# user wrote correctly (BUG-260, BUG-267). This class was declared retired once already
+# by hand ("BUG-169 retirement") and came back twice, because the failure is not
+# forgetting a variant — it is writing down that a variant holds nothing. The oracle is
+# Ast.zbr itself, so the answer is derived rather than remembered.
+# NOTE the expectation is "0 finding" and that is a count PREFIX — sound only because
+# the tool exits non-zero under --gate when findings exist (see run()'s warning above).
+run "expr-walker"    "0 finding"       python tools/lint_expr_walkers.py --gate
 # §28e: docs/str_ownership.md is DERIVED from real emit, so a codegen change that flips
 # a borrow into an own (or the reverse) makes the shipped table wrong while it still
 # carries a "GENERATED" banner vouching for it. One emit; cheap.

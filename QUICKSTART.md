@@ -2018,11 +2018,18 @@ map straight onto the C ones:
   extern def Py_GetVersion(): uint
   ```
   ```
-  zig"const _c: [*:0]const u8 = @ptrFromInt(p); out = std.mem.span(_c);"
+  var p = Py_GetVersion()
+  var version: str = zig"std.mem.span(@as([*:0]const u8, @ptrFromInt(p)))"
   ```
 
-  Note a variable used *only* inside a `zig"…"` escape is currently seen as
-  unused (BUG-267), so this needs a dummy reference to compile.
+  Use the **expression** form, as above — the value comes back out of the escape
+  and Zebra binds it normally.  A local read only inside the escape is counted as
+  used, so it needs no dummy reference.
+
+  The *statement* form (`zig"…; out = …;"`, assigning an existing local) does not
+  work: nothing tracks assignments made inside an escape, so `out` is emitted
+  `const` and Zig rejects the write.  That is BUG-267's remaining half, and the
+  expression form above avoids it.
 - The library must sit beside the source or on `--module-path`; there is no
   system-library search path and no `-l` flag.
 - `extern` applies to `def` only — not to variables, types, or classes.

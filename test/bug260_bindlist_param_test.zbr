@@ -1,0 +1,40 @@
+# BUG-260 regression: a parameter referenced ONLY inside a `[...]` list literal is
+# used, and must not be auto-discarded.
+#
+# Reported from zebra-sprocket. `d.query("CALL pwc(?)", [pid])` is the shape every
+# GENERATED binding takes -- a function per stored procedure whose parameters exist
+# solely to be bound -- so the bug hits generated code near-universally while
+# hand-written code mostly escapes it, because a hand-written function tends to touch
+# its parameter somewhere else too.
+#
+# `take()` stands in for the query call so this fixture needs no database: the defect
+# is in the USAGE WALK, not in anything SQLite-specific. `pid` appears nowhere except
+# inside the list literal.
+#
+# BOTH DIRECTIONS ARE PINNED. `unusedParam` below has a genuinely unused parameter
+# that must still receive its `_ = a;` -- without it, a fix that simply stopped
+# discarding parameters would pass this file while breaking every function that has a
+# legitimately unused one. That is not hypothetical: the same one-sided mistake was
+# made twice in this codebase during the week this was fixed.
+
+def take(sql: str, ps: List(int)): int
+    return ps.len
+
+def pwc(pid: int): int
+    return take("CALL pwc(?)", [pid])
+
+# Array-literal form of the same defect: `array_lit` sat in the identical
+# "no user idents" list as `list_lit`.
+def viaArray(n: int): int
+    var xs = @[n, 2, 3]
+    return xs.len
+
+# Control, opposite direction: `a` is genuinely unused and MUST still be discarded.
+def unusedParam(a: int, b: int): int
+    return b
+
+def main()
+    print(pwc(7))
+    print(viaArray(1))
+    print(unusedParam(9, 4))
+    print("bug260: OK")

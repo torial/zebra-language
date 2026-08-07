@@ -1,0 +1,32 @@
+# BUG-267 regression: a LOCAL referenced only inside a `zig"…"` escape is used, and
+# must not be auto-discarded.
+#
+# There are two usage walkers. `nameUsedInExpr` already scanned zig literals via
+# `zigLitMentionsWord` -- added so a PARAMETER referenced only from an escape would
+# not be discarded -- while `mightUseNameInExpr`, the one the local auto-discard
+# consults, dropped `zig_lit` into its "no user idents" else. So the identical
+# question got opposite answers depending on whether the name was a param or a local:
+#
+#     param used only in zig"…"  ->  no discard   (correct, long-standing)
+#     local used only in zig"…"  ->  `_ = q;`     (emitted beside a real use)
+#
+# and Zig rejected the pair with `pointless discard of local constant`.
+#
+# BOTH DIRECTIONS ARE PINNED HERE, which is the point of the second local. If a fix
+# ever suppresses discards too broadly, `neverUsed` stops getting its `_ =` and Zig
+# fails with `unused local variable` -- so this file catches an over-correction just
+# as surely as the original bug. A fixture that only proved "the escape case
+# compiles" would pass for a compiler that had simply stopped discarding anything.
+#
+# No `extern` here on purpose: the bug is about the ANALYSIS, not about FFI, and
+# keeping it dependency-free means it needs no sibling file and cannot fail for
+# linking reasons.
+
+def compute(): int
+    var base: int = 40          # referenced ONLY inside the escape below
+    var neverUsed: int = 99     # referenced nowhere -- must still get its discard
+    return zig"@as(i64, base) + 2"
+
+def main()
+    print(compute())
+    print("bug267: OK")

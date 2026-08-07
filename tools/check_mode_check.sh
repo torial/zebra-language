@@ -98,15 +98,41 @@ if [ "$found" -eq 0 ]; then
 fi
 
 # ── 4. fast really is fast ───────────────────────────────────────────────────
-# Guards against `-c` quietly starting to invoke zig again. Generous threshold: the
-# front end is ~60ms and a zig pass is ~800ms, so anything under half a second means
-# zig was not run. Timing is coarse on purpose — this is a shape check, not a benchmark.
-t0=$(date +%s%N)
-"$ZEBRA" -c "$OUT/ok.zbr" >/dev/null 2>&1
-t1=$(date +%s%N)
+# Guards against `-c` quietly starting to invoke zig again.
+#
+# SELF-CALIBRATING, and it has to be. This was an absolute `< 500ms`, written when
+# "the front end is ~60ms". On 2026-08-06 it failed at 1205ms on an IDLE machine —
+# and `zebra --help`, which compiles NOTHING, measured 1445-1801ms by itself. The
+# 37 MB binary simply costs that much to load here now. So the gate was reporting a
+# lost fast path while the fast path was fine: an absolute millisecond number is a
+# recorded constant, and recorded constants rot exactly like the hardcoded binary
+# size that `release_mode_check` had to stop using for the same reason.
+#
+# What the check actually wants to know is "does `-c` do substantially LESS WORK than
+# a full check?", and that is a comparison, not a number. So measure three things in
+# THIS run: process startup (`--help`, compiles nothing), `-c`, and `--check-full`.
+# Subtracting startup leaves the work each mode really does, on this machine, today.
+t0=$(date +%s%N); "$ZEBRA" --help            >/dev/null 2>&1; t1=$(date +%s%N)
+base=$(( (t1 - t0) / 1000000 ))
+t0=$(date +%s%N); "$ZEBRA" -c "$OUT/ok.zbr"  >/dev/null 2>&1; t1=$(date +%s%N)
 ms=$(( (t1 - t0) / 1000000 ))
-if [ "$ms" -lt 500 ]; then pass "-c took ${ms}ms (front-end only; a zig pass is ~800ms)"
-else fail "-c took ${ms}ms — that is zig-pass territory, the fast path may be gone"; fi
+t0=$(date +%s%N); "$ZEBRA" --check-full "$OUT/ok.zbr" >/dev/null 2>&1; t1=$(date +%s%N)
+full=$(( (t1 - t0) / 1000000 ))
+
+work_c=$(( ms - base ));   [ "$work_c" -lt 0 ] && work_c=0
+work_f=$(( full - base )); [ "$work_f" -lt 0 ] && work_f=0
+
+# REFUSE rather than report when the two modes cannot be told apart — if a full check
+# costs no more than startup noise, this run has no resolution and a "pass" would mean
+# nothing. A check that has stopped discriminating must not look like a check that
+# found nothing.
+if [ "$work_f" -lt 150 ]; then
+    fail "cannot discriminate: --check-full cost only ${work_f}ms above startup (${base}ms) — no resolution to judge -c by"
+elif [ $(( work_c * 2 )) -lt "$work_f" ]; then
+    pass "-c does ${work_c}ms of work vs --check-full ${work_f}ms (startup ${base}ms) — fast path intact"
+else
+    fail "-c did ${work_c}ms of work vs --check-full ${work_f}ms (startup ${base}ms) — that is full-check territory, the fast path may be gone"
+fi
 
 echo
 if [ "$FAIL" -gt 0 ]; then

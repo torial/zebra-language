@@ -467,6 +467,13 @@ def zigLitMentionsWord(code: str, name: str): bool
             i = i + 1
     return false
 
+# expr-walker: exhaustive
+# expr-walker-ok: old_ — BUG-269. `old x` IS a use, but only when contracts survive.
+#   Under `--turbo` the snapshot is never emitted, so the parameter really is unused and
+#   the discard is REQUIRED; adding a plain `old_` case here would fix the default build
+#   and break `--turbo`. The walker is a pure helper with no view of `strip_contracts`,
+#   so this needs a signature or a call-site decision, not a missing branch. Measured
+#   both ways before waiving — see BUG-269 for the repro.
 def nameUsedInExpr(name: str, expr: Expr): bool
     branch expr
         on Expr.ident as id
@@ -596,8 +603,40 @@ def nameUsedInExpr(name: str, expr: Expr): bool
                     return nameUsedInExpr(name, ex)
                 on LambdaBody.stmts as ss
                     return nameUsedInStmts(name, ss)
+        on Expr.list_lit as ll
+            # BUG-260: a list literal OBVIOUSLY holds expressions, and the `else` below
+            # used to claim otherwise in writing. A parameter referenced only inside one
+            # -- `d.query("CALL pwc(?)", [pid])`, the shape every generated binding
+            # takes -- was therefore invisible here, so `_ = pid;` was emitted beside a
+            # real use and Zig rejected the pair. Reported from zebra-sprocket, where a
+            # generator emits one function per procedure whose parameters exist SOLELY
+            # to be bound; hand-written code usually touches a parameter somewhere else
+            # too, which is why it went unseen so long.
+            for lle in ll.elems
+                if nameUsedInExpr(name, lle)
+                    return true
+            return false
+        on Expr.array_lit as al
+            # Same defect, same sentence in the same comment.
+            for ale in al.elems
+                if nameUsedInExpr(name, ale)
+                    return true
+            return false
         else
-            # Literals, nil_, this_, zig_lit, list_lit, array_lit -- no user idents
+            # Genuinely ident-free leaves only: literals, nil_, this_, result_.
+            #
+            # THIS ARM RETURNS false, WHICH MAKES IT A BUG FACTORY, and that is the
+            # thing to understand before editing here. The sibling walker
+            # (mightUseNameInExpr) defaults its unmodelled forms to TRUE, so an
+            # omission there is merely conservative. Here an omission SILENTLY ANSWERS
+            # "not used" for an entire construct, and the symptom surfaces as a Zig
+            # error in code the user wrote correctly.
+            #
+            # `zig_lit`, `list_lit` and `array_lit` were all named in this comment as
+            # ident-free. All three were wrong (BUG-267, BUG-260). The failure was not
+            # forgetting a variant — it was writing down that a variant holds nothing.
+            # `tools/lint_expr_walkers.py` now derives the answer from Ast.zbr instead
+            # of trusting this list; keep the marker above this function.
             return false
 
 # ── nameUsedInStmt / nameUsedInStmts ─────────────────────────────────────────
@@ -612,6 +651,7 @@ def nameUsedInStmts(name: str, stmts: List(Stmt)): bool
 # model, so a use hidden inside one (type_check / if_expr / catch / …) is never
 # missed.  Leaves (literals / nil / this) must return FALSE so a `var X = nil`
 # stub isn't seen as using X.  Mirrors src/CodeGen.zig mightUseNameInExpr.
+# expr-walker: exhaustive
 def mightUseNameInExpr(name: str, expr: Expr): bool
     branch expr
         on Expr.ident as id
@@ -731,7 +771,8 @@ def mightUseNameInExpr(name: str, expr: Expr): bool
         on Expr.this_
             return false
         # BUG-169 retirement: model every remaining ident-bearing expr, so the
-        # final `else` only catches genuinely ident-free forms (zig_lit/result_)
+        # final `else` only catches genuinely ident-free forms (result_; zig_lit
+        # was in this list until BUG-267 showed it is NOT ident-free)
         # → false.  Mirrors the bootstrap's exhaustive switch (round-trip enforces
         # parity).  Retires the walker-drift class (F2/F6/F11).
         on Expr.lambda as lam
@@ -762,8 +803,29 @@ def mightUseNameInExpr(name: str, expr: Expr): bool
             return false
         on Expr.old_ as ol
             return mightUseNameInExpr(name, ol.operand)
+        on Expr.zig_lit as zl
+            # BUG-267: an inline-Zig escape DOES contain user idents — it is the only
+            # way to touch a C pointer, so it is where a local most often ends up being
+            # read. `nameUsedInExpr` (the sibling walker, ~line 474) has scanned zig
+            # literals for exactly this reason since B3: *"A param referenced from a
+            # `zig\"…\"` literal is used, so it must not be discarded."* This walker,
+            # which the LOCAL auto-discard consults, never learned it — so the identical
+            # question got opposite answers depending on whether the name was a param or
+            # a local, and a local read only from an escape got `_ = q;` emitted beside
+            # a real use (`pointless discard of local constant`).
+            #
+            # LIMIT, stated rather than hidden: zigLitMentionsWord does not skip Zig
+            # strings or comments, so a name appearing ONLY inside one counts as a use,
+            # the discard is suppressed, and Zig reports `unused local variable`. That
+            # is the same exposure parameters have carried all along without incident,
+            # and it fails as a COMPILE ERROR rather than a silent miscompile. If it
+            # ever does bite, the fix is to teach zigLitMentionsWord about string and
+            # comment spans — not to add a `reads` clause to the language, which would
+            # leave two mechanisms answering one question (see BUG-267 for that design
+            # and why it was dropped).
+            return zigLitMentionsWord(zl.text, name)
         else
-            # zig_lit / result_ — no user idents.
+            # result_ — no user idents.
             return false
 
 # F1 / BUG-162: true when `name` emitted as a bare Zig identifier would collide

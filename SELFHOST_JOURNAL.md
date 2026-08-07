@@ -2426,3 +2426,155 @@ appearing, so leg 1 cannot pass incidentally.
   most of a real C API returns `char*`.
 - No system-library search path: the library must sit beside the source or on
   `--module-path`.
+
+---
+
+## Two analysis bugs found by probing something else (BUG-268, BUG-267, 2026-08-06)
+
+Both were found while scoping an FFI ergonomics question, and neither is about FFI. Both
+turned out to be cases where the *emit* was innocent and something upstream was lying.
+
+### BUG-268 — `branch` on an integer did not compile, at all
+
+    branch x
+        on 2
+            print("hit")
+    ->  switch (x) { .2 => {        // enum-variant syntax against an integer
+
+`genSwitchTag` prefixes `.` for an ident, which for a union is exactly right. The defect is
+that the arm *was* an ident: the parser stores on-clause patterns as **strings**
+(`patterns: List(str)`), and `AstBuilder.patternToExpr` recognised only char and string
+literals before falling through to `Expr.ident`. `on 2` became `ident("2")`, `on true`
+became `ident("true")`.
+
+Fixed at `patternToExpr` rather than at the emit, because the emit was reading the AST
+correctly — the AST was wrong. Every later pass asking "what kind of value is this arm?"
+deserves a true answer. The bootstrap already emitted `2 =>`, so this converges the
+selfhost onto the working reference rather than inventing behaviour.
+
+**How it survived**: a guard on ANY arm routes the whole branch to `genBranchGuarded`, an
+if-chain that was never broken — and `branch_guard_test.zbr` is the only tracked file with
+integer arms, guarding all of them because guards are what it tests. **The corpus held the
+construct solely in the shape that worked.** That is a sharper form of the full_sweep
+baseline gap: not a file failing unnoticed, but a *form* absent from the corpus. No
+instrument that counts files can see it.
+
+### BUG-267 — the same question, answered two different ways
+
+A local read only inside a `zig"…"` escape was auto-discarded, and Zig rejected the
+`_ = q;` beside a real use. My first scoping of this argued for **new language syntax**
+(`zig"…" reads p`) because a text scan looked heuristic and risky.
+
+Then `zigLitMentionsWord()` turned up in `CgHelpers.zbr`, with a comment saying exactly
+why it exists: *"A param referenced from a `zig"…"` literal is used, so it must not be
+discarded."* There are two usage walkers and only one had learned it:
+
+| walker | `zig_lit` | consulted by |
+|---|---|---|
+| `nameUsedInExpr` | scans the text | parameter discards |
+| `mightUseNameInExpr` | fell into "no user idents" | **local** discards |
+
+Measured: a param used only in an escape got no discard; a local got one. So this was an
+**inconsistency, not a missing capability**, and the fix is the two-line case the sibling
+walker already had. The `reads` design was dropped — adding language surface to answer a
+question the compiler already answers one walker over would leave two mechanisms for it,
+which is the worse long-term hazard.
+
+**The lesson is the one this session kept repeating**: I recommended new syntax from a
+model of the codebase built by reading one walker. The correction came from grepping for
+the helper that would exist *if* someone had already solved it — which is the read-only
+equivalent of building the second probe.
+
+### Both fixtures pin BOTH directions, and that is not ceremony
+
+`bug268_*` keeps its arms **unguarded** and says so, because adding a guard would route it
+to the working path and it would pass while testing nothing. `bug267_*` carries a
+genuinely-unused local alongside the escape-read one, so a fix that simply stopped
+discarding anything fails there instead of passing. Earlier the same day, a one-sided
+control of mine passed while the mechanism under test was completely inert (`int` keys vs
+`str` keys in `bug_fixture_check`) — the paired direction is what caught it.
+
+### Still open
+
+- BUG-267's **write** half: no mutation walker scans `zig"…"`, so a local assigned only
+  inside a statement-form escape is emitted `const`. Expression form avoids it entirely
+  and is now what QUICKSTART recommends, so this is a documented limit rather than a
+  blocker.
+- `on -1` does not parse.
+- A **guarded** branch in a value-returning function fails exhaustiveness in BOTH
+  compilers ("control flow reaches end of body"). Pre-existing, shared, no divergence gap
+  — and the reason `branch_guard_test` prints rather than returns.
+
+---
+
+## The walker-drift class, and an instrument for it (BUG-260, BUG-272, 2026-08-06)
+
+BUG-260 — reported from `zebra-sprocket`, where a parameter referenced only inside a
+query's `[...]` bind list was emitted as unused — turned out to be the third instance of
+one class in a week, and the reason it kept recurring is worth more than the fix.
+
+### The fix
+
+`nameUsedInExpr` (the walker the PARAMETER discard consults) had no `list_lit` or
+`array_lit` case, so both fell into its `else`. Two lines each, mirroring what the sibling
+walker already did.
+
+### Why the class keeps coming back
+
+There are two usage walkers with **opposite defaults**:
+
+| walker | unmodelled form | consequence of an omission |
+|---|---|---|
+| `mightUseNameInExpr` (locals) | returns **true** | conservative — harmless |
+| `nameUsedInExpr` (params) | returns **false** | **silently answers "not used" for a whole construct** |
+
+The second is a bug factory by construction. And this was *known*: `mightUseNameInExpr`
+carries the note *"BUG-169 retirement: model every remaining ident-bearing expr … Retires
+the walker-drift class (F2/F6/F11)."* Someone had already hardened one walker specifically
+to end this.
+
+It came back twice anyway — BUG-267 (`zig_lit`) and BUG-260 (`list_lit`, `array_lit`) —
+and both times the variant was **not forgotten**. It was *misclassified*: written down, in
+a comment, as holding no expressions. Modelling everything by hand does not prevent
+someone asserting a false thing, and neither does a habit.
+
+### The instrument
+
+`tools/lint_expr_walkers.py`. **The oracle is `Ast.zbr` itself** — each Expr variant's
+payload struct and its field types are declared, so "does this variant contain
+expressions" is *derived*, through one level of indirection (`List(DictPair)` ->
+`DictPair.key: Expr`). 35 variants, 27 ident-bearing, 8 leaf.
+
+Opt-in (`# expr-walker: exhaustive`) rather than blanket: 53 functions branch over `Expr`
+and most legitimately care about two or three forms, so demanding full coverage from all
+of them would be ~90% noise — and a gate at that ratio gets suppressed wholesale, which is
+the lesson `doc_example_check` already paid for. The non-opted-in count prints every run
+so the gap stays visible rather than silent.
+
+Two variants are **hardcoded** because nothing structural can find them: `zig_lit` (its
+identifiers live in a *string* — precisely how BUG-267 hid) and `ident` (structurally a
+leaf, yet a usage walker that skips it is broken by definition).
+
+**On its first run it found exactly one thing** — `old_` in the param walker — which was
+also the only gap I had found by hand. Agreement between an oracle and an independent
+manual pass is the closest thing to calibration available here.
+
+### The lint caught itself, which is the part I would keep
+
+Adding the `old_` waiver pushed the `# expr-walker: exhaustive` marker outside a fixed
+four-line lookback, and coverage silently dropped from 2 walkers to 1. Nothing failed. The
+only reason it surfaced is that the tool **prints how many walkers opted in**, and the
+number moved. It now scans the whole contiguous comment block instead.
+
+A gate whose reach depends on how much prose someone wrote above a function is a gate that
+quietly shrinks — and it would have shrunk to zero one waiver at a time.
+
+### BUG-272, and why `old_` was waived rather than fixed
+
+A parameter used only in `ensure … old p` does not compile today: the emit discards it and
+then reads it for the snapshot. But the obvious fix breaks `--turbo`, because when
+contracts are stripped the snapshot is never emitted, the parameter genuinely *is* unused,
+and the discard is what makes it compile. Measured both ways before waiving. The walker is
+a pure helper with no view of `strip_contracts`, so this needs a signature or a call-site
+decision, not another branch — and three of the four build/usage combinations pass today,
+which is exactly why a one-directional fix would look convincing.
