@@ -32,7 +32,7 @@ WHAT IT CANNOT SEE, stated because a clean run must not be over-read:
     handled at all, never that it is handled properly.
   * Walkers that do not opt in (see below). The count of those is printed every run.
 
-OPT-IN, NOT BLANKET. 29 functions in this tree branch over Expr and most of them are
+OPT-IN, NOT BLANKET. 53 functions in this tree branch over Expr and most of them are
 supposed to care about two or three forms -- `getVariantKey` wants `member` and
 nothing else. Demanding full coverage from all of them would be ~90% noise, and a
 gate at that ratio gets suppressed wholesale (the lesson doc_example_check records).
@@ -211,15 +211,17 @@ def main():
         print(f"  {rel}:{ln}: [walker-drift] {fn}() does not handle Expr.{v}, "
               f"which the AST says contains expressions")
 
-    print(f"[expr-walker] {len(variants)} Expr variants ({len(required)} ident-bearing, "
-          f"{len(leaves)} leaf); {checked}/{total_walkers} walkers opted in; "
-          f"{len(findings)} finding(s)")
     if checked < total_walkers:
         print(f"              NOT checked: {total_walkers - checked} walker(s) without "
               f"`# expr-walker: exhaustive`. Most legitimately care about a few forms; "
               f"add the marker to any that should be complete.")
     print("              NOT checked: whether a handled variant is handled CORRECTLY, "
           "and any name embedded in a zig\"…\" string (BUG-267 — structurally invisible).")
+    # The verdict prints LAST on purpose: gates.sh shows a gate's final non-empty line on
+    # the board, so a trailing caveat would display in place of the result.
+    print(f"[expr-walker] {len(variants)} Expr variants ({len(required)} ident-bearing, "
+          f"{len(leaves)} leaf); {checked}/{total_walkers} walkers opted in; "
+          f"{len(findings)} finding(s)")
 
     if "--gate" in sys.argv and findings:
         return 1

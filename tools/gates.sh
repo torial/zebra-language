@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# There are 17 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 17 = grep -c '^run "' tools/gates.sh -->
+# There are 18 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 18 = grep -c '^run "' tools/gates.sh -->
 # (CLAUDE.md explains each), plus four heavy witnesses in FULL. The count in this
 # sentence has been wrong before: it said "seven" while twelve were registered, and
 # doc_lint cannot catch that class -- a number in prose has no referent to resolve.
@@ -188,6 +188,12 @@ run "ffi-lib"        "checks pass"     bash tools/ffi_lib_check.sh
 # NOTE the expectation is "0 finding" and that is a count PREFIX — sound only because
 # the tool exits non-zero under --gate when findings exist (see run()'s warning above).
 run "expr-walker"    "0 finding"       python tools/lint_expr_walkers.py --gate
+# Two agents allocate bug numbers from the same ledger, and collided TWICE on
+# 2026-08-06 (BUG-260, BUG-269). doc_lint D4 cannot see it: it checks that a cited
+# BUG-NNN RESOLVES, and a duplicate resolves twice over — so a collision leaves D4
+# more satisfied, not less. Also gates the allocator line, because a "Last bug number"
+# that lags is not a stale fact, it is the NEXT collision already scheduled.
+run "bug-numbers"    "0 NEW"           python tools/lint_bug_numbers.py --gate
 # §28e: docs/str_ownership.md is DERIVED from real emit, so a codegen change that flips
 # a borrow into an own (or the reverse) makes the shipped table wrong while it still
 # carries a "GENERATED" banner vouching for it. One emit; cheap.

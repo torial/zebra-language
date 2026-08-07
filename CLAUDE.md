@@ -465,6 +465,31 @@ the FULL_SWEEP baseline. When a corpus file changes compile status, re-baseline
 whose file is no longer a candidate, and the gate correctly reports it as "stopped being
 measured", which is a coverage loss rather than a behaviour change.
 
+python tools/lint_bug_numbers.py   # THE BUG-NUMBER COLLISION GATE (static, instant, QUICK).
+                                #   Two agents work in this tree and both allocate a
+                                #   number the same way — read BUGS.md, take the next.
+                                #   Between one reading and committing, the other can file
+                                #   twice. It happened TWICE on 2026-08-06: BUG-260 (two
+                                #   bugs, untangled only by `git log -S` archaeology) and
+                                #   BUG-269 (caught because a grep happened to print two
+                                #   identical headings side by side).
+                                #   NO EXISTING GATE COULD SEE IT. `doc_lint` D4 checks a
+                                #   cited BUG-NNN RESOLVES — and a duplicate resolves TWICE,
+                                #   so a collision leaves D4 *more* satisfied. The failure
+                                #   is invisible exactly because the thing that would notice
+                                #   is looking for presence.
+                                #   SUB-LETTERED NUMBERS ARE NOT COLLISIONS: `BUG-009 (a)` /
+                                #   `BUG-060a` are parts of one bug and key to distinct
+                                #   slots. Baselined (3 known: 106, and a 49-line block
+                                #   containing 249+250 duplicated VERBATIM in BUGS.md — an
+                                #   editing accident left in place because BUGS.md is
+                                #   doc-status: historical and not mine to edit).
+                                #   SECOND LEG, NOT BASELINED: "Last bug number generated"
+                                #   must be >= the highest heading. That line is what the
+                                #   next person reads, so when it lags it is not a stale
+                                #   fact — it is the NEXT collision already scheduled.
+                                #   Refuses to report if <150 headings parse or if a planted
+                                #   duplicate is not detected. 0 NEW = clean.
 python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUICK tier).
                                 #   A function that searches the Expr tree for a name is
                                 #   correct only if it descends into every variant that
@@ -673,8 +698,9 @@ than "what do we know":
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
+| **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 67 scripts | <!-- doc-gen: 67 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 68 scripts | <!-- doc-gen: 68 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 documents |
 | **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 49 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
 
