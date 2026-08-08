@@ -1,0 +1,30 @@
+# BUG-259 control: a program that fails an `assert` AT RUNTIME must exit non-zero.
+#
+# BUG-259 itself did NOT reproduce — it was a cmd.exe artifact (`%ERRORLEVEL%` is
+# expanded at PARSE time, so `cmd /c "prog & echo %ERRORLEVEL%"` prints the value from
+# BEFORE the command ran; `!ERRORLEVEL!` with delayed expansion shows the true 1).
+# Demonstrated on one binary in one session: same command, %-form reports 0, !-form
+# reports 1. See BUGS_FIXED.
+#
+# But the reporter was right about the RISK even though the observation was an
+# artifact, and checking turned up a real gap: all three existing `smoke_run_fail`
+# registrations are BUILD-time failures (method-not-found, field-not-found, a
+# non-ASCII byte). NOTHING asserted that a program failing at RUNTIME exits non-zero
+# — and `test/*.zbr` is built on `assert`, so if that propagation ever broke, an
+# entire corpus of tests would fail silently while every caller reading the exit code
+# was told they passed.
+#
+# `smoke_run_fail` requires BOTH a non-zero exit and the expected text, which is what
+# makes this a real control: a compiler that stopped propagating the exit code fails
+# here even though the panic message still prints.
+#
+# Verified across every path before this was written — plain, `run`, `--turbo`,
+# `--release`, and the extern/LLVM route added by BUG-265 — all return 1 today.
+#
+# NOTE the diagnostic quality is poor and separately filed: this prints "reached
+# unreachable code" with an empty stack trace, naming neither the assert nor the
+# line, where a contract failure says "ensure failed in 'bump'".
+
+def main()
+    assert 1 == 2
+    print("unreachable — the assert above must abort before this")

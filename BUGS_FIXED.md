@@ -6,6 +6,127 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-259: `zebra.exe run` exits 0 after failure — ✅ NOT REPRODUCED 2026-08-07 (a cmd.exe artifact)
+
+> **Any build gate hung on `errorlevel` reads a failed compile as success.** Filed
+> ahead of BUG-258 because it is the smaller fix and the larger consequence.
+>
+> ```
+> > zebra.exe run probe_extern.zbr & echo EXIT=%ERRORLEVEL%
+> probe_extern.zbr:5:1: error: unexpected top-level token: 'extern'
+> EXIT=0
+> ```
+>
+> The diagnostic is correct, well-formed and pointed at the right line. The process
+> then returns success. A caller that checks the exit code — a gate script, CI, a
+> `Makefile`, another tool driving the compiler — is told the build worked.
+>
+> **ESCALATED, same day: it is not only compile errors. A RUNTIME ASSERTION
+> FAILURE also returns 0.**
+>
+> ```
+> thread 22192 panic: expected 2 parents, got 2
+> EXIT=0
+> ```
+>
+> The program panicked, printed the assertion message, and `zebra.exe run`
+> returned success. **This matters far more than the compile-error case**, because
+> `test/*.zbr` is built on `assert` — a corpus of tests whose failures are
+> invisible to any caller reading the exit code.
+>
+> `tools/gates.sh:97` does capture it (`timeout ... "$@"; rc=$?`). Whether any
+> gate leg's `rc` comes from `zebra.exe run` rather than from a separately
+> compiled binary is for someone with the tree to check — I am reporting the
+> mechanism, not the blast radius.
+>
+> **Suggested control when fixing:** a `.zbr` that asserts something false, run
+> through whatever path the gates use, must produce non-zero. Watch it go red
+> before trusting it green — a fix to an exit code is exactly the kind that
+> reports success while changing nothing.
+>
+> **Repro:** any `.zbr` that fails to parse. `zebra-sprocket/probe_extern.zbr` is one.
+>
+> **Expected:** non-zero on any diagnostic that prevented a run.
+>
+> **Why this is worth the interruption.** It is the third instance this week of one
+> failure shape, in three unrelated toolchains: `nmake` printing `BUILD_OK` after a
+> failed compile, a missing `compiler_rt.dll` exiting 0 having printed nothing, and
+> now this. Two of those were caught only because the *count* of what should have
+> reported was wrong, not because anything went red. A gate that cannot distinguish
+> "compiled" from "failed to compile" is not a gate, and gates are being built right
+> now. See `wiki/pages/concepts/concept_false-green-taxonomy.md`.
+>
+> *(Filed by Fable, 2026-08-05, from outside the tree — found while probing whether
+> Zebra could reach the sprocket SQLite fork.)*
+> ---
+>
+> **VERIFICATION 2026-08-05 (Opus 5, in the tree): DOES NOT REPRODUCE. The compiler's
+> exit codes are correct; the probe was misreading them.**
+>
+> In `cmd.exe`, `%ERRORLEVEL%` on a single command line is expanded **before the line
+> executes**, so `A & echo EXIT=%ERRORLEVEL%` prints the errorlevel from *before* `A`
+> ran — always `0` in a fresh shell. It is the delayed-expansion trap, not a compiler
+> behaviour.
+>
+> | probe | result |
+> |---|---|
+> | bash, compile error (`extern` at top level) | `rc=1` |
+> | bash, runtime `assert` failure | `rc=1` |
+> | cmd, the filed form `& echo EXIT=%ERRORLEVEL%` | `EXIT=0` ← the artifact |
+> | cmd, `& if errorlevel 1` (evaluated at RUNTIME, not expanded) | `COMPILER_REALLY_FAILED` |
+> | control: `cmd /c "echo BEFORE_ANY_COMMAND=%ERRORLEVEL%"` | `0` — confirms early expansion |
+>
+> Run with the reported file shape (`extern` at top level, the exact diagnostic quoted
+> above) and with a failing `assert`, through both `zebra.exe run` and plain
+> `zebra.exe`. All four return 1.
+>
+> **No fix should be attempted.** A change to these exit codes would alter behaviour that
+> is already correct — and per this ticket's own warning, an exit-code fix is exactly the
+> kind that reports success while changing nothing. The suggested control (a `.zbr` that
+> asserts something false must produce non-zero) **already passes today**.
+>
+> The report's wider point stands and is worth keeping: this was the third instance that
+> week of a caller reading a failure as success. It is simply that on this occasion the
+> instrument was the one at fault, which is the same lesson pointed at the observer —
+> see `concept_false-green-taxonomy` Part 4, where a zero that is the *expected* answer is
+> the hardest kind to doubt.
+>
+> **STATUS: closed, not-reproducible.** Filed in good faith from outside the tree; the
+> reporter explicitly flagged the blast radius as unverified and asked someone with the
+> tree to check. This is that check.
+
+---
+
+**NOT REPRODUCED — verified 2026-08-07 from inside the tree. The compiler was never
+wrong; the measurement was.**
+
+`cmd.exe` expands `%VAR%` when it PARSES a line, so in `prog & echo %ERRORLEVEL%` the
+value is substituted BEFORE `prog` runs — the reported 0 is the *previous* command's
+status. Demonstrated on one binary in one session, same command both ways:
+
+    cmd /c   "... zebra.exe parsefail.zbr & echo EXIT=%ERRORLEVEL%"   -> EXIT=0
+    cmd /v:on /c "... zebra.exe parsefail.zbr & echo EXIT=!ERRORLEVEL!" -> EXIT=1
+
+**It was not a silent fix either**, which is the other thing "does not reproduce" could
+mean. Exit propagation (`if rc != 0 -> sys.exit(1)`) landed in `12fda11` on 2026-07-25,
+**eleven days before this was filed**, and the only two commits touching
+`selfhost/main.zbr` since are the BUG-261/265/266 FFI work, neither of which goes near
+exit handling. The code was already correct at filing time.
+
+Every path measured, on both a parse failure and a runtime assert failure — plain,
+`run`, `--turbo`, `--release`, and the extern/LLVM route: **all return 1**.
+
+**THE REPORTER WAS RIGHT ABOUT THE RISK, and checking it found a real gap.** All three
+existing `smoke_run_fail` registrations are BUILD-time failures (method-not-found,
+field-not-found, non-ASCII byte). Nothing asserted that a program failing at RUNTIME
+exits non-zero — exactly the case escalated as mattering more, since `test/*.zbr` is
+built on `assert`. Closed with `test/bug259_runtime_exit_code_test.zbr` registered as
+`smoke_run_fail`, which requires BOTH a non-zero exit and the panic text.
+
+*(Filed by Fable from outside the tree and flagged unverified, which is the norm that
+made this cheap to resolve rather than expensive to chase.)*
+
+
 ### BUG-268: `branch` on an INTEGER with no guarded arm emits enum-variant syntax and does not compile — ✅ FIXED
 
 **Found 2026-08-06** while probing an unrelated `zig"…"` question. A basic construct;

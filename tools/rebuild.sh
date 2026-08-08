@@ -192,6 +192,11 @@ if [[ -x zig-out/bin/zebra.exe ]]; then
     if out=$(timeout 120 ./zig-out/bin/zebra.exe run /tmp/_rebuild_probe.zbr 2>&1) \
        && echo "$out" | grep -qF "rebuild ok"; then
         echo "  zebra.exe builds and runs"
+        # Record WHICH generated Zig this binary was built from, so doctor can tell a
+        # finished build from an interrupted one. CONTENT, not mtime: bootstrap_check
+        # restores selfhost/*.zig byte-identically, so any timestamp-based check false-
+        # positives after every round-trip gate (it did, twice, and blocked the tier).
+        cat selfhost/*.zig 2>/dev/null | sha1sum | cut -d' ' -f1 > zig-out/.selfhost-stamp 2>/dev/null || true
     else
         fail "zebra.exe was built but cannot run a hello-world — something is badly wrong"
     fi

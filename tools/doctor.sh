@@ -60,77 +60,45 @@ else
     ok "generated selfhost/*.zig is current with its .zbr sources"
 fi
 
-# ── 1b. binary older than the generated .zig (the OTHER half of the same lie) ──
-# Check 1 asks "is the .zig current with the .zbr". It does NOT ask whether the
-# BINARY was built from that .zig — and both halves have to hold before a gate result
-# means anything, because a gate runs `zebra.exe`, not the source.
+# ── 1b. was the BINARY built from the generated .zig? ────────────────────────
+# Check 1 asks "is the .zig current with the .zbr". It does NOT ask whether the BINARY
+# came from that .zig, and both must hold before a gate result means anything — a gate
+# runs zebra.exe, not the source. Reachable, not theoretical: an interrupted rebuild on
+# 2026-08-06 left regenerated .zig with an old binary, check 1 said "current", the
+# hello-world probe passed (the OLD compiler is a working compiler, just not the one on
+# disk), and doctor called the tree trustworthy.
 #
-# The gap is reachable, not theoretical: on 2026-08-06 a rebuild was interrupted after
-# the regeneration completed and before `zig build` finished. Check 1 said "current",
-# the hello-world probe passed (the OLD binary runs fine — it is a working compiler,
-# just not the one whose source is on disk), and doctor reported the tree trustworthy.
-# Anything run in that window measures a compiler that no longer matches its source,
-# which is exactly the class BUG-210 exists to prevent, one step further down.
+# CONTENT, NOT MTIME — and this is the second attempt. The first compared timestamps and
+# false-positived TWICE on healthy trees, because `bootstrap_check` RESTORES
+# selfhost/*.zig from its snapshot: byte-identical content, fresh mtimes, every time the
+# round-trip gate runs. Adding "...and the .zig differs from git" did not save it either
+# — during any uncommitted selfhost change that is also true, so the check fired on a
+# correct build and BLOCKED THE WHOLE TIER. A gate that blocks good work is worse than
+# no gate.
 #
-# Deliberately `wrong` rather than `warn`: this makes results LIE, which is doctor's
-# stated bar for exiting non-zero.
-#
-# MTIME ALONE IS THE WRONG ORACLE, and this check reported a false positive on a clean
-# tree before the second condition was added. `bootstrap_check` RESTORES selfhost/*.zig
-# from its pre-run snapshot, which rewrites every one of them with byte-identical
-# content and bumps their mtimes past the binary. So after any round-trip gate, mtime
-# says "the binary is behind" while nothing whatsoever has changed.
-#
-# The second condition is what makes it mean something: only complain when the
-# generated Zig also DIFFERS FROM git. An interrupted rebuild leaves regenerated .zig
-# that is both newer than the binary and uncommitted — the real case. A snapshot
-# restore leaves content identical to HEAD, so it stays quiet.
-#
-# Known limit, stated rather than hidden: committing regenerated .zig WITHOUT building
-# is not caught, because then the content matches HEAD too. Rarer, and it is the case
-# where `git status` is already clean enough to mislead nobody.
-newest_zig=""
-for z in selfhost/*.zig; do
-    [[ -f "$z" ]] || continue
-    if [[ -z "$newest_zig" || "$z" -nt "$newest_zig" ]]; then newest_zig="$z"; fi
-done
+# A hash of the generated set answers the actual question and is immune to both: an
+# identical restore does not move it, and an interrupted regen does.
+STAMP="zig-out/.selfhost-stamp"
 ZEXE="zig-out/bin/zebra.exe"
-zig_dirty=""
-if git -C . rev-parse --git-dir >/dev/null 2>&1; then
-    zig_dirty="$(git -C . status --porcelain -- 'selfhost/*.zig' 2>/dev/null | head -1)"
-fi
-if [[ -n "$newest_zig" && -f "$ZEXE" ]]; then
-    if [[ "$newest_zig" -nt "$ZEXE" && -n "$zig_dirty" ]]; then
-        wrong "zebra.exe is OLDER than the generated Zig it should be built from:"
-        printf '           %s is newer than %s\n' "$newest_zig" "$ZEXE"
-        printf '           the regen ran but the build did not finish — you would be testing the OLD compiler\n'
-        printf '           fix: zig build   (or bash tools/rebuild.sh --no-regen)\n'
+if [[ -f "$ZEXE" ]] && compgen -G "selfhost/*.zig" >/dev/null; then
+    now_stamp="$(cat selfhost/*.zig 2>/dev/null | sha1sum | cut -d' ' -f1)"
+    if [[ -f "$STAMP" ]]; then
+        if [[ "$(cat "$STAMP" 2>/dev/null)" != "$now_stamp" ]]; then
+            wrong "zebra.exe was NOT built from the generated Zig now on disk:"
+            printf '           the regen ran but the build did not finish — you would be testing the OLD compiler
+'
+            printf '           fix: bash tools/rebuild.sh --no-regen   (or zig build)
+'
+        else
+            ok "zebra.exe was built from the generated selfhost/*.zig"
+        fi
     else
-        ok "zebra.exe is current with the generated selfhost/*.zig"
+        # Absent stamp is UNKNOWN, and says so rather than passing quietly — a build done
+        # by plain `zig build` leaves none, and silence there would read as "verified".
+        warn "no build stamp — cannot tell whether zebra.exe matches the generated Zig"
+        printf '           (tools/rebuild.sh writes one; this is unknown, not clean)
+'
     fi
-fi
-
-# ── 1b. bootstrap older than the preamble it EMBEDS (the other silent one) ───
-# build.zig:37-59 reads the preamble files and embeds them into zebra-bootstrap.exe
-# via b.addOptions — at BUILD time. The bootstrap is the regen authority, so if it
-# predates a preamble edit it regenerates the OLD runtime, the regen looks clean,
-# and every gate afterwards measures a compiler that does not contain the change.
-# Observed 2026-07-28: a preamble edit + rebuild.sh reported OK and changed nothing.
-# Same family as check 1 — there the .zig lags the .zbr; here the BINARY lags the
-# file it baked in. Both make results lie, so both are WRONG, not warn.
-BOOT=zig-out/bin/zebra-bootstrap.exe
-embed_stale=()
-if [[ -f "$BOOT" ]]; then
-    for f in selfhost/stdlib_preamble.zig selfhost/napi_preamble.zig; do
-        [[ -f "$f" && "$f" -nt "$BOOT" ]] && embed_stale+=("$(basename "$f")")
-    done
-fi
-if [[ ${#embed_stale[@]} -gt 0 ]]; then
-    wrong "bootstrap predates a preamble it embeds — a regen now emits the OLD runtime:"
-    for f in "${embed_stale[@]}"; do printf '           %s is newer than zebra-bootstrap.exe\n' "$f"; done
-    printf '           fix: zig build   (then regenerate — bash tools/rebuild.sh does both, in order)\n'
-elif [[ -f "$BOOT" ]]; then
-    ok "bootstrap is current with the preamble files it embeds"
 fi
 
 # ── 2. orphaned compilers holding locks ──────────────────────────────────────

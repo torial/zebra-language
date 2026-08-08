@@ -1,0 +1,52 @@
+# BUG-271 regression: an unknown method on a builtin is DEFERRED to Zig, and the
+# binding must not be stamped `void` — otherwise the deferral can never hand a value
+# back to Zebra.
+#
+# The deferral itself is the feature: it is what makes preamble-seam extensions
+# possible (add a method to the sqlite preamble, call it from Zebra). But codegen
+# annotated the result from the TC-inferred type, and an unknown method infers as
+# `void` because nothing in Zebra knows its type:
+#
+#     const segs: void = db.query_segments("SELECT 1");   // compiles, runs, useless
+#
+# Reported from zebra-sprocket, worked around there by tunnelling through the known
+# `query()` signature with a "@segments " SQL-prefix marker.
+#
+# WHY THIS FILE DOES NOT CALL A DEFERRED METHOD. A real deferred call needs a MODIFIED
+# preamble to link against, which no corpus fixture can carry. What is pinned instead is
+# the property the fix rests on and that a regression would break first: the TYPE
+# ANNOTATION machinery still annotates what it must, and stops annotating what it must
+# not. The deferred case is verified by hand against the emit (see BUGS_FIXED BUG-271).
+#
+# BOTH DIRECTIONS, because the fix is a REMOVAL and removals over-apply:
+#   * a genuinely void call must still compile and run (voidCall below)
+#   * a non-void inferred local must STILL get its annotation, or BUG-159 / BUG-173
+#     come back — those are the "comptime_int must be const" and slice-vs-array
+#     failures that the annotation exists to prevent, and they are invisible here
+#     unless something actually exercises them.
+
+class Counter
+    var n: int = 0
+
+    def bump()
+        .n = .n + 1
+
+def main()
+    # a genuinely void method call — must still work with no annotation
+    var c = Counter()
+    c.bump()
+    c.bump()
+    print(c.n)
+
+    # non-void inference must SURVIVE: `var v = (8 * 2)` is comptime_int in Zig
+    # without the `: i64` annotation, and a later mutation then fails to compile.
+    var v = (8 * 2)
+    v = v + 1
+    print(v)
+
+    # the slice-vs-array half of the same machinery (BUG-173)
+    var s = "gg"
+    s = "f"
+    print(s)
+
+    print("bug271: OK")

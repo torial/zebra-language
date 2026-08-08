@@ -1281,6 +1281,21 @@ smoke_run     test/bug267_ziglit_local_use_test.zbr "bug267: OK"
 # that legitimately has one.
 smoke_run     test/bug260_bindlist_param_test.zbr "bug260: OK"
 
+# BUG-271: an unknown method on a builtin is DEFERRED to Zig, and the binding must not
+# be stamped `void` or the deferral can never return a value. The fix is a REMOVAL
+# (tcTypeAnnotation returns "" for void), so this pins the OPPOSITE directions too: a
+# genuinely void call still runs, and non-void inference still annotates — without that
+# second half, BUG-159 (comptime_int) and BUG-173 (slice-vs-array) come straight back.
+smoke_run     test/bug271_deferred_method_type_test.zbr "bug271: OK"
+
+# BUG-259 control: a RUNTIME failure must exit non-zero. The bug itself did not
+# reproduce (a cmd.exe %ERRORLEVEL% parse-time-expansion artifact), but checking it
+# exposed a real gap: the other three smoke_run_fail registrations are all BUILD-time
+# failures, so nothing asserted that a program failing at RUNTIME propagates its exit
+# code — and test/*.zbr is built on `assert`. If that ever broke, a whole corpus would
+# fail silently while every caller reading rc was told it passed.
+smoke_run_fail test/bug259_runtime_exit_code_test.zbr "panic"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

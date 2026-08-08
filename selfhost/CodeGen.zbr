@@ -452,7 +452,24 @@ def tcTypeAnnotation(t: Type_): str
         on Type_.str_slice
             return "[]const []const u8"
         on Type_.void_
-            return "void"
+            # BUG-271: NO annotation for void. This function exists to stop Zig defaulting
+            # an untyped local to comptime_int / *const [N:0]u8 (BUG-159, BUG-173) — and
+            # `void` is never one of those cases, so annotating it buys nothing and can
+            # only be wrong.
+            #
+            # It WAS wrong. The resolver deliberately defers an unknown method on a builtin
+            # to Zig — that deferral is what makes preamble-seam extensions possible — and
+            # such a call infers as `void` here because nothing in Zebra knows its type.
+            # Stamping the binding `const segs: void = db.query_segments(…)` then made the
+            # deferral useless: the method compiled, ran, and could never hand its result
+            # back. Returning "" lets Zig infer, which is right for BOTH readings —
+            # a genuinely void call still binds as void, a deferred one binds its real type.
+            #
+            # The bootstrap avoids this ONLY for immutable locals, by skipping the whole
+            # annotation when it emits `const` (src/CodeGen.zig:7326, `kw == "var"`); a
+            # MUTABLE local bound to a deferred call still gets `: void` there. Fixing it at
+            # the type mapper covers both, and this is the mapper's only caller.
+            return ""
         on Type_.int_n as n
             return "i" + n.toString()
         on Type_.uint_n as n

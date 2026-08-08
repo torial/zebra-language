@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-272. Next new bug: BUG-273.**
+**Last bug number generated: BUG-273. Next new bug: BUG-274.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -77,6 +77,42 @@ A C `const char*` is `[*:0]const u8` in Zig; the extern lowering emits the
 native slice type instead. Declaration-only externs parse and resolve fine
 (the gap is exactly at the ABI boundary), so BUG-258's fix is confirmed
 working -- this is the next layer down.
+
+### BUG-273: a failed `assert` says "reached unreachable code" and names nothing
+
+**Found 2026-08-07** while building the BUG-259 control. `assert` is what the entire
+`test/*.zbr` corpus is built on, and when one fails it tells you nothing you can act on:
+
+```
+def main()
+    assert 1 == 2
+```
+```
+thread 12240 panic: reached unreachable code
+(empty stack trace)
+```
+
+No file, no line, no expression, no assert identity — and the stack trace is empty, so
+there is nothing to recover it from either. In a corpus fixture with twenty asserts, a
+failure gives the maintainer no way to tell WHICH one went red short of bisecting by
+hand.
+
+**The compiler already knows all of it.** The same machinery does far better one layer
+over: a contract failure prints `ensure failed in 'bump'`, naming the clause and the
+method. `assert` lowers to a bare `unreachable` instead of to a check that reports.
+
+This is the UNGIT "nothing withheld" test (`wiki/pages/concepts/concept_ungit-principle.md`):
+the system holds the information and drops it at the surface where the user is standing.
+
+**Suggested shape:** lower `assert X` the way `ensure` is lowered — a runtime check
+that panics with the source line and the asserted expression text, e.g.
+`assert failed at foo.zbr:12: 1 == 2`. The expression text is available at codegen; the
+line is already tracked (`w.cur_line`, used for the implicit-try diagnostic).
+
+**Control when fixing:** a failing assert must name its file, line and expression; a
+PASSING assert must still cost nothing at runtime beyond the check; and `--turbo` must
+still keep asserts (BUG-257 established that `--turbo` strips contracts but NOT
+asserts, so the two lowerings must stay distinct).
 
 ### BUG-272: a parameter used only inside `ensure … old p` is discarded, and the obvious fix breaks `--turbo`
 
@@ -296,95 +332,6 @@ it into the output dir alongside the emitted `.zig`.
 did not reach the shipping compiler. `zig_interop_test` is in
 `registration_baseline.txt` as known debt and in `compile_check`'s SKIP list, so
 nothing currently goes red on it.
-
-### BUG-259: `zebra.exe run` exits 0 after a compile error AND after a runtime assertion failure
-
-> **Any build gate hung on `errorlevel` reads a failed compile as success.** Filed
-> ahead of BUG-258 because it is the smaller fix and the larger consequence.
->
-> ```
-> > zebra.exe run probe_extern.zbr & echo EXIT=%ERRORLEVEL%
-> probe_extern.zbr:5:1: error: unexpected top-level token: 'extern'
-> EXIT=0
-> ```
->
-> The diagnostic is correct, well-formed and pointed at the right line. The process
-> then returns success. A caller that checks the exit code — a gate script, CI, a
-> `Makefile`, another tool driving the compiler — is told the build worked.
->
-> **ESCALATED, same day: it is not only compile errors. A RUNTIME ASSERTION
-> FAILURE also returns 0.**
->
-> ```
-> thread 22192 panic: expected 2 parents, got 2
-> EXIT=0
-> ```
->
-> The program panicked, printed the assertion message, and `zebra.exe run`
-> returned success. **This matters far more than the compile-error case**, because
-> `test/*.zbr` is built on `assert` — a corpus of tests whose failures are
-> invisible to any caller reading the exit code.
->
-> `tools/gates.sh:97` does capture it (`timeout ... "$@"; rc=$?`). Whether any
-> gate leg's `rc` comes from `zebra.exe run` rather than from a separately
-> compiled binary is for someone with the tree to check — I am reporting the
-> mechanism, not the blast radius.
->
-> **Suggested control when fixing:** a `.zbr` that asserts something false, run
-> through whatever path the gates use, must produce non-zero. Watch it go red
-> before trusting it green — a fix to an exit code is exactly the kind that
-> reports success while changing nothing.
->
-> **Repro:** any `.zbr` that fails to parse. `zebra-sprocket/probe_extern.zbr` is one.
->
-> **Expected:** non-zero on any diagnostic that prevented a run.
->
-> **Why this is worth the interruption.** It is the third instance this week of one
-> failure shape, in three unrelated toolchains: `nmake` printing `BUILD_OK` after a
-> failed compile, a missing `compiler_rt.dll` exiting 0 having printed nothing, and
-> now this. Two of those were caught only because the *count* of what should have
-> reported was wrong, not because anything went red. A gate that cannot distinguish
-> "compiled" from "failed to compile" is not a gate, and gates are being built right
-> now. See `wiki/pages/concepts/concept_false-green-taxonomy.md`.
->
-> *(Filed by Fable, 2026-08-05, from outside the tree — found while probing whether
-> Zebra could reach the sprocket SQLite fork.)*
-> ---
->
-> **VERIFICATION 2026-08-05 (Opus 5, in the tree): DOES NOT REPRODUCE. The compiler's
-> exit codes are correct; the probe was misreading them.**
->
-> In `cmd.exe`, `%ERRORLEVEL%` on a single command line is expanded **before the line
-> executes**, so `A & echo EXIT=%ERRORLEVEL%` prints the errorlevel from *before* `A`
-> ran — always `0` in a fresh shell. It is the delayed-expansion trap, not a compiler
-> behaviour.
->
-> | probe | result |
-> |---|---|
-> | bash, compile error (`extern` at top level) | `rc=1` |
-> | bash, runtime `assert` failure | `rc=1` |
-> | cmd, the filed form `& echo EXIT=%ERRORLEVEL%` | `EXIT=0` ← the artifact |
-> | cmd, `& if errorlevel 1` (evaluated at RUNTIME, not expanded) | `COMPILER_REALLY_FAILED` |
-> | control: `cmd /c "echo BEFORE_ANY_COMMAND=%ERRORLEVEL%"` | `0` — confirms early expansion |
->
-> Run with the reported file shape (`extern` at top level, the exact diagnostic quoted
-> above) and with a failing `assert`, through both `zebra.exe run` and plain
-> `zebra.exe`. All four return 1.
->
-> **No fix should be attempted.** A change to these exit codes would alter behaviour that
-> is already correct — and per this ticket's own warning, an exit-code fix is exactly the
-> kind that reports success while changing nothing. The suggested control (a `.zbr` that
-> asserts something false must produce non-zero) **already passes today**.
->
-> The report's wider point stands and is worth keeping: this was the third instance that
-> week of a caller reading a failure as success. It is simply that on this occasion the
-> instrument was the one at fault, which is the same lesson pointed at the observer —
-> see `concept_false-green-taxonomy` Part 4, where a zero that is the *expected* answer is
-> the hardest kind to doubt.
->
-> **STATUS: closed, not-reproducible.** Filed in good faith from outside the tree; the
-> reporter explicitly flagged the blast radius as unverified and asked someone with the
-> tree to check. This is that check.
 
 ### BUG-254: the BOOTSTRAP is over-strict on mixed numeric arithmetic — `1 + 2.0` is rejected — OPEN
 
