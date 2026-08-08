@@ -117,6 +117,32 @@ walker seeks. Deliberate omissions get `# expr-walker-ok: <variant> <reason>`. D
 bulk-add cases — a walker that answers a different question (does this mention `this`?
 does it contain `try`?) has different right answers per variant.
 
+**PROBED 2026-08-08 — `exprMentionsThis`'s gaps are NOT reachable via its main consumer,
+so gap-count OVERSTATES risk and this ticket should not be worked by counting.**
+
+Its answer feeds `bodyMentionsThis`, which decides whether to emit `_ = self;`. A wrong
+FALSE would emit that discard beside a real use of `self` and Zig would reject the pair —
+the exact BUG-260 symptom, and loud rather than silent. So it is directly testable, and I
+tested it: `this` used ONLY inside a `list_lit`, `array_lit`, `tuple_lit` or `set_lit`,
+as a return value, a `for` iterable and a `while` condition. **All compile.**
+
+The probe was verified able to see before its negative was believed: a method that
+genuinely does not mention `this` DOES get `_ = self;` (control = 1), and the list-literal
+probe does not (0). So the walker detects `this` inside those constructs by some route —
+either another mechanism reaches it first, or the answer is not consumed there.
+
+**What this does and does not establish.** It does not prove the twelve gaps are harmless;
+it proves I could not construct a reproducer through the consumer that matters, having
+first shown the probe can distinguish the two cases. Treat the remaining three walkers
+(`exprHasTry`, `containsResultRef`, `exprHasSelfCall`) the same way: find the consumer,
+work out what a wrong FALSE would produce, and try to produce it. A walker whose wrong
+answer nothing acts on is a cosmetic finding.
+
+**Do NOT bulk-add the missing cases to `exprMentionsThis`** — it carries a live "must stay
+EXACT" constraint from the differential-fuzzer work, and there is now measured evidence
+that its gaps are unreached rather than latent. Changing a hot path on gap-count alone
+would be change without evidence.
+
 **Control when fixing:** each walker needs BOTH directions, as BUG-260 and BUG-267 did —
 the newly-handled construct must be detected, AND something that genuinely lacks the
 property must still answer no. A one-sided fix here silently over-reports, which for
