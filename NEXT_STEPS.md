@@ -82,6 +82,67 @@ makes the TC authoritative about what is known and unblocks the rest. **#5a is n
 group (self-contained, immediate user-visible payoff, no dependencies); then revisit #4 with
 Sean once the front end's coverage is actually worth promising something about.
 
+### UNGIT pass — migrate every SILENT surface into a LOUD one (Fable, 2026-08-08)
+
+Same organizing goal, arrived at from a different door: an UNGIT review of
+`QUICKSTART.md` (the design principle: *a tool owes its user the whole truth it
+holds, and no more; nothing withheld, nothing fabricated, nothing ambient* —
+`wiki/pages/concepts/concept_ungit-principle.md`). The finding is that the
+quickstart is *unusually honest* — its §1.5 already splits Python gotchas into
+**Loud** (compile error) and **SILENT** (different answer, no warning), tags
+each with a BUG number, and one section literally opens *"read this one, it
+fails silently."* That honesty is the documentation compensating for language
+silence. **The program: move each SILENT row across the line into Loud** — which
+is precisely "move checking into Zebra," and BUG-218 (`str + int`) is the
+template each item below follows: a mistake that surfaced as a Zig error in
+generated code becomes a 62 ms diagnostic against the user's own source.
+
+Distinction held deliberately: some SILENT surprises are *correct design* and
+must stay documented, not "fixed" — `-7/2 == -3` (C/Zig truncation, self-
+consistent) is not a defect and is out of scope. Ungitting makes *silence*
+loud; it does not make a language refuse to have opinions.
+
+- [ ] **U1 — `for-else` silently DROPS the `else` block** on HashMap /
+  string-split / chars iterators (BUG-16; QUICKSTART §26, §27#11). This is the
+  sharpest item: not a wrong answer but *code the author wrote, deleted with no
+  word* — the worst shape a SILENT surface can take. **Interim fix is cheap and
+  should not wait on the real feature:** reject `for-else` on the unsupported
+  iterator forms with a front-end error — `error: for-else is not yet supported
+  on <chars/split/HashMap> iterators` — pointing at the `else` keyword.
+  *Acceptance:* a `for … else` over `.chars()` compiles to that diagnostic, not
+  to a binary missing the block. Milestone: 0.9 (a dropped block is a
+  correctness hazard, not polish).
+
+- [ ] **U2 — map/filter element type not inferred through a binding** (BUG-17;
+  QUICKSTART §10, stated 3×: *"annotate the binding … isn't inferred through the
+  binding yet"*). The ambient-knowledge tax: the user must know to write
+  `var d: List(int) = xs.map(...)` or silently lose the ability to call List
+  methods on `d`. Two honest exits, either acceptable: (a) propagate the
+  map/filter result's element type through the binding (the real fix), or (b)
+  interim — when a List method is called on an un-annotated map/filter binding
+  and inference fails, emit a diagnostic that *names the annotation fix* instead
+  of a downstream type error. *Acceptance:* `[1,2,3].map(def(x)=x*2)` bound and
+  then `.sort()`-ed either works or errors saying "annotate the binding as
+  List(int)". Milestone: 0.x.
+
+- [ ] **U3 — `extern` `int`-size ABI mismatch is silent** (BUG-18; QUICKSTART
+  §ABI, *"read this one, it fails silently"*). `extern def f(x: int)` against a C
+  `int` links cleanly and corrupts the call (Zebra `int` is 64-bit; C's is 32).
+  The front end *knows the declared type* — this is a 62 ms check. **Fix:** a
+  front-end lint on `extern def` parameters/returns typed `int` (and `uint`):
+  `warning: C 'int' is 32-bit; use int32 for a C ABI boundary`. *Acceptance:*
+  an `extern def` with an `int` param warns with the int32 suggestion; using
+  `int32` is silent. Milestone: 0.x (cheap, high-value at the FFI boundary Graze
+  will lean on).
+
+**Same template, already tracked — fold in when their sections are touched:**
+BUG-225 (`s[i]` typed `char` while holding a byte — the type lies about the
+value), BUG-227 (`tokenize(seps)` splits on the whole sequence, disagreeing with
+its own docs). Both are SILENT rows awaiting the same Loud migration.
+
+Cross-reference for all of the above: bugbook BUG-16/17/18 (Fable's tracker,
+`C:\Projects\bugbook`), filed 2026-08-08.
+
 ### ~~FREE WIN — `-c` is excluded from the fast backend~~ — **DONE 2026-07-28 (`3fabc50`)**
 
 `selfhost/main.zbr:2414` read `if not mode_c and not release and …`, so check mode — the
