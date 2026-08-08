@@ -9198,9 +9198,38 @@ struct Generator
             genExpr(a.message!)
             w.emit(");\n")
         else
-            w.emit("std.debug.assert(")
+            # BUG-273: an explicit panic naming file:line, NOT `std.debug.assert`.
+            #
+            # `std.debug.assert` lowers to `unreachable`, and that failed the author on
+            # both counts. In Debug it printed "reached unreachable code" with an EMPTY
+            # stack trace — naming neither the assert, the line, nor the expression, in a
+            # corpus of 455 files built on `assert`, so a red fixture told you only THAT
+            # something failed. And in `--release` (ReleaseFast) it printed NOTHING AT
+            # ALL: measured, the program stopped after its last `print` with no
+            # diagnostic whatsoever.
+            #
+            # The release case is the serious half. `unreachable` in ReleaseFast is
+            # UNDEFINED BEHAVIOUR — it happens to trap today, and nothing says it will
+            # tomorrow, so `assert` was not reliably a check in the builds users ship.
+            # That directly undercuts contract_mode_check's stated contract: `--turbo`
+            # strips contracts but KEEPS asserts, "because an assert is a check the
+            # author wrote to RUN". It only ran in Debug. (See also
+            # tools/lint_oom_unreachable.py, which exists for this same ReleaseFast-UB
+            # hazard in a different place.)
+            #
+            # `ensure` had it right all along one layer over — `std.debug.panic("ensure
+            # failed in 'f'")` — so this is the same lowering, with the location the
+            # message has to carry itself because the trace cannot be relied on.
+            #
+            # fwdSlashes because a Windows path inside a Zig string literal would make
+            # `C:\Presolved\...` an invalid escape and the emitted Zig would not compile.
+            w.emit("if (!(")
             genExpr(a.cond)
-            w.emit(");\n")
+            w.emit(")) std.debug.panic(\"assert failed at ")
+            w.emit(fwdSlashes(source_file))
+            w.emit(":")
+            w.emit(a.span.line.toString())
+            w.emit("\\n\", .{});\n")
 
     def genAssertCmp(a: StmtAssertCmp, is_eq: bool)
         writeIndent()

@@ -742,7 +742,7 @@ gate measured contention as a failure. Sequential, not parallel.
 
 The tier grew 19 → 21 that night: `doc-example` (QUICK) and `release-mode` (FULL).
 
-**Tier update 2026-08-06 (later) — now 25, and `gates.sh --full` was 25/25** at JOBS=1 (smoke 317/317, compile_check 247/0 in both runtime shapes, output_sweep 322 identical, full_sweep 0 regressions vs 337, divergence 0 selfhost gaps). `expr-walker` joined that afternoon. Earlier the same day it was 24/24 (smoke 314/314,
+**Tier update 2026-08-07 — now 26, and `gates.sh --full` was 26/26** at JOBS=1 (smoke 320/320, output_sweep 322 identical, full_sweep 0 regressions, divergence 0 selfhost gaps). `bug-numbers` joined that day. The output_sweep line carried the weight: BUG-273 rewrote what every `assert` in 456 corpus files emits, and only a behaviour witness over the whole corpus could have caught a regression there. Previously — now 25, and `gates.sh --full` was 25/25 at JOBS=1 (smoke 317/317, compile_check 247/0 in both runtime shapes, output_sweep 322 identical, full_sweep 0 regressions vs 337, divergence 0 selfhost gaps). `expr-walker` joined that afternoon. Earlier the same day it was 24/24 (smoke 314/314,
 compile_check 244/0 in both runtime shapes, output_sweep 322 identical, full_sweep 0
 regressions vs 337, examples_sweep 0 vs 14, divergence 0 selfhost gaps). `ffi-lib` was
 added that day (QUICK); the other two new lines are `contract-mode` and
@@ -753,7 +753,7 @@ the table below stands unchanged.
 **Previous sweep 2026-08-02** — 18/18, before those two gates existed.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
-**337** while the tracked corpus is **455** <!-- doc-gen: 455 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+**337** while the tracked corpus is **456** <!-- doc-gen: 456 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

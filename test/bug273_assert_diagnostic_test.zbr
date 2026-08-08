@@ -1,0 +1,60 @@
+# BUG-273: a failed `assert` must NAME where it failed, and must actually RUN in a
+# release build.
+#
+# This was filed as a diagnostics complaint and measurement made it a correctness bug.
+# `assert` used to lower to `std.debug.assert`, which is `unreachable`:
+#
+#     Debug      thread N panic: reached unreachable code   (empty stack trace)
+#     --release  <nothing at all — the program simply stopped>
+#
+# The release half is the serious one. `unreachable` under ReleaseFast is UNDEFINED
+# BEHAVIOUR: it trapped, but nothing guaranteed it would keep trapping, so `assert` was
+# not reliably a check in the builds users ship. That contradicted a contract this repo
+# already gates — contract_mode_check asserts that `--turbo` strips contracts but KEEPS
+# asserts, "because an assert is a check the author wrote to RUN". It only ran in Debug.
+#
+# Now lowered the way `ensure` always was: an explicit `std.debug.panic` carrying
+# file:line. The location has to live in the MESSAGE because the stack trace cannot be
+# relied on — the self-hosted backend emits none, which is why the old diagnostic was
+# useless even in Debug.
+#
+# WHAT THIS FILE CAN AND CANNOT PIN. A fixture cannot assert on its own panic text
+# without failing, so the FAILING direction is covered by
+# test/bug259_runtime_exit_code_test.zbr (registered `smoke_run_fail`, which requires a
+# non-zero exit AND the panic text) and by hand against --release/--turbo. What this
+# pins is the other direction, which is the one a careless "fix" breaks: PASSING asserts
+# must remain transparent — no behaviour change, no output, no cost beyond the branch.
+#
+# That direction is not ceremony. The change rewrites what all 455 corpus files emit for
+# every `assert` they contain, so "passing asserts still pass" is the property with the
+# entire corpus riding on it; output_sweep is the real witness and this is the canary.
+
+class Acc
+    var total: int = 0
+
+    def add(n: int)
+        require
+            n >= 0
+        .total = .total + n
+        ensure
+            .total >= 0
+
+def main()
+    # plain passing asserts, several shapes
+    assert 1 == 1
+    assert 2 + 2 == 4
+    assert "ab" + "c" == "abc"
+    var xs: List(int) = List(int)()
+    xs.add(5)
+    assert xs.len == 1
+
+    # an assert with a MESSAGE takes a different emit path (@panic) — must still pass
+    assert xs.at(0) == 5, "first element should be 5"
+
+    # asserts alongside contracts, since --turbo treats the two differently
+    var a = Acc()
+    a.add(3)
+    a.add(4)
+    assert a.total == 7
+
+    print("bug273: OK")

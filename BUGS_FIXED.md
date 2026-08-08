@@ -6,6 +6,81 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-273: a failed `assert` named nothing — and was UNDEFINED BEHAVIOUR in release — ✅ FIXED 2026-08-07
+
+**Found 2026-08-07** while building the BUG-259 control. `assert` is what the entire
+`test/*.zbr` corpus is built on, and when one fails it tells you nothing you can act on:
+
+```
+def main()
+    assert 1 == 2
+```
+```
+thread 12240 panic: reached unreachable code
+(empty stack trace)
+```
+
+No file, no line, no expression, no assert identity — and the stack trace is empty, so
+there is nothing to recover it from either. In a corpus fixture with twenty asserts, a
+failure gives the maintainer no way to tell WHICH one went red short of bisecting by
+hand.
+
+**The compiler already knows all of it.** The same machinery does far better one layer
+over: a contract failure prints `ensure failed in 'bump'`, naming the clause and the
+method. `assert` lowers to a bare `unreachable` instead of to a check that reports.
+
+This is the UNGIT "nothing withheld" test (`wiki/pages/concepts/concept_ungit-principle.md`):
+the system holds the information and drops it at the surface where the user is standing.
+
+**Suggested shape:** lower `assert X` the way `ensure` is lowered — a runtime check
+that panics with the source line and the asserted expression text, e.g.
+`assert failed at foo.zbr:12: 1 == 2`. The expression text is available at codegen; the
+line is already tracked (`w.cur_line`, used for the implicit-try diagnostic).
+
+**Control when fixing:** a failing assert must name its file, line and expression; a
+PASSING assert must still cost nothing at runtime beyond the check; and `--turbo` must
+still keep asserts (BUG-257 established that `--turbo` strips contracts but NOT
+asserts, so the two lowerings must stay distinct).
+
+---
+
+**FIXED 2026-08-07. Filed as a diagnostics complaint; measurement made it a correctness
+bug, and the release half is the serious one.**
+
+`assert` lowered to `std.debug.assert`, which is `unreachable`:
+
+| build | before | after |
+|---|---|---|
+| Debug | `reached unreachable code`, empty trace | `assert failed at foo.zbr:3` |
+| `--release` | **nothing at all** | `assert failed at foo.zbr:3` |
+| `--turbo` | kept, same silence | `assert failed at foo.zbr:3` |
+| passing assert | transparent | transparent |
+
+`unreachable` under ReleaseFast is **undefined behaviour**. It trapped, but nothing said
+it would keep trapping — so `assert` was not reliably a check in the builds users ship.
+That quietly contradicted a contract already gated here: `contract_mode_check` asserts
+that `--turbo` strips contracts but KEEPS asserts, *"because an assert is a check the
+author wrote to RUN"*. It only ran in Debug. (Same ReleaseFast-UB hazard
+`tools/lint_oom_unreachable.py` exists for elsewhere.)
+
+**Fix:** lower it the way `ensure` always was — `std.debug.panic` carrying `file:line`.
+The location must live in the MESSAGE because the self-hosted backend emits no stack
+trace, which is why the old diagnostic was useless even in Debug. `fwdSlashes` on the
+path, or a Windows `C:\...` becomes an invalid escape and the emitted Zig will not
+compile.
+
+**Verified:** all four rows above, by hand, plus `gates.sh --full` 26/26. The number that
+mattered is **output_sweep: 322 files, behaviour identical** — this rewrites what every
+`assert` in 456 corpus files emits, so a behaviour witness over the whole corpus is the
+only thing that could have caught a regression. divergence held at 0 selfhost gaps.
+
+**Fixture limit, stated rather than papered over:** `test/bug273_assert_diagnostic_test.zbr`
+pins the PASSING direction only — a fixture cannot assert on its own panic text without
+failing. The failing direction is covered by `test/bug259_runtime_exit_code_test.zbr`
+(`smoke_run_fail`, which requires non-zero exit AND the panic text) and by the by-hand
+`--release` / `--turbo` runs recorded above.
+
+
 ### BUG-259: `zebra.exe run` exits 0 after failure — ✅ NOT REPRODUCED 2026-08-07 (a cmd.exe artifact)
 
 > **Any build gate hung on `errorlevel` reads a failed compile as success.** Filed

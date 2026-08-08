@@ -1296,6 +1296,14 @@ smoke_run     test/bug271_deferred_method_type_test.zbr "bug271: OK"
 # fail silently while every caller reading rc was told it passed.
 smoke_run_fail test/bug259_runtime_exit_code_test.zbr "panic"
 
+# BUG-273: `assert` used to lower to std.debug.assert (= `unreachable`), which named
+# nothing in Debug and printed NOTHING under --release, where it was also UNDEFINED
+# BEHAVIOUR rather than a check. Now an explicit panic carrying file:line, like `ensure`.
+# This fixture pins the PASSING direction — the change rewrites what every `assert` in
+# all 455 corpus files emits, so "passing asserts stay transparent" is the property the
+# whole corpus rides on. The failing direction is covered by bug259_runtime_exit_code.
+smoke_run     test/bug273_assert_diagnostic_test.zbr "bug273: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

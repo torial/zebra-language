@@ -78,42 +78,6 @@ native slice type instead. Declaration-only externs parse and resolve fine
 (the gap is exactly at the ABI boundary), so BUG-258's fix is confirmed
 working -- this is the next layer down.
 
-### BUG-273: a failed `assert` says "reached unreachable code" and names nothing
-
-**Found 2026-08-07** while building the BUG-259 control. `assert` is what the entire
-`test/*.zbr` corpus is built on, and when one fails it tells you nothing you can act on:
-
-```
-def main()
-    assert 1 == 2
-```
-```
-thread 12240 panic: reached unreachable code
-(empty stack trace)
-```
-
-No file, no line, no expression, no assert identity — and the stack trace is empty, so
-there is nothing to recover it from either. In a corpus fixture with twenty asserts, a
-failure gives the maintainer no way to tell WHICH one went red short of bisecting by
-hand.
-
-**The compiler already knows all of it.** The same machinery does far better one layer
-over: a contract failure prints `ensure failed in 'bump'`, naming the clause and the
-method. `assert` lowers to a bare `unreachable` instead of to a check that reports.
-
-This is the UNGIT "nothing withheld" test (`wiki/pages/concepts/concept_ungit-principle.md`):
-the system holds the information and drops it at the surface where the user is standing.
-
-**Suggested shape:** lower `assert X` the way `ensure` is lowered — a runtime check
-that panics with the source line and the asserted expression text, e.g.
-`assert failed at foo.zbr:12: 1 == 2`. The expression text is available at codegen; the
-line is already tracked (`w.cur_line`, used for the implicit-try diagnostic).
-
-**Control when fixing:** a failing assert must name its file, line and expression; a
-PASSING assert must still cost nothing at runtime beyond the check; and `--turbo` must
-still keep asserts (BUG-257 established that `--turbo` strips contracts but NOT
-asserts, so the two lowerings must stay distinct).
-
 ### BUG-272: a parameter used only inside `ensure … old p` is discarded, and the obvious fix breaks `--turbo`
 
 **Found 2026-08-06** by `tools/lint_expr_walkers.py` on its first run — the only finding
