@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-273. Next new bug: BUG-274.**
+**Last bug number generated: BUG-274. Next new bug: BUG-275.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -77,6 +77,50 @@ A C `const char*` is `[*:0]const u8` in Zig; the extern lowering emits the
 native slice type instead. Declaration-only externs parse and resolve fine
 (the gap is exactly at the ABI boundary), so BUG-258's fix is confirmed
 working -- this is the next layer down.
+
+### BUG-274: four broad Expr walkers default to FALSE and have gaps — the BUG-260 shape, surveyed
+
+**Found 2026-08-07** by running `lint_expr_walkers`'s analysis read-only across ALL 53
+functions that branch over `Expr`, rather than only the two that had opted in. This is a
+SURVEY, not a reproduction: each gap below is a candidate, and each needs its own
+judgement about whether the missing variant can actually carry the thing that walker
+looks for.
+
+**The survey answered two questions.** First, the opt-in design was right: **36 of 53
+walkers handle 4 or fewer variants** and are legitimately narrow (`getVariantKey` wants
+`member` and nothing else), so blanket checking would have been mostly noise. Second, the
+danger is not "has gaps" — it is "has gaps AND defaults to FALSE":
+
+| walker | handles | gaps | file |
+|---|---|---|---|
+| `exprMentionsThis` | 16 | **12** | CodeGen.zbr |
+| `exprHasTry` | 17 | 10 | CgHelpers.zbr |
+| `containsResultRef` | 22 | 6 | CodeGen.zbr |
+| `exprHasSelfCall` | 25 | 2 | CgHelpers.zbr |
+
+Five other broad walkers default conservatively (`true` / `pass`), so their gaps are
+harmless — the same asymmetry that made BUG-260 silent while the identical omission in
+its sibling was merely cautious.
+
+**`exprMentionsThis` is the one to look at first.** The project memory records
+"`stmtMentionsThis` must stay EXACT" as a live constraint from the differential fuzzer
+work, and this walker has twelve unmodelled ident-bearing variants under a FALSE default.
+
+**Precedent that these are not hypothetical:** `test/contract_old_compound_test.zbr`
+exists because `collectAndEmitOldSnapshots` failed to recurse into `array_lit` and missed
+an `old` snapshot — the identical class, already fixed once, in a walker that still shows
+4 gaps.
+
+**How to work it:** annotate one walker at a time with `# expr-walker: exhaustive`, let
+the lint enumerate its gaps, and for each ask whether that variant can carry what the
+walker seeks. Deliberate omissions get `# expr-walker-ok: <variant> <reason>`. Do NOT
+bulk-add cases — a walker that answers a different question (does this mention `this`?
+does it contain `try`?) has different right answers per variant.
+
+**Control when fixing:** each walker needs BOTH directions, as BUG-260 and BUG-267 did —
+the newly-handled construct must be detected, AND something that genuinely lacks the
+property must still answer no. A one-sided fix here silently over-reports, which for
+`exprHasTry` would wrap non-throwing expressions.
 
 ### BUG-272: a parameter used only inside `ensure … old p` is discarded, and the obvious fix breaks `--turbo`
 

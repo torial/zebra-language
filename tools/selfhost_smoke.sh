@@ -1304,6 +1304,15 @@ smoke_run_fail test/bug259_runtime_exit_code_test.zbr "panic"
 # whole corpus rides on. The failing direction is covered by bug259_runtime_exit_code.
 smoke_run     test/bug273_assert_diagnostic_test.zbr "bug273: OK"
 
+# BUG-270: `int`/`uint` in an extern signature is ambiguous across the C boundary
+# (Zebra's int is 64-bit, C's is 32-bit) and is REFUSED at the declaration rather than
+# silently remapped — a remap would be wrong about half the time, since `int` is right
+# for C `long long`. BOTH directions: the sized form must still link and be correct for
+# a NEGATIVE value (the case a 64-vs-32 mismatch corrupts first), and the bare form must
+# be refused with a message naming both fixes.
+smoke_run     test/bug270_extern_int_ambiguity_test.zbr "bug270: OK"
+smoke_tc_fail test/bug270_extern_int_fail.zbr "ambiguous in an \`extern\` signature"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

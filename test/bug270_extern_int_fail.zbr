@@ -1,0 +1,5 @@
+# BUG-270 negative fixture: `int` in an extern signature must be REFUSED at the
+# declaration, naming both fixes. See test/bug270_extern_int_ambiguity_test.zbr.
+extern def bad(): int
+def main()
+    print(bad())

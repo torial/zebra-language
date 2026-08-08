@@ -1,0 +1,28 @@
+# BUG-270: an `extern` signature must use EXPLICITLY SIZED types, and this file is the
+# positive half — the correct forms must keep compiling and running.
+#
+# Zebra's `int` is 64-bit; C's `int` is 32-bit on every platform Zebra targets. So
+# `extern def f(): int` against a C `int` reads 64 bits of a 32-bit return: it LINKS
+# CLEANLY and silently corrupts, showing up first on negative values.
+# docs/extern_ffi_design.md §4 called that "the single most likely way to get a green
+# build and a wrong program".
+#
+# `int`/`uint` are now REFUSED in an extern signature rather than remapped, because
+# `int` is genuinely right for C `long long`/`int64_t` and genuinely wrong for C `int` —
+# a silent remap would be wrong about half the time and wrong INVISIBLY. The author knows
+# which they meant; the compiler does not, so it asks at the declaration.
+#
+# The REFUSING direction is exercised by test/bug270_extern_int_fail.zbr via
+# smoke_tc_fail. This file pins the other one: a fix that over-applies and rejected the
+# sized types too would break every legitimate binding, and would pass a
+# refusal-only fixture.
+#
+# `abs` comes from libc, so this needs no sibling file and is not Windows-specific.
+
+extern def abs(n: int32): int32
+
+def main()
+    # the sized form must work, and must be correct for a NEGATIVE value — the exact
+    # case a 64-vs-32 mismatch corrupts first
+    print(abs(0 - 42))
+    print("bug270: OK")

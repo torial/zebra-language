@@ -2004,6 +2004,44 @@ class Parser
                 var wrapped = List(PNode)()
                 wrapped.add(PNode.stmt_try_catch(PTryCatch(stmts, catch_binding, catch_stmts, line)))
                 stmts = wrapped
+        # BUG-270: `int` / `uint` are AMBIGUOUS across a C boundary, so refuse them in an
+        # extern signature rather than guessing.
+        #
+        # Zebra's `int` is 64-bit; C's `int` is 32-bit on every platform Zebra targets.
+        # `extern def f(): int` against a C `int` therefore reads 64 bits of a 32-bit
+        # return — it LINKS CLEANLY and silently corrupts, and a negative value is where
+        # it shows first. docs/extern_ffi_design.md §4 named this "the single most likely
+        # way to get a green build and a wrong program" before anything could catch it.
+        #
+        # NOT silently remapped to c_int, and that is the whole judgement here: `int`
+        # is genuinely correct when the C side is `long long` / `int64_t`, so a remap
+        # would be wrong about half the time and wrong SILENTLY — trading one invisible
+        # corruption for another. The author knows which they meant; the compiler does
+        # not. So it asks, at the declaration, and names both answers.
+        #
+        # Checked in the PARSER because that is where the declaration is, and a
+        # declaration should be checked when it is written rather than discovered broken
+        # at the call site (the UNGIT "nothing ambient" test — a refusal must name the
+        # reason AND the fix).
+        if is_extern
+            var ext_bad: str = ""
+            var ext_where: str = ""
+            if return_type == "int" or return_type == "uint"
+                ext_bad = return_type
+                ext_where = "return type"
+            for ep in params
+                if ext_bad == ""
+                    if ep.type_name == "int" or ep.type_name == "uint"
+                        ext_bad = ep.type_name
+                        ext_where = "parameter `" + ep.name + "`"
+            if ext_bad != ""
+                var ext_sized: str = "int64"
+                if ext_bad == "uint"
+                    ext_sized = "uint64"
+                var ext_small: str = "int32"
+                if ext_bad == "uint"
+                    ext_small = "uint32"
+                raise .errorAt("`" + ext_bad + "` is ambiguous in an `extern` signature (" + ext_where + " of `" + name + "`): Zebra's `" + ext_bad + "` is 64-bit, C's `int` is 32-bit. Write `" + ext_small + "` for C `int`, or `" + ext_sized + "` for C `long long`/`int64_t`.")
         return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export, _dl, _dc, is_extern))
 
     # -- Block and statements --------------------------------------------------
