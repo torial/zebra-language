@@ -488,8 +488,26 @@ python tools/lint_bug_numbers.py   # THE BUG-NUMBER COLLISION GATE (static, inst
                                 #   must be >= the highest heading. That line is what the
                                 #   next person reads, so when it lags it is not a stale
                                 #   fact — it is the NEXT collision already scheduled.
+                                #   THIRD LEG: a RESOLVED entry must not linger in the
+                                #   OPEN ledger. BUGS.md answers "what is left to work
+                                #   on", so a finished entry still sitting there makes
+                                #   that answer wrong — silently: a reader counts 53 open
+                                #   bugs when 50 are open. Found 2026-08-07 with exactly
+                                #   that (BUG-255/256/257, all three carrying FIXED plus a
+                                #   date in their own headings). HEADING-ONLY on purpose:
+                                #   bodies routinely say FIXED about OTHER bugs and every
+                                #   good entry has a "Control when fixing" section, which
+                                #   scored 30 of 53 — a noise ratio that gets a gate
+                                #   ignored. A part-done bug is legitimate and says so with
+                                #   `<!-- bug-open-ok: reason -->` (BUG-267 has one: usage
+                                #   half fixed, mutation half open).
                                 #   Refuses to report if <150 headings parse or if a planted
-                                #   duplicate is not detected. 0 NEW = clean.
+                                #   duplicate is not detected. Reconfigures stdout to UTF-8:
+                                #   printing a heading containing an em-dash or a tick
+                                #   raised UnicodeEncodeError on this cp1252 console and
+                                #   took the whole gate down with a traceback — a gate that
+                                #   CRASHES reports nothing, and the cause looks like the
+                                #   ledger rather than the terminal. 0 NEW = clean.
 python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUICK tier).
                                 #   A function that searches the Expr tree for a name is
                                 #   correct only if it descends into every variant that

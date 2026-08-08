@@ -1,4 +1,6 @@
 # BUG-261 regression: a `use` that resolves to a sibling .c must link and call.
+# Also pins BUG-258 (`extern` was in the grammar but rejected by the parser): this
+# file cannot even parse if `extern def` stops being accepted at top level.
 #
 # THIS FIXTURE MUST RUN, NOT MERELY COMPILE. The whole failure mode of FFI is a
 # declaration that resolves to nothing or to the wrong ABI, and both of those

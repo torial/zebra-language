@@ -33,6 +33,10 @@
 # and neither would be missed by anything else.
 #
 # NOT a size check — release_mode_check.sh owns that and self-calibrates.
+# pins: BUG-257 this gate IS the regression test — its whole subject is the four-way
+# pins: BUG-257 matrix, including the leg BUG-257 got wrong (a plain --release build KEEPS
+# pins: BUG-257 its contracts). There is no test/bug257_*.zbr because the claim is about
+# pins: BUG-257 FLAG COMBINATIONS, which only a driver script can exercise.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ZEBRA="zig-out/bin/zebra.exe"

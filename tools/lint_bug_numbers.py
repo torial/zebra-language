@@ -65,6 +65,15 @@ def last_declared():
 
 
 def main():
+    # The ledgers contain em-dashes and ✅, and this console is cp1252 — printing a
+    # heading verbatim raised UnicodeEncodeError and took the whole gate down with a
+    # traceback. A gate that CRASHES is worse than one that is wrong: it reports
+    # nothing at all, and the cause looks like the ledger rather than the terminal.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     slots = collect()
 
     # ── Controls, before reporting anything ──────────────────────────────────
@@ -115,14 +124,42 @@ def main():
     if last is None:
         print("  BUGS.md: no 'Last bug number generated' line found")
 
+    # ── Leg 3: resolved entries must not linger in the OPEN ledger ───────────
+    # BUGS.md answers "what is left to work on". Every entry that is actually finished
+    # but still sitting there makes that answer wrong, and the error is silent — a
+    # reader counts 53 open bugs when 50 are open. Found 2026-08-07 with three
+    # (BUG-255/256/257), each carrying FIXED/RESOLVED plus a date in its own heading.
+    #
+    # Heading-only on purpose. Bodies routinely say "FIXED" about OTHER bugs, and every
+    # well-written entry has a "Control when fixing:" section — scanning bodies produced
+    # 30 hits out of 53, which is a noise ratio that gets a gate ignored.
+    #
+    # A part-done bug is legitimate (BUG-267: usage half fixed, mutation half open) and
+    # declares itself with `<!-- bug-open-ok: reason -->`; a reason is required.
+    resolved_open = []
+    op = io.open(REPO / "BUGS.md", encoding="utf-8").read().split("\n")
+    heads = [i for i, l in enumerate(op) if re.match(r"^### BUG-", l)] + [len(op)]
+    for a, b in zip(heads, heads[1:]):
+        head = op[a]
+        if not re.search(r"(FIXED|RESOLVED)\s+\d{4}-\d{2}-\d{2}", head):
+            continue
+        if "bug-open-ok:" in "\n".join(op[a:b]):
+            continue
+        resolved_open.append(head.strip())
+    for h in resolved_open:
+        print(f"  BUGS.md: resolved entry still in the OPEN ledger — move it to "
+              f"BUGS_FIXED.md:\n      {h[:104]}")
+
     print("              NOT checked: whether two entries sharing a number are actually "
-          "the same bug — only that a reader cannot tell them apart by number.")
+          "the same bug — only that a reader cannot tell them apart by number; and "
+          "whether an entry with no FIXED marker is secretly done.")
     # Verdict LAST — gates.sh displays the final non-empty line.
     print(f"[bug-numbers] {len(slots)} slots across {len(LEDGERS)} ledger(s); "
           f"{len(dupes)} shared ({len(known)} known debt), {len(new)} NEW; "
-          f"allocator line {'LAGS' if lag else 'ok'}")
+          f"allocator line {'LAGS' if lag else 'ok'}; "
+          f"{len(resolved_open)} resolved entry(s) stuck in the open ledger")
 
-    if "--gate" in sys.argv and (new or lag or last is None):
+    if "--gate" in sys.argv and (new or lag or last is None or resolved_open):
         return 1
     return 0
 
