@@ -11972,6 +11972,36 @@ struct Generator
                         genExpr(m.object)
                         w.emit(".close_()")
                         return
+                    # bugbook BUG-2 (Fable, from zebra-sprocket): a DEFERRED method on a
+                    # SqliteDb — one the resolver hands to Zig because the preamble was
+                    # extended — must build its bind list the SAME WAY the known paths do.
+                    #
+                    # `db.query("CALL p(?)", [1])` emits `&[_]_SqliteParam{...}`; the
+                    # deferred `db.query_segments("CALL p(?)", [1])` fell past every
+                    # `mname ==` above and emitted Zebra's own `std.ArrayList(i64)`, which
+                    # no preamble function can accept. That mismatch is the last reason
+                    # zebra-sprocket needed its `"@segments "` SQL-prefix marker — a mode
+                    # by incantation, and the final open scar on the UNGIT table.
+                    #
+                    # DELIBERATELY NARROW: only a LIST LITERAL in the second position, on
+                    # a receiver already known to be a SqliteDb. That is the exact shape
+                    # `query`/`exec` take, so a deferred method written to the same
+                    # convention gets the same treatment, while a preamble method that
+                    # genuinely wants a Zebra `List(T)` keeps it by passing a variable
+                    # rather than a literal. The compiler cannot know a deferred method's
+                    # signature — that is what "deferred" means — so this matches on the
+                    # CALL SHAPE, and the narrowness is what keeps the guess honest.
+                    if args.len >= 2
+                        if args.at(1).value is Expr.list_lit
+                            genExpr(m.object)
+                            w.emit(".")
+                            w.emit(mname)
+                            w.emit("(")
+                            genExpr(args.at(0).value)
+                            w.emit(", ")
+                            genSqliteParams(args.at(1).value)
+                            w.emit(")")
+                            return
                 on Type_.sqlite_row
                     if mname == "asInt" or mname == "asBool"
                         genExpr(m.object)
