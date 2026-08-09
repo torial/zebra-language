@@ -795,6 +795,7 @@ gate measured contention as a failure. Sequential, not parallel.
 | `python fuzz/gramgen.py --gate` | PASS — 960 derived programs, 0 hangs, 0 crashes |
 | `bash tools/node_addon_test.sh` | PASS |
 | `bash tools/gui_scaffold_check.sh` | PASS — scaffold globals assigned, app got PAST the BUG-229 crash site and refused a non-tty cleanly (rc=3) |
+| `zig build test` | **RED, and was already red — BUG-279.** Added to this table 2026-08-09 because it was in NEITHER a tier nor this list, which is the one state this table exists to make impossible. Three unrelated pre-existing failures: an AstPrinter switch missing `TypeRef.fn_type`, a CodeGen test calling `generate()` with 15 of 16 arguments, and a preamble `page_allocator` count drift (70 vs 72). Its selfhost-smoke leg passes 326/326. |
 
 The tier grew 19 → 21 that night: `doc-example` (QUICK) and `release-mode` (FULL).
 

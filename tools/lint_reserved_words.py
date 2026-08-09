@@ -64,30 +64,18 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Baseline: known at the lint's first run, 2026-08-09. Each is a language decision,
 # not hygiene, and each says why it is here. Shrink this; do not grow it.
 BASELINE = {
-    "weaves":  "R2. AOP's other half, coupled to `aspect` (freed under U4 the same day). "
-               "Its WeavesOpt clause threads through ten declaration rules and "
-               "AstBuilder's positional child scanning, so freeing it is a larger change "
-               "than U4 asked for. Not free, not forgotten.",
-    "expect":  "R2. Surfaced by this lint; nobody had flagged it. Plausible as a planned "
-               "test-assertion keyword and plausible as a user identifier — the kind of "
-               "collision `aspect` turned out to be.",
-    "lock":    "R2. Same as `expect`. Likely to collide with concurrent user code, which "
-               "is simultaneously an argument for freeing it and evidence someone wanted "
-               "the statement.",
-    "error":   "R1, AND NEWLY SO — its only grammar uses were inside the aspect rules "
-               "removed on 2026-08-09, so freeing `aspect` orphaned it. Kept for now "
-               "because `error` is load-bearing vocabulary in the error model even though "
-               "no rule accepts the bare token. Note the reservation is NOT needed for "
-               "Zig's sake: emitName escapes Zig keywords as @\"error\" already.",
-    "try":     "R1. Zebra propagates with `expr?` since §28b, so the word has no "
-               "construct left. Free on the evidence; kept pending a decision because "
-               "removing it is a language change nobody asked for.",
-    "from":    "R1. No rule in either compiler accepts it. U4's 'likely companions'.",
-    "implies": "R1. Sits under Contracts in the token table, which suggests it was "
-               "reserved for a planned `a implies b` contract operator. Reserving for "
-               "an intended feature is legitimate; leaving it undecided is what this "
-               "entry exists to make visible.",
-    "trace":   "R1. Sits under Statements. Same status as `implies`.",
+    "implies": "R1, and the one word deliberately kept on LANGUAGE grounds \u2014 Sean's call, "
+               "2026-08-09. It sits under Contracts in the token table because it is "
+               "intended as a contract operator (`a implies b`). Reserving for an intended "
+               "feature is legitimate; this entry is what keeps it a decision.",
+    "error":   "R1, and kept on ENGINEERING grounds, against the intent to free it. "
+               "BUG-280: a class field named `error` emits `error: i64 = 0,` because the "
+               "field path never consults emitName. Freeing a word the compiler cannot "
+               "emit trades a clear Zebra diagnostic for a Zig parse error against "
+               "generated code. Free it when BUG-280 lands, not before.",
+    "try":     "R1, same as `error` and worse \u2014 it fails in every position, because "
+               "isZigKeyword is a hand-maintained list that does not contain `try`. "
+               "BUG-280.",
 }
 
 

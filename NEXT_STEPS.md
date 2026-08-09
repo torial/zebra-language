@@ -154,22 +154,66 @@ loud; it does not make a language refuse to have opinions.
   The old construct now gives a clean `unexpected top-level token: 'aspect'`
   instead of the `std.debug.panic` it used to.
 
-- [ ] **U4a — the rest of the reserved-word audit (a decision, not hygiene)**
-  Now mechanical: `tools/lint_reserved_words.py` (QUICK tier, baselined at 8).
-  It classifies every one of the 88 keywords as reachable, **R1 unreachable**
-  (no rule in *either* compiler accepts the token) or **R2 parsed-then-refused**
-  (a rule accepts it and AstBuilder answers "not yet implemented"). Each of the
-  eight is a call for you, not a cleanup:
-  | word | class | note |
+- [x] **U4a — the rest of the reserved-word audit** — **DONE 2026-08-09.**
+  Sean's call: *"implies I think is the only one to keep. weaves could be turned
+  into a decorator so no kw needed there."* **Five freed, three still reserved** —
+  and the split is not the one either of us expected.
+
+  | word | was | now |
   |---|---|---|
-  | `weaves` | R2 | AOP's other half. Its `WeavesOpt` clause threads through ten declaration rules and AstBuilder's *positional* child scanning, so it is a bigger change than `aspect` was. |
-  | `expect`, `lock` | R2 | Surfaced by the lint; nobody had flagged either. `lock` especially is likely to collide with concurrent user code. |
-  | `error` | R1 | Newly orphaned by U4 (above). Kept for now as error-model vocabulary. Note the reservation is **not** needed for Zig's sake — `emitName` already escapes Zig keywords as `@"error"`. |
-  | `try` | R1 | §28b replaced it with `expr?`; the word has no construct left. |
-  | `from`, `implies`, `trace` | R1 | `implies` sits under *Contracts* and `trace` under *Statements*, which reads like reservations for planned features. Reserving for an intended feature is legitimate; leaving it undecided is what the lint exists to keep visible. |
-  Two guesses in the original U4 note — `cue` and `vari` — were **both wrong**:
-  the lint clears them as genuinely live. That is the argument for the lint over
-  a memory.
+  | `weaves` | R2 — clause parsed, nothing read it; project-level form panicked | **freed**; `@weaves` if AOP is ever built, matching `@aspect` |
+  | `expect`, `lock` | R2 — parsed, then `std.debug.panic("not yet implemented")` | **freed** |
+  | `from`, `trace` | R1 — no rule in either compiler | **freed** |
+  | `error` | R1 — orphaned when `aspect` took the `on error(e)` clauses | **still reserved** — BUG-280 |
+  | `try` | R1 — no construct since §28b replaced it with `expr?` | **still reserved** — BUG-280 |
+  | **`implies`** | R1 — sits under *Contracts* | **kept**, on language grounds |
+
+  **Why two of the five you asked for did not ship.** Freeing a word at the tokenizer
+  is only half the job: the compiler then has to be able to EMIT it. Measured after
+  the change, per word and per position — `error` works as a local and a parameter and
+  fails as a **field** (`error: i64 = 0,` in the generated Zig); `try` fails
+  everywhere. Both are Zig keywords, and `isZigKeyword` is a hand-maintained list
+  missing `try` while the field-declaration path never consults it at all (BUG-280).
+
+  Freeing them anyway would have replaced a clear Zebra diagnostic
+  (`expected identifier, got 'try'`) with a Zig parse error against generated code
+  carrying no Zebra source location. That is a worse surface, so they wait. The
+  Parser tests assert they are STILL rejected, so the tokenizer cannot be freed
+  without the emit being fixed first.
+
+  **BUG-280 is a live bug regardless**, which is the part worth acting on: Zebra never
+  reserved `align`, `packed`, `opaque`, `volatile`, `threadlocal`, `anyframe` — all Zig
+  keywords, all legal Zebra identifiers today. `class C / var align: int = 0` does not
+  compile, and has not for as long as the field path has skipped `emitName`.
+
+  Grammar: 465 → **456 rules**, 146 → **143 nonterminals** — exactly the 9 rules and
+  3 nonterminals removed here. `grammar.txt` is regenerated from the rule table.
+
+- [ ] **U4b — delete the vestigial `WeavesOpt` nonterminal (small, and a real hazard)**
+  U4a freed `weaves` by deleting the rule `WeavesOpt → kw_weaves TypeRefListNE`
+  and **keeping the ε production**, so `WeavesOpt` still occupies a slot in the
+  RHS of **14 declaration rules** while always matching empty.
+
+  That was deliberate, and the reason is the interesting part: `src/AstBuilder.zig`
+  addresses parse-tree children by **hardcoded index** — `kids[11]`, `kids[9]` —
+  with the rule's layout written in a **comment** above each function, e.g.
+
+  ```
+  // Non-generic: ModList kw_class id ClassHeader IsClauseOpt HasOpt WeavesOpt eol indent MemberDeclList dedent
+  //   indices:   0       1         2  3           4           5      6         7    8      9              10
+  ```
+
+  Deleting `WeavesOpt` shifts every index after position 6 in all 14 rules, across
+  generic and non-generic variants, checked against nothing but that prose. There
+  are 503 `kids[N]` sites in the file. A wrong index does not necessarily fail
+  loudly — landing on an adjacent optional (`IsClauseOpt` vs `HasOpt`) yields an
+  empty list rather than an error.
+
+  So this is **rule 1b at the scale of a whole file**: a comment enumerating a
+  layout, load-bearing, unchecked. The cleanup is worth doing, but it wants its own
+  session and probably wants the positional access replaced by a
+  find-child-by-nonterminal helper first — which would retire the hazard rather
+  than move it. Filed rather than rushed.
 
   <details><summary>original U4 text, kept for the record</summary>
 

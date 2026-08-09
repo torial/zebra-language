@@ -13,7 +13,6 @@ TopDecl              → UseDecl
                      |  EnumDecl
                      |  ExtendDecl
                      |  AtDirective
-                     |  WeaveDecl
                      |  DeclUnion
                      |  SigDecl
                      |  TypeAliasDecl
@@ -194,11 +193,6 @@ ContractClause       → kw_require eol Block
                      |  kw_test eol Block
 
 WeavesOpt            → ε
-                     |  kw_weaves TypeRefListNE
-
-WeaveDecl            → kw_weaves TypeRef kw_to id kw_def Atom eol
-                     |  kw_weaves TypeRef kw_to id kw_class Atom eol
-                     |  kw_weaves TypeRef kw_to id kw_public kw_def Atom eol
 
 ParamList            → ε
                      |  ParamListNE
@@ -242,8 +236,6 @@ Stmt                 → StmtReturn
                      |  StmtDestructStruct
                      |  StmtAssign
                      |  StmtExpr
-                     |  StmtExpect
-                     |  StmtLock
                      |  StmtDefer
                      |  StmtWith
                      |  StmtIn
@@ -375,10 +367,6 @@ AssignOp             → assign
                      |  question_equals
 
 StmtExpr             → Expr eol
-
-StmtExpect           → kw_expect TypeRef comma Expr eol
-
-StmtLock             → kw_lock Expr eol Block
 
 StmtDefer            → kw_defer Stmt
                      |  kw_errdefer Stmt

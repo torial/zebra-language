@@ -165,8 +165,6 @@ pub const NT = enum {
     IdListNE,            // non-empty comma-separated id list (for destructuring)
     StmtExpr,            // expression used as a statement
 
-    StmtExpect,          // expect TypeRef , Expr eol
-    StmtLock,            // lock Expr eol Block
     StmtDefer,           // defer Stmt | errdefer Stmt
 
     // ── Lambda expressions ─────────────────────────────────────────────────
@@ -227,7 +225,6 @@ pub const NT = enum {
 
     // ── Weaves clause and project-level weave ─────────────────────────────────
     WeavesOpt,    // optional `weaves TypeRefListNE` on class/method
-    WeaveDecl,    // top-level: weaves Aspect to all def|class Pattern
 
     // ── String interpolation ───────────────────────────────────────────────
     InterpBodyS,   // body of single-quoted interpolated string
@@ -302,7 +299,6 @@ const program_rules: []const Rule = &.{
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.EnumDecl) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.ExtendDecl) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.AtDirective) } },
-    .{ .lhs = .TopDecl,     .rhs = &.{ n(.WeaveDecl) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.DeclUnion) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.SigDecl) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.TypeAliasDecl) } },
@@ -714,21 +710,14 @@ const contract_rules: []const Rule = &.{
 
 const weave_rules: []const Rule = &.{
     // Nullable clause on declarations
-    .{ .lhs = .WeavesOpt, .rhs = &.{} }, // ε
-    .{ .lhs = .WeavesOpt, .rhs = &.{ t(.kw_weaves), n(.TypeRefListNE) } },
+    // U4a 2026-08-09: `weaves` freed as an identifier; if AOP is ever built it is
+    // `@weaves`, matching `@aspect`. This nonterminal is deliberately left
+    // EPSILON-ONLY rather than deleted: it sits in the RHS of 14 declaration
+    // rules whose children AstBuilder addresses by hardcoded index, so removing
+    // it shifts those indices against a layout documented only in comments.
+    // Epsilon keeps every index exactly where it was. See NEXT_STEPS U4b.
+    .{ .lhs = .WeavesOpt, .rhs = &.{} }, // ε (always; see above)
 
-    // Project-level: weaves Aspect to all def Pattern
-    .{ .lhs = .WeaveDecl, .rhs = &.{
-        t(.kw_weaves), n(.TypeRef), t(.kw_to), t(.id), t(.kw_def), n(.Atom), t(.eol),
-    } },
-    // Project-level: weaves Aspect to all class Pattern
-    .{ .lhs = .WeaveDecl, .rhs = &.{
-        t(.kw_weaves), n(.TypeRef), t(.kw_to), t(.id), t(.kw_class), n(.Atom), t(.eol),
-    } },
-    // Project-level: weaves Aspect to all public def Pattern
-    .{ .lhs = .WeaveDecl, .rhs = &.{
-        t(.kw_weaves), n(.TypeRef), t(.kw_to), t(.id), t(.kw_public), t(.kw_def), n(.Atom), t(.eol),
-    } },
 };
 
 // ── Parameters ────────────────────────────────────────────────────────────────
@@ -788,8 +777,6 @@ const stmt_rules: []const Rule = &.{
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtDestructStruct) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtAssign) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtExpr) } },
-    .{ .lhs = .Stmt, .rhs = &.{ n(.StmtExpect) } },
-    .{ .lhs = .Stmt, .rhs = &.{ n(.StmtLock) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtDefer) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtWith) } },
     .{ .lhs = .Stmt, .rhs = &.{ n(.StmtIn) } },
@@ -951,13 +938,6 @@ const stmt_rules: []const Rule = &.{
 
     // expression statement (call, etc.)
     .{ .lhs = .StmtExpr, .rhs = &.{ n(.Expr), t(.eol) } },
-
-    // expect ExcType, expr  — assert an expression throws
-    .{ .lhs = .StmtExpect, .rhs = &.{ t(.kw_expect), n(.TypeRef), t(.comma), n(.Expr), t(.eol) } },
-
-    // lock obj eol Block
-    .{ .lhs = .StmtLock, .rhs = &.{ t(.kw_lock), n(.Expr), t(.eol), n(.Block) } },
-
     // defer / errdefer — run on scope exit (/ error exit only)
     // The body is a single Stmt (which may itself be a block-form statement).
     .{ .lhs = .StmtDefer,    .rhs = &.{ t(.kw_defer),    n(.Stmt) } },

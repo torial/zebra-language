@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-278. Next new bug: BUG-279.**
+**Last bug number generated: BUG-280. Next new bug: BUG-281.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -77,6 +77,111 @@ A C `const char*` is `[*:0]const u8` in Zig; the extern lowering emits the
 native slice type instead. Declaration-only externs parse and resolve fine
 (the gap is exactly at the ABI boundary), so BUG-258's fix is confirmed
 working -- this is the next layer down.
+
+### BUG-280: identifier escaping for Zig keywords is a hand-list, and field declarations skip it entirely
+
+**Found 2026-08-09** freeing reserved words under NEXT_STEPS U4a. Five of the seven
+words worked immediately as locals, parameters and fields. Two did not, and the two
+failures are the same root cause seen from different angles.
+
+```
+class C
+    var error: int = 0
+```
+```
+error: expected '.', found ':'      # in the EMITTED Zig
+error: i64 = 0,
+```
+
+```
+def main()
+    var try = 1
+```
+```
+error: expected 'an identifier', found 'try'    # also the emitted Zig
+```
+
+**Two defects, both rule 1.**
+
+1. **`isZigKeyword` (`src/CodeGen.zig:2093`) is a hand-maintained list**, and it is
+   incomplete. It has `error`, `defer`, `switch`, `struct` — and not `try`, `catch`,
+   `orelse`, `if`, `else`, `while`, `for`, `return`, `break`, `continue`, `and`, `or`.
+   The oracle it should be deriving from is Zig's own keyword set.
+
+2. **Field declarations never consult it.** `emitName` exists and does the right thing
+   (`@"error"`), but the struct-field emit path does not go through it — which is why
+   `error` works as a local and a parameter and fails as a field. `self.error = 0` in
+   the generated initialiser is unescaped too.
+
+**Consequence, and why it gates U4a.** `error` and `try` were on Sean's list to free
+and are deliberately **still reserved** because of this. Freeing a word the compiler
+cannot then emit trades a clear Zebra diagnostic (`expected identifier, got 'try'`) for
+a Zig parse error against generated code with no Zebra source location — strictly worse
+for the user, and the exact shape UNGIT test 2 rules out. The other five (`weaves`,
+`expect`, `lock`, `from`, `trace`) are not Zig keywords and are freed.
+
+**This is latent for words that are ALREADY free.** Zebra does not reserve `align`,
+`packed`, `opaque`, `volatile`, `threadlocal`, `noalias`, `linksection`, `addrspace`,
+`anyframe`, `nosuspend`, `suspend`, `resume`, `await`, `async` — all Zig keywords, all
+legal Zebra identifiers today, all presumably broken as field names right now. The
+field-path defect is therefore a live bug for existing code, not only a blocker for
+U4a. **That is the half worth fixing first.**
+
+**Fix direction:** route every identifier emit through `emitName`, and derive the
+keyword set rather than listing it — Zig exposes `std.zig.Token.keywords`, so the list
+can be a lookup into the compiler's own table instead of a copy of it. Both compilers.
+
+**Control when fixing:** a field, a local, a parameter, a `self.X =` assignment and a
+struct-literal initialiser named `align` must all compile and round-trip — `align` is
+chosen because it is a Zig keyword Zebra never reserved, so it tests the LIVE bug rather
+than the U4a blocker, and it will not stop being a Zig keyword the way a fixed bug stops
+being reproducible. Then `error` and `try` can be freed and this entry closed with U4a.
+
+### BUG-279: `zig build test` is red on committed code, in no gate tier, for three unrelated reasons
+
+**Found 2026-08-09** by running it after a front-end change, on the assumption it was
+part of the contract. It is not: `gates.sh` does not run it in either tier, and
+CLAUDE.md's *"What the gates do NOT cover"* section — which exists precisely so the
+unrun set stays visible — does not list it either. So it is neither run nor accounted
+for as unrun, which is the one state that section is designed to make impossible.
+
+It is also the first command in CLAUDE.md's **Build and test** block, three lines under
+`zig build`. A newcomer types it before anything else.
+
+**Three independent failures, none related to the others, all on committed code:**
+
+1. **`src/AstPrinter.zig:283` — `switch must handle all possibilities`**, missing
+   `TypeRef.fn_type`. The inline `def(P): R` function-type was added to
+   `Ast.TypeRef` (the closure-factory work) and the printer never grew a case.
+   Compile error, so `test/main.zig`'s whole integration binary does not build.
+
+2. **`src/CodeGen.zig:17750` — `expected 16 argument(s), found 15`.** A test calls
+   `generate(...)` with the signature it had before a parameter was added. The unit
+   test binary does not build either.
+
+3. **`escape_hatches_check`: `stdlib_preamble.zig` count drift, expected 70, actual
+   **72**.** Two `page_allocator` uses were added without bumping `EXPECTED_PREAMBLE`
+   in `tools/escape_hatches_check.sh`. That tool prints the correct procedure in its
+   own failure message — verify each new use has a comment justifying why it must
+   outlive the program arena, then bump the counter — so this one is **a review, not
+   an edit**, and belongs to whoever added the uses. <!-- bug-open-ok: leg 3 is a review someone else owns; legs 1 and 2 are ordinary fixes -->
+
+**Why the green board did not see any of it.** Legs 1 and 2 are in code that only the
+Zig test binaries compile; `zig build` alone never analyses them, and every gate builds
+the compiler rather than the tests. Leg 3's checker is only invoked from `zig build
+test`. So `gates.sh --full` can be 27/27 — it was, on the commit before this entry —
+while the command in the README is broken three ways.
+
+**The structural fix is not "fix these three".** It is to decide whether `zig build
+test` is part of the contract. If it is, it belongs in a tier and the drift stops being
+possible. If it is not, it belongs in the *uncovered* table with a date, like
+`gramgen`, `node_addon_test` and the GUI paths — which is the whole point of that
+table. Leaving it in neither is how all three of these landed.
+
+**Control when fixing:** legs 1 and 2 must be verified by `zig build test` reaching the
+*run* phase, not merely by the compile error disappearing — a test binary that builds
+and then fails is a different state from one that never built, and the second is what
+has been hiding here.
 
 ### BUG-274: four broad Expr walkers default to FALSE and have gaps — the BUG-260 shape, surveyed
 

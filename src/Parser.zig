@@ -470,14 +470,12 @@ test "parse: invariant block" {
 
 // ── Acceptance: new statements ────────────────────────────────────────────────
 
-test "parse: expect statement" {
-    // StmtExpect → kw_expect TypeRef comma Expr eol
-    try expectAccepts("class Foo\n\tdef run\n\t\texpect Exception, foo()\n");
-}
+// U4a 2026-08-09: the `expect` and `lock` acceptance tests are gone with their
+// keywords. Both parsed and then died in AstBuilder as "not yet implemented", so
+// the only thing they actually reserved was the name. Replaced by their inverse.
 
-test "parse: lock statement" {
-    // StmtLock → kw_lock Expr eol Block
-    try expectAccepts("class Foo\n\tdef run\n\t\tlock mutex\n\t\t\tpass\n");
+test "parse: expect and lock are ordinary identifiers" {
+    try expectAccepts("def main\n\tvar expect = 1\n\tvar lock = 2\n");
 }
 
 test "parse: inline branch-on" {
@@ -545,37 +543,39 @@ test "parse: aspect as a field name" {
     try expectAccepts("class Claim\n\tvar aspect: str = ''\n");
 }
 
-// ── Acceptance: weaves clause ─────────────────────────────────────────────────
+// ── Acceptance: the freed words are ORDINARY IDENTIFIERS ─────────────────────────
+//
+// U4a 2026-08-09. Seven `weaves` acceptance tests lived here. The clause parsed into
+// WeavesOpt and nothing downstream ever read it, and the project-level
+// `weaves X to all def '...'` form died in AstBuilder as "not yet implemented".
+//
+// `implies` is the ONE reserved-but-unimplemented word deliberately KEPT (Sean's
+// call -- it is intended as a contract operator, `a implies b`). It is asserted here
+// as STILL RESERVED, so that if it is ever freed by accident this test says so
+// instead of the change passing silently.
 
-test "parse: method with weaves clause" {
-    // MethodDecl → ... WeavesOpt ...
-    try expectAccepts("class Foo\n\tdef save(data: String) weaves Logging\n");
+test "parse: weaves is an ordinary identifier" {
+    try expectAccepts("def main\n\tvar weaves = 1\n");
 }
 
-test "parse: method with weaves clause and body" {
-    try expectAccepts("class Foo\n\tdef save(data: String) weaves Logging\n\t\tpass\n");
+test "parse: from and trace are ordinary identifiers" {
+    try expectAccepts("def main\n\tvar from = 1\n\tvar trace = 2\n");
 }
 
-test "parse: method weaves multiple aspects" {
-    try expectAccepts("class Foo\n\tdef run weaves Logging, Timing\n\t\tpass\n");
+// `error` and `try` stay reserved until codegen can emit them everywhere (BUG-280).
+// Asserted, so that freeing the tokenizer without fixing the emit is caught here
+// rather than by a user reading a generated-Zig error.
+test "parse: error and try are STILL reserved -- pending BUG-280" {
+    try expectRejects("def main\n\tvar error = 1\n");
+    try expectRejects("def main\n\tvar try = 1\n");
 }
 
-test "parse: class with weaves clause" {
-    // ClassDecl → ... WeavesOpt ...
-    try expectAccepts("class Repository weaves Logging\n\tdef save\n");
+test "parse: the freed words work as parameter names" {
+    try expectAccepts("def f(lock: int, weaves: bool, expect: str, from: int)\n\tpass\n");
 }
 
-test "parse: project-level weave to all def" {
-    // WeaveDecl → kw_weaves TypeRef kw_to kw_all kw_def Atom eol
-    try expectAccepts("weaves Logging to all def 'save*'\n");
-}
-
-test "parse: project-level weave to all class" {
-    try expectAccepts("weaves Timing to all class '*Repository'\n");
-}
-
-test "parse: project-level weave to all public def" {
-    try expectAccepts("weaves Auditing to all public def '*'\n");
+test "parse: implies is STILL reserved -- the one word kept" {
+    try expectRejects("def main\n\tvar implies = 1\n");
 }
 
 // ── Acceptance: error unions ───────────────────────────────────────────────────

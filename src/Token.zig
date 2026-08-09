@@ -208,7 +208,6 @@ pub const TokenKind = enum {
     kw_adds,
     kw_is,
     kw_as,
-    kw_from,
     kw_has,
     kw_static,
     kw_invariant,
@@ -247,10 +246,8 @@ pub const TokenKind = enum {
     kw_assert_false,
     kw_branch,
     kw_on,
-    kw_expect,
     kw_if,
     kw_else,
-    kw_lock,
     kw_while,
     kw_for,
     kw_break,
@@ -258,7 +255,6 @@ pub const TokenKind = enum {
     kw_pass,
     kw_print,
     kw_stop,
-    kw_trace,
     kw_return,
     kw_defer,     // defer stmt — run on scope exit
     kw_errdefer,  // errdefer stmt — run only on error exit
@@ -286,10 +282,19 @@ pub const TokenKind = enum {
     // keyword's only live effect was to block `aspect` as an identifier, which it
     // is in the wild (a DB column name, a parameter name). If AOP is ever built,
     // `@aspect` matches @reflectable/@once and needs no reserved word.
-    kw_weaves,    // weaves clause on class/method; project-level weave declaration
+    // U4a 2026-08-09: kw_weaves removed with kw_aspect. `@weaves` if AOP is ever
+    // built. `implies` is the ONLY reserved-but-unimplemented word kept (Sean's
+    // call) -- it is intended as a contract operator, `a implies b`.
 
     // Error handling (error union path)
-    kw_error,     // used in `on error(e)` advice clauses and error-union types
+    // U4a 2026-08-09: `error` and `try` were to be freed with the other five, and
+    // are NOT. Measured after the tokenizer change: a class field named `error`
+    // emits `error: i64 = 0,` and `try` emits unescaped in every position, because
+    // `isZigKeyword` (CodeGen.zig:2093) is a hand-maintained list missing `try`, and
+    // field declarations never consult it at all. Freeing a word whose codegen then
+    // fails trades a clear Zebra error for a confusing generated-Zig one. BUG-280.
+    kw_error,
+    kw_try,
 
     // Closures / contextual self / struct update
     kw_capture,   // capture block — explicit closure state declaration
@@ -309,7 +314,6 @@ pub const TokenKind = enum {
     // Error propagation
     kw_raise,     // raise an error (with optional details)
     kw_throws,    // method annotation — method may propagate errors
-    kw_try,       // propagate error upward (expression) or try/catch block (statement)
 
 };
 
@@ -338,7 +342,6 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "adds",        .kw_adds },
     .{ "is",          .kw_is },
     .{ "as",          .kw_as },
-    .{ "from",        .kw_from },
     .{ "has",         .kw_has },
     .{ "static",      .kw_static },
     .{ "invariant",   .kw_invariant },
@@ -368,10 +371,8 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "assert_false", .kw_assert_false },
     .{ "branch",       .kw_branch },
     .{ "on",          .kw_on },
-    .{ "expect",      .kw_expect },
     .{ "if",          .kw_if },
     .{ "else",        .kw_else },
-    .{ "lock",        .kw_lock },
     .{ "while",       .kw_while },
     .{ "for",         .kw_for },
     .{ "break",       .kw_break },
@@ -381,7 +382,6 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     // `stop` is intentionally NOT reserved: kw_stop is unused by the parser and
     // `stop` is an extremely common method name (Sound/Animation/Tween :Stop()).
     // Reserving it broke `.stop()` calls — tokenize it as a plain identifier.
-    .{ "trace",       .kw_trace },
     .{ "return",      .kw_return },
     .{ "defer",       .kw_defer },
     .{ "errdefer",    .kw_errdefer },
@@ -397,9 +397,9 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "true",        .kw_true },
     .{ "false",       .kw_false },
     .{ "nil",         .kw_nil },
+    .{ "error",       .kw_error },   // still reserved -- BUG-280
+    .{ "try",         .kw_try },     // still reserved -- BUG-280
     .{ "vari",        .kw_vari },
-    .{ "weaves",      .kw_weaves },
-    .{ "error",       .kw_error },
     .{ "capture",     .kw_capture },
     .{ "with",        .kw_with },
     .{ "except",      .kw_except },
@@ -407,7 +407,6 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "guard",       .kw_guard  },
     .{ "raise",       .kw_raise  },
     .{ "throws",      .kw_throws },
-    .{ "try",         .kw_try    },
     .{ "where",       .kw_where  },
     .{ "arena",       .kw_arena     },
     .{ "allocate",    .kw_allocate  },
