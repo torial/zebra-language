@@ -1,0 +1,42 @@
+# BUG-278 regression: `result` inside an ensure clause must be found however it is
+# nested. containsResultRef decides whether genEnsureBlock emits `var _result: T`,
+# while genExpr emits `_result` for every Expr.result_ it reaches — so a variant the
+# walker did not model produced a reference to a local that was never declared:
+#
+#   error: use of undeclared identifier '_result'
+#
+# Loud rather than silent (unlike BUG-260's class), but the user sees a Zig error
+# against generated code with no Zebra source location.
+#
+# Three of the four missing variants had reproducers and are asserted below; the
+# fourth (lambda) is handled in the walker without one, since the AST says the
+# variant holds an expression and that is the whole standard the lint applies.
+#
+# The same walk exists twice — collectAndEmitOldSnapshots does it for `old()` — and
+# the two had already drifted apart, one handling `slice`/`except_` and the other
+# not. Both now carry `# expr-walker: exhaustive`, so the lint keeps them in step
+# instead of someone remembering to edit both.
+
+class P
+    var n: int = 0
+
+def head(s: str): str
+    ensure
+        result[0..1] == "a"
+    return s
+
+def find(k: int): P?
+    ensure
+        result?.n != 99
+    return P()
+
+def bump(p: P): P
+    ensure
+        (result except n = 1).n == 1
+    return p
+
+def main()
+    print(head("abc"))
+    print(find(1)!.n)
+    print(bump(P()).n)
+    print("bug278: OK")

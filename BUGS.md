@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-277. Next new bug: BUG-278.**
+**Last bug number generated: BUG-278. Next new bug: BUG-279.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -78,58 +78,6 @@ native slice type instead. Declaration-only externs parse and resolve fine
 (the gap is exactly at the ABI boundary), so BUG-258's fix is confirmed
 working -- this is the next layer down.
 
-### BUG-277: a user class field named `path` (or `text`/`name`/`message`) is force-typed to `str`
-
-**Found 2026-08-08** while red-teaming BUG-276's fix. This compiles nowhere:
-
-```
-class Route
-    var path: int = 0
-
-def main()
-    var r = Route()
-    r.path = 7
-```
-```
-error: expected type 'str', found 'i64'
-```
-
-`isStringExpr` (`selfhost/CodeGen.zbr:10674`) decides "is this expression a string?" by
-MEMBER NAME:
-
-```
-if m.member == "text" or m.member == "name" or m.member == "message"
-   or m.member == "path" or m.member == "stdout" or m.member == "stderr"
-   or m.member == "src" or m.member == "member"
-```
-
-so any field with one of those eight names is treated as a string regardless of its
-DECLARED type. `path`, `name`, `text` and `message` are among the most common field names
-there are; a `Route.path`, a `Node.name`, a `Token.text` or an `Err.message` of any
-non-string type is unwritable.
-
-**Filed while REJECTING a proposed fix of exactly this shape.** The minimal fix offered
-for BUG-276 was to add `method`/`path`/`content` to the sibling member-name whitelist in
-the TypeChecker. This bug is what that mechanism does when the name is common — so the
-proposal would have added two more instances of a live bug rather than one feature. The
-type-based fix shipped instead (BUG-276) and does not touch user classes at all.
-
-**Why it survives:** the heuristic only fires when the walker CANNOT resolve the type, so
-it is invisible whenever inference works — and it fails toward "string", which is right
-often enough in stdlib code that nobody chased it. That is rule 1b in the wild: a
-hand-maintained list, in a default position, asserting something false about a whole class
-of programs.
-
-**Fix direction:** the name heuristic is a fallback for types the walker cannot resolve.
-It must never override a type the walker CAN resolve — check `fieldTypeAny` first and only
-consult the name list when it returns nil. That inverts today's precedence, which is what
-makes a declared `int` lose to a guess.
-
-**Control when fixing:** a user class field named `path`/`name`/`text` with a declared
-non-string type must keep it; a genuinely unresolved `.stdout`/`.stderr` (Shell.Result,
-which has no declared type anywhere) must still be treated as a string, or the fallback's
-original purpose is lost.
-
 ### BUG-274: four broad Expr walkers default to FALSE and have gaps — the BUG-260 shape, surveyed
 
 **Found 2026-08-07** by running `lint_expr_walkers`'s analysis read-only across ALL 53
@@ -147,8 +95,18 @@ danger is not "has gaps" — it is "has gaps AND defaults to FALSE":
 |---|---|---|---|
 | `exprMentionsThis` | 16 | **12** | CodeGen.zbr |
 | `exprHasTry` | 17 | 10 | CgHelpers.zbr |
-| `containsResultRef` | 22 | 6 | CodeGen.zbr |
+| ~~`containsResultRef`~~ | 22 | 6 | **CLOSED — BUG-278, 3 of 4 reproduced** |
 | `exprHasSelfCall` | 25 | 2 | CgHelpers.zbr |
+
+**Every gap count in that table is inflated by one, and the inflation is the LINT's, not
+the code's.** `lint_expr_walkers` hardcodes `ident` as ident-bearing — correctly, because a
+walker asking *"does this use the name X?"* that skips idents is broken by definition. But
+`containsResultRef` and `collectAndEmitOldSnapshots` ask a different question, *"does this
+contain a node of KIND K?"*, and an `ident` can never be one: `AstBuilder` builds
+`Expr.result_` from `PNode.expr_result` and `Expr.old_` from an `old` construct, never from
+an identifier. Both now carry an `expr-walker-ok: ident` waiver with that reasoning. Before
+working `exprHasTry` (10) or `exprMentionsThis` (12), check which of their gaps are the
+same artifact — and note this ticket already warns against working it by counting.
 
 Five other broad walkers default conservatively (`true` / `pass`), so their gaps are
 harmless — the same asymmetry that made BUG-260 silent while the identical omission in
@@ -194,6 +152,20 @@ answer nothing acts on is a cosmetic finding.
 EXACT" constraint from the differential-fuzzer work, and there is now measured evidence
 that its gaps are unreached rather than latent. Changing a hot path on gap-count alone
 would be change without evidence.
+
+**PROBED 2026-08-08 — `containsResultRef` CLOSED as BUG-278, and the method worked.** Its
+consumer emits `var _result: T` only when it says yes, while `genExpr` emits `_result`
+unconditionally, so a wrong FALSE produces `use of undeclared identifier '_result'`. Three
+of its four remaining candidates reproduced on the first attempt (`slice`, `opt_chain`,
+`except_`). Two lessons for the two walkers still open:
+
+1. **Diff the twin before editing.** `collectAndEmitOldSnapshots` does the same walk for
+   `old()` and had *already* diverged — it handled `slice` and `except_`, this one did not.
+   Neither had drifted from a spec; they had drifted from *each other*.
+2. **Grade by loudness, not by gap count.** These gaps were real and worth fixing, but the
+   symptom is a hard Zig error, not a wrong program. That is a different severity from
+   BUG-260 and belongs in the triage, since `exprMentionsThis`'s probe found the same
+   thing (loud, and unreachable besides).
 
 **Control when fixing:** each walker needs BOTH directions, as BUG-260 and BUG-267 did —
 the newly-handled construct must be detected, AND something that genuinely lacks the

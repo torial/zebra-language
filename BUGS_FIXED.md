@@ -6,6 +6,98 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-278: `result` nested in a slice / `?.` / `except` inside an ensure emitted an undeclared `_result` — ✅ FIXED 2026-08-08
+
+**Found 2026-08-08** working BUG-274's list the way that ticket prescribes: find the
+consumer, work out what a wrong FALSE would produce, and try to produce it.
+
+`containsResultRef` decides whether `genEnsureBlock` emits `var _result: T = undefined;`.
+`genExpr` emits `_result` for every `Expr.result_` it reaches, unconditionally. So a
+variant the walker did not model produced a reference to a local that was never declared:
+
+```
+def head(s: str): str
+    ensure
+        result[0..1] == "a"
+    return s
+```
+```
+error: use of undeclared identifier '_result'
+```
+
+Three of the four candidate variants reproduced — `slice`, `opt_chain` (`result?.n`) and
+`except_` (`(result except n = 1).n`). The fourth, `lambda`, is now handled without a
+reproducer, because the AST says the variant holds an expression and that is the entire
+standard the lint applies; its statement body is waived in place with a reason rather
+than silently defaulted.
+
+**THE FAILURE MODE IS LOUD, which grades this differently from BUG-260.** An undeclared
+identifier is a hard Zig error, so no program silently did the wrong thing — but the user
+sees it against *generated* code, with no Zebra source location, for a contract they wrote
+in three legal tokens. That is the right severity to record: real, not silent.
+
+**The twin had already drifted.** `collectAndEmitOldSnapshots` walks the same shape for
+`old()`, with the same consumer pattern (`_old_N` emitted unconditionally, declared only
+where the walker looks). It handled `slice` and `except_`; `containsResultRef` did not.
+Two hand-maintained parallel walkers, diverged, exactly as rule 1 predicts. Fixing one and
+shipping would have been this session's second-`@import`-site mistake a second time — the
+sibling was found by diffing the two arm sets before editing either, not by luck.
+
+Both now carry `# expr-walker: exhaustive`, so `lint_expr_walkers` keeps them in step.
+Opted-in coverage 2 → 4 walkers. Pinned by `test/bug278_ensure_result_walker_test.zbr`.
+
+### BUG-277: a class field named `path`/`name`/`text`/`message` printed as a string inside `"${...}"` — ✅ FIXED 2026-08-08
+
+**Filed 2026-08-08 while REJECTING a proposed fix of exactly this shape** (see BUG-276),
+then fixed the next day.
+
+**THE REPRO AS ORIGINALLY FILED WAS WRONG AND IS CORRECTED HERE.** It claimed
+`r.path = 7` on a class with `var path: int` failed with `expected type 'str', found
+'i64'`. It does not — that program compiles and runs. The error string was recorded from
+a different probe and never re-run. An unverified repro in a ledger is precisely the
+hazard class this repo is built around, so it is called out rather than quietly replaced.
+Verified trigger:
+
+```
+class Route
+    var path: int = 0
+def main()
+    var r = Route()
+    print("p=${r.path}")
+```
+```
+error: invalid format string 's' for type 'i64'
+```
+
+**Interpolation specifically** — `print(r.path)` was always fine. That asymmetry is the
+whole bug. `printFmtSpec` consults the name heuristic ONLY after inference falls through
+to unknown/unresolved, which is the correct order; the interpolation path
+(`genStringInterp`) asks `isStringBoth` **first** and never reaches it. `isStringBoth` was
+an unconditional OR of a precise walker and an imprecise heuristic, so the heuristic could
+overrule a type the walker had already resolved.
+
+The heuristic is `isStringExpr`, which force-types eight member names —
+`text`/`name`/`message`/`path`/`stdout`/`stderr`/`src`/`member` — regardless of
+declaration. Four of those are among the most common field names there are.
+
+**Fixed by inverting the precedence, not by shortening the list.** When the walker
+resolves a definite non-string scalar, the heuristic is not consulted. It keeps its
+original job unchanged: it is still the only answer available for a type nothing can
+resolve, which is the `Shell.Result.stdout` case it was written for. Both directions are
+pinned by `test/bug277_member_name_forced_str_test.zbr` — `path: int` prints as a number
+AND `name: str` still prints as a string.
+
+The predicate is deliberately NOT the `isPrimType` sitting directly below it, which looks
+identical: that one exists for the numeric-emit decision and includes `void_`. Sharing it
+would make this fix change silently the next time someone extends it for its own purpose,
+and would import an inference artifact (a `void` here is far more often the walker failing
+than a real type — BUG-271).
+
+One line of BUG-276's entry below overstates this bug and is left standing as written with
+this correction attached: it says an `int` field named `path` "does not compile today".
+Only the interpolated form fails. The argument it was making — that widening a
+member-name whitelist is the wrong shape of fix — is unaffected.
+
 ### BUG-276: HttpRequest's fields were untyped in the selfhost, so `req.method == x` did not compile — ✅ FIXED 2026-08-08
 
 **Reported from the Graze web-framework spike.** `req.method == route.method` failed with

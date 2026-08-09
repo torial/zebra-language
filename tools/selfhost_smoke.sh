@@ -1328,6 +1328,18 @@ smoke_run     test/bug275_try_in_container_test.zbr "bug275: OK"
 # `path`. Reaching the print proves the file compiled, which is the property at issue.
 smoke_run     test/bug276_http_request_str_test.zbr "bug276: OK"
 
+# BUG-277: `isStringBoth` consulted the member-NAME heuristic even when the walker had
+# already resolved the type, so a class field `var path: int` emitted `{s}` inside a
+# string interpolation. Asserts both directions — the int/float/bool fields print as
+# themselves AND a genuine `name: str` still prints as a string, because the heuristic
+# is still the only answer available for a type nothing can resolve.
+smoke_run     test/bug277_member_name_forced_str_test.zbr "bug277: OK"
+
+# BUG-278: `result` nested inside slice / opt_chain / except_ in an ensure clause was
+# not found by containsResultRef, so `_result` was referenced without being declared.
+# Reaching the print proves all three shapes emitted a well-formed contract block.
+smoke_run     test/bug278_ensure_result_walker_test.zbr "bug278: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

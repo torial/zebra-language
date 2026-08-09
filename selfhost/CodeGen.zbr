@@ -2793,7 +2793,48 @@ struct Generator
         if .infer_ctx != nil
             if .isStringWalker(e)
                 return true
+            # BUG-277: the walker RESOLVED this to a definite non-string scalar, so
+            # the name heuristic must not overrule it. isStringExpr force-types eight
+            # common member names (text/name/message/path/stdout/stderr/src/member) to
+            # `str` REGARDLESS of declaration, and without this line a class field
+            # `var path: int` printed as `"${r.path}"` emits `{s}` — Zig rejects it
+            # with "invalid format string 's' for type 'i64'". Note the ordering is
+            # what broke: printFmtSpec had this right already (it consults the
+            # heuristic ONLY after inference falls through to unknown/unresolved),
+            # but the interpolation path asks isStringBoth first and never gets there.
+            #
+            # The heuristic keeps its original job unchanged — it is still the only
+            # answer available when the type is genuinely unresolved, which is the
+            # Shell.Result `.stdout`/`.stderr` case it was written for.
+            if .isDefiniteNonStringScalar(e)
+                return false
         return isStringExpr(e)
+
+    # BUG-277. Deliberately NOT isPrimType, which sits directly below and looks like
+    # the same predicate: that one exists for the numeric-emit decision and includes
+    # `void_`, so sharing it would (a) make this fix change silently the next time
+    # someone extends it for its own purpose and (b) import an inference artifact —
+    # a `void` here is far more often the walker failing than a real type (BUG-271).
+    # What this names is exactly the claim the call site makes: "a string guess must
+    # not override THIS type."
+    def isDefiniteNonStringScalar(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var t: Type_ = inferExpr(e, .infer_ctx!)
+        branch t
+            on Type_.int_   return true
+            on Type_.uint_  return true
+            on Type_.float_ return true
+            on Type_.bool_  return true
+            on Type_.char_  return true
+            on Type_.int_n as _
+                return true
+            on Type_.uint_n as _
+                return true
+            on Type_.float_n as _
+                return true
+            else
+                return false
 
     def isPrimType(e: Expr): bool
         if .infer_ctx == nil
@@ -8986,10 +9027,25 @@ struct Generator
             w.emit(context)
             w.emit("'\\n\", .{});\n")
 
-    # Emit `const _old_{uid} = <operand>;` for every old() node found (depth-first).
-    # Each old_ node carries a stable uid assigned by the astbuilder — no ordering
-    # dependency between this traversal and the genExpr emit pass.
     # True if any sub-expression is `result` (the contract return-value reference).
+    #
+    # BUG-278: its consumer (genEnsureBlock) emits `var _result: T = undefined;` only
+    # when this returns true, while genExpr emits `_result` for every Expr.result_ it
+    # reaches. A missed variant therefore emits a reference to a local that was never
+    # declared — LOUD (`use of undeclared identifier '_result'`), unlike BUG-260's
+    # silent class, but the user sees a Zig error against generated code with no Zebra
+    # source location. It had drifted from its own twin below: collectAndEmitOldSnapshots
+    # handled `slice` and `except_` and this did not, which is the divergence you get
+    # from maintaining two parallel walkers by hand. Both now opt in to the lint.
+    # expr-walker: exhaustive
+    # expr-walker-ok: zig_lit — a raw Zig literal cannot contain a Zebra `result` node.
+    #   Its identifiers live in a string (BUG-267), and `result` there is already Zig.
+    # expr-walker-ok: ident — the lint hardcodes `ident` as ident-bearing because a NAME
+    #   walker that skips it is broken by definition. This is not a name walker: it hunts
+    #   one node KIND, Expr.result_, and the parser emits that kind for `result` rather
+    #   than an ident. An ident therefore cannot be one, structurally. The hardcode is
+    #   right for the walkers it was written for and wrong here, so it is declared per
+    #   walker rather than weakened in the tool — the tool cannot know a walker's question.
     def containsResultRef(e: Expr): bool
         branch e
             on Expr.result_
@@ -9063,9 +9119,59 @@ struct Generator
                     if containsResultRef(op)
                         return true
                 return false
+            on Expr.slice as slc
+                # `ensure result[0..1] == "a"` — reproduced, BUG-278.
+                if containsResultRef(slc.object)
+                    return true
+                if slc.start != nil
+                    if containsResultRef(slc.start!)
+                        return true
+                if slc.stop_ != nil
+                    if containsResultRef(slc.stop_!)
+                        return true
+                return false
+            on Expr.except_ as exc
+                # `ensure (result except n = 1).n == 1` — reproduced, BUG-278.
+                if containsResultRef(exc.base)
+                    return true
+                for f in exc.fields
+                    if containsResultRef(f.value)
+                        return true
+                return false
+            on Expr.opt_chain as oc
+                # `ensure result?.n != 99` — reproduced, BUG-278.
+                if containsResultRef(oc.base)
+                    return true
+                for oa in oc.args
+                    if containsResultRef(oa.value)
+                        return true
+                return false
+            on Expr.lambda as lam
+                # No reproducer was produced for this one; it is here because the
+                # AST says the variant holds an expression, which is the whole
+                # standard the lint applies. A statement-bodied lambda needs a Stmt
+                # walker this helper does not have — waived below rather than
+                # silently defaulted, since an undeclared exception is
+                # indistinguishable from a bug.
+                # expr-walker-ok: lambda — stmts body not walked; expr body is.
+                if lam.body_ is LambdaBody.expr_ as lbe
+                    return containsResultRef(lbe)
+                return false
             else
                 return false
 
+    # Emit `const _old_{uid} = <operand>;` for every old() node found (depth-first).
+    # Each old_ node carries a stable uid assigned by the astbuilder — no ordering
+    # dependency between this traversal and the genExpr emit pass.
+    #
+    # The twin of containsResultRef above, with the same failure mode one level over:
+    # a missed variant emits `_old_N` with no `const _old_N` to match it. Kept in step
+    # with it by the lint rather than by remembering to edit both.
+    # expr-walker: exhaustive
+    # expr-walker-ok: zig_lit — a raw Zig literal cannot contain a Zebra `old` node.
+    # expr-walker-ok: ident — same reasoning as its twin above: this hunts the node KIND
+    #   Expr.old_, which AstBuilder builds from an `old` construct with a snapshot uid,
+    #   never from an identifier. Verified at AstBuilder.zbr:942, not assumed.
     def collectAndEmitOldSnapshots(e: Expr)
         branch e
             on Expr.old_ as o
@@ -9142,6 +9248,14 @@ struct Generator
             on Expr.chained_cmp as cc
                 for op in cc.operands
                     collectAndEmitOldSnapshots(op)
+            on Expr.opt_chain as oc
+                collectAndEmitOldSnapshots(oc.base)
+                for oa in oc.args
+                    collectAndEmitOldSnapshots(oa.value)
+            on Expr.lambda as lam
+                # expr-walker-ok: lambda — stmts body not walked; expr body is.
+                if lam.body_ is LambdaBody.expr_ as lbe
+                    collectAndEmitOldSnapshots(lbe)
             else
                 pass
 

@@ -1,0 +1,38 @@
+# BUG-277 regression: a class field whose NAME is one of the eight that
+# isStringExpr force-types to `str` must keep its declared type.
+#
+# The heuristic (CodeGen.zbr, isStringExpr) answers "is this a string?" by member
+# NAME — text/name/message/path/stdout/stderr/src/member — and `isStringBoth` used
+# to consult it even when the walker had already RESOLVED the type. Inside a string
+# interpolation that produced `{s}` for an i64 and the emitted Zig was rejected:
+#
+#   error: invalid format string 's' for type 'i64'
+#
+# Note the trigger is interpolation specifically. `print(r.path)` was always fine:
+# printFmtSpec consults the heuristic only after inference falls through, which is
+# the correct order. The interpolation path asked isStringBoth first.
+#
+# Both directions are asserted here. The heuristic is still the ONLY answer
+# available when a type is genuinely unresolved, so the fix must not have disabled
+# it — `name: str` below has to keep printing as a string.
+
+class Route
+    var path: int = 0
+    var name: str = ""
+    var text: float = 0.0
+    var message: bool = false
+
+def main()
+    var r = Route()
+    r.path = 7
+    r.name = "home"
+    r.text = 1.5
+    r.message = true
+    # The regression: each of these emitted {s} against a non-string type.
+    print("path=${r.path}")
+    print("text=${r.text}")
+    print("message=${r.message}")
+    # The control: a field with the same force-typed NAME and a real str type
+    # must still be treated as a string.
+    print("name=${r.name}")
+    print("bug277: OK")
