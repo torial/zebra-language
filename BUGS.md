@@ -78,59 +78,6 @@ native slice type instead. Declaration-only externs parse and resolve fine
 (the gap is exactly at the ABI boundary), so BUG-258's fix is confirmed
 working -- this is the next layer down.
 
-### BUG-275: a `?` inside an INDEX expression does not mark the function `throws`, and the emit is invalid Zig
-
-**Found 2026-08-08** by probing BUG-274's survey — the first CONFIRMED instance from it,
-and the only real one in roughly thirty gaps probed.
-
-```
-def risky(): int throws
-    raise "boom"
-
-def idx(): int
-    var arr: List(int) = List(int)()
-    arr.add(9)
-    return arr[risky()?]        # the `?` is inside an INDEX
-
-def main()
-    print(idx())
-```
-
-`exprHasTry` has no `Expr.index` case, so `bodyHasRaise` answers false, so `auto_throws`
-is not set (`selfhost/CodeGen.zbr:4514`) — while codegen still emits the `try`:
-
-```zig
-pub fn _zbr_fn_idx() i64 {          // <- NOT anyerror!i64
-    return arr.items[@as(usize, @intCast((try _zbr_fn_risky())))];
-}
-```
-```
-error: expected type 'i64', found 'anyerror'
-note: function cannot return an error
-```
-
-**The control is what makes this a finding rather than a guess.** The same `?` in a
-HANDLED position emits `anyerror!i64`; in the index position it emits `i64`, with a `try`
-in the body either way. One variable, opposite results.
-
-**Two probe traps hit on the way, both worth knowing:**
-
-1. **Zig only analyses REFERENCED functions.** The first probe never called `idx()`, so
-   `zig` never looked at it and the program "compiled". A dead function proves nothing —
-   the call site is part of the test.
-2. **`zebra -c` reports rc=0 on this**, because check mode is front-end-only by design
-   (CLAUDE.md documents "exits 0 on non-compiling emit"). Not a second bug — but it means
-   `-c` cannot be the oracle for this class, and the emitted Zig must be compiled directly.
-
-**Fix:** add the `index` case to `exprHasTry` (both `.object` and `.index`). The other
-gaps in that walker — `array_lit`, `list_lit`, `slice`, `opt_chain`, `except_`, `old_`,
-`lambda` — are the same shape and probably the same bug; each needs its own probe rather
-than a bulk edit.
-
-**Control when fixing:** `?` inside an index must mark the function throws AND the emitted
-Zig must compile (compile it directly — `-c` will not tell you); a function with NO `?`
-must still NOT be marked throws, or every function in the corpus becomes an error union.
-
 ### BUG-274: four broad Expr walkers default to FALSE and have gaps — the BUG-260 shape, surveyed
 
 **Found 2026-08-07** by running `lint_expr_walkers`'s analysis read-only across ALL 53

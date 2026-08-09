@@ -6,6 +6,95 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-275: a `?` inside a container expression did not mark the function `throws` — ✅ FIXED 2026-08-08
+
+**Found 2026-08-08** by probing BUG-274's survey — the first CONFIRMED instance from it,
+and the only real one in roughly thirty gaps probed.
+
+```
+def risky(): int throws
+    raise "boom"
+
+def idx(): int
+    var arr: List(int) = List(int)()
+    arr.add(9)
+    return arr[risky()?]        # the `?` is inside an INDEX
+
+def main()
+    print(idx())
+```
+
+`exprHasTry` has no `Expr.index` case, so `bodyHasRaise` answers false, so `auto_throws`
+is not set (`selfhost/CodeGen.zbr:4514`) — while codegen still emits the `try`:
+
+```zig
+pub fn _zbr_fn_idx() i64 {          // <- NOT anyerror!i64
+    return arr.items[@as(usize, @intCast((try _zbr_fn_risky())))];
+}
+```
+```
+error: expected type 'i64', found 'anyerror'
+note: function cannot return an error
+```
+
+**The control is what makes this a finding rather than a guess.** The same `?` in a
+HANDLED position emits `anyerror!i64`; in the index position it emits `i64`, with a `try`
+in the body either way. One variable, opposite results.
+
+**Two probe traps hit on the way, both worth knowing:**
+
+1. **Zig only analyses REFERENCED functions.** The first probe never called `idx()`, so
+   `zig` never looked at it and the program "compiled". A dead function proves nothing —
+   the call site is part of the test.
+2. **`zebra -c` reports rc=0 on this**, because check mode is front-end-only by design
+   (CLAUDE.md documents "exits 0 on non-compiling emit"). Not a second bug — but it means
+   `-c` cannot be the oracle for this class, and the emitted Zig must be compiled directly.
+
+**Fix:** add the `index` case to `exprHasTry` (both `.object` and `.index`). The other
+gaps in that walker — `array_lit`, `list_lit`, `slice`, `opt_chain`, `except_`, `old_`,
+`lambda` — are the same shape and probably the same bug; each needs its own probe rather
+than a bulk edit.
+
+**Control when fixing:** `?` inside an index must mark the function throws AND the emitted
+Zig must compile (compile it directly — `-c` will not tell you); a function with NO `?`
+must still NOT be marked throws, or every function in the corpus becomes an error union.
+
+---
+
+**FIXED 2026-08-08.** `exprHasTry` gained `index`, `list_lit`, `array_lit`, `slice`,
+`opt_chain`, `except_` and `old_`. All three probed forms now emit `anyerror!i64` and the
+previously-invalid Zig compiles.
+
+**`lambda` deliberately EXCLUDED.** A `try` inside a lambda body belongs to the LAMBDA's
+error surface, not the enclosing function's; recursing would mark the outer function
+throws for an error it never sees — wrong in the opposite direction. Completing the set
+mechanically would have introduced that bug while fixing three.
+
+**Fixed comprehensively rather than one probed variant at a time, contradicting BUG-274's
+advice ON PURPOSE.** This walker asks "does this subtree contain a try?", which has the
+SAME answer shape for every container — yes if any child says yes — so a container that
+does not recurse is wrong by construction. `exprMentionsThis` is the opposite case: its
+right answer genuinely varies per variant, which is why it was probed and left alone. The
+rule is **probe when the answer varies, derive when it does not**.
+
+**A failed regen on the way, worth recording.** The first attempt used `if sl.start as
+sst` to unwrap a `^Expr?`; that binding hands you the POINTER and the bootstrap rejected
+the emit (`expected type 'Ast.Expr', found '*Ast.Expr'`). `zebra -c` passed it — only the
+regen, where the BOOTSTRAP compiles selfhost source, caught it. Both sibling walkers
+already used `!= nil` + `!`, which emits `sl.start.?.*`.
+
+Note `TypeChecker.zbr:3388` documents this hazard and says it does NOT bite in a
+condition. That is true for `on X as y` and FALSE for `if opt as y`. The distinction is
+now written at the site, since the existing note points the wrong way.
+
+**Pinned by `test/bug275_try_in_container_test.zbr`**, both directions: the three
+container forms must come back throws (their `catch` call sites only compile if they do),
+and `noTry()` must NOT become an error union — an over-applied fix would turn every
+function in the corpus into one and still pass a detection-only fixture.
+
+gates.sh --full 26/26.
+
+
 ### BUG-273: a failed `assert` named nothing — and was UNDEFINED BEHAVIOUR in release — ✅ FIXED 2026-08-07
 
 **Found 2026-08-07** while building the BUG-259 control. `assert` is what the entire

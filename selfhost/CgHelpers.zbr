@@ -291,9 +291,74 @@ def exprHasTry(expr: Expr): bool
                 if exprHasTry(telem)
                     return true
             return false
+        # BUG-275: the containers below were listed in the `else` comment as forms that
+        # "none contain bare try_ in practice". Three of them measurably do:
+        #
+        #     xs[risky()?]        index      -> emitted `i64`, body contains `try`
+        #     [risky()?, 2]       list_lit   -> same
+        #     @[risky()?, 2]      array_lit  -> same
+        #
+        # This walker feeds `bodyHasRaise`, which sets `auto_throws` (CodeGen.zbr:4514).
+        # A missed `try` means the function is NOT marked throws while codegen still emits
+        # the `try` — invalid Zig: "expected type 'i64', found 'anyerror'; function cannot
+        # return an error". Confirmed against a control: the same `?` in a HANDLED position
+        # emits `anyerror!i64`, in an index position `i64`, with a `try` in the body either
+        # way.
+        #
+        # Added COMPREHENSIVELY rather than one probed variant at a time, and that is a
+        # judgement specific to this walker: its question ("does this subtree contain a
+        # try?") has the SAME answer shape for every container — yes if any child says yes.
+        # Contrast `exprMentionsThis`, where the right answer genuinely differs per variant
+        # and BUG-274 therefore says probe before touching. Here, a container that does not
+        # recurse is wrong by construction, so the AST's own notion of "has child
+        # expressions" is the correct completion.
+        on Expr.index as ix
+            if exprHasTry(ix.object)
+                return true
+            return exprHasTry(ix.index)
+        on Expr.list_lit as ll
+            for lel in ll.elems
+                if exprHasTry(lel)
+                    return true
+            return false
+        on Expr.array_lit as al
+            for ael in al.elems
+                if exprHasTry(ael)
+                    return true
+            return false
+        on Expr.slice as sl
+            if exprHasTry(sl.object)
+                return true
+            # `!= nil` + `!` unwrap, NOT `if sl.start as sst`. An optional binding of a
+            # `^Expr?` hands you the POINTER — `exprHasTry(sst)` emitted
+            # `exprHasTry(sst)` with sst: *Ast.Expr and the bootstrap rejected it
+            # ("expected type 'Ast.Expr', found '*Ast.Expr'"). The `!` form derefs.
+            # Both sibling walkers (nameUsedInExpr:561, mightUseNameInExpr:780) already
+            # spell it this way; TypeChecker.zbr:3388 documents the same hazard for a
+            # branch-bound `^T`, but notes it does NOT bite in a condition — which is
+            # true for `on X as y` and NOT for `if opt as y`, the distinction that cost
+            # this a regen cycle.
+            if sl.start != nil
+                if exprHasTry(sl.start!)
+                    return true
+            if sl.stop_ != nil
+                if exprHasTry(sl.stop_!)
+                    return true
+            return false
+        on Expr.opt_chain as oc
+            return exprHasTry(oc.base)
+        on Expr.except_ as ex
+            return exprHasTry(ex.base)
+        on Expr.old_ as ol
+            return exprHasTry(ol.operand)
         else
-            # Literals, nil_, this_, ident, zig_lit, list_lit, array_lit,
-            # lambda, index, slice -- none contain bare try_ in practice.
+            # Genuinely leaf: literals, nil_, this_, ident, result_.
+            #
+            # `lambda` is deliberately NOT here and deliberately NOT recursed into: a `try`
+            # inside a lambda body belongs to the LAMBDA's error surface, not the enclosing
+            # function's, so marking the outer function `throws` for it would be wrong in
+            # the opposite direction. `zig"…"` is also out — its contents are opaque text,
+            # the same limit recorded in BUG-267.
             return false
 
 # ── bodyHasRaise ─────────────────────────────────────────────────────────────

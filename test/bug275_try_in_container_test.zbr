@@ -1,0 +1,53 @@
+# BUG-275: a `?` inside a CONTAINER expression must mark the enclosing function `throws`.
+#
+# `exprHasTry` feeds `bodyHasRaise`, which sets `auto_throws` (CodeGen.zbr:4514). Three
+# containers were missing, so the function stayed un-marked while codegen still emitted
+# the `try` — invalid Zig:
+#
+#     pub fn _zbr_fn_f() i64 {            // not anyerror!i64
+#         return arr.items[... (try _zbr_fn_risky()) ...];
+#     }
+#     error: expected type 'i64', found 'anyerror'
+#
+# The `else` arm's comment had asserted these hold no try "in practice". Three of the
+# ten forms it named do. That comment was a hand-maintained oracle wearing documentation
+# as a disguise — the same shape as BUG-260, BUG-267 and BUG-271.
+#
+# BOTH DIRECTIONS. The functions below MUST come back throws (each returns via `catch`
+# at the call site, which only compiles if they do). And `noTry` must NOT — if a fix
+# over-applies, every function in the corpus becomes an error union, which would pass a
+# detection-only fixture while breaking the language.
+#
+# `lambda` is deliberately NOT covered: a `try` inside a lambda body belongs to the
+# LAMBDA's error surface, not the enclosing function's, so recursing into it would be
+# wrong in the opposite direction. Recorded so nobody "completes" the set later.
+
+def risky(): int throws
+    raise "boom"
+
+def viaIndex(): int
+    var xs: List(int) = List(int)()
+    xs.add(1)
+    return xs[risky()?]
+
+def viaListLit(): int
+    var a = [risky()?, 2]
+    return a.len
+
+def viaArrayLit(): int
+    var a = @[risky()?, 2]
+    return a.len
+
+# the opposite direction: no `?` anywhere, must NOT become an error union
+def noTry(): int
+    return 40 + 2
+
+def main()
+    var a = viaIndex() catch -1
+    var b = viaListLit() catch -1
+    var c = viaArrayLit() catch -1
+    print(a)
+    print(b)
+    print(c)
+    print(noTry())
+    print("bug275: OK")

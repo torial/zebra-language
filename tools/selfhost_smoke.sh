@@ -1313,6 +1313,14 @@ smoke_run     test/bug273_assert_diagnostic_test.zbr "bug273: OK"
 smoke_run     test/bug270_extern_int_ambiguity_test.zbr "bug270: OK"
 smoke_tc_fail test/bug270_extern_int_fail.zbr "ambiguous in an \`extern\` signature"
 
+# BUG-275: a `?` inside an index / list literal / array literal must mark the enclosing
+# function throws. exprHasTry missed those containers, so the function stayed un-marked
+# while codegen still emitted the `try` — invalid Zig. BOTH directions: the three
+# container forms must come back throws (the `catch` call sites only compile if they do),
+# and noTry() must NOT become an error union — an over-applied fix would turn every
+# function in the corpus into one and still pass a detection-only fixture.
+smoke_run     test/bug275_try_in_container_test.zbr "bug275: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"
