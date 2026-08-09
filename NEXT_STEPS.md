@@ -135,13 +135,32 @@ loud; it does not make a language refuse to have opinions.
   `int32` is silent. Milestone: 0.x (cheap, high-value at the FFI boundary Graze
   will lean on).
 
+- [ ] **U4 — free the reserved word `aspect`; move AOP (if ever) to `@aspect`**
+  (bugbook BUG-10; Sean's call, confirmed by investigation 2026-08-08).
+  `kw_aspect` is reserved but the feature does not exist: the bootstrap parses
+  `AspectDecl` into a dead node (0 references in `CodeGen.zig` /
+  `TypeChecker.zig`), and the selfhost does not parse it at all — `aspect Foo`
+  today errors `unexpected top-level token: 'aspect'`. So the keyword's only
+  live effect is to *block `aspect` as an identifier*, at real cost: it is the
+  collision behind procgen's keyword-rename shield, it cannot be a parameter or
+  field name, and it is a real DB column name in the wild (Mosaic's
+  `claim_confidence.aspect`). **Fix:** remove `aspect` from the keyword token
+  list (same hygiene as the `pro`/`get`/`set`/`body`/`post` removal already
+  done); if aspect-oriented programming is ever built, `@aspect` decorator
+  syntax (matching `@reflectable`/`@once`/`@profile`) is the modern idiom and
+  needs no reserved word. *Acceptance:* `var aspect = 1` and `def f(aspect: str)`
+  compile; the AOP grammar production, if kept, is unreachable and can be
+  deleted or gated behind `@`. Milestone: 0.x (small, removes a whole friction
+  class). **Likely companions:** a quick audit for other reserved-but-
+  unimplemented words (`weaves`, `cue`, `vari`?) may free several at once.
+
 **Same template, already tracked — fold in when their sections are touched:**
 BUG-225 (`s[i]` typed `char` while holding a byte — the type lies about the
 value), BUG-227 (`tokenize(seps)` splits on the whole sequence, disagreeing with
 its own docs). Both are SILENT rows awaiting the same Loud migration.
 
-Cross-reference for all of the above: bugbook BUG-16/17/18 (Fable's tracker,
-`C:\Projects\bugbook`), filed 2026-08-08.
+Cross-reference for all of the above: bugbook BUG-16/17/18 + BUG-10 (Fable's
+tracker, `C:\Projects\bugbook`), filed 2026-08-08.
 
 ### ~~FREE WIN — `-c` is excluded from the fast backend~~ — **DONE 2026-07-28 (`3fabc50`)**
 

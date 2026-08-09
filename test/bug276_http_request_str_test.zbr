@@ -1,0 +1,35 @@
+# BUG-276: HttpRequest's `method` / `path` / `content` are Zebra `str`, so comparing them
+# must emit std.mem.eql — not a raw Zig `==` on two []const u8, which Zig rejects.
+#
+# Reported from the Graze web-framework spike: `req.method == route.method` failed to
+# compile, and every router, handler and comparison hit it.
+#
+# The BOOTSTRAP had this right the whole time (src/TypeChecker.zig:73 declares
+# .http_request; :2540 types the three fields). The selfhost never ported the type, so a
+# request inferred as a generic named class and the fields came back `unknown`.
+#
+# FIXED BY NAMING THE TYPE, not by adding the field names to a whitelist. The proposed
+# minimal fix was to extend the `stdout`/`stderr` member-name fallback with
+# `method`/`path`/`content` — but that fallback fires whenever an object's type is
+# UNRESOLVED, so it would type any unresolved `.method` as a string. See BUG-277: the
+# sibling heuristic already does exactly that for `path`, and a user class with an `int`
+# field named `path` does not compile today because of it. Naming the type costs the same
+# and cannot reach user code.
+
+def classify(req: HttpRequest): str
+    if req.method == "GET"
+        if req.path == "/"
+            return "index"
+        return "get-other"
+    if req.method == "POST"
+        return "post"
+    return "unsupported"
+
+def bodyEmpty(req: HttpRequest): bool
+    return req.content == ""
+
+def main()
+    # No live server here — this fixture pins the TYPE and the emitted comparison.
+    # Reaching this code proves the file compiled, which is the property at issue:
+    # before the fix it did not, with "operator == not allowed for []const u8".
+    print("bug276: OK")
