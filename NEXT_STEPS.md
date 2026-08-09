@@ -1503,6 +1503,19 @@ fail at the parser (BUG-172 follow-on). See `fuzz/README.md` + `FINDINGS.md`.
 - **BUG-014** — regex lazy match is global, not per-quantifier (`<.*?>STUFF.*>`
   misbehaves). Architectural (priority-first NFA / backtracking). **Deferred
   post-1.0 (§7);** workaround = split/restructure the pattern.
+- **SQLite feature defines not passed to the vendored `sqlite3.c`** — the
+  compiler adds `sqlite3.c` to the zig build (`selfhost/main.zbr` ~2703) with no
+  `-DSQLITE_ENABLE_*` defines, so every feature the amalgamation fences behind
+  `#ifdef` (FTS5, RTREE, JSON1 config, etc.) silently compiles out. Surfaced via
+  the Graze docs-browser: FTS5 search returned "no such module: fts5" in-app but
+  17 hits in `testfixture` — the tell that the *flag*, not the query, was
+  missing. **Interim fix (zebra-sprocket `cfc91e1`):** `apply_sprocket_patch.py`
+  prepends `#define SQLITE_ENABLE_FTS5 1` to the vendored file, seam-side.
+  **Upstream fix:** the compiler should pass the feature-define set (at minimum
+  FTS5) when it adds `sqlite3.c` — ideally a small `sqlite_features` knob rather
+  than a hardcoded list, so a program can ask for RTREE/JSON without another
+  seam patch. Interim workaround is a silent-failure trap if the define is ever
+  dropped; make it a build flag, not a prepend. Filed for Opus.
 
 ---
 
