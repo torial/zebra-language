@@ -11,7 +11,7 @@ each entry notes the module, the hack, and what the clean fix would be.
 
 ### 1. Shadow-set type tracking system
 
-**Files:** `selfhost/codegen.zbr` — `Generator` struct  
+**Files:** `selfhost/CodeGen.zbr` — `Generator` struct  
 **Status:** Stages 1–4 complete (2026-05-15); 3 sets remain pending
 
 **What:** The `Generator` struct originally carried 9 parallel `StrSet`/`HashMap` fields.
@@ -50,7 +50,7 @@ patterns, then deleted the 6 shadow-set fields and `lookupTopLevelFnReturnTypeRe
 
 ### 2. `str_slice` overloaded as "string collection"
 
-**File:** `selfhost/typechecker.zbr` — `Type_` union, `typeFromRef`  
+**File:** `selfhost/TypeChecker.zbr` — `Type_` union, `typeFromRef`  
 **Status:** Safety-net `inferExpr` arms removed (2026-05-15); variant still exists
 
 **What:** `Type_.str_slice` was originally used as a sentinel for any string-valued
@@ -75,7 +75,7 @@ codegen.zbr (lines 372, 5095, 5130, 7304) and in `typeTag` (typechecker.zbr line
 
 ### 3. `list_tuple_str_pos` string-encoding for tuple position flags
 
-**File:** `selfhost/codegen.zbr` — `Generator.list_tuple_str_pos: StrSet`  
+**File:** `selfhost/CodeGen.zbr` — `Generator.list_tuple_str_pos: StrSet`  
 **Status:** Active; superseded by root fix eventually
 
 **What:** Whether a tuple position `N` in a list holds a `str` value is encoded as
@@ -90,7 +90,7 @@ string-encoded StrSet entirely.
 
 ### 4. `lookupTopLevelFnReturnTypeRef` patch in codegen
 
-**File:** `selfhost/codegen.zbr`  
+**File:** `selfhost/CodeGen.zbr`  
 **Status:** Active; becomes obsolete once Stage 3 of root fix covers function-call sources
 
 **What:** When a local variable is initialized by a function call (`var x = f()`) with
@@ -111,7 +111,7 @@ needed for shadow-set population.
 
 ### 5. `Type_` taxonomy split (`context_dependent` / `unresolved` / `unknown_`)
 
-**File:** `selfhost/typechecker.zbr` — `Type_` union  
+**File:** `selfhost/TypeChecker.zbr` — `Type_` union  
 **Status:** Active design debt (BUG-099)
 
 **What:** Three "abstract/placeholder" Type_ variants were introduced as part of the
@@ -130,7 +130,7 @@ is genuinely unknowable without deeper analysis.
 
 ### 6. `isHashMapTypeRef` raw-TypeRef parallel path
 
-**File:** `selfhost/typechecker.zbr`  
+**File:** `selfhost/TypeChecker.zbr`  
 **Status:** Active; used in `addClassMembers` to populate `hashmap_field_names`
 
 **What:** `isHashMapTypeRef` inspects the raw `TypeRef` to detect HashMap fields, in

@@ -525,39 +525,24 @@ test "parse: enum mixing plain and payload members" {
     try expectAccepts("enum Result\n\tok(value: int)\n\terr(msg: String)\n\tempty\n");
 }
 
-// ── Acceptance: aspect declarations ───────────────────────────────────────────
+// ── Acceptance: `aspect` is an ORDINARY IDENTIFIER ────────────────────────────
+//
+// NEXT_STEPS U4, 2026-08-09. Six acceptance tests for `aspect Logging / on before`
+// used to live here. The construct parsed and then died in AstBuilder with "aspect
+// declarations are not yet implemented", so the keyword's only live effect was to
+// make `aspect` unusable as a name — which it is in the wild. These tests are
+// replaced by their inverse: the word must now reach the parser as a plain `id`.
 
-test "parse: aspect with before clause" {
-    // AspectBodyItem → kw_on id eol Block
-    try expectAccepts("aspect Logging\n\ton before\n\t\tpass\n");
+test "parse: aspect as a local variable name" {
+    try expectAccepts("def main\n\tvar aspect = 1\n");
 }
 
-test "parse: aspect with after clause binding result" {
-    // AspectBodyItem → kw_on id lparen id rparen eol Block
-    try expectAccepts("aspect Logging\n\ton after(result)\n\t\tpass\n");
+test "parse: aspect as a parameter name" {
+    try expectAccepts("def show(aspect: str)\n\tpass\n");
 }
 
-test "parse: aspect with around clause" {
-    try expectAccepts("aspect Timing\n\ton around\n\t\tresult = proceed()\n\t\treturn result\n");
-}
-
-test "parse: aspect with error clause binding error" {
-    try expectAccepts("aspect Safety\n\ton error(e)\n\t\tpass\n");
-}
-
-test "parse: aspect with all four advice clauses" {
-    try expectAccepts(
-        "aspect Full\n" ++
-        "\ton before\n\t\tpass\n" ++
-        "\ton after(result)\n\t\tpass\n" ++
-        "\ton around\n\t\tresult = proceed()\n\t\treturn result\n" ++
-        "\ton error(e)\n\t\tpass\n"
-    );
-}
-
-test "parse: aspect defined inside a class" {
-    // MemberDecl → AspectDecl — private/scoped aspect
-    try expectAccepts("class Repo\n\taspect Audit\n\t\ton before\n\t\t\tpass\n");
+test "parse: aspect as a field name" {
+    try expectAccepts("class Claim\n\tvar aspect: str = ''\n");
 }
 
 // ── Acceptance: weaves clause ─────────────────────────────────────────────────

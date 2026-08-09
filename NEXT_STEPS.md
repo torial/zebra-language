@@ -135,7 +135,44 @@ loud; it does not make a language refuse to have opinions.
   `int32` is silent. Milestone: 0.x (cheap, high-value at the FFI boundary Graze
   will lean on).
 
-- [ ] **U4 — free the reserved word `aspect`; move AOP (if ever) to `@aspect`**
+- [x] **U4 — free the reserved word `aspect`; move AOP (if ever) to `@aspect`**
+  — **DONE 2026-08-09.** `aspect` is an ordinary identifier: `var aspect = 1`,
+  `def f(aspect: str)` and `var aspect: str` in a class all compile and run.
+  Removed `kw_aspect` from both tokenizers, the nine `AspectDecl` /
+  `AspectBodyItem` grammar rules, the three nonterminals, the two `TopDecl` /
+  `MemberDecl` productions, AstBuilder's three arms, and the six Parser
+  acceptance tests — which are replaced by their inverse (the word must now
+  reach the parser as a plain `id`). `grammar.txt` regenerated from the rule
+  table: 474 → 465 rules, 149 → 146 nonterminals.
+  **Two things the removal surfaced.** (1) It also closed a *permanent*
+  accept/reject divergence: `AspectDecl` never appears anywhere under
+  `selfhost/` in the whole git history, so the bootstrap accepted a construct
+  the selfhost had no parse path for — and `fuzz/gramgen.py` derives its
+  programs from `grammar.txt`, so it was generating exactly that. (2) It
+  orphaned `kw_error`, whose *only* grammar uses were inside the `on error(e)`
+  advice clauses. Baselined rather than removed — see below.
+  The old construct now gives a clean `unexpected top-level token: 'aspect'`
+  instead of the `std.debug.panic` it used to.
+
+- [ ] **U4a — the rest of the reserved-word audit (a decision, not hygiene)**
+  Now mechanical: `tools/lint_reserved_words.py` (QUICK tier, baselined at 8).
+  It classifies every one of the 88 keywords as reachable, **R1 unreachable**
+  (no rule in *either* compiler accepts the token) or **R2 parsed-then-refused**
+  (a rule accepts it and AstBuilder answers "not yet implemented"). Each of the
+  eight is a call for you, not a cleanup:
+  | word | class | note |
+  |---|---|---|
+  | `weaves` | R2 | AOP's other half. Its `WeavesOpt` clause threads through ten declaration rules and AstBuilder's *positional* child scanning, so it is a bigger change than `aspect` was. |
+  | `expect`, `lock` | R2 | Surfaced by the lint; nobody had flagged either. `lock` especially is likely to collide with concurrent user code. |
+  | `error` | R1 | Newly orphaned by U4 (above). Kept for now as error-model vocabulary. Note the reservation is **not** needed for Zig's sake — `emitName` already escapes Zig keywords as `@"error"`. |
+  | `try` | R1 | §28b replaced it with `expr?`; the word has no construct left. |
+  | `from`, `implies`, `trace` | R1 | `implies` sits under *Contracts* and `trace` under *Statements*, which reads like reservations for planned features. Reserving for an intended feature is legitimate; leaving it undecided is what the lint exists to keep visible. |
+  Two guesses in the original U4 note — `cue` and `vari` — were **both wrong**:
+  the lint clears them as genuinely live. That is the argument for the lint over
+  a memory.
+
+  <details><summary>original U4 text, kept for the record</summary>
+
   (bugbook BUG-10; Sean's call, confirmed by investigation 2026-08-08).
   `kw_aspect` is reserved but the feature does not exist: the bootstrap parses
   `AspectDecl` into a dead node (0 references in `CodeGen.zig` /
@@ -153,6 +190,8 @@ loud; it does not make a language refuse to have opinions.
   deleted or gated behind `@`. Milestone: 0.x (small, removes a whole friction
   class). **Likely companions:** a quick audit for other reserved-but-
   unimplemented words (`weaves`, `cue`, `vari`?) may free several at once.
+
+  </details>
 
 **Same template, already tracked — fold in when their sections are touched:**
 BUG-225 (`s[i]` typed `char` while holding a byte — the type lies about the

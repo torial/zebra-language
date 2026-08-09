@@ -206,8 +206,35 @@ def assemble(body):
     return ("\n".join(decls) + "\n" + wrapped) if decls else wrapped
 
 
+def _tracked():
+    """Paths git knows about (index included). None if git cannot answer."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "ls-files"], cwd=REPO, capture_output=True,
+                           text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return None if r.returncode else {ln.strip() for ln in r.stdout.splitlines() if ln.strip()}
+
+
 def live_docs():
-    docs = sorted(list(REPO.glob("*.md")) + list(REPO.glob("docs/*.md")))
+    # TRACKED, not merely present -- the same change doc_lint took on 2026-08-09, and
+    # for the same reason: this is a SHARED gate with a baseline, so an untracked local
+    # note carrying one broken fence pushes the count past the baseline and turns it red
+    # in a way nobody else can reproduce or see in the commit. Same line corpus_ls.sh
+    # draws. Refuses rather than falling back, because a silent fallback reintroduces it.
+    keep = _tracked()
+    if keep is None:
+        print("[doc-example] REFUSING: not a git worktree (or git failed), so the document "
+              "set cannot be determined; globbing would make this gate depend on local "
+              "scratch.", file=sys.stderr)
+        sys.exit(2)
+    docs = sorted(p for p in (list(REPO.glob("*.md")) + list(REPO.glob("docs/*.md")))
+                  if p.relative_to(REPO).as_posix() in keep)
+    if not docs:
+        print("[doc-example] REFUSING: 0 tracked documents matched — the enumerator is "
+              "broken, not the docs.", file=sys.stderr)
+        sys.exit(2)
     out = []
     for d in docs:
         m = STATUS.search(d.read_text(encoding="utf-8", errors="replace")[:200])

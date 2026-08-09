@@ -281,7 +281,11 @@ pub const TokenKind = enum {
     kw_vari,
 
     // Aspect-oriented programming
-    kw_aspect,    // aspect declaration
+    // NEXT_STEPS U4: `kw_aspect` removed 2026-08-09. AOP was never implemented —
+    // AstBuilder panicked "aspect declarations are not yet implemented" — so the
+    // keyword's only live effect was to block `aspect` as an identifier, which it
+    // is in the wild (a DB column name, a parameter name). If AOP is ever built,
+    // `@aspect` matches @reflectable/@once and needs no reserved word.
     kw_weaves,    // weaves clause on class/method; project-level weave declaration
 
     // Error handling (error union path)
@@ -394,7 +398,6 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "false",       .kw_false },
     .{ "nil",         .kw_nil },
     .{ "vari",        .kw_vari },
-    .{ "aspect",      .kw_aspect },
     .{ "weaves",      .kw_weaves },
     .{ "error",       .kw_error },
     .{ "capture",     .kw_capture },

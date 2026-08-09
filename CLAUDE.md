@@ -256,7 +256,24 @@ python tools/hazard_lint.py        # THE TOOLING GATE (static, instant, no build
                                 #   0 = clean. QUICK tier.
 python tools/doc_lint.py           # THE DOC-DRIFT GATE (static, instant, no build) — checks
                                 #   the CHECKABLE claims only. D1 a `tools/x.sh` named in a
-                                #   .md exists; D2 a repo path linked from a .md exists;
+                                #   .md is TRACKED; D2 a repo path linked from a .md is
+                                #   TRACKED;
+                                #   TRACKED, NOT MERELY PRESENT — changed 2026-08-09, and
+                                #   both directions had bitten. It enumerated documents with
+                                #   a filesystem glob, so another agent's untracked working
+                                #   note in the root turned this SHARED gate red for
+                                #   everyone (a D7 "no doc-status" plus a D6 count drift) on
+                                #   a file nobody else had. And it resolved a referenced
+                                #   path with `.exists()`, which on this case-insensitive
+                                #   filesystem answered YES for `selfhost/codegen.zbr` when
+                                #   the file is `CodeGen.zbr` — so D2 was BLIND TO EVERY
+                                #   CASE-WRONG PATH, and switching to `git ls-files`
+                                #   (case-sensitive) immediately surfaced 10 stale
+                                #   references to the pre-rename lowercase module names
+                                #   across four live/design docs. The false-green was the
+                                #   worse half: a red gets fixed. Same line corpus_ls.sh
+                                #   draws, and the same refusal — no silent fallback to
+                                #   globbing outside a git worktree.
                                 #   D3 every gate registered in gates.sh is DESCRIBED here
                                 #   in CLAUDE.md (an undocumented gate is how a tier's
                                 #   meaning drifts — it found 3 on the day it was written);
@@ -508,6 +525,44 @@ python tools/lint_bug_numbers.py   # THE BUG-NUMBER COLLISION GATE (static, inst
                                 #   took the whole gate down with a traceback — a gate that
                                 #   CRASHES reports nothing, and the cause looks like the
                                 #   ledger rather than the terminal. 0 NEW = clean.
+python tools/lint_reserved_words.py # THE RESERVED-WORD GATE (static, instant, QUICK tier):
+                                #   a keyword must either be USED or be JUSTIFIED. A word in
+                                #   the keyword table costs every user of the language the
+                                #   right to name a variable, parameter, field or column with
+                                #   it — a cost that is invisible until someone hits it, and
+                                #   then looks like a compiler bug rather than a decision
+                                #   nobody revisited.
+                                #   RECEIPT: `aspect` was reserved for aspect-oriented
+                                #   programming that was NEVER BUILT — the bootstrap parsed it
+                                #   and then panicked "not yet implemented", and the selfhost
+                                #   had no parse path at all (`AspectDecl` never appears under
+                                #   selfhost/ in the whole git history). So it blocked a real
+                                #   DB column name, forced a keyword-rename shield in another
+                                #   project, and created a permanent bootstrap-accepts /
+                                #   selfhost-rejects divergence for `gramgen` to trip over.
+                                #   Freed under NEXT_STEPS U4, 2026-08-09.
+                                #   TWO CLASSES, different fixes. R1 UNREACHABLE: no rule in
+                                #   EITHER compiler mentions the token, so reserving it is
+                                #   pure cost. R2 PARSED-THEN-REFUSED: a rule accepts it and
+                                #   AstBuilder answers "not yet implemented" — the feature
+                                #   does not exist, the reservation does.
+                                #   BOTH COMPILERS, and the first draft got this wrong: it
+                                #   scanned only the bootstrap's Earley table, but the
+                                #   selfhost parses by hand and consumes TokenKind directly,
+                                #   so a word invisible to the table can be live there. That
+                                #   is rule 1c — an instrument's assumptions are quantified
+                                #   over the subjects it had when written.
+                                #   HOW IT NEARLY LIED: the first version asked "does this
+                                #   token name appear downstream?" and classified `raise` and
+                                #   `throws` as unused. Downstream code acts on the PNode, not
+                                #   the token, so absence there means nothing. R2 now asks the
+                                #   COMPILER's own answer instead of the author's inference.
+                                #   Runs a 5-check selftest on synthetic input before every
+                                #   scan and REFUSES if the classifier stops discriminating;
+                                #   verified red by removing one baseline entry.
+                                #   Baselined at 8 (each a pending LANGUAGE decision, with the
+                                #   reason it stays: weaves/expect/lock/error/try/from/
+                                #   implies/trace). Shrink it; do not grow it. 0 NEW = clean.
 python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUICK tier).
                                 #   A function that searches the Expr tree for a name is
                                 #   correct only if it descends into every variant that
@@ -718,9 +773,10 @@ than "what do we know":
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 68 scripts | <!-- doc-gen: 68 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
-| docs' checkable claims still resolve | `doc_lint` | 45 documents |
-| **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 50 = ls *.md docs/*.md | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 69 scripts | <!-- doc-gen: 69 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| docs' checkable claims still resolve | `doc_lint` | 50 tracked documents <!-- doc-gen: 50 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
+| **a reserved word is used, or justified** | `reserved-words` (both compilers) | 88 keywords, 8 baselined |
+| **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 50 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
 

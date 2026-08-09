@@ -67,7 +67,7 @@ accumulates on-arm body, verifies else body is exactly `pass`.
 old branch style.  Skips `as _` discard bindings (Zig 0.15 rejects `_` as an id).
 **Zebra port notes:** Uses manual index-loop for stateful multi-line scanning;
 avoids method chaining on `List.at()` returns (uses temp vars).  Applied 1
-conversion to `selfhost/codegen.zbr` on first run.
+conversion to `selfhost/CodeGen.zbr` on first run.
 
 ### `tools/attic/migrate_colon_syntax.py` / `tools/migrate_colon_syntax.zbr`
 **Language:** Python → ✅ Zebra port DONE 2026-05-08  

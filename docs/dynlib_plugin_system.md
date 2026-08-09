@@ -7,7 +7,7 @@
 
 Four components were added together to make the plugin system work:
 
-1. **Interface vtable construction** — Both `src/CodeGen.zig` and `selfhost/codegen.zbr` now emit C-compatible vtable structs and shim functions when a class declares `implements IFaceName`. This was the enabling primitive; DynLib is just one consumer.
+1. **Interface vtable construction** — Both `src/CodeGen.zig` and `selfhost/CodeGen.zbr` now emit C-compatible vtable structs and shim functions when a class declares `implements IFaceName`. This was the enabling primitive; DynLib is just one consumer.
 
 2. **Interface coercion at assignment and return** — The codegens detect when a class-constructor expression is being assigned to an interface-typed variable (or returned from an interface-pointer-returning method) and emit the fat-pointer initialization instead of the normal struct init.
 
@@ -74,7 +74,7 @@ This isn't in CI because it requires platform-specific shared-library build flag
 |------|--------|
 | `src/CodeGen.zig` | Vtable shim emission; interface coercion (var + return); DynLib dispatch; `dynlib_vars` tracking; `module` field on Generator |
 | `src/Builtins.zig` | `DynLib` registered as known stdlib name |
-| `selfhost/codegen.zbr` | Mirrors all src/CodeGen.zig changes |
+| `selfhost/CodeGen.zbr` | Mirrors all src/CodeGen.zig changes |
 | `selfhost/stdlib_preamble.zig` | `_DynLib` struct + `_dynlib_open` + `_dynlib_close` helpers |
 | `selfhost/Resolver.zbr` | `DynLib` added to `isBuiltin()` |
 | `test/dynlib_iface_test.zbr` | Integration test: vtable dispatch without DLL loading |

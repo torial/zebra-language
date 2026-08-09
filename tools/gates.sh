@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# There are 18 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 18 = grep -c '^run "' tools/gates.sh -->
+# There are 19 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 19 = grep -c '^run "' tools/gates.sh -->
 # (CLAUDE.md explains each), plus four heavy witnesses in FULL. The count in this
 # sentence has been wrong before: it said "seven" while twelve were registered, and
 # doc_lint cannot catch that class -- a number in prose has no referent to resolve.
@@ -194,6 +194,14 @@ run "expr-walker"    "0 finding"       python tools/lint_expr_walkers.py --gate
 # more satisfied, not less. Also gates the allocator line, because a "Last bug number"
 # that lags is not a stale fact, it is the NEXT collision already scheduled.
 run "bug-numbers"    "0 NEW"           python tools/lint_bug_numbers.py --gate
+# A reserved word costs every user the right to name a thing with it, and that cost is
+# invisible until someone hits it — at which point it looks like a compiler bug. `aspect`
+# sat reserved for a feature that was never built, blocking a real DB column name and
+# forcing a keyword-rename shield in another project, until 2026-08-09. The audit that
+# found it also turned up `expect` and `lock`, which nobody had flagged, and cleared
+# `cue`/`vari`, which had been guessed at — two guesses wrong in opposite directions,
+# which is the argument for a lint over a memory. Baselined; fails only on NEW words.
+run "reserved-words" "0 NEW"           python tools/lint_reserved_words.py --gate
 # §28e: docs/str_ownership.md is DERIVED from real emit, so a codegen change that flips
 # a borrow into an own (or the reverse) makes the shipped table wrong while it still
 # carries a "GENERATED" banner vouching for it. One emit; cheap.

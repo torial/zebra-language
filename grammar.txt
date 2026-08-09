@@ -13,7 +13,6 @@ TopDecl              → UseDecl
                      |  EnumDecl
                      |  ExtendDecl
                      |  AtDirective
-                     |  AspectDecl
                      |  WeaveDecl
                      |  DeclUnion
                      |  SigDecl
@@ -145,7 +144,6 @@ MemberDecl           → MethodDecl
                      |  TestMemberDecl
                      |  InvariantDecl
                      |  AtDirective
-                     |  AspectDecl
                      |  kw_is IsAttrList eol
 
 MethodDecl           → ModList kw_def open_call ParamList rparen ReturnAnnotOpt ThrowsOpt IsClauseOpt HasOpt WeavesOpt eol
@@ -194,16 +192,6 @@ ContractClauseListNE → ContractClause
 ContractClause       → kw_require eol Block
                      |  kw_ensure eol Block
                      |  kw_test eol Block
-
-AspectDecl           → kw_aspect id eol indent AspectBodyListNE dedent
-
-AspectBodyListNE     → AspectBodyItem
-                     |  AspectBodyListNE AspectBodyItem
-
-AspectBodyItem       → kw_on id eol Block
-                     |  kw_on open_call id rparen eol Block
-                     |  kw_on kw_error eol Block
-                     |  kw_on kw_error lparen id rparen eol Block
 
 WeavesOpt            → ε
                      |  kw_weaves TypeRefListNE

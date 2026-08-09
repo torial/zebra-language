@@ -173,7 +173,10 @@ union TokenKind
     kw_false
     kw_nil
     kw_vari
-    kw_aspect
+    # NEXT_STEPS U4 (2026-08-09): kw_aspect removed. AOP was never implemented —
+    # the bootstrap parsed it and then panicked "not yet implemented", and the
+    # selfhost never parsed it at all — so reserving the word only made `aspect`
+    # unusable as an identifier, which it is in real code. `@aspect` if ever built.
     kw_weaves
     kw_error
     kw_raise
@@ -356,8 +359,6 @@ class Keywords
             return TokenKind.kw_nil()
         if word == "vari"
             return TokenKind.kw_vari()
-        if word == "aspect"
-            return TokenKind.kw_aspect()
         if word == "weaves"
             return TokenKind.kw_weaves()
         if word == "error"

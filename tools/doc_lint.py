@@ -42,6 +42,7 @@ Exit status: 0 = clean, 1 = at least one stale reference, 2 = the checker is not
 import re
 import sys
 import pathlib
+import subprocess
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
@@ -124,15 +125,69 @@ class Finding:
         return f"{self.doc}:{self.line}: [{self.code}] {self.msg}"
 
 
+def tracked():
+    """The set of paths git knows about (index included, so `git add` counts).
+
+    Returns None outside a git worktree, which callers must treat as "cannot tell"
+    rather than as "nothing is tracked".
+    """
+    try:
+        out = subprocess.run(["git", "ls-files"], cwd=REPO, capture_output=True,
+                             text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return {ln.strip() for ln in out.stdout.splitlines() if ln.strip()}
+
+
 def docs():
+    """The documents this gate is responsible for: the TRACKED ones.
+
+    This used to glob the filesystem, and that made a SHARED gate's result depend on
+    whatever scratch happened to be sitting in the repo. Observed 2026-08-09: an
+    untracked working note in the root turned doc-lint red for everyone — a D7 finding
+    ("no doc-status line") plus a D6 count drift — on a file nobody else had.
+
+    The mirror case is the one that actually matters, and it is `bug_fixture_check`'s
+    lesson one directory over: D1/D2 resolve a referenced path by asking whether it
+    EXISTS, so an untracked file can make a broken link look fine. `check_refs` now
+    resolves against the tracked set for that reason.
+
+    Same line as tools/corpus_ls.sh draws: staging is where a file stops being scratch
+    and starts being something you are asking others to have. And the same refusal —
+    NO silent fallback to globbing, because that reintroduces exactly this bug.
+    """
+    keep = tracked()
+    if keep is None:
+        print("[doc-lint] REFUSING: not a git worktree (or git failed), so the document "
+              "set cannot be determined. Globbing instead would make this gate's result "
+              "depend on local scratch — the bug tools/corpus_ls.sh exists to remove.",
+              file=sys.stderr)
+        sys.exit(2)
     out = []
     for g in DOC_GLOBS:
-        out.extend(sorted(REPO.glob(g)))
+        out.extend(p for p in sorted(REPO.glob(g))
+                   if p.relative_to(REPO).as_posix() in keep)
+    if not out:
+        print("[doc-lint] REFUSING: 0 tracked documents matched "
+              f"{DOC_GLOBS} — the enumerator is broken, not the docs.", file=sys.stderr)
+        sys.exit(2)
     return out
 
 
-def check_refs(path, text):
-    """D1/D2/D5 -- a referenced repo path must exist."""
+def check_refs(path, text, keep=None):
+    """D1/D2/D5 -- a referenced repo path must exist FOR EVERYONE.
+
+    `keep` is the tracked-path set. Resolving against the filesystem instead lets an
+    untracked local file satisfy a reference that is broken for every other clone --
+    the same false-GREEN that `bug_fixture_check` had before tools/corpus_ls.sh, and
+    strictly worse than the false-red that motivated the change (a red gets fixed).
+    """
+    def resolves(target):
+        if keep is not None:
+            return target in keep
+        return (REPO / target).exists()
     rel = path.relative_to(REPO).as_posix()
     hits = []
     in_fence = False
@@ -154,8 +209,8 @@ def check_refs(path, text):
             # tool itself, on the CLAUDE.md paragraph documenting the tool.)
             if pathlib.PurePosixPath(target).stem.lower() in PLACEHOLDER_STEMS:
                 continue
-            if not (REPO / target).exists():
-                hits.append(Finding("D1", rel, i, f"references `{target}`, which does not exist"))
+            if not resolves(target):
+                hits.append(Finding("D1", rel, i, f"references `{target}`, which is not a tracked file"))
         if in_fence:
             continue
         for m in DOC_REF.finditer(ln):
@@ -169,8 +224,8 @@ def check_refs(path, text):
                 continue
             if target.endswith(".cxx"):
                 continue      # third-party sources (Scintilla), not paths in this repo
-            if not (REPO / target).exists():
-                hits.append(Finding("D2", rel, i, f"references `{target}`, which does not exist"))
+            if not resolves(target):
+                hits.append(Finding("D2", rel, i, f"references `{target}`, which is not a tracked file"))
     return hits
 
 
@@ -278,12 +333,18 @@ CONTROLS = {
 }
 
 
+# The controls run through the SAME tracked-set resolution as a real run. An empty set
+# would make every D1/D2 control fire for the wrong reason (nothing resolves), so it
+# carries one real entry and the controls reference names deliberately absent from it.
+_CONTROL_TRACKED = {"tools/doc_lint.py"}
+
+
 def selftest(verbose=False):
     dead = set()
     known = {"1"}
     for code, text in CONTROLS.items():
         fake = REPO / "CONTROL.md"
-        hits = (check_refs(fake, text) + check_bugs(fake, text, known)
+        hits = (check_refs(fake, text, _CONTROL_TRACKED) + check_bugs(fake, text, known)
                 + check_gen(fake, text) + check_status(fake, text))
         fired = {h.code for h in hits}
         if code not in fired:
@@ -342,6 +403,7 @@ def main():
     claude_text = claude.read_text(encoding="utf-8") if claude.exists() else None
 
     hits = []
+    keep = tracked()
     files = docs()
     archival = {}
     for f in files:
@@ -352,7 +414,7 @@ def main():
         archival[f.relative_to(REPO).as_posix()] = status_of(text) in ("historical",
                                                                        "generated")
         hits.extend(check_status(f, text))
-        hits.extend(check_refs(f, text))
+        hits.extend(check_refs(f, text, keep))
         hits.extend(check_bugs(f, text, known))
         hits.extend(check_gen(f, text))
 

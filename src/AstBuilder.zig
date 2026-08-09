@@ -222,13 +222,6 @@ const Builder = struct {
                 v.is_top_level = true;
                 break :blk .{ .var_ = try b.box(Ast.DeclVar, v) };
             },
-            .AspectDecl    => {
-                const sp = spanOf(decl_node, b.tokens);
-                std.debug.panic(
-                    "{d}:{d}: error: aspect declarations are not yet implemented",
-                    .{ sp.line, sp.col },
-                );
-            },
             .WeaveDecl     => {
                 const sp = spanOf(decl_node, b.tokens);
                 std.debug.panic(
@@ -713,7 +706,6 @@ const Builder = struct {
                     // These carry no code-gen payload; skip silently.
                     .TestMemberDecl,
                     .InvariantDecl => {},
-                    .AspectDecl    => {},
                     .AtDirective   => {
                         const at_kids = ch(inner_decl);
                         const at_text = leafText(at_kids[0], b.tokens);
@@ -805,8 +797,7 @@ const Builder = struct {
             .SharedGroupDecl,
             .TestMemberDecl,
             .InvariantDecl,
-            .AtDirective,
-            .AspectDecl      => unreachable, // filtered out in collectMemberDecls
+            .AtDirective     => unreachable, // filtered out in collectMemberDecls
             else => std.debug.panic("buildMemberDecl: unexpected NT {s}", .{@tagName(ntOf(inner_node))}),
         };
     }

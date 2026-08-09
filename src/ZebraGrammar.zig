@@ -225,11 +225,6 @@ pub const NT = enum {
     ExprList,    // possibly empty
     ExprListNE,  // non-empty
 
-    // ── Aspect declarations ────────────────────────────────────────────────────
-    AspectDecl,
-    AspectBodyListNE,  // one or more advice clauses
-    AspectBodyItem,    // on before | on after[(result)] | on around | on error[(e)]
-
     // ── Weaves clause and project-level weave ─────────────────────────────────
     WeavesOpt,    // optional `weaves TypeRefListNE` on class/method
     WeaveDecl,    // top-level: weaves Aspect to all def|class Pattern
@@ -307,7 +302,6 @@ const program_rules: []const Rule = &.{
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.EnumDecl) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.ExtendDecl) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.AtDirective) } },
-    .{ .lhs = .TopDecl,     .rhs = &.{ n(.AspectDecl) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.WeaveDecl) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.DeclUnion) } },
     .{ .lhs = .TopDecl,     .rhs = &.{ n(.SigDecl) } },
@@ -545,7 +539,6 @@ const member_rules: []const Rule = &.{
     .{ .lhs = .MemberDecl, .rhs = &.{ n(.TestMemberDecl) } },
     .{ .lhs = .MemberDecl, .rhs = &.{ n(.InvariantDecl) } },
     .{ .lhs = .MemberDecl, .rhs = &.{ n(.AtDirective) } },
-    .{ .lhs = .MemberDecl, .rhs = &.{ n(.AspectDecl) } },
     // `is static` (and other is-attributes) as a bare member declaration
     .{ .lhs = .MemberDecl, .rhs = &.{ t(.kw_is), n(.IsAttrList), t(.eol) } },
 };
@@ -707,48 +700,6 @@ const contract_rules: []const Rule = &.{
     .{ .lhs = .ContractClause,        .rhs = &.{ t(.kw_require),   t(.eol), n(.Block) } },
     .{ .lhs = .ContractClause,        .rhs = &.{ t(.kw_ensure),    t(.eol), n(.Block) } },
     .{ .lhs = .ContractClause,        .rhs = &.{ t(.kw_test),      t(.eol), n(.Block) } },
-};
-
-// ── Aspect declarations ───────────────────────────────────────────────────────
-//
-// aspect Logging
-//     on before
-//         print 'entering [method.name]'
-//     on after(result)
-//         print 'returning [result]'
-//     on around
-//         result = proceed()
-//         return result
-//     on error(e)
-//         print 'error: [e]'
-//
-// The advice clause names (before, after, around, error) are plain identifiers
-// in the grammar — the semantic layer validates which names are legal.
-// `proceed()` inside `on around` desugars to a call through to the real method;
-// it uses the existing open_call grammar path (no special token needed).
-
-const aspect_rules: []const Rule = &.{
-    .{ .lhs = .AspectDecl, .rhs = &.{
-        t(.kw_aspect), t(.id), t(.eol),
-        t(.indent), n(.AspectBodyListNE), t(.dedent),
-    } },
-
-    .{ .lhs = .AspectBodyListNE, .rhs = &.{ n(.AspectBodyItem) } },
-    .{ .lhs = .AspectBodyListNE, .rhs = &.{ n(.AspectBodyListNE), n(.AspectBodyItem) } },
-
-    // on before / on after / on around  (plain id clause name, no binding param)
-    .{ .lhs = .AspectBodyItem, .rhs = &.{ t(.kw_on), t(.id), t(.eol), n(.Block) } },
-    // on after(result) / on around(x)
-    //   `after(` tokenizes as a single open_call token (identifier + no-space `(`).
-    .{ .lhs = .AspectBodyItem, .rhs = &.{
-        t(.kw_on), t(.open_call), t(.id), t(.rparen), t(.eol), n(.Block),
-    } },
-    // on error  (`error` is a keyword, so it's kw_error not id)
-    .{ .lhs = .AspectBodyItem, .rhs = &.{ t(.kw_on), t(.kw_error), t(.eol), n(.Block) } },
-    // on error(e)  (kw_error followed by lparen, not open_call)
-    .{ .lhs = .AspectBodyItem, .rhs = &.{
-        t(.kw_on), t(.kw_error), t(.lparen), t(.id), t(.rparen), t(.eol), n(.Block),
-    } },
 };
 
 // ── Weaves clause and project-level weave declarations ───────────────────────
@@ -1461,7 +1412,6 @@ const rules: []const Rule = program_rules ++
     init_rules ++
     group_member_rules ++
     contract_rules ++
-    aspect_rules ++
     weave_rules ++
     param_rules ++
     block_rules ++
