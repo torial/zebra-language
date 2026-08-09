@@ -152,6 +152,44 @@ self-containment rule above.
 
 ---
 
+### CHANGED 2026-08-08: the engine shipped past this section (P0 was the floor, not the ceiling)
+
+*Drafted by Fable, who holds the receipts, and placed verbatim — every number below is a
+suite result he can point at. Placed under this section's own convention: where it
+contradicts the body, this section is right.*
+
+§0.5's P0-DONE table stops at 2026-08-05. Since then sprocket shipped a large surface, all
+merged to `stored-procs`, all suite-verified. Where the body below assumes P0-era
+capabilities, this list corrects it.
+
+| Capability | State | Receipt |
+|---|---|---|
+| `PRAGMA proc_nested(p)` — per nested table: child segment, column, key_child, key_parent | done | `procinter` 5.x |
+| Depth-N nested shapes (grandchildren+), recursive folds, per-level counts | done | `procdeep` 19/19, `procfault` 2256 |
+| `WITH INTERLEAVED` — whole tree as one engine-merged result set, disjoint honest-header layout | done | `procinter` 36/36 |
+| `sqlite3_proc_*` read family (segment_count / column_count / column_name / column_decltype / row_value) — per-segment metadata, statement-lifetime pointer stability | done | `procinter` 7.x |
+| `PRAGMA proc_check(p)` — advisories as rows (hand-rolled levels, missing-index tri-state, cache-disqualification reasons) | done | `proccheck` 11/11 |
+| procgen typed emitters — nested structs, depth-N recursion, byte-deterministic | done | standing regression control; 3 transport changes byte-unchanged |
+
+**What this changes for the stitcher:** `proc_nested` is the correlation metadata a
+generator needs and P0 could not supply — the reconstruction key is now a pragma read,
+not an inference.
+
+**For §4 (build-time validation):** `proc_check` means the twin-engine pre-pass can
+surface advisories (unindexed correlations, hand-rolled levels) as build diagnostics,
+not just accept/reject.
+
+**For §14.2:** procgen is now the working reference implementation of tier-4, proven
+across three transport changes without a byte of client drift. The unification is
+**"lift when ZTL pressures," not "build"** — settled 2026-08-08. The reasoning worth
+keeping: procgen surviving three transport changes byte-unchanged is *evidence its
+interface is right*, and evidence is the expensive thing to acquire. Lifting a proven
+interface later is cheap; rewriting now spends that evidence and buys nothing until ZTL
+applies actual pressure.
+
+Regression: `veryquick` 0/393,110 over the full post-P0 surface.
+
+
 ## 0. How to use this document (note to implementing Claude)
 
 Same conventions as the web architecture doc: **DECIDED** items carry rationale in the ADRs and are not to be silently deviated from — surface conflicts with a counter-proposal instead. **OPEN** items are flagged with the phase that must resolve them. Zebra snippets are illustrative; `grammar.txt` and `QUICKSTART.md` in the language repo are authoritative for syntax. The target engine is **sprocket exclusively** — exploit SQLite-isms (RETURNING, upsert, json functions, FTS5) and sprocket-isms (CALL, streaming multi-result procs, compiled-body caching) freely; portability to other databases is a non-goal.
@@ -572,6 +610,43 @@ If the engine grows a fan-out shard virtual table, Tack's connection topology
 shard-key concept so a query can be routed rather than fanned. This is the item
 most likely to force a Tack redesign, so it is worth knowing early whether it
 is on the road.
+
+**AMENDED 2026-08-05 — this is understated. Sharding does not merely disturb
+§10's connection topology; it invalidates S4's correctness precondition.**
+
+S4's guarantee is that the correlated ordering is imposed *by the engine*, so a
+proc author cannot get it wrong. As of 2026-08-04 the fork does exactly that: it
+writes the child `ORDER BY` from the declared `KEY`, and an author-written
+`ORDER BY` is merged after it rather than replacing it.
+
+**That guarantee is per-engine.** Fan a query across shards and no single engine
+sees the whole child set, so nothing can impose an ordering over the union. The
+zipper's precondition — children arrive grouped by correlation key — is not
+merely unguaranteed, it is **false**, because each shard emits its own ordered
+run and the runs interleave arbitrarily on arrival.
+
+Three ways out, none free:
+
+- **Merge on receipt.** Treat each shard's stream as a sorted run and k-way merge
+  them client-side. Restores the precondition, costs a comparison per row, and
+  makes Tack the thing imposing the ordering — which is the property S4 was
+  chosen to avoid.
+- **Route, do not fan.** If the shard key *is* the correlation key, every parent
+  and its children live on one shard and the problem vanishes. This is the case
+  worth designing for, and it means the criteria builder's shard-key concept
+  (above) is not an optimisation but a **correctness requirement** for S4.
+- **Refuse.** A nested proc fanned across shards fails at build time rather than
+  returning misgrouped rows. Ugly, honest, and cheap.
+
+**Detectable either way:** `CALL … WITH COUNTS` carries a per-parent child count
+(fork, 2026-08-05), so a misgrouped fan-out is caught rather than silently
+wrong. Worth wiring in *before* sharding rather than after — the debug
+key-monotonicity assertion in the stitcher catches disorder but cannot catch a
+parent whose children were split across two runs and partially lost.
+
+**Recommendation:** decide *route-not-fan* now, while it is a line in the
+criteria builder's spec, rather than after S4 ships and the failure mode is
+"some children are missing, occasionally, under load."
 
 ### 14.6 The wire protocol — **the strongest synergy, and a new idea**
 

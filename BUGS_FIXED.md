@@ -6,6 +6,40 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-276: HttpRequest's fields were untyped in the selfhost, so `req.method == x` did not compile — ✅ FIXED 2026-08-08
+
+**Reported from the Graze web-framework spike.** `req.method == route.method` failed with
+"operator == not allowed for []const u8". Every router, handler and comparison hit it.
+
+**The BOOTSTRAP had this right the whole time** — `src/TypeChecker.zig:73` declares
+`.http_request`, `:2540` types `method`/`path`/`content` as `.string`. The selfhost never
+ported the type, so a request inferred as a generic named class, `fieldTypeAny` returned
+nil, the field came back `unknown`, and codegen emitted a raw Zig `==` on two
+`[]const u8`. A pure selfhost-equivalence gap, same family as BUG-261/265/266.
+
+**FIXED by naming the type, not by widening a whitelist — and the control proved that
+mattered.** The proposed minimal fix was to add `method`/`path`/`content` to the
+member-name fallback that rescues `stdout`/`stderr` when an object's type is unresolved.
+That fallback fires on ANY unresolved object, so it would have typed every unresolved
+`.method` as a string. `stdout`/`stderr` are rare enough to survive it; `method`, `path`
+and `content` are not. **BUG-277 is what that mechanism already does to `path`** — a user
+class with an `int` field named `path` does not compile today. The one-line fix would have
+added two more instances of a live bug.
+
+Now: `Type_.http_request` in the union, `typeFromName("HttpRequest")` wired, and the three
+fields typed at the member-access site. Emits `std.mem.eql(u8, req.method, "GET")`.
+
+Adding the variant cost nothing in exhaustiveness — measured 0 errors across 252 `Type_`
+switch arms before committing to the approach.
+
+Pinned by `test/bug276_http_request_str_test.zbr`. gates.sh --full 26/26.
+
+*(`HttpResponse.new(status, body)` — the reporter's other blocker — turned out to already
+exist and work, merely undocumented behind an "etc." in QUICKSTART's capability table. He
+shipped a 404 in place of a 405 for want of that line. Now documented; the table's "etc."
+was a small instance of the same hand-list hazard.)*
+
+
 ### BUG-275: a `?` inside a container expression did not mark the function `throws` — ✅ FIXED 2026-08-08
 
 **Found 2026-08-08** by probing BUG-274's survey — the first CONFIRMED instance from it,

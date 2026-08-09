@@ -1321,6 +1321,13 @@ smoke_tc_fail test/bug270_extern_int_fail.zbr "ambiguous in an \`extern\` signat
 # function in the corpus into one and still pass a detection-only fixture.
 smoke_run     test/bug275_try_in_container_test.zbr "bug275: OK"
 
+# BUG-276: HttpRequest.method/.path/.content are Zebra `str`. The bootstrap typed them
+# all along; the selfhost never ported the type, so comparisons emitted a raw Zig `==`
+# on []const u8. Fixed by adding Type_.http_request, NOT by extending the member-name
+# whitelist — see BUG-277 for what that mechanism does to a user class field named
+# `path`. Reaching the print proves the file compiled, which is the property at issue.
+smoke_run     test/bug276_http_request_str_test.zbr "bug276: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

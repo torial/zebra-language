@@ -128,6 +128,15 @@ union Type_
     sqlite_db
     # A row returned by db.query().
     sqlite_row
+    # The request handed to an Http.serve handler. Its `method`/`path`/`content`
+    # fields are Zebra `str` — see fieldTypeAny's http_request arm.
+    #
+    # BUG-276: this existed in the BOOTSTRAP (src/TypeChecker.zig:73 + the field
+    # typing at 2540) and was never ported, so the selfhost typed a request as a
+    # generic named class, `req.method` inferred `unknown`, and `req.method ==
+    # route.method` emitted a raw Zig `==` on two []const u8 — which Zig rejects.
+    # Every router and handler hit it.
+    http_request
     # The result of db.query() — an ArrayList of sqlite_row. Allows type-tracing
     # through `var rows = db.query(...)` → `for row in rows`.
     sqlite_row_list
@@ -559,6 +568,8 @@ def typeFromName(n: str): Type_
         return Type_.sqlite_db
     if n == "SqliteRow"
         return Type_.sqlite_row
+    if n == "HttpRequest"
+        return Type_.http_request
     if n == "Gui"
         return Type_.gui_context
     if n == "CodeEditor"
@@ -1880,6 +1891,21 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     obj_t = ot
                 else
                     pass
+            # BUG-276: HttpRequest's fields are Zebra `str`. Ported from the bootstrap
+            # (src/TypeChecker.zig:2540), which has typed them since it was the only
+            # compiler; the selfhost never had the type at all, so a request inferred as
+            # a generic named class, `req.method` came back `unknown`, and codegen fell
+            # through to a raw Zig `==` on two []const u8 — which Zig rejects. Every
+            # router and handler in a web framework hits it.
+            #
+            # TYPED HERE rather than added to the `stdout`/`stderr` member-name whitelist
+            # below. That whitelist fires whenever an object's type is UNRESOLVED, so it
+            # would type ANY unresolved `.method`/`.path`/`.content` as a string —
+            # tolerable for names as rare as `stdout`, reckless for three of the most
+            # common field names there are. Naming the type is exact and costs the same.
+            if obj_t is Type_.http_request
+                if m.member == "method" or m.member == "path" or m.member == "content"
+                    return Type_.string_
             if obj_t is Type_.named as tn
                 # Enum member access: Color.red → Type_.named("Color").
                 if ctx.hasEnumAny(tn)

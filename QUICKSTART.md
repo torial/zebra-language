@@ -3088,8 +3088,24 @@ Representative zones (≈ 75 total):
 | `Http.post(url, body)`                        | `HttpResponse?` |
 | `Http.json(url, json)`                        | `HttpResponse?` |
 | `Http.postJson(url, json)`                    | `HttpResponse?` |
-| `HttpResponse.ok(body)` / `notFound(body)` / etc. | `HttpResponse` |
+| `HttpResponse.ok(body)` / `.notFound(body)` / `.err(body)` | `HttpResponse` |
+| `HttpResponse.new(status, body)` — **any status code** | `HttpResponse` |
 | `r.status / r.text / r.headers`               | mixed           |
+| `req.method / req.path / req.content` (handler arg) | `str`     |
+
+`HttpResponse.new(status, body)` is how you build a response with a status the
+named factories do not cover — a 405, a 302, a 422:
+
+```zebra
+var r = HttpResponse.new(405, "method not allowed")
+```
+
+It was reachable but undocumented until 2026-08-08, and a framework author
+shipped a 404 in place of a 405 for want of this line.  The bare-constructor
+form `HttpResponse(405, "…")` does **not** work — that is BUG-250.
+
+`Http.serve`'s handler receives an `HttpRequest` whose `method`, `path` and
+`content` are ordinary `str`, so they compare with `==` like any other string.
 
 ### `Ws` — WebSocket client and server
 
