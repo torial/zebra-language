@@ -78,64 +78,85 @@ native slice type instead. Declaration-only externs parse and resolve fine
 (the gap is exactly at the ABI boundary), so BUG-258's fix is confirmed
 working -- this is the next layer down.
 
-### BUG-280: identifier escaping for Zig keywords is a hand-list, and field declarations skip it entirely
+### BUG-280: field names are not escaped for Zig keywords — ⚠ HALF FIXED (bootstrap done, selfhost pending)
 
-**Found 2026-08-09** freeing reserved words under NEXT_STEPS U4a. Five of the seven
-words worked immediately as locals, parameters and fields. Two did not, and the two
-failures are the same root cause seen from different angles.
+**Found 2026-08-09** freeing reserved words under U4a. **Bootstrap fixed and verified
+2026-08-11; the selfhost is the remaining work.** Read the state section before touching
+anything.
 
 ```
 class C
-    var error: int = 0
+    var align: int = 0
 ```
 ```
-error: expected '.', found ':'      # in the EMITTED Zig
-error: i64 = 0,
+error: expected type expression, found 'align'     # in the EMITTED Zig
 ```
 
-```
-def main()
-    var try = 1
-```
-```
-error: expected 'an identifier', found 'try'    # also the emitted Zig
-```
+`align`, `packed`, `opaque`, `volatile`, `threadlocal`, `anyframe` and `noalias` are Zig
+keywords that **Zebra never reserved**. All seven are legal Zebra identifiers today, and
+all seven failed as class fields. This is live for code a user can write right now.
 
-**Two defects, both rule 1.**
+**TWO DEFECTS, and only one of them is the live bug.**
 
-1. **`isZigKeyword` (`src/CodeGen.zig:2093`) is a hand-maintained list**, and it is
-   incomplete. It has `error`, `defer`, `switch`, `struct` — and not `try`, `catch`,
-   `orelse`, `if`, `else`, `while`, `for`, `return`, `break`, `continue`, `and`, `or`.
-   The oracle it should be deriving from is Zig's own keyword set.
+1. **The field paths never called `emitName`.** `emitName`/`zigSafeName` has always
+   escaped correctly — which is why `var align = 1` as a *local* worked all along. The
+   field, constructor, struct-literal and member-access paths simply did not call it.
+   **This is the whole live bug.**
+2. `isZigKeyword` is a hand-maintained 37-entry list against Zig's own 46, missing
+   `try`, `catch`, `orelse`, `if`, `else`, `while`, `for`, `return`, `break`,
+   `continue`, `and`, `or`. **All twelve are ALSO Zebra keywords**, so the gap bites
+   nothing today — it matters only because `try` cannot be freed until it is closed.
+   Recorded so nobody mistakes it for the urgent half. (`std.zig.Token.keywords` is the
+   derivable oracle, but do NOT reach for it from the selfhost through a `zig"..."`
+   literal — that couples codegen to a stdlib internal inside the one construct the
+   lints are structurally blind to. Hand-list both, and gate the comparison.)
 
-2. **Field declarations never consult it.** `emitName` exists and does the right thing
-   (`@"error"`), but the struct-field emit path does not go through it — which is why
-   `error` works as a local and a parameter and fails as a field. `self.error = 0` in
-   the generated initialiser is unescaped too.
+**THE SITE MAP IS DERIVED, AND THAT IS THE POINT.** Reading the source found **four**
+sites. Emitting a probe that uses a keyword field in every position, and grepping the
+output, found **nine**:
 
-**Consequence, and why it gates U4a.** `error` and `try` were on Sean's list to free
-and are deliberately **still reserved** because of this. Freeing a word the compiler
-cannot then emit trades a clear Zebra diagnostic (`expected identifier, got 'try'`) for
-a Zig parse error against generated code with no Zebra source location — strictly worse
-for the user, and the exact shape UNGIT test 2 rules out. The other five (`weaves`,
-`expect`, `lock`, `from`, `trace`) are not Zig keywords and are freed.
+| site | found by |
+|---|---|
+| instance field declaration (class, struct, generic — three class-emit paths) | reading |
+| constructor init `self.x = ...` | reading |
+| member access `c.x`, read and write — the keystone, one site covers many symptoms | reading |
+| reflection strings `&.{"align"}` — **must stay bare**, it is data | reading |
+| **synthesised constructor parameter** `pub fn init(align: i64)` | **the probe** |
+| **struct-literal designator** `.{ .align = align }` — designator *and* parameter | **the probe** |
+| **static field declaration** `pub var align: i64` and `C.align` | **the probe** |
+| **`except` temp-copy** `_tmp.align = 11` | **the probe** |
+| **named-arg struct literal** `Point{ .align = 7 }` | **the probe** |
 
-**This is latent for words that are ALREADY free.** Zebra does not reserve `align`,
-`packed`, `opaque`, `volatile`, `threadlocal`, `noalias`, `linksection`, `addrspace`,
-`anyframe`, `nosuspend`, `suspend`, `resume`, `await`, `async` — all Zig keywords, all
-legal Zebra identifiers today, all presumably broken as field names right now. The
-field-path defect is therefore a live bug for existing code, not only a blocker for
-U4a. **That is the half worth fixing first.**
+A tenth surfaced during the fix: five interface-typed locals in `genLocalVar` were
+missing the escaping too — a latent instance of the same bug nobody had reported.
 
-**Fix direction:** route every identifier emit through `emitName`, and derive the
-keyword set rather than listing it — Zig exposes `std.zig.Token.keywords`, so the list
-can be a lookup into the compiler's own table instead of a copy of it. Both compilers.
+**STATE, 2026-08-11.**
+- `src/CodeGen.zig` — **DONE.** Bootstrap emits zero bare keywords; the fixture
+  compiles and runs with every value correct.
+- `selfhost/CodeGen.zbr` — **NOT STARTED.** Same functions: `genFieldDecl` (~3406),
+  `genLocalVar` (~5647), the member arm of `genExpr`, the synthesised-init pair, the
+  `except` temp-copy, capture struct fields, named-arg struct literals. The selfhost has
+  many more `w.emit(n.name)` sites than the bootstrap had — **scope by function, do not
+  blanket-replace.** (In the bootstrap a blanket replace matched 7 where 3 were expected;
+  checking each is what made it safe.)
+- `tools/keyword_ident_check.sh` — new gate. **Not registered in `gates.sh`** yet.
+  Register it with the selfhost fix.
+- `tools/fixtures/bug280_keyword_idents.zbr` — deliberately OUTSIDE `test/`, because a
+  corpus file the bootstrap compiles and the selfhost does not is exactly what
+  `divergence_check --gate` exists to catch. Move it to `test/` with a smoke
+  registration in the commit that fixes the selfhost.
 
-**Control when fixing:** a field, a local, a parameter, a `self.X =` assignment and a
-struct-literal initialiser named `align` must all compile and round-trip — `align` is
-chosen because it is a Zig keyword Zebra never reserved, so it tests the LIVE bug rather
-than the U4a blocker, and it will not stop being a Zig keyword the way a fixed bug stops
-being reproducible. Then `error` and `try` can be freed and this entry closed with U4a.
+**Control when fixing:** `bash tools/keyword_ident_check.sh` is the oracle — it strips
+string literals and reports any keyword left bare, so `@"align"` and the reflection
+string `"align"` both correctly pass while `align: i64` does not. It needs no
+allow-list, which is the point. **Known limitation:** it false-positives on `opaque`
+against the bootstrap's `--emit-zig` single-file output, because the inlined runtime
+preamble uses `opaque {}` as real Zig; clean against the selfhost's `--output-dir`
+default. Fix by diffing against a no-keyword control emit.
+
+**Do not forget:** freeing `error`/`try` afterwards requires flipping the Parser tests
+that currently assert they are rejected, and dropping `lint_reserved_words`'s BASELINE
+from 3 entries to 1.
 
 ### BUG-279: `zig build test` is red on committed code, in no gate tier, for three unrelated reasons
 

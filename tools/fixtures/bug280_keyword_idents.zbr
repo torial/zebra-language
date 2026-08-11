@@ -1,0 +1,53 @@
+# BUG-280 regression: a Zig keyword that Zebra does NOT reserve must be usable as an
+# identifier in every position, because codegen has to escape it as @"name" on the way
+# out. Before the fix, `emitName` existed and did the right thing — but the field paths
+# never called it, so a class field named `align` emitted `align: i64 = 0,` and the
+# generated Zig would not parse.
+#
+# The words below are all Zig keywords and none are Zebra keywords, so a user can write
+# them today and nothing warns them. `align` is the control that matters: it was never
+# reserved by Zebra, so this tests the LIVE bug rather than a word freed alongside it.
+#
+# Every position the site survey turned up is exercised here. If a new emit path is
+# added that writes a field name without going through emitName, this stops compiling.
+
+class Route
+    var align: int = 0
+    var volatile: str = ""
+    static var opaque: int = 7
+
+    def bump()
+        .align = .align + 1
+
+struct Point
+    var align: int = 0
+    var packed: int = 0
+
+def takes(align: int, noalias: str): str
+    return align.toString() + noalias
+
+def main()
+    # instance field: declaration, constructor init, read, write
+    var r = Route()
+    r.align = 5
+    r.volatile = "v"
+    r.bump()
+    print("${r.align} ${r.volatile}")
+
+    # static field: qualified declaration and access
+    Route.opaque = 9
+    print(Route.opaque)
+
+    # struct literal — designator and the synthesised init parameter
+    var p = Point(align: 7, packed: 8)
+    print("${p.align} ${p.packed}")
+
+    # `except` update — writes the field name into a temp-copy assignment
+    var q = p except align = 11
+    print(q.align)
+
+    # ordinary parameters and locals (these already worked; kept as the both-directions half)
+    var anyframe = 3
+    print(takes(anyframe, "n"))
+
+    print("bug280: OK")

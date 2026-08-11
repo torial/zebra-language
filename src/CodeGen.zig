@@ -5634,7 +5634,7 @@ const Generator = struct {
                             try g.w.writeAll("pub ");
                             try g.w.writeAll(kw);
                             try g.w.writeAll(" ");
-                            try g.w.writeAll(n.name);
+                            try g.emitName(n.name);                         // BUG-280
                             try g.w.writeAll(": ");
                             try g.genType(tr);
                             try g.w.writeAll(" = ");
@@ -5648,7 +5648,7 @@ const Generator = struct {
             try g.w.writeAll("pub ");
             try g.w.writeAll(kw);
             try g.w.writeAll(" ");
-            try g.w.writeAll(n.name);
+            try g.emitName(n.name);                         // BUG-280
             if (n.type_) |tr| {
                 try g.w.writeAll(": ");
                 try g.genType(tr);
@@ -5672,7 +5672,7 @@ const Generator = struct {
             else try g.w.writeAll(" = undefined");
             try g.w.writeAll(";\n");
         } else {
-            try g.w.writeAll(n.name);
+            try g.emitName(n.name);                         // BUG-280
             try g.w.writeAll(": ");
             // StringBuilder as struct field: emit the concrete type and default to empty.
             if (n.type_) |tr| {
@@ -5867,7 +5867,8 @@ const Generator = struct {
                 if (m != .var_) continue;
                 if (m.var_.mods.static_) continue;
                 if (fi > 0) try ig.w.writeAll(", ");
-                try ig.w.print("{s}: ", .{m.var_.name});
+                try ig.emitName(m.var_.name);          // BUG-280
+                try ig.w.writeAll(": ");
                 if (m.var_.type_) |tr| try ig.genType(tr) else try ig.w.writeAll("anytype");
                 fi += 1;
             }
@@ -5883,7 +5884,10 @@ const Generator = struct {
                     if (m != .var_) continue;
                     if (m.var_.mods.static_) continue;
                     if (fj > 0) try sig.w.writeAll(",");
-                    try sig.w.print(" .{s} = {s}", .{ m.var_.name, m.var_.name });
+                    try sig.w.writeAll(" .");                // BUG-280: designator
+                    try sig.emitName(m.var_.name);
+                    try sig.w.writeAll(" = ");
+                    try sig.emitName(m.var_.name);          // ...and the parameter
                     fj += 1;
                 }
                 try sig.w.writeAll(" };\n");
@@ -11133,7 +11137,7 @@ const Generator = struct {
             // Emit capture fields
             for (e.capture) |cv| {
                 try fg.writeIndent();
-                try fg.w.writeAll(cv.name);
+                try fg.emitName(cv.name);  // BUG-280
                 try fg.w.writeAll(": ");
                 if (cv.type_) |tr| {
                     try fg.genType(tr);
@@ -11209,7 +11213,7 @@ const Generator = struct {
             try g.w.writeAll("{ ");
             for (e.capture) |cv| {
                 try g.w.writeAll(".");
-                try g.w.writeAll(cv.name);
+                try g.emitName(cv.name);  // BUG-280
                 try g.w.writeAll(" = ");
                 if (cv.init) |init| try g.genExpr(init) else try g.w.writeAll("undefined");
                 try g.w.writeAll(", ");
@@ -13703,7 +13707,7 @@ const Generator = struct {
         for (s.fields) |f| {
             try ig.writeIndent();
             try ig.w.writeAll("_tmp.");
-            try ig.w.writeAll(f.name);
+            try ig.emitName(f.name);   // BUG-280
             try ig.w.writeAll(" = ");
             try ig.genExceptFieldValue(f);
             try ig.w.writeAll(";\n");
@@ -13734,7 +13738,7 @@ const Generator = struct {
         for (s.fields) |f| {
             try ig.writeIndent();
             try ig.w.writeAll("_tmp.");
-            try ig.w.writeAll(f.name);
+            try ig.emitName(f.name);   // BUG-280
             try ig.w.writeAll(" = ");
             try ig.genExceptFieldValue(f);
             try ig.w.writeAll(";\n");
@@ -14171,7 +14175,10 @@ const Generator = struct {
                 };
                 try g.genExpr(e.object);
                 try g.w.writeAll(".");
-                try g.w.writeAll(e.member);
+                // BUG-280: a field may be named for a ZIG keyword (align, volatile,
+                // opaque...) that Zebra does not reserve. emitName escapes it as
+                // @"name"; the declaration side does the same, so the two agree.
+                try g.emitName(e.member);
                 if (field_needs_deref) try g.w.writeAll(".*");
             },
             .call  => |e| try g.genCall(e),
@@ -14573,7 +14580,7 @@ const Generator = struct {
                     try g.w.print(") |_oc_val_{d}| _oc_blk_{d}: {{ var _oc_{d} = _oc_val_{d}; break :_oc_blk_{d} _oc_{d}.{s}(", .{uid, uid, uid, uid, uid, uid, e.member});
                     for (args, 0..) |a, i| {
                         if (i > 0) try g.w.writeAll(", ");
-                        if (a.name) |nm| try g.w.print(".{s} = ", .{nm});
+                        if (a.name) |nm| { try g.w.writeAll("."); try g.emitName(nm); try g.w.writeAll(" = "); }   // BUG-280
                         try g.genExpr(a.value);
                     }
                     try g.w.print("); }} else null)", .{});
@@ -15796,7 +15803,9 @@ const Generator = struct {
                             for (e.args, 0..) |a, i| {
                                 if (i > 0) try g.w.writeAll(",");
                                 if (a.name) |n| {
-                                    try g.w.print(" .{s} = ", .{n});
+                                    try g.w.writeAll(" .");   // BUG-280
+                                    try g.emitName(n);
+                                    try g.w.writeAll(" = ");
                                     // Look up field type from members for typed generic init.
                                     const field_type: ?Ast.TypeRef = blk: {
                                         for (members) |m| {
@@ -16807,7 +16816,7 @@ const Generator = struct {
             const fg = g.indented();
             for (e.capture) |cv| {
                 try fg.writeIndent();
-                try fg.w.writeAll(cv.name);
+                try fg.emitName(cv.name);  // BUG-280
                 try fg.w.writeAll(": ");
                 if (cv.type_) |tr| {
                     try fg.genType(tr);
@@ -16921,7 +16930,7 @@ const Generator = struct {
             try g.w.writeAll("{ ");
             for (e.capture) |cv| {
                 try g.w.writeAll(".");
-                try g.w.writeAll(cv.name);
+                try g.emitName(cv.name);  // BUG-280
                 try g.w.writeAll(" = ");
                 if (cv.init) |init| try g.genExpr(init) else try g.w.writeAll("undefined");
                 try g.w.writeAll(", ");
@@ -16986,7 +16995,7 @@ const Generator = struct {
                 // Structs, enums, unions, and primitives are value types (no pointer).
                 if (g.class_names.contains(n.name)) {
                     try g.w.writeAll("*");
-                    try g.w.writeAll(n.name);
+                    try g.emitName(n.name);                         // BUG-280
                     return;
                 }
                 // StringBuilder as a struct field or typed local: emit std.ArrayList(u8).
@@ -17044,7 +17053,7 @@ const Generator = struct {
                         break :blk kind == .class;
                     };
                     if (is_class) try g.w.writeAll("*");
-                    try g.w.writeAll(n.name);
+                    try g.emitName(n.name);                         // BUG-280
                     return;
                 }
                 // Try static mapping first; fall back to dynamic sized-type emission
@@ -17096,7 +17105,7 @@ const Generator = struct {
                     // Bare class name.
                     if (g.class_names.contains(n.name)) {
                         try g.w.writeAll(nilable_prefix);
-                        try g.w.writeAll(n.name);
+                        try g.emitName(n.name);                         // BUG-280
                         return;
                     }
                     // Cross-module dotted class: Mod.ClassName.
@@ -17111,7 +17120,7 @@ const Generator = struct {
                         };
                         if (is_class) {
                             try g.w.writeAll(nilable_prefix);
-                            try g.w.writeAll(n.name);
+                            try g.emitName(n.name);                         // BUG-280
                             return;
                         }
                     }
