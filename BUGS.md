@@ -251,14 +251,54 @@ habit this bug exists to discourage.
    means; this is effectively "Zig's keywords are reserved for TYPE and METHOD names,
    but free everywhere else."
 
-**Recommended: 3 now, 2 later, and 1 probably never.** Option 3 converts a confusing
-failure into a clear one immediately and is deleted in one commit if 1 or 2 lands. Option
-2 is the real fix and retires the class instead of paying it down site by site. Option 1
-buys the same outcome as 2 for more work and leaves the next new emit site exposed. Note
-the asymmetry that makes 3 defensible: BUG-280 was reported because a *field* could not be
-named `align` — a DB column, a config key — and fields are now fully supported. A *class*
-named `opaque` is a much rarer thing to want. **Sean's call; my preference matches the
-recommendation.**
+**DECIDED 2026-08-12: option 2, the prefix.** Sean's call — an investment against future
+work, and he wants the bootstrap retired soon anyway, so paying a bootstrap tax here is
+not worth it. **Selfhost-first is therefore acceptable**, under the standing rule: the
+bootstrap must still COMPILE the selfhost source, which it does, because no `.zbr` source
+changes.
+
+**The argument for 2 over 1 is NOT "no escaping ever needed" — that is weak, since both
+cost the same ~45 sites up front. It is the FAILURE MODE afterward:**
+
+| | a newly-added emit site that forgets | |
+|---|---|---|
+| escaping (1) | breaks only for a keyword-named type — **silent, latent, rare** | this bug, twice |
+| prefixing (2) | emits `Route` when nothing declares it — **Zig errors on the first test that uses any class** | loud, immediate, universal |
+
+That converts a rare silent failure into an unmissable one, which is the principle the
+rest of this repo is built on. It is also why family G costs the selfhost nothing today.
+
+**THE ONE REAL COST, found by measuring rather than reasoning.** Of 70 `zig"..."` inline
+literals, **three** reference a Zebra type by its emitted spelling — `zig"Counter{}"`,
+`zig"Greeter{}"`, `zig"Point{}"`. So prefixing raises a language question: **is the
+emitted Zig spelling of a Zebra type part of the public contract for `zig"..."` escape
+hatches?** Note these are the construct the lints are structurally blind to (BUG-267), so
+they cannot be found by any checker — only by grep.
+
+**Design, defaulting to preserving that surface:**
+
+```zig
+pub const _zbr_ty_Route = struct { ... };
+pub const Route = _zbr_ty_Route;   // OMITTED when the name is itself a Zig keyword
+```
+
+Compiler-generated references all use the prefix, so a missed emit site still fails
+loudly. Hand-written `zig"..."` keeps working for every name that works today. A
+keyword-named type gets no alias, which costs nothing — `zig"opaque{}"` does not work
+today either. `zigSafeName` already answers "does this need escaping", so it is the same
+predicate that decides whether to emit the alias.
+
+**Sequencing.** B (type names) first, since E (method names) is namespaced inside the
+type and becomes easier once B lands. G disappears for free the moment the bootstrap is
+retired, and is already a non-issue in the selfhost.
+
+**What this does NOT fix, measured 2026-08-12 in answer to a direct question:** the
+trailing-`_` convention in the selfhost sources. Of 94 such identifiers, **48** dodge a
+**ZEBRA** keyword (`var_`, `class_`, `if_`, `int_`, `bool_`, `except_`…), 44 are
+stylistic, and only **2** (`fn_`, `void_`) dodge a Zig name. A Zebra-keyword collision
+happens in the TOKENIZER, before anything is emitted, so no emit-side scheme can touch
+it. The lever for those 48 is freeing Zebra keywords — the `lint_reserved_words` / U4
+line of work. Two problems that look like one.
 
 **Do not fix these by hand-hunting `w.emit(<x>.name)` call sites.** There are hundreds,
 most of them correct. The reliable procedure is the one that produced this table: extend
