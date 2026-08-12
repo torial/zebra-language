@@ -5,7 +5,7 @@
 # WHY THIS EXISTS
 # ---------------
 # There are 20 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 20 = grep -c '^run "' tools/gates.sh -->
-# (CLAUDE.md explains each), plus four heavy witnesses in FULL. The count in this
+# (CLAUDE.md explains each), plus EIGHT more in FULL — 28 total. The count in this
 # sentence has been wrong before: it said "seven" while twelve were registered, and
 # doc_lint cannot catch that class -- a number in prose has no referent to resolve.
 # If you add a `run` line, fix the number here; `grep -c '^run "' tools/gates.sh` is
@@ -31,7 +31,8 @@
 #         BUG-221 repro — the only gate that RUNS emitted output, and the only one
 #         that checks the DEFAULT shape is actually the split one). Catches most
 #         breakage fast.
-# FULL  = QUICK plus the four heavy independent witnesses:
+# FULL  = QUICK plus EIGHT more (28 total, 2026-08-11) — the heavy independent
+#         witnesses, plus the two flag gates no other tier exercises:
 #         compile_check        — compiles what the selfhost emits (`zig` as witness)
 #         compile_check-inline — the same corpus with --no-runtime-module. The split
 #                                runtime is the DEFAULT now, so the INLINE shape is
@@ -44,6 +45,14 @@
 #                            regressions, not existing wrongness.
 #         full_sweep       — emits + typechecks the WHOLE corpus, gated on regression
 #         divergence       — emits with BOTH compilers, gated on selfhost gaps
+#         examples_sweep   — the same sweep over examples/, which NO other gate touches
+#         release-mode     — THE ONLY GATE THAT BUILDS WITH --release. Every other gate
+#                            in both tiers is Debug, which is how BUG-228 shipped Debug
+#                            from `--release` for four days under 19 green gates
+#         contract-mode    — the only gate that passes --turbo, asserting what the two
+#                            shipping flags actually DO (and that --release ALONE still
+#                            fires contracts, which is what a plausible "optimisation"
+#                            breaks)
 #
 # HONEST LIMITS — what NO tier here covers:
 #   * Anything requiring a GUI. No gate clicks a button; the libui_ng/IDE paths
