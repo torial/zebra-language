@@ -108,10 +108,21 @@ a name that does not resolve. Note the refusal matters as much as the substituti
 typo must say *"no Zebra type named Countr"* at compile time rather than emit text that
 fails later inside Zig.
 
+**FIX THIS BEFORE BUG-281 B, not after.** They look coupled and are not. Landing the
+substitution first means the three corpus literals migrate while the old spelling still
+works, so the prefix commit that follows breaks nothing at all and needs no deprecation
+story. Landing the prefix first breaks every `zig"Type{}"` in existence with nothing to
+migrate *to*. Same two commits, opposite user experience.
+
 **Control when fixing:** the three corpus literals migrated to the new form must still
 produce a working program, AND an unknown name must be REFUSED with a Zebra diagnostic
 naming it. A substitution that silently passes through an unrecognised name would restore
-exactly the ambient guess this exists to remove.
+exactly the ambient guess this exists to remove — and it would do it invisibly, since
+`zig"..."` contents are what no lint here can read.
+
+**Verify the refusal by MAKING IT FIRE, not by reading the code.** `zig"${Countr}{}"`
+must fail at Zebra compile time naming `Countr`; if it instead emits `${Countr}` as text
+and dies inside `zig`, the check is not doing its job even though the build is red.
 
 ### BUG-282: `--output-dir` at a path that does not exist PANICS instead of refusing
 
@@ -336,9 +347,21 @@ not assumed.
 
 **Accepted cost: the emitted Zig spelling of a Zebra type becomes PRIVATE.** A
 hand-written `zig"Foo{}"` naming a type by that spelling stops resolving. Three such
-literals exist in the corpus (`zig"Counter{}"`, `zig"Greeter{}"`, `zig"Point{}"`) and
-must be migrated in the same commit. Naming a Zebra type from inside a `zig"..."` literal
-then needs a real mechanism instead of ambient knowledge — **BUG-283**.
+literals exist in the corpus: `zig"Counter{}"`, `zig"Greeter{}"`, `zig"Point{}"`.
+
+**LAND BUG-283 FIRST — the two decouple completely, and the order matters.** An earlier
+draft of this entry said to migrate those three literals *in the same commit* as the
+prefix. That is wrong, and needlessly so:
+
+| order | what the prefix commit does to users |
+|---|---|
+| prefix first, then BUG-283 | **breaks every `zig"Type{}"` in existence** with nothing to migrate *to* — the replacement mechanism does not exist yet |
+| **BUG-283 first, then prefix** | the substitution form exists, the three literals move to it while the old spelling still works, and the prefix commit then breaks **nothing** |
+
+With BUG-283 in place the prefix becomes a pure internal change with no user-visible
+surface at all — which is the whole point of doing it as an investment rather than a
+patch. It also means the prefix no longer needs a deprecation story, because by the time
+it lands nothing depends on the spelling.
 
 **Sequencing.** B (type names) first, since E (method names) is namespaced inside the
 type and becomes easier once B lands. G disappears for free the moment the bootstrap is
