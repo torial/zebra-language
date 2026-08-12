@@ -834,8 +834,38 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
-**Swept 2026-08-04, all clean** — run overnight with the machine otherwise idle, so no
-gate measured contention as a failure. Sequential, not parallel.
+**FULL tier swept 2026-08-11 — 28/28 PASS, but ASSEMBLED, not observed in one run.**
+`gates.sh --full` was killed twice by the harness before reaching the heavy witnesses
+(once at gate 23, once during `smoke`) with no contention to explain it — no processes
+from this tree, 6 GB free, 0% CPU. So the 21 QUICK-plus-`release-mode` lines come from
+the first partial run and the remaining 7 were each run individually. Every gate was
+seen green; **no single invocation was**. Recorded that way deliberately: a tier result
+stitched from separate runs is weaker evidence than one clean pass, because nothing
+proves the tree was in the same state throughout.
+
+| gate | result |
+|---|---|
+| `output_sweep --gate` | 322 files, behaviour identical to baseline (15 nondeterministic) |
+| `compile_check` | 255 passed, 0 FAILED, 2 skipped |
+| `compile_check-inline` | 255 passed, 0 FAILED — identical to the default shape |
+| `full_sweep --gate` | 0 regressions vs baseline (337) |
+| `examples_sweep` | 0 regressions vs baseline (14) |
+| `divergence --gate` | **0 selfhost gaps**; 44 bootstrap gaps (informational) |
+| `contract-mode` | 13/13 |
+| QUICK (separate run, one invocation) | **20/20** — smoke 327/327, round-trip byte-identical |
+
+Two numbers worth recording, neither of which this file previously carried.
+`divergence` reports **44 bootstrap gaps** — cases where the selfhost LEADS. Still
+informational, still "don't chase", but the last written-down figures are **14** in
+`docs/divergence_audit.md` and 23 in a session memory, so it has roughly tripled
+unremarked and no document here tracked it. And `full_sweep` reports
+**369 PASS against a baseline of 337**, i.e. **32 accumulated new passes** nobody has
+locked in. A baseline defines the pass set, so those 32 files cannot make the gate red
+however broken they become. Re-baselining is a real coverage win and is **not** done —
+`full_sweep --update-baseline` FIRST, then `output_sweep --update-baseline`.
+
+**Previous sweep 2026-08-04, all clean** — run overnight with the machine otherwise idle,
+so no gate measured contention as a failure. Sequential, not parallel.
 
 | path | result |
 |---|---|
