@@ -1,0 +1,48 @@
+# BUG-283: `${Name}` inside a zig"..." literal names a ZEBRA TYPE, and the compiler
+# supplies that type's current emitted Zig spelling.
+#
+# Before this, a zig literal could only name a type by GUESSING the spelling —
+# `zig"Counter{}"` worked only because a `class Counter` happened to emit as `Counter`.
+# That is an ambient dependency on an internal detail, inside the one construct every
+# lint here is structurally blind to, so a change to the emitted spelling broke user
+# code that no tool could find. Three corpus literals relied on the guess and were
+# migrated to this form.
+#
+# The paired NEGATIVE test is bug283_zig_lit_unknown_type_fail.zbr, and it is the half
+# that matters: `${...}` was RAW PASSTHROUGH before this feature, so an unrecognised
+# name emitted verbatim would fail exactly the way it always did. Without the refusal
+# the feature would look implemented while its whole purpose went unmet.
+
+struct Point
+    var x: int = 0
+    var y: int = 0
+
+class Counter
+    var n: int = 0
+
+    def bump()
+        .n = .n + 1
+
+def main()
+    # struct: the designator form the migrated corpus literals use
+    var p: Point = zig"${Point}{ .x = 3, .y = 4 }"
+    print(p.x + p.y)
+
+    # bare `${T}{}` — the exact shape of the three migrated literals
+    var p2: Point = zig"${Point}{}"
+    print(p2.x)
+
+    # a class, through its emitted init
+    var c: Counter = zig"${Counter}.init()"
+    c.bump()
+    print(c.n)
+
+    # two substitutions in ONE literal, with text on both sides and between
+    var sz = zig"(@sizeOf(${Point}) > 0 and @sizeOf(${Point}) > 0)"
+    print(sz)
+
+    # a literal with NO substitution still passes through untouched
+    var plain = zig"@as(i64, 42)"
+    print(plain)
+
+    print("bug283: OK")

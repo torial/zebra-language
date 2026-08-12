@@ -5,6 +5,6 @@ class Greeter
 class Program
     static
         def main
-            var g: Greeter = zig"Greeter{}"
+            var g: Greeter = zig"${Greeter}{}"
             var msg: String = g.greet("world")
             print(msg)

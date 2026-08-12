@@ -1931,6 +1931,38 @@ def rawMemset(ptr: uint, size: uint)
 `zig"…"` is **statement-level only** — it cannot declare a top-level symbol.  To
 declare a foreign function, use `extern` (next section).
 
+### Naming a Zebra type inside a `zig"…"` literal
+
+Use `${TypeName}` and the compiler substitutes that type's emitted Zig spelling:
+
+```zebra
+struct Point
+    var x: int = 0
+    var y: int = 0
+
+def main()
+    var p: Point = zig"${Point}{ .x = 3, .y = 4 }"
+    print(p.x + p.y)
+```
+
+**Do not write the Zig spelling directly.** `zig"Point{}"` may happen to work today, but
+it hard-codes an internal detail of code generation: nothing promises a Zebra type keeps
+its name on the way out, and because the compiler cannot read inside a `zig"…"` literal,
+a change to that spelling would break your code with no warning from any tool. `${Point}`
+asks instead of guessing, so it keeps working when the emitted form changes.
+
+The name must be a class, struct, enum, union or type alias visible from the current
+module — including one from a `use`d dependency. Anything else is a compile error naming
+the word:
+
+```
+error: no Zebra type named 'Countr' — '${Countr}' in a zig literal must name a
+       class, struct, enum or union in scope
+```
+
+`${…}` is only special for type names; every other character in the literal passes
+through untouched, so ordinary Zig braces (`.{ .x = 1 }`) need no escaping.
+
 ---
 
 ## 23a. `extern` — calling C (FFI)

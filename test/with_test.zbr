@@ -5,7 +5,7 @@ class Point
 class Program
     static
         def main
-            var p: Point = zig"Point{}"
+            var p: Point = zig"${Point}{}"
             with p
                 x = 10
                 y = 20

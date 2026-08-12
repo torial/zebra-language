@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing StringPart, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp
+use Ast exposing StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -1795,8 +1795,64 @@ def isSimdTypeName(name: str): bool
         return true
     return false
 
+# BUG-283: validate every `${Name}` in a zig"..." literal against the types this module
+# can see.  Codegen substitutes the emitted spelling; an unknown name must be refused
+# HERE, where there is a span and a real diagnostic, because emitting it verbatim would
+# reproduce the pre-feature behaviour exactly (raw passthrough -> a Zig parse error with
+# no Zebra location).
+#
+# The marker is BUILT rather than written literally: `"${"` in Zebra source is an
+# unterminated INTERPOLATION and the bootstrap refuses the file. Same family as BUG-216.
+def checkZigLitTypeRefs(zl: ExprZigLit, ctx: InferCtx)
+    var marker: str = "$" + "{"
+    var rest: str = zl.text
+    while marker in rest
+        var open = rest.indexOf(marker)
+        var after = rest.substring(open + 2, rest.len)
+        if not ("}" in after)
+            ctx.errors.add(Diagnostic(ctx.file, zl.span.line, zl.span.col,
+                "unterminated '" + marker + "...}' in a zig literal"))
+            return
+        var close = after.indexOf("}")
+        var nm: str = after.substring(0, close)
+        if not zigLitTypeIsKnown(nm, ctx)
+            ctx.errors.add(Diagnostic(ctx.file, zl.span.line, zl.span.col,
+                "no Zebra type named '" + nm + "' — '" + marker + nm +
+                "}' in a zig literal must name a class, struct, enum or union in scope"))
+        rest = after.substring(close + 1, after.len)
+
+def zigLitTypeIsKnown(nm: str, ctx: InferCtx): bool
+    if ctx.module_types.hasClass(nm)
+        return true
+    if ctx.module_types.hasEnum(nm) or ctx.module_types.hasUnion(nm)
+        return true
+    if ctx.module_types.isTypeAlias(nm)
+        return true
+    # A dependency's type is legal too — `use Foo` then `${Bar}` where Bar is Foo's.
+    if ctx.dep_types.hasClass(nm)
+        return true
+    if ctx.dep_types.hasEnum(nm) or ctx.dep_types.hasUnion(nm)
+        return true
+    return false
+
 def inferExpr(e: Expr, ctx: InferCtx): Type_
     branch e
+        # BUG-283: `${Name}` inside a zig"..." literal names a ZEBRA TYPE, and codegen
+        # substitutes that type's current emitted spelling.  An unknown name is REFUSED
+        # here, with a located Zebra diagnostic, rather than emitted verbatim.
+        #
+        # THE REFUSAL IS THE LOAD-BEARING HALF, not a nicety.  `${...}` was raw
+        # passthrough before this feature existed, so it reached `zig` and died there.
+        # A substitution that silently passed an unknown name through would fail in
+        # EXACTLY the same way it does today — the feature would look implemented while
+        # the case it exists to fix went untouched, and every test would still pass.
+        #
+        # zig_lit had no arm here at all, so this is purely additive; the type is still
+        # whatever the else arm gave it (unresolved), because a raw Zig literal has no
+        # Zebra type.
+        on Expr.zig_lit as zl
+            checkZigLitTypeRefs(zl, ctx)
+            return Type_.unresolved
         on Expr.int_lit as _
             return Type_.int_
         on Expr.float_lit as _

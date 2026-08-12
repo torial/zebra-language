@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-283. Next new bug: BUG-284.**
+**Last bug number generated: BUG-285. Next new bug: BUG-286.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -150,6 +150,59 @@ exactly the ambient guess this exists to remove — and it would do it invisibly
 **Verify the refusal by MAKING IT FIRE, not by reading the code.** `zig"${Countr}{}"`
 must fail at Zebra compile time naming `Countr`; if it instead emits `${Countr}` as text
 and dies inside `zig`, the check is not doing its job even though the build is red.
+
+### BUG-284: a `zig"..."` literal has NO source position, so its diagnostics say `0:0`
+
+**Found 2026-08-12** implementing BUG-283, whose refusal is the first diagnostic ever
+attached to a zig literal — which is how nobody noticed.
+
+```
+bad.zbr:0:0: error: no Zebra type named 'Countr' — ...
+```
+
+`AstBuilder` builds every zig literal with `zspan()`, and `zspan()` is literally
+`Span(0, 0, 0, 0)`. The parser *has* the position — it is holding the token at
+`Parser.zbr:3044` — but `PNode.expr_zig_lit` is declared as a bare `str`, so the line and
+column are dropped on the floor between the two.
+
+**Why it matters beyond tidiness.** A diagnostic that cannot say *where* fails the UNGIT
+"nothing fabricated" test twice over: `0:0` is not unknown-spelled-as-unknown, it is a
+**plausible-looking coordinate that is simply wrong**, and it defeats caret rendering,
+which reads line/col to quote the source. In a file with several zig literals the reader
+is told only that one of them is bad.
+
+**The fix has precedent in the same file.** `PNode.expr_id` already carries `name`,
+`line` and `col`, and the Resolver uses them (`fmtErrAt(id.line, id.col, …)`). So the
+change is to give `expr_zig_lit` the same treatment: a payload with `text`, `line`, `col`,
+set at `Parser.zbr:3044` from the token, and read in `AstBuilder.zbr:840` in place of
+`zspan()`. Two construction sites, one declaration.
+
+**Control when fixing:** `bug283_zig_lit_unknown_type_fail.zbr` must report the real line
+of its `zig"${Countr}…"`, and a file with TWO bad literals must report two DIFFERENT
+lines — a single-literal test passes just as well with a hardcoded constant.
+
+### BUG-285: `inferExpr` visits an expression twice, so its diagnostics print twice
+
+**Found 2026-08-12** by BUG-283's refusal appearing verbatim two times for one typo:
+
+```
+bad.zbr:0:0: error: no Zebra type named 'Countr' — ...
+bad.zbr:0:0: error: no Zebra type named 'Countr' — ...
+```
+
+Harmless for a `grep -qF` gate, which is why `smoke_run_fail` passes on it, and ugly for
+a person, who has to decide whether they have one problem or two.
+
+**This is almost certainly not specific to zig literals** — it is the type checker
+inferring and then checking the same node, and *any* diagnostic raised from `inferExpr`
+would double. BUG-283's is simply the newest one, and possibly the first raised from that
+function on a path that runs twice. **Before fixing, check whether existing `inferExpr`
+diagnostics already double**; if they do, this is a long-standing wart with a wider blast
+radius than one message, and the fix belongs at the visit, not at the message.
+
+**Do not fix it by deduplicating the error list.** Two genuinely distinct problems can
+share a file, line, column and message — two identical typos on one line, for instance —
+and collapsing them would hide a real second defect to tidy a cosmetic one.
 
 ### BUG-282: `--output-dir` at a path that does not exist PANICS instead of refusing
 

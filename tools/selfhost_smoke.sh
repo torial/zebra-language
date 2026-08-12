@@ -1347,6 +1347,16 @@ smoke_run     test/bug278_ensure_result_walker_test.zbr "bug278: OK"
 # escaping bug that swapped two fields would still compile.
 smoke_run     test/bug280_keyword_idents.zbr "bug280: OK"
 
+# BUG-283: `${Name}` in a zig"..." literal names a Zebra TYPE and codegen substitutes its
+# current emitted spelling, so user code stops guessing that spelling. THE NEGATIVE TEST
+# IS THE LOAD-BEARING ONE: `${...}` was raw passthrough before the feature, so a
+# substitution that silently passed an unknown name through would fail EXACTLY as it did
+# before — the feature would look implemented and this positive test would still pass.
+# smoke_run_fail additionally asserts no `.zig:` leaks, i.e. that the refusal is a ZEBRA
+# diagnostic rather than a Zig parse error attributed back to the line.
+smoke_run      test/bug283_zig_lit_typeref_test.zbr "bug283: OK"
+smoke_run_fail test/bug283_zig_lit_unknown_type_fail.zbr "no Zebra type named 'Countr'"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

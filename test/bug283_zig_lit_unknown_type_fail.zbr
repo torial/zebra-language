@@ -1,0 +1,15 @@
+# BUG-283 NEGATIVE control: an unrecognised `${Name}` in a zig literal must be REFUSED
+# at ZEBRA compile time, naming the name — not emitted verbatim to die inside Zig.
+#
+# This is the load-bearing half. `${...}` was raw passthrough before the feature, so a
+# substitution that quietly passed an unknown name through would fail IDENTICALLY to the
+# way it failed before — the feature would look implemented and every test would pass.
+# smoke_run_fail also asserts no `.zig:` leaks into the message, i.e. that this is a
+# Zebra diagnostic rather than a Zig one.
+
+struct Counter
+    var n: int = 0
+
+def main()
+    var c = zig"${Countr}{ .n = 3 }"
+    print(c.n)

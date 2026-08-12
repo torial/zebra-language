@@ -5465,6 +5465,56 @@ struct Generator
         # F4: escape Zig primitives AND Zig keywords (fn, error, …) as @"name".
         w.emit(zigSafeName(name))
 
+    # BUG-283: inside a zig"..." literal, `${Name}` names a ZEBRA TYPE and the compiler
+    # supplies its current emitted spelling.  Everything else passes through untouched.
+    #
+    # Before this, a zig literal could only name a type by GUESSING that spelling —
+    # `zig"Counter{}"` works only because a `class Counter` happens to emit as `Counter`.
+    # That is an ambient dependency on an internal detail (UNGIT: "nothing ambient"),
+    # living inside the ONE construct every lint here is structurally blind to (BUG-267),
+    # so changing the spelling breaks user code that no tool can find.  With `${Counter}`
+    # the guess is gone, and BUG-281 B's rename to `_zbr_ty_Counter` costs users nothing.
+    #
+    # The syntax was free: `${...}` in a zig literal was previously RAW PASSTHROUGH, so it
+    # reached `zig` verbatim and died there as `expected expression, found 'invalid
+    # token'`.  Nothing existing can therefore break.
+    #
+    # AN UNKNOWN NAME IS REFUSED BY THE TYPECHECKER, which has the span and a real
+    # located diagnostic; by the time codegen runs the name is known good.  That split
+    # matters: emitting an unknown name verbatim here would reproduce today's behaviour
+    # EXACTLY, so a typo would fail identically before and after — the feature would look
+    # implemented while the case it exists to fix went untouched.
+    def emitZigLitText(text: str)
+        # The marker is BUILT, not written literally: `"${"` in a Zebra source is an
+        # unterminated INTERPOLATION, not a two-character string, and the bootstrap
+        # refuses the file outright.  Same family as BUG-216 / lint_interp_escape.
+        var marker: str = "$" + "{"
+        if not (marker in text)
+            w.emit(text)
+            return
+        var rest: str = text
+        while marker in rest
+            var open = rest.indexOf(marker)
+            w.emit(rest.substring(0, open))
+            var after = rest.substring(open + 2, rest.len)
+            if not ("}" in after)
+                # Unterminated — the TypeChecker refuses this, so reaching it means the
+                # front end let it through.  Emit verbatim rather than silently dropping
+                # the rest of the literal: a visible Zig error beats vanished code.
+                w.emit(marker)
+                w.emit(after)
+                return
+            var close = after.indexOf("}")
+            emitTypeRefName(after.substring(0, close))
+            rest = after.substring(close + 1, after.len)
+        w.emit(rest)
+
+    # The emitted Zig spelling of a Zebra type, for `${Name}`.  Today that is the name
+    # itself; BUG-281 B changes it in ONE place, and every `${...}` follows for free —
+    # which is the entire reason this indirection exists.
+    def emitTypeRefName(name: str)
+        emitName(name)
+
     def genStmts(stmts: List(Stmt))
         # Per-block mutation scope: save caller's mut_set, install block-scoped one,
         # restore on exit. This prevents sibling branch arms from polluting each
@@ -10228,7 +10278,7 @@ struct Generator
                 w.emit("}")
             on Expr.zig_lit as zl
                 # astbuilder already stripped the zig"..." wrapper via stripZigQuotes.
-                w.emit(zl.text)
+                emitZigLitText(zl.text)
             on Expr.try_ as tr
                 if try_block_label != nil
                     # Inside try block: use catch-break pattern instead of try keyword

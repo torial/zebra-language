@@ -15,7 +15,7 @@ class Program
             print(nums)
 
             # Test with block (contextual self)
-            var c: Counter = zig"Counter{}"
+            var c: Counter = zig"${Counter}{}"
             c.increment()
             c.increment()
             c.increment()
@@ -27,7 +27,7 @@ class Program
             print(result)
 
             # Test except struct update
-            var c2: Counter = zig"Counter{}"
+            var c2: Counter = zig"${Counter}{}"
             var c3 = c2 except
                 count = 99
             print(c3.count)
