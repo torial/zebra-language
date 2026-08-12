@@ -103,10 +103,26 @@ zig"${Counter}{}"          # interpolate the emitted spelling of a known type
 ```
 
 The compiler already knows every type name (`class_names`, `struct_names`, `enum_names`,
-`union_names`), so resolution is available; what is missing is a syntax and a refusal for
-a name that does not resolve. Note the refusal matters as much as the substitution — a
-typo must say *"no Zebra type named Countr"* at compile time rather than emit text that
-fails later inside Zig.
+`union_names`), so resolution is available; what is missing is the substitution and a
+refusal for a name that does not resolve.
+
+**MEASURED 2026-08-12 — the syntax space is FREE, and this is a smaller change than it
+looks.** `${...}` inside a `zig"..."` is **not** interpolated and **not** rejected: it is
+raw passthrough. `zig"@as(i64, ${v})"` parses, resolves, and emits `@as(i64, ${v})`
+verbatim, which then fails in `zig` as `expected expression, found 'invalid token'` —
+reported against the *Zebra* line via the `// zbr:` markers. So:
+
+- **No lexer or parser change is needed.** The text already arrives intact at
+  `CodeGen`'s `on Expr.zig_lit` arm, which is a single `w.emit(zl.text)`.
+- **Nothing existing can break**, because any current `${...}` in a zig literal is
+  already a hard error downstream.
+- **`zebra -c` accepts it and writes a `.zig` anyway** — another instance of check-mode
+  being front-end-only, so `-c` cannot be the control here.
+
+**And it makes the refusal load-bearing rather than a nicety.** Today a typo'd
+`zig"${Countr}{}"` emits `${Countr}` and dies inside Zig. If the substitution ships
+*without* the refusal, a typo produces **exactly the same failure as today** — so the
+feature would look implemented while the case it exists to fix is untouched.
 
 **FIX THIS BEFORE BUG-281 B, not after.** They look coupled and are not. Landing the
 substitution first means the three corpus literals migrate while the old spelling still
