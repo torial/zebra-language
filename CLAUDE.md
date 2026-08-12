@@ -834,6 +834,25 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
+**Swept again 2026-08-12 after BUG-281 closed four families in BOTH compilers** — all
+28 green, again assembled rather than observed in one invocation. QUICK 20/20 in a single
+run (smoke 327/327, round-trip byte-identical); `output_sweep` 322 identical; `full_sweep`
+0 regressions vs 337; `examples_sweep` 0 vs 14; `divergence` **0 selfhost gaps** with
+bootstrap gaps steady at 44; `compile_check` 255/0 in both runtime shapes;
+`contract-mode` 13/13; `release-mode` clean.
+
+**`compile_check --bootstrap` is 220 passed / 17 FAILED / 20 skipped, and that is its
+NORMAL state — recorded here because it never has been.** The tool is manual, so its
+number has no baseline anywhere, and a future session seeing 17 red has nothing to
+compare against. The 17 break down as: **14 known bootstrap gaps** (the same files
+`divergence` lists as *selfhost leads* — the bootstrap genuinely cannot compile them),
+and **3 cross-module tests** (`crossmod_modvar_test`, `bug168_crossmod_prim_return_test`,
+`bug235_exposing_test`) that fail with `unable to load '<dep>.zig': FileNotFound` because
+`--emit-zig` writes ONE file and never emits the dependency. That third group is
+`DEPMISS`, not breakage — the same distinction `examples_sweep` draws, and a gate that
+libels a working file is one people learn to disbelieve. **If this number moves, check
+which group moved before assuming a regression.**
+
 **FULL tier swept 2026-08-11 — 28/28 PASS, but ASSEMBLED, not observed in one run.**
 `gates.sh --full` was killed twice by the harness before reaching the heavy witnesses
 (once at gate 23, once during `smoke`) with no contention to explain it — no processes
