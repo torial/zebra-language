@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-282. Next new bug: BUG-283.**
+**Last bug number generated: BUG-283. Next new bug: BUG-284.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -77,6 +77,41 @@ A C `const char*` is `[*:0]const u8` in Zig; the extern lowering emits the
 native slice type instead. Declaration-only externs parse and resolve fine
 (the gap is exactly at the ABI boundary), so BUG-258's fix is confirmed
 working -- this is the next layer down.
+
+### BUG-283: a `zig"..."` literal has no way to NAME a Zebra type except by guessing the emitted spelling
+
+**Found 2026-08-12** designing BUG-281 B. Three literals in the corpus do exactly this:
+
+```zebra
+zig"Counter{}"      zig"Greeter{}"      zig"Point{}"
+```
+
+They work only because codegen happens to emit a Zebra `class Counter` as a Zig
+`Counter`. That is an **ambient** dependency on an internal spelling — the UNGIT test the
+escape hatch currently fails. Nothing declares it a contract, nothing checks it, and
+`zig"..."` contents are the one construct every lint here is structurally blind to
+(BUG-267), so a change to the emitted spelling breaks user code that no tool can find.
+
+BUG-281 B changes that spelling deliberately (`_zbr_ty_Counter`), which is what surfaces
+this. **The right fix is not to preserve the guess** — an alias that does so was tried and
+silently defeated BUG-281 B's whole purpose, see that entry. It is to give the literal a
+way to *ask*, so the compiler substitutes the current spelling and the user never encodes
+it. Shape to consider (not decided):
+
+```zebra
+zig"${Counter}{}"          # interpolate the emitted spelling of a known type
+```
+
+The compiler already knows every type name (`class_names`, `struct_names`, `enum_names`,
+`union_names`), so resolution is available; what is missing is a syntax and a refusal for
+a name that does not resolve. Note the refusal matters as much as the substitution — a
+typo must say *"no Zebra type named Countr"* at compile time rather than emit text that
+fails later inside Zig.
+
+**Control when fixing:** the three corpus literals migrated to the new form must still
+produce a working program, AND an unknown name must be REFUSED with a Zebra diagnostic
+naming it. A substitution that silently passes through an unrecognised name would restore
+exactly the ambient guess this exists to remove.
 
 ### BUG-282: `--output-dir` at a path that does not exist PANICS instead of refusing
 
@@ -275,18 +310,35 @@ emitted Zig spelling of a Zebra type part of the public contract for `zig"..."` 
 hatches?** Note these are the construct the lints are structurally blind to (BUG-267), so
 they cannot be found by any checker — only by grep.
 
-**Design, defaulting to preserving that surface:**
+**THE COMPATIBILITY ALIAS WAS TRIED AND IT IS WRONG. Do not reintroduce it.**
+
+The proposal was to emit, alongside the prefixed declaration:
 
 ```zig
 pub const _zbr_ty_Route = struct { ... };
-pub const Route = _zbr_ty_Route;   // OMITTED when the name is itself a Zig keyword
+pub const Route = _zbr_ty_Route;   // <- WRONG. Do not do this.
 ```
 
-Compiler-generated references all use the prefix, so a missed emit site still fails
-loudly. Hand-written `zig"..."` keeps working for every name that works today. A
-keyword-named type gets no alias, which costs nothing — `zig"opaque{}"` does not work
-today either. `zigSafeName` already answers "does this need escaping", so it is the same
-predicate that decides whether to emit the alias.
+reasoning that generated code would use the prefix while hand-written `zig"Route{}"`
+kept working. **It silently defeats the entire change**, and this was measured, not
+argued:
+
+| | 26 reference sites still un-migrated | result |
+|---|---|---|
+| alias emitted | every bare `ZqClass` RESOLVES through it | **whole probe compiles clean** |
+| alias removed | nothing declares the bare name | `error: use of undeclared identifier 'ZqClass'`, ×26 |
+
+So with the alias, the loud-failure property that is the *entire justification* for
+prefixing over escaping does not exist. It is a silent fallback sitting on the exact path
+that decides "is this correct", biased — as the repo's own instrument rules say they
+always are — toward *nothing is wrong*. Both directions were run; the failure was seen,
+not assumed.
+
+**Accepted cost: the emitted Zig spelling of a Zebra type becomes PRIVATE.** A
+hand-written `zig"Foo{}"` naming a type by that spelling stops resolving. Three such
+literals exist in the corpus (`zig"Counter{}"`, `zig"Greeter{}"`, `zig"Point{}"`) and
+must be migrated in the same commit. Naming a Zebra type from inside a `zig"..."` literal
+then needs a real mechanism instead of ambient knowledge — **BUG-283**.
 
 **Sequencing.** B (type names) first, since E (method names) is namespaced inside the
 type and becomes easier once B lands. G disappears for free the moment the bootstrap is
