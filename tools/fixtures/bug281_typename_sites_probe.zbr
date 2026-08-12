@@ -1,0 +1,92 @@
+# BUG-281 family B — the SITE PROBE for the type-name prefix (option 2).
+#
+# Not a regression test. This exists to DERIVE the list of emit positions where a Zebra
+# type name becomes a Zig identifier, so the prefix work is mechanical instead of
+# exploratory. Every type here is named `Zq<something>` — a token that appears nowhere
+# else in the compiler or the runtime — so grepping the emitted Zig for `Zq` returns
+# exactly the sites that must be prefixed, and nothing else.
+#
+#   $ zebra --output-dir OUT tools/fixtures/bug281_typename_sites_probe.zbr
+#   $ grep -n 'Zq' OUT/bug281_typename_sites_probe.zig
+#
+# Read the RESULT, not this file, for the site list. Reading found 4 of 9 sites on
+# BUG-280 and 3 of 7 families on BUG-281; the emit has been right both times.
+#
+# Cover every shape that can put a type name into the output: a class (with a method, a
+# static field, an init and a reflection block), a plain struct, a @derive struct, an
+# enum, a union with a payload, a nested/annotated local, an optional, a container of the
+# type, and a cross-type reference.
+
+class ZqClass
+    var n: int = 0
+    static var shared: int = 1
+
+    def bump(): int
+        .n = .n + 1
+        return .n
+
+@derive(Debug, Eq)
+struct ZqDerived
+    var a: int = 0
+
+struct ZqPlain
+    var b: int = 0
+
+enum ZqEnum
+    one
+    two
+
+union ZqUnion
+    num: int
+    text: str
+
+# the type name in parameter, return, optional and container positions
+def takesZq(c: ZqClass, p: ZqPlain): int
+    return c.n + p.b
+
+def makesZq(): ZqPlain
+    return ZqPlain(b: 2)
+
+class ZqHolder
+    var inner: ZqPlain
+    var maybe: ZqClass?
+
+    def get(): int
+        return .inner.b
+
+def main()
+    var c = ZqClass()
+    print(c.bump())
+    ZqClass.shared = 3
+    print(ZqClass.shared)
+
+    var p: ZqPlain = ZqPlain(b: 4)
+    print(takesZq(c, p))
+    print(makesZq().b)
+
+    var d = ZqDerived(a: 5)
+    print(d.toString())
+
+    var e = ZqEnum.two
+    branch e
+        on ZqEnum.one
+            print("one")
+        on ZqEnum.two
+            print("two")
+
+    var u = ZqUnion.num(6)
+    branch u
+        on ZqUnion.num as un
+            print(un)
+        on ZqUnion.text as ut
+            print(ut)
+
+    var lst: List(ZqPlain) = List(ZqPlain)()
+    lst.add(p)
+    print(lst.count())
+
+    var h = ZqHolder()
+    h.inner = p
+    print(h.get())
+
+    print("zq probe: emitted")

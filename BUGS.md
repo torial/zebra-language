@@ -292,6 +292,36 @@ predicate that decides whether to emit the alias.
 type and becomes easier once B lands. G disappears for free the moment the bootstrap is
 retired, and is already a non-issue in the selfhost.
 
+**THE SITE LIST IS DERIVED AND READY — `tools/fixtures/bug281_typename_sites_probe.zbr`.**
+Every type in it is named `Zq…`, a token that appears nowhere else in the compiler or the
+runtime, so `grep Zq` over the emit returns exactly the sites and nothing else. 51
+occurrences collapse to **~15 distinct emit positions**, and the rule separating them is
+the same one BUG-280 settled: **an identifier gets the prefix; a string never does.**
+
+| must be prefixed (identifier) | |
+|---|---|
+| `pub const ZqClass = struct` | declaration — class, struct, enum, union |
+| `pub fn bump(self: *ZqClass)` | method receiver |
+| `pub fn init() *ZqClass` / `create(ZqClass)` | class init return + allocator arg |
+| `pub fn init(a: i64) ZqDerived` | struct synth-init return type |
+| `toString(self: *const ZqDerived)`, `eql(…, other: *const ZqDerived)` | derive receivers |
+| `_zbr_fn_takesZq(c: *ZqClass, p: ZqPlain)` | parameter types (via `genType`) |
+| `pub fn _zbr_fn_makesZq() ZqPlain` | return type |
+| `return ZqPlain{ .b = 2 }` / `ZqUnion{ .num = 6 }` | struct + union construction |
+| `inner: ZqPlain`, `maybe: ?*ZqClass` | field types |
+| `ZqClass.init()`, `ZqClass.shared`, `ZqEnum.two` | qualified access |
+| `std.ArrayList(ZqPlain)` | container type argument |
+
+| must NOT be prefixed | why |
+|---|---|
+| `_ttag_ZqClass`, `_reflect_ZqClass_name` | **already prefixed** — and they are the existing proof this approach works |
+| `_zbr_hash("ZqClass")`, `"ZqClass"`, `"ZqDerived(a={})"` | strings — data, not identifiers |
+| `&.{"ZqPlain", "?ZqClass"}` | reflection FIELD TYPES — the Zebra type name AS DATA. Prefixing this would silently corrupt reflection, and no gate would see it |
+
+That last row is the over-application hazard, in the same shape as BUG-280's reflection
+strings: verify by diffing a pre/post emit of this probe, where every changed line must
+be an identifier gaining the prefix and nothing else.
+
 **What this does NOT fix, measured 2026-08-12 in answer to a direct question:** the
 trailing-`_` convention in the selfhost sources. Of 94 such identifiers, **48** dodge a
 **ZEBRA** keyword (`var_`, `class_`, `if_`, `int_`, `bool_`, `except_`…), 44 are
