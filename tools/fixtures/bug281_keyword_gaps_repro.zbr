@@ -1,0 +1,48 @@
+# BUG-281 repro. Asks whether BUG-280's escaping reaches the emit families the BUG-280
+# fixture does not exercise: @derive bodies, a CLASS whose own name is a Zig keyword,
+# and a capture read inside a lambda body. It does not — in EITHER compiler.
+#
+# NEITHER COMPILER CAN BUILD THIS, which is why it lives here and not in test/. A corpus
+# file in that state would put full_sweep, smoke and registration_check in the red for
+# debt that is already filed and understood. When BUG-281 is fixed, fold these shapes
+# into test/bug280_keyword_idents.zbr and delete this file.
+#
+#   $ zebra-bootstrap --emit-zig tools/fixtures/bug281_keyword_gaps_repro.zbr > p.zig
+#   $ zig build-exe p.zig
+#   error: expected pointer dereference, optional unwrap, or field access, found 'align'
+#
+# That first error is family A (@derive) and it masks B and C — read the emitted Zig
+# rather than the compiler's first complaint.
+
+@derive(Debug, Eq, Hash)
+struct Der
+    var align: int = 0
+    var volatile: int = 0
+
+class opaque
+    var packed: int = 0
+
+    def get(): int
+        return .packed
+
+def main()
+    # @derive bodies emit self.<field> for toString / eql / hash
+    var d1 = Der(align: 1, volatile: 2)
+    var d2 = Der(align: 1, volatile: 2)
+    print(d1.toString())
+    print(d1 == d2)
+
+    # a class NAMED for a Zig keyword — genType emits the bare name
+    var o = opaque()
+    o.packed = 4
+    print(o.get())
+
+    # capture block: the captured name is a struct field AND a literal designator
+    var noalias: int = 5
+    var addIt = def(v: int): int
+        capture
+            var noalias: int = noalias
+        return v + noalias
+    print(addIt(1))
+
+    print("zz_kw_probe: OK")

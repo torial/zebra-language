@@ -2995,7 +2995,7 @@ struct Generator
                     return
                 if class_names.contains_(n.name)
                     w.emit("*")
-                    w.emit(n.name)
+                    emitName(n.name)                        # BUG-280
                     return
                 if n.name == "StringBuilder"
                     w.emit("std.ArrayList(u8)")
@@ -3033,7 +3033,7 @@ struct Generator
                     var class_part = extractAfterDot(n.name)
                     if class_names.contains_(class_part)
                         w.emit("*")
-                    w.emit(n.name)
+                    emitName(n.name)                        # BUG-280
                     return
                 w.emit(zigPrimitive(n.name))
 
@@ -3068,24 +3068,24 @@ struct Generator
                         if ni2 is TypeRef.named as n
                             if class_names.contains_(n.name)
                                 w.emit(prefix)
-                                w.emit(n.name)
+                                emitName(n.name)            # BUG-280
                                 handled = true
                             else if "." in n.name
                                 var class_part = extractAfterDot(n.name)
                                 if class_names.contains_(class_part)
                                     w.emit(prefix)
-                                    w.emit(n.name)
+                                    emitName(n.name)        # BUG-280
                                     handled = true
                     on TypeRef.named as n
                         if class_names.contains_(n.name)
                             w.emit(prefix)
-                            w.emit(n.name)
+                            emitName(n.name)                # BUG-280
                             handled = true
                         else if "." in n.name
                             var class_part = extractAfterDot(n.name)
                             if class_names.contains_(class_part)
                                 w.emit(prefix)
-                                w.emit(n.name)
+                                emitName(n.name)            # BUG-280
                                 handled = true
                     else
                         pass
@@ -3417,9 +3417,16 @@ struct Generator
                 w.emit("pub const ")
             else
                 w.emit("pub var ")
+            # BUG-280: escape a name that is a ZIG keyword (align, volatile, opaque…)
+            # but not a Zebra one.  ONLY in the un-prefixed form: the `_zbr_mv_`
+            # prefix already makes the name collision-free, and emitName's own
+            # contract forbids prefix-concatenation — `_zbr_mv_@"align"` is invalid
+            # Zig.  genIdent reconstructs the prefixed spelling the same way.
             if owner == "" and not n.mods.is_static
                 w.emit("_zbr_mv_")
-            w.emit(n.name)
+                w.emit(n.name)
+            else
+                emitName(n.name)
             # BUG-153: an allocating-container module global (HashMap/Set/Atomic)
             # cannot be initialised at container scope (its init references the
             # runtime _allocator or allocates).  Declare it `= undefined` and assign
@@ -3464,7 +3471,7 @@ struct Generator
                 w.emit("undefined")
             w.emit(";\n")
             return
-        w.emit(n.name)
+        emitName(n.name)                                    # BUG-280
         w.emit(": ")
         if n.type_ != nil
             var tr = n.type_!
@@ -3593,7 +3600,7 @@ struct Generator
                     if not si_first
                         w.emit(", ")
                     si_first = false
-                    w.emit(si_fld.name)
+                    emitName(si_fld.name)                   # BUG-280
                     w.emit(": ")
                     if si_fld.type_ != nil
                         ig.genType(si_fld.type_!)
@@ -3616,9 +3623,9 @@ struct Generator
                             w.emit(",")
                         si_first2 = false
                         w.emit(" .")
-                        w.emit(si_fld2.name)
+                        emitName(si_fld2.name)              # BUG-280: designator
                         w.emit(" = ")
-                        w.emit(si_fld2.name)
+                        emitName(si_fld2.name)              # ...and the parameter
                 w.emit(" };\n")
             ig.writeIndent()
             w.emit("}\n\n")
@@ -4188,7 +4195,7 @@ struct Generator
                         if fld.init_expr != nil
                             dig.writeIndent()
                             dig.w.emit("self.")
-                            dig.w.emit(fld.name)
+                            dig.emitName(fld.name)          # BUG-280
                             dig.w.emit(" = ")
                             dig.genExpr(fld.init_expr!)
                             dig.w.emit(";\n")
@@ -9898,7 +9905,10 @@ struct Generator
                     return
                 genExpr(m.object)
                 w.emit(".")
-                w.emit(m.member)
+                # BUG-280: a field may be named for a ZIG keyword (align, volatile,
+                # opaque…) that Zebra does not reserve.  emitName escapes it as
+                # @"name"; the declaration side does the same, so the two agree.
+                emitName(m.member)
                 # Auto-deref ^T fields: if binding.field is a *T, emit .*
                 var obj_name = getIdentName(m.object)
                 if obj_name != nil
@@ -10370,7 +10380,7 @@ struct Generator
                 w.emit("; ")
                 for ef in ex.fields
                     w.emit("_except_tmp.")
-                    w.emit(ef.name)
+                    emitName(ef.name)                       # BUG-280
                     w.emit(" = ")
                     var ef_ftype = lookupFieldType(ef.name)
                     if ef_ftype != nil
@@ -10397,7 +10407,7 @@ struct Generator
                             w.emit(", ")
                         var a = oc.args.at(ai)
                         if a.name != nil
-                            w.emit(a.name!)
+                            emitName(a.name!)               # BUG-280
                             w.emit(" = ")
                         genExpr(a.value)
                         ai = ai + 1
@@ -11649,7 +11659,7 @@ struct Generator
                     if a.name != nil
                         w.emit(".")
                         var sf_name = a.name!
-                        w.emit(sf_name)
+                        emitName(sf_name)                   # BUG-280
                         w.emit(" = ")
                         var sf_type = lookupStructFieldType(id.name, sf_name)
                         if sf_type != nil
@@ -15052,7 +15062,7 @@ struct Generator
                 var fg = indented()
                 for cv in lam.captures
                     fg.writeIndent()
-                    fg.w.emit(cv.name)
+                    fg.emitName(cv.name)                    # BUG-280
                     fg.w.emit(": ")
                     if cv.type_ != nil
                         fg.genType(cv.type_!)
@@ -15156,7 +15166,7 @@ struct Generator
                 w.emit("{ ")
                 for cv in lam.captures
                     w.emit(".")
-                    w.emit(cv.name)
+                    emitName(cv.name)                       # BUG-280
                     w.emit(" = ")
                     if cv.init_expr != nil
                         genExpr(cv.init_expr!)

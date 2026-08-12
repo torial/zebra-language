@@ -6618,3 +6618,96 @@ selfhost-may-lead policy — `Shell` is not used by any selfhost source.
 
 ### BUG-080: `^T?` field assignment — CLOSED NOT REPRODUCING
 - **Status:** Closed 2026-04-21. Verified: `n.next = n2` where `next: ^Node?` generates correct `n.next = n2;` — BUG-047 class short-circuit in `genAssign` and `field_needs_deref` both correctly suppress the `.*` for class-typed optional ref fields.
+
+---
+
+### BUG-280: field names were not escaped for Zig keywords — FIXED 2026-08-11 (both compilers)
+
+**Found 2026-08-09** freeing reserved words under U4a. Bootstrap fixed earlier the same
+day as the selfhost (`bda5090`); selfhost half and the gate registration completed
+2026-08-11.
+
+```
+class C
+    var align: int = 0
+```
+```
+error: expected type expression, found 'align'     # in the EMITTED Zig
+```
+
+`align`, `packed`, `opaque`, `volatile`, `threadlocal`, `anyframe` and `noalias` are Zig
+keywords that **Zebra never reserved**. All seven are legal Zebra identifiers, and all
+seven failed as class fields — live for code a user could write at the time.
+
+**TWO DEFECTS, and only one was the live bug.**
+
+1. **The field paths never called `emitName`.** `emitName`/`zigSafeName` has always
+   escaped correctly — which is why `var align = 1` as a *local* worked all along. The
+   field, constructor, struct-literal and member-access paths simply did not call it.
+   **This was the whole live bug, and it is what was fixed.**
+2. `isZigKeyword` is a hand-maintained 37-entry list against Zig's own 46, missing
+   `try`, `catch`, `orelse`, `if`, `else`, `while`, `for`, `return`, `break`,
+   `continue`, `and`, `or`. **All twelve are ALSO Zebra keywords**, so the gap bites
+   nothing today — it matters only because `try` cannot be freed until it is closed.
+   **STILL OPEN.** (`std.zig.Token.keywords` is the derivable oracle, but do NOT reach
+   for it from the selfhost through a `zig"..."` literal — that couples codegen to a
+   stdlib internal inside the one construct the lints are structurally blind to. Hand-
+   list both, and gate the comparison.)
+
+**THE SITE MAP WAS DERIVED, AND THAT IS THE POINT.** Reading the source found **four**
+sites. Emitting a probe that uses a keyword field in every position, and grepping the
+output, found **nine**:
+
+| site | found by |
+|---|---|
+| instance field declaration (class, struct, generic — three class-emit paths) | reading |
+| constructor init `self.x = ...` | reading |
+| member access `c.x`, read and write — the keystone, one site covers many symptoms | reading |
+| reflection strings `&.{"align"}` — **must stay bare**, it is data | reading |
+| **synthesised constructor parameter** `pub fn init(align: i64)` | **the probe** |
+| **struct-literal designator** `.{ .align = align }` — designator *and* parameter | **the probe** |
+| **static field declaration** `pub var align: i64` and `C.align` | **the probe** |
+| **`except` temp-copy** `_tmp.align = 11` | **the probe** |
+| **named-arg struct literal** `Point{ .align = 7 }` | **the probe** |
+
+A tenth surfaced during the bootstrap fix: five interface-typed locals were missing the
+escaping too — a latent instance of the same bug nobody had reported.
+
+**THE TWO COMPILERS NEEDED DIFFERENT SITE COUNTS, which is why "scope by function" was
+the rule rather than a blanket replace.** 18 sites in `src/CodeGen.zig`, 18 in
+`selfhost/CodeGen.zbr`, but not the same 18 — they differ by structure at four places:
+
+| function | bootstrap | selfhost | why |
+|---|---|---|---|
+| `genFieldDecl` | 3 | 2 | the bootstrap has two `pub <kw> <name>` branches |
+| `genStruct` | 2 | 3 | the selfhost writes designator and parameter separately |
+| `genType` | 4 | 6 | the selfhost carries extra nilable-of-nilable branches |
+| capture fields | 4 (`genCaptureClosureStructMode` + `genLambda`) | 2 (`genLambdaEx` only) | one emit path, not two |
+| `except` temp-copy | 2 (`genVarExcept` + `genAssignExcept`) | 1 (`genExpr` `except_`) | folded into the expression |
+| synthesised class-init field default | 0 | 1 | selfhost-only emit: `self.align = 0;` |
+
+**The one trap worth remembering** is in `genFieldDecl`. A module-scope var gets the
+`_zbr_mv_` prefix (BUG-137), and `emitName`'s own contract forbids
+prefix-concatenation — `_zbr_mv_@"align"` is invalid Zig, and the prefix already makes
+the name collision-free. So the escape applies to the un-prefixed branch only. A
+blanket replace would have emitted the broken form; in the bootstrap a broad replace
+matched **seven** sites where three were expected, and checking each is what made it
+safe.
+
+**Verification.** `bash tools/keyword_ident_check.sh` — now a QUICK-tier gate — and
+`test/bug280_keyword_idents.zbr`, registered with `smoke_run`, which RUNS the program
+rather than only emitting it (`6 v / 9 / 7 8 / 11 / 3n`, identical from both compilers;
+an escaping bug that swapped two fields would still compile). Over-escaping was checked
+separately by diffing a pre-fix against a post-fix emit: every changed line is a keyword
+acquiring `@"…"` and nothing else, and the reflection strings `&.{"align", "volatile"}`
+are absent from that diff — they must stay bare, and no gate can see it if they don't.
+
+**What this fix does NOT cover: see BUG-281.** Three further emit families — `@derive`
+bodies, the type name itself, and a capture read inside a lambda body — still emit bare
+keywords **in both compilers**. `keyword_ident_check.sh` reported the bootstrap clean
+throughout, which is its declared limit ("the fixture is the coverage") arriving with a
+receipt. The claim in `bda5090` that the bootstrap emits "zero bare keywords" was true
+of the fixture, not of the compiler.
+
+**Freeing `error`/`try` is still blocked** on defect 2 above, and requires flipping the
+Parser tests that currently assert those words are rejected.

@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# There are 19 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 19 = grep -c '^run "' tools/gates.sh -->
+# There are 20 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 20 = grep -c '^run "' tools/gates.sh -->
 # (CLAUDE.md explains each), plus four heavy witnesses in FULL. The count in this
 # sentence has been wrong before: it said "seven" while twelve were registered, and
 # doc_lint cannot catch that class -- a number in prose has no referent to resolve.
@@ -202,6 +202,16 @@ run "bug-numbers"    "0 NEW"           python tools/lint_bug_numbers.py --gate
 # `cue`/`vari`, which had been guessed at — two guesses wrong in opposite directions,
 # which is the argument for a lint over a memory. Baselined; fails only on NEW words.
 run "reserved-words" "0 NEW"           python tools/lint_reserved_words.py --gate
+# The mirror image of reserved-words: a word Zebra does NOT reserve but ZIG does
+# (align, volatile, opaque, packed, noalias, anyframe). The user may legally name a
+# field with one, so codegen has to escape it as @"name" on the way out. emitName
+# always did; the FIELD paths never called it, and nine emit sites were involved —
+# five of which reading the source did not find. Emits the fixture and reports any
+# keyword left BARE outside a string literal, which needs no allow-list: an
+# allow-list here would be the same hand-maintained oracle that caused the bug.
+# Its coverage IS the fixture — see BUG-281, where it passed the bootstrap while
+# three further emit families were broken in it.
+run "keyword-ident"  "escaped in every" bash tools/keyword_ident_check.sh
 # §28e: docs/str_ownership.md is DERIVED from real emit, so a codegen change that flips
 # a borrow into an own (or the reverse) makes the shipped table wrong while it still
 # carries a "GENERATED" banner vouching for it. One emit; cheap.

@@ -68,14 +68,20 @@ BASELINE = {
                "2026-08-09. It sits under Contracts in the token table because it is "
                "intended as a contract operator (`a implies b`). Reserving for an intended "
                "feature is legitimate; this entry is what keeps it a decision.",
-    "error":   "R1, and kept on ENGINEERING grounds, against the intent to free it. "
-               "BUG-280: a class field named `error` emits `error: i64 = 0,` because the "
-               "field path never consults emitName. Freeing a word the compiler cannot "
-               "emit trades a clear Zebra diagnostic for a Zig parse error against "
-               "generated code. Free it when BUG-280 lands, not before.",
-    "try":     "R1, same as `error` and worse \u2014 it fails in every position, because "
-               "isZigKeyword is a hand-maintained list that does not contain `try`. "
-               "BUG-280.",
+    "error":   "R1. The ENGINEERING blocker is GONE as of 2026-08-11: BUG-280 landed in "
+               "both compilers, the field path now calls emitName, and `error` is one of "
+               "the 37 words isZigKeyword already knows \u2014 so a field named `error` "
+               "emits `@\"error\"`. That is derived from the mechanism rather than "
+               "measured, because the word cannot be WRITTEN in Zebra today; `opaque` "
+               "takes the identical path and is covered by test/bug280_keyword_idents.zbr. "
+               "What remains is the tokenizer change plus flipping the two Parser tests "
+               "that assert `error` is rejected. Freeing it is now a language decision, "
+               "not an engineering one.",
+    "try":     "R1, and STILL BLOCKED after BUG-280 \u2014 by its second defect, not its "
+               "first. isZigKeyword is a hand-maintained 37-entry list against Zig's 46 "
+               "and does not contain `try`, so escaping would not fire and `try` fails in "
+               "every position, not just as a field. Closing that gap is the prerequisite; "
+               "see BUG-280 in BUGS_FIXED.md, defect 2.",
 }
 
 

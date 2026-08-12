@@ -186,6 +186,15 @@ loud; it does not make a language refuse to have opinions.
   keywords, all legal Zebra identifiers today. `class C / var align: int = 0` does not
   compile, and has not for as long as the field path has skipped `emitName`.
 
+  **BUG-280 is FIXED in both compilers as of 2026-08-11** (18 emit sites each, not the
+  same 18 — see the entry in `BUGS_FIXED.md`), gated by `keyword-ident` in the QUICK
+  tier. **`error` and `try` remain blocked**, and by defect 2 rather than by the field
+  path: `isZigKeyword` is still the hand-maintained 37-entry list missing `try`,
+  `catch`, `orelse` and nine others. Closing that gap — and flipping the Parser tests
+  that currently assert both words are rejected — is what frees them. Three further
+  emit families are still unescaped in BOTH compilers (`@derive` bodies, the type name
+  itself, a capture read in a lambda body): **BUG-281**.
+
   Grammar: 465 → **456 rules**, 146 → **143 nonterminals** — exactly the 9 rules and
   3 nonterminals removed here. `grammar.txt` is regenerated from the rule table.
 

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-280. Next new bug: BUG-281.**
+**Last bug number generated: BUG-281. Next new bug: BUG-282.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -78,85 +78,90 @@ native slice type instead. Declaration-only externs parse and resolve fine
 (the gap is exactly at the ABI boundary), so BUG-258's fix is confirmed
 working -- this is the next layer down.
 
-### BUG-280: field names are not escaped for Zig keywords — ⚠ HALF FIXED (bootstrap done, selfhost pending)
+### BUG-281: three more emit families still print Zig keywords bare — in BOTH compilers
 
-**Found 2026-08-09** freeing reserved words under U4a. **Bootstrap fixed and verified
-2026-08-11; the selfhost is the remaining work.** Read the state section before touching
-anything.
+**Found 2026-08-11** finishing BUG-280's selfhost half, by a four-line probe rather than
+by reading. BUG-280 fixed the field/constructor/member/literal paths in both compilers
+and its gate reports clean. Three families remain, and **the bootstrap is broken in all
+three as well** — so this is not a selfhost gap, and `divergence_check` will not see it.
 
-```
-class C
+Repro: `tools/fixtures/bug281_keyword_gaps_repro.zbr` — deliberately OUTSIDE `test/`,
+because neither compiler can build it and a corpus file in that state would put
+`full_sweep`, `smoke` and `registration_check` in the red for known, filed debt.
+
+```zebra
+@derive(Debug, Eq, Hash)
+struct Der
     var align: int = 0
+
+class opaque
+    var packed: int = 0
 ```
+
+Emitted by `zebra-bootstrap --emit-zig`, and it does not compile:
+
 ```
-error: expected type expression, found 'align'     # in the EMITTED Zig
+error: expected pointer dereference, optional unwrap, or field access, found 'align'
 ```
 
-`align`, `packed`, `opaque`, `volatile`, `threadlocal`, `anyframe` and `noalias` are Zig
-keywords that **Zebra never reserved**. All seven are legal Zebra identifiers today, and
-all seven failed as class fields. This is live for code a user can write right now.
+**A — `@derive` bodies emit `self.<field>` bare.** `genDeriveToString`,
+`genDeriveEql` and `genDeriveHash` build their member access with a raw `{s}`:
 
-**TWO DEFECTS, and only one of them is the live bug.**
+```zig
+return std.fmt.allocPrint(_allocator, "Der(align={}, ...)", .{self.align, ...});
+return (self.align == other.align) and ...;
+std.hash.autoHashStrat(&hasher, self.align, .Deep);
+```
 
-1. **The field paths never called `emitName`.** `emitName`/`zigSafeName` has always
-   escaped correctly — which is why `var align = 1` as a *local* worked all along. The
-   field, constructor, struct-literal and member-access paths simply did not call it.
-   **This is the whole live bug.**
-2. `isZigKeyword` is a hand-maintained 37-entry list against Zig's own 46, missing
-   `try`, `catch`, `orelse`, `if`, `else`, `while`, `for`, `return`, `break`,
-   `continue`, `and`, `or`. **All twelve are ALSO Zebra keywords**, so the gap bites
-   nothing today — it matters only because `try` cannot be freed until it is closed.
-   Recorded so nobody mistakes it for the urgent half. (`std.zig.Token.keywords` is the
-   derivable oracle, but do NOT reach for it from the selfhost through a `zig"..."`
-   literal — that couples codegen to a stdlib internal inside the one construct the
-   lints are structurally blind to. Hand-list both, and gate the comparison.)
+The field is DECLARED `@"align": i64` two lines above. This is the first error Zig
+reaches, which is why it masks B and C.
 
-**THE SITE MAP IS DERIVED, AND THAT IS THE POINT.** Reading the source found **four**
-sites. Emitting a probe that uses a keyword field in every position, and grepping the
-output, found **nine**:
+**B — the type NAME itself is never escaped.** `pub const opaque = struct {`,
+`pub fn get(self: *const opaque)`, `pub fn init() *opaque`, `opaque.init()`. Note the
+asymmetry that makes this easy to misread as fine: `_ttag_opaque` and
+`_reflect_opaque_name` are *correct*, because the prefix already makes them
+collision-free — the same reasoning that governs `_zbr_mv_` in `genFieldDecl`.
+BUG-280 *did* escape `genType`'s class-name emits, which makes the two halves
+**disagree**: an annotated local emits `*@"opaque"` while the declaration it names emits
+`pub const opaque`. Escaped and bare are the same identifier for a Zig *primitive* (the
+case `emitName` was originally written for) but not for a Zig *keyword*, where the bare
+spelling does not parse at all. So fixing B means fixing the declaration side to match,
+not reverting `genType`.
 
-| site | found by |
-|---|---|
-| instance field declaration (class, struct, generic — three class-emit paths) | reading |
-| constructor init `self.x = ...` | reading |
-| member access `c.x`, read and write — the keystone, one site covers many symptoms | reading |
-| reflection strings `&.{"align"}` — **must stay bare**, it is data | reading |
-| **synthesised constructor parameter** `pub fn init(align: i64)` | **the probe** |
-| **struct-literal designator** `.{ .align = align }` — designator *and* parameter | **the probe** |
-| **static field declaration** `pub var align: i64` and `C.align` | **the probe** |
-| **`except` temp-copy** `_tmp.align = 11` | **the probe** |
-| **named-arg struct literal** `Point{ .align = 7 }` | **the probe** |
+**C — a capture is declared escaped and read bare.** Within one emitted struct:
 
-A tenth surfaced during the fix: five interface-typed locals in `genLocalVar` were
-missing the escaping too — a latent instance of the same bug nobody had reported.
+```zig
+const addIt = struct {
+    @"noalias": i64,                       // declaration — escaped
+    fn call(self: @This(), v: i64) i64 {
+        return (v + self.noalias);         // read — BARE
+    }
+}{ .@"noalias" = @"noalias", };            // designator — escaped
+```
 
-**STATE, 2026-08-11.**
-- `src/CodeGen.zig` — **DONE.** Bootstrap emits zero bare keywords; the fixture
-  compiles and runs with every value correct.
-- `selfhost/CodeGen.zbr` — **NOT STARTED.** Same functions: `genFieldDecl` (~3406),
-  `genLocalVar` (~5647), the member arm of `genExpr`, the synthesised-init pair, the
-  `except` temp-copy, capture struct fields, named-arg struct literals. The selfhost has
-  many more `w.emit(n.name)` sites than the bootstrap had — **scope by function, do not
-  blanket-replace.** (In the bootstrap a blanket replace matched 7 where 3 were expected;
-  checking each is what made it safe.)
-- `tools/keyword_ident_check.sh` — new gate. **Not registered in `gates.sh`** yet.
-  Register it with the selfhost fix.
-- `tools/fixtures/bug280_keyword_idents.zbr` — deliberately OUTSIDE `test/`, because a
-  corpus file the bootstrap compiles and the selfhost does not is exactly what
-  `divergence_check --gate` exists to catch. Move it to `test/` with a smoke
-  registration in the commit that fixes the selfhost.
+The declaration and designator were in BUG-280's site map; the body reference goes
+through `genIdentRaw`'s capture-field path (`selfhost/CodeGen.zbr` ~10475) and was not.
+Inconsistent inside a single struct is the sharpest statement of it.
 
-**Control when fixing:** `bash tools/keyword_ident_check.sh` is the oracle — it strips
-string literals and reports any keyword left bare, so `@"align"` and the reflection
-string `"align"` both correctly pass while `align: i64` does not. It needs no
-allow-list, which is the point. **Known limitation:** it false-positives on `opaque`
-against the bootstrap's `--emit-zig` single-file output, because the inlined runtime
-preamble uses `opaque {}` as real Zig; clean against the selfhost's `--output-dir`
-default. Fix by diffing against a no-keyword control emit.
+**RECOMMENDATION: fix A and C, defer B.** A and C are a handful of emit sites each and
+are the same one-line change BUG-280 made everywhere else. B is invasive — a type name
+is a `class_names` key, a `struct_names` key, a dotted-key component and a
+`_ttag_`/`_reflect_` prefix component, so escaping the emitted spelling while the lookup
+keys stay bare touches many paths — and it buys the *class*-named-for-a-keyword case,
+which is rarer than the field case BUG-280 was reported for. Sean's call; my preference
+matches the recommendation.
 
-**Do not forget:** freeing `error`/`try` afterwards requires flipping the Parser tests
-that currently assert they are rejected, and dropping `lint_reserved_words`'s BASELINE
-from 3 entries to 1.
+**Why no gate saw it.** `keyword_ident_check.sh` passed the bootstrap the whole time.
+Its own header declares the limit — "the fixture is the coverage" — and this is the
+receipt: three broken families, one gate, green. It is also invisible to
+`divergence_check --gate` by construction, since both compilers are wrong identically,
+and to `compile_check`/`full_sweep`, because no corpus file names a field or a class
+after a Zig keyword.
+
+**Control when fixing:** extend `test/bug280_keyword_idents.zbr` with the probe's three
+shapes **before** touching codegen, and watch `keyword_ident_check.sh` go red first. The
+fixture deliberately does *not* carry them today — a corpus file neither compiler can
+build would put `full_sweep` and `smoke` in the red for known, filed debt.
 
 ### BUG-279: `zig build test` is red on committed code, in no gate tier, for three unrelated reasons
 

@@ -28,8 +28,19 @@
 # it needs no allow-list of legitimate exceptions — which is the point, because an
 # allow-list here would be the same hand-maintained oracle that caused the bug.
 #
-# CANNOT SEE: a keyword emitted into a position this fixture does not exercise. The
-# fixture is the coverage, so extend it when a new emit path appears.
+# CANNOT SEE, and this is not hypothetical: a keyword emitted into a position the
+# fixture does not exercise. THE FIXTURE IS THE COVERAGE. On 2026-08-11 this gate
+# reported the bootstrap clean while THREE further emit families were still broken in
+# it — @derive bodies, the type name itself, and a capture read in a lambda body (see
+# BUG-281). A four-line probe found all three in one emit. So when a fix lands, extend
+# the fixture in the same commit; a green run here means "every position the fixture
+# reaches", never "the compiler escapes correctly".
+#
+# It also CANNOT SEE OVER-escaping, and that direction is the dangerous one: stripping
+# string literals is what lets the reflection strings `&.{"align"}` pass, so escaping
+# THOSE — which would silently corrupt field lookup — reads as clean here. Check that
+# by diffing a pre-fix and post-fix emit: every changed line should be a keyword
+# acquiring @"…" and nothing else.
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,7 +48,7 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 
-FIXTURE="tools/fixtures/bug280_keyword_idents.zbr"
+FIXTURE="test/bug280_keyword_idents.zbr"
 OUT="$(mktemp -d -t kwident-XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 

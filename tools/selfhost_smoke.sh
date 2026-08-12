@@ -1340,6 +1340,13 @@ smoke_run     test/bug277_member_name_forced_str_test.zbr "bug277: OK"
 # Reaching the print proves all three shapes emitted a well-formed contract block.
 smoke_run     test/bug278_ensure_result_walker_test.zbr "bug278: OK"
 
+# BUG-280: `align`, `volatile`, `opaque`, `packed` and friends are ZIG keywords that
+# Zebra never reserved, so a user can name a field with one today. emitName has always
+# escaped correctly; the FIELD paths simply never called it. This runs the program
+# rather than only emitting it, because the values are the half that matters — an
+# escaping bug that swapped two fields would still compile.
+smoke_run     test/bug280_keyword_idents.zbr "bug280: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

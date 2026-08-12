@@ -560,9 +560,56 @@ python tools/lint_reserved_words.py # THE RESERVED-WORD GATE (static, instant, Q
                                 #   Runs a 5-check selftest on synthetic input before every
                                 #   scan and REFUSES if the classifier stops discriminating;
                                 #   verified red by removing one baseline entry.
-                                #   Baselined at 8 (each a pending LANGUAGE decision, with the
-                                #   reason it stays: weaves/expect/lock/error/try/from/
-                                #   implies/trace). Shrink it; do not grow it. 0 NEW = clean.
+                                #   Baselined at 3 (each a pending decision, with the reason
+                                #   it stays: error/implies/try). weaves, expect, lock, from
+                                #   and trace were in the first baseline and were FREED by
+                                #   U4a — the list shrinking is the gate working. `error`'s
+                                #   engineering blocker cleared when BUG-280 landed
+                                #   2026-08-11, so it is now a language decision; `try` is
+                                #   still blocked on BUG-280's second defect (isZigKeyword
+                                #   does not contain it). Shrink it; do not grow it.
+                                #   0 NEW = clean.
+bash tools/keyword_ident_check.sh  # THE ESCAPED-IDENTIFIER GATE (BUG-280, QUICK tier) —
+                                #   the MIRROR IMAGE of reserved-words. That gate asks
+                                #   whether a word Zebra reserves earns its keep; this
+                                #   one asks what happens to a word Zebra does NOT
+                                #   reserve but ZIG does: align, volatile, opaque,
+                                #   packed, noalias, anyframe. A user may legally name a
+                                #   field with one TODAY, so codegen must escape it as
+                                #   @"name" on the way out.
+                                #   `emitName` always did. The FIELD paths never called
+                                #   it, so `var align: int` in a class emitted
+                                #   `align: i64 = 0,` and the generated Zig did not
+                                #   parse — while the same word as a LOCAL worked all
+                                #   along, which is why it went unnoticed.
+                                #   THE SITE MAP IS DERIVED, and that is the whole
+                                #   point. Reading the source found FOUR sites. Emitting
+                                #   a probe that uses a keyword field in every position
+                                #   and grepping the output found NINE; a tenth surfaced
+                                #   during the fix. So the probe is now the permanent
+                                #   instrument rather than a one-off.
+                                #   HOW IT DECIDES: strips string-literal CONTENTS, then
+                                #   flags any keyword left as a whole word. That single
+                                #   rule makes `@"align"` pass AND the reflection string
+                                #   `&.{"align"}` pass — the latter is DATA, must stay
+                                #   bare, and escaping it would silently corrupt field
+                                #   lookup. It needs no allow-list, deliberately: an
+                                #   allow-list here would be the same hand-maintained
+                                #   oracle that caused the bug.
+                                #   TWO BLIND SPOTS, both live. (1) THE FIXTURE IS THE
+                                #   COVERAGE — on 2026-08-11 it reported the bootstrap
+                                #   CLEAN while three further emit families were broken
+                                #   in it (BUG-281). Extend the fixture with every fix.
+                                #   (2) It cannot see OVER-escaping, the dangerous
+                                #   direction, since stripping strings is exactly what
+                                #   lets the reflection strings pass. Diff a pre/post
+                                #   emit for that: every changed line must be a keyword
+                                #   acquiring @"…" and nothing else.
+                                #   Carries a positive control (the names must appear in
+                                #   the emit at all) and a negative one, and REFUSES
+                                #   rather than reporting clean when either fails. A
+                                #   clean escape with a failed BUILD is reported as a
+                                #   separate defect, not as a pass. 0 = clean.
 python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUICK tier).
                                 #   A function that searches the Expr tree for a name is
                                 #   correct only if it descends into every variant that
@@ -775,7 +822,8 @@ than "what do we know":
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **our own tools are not lying** | `hazard_lint` (+ its controls) | 70 scripts | <!-- doc-gen: 70 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 50 tracked documents <!-- doc-gen: 50 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
-| **a reserved word is used, or justified** | `reserved-words` (both compilers) | 88 keywords, 8 baselined |
+| **a reserved word is used, or justified** | `reserved-words` (both compilers) | 83 keywords, 3 baselined |
+| **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 50 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
@@ -810,7 +858,7 @@ the table below stands unchanged.
 **Previous sweep 2026-08-02** — 18/18, before those two gates existed.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
-**337** while the tracked corpus is **462** <!-- doc-gen: 462 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+**337** while the tracked corpus is **463** <!-- doc-gen: 463 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.
