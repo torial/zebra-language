@@ -834,7 +834,25 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
-**Swept again 2026-08-12 after BUG-281 closed four families in BOTH compilers** — all
+**BUG-283 landed 2026-08-12** (`zig"${Type}"`): QUICK **20/20** in one invocation —
+smoke **329/329**, round-trip byte-identical, registration 465. Heavy witnesses run
+individually: `output_sweep` 322 identical, `compile_check` 256/0, `full_sweep` 0
+regressions vs 337, `divergence` **0 selfhost gaps**.
+
+`divergence` bootstrap gaps **44 → 45**, and the +1 is accounted for rather than waved
+through: the new `test/bug283_zig_lit_typeref_test.zbr` uses a feature the bootstrap does
+not have, verified directly — `zebra-bootstrap --emit-zig` passes `${...}` through
+verbatim (4 occurrences). The three MIGRATED literals added none, because
+`features`/`greet`/`with_test` were already gaps. Selfhost-leads, informational, expected.
+
+**A method note from this landing: do not edit docs while a gate tier is running.** The
+QUICK run above reported `doc-lint` clean, and re-running it against the final tree
+reported **1** — the two new corpus files moved the tracked count 463 → 465 and this
+file's pinned counter went stale *after* the gate had read it. The gate was not wrong; it
+measured a tree that no longer existed. Re-run the cheap static gates against the state
+you actually commit.
+
+**Swept 2026-08-12 after BUG-281 closed four families in BOTH compilers** — all
 28 green, again assembled rather than observed in one invocation. QUICK 20/20 in a single
 run (smoke 327/327, round-trip byte-identical); `output_sweep` 322 identical; `full_sweep`
 0 regressions vs 337; `examples_sweep` 0 vs 14; `divergence` **0 selfhost gaps** with
