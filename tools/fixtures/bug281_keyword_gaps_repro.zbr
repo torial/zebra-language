@@ -1,10 +1,17 @@
-# BUG-281 repro AND site probe. Asks whether BUG-280's escaping reaches the emit
-# positions the BUG-280 fixture does not exercise. It does not — in EITHER compiler.
+# BUG-281 repro — the families that are STILL OPEN. A, C, D and F were fixed in both
+# compilers on 2026-08-12 and their shapes moved into test/bug280_keyword_idents.zbr,
+# where the gate and smoke both see them. What is left:
+#
+#   B  a class/struct NAMED for a Zig keyword   -> `pub const opaque = struct {`
+#   E  a METHOD named for a Zig keyword         -> `pub fn volatile(self: ...)`
+#   G  a TOP-LEVEL FN named for a Zig keyword   -> bootstrap only; the SELFHOST is
+#                                                  immune because it already prefixes
+#                                                  the name (`_zbr_fn_anyframe`)
 #
 # NEITHER COMPILER CAN BUILD THIS, which is why it lives here and not in test/. A corpus
 # file in that state would put full_sweep, smoke and registration_check in the red for
-# debt that is already filed and understood. As each family is fixed, fold its shape
-# into test/bug280_keyword_idents.zbr and delete it from here.
+# debt that is already filed and understood. Move each shape into the test/ fixture as it
+# is fixed, and delete this file when the last one goes.
 #
 # READ THE EMITTED .zig, NOT the compiler's first complaint — Zig stops at the first
 # parse error, so one broken family masks the rest:
@@ -12,70 +19,36 @@
 #   $ zebra-bootstrap --emit-zig tools/fixtures/bug281_keyword_gaps_repro.zbr > p.zig
 #   $ grep -nwE 'align|volatile|opaque|packed|noalias|anyframe' p.zig
 #
-# Every word below is a ZIG keyword and NONE is a Zebra keyword, so a user can write all
-# of them today and nothing warns them.
-
-# ── family A: @derive bodies emit self.<field> for toString / eql / hash ──────────
-@derive(Debug, Eq, Hash)
-struct Der
-    var align: int = 0
-    var volatile: int = 0
+# AND WIDEN IT BEFORE BELIEVING A FAMILY COUNT. This bug was filed as three families
+# because the first probe reached three; adding an enum member, a union variant, a method
+# name, a top-level fn name and a bare field read turned up four more in one emit.
 
 # ── family B: the type NAME itself ───────────────────────────────────────────────
 class opaque
-    var packed: int = 0
+    var count: int = 0
 
     def get(): int
-        return .packed
+        return .count
 
-# ── a keyword as a METHOD name, an ENUM member, a UNION variant ──────────────────
-enum Mode
-    align
-    packed
-
-union Shape
-    volatile: int
-    noalias: str
-
+# ── family E: a METHOD named for a keyword — declaration AND call site ───────────
 class Holder
-    var count: int = 0
+    var count: int = 5
 
     def volatile(): int
         return .count
 
-# ── a keyword as a TOP-LEVEL function name, and a bare field read in a method ────
+# ── family G: a TOP-LEVEL fn named for a keyword (bootstrap only) ────────────────
 def anyframe(): int
     return 1
 
-class Bare
-    var align: int = 3
-
-    def readBare(): int
-        # bare field name, no dot — a DIFFERENT emit path from `.align`
-        return align
-
 def main()
-    var d1 = Der(align: 1, volatile: 2)
-    var d2 = Der(align: 1, volatile: 2)
-    print(d1.toString())
-    print(d1 == d2)
-
     var o = opaque()
-    o.packed = 4
+    o.count = 4
     print(o.get())
 
-    print(Mode.align)
     var h = Holder()
     print(h.volatile())
-    print(anyframe())
-    print(Bare().readBare())
 
-    # ── family C: a capture DECLARED escaped and READ bare in the body ────────────
-    var noalias: int = 5
-    var addIt = def(v: int): int
-        capture
-            var noalias: int = noalias
-        return v + noalias
-    print(addIt(1))
+    print(anyframe())
 
     print("bug281 probe: emitted")

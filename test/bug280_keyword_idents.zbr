@@ -1,15 +1,26 @@
-# BUG-280 regression: a Zig keyword that Zebra does NOT reserve must be usable as an
-# identifier in every position, because codegen has to escape it as @"name" on the way
-# out. Before the fix, `emitName` existed and did the right thing — but the field paths
-# never called it, so a class field named `align` emitted `align: i64 = 0,` and the
+# BUG-280 / BUG-281 regression: a Zig keyword that Zebra does NOT reserve must be usable
+# as an identifier in every position, because codegen has to escape it as @"name" on the
+# way out. Before the fix, `emitName` existed and did the right thing — but the field
+# paths never called it, so a class field named `align` emitted `align: i64 = 0,` and the
 # generated Zig would not parse.
 #
 # The words below are all Zig keywords and none are Zebra keywords, so a user can write
 # them today and nothing warns them. `align` is the control that matters: it was never
 # reserved by Zebra, so this tests the LIVE bug rather than a word freed alongside it.
 #
-# Every position the site survey turned up is exercised here. If a new emit path is
-# added that writes a field name without going through emitName, this stops compiling.
+# THIS FIXTURE IS THE GATE'S COVERAGE — keyword_ident_check.sh can only see positions
+# exercised here. That is not a footnote: BUG-281 was filed as three broken families and
+# a WIDENED probe found seven, because the first probe only reached three. If you add an
+# emit path, add a shape here in the same commit.
+#
+# STILL DELIBERATELY ABSENT — the BUG-281 families that remain broken in BOTH compilers.
+# A corpus file neither compiler can build would redden full_sweep, smoke and
+# registration_check for debt that is already filed:
+#   B  a class/struct NAMED for a keyword  (`class opaque`)
+#   E  a METHOD named for a keyword        (`def volatile()`)
+#   G  a TOP-LEVEL FN named for a keyword  (bootstrap only; the selfhost prefixes it)
+# They live in tools/fixtures/bug281_keyword_gaps_repro.zbr. Move each one here as it is
+# fixed.
 
 class Route
     var align: int = 0
@@ -25,6 +36,29 @@ struct Point
 
 def takes(align: int, noalias: str): str
     return align.toString() + noalias
+
+# BUG-281 family A: @derive bodies emit `self.<field>` for toString / eql / hash.
+@derive(Debug, Eq, Hash)
+struct Der
+    var align: int = 0
+    var volatile: int = 0
+
+# BUG-281 family D: enum members and union variants, at DECLARATION and at USE.
+enum Mode
+    align
+    packed
+
+union Shape
+    volatile: int
+    noalias: str
+
+# BUG-281 family F: a bare field read inside a method takes a different emit path
+# from the `.align` form above — it goes through the ident walker, not member access.
+class Bare
+    var align: int = 3
+
+    def readBare(): int
+        return align
 
 def main()
     # instance field: declaration, constructor init, read, write
@@ -49,5 +83,41 @@ def main()
     # ordinary parameters and locals (these already worked; kept as the both-directions half)
     var anyframe = 3
     print(takes(anyframe, "n"))
+
+    # A: derived toString reads every field; derived eql compares them
+    var d1 = Der(align: 1, volatile: 2)
+    var d2 = Der(align: 1, volatile: 2)
+    print(d1.toString())
+    print(d1 == d2)
+
+    # D: enum member and union variant, constructed and matched
+    var m = Mode.packed
+    var mlabel = "?"
+    branch m
+        on Mode.align
+            mlabel = "a"
+        on Mode.packed
+            mlabel = "p"
+    print(mlabel)
+
+    var s = Shape.volatile(12)
+    var slabel = "?"
+    branch s
+        on Shape.volatile as sv
+            slabel = sv.toString()
+        on Shape.noalias as sn
+            slabel = sn
+    print(slabel)
+
+    # F: bare field read inside a method
+    print(Bare().readBare())
+
+    # C: a capture DECLARED escaped must be READ escaped in the body
+    var noalias: int = 5
+    var addIt = def(v: int): int
+        capture
+            var noalias: int = noalias
+        return v + noalias
+    print(addIt(1))
 
     print("bug280: OK")

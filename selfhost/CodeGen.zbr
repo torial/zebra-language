@@ -3510,7 +3510,7 @@ struct Generator
         var ig = indented()
         for m in n.members
             ig.writeIndent()
-            ig.w.emit(m.name)
+            ig.emitName(m.name)                             # BUG-281 D
             # B10: explicit backing value — `active = 1`.
             if m.value != nil
                 ig.w.emit(" = ")
@@ -3540,7 +3540,7 @@ struct Generator
         var ig = indented()
         for v in n.variants
             ig.writeIndent()
-            ig.w.emit(v.name)
+            ig.emitName(v.name)                             # BUG-281 D
             if v.payload != nil
                 ig.w.emit(": ")
                 ig.genType(v.payload!)
@@ -3704,7 +3704,7 @@ struct Generator
                     w.emit(", ")
                 first_arg = false
                 w.emit("self.")
-                w.emit(fld.name)
+                emitName(fld.name)                          # BUG-281 A
         w.emit("}) catch @panic(\"OOM\");\n")
         writeIndent()
         w.emit("}\n")
@@ -3737,15 +3737,15 @@ struct Generator
                     first_fld = false
                     if .isStrFieldType(fld.type_)
                         w.emit("std.mem.eql(u8, self.")
-                        w.emit(fld.name)
+                        emitName(fld.name)                  # BUG-281 A
                         w.emit(", other.")
-                        w.emit(fld.name)
+                        emitName(fld.name)
                         w.emit(")")
                     else
                         w.emit("(self.")
-                        w.emit(fld.name)
+                        emitName(fld.name)                  # BUG-281 A
                         w.emit(" == other.")
-                        w.emit(fld.name)
+                        emitName(fld.name)
                         w.emit(")")
             w.emit(";\n")
         writeIndent()
@@ -3765,7 +3765,7 @@ struct Generator
                     continue
                 ig_h.writeIndent()
                 w.emit("std.hash.autoHashStrat(&hasher, self.")
-                w.emit(fld.name)
+                emitName(fld.name)                          # BUG-281 A
                 w.emit(", .Deep);\n")
         ig_h.writeIndent()
         w.emit("return hasher.final();\n")
@@ -8553,10 +8553,10 @@ struct Generator
         branch e
             on Expr.member as m
                 w.emit(".")
-                w.emit(m.member)
+                emitName(m.member)                          # BUG-281 D
             on Expr.ident as id
                 w.emit(".")
-                w.emit(id.name)
+                emitName(id.name)                           # BUG-281 D
             on Expr.binary as b
                 if b.op == BinaryOp.dotdot
                     # Switch range: c'0'..c'9' → '0'...'9' (three dots, no parens)
@@ -10480,17 +10480,21 @@ struct Generator
         genIdentRaw(id)
 
     def genIdentRaw(id: ExprIdent)
+        # BUG-281 C: the capture field is DECLARED through emitName (genLambdaEx), so a
+        # bare read here would disagree with its own declaration inside one struct.
         if capture_fields.contains_(id.name)
             w.emit("self.")
-            w.emit(id.name)
+            emitName(id.name)
             return
+        # BUG-281 F: a bare field read inside a method. Distinct path from `.field`
+        # (member access) — that one is genExpr's member arm, fixed under BUG-280.
         if in_method and isFieldName(id.name)
             if isSharedField(id.name)
                 w.emit(owner)
             else
                 w.emit(self_name)
             w.emit(".")
-            w.emit(id.name)
+            emitName(id.name)
             return
         # BUG-137: a reference to a module-level var → its prefixed file-scope
         # name (matches genFieldDecl), UNLESS a local/param of the same name
@@ -11404,7 +11408,7 @@ struct Generator
                     # Bare .variant fails with `var` in Zig
                     w.emit(oname)
                     w.emit("{ .")
-                    w.emit(mname2)
+                    emitName(mname2)                        # BUG-281 D
                     w.emit(" = {} }")
                 else
                     var variant_key = makeDottedKey(oname, mname2)
@@ -11419,7 +11423,7 @@ struct Generator
                             is_boxed = true
                     w.emit(oname)
                     w.emit("{ .")
-                    w.emit(mname2)
+                    emitName(mname2)                        # BUG-281 D
                     w.emit(" = ")
                     if c.args.len > 0
                         if is_boxed

@@ -118,7 +118,15 @@ already produced by unrelated failures, so scoring on it would pass a compiler t
 panicked for a different reason. A `smoke_run_fail`-style fixture asserting the path
 appears in the diagnostic is the shape.
 
-### BUG-281: SEVEN more emit families still print Zig keywords bare — in BOTH compilers
+### BUG-281: SEVEN emit families print Zig keywords bare — A/C/D/F closed 2026-08-12, B/E/G open
+<!-- bug-open-ok: four of seven families are closed in both compilers and pinned by test/bug280_keyword_idents.zbr; B, E and G are open and carry a decision for Sean (see RECOMMENDATION) -->
+
+**STATE 2026-08-12.** A (`@derive` bodies), C (capture read), D (enum members, union
+variants, switch prongs and construction) and F (bare field read in a method) are **fixed
+in BOTH compilers** and pinned by `test/bug280_keyword_idents.zbr`, which now runs all
+four shapes and is registered with `smoke_run`. B (the type name), E (a method name) and
+G (a top-level fn name, bootstrap only) remain open — see the revised recommendation
+below, which now offers a third option that was not visible when this was filed.
 
 **Found 2026-08-11** finishing BUG-280's selfhost half, by a four-line probe rather than
 by reading. BUG-280 fixed the field/constructor/member/literal paths in both compilers
@@ -211,18 +219,46 @@ The declaration and designator were in BUG-280's site map; the body reference go
 through `genIdentRaw`'s capture-field path (`selfhost/CodeGen.zbr` ~10475) and was not.
 Inconsistent inside a single struct is the sharpest statement of it.
 
-**RECOMMENDATION, revised after the widened probe: fix A, C, D and F; measure B and E
-before committing to them; fix G by giving the bootstrap the selfhost's prefix.**
+**A, C, D and F are done** — each was a bounded set of emit sites and the same one-line
+change BUG-280 made everywhere else: route the emit through `emitName`. D was the widest
+and the least obvious: the enum member and union variant *declarations* are only half of
+it, and the gate also named the **switch prongs** (`.align => {`) and the **construction
+designator** (`Shape{ .volatile = 12 }`). Reading would have found the declarations and
+stopped.
 
-A, C, D and F are each a bounded set of emit sites and the same one-line change BUG-280
-made everywhere else — route the emit through `emitName`. B and E are the two that touch
-*names other code looks up*: a type name and a method name are keys in `class_names` /
-`struct_names` / `enum_names` / the dotted `Owner.method` maps. Note the escape is only
-needed at **emit** sites — the keys hold the Zebra name and never change — so the real
-question is how many emit sites there are, not how many maps. That is a countable
-number, and it should be counted rather than estimated; the "invasive" call in the first
-version of this entry was an adjective derived from reading, which is the habit this bug
-exists to discourage.
+**B AND E ARE A DECISION, NOT A CHORE — and there are three options, not two.** The
+counting matters: the escape is only ever needed at **emit** sites, because
+`class_names` / `struct_names` / `enum_names` / the dotted `Owner.method` maps hold the
+*Zebra* name and never change. A crude grep puts B at roughly **45** candidate emit sites
+in the selfhost (12 of them the bare `owner` spelling) and E at roughly **21**, plus the
+bootstrap's own set. So it is wide-but-mechanical, not a map audit — the word "invasive"
+in the first version of this entry was an adjective derived from reading, which is the
+habit this bug exists to discourage.
+
+1. **Escape at every emit site.** Supports the names fully. Wide (~66 selfhost sites plus
+   the bootstrap), but each edit is trivial and the probe-plus-gate makes completeness
+   checkable rather than believed.
+2. **Prefix the emitted spelling**, the way `_zbr_mv_` already does for module vars and
+   `_zbr_fn_` for top-level functions. This *immunises the whole class permanently* — no
+   escaping is ever needed again, at any emit site anyone adds later. That is why family
+   G costs the selfhost nothing today. The catch is that type names cross module
+   boundaries (`Module.ClassName`), so the prefix must be consistent across modules AND
+   across the bootstrap/selfhost pair. Biggest change, biggest payoff.
+3. **Refuse at the front end**, with a Zebra diagnostic naming the word and the fix.
+   Cheapest by far — one check in the resolver — and *strictly better than today*, where
+   the user gets a Zig parse error against generated code carrying no Zebra source
+   location. The cost is that the name stays unusable, which is what reserving a word
+   means; this is effectively "Zig's keywords are reserved for TYPE and METHOD names,
+   but free everywhere else."
+
+**Recommended: 3 now, 2 later, and 1 probably never.** Option 3 converts a confusing
+failure into a clear one immediately and is deleted in one commit if 1 or 2 lands. Option
+2 is the real fix and retires the class instead of paying it down site by site. Option 1
+buys the same outcome as 2 for more work and leaves the next new emit site exposed. Note
+the asymmetry that makes 3 defensible: BUG-280 was reported because a *field* could not be
+named `align` — a DB column, a config key — and fields are now fully supported. A *class*
+named `opaque` is a much rarer thing to want. **Sean's call; my preference matches the
+recommendation.**
 
 **Do not fix these by hand-hunting `w.emit(<x>.name)` call sites.** There are hundreds,
 most of them correct. The reliable procedure is the one that produced this table: extend

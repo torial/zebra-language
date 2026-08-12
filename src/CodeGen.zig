@@ -5952,7 +5952,8 @@ const Generator = struct {
             if (m != .var_) continue;
             if (m.var_.mods.static_) continue;
             if (fi > 0) try ig.w.writeAll(", ");
-            try ig.w.print("self.{s}", .{m.var_.name});
+            try ig.w.writeAll("self.");                     // BUG-281 A
+            try ig.emitName(m.var_.name);
             fi += 1;
         }
         try ig.w.writeAll("}) catch unreachable;\n");
@@ -5983,9 +5984,17 @@ const Generator = struct {
                 if (fi > 0) try ig.w.writeAll(" and ");
                 const is_str = if (m.var_.type_) |tr| isStringTypeRef(tr) else false;
                 if (is_str) {
-                    try ig.w.print("std.mem.eql(u8, self.{s}, other.{s})", .{ m.var_.name, m.var_.name });
+                    try ig.w.writeAll("std.mem.eql(u8, self.");   // BUG-281 A
+                    try ig.emitName(m.var_.name);
+                    try ig.w.writeAll(", other.");
+                    try ig.emitName(m.var_.name);
+                    try ig.w.writeAll(")");
                 } else {
-                    try ig.w.print("(self.{s} == other.{s})", .{ m.var_.name, m.var_.name });
+                    try ig.w.writeAll("(self.");                 // BUG-281 A
+                    try ig.emitName(m.var_.name);
+                    try ig.w.writeAll(" == other.");
+                    try ig.emitName(m.var_.name);
+                    try ig.w.writeAll(")");
                 }
                 fi += 1;
             }
@@ -6005,7 +6014,9 @@ const Generator = struct {
             if (m != .var_) continue;
             if (m.var_.mods.static_) continue;
             try ig.writeIndent();
-            try ig.w.print("std.hash.autoHashStrat(&hasher, self.{s}, .Deep);\n", .{m.var_.name});
+            try ig.w.writeAll("std.hash.autoHashStrat(&hasher, self.");   // BUG-281 A
+            try ig.emitName(m.var_.name);
+            try ig.w.writeAll(", .Deep);\n");
         }
         try ig.writeIndent();
         try ig.w.writeAll("return hasher.final();\n");
@@ -6027,7 +6038,7 @@ const Generator = struct {
         const ig = g.indented();
         for (n.members) |m| {
             try ig.writeIndent();
-            try ig.w.writeAll(m.name);
+            try ig.emitName(m.name);                        // BUG-281 D
             if (m.value) |v| {
                 try ig.w.writeAll(" = ");
                 try ig.genExpr(v);
@@ -6050,11 +6061,13 @@ const Generator = struct {
         for (n.variants) |v| {
             try ig.writeIndent();
             if (v.payload) |pl| {
-                try ig.w.print("{s}: ", .{v.name});
+                try ig.emitName(v.name);                    // BUG-281 D
+                try ig.w.writeAll(": ");
                 try ig.genType(pl);
                 try ig.w.writeAll(",\n");
             } else {
-                try ig.w.print("{s},\n", .{v.name});
+                try ig.emitName(v.name);                    // BUG-281 D
+                try ig.w.writeAll(",\n");
             }
         }
         try g.writeIndent();
@@ -12869,7 +12882,8 @@ const Generator = struct {
                             if (vi > 0) try g.w.writeAll(" or ");
                             try g.w.print("{s} == ", .{bv});
                             if (v.* == .member) {
-                                try g.w.print(".{s}", .{v.member.member});
+                                try g.w.writeAll(".");          // BUG-281 D
+                                try g.emitName(v.member.member);
                             } else {
                                 try g.genExpr(v);
                             }
@@ -12944,9 +12958,11 @@ const Generator = struct {
                     // Emit `.variant_name` — extract member part of `Type.variant` or
                     // `Type.variant()` (constructor-call form used in on-clauses) expr.
                     if (v.* == .member) {
-                        try bg.w.print(".{s}", .{v.member.member});
+                        try bg.w.writeAll(".");                 // BUG-281 D
+                        try bg.emitName(v.member.member);
                     } else if (v.* == .call and v.call.callee.* == .member) {
-                        try bg.w.print(".{s}", .{v.call.callee.member.member});
+                        try bg.w.writeAll(".");                 // BUG-281 D
+                        try bg.emitName(v.call.callee.member.member);
                     } else {
                         try bg.genExpr(v);
                     }
@@ -12958,7 +12974,8 @@ const Generator = struct {
                         try bg.w.writeAll("...");
                         try bg.genExpr(v.binary.right);
                     } else if (v.* == .member) {
-                        try bg.w.print(".{s}", .{v.member.member});
+                        try bg.w.writeAll(".");                 // BUG-281 D
+                        try bg.emitName(v.member.member);
                     } else {
                         try bg.genExpr(v);
                     }
@@ -14836,7 +14853,10 @@ const Generator = struct {
         // Inside a lambda body: captured vars become self.name
         for (g.capture_fields) |cf| {
             if (std.mem.eql(u8, cf, e.name)) {
-                try g.w.print("self.{s}", .{e.name});
+                // BUG-281 C: the capture field is DECLARED through emitName, so a bare
+                // read here would disagree with its own declaration inside one struct.
+                try g.w.writeAll("self.");
+                try g.emitName(e.name);
                 return;
             }
         }
@@ -14869,18 +14889,24 @@ const Generator = struct {
             if (g.resolve.exprs.get(e)) |sym| {
                 if (sym.kind == .var_) {
                     // Shared (static) fields → TypeName.field, not self.field
+                    // BUG-281 F: bare field read inside a method — a different emit
+                    // path from `.field` (genExpr's member arm, fixed under BUG-280).
                     if (sym.decl.var_.mods.static_) {
-                        try g.w.print("{s}.{s}", .{g.owner, e.name});
+                        try g.w.print("{s}.", .{g.owner});
+                        try g.emitName(e.name);
                         return;
                     }
                     // Nil-narrowed field: self.name.?
                     if (g.nil_narrowed) |nn| {
                         if (nn.contains(e.name)) {
-                            try g.w.print("self.{s}.?", .{e.name});
+                            try g.w.writeAll("self.");
+                            try g.emitName(e.name);
+                            try g.w.writeAll(".?");
                             return;
                         }
                     }
-                    try g.w.print("self.{s}", .{e.name});
+                    try g.w.writeAll("self.");
+                    try g.emitName(e.name);
                     return;
                 }
             }
@@ -15555,7 +15581,9 @@ const Generator = struct {
                         break :blk kind_ptr.* == .union_;
                     };
                     if (is_xmod_union) {
-                        try g.w.print("{s}.{s}{{ .{s} = ", .{ mod_alias, type_name, variant });
+                        try g.w.print("{s}.{s}{{ .", .{ mod_alias, type_name });   // BUG-281 D
+                        try g.emitName(variant);
+                        try g.w.writeAll(" = ");
                         if (e.args.len == 1) {
                             // Check whether this cross-module variant's payload is ^T.
                             const box_type: ?[]const u8 = blk: {
@@ -15588,7 +15616,9 @@ const Generator = struct {
             if (mem.object.* == .ident) {
                 const type_name = mem.object.ident.name;
                 if (g.union_names.contains(type_name) or g.exposed_unions.contains(type_name)) {
-                    try g.w.print("{s}{{ .{s} = ", .{type_name, mem.member});
+                    try g.w.print("{s}{{ .", .{type_name});                        // BUG-281 D
+                    try g.emitName(mem.member);
+                    try g.w.writeAll(" = ");
                     if (e.args.len == 1) {
                         // Check whether this variant's payload is ^T (heap-boxed).
                         // For same-module unions: look up union_decls.
