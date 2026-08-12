@@ -1,43 +1,76 @@
-# BUG-281 repro. Asks whether BUG-280's escaping reaches the emit families the BUG-280
-# fixture does not exercise: @derive bodies, a CLASS whose own name is a Zig keyword,
-# and a capture read inside a lambda body. It does not — in EITHER compiler.
+# BUG-281 repro AND site probe. Asks whether BUG-280's escaping reaches the emit
+# positions the BUG-280 fixture does not exercise. It does not — in EITHER compiler.
 #
 # NEITHER COMPILER CAN BUILD THIS, which is why it lives here and not in test/. A corpus
 # file in that state would put full_sweep, smoke and registration_check in the red for
-# debt that is already filed and understood. When BUG-281 is fixed, fold these shapes
-# into test/bug280_keyword_idents.zbr and delete this file.
+# debt that is already filed and understood. As each family is fixed, fold its shape
+# into test/bug280_keyword_idents.zbr and delete it from here.
+#
+# READ THE EMITTED .zig, NOT the compiler's first complaint — Zig stops at the first
+# parse error, so one broken family masks the rest:
 #
 #   $ zebra-bootstrap --emit-zig tools/fixtures/bug281_keyword_gaps_repro.zbr > p.zig
-#   $ zig build-exe p.zig
-#   error: expected pointer dereference, optional unwrap, or field access, found 'align'
+#   $ grep -nwE 'align|volatile|opaque|packed|noalias|anyframe' p.zig
 #
-# That first error is family A (@derive) and it masks B and C — read the emitted Zig
-# rather than the compiler's first complaint.
+# Every word below is a ZIG keyword and NONE is a Zebra keyword, so a user can write all
+# of them today and nothing warns them.
 
+# ── family A: @derive bodies emit self.<field> for toString / eql / hash ──────────
 @derive(Debug, Eq, Hash)
 struct Der
     var align: int = 0
     var volatile: int = 0
 
+# ── family B: the type NAME itself ───────────────────────────────────────────────
 class opaque
     var packed: int = 0
 
     def get(): int
         return .packed
 
+# ── a keyword as a METHOD name, an ENUM member, a UNION variant ──────────────────
+enum Mode
+    align
+    packed
+
+union Shape
+    volatile: int
+    noalias: str
+
+class Holder
+    var count: int = 0
+
+    def volatile(): int
+        return .count
+
+# ── a keyword as a TOP-LEVEL function name, and a bare field read in a method ────
+def anyframe(): int
+    return 1
+
+class Bare
+    var align: int = 3
+
+    def readBare(): int
+        # bare field name, no dot — a DIFFERENT emit path from `.align`
+        return align
+
 def main()
-    # @derive bodies emit self.<field> for toString / eql / hash
     var d1 = Der(align: 1, volatile: 2)
     var d2 = Der(align: 1, volatile: 2)
     print(d1.toString())
     print(d1 == d2)
 
-    # a class NAMED for a Zig keyword — genType emits the bare name
     var o = opaque()
     o.packed = 4
     print(o.get())
 
-    # capture block: the captured name is a struct field AND a literal designator
+    print(Mode.align)
+    var h = Holder()
+    print(h.volatile())
+    print(anyframe())
+    print(Bare().readBare())
+
+    # ── family C: a capture DECLARED escaped and READ bare in the body ────────────
     var noalias: int = 5
     var addIt = def(v: int): int
         capture
@@ -45,4 +78,4 @@ def main()
         return v + noalias
     print(addIt(1))
 
-    print("zz_kw_probe: OK")
+    print("bug281 probe: emitted")

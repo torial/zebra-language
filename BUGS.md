@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-281. Next new bug: BUG-282.**
+**Last bug number generated: BUG-282. Next new bug: BUG-283.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -78,12 +78,80 @@ native slice type instead. Declaration-only externs parse and resolve fine
 (the gap is exactly at the ABI boundary), so BUG-258's fix is confirmed
 working -- this is the next layer down.
 
-### BUG-281: three more emit families still print Zig keywords bare — in BOTH compilers
+### BUG-282: `--output-dir` at a path that does not exist PANICS instead of refusing
+
+**Found 2026-08-11** as a side-effect of probing BUG-281 — I typo'd nothing, I simply
+had not created the directory yet.
+
+```
+$ zebra --output-dir /some/dir/that/does/not/exist hello.zbr
+  parsing...
+  parsed OK
+  resolved OK
+thread 61956 panic: File.write error
+error return context:
+???:?:?: 0x140e47953 in ??? (zebra.exe)
+stack trace:
+(empty stack trace)
+```
+
+**Isolated with a negative control**, not inferred: the same invocation on a
+*known-good* corpus file (`test/bug280_keyword_idents.zbr`) panics identically, so it is
+the missing directory and not the input program. Exit code 3.
+
+**Why this is worth a ticket rather than a shrug.** The message names neither the
+directory, the flag, nor the fix, and the stack trace is empty — so the reader's most
+natural conclusion is that their *program* broke the compiler. It arrives **after**
+`parsed OK` / `resolved OK`, which actively points attention at the wrong end. This is
+the UNGIT "nothing ambient" test failing at all three clauses: the refusal does not name
+the reason, does not name the fix, and the condition is checked at *use* rather than at
+*declaration* — the flag is known at startup and the directory could be validated (or
+created) there, before any work is done.
+
+The fix is a `makePath`-or-refuse at argument-parsing time, with a message naming the
+path. Whether it should CREATE the directory or refuse is a real decision:
+`--output-dir` reads like an instruction, and `mkdir -p` semantics would match how
+`--emit-zig` behaves for its own file. Both compilers need whichever answer wins.
+
+**Control when fixing:** assert on the printed message, not the exit code — exit 3 is
+already produced by unrelated failures, so scoring on it would pass a compiler that
+panicked for a different reason. A `smoke_run_fail`-style fixture asserting the path
+appears in the diagnostic is the shape.
+
+### BUG-281: SEVEN more emit families still print Zig keywords bare — in BOTH compilers
 
 **Found 2026-08-11** finishing BUG-280's selfhost half, by a four-line probe rather than
 by reading. BUG-280 fixed the field/constructor/member/literal paths in both compilers
-and its gate reports clean. Three families remain, and **the bootstrap is broken in all
-three as well** — so this is not a selfhost gap, and `divergence_check` will not see it.
+and its gate reports clean. **The bootstrap is broken in all of these too** — so this is
+not a selfhost gap, and `divergence_check` will not see it.
+
+**FILED AS THREE FAMILIES; A WIDENED PROBE FOUND SEVEN.** The first version of this entry
+listed A, B and C, derived from a probe that exercised `@derive`, a keyword-named class,
+and a capture block. Adding a keyword as an enum member, a union variant, a method name,
+a top-level function name and a bare field read inside a method — all legal Zebra
+identifiers today — turned up four more in a single emit. That is the same ratio as
+BUG-280 (reading found 4 of 9; a probe found 9), arriving immediately after the lesson
+was written down. **The probe is the map. Widen it before believing a family count.**
+
+| | family | bootstrap | selfhost |
+|---|---|---|---|
+| A | `@derive` bodies — `self.<field>` in toString/eql/hash | broken | broken |
+| B | the type NAME itself — `pub const opaque = struct` | broken | broken |
+| C | a capture READ in a lambda body | broken | broken |
+| D | enum members and union variants | broken | broken |
+| E | method name — declaration AND call site | broken | broken |
+| F | bare field read inside a method (no `.` prefix) | broken | broken |
+| G | top-level function name | **broken** | **OK** |
+
+**G is the interesting one, and it points at the cheap general fix.** The selfhost emits
+`pub fn _zbr_fn_anyframe()` while the bootstrap emits `pub fn anyframe()`. The selfhost is
+immune *for free*, because the prefix already makes the name collision-free — exactly the
+reasoning that governs `_zbr_mv_` for module vars and `_ttag_`/`_reflect_` for type tags.
+Wherever a name is already prefixed, this whole bug class cannot occur.
+
+**Note also what D, E and F share with C:** in each, a name is escaped at one end and bare
+at the other, so the emitted Zig is internally inconsistent rather than uniformly wrong.
+That is why no single error message describes the bug — Zig stops at the first one.
 
 Repro: `tools/fixtures/bug281_keyword_gaps_repro.zbr` — deliberately OUTSIDE `test/`,
 because neither compiler can build it and a corpus file in that state would put
@@ -143,13 +211,22 @@ The declaration and designator were in BUG-280's site map; the body reference go
 through `genIdentRaw`'s capture-field path (`selfhost/CodeGen.zbr` ~10475) and was not.
 Inconsistent inside a single struct is the sharpest statement of it.
 
-**RECOMMENDATION: fix A and C, defer B.** A and C are a handful of emit sites each and
-are the same one-line change BUG-280 made everywhere else. B is invasive — a type name
-is a `class_names` key, a `struct_names` key, a dotted-key component and a
-`_ttag_`/`_reflect_` prefix component, so escaping the emitted spelling while the lookup
-keys stay bare touches many paths — and it buys the *class*-named-for-a-keyword case,
-which is rarer than the field case BUG-280 was reported for. Sean's call; my preference
-matches the recommendation.
+**RECOMMENDATION, revised after the widened probe: fix A, C, D and F; measure B and E
+before committing to them; fix G by giving the bootstrap the selfhost's prefix.**
+
+A, C, D and F are each a bounded set of emit sites and the same one-line change BUG-280
+made everywhere else — route the emit through `emitName`. B and E are the two that touch
+*names other code looks up*: a type name and a method name are keys in `class_names` /
+`struct_names` / `enum_names` / the dotted `Owner.method` maps. Note the escape is only
+needed at **emit** sites — the keys hold the Zebra name and never change — so the real
+question is how many emit sites there are, not how many maps. That is a countable
+number, and it should be counted rather than estimated; the "invasive" call in the first
+version of this entry was an adjective derived from reading, which is the habit this bug
+exists to discourage.
+
+**Do not fix these by hand-hunting `w.emit(<x>.name)` call sites.** There are hundreds,
+most of them correct. The reliable procedure is the one that produced this table: extend
+the probe with a new declaration form, emit, grep, and fix only what the grep names.
 
 **Why no gate saw it.** `keyword_ident_check.sh` passed the bootstrap the whole time.
 Its own header declares the limit — "the fixture is the coverage" — and this is the
