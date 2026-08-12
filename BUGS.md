@@ -124,6 +124,17 @@ reported against the *Zebra* line via the `// zbr:` markers. So:
 *without* the refusal, a typo produces **exactly the same failure as today** — so the
 feature would look implemented while the case it exists to fix is untouched.
 
+**BOTH HOOK POINTS ARE CONFIRMED TO EXIST, with the data already in scope:**
+
+| | where | what is there |
+|---|---|---|
+| substitution | `selfhost/CodeGen.zbr`, `on Expr.zig_lit as zl` | one line, `w.emit(zl.text)` |
+| refusal | `selfhost/TypeChecker.zbr`, `inferExpr` | **has no `zig_lit` arm at all**, so the case is additive; `InferCtx` carries `module_types` (type knowledge) *and* `errors` (`Diagnostic(file, line, col, msg)`), and `ExprZigLit` carries a `span` |
+
+So the refusal can be a real located Zebra diagnostic rather than an `@compileError`
+emitted into the output — which matters, because `@compileError` fires at *Zig* time and
+would be indistinguishable from the untouched status quo.
+
 **FIX THIS BEFORE BUG-281 B, not after.** They look coupled and are not. Landing the
 substitution first means the three corpus literals migrate while the old spelling still
 works, so the prefix commit that follows breaks nothing at all and needs no deprecation
