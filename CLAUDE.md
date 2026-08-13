@@ -596,15 +596,40 @@ bash tools/keyword_ident_check.sh  # THE ESCAPED-IDENTIFIER GATE (BUG-280, QUICK
                                 #   lookup. It needs no allow-list, deliberately: an
                                 #   allow-list here would be the same hand-maintained
                                 #   oracle that caused the bug.
+                                #   AS OF 2026-08-13 IT ALSO COVERS THE TYPE NAME
+                                #   (BUG-281 B), and it covers it DIFFERENTLY: that
+                                #   family was fixed by PREFIXING, not escaping, so a
+                                #   Zebra type emits as `_zbr_ty_opaque` and the bare
+                                #   word never reaches the output at all. `_zbr_ty_opaque`
+                                #   is not a whole-word match for `opaque`, so the check
+                                #   stays live rather than vacuous — verified by watching
+                                #   it go RED on the new shapes before the fix (9 hits
+                                #   across both words) and green after.
+                                #   SELFHOST ONLY, and that is now structural: the
+                                #   fixture no longer builds under the bootstrap, so
+                                #   passing it `zebra-bootstrap.exe` is a permanent FAIL
+                                #   rather than a check. gates.sh has never had a
+                                #   bootstrap leg here; do not add one.
                                 #   TWO BLIND SPOTS, both live. (1) THE FIXTURE IS THE
                                 #   COVERAGE — on 2026-08-11 it reported the bootstrap
                                 #   CLEAN while three further emit families were broken
                                 #   in it (BUG-281). Extend the fixture with every fix.
+                                #   Receipt that this is not a formality: B's landing
+                                #   needed NINE emit sites the fixture (and the derived
+                                #   probe) never reached, and every one came from a
+                                #   different witness — the ROUND-TRIP (cross-module) and
+                                #   selfhost_smoke. A keyword gate over a single-module
+                                #   fixture cannot see either.
                                 #   (2) It cannot see OVER-escaping, the dangerous
                                 #   direction, since stripping strings is exactly what
                                 #   lets the reflection strings pass. Diff a pre/post
                                 #   emit for that: every changed line must be a keyword
-                                #   acquiring @"…" and nothing else.
+                                #   acquiring @"…" and nothing else. Done for B against
+                                #   tools/fixtures/bug281_typename_sites_probe.zbr:
+                                #   32 changed lines, every one an identifier gaining the
+                                #   prefix; the reflection field-type strings, the _ttag_
+                                #   and _reflect_ symbols and the @derive toString format
+                                #   literal all correctly UNCHANGED.
                                 #   Carries a positive control (the names must appear in
                                 #   the emit at all) and a negative one, and REFUSES
                                 #   rather than reporting clean when either fails. A
@@ -834,6 +859,38 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
+**BUG-281 B landed 2026-08-13** — a Zebra type now emits as `_zbr_ty_<name>` in the
+selfhost. QUICK **20/20 in one invocation** (smoke **329/329**, round-trip byte-identical,
+`keyword-ident` 6/6, registration 465), with one caveat recorded below. Heavy witnesses,
+all run against the final tree in one scripted sequence: `compile_check` **256/0/2**,
+`full_sweep` 0 regressions vs 337, `examples_sweep` 0 vs 14, `output_sweep` **322
+identical**, `divergence` **0 selfhost gaps**. `compile_check --no-runtime-module` (the
+INLINE runtime shape, which nothing else watches) is **256/0/2 — identical to the
+default**, which matters here because the change touched ~40 emit sites.
+
+`divergence` bootstrap gaps **45 → 46**. The +1 is `bug280_keyword_idents` and nothing
+else — the fixture gained a keyword-named class and struct, which the bootstrap cannot
+emit because B was landed **selfhost-only** (Sean's call; the bootstrap is being retired
+and the standing rule only requires it to COMPILE the selfhost source, which it does since
+no `.zbr` class was renamed). Selfhost-leads, informational, expected.
+
+**The QUICK caveat, and it is an instrument note rather than a result.** `check-mode`
+failed its TIMING leg at `-c 4723ms vs --check-full 7773ms`. Re-run alone on the same
+binary minutes later: **59ms vs 2195ms, "fast path intact"**. The gate was measuring
+machine contention — the whole gate took 48s in the tier run and 5s alone. Every other
+leg of it passed both times. Treat a timing-only failure here as a load reading until it
+reproduces on a quiet machine; the deterministic legs are the ones that mean something.
+
+**A coverage fact worth knowing before trusting that `output_sweep` line.** It reported
+322 files **identical** even though `test/bug280_keyword_idents.zbr` gained four `print`
+statements — which looks wrong and is not. That file is in **neither** heavy baseline
+(`full_sweep_baseline.txt`'s 337, `output_baseline.txt`'s 322), so no re-baseline was
+needed and none was done. It is one of the ~32 accumulated new passes this file already
+flags as unlocked-in. Its real coverage is `smoke_run` (runs it, greps `bug280: OK`) plus
+`keyword_ident_check`, which emits it, **builds** it, and fails on either. That is
+adequate — but it means the heavy sweeps say nothing about this fixture, and a future
+session reading "322 identical" should not infer they do.
+
 **BUG-283 landed 2026-08-12** (`zig"${Type}"`): QUICK **20/20** in one invocation —
 smoke **329/329**, round-trip byte-identical, registration 465. Heavy witnesses run
 individually: `output_sweep` 322 identical, `compile_check` 256/0, `full_sweep` 0
@@ -859,10 +916,10 @@ run (smoke 327/327, round-trip byte-identical); `output_sweep` 322 identical; `f
 bootstrap gaps steady at 44; `compile_check` 255/0 in both runtime shapes;
 `contract-mode` 13/13; `release-mode` clean.
 
-**`compile_check --bootstrap` is 220 passed / 17 FAILED / 20 skipped, and that is its
-NORMAL state — recorded here because it never has been.** The tool is manual, so its
-number has no baseline anywhere, and a future session seeing 17 red has nothing to
-compare against. The 17 break down as: **14 known bootstrap gaps** (the same files
+**`compile_check --bootstrap` is 219 passed / 19 FAILED / 20 skipped (2026-08-13), and
+that is its NORMAL state — recorded here because it never has been.** The tool is manual,
+so its number has no baseline anywhere, and a future session seeing 19 red has nothing to
+compare against. The 19 break down as: **16 known bootstrap gaps** (the same files
 `divergence` lists as *selfhost leads* — the bootstrap genuinely cannot compile them),
 and **3 cross-module tests** (`crossmod_modvar_test`, `bug168_crossmod_prim_return_test`,
 `bug235_exposing_test`) that fail with `unable to load '<dep>.zig': FileNotFound` because
@@ -870,6 +927,18 @@ and **3 cross-module tests** (`crossmod_modvar_test`, `bug168_crossmod_prim_retu
 `DEPMISS`, not breakage — the same distinction `examples_sweep` draws, and a gate that
 libels a working file is one people learn to disbelieve. **If this number moves, check
 which group moved before assuming a regression.**
+
+Movement since it was first recorded (220/17/20 on 2026-08-11), accounted for in full
+rather than re-recorded — the arithmetic is the check:
+
+| | | |
+|---|---|---|
+| `bug283_zig_lit_typeref_test` | new corpus file, bootstrap has no `${...}` | 17 → 18, total 257 → 258 |
+| `bug280_keyword_idents` | gained a keyword-named class; BUG-281 B is selfhost-only | 18 → 19, and **220 → 219** — it moved OUT of the pass set |
+
+Both are selfhost-leads and both are in `divergence`'s bootstrap-gap list, which is the
+cross-check: 46 there, 16 here, and the difference is `examples/` plus files this tool
+skips. A move that does NOT reconcile against that list is the one to worry about.
 
 **FULL tier swept 2026-08-11 — 28/28 PASS, but ASSEMBLED, not observed in one run.**
 `gates.sh --full` was killed twice by the harness before reaching the heavy witnesses

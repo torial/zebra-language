@@ -2850,6 +2850,14 @@ def humanizeZigTypes(msg: str, mod_name: str): str
     var m: str = msg
     m = m.replace("[]const u8", "str")
     m = m.replace("[]u8", "str")
+    # BUG-281 B: a Zebra type emits as `_zbr_ty_<name>`, and Zig quotes that spelling
+    # back in its own diagnostics — `no field named 'y' in struct '_zbr_ty_P'`.  The
+    # user wrote `struct P` and has never seen the prefix, so showing it is the exact
+    # generated-code leak this function exists to close.
+    # NOT done here: `_zbr_fn_` and `_zbr_mv_`, which have leaked the same way since
+    # BUG-220 / BUG-137.  Same one-line shape, but changing them would move messages
+    # this change is not responsible for.
+    m = m.replace("_zbr_ty_", "")
     if mod_name != ""
         m = m.replace(mod_name + ".", "")
     return m

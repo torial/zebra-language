@@ -905,6 +905,9 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 if tlm.mods.is_export or tlm.mods.is_node_export or tlm.mods.is_extern
                     g.toplevel_export_fns.add(tlm.name)
             on Decl.use_ as imp
+                # BUG-281 B: record the alias BEFORE any emit, so the namespace-vs-type
+                # question is answerable no matter what order decls are generated in.
+                g.import_aliases.add(imp.path)
                 populateBoxedVariants(g.boxed_variants, deps_mt)
                 populateRefFields(g.ref_fields, g.opt_ref_fields, deps_mt)
                 for exposed_name in imp.exposed
@@ -1084,7 +1087,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
                 for mem in c.members
                     if mem is Decl.method as mth
                         if mth.name == "main" and mth.mods.is_static
-                            main_class = c.name
+                            main_class = zbrTypeSymbol(c.name)   # BUG-281 B
                             main_throws = mth.throws_
             on Decl.namespace_ as ns
                 for nested in ns.decls
@@ -1094,7 +1097,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
                                 if nmth.name == "main" and nmth.mods.is_static
                                     var qn: str = ns.name
                                     qn = qn + "."
-                                    qn = qn + nc.name
+                                    qn = qn + zbrTypeSymbol(nc.name)  # BUG-281 B
                                     main_class = qn
                                     main_throws = nmth.throws_
             else
@@ -1161,6 +1164,36 @@ def zbrFnSymbol(name: str, is_export: bool): str
         return name
     return "_zbr_fn_" + name
 
+# BUG-281 B: THE single source of truth for how a Zebra TYPE is spelled in the emitted
+# Zig — the same role zbrFnSymbol plays for a top-level `def`, and for the same reason.
+#
+# Why a prefix rather than escaping.  A Zig keyword that Zebra does not reserve
+# (`opaque`, `packed`, `align`, …) is a legal Zebra type name today, so `class opaque`
+# must not emit `pub const opaque = struct`.  Escaping every emit site would work, but
+# its failure mode after the fact is a NEW emit site that forgets: broken only for a
+# keyword-named type — silent, latent, rare.  BUG-280 and BUG-281 are that failure
+# twice.  A prefix inverts it: a forgotten site emits `Route` when nothing declares it,
+# so `zig` errors on the first test that uses ANY class.  Loud, immediate, universal.
+#
+# The precedent is already load-bearing: `_zbr_mv_` (module vars), `_zbr_fn_`
+# (top-level defs) and `_ttag_`/`_reflect_` (type tags) have never had this bug class,
+# for free, because the prefix already makes them collision-free.
+#
+# NEVER escape a prefixed name — `_zbr_ty_@"opaque"` is not valid Zig, and the prefix
+# has already removed the collision the escape existed for.
+#
+# WHAT DECIDES WHETHER A NAME GETS THIS: the Generator's `isUserTypeName`, which reads
+# `class_names` / `struct_names` / `enum_names` / `union_names`.  Those four are filled
+# by `generateModuleWith`'s prepopulation loop BEFORE any decl is emitted, and that
+# ordering is what makes the answer stable for forward references.  **A new declaration
+# kind that does not register itself there gets no prefix**, which is silent until
+# something references it — so register first, then emit.  Interfaces are deliberately
+# absent from all four: they emit bare on both the declaration and the reference side,
+# consistently, so `typeZigName` leaving them alone is the correct answer and not an
+# oversight.
+def zbrTypeSymbol(name: str): str
+    return "_zbr_ty_" + name
+
 def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     # Collect test entries: (call expression, display label).
     # Auto-tags: file_stem (all tests) + class name (class-contained static tests).
@@ -1212,10 +1245,12 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
                                         matched = true
                             included = matched
                         if included
+                            # BUG-281 B: the CALL names the emitted type (prefixed); the
+                            # LABEL is printed text and stays the Zebra spelling.
                             var entry: str = "${class_name}.${mth.name}"
-                            var ecall: str = entry
+                            var ecall: str = "${zbrTypeSymbol(class_name)}.${mth.name}"
                             if _single_file
-                                ecall = "_Mod.${entry}"
+                                ecall = "_Mod.${ecall}"
                             test_calls.add(ecall)
                             test_labels.add(entry)
 
@@ -2493,6 +2528,10 @@ struct Generator
     var ext_method_keys      : StrSet  # "TypeName.method" for `extend TypeName` methods → rewrite obj.m() to _ext_TypeName_m(obj)
     var ext_method_ret       : HashMap(str, TypeRef)  # "TypeName.method" → return TypeRef (print-format inference can't see the _ext_ rewrite)
     var unwrapped_imports    : StrSet  # module names where genUse did .ModuleName unwrap
+    var import_aliases       : StrSet  # BUG-281 B: every `use Mod` alias in scope. A module whose
+                                       # name matches a class it declares (Parser/Parser) is in
+                                       # class_names too, so without this the alias in
+                                       # `Parser.Parser.parse()` reads as a type reference.
     var exposed_module_vars  : HashMap(str, str)  # BUG-158: exposed cross-module module-var name → import alias
     # Phase 7b additions
     var mut_set              : StrSet?  # locals mutated in current block; nil → all emitted as const; set by genStmts
@@ -2600,6 +2639,7 @@ struct Generator
         .ext_method_keys       = StrSet()
         .ext_method_ret        = HashMap()
         .unwrapped_imports     = StrSet()
+        .import_aliases        = StrSet()
         .exposed_module_vars   = HashMap(str, str)()
         # Phase 7b field initializations
         .mut_set               = nil
@@ -2995,7 +3035,7 @@ struct Generator
                     return
                 if class_names.contains_(n.name)
                     w.emit("*")
-                    emitName(n.name)                        # BUG-280
+                    emitTypeName(n.name)                    # BUG-280 → BUG-281 B
                     return
                 if n.name == "StringBuilder"
                     w.emit("std.ArrayList(u8)")
@@ -3033,7 +3073,15 @@ struct Generator
                     var class_part = extractAfterDot(n.name)
                     if class_names.contains_(class_part)
                         w.emit("*")
-                    emitName(n.name)                        # BUG-280
+                    emitTypeName(n.name)                    # BUG-280 → BUG-281 B
+                    return
+                # BUG-281 B: a struct / enum / union declared in Zebra reaches the
+                # fall-through, and zigPrimitive returns such a name verbatim.  It has
+                # to take the prefix here or its declaration and its uses disagree.
+                # AFTER the stdlib special-cases above, so a user type never captures a
+                # name the runtime spells itself.
+                if isUserTypeName(n.name)
+                    emitTypeName(n.name)                    # BUG-281 B
                     return
                 w.emit(zigPrimitive(n.name))
 
@@ -3068,24 +3116,24 @@ struct Generator
                         if ni2 is TypeRef.named as n
                             if class_names.contains_(n.name)
                                 w.emit(prefix)
-                                emitName(n.name)            # BUG-280
+                                emitTypeName(n.name)        # BUG-281 B
                                 handled = true
                             else if "." in n.name
                                 var class_part = extractAfterDot(n.name)
                                 if class_names.contains_(class_part)
                                     w.emit(prefix)
-                                    emitName(n.name)        # BUG-280
+                                    emitTypeName(n.name)    # BUG-281 B
                                     handled = true
                     on TypeRef.named as n
                         if class_names.contains_(n.name)
                             w.emit(prefix)
-                            emitName(n.name)                # BUG-280
+                            emitTypeName(n.name)            # BUG-281 B
                             handled = true
                         else if "." in n.name
                             var class_part = extractAfterDot(n.name)
                             if class_names.contains_(class_part)
                                 w.emit(prefix)
-                                emitName(n.name)            # BUG-280
+                                emitTypeName(n.name)        # BUG-281 B
                                 handled = true
                     else
                         pass
@@ -3110,7 +3158,7 @@ struct Generator
 
             on TypeRef.same_
                 if owner != ""
-                    w.emit(owner)
+                    emitTypeName(owner)                     # BUG-281 B
                 else
                     w.emit("@This()")
 
@@ -3229,7 +3277,7 @@ struct Generator
         if gtr.name == "ThreadPool"
             w.emit("*_ThreadPool")
             return
-        w.emit(gtr.name)
+        emitTypeName(gtr.name)                              # BUG-281 B
         if gtr.args.len > 0
             w.emit("(")
             var bi = 0
@@ -3361,13 +3409,23 @@ struct Generator
             imp = "@import(\"" + n.path + ".zig\")"
         if n.exposed.len == 0
             # `use Mod` — import module (or unwrap same-named class)
+            #
+            # BUG-281 B: when the module IS unwrapped to its same-named class, both
+            # halves name a TYPE, so both take the `_zbr_ty_` prefix — the binding as
+            # well as the target, exactly as BUG-220 had to do for `_zbr_fn_`.  A bare
+            # binding (`const Lexer = …._zbr_ty_Lexer;`) would compile here and then
+            # disagree with every reference genIdentRaw emits.  A module alias that is
+            # NOT a class is a namespace, not a type, and stays bare.
             w.emit("const ")
-            w.emit(alias)
+            if has_same_named_class
+                w.emit(zbrTypeSymbol(alias))                # BUG-281 B
+            else
+                w.emit(alias)
             w.emit(" = ")
             w.emit(imp)
             if has_same_named_class
                 w.emit(".")
-                w.emit(alias)
+                w.emit(zbrTypeSymbol(alias))                # BUG-281 B
                 unwrapped_imports.add(alias)
             w.emit(";\n")
         else
@@ -3392,6 +3450,11 @@ struct Generator
                     var uname: str = ename
                     if toplevel_fns.contains_(ename)
                         uname = topLevelFnZigName(ename)
+                    # BUG-281 B: an exposed TYPE is emitted by its defining module under
+                    # the `_zbr_ty_` prefix, for the same reason and with the same
+                    # both-halves rule as the `_zbr_fn_` case above.
+                    else if isUserTypeName(ename)
+                        uname = zbrTypeSymbol(ename)
                     w.emit("const ")
                     w.emit(uname)
                     w.emit(" = ")
@@ -3500,7 +3563,7 @@ struct Generator
         enum_names.add(n.name)
         writeIndent()
         w.emit("pub const ")
-        w.emit(n.name)
+        emitTypeName(n.name)                                # BUG-281 B
         w.emit(" = enum")
         if n.base != nil
             w.emit("(")
@@ -3535,7 +3598,7 @@ struct Generator
                 novalue_variants.add(makeDottedKey(n.name, v.name))
         writeIndent()
         w.emit("pub const ")
-        w.emit(n.name)
+        emitTypeName(n.name)                                # BUG-281 B
         w.emit(" = union(enum) {\n")
         var ig = indented()
         for v in n.variants
@@ -3567,7 +3630,7 @@ struct Generator
                             pass
         writeIndent()
         w.emit("pub const ")
-        w.emit(n.name)
+        emitTypeName(n.name)                                # BUG-281 B
         w.emit(" = struct {\n")
         var ig0 = indented()
         var ig1 = ig0.withOwner(n.name)
@@ -3607,7 +3670,7 @@ struct Generator
                     else
                         w.emit("anytype")
             w.emit(") ")
-            w.emit(n.name)
+            emitTypeName(n.name)                            # BUG-281 B
             w.emit(" {\n")
             sig_ig.writeIndent()
             if si_first
@@ -3670,7 +3733,7 @@ struct Generator
     def genDeriveToString(n: DeclStruct)
         writeIndent()
         w.emit("pub fn toString(self: *const ")
-        w.emit(n.name)
+        emitTypeName(n.name)                                # BUG-281 B
         w.emit(") []const u8 {\n")
         var ig_ts = indented()
         # Build format string in a StringBuilder
@@ -3712,9 +3775,9 @@ struct Generator
     def genDeriveEql(n: DeclStruct)
         writeIndent()
         w.emit("pub fn eql(self: *const ")
-        w.emit(n.name)
+        emitTypeName(n.name)                                # BUG-281 B
         w.emit(", other: *const ")
-        w.emit(n.name)
+        emitTypeName(n.name)                                # BUG-281 B
         w.emit(") bool {\n")
         var ig_eq = indented()
         var field_count = 0
@@ -3754,7 +3817,7 @@ struct Generator
     def genDeriveHash(n: DeclStruct)
         writeIndent()
         w.emit("pub fn hash(self: *const ")
-        w.emit(n.name)
+        emitTypeName(n.name)                                # BUG-281 B
         w.emit(") u64 {\n")
         var ig_h = indented()
         ig_h.writeIndent()
@@ -3778,7 +3841,7 @@ struct Generator
         class_names.add(n.name)
         writeIndent()
         w.emit("pub fn ")
-        w.emit(n.name)
+        emitTypeName(n.name)                                # BUG-281 B
         w.emit("(")
         var i = 0
         while i < n.type_params.len
@@ -4012,10 +4075,15 @@ struct Generator
                     genType(meth.return_type!)
                 else
                     w.emit("void")
+                # BUG-281 B: the shim BODY calls the class's method, so it names the
+                # emitted type.  The shim's own NAME and the vtable's stay on the Zebra
+                # spelling: `_shim_`/`_vtable_` already make those collision-free, and
+                # every reference to them is built by this same concatenation.
+                var shim_ty: str = zbrTypeSymbol(class_name)
                 if meth.throws_
-                    w.emit(" { return try " + class_name + "." + meth.name + "(@alignCast(@ptrCast(ptr))")
+                    w.emit(" { return try " + shim_ty + "." + meth.name + "(@alignCast(@ptrCast(ptr))")
                 else
-                    w.emit(" { return " + class_name + "." + meth.name + "(@alignCast(@ptrCast(ptr))")
+                    w.emit(" { return " + shim_ty + "." + meth.name + "(@alignCast(@ptrCast(ptr))")
                 for p in meth.params
                     w.emit(", " + p.name)
                 w.emit("); }\n")
@@ -4127,7 +4195,7 @@ struct Generator
         class_names.add(n.name)
         writeIndent()
         w.emit("pub const ")
-        w.emit(n.name)
+        emitTypeName(n.name)                                # BUG-281 B
         w.emit(" = struct {\n")
         var ig0 = indented()
         var ig1 = ig0.withOwner(n.name)
@@ -4176,12 +4244,12 @@ struct Generator
         if not has_init
             ig.writeIndent()
             ig.w.emit("pub fn init() *")
-            ig.w.emit(n.name)
+            ig.emitTypeName(n.name)                         # BUG-281 B
             ig.w.emit(" {\n")
             var dig = ig.indented()
             dig.writeIndent()
             dig.w.emit("const self = _allocator.create(")
-            dig.w.emit(n.name)
+            dig.emitTypeName(n.name)                        # BUG-281 B
             dig.w.emit(") catch @panic(\"OOM\");\n")
             dig.writeIndent()
             dig.w.emit("self.* = .{};\n")
@@ -4317,9 +4385,9 @@ struct Generator
                     w.emit("        _zbr_export_")
                     w.emit(sym)
                     w.emit("_iface = .{ .ptr = ")
-                    w.emit(n.name)
+                    emitTypeName(n.name)                    # BUG-281 B: the TYPE...
                     w.emit(".init(), .vtable = &_vtable_")
-                    w.emit(n.name)
+                    w.emit(n.name)                          # ...but the vtable SYMBOL
                     w.emit("_")
                     w.emit(iface_name)
                     w.emit(" };\n")
@@ -4367,9 +4435,9 @@ struct Generator
                 f_names.add(fld.name)
                 f_kinds.add(kind)
         w.emit("fn _json_parse_strict_")
-        w.emit(n.name)
+        w.emit(n.name)                                      # SYMBOL — already prefixed
         w.emit("(_src: []const u8) ?*")
-        w.emit(n.name)
+        emitTypeName(n.name)                                # BUG-281 B: the TYPE
         w.emit(" {\n")
         w.emit("    const _v = _json_parse(_src) orelse return null;\n")
         w.emit("    if (!_json_is_object(_v)) return null;\n")
@@ -4409,7 +4477,7 @@ struct Generator
             w.emit(" } }\n")
             j = j + 1
         w.emit("    const _r = _allocator.create(")
-        w.emit(n.name)
+        emitTypeName(n.name)                                # BUG-281 B
         w.emit(") catch return null;\n")
         w.emit("    _r.* = .{};\n")
         w.emit("    _r._type_tag = _ttag_")
@@ -4470,7 +4538,7 @@ struct Generator
             if is_generic
                 w.emit("@This()")
             else
-                w.emit(owner)
+                emitTypeName(owner)                         # BUG-281 B
             w.emit(") ")
             if m.return_type != nil
                 genType(m.return_type!)
@@ -4548,7 +4616,7 @@ struct Generator
                     w.emit("self: *const ")
                 else
                     w.emit("self: *")
-                w.emit(owner)
+                emitTypeName(owner)                         # BUG-281 B
             if m.params.len > 0
                 w.emit(", ")
         genParamList(m.params, m.stmts)
@@ -4779,7 +4847,7 @@ struct Generator
         if is_generic
             w.emit("@This()")
         else
-            w.emit(owner)
+            emitTypeName(owner)                             # BUG-281 B
         w.emit(" {\n")
         var ig = indented()
         if not is_struct_owner
@@ -4789,7 +4857,7 @@ struct Generator
             if is_generic
                 ig.w.emit("@This()")
             else
-                ig.w.emit(owner)
+                ig.emitTypeName(owner)                      # BUG-281 B
             ig.w.emit(") catch @panic(\"OOM\");\n")
             ig.writeIndent()
             ig.w.emit("_self._type_tag = _zbr_hash(\"")
@@ -4807,7 +4875,7 @@ struct Generator
             # Struct init: local value
             ig.writeIndent()
             ig.w.emit("var _self: ")
-            ig.w.emit(owner)
+            ig.emitTypeName(owner)                          # BUG-281 B
             ig.w.emit(" = undefined;\n")
         if ini.stmts as istmts
             var rs = analyzeEscapes(istmts)
@@ -5465,6 +5533,53 @@ struct Generator
         # F4: escape Zig primitives AND Zig keywords (fn, error, …) as @"name".
         w.emit(zigSafeName(name))
 
+    # BUG-281 B: is `name` a type DECLARED IN ZEBRA, as opposed to a stdlib type, a
+    # primitive, or a name codegen invents?  Only the first kind takes the prefix —
+    # `int`, `List`, `_CsvWriter` and friends are spelled by the runtime, not by us.
+    def isUserTypeName(name: str): bool
+        if class_names.contains_(name)
+            return true
+        if struct_names.contains_(name)
+            return true
+        if enum_names.contains_(name)
+            return true
+        return union_names.contains_(name)
+
+    # BUG-281 B: the emitted Zig spelling of a Zebra type name.
+    #
+    # A DOTTED name is `Module.TypeName` — reaching a type position means the tail is a
+    # type declared in that module, and the same compiler emitted its declaration, so the
+    # tail always takes the prefix.  The head is the import alias and never does.
+    #
+    # AN UNKNOWN NAME IS RETURNED BARE, deliberately.  That is the loud failure the
+    # prefix exists to buy: a reference site that has not been converted emits `Route`
+    # while the declaration says `_zbr_ty_Route`, and `zig` answers `use of undeclared
+    # identifier`.  Do NOT add a "prefix when unsure" branch, and do NOT emit a
+    # compatibility alias (`pub const Route = _zbr_ty_Route;`) — that was tried, and it
+    # makes every un-converted site resolve silently, which deletes the entire reason
+    # for choosing a prefix over escaping.  See BUG-281.
+    def typeZigName(name: str): str
+        if "." in name
+            var tail: str = extractAfterDot(name)
+            var head: str = name.substring(0, name.len - tail.len - 1)
+            return head + "." + zbrTypeSymbol(tail)
+        if isUserTypeName(name)
+            return zbrTypeSymbol(name)
+        return zigSafeName(name)
+
+    def emitTypeName(name: str)
+        w.emit(typeZigName(name))
+
+    # `StrSet()` has a hardcoded ctor emit in three places because it is spelled as a
+    # stdlib container in Zebra — but unlike List/HashMap it has NO preamble type: it is
+    # an ordinary Zebra `class StrSet`, declared in the compiler's own CgHelpers.zbr.
+    # So it takes the prefix whenever such a class is visible, and stays bare otherwise
+    # (a program with no StrSet class would have got an undeclared identifier either way).
+    # Found by the round-trip: the selfhost is the largest StrSet user there is.
+    def emitStrSetInit()
+        emitTypeName("StrSet")
+        w.emit(".init()")
+
     # BUG-283: inside a zig"..." literal, `${Name}` names a ZEBRA TYPE and the compiler
     # supplies its current emitted spelling.  Everything else passes through untouched.
     #
@@ -5509,11 +5624,11 @@ struct Generator
             rest = after.substring(close + 1, after.len)
         w.emit(rest)
 
-    # The emitted Zig spelling of a Zebra type, for `${Name}`.  Today that is the name
-    # itself; BUG-281 B changes it in ONE place, and every `${...}` follows for free —
-    # which is the entire reason this indirection exists.
+    # The emitted Zig spelling of a Zebra type, for `${Name}`.  BUG-281 B changed it in
+    # THIS ONE PLACE and every `${...}` in every user program followed for free — which
+    # is the entire reason this indirection exists.
     def emitTypeRefName(name: str)
-        emitName(name)
+        emitTypeName(name)
 
     def genStmts(stmts: List(Stmt))
         # Per-block mutation scope: save caller's mut_set, install block-scoped one,
@@ -5943,7 +6058,11 @@ struct Generator
                                             var zn_ifc3: str = zigSafeName(n.name)
                                             w.emit(ikw3 + " " + zn_ifc3 + ": " + itn2.name + " = .{ .ptr = ")
                                             genExpr(iinit)
-                                            w.emit(", .vtable = &" + (cc!) + "(")
+                                            # BUG-281 B: the instantiation names the
+                                            # generic TYPE; `_vtable_<Iface>` below is a
+                                            # member of the struct it returns, not a
+                                            # file-scope symbol, so only this half moves.
+                                            w.emit(", .vtable = &" + typeZigName(cc!) + "(")
                                             var g_first = true
                                             for g_ta in g_inner.args
                                                 if not g_first
@@ -6494,7 +6613,7 @@ struct Generator
                             return
                 on Expr.ident as id
                     if id.name == "StrSet"
-                        w.emit("StrSet.init()")
+                        emitStrSetInit()                        # BUG-281 B
                         return
                     # Bare List() or HashMap() — use type_hint from variable declaration
                     if id.name == "List"
@@ -6573,7 +6692,11 @@ struct Generator
         branch e
             on Expr.ident as id
                 if class_names.contains_(id.name)
-                    w.emit("*${id.name}")
+                    w.emit("*")
+                    emitTypeName(id.name)                   # BUG-281 B
+                    return
+                if isUserTypeName(id.name)                  # BUG-281 B
+                    emitTypeName(id.name)
                     return
                 w.emit(zigPrimitive(id.name))
             on Expr.tuple_lit as tl
@@ -6726,7 +6849,7 @@ struct Generator
                         # `cue init(opt_val: ^Val?) { .opt_val = opt_val }` is a direct
                         # pointer copy, not a box (BUG: union-box regressed val_test here).
                         if (struct_names.contains_(tn) or .module_types.hasUnion(tn)) and not rhsIsAlreadyRef(a.value)
-                            w.emit("{ const _rp = _allocator.create(" + tn + ") catch @panic(\"OOM\"); _rp.* = ")
+                            w.emit("{ const _rp = _allocator.create(" + typeZigName(tn) + ") catch @panic(\"OOM\"); _rp.* = ")
                             genExpr(a.value)
                             w.emit("; ")
                             genExpr(a.target)
@@ -7011,7 +7134,7 @@ struct Generator
                         w.emit(").init(_allocator)")
                         return
                     if id.name == "StrSet"
-                        w.emit("StrSet.init()")
+                        emitStrSetInit()                        # BUG-281 B
                         return
         genExpr(e)
 
@@ -8934,7 +9057,7 @@ struct Generator
                     w.emit("{ const _rdet_")
                     w.emit(uid.toString())
                     w.emit(" = _allocator.create(")
-                    w.emit(type_name)
+                    emitTypeName(type_name)                 # BUG-281 B
                     w.emit(") catch @panic(\"OOM\");\n")
                     writeIndent()
                     w.emit("  _rdet_")
@@ -8948,7 +9071,7 @@ struct Generator
                 w.emit(" = struct { " + rtPub() + "fn call(p: *anyopaque) []const u8 {\n")
                 writeIndent()
                 w.emit("      return @as(*")
-                w.emit(type_name)
+                emitTypeName(type_name)                 # BUG-281 B
                 w.emit(", @alignCast(@ptrCast(p))).toString();\n")
                 writeIndent()
                 w.emit("  } };\n")
@@ -9059,7 +9182,7 @@ struct Generator
         if is_generic
             w.emit("@This()")
         else
-            w.emit(owner)
+            emitTypeName(owner)                             # BUG-281 B
         w.emit(") void {\n")
         var ig0 = indented()
         var mg = ig0.asMethod()
@@ -9953,6 +10076,18 @@ struct Generator
                     w.emit(m.member)
                     w.emit("\"")
                     return
+                # BUG-281 B: `Alias.TypeName` — a type reached THROUGH a module
+                # namespace, the other half of the import-alias case in genIdentRaw.
+                # The defining module emitted that declaration under the `_zbr_ty_`
+                # prefix, so the qualified reference has to name it the same way.
+                # Guarded on the object being an import alias, so an ordinary field
+                # that happens to share a name with a type is untouched.
+                if m.object is Expr.ident as xm_alias
+                    if import_aliases.contains_(xm_alias.name) and isUserTypeName(m.member)
+                        genExpr(m.object)
+                        w.emit(".")
+                        w.emit(zbrTypeSymbol(m.member))
+                        return
                 genExpr(m.object)
                 w.emit(".")
                 # BUG-280: a field may be named for a ZIG keyword (align, volatile,
@@ -10540,7 +10675,7 @@ struct Generator
         # (member access) — that one is genExpr's member arm, fixed under BUG-280.
         if in_method and isFieldName(id.name)
             if isSharedField(id.name)
-                w.emit(owner)
+                emitTypeName(owner)                         # BUG-281 B
             else
                 w.emit(self_name)
             w.emit(".")
@@ -10572,6 +10707,23 @@ struct Generator
         # name and refers to the local.
         if toplevel_fns.contains_(id.name) and not isLocalOrParamName(id.name)
             w.emit(topLevelFnZigName(id.name))
+            return
+        # BUG-281 B: a bare reference to a Zebra TYPE, used as a namespace or as a
+        # value — `Route.shared`, `Mode.packed`, a class handed to a generic ctor.
+        # Its declaration carries the `_zbr_ty_` prefix, so this must too.  Same
+        # shadow guard as the two cases above: a local or param of the same name is
+        # the local, not the type.
+        if isUserTypeName(id.name) and not isLocalOrParamName(id.name)
+            # ...but an IMPORT ALIAS is a module namespace, not a type, even when a
+            # class of the same name lives inside it (`use Parser`, which declares
+            # `class Parser`, referenced as `Parser.Parser.parse()`).  The alias is
+            # only the type when genUse UNWRAPPED it — then the binding it emitted
+            # carries the prefix and this must match.  Found by the round-trip, which
+            # is the only witness that compiles the selfhost's own cross-module code.
+            if import_aliases.contains_(id.name) and not unwrapped_imports.contains_(id.name)
+                emitName(id.name)
+                return
+            w.emit(zbrTypeSymbol(id.name))
             return
         emitName(id.name)
 
@@ -10914,7 +11066,7 @@ struct Generator
         if e is Expr.member as um2
             var uobj2 = getIdentName(um2.object)
             if uobj2 != nil
-                w.emit(uobj2!)
+                emitTypeName(uobj2!)                        # BUG-281 B
                 w.emit("{ .")
                 w.emit(um2.member)
                 w.emit(" = {} }")
@@ -11431,11 +11583,11 @@ struct Generator
                 # If genUse unwrapped this module (class_names), emit ClassName.init()
                 # Otherwise emit ModuleName.ClassName.init()
                 if unwrapped_imports.contains_(cm_obj!)
-                    w.emit(cm_mem!)
+                    emitTypeName(cm_mem!)                   # BUG-281 B
                 else
-                    w.emit(cm_obj!)
+                    w.emit(cm_obj!)                         # import alias, not a type
                     w.emit(".")
-                    w.emit(cm_mem!)
+                    w.emit(zbrTypeSymbol(cm_mem!))          # BUG-281 B
                 w.emit(".init(")
                 var fc = true
                 for a in c.args
@@ -11456,7 +11608,7 @@ struct Generator
                 if enum_names.contains_(oname)
                     # Full form for enum: EnumName{ .variant = {} }
                     # Bare .variant fails with `var` in Zig
-                    w.emit(oname)
+                    emitTypeName(oname)                     # BUG-281 B
                     w.emit("{ .")
                     emitName(mname2)                        # BUG-281 D
                     w.emit(" = {} }")
@@ -11471,7 +11623,7 @@ struct Generator
                         # Cross-module or unknown: assume boxed if it has a payload arg
                         if not union_names.contains_(oname)
                             is_boxed = true
-                    w.emit(oname)
+                    emitTypeName(oname)                     # BUG-281 B
                     w.emit("{ .")
                     emitName(mname2)                        # BUG-281 D
                     w.emit(" = ")
@@ -11486,7 +11638,7 @@ struct Generator
                             var box_lbl: str = "blk_box_" + box_uid.toString()
                             w.emit(box_lbl)
                             w.emit(": { const _bv: std.meta.Child(@FieldType(")
-                            w.emit(oname)
+                            emitTypeName(oname)             # BUG-281 B
                             w.emit(", \"")
                             w.emit(mname2)
                             w.emit("\")) = ")
@@ -11513,7 +11665,7 @@ struct Generator
                 var xmu_boxed = boxed_variants.contains_(xmu_key)
                 w.emit(xmu_mod)
                 w.emit(".")
-                w.emit(xmu_union)
+                w.emit(zbrTypeSymbol(xmu_union))            # BUG-281 B
                 w.emit("{ .")
                 w.emit(xmu_variant)
                 w.emit(" = ")
@@ -11525,7 +11677,7 @@ struct Generator
                         w.emit(": { const _bv: std.meta.Child(@FieldType(")
                         w.emit(xmu_mod)
                         w.emit(".")
-                        w.emit(xmu_union)
+                        w.emit(zbrTypeSymbol(xmu_union))    # BUG-281 B
                         w.emit(", \"")
                         w.emit(xmu_variant)
                         w.emit("\")) = ")
@@ -11568,7 +11720,7 @@ struct Generator
                     genGenericCtorCall(id.name, inner.args, c.args)
                     return
                 if class_names.contains_(id.name)
-                    w.emit(id.name)
+                    emitTypeName(id.name)                   # BUG-281 B
                     w.emit("(")
                     var gci = 0
                     while gci < inner.args.len
@@ -11579,7 +11731,10 @@ struct Generator
                             var gca_nm: str = gcid.name
                             if class_names.contains_(gca_nm)
                                 w.emit("*")
-                            w.emit(zigPrimitive(gca_nm))
+                            if isUserTypeName(gca_nm)       # BUG-281 B
+                                emitTypeName(gca_nm)
+                            else
+                                w.emit(zigPrimitive(gca_nm))
                         else
                             genExpr(gca)
                         gci += 1
@@ -11600,7 +11755,7 @@ struct Generator
                 w.emit("std.StringHashMap(anytype).init(_allocator)")
                 return
             if id.name == "StrSet" and c.args.len == 0
-                w.emit("StrSet.init()")
+                emitStrSetInit()                        # BUG-281 B
                 return
             if id.name == "StringBuilder" and c.args.len == 0
                 w.emit("std.ArrayList(u8).empty")
@@ -11628,7 +11783,7 @@ struct Generator
         # BUG-118: class constructor → .init(args); struct without cue init → struct literal
         if c.callee is Expr.ident as id
             if class_names.contains_(id.name) or struct_with_init.contains_(id.name)
-                w.emit(id.name)
+                emitTypeName(id.name)                       # BUG-281 B
                 w.emit(".init(")
                 # Named-arg / default-fill path: any arg has a name, or caller passed
                 # fewer args than params (some need their declared defaults filled in).
@@ -11701,7 +11856,7 @@ struct Generator
                 return
             # BUG-118: plain struct (no cue init) → struct literal StructName{ .field = val }
             if struct_names.contains_(id.name)
-                w.emit(id.name)
+                emitTypeName(id.name)                       # BUG-281 B
                 w.emit("{")
                 var first_sf = true
                 for a in c.args
@@ -11734,7 +11889,7 @@ struct Generator
                     recordImplicitTry(source_file + ":" + w.cur_line.toString())
                     w.emit("try ")
                 if isOwnerSharedMethod(id.name)
-                    w.emit(owner)
+                    emitTypeName(owner)                     # BUG-281 B
                     w.emit(".")
                 else
                     w.emit("self.")
@@ -12505,7 +12660,7 @@ struct Generator
                             if item_is_ref
                                 var ref_uid = w.nextUid()
                                 var ref_lbl = "_box_" + ref_uid.toString()
-                                w.emit(ref_lbl + ": { const _bp_" + ref_uid.toString() + " = _allocator.create(" + item_ref_type + ") catch @panic(\"OOM\"); _bp_" + ref_uid.toString() + ".* = ")
+                                w.emit(ref_lbl + ": { const _bp_" + ref_uid.toString() + " = _allocator.create(" + typeZigName(item_ref_type) + ") catch @panic(\"OOM\"); _bp_" + ref_uid.toString() + ".* = ")
                                 genExpr(args.at(0).value)
                                 w.emit("; break :${ref_lbl} _bp_${ref_uid.toString()}; }")
                             else if item_is_str
@@ -13276,7 +13431,7 @@ struct Generator
                     if add_item_is_ref
                         var ref_uid = w.nextUid()
                         var ref_lbl = "_box_" + ref_uid.toString()
-                        w.emit(ref_lbl + ": { const _bp_" + ref_uid.toString() + " = _allocator.create(" + add_item_ref_type + ") catch @panic(\"OOM\"); _bp_" + ref_uid.toString() + ".* = ")
+                        w.emit(ref_lbl + ": { const _bp_" + ref_uid.toString() + " = _allocator.create(" + typeZigName(add_item_ref_type) + ") catch @panic(\"OOM\"); _bp_" + ref_uid.toString() + ".* = ")
                         genExpr(args.at(0).value)
                         w.emit("; break :" + ref_lbl + " _bp_" + ref_uid.toString() + "; }")
                     else if add_item_is_str

@@ -13,14 +13,27 @@
 # a WIDENED probe found seven, because the first probe only reached three. If you add an
 # emit path, add a shape here in the same commit.
 #
-# STILL DELIBERATELY ABSENT — the BUG-281 families that remain broken in BOTH compilers.
-# A corpus file neither compiler can build would redden full_sweep, smoke and
-# registration_check for debt that is already filed:
-#   B  a class/struct NAMED for a keyword  (`class opaque`)
-#   E  a METHOD named for a keyword        (`def volatile()`)
+# STILL DELIBERATELY ABSENT — the BUG-281 families that remain broken:
+#   E  a METHOD named for a keyword        (`def volatile()`) — both compilers
 #   G  a TOP-LEVEL FN named for a keyword  (bootstrap only; the selfhost prefixes it)
 # They live in tools/fixtures/bug281_keyword_gaps_repro.zbr. Move each one here as it is
-# fixed.
+# fixed. A corpus file neither compiler can build would redden full_sweep, smoke and
+# registration_check for debt that is already filed.
+#
+# FAMILY B (the type NAME itself) MOVED HERE 2026-08-12, and the shapes below are the
+# gate's only view of it. B was fixed by PREFIXING rather than escaping — a Zebra type
+# emits as `_zbr_ty_<name>`, so a keyword type name can no longer collide at all. That
+# also means this gate sees B differently from the other families: it passes not because
+# `opaque` is escaped but because the bare word never reaches the output. `_zbr_ty_opaque`
+# is not a whole-word match for `opaque`, so the check is still live rather than vacuous —
+# revert the prefix and these emit `pub const opaque = struct`, which it flags.
+#
+# THIS FILE IS SELFHOST-ONLY FROM HERE ON. BUG-281 B was landed in selfhost/CodeGen.zbr
+# and not in src/CodeGen.zig (the bootstrap is being retired; paying the tax twice was
+# judged not worth it), so `zebra-bootstrap --emit-zig` still emits bare type names for
+# the two declarations below and cannot build this file. That is a BOOTSTRAP GAP —
+# informational in divergence_check, which gates only on selfhost gaps — and it is why
+# the gate runner passes no `--bootstrap` leg here.
 
 class Route
     var align: int = 0
@@ -59,6 +72,22 @@ class Bare
 
     def readBare(): int
         return align
+
+# BUG-281 family B: the TYPE NAME itself — a class and a struct named for a Zig keyword.
+# Every position the name reaches has to agree: the declaration, the method receiver, the
+# synthesised init and its return type, construction, and qualified static access.
+class opaque
+    var n: int = 1
+    static var total: int = 100
+
+    def twice(): int
+        return .n * 2
+
+struct volatile
+    var v: int = 0
+
+def takesKwTypes(o: opaque, s: volatile): int
+    return o.n + s.v
 
 def main()
     # instance field: declaration, constructor init, read, write
@@ -119,5 +148,16 @@ def main()
             var noalias: int = noalias
         return v + noalias
     print(addIt(1))
+
+    # B: a keyword-named class and struct — declaration, receiver, init, construction,
+    # qualified static access, and the name in parameter position
+    var kw = opaque()
+    kw.n = 4
+    print(kw.twice())
+    opaque.total = 101
+    print(opaque.total)
+    var kws = volatile(v: 6)
+    print(kws.v)
+    print(takesKwTypes(kw, kws))
 
     print("bug280: OK")

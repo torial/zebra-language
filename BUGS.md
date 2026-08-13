@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-285. Next new bug: BUG-286.**
+**Last bug number generated: BUG-286. Next new bug: BUG-287.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -204,6 +204,43 @@ radius than one message, and the fix belongs at the visit, not at the message.
 share a file, line, column and message — two identical typos on one line, for instance —
 and collapsing them would hide a real second defect to tidy a cosmetic one.
 
+### BUG-286: a class inside a `namespace` cannot be CONSTRUCTED through the namespace
+
+**Found 2026-08-12** while widening `tools/fixtures/bug281_typename_sites_probe.zbr` for
+BUG-281 B — i.e. by a probe, not by reading, which is the third time in this ticket
+family that the probe found what reading did not.
+
+```zebra
+namespace ZqNs
+    class ZqInner
+        var k: int = 0
+
+def main()
+    var ni = ZqNs.ZqInner()      # error: type 'type' not a function
+```
+
+**Pre-existing, and it is NOT a BUG-281 B regression** — established with the control
+rather than assumed: the same probe was run against the unmodified codegen (stash the
+CodeGen change, `rebuild.sh --module CodeGen`, emit) and it failed there too, with
+`error: type 'type' not a function` instead of the prefixed-name error the changed
+compiler gives. Two different messages, one shape: the construction never worked.
+
+The DECLARATION side is fine — the namespace emits `pub const ZqNs = struct { pub const
+ZqInner = struct {…} }` and BUG-281 B correctly prefixes the inner class inside it. What
+is missing is the call path: `genCall`'s class-constructor branch matches a bare
+`Expr.ident` callee, and `ZqNs.ZqInner` arrives as an `Expr.member`, so it never reaches
+the `.init()` rewrite and the emitted Zig tries to call the type.
+
+**Also unprefixed, and deliberately so for now: the namespace NAME itself.** A
+`namespace opaque` still emits `pub const opaque = struct`, so the BUG-281 family-B
+hazard survives for that one declaration kind. It was left out because a namespace's
+qualified reference path is the very thing broken here — fixing the name without the
+path would be untestable.
+
+**Control when fixing:** the probe's `ZqNs.ZqInner()` line (commented out, with a
+pointer to this ticket) must compile AND run, and `namespace opaque` containing a class
+must build — the second is what makes it a BUG-281 fix rather than only a dispatch fix.
+
 ### BUG-282: `--output-dir` at a path that does not exist PANICS instead of refusing
 
 **Found 2026-08-11** as a side-effect of probing BUG-281 — I typo'd nothing, I simply
@@ -244,15 +281,59 @@ already produced by unrelated failures, so scoring on it would pass a compiler t
 panicked for a different reason. A `smoke_run_fail`-style fixture asserting the path
 appears in the diagnostic is the shape.
 
-### BUG-281: SEVEN emit families print Zig keywords bare — A/C/D/F closed 2026-08-12, B/E/G open
-<!-- bug-open-ok: four of seven families are closed in both compilers and pinned by test/bug280_keyword_idents.zbr; B, E and G are open and carry a decision for Sean (see RECOMMENDATION) -->
+### BUG-281: SEVEN emit families print Zig keywords bare — A/B/C/D/F closed, E/G open
+<!-- bug-open-ok: five of seven families are closed and pinned by test/bug280_keyword_idents.zbr; E (method names) and G (bootstrap-only top-level fn) are open -->
 
-**STATE 2026-08-12.** A (`@derive` bodies), C (capture read), D (enum members, union
-variants, switch prongs and construction) and F (bare field read in a method) are **fixed
-in BOTH compilers** and pinned by `test/bug280_keyword_idents.zbr`, which now runs all
-four shapes and is registered with `smoke_run`. B (the type name), E (a method name) and
-G (a top-level fn name, bootstrap only) remain open — see the revised recommendation
-below, which now offers a third option that was not visible when this was filed.
+**STATE 2026-08-13.** A (`@derive` bodies), C (capture read), D (enum members, union
+variants, switch prongs and construction) and F (bare field read in a method) are fixed
+in **both** compilers. **B (the type name) is fixed in the SELFHOST**, by prefixing —
+option 2 below, Sean's call. All five are pinned by `test/bug280_keyword_idents.zbr`,
+which is registered with `smoke_run`; the B shapes were added there and
+`keyword_ident_check.sh` was **watched going red on them before the fix and green after**.
+E (a method name) and G (a top-level fn name, bootstrap only) remain open.
+
+**B'S LANDING — WHAT THE DERIVED SITE TABLE DID NOT CONTAIN.** The five-cluster table
+below was derived from the probe, and every cluster in it was real. It was also
+**incomplete, by exactly the property that produced it**: a probe can only name shapes it
+contains. Nine further sites came from two witnesses the probe cannot be:
+
+| witness | what it found |
+|---|---|
+| **the level-2 round-trip** (`bootstrap_check.sh`, steps 3–4) | `StrSet.init()`, which is HARDCODED in three places because `StrSet` is spelled like a stdlib container yet is an ordinary Zebra class in `CgHelpers.zbr`; and `Parser.Parser.parse()`, where a module ALIAS shares its name with a class it declares, so `class_names` reports the namespace as a type |
+| **`selfhost_smoke`** (11 red, then 1) | interface vtable shim bodies; the `@export` singleton factory; the `^T` heap-box `create(T)` in four places; a no-payload union value; and `field_not_found_test`, which caught a **user-facing leak** rather than a compile error |
+
+Nothing in `test/*.zbr` reaches the first two — they need the compiler's own cross-module
+code, which only the round-trip compiles. **Run the round-trip early on a change like
+this, not last.**
+
+**A METHOD NOTE THAT COST A 17-MINUTE CYCLE, recorded because it will recur.** This was
+run by hand:
+
+```bash
+bash tools/rebuild.sh --module CodeGen 2>&1 | grep -E "^rebuild|error" | head -3 \
+  && bash tools/selfhost_smoke.sh
+```
+
+A pipeline's exit status is its LAST command, so `head`'s success gated the `&&`.
+`rebuild.sh` had in fact refused — correctly, because `selfhost/main.zbr` was modified and
+not named in `--module` — and `smoke` then measured the OLD compiler for a full cycle and
+reported a confident 328/1. The refusal it printed was three lines above the `head -3`
+cut. `hazard_lint` cannot see this: it scans `tools/`, and no committed script does it
+(checked). **Redirect to a file and check `$?` explicitly** when chaining a build into a
+gate; `| head` in front of `&&` throws the answer away.
+
+**THE LEAK IS THE FINDING WORTH KEEPING.** `_zbr_ty_` is internal, but `zig` quotes it
+back: `no field named 'y' in struct '_zbr_ty_P'`, against a program whose author wrote
+`struct P` and has never seen the prefix. That is UNGIT "nothing fabricated" — a spelling
+presented as the user's own. `selfhost/main.zbr`'s `humanizeZigTypes` already existed for
+exactly this purpose (it maps `[]const u8` back to `str`) and now strips the prefix too.
+**`_zbr_fn_` and `_zbr_mv_` leak the same way and still do** — same one-line fix, left
+alone because moving those messages is not this change's business.
+
+**Not done, and named so it does not read as covered:** `src/CodeGen.zig`. Selfhost-only
+under the standing rule — the bootstrap still COMPILES the selfhost source, because no
+`.zbr` class was renamed. The cost is one new bootstrap gap
+(`test/bug280_keyword_idents.zbr`), informational in `divergence_check`.
 
 **Found 2026-08-11** finishing BUG-280's selfhost half, by a four-line probe rather than
 by reading. BUG-280 fixed the field/constructor/member/literal paths in both compilers
@@ -447,6 +528,16 @@ it lands nothing depends on the spelling.
 type and becomes easier once B lands. G disappears for free the moment the bootstrap is
 retired, and is already a non-issue in the selfhost.
 
+**B LANDED 2026-08-13; the planning below is kept as the record of how it was scoped.**
+Read it for the reasoning, not for the state — the site table is accurate and incomplete,
+and the section at the top of this entry says by exactly what.
+
+**E is now the cheap one, and the shape is already written.** A method name is namespaced
+inside its type, so it cannot collide with anything at file scope — which means E does
+NOT need a prefix, only `emitName` at the declaration and every call site, the same
+one-line change A/C/D/F took. Fixing it needs no design; it needs the probe-emit-grep
+loop and a shape added to `test/bug280_keyword_idents.zbr` first.
+
 **THE SITE LIST IS DERIVED AND READY — `tools/fixtures/bug281_typename_sites_probe.zbr`.**
 Every type in it is named `Zq…`, a token that appears nowhere else in the compiler or the
 runtime, so `grep Zq` over the emit returns exactly the sites and nothing else. 51
@@ -500,6 +591,13 @@ and reading what still came out bare:
 Cluster 4 is the reassuring one: BUG-280 already found and routed those six, so they are
 known-complete and the edit is mechanical. Cluster 1 is mostly `w.emit(owner)`, of which
 there are 12 occurrences — check each, since not all are type positions.
+
+**OUTCOME: 12 of those 12 `owner` sites, 8 of them type positions and 4 not.** The four
+left bare are the ones that put the name in a STRING — `_profile_start("Owner.method")`,
+`_zbr_hash("Owner")`, the invariant-failure panic text, and the `@derive` `toString`
+format literal. That split is the same rule BUG-280 settled and the same rule the
+over-application control checks; "check each" was the right instruction and a sweep would
+have corrupted all four.
 
 **And BUG-283 already bought the user-facing half:** `emitTypeRefName` in
 `selfhost/CodeGen.zbr` is the single place `${Name}` resolves to a spelling. Change that

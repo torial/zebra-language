@@ -1945,11 +1945,12 @@ def main()
     print(p.x + p.y)
 ```
 
-**Do not write the Zig spelling directly.** `zig"Point{}"` may happen to work today, but
-it hard-codes an internal detail of code generation: nothing promises a Zebra type keeps
-its name on the way out, and because the compiler cannot read inside a `zig"…"` literal,
-a change to that spelling would break your code with no warning from any tool. `${Point}`
-asks instead of guessing, so it keeps working when the emitted form changes.
+**Do not write the Zig spelling directly — as of 2026-08-13 it no longer works.** A Zebra
+type is emitted under a reserved prefix (`struct Point` becomes `_zbr_ty_Point`), so
+`zig"Point{}"` now fails with `use of undeclared identifier 'Point'`. That spelling is
+**private and may change again**; because the compiler cannot read inside a `zig"…"`
+literal, no tool here can warn you about a hard-coded one. `${Point}` asks instead of
+guessing, and it kept working across exactly this change.
 
 The name must be a class, struct, enum, union or type alias visible from the current
 module — including one from a `use`d dependency. Anything else is a compile error naming

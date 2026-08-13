@@ -54,6 +54,22 @@ class ZqHolder
     def get(): int
         return .inner.b
 
+# Added while landing BUG-281 B: a static METHOD called through the type name, a class
+# inside a namespace, a class used as a container element, and `is` / `as`.  The first
+# round of the fix left every one of these unexercised — the 5-cluster table was derived
+# from the shapes above, and a table derived from a probe can only be as wide as it.
+
+class ZqStatics
+    static def make(): int
+        return 42
+
+namespace ZqNs
+    class ZqInner
+        var k: int = 0
+
+        def kk(): int
+            return .k
+
 def main()
     var c = ZqClass()
     print(c.bump())
@@ -88,5 +104,19 @@ def main()
     var h = ZqHolder()
     h.inner = p
     print(h.get())
+
+    # static method through the type name
+    print(ZqStatics.make())
+
+    # NOT constructed: `ZqNs.ZqInner()` does not compile in EITHER compiler and did not
+    # before BUG-281 B either (`error: type 'type' not a function`) — BUG-286.  The
+    # declaration above still exercises the namespace-nested class EMIT, which is what
+    # this probe is for; a shape that cannot build would make the grep incomplete
+    # instead of complete.
+
+    # the type as a container element and as a list of instances
+    var cl: List(ZqClass) = List(ZqClass)()
+    cl.add(c)
+    print(cl.count())
 
     print("zq probe: emitted")
