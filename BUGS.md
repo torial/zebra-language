@@ -477,6 +477,35 @@ That last row is the over-application hazard, in the same shape as BUG-280's ref
 strings: verify by diffing a pre/post emit of this probe, where every changed line must
 be an identifier gaining the prefix and nothing else.
 
+**THIS CHANGE IS ATOMIC. It cannot be landed in pieces, and that is not a preference.**
+Prefixing the declarations while the references stay bare produces a compiler that emits
+nothing compilable for any program containing a class. The one mechanism that would allow
+a staged landing is the compatibility alias — and that is the design proven wrong above.
+So it is 26 sites or none, in a single commit, with a full gated landing behind it.
+Attempted twice and reverted twice on that basis; the revert is clean and takes one
+`git checkout` plus `rebuild.sh --module CgHelpers --module CodeGen`.
+
+**THE 26 SITES ARE FIVE CLUSTERS, which is what makes it a session's work rather than an
+archaeology project.** Derived by running the probe with declarations already prefixed
+and reading what still came out bare:
+
+| # | cluster | emitted shape | where |
+|---|---|---|---|
+| 1 | method + derive receivers | `self: *ZqClass`, `self: *const ZqDerived` | `genMethod`, `genInit`, `genDeriveToString`/`Eql`/`Hash` |
+| 2 | class synthesised init | `pub fn init() *ZqClass`, `_allocator.create(ZqClass)` | `genClass` |
+| 3 | struct synthesised init return | `pub fn init(a: i64) ZqDerived` | `genStruct` |
+| 4 | type positions | `*ZqClass`, `ZqPlain`, `?*ZqClass`, `std.ArrayList(ZqPlain)` | `genType` — **these are exactly the 6 sites BUG-280 routed through `emitName`; they become `emitTypeName`** |
+| 5 | construction + qualified access | `ZqPlain{ .b = 2 }`, `ZqClass.init()`, `ZqClass.shared`, `ZqEnum.two`, `ZqUnion{ .num = 6 }` | `genCall`, `genIdentRaw`'s shared-field branch, the enum/union construction arms |
+
+Cluster 4 is the reassuring one: BUG-280 already found and routed those six, so they are
+known-complete and the edit is mechanical. Cluster 1 is mostly `w.emit(owner)`, of which
+there are 12 occurrences — check each, since not all are type positions.
+
+**And BUG-283 already bought the user-facing half:** `emitTypeRefName` in
+`selfhost/CodeGen.zbr` is the single place `${Name}` resolves to a spelling. Change that
+one function from `emitName` to `emitTypeName` and every `${...}` in every user program
+follows. That indirection exists for exactly this.
+
 **What this does NOT fix, measured 2026-08-12 in answer to a direct question:** the
 trailing-`_` convention in the selfhost sources. Of 94 such identifiers, **48** dodge a
 **ZEBRA** keyword (`var_`, `class_`, `if_`, `int_`, `bool_`, `except_`…), 44 are
