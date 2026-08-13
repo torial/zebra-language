@@ -275,6 +275,12 @@ def main()
   with a function-local or parameter anywhere in the file. A local of the same
   name simply shadows the module var within that function (and keeps its own
   value); the module var is unaffected.
+- **The reserved emit prefixes, in one place**, for anyone who ever reads the
+  generated Zig: `_zbr_mv_` (module vars), `_zbr_fn_` (top-level `def`s) and
+  `_zbr_ty_` (classes, structs, enums, unions). All three are internal, all three
+  exist so a Zebra name can never collide with a Zig keyword or another
+  file-scope symbol, and **none of them is a spelling to write by hand** — inside
+  a `zig"…"` literal use `${TypeName}` (§23) and let the compiler supply it.
 - Unlike locals, module-scope `const` is a real keyword here: use it for named
   constants, `var` for shared mutable state.
 
