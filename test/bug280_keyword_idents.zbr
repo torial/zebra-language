@@ -89,6 +89,23 @@ struct volatile
 def takesKwTypes(o: opaque, s: volatile): int
     return o.n + s.v
 
+# BUG-281 family E: the METHOD NAME. Unlike the type name (B), a method is namespaced
+# inside its type, so it cannot collide at file scope and needs ESCAPING rather than a
+# prefix — the same one-line `emitName` routing A/C/D/F took. Both the declaration and
+# every call site have to agree; escaped-at-one-end is what made C, D and F broken
+# rather than uniformly wrong.
+class KwMethods
+    var base: int = 10
+
+    def align(): int
+        return .base + 1
+
+    static def packed(n: int): int
+        return n * 2
+
+    def callsSibling(): int
+        return align() + 100
+
 def main()
     # instance field: declaration, constructor init, read, write
     var r = Route()
@@ -159,5 +176,12 @@ def main()
     var kws = volatile(v: 6)
     print(kws.v)
     print(takesKwTypes(kw, kws))
+
+    # E: a keyword-named method — instance call, static call, and a bare sibling call
+    # from inside another method (which takes a different emit path from `obj.m()`)
+    var km = KwMethods()
+    print(km.align())
+    print(KwMethods.packed(21))
+    print(km.callsSibling())
 
     print("bug280: OK")

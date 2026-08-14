@@ -4513,7 +4513,13 @@ struct Generator
         # BUG-220: a TOP-LEVEL def (owner == "") emits under the reserved `_zbr_fn_`
         # prefix so it cannot collide with a preamble parameter/local.  Methods are
         # inside a struct namespace and cannot collide, so they keep their names.
-        var fn_name: str = m.name
+        # BUG-281 E: a METHOD may be named for a Zig keyword. Unlike a type name (B),
+        # a method is namespaced inside its type and cannot collide at file scope, so
+        # it takes ESCAPING rather than a prefix. `@"align"` and `align` are the same
+        # identifier to Zig, which is also why an `extern fn @"align"` still binds the
+        # symbol `align` exactly. The two PREFIXED spellings below overwrite this and
+        # must not be escaped — a prefix already removes the collision.
+        var fn_name: str = zigSafeName(m.name)
         # BUG-258: an extern declaration must keep its EXACT name -- it is the
         # linker symbol. The `_zbr_fn_` prefix below (BUG-220) prevents collision
         # with preamble symbols for functions we DEFINE; applying it to one we
@@ -4533,7 +4539,7 @@ struct Generator
             # Public wrapper
             writeIndent()
             w.emit("pub fn ")
-            w.emit(m.name)
+            emitName(m.name)                                # BUG-281 E
             w.emit("(self: *")
             if is_generic
                 w.emit("@This()")
@@ -6470,7 +6476,16 @@ struct Generator
     # Two names keep their source spelling: `main` (Zig's entry point) and any
     # `@export`/`@node_export` fn (the ABI symbol name is the whole point).
     def topLevelFnZigName(name: str): str
-        return zbrFnSymbol(name, toplevel_export_fns.contains_(name))
+        var sym: str = zbrFnSymbol(name, toplevel_export_fns.contains_(name))
+        # BUG-281 E: `main` and an @export fn keep their own name (the ABI symbol IS
+        # the name), so those two are the only cases here that can still be a Zig
+        # keyword and they need escaping. A `_zbr_fn_`-prefixed name never does.
+        # Escaping here rather than at the call sites is deliberate: this function is
+        # what BOTH the declaration and every reference go through, so the two ends
+        # cannot disagree — which is exactly how C, D and F broke.
+        if sym == name
+            return zigSafeName(name)
+        return sym
 
     def isTopLevelMethod(name: str): bool
         for decl in module_decls
@@ -11893,7 +11908,7 @@ struct Generator
                     w.emit(".")
                 else
                     w.emit("self.")
-                w.emit(id.name)
+                emitName(id.name)                           # BUG-281 E
                 w.emit("(")
                 var first3 = true
                 for a in c.args
@@ -13268,7 +13283,14 @@ struct Generator
                         recordImplicitTry(source_file + ":" + w.cur_line.toString())
                         w.emit("try ")
                     genExpr(m.object)
-                    w.emit("." + mname + "(")
+                    # BUG-281 E: the EARLY user-method dispatch. It fires whenever the
+                    # receiver's class method is known to inference, which is the common
+                    # case — so the default dispatch further down is NOT the only place a
+                    # user method name is emitted, and fixing only that one left every
+                    # resolved call bare.
+                    w.emit(".")
+                    emitName(mname)                         # BUG-281 E
+                    w.emit("(")
                     # BUG-091: this early user-method dispatch must apply the same
                     # three-case addr-of/pass/deref convention as the default path
                     # below, or List/HashMap params the callee mutates are passed by
@@ -14505,7 +14527,11 @@ struct Generator
             w.emit("try ")
         genExpr(m.object)
         w.emit(".")
-        w.emit(mname)
+        # BUG-281 E: the generic USER-method dispatch — `obj.m()` and `Type.m()` both
+        # land here, so escaping once covers both. The other ~30 `w.emit(mname)` sites
+        # in this file are stdlib namespaces (Math, File, sys, Json…) whose method
+        # names are fixed by the runtime and can never be a user identifier.
+        emitName(mname)                                     # BUG-281 E
         w.emit("(")
         # BUG-091: resolve callee params+body so we can take `&` for List/HashMap
         # params that the body mutates.  Covers static (Class.method), self

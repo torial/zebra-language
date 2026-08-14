@@ -596,7 +596,16 @@ bash tools/keyword_ident_check.sh  # THE ESCAPED-IDENTIFIER GATE (BUG-280, QUICK
                                 #   lookup. It needs no allow-list, deliberately: an
                                 #   allow-list here would be the same hand-maintained
                                 #   oracle that caused the bug.
-                                #   AS OF 2026-08-13 IT ALSO COVERS THE TYPE NAME
+                                #   AS OF 2026-08-13 IT ALSO COVERS THE METHOD NAME
+                                #   (BUG-281 E) — declaration, static declaration, a bare
+                                #   sibling call inside a method, and BOTH member-call
+                                #   dispatches. Reading found 1 of those 5; the gate named
+                                #   the other 4, including the one that matters most: the
+                                #   EARLY user-method dispatch, which fires whenever
+                                #   inference knows the receiver's class (the common
+                                #   case), so fixing the default path alone left every
+                                #   resolved call bare.
+                                #   AND THE TYPE NAME
                                 #   (BUG-281 B), and it covers it DIFFERENTLY: that
                                 #   family was fixed by PREFIXING, not escaping, so a
                                 #   Zebra type emits as `_zbr_ty_opaque` and the bare
@@ -897,6 +906,40 @@ The last row is the one that keeps the rest honest; see its header for why.
 `gates.sh` deliberately excludes three things so that "gates green" keeps a precise
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
+
+**FULL tier 2026-08-13: 29/29 PASS — and for the first time, IN ONE INVOCATION.** The
+two previous sweeps were assembled from separate runs, which this file records as weaker
+evidence because nothing proves the tree was the same throughout. This one was
+`JOBS=2 bash tools/gates.sh --full`, start to finish, on the tree that was committed.
+
+| gate | result |
+|---|---|
+| QUICK (21) | all PASS — smoke **329/329**, round-trip byte-identical, `zig-keywords` 46/46 |
+| `compile_check` | 256 passed, 0 FAILED, 2 skipped |
+| `compile_check-inline` | 256 / 0 — identical to the default shape |
+| `output_sweep` | 322 files, behaviour identical |
+| `full_sweep` | 0 regressions vs 337; `examples_sweep` 0 vs 14 |
+| `divergence` | **0 selfhost gaps**; bootstrap gaps steady at **46** |
+| `release-mode` / `contract-mode` | clean / 13/13 |
+
+Bootstrap gaps did NOT move for E, and that is worth reading rather than skipping: the
+only file carrying an E shape is `bug280_keyword_idents`, which was *already* a bootstrap
+gap from B. A family landing selfhost-only adds a gap the first time and none after.
+
+**BUG-281 E landed 2026-08-13** — a keyword-named METHOD is now escaped in the selfhost,
+closing the sixth of seven families. Only G remains and it is bootstrap-only (the
+selfhost is immune for free via `_zbr_fn_`), so it retires with the bootstrap.
+`keyword-ident` watched red on the new shapes then green; the fixture RUNS and prints the
+right values (11 / 42 / 111), which is the half that matters — an escaping bug that
+swapped two methods would still compile. The regen control: a full rebuild moved
+**only `CodeGen.zig`**, so no non-keyword method name anywhere in the compiler's own
+25k lines was touched.
+
+**Both B and E are SELFHOST-ONLY, deliberately.** E's bootstrap half is cheap and was
+still declined: the bootstrap is the REGEN AUTHORITY, and
+`test/bug280_keyword_idents.zbr` can no longer gate it (the file contains a keyword-named
+class since B). An ungated change to the regen authority, for a retiring compiler, in a
+family already half-broken there, is a poor trade. See BUG-281 for what it costs.
 
 **BUG-281 B landed 2026-08-13** — a Zebra type now emits as `_zbr_ty_<name>` in the
 selfhost. QUICK **20/20 in one invocation** (smoke **329/329**, round-trip byte-identical,

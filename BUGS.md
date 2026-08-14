@@ -281,16 +281,44 @@ already produced by unrelated failures, so scoring on it would pass a compiler t
 panicked for a different reason. A `smoke_run_fail`-style fixture asserting the path
 appears in the diagnostic is the shape.
 
-### BUG-281: SEVEN emit families print Zig keywords bare — A/B/C/D/F closed, E/G open
-<!-- bug-open-ok: five of seven families are closed and pinned by test/bug280_keyword_idents.zbr; E (method names) and G (bootstrap-only top-level fn) are open -->
+### BUG-281: SEVEN emit families print Zig keywords bare — SIX closed, G open (bootstrap-only)
+<!-- bug-open-ok: six of seven families are closed and pinned by test/bug280_keyword_idents.zbr; G is bootstrap-only and the selfhost is immune to it for free -->
 
 **STATE 2026-08-13.** A (`@derive` bodies), C (capture read), D (enum members, union
 variants, switch prongs and construction) and F (bare field read in a method) are fixed
-in **both** compilers. **B (the type name) is fixed in the SELFHOST**, by prefixing —
-option 2 below, Sean's call. All five are pinned by `test/bug280_keyword_idents.zbr`,
-which is registered with `smoke_run`; the B shapes were added there and
-`keyword_ident_check.sh` was **watched going red on them before the fix and green after**.
-E (a method name) and G (a top-level fn name, bootstrap only) remain open.
+in **both** compilers. **B (the type name) and E (a method name) are fixed in the
+SELFHOST** — B by prefixing (option 2 below, Sean's call), E by escaping. All six are
+pinned by `test/bug280_keyword_idents.zbr`, which is registered with `smoke_run`; each
+set of shapes was added there and `keyword_ident_check.sh` was **watched going red on
+them before the fix and green after**. Only G (a top-level fn name) remains, it is
+**bootstrap-only**, and the selfhost is immune to it for free because `_zbr_fn_` already
+prefixes those — so G disappears when the bootstrap is retired and needs no work.
+
+**B AND E ARE SELFHOST-ONLY, AND E's HALF WAS A DECISION RATHER THAN AN OVERSIGHT.**
+Fixing E in the bootstrap is genuinely cheap — the same `emitName` routing. It was not
+done, for two reasons that only apply together: the bootstrap is the **regen authority**,
+so a mistake there corrupts every `selfhost/*.zig`, and `test/bug280_keyword_idents.zbr`
+can no longer gate it (the file now contains a keyword-named class, which the bootstrap
+cannot emit since B). An ungated change to the regen authority, for a compiler being
+retired, in a family that is *already* half-broken there because of B, is a poor trade.
+It costs nothing today: the selfhost source has no keyword-named method, so the bootstrap
+still compiles it. It costs a **GUI** user with a keyword-named method, since
+`--gui-backend=*` delegates to the bootstrap — and such a user is already blocked by B.
+
+**WHY E TOOK ESCAPING AND B TOOK A PREFIX — the rule, not a preference.** A method is
+namespaced inside its type, so it cannot collide with anything at file scope; escaping is
+sufficient and `@"align"` is the same identifier to Zig as `align`. A type name IS at file
+scope, which is what made the prefix worth its cost. The same test tells you which tool a
+future family needs.
+
+**THE SITE COUNT WAS 5, AND FOUR OF FIVE CAME FROM THE GATE.** Reading found the public
+wrapper's declaration. The gate named the static declaration, a bare sibling call
+(`self.align()`, a different path from `obj.m()`), and both member-call dispatches — and
+the second dispatch is the one worth remembering: `genMemberCall` has an **early**
+user-method path that fires whenever inference knows the receiver's class, which is the
+common case, so fixing the *default* path left every resolved call bare and the gate red
+in exactly the same place. One `emitName` in `topLevelFnZigName` covers `main` and every
+`@export` fn at both ends at once, because declaration and reference both go through it.
 
 **B'S LANDING — WHAT THE DERIVED SITE TABLE DID NOT CONTAIN.** The five-cluster table
 below was derived from the probe, and every cluster in it was real. It was also
@@ -532,11 +560,14 @@ retired, and is already a non-issue in the selfhost.
 Read it for the reasoning, not for the state — the site table is accurate and incomplete,
 and the section at the top of this entry says by exactly what.
 
-**E is now the cheap one, and the shape is already written.** A method name is namespaced
-inside its type, so it cannot collide with anything at file scope — which means E does
-NOT need a prefix, only `emitName` at the declaration and every call site, the same
-one-line change A/C/D/F took. Fixing it needs no design; it needs the probe-emit-grep
-loop and a shape added to `test/bug280_keyword_idents.zbr` first.
+**E LANDED 2026-08-13, and the prediction above held exactly**: a method is namespaced
+inside its type, so it needed `emitName` rather than a prefix, and it was five sites of
+the same one-line change A/C/D/F took. What the prediction did *not* contain is which
+five — see the site-count note at the top of this entry. The estimate in the option list
+below said "roughly 21 emit sites" for E; the real number is 5, because that grep counted
+every `w.emit(mname)` in the file and ~30 of those are stdlib namespaces (`Math.`,
+`File.`, `sys.`, `Json.`…) whose method names are fixed by the runtime and can never be a
+user identifier. **A grep-derived site estimate is an upper bound, not a count.**
 
 **THE SITE LIST IS DERIVED AND READY — `tools/fixtures/bug281_typename_sites_probe.zbr`.**
 Every type in it is named `Zq…`, a token that appears nowhere else in the compiler or the
