@@ -1346,6 +1346,10 @@ smoke_run     test/bug278_ensure_result_walker_test.zbr "bug278: OK"
 # rather than only emitting it, because the values are the half that matters — an
 # escaping bug that swapped two fields would still compile.
 smoke_run     test/bug280_keyword_idents.zbr "bug280: OK"
+# U4a tail: `error` and `try` freed. NOT a keyword_ident_check word -- codegen emits
+# both legitimately as ZIG keywords (`return error.ZebraError;`, `try f()`), so that
+# gate would fire on nearly every program. A run fixture is the sound check instead.
+smoke_run     test/bug280_freed_words_test.zbr "freed words: OK"
 
 # BUG-283: `${Name}` in a zig"..." literal names a Zebra TYPE and codegen substitutes its
 # current emitted spelling, so user code stops guessing that spelling. THE NEGATIVE TEST

@@ -188,12 +188,38 @@ loud; it does not make a language refuse to have opinions.
 
   **BUG-280 is FIXED in both compilers as of 2026-08-11** (18 emit sites each, not the
   same 18 — see the entry in `BUGS_FIXED.md`), gated by `keyword-ident` in the QUICK
-  tier. **`error` and `try` remain blocked**, and by defect 2 rather than by the field
-  path: `isZigKeyword` is still the hand-maintained 37-entry list missing `try`,
-  `catch`, `orelse` and nine others. Closing that gap — and flipping the Parser tests
-  that currently assert both words are rejected — is what frees them. Three further
-  emit families are still unescaped in BOTH compilers (`@derive` bodies, the type name
-  itself, a capture read in a lambda body): **BUG-281**.
+  tier.
+
+  **U4a's TAIL IS CLOSED — `error` and `try` are FREED, 2026-08-13.** Sean's call, after
+  the scan corrected a premise: `error` was never a competing error mechanism, it was the
+  `on error(e)` **advice clause inside an aspect body**, orphaned when `aspect` went; and
+  `try` lost its construct when §28b replaced `try expr` with `expr?`. What survives is
+  the method-level `catch |e|` clause, which synthesises `Ast.StmtTryCatch` with no `try`
+  token — so `buildStmtTryCatch` in the bootstrap is dead code (flagged in place, not
+  deleted). Verified in BOTH compilers, structurally (zero occurrences in `grammar.txt`,
+  which is GENERATED from the rule table) and empirically (statement prefix, expression
+  prefix, `try`/`catch` block and bare identifier all rejected before the change).
+  Nothing planned claims either word: typed error sets (#2) is `throws ParseError`, an
+  ordinary identifier, with no `error{...}` syntax.
+
+  **What actually unblocked them was the EMIT, and that is the lesson.** They were held
+  back not by the parse but by codegen's inability to spell them, which
+  `lint_reserved_words` cannot see — it classified both R1 (unreachable) the whole time.
+  BUG-280's field paths plus the `isZigKeyword` oracle (`tools/lint_zig_keywords.py`,
+  2026-08-13) closed it. **A word can be R1 in that gate and still be unsafe to free.**
+
+  Proof is `test/bug280_freed_words_test.zbr`, registered with `smoke_run`: both words as
+  a local, a parameter, a field, a static field, a class name, a struct name, a method
+  name, a static method name, an enum member, a union variant and inside `@derive`
+  bodies — all compiling and printing the right values. Deliberately NOT added to
+  `keyword_ident_check`'s word list: codegen emits `error` and `try` legitimately as ZIG
+  keywords (`return error.ZebraError;`, `try f()` — 56 and 17 bare occurrences in a
+  single generated module), so that gate's rule would fire on nearly every program.
+  Reserved-words baseline 3 → **1**; only `implies` remains, kept on language grounds.
+
+  Three further emit families were still unescaped in BOTH compilers when this was
+  written (`@derive` bodies, the type name itself, a capture read in a lambda body):
+  **BUG-281**, now six of seven closed.
 
   Grammar: 465 → **456 rules**, 146 → **143 nonterminals** — exactly the 9 rules and
   3 nonterminals removed here. `grammar.txt` is regenerated from the rule table.

@@ -562,16 +562,19 @@ test "parse: from and trace are ordinary identifiers" {
     try expectAccepts("def main\n\tvar from = 1\n\tvar trace = 2\n");
 }
 
-// `error` and `try` stay reserved until codegen can emit them everywhere (BUG-280).
-// Asserted, so that freeing the tokenizer without fixing the emit is caught here
-// rather than by a user reading a generated-Zig error.
-test "parse: error and try are STILL reserved -- pending BUG-280" {
-    try expectRejects("def main\n\tvar error = 1\n");
-    try expectRejects("def main\n\tvar try = 1\n");
+// U4a tail 2026-08-13: `error` and `try` are FREED, so this assertion is replaced by
+// its inverse -- the same swap the other five words got. They were held back on the
+// EMIT (a class field named `error` emitted bare and would not parse as Zig), never on
+// the parse; BUG-280's field paths plus the isZigKeyword oracle
+// (tools/lint_zig_keywords.py) closed that.
+test "parse: error and try are ordinary identifiers" {
+    try expectAccepts("def main\n\tvar error = 1\n");
+    try expectAccepts("def main\n\tvar try = 1\n");
 }
 
 test "parse: the freed words work as parameter names" {
     try expectAccepts("def f(lock: int, weaves: bool, expect: str, from: int)\n\tpass\n");
+    try expectAccepts("def g(error: str, try: int)\n\tpass\n");
 }
 
 test "parse: implies is STILL reserved -- the one word kept" {

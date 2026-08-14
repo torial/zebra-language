@@ -2110,8 +2110,13 @@ const Builder = struct {
         return .{ .span = span, .cond = cond, .else_body = else_body };
     }
 
+    // DEAD as of 2026-08-13 and left in place rather than deleted (pre-existing dead
+    // code is not this change's to remove -- flagged instead). It built the old
+    // `try` STATEMENT, whose rule and whose kw_try token are both gone; the surviving
+    // producer of Ast.StmtTryCatch is buildMethodDecl, which synthesises one from a
+    // method-level `catch |e|` clause with no `try` token involved. Nothing calls this.
     fn buildStmtTryCatch(b: Builder, node: TN) anyerror!Ast.StmtTryCatch {
-        // kw_try eol Block CatchClauseList
+        // was: kw_try eol Block CatchClauseList
         const kids = ch(node);
         var clauses = std.ArrayList(Ast.CatchClause).empty;
         try b.collectCatchClauses(kids[3], &clauses);

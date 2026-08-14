@@ -1,0 +1,123 @@
+# U4a tail / BUG-280: `error` and `try` were the last two words held back from the
+# reserved-word audit, and they were held back on the EMIT rather than on the parse.
+# Freeing them at the tokenizer is trivial; proving codegen can SPELL them is the work,
+# and this fixture is that proof.
+#
+# WHY THIS IS A RUN FIXTURE AND NOT A keyword_ident_check WORD.
+# That gate decides by looking for the keyword BARE outside a string literal, which is
+# sound for `align`/`opaque`/`packed` — codegen never emits those itself. It is NOT sound
+# for these two: `error` and `try` are words the compiler legitimately emits as ZIG
+# keywords in ordinary output (`return error.ZebraError;`, `try someCall()`). One
+# generated compiler module carries 56 bare `try` and 17 bare `error`. Adding them to
+# that gate's word list would make it fire on nearly every program that can raise.
+# So the check here is behavioural: if any position escapes wrongly, the emitted Zig
+# does not compile and this fixture fails — and if it escapes right, the values print.
+#
+# Every position below is one the reserved-word audit had to be able to reach.
+
+# the type NAME itself (BUG-281 B — prefixed, so `class error` is safe now)
+class error
+    var n: int = 1
+
+    def get(): int
+        return .n
+
+struct try
+    var t: int = 2
+
+# fields, including a static one
+class Holder
+    var error: str = "e"
+    var try: int = 3
+    static var trace: int = 4
+
+# The keyword-named METHOD lives in its own class on purpose: a field and a method
+# cannot share a name, because they share one namespace in the emitted Zig struct.
+# Zebra reports that as `duplicate struct member name 'error'` against the Zebra
+# source, which is the right surface — noted here so the split does not look arbitrary.
+class KwMethod
+    var base: int = 3
+
+    # the METHOD name (BUG-281 E — escaped)
+    def error(): int
+        return .base + 10
+
+    static def try(n: int): int
+        return n * 2
+
+# parameters and a return
+def combine(error: str, try: int): str
+    return "${error}${try}"
+
+# enum members and union variants
+enum Mode
+    error
+    try
+
+union Payload
+    error: str
+    try: int
+
+@derive(Debug, Eq)
+struct Rec
+    var error: int = 0
+    var try: int = 0
+
+def main()
+    # locals
+    var error = 5
+    var try = 6
+    print(error + try)                      # 11
+
+    # the keyword-named class and struct
+    var e = error()
+    print(e.get())                          # 1
+    var t = try(t: 7)
+    print(t.t)                              # 7
+
+    # fields and a static field
+    var h = Holder()
+    print("${h.error} ${h.try}")            # e 3
+    Holder.trace = 8
+    print(Holder.trace)                     # 8
+
+    # keyword-named method: instance call and static call.
+    # NO bare sibling call here on purpose: `return error() + 100` inside a method
+    # resolves to the CLASS named `error` and constructs it instead of calling the
+    # sibling method — BUG-287, which is pre-existing and not keyword-specific (plain
+    # `class Widget` + `def Widget()` does the same). The sibling-call path for a
+    # keyword-named method is already covered by bug280_keyword_idents.zbr's `align()`,
+    # so nothing is lost by keeping this fixture off a known-broken shape.
+    var k = KwMethod()
+    print(k.error())                        # 13
+    print(KwMethod.try(21))                 # 42
+
+    # parameters
+    print(combine("x", 9))                  # x9
+
+    # enum member and union variant, constructed and matched
+    var m = Mode.try
+    var label = "?"
+    branch m
+        on Mode.error
+            label = "E"
+        on Mode.try
+            label = "T"
+    print(label)                            # T
+
+    var p = Payload.error("boom")
+    var plabel = "?"
+    branch p
+        on Payload.error as pe
+            plabel = pe
+        on Payload.try as pt
+            plabel = pt.toString()
+    print(plabel)                           # boom
+
+    # @derive bodies read every field
+    var r1 = Rec(error: 1, try: 2)
+    var r2 = Rec(error: 1, try: 2)
+    print(r1.toString())                    # Rec(error=1, try=2)
+    print(r1 == r2)                         # true
+
+    print("freed words: OK")

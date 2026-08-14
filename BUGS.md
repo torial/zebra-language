@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-286. Next new bug: BUG-287.**
+**Last bug number generated: BUG-287. Next new bug: BUG-288.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -203,6 +203,49 @@ radius than one message, and the fix belongs at the visit, not at the message.
 **Do not fix it by deduplicating the error list.** Two genuinely distinct problems can
 share a file, line, column and message — two identical typos on one line, for instance —
 and collapsing them would hide a real second defect to tidy a cosmetic one.
+
+### BUG-287: a bare sibling-method call resolves to a same-named CLASS instead of the method
+
+**Found 2026-08-13** writing the fixture for the `error`/`try` freeing, by a shape that
+had never existed before: a class named `error` in the same file as a method named
+`error`.
+
+```zebra
+class Widget
+    var n: int = 1
+
+class User
+    var base: int = 3
+    def Widget(): int
+        return .base + 10
+    def callsIt(): int
+        return Widget() + 100        # emits `_zbr_ty_Widget.init() + 100`
+```
+
+The bare call inside a method resolves to the **class constructor**, not to the sibling
+method, and the program fails to compile with `unused function parameter` — because
+`self` is then never read. The message points at the wrong thing entirely.
+
+**Keyword-independent and pre-existing, established with the control rather than
+assumed.** The reproducer above uses ordinary names; it was reduced from the keyword
+version specifically to check whether freeing `error` had caused it. It had not — in
+`genCall`, the class-constructor branch (`class_names.contains_(id.name)`) is tested
+*before* the owner-method branch (`isOwnerMethod(id.name)`), so the collision predates
+both this work and BUG-281.
+
+**Which should win is not in doubt.** Inside a method, a bare name is a sibling method
+before it is a global type — that is ordinary lexical scoping, and it is what every
+other bare-name path in `genIdentRaw` already does (a field wins over a module var; a
+local wins over a top-level fn). The constructor branch is simply tested too early.
+
+**Why nothing found it before:** it needs a class and a method sharing one name in one
+file, which no corpus program does. Note it is NOT the same as a field and a method
+sharing a name — that one is caught cleanly at the Zebra level (`duplicate struct member
+name 'error'`) because they collide inside a single struct.
+
+**Control when fixing:** the reproducer above must print 113, AND a program with a class
+but no same-named method must still construct it — reordering the branches without that
+second leg would break every constructor call in the corpus.
 
 ### BUG-286: a class inside a `namespace` cannot be CONSTRUCTED through the namespace
 

@@ -286,15 +286,16 @@ pub const TokenKind = enum {
     // built. `implies` is the ONLY reserved-but-unimplemented word kept (Sean's
     // call) -- it is intended as a contract operator, `a implies b`.
 
-    // Error handling (error union path)
-    // U4a 2026-08-09: `error` and `try` were to be freed with the other five, and
-    // are NOT. Measured after the tokenizer change: a class field named `error`
-    // emits `error: i64 = 0,` and `try` emits unescaped in every position, because
-    // `isZigKeyword` (CodeGen.zig:2093) is a hand-maintained list missing `try`, and
-    // field declarations never consult it at all. Freeing a word whose codegen then
-    // fails trades a clear Zebra error for a confusing generated-Zig one. BUG-280.
-    kw_error,
-    kw_try,
+    // U4a tail 2026-08-13: kw_error and kw_try are GONE. Both were reserved and
+    // consumed by no rule in either compiler -- `error`'s only grammar uses were the
+    // `on error(e)` advice clauses inside an aspect body, orphaned when kw_aspect was
+    // removed; `try` lost its construct when Section 28b replaced `try expr` with
+    // `expr?`. What survives is the method-level `catch |e|` clause, which synthesises
+    // Ast.StmtTryCatch without any `try` token.
+    // They waited on the EMIT, not on the parse: freeing a word the codegen cannot
+    // spell trades a clear Zebra diagnostic for a Zig error against generated code.
+    // That cleared with BUG-280's field paths plus the isZigKeyword oracle
+    // (tools/lint_zig_keywords.py), which is what made this safe to do.
 
     // Closures / contextual self / struct update
     kw_capture,   // capture block — explicit closure state declaration
@@ -397,8 +398,6 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "true",        .kw_true },
     .{ "false",       .kw_false },
     .{ "nil",         .kw_nil },
-    .{ "error",       .kw_error },   // still reserved -- BUG-280
-    .{ "try",         .kw_try },     // still reserved -- BUG-280
     .{ "vari",        .kw_vari },
     .{ "capture",     .kw_capture },
     .{ "with",        .kw_with },

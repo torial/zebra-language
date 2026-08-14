@@ -560,14 +560,17 @@ python tools/lint_reserved_words.py # THE RESERVED-WORD GATE (static, instant, Q
                                 #   Runs a 5-check selftest on synthetic input before every
                                 #   scan and REFUSES if the classifier stops discriminating;
                                 #   verified red by removing one baseline entry.
-                                #   Baselined at 3 (each a pending decision, with the reason
-                                #   it stays: error/implies/try). weaves, expect, lock, from
-                                #   and trace were in the first baseline and were FREED by
-                                #   U4a — the list shrinking is the gate working. `error`'s
-                                #   engineering blocker cleared when BUG-280 landed
-                                #   2026-08-11, so it is now a language decision; `try` is
-                                #   still blocked on BUG-280's second defect (isZigKeyword
-                                #   does not contain it). Shrink it; do not grow it.
+                                #   Baselined at 1 — `implies`, kept on LANGUAGE grounds
+                                #   (Sean's call: it is intended as a contract operator,
+                                #   `a implies b`). SEVEN words have now left this list:
+                                #   weaves, expect, lock, from and trace under U4a
+                                #   2026-08-09, then `error` and `try` on 2026-08-13.
+                                #   The list shrinking is the gate working, and the last
+                                #   two are the shape to remember — they were blocked on
+                                #   the EMIT, not the parse, so what freed them was
+                                #   BUG-280 plus the isZigKeyword oracle, and neither is
+                                #   visible to this gate. A word can be R1 here and still
+                                #   be unsafe to free. Shrink it; do not grow it.
                                 #   0 NEW = clean.
 bash tools/keyword_ident_check.sh  # THE ESCAPED-IDENTIFIER GATE (BUG-280, QUICK tier) —
                                 #   the MIRROR IMAGE of reserved-words. That gate asks
@@ -894,7 +897,7 @@ than "what do we know":
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **our own tools are not lying** | `hazard_lint` (+ its controls) | 71 scripts | <!-- doc-gen: 71 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 50 tracked documents <!-- doc-gen: 50 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
-| **a reserved word is used, or justified** | `reserved-words` (both compilers) | 83 keywords, 3 baselined |
+| **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords × both compilers |
 | **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 50 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' -->
@@ -906,6 +909,24 @@ The last row is the one that keeps the rest honest; see its header for why.
 `gates.sh` deliberately excludes three things so that "gates green" keeps a precise
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
+
+**U4a's TAIL CLOSED 2026-08-13 — `error` and `try` are ordinary identifiers.** FULL tier
+**29/29 in one invocation** again: smoke, round-trip byte-identical, `compile_check`
+**257/0/2** in both runtime shapes (the +1 is the new fixture), `output_sweep` 322
+identical, `full_sweep` 0 vs 337, `divergence` 0 selfhost gaps. `reserved-words` is now
+**81 keywords, 1 baselined** — down from 83/3; only `implies` remains, kept on language
+grounds.
+
+**Neither word can be added to `keyword_ident_check`'s word list, and that is a property
+of the gate rather than an oversight.** Its rule is "a keyword appearing BARE outside a
+string literal is an unescaped identifier", which is sound for `align`/`opaque`/`packed`
+because codegen never emits those itself. `error` and `try` are words the compiler emits
+legitimately as ZIG keywords — `return error.ZebraError;`, `try f()` — and one generated
+compiler module carries **56 bare `try` and 17 bare `error`**. Adding them would fire on
+nearly every program that can raise. They are covered instead by
+`test/bug280_freed_words_test.zbr`, a `smoke_run` fixture that names things with both
+words in eleven positions and asserts the printed values. **The general rule: a word
+codegen itself emits cannot be checked by absence.**
 
 **FULL tier 2026-08-13: 29/29 PASS — and for the first time, IN ONE INVOCATION.** The
 two previous sweeps were assembled from separate runs, which this file records as weaker
@@ -1076,7 +1097,7 @@ the table below stands unchanged.
 **Previous sweep 2026-08-02** — 18/18, before those two gates existed.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
-**337** while the tracked corpus is **465** <!-- doc-gen: 465 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+**337** while the tracked corpus is **466** <!-- doc-gen: 466 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

@@ -169,11 +169,9 @@ union TokenKind
     kw_false
     kw_nil
     kw_vari
-    # U4a: kw_error and kw_try were to be freed and are NOT -- codegen cannot emit
-    # either word in every position yet (a field named `error`, `try` anywhere).
-    # See BUG-280; the other five words WERE freed.
-    kw_error
-    kw_try
+    # U4a tail 2026-08-13: kw_error and kw_try are GONE -- both were reserved and
+    # consumed by no rule in either compiler. They waited on the EMIT rather than the
+    # parse, and that cleared with BUG-280 plus the isZigKeyword oracle.
     # NEXT_STEPS U4 (2026-08-09): kw_aspect removed. AOP was never implemented —
     # the bootstrap parsed it and then panicked "not yet implemented", and the
     # selfhost never parsed it at all — so reserving the word only made `aspect`
@@ -347,10 +345,6 @@ class Keywords
             return TokenKind.kw_false()
         if word == "nil"
             return TokenKind.kw_nil()
-        if word == "error"
-            return TokenKind.kw_error()
-        if word == "try"
-            return TokenKind.kw_try()
         if word == "vari"
             return TokenKind.kw_vari()
         if word == "raise"
