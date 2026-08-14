@@ -1165,31 +1165,6 @@ say the factories are the API.**
 The new `test/http_echo_test.zbr` uses the factory form and passes 5/5.
 
 
-### BUG-249: `Expr.this_` (and friends) carry a PLACEHOLDER span, so diagnostics report 0:0 — OPEN
-
-**Found 2026-08-04** while porting BUG-108's check (BUG-248). The selfhost reports
-
-    test/bug108_this_outside_class_test.zbr:0:0: error: 'this' used outside a class/…
-
-where the bootstrap reports `6:13`. The message is right; the location is a placeholder.
-
-**Cause.** `AstBuilder.zbr` builds these nodes with `zspan()`, which is literally
-`Span(0, 0, 0, 0)`. It has no choice: `PNode.expr_this` is a **payload-less** parser
-variant, so the token position never reaches the AST. Same for `expr_nil` / `expr_result`
-and any other payload-less PNode.
-
-**Fix is structural, not local:** give the PNode variant a position payload and thread it
-through, which touches every construction and match site for that variant. Related to
-**BUG-121** (TC diagnostics report col 0) but distinct — this is line AND col, and the
-cause is upstream in the parser rather than in span resolution.
-
-**Not urgent, but it caps diagnostic quality.** Every future front-end check anchored on one
-of these nodes inherits the 0:0. That matters more now than it did, because the whole
-front-end-gap programme (`tools/frontend_gap.py`) is about MOVING checks inward — and a
-check that cannot say where is a check delivered half-finished.
-
----
-
 ### BUG-106 (front-end check) — CONFLICT: the fixture serves two incompatible roles — NEEDS A DECISION
 
 **Not a new defect. A collision, surfaced 2026-08-04**, and recorded because acting on it

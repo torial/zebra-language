@@ -821,14 +821,17 @@ class ASTBuilder
             on PNode.expr_bool as v
                 return Expr.bool_lit(ExprBoolLit(zspan(), v))
 
-            on PNode.expr_nil
-                return Expr.nil_(zspan())
+            # BUG-249: carry the token's REAL position. These three were the last
+            # payload-less expression variants, so `zspan()` was the only thing
+            # AstBuilder could build them with.
+            on PNode.expr_nil as np
+                return Expr.nil_(Span(np.line, np.col, np.line, np.col))
 
-            on PNode.expr_this
-                return Expr.this_(zspan())
+            on PNode.expr_this as tp
+                return Expr.this_(Span(tp.line, tp.col, tp.line, tp.col))
 
-            on PNode.expr_result
-                return Expr.result_(zspan())
+            on PNode.expr_result as rp
+                return Expr.result_(Span(rp.line, rp.col, rp.line, rp.col))
 
             on PNode.expr_str as text
                 return .buildStringLit(text)?

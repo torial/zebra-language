@@ -250,6 +250,59 @@ Selfhost-only: the bootstrap passes `${...}` through verbatim.
 `test/bug283_zig_lit_unknown_type_fail.zbr` (`smoke_run_fail`), both registered and
 passing since the day it landed.
 
+### BUG-249: `Expr.this_` (and friends) carry a PLACEHOLDER span, so diagnostics report 0:0 — ✅ FIXED 2026-08-14
+
+**Found 2026-08-04** while porting BUG-108's check (BUG-248). The selfhost reports
+
+    test/bug108_this_outside_class_test.zbr:0:0: error: 'this' used outside a class/…
+
+where the bootstrap reports `6:13`. The message is right; the location is a placeholder.
+
+**Cause.** `AstBuilder.zbr` builds these nodes with `zspan()`, which is literally
+`Span(0, 0, 0, 0)`. It has no choice: `PNode.expr_this` is a **payload-less** parser
+variant, so the token position never reaches the AST. Same for `expr_nil` / `expr_result`
+and any other payload-less PNode.
+
+**Fix is structural, not local:** give the PNode variant a position payload and thread it
+through, which touches every construction and match site for that variant. Related to
+**BUG-121** (TC diagnostics report col 0) but distinct — this is line AND col, and the
+cause is upstream in the parser rather than in span resolution.
+
+**Not urgent, but it caps diagnostic quality.** Every future front-end check anchored on one
+of these nodes inherits the 0:0. That matters more now than it did, because the whole
+front-end-gap programme (`tools/frontend_gap.py`) is about MOVING checks inward — and a
+check that cannot say where is a check delivered half-finished.
+
+---
+
+**FIXED 2026-08-14, and it was much smaller than this entry feared.** The ticket called it
+"structural, not local — touches every construction and match site for that variant." The
+actual count is **three construction sites and three match sites**, because `nil`, `this`
+and `result` are single tokens that appear in exactly one parser arm each. Reading the
+ticket would have deterred the work; counting the sites took one grep.
+
+All three now carry a shared `PPos { line, col }` payload, captured from the token BEFORE
+`.advance()` and read by `AstBuilder` in place of `zspan()`. One struct rather than three
+near-identical ones: they carry the same thing for the same reason.
+
+**Control — the reference implementation's own answer.** The selfhost now reports
+`bug108_this_outside_class_test.zbr:6:13`, which is byte-identical to what
+`zebra-bootstrap` reports for the same file, and line 6 is `    var x = this` with `this`
+at column 13. The existing `smoke_tc_fail` expectation was tightened from the message
+alone to the full `file:6:13: error: …` string, so a regression to `0:0` fails the gate;
+that also pins selfhost/bootstrap agreement on the LOCATION, not just the wording.
+
+`result` verified the same way: `var y = result` outside an ensure reports `2:13`.
+
+**HONEST LIMIT — two of three are verified by observation, not three.** No diagnostic
+anywhere in the front end anchors on `Expr.nil_` (checked: no `addErr` in TypeChecker or
+Resolver references it), so its span has no observable consumer today. It carries the same
+payload by the same code path, but that is reasoning rather than measurement, and the
+first check anchored on a `nil` node is what will actually confirm it.
+
+**Related and still open: BUG-121** (TC diagnostics report col 0) — a different cause,
+in span resolution rather than in the parser.
+
 ### BUG-287: a bare sibling-method call resolves to a same-named CLASS instead of the method — ✅ FIXED 2026-08-14
 
 **FIXED 2026-08-14.** `genCall`'s class-constructor branch is now guarded by

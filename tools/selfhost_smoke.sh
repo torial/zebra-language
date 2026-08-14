@@ -1204,7 +1204,16 @@ smoke_run_fail test/bug247_nonascii_diag_test.zbr "unexpected non-ASCII byte"
 # noticed that BUG-108's fix was not merely unverified but ABSENT from the selfhost, which
 # is the compiler that ships. It is a NEGATIVE test: `var x = this` at top level must be
 # rejected by the FRONT END, not by zig complaining about generated code.
-smoke_tc_fail test/bug108_this_outside_class_test.zbr "'this' used outside a class/struct method or 'with' block"
+# pins: BUG-249 this registration IS its regression test. The fix has no fixture of its
+# pins: BUG-249 own because the reproducer already existed under ANOTHER bug's number --
+# pins: BUG-249 bug108_this_outside_class_test.zbr -- and the expectation below was
+# pins: BUG-249 tightened from the message alone to the full file:6:13 coordinate, which
+# pins: BUG-249 is what a regression to 0:0 would break.
+# BUG-249: the expectation carries the COORDINATE, not just the message. The message was
+# always right; the LOCATION was `0:0` because PNode.expr_this was payload-less. 6:13 is
+# also exactly what zebra-bootstrap reports for this file, so this pins selfhost/bootstrap
+# agreement on the location as well as the wording.
+smoke_tc_fail test/bug108_this_outside_class_test.zbr "bug108_this_outside_class_test.zbr:6:13: error: 'this' used outside a class/struct method or 'with' block"
 
 # BUG-248's POSITIVE half. The negative fixture above proves the check FIRES; this proves it
 # does not over-fire on bare `this`, implicit `.field`, or `this except`. Both halves matter:

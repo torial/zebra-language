@@ -1905,15 +1905,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 # absent. Message copied verbatim from src/TypeChecker.zig so the two
                 # compilers report identically (the selfhost-equivalence rule).
                 #
-                # THE SPAN IS 0:0 AND THAT IS A KNOWN SHORTFALL, not an oversight. The
-                # bootstrap reports 6:13. `Expr.this_` carries `zspan()` — the literal
-                # placeholder `Span(0,0,0,0)` — because `PNode.expr_this` is payload-less,
-                # so the parser's token position never reaches the AST. Fixing that means
-                # adding a payload to the PNode variant and touching every construction and
-                # match site: a structural change, filed as BUG-249 rather than smuggled in
-                # here. A correct diagnosis with a weak location still beats what this did
-                # before, which was to emit invalid Zig and let the user read
-                # `use of undeclared identifier 'self'` about code they never wrote.
+                # THE SPAN WAS 0:0 UNTIL BUG-249 (fixed 2026-08-14); it now reports the
+                # real position and matches the bootstrap's 6:13 exactly on
+                # test/bug108_this_outside_class_test.zbr, whose smoke expectation pins
+                # that coordinate. `PNode.expr_this` was payload-less, so the parser's
+                # token position never reached the AST and `zspan()` was all AstBuilder
+                # could build. It carries a `PPos` now, as do expr_nil and expr_result.
                 ctx.addErr(ctx.file, this_sp.line, this_sp.col,
                            "'this' used outside a class/struct method or 'with' block")
                 return Type_.unknown_

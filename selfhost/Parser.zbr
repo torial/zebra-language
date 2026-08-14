@@ -75,9 +75,9 @@ union PNode
     expr_int: str
     expr_float: str
     expr_bool: bool
-    expr_nil
-    expr_this
-    expr_result
+    expr_nil: ^PPos
+    expr_this: ^PPos
+    expr_result: ^PPos
     expr_str: str
     expr_char: str
     expr_zig_lit: ^PZigLit
@@ -687,6 +687,23 @@ struct PIfExpr
         .cond = cond
         .then_expr = then_expr
         .else_expr = else_expr
+
+# BUG-249: the position payload for parser variants that carry NOTHING ELSE.
+# `nil`, `this` and `result` are single tokens, so their PNode variants held no data at
+# all and `AstBuilder` had to build them with `zspan()` -- Span(0,0,0,0). Every
+# front-end diagnostic anchored on one of them therefore reported 0:0, which caps the
+# quality of the whole move-checking-inward programme: a check that cannot say WHERE is
+# delivered half-finished.
+#
+# One struct shared by all three rather than three near-identical ones: they carry the
+# same thing for the same reason, and a shared payload is one place to change if a span
+# ever needs more than a point.
+struct PPos
+    var line: int
+    var col: int
+    cue init(line: int, col: int)
+        .line = line
+        .col = col
 
 # BUG-284: a zig literal carried only its TEXT, so every diagnostic attached to one
 # reported 0:0 -- a plausible-looking coordinate that is simply wrong, which also
@@ -3025,14 +3042,20 @@ class Parser
             .advance()
             return PNode.expr_bool(false)
         else if .textIs("nil")
+            const nil_line = .peek().line
+            const nil_col = .peek().col
             .advance()
-            return PNode.expr_nil()
+            return PNode.expr_nil(PPos(nil_line, nil_col))
         else if .textIs("this")
+            const this_line = .peek().line
+            const this_col = .peek().col
             .advance()
-            return PNode.expr_this()
+            return PNode.expr_this(PPos(this_line, this_col))
         else if .isKwResult()
+            const res_line = .peek().line
+            const res_col = .peek().col
             .advance()
-            return PNode.expr_result()
+            return PNode.expr_result(PPos(res_line, res_col))
         else if .isIntLit()
             const text = .peek().text
             .advance()

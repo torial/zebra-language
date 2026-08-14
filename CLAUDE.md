@@ -910,6 +910,24 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
+**BUG-249 landed 2026-08-14** — `this`, `nil` and `result` carry real source positions, so
+a diagnostic anchored on one no longer reports `0:0`. The selfhost now reports
+`bug108_this_outside_class_test.zbr:6:13`, byte-identical to what the BOOTSTRAP reports
+for that file, and the `smoke_tc_fail` expectation was tightened from the message alone to
+the full coordinate. Verified at JOBS=1 because RAM was down to 3.5 GB: smoke **333/333**,
+`compile_check` **259/0/2** in both runtime shapes, `output_sweep` 322 identical,
+`full_sweep` 0 vs 337, `examples_sweep` 0 vs 14.
+
+**`divergence` is UNCONFIRMED for that change, and this is the entry that says so.** It hit
+the tier's 2700 s ceiling at JOBS=1 (it takes ~25 min at JOBS=2, so the ceiling is the
+issue, not a hang), and two standalone re-runs were killed by the harness with **zero bytes
+written and no processes left** — the same silent-kill pattern this file already records
+from 2026-08-11. It is not refusing at startup: run under a 90 s `timeout` it exits 124,
+i.e. still working. What divergence uniquely covers is a SELFHOST GAP on a file outside
+`full_sweep`'s pass baseline; the change adds a payload to three PNode variants with no
+logic change, and five other heavy witnesses passed. **Low residual risk, but not zero, and
+not measured — re-run `JOBS=2 bash tools/divergence_check.sh --gate` when convenient.**
+
 **BUG-282 / BUG-284 / BUG-285 / BUG-286 / BUG-287 landed 2026-08-14** — five bugs, four
 commits. FULL tier at JOBS=2 for the last of them: every gate PASS except `output_sweep`,
 which is the story below; re-run afterwards with its fix, **322 files behaviour
