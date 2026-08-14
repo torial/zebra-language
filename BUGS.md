@@ -188,46 +188,6 @@ path would be untestable.
 pointer to this ticket) must compile AND run, and `namespace opaque` containing a class
 must build — the second is what makes it a BUG-281 fix rather than only a dispatch fix.
 
-### BUG-282: `--output-dir` at a path that does not exist PANICS instead of refusing
-
-**Found 2026-08-11** as a side-effect of probing BUG-281 — I typo'd nothing, I simply
-had not created the directory yet.
-
-```
-$ zebra --output-dir /some/dir/that/does/not/exist hello.zbr
-  parsing...
-  parsed OK
-  resolved OK
-thread 61956 panic: File.write error
-error return context:
-???:?:?: 0x140e47953 in ??? (zebra.exe)
-stack trace:
-(empty stack trace)
-```
-
-**Isolated with a negative control**, not inferred: the same invocation on a
-*known-good* corpus file (`test/bug280_keyword_idents.zbr`) panics identically, so it is
-the missing directory and not the input program. Exit code 3.
-
-**Why this is worth a ticket rather than a shrug.** The message names neither the
-directory, the flag, nor the fix, and the stack trace is empty — so the reader's most
-natural conclusion is that their *program* broke the compiler. It arrives **after**
-`parsed OK` / `resolved OK`, which actively points attention at the wrong end. This is
-the UNGIT "nothing ambient" test failing at all three clauses: the refusal does not name
-the reason, does not name the fix, and the condition is checked at *use* rather than at
-*declaration* — the flag is known at startup and the directory could be validated (or
-created) there, before any work is done.
-
-The fix is a `makePath`-or-refuse at argument-parsing time, with a message naming the
-path. Whether it should CREATE the directory or refuse is a real decision:
-`--output-dir` reads like an instruction, and `mkdir -p` semantics would match how
-`--emit-zig` behaves for its own file. Both compilers need whichever answer wins.
-
-**Control when fixing:** assert on the printed message, not the exit code — exit 3 is
-already produced by unrelated failures, so scoring on it would pass a compiler that
-panicked for a different reason. A `smoke_run_fail`-style fixture asserting the path
-appears in the diagnostic is the shape.
-
 ### BUG-281: SEVEN emit families print Zig keywords bare — SIX closed, G open (bootstrap-only)
 <!-- bug-open-ok: six of seven families are closed and pinned by test/bug280_keyword_idents.zbr; G is bootstrap-only and the selfhost is immune to it for free -->
 

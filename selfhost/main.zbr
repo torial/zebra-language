@@ -2452,6 +2452,30 @@ def main()
         setGuiSection(File.read(gui_sec_path))
     # --output-dir=DIR style to avoid positional arg confusion
     var output_dir: str    = args.option("--output-dir", "")
+    # BUG-282: the directory was never checked, so a path that did not exist reached
+    # File.write and PANICKED — `thread NNNNN panic: File.write error`, empty stack
+    # trace, AFTER `parsed OK` / `resolved OK`. Every part of that points the reader at
+    # their PROGRAM, which is the one place the fault is not.
+    #
+    # CREATED rather than refused, and then ANNOUNCED. The ticket framed this as
+    # create-or-refuse and both beat a panic, but each alone fails one half of UNGIT:
+    # refusing is pure friction when the fix is a `mkdir` the tool could have done
+    # (a refusal that can be worked around must price the workaround), while creating
+    # silently means a typo'd `--output-dir /tmp/oputput` quietly builds a junk tree and
+    # says nothing. Creating AND saying so costs the user nothing and hides nothing —
+    # a mistyped path is visible on the line that reports it.
+    #
+    # Checked HERE, at argument-parsing time, not at first write: the flag is known at
+    # startup, so "declarations are checked when declared" rather than discovered broken
+    # three phases later.
+    if output_dir != "" and not Dir.exists(output_dir)
+        Dir.createAll(output_dir)
+        if Dir.exists(output_dir)
+            sys.errln("zebra: created output directory " + output_dir)
+        else
+            sys.errln("zebra: --output-dir " + output_dir +
+                      " does not exist and could not be created — check the path and permissions")
+            sys.exit(1)
     # --module-path DIR: extra search dir for `use` deps not adjacent to the
     # source (e.g. an engine's zbra/ next to game/scripts/).  Found deps are
     # parsed for types only, not emitted — BUG-125.

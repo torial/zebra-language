@@ -6,6 +6,71 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-282: `--output-dir` at a path that does not exist PANICS instead of refusing — ✅ FIXED 2026-08-14
+
+**Found 2026-08-11** as a side-effect of probing BUG-281 — I typo'd nothing, I simply
+had not created the directory yet.
+
+```
+$ zebra --output-dir /some/dir/that/does/not/exist hello.zbr
+  parsing...
+  parsed OK
+  resolved OK
+thread 61956 panic: File.write error
+error return context:
+???:?:?: 0x140e47953 in ??? (zebra.exe)
+stack trace:
+(empty stack trace)
+```
+
+**Isolated with a negative control**, not inferred: the same invocation on a
+*known-good* corpus file (`test/bug280_keyword_idents.zbr`) panics identically, so it is
+the missing directory and not the input program. Exit code 3.
+
+**Why this is worth a ticket rather than a shrug.** The message names neither the
+directory, the flag, nor the fix, and the stack trace is empty — so the reader's most
+natural conclusion is that their *program* broke the compiler. It arrives **after**
+`parsed OK` / `resolved OK`, which actively points attention at the wrong end. This is
+the UNGIT "nothing ambient" test failing at all three clauses: the refusal does not name
+the reason, does not name the fix, and the condition is checked at *use* rather than at
+*declaration* — the flag is known at startup and the directory could be validated (or
+created) there, before any work is done.
+
+The fix is a `makePath`-or-refuse at argument-parsing time, with a message naming the
+path. Whether it should CREATE the directory or refuse is a real decision:
+`--output-dir` reads like an instruction, and `mkdir -p` semantics would match how
+`--emit-zig` behaves for its own file. Both compilers need whichever answer wins.
+
+**Control when fixing:** assert on the printed message, not the exit code — exit 3 is
+already produced by unrelated failures, so scoring on it would pass a compiler that
+panicked for a different reason. A `smoke_run_fail`-style fixture asserting the path
+appears in the diagnostic is the shape.
+
+**FIXED 2026-08-14 — created and ANNOUNCED, which is a third answer the ticket did not
+list.** It framed this as create-or-refuse. Both beat a panic and each alone fails one
+half of UNGIT: refusing is pure friction when the fix is a `mkdir` the tool could have
+done (a refusal that can be worked around must price the workaround), and creating
+silently means a typo'd `--output-dir /tmp/oputput` quietly builds a junk tree and says
+nothing. Creating **and saying so** costs nothing and hides nothing — a mistyped path is
+visible on the line that reports it.
+
+Checked at ARGUMENT-PARSING time rather than at first write, which is the "declarations
+are checked when declared" clause the ticket cited: the flag is known at startup, so the
+failure no longer arrives three phases later behind `parsed OK` / `resolved OK`.
+
+**SELFHOST-ONLY BY CONSTRUCTION, so the ticket's "both compilers need whichever answer
+wins" is resolved rather than deferred:** `zebra-bootstrap --output-dir` answers
+`unknown flag '--output-dir'`. The bootstrap has no such flag to fix.
+
+**Control:** two legs in `tools/runtime_module_check.sh`, the gate that already drives
+this flag — a CLI behaviour no `test/*.zbr` can carry, so smoke cannot see it. Leg 1: a
+missing path is created, the creation is announced, `hw.zig` lands in it, and no `panic`
+appears. Leg 2: an existing path stays SILENT — a fix that announced on every run would
+be its own regression. Both assert on the PRINTED MESSAGE, never the exit code, as the
+ticket instructed (the old panic exited 3, and 3 is produced by unrelated failures too).
+The two legs run the same grep with opposite expectations on real data, which is a
+stronger discrimination proof than a synthetic red.
+
 ### BUG-287: a bare sibling-method call resolves to a same-named CLASS instead of the method — ✅ FIXED 2026-08-14
 
 **FIXED 2026-08-14.** `genCall`'s class-constructor branch is now guarded by

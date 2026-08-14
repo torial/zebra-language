@@ -194,6 +194,39 @@ else
     fail "--single-file did not fall back to the inline runtime"
 fi
 
+# pins: BUG-282 the two legs below ARE its regression test. --output-dir at a
+# pins: BUG-282 nonexistent path used to panic; that is a CLI behaviour, so no
+# pins: BUG-282 test/*.zbr can carry it and selfhost_smoke cannot see it. This gate
+# pins: BUG-282 already drives --output-dir, which is why it hosts them.
+# BUG-282: --output-dir at a path that does not exist used to PANIC (`File.write error`,
+# empty stack trace) AFTER printing `parsed OK` / `resolved OK` -- every part of which
+# points the reader at their program. It is now created at ARGUMENT-PARSING time and the
+# creation is announced.
+#
+# Hosted here because this is the gate that already drives --output-dir, and because the
+# failure is a CLI behaviour: no test/*.zbr can carry it, so smoke cannot see it.
+#
+# ASSERTS ON THE PRINTED MESSAGE, NOT THE EXIT CODE -- the ticket's own instruction. The
+# old panic exited 3, and 3 is produced by unrelated failures too, so scoring on it would
+# pass a compiler that died for a different reason.
+missing="$OUT/made/up/deep"
+rm -rf "$OUT/made"
+got=$("$ZEBRA" --emit-zig --output-dir "$missing" "$hw/hw.zbr" 2>&1)
+if echo "$got" | grep -q "created output directory"    && [ -f "$missing/hw.zig" ]    && ! echo "$got" | grep -qi "panic"; then
+    pass "--output-dir at a missing path is created, announced, and emitted into"
+else
+    fail "--output-dir at a missing path: expected a 'created output directory' line and hw.zig, got: $got"
+fi
+
+# ...and the SILENT half: an existing directory must not grow a new line of noise. A
+# fix that announced on every run would be its own regression.
+got2=$("$ZEBRA" --emit-zig --output-dir "$missing" "$hw/hw.zbr" 2>&1)
+if ! echo "$got2" | grep -q "created output directory"; then
+    pass "--output-dir at an EXISTING path stays silent"
+else
+    fail "--output-dir announced a creation for a directory that already existed"
+fi
+
 echo
 if [ "$FAIL" -gt 0 ]; then
     printf '\033[31mruntime-module: %d check(s) FAILED\033[0m\n' "$FAIL"
