@@ -139,7 +139,18 @@ run_one() { # $1 = test/foo.zbr ; echoes program output, or a classification tok
     local zbr="$1" raw rc
     # $MODE_FLAGS is unquoted deliberately: it is either empty or a single flag, and an
     # empty quoted "" would be passed to the compiler as a bogus argument.
-    raw=$(timeout "$TIMEOUT_SECS" "$ZEBRA" $MODE_FLAGS "$zbr" 2>&1); rc=$?
+    # STDIN IS CLOSED, and that is load-bearing rather than tidiness. The sweep used to
+    # inherit the runner's stdin, so a fixture that READS stdin behaved differently
+    # depending on what the harness happened to hand it: closed -> instant EOF, an open
+    # handle -> block until the timeout. bug120_sys_readline_test failed that way
+    # intermittently across three separate tier runs (once at JOBS=3, once at JOBS=2,
+    # while passing alone and passing another JOBS=2 tier), and it was misdiagnosed as
+    # load before the pattern showed it was not.
+    #
+    # The retry below CANNOT help this case: retrying a blocking read blocks twice. The
+    # fix has to be at the input, not at the observation. </dev/null also matches what
+    # such a fixture asserts -- bug120's baselined output is its EOF branch.
+    raw=$(timeout "$TIMEOUT_SECS" "$ZEBRA" $MODE_FLAGS "$zbr" </dev/null 2>&1); rc=$?
     # A timeout is the one classification here that depends on MACHINE LOAD rather than on
     # the program, so a single observation must not become a verdict. Confirmed 2026-07-30:
     # allocate_slice4_test timed out once during a back-to-back 322-program sweep and was
@@ -147,7 +158,7 @@ run_one() { # $1 = test/foo.zbr ; echoes program output, or a classification tok
     # in both modes. Retry once; only a repeated timeout counts. Everything else is
     # deterministic given the same binary and is not retried.
     if [ "$rc" -eq 124 ]; then
-        raw=$(timeout "$TIMEOUT_SECS" "$ZEBRA" $MODE_FLAGS "$zbr" 2>&1); rc=$?
+        raw=$(timeout "$TIMEOUT_SECS" "$ZEBRA" $MODE_FLAGS "$zbr" </dev/null 2>&1); rc=$?
     fi
     if [ "$rc" -eq 124 ]; then printf '<<TIMEOUT>>'; return; fi
     printf '%s' "$raw" | grep -vE '^wrote |^compiling:|^ *parsing\.\.\.|^ *parsed OK|^ *resolved OK'

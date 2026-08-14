@@ -1398,6 +1398,10 @@ smoke_run_fail_once test/bug284_zig_lit_span_fail.zbr "bug284_zig_lit_span_fail.
 # BUG-287: a bare sibling-method call must beat a same-named class. Leg 2 (a class
 # with NO same-named method still constructs) is what stops a blind branch reorder.
 smoke_run     test/bug287_sibling_method_shadow_test.zbr "bug287: OK"
+# BUG-286: a class (and a struct) inside a `namespace`, constructed THROUGH it, plus a
+# namespace named for a Zig keyword. A bootstrap gap by design — the keyword half is
+# selfhost-only, and divergence gates on selfhost gaps.
+smoke_run     test/bug286_namespace_ctor_test.zbr "bug286: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

@@ -108,11 +108,11 @@ def main()
     # static method through the type name
     print(ZqStatics.make())
 
-    # NOT constructed: `ZqNs.ZqInner()` does not compile in EITHER compiler and did not
-    # before BUG-281 B either (`error: type 'type' not a function`) — BUG-286.  The
-    # declaration above still exercises the namespace-nested class EMIT, which is what
-    # this probe is for; a shape that cannot build would make the grep incomplete
-    # instead of complete.
+    # namespaced class: constructible since BUG-286 (2026-08-14). Before that this line
+    # did not compile in either compiler, and the probe carried it commented out.
+    var ni = ZqNs.ZqInner()
+    ni.k = 8
+    print(ni.kk())
 
     # the type as a container element and as a list of instances
     var cl: List(ZqClass) = List(ZqClass)()

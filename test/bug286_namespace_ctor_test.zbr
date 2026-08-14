@@ -1,0 +1,58 @@
+# BUG-286 regression, both halves the ticket named.
+#
+# HALF 1 — a class inside a `namespace` could not be CONSTRUCTED through it.
+# `genCall`'s constructor branch matches a BARE ident callee, and `Outer.Inner()` arrives
+# as an `Expr.member`, so it never reached the `.init()` rewrite: the emit was
+# `Outer.Inner()`, which calls a type rather than constructing one. Neither compiler had
+# ever built this. The declaration side was always fine — only the call path was missing.
+#
+# HALF 2 — the namespace NAME itself was never escaped, so `namespace opaque` emitted
+# `pub const opaque = struct` and the generated Zig did not parse. The ticket deferred
+# this deliberately, because a namespace's qualified reference path was the very thing
+# broken in half 1 and fixing the name alone would have been untestable. With half 1
+# landed it is testable, so both are here.
+#
+# WHY THE NAME IS ESCAPED AND A TYPE NAME IS PREFIXED (BUG-281 B): a namespace is a
+# SCOPE, its name reaches only a handful of emit sites, and `@"opaque"` is the same
+# identifier to Zig as `opaque` — so every non-keyword namespace emits byte-identically
+# to before. A type name is at file scope with references all over codegen, which is what
+# made the prefix worth its wider cost there.
+#
+# THIS FILE IS A BOOTSTRAP GAP, on purpose: `namespace opaque` is the second half above,
+# and it was fixed in the selfhost only. `divergence_check` gates on SELFHOST gaps, so a
+# bootstrap gap here is informational.
+
+namespace Shapes
+    class Circle
+        var r: int = 0
+
+        def area10(): int
+            return .r * .r * 10
+
+    struct Point
+        var x: int = 0
+        var y: int = 0
+
+# a namespace named for a Zig keyword — the half-2 case
+namespace opaque
+    class Holder
+        var k: int = 5
+
+        def bump(): int
+            return .k + 1
+
+def main()
+    # half 1: construct a namespaced CLASS through the namespace
+    var c = Shapes.Circle()
+    c.r = 3
+    print(c.area10())            # 90
+
+    # ...and a namespaced STRUCT, which takes the literal path rather than .init()
+    var p = Shapes.Point(x: 4, y: 6)
+    print(p.x + p.y)             # 10
+
+    # half 2: the same, through a namespace whose name is a Zig keyword
+    var h = opaque.Holder()
+    print(h.bump())              # 6
+
+    print("bug286: OK")

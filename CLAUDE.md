@@ -910,24 +910,43 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
+**BUG-282 / BUG-284 / BUG-285 / BUG-286 / BUG-287 landed 2026-08-14** — five bugs, four
+commits. FULL tier at JOBS=2 for the last of them: every gate PASS except `output_sweep`,
+which is the story below; re-run afterwards with its fix, **322 files behaviour
+identical**. `compile_check` **259/0/2** in both runtime shapes, `full_sweep` 0 vs 337,
+`divergence` **0 selfhost gaps**.
+
+`divergence` bootstrap gaps **46 → 48**, both accounted for by name rather than waved
+through: `bug286_namespace_ctor_test` (a keyword-named namespace, fixed selfhost-only) and
+`bug287_sibling_method_shadow_test` (the bootstrap still resolves a bare sibling call to
+the same-named class — the same `genCall` ordering, not fixed there). `bug284`'s fixture
+is a negative test that fails in BOTH, so it lands as agree-fail rather than a gap.
+
 **BUG-284 / BUG-285 / BUG-287 landed 2026-08-14.** FULL tier at `JOBS=3`: **28/29**, the
-one failure being `output_sweep`, and it was **the harness rather than the change** —
-established rather than assumed. Re-run alone on an idle machine: **322 files, behaviour
-identical**, the same figure as every previous sweep.
+one failure being `output_sweep`.
 
-**DO NOT RUN `gates.sh --full` AT `JOBS=3` IF YOU WANT output_sweep's VERDICT.** It
-reported `bug120_sys_readline_test` as having "produced NO record — they stopped being
-measured", which the gate correctly calls *worse than failing*. The cause is its own
-timeout classification: the sweep retries once and counts only a repeated timeout, and
-under JOBS=3 that fixture timed out **twice**. Its header already warns the timeout path
-"depends on MACHINE LOAD"; two retries is not enough at JOBS=3. Diagnosed by running the
-program directly (correct output), then `--show --only` (correct record), then
-`--gate --only` while `divergence` was still running (failed again — reproducing the
-contention), then idle (passed). **JOBS=2 or run it alone.**
+It reported `bug120_sys_readline_test` as having "produced NO record — they stopped being
+measured", which the gate correctly calls *worse than failing*.
 
-That sequence is also the answer to "is a lost file ever benign?" — no, but it is not
-always the subject's fault. A file that stops being measured needs the instrument
-eliminated before the code is blamed, and the elimination has to be a run that CAN fail.
+**FIRST DIAGNOSIS WAS WRONG, AND THE CORRECTION IS THE USEFUL PART.** It looked like
+load: the program ran correctly on its own, `--show --only` produced the right record,
+`--gate --only` failed again *while divergence was still running*, and idle passed. That
+is a clean-looking contention story and this file briefly said "do not run at JOBS=3".
+**Then it failed again at JOBS=2**, on a tier where an earlier JOBS=2 run had passed —
+so the pattern was intermittent, not tiered, and the tidy explanation was wrong.
+
+**THE REAL CAUSE: the sweep inherited the RUNNER's stdin.** A fixture that READS stdin
+therefore behaved differently depending on what the harness handed it — closed gives an
+instant EOF, an open handle blocks until the timeout. `run_one` now redirects
+`</dev/null`, so a stdin-reading program is deterministic. Note the retry could never
+have helped: **retrying a blocking read blocks twice**, and the retry exists for slow
+programs, which is a different failure. The fix had to be at the input, not the
+observation.
+
+The general lesson, and it is one this repo has written down in other words: a first
+explanation that fits every observation so far is still a hypothesis. This one predicted
+"JOBS=2 is safe" and that prediction failed on the next run. **A diagnosis that has not
+made a prediction has not been tested.**
 
 **U4a's TAIL CLOSED 2026-08-13 — `error` and `try` are ordinary identifiers.** FULL tier
 **29/29 in one invocation** again: smoke, round-trip byte-identical, `compile_check`
@@ -1116,7 +1135,7 @@ the table below stands unchanged.
 **Previous sweep 2026-08-02** — 18/18, before those two gates existed.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
-**337** while the tracked corpus is **468** <!-- doc-gen: 468 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+**337** while the tracked corpus is **469** <!-- doc-gen: 469 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

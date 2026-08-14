@@ -71,6 +71,78 @@ ticket instructed (the old panic exited 3, and 3 is produced by unrelated failur
 The two legs run the same grep with opposite expectations on real data, which is a
 stronger discrimination proof than a synthetic red.
 
+### BUG-286: a class inside a `namespace` cannot be CONSTRUCTED through the namespace — ✅ FIXED 2026-08-14
+
+**Found 2026-08-12** while widening `tools/fixtures/bug281_typename_sites_probe.zbr` for
+BUG-281 B — i.e. by a probe, not by reading, which is the third time in this ticket
+family that the probe found what reading did not.
+
+```zebra
+namespace ZqNs
+    class ZqInner
+        var k: int = 0
+
+def main()
+    var ni = ZqNs.ZqInner()      # error: type 'type' not a function
+```
+
+**Pre-existing, and it is NOT a BUG-281 B regression** — established with the control
+rather than assumed: the same probe was run against the unmodified codegen (stash the
+CodeGen change, `rebuild.sh --module CodeGen`, emit) and it failed there too, with
+`error: type 'type' not a function` instead of the prefixed-name error the changed
+compiler gives. Two different messages, one shape: the construction never worked.
+
+The DECLARATION side is fine — the namespace emits `pub const ZqNs = struct { pub const
+ZqInner = struct {…} }` and BUG-281 B correctly prefixes the inner class inside it. What
+is missing is the call path: `genCall`'s class-constructor branch matches a bare
+`Expr.ident` callee, and `ZqNs.ZqInner` arrives as an `Expr.member`, so it never reaches
+the `.init()` rewrite and the emitted Zig tries to call the type.
+
+**Also unprefixed, and deliberately so for now: the namespace NAME itself.** A
+`namespace opaque` still emits `pub const opaque = struct`, so the BUG-281 family-B
+hazard survives for that one declaration kind. It was left out because a namespace's
+qualified reference path is the very thing broken here — fixing the name without the
+path would be untestable.
+
+**Control when fixing:** the probe's `ZqNs.ZqInner()` line (commented out, with a
+pointer to this ticket) must compile AND run, and `namespace opaque` containing a class
+must build — the second is what makes it a BUG-281 fix rather than only a dispatch fix.
+
+**FIXED 2026-08-14, BOTH halves.** The ticket named a construction defect and, separately,
+that the namespace NAME was still unprefixed — deferring the second because "a namespace's
+qualified reference path is the very thing broken here, so fixing the name without the
+path would be untestable." Landing the path made the name testable, so both went together.
+
+**Half 1 — construction.** `genCall` now has a namespace arm ahead of its bare-ident
+constructor branch, guarded on a new `namespace_names` set. A class emits
+`Ns._zbr_ty_Cls.init(args)`; a plain struct with no cue init takes the LITERAL path
+instead, which is the same split the top-level constructor branch already makes and would
+have been easy to miss with only a class in the probe.
+
+`namespace_names` is populated in the PREPOPULATION loop, not at emit time, along with
+the classes and structs declared inside — registering at emit time would have made the
+answer depend on whether a namespace happens to precede its first use in the file.
+
+**Half 2 — the name.** ESCAPED, not prefixed, and the asymmetry with BUG-281 B is the
+point: a namespace is a SCOPE whose name reaches a handful of emit sites, and `@"opaque"`
+is the same identifier to Zig as `opaque`, so every non-keyword namespace emits
+byte-identically to before. A TYPE name is at file scope with references throughout
+codegen, which is what made a prefix worth its wider cost there. Sites: the declaration in
+`genNamespace`, the two emits on the new constructor arm, and `typeZigName`'s dotted HEAD.
+
+**One trap worth recording.** `tns.name.split(".")` emits a Zig `SplitIterator`, which
+does not index — `.at(0)` fails to compile. `genNamespace` two screens away already
+annotates `var parts: List(str) = ns.name.split(".")` for exactly this reason.
+
+**Control:** `test/bug286_namespace_ctor_test.zbr` (registered `smoke_run`) — a namespaced
+class constructed through the namespace (90), a namespaced STRUCT (10), and the same
+through a namespace named `opaque` (6). `tools/fixtures/bug281_typename_sites_probe.zbr`
+also had its `ZqNs.ZqInner()` line commented out with a pointer to this ticket; it is
+live again and runs.
+
+**Cost:** the fixture is a BOOTSTRAP GAP by design — half 2 is selfhost-only, and
+`divergence_check` gates on selfhost gaps.
+
 ### BUG-287: a bare sibling-method call resolves to a same-named CLASS instead of the method — ✅ FIXED 2026-08-14
 
 **FIXED 2026-08-14.** `genCall`'s class-constructor branch is now guarded by

@@ -939,6 +939,26 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                             # prefixes references, and genUse aliases the prefixed symbol that the
                             # defining module actually emitted.
                             g.toplevel_fns.add(exposed_name)
+            on Decl.namespace_ as tns
+                # BUG-286: register the namespace AND the types inside it, before any
+                # decl is emitted. Registering at emit time would make the answer depend
+                # on whether the namespace happens to precede its first use in the file.
+                # The annotation is load-bearing: a bare `.split(".")` emits a Zig
+                # SplitIterator, which does not index. `genNamespace` annotates for the
+                # same reason. A dotted `namespace A.B` nests, so the OUTER name is what
+                # a reference like `A.B.C()` starts with.
+                var tns_parts: List(str) = tns.name.split(".")
+                g.namespace_names.add(tns_parts.at(0))
+                for nsmem in tns.decls
+                    branch nsmem
+                        on Decl.class_ as nsc
+                            g.class_names.add(nsc.name)
+                        on Decl.struct_ as nss
+                            g.struct_names.add(nss.name)
+                            if declMembersHaveInit(nss.members)
+                                g.struct_with_init.add(nss.name)
+                        else
+                            pass
             on Decl.struct_ as s
                 g.struct_names.add(s.name)
                 if declMembersHaveInit(s.members)
@@ -2528,6 +2548,10 @@ struct Generator
     var ext_method_keys      : StrSet  # "TypeName.method" for `extend TypeName` methods → rewrite obj.m() to _ext_TypeName_m(obj)
     var ext_method_ret       : HashMap(str, TypeRef)  # "TypeName.method" → return TypeRef (print-format inference can't see the _ext_ rewrite)
     var unwrapped_imports    : StrSet  # module names where genUse did .ModuleName unwrap
+    var namespace_names      : StrSet  # BUG-286: top-level `namespace` names. A namespace is
+                                       # a Zig struct used as a scope, so `Ns.Cls()` needs
+                                       # to be told that `Ns` is one -- it is neither a type
+                                       # nor an import alias.
     var import_aliases       : StrSet  # BUG-281 B: every `use Mod` alias in scope. A module whose
                                        # name matches a class it declares (Parser/Parser) is in
                                        # class_names too, so without this the alias in
@@ -2639,6 +2663,7 @@ struct Generator
         .ext_method_keys       = StrSet()
         .ext_method_ret        = HashMap()
         .unwrapped_imports     = StrSet()
+        .namespace_names       = StrSet()
         .import_aliases        = StrSet()
         .exposed_module_vars   = HashMap(str, str)()
         # Phase 7b field initializations
@@ -4983,7 +5008,13 @@ struct Generator
                 w.emit("    ")
                 oi += 1
             w.emit("pub const ")
-            w.emit(part)
+            # BUG-286 / BUG-281: a NAMESPACE name is a file-scope Zig identifier too, so
+            # `namespace opaque` emitted `pub const opaque = struct` and did not parse.
+            # ESCAPED rather than prefixed, unlike a type: a namespace is a SCOPE, its
+            # name appears in only a handful of emit sites, and `@"opaque"` is the same
+            # identifier to Zig as `opaque` — so every non-keyword namespace emits
+            # byte-identically to before.
+            emitName(part)
             w.emit(" = struct {\n")
             depth += 1
         # Get a generator at the body indent level via chained indented() calls.
@@ -5568,7 +5599,9 @@ struct Generator
         if "." in name
             var tail: str = extractAfterDot(name)
             var head: str = name.substring(0, name.len - tail.len - 1)
-            return head + "." + zbrTypeSymbol(tail)
+            # BUG-286: the head is a NAMESPACE or an import alias — a plain Zig
+            # identifier, and a namespace may be named for a Zig keyword.
+            return zigSafeName(head) + "." + zbrTypeSymbol(tail)
         if isUserTypeName(name)
             return zbrTypeSymbol(name)
         return zigSafeName(name)
@@ -11612,6 +11645,51 @@ struct Generator
                     genExpr(a.value)
                 w.emit(")")
                 return
+        # BUG-286: `Namespace.Class(args)` — a class declared inside a `namespace`.
+        # genCall's constructor branch below matches a BARE ident callee, and this
+        # arrives as a member, so it never reached the `.init()` rewrite: the emit was
+        # `Outer.Inner()`, which calls a type. Neither compiler has ever built it.
+        # Guarded on the object being a known namespace, so `obj.method()` on an
+        # ordinary receiver cannot be captured by this.
+        var ns_obj = getMemberObjectIdent(c.callee)
+        var ns_mem = getMemberName(c.callee)
+        if ns_obj != nil and ns_mem != nil
+            if namespace_names.contains_(ns_obj!)
+                if class_names.contains_(ns_mem!) or struct_with_init.contains_(ns_mem!)
+                    emitName(ns_obj!)
+                    w.emit(".")
+                    w.emit(zbrTypeSymbol(ns_mem!))
+                    w.emit(".init(")
+                    var ns_first = true
+                    for ns_a in c.args
+                        if not ns_first
+                            w.emit(", ")
+                        ns_first = false
+                        genExpr(ns_a.value)
+                    w.emit(")")
+                    return
+                if struct_names.contains_(ns_mem!)
+                    # A plain struct with no cue init is a literal, not an .init() call.
+                    emitName(ns_obj!)
+                    w.emit(".")
+                    w.emit(zbrTypeSymbol(ns_mem!))
+                    w.emit("{")
+                    var nsf_first = true
+                    for nsf_a in c.args
+                        if nsf_first
+                            w.emit(" ")
+                        else
+                            w.emit(", ")
+                        nsf_first = false
+                        if nsf_a.name != nil
+                            w.emit(".")
+                            emitName(nsf_a.name!)
+                            w.emit(" = ")
+                        genExpr(nsf_a.value)
+                    if not nsf_first
+                        w.emit(" ")
+                    w.emit("}")
+                    return
         # Union construction: UnionName.variant(value?) → UnionName{ .variant = value }
         # Enum construction: EnumName.variant() → .variant
         var callee_obj = getMemberObjectIdent(c.callee)

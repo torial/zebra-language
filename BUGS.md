@@ -151,43 +151,6 @@ exactly the ambient guess this exists to remove — and it would do it invisibly
 must fail at Zebra compile time naming `Countr`; if it instead emits `${Countr}` as text
 and dies inside `zig`, the check is not doing its job even though the build is red.
 
-### BUG-286: a class inside a `namespace` cannot be CONSTRUCTED through the namespace
-
-**Found 2026-08-12** while widening `tools/fixtures/bug281_typename_sites_probe.zbr` for
-BUG-281 B — i.e. by a probe, not by reading, which is the third time in this ticket
-family that the probe found what reading did not.
-
-```zebra
-namespace ZqNs
-    class ZqInner
-        var k: int = 0
-
-def main()
-    var ni = ZqNs.ZqInner()      # error: type 'type' not a function
-```
-
-**Pre-existing, and it is NOT a BUG-281 B regression** — established with the control
-rather than assumed: the same probe was run against the unmodified codegen (stash the
-CodeGen change, `rebuild.sh --module CodeGen`, emit) and it failed there too, with
-`error: type 'type' not a function` instead of the prefixed-name error the changed
-compiler gives. Two different messages, one shape: the construction never worked.
-
-The DECLARATION side is fine — the namespace emits `pub const ZqNs = struct { pub const
-ZqInner = struct {…} }` and BUG-281 B correctly prefixes the inner class inside it. What
-is missing is the call path: `genCall`'s class-constructor branch matches a bare
-`Expr.ident` callee, and `ZqNs.ZqInner` arrives as an `Expr.member`, so it never reaches
-the `.init()` rewrite and the emitted Zig tries to call the type.
-
-**Also unprefixed, and deliberately so for now: the namespace NAME itself.** A
-`namespace opaque` still emits `pub const opaque = struct`, so the BUG-281 family-B
-hazard survives for that one declaration kind. It was left out because a namespace's
-qualified reference path is the very thing broken here — fixing the name without the
-path would be untestable.
-
-**Control when fixing:** the probe's `ZqNs.ZqInner()` line (commented out, with a
-pointer to this ticket) must compile AND run, and `namespace opaque` containing a class
-must build — the second is what makes it a BUG-281 fix rather than only a dispatch fix.
-
 ### BUG-281: SEVEN emit families print Zig keywords bare — SIX closed, G open (bootstrap-only)
 <!-- bug-open-ok: six of seven families are closed and pinned by test/bug280_keyword_idents.zbr; G is bootstrap-only and the selfhost is immune to it for free -->
 
