@@ -910,6 +910,25 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
+**BUG-284 / BUG-285 / BUG-287 landed 2026-08-14.** FULL tier at `JOBS=3`: **28/29**, the
+one failure being `output_sweep`, and it was **the harness rather than the change** —
+established rather than assumed. Re-run alone on an idle machine: **322 files, behaviour
+identical**, the same figure as every previous sweep.
+
+**DO NOT RUN `gates.sh --full` AT `JOBS=3` IF YOU WANT output_sweep's VERDICT.** It
+reported `bug120_sys_readline_test` as having "produced NO record — they stopped being
+measured", which the gate correctly calls *worse than failing*. The cause is its own
+timeout classification: the sweep retries once and counts only a repeated timeout, and
+under JOBS=3 that fixture timed out **twice**. Its header already warns the timeout path
+"depends on MACHINE LOAD"; two retries is not enough at JOBS=3. Diagnosed by running the
+program directly (correct output), then `--show --only` (correct record), then
+`--gate --only` while `divergence` was still running (failed again — reproducing the
+contention), then idle (passed). **JOBS=2 or run it alone.**
+
+That sequence is also the answer to "is a lost file ever benign?" — no, but it is not
+always the subject's fault. A file that stops being measured needs the instrument
+eliminated before the code is blamed, and the elimination has to be a run that CAN fail.
+
 **U4a's TAIL CLOSED 2026-08-13 — `error` and `try` are ordinary identifiers.** FULL tier
 **29/29 in one invocation** again: smoke, round-trip byte-identical, `compile_check`
 **257/0/2** in both runtime shapes (the +1 is the new fixture), `output_sweep` 322
@@ -1097,7 +1116,7 @@ the table below stands unchanged.
 **Previous sweep 2026-08-02** — 18/18, before those two gates existed.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
-**337** while the tracked corpus is **466** <!-- doc-gen: 466 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+**337** while the tracked corpus is **468** <!-- doc-gen: 468 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

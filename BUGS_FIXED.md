@@ -6,6 +6,150 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-287: a bare sibling-method call resolves to a same-named CLASS instead of the method — ✅ FIXED 2026-08-14
+
+**FIXED 2026-08-14.** `genCall`'s class-constructor branch is now guarded by
+`ctor_shadowed` — true only when the callee names BOTH a visible type and a method of the
+current owner. Inside a method a bare name is a sibling member before it is a global
+type, which is the rule every other bare-name path already follows (a field beats a
+module var; a local beats a top-level fn).
+
+**Written as a guard rather than a reordering, deliberately.** The guard can only fire
+when a type and a sibling method share one name, so every ordinary constructor call takes
+exactly the path it did before. Reordering the branches would have passed the obvious
+test and broken every constructor call in the corpus — which is what the ticket's second
+control leg exists to catch, and `test/bug287_sibling_method_shadow_test.zbr` carries
+both: 113 (the sibling method wins) and 42 (a class with no same-named method still
+constructs).
+
+**Found 2026-08-13** writing the fixture for the `error`/`try` freeing, by a shape that
+had never existed before: a class named `error` in the same file as a method named
+`error`.
+
+```zebra
+class Widget
+    var n: int = 1
+
+class User
+    var base: int = 3
+    def Widget(): int
+        return .base + 10
+    def callsIt(): int
+        return Widget() + 100        # emits `_zbr_ty_Widget.init() + 100`
+```
+
+The bare call inside a method resolves to the **class constructor**, not to the sibling
+method, and the program fails to compile with `unused function parameter` — because
+`self` is then never read. The message points at the wrong thing entirely.
+
+**Keyword-independent and pre-existing, established with the control rather than
+assumed.** The reproducer above uses ordinary names; it was reduced from the keyword
+version specifically to check whether freeing `error` had caused it. It had not — in
+`genCall`, the class-constructor branch (`class_names.contains_(id.name)`) is tested
+*before* the owner-method branch (`isOwnerMethod(id.name)`), so the collision predates
+both this work and BUG-281.
+
+**Which should win is not in doubt.** Inside a method, a bare name is a sibling method
+before it is a global type — that is ordinary lexical scoping, and it is what every
+other bare-name path in `genIdentRaw` already does (a field wins over a module var; a
+local wins over a top-level fn). The constructor branch is simply tested too early.
+
+**Why nothing found it before:** it needs a class and a method sharing one name in one
+file, which no corpus program does. Note it is NOT the same as a field and a method
+sharing a name — that one is caught cleanly at the Zebra level (`duplicate struct member
+name 'error'`) because they collide inside a single struct.
+
+**Control when fixing:** the reproducer above must print 113, AND a program with a class
+but no same-named method must still construct it — reordering the branches without that
+second leg would break every constructor call in the corpus.
+
+### BUG-285: `inferExpr` visits an expression twice, so its diagnostics print twice — ✅ FIXED 2026-08-14
+
+**FIXED 2026-08-14 — and the ticket's hypothesis was WRONG, which is the useful part.**
+It guessed this was "almost certainly not specific to zig literals" and that *any*
+inferExpr diagnostic would double, with a wide blast radius. Measured instead of
+assumed: `'x' is private` and `tuple index out of bounds` — both raised from inferExpr —
+print **once**. So the wide hypothesis is refuted.
+
+**The real rule is narrower and stranger: it doubles in the VAR-INIT POSITION only.**
+`var v = b.secret` printed the private diagnostic twice; `print(b.secret)` printed it
+once. Statements are walked twice — `walkStmt` binds, `checkStmts` checks — and BOTH
+call `inferExpr` on an un-annotated `var`'s init purely to compute a type to bind.
+
+Fixed **at the visit, not at the message**, exactly as the ticket required: `checkStmts`'
+bind-inference now runs with `InferCtx.quiet_errors` set, because `walkStmt` has already
+reported on that same expression. The error list is NOT deduplicated by value — two
+identical typos on one line are two real problems, and collapsing them would hide the
+second.
+
+**Control, with the leg that matters being the one that must NOT change:** the two
+doubling cases drop to 1, and `print(b.secret)` and the tuple case stay at 1 rather than
+falling to 0. Pinned by `test/bug284_zig_lit_span_fail.zbr` via a new
+`smoke_run_fail_once` helper — plain `smoke_run_fail` uses `grep -qF`, which is true for
+one occurrence and for two, and is why this survived so long unnoticed by any gate.
+
+**Found 2026-08-12** by BUG-283's refusal appearing verbatim two times for one typo:
+
+```
+bad.zbr:0:0: error: no Zebra type named 'Countr' — ...
+bad.zbr:0:0: error: no Zebra type named 'Countr' — ...
+```
+
+Harmless for a `grep -qF` gate, which is why `smoke_run_fail` passes on it, and ugly for
+a person, who has to decide whether they have one problem or two.
+
+**This is almost certainly not specific to zig literals** — it is the type checker
+inferring and then checking the same node, and *any* diagnostic raised from `inferExpr`
+would double. BUG-283's is simply the newest one, and possibly the first raised from that
+function on a path that runs twice. **Before fixing, check whether existing `inferExpr`
+diagnostics already double**; if they do, this is a long-standing wart with a wider blast
+radius than one message, and the fix belongs at the visit, not at the message.
+
+**Do not fix it by deduplicating the error list.** Two genuinely distinct problems can
+share a file, line, column and message — two identical typos on one line, for instance —
+and collapsing them would hide a real second defect to tidy a cosmetic one.
+
+### BUG-284: a `zig"..."` literal has NO source position, so its diagnostics say `0:0` — ✅ FIXED 2026-08-14
+
+**FIXED 2026-08-14.** `PNode.expr_zig_lit` went from a bare `str` to a `^PZigLit`
+carrying `text`/`line`/`col`, set at the parser's token and read by `AstBuilder` in place
+of `zspan()` — the same treatment `PExprId` already had, which is the precedent the
+ticket named.
+
+**Control, both legs:** `bug283_zig_lit_unknown_type_fail.zbr` now reports `14:13`
+instead of `0:0`, and a file with TWO bad literals reports **5 and 7** — different lines,
+which a hardcoded constant cannot produce. That second leg is why the regression fixture
+carries two literals; the ticket's own warning was that a single-literal test passes just
+as well against a hardcoded value.
+
+**Found 2026-08-12** implementing BUG-283, whose refusal is the first diagnostic ever
+attached to a zig literal — which is how nobody noticed.
+
+```
+bad.zbr:0:0: error: no Zebra type named 'Countr' — ...
+```
+
+`AstBuilder` builds every zig literal with `zspan()`, and `zspan()` is literally
+`Span(0, 0, 0, 0)`. The parser *has* the position — it is holding the token at
+`Parser.zbr:3044` — but `PNode.expr_zig_lit` is declared as a bare `str`, so the line and
+column are dropped on the floor between the two.
+
+**Why it matters beyond tidiness.** A diagnostic that cannot say *where* fails the UNGIT
+"nothing fabricated" test twice over: `0:0` is not unknown-spelled-as-unknown, it is a
+**plausible-looking coordinate that is simply wrong**, and it defeats caret rendering,
+which reads line/col to quote the source. In a file with several zig literals the reader
+is told only that one of them is bad.
+
+**The fix has precedent in the same file.** `PNode.expr_id` already carries `name`,
+`line` and `col`, and the Resolver uses them (`fmtErrAt(id.line, id.col, …)`). So the
+change is to give `expr_zig_lit` the same treatment: a payload with `text`, `line`, `col`,
+set at `Parser.zbr:3044` from the token, and read in `AstBuilder.zbr:840` in place of
+`zspan()`. Two construction sites, one declaration.
+
+**Control when fixing:** `bug283_zig_lit_unknown_type_fail.zbr` must report the real line
+of its `zig"${Countr}…"`, and a file with TWO bad literals must report two DIFFERENT
+lines — a single-literal test passes just as well with a hardcoded constant.
+
 ### BUG-278: `result` nested in a slice / `?.` / `except` inside an ensure emitted an undeclared `_result` — ✅ FIXED 2026-08-08
 
 **Found 2026-08-08** working BUG-274's list the way that ticket prescribes: find the

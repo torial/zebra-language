@@ -11797,7 +11797,18 @@ struct Generator
                 return
         # BUG-118: class constructor → .init(args); struct without cue init → struct literal
         if c.callee is Expr.ident as id
-            if class_names.contains_(id.name) or struct_with_init.contains_(id.name)
+            # BUG-287: a sibling METHOD wins over a same-named global type. Inside a
+            # method a bare name is a member before it is a type — ordinary lexical
+            # scoping, and the rule every other bare-name path already follows (a field
+            # beats a module var; a local beats a top-level fn). Without this, a class
+            # and a method sharing one name made `foo()` CONSTRUCT the class, and the
+            # program died with `unused function parameter` because `self` then went
+            # unread — a message pointing nowhere near the cause.
+            # Written as a guard rather than a reordering on purpose: it can only fire
+            # when BOTH a type and a sibling method carry the name, so every ordinary
+            # constructor call takes exactly the path it did before.
+            var ctor_shadowed: bool = in_method and owner != "" and isOwnerMethod(id.name)
+            if (class_names.contains_(id.name) or struct_with_init.contains_(id.name)) and not ctor_shadowed
                 emitTypeName(id.name)                       # BUG-281 B
                 w.emit(".init(")
                 # Named-arg / default-fill path: any arg has a name, or caller passed
