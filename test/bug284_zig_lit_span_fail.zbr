@@ -1,0 +1,30 @@
+# BUG-284 + BUG-285 regression, in one file because one fixture can pin both.
+#
+# BUG-284: a zig literal carried only its TEXT through PNode, so `AstBuilder` built it
+# with `zspan()` — literally Span(0, 0, 0, 0) — and BUG-283's refusal, the first
+# diagnostic ever attached to a zig literal, reported `0:0`. That is not
+# unknown-spelled-as-unknown; it is a plausible-looking coordinate that is simply wrong,
+# and it defeats caret rendering, which reads line/col to quote the source.
+#
+# BUG-285: statements are walked TWICE — walkStmt binds, checkStmts checks — and BOTH
+# called inferExpr on an un-annotated `var`'s init just to compute a type to bind, so
+# every inferExpr diagnostic printed twice. For an un-annotated `var` only, which is why
+# it looked like a zig-literal bug.
+#
+# TWO bad literals, deliberately: a single one passes just as well against a hardcoded
+# constant, so it proves nothing about the position being real. These are on different
+# lines and the registration asserts the SECOND one's full coordinate — which no
+# hardcoded 0:0 and no "first literal's position" implementation can satisfy.
+#
+# Registered with `smoke_run_fail_once`, which asserts the message appears EXACTLY once.
+# Plain `smoke_run_fail` greps with -qF and is true for one occurrence and for two, so
+# it passed throughout BUG-285's life. Multiplicity needs its own assertion.
+
+struct Counter
+    var n: int = 0
+
+def main()
+    var a = zig"${Countr}{ .n = 1 }"
+    var spacer = 0
+    var c = zig"${Countur}{ .n = 2 }"
+    print(spacer)

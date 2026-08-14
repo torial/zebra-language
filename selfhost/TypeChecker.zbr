@@ -1043,6 +1043,17 @@ class InferCtx
     # When true, checkStmts emits a warning for branch...else arms that do not
     # explicitly name every variant of a same-module union type.
     var warn_non_exhaustive: bool
+    # BUG-285. Statements are walked TWICE — walkStmt binds and infers, checkStmts
+    # checks — and BOTH call inferExpr on an un-annotated `var`'s init purely to work
+    # out what type to bind. Every diagnostic inferExpr raises therefore landed twice
+    # for `var x = <expr>` and once everywhere else, which is why it looked like a
+    # zig-literal bug when BUG-283 first surfaced it.
+    #
+    # Fixed at the VISIT, not at the message: the second inference is silenced rather
+    # than the duplicate message removed. Deduplicating the error list by value would
+    # hide a genuine second defect — two identical typos on one line are two problems,
+    # and they are indistinguishable from this once collapsed.
+    var quiet_errors: bool
     var file: str  # source file path for error reporting in inferExpr
     var source: str  # full source text, for source-line/caret rendering in errorMessages()
     # Non-nil inside an `extend T` method body where T is a primitive (str/int/…):
@@ -1060,6 +1071,7 @@ class InferCtx
         warnings = List(Diagnostic)()
         .strict = false
         .warn_non_exhaustive = false
+        .quiet_errors = false
         .file = ""
         .source = ""
         .self_type_override = nil
@@ -1097,7 +1109,11 @@ class InferCtx
         .warn_non_exhaustive = true
 
     def addErr(file: str, line: int, col: int, message: str)
+        # BUG-285: the second, redundant inference of a var-init is silenced here.
+        if quiet_errors
+            return
         errors.add(Diagnostic(file, line, col, message))
+
 
     def hasErrors(): bool
         return errors.len > 0
@@ -1810,15 +1826,15 @@ def checkZigLitTypeRefs(zl: ExprZigLit, ctx: InferCtx)
         var open = rest.indexOf(marker)
         var after = rest.substring(open + 2, rest.len)
         if not ("}" in after)
-            ctx.errors.add(Diagnostic(ctx.file, zl.span.line, zl.span.col,
-                "unterminated '" + marker + "...}' in a zig literal"))
+            ctx.addErr(ctx.file, zl.span.line, zl.span.col,
+                "unterminated '" + marker + "...}' in a zig literal")
             return
         var close = after.indexOf("}")
         var nm: str = after.substring(0, close)
         if not zigLitTypeIsKnown(nm, ctx)
-            ctx.errors.add(Diagnostic(ctx.file, zl.span.line, zl.span.col,
+            ctx.addErr(ctx.file, zl.span.line, zl.span.col,
                 "no Zebra type named '" + nm + "' — '" + marker + nm +
-                "}' in a zig literal must name a class, struct, enum or union in scope"))
+                "}' in a zig literal must name a class, struct, enum or union in scope")
         rest = after.substring(close + 1, after.len)
 
 def zigLitTypeIsKnown(nm: str, ctx: InferCtx): bool
@@ -3665,7 +3681,15 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                     bt = typeFromRef(dv.type_!)
                 else
                     if dv.init_expr != nil
+                        # BUG-285: walkStmt already inferred this exact expression and
+                        # already reported anything wrong with it. This second inference
+                        # exists ONLY to produce a type to bind, so it runs silent —
+                        # otherwise every inferExpr diagnostic prints twice for an
+                        # un-annotated `var`, and only for an un-annotated `var`.
+                        var saved_q: bool = ctx.quiet_errors
+                        ctx.quiet_errors = true
                         bt = inferExpr(dv.init_expr!, ctx)
+                        ctx.quiet_errors = saved_q
                 ctx.bind(dv.name, bt)
             on Stmt.if_ as si
                 checkCallsInExpr(si.cond, file, si.span.line, ctx)  # BUG-142

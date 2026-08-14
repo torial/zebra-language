@@ -1,0 +1,47 @@
+# BUG-287 regression: inside a method, a bare `name()` is a SIBLING METHOD before it is
+# a same-named global type.
+#
+# Before the fix, `genCall` tested its class-constructor branch before its owner-method
+# branch, so `Widget()` inside `User.callsIt` emitted `_zbr_ty_Widget.init()` — it
+# CONSTRUCTED the class instead of calling the method. The program then failed to
+# compile with `unused function parameter`, because `self` was never read once the
+# sibling call had been rewritten away. A message pointing nowhere near the cause.
+#
+# BOTH LEGS MATTER, and the second is the one that makes this a real test. A blind
+# reordering of the two branches would pass leg 1 and break every ordinary constructor
+# call in the corpus; leg 2 is what catches that. The fix is a guard rather than a
+# reorder, so it can only fire when a type and a sibling method share one name.
+#
+# Found 2026-08-13 writing the `error`/`try` fixture, by a shape no corpus program had:
+# a class and a method carrying the same name. Reduced to ordinary names to prove it was
+# not caused by freeing a keyword — it was not.
+#
+# NOTE this is NOT the same as a field and a method sharing a name. That collides inside
+# a single emitted struct and is caught cleanly at the Zebra level as
+# `duplicate struct member name`.
+
+class Widget
+    var n: int = 42
+
+    def get(): int
+        return .n
+
+class User
+    var base: int = 3
+
+    # leg 1: a method whose name is also a class in this file
+    def Widget(): int
+        return .base + 10
+
+    def callsIt(): int
+        return Widget() + 100
+
+class Plain
+    # leg 2: no same-named method here, so the bare call must still CONSTRUCT
+    def build(): int
+        return Widget().get()
+
+def main()
+    print(User().callsIt())      # 113 — the sibling method won
+    print(Plain().build())       # 42  — the constructor still constructs
+    print("bug287: OK")

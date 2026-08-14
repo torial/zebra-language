@@ -80,7 +80,7 @@ union PNode
     expr_result
     expr_str: str
     expr_char: str
-    expr_zig_lit: str
+    expr_zig_lit: ^PZigLit
     expr_raw_str: str
     expr_format: str
     expr_id: ^PExprId
@@ -687,6 +687,19 @@ struct PIfExpr
         .cond = cond
         .then_expr = then_expr
         .else_expr = else_expr
+
+# BUG-284: a zig literal carried only its TEXT, so every diagnostic attached to one
+# reported 0:0 -- a plausible-looking coordinate that is simply wrong, which also
+# defeats caret rendering. The parser was holding the position all along; this is the
+# same treatment PExprId already gets, for the same reason.
+struct PZigLit
+    var text: str
+    var line: int
+    var col: int
+    cue init(text: str, line: int, col: int)
+        .text = text
+        .line = line
+        .col = col
 
 struct PExprId
     var name: str
@@ -3040,8 +3053,10 @@ class Parser
             return PNode.expr_char(text)
         else if .isZigLit()
             const text = .peek().text
+            const zl_line = .peek().line
+            const zl_col = .peek().col
             .advance()
-            return PNode.expr_zig_lit(text)
+            return PNode.expr_zig_lit(PZigLit(text, zl_line, zl_col))
         else if .isRawString()
             const text = .peek().text
             .advance()

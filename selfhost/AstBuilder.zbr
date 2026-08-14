@@ -837,9 +837,12 @@ class ASTBuilder
                 # Keep raw token text (e.g. c'A', c'\'') — codegen strips c prefix
                 return Expr.char_lit(ExprCharLit(zspan(), text))
 
-            on PNode.expr_zig_lit as text
+            on PNode.expr_zig_lit as zl
                 # Strip zig"..." / zig'...' wrapper so stored text is emit-ready.
-                return Expr.zig_lit(ExprZigLit(zspan(), stripZigQuotes(text)))
+                # BUG-284: carry the literal's REAL position; `zspan()` is Span(0,0,0,0),
+                # and BUG-283's refusal was the first diagnostic ever attached here,
+                # which is how a 0:0 went unnoticed for so long.
+                return Expr.zig_lit(ExprZigLit(Span(zl.line, zl.col, zl.line, zl.col), stripZigQuotes(zl.text)))
 
             on PNode.expr_raw_str as text
                 # Strip r"..." / r'...' wrapper, double backslashes for Zig emit.

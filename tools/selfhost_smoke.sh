@@ -193,6 +193,35 @@ smoke_run_fail() {
     fi
 }
 
+# Like smoke_run_fail, but asserts the message appears EXACTLY ONCE.
+#
+# BUG-285: statements are walked twice and both passes inferred an un-annotated `var`'s
+# init, so every inferExpr diagnostic printed twice -- for a var-init only. `grep -qF`
+# is true for one occurrence and for two, which is why smoke_run_fail passed happily
+# throughout and the duplication was found by a person reading output rather than by a
+# gate. Multiplicity needs its own assertion; this is it.
+smoke_run_fail_once() {
+    local zbr="$1"
+    local expected_msg="$2"
+    local label
+    label="$(basename "$zbr" .zbr)_runfail_once"
+    local got n
+    if got=$("$ZEBRA" "$zbr" 2>&1); then
+        echo "  FAIL: $label (expected failure, got exit 0)" >&2
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    n=$(echo "$got" | grep -cF -- "$expected_msg")
+    if [[ "$n" -eq 1 ]] && ! echo "$got" | grep -q "\.zig:"; then
+        echo "  PASS: $label"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $label (expected the message exactly ONCE, got $n; or .zig leaked)" >&2
+        echo "$got" | grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved\|^wrote " | tail -6 >&2
+        FAIL=$((FAIL + 1))
+    fi
+}
+
 # Run a fixture expected to FAIL TC with a specific diagnostic substring in stderr.
 smoke_tc_fail() {
     local zbr="$1"
@@ -1360,6 +1389,15 @@ smoke_run     test/bug280_freed_words_test.zbr "freed words: OK"
 # diagnostic rather than a Zig parse error attributed back to the line.
 smoke_run      test/bug283_zig_lit_typeref_test.zbr "bug283: OK"
 smoke_run_fail test/bug283_zig_lit_unknown_type_fail.zbr "no Zebra type named 'Countr'"
+# BUG-284 (a zig literal reported 0:0) + BUG-285 (an inferExpr diagnostic printed
+# twice for an un-annotated `var`). The expectation names the SECOND literal's full
+# coordinate: a hardcoded 0:0 fails it, and so does any implementation that reports
+# the first literal's position for both. `_once` is what pins the de-duplication --
+# grep -qF is true for one occurrence and for two.
+smoke_run_fail_once test/bug284_zig_lit_span_fail.zbr "bug284_zig_lit_span_fail.zbr:29:13: error: no Zebra type named 'Countur'"
+# BUG-287: a bare sibling-method call must beat a same-named class. Leg 2 (a class
+# with NO same-named method still constructs) is what stops a blind branch reorder.
+smoke_run     test/bug287_sibling_method_shadow_test.zbr "bug287: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then
