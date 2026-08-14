@@ -143,6 +143,113 @@ live again and runs.
 **Cost:** the fixture is a BOOTSTRAP GAP by design — half 2 is selfhost-only, and
 `divergence_check` gates on selfhost gaps.
 
+### BUG-283: a `zig"..."` literal has no way to NAME a Zebra type except by guessing the emitted spelling — ✅ FIXED 2026-08-12
+
+**Found 2026-08-12** designing BUG-281 B. Three literals in the corpus do exactly this:
+
+```zebra
+zig"Counter{}"      zig"Greeter{}"      zig"Point{}"
+```
+
+They work only because codegen happens to emit a Zebra `class Counter` as a Zig
+`Counter`. That is an **ambient** dependency on an internal spelling — the UNGIT test the
+escape hatch currently fails. Nothing declares it a contract, nothing checks it, and
+`zig"..."` contents are the one construct every lint here is structurally blind to
+(BUG-267), so a change to the emitted spelling breaks user code that no tool can find.
+
+BUG-281 B changes that spelling deliberately (`_zbr_ty_Counter`), which is what surfaces
+this. **The right fix is not to preserve the guess** — an alias that does so was tried and
+silently defeated BUG-281 B's whole purpose, see that entry. It is to give the literal a
+way to *ask*, so the compiler substitutes the current spelling and the user never encodes
+it. Shape to consider (not decided):
+
+```zebra
+zig"${Counter}{}"          # interpolate the emitted spelling of a known type
+```
+
+The compiler already knows every type name (`class_names`, `struct_names`, `enum_names`,
+`union_names`), so resolution is available; what is missing is the substitution and a
+refusal for a name that does not resolve.
+
+**MEASURED 2026-08-12 — the syntax space is FREE, and this is a smaller change than it
+looks.** `${...}` inside a `zig"..."` is **not** interpolated and **not** rejected: it is
+raw passthrough. `zig"@as(i64, ${v})"` parses, resolves, and emits `@as(i64, ${v})`
+verbatim, which then fails in `zig` as `expected expression, found 'invalid token'` —
+reported against the *Zebra* line via the `// zbr:` markers. So:
+
+- **No lexer or parser change is needed.** The text already arrives intact at
+  `CodeGen`'s `on Expr.zig_lit` arm, which is a single `w.emit(zl.text)`.
+- **Nothing existing can break**, because any current `${...}` in a zig literal is
+  already a hard error downstream.
+- **`zebra -c` accepts it and writes a `.zig` anyway** — another instance of check-mode
+  being front-end-only, so `-c` cannot be the control here.
+
+**And it makes the refusal load-bearing rather than a nicety.** Today a typo'd
+`zig"${Countr}{}"` emits `${Countr}` and dies inside Zig. If the substitution ships
+*without* the refusal, a typo produces **exactly the same failure as today** — so the
+feature would look implemented while the case it exists to fix is untouched.
+
+**BOTH HOOK POINTS ARE CONFIRMED TO EXIST, with the data already in scope:**
+
+| | where | what is there |
+|---|---|---|
+| substitution | `selfhost/CodeGen.zbr`, `on Expr.zig_lit as zl` | one line, `w.emit(zl.text)` |
+| refusal | `selfhost/TypeChecker.zbr`, `inferExpr` | **has no `zig_lit` arm at all**, so the case is additive; `InferCtx` carries `module_types` (type knowledge) *and* `errors` (`Diagnostic(file, line, col, msg)`), and `ExprZigLit` carries a `span` |
+
+So the refusal can be a real located Zebra diagnostic rather than an `@compileError`
+emitted into the output — which matters, because `@compileError` fires at *Zig* time and
+would be indistinguishable from the untouched status quo.
+
+**FIX THIS BEFORE BUG-281 B, not after.** They look coupled and are not. Landing the
+substitution first means the three corpus literals migrate while the old spelling still
+works, so the prefix commit that follows breaks nothing at all and needs no deprecation
+story. Landing the prefix first breaks every `zig"Type{}"` in existence with nothing to
+migrate *to*. Same two commits, opposite user experience.
+
+**Control when fixing:** the three corpus literals migrated to the new form must still
+produce a working program, AND an unknown name must be REFUSED with a Zebra diagnostic
+naming it. A substitution that silently passes through an unrecognised name would restore
+exactly the ambient guess this exists to remove — and it would do it invisibly, since
+`zig"..."` contents are what no lint here can read.
+
+**Verify the refusal by MAKING IT FIRE, not by reading the code.** `zig"${Countr}{}"`
+must fail at Zebra compile time naming `Countr`; if it instead emits `${Countr}` as text
+and dies inside `zig`, the check is not doing its job even though the build is red.
+
+**FIXED 2026-08-12 (`9d2beb1`), and MOVED HERE 2026-08-14 — it sat in the OPEN ledger for
+two days after it shipped.** Recorded because of WHY no gate noticed:
+`lint_bug_numbers`' resolved-entry leg is HEADING-ONLY by design (bodies routinely say
+FIXED about other bugs, which scored 30 of 53 and is a noise ratio that gets a gate
+ignored), and this heading never gained a FIXED marker. So a fixed entry whose heading is
+never stamped is invisible to that check. The cost is real but bounded: BUGS.md answers
+"what is left to work on", and for two days it over-reported by one.
+
+**A GATE FOR THIS WAS CONSIDERED AND MEASURED AWAY — do not re-litigate without new
+data.** The obvious oracle is "an OPEN bug that already has a REGISTERED, passing fixture
+is suspicious", which describes BUG-283 exactly. Run against the ledger on 2026-08-14 it
+flags **six** open bugs, and all six are legitimately open: fixtures that pin
+known-BROKEN behaviour, the BUG-106 role conflict, and umbrella entries. That is zero
+true positives and six waivers — a gate that would be entirely baseline on the day it
+shipped, which is the ratio `doc_example_check`'s header warns gets a gate suppressed
+wholesale. The existing "NOT checked" line on `lint_bug_numbers` already discloses the
+limit, which is the honest alternative to a noisy check.
+
+**What shipped:** `zig"${Name}"` inside a zig literal resolves to that type's current
+emitted spelling, so an escape hatch ASKS instead of guessing. `emitTypeRefName` in
+`selfhost/CodeGen.zbr` is the single place the spelling is decided — which is what let
+BUG-281 B rename every type to `_zbr_ty_<name>` a day later at zero cost to users.
+
+An unknown name is REFUSED by the TypeChecker with a located Zebra diagnostic rather than
+passed through to die inside `zig` — the load-bearing half, since passing it through
+would have failed identically to the pre-feature behaviour and every test would still
+have passed.
+
+Selfhost-only: the bootstrap passes `${...}` through verbatim.
+
+**Pinned by** `test/bug283_zig_lit_typeref_test.zbr` (`smoke_run`) and
+`test/bug283_zig_lit_unknown_type_fail.zbr` (`smoke_run_fail`), both registered and
+passing since the day it landed.
+
 ### BUG-287: a bare sibling-method call resolves to a same-named CLASS instead of the method — ✅ FIXED 2026-08-14
 
 **FIXED 2026-08-14.** `genCall`'s class-constructor branch is now guarded by

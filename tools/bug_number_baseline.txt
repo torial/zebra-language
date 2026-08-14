@@ -2,5 +2,3 @@
 # Bug-number slots carrying more than one heading. This is DEBT: each is a
 # number a reader cannot resolve to one bug. Shrink it, never grow it.
 106
-249
-250
