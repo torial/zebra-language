@@ -635,6 +635,44 @@ bash tools/keyword_ident_check.sh  # THE ESCAPED-IDENTIFIER GATE (BUG-280, QUICK
                                 #   rather than reporting clean when either fails. A
                                 #   clean escape with a failed BUILD is reported as a
                                 #   separate defect, not as a pass. 0 = clean.
+python tools/lint_zig_keywords.py  # THE KEYWORD-ORACLE GATE (BUG-280 defect 2, QUICK
+                                #   tier) — the oracle BEHIND keyword-ident. `isZigKeyword`
+                                #   decides which words get escaped, it exists TWICE
+                                #   (src/CodeGen.zig, selfhost/CgHelpers.zbr), and both
+                                #   copies were hand-written lists. A hand-maintained
+                                #   oracle guarding against a bug caused by a
+                                #   hand-maintained oracle.
+                                #   THE RECEIPT IS NOT THE OBVIOUS DIRECTION. The lists
+                                #   were missing 12 of Zig 0.16's 46 keywords — and every
+                                #   one of the 12 is ALSO a Zebra keyword, so no user
+                                #   could reach any of them and nothing was broken. What
+                                #   proves the class is the other direction: both copies
+                                #   still carry `async`, `await` and `usingnamespace`,
+                                #   which Zig NO LONGER HAS. The list already drifted
+                                #   across a version bump, silently.
+                                #   MISSING fails; EXTRA is reported and NOT gated —
+                                #   escaping a non-keyword is identity in Zig, so a stale
+                                #   entry is inert, and deleting one would break a build
+                                #   against an older Zig. Report, do not churn.
+                                #   ORACLE = zig's own std/zig/tokenizer.zig keyword
+                                #   table, located via `zig env`. Same philosophy as
+                                #   grammar_export --check: the compiled table is the
+                                #   authority, never a second copy. THE ONLY GATE THAT
+                                #   READS THE ZIG INSTALLATION rather than the repo, so it
+                                #   prints the version it judged against — the answer is
+                                #   only true for one toolchain.
+                                #   Refuses (exit 2) if it extracts <40 keywords, if
+                                #   `zig env` cannot be parsed (it is ZON, not JSON), or
+                                #   if either isZigKeyword cannot be found — a regex that
+                                #   has stopped matching must blame ITSELF, not the
+                                #   compiler. Runs both-direction controls on synthetic
+                                #   input first (a planted gap must fire, a complete list
+                                #   must not) and verified red by deleting one real entry.
+                                #   NOT checked: isZigPrimitiveName, zigSafeName's other
+                                #   half — already PATTERN-based for the open-ended part
+                                #   (`i37`, `u3`, any iN/uN; verified by emitting a class
+                                #   with an `i37` field and getting @"i37"), so it does not
+                                #   have this failure mode. 0 = clean.
 python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUICK tier).
                                 #   A function that searches the Expr tree for a name is
                                 #   correct only if it descends into every variant that
@@ -845,10 +883,11 @@ than "what do we know":
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 70 scripts | <!-- doc-gen: 70 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 71 scripts | <!-- doc-gen: 71 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 50 tracked documents <!-- doc-gen: 50 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 83 keywords, 3 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
+| **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords × both compilers |
 | **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 50 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' -->
 
 The last row is the one that keeps the rest honest; see its header for why.

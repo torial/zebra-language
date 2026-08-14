@@ -2100,6 +2100,9 @@ fn isZigKeyword(name: []const u8) bool {
         .{ "usingnamespace", {} }, .{ "unreachable", {} }, .{ "errdefer", {} }, .{ "suspend", {} },
         .{ "resume", {} }, .{ "await", {} }, .{ "async", {} }, .{ "anyframe", {} }, .{ "anytype", {} },
         .{ "switch", {} }, .{ "defer", {} }, .{ "struct", {} }, .{ "union", {} }, .{ "enum", {} },
+        .{ "and", {} }, .{ "break", {} }, .{ "catch", {} }, .{ "continue", {} }, .{ "else", {} },
+        .{ "for", {} }, .{ "if", {} }, .{ "or", {} }, .{ "orelse", {} }, .{ "return", {} },
+        .{ "try", {} }, .{ "while", {} },
     });
     return kws.get(name) != null;
 }

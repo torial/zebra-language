@@ -4,8 +4,8 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# There are 20 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 20 = grep -c '^run "' tools/gates.sh -->
-# (CLAUDE.md explains each), plus EIGHT more in FULL — 28 total. The count in this
+# There are 21 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 21 = grep -c '^run "' tools/gates.sh -->
+# (CLAUDE.md explains each), plus EIGHT more in FULL — 29 total. The count in this
 # sentence has been wrong before: it said "seven" while twelve were registered, and
 # doc_lint cannot catch that class -- a number in prose has no referent to resolve.
 # If you add a `run` line, fix the number here; `grep -c '^run "' tools/gates.sh` is
@@ -31,7 +31,7 @@
 #         BUG-221 repro — the only gate that RUNS emitted output, and the only one
 #         that checks the DEFAULT shape is actually the split one). Catches most
 #         breakage fast.
-# FULL  = QUICK plus EIGHT more (28 total, 2026-08-11) — the heavy independent
+# FULL  = QUICK plus EIGHT more (29 total, 2026-08-13) — the heavy independent
 #         witnesses, plus the two flag gates no other tier exercises:
 #         compile_check        — compiles what the selfhost emits (`zig` as witness)
 #         compile_check-inline — the same corpus with --no-runtime-module. The split
@@ -221,6 +221,15 @@ run "reserved-words" "0 NEW"           python tools/lint_reserved_words.py --gat
 # Its coverage IS the fixture — see BUG-281, where it passed the bootstrap while
 # three further emit families were broken in it.
 run "keyword-ident"  "escaped in every" bash tools/keyword_ident_check.sh
+# And the ORACLE behind keyword-ident: `isZigKeyword` decides which words get escaped,
+# it exists twice (bootstrap + selfhost), and both copies were hand-written. The receipt
+# is not the 12 keywords they were missing — every one of those is also a Zebra keyword,
+# so nothing was reachable. It is the 3 they still carry that Zig 0.16 no longer HAS
+# (async, await, usingnamespace): the list already drifted across a version bump with
+# nothing noticing. Compares both copies against Zig's own std/zig/tokenizer.zig table,
+# found through `zig env`. The only gate here that reads the Zig INSTALLATION, so it
+# prints the version it judged against.
+run "zig-keywords"   "cover all"        python tools/lint_zig_keywords.py
 # §28e: docs/str_ownership.md is DERIVED from real emit, so a codegen change that flips
 # a borrow into an own (or the reverse) makes the shipped table wrong while it still
 # carries a "GENERATED" banner vouching for it. One emit; cheap.
