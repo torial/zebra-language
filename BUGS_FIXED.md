@@ -394,6 +394,106 @@ A gate for this was measured and declined on 2026-08-14 (see BUG-283): the obvio
 flags six legitimately-open bugs and zero real ones. That verdict stands, but the tally is
 now two misses, which is worth re-weighing if it happens again.
 
+### BUG-244: `zebra <file>` leaks a ~20 MB executable into TMPDIR on every run — ✅ FIXED 2026-08-15
+
+**Found 2026-08-03**, while Sean was freeing disk space; the machine had reached 40 GB free
+on a 953 GB volume.
+
+**Measured, not estimated.** One invocation of `zebra test/bug241_progress_io_test.zbr`
+(no `--output-dir`) leaves behind:
+
+    C:\Presolved\tmp\bug241_progress_io_test.zig            1 KB
+    C:\Presolved\tmp\bug241_progress_io_test.zig.fast.exe   20,119,552 bytes
+
+Neither is ever removed. **6,413 executables totalling 120 GB** had accumulated.
+
+**The binary is not a cache.** Its mtime changes on every run, so it is re-linked each
+time and nothing is reused — deleting it costs nothing. (Checked before proposing a fix,
+because "clean up the temp files" is a bad idea if they are a warm cache.)
+
+**Scale.** `selfhost_smoke.sh` runs 285 fixtures through this path, so a single smoke run
+leaks ~5.7 GB, and smoke is in **both** the QUICK and FULL tiers.
+
+**The heavy sweeps are NOT the culprit and need no change.** `full_sweep.sh` and
+`compile_check.sh` emit into a scoped `$OUT/w-$name` subdirectory and `rm -rf` it on every
+path including their failure paths. This is specifically the compiler's own run path
+(`zbrToZig`'s temp-dir branch, the one `runtime_module_check.sh` describes as "temp dir,
+not --output-dir").
+
+**Why it went unnoticed for so long:** a temp directory is where nobody looks, nothing
+warns, and no gate asserts. It is the same shape as BUG-241/243 in a different medium — an
+unmeasured quantity that only becomes visible when it hits a hard limit.
+
+**Fix (proposed).** Remove the emitted `.zig`/`.exe` after the child process exits on the
+run path. Two things to decide first, which is why this is filed rather than patched:
+1. **Keep artifacts on failure.** If the program crashes or the Zig build fails, the
+   emitted source is the debugging evidence — delete only on a clean exit.
+2. **An opt-out.** A `--keep-temp` flag (or honouring an existing debug flag) so anyone
+   inspecting emitted output does not have to fight the cleanup.
+
+**Interim mitigation, already landed:** `bash tools/tidy.sh` now reports the leak and
+`--clean` clears it. Note the trap that cost a first attempt: `zebra.exe` is a **Windows**
+binary reading `TMP`/`TEMP`, while Git Bash sets `TMPDIR` to the MSYS mount `/tmp`. A tool
+that reads `$TMPDIR` looks at the wrong directory and cheerfully reports ~20 MB while
+120 GB sits elsewhere.
+
+
+---
+
+**FIXED 2026-08-15, taking BOTH decisions this entry said to make first.**
+
+1. **Kept on failure.** The scratch `.zig` and binary are removed only after a CLEAN
+   exit. If the program dies, those two files ARE the debugging evidence and deleting
+   them would take away the one thing worth looking at.
+2. **`--keep-temp`** opts out entirely, and is listed in `--help` rather than being a
+   flag you have to know about.
+
+**BOTH run paths, not one.** The fast (`-fno-llvm`) path and the LLVM path each build and
+run their own executable; the LLVM branch is taken by any program with a C dependency,
+sqlite, an `extern`, or `--release`, so fixing only the fast path would have left half the
+leak in place and looked fixed on a hello-world.
+
+**Control — three legs, and two of them are the ones that stop this becoming a fix that
+eats evidence:** a successful run leaves 0 files; a FAILING program leaves 2; `--keep-temp`
+leaves 2 even on success. Gated in `tools/runtime_module_check.sh`, which already hosts
+BUG-282 for the same reason — this is CLI behaviour that no `test/*.zbr` can carry.
+
+**The gate asks the compiler WHERE it wrote instead of assuming.** This entry already
+records the trap that cost a first attempt: `zebra.exe` is a Windows binary reading
+`TMP`/`TEMP`, while Git Bash sets `TMPDIR` to the MSYS mount `/tmp`, so a check reading
+`$TMPDIR` watches the wrong directory and reports a clean ~20 MB while 120 GB sits
+elsewhere. The leg derives the directory from a `--keep-temp` run and refuses if it cannot
+find it, rather than reporting a pass it did not earn.
+
+**THE FIRST VERSION OF THIS FIX WAS WRONG, and `contract-mode` caught it.** It deleted
+the scratch build after any clean run — including when the user passed `--output-dir`,
+which is not scratch at all but the output they explicitly asked for.
+`contract_mode_check.sh` runs `--turbo --output-dir DIR` and then READS the emitted
+`.zig`, and its two `--turbo` legs went blind with "emit produced no .zig".
+
+**Which legs failed is the instructive part.** Only the ones where the program EXITS 0 —
+because `--turbo` strips the contracts, so nothing fires. The `default` and `--release`
+legs passed *only* because their contracts failed and the non-zero exit happened to take
+the keep-on-failure branch. A gate can be green for a reason unrelated to what it asserts.
+
+Cleanup is now guarded on `output_dir == ""`, and `runtime_module_check.sh` carries a
+third leg pinning that `--output-dir` output survives a successful run.
+
+**AND `release-mode` was silently living off the leak.** It runs `zebra --release rel.zbr`
+and then measures the resulting binary's SIZE — evidence the compiler now removes. It
+failed honestly ("the size check could not run, so this gate knows NOTHING about the
+optimize flag"), which is exactly the refusal its header promises instead of a vacuous
+pass. Fixed by passing `--keep-temp`: the gate deliberately inspects a scratch artifact,
+so asking for it is the honest version of the dependency it already had.
+
+**Two gates broke on this fix, and both were RIGHT to.** They were the only consumers of
+an artifact nobody had decided should persist. That is the real cost of a leak nobody
+measured: things quietly come to depend on it.
+
+**Not retroactive:** the ~28 GB already on disk at fix time stays until
+`bash tools/tidy.sh --clean` removes it. This stops the bleeding; it does not clean the
+wound.
+
 ### BUG-287: a bare sibling-method call resolves to a same-named CLASS instead of the method — ✅ FIXED 2026-08-14
 
 **FIXED 2026-08-14.** `genCall`'s class-constructor branch is now guarded by

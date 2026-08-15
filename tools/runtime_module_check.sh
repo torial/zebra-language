@@ -227,6 +227,58 @@ else
     fail "--output-dir announced a creation for a directory that already existed"
 fi
 
+# pins: BUG-244 `zebra <file>` built a ~20 MB executable into TMPDIR and never removed
+# pins: BUG-244 it -- 6,413 files / 120 GB observed. Cleanup happens on a CLEAN exit
+# pins: BUG-244 only; a failing program keeps its .zig and binary because those ARE the
+# pins: BUG-244 debugging evidence. `--keep-temp` opts out. CLI behaviour, so no
+# pins: BUG-244 test/*.zbr can carry it and smoke cannot see it.
+#
+# THE TEMP DIR IS THE WINDOWS ONE, and that trap already cost one attempt: zebra.exe is a
+# Windows binary reading TMP/TEMP, while Git Bash sets TMPDIR to the MSYS mount /tmp. A
+# check that looks at $TMPDIR watches the wrong directory and reports a clean ~20 MB while
+# 120 GB sits elsewhere. Ask the compiler where it actually wrote instead of assuming.
+wintmp=$("$ZEBRA" --keep-temp "$hw/hw.zbr" >/dev/null 2>&1; ls -dt "${TEMP:-${TMP:-/tmp}}"/hw.zig 2>/dev/null | head -1)
+if [ -n "$wintmp" ]; then
+    tdir=$(dirname "$wintmp")
+    rm -f "$tdir"/hw.zig "$tdir"/hw.zig.fast.exe "$tdir"/hw.zig.llvm.exe 2>/dev/null
+    "$ZEBRA" "$hw/hw.zbr" >/dev/null 2>&1
+    left=$(ls "$tdir"/hw.zig "$tdir"/hw.zig.*.exe 2>/dev/null | wc -l)
+    if [ "$left" -eq 0 ]; then
+        pass "a successful run leaves no scratch build in the temp dir"
+    else
+        fail "a successful run left $left scratch file(s) in $tdir"
+    fi
+
+    # ...and the OPPOSITE direction, which is what stops this becoming a fix that
+    # deletes the evidence: --keep-temp must still leave them.
+    rm -f "$tdir"/hw.zig "$tdir"/hw.zig.*.exe 2>/dev/null
+    "$ZEBRA" --keep-temp "$hw/hw.zbr" >/dev/null 2>&1
+    kept=$(ls "$tdir"/hw.zig "$tdir"/hw.zig.*.exe 2>/dev/null | wc -l)
+    if [ "$kept" -gt 0 ]; then
+        pass "--keep-temp still leaves the scratch build"
+    else
+        fail "--keep-temp deleted the scratch build anyway"
+    fi
+    rm -f "$tdir"/hw.zig "$tdir"/hw.zig.*.exe 2>/dev/null
+
+    # THIRD LEG, and it exists because the first version of the fix got this WRONG.
+    # `--output-dir` means "put the output HERE" -- it is not scratch, and deleting it
+    # destroys exactly what the user asked for. contract_mode_check caught it: it runs
+    # `--turbo --output-dir DIR` and then READS the .zig, and its two --turbo legs went
+    # blind. Note which legs failed: only the ones where the program EXITS 0, because
+    # stripped contracts do not fire. The others passed only because their contracts
+    # failed and the non-zero exit happened to keep the files.
+    od="$OUT/keepdir"; rm -rf "$od"; mkdir -p "$od"
+    "$ZEBRA" --output-dir "$od" "$hw/hw.zbr" >/dev/null 2>&1
+    if [ -f "$od/hw.zig" ]; then
+        pass "--output-dir output SURVIVES a successful run (it is not scratch)"
+    else
+        fail "--output-dir output was deleted after a successful run"
+    fi
+else
+    fail "BUG-244: could not locate the compiler's temp dir, so the leak check never ran"
+fi
+
 echo
 if [ "$FAIL" -gt 0 ]; then
     printf '\033[31mruntime-module: %d check(s) FAILED\033[0m\n' "$FAIL"

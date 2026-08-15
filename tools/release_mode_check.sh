@@ -55,7 +55,7 @@ def main()
 EOF
 
 # ---- 1. behaviour: a release build must still be CORRECT -----------------------------
-out="$(cd "$WORK" && timeout 600 "$ZEBRA" --release rel.zbr 2>&1)"
+out="$(cd "$WORK" && timeout 600 "$ZEBRA" --keep-temp --release rel.zbr 2>&1)"
 rc=$?
 if [[ $rc -ne 0 ]]; then
     say FAIL "--release build did not complete (rc=$rc)"
@@ -81,11 +81,17 @@ fi
 # `zebra --release x.zbr` writes `<temp>/x.zig.run.exe`. Deliberately NOT using
 # --output-dir, because that is a DIFFERENT emit branch (see runtime_module_check) and the
 # branch under test here is the plain one a user invokes.
+#
+# `--keep-temp` IS passed, and it has to be: since BUG-244 the compiler REMOVES its scratch
+# build after a clean run, so this gate would find nothing and correctly report that it
+# knows nothing about the optimize flag. Before that fix it was silently relying on a
+# 20 MB-per-run leak to leave its evidence lying around. Asking for what it needs is the
+# honest version of the same dependency, and it keeps the branch under test the plain one.
 ZTMP="${TMP:-${TEMP:-/tmp}}"
 command -v cygpath >/dev/null 2>&1 && ZTMP="$(cygpath -u "$ZTMP")"
 rel_exe="$ZTMP/rel.zig.run.exe"
 rm -f "$ZTMP/rel.zig.fast.exe"
-(cd "$WORK" && timeout 600 "$ZEBRA" rel.zbr >/dev/null 2>&1)
+(cd "$WORK" && timeout 600 "$ZEBRA" --keep-temp rel.zbr >/dev/null 2>&1)
 dbg_exe="$ZTMP/rel.zig.fast.exe"
 
 if [[ ! -f "$rel_exe" ]]; then
