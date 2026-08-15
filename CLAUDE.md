@@ -918,15 +918,27 @@ the full coordinate. Verified at JOBS=1 because RAM was down to 3.5 GB: smoke **
 `compile_check` **259/0/2** in both runtime shapes, `output_sweep` 322 identical,
 `full_sweep` 0 vs 337, `examples_sweep` 0 vs 14.
 
-**`divergence` is UNCONFIRMED for that change, and this is the entry that says so.** It hit
-the tier's 2700 s ceiling at JOBS=1 (it takes ~25 min at JOBS=2, so the ceiling is the
-issue, not a hang), and two standalone re-runs were killed by the harness with **zero bytes
-written and no processes left** — the same silent-kill pattern this file already records
-from 2026-08-11. It is not refusing at startup: run under a 90 s `timeout` it exits 124,
-i.e. still working. What divergence uniquely covers is a SELFHOST GAP on a file outside
-`full_sweep`'s pass baseline; the change adds a payload to three PNode variants with no
-logic change, and five other heavy witnesses passed. **Low residual risk, but not zero, and
-not measured — re-run `JOBS=2 bash tools/divergence_check.sh --gate` when convenient.**
+**`divergence` CONFIRMED CLEAN 2026-08-14, after a detour worth recording.** Final result:
+**0 selfhost gaps**, 490/490 files scored, bootstrap gaps steady at **48** — unchanged from
+before BUG-249, which is what a front-end-only change that adds no corpus file should do.
+
+Getting there took four failed attempts and one wrong diagnosis. It hit the tier's 2700 s
+ceiling at JOBS=1, and I then read `ps -W | grep -c zebra-language` returning 0 as "the
+background runs are dying" — **that probe returns 0 whether or not a worker is running**,
+verified afterwards with a positive control. One "dead" run had in fact been alive for
+three hours and died only because I EDITED `divergence_check.sh` WHILE IT WAS EXECUTING
+(bash re-reads a script as it runs). The 0-byte logs that made runs look dead have a duller
+cause: divergence buffers its whole report to the end, so a healthy long run and a corpse
+look identical from outside.
+
+The eventual clean run was a single uninterrupted background pass. **Background runs were
+never the problem.** Two lessons, both already rules here and both applied too late: prove
+an instrument can SEE before reading its zero as an answer, and never edit a running
+script.
+
+`divergence_check.sh` gained `--results` / `--max` / `--classify` out of that detour, which
+make the heaviest gate resumable — worth having on the 2026-08-11 receipt alone (two
+harness kills, every heavy witness lost), independent of the wrong reason I first gave.
 
 **BUG-282 / BUG-284 / BUG-285 / BUG-286 / BUG-287 landed 2026-08-14** — five bugs, four
 commits. FULL tier at JOBS=2 for the last of them: every gate PASS except `output_sweep`,
