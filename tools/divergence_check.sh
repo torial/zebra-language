@@ -23,6 +23,13 @@
 #   bash tools/divergence_check.sh --only json    # names containing 'json'
 #   bash tools/divergence_check.sh --gate         # exit 1 if any SELFHOST gap (regression)
 #   JOBS=4 bash tools/divergence_check.sh         # parallelism (default 4)
+#
+#   RESUMABLE (for a machine or harness that cannot hold a ~25 min run):
+#     bash tools/divergence_check.sh --gate --results R.txt   # run a pass, append, resume
+#     ...re-run until it reports "0 file(s) this pass"...
+#     bash tools/divergence_check.sh --gate --results R.txt --classify   # score it
+#   --max N sizes a pass. --classify skips corpus enumeration (~2 min here) and scores
+#   what is already on disk.
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${TMPDIR:-/tmp}/zbr-divergence"
@@ -59,25 +66,101 @@ if [ "${1:-}" = "--worker" ]; then
   echo "$name|$b|$s"; exit 0
 fi
 
-ONLY=""; GATE=0
+ONLY=""; GATE=0; RESULTS=""; MAX=0; CLASSIFY=0
 while [ $# -gt 0 ]; do case "$1" in
   --only) ONLY="${2:-}"; shift 2;;
   --gate) GATE=1; shift;;   # exit non-zero if any SELFHOST gap exists (regression signal)
+  # RESUMABLE MODE. `--results FILE` accumulates one `name|boot|self` line per file and
+  # SKIPS anything already recorded, so an interrupted run loses only the file it was on.
+  # `--max N` stops after N fresh files, sizing a pass to whatever window is available.
+  # Re-invoke until it reports 0 this pass; it then classifies over the complete set.
+  #
+  # This costs almost nothing to add because the per-file unit ALREADY existed and was
+  # already stateless: `--worker <file>` emits with both compilers and prints one line.
+  # The gate was atomic only because the driver held every result in a shell variable.
+  #
+  # WHY IT MATTERS BEYOND ONE BAD AFTERNOON: this is the heaviest gate here (~25 min at
+  # JOBS=2), and CLAUDE.md already records `gates.sh --full` being killed by the harness
+  # TWICE on 2026-08-11, losing every heavy witness. All-or-nothing turns any
+  # interruption into a total loss — a property of the tool, not of the machine it runs on.
+  --results) RESULTS="${2:-}"; shift 2;;
+  --max) MAX="${2:-0}"; shift 2;;
+  # score an existing results file without touching the corpus
+  --classify) CLASSIFY=1; shift;;
   *) shift;;
 esac; done
 JOBS="${JOBS:-4}"; mkdir -p "$OUT"
 
+# --classify: score an existing --results file WITHOUT re-enumerating the corpus.
+# Enumeration plus the per-file skip loop costs ~2 minutes here (490 files, and every
+# `basename`/`grep` is a process spawn on Windows), which is fine once per pass and
+# absurd when the answer is already on disk. It also makes the refusal below testable
+# in under a second instead of never.
+if [ -n "$RESULTS" ] && [ "$CLASSIFY" = 1 ]; then
+  [ -f "$RESULTS" ] || { echo "divergence: REFUSING — no results file at $RESULTS" >&2; exit 2; }
+  files=""
+  nqueued=0
+  skip_scan=1
+fi
+
 # TRACKED files only; see tools/corpus_ls.sh for why a glob is wrong here.
+if [ "${skip_scan:-0}" != 1 ]; then
 files=$(bash "$REPO/tools/corpus_ls.sh" --abs test examples)
-worklist=""
+fi
+worklist=""; nqueued=0
 for f in $files; do
   name=$(basename "$f" .zbr)
   [ -n "$ONLY" ] && { case "$name" in *"$ONLY"*) ;; *) continue;; esac; }
+  # Resume: a name already recorded is not re-run. Anchored on the field separator so
+  # `bug28` cannot match `bug283`.
+  if [ -n "$RESULTS" ] && [ -f "$RESULTS" ] && grep -q "^$name|" "$RESULTS"; then continue; fi
+  if [ "$MAX" -gt 0 ] && [ "$nqueued" -ge "$MAX" ]; then break; fi
   worklist="$worklist$f"$'\n'
+  nqueued=$((nqueued + 1))
 done
 
-results=$(printf '%s' "$worklist" | grep -v '^$' \
-          | xargs -P"$JOBS" -I{} bash "$0" --worker {})
+if [ -n "$RESULTS" ]; then
+  touch "$RESULTS"
+  if [ "$nqueued" -gt 0 ]; then
+    # `tee -a` so a KILL mid-pass still leaves every COMPLETED line on disk. Buffering
+    # the pass and writing at the end would reproduce the very failure this flag fixes.
+    printf '%s' "$worklist" | grep -v '^$' \
+      | xargs -P"$JOBS" -I{} bash "$0" --worker {} | tee -a "$RESULTS" >/dev/null
+  fi
+  total_seen=$(grep -c '|' "$RESULTS" 2>/dev/null || echo 0)
+  echo "── resumable: $nqueued file(s) this pass; $total_seen recorded in $RESULTS"
+  # Classify ONLY when nothing fresh was queued, i.e. the corpus is fully recorded.
+  # A verdict over a PARTIAL set would be the "0 findings because nothing ran" failure
+  # this repo has receipts for, and --gate would print a green it has not earned.
+  if [ "$nqueued" -gt 0 ]; then
+    echo "   more remain — re-run the same command until it reports 0 file(s) this pass."
+    exit 0
+  fi
+  echo "   corpus complete; classifying."
+  # A killed pass ORPHANS its `bash --worker` children, and they keep appending here
+  # after the driver is gone. Observed 2026-08-14: the file grew 640 -> 657 lines in 20
+  # seconds with the driver dead, and `kill_orphans.sh` does not help because it targets
+  # compiler processes, not the worker shells. So a resumed run can queue a file an
+  # orphan is still working on, and BOTH write a row.
+  #
+  # Duplicates that AGREE are harmless and are collapsed. Duplicates that DISAGREE mean
+  # the measurement was not deterministic for that file, and picking either row would be
+  # inventing a verdict -- so REFUSE. A gate that reports a green it has not earned is
+  # the one outcome this repo will not tolerate, and every other tool here that can lose
+  # its footing (grammar_export, hazard_lint, output_sweep) refuses the same way.
+  dis=$(sort -u "$RESULTS" | grep '|' | cut -d'|' -f1 | sort | uniq -d)
+  if [ -n "$dis" ]; then
+    echo "divergence: REFUSING — these file(s) recorded CONTRADICTORY results across" >&2
+    echo "            passes, so no verdict over this results file is trustworthy:" >&2
+    printf '              %s\n' $dis >&2
+    echo "            Delete $RESULTS and re-run, ideally without interruption." >&2
+    exit 2
+  fi
+  results=$(sort -u "$RESULTS")
+else
+  results=$(printf '%s' "$worklist" | grep -v '^$' \
+            | xargs -P"$JOBS" -I{} bash "$0" --worker {})
+fi
 
 # classify
 self_gap=""; boot_gap=""; agree_fail=""; multi_selffail=""
