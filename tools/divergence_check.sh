@@ -83,6 +83,22 @@ while [ $# -gt 0 ]; do case "$1" in
   # JOBS=2), and CLAUDE.md already records `gates.sh --full` being killed by the harness
   # TWICE on 2026-08-11, losing every heavy witness. All-or-nothing turns any
   # interruption into a total loss — a property of the tool, not of the machine it runs on.
+  #
+  # CORRECTION 2026-08-14, and it matters because it was my stated reason for building
+  # this. I claimed background runs here "die silently within ~2 minutes", from a
+  # liveness probe (`ps -W | grep -c zebra-language`) that returns 0 WHETHER OR NOT a
+  # worker is running — verified by starting a known-live worker and watching it still
+  # print 0. A broken probe pointing at the reassuring answer, exactly as CLAUDE.md's
+  # instrument rules predict.
+  #
+  # What actually happened: one run survived THREE HOURS and died only when I EDITED
+  # THIS FILE while it was executing — bash re-reads a script as it runs, so the edit
+  # corrupted the live instance (`syntax error near unexpected token` from a flag that
+  # did not exist when it started). Some of the "harness kills" were plausibly me.
+  #
+  # The feature still earns its place on the 2026-08-11 receipt above and on the
+  # all-or-nothing argument. But do NOT cite "runs die in 2 minutes here" — that was
+  # measured with an instrument that could not see.
   --results) RESULTS="${2:-}"; shift 2;;
   --max) MAX="${2:-0}"; shift 2;;
   # score an existing results file without touching the corpus
