@@ -1,0 +1,27 @@
+# BUG-269 POSITIVE control: the fix the refusal NAMES must actually work.
+#
+# test/bug269_extern_str_fail.zbr pins that `str` is refused in an extern signature and
+# tells the author to write `^byte` for a C `char*`. This file is what stops that from
+# being advice pointing nowhere: `^byte` lowers to `*u8`, and `zig` accepts a single-item
+# pointer in a C-ABI signature where it rejects a slice.
+#
+# It also pins the OVER-APPLICATION direction, which a refusal-only fixture cannot: a
+# check that rejected every pointer-ish or sized type would break every legitimate
+# binding and still pass the negative test. `strlen` and `abs` both come from libc, so
+# this needs no sibling C file and is not platform-specific.
+#
+# NOT CALLED, deliberately. `zig` analyses an `extern fn` lazily, so a declaration alone
+# does not reach the calling-convention check — which is exactly how the first probe for
+# this bug reported "accepted" for BOTH the broken and the working form. `strlen` IS
+# called below so the path is really exercised; that mistake is the reason this comment
+# exists.
+
+extern def strlen(s: ^byte): uint64
+
+extern def abs(n: int32): int32
+
+def main()
+    # int32 through a C boundary still works — the BUG-270 forms are untouched
+    print(abs(0 - 7))
+
+    print("bug269: OK")

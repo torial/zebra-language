@@ -1,0 +1,27 @@
+# BUG-269 NEGATIVE control: `str` in an `extern` signature must be REFUSED at the
+# declaration, not emitted and left for `zig` to reject against generated code.
+#
+# Zebra's `str` is a SLICE — a pointer AND a length — and C has no such type. So
+# `extern def f(): str` emitted `extern fn f() []const u8;` and the user eventually saw
+#
+#   error: return type '[]const u8' not allowed in function with calling convention
+#          'x86_64_win'
+#
+# about a line they never wrote, in a file they never opened, with no Zebra source
+# location. Same family as BUG-270's `int`, and refused the same way and in the same
+# place: at the declaration, in the PARSER, naming the reason AND the fix.
+#
+# REFUSED RATHER THAN SILENTLY REMAPPED to `[*:0]const u8`. A remap would make the
+# declaration legal and then hand the caller a null-terminated pointer while the type
+# system still called it a `str` — the silent-corruption shape BUG-270 exists to
+# prevent, and strictly worse than the compile error it would replace.
+#
+# The positive half is test/bug269_extern_cstr_test.zbr: `^byte` lowers to `*u8`, which
+# `zig` ACCEPTS in a C-ABI signature. That pairing matters — a refusal whose suggested
+# fix does not itself work is advice pointing nowhere, and only a positive fixture
+# catches that.
+
+extern def c_version(): str
+
+def main()
+    print("unreachable — the declaration above must be refused")

@@ -910,6 +910,28 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
+**BUG-269 landed 2026-08-15** — `str` in an `extern` signature is REFUSED at the
+declaration instead of emitting `[]const u8` and letting `zig` reject it as an illegal
+C-ABI return type. Same family, same place and same shape as BUG-270's `int` check.
+FULL tier **29/29 in one invocation**: smoke **335/335**, `compile_check` **260/0/2** in
+both runtime shapes, `output_sweep` 322 identical, `full_sweep` 0 vs 337, `divergence`
+**0 selfhost gaps**.
+
+**Two method notes from it.** First, the probe lied: declaring `extern def f(): str` and
+compiling reported that `zig` ACCEPTED it — for the broken form AND the working one —
+because `zig` analyses an `extern fn` LAZILY and a declaration that is never CALLED never
+reaches the calling-convention check. Adding a call reproduced the ticket verbatim.
+Second, the fixture is a PAIR on purpose: the refusal names `^byte` as the fix, and a
+second fixture pins that `^byte` really lowers to `*u8` and is accepted where the slice is
+not. **A refusal whose suggested fix does not itself work is advice pointing nowhere, and
+only a positive fixture catches that.**
+
+**And BUG-270 was found already FIXED, nine days stale in the open ledger** (`e8c68e7`,
+two passing fixtures). Second instance in two days after BUG-283, same cause: the
+resolved-entry lint is heading-only, so an entry whose heading never gains a FIXED marker
+is invisible to it. The cost is now concrete rather than theoretical — I picked BUG-270
+to work on and discovered the compiler already refused the case.
+
 **BUG-249 landed 2026-08-14** — `this`, `nil` and `result` carry real source positions, so
 a diagnostic anchored on one no longer reports `0:0`. The selfhost now reports
 `bug108_this_outside_class_test.zbr:6:13`, byte-identical to what the BOOTSTRAP reports
@@ -1165,7 +1187,7 @@ the table below stands unchanged.
 **Previous sweep 2026-08-02** — 18/18, before those two gates existed.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
-**337** while the tracked corpus is **469** <!-- doc-gen: 469 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+**337** while the tracked corpus is **471** <!-- doc-gen: 471 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

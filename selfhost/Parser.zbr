@@ -2072,6 +2072,35 @@ class Parser
                 if ext_bad == "uint"
                     ext_small = "uint32"
                 raise .errorAt("`" + ext_bad + "` is ambiguous in an `extern` signature (" + ext_where + " of `" + name + "`): Zebra's `" + ext_bad + "` is 64-bit, C's `int` is 32-bit. Write `" + ext_small + "` for C `int`, or `" + ext_sized + "` for C `long long`/`int64_t`.")
+            # BUG-269, the same family as the `int` check above and refused the same way.
+            # Zebra's `str` is a SLICE (pointer + length), which has no C representation
+            # at all — so `extern def f(): str` emitted `extern fn f() []const u8` and
+            # `zig` answered `return type '[]const u8' not allowed in function with
+            # calling convention 'x86_64_win'`, against generated code carrying no Zebra
+            # source location.
+            #
+            # REFUSED rather than silently remapped to `[*:0]const u8`. A remap would
+            # make the DECLARATION legal and then hand the caller a null-terminated
+            # pointer while the type system still called it a `str`, which is the
+            # silent-corruption shape BUG-270 exists to prevent — worse than the compile
+            # error it replaces.
+            #
+            # `^byte` is the fix and it is a REAL one, verified rather than assumed:
+            # it lowers to `*u8`, and `zig` accepts that in a C-ABI signature where it
+            # rejects the slice. Span it back to a Zebra `str` with
+            # `zig"std.mem.span(...)"` at the call site.
+            var ext_str: str = ""
+            var ext_str_where: str = ""
+            if return_type == "str" or return_type == "String"
+                ext_str = return_type
+                ext_str_where = "return type"
+            for sp in params
+                if ext_str == ""
+                    if sp.type_name == "str" or sp.type_name == "String"
+                        ext_str = sp.type_name
+                        ext_str_where = "parameter `" + sp.name + "`"
+            if ext_str != ""
+                raise .errorAt("`" + ext_str + "` is not a C-ABI type in an `extern` signature (" + ext_str_where + " of `" + name + "`): Zebra's `" + ext_str + "` is a slice (pointer + length) and C has no such type. Write `^byte` for a C `char*`, then `zig\"std.mem.span(...)\"` to read it back as a str.")
         return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export, _dl, _dc, is_extern))
 
     # -- Block and statements --------------------------------------------------

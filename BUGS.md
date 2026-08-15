@@ -36,48 +36,6 @@ infer) would make the deferral fully usable. Worked around in zebra-sprocket by
 routing through the known `query()` signature with a `"@segments "` SQL-prefix
 marker, which keeps the known `List(SqliteRow)` return type.
 
-### BUG-270: `extern def` returning `int` lowers to `i64` against C's `c_int` -- negative returns silently corrupt
-
-**Found 2026-08-06** in zebra-sprocket (`probe_extern3.zbr` / `probe_extern4.zbr`).
-
-```
-extern def sqlite3_libversion_number(): int
-```
-
-```
-extern fn sqlite3_libversion_number() i64;
-```
-
-The C function returns `c_int`. On x86-64 this LINKS and WORKS for non-negative
-values (32-bit register writes zero-extend), which is what makes it dangerous:
-`sqlite3_libversion_number()` returned 3053004 correctly, so nothing looks
-wrong -- but a C function returning `-1` arrives as `4294967295`. Every sqlite
-API that signals "no answer" with a negative return would misreport through
-this path. The extern lowering needs a C-ABI integer type (`c_int`) rather than
-Zebra's native `i64`, or a distinct declared type for C ints.
-
-### BUG-269: `extern def` returning `str` lowers to `[]const u8`, which is not a legal C-ABI return type
-
-**Found 2026-08-06** in zebra-sprocket (`probe_extern2.zbr`), first call through
-`extern` into the vendored sqlite.
-
-```
-extern def sqlite3_libversion(): str
-```
-
-```
-extern fn sqlite3_libversion() []const u8;
-```
-
-```
-error: return type '[]const u8' not allowed in function with calling convention 'x86_64_win'
-```
-
-A C `const char*` is `[*:0]const u8` in Zig; the extern lowering emits the
-native slice type instead. Declaration-only externs parse and resolve fine
-(the gap is exactly at the ABI boundary), so BUG-258's fix is confirmed
-working -- this is the next layer down.
-
 ### BUG-281: SEVEN emit families print Zig keywords bare — SIX closed, G open (bootstrap-only)
 <!-- bug-open-ok: six of seven families are closed and pinned by test/bug280_keyword_idents.zbr; G is bootstrap-only and the selfhost is immune to it for free -->
 

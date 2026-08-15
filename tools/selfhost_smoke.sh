@@ -1350,6 +1350,12 @@ smoke_run     test/bug273_assert_diagnostic_test.zbr "bug273: OK"
 # be refused with a message naming both fixes.
 smoke_run     test/bug270_extern_int_ambiguity_test.zbr "bug270: OK"
 smoke_tc_fail test/bug270_extern_int_fail.zbr "ambiguous in an \`extern\` signature"
+# BUG-269, the same family: `str` is a SLICE and has no C representation, so it is
+# refused at the declaration too. The PAIR is the point — the _fail fixture pins the
+# refusal, the _test fixture pins that `^byte`, the fix the message names, actually
+# works. A refusal whose suggested fix does not compile is advice pointing nowhere.
+smoke_tc_fail test/bug269_extern_str_fail.zbr "is not a C-ABI type in an \`extern\` signature"
+smoke_run     test/bug269_extern_cstr_test.zbr "bug269: OK"
 
 # BUG-275: a `?` inside an index / list literal / array literal must mark the enclosing
 # function throws. exprHasTry missed those containers, so the function stayed un-marked

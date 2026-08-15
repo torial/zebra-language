@@ -303,6 +303,97 @@ first check anchored on a `nil` node is what will actually confirm it.
 **Related and still open: BUG-121** (TC diagnostics report col 0) — a different cause,
 in span resolution rather than in the parser.
 
+### BUG-269: `extern def` returning `str` lowers to `[]const u8`, which is not a legal C-ABI return type — ✅ FIXED 2026-08-15
+
+**Found 2026-08-06** in zebra-sprocket (`probe_extern2.zbr`), first call through
+`extern` into the vendored sqlite.
+
+```
+extern def sqlite3_libversion(): str
+```
+
+```
+extern fn sqlite3_libversion() []const u8;
+```
+
+```
+error: return type '[]const u8' not allowed in function with calling convention 'x86_64_win'
+```
+
+A C `const char*` is `[*:0]const u8` in Zig; the extern lowering emits the
+native slice type instead. Declaration-only externs parse and resolve fine
+(the gap is exactly at the ABI boundary), so BUG-258's fix is confirmed
+working -- this is the next layer down.
+
+**FIXED 2026-08-15 — REFUSED at the declaration, not remapped.** Zebra's `str` is a slice
+(pointer + length) and C has no such type, so the parser now rejects it in an extern
+return or parameter, naming the reason and the fix:
+
+```
+error: `str` is not a C-ABI type in an `extern` signature (return type of `c_version`):
+       Zebra's `str` is a slice (pointer + length) and C has no such type. Write `^byte`
+       for a C `char*`, then `zig"std.mem.span(...)"` to read it back as a str.
+```
+
+Same family, same place and same shape as BUG-270's `int` check — at the DECLARATION, in
+the parser, because that is where the author wrote it.
+
+**Not silently remapped to `[*:0]const u8`, and that was the real decision.** A remap
+would make the declaration legal and then hand the caller a null-terminated pointer while
+the type system still called it a `str` — the silent-corruption shape BUG-270 exists to
+prevent, and strictly worse than the compile error it replaces.
+
+**THE PROBE LIED FIRST, and the reason is worth keeping.** The obvious reproducer —
+declare `extern def cfn(): str` and compile — reported that `zig` ACCEPTED it, for the
+broken form AND the working one. `zig` analyses an `extern fn` LAZILY, so a declaration
+that is never CALLED never reaches the calling-convention check. Adding a call reproduced
+the ticket's error verbatim. A probe that does not reach the failing path answers with
+the reassuring result.
+
+**Control is a PAIR, and the second half is the one that makes the refusal honest:**
+`bug269_extern_str_fail.zbr` pins the refusal (return AND parameter), and
+`bug269_extern_cstr_test.zbr` pins that `^byte` — the fix the message names — really
+lowers to `*u8`, is accepted by `zig` in a C-ABI signature, and that ordinary `int32`
+externs still compile and run. A refusal whose suggested fix does not work is advice
+pointing nowhere, and only the positive fixture catches that.
+
+### BUG-270: `extern def` returning `int` lowers to `i64` against C's `c_int` -- negative returns silently corrupt — ✅ FIXED 2026-08-06 (`e8c68e7`), ledger corrected 2026-08-15
+
+**Found 2026-08-06** in zebra-sprocket (`probe_extern3.zbr` / `probe_extern4.zbr`).
+
+```
+extern def sqlite3_libversion_number(): int
+```
+
+```
+extern fn sqlite3_libversion_number() i64;
+```
+
+The C function returns `c_int`. On x86-64 this LINKS and WORKS for non-negative
+values (32-bit register writes zero-extend), which is what makes it dangerous:
+`sqlite3_libversion_number()` returned 3053004 correctly, so nothing looks
+wrong -- but a C function returning `-1` arrives as `4294967295`. Every sqlite
+API that signals "no answer" with a negative return would misreport through
+this path. The extern lowering needs a C-ABI integer type (`c_int`) rather than
+Zebra's native `i64`, or a distinct declared type for C ints.
+
+**THIS ENTRY WAS ALREADY FIXED AND SAT IN THE OPEN LEDGER FOR NINE DAYS.** `e8c68e7`
+landed the refusal — `int`/`uint` in an extern signature are rejected with a message
+naming `int32` for C `int` and `int64` for C `long long` — with two registered fixtures
+(`bug270_extern_int_fail.zbr`, `bug270_extern_int_ambiguity_test.zbr`) passing ever since.
+Found 2026-08-15 by picking BUG-270 up to work on it and discovering the compiler already
+refused the case.
+
+**Second instance of the same ledger failure in two days** (BUG-283 was the first), and
+the same cause: `lint_bug_numbers`' resolved-entry leg is HEADING-ONLY by design, so an
+entry whose heading never gains a FIXED marker is invisible to it. The measured cost is
+now concrete rather than theoretical — BUGS.md over-reported the open set, and someone
+picked a fixed bug to work on.
+
+A gate for this was measured and declined on 2026-08-14 (see BUG-283): the obvious oracle
+flags six legitimately-open bugs and zero real ones. That verdict stands, but the tally is
+now two misses, which is worth re-weighing if it happens again.
+
 ### BUG-287: a bare sibling-method call resolves to a same-named CLASS instead of the method — ✅ FIXED 2026-08-14
 
 **FIXED 2026-08-14.** `genCall`'s class-constructor branch is now guarded by
