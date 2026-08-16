@@ -996,6 +996,26 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
+**BUG-288 BATCHES 1 AND 2 LANDED 2026-08-16** — literals, then compound expressions,
+carry real source positions. `diag-columns` **18 → 14**, and the candidate set grew
+**49 → 51**. QUICK **22/22 in one invocation** (smoke **337/337**, round-trip
+byte-identical), `output_sweep` 356 files behaviour identical, `compile_check`
+**260/0/2**.
+
+**The method note is worth more than the numbers here.** Batch 2 touched 25 emit paths
+and **not one of the 14 baseline entries is expression-anchored** — so it would have
+landed with the gate reading the same number, indistinguishable from having done nothing.
+Two fixtures were therefore written and registered BEFORE the fix, their broken
+coordinates recorded (10:0, 11:0), and the gate was watched going **RED** on them first.
+That is the `boundary_check` discipline — intent before observation — applied to a
+gate that already existed. **When a change's witness cannot see it, extend the witness
+first and watch it fail; a batch verified only by gates that were already green is
+verified by nothing.**
+
+Batch 3 (21 statement kinds carrying a line but **no column**) holds **all 14** remaining
+entries; see BUG-288 for the per-entry breakdown. It is the remainder of the value, not
+the leftovers.
+
 **BOTH HEAVY BASELINES RE-LOCKED 2026-08-16, and this closes a gap this file had been
 flagging against itself.** `full_sweep` **337 → 374** (+37 insertions, **zero deletions** —
 purely additive, so nothing dropped out of the pass set and it cannot be hiding a
