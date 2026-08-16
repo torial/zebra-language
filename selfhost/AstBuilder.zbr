@@ -323,8 +323,8 @@ class ASTBuilder
                 const type_ref = .parseTypeRef(pv.type_name)
                 if pv.init_expr.len > 0
                     const initval = .buildExpr(pv.init_expr.at(0))?
-                    return Decl.var_(DeclVar(Span(pv.line, 0, pv.line, 0), zmods(), pv.name, type_ref, initval, pv.is_const))
-                return Decl.var_(DeclVar(Span(pv.line, 0, pv.line, 0), zmods(), pv.name, type_ref, nil, pv.is_const))
+                    return Decl.var_(DeclVar(Span(pv.line, pv.col, pv.line, pv.col), zmods(), pv.name, type_ref, initval, pv.is_const))
+                return Decl.var_(DeclVar(Span(pv.line, pv.col, pv.line, pv.col), zmods(), pv.name, type_ref, nil, pv.is_const))
             else
                 raise "buildTopDecl: unexpected PNode variant"
 
@@ -602,8 +602,8 @@ class ASTBuilder
             on PNode.stmt_return as pret
                 if pret.value.len > 0
                     const rval = .buildExpr(pret.value.at(0))?
-                    return Stmt.return_(StmtReturn(Span(pret.line, 0, pret.line, 0), rval))
-                return Stmt.return_(StmtReturn(Span(pret.line, 0, pret.line, 0), nil))
+                    return Stmt.return_(StmtReturn(Span(pret.line, pret.col, pret.line, pret.col), rval))
+                return Stmt.return_(StmtReturn(Span(pret.line, pret.col, pret.line, pret.col), nil))
 
             on PNode.stmt_if as pif
                 const cond_expr = .buildExpr(pif.cond.at(0))?
@@ -652,8 +652,8 @@ class ASTBuilder
                 const type_ref = .parseTypeRef(pv.type_name)
                 if pv.init_expr.len > 0
                     const initval = .buildExpr(pv.init_expr.at(0))?
-                    return Stmt.var_(DeclVar(Span(pv.line, 0, pv.line, 0), zmods(), pv.name, type_ref, initval, pv.is_const))
-                return Stmt.var_(DeclVar(Span(pv.line, 0, pv.line, 0), zmods(), pv.name, type_ref, nil, pv.is_const))
+                    return Stmt.var_(DeclVar(Span(pv.line, pv.col, pv.line, pv.col), zmods(), pv.name, type_ref, initval, pv.is_const))
+                return Stmt.var_(DeclVar(Span(pv.line, pv.col, pv.line, pv.col), zmods(), pv.name, type_ref, nil, pv.is_const))
 
             on PNode.stmt_assign as pa
                 const target_expr = .buildExpr(pa.target.at(0))?
@@ -742,7 +742,7 @@ class ASTBuilder
             on PNode.stmt_in as pi
                 const in_expr = .buildExpr(pi.expr.at(0))?
                 const in_body: List(Stmt) = .buildStmts(pi.stmts)?
-                return Stmt.in_scope(StmtIn(Span(pi.line, 0, pi.line, 0), in_expr, in_body))
+                return Stmt.in_scope(StmtIn(Span(pi.line, pi.col, pi.line, pi.col), in_expr, in_body))
 
             on PNode.stmt_destruct as pd
                 const init_expr = .buildExpr(pd.init_expr.at(0))?

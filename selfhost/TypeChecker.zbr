@@ -3277,7 +3277,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             if is_compound
                 var lhs_t: Type_ = inferExpr(sasn.target, ctx)
                 if isArithmeticMistake(lhs_t)
-                    ctx.addErr(ctx.file, sasn.span.line, sasn.span.col,
+                    ctx.addErr(ctx.file, anchorLine(sasn.target, sasn.span.line), anchorCol(sasn.target, sasn.span.col),
                                "compound assignment requires numeric type, got '"
                                + typeTag(lhs_t) + "'")
         on Stmt.var_ as dv
@@ -3362,7 +3362,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 # zero-element tuple type is an inference artifact, not a real
                 # arity to measure against.
                 if tupt.len > 0 and tupt.len != sds.names.len
-                    ctx.addErr(ctx.file, sds.span.line, sds.span.col, "destructuring expects " + sds.names.len.toString() + " names but tuple has " + tupt.len.toString() + " elements")
+                    ctx.addErr(ctx.file, anchorLine(sds.init_expr, sds.span.line), anchorCol(sds.init_expr, sds.span.col), "destructuring expects " + sds.names.len.toString() + " names but tuple has " + tupt.len.toString() + " elements")
                 var tdi: int = 0
                 for nm in sds.names
                     var tde: Type_? = tupt.at(tdi)
@@ -3380,13 +3380,13 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 # selfhost inference came up short. See isConcretePrimitive for
                 # why this fires on fewer types than the bootstrap's version.
                 if not sds.is_struct and isConcretePrimitive(destruct_recv_t)
-                    ctx.addErr(ctx.file, sds.span.line, sds.span.col, "destructuring requires a tuple, got '" + typeTag(destruct_recv_t) + "'")
+                    ctx.addErr(ctx.file, anchorLine(sds.init_expr, sds.span.line), anchorCol(sds.init_expr, sds.span.col), "destructuring requires a tuple, got '" + typeTag(destruct_recv_t) + "'")
                 # And the mirror: `var {a, b} = x` where x is not a class/struct.
                 # Ported from src/TypeChecker.zig:2064. Individual field names are
                 # deliberately NOT validated here — the bootstrap leaves that to
                 # Zig, and so does this.
                 if sds.is_struct and isConcretePrimitive(destruct_recv_t)
-                    ctx.addErr(ctx.file, sds.span.line, sds.span.col, "struct destructuring requires a class or struct, got '" + typeTag(destruct_recv_t) + "'")
+                    ctx.addErr(ctx.file, anchorLine(sds.init_expr, sds.span.line), anchorCol(sds.init_expr, sds.span.col), "struct destructuring requires a class or struct, got '" + typeTag(destruct_recv_t) + "'")
                 # Struct destructuring: var {x, y} = struct_expr
                 var destruct_class: str = ""
                 if destruct_recv_t is Type_.named as dtn
@@ -3780,6 +3780,51 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
             checkExpr(arg.value, expected, file, aline, acol, ctx)
         idx += 1
 
+# BUG-288 batch 3: anchor a diagnostic on the EXPRESSION it is about, when there is one.
+#
+# A statement's span carries a line and (for most kinds) no column, so `sds.span.col` and
+# friends reported 0. Where the diagnostic concerns a sub-expression -- the value being
+# destructured, the target of a compound assignment -- that expression carries a real
+# position after batches 1 and 2, and it is also the more useful place to point: for
+# "destructuring requires a tuple, got 'int'" the interesting token is the value, not the
+# `var` keyword. Falls back to the statement, so this is never worse than before.
+def anchorLine(e: Expr, fb_line: int): int
+    const el: int = exprSpanLine(e)
+    if el > 0
+        return el
+    return fb_line
+
+def anchorCol(e: Expr, fb_col: int): int
+    const el: int = exprSpanCol(e)
+    if exprSpanLine(e) > 0
+        return el
+    return fb_col
+
+# BUG-288 batch 3: where a var-declaration diagnostic should POINT.
+#
+# These used `dv.span`, and AstBuilder builds a statement-var's span as
+# `Span(pv.line, 0, pv.line, 0)` — a hardcoded 0, because PVar has no column field.
+# So `var x: int = true` reported `2:0`, pointing at the indentation.
+#
+# The fix is not to give PVar a column. It is to anchor on the INIT EXPRESSION, which
+# after batches 1 and 2 carries a real position, and which is the thing the diagnostic
+# is actually about: for "expected int, found bool" the interesting token is `true`, not
+# the name `x`. Falls back to the declaration's own span when the expression has none,
+# so this is never worse than before — the same shape checkExpr uses.
+def varDiagLine(dv: DeclVar): int
+    if dv.init_expr != nil
+        const el: int = exprSpanLine(dv.init_expr!)
+        if el > 0
+            return el
+    return dv.span.line
+
+def varDiagCol(dv: DeclVar): int
+    if dv.init_expr != nil
+        const el: int = exprSpanLine(dv.init_expr!)
+        if el > 0
+            return exprSpanCol(dv.init_expr!)
+    return dv.span.col
+
 def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     if dv.type_ == nil
         return
@@ -3793,7 +3838,7 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
             if cv_inferred is Type_.named as inf_class
                 if dec_class != inf_class
                     if not ctx.classConformsToAny(inf_class, dec_class)
-                        ctx.addErr(file, dv.span.line, dv.span.col, "type mismatch: expected " + dec_class + ", found " + inf_class + " (which does not implement " + dec_class + ")")
+                        ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + dec_class + ", found " + inf_class + " (which does not implement " + dec_class + ")")
         return
     if not isPrimitive(declared)
         return
@@ -3803,12 +3848,12 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     # Strict mode (typecheck-merge only): flag inference gaps — TC should have
     # known the init-expr type for a primitive-annotated var but didn't.
     if ctx.strict and inferred is Type_.unresolved
-        ctx.addErr(file, dv.span.line, dv.span.col, "unresolved type for init expr of '" + dv.name + "' (TC gap)")
+        ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "unresolved type for init expr of '" + dv.name + "' (TC gap)")
         return
     if not isPrimitive(inferred)
         return
     if not typesCompatible(declared, inferred)
-        ctx.addErr(file, dv.span.line, dv.span.col, "type mismatch: expected " + typeTag(declared) + ", found " + typeTag(inferred))
+        ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + typeTag(declared) + ", found " + typeTag(inferred))
 
 def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
     for s in stmts
@@ -3829,7 +3874,7 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                     if dv.type_ as dv_tr
                         if dv_tr is TypeRef.generic as dv_gen
                             if dv_gen.name == "List" or dv_gen.name == "HashMap"
-                                ctx.addErr(file, dv.span.line, dv.span.col, "'" + dv_gen.name + "(...)' requires explicit initialization; use 'var " + dv.name + " = " + dv_gen.name + "()()'")
+                                ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "'" + dv_gen.name + "(...)' requires explicit initialization; use 'var " + dv.name + " = " + dv_gen.name + "()()'")
                 checkVarDecl(dv, file, ctx)
                 # Check arg counts + arg types over the whole init expression
                 # (checkCallsInExpr reaches nested calls; audit #3).

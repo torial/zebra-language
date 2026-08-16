@@ -3,16 +3,3 @@
 # at all). This is DEBT: each is a real diagnostic a user can hit
 # that cannot say where. Shrink this list; it should never grow.
 bug078_double_box_test	0:0	'^Payload' is invalid â€” a class is already a reference; drop the '^' and use 'Payload'
-bug253_bare_return_fail	6:0	return without value in non-void method
-bug253_compound_assign_fail	8:0	compound assignment requires numeric type, got 'str'
-bug253_destruct_arity_fail	11:0	destructuring expects 3 names but tuple has 2 elements
-bug253_destruct_nontuple_fail	8:0	destructuring requires a tuple, got 'int'
-bug253_struct_destruct_nonclass_fail	7:0	struct destructuring requires a class or struct, got 'int'
-bug253_uninit_collection_fail	12:0	'List(...)' requires explicit initialization; use 'var l = List()()'
-diag_type_mismatch_test	5:0	type mismatch: expected int, found str
-in_scope_tc_fail_test	9:0	type 'Ungrouped' used in 'using' must define 'def begin()' and 'def end()': 'begin and e
-tc_iface_generic_mismatch_test	12:0	type mismatch: expected Printable, found Box (which does not implement Printable)
-tc_iface_i2i_mismatch_test	13:0	type mismatch: expected IBase, found IFoo (which does not implement IBase)
-tc_iface_mismatch_test	9:0	type mismatch: expected Printable, found Cat (which does not implement Printable)
-tc_iface_transitive_mismatch_test	13:0	type mismatch: expected IBase, found Dog (which does not implement IBase)
-tc_mismatch_var_test	2:0	type mismatch: expected int, found bool

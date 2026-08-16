@@ -396,9 +396,14 @@ struct PInit
 struct PReturn
     var value: List(PNode)
     var line: int
-    cue init(value: List(PNode), line: int)
+    # BUG-288 batch 3: the statement's own column. A BARE `return` and an `in` scope
+    # have no sub-expression to anchor a diagnostic on, so the statement position is all
+    # there is -- and `Span(line, 0, ...)` was reporting column 0 for both.
+    var col: int
+    cue init(value: List(PNode), line: int, col: int)
         .value = value
         .line = line
+        .col = col
 
 struct PIf
     var cond: List(PNode)
@@ -457,10 +462,13 @@ struct PInScope
     var expr: List(PNode)
     var stmts: List(PNode)
     var line: int
-    cue init(expr: List(PNode), stmts: List(PNode), line: int)
+    # BUG-288 batch 3: see PReturn.
+    var col: int
+    cue init(expr: List(PNode), stmts: List(PNode), line: int, col: int)
         .expr = expr
         .stmts = stmts
         .line = line
+        .col = col
 
 struct PGuard
     var cond: List(PNode)
@@ -532,12 +540,17 @@ struct PVar
     var type_name: str
     var init_expr: List(PNode)
     var line: int
-    cue init(name: str, is_const: bool, type_name: str, init_expr: List(PNode), line: int)
+    # BUG-288 batch 3: the declaration's own column. Most var diagnostics anchor on
+    # the init EXPRESSION instead (TypeChecker.varDiagCol), but an uninitialised
+    # declaration has none, and `Span(line, 0, ...)` was reporting column 0 for it.
+    var col: int
+    cue init(name: str, is_const: bool, type_name: str, init_expr: List(PNode), line: int, col: int)
         .name = name
         .is_const = is_const
         .type_name = type_name
         .init_expr = init_expr
         .line = line
+        .col = col
 
 struct PDestruct
     var names: List(str)
@@ -2216,12 +2229,13 @@ class Parser
 
     def parseReturnStmt(): PNode throws
         const line = .peek().line
+        const col = .peek().col
         .expectText("return")?
         var value = List(PNode)()
         if not .isEol() and not .isEof() and not .isDedent()
             value.add(.parseExpr()?)
         .skipEol()
-        return PNode.stmt_return(PReturn(value, line))
+        return PNode.stmt_return(PReturn(value, line, col))
 
     def parseIfStmt(): PNode throws
         const line = .peek().line
@@ -2293,7 +2307,8 @@ class Parser
             break_list.add(PNode.stmt_break())
             var empty_else = List(PNode)()
             var wrapped = List(PNode)()
-            wrapped.add(PNode.stmt_var(PVar(bind_name, false, "", init_list, line)))
+            # Synthesized by the for-in desugaring: no source column to report.
+            wrapped.add(PNode.stmt_var(PVar(bind_name, false, "", init_list, line, 0)))
             wrapped.add(PNode.stmt_if(PIf(if_cond_list, break_list, empty_else, line)))
             for bs in body_stmts
                 wrapped.add(bs)
@@ -2347,13 +2362,14 @@ class Parser
 
     def parseInStmt(): PNode throws
         const line = .peek().line
+        const col = .peek().col
         .expectText("using")?
         const expr = .parseExpr()?
         .skipEol()
         const stmts = .parseBlock()?
         var expr_list = List(PNode)()
         expr_list.add(expr)
-        return PNode.stmt_in(PInScope(expr_list, stmts, line))
+        return PNode.stmt_in(PInScope(expr_list, stmts, line, col))
 
     def parseGuardStmt(): PNode throws
         const line = .peek().line
@@ -2449,6 +2465,7 @@ class Parser
 
     def parseVarStmt(is_const: bool): PNode throws
         const line = .peek().line
+        const col = .peek().col
         if is_const
             .expectText("const")?
         else
@@ -2477,7 +2494,7 @@ class Parser
                     .skipEol()
                     var lambda_node = PLambda(lam.params, lam.return_type, List(PCaptureVar)(), body_expr, List(PNode)())
                     init_expr.add(PNode.expr_lambda(lambda_node))
-                    return PNode.stmt_var(PVar(name, is_const, type_name, init_expr, line))
+                    return PNode.stmt_var(PVar(name, is_const, type_name, init_expr, line, col))
                 # Statement-body: def(params) eol indent [capture] stmts dedent
                 .skipEol()
                 if not .isIndent()
@@ -2496,10 +2513,10 @@ class Parser
                     .advance()
                 var lambda_node = PLambda(lam.params, lam.return_type, captures, List(PNode)(), body_stmts)
                 init_expr.add(PNode.expr_lambda(lambda_node))
-                return PNode.stmt_var(PVar(name, is_const, type_name, init_expr, line))
+                return PNode.stmt_var(PVar(name, is_const, type_name, init_expr, line, col))
             init_expr.add(.parseExpr()?)
         .skipEol()
-        return PNode.stmt_var(PVar(name, is_const, type_name, init_expr, line))
+        return PNode.stmt_var(PVar(name, is_const, type_name, init_expr, line, col))
 
     def parseAssertStmt(): PNode throws
         const line = .peek().line
