@@ -494,6 +494,48 @@ measured: things quietly come to depend on it.
 `bash tools/tidy.sh --clean` removes it. This stops the bleeding; it does not clean the
 wound.
 
+### BUG-121: TC diagnostics always report col 0 — span resolution needed — ✅ FIXED 2026-08-15 (checkExpr); the wider class is now GATED
+
+- **Severity:** Low (correct file:line, wrong column — usable but imprecise)
+- **Status:** Open — deferred; noted in `checkExpr` with a TODO comment
+- **Symptom:** All type-mismatch diagnostics emitted by `checkExpr` and `checkVarDecl` report column 0. The format `file:line:0: error: type mismatch: ...` is technically valid but unhelpful for editors and users.
+- **Root cause:** Statement spans record the keyword position (e.g., the `return` token or `var` token), not the expression start. Column within the line is stored as 0 in most spans because the parser does not yet thread byte-offset-within-line into `Span.col`.
+- **Proper fix:** Thread a true column (byte offset from start of line) into `Span` during tokenization. The tokenizer tracks `col` via `_col` already in `Lexer.zbr`; it needs to be passed through `PExprId` → `Span` in the ASTBuilder rather than defaulting to 0.
+- **Where noted:** `selfhost/typechecker.zbr` `checkExpr` — `TODO BUG-121` comment.
+- **Filed:** 2026-05-09
+
+
+---
+
+**FIXED for `checkExpr` 2026-08-15, and it needed NO tokenizer work** — contrary to this
+entry's "proper fix" note, which predates the spans that now exist. The EXPRESSION already
+knew where it was: `exprSpanLine`/`exprSpanCol` were built for BUG-218 and cover
+ident/member/call, and BUG-249/284 added `this`/`nil`/`result`/zig-literals (all four are
+now wired into those accessors too). `checkExpr` prefers the expression's own position and
+falls back to the statement's, so an expression kind with no span is no worse off.
+
+    before   zz.zbr:3:0:  error: type mismatch: expected int, got str
+    after    zz.zbr:3:12: error: type mismatch: expected int, got str   (`return s`)
+
+**Controls:** a call-argument mismatch that ALREADY reported a real column (`5:20`) is
+unmoved, and BUG-249's pinned `6:13` still holds. Parameters emit as Zig `const`, so the
+derived position goes in locals rather than reassigning `line`/`col` — the first attempt
+failed to build on exactly that.
+
+**THE CLASS IS WIDER THAN THIS TICKET AND IS NOW MEASURED RATHER THAN GUESSED.** A census
+over the corpus found **18 more fixtures** whose front-end diagnostic still reports column
+0, from other reporting sites: branch exhaustiveness, bare `return`, compound assignment,
+destructuring arity, heterogeneous list literals, interface mismatches. Two report `0:0`
+with no line at all.
+
+Rather than chase them one at a time, `tools/lint_diag_columns.py` (QUICK tier) now
+BASELINES the 18 and fails on NEW ones. Its candidate set is DERIVED from the smoke
+suite's own must-fail registrations, it prints its denominator on every path, and it
+refuses if no must-fail fixture produces a parseable diagnostic. **Three bugs of this
+shape were fixed in two days and nothing here could have caught any of them** — a
+golden-output gate does not assert positions and a compile gate cannot see them. Shrink
+the baseline; do not grow it.
+
 ### BUG-287: a bare sibling-method call resolves to a same-named CLASS instead of the method — ✅ FIXED 2026-08-14
 
 **FIXED 2026-08-14.** `genCall`'s class-constructor branch is now guarded by

@@ -685,6 +685,46 @@ python tools/lint_zig_keywords.py  # THE KEYWORD-ORACLE GATE (BUG-280 defect 2, 
                                 #   (`i37`, `u3`, any iN/uN; verified by emitting a class
                                 #   with an `i37` field and getting @"i37"), so it does not
                                 #   have this failure mode. 0 = clean.
+python tools/lint_diag_columns.py  # THE DIAGNOSTIC-POSITION GATE (QUICK tier, ~2s).
+                                #   A front-end diagnostic that cannot say WHERE is
+                                #   delivered half-finished — and `file:8:0` is NOT
+                                #   "position unknown", it is a plausible-looking
+                                #   coordinate that is simply wrong. It defeats caret
+                                #   rendering (which reads line/col to quote the source)
+                                #   and sends an editor to the wrong place. UNGIT
+                                #   "nothing fabricated", in the one place the
+                                #   move-checking-inward programme keeps landing.
+                                #   RECEIPT: THREE bugs of exactly this shape were fixed
+                                #   in two days — BUG-284 (zig literals had no span at
+                                #   all), BUG-249 (this/nil/result were payload-less),
+                                #   BUG-121 (checkExpr used the STATEMENT keyword's
+                                #   position). Every one was found by a PERSON reading
+                                #   output. A golden-output gate does not assert
+                                #   positions and a compile gate cannot see them, so
+                                #   nothing here could have caught any of them.
+                                #   CANDIDATE SET IS DERIVED from the smoke suite's own
+                                #   `smoke_tc_fail`/`smoke_run_fail` registrations —
+                                #   where the suite already declares "this must be
+                                #   refused". A hand-listed set would rot and silently
+                                #   shrink coverage.
+                                #   BASELINED at 18 (49 candidates, 45 producing
+                                #   diagnostics). Each entry is a real diagnostic a user
+                                #   can hit that cannot say where — branch
+                                #   exhaustiveness, bare return, destructuring, interface
+                                #   mismatches. Shrink it; do not grow it.
+                                #   PRINTS ITS DENOMINATOR ON EVERY PATH, pass or fail:
+                                #   a gate that hides how much it examined when it fails
+                                #   leaves you unable to tell "18 of 49" from "18 of 18",
+                                #   and the second means the scan collapsed.
+                                #   Refuses if <30 candidates extract (the registration
+                                #   regex stopped matching) or if NOT ONE must-fail
+                                #   fixture produced a parseable diagnostic — that is a
+                                #   harness failure, not a clean result. Runs a
+                                #   4-check both-directions selftest first, and was
+                                #   verified red by removing one baseline entry.
+                                #   CANNOT SEE whether a non-zero column is the RIGHT
+                                #   column: it asserts a position was computed, not that
+                                #   it points at the token. 0 NEW = clean.
 python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUICK tier).
                                 #   A function that searches the Expr tree for a name is
                                 #   correct only if it descends into every variant that
@@ -895,9 +935,10 @@ than "what do we know":
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 71 scripts | <!-- doc-gen: 71 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 72 scripts | <!-- doc-gen: 72 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 50 tracked documents <!-- doc-gen: 50 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
+| **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords × both compilers |
 | **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 50 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' -->

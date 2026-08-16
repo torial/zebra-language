@@ -4,8 +4,8 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# There are 21 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 21 = grep -c '^run "' tools/gates.sh -->
-# (CLAUDE.md explains each), plus EIGHT more in FULL — 29 total. The count in this
+# There are 22 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 22 = grep -c '^run "' tools/gates.sh -->
+# (CLAUDE.md explains each), plus EIGHT more in FULL — 30 total. The count in this
 # sentence has been wrong before: it said "seven" while twelve were registered, and
 # doc_lint cannot catch that class -- a number in prose has no referent to resolve.
 # If you add a `run` line, fix the number here; `grep -c '^run "' tools/gates.sh` is
@@ -31,7 +31,7 @@
 #         BUG-221 repro — the only gate that RUNS emitted output, and the only one
 #         that checks the DEFAULT shape is actually the split one). Catches most
 #         breakage fast.
-# FULL  = QUICK plus EIGHT more (29 total, 2026-08-13) — the heavy independent
+# FULL  = QUICK plus EIGHT more (30 total, 2026-08-15) — the heavy independent
 #         witnesses, plus the two flag gates no other tier exercises:
 #         compile_check        — compiles what the selfhost emits (`zig` as witness)
 #         compile_check-inline — the same corpus with --no-runtime-module. The split
@@ -133,6 +133,13 @@ run() {
     else
         printf '\033[31mFAIL\033[0m  %-58s %ss\n' "${last:0:58}" "$t1"
         FAILED+=("$label")
+        # THE FAILING LINES FIRST, then the tail. `tail -12` alone reliably HIDES the
+        # answer for any gate whose output is long: smoke prints 335 PASS lines, so a
+        # single failure scrolls past and the board shows twelve PASSes underneath the
+        # word FAIL. Observed 2026-08-15 — a smoke fixture failed in-tier, passed on
+        # rerun, and could not be NAMED because the runner had dropped it. A gate that
+        # reports a failure without saying which is one investigation longer than needed.
+        echo "$out" | grep -aiE '^[[:space:]]*(FAIL|✗|error:)' | head -8 | sed 's/^/      ! /'
         echo "$out" | tail -12 | sed 's/^/        /'
     fi
 }
@@ -230,6 +237,14 @@ run "keyword-ident"  "escaped in every" bash tools/keyword_ident_check.sh
 # found through `zig env`. The only gate here that reads the Zig INSTALLATION, so it
 # prints the version it judged against.
 run "zig-keywords"   "cover all"        python tools/lint_zig_keywords.py
+# A diagnostic that cannot say WHERE is delivered half-finished, and `file:8:0` is not
+# "unknown" -- it is a plausible coordinate that is simply wrong, defeats caret rendering,
+# and sends an editor to the wrong place. THREE bugs of exactly this shape were fixed in
+# two days (BUG-284 zig literals, BUG-249 this/nil/result, BUG-121 checkExpr) and every
+# one was found by a person reading output: a golden-output gate does not assert positions
+# and a compile gate cannot see them. Candidate set DERIVED from the smoke suite's own
+# must-fail registrations; baselined, so only NEW position-less diagnostics fail.
+run "diag-columns"   "0 NEW"           python tools/lint_diag_columns.py
 # §28e: docs/str_ownership.md is DERIVED from real emit, so a codegen change that flips
 # a borrow into an own (or the reverse) makes the shipped table wrong while it still
 # carries a "GENERATED" banner vouching for it. One emit; cheap.

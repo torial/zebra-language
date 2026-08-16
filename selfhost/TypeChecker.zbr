@@ -1603,6 +1603,17 @@ def exprSpanLine(e: Expr): int
             return smem.span.line
         on Expr.call as scall
             return scall.span.line
+        # BUG-121/249/284: these four gained REAL spans on 2026-08-14 and were
+        # unreachable here before that, so widening costs nothing and buys the
+        # position for every diagnostic anchored on them.
+        on Expr.this_ as sthis
+            return sthis.line
+        on Expr.nil_ as snil
+            return snil.line
+        on Expr.result_ as sres
+            return sres.line
+        on Expr.zig_lit as szl
+            return szl.span.line
         else
             return 0
 
@@ -1614,6 +1625,14 @@ def exprSpanCol(e: Expr): int
             return cmem.span.col
         on Expr.call as ccall
             return ccall.span.col
+        on Expr.this_ as cthis
+            return cthis.col
+        on Expr.nil_ as cnil
+            return cnil.col
+        on Expr.result_ as cres
+            return cres.col
+        on Expr.zig_lit as czl
+            return czl.span.col
         else
             return 0
 
@@ -3346,10 +3365,23 @@ def typesCompatible(declared: Type_, inferred: Type_): bool
 # Thin wrapper around inferExpr that compares the result against an expected type.
 # Records a type_mismatch diagnostic on primitive-to-primitive conflicts and fills
 # context_dependent from expected (error recovery). Returns expected on mismatch.
-# TODO BUG-121: col comes from the statement span, which is the keyword position.
-# All diagnostics currently report col 0. When span resolution is improved,
-# pass the actual expression start column here.
+# BUG-121 (fixed 2026-08-15): callers pass the enclosing STATEMENT's position, which is
+# the keyword — `return`, `var` — and carries col 0. So every type-mismatch diagnostic
+# from here reported `file:line:0`, technically valid and useless to an editor.
+#
+# The fix needed no tokenizer work, contrary to this ticket's "proper fix" note: the
+# EXPRESSION already knows where it is. `exprSpanLine`/`exprSpanCol` were built for
+# BUG-218 and cover ident/member/call, and BUG-249/284 added this/nil/result/zig-lit.
+# Prefer that position and fall back to the statement's, so an expression kind with no
+# span of its own is no worse off than before.
 def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: InferCtx): Type_
+    # Locals, not reassigned parameters: a Zebra param emits as a Zig `const`.
+    var d_line: int = line
+    var d_col: int = col
+    var e_line: int = exprSpanLine(e)
+    if e_line > 0
+        d_line = e_line
+        d_col = exprSpanCol(e)
     var inferred: Type_ = inferExpr(e, ctx)
     if expected == nil
         return inferred
@@ -3363,14 +3395,14 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
         if inferred is Type_.named as inf_class
             if exp_class != inf_class
                 if not ctx.classConformsToAny(inf_class, exp_class)
-                    ctx.addErr(file, line, col, "type mismatch: expected " + exp_class + ", got " + inf_class + " (which does not implement " + exp_class + ")")
+                    ctx.addErr(file, d_line, d_col, "type mismatch: expected " + exp_class + ", got " + inf_class + " (which does not implement " + exp_class + ")")
         return inferred
     if not isPrimitive(exp)
         return inferred
     if not isPrimitive(inferred)
         return inferred
     if not typesCompatible(exp, inferred)
-        ctx.addErr(file, line, col, "type mismatch: expected " + typeTag(exp) + ", got " + typeTag(inferred))
+        ctx.addErr(file, d_line, d_col, "type mismatch: expected " + typeTag(exp) + ", got " + typeTag(inferred))
         return exp
     return inferred
 

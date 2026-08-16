@@ -1833,19 +1833,6 @@ Two distinct facets surfaced when probing BUG-196, each its own mechanism:
 
 ---
 
-### BUG-121: TC diagnostics always report col 0 — span resolution needed
-
-- **Severity:** Low (correct file:line, wrong column — usable but imprecise)
-- **Status:** Open — deferred; noted in `checkExpr` with a TODO comment
-- **Symptom:** All type-mismatch diagnostics emitted by `checkExpr` and `checkVarDecl` report column 0. The format `file:line:0: error: type mismatch: ...` is technically valid but unhelpful for editors and users.
-- **Root cause:** Statement spans record the keyword position (e.g., the `return` token or `var` token), not the expression start. Column within the line is stored as 0 in most spans because the parser does not yet thread byte-offset-within-line into `Span.col`.
-- **Proper fix:** Thread a true column (byte offset from start of line) into `Span` during tokenization. The tokenizer tracks `col` via `_col` already in `Lexer.zbr`; it needs to be passed through `PExprId` → `Span` in the ASTBuilder rather than defaulting to 0.
-- **Where noted:** `selfhost/typechecker.zbr` `checkExpr` — `TODO BUG-121` comment.
-- **Filed:** 2026-05-09
-
-
----
-
 ### BUG-122: Selfhost codegen — `opt_ptr_field_bindings` not seeded for local variables with inferred types
 
 - **Severity:** Low (workaround exists; only hits when a local var holds a struct with `^T?` fields and those fields are accessed via `to!`)
