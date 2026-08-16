@@ -1595,46 +1595,177 @@ def isNumeric(t: Type_): bool
 # (Line and col are returned separately rather than as a Span because `Span` is not
 # in TypeChecker's `use Ast exposing` list, and widening a shared import for a
 # diagnostic is not worth the blast radius.)
+# BUG-121 follow-up (2026-08-15): read the span of EVERY Expr variant, not seven.
+# All 35 variants carry a position in Ast.zbr -- verified by deriving the list from
+# the union itself -- but these two functions read only ident/member/call plus the
+# four that BUG-249/284 fixed. Every other kind fell through to 0, so `return "x"`
+# in an int method reported col 0 and the caret had nothing to point at. That is 28
+# variants' worth of position thrown away at the last step, and it is the single
+# root cause behind most of tools/diag_column_baseline.txt.
+#
+# The arm list is GENERATED from the union, never hand-typed: writing 35 names twice
+# is precisely how a variant goes missing, which is the drift this repo already has
+# lint_expr_walkers for. Keep it exhaustive -- if a new Expr variant is added, both
+# of these must gain an arm.
+# expr-walker: exhaustive
 def exprSpanLine(e: Expr): int
     branch e
-        on Expr.ident as sid
-            return sid.span.line
-        on Expr.member as smem
-            return smem.span.line
-        on Expr.call as scall
-            return scall.span.line
-        # BUG-121/249/284: these four gained REAL spans on 2026-08-14 and were
-        # unreachable here before that, so widening costs nothing and buys the
-        # position for every diagnostic anchored on them.
-        on Expr.this_ as sthis
-            return sthis.line
-        on Expr.nil_ as snil
-            return snil.line
-        on Expr.result_ as sres
-            return sres.line
-        on Expr.zig_lit as szl
-            return szl.span.line
-        else
-            return 0
+        on Expr.int_lit as sp_int_lit
+            return sp_int_lit.span.line
+        on Expr.float_lit as sp_float_lit
+            return sp_float_lit.span.line
+        on Expr.bool_lit as sp_bool_lit
+            return sp_bool_lit.span.line
+        on Expr.char_lit as sp_char_lit
+            return sp_char_lit.span.line
+        on Expr.string_lit as sp_string_lit
+            return sp_string_lit.span.line
+        on Expr.string_interp as sp_string_interp
+            return sp_string_interp.span.line
+        on Expr.nil_ as sp_nil
+            return sp_nil.line
+        on Expr.this_ as sp_this
+            return sp_this.line
+        on Expr.ident as sp_ident
+            return sp_ident.span.line
+        on Expr.member as sp_member
+            return sp_member.span.line
+        on Expr.call as sp_call
+            return sp_call.span.line
+        on Expr.index as sp_index
+            return sp_index.span.line
+        on Expr.slice as sp_slice
+            return sp_slice.span.line
+        on Expr.binary as sp_binary
+            return sp_binary.span.line
+        on Expr.unary as sp_unary
+            return sp_unary.span.line
+        on Expr.cast as sp_cast
+            return sp_cast.span.line
+        on Expr.to_non_nil as sp_to_non_nil
+            return sp_to_non_nil.span.line
+        on Expr.is_nil as sp_is_nil
+            return sp_is_nil.span.line
+        on Expr.orelse_ as sp_orelse
+            return sp_orelse.span.line
+        on Expr.catch_ as sp_catch
+            return sp_catch.span.line
+        on Expr.if_expr as sp_if_expr
+            return sp_if_expr.span.line
+        on Expr.lambda as sp_lambda
+            return sp_lambda.span.line
+        on Expr.list_lit as sp_list_lit
+            return sp_list_lit.span.line
+        on Expr.dict_lit as sp_dict_lit
+            return sp_dict_lit.span.line
+        on Expr.set_lit as sp_set_lit
+            return sp_set_lit.span.line
+        on Expr.array_lit as sp_array_lit
+            return sp_array_lit.span.line
+        on Expr.zig_lit as sp_zig_lit
+            return sp_zig_lit.span.line
+        on Expr.try_ as sp_try
+            return sp_try.span.line
+        on Expr.tuple_lit as sp_tuple_lit
+            return sp_tuple_lit.span.line
+        on Expr.type_check as sp_type_check
+            return sp_type_check.span.line
+        on Expr.chained_cmp as sp_chained_cmp
+            return sp_chained_cmp.span.line
+        on Expr.except_ as sp_except
+            return sp_except.span.line
+        on Expr.old_ as sp_old
+            return sp_old.span.line
+        on Expr.result_ as sp_result
+            return sp_result.line
+        on Expr.opt_chain as sp_opt_chain
+            return sp_opt_chain.span.line
 
+# BUG-121 follow-up (2026-08-15): read the span of EVERY Expr variant, not seven.
+# All 35 variants carry a position in Ast.zbr -- verified by deriving the list from
+# the union itself -- but these two functions read only ident/member/call plus the
+# four that BUG-249/284 fixed. Every other kind fell through to 0, so `return "x"`
+# in an int method reported col 0 and the caret had nothing to point at. That is 28
+# variants' worth of position thrown away at the last step, and it is the single
+# root cause behind most of tools/diag_column_baseline.txt.
+#
+# The arm list is GENERATED from the union, never hand-typed: writing 35 names twice
+# is precisely how a variant goes missing, which is the drift this repo already has
+# lint_expr_walkers for. Keep it exhaustive -- if a new Expr variant is added, both
+# of these must gain an arm.
+# expr-walker: exhaustive
 def exprSpanCol(e: Expr): int
     branch e
-        on Expr.ident as cid
-            return cid.span.col
-        on Expr.member as cmem
-            return cmem.span.col
-        on Expr.call as ccall
-            return ccall.span.col
-        on Expr.this_ as cthis
-            return cthis.col
-        on Expr.nil_ as cnil
-            return cnil.col
-        on Expr.result_ as cres
-            return cres.col
-        on Expr.zig_lit as czl
-            return czl.span.col
-        else
-            return 0
+        on Expr.int_lit as sp_int_lit
+            return sp_int_lit.span.col
+        on Expr.float_lit as sp_float_lit
+            return sp_float_lit.span.col
+        on Expr.bool_lit as sp_bool_lit
+            return sp_bool_lit.span.col
+        on Expr.char_lit as sp_char_lit
+            return sp_char_lit.span.col
+        on Expr.string_lit as sp_string_lit
+            return sp_string_lit.span.col
+        on Expr.string_interp as sp_string_interp
+            return sp_string_interp.span.col
+        on Expr.nil_ as sp_nil
+            return sp_nil.col
+        on Expr.this_ as sp_this
+            return sp_this.col
+        on Expr.ident as sp_ident
+            return sp_ident.span.col
+        on Expr.member as sp_member
+            return sp_member.span.col
+        on Expr.call as sp_call
+            return sp_call.span.col
+        on Expr.index as sp_index
+            return sp_index.span.col
+        on Expr.slice as sp_slice
+            return sp_slice.span.col
+        on Expr.binary as sp_binary
+            return sp_binary.span.col
+        on Expr.unary as sp_unary
+            return sp_unary.span.col
+        on Expr.cast as sp_cast
+            return sp_cast.span.col
+        on Expr.to_non_nil as sp_to_non_nil
+            return sp_to_non_nil.span.col
+        on Expr.is_nil as sp_is_nil
+            return sp_is_nil.span.col
+        on Expr.orelse_ as sp_orelse
+            return sp_orelse.span.col
+        on Expr.catch_ as sp_catch
+            return sp_catch.span.col
+        on Expr.if_expr as sp_if_expr
+            return sp_if_expr.span.col
+        on Expr.lambda as sp_lambda
+            return sp_lambda.span.col
+        on Expr.list_lit as sp_list_lit
+            return sp_list_lit.span.col
+        on Expr.dict_lit as sp_dict_lit
+            return sp_dict_lit.span.col
+        on Expr.set_lit as sp_set_lit
+            return sp_set_lit.span.col
+        on Expr.array_lit as sp_array_lit
+            return sp_array_lit.span.col
+        on Expr.zig_lit as sp_zig_lit
+            return sp_zig_lit.span.col
+        on Expr.try_ as sp_try
+            return sp_try.span.col
+        on Expr.tuple_lit as sp_tuple_lit
+            return sp_tuple_lit.span.col
+        on Expr.type_check as sp_type_check
+            return sp_type_check.span.col
+        on Expr.chained_cmp as sp_chained_cmp
+            return sp_chained_cmp.span.col
+        on Expr.except_ as sp_except
+            return sp_except.span.col
+        on Expr.old_ as sp_old
+            return sp_old.span.col
+        on Expr.result_ as sp_result
+            return sp_result.col
+        on Expr.opt_chain as sp_opt_chain
+            return sp_opt_chain.span.col
 
 # BUG-218: is `t` a type that is definitely WRONG on one side of a `str + t`?
 # Only definitively-known scalars qualify.  Everything else — `unknown_`, a named

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-288. Next new bug: BUG-289.**
+**Last bug number generated: BUG-289. Next new bug: BUG-290.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -14,6 +14,48 @@
 > *somewhere*, so a duplicate satisfies it twice over.
 
 ---
+
+### BUG-289: two deterministic programs disagreed with themselves inside a full output_sweep — cause unknown
+
+**Found 2026-08-15** during an `output_sweep --update-baseline`. `log_test` and
+`refinement_type_test` were auto-excluded as nondeterministic and so dropped out
+of behaviour coverage. Both are deterministic:
+
+| check | result |
+|---|---|
+| built executable, 10 consecutive runs (`refinement_type_test`) | byte-identical, 12 bytes, rc=0 |
+| built executable, 8 consecutive runs (`log_test`) | byte-identical, 178 bytes |
+| through the harness's own `--show --only` path, 5 runs | byte-identical |
+
+The disagreement appears **only** inside a full 354-file sweep. What the
+exclusion records actually show is narrower than "truncation", and the
+distinction matters because the wrong word sends the next reader chasing the
+wrong mechanism: the recorded reason is a single `<` line — `0` for
+`refinement_type_test`, `All log tests passed.` for `log_test` — meaning that
+line was present in one sample and absent in another. Both happen to be the last
+line of the recorded output, which is suggestive, but nothing here establishes
+that the tail was cut rather than a sample differing some other way.
+
+**The obvious explanation was tested and FAILED.** This repo has a documented
+Windows hazard — stdout to a PIPE can lose writes, which is why `rebuild.sh` and
+`mutation_check.py` both redirect to a file — and `output_sweep` captures with
+`$(...)`, a pipe. Predicted: pipe capture truncates occasionally, file capture
+never does. Observed: **12/12 identical through both.** The theory is recorded
+here as eliminated, not as the answer.
+
+Remaining candidates, none tested: interference from an earlier fixture in the
+same sweep (a server or thread fixture outliving its `timeout`), console/handle
+contention, or something about sustained sequential load.
+
+**Mitigated, not fixed.** `output_sweep --update-baseline` now requires an
+exclusion to REPRODUCE: three samples, and if they disagree, a three-sample
+confirmation round; only a repeated difference excludes. A file that disagrees
+once and is then unanimous is kept and reported as a `transient` in the run
+summary. Both paths are control-tested (a clock-printing fixture must still be
+excluded; a forced single disagreement must be kept). That converts this from
+silent coverage loss into a printed number — but it does not explain the
+underlying disagreement, and a rising transient count is the signal to come
+back to this ticket.
 
 ### BUG-288: AstBuilder constructs 96 of ~146 node kinds with a ZERO span, so most diagnostics cannot say where
 

@@ -862,11 +862,36 @@ bash tools/output_sweep.sh --gate  # THE BEHAVIOUR WITNESS — the only heavy ga
                                 #   `{ 97 }` for `a` — perfectly good Zig).
                                 #   327 of the 335 compile-clean files, golden-baselined.
                                 #   NONDETERMINISM IS DERIVED, never hand-listed:
-                                #   --update-baseline runs every file TWICE and auto-
-                                #   excludes any whose output differs, recording the
-                                #   reason (8 today: clocks, timings, racy panics, and 3
-                                #   server fixtures that never terminate). A hand-written
-                                #   skip list rots and silently shrinks coverage.
+                                #   --update-baseline takes THREE samples and, if they
+                                #   disagree, a three-sample CONFIRMATION ROUND — only a
+                                #   REPRODUCED difference is excluded, with its reason
+                                #   recorded. A hand-written skip list rots and silently
+                                #   shrinks coverage; what the confirmation round fixes is
+                                #   that a DERIVED list could silently shrink too, which
+                                #   is the same failure in better clothes.
+                                #   THE ASYMMETRY IS THE ARGUMENT. A wrongly-EXCLUDED file
+                                #   leaves behaviour coverage permanently and reports
+                                #   nothing; a wrongly-INCLUDED flaky file fails the gate
+                                #   loudly and names itself. Prefer the recoverable error.
+                                #   RECEIPT (2026-08-15): a re-baseline dropped `log_test`
+                                #   and `refinement_type_test` as nondeterministic. Both
+                                #   are deterministic — 10x and 8x byte-identical on the
+                                #   built executables, 5x through this harness's own
+                                #   --show path. The disagreement appears only inside a
+                                #   full 354-file sweep and IS STILL UNEXPLAINED; the
+                                #   obvious pipe-capture theory was tested and FAILED
+                                #   (12/12 identical through both `$(...)` and a file
+                                #   redirect). Recorded as an open question rather than
+                                #   given a tidy cause it has not earned.
+                                #   TRANSIENTS ARE PRINTED EVERY RUN, including zero, and
+                                #   named when non-zero: a rate that starts climbing is
+                                #   the early warning that something in the environment
+                                #   changed, and it is only legible against a number that
+                                #   was always there.
+                                #   Both paths are control-tested: a genuinely
+                                #   nondeterministic file (log_json_test, which prints a
+                                #   clock) must still be excluded, and a forced single
+                                #   disagreement must be KEPT and counted.
                                 #   LIMIT: golden baseline = catches REGRESSIONS, not
                                 #   existing wrongness — same limit full_sweep_baseline
                                 #   has. It refuses to write a baseline that is >25%

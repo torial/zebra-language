@@ -212,10 +212,10 @@ mapfile -t NAMES < <(grep -vE '^\s*(#|$)' "$CANDIDATES" | sort -u)
 [ "${#NAMES[@]}" -gt 0 ] || { echo "no candidates matched" >&2; exit 2; }
 
 echo "── output sweep (${#NAMES[@]} candidates) ──"
-[ "$UPDATE" = 1 ] && echo "   baselining: each file runs 3x; any difference = auto-excluded"
+[ "$UPDATE" = 1 ] && echo "   baselining: 3 samples; a disagreement triggers a 3-sample confirmation round, and only a REPRODUCED difference is excluded"
 
-: > "$OUT/manifest.txt"; : > "$OUT/excluded.txt"; : > "$OUT/diffs.txt"
-n_ok=0; n_excl=0; n_diff=0; n_missing=0; n_empty=0; n_timeout=0; n_cap=0
+: > "$OUT/manifest.txt"; : > "$OUT/excluded.txt"; : > "$OUT/diffs.txt"; : > "$OUT/transient.txt"
+n_ok=0; n_excl=0; n_diff=0; n_missing=0; n_empty=0; n_timeout=0; n_cap=0; n_transient=0
 CAP_SKIPPED=""
 
 # At GATE time the derived exclusions must be honoured by NAME, before running anything.
@@ -277,13 +277,43 @@ for name in "${NAMES[@]}"; do
         out2=$(run_one "$zbr" | norm)
         out3=$(run_one "$zbr" | norm)
         if [ "$out1" != "$out2" ] || [ "$out1" != "$out3" ]; then
-            [ "$out1" = "$out2" ] && out2="$out3"
-            # Derived exclusion. Record WHY, so the list is auditable rather than magic.
-            reason=$(diff <(printf '%s' "$out1") <(printf '%s' "$out2") 2>/dev/null \
-                     | grep -m1 -E '^[<>]' | cut -c1-100)
-            [ -z "$reason" ] && reason="(differs, no line-level diff — length only)"
-            printf '%s\t%s\n' "$name" "$reason" >> "$OUT/excluded.txt"
-            n_excl=$((n_excl+1)); continue
+            # CONFIRMATION ROUND — an exclusion must REPRODUCE (added 2026-08-16).
+            #
+            # A single disagreement is not proof of nondeterminism, and treating it as
+            # proof costs real coverage SILENTLY. Receipt: the 2026-08-15 re-baseline
+            # excluded `log_test` and `refinement_type_test` as nondeterministic. Both are
+            # deterministic — verified 10x and 8x on the built executables, and 5x through
+            # this harness's own --show path, byte-identical every time. The disagreement
+            # appeared only inside a full 354-file sweep and has no explanation yet; the
+            # obvious pipe-capture theory was TESTED AND FAILED (12/12 identical through
+            # both `$(...)` and a file redirect).
+            #
+            # The asymmetry is what makes this worth the runtime: a wrongly-EXCLUDED file
+            # is removed from behaviour coverage permanently and reports nothing, while a
+            # wrongly-INCLUDED flaky file fails the gate loudly and names itself. This
+            # list is documented as "regenerated on every re-baseline, so it cannot
+            # silently rot" — true, but it could silently SHRINK, which is the same
+            # failure wearing different clothes.
+            c1=$(run_one "$zbr" | norm)
+            c2=$(run_one "$zbr" | norm)
+            c3=$(run_one "$zbr" | norm)
+            if [ "$c1" = "$c2" ] && [ "$c1" = "$c3" ]; then
+                # Unanimous on re-test: the earlier disagreement was a transient. Take the
+                # confirmed value — it has three votes and the original had at most two.
+                printf '%s\t%s\n' "$name" \
+                    "(disagreed once, then unanimous on a 3-sample re-test — kept)" \
+                    >> "$OUT/transient.txt"
+                n_transient=$((n_transient+1))
+                out1="$c1"
+            else
+                [ "$c1" = "$c2" ] && c2="$c3"
+                # Derived exclusion. Record WHY, so the list is auditable rather than magic.
+                reason=$(diff <(printf '%s' "$c1") <(printf '%s' "$c2") 2>/dev/null \
+                         | grep -m1 -E '^[<>]' | cut -c1-100)
+                [ -z "$reason" ] && reason="(differs, no line-level diff — length only)"
+                printf '%s\t%s\n' "$name" "$reason" >> "$OUT/excluded.txt"
+                n_excl=$((n_excl+1)); continue
+            fi
         fi
     fi
 
@@ -321,12 +351,22 @@ if [ "$UPDATE" = 1 ]; then
     sort -o "$OUT/excluded.txt" "$OUT/excluded.txt"
     {
         echo "# DERIVED by tools/output_sweep.sh --update-baseline — do not hand-edit."
-        echo "# Files whose output differed between two consecutive runs, with the reason."
+        echo "# Files whose output differed on THREE samples and again on a three-sample"
+        echo "# confirmation round, with the reason. An exclusion must REPRODUCE: a file"
+        echo "# that disagrees once and is then unanimous is kept, and counted as a"
+        echo "# transient in the run summary rather than dropped in silence."
         echo "# Regenerated on every re-baseline, so it cannot silently rot."
         cat "$OUT/excluded.txt"
     } > "$EXCLUSIONS"
     echo "baseline updated: $n_ok files recorded -> tools/output_baseline.txt"
-    echo "auto-excluded (nondeterministic): $n_excl -> tools/output_baseline_excluded.txt"
+    echo "auto-excluded (nondeterministic, CONFIRMED): $n_excl -> tools/output_baseline_excluded.txt"
+    # Printed on every run, including zero. A transient rate that starts climbing is the
+    # early warning that something about the environment has changed, and it is only
+    # legible if the number is always there to compare against.
+    echo "transients (disagreed once, kept after re-test): $n_transient"
+    if [ "$n_transient" -gt 0 ]; then
+        sed 's/^/    /' "$OUT/transient.txt"
+    fi
     echo "empty-output files: $n_empty of $n_ok (threshold ${MAX_EMPTY_FRACTION_PCT}%) · timeouts: $n_timeout"
     echo "excluded by CAPABILITY (network, cannot be sampled): $n_cap"
     [ "$n_missing" -gt 0 ] && echo "note: $n_missing baseline names had no test/*.zbr"
