@@ -93,21 +93,42 @@ cannot pass a position on because it was never given one.
 variants; the scanner asserts `PPos` positions, a scalar does not, and a bogus
 name is unresolved, before reporting):
 
-| group | count | what it needs |
+| group | count | state |
 |---|---|---|
-| already carry a position | 37 | nothing — all statements, all declarations, plus the BUG-249/284 fixes |
-| **scalar payload** (`expr_int`, `expr_float`, `expr_bool`, `expr_str`, `expr_char`, `expr_raw_str`, `expr_format`) | **7** | a payload struct, exactly as BUG-284 introduced `PZigLit {text, line, col}` |
-| struct payload, no `line`/`span` field | 25 | one field added to a struct that already exists — mechanically cheaper |
+| line **and** column | 23 | fine |
+| **LINE ONLY** — every `stmt_*` kind | **21** | reports `file:LINE:0` — **batch 3** |
+| struct payload, no position at all | 25 | **batch 2** — one field added to a struct that already exists |
+| **scalar payload** — every literal | **7** | **BATCH 1, DONE 2026-08-16** |
 
-So it is **two batches, not 96 scattered edits**, and the 7-variant batch is the
-one that matters: every literal is in it, and literals are what the
-`diag-columns` entries are anchored on. Land each batch with the
-`diag-columns` baseline shrunk by the entries it clears; that gate is the
-witness, and it fails on growth.
+**CORRECTION, 2026-08-16.** An earlier version of this table said "37 already
+carry a position" and called the work two batches. That was wrong, and wrong in
+the direction that would have misled whoever picked it up: the scan asked
+whether a payload has a `line` field, and 21 of those 37 have a line and **no
+column**. Every statement kind is in that group, which is the actual reason the
+six BUG-253 entries report `line:0` rather than `0:0` — and why
+`var x: str = 42` still reports `2:0` after batch 1, since that diagnostic
+anchors on `dv.span`, the declared variable, not on the expression. Isolated with
+a direct probe: `return 42` gives `2:12`, `var x: str = 42` gives `2:0`.
 
-Note the statement group already has positions, which is why the six BUG-253
-entries report `line:0` rather than `0:0` — the line is known and only the
-column is missing. Those are a separate, smaller question from the literal work.
+Land each batch with the `diag-columns` baseline shrunk by the entries it clears;
+that gate is the witness and it fails on growth. **A batch that lands without
+moving that number has not worked**, whatever else is green.
+
+**BATCH 1 LANDED 2026-08-16** — the seven literal variants now carry `^PLit`
+(text) or `^PBoolLit` (value), each with line and col. `diag-columns`
+**18 → 14**, baseline diff 4 deletions / 0 insertions. Cleared:
+`bug106_heterogeneous_list_test` (which reported `0:0` — no position at all),
+`tc_mismatch_guard_test`, `tc_mismatch_return_test`, `tc_mismatch_with_test`.
+Verified QUICK 22/22 in one invocation, `output_sweep` 356 files behaviour
+identical, `compile_check` 260/0/2, round-trip byte-identical.
+
+Two decisions worth keeping. The synthesized `true` in the `for`-in desugaring
+keeps `Span(0,0,0,0)` on purpose — the user never wrote it, so "no position" is
+the true statement, and minting a `(line, 0)` there would add a fresh instance of
+the invented coordinate the batch exists to remove. And the arithmetic check
+caught its own instrument: `zspan()` **calls** in AstBuilder went 92 → 85, the 7
+predicted, while a raw `grep -c 'zspan()'` said 96 → 90 because it counts lines
+and the new comments quote the word. Count calls, not mentions.
 
 **Groundwork already landed** (`selfhost/TypeChecker.zbr`, this session):
 `exprSpanLine`/`exprSpanCol` read only 7 of 35 Expr variants and fell through to
