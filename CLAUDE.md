@@ -1315,10 +1315,17 @@ the table below stands unchanged.
 **Previous sweep 2026-08-02** — 18/18, before those two gates existed.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
-**337** while the tracked corpus is **471** <!-- doc-gen: 471 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+**374** <!-- doc-gen: 374 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
+while the tracked corpus is **473** <!-- doc-gen: 473 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.
+
+The baseline figure now carries its own `doc-gen` oracle, added 2026-08-16 after it sat
+stale at 337 through a re-baseline to 374. The corpus number beside it had an oracle and
+went red within the hour; this one had none and went quietly wrong — in the paragraph
+whose whole subject is numbers that look fine and are not. **A count worth writing down
+is a count worth deriving.**
 
 The size of that gap is now **measured rather than estimated**, which it was not when this
 paragraph was first written (it said "57 are in no known category" against a corpus of 421).
