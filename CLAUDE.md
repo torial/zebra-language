@@ -996,6 +996,28 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
+**BOTH HEAVY BASELINES RE-LOCKED 2026-08-16, and this closes a gap this file had been
+flagging against itself.** `full_sweep` **337 → 374** (+37 insertions, **zero deletions** —
+purely additive, so nothing dropped out of the pass set and it cannot be hiding a
+regression behind a re-record). `output_sweep` **322 → 356**. Both captured at JOBS=1 on an
+idle machine after `doctor` reported the tree trustworthy, in the documented order
+(full_sweep FIRST — output_sweep derives its candidates from it).
+
+The 32-accumulated-passes note above is now DISCHARGED: those files could not turn the
+gate red however badly they broke, and they can now. QUICK was **22/22 in one invocation**
+(smoke 335/335, round-trip byte-identical, `diag-columns` 18 known / 0 NEW) and
+`output_sweep --gate` re-run afterwards is **356 files behaviour identical**.
+
+**A method note that cost a re-measurement.** The first `output_sweep --gate` was taken on
+a `zebra.exe` built from a source tree carrying a deliberately-injected dead `const` — the
+residue of a break-the-gate-on-purpose test whose FIRST attempt was vacuous (Zig does not
+analyse unused top-level declarations, so the build passed and rebuilt the binary; the same
+lazy-analysis trap that made the BUG-269 probe lie). `doctor` caught the binary↔source
+mismatch. The dead const cannot affect codegen, but that is reasoning rather than
+measurement, so the gate was re-run after a clean rebuild — same result. **When you break
+something on purpose, check that the break actually took, and check what the failed attempt
+REBUILT.**
+
 **BUG-269 landed 2026-08-15** — `str` in an `extern` signature is REFUSED at the
 declaration instead of emitting `[]const u8` and letting `zig` reject it as an illegal
 C-ABI return type. Same family, same place and same shape as BUG-270's `int` check.
