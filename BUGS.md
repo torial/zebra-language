@@ -96,9 +96,21 @@ name is unresolved, before reporting):
 | group | count | state |
 |---|---|---|
 | line **and** column | 23 | fine |
-| **LINE ONLY** — every `stmt_*` kind | **21** | reports `file:LINE:0` — **batch 3** |
-| struct payload, no position at all | 25 | **batch 2** — one field added to a struct that already exists |
+| **LINE ONLY** — every `stmt_*` kind | **21** | reports `file:LINE:0` — **batch 3, where ALL 14 remaining entries live** |
+| struct payload, no position at all | 25 | **BATCH 2, DONE 2026-08-16** |
 | **scalar payload** — every literal | **7** | **BATCH 1, DONE 2026-08-16** |
+
+**READ THIS BEFORE PICKING UP BATCH 3 — it holds every remaining entry.** The 14
+in `diag_column_baseline.txt` break down as: **6 × `bug253_*`** (bare return,
+compound assign, three destructuring forms, uninit collection — all statement
+checks); **6 anchored on `dv.span`, the DECLARED VARIABLE** (`tc_mismatch_var`,
+the four `tc_iface_*_mismatch`, `diag_type_mismatch`); **1 × `in_scope_tc_fail`**
+(a `using` statement); and **1 × `bug078_double_box`**, which is a **TypeRef**
+diagnostic and belongs to none of these groups — it needs its own look.
+
+So batch 3 is not the leftovers, it is the remainder of the value. Batches 1 and
+2 were still worth doing (see each below for what they fixed and how it was
+measured), but a session picking this up for baseline movement should start at 3.
 
 **CORRECTION, 2026-08-16.** An earlier version of this table said "37 already
 carry a position" and called the work two batches. That was wrong, and wrong in
@@ -113,6 +125,43 @@ a direct probe: `return 42` gives `2:12`, `var x: str = 42` gives `2:0`.
 Land each batch with the `diag-columns` baseline shrunk by the entries it clears;
 that gate is the witness and it fails on growth. **A batch that lands without
 moving that number has not worked**, whatever else is green.
+
+**BATCH 2 LANDED 2026-08-16** — a COMPOUND expression carries a position, derived
+in AstBuilder rather than recorded in the parser.
+
+`return a + b` in a `str` method reported `10:0` — pointing at the indentation.
+25 `zspan()` calls in AstBuilder became real spans (85 → 58 calls remaining).
+
+**WHY DERIVE, NOT RECORD.** For every infix and postfix form the leftmost
+sub-expression's start IS the expression's start, so derivation is EXACT:
+`a + b` starts where `a` does, `g()` where `g` does, `xs[0]` where `xs` does.
+Recording in the parser would mean capturing a position BEFORE parsing the left
+operand at each precedence level — seven sites for `PBinary` alone, threaded
+through control flow rather than appended to. The helper is `spanOf(e: Expr)`,
+generated from the Ast union and marked `# expr-walker: exhaustive`, plus
+`spanOfFirst(es)` which returns `zspan()` for an empty collection because an
+empty `[]` genuinely has no sub-expression to derive from.
+
+**THE KNOWN IMPRECISION, stated rather than hidden.** For PREFIX and BRACKETED
+forms the derived span points at the first sub-expression, not the opening token:
+`-x` reports `x`, `[1, 2]` reports `1`. That is off by a token. It is not a
+fabrication — it points inside the expression the diagnostic is about, where
+`10:0` pointed at the indentation. Exact opening-token spans are a later pass and
+nothing in the baseline needs them.
+
+**THE WITNESS HAD TO BE BUILT FIRST, and that is the transferable part.** None of
+the 14 baseline entries is expression-anchored, so this batch would have landed
+with the gate reading exactly the same number — indistinguishable from having
+done nothing. Two fixtures were therefore written and registered BEFORE the fix,
+with their broken coordinates recorded (`bug288_binary_span_fail` 10:0,
+`bug288_call_span_fail` 11:0); the gate correctly went RED on 2 new position-less
+entries; the fix took them to **10:12 and 11:12** and the gate back to 14 with
+**51 candidates instead of 49**. Coverage grew, debt did not. Two fixtures rather
+than one because binary derives from an operand and a call from its callee — a
+fix to either does not imply the other.
+
+Verified: QUICK **22/22 in one invocation**, smoke **337/337**, round-trip
+byte-identical.
 
 **BATCH 1 LANDED 2026-08-16** — the seven literal variants now carry `^PLit`
 (text) or `^PBoolLit` (value), each with line and col. `diag-columns`

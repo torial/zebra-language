@@ -31,6 +31,112 @@ def nameSpan(line: int, col: int, name: str): Span
         return zspan()
     return Span(line, col, line, col + name.len)
 
+# BUG-288 batch 2: the span of an already-built Expr.
+#
+# A COMPOUND expression (`a + b`, `g()`, `xs[0]`) had no position of its own, so a
+# diagnostic anchored on one reported column 0 -- `return a + b` in a str method said
+# `10:0`, pointing at the indentation. Batch 1 fixed this for literals; the compound
+# forms are built here, from parts that now all carry positions.
+#
+# WHY DERIVE RATHER THAN RECORD IN THE PARSER. For every infix and postfix form the
+# leftmost sub-expression's start IS the expression's start, so derivation is EXACT:
+# `a + b` starts where `a` starts, `g()` where `g` does, `xs[0]` where `xs` does.
+# Recording it in the parser instead would mean capturing a position BEFORE parsing the
+# left operand at each precedence level -- seven sites for PBinary alone, threaded
+# through control flow rather than appended to.
+#
+# THE KNOWN IMPRECISION, stated rather than hidden: for PREFIX and BRACKETED forms the
+# derived span points at the first sub-expression, not the opening token. `-x` reports
+# `x`, `[1, 2]` reports `1`. That is off by a token, and it is not a fabrication -- it
+# points inside the expression the diagnostic is about, where `10:0` pointed at the
+# indentation. Exact opening-token spans for those forms are a later pass; nothing in
+# the current baseline needs them.
+#
+# A form with no sub-expression to derive from keeps zspan(), which is the honest
+# spelling of "no position" -- same reasoning as the synthesized `true` in batch 1.
+# expr-walker: exhaustive
+def spanOf(e: Expr): Span
+    branch e
+        on Expr.int_lit as so_int_lit
+            return so_int_lit.span
+        on Expr.float_lit as so_float_lit
+            return so_float_lit.span
+        on Expr.bool_lit as so_bool_lit
+            return so_bool_lit.span
+        on Expr.char_lit as so_char_lit
+            return so_char_lit.span
+        on Expr.string_lit as so_string_lit
+            return so_string_lit.span
+        on Expr.string_interp as so_string_interp
+            return so_string_interp.span
+        on Expr.nil_ as so_nil
+            return so_nil
+        on Expr.this_ as so_this
+            return so_this
+        on Expr.ident as so_ident
+            return so_ident.span
+        on Expr.member as so_member
+            return so_member.span
+        on Expr.call as so_call
+            return so_call.span
+        on Expr.index as so_index
+            return so_index.span
+        on Expr.slice as so_slice
+            return so_slice.span
+        on Expr.binary as so_binary
+            return so_binary.span
+        on Expr.unary as so_unary
+            return so_unary.span
+        on Expr.cast as so_cast
+            return so_cast.span
+        on Expr.to_non_nil as so_to_non_nil
+            return so_to_non_nil.span
+        on Expr.is_nil as so_is_nil
+            return so_is_nil.span
+        on Expr.orelse_ as so_orelse
+            return so_orelse.span
+        on Expr.catch_ as so_catch
+            return so_catch.span
+        on Expr.if_expr as so_if_expr
+            return so_if_expr.span
+        on Expr.lambda as so_lambda
+            return so_lambda.span
+        on Expr.list_lit as so_list_lit
+            return so_list_lit.span
+        on Expr.dict_lit as so_dict_lit
+            return so_dict_lit.span
+        on Expr.set_lit as so_set_lit
+            return so_set_lit.span
+        on Expr.array_lit as so_array_lit
+            return so_array_lit.span
+        on Expr.zig_lit as so_zig_lit
+            return so_zig_lit.span
+        on Expr.try_ as so_try
+            return so_try.span
+        on Expr.tuple_lit as so_tuple_lit
+            return so_tuple_lit.span
+        on Expr.type_check as so_type_check
+            return so_type_check.span
+        on Expr.chained_cmp as so_chained_cmp
+            return so_chained_cmp.span
+        on Expr.except_ as so_except
+            return so_except.span
+        on Expr.old_ as so_old
+            return so_old.span
+        on Expr.result_ as so_result
+            return so_result
+        on Expr.opt_chain as so_opt_chain
+            return so_opt_chain.span
+
+# The span of the FIRST element of a built list, or zspan() when the list is empty.
+# An empty `[]` or `{}` genuinely has no sub-expression to derive from, and zspan() is
+# the honest spelling of "no position" -- inventing one would be the fabrication this
+# whole ticket is about removing.
+def spanOfFirst(es: List(Expr)): Span
+    if es.len == 0
+        return zspan()
+    return spanOf(es.at(0))
+
 def zmods(): Modifiers
     return Modifiers(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false)
 
@@ -876,23 +982,23 @@ class ASTBuilder
                 for arg_pn in pc.args
                     if arg_pn is PNode.expr_named_arg as pna
                         const av = .buildExpr(pna.value.at(0))?
-                        args.add(Arg(zspan(), pna.name, av))
+                        args.add(Arg(spanOf(av), pna.name, av))
                     else
                         const av = .buildExpr(arg_pn)?
-                        args.add(Arg(zspan(), nil, av))
-                return Expr.call(ExprCall(zspan(), callee_expr, args))
+                        args.add(Arg(spanOf(av), nil, av))
+                return Expr.call(ExprCall(spanOf(callee_expr), callee_expr, args))
 
             on PNode.expr_index as pix
                 const obj_expr = .buildExpr(pix.object.at(0))?
                 const idx_expr = .buildExpr(pix.index.at(0))?
-                return Expr.index(ExprIndex(zspan(), obj_expr, idx_expr))
+                return Expr.index(ExprIndex(spanOf(obj_expr), obj_expr, idx_expr))
 
             on PNode.expr_slice as psl
                 const obj_expr = .buildExpr(psl.object.at(0))?
                 # Always have both start and stop in our parse tree
                 const start_expr = .buildExpr(psl.start.at(0))?
                 const stop_expr = .buildExpr(psl.stop_.at(0))?
-                return Expr.slice(ExprSlice(zspan(), obj_expr, start_expr, stop_expr))
+                return Expr.slice(ExprSlice(spanOf(obj_expr), obj_expr, start_expr, stop_expr))
 
             on PNode.expr_binary as pb
                 const left_expr = .buildExpr(pb.left.at(0))?
@@ -902,12 +1008,12 @@ class ASTBuilder
                 if pb.op == "is"
                     branch right_expr
                         on Expr.ident as ei
-                            return Expr.type_check(ExprTypeCheck(zspan(), left_expr, ei.name))
+                            return Expr.type_check(ExprTypeCheck(spanOf(left_expr), left_expr, ei.name))
                         on Expr.member as em
                             # em.object is ^Expr; auto-deref passes Expr value to getObjectIdentName
                             var obj_name = getObjectIdentName(em.object)
                             if obj_name as obj_n
-                                var tc = ExprTypeCheck(zspan(), left_expr, obj_n)
+                                var tc = ExprTypeCheck(spanOf(left_expr), left_expr, obj_n)
                                 tc.variant_name = em.member
                                 return Expr.type_check(tc)
                             else
@@ -915,12 +1021,12 @@ class ASTBuilder
                         else
                             raise "buildExpr: `is` RHS must be a plain identifier or Union.variant"
                 const op = .toBinaryOp(pb.op)?
-                return Expr.binary(ExprBinary(zspan(), op, left_expr, right_expr))
+                return Expr.binary(ExprBinary(spanOf(left_expr), op, left_expr, right_expr))
 
             on PNode.expr_orelse as po
                 const expr_val = .buildExpr(po.expr.at(0))?
                 const fb_val = .buildExpr(po.fallback.at(0))?
-                return Expr.orelse_(ExprOrelse(zspan(), expr_val, fb_val))
+                return Expr.orelse_(ExprOrelse(spanOf(expr_val), expr_val, fb_val))
 
             on PNode.expr_pipeline as pp
                 # Desugar: `lhs -> f(args)` → `f(lhs, args)` (prepend lhs: first arg).
@@ -930,15 +1036,15 @@ class ASTBuilder
                     on PNode.expr_call as pc
                         const callee_expr = .buildExpr(pc.callee.at(0))?
                         var args: List(Arg) = List(Arg)()
-                        args.add(Arg(zspan(), nil, lhs_expr))
+                        args.add(Arg(spanOf(lhs_expr), nil, lhs_expr))
                         for arg_pn in pc.args
                             if arg_pn is PNode.expr_named_arg as pna
                                 const av = .buildExpr(pna.value.at(0))?
-                                args.add(Arg(zspan(), pna.name, av))
+                                args.add(Arg(spanOf(av), pna.name, av))
                             else
                                 const av = .buildExpr(arg_pn)?
-                                args.add(Arg(zspan(), nil, av))
-                        return Expr.call(ExprCall(zspan(), callee_expr, args))
+                                args.add(Arg(spanOf(av), nil, av))
+                        return Expr.call(ExprCall(spanOf(lhs_expr), callee_expr, args))
                     else
                         raise "buildExpr: pipeline RHS must be a call expression"
 
@@ -947,13 +1053,13 @@ class ASTBuilder
                 if pu.op == "old"
                     const uid = next_old_uid
                     next_old_uid = next_old_uid + 1
-                    return Expr.old_(ExprOld(zspan(), uid, operand_expr))
+                    return Expr.old_(ExprOld(spanOf(operand_expr), uid, operand_expr))
                 const op = .toUnaryOp(pu.op)?
-                return Expr.unary(ExprUnary(zspan(), op, operand_expr))
+                return Expr.unary(ExprUnary(spanOf(operand_expr), op, operand_expr))
 
             on PNode.expr_try as inner
                 const inner_expr = .buildExpr(inner)?
-                return Expr.try_(ExprTry(zspan(), inner_expr))
+                return Expr.try_(ExprTry(spanOf(inner_expr), inner_expr))
 
             on PNode.expr_catch as pc
                 const expr_val = .buildExpr(pc.expr.at(0))?
@@ -961,11 +1067,11 @@ class ASTBuilder
                 var ev: String? = nil
                 if pc.binding != ""
                     ev = pc.binding
-                return Expr.catch_(ExprCatch(zspan(), expr_val, ev, fb_val))
+                return Expr.catch_(ExprCatch(spanOf(expr_val), expr_val, ev, fb_val))
 
             on PNode.expr_to_bang as inner
                 const inner_expr = .buildExpr(inner)?
-                return Expr.to_non_nil(ExprToNonNil(zspan(), inner_expr))
+                return Expr.to_non_nil(ExprToNonNil(spanOf(inner_expr), inner_expr))
 
             on PNode.expr_opt_chain as poc
                 const base_expr = .buildExpr(poc.base.at(0))?
@@ -973,11 +1079,11 @@ class ASTBuilder
                 for arg_pn in poc.args
                     if arg_pn is PNode.expr_named_arg as pna
                         const av = .buildExpr(pna.value.at(0))?
-                        oc_args.add(Arg(zspan(), pna.name, av))
+                        oc_args.add(Arg(spanOf(av), pna.name, av))
                     else
                         const av = .buildExpr(arg_pn)?
-                        oc_args.add(Arg(zspan(), nil, av))
-                return Expr.opt_chain(ExprOptChain(zspan(), base_expr, poc.member, poc.has_args, oc_args))
+                        oc_args.add(Arg(spanOf(av), nil, av))
+                return Expr.opt_chain(ExprOptChain(spanOf(base_expr), base_expr, poc.member, poc.has_args, oc_args))
 
             on PNode.expr_except as pex
                 const base_expr = .buildExpr(pex.base.at(0))?
@@ -985,7 +1091,7 @@ class ASTBuilder
                 for pf in pex.fields
                     const fval = .buildExpr(pf.value.at(0))?
                     fields.add(ExceptField(pf.name, fval))
-                return Expr.except_(ExprExcept(zspan(), base_expr, fields))
+                return Expr.except_(ExprExcept(spanOf(base_expr), base_expr, fields))
 
             on PNode.expr_string_interp as psi
                 var parts: List(StringPart) = List(StringPart)()
@@ -1007,13 +1113,13 @@ class ASTBuilder
                 var elems: List(Expr) = List(Expr)()
                 for e in pt.elems
                     elems.add(.buildExpr(e)?)
-                return Expr.tuple_lit(ExprTuple(zspan(), elems))
+                return Expr.tuple_lit(ExprTuple(spanOfFirst(elems), elems))
 
             on PNode.expr_array_lit as pa
                 var elems: List(Expr) = List(Expr)()
                 for e in pa.elems
                     elems.add(.buildExpr(e)?)
-                return Expr.array_lit(ExprArrayLit(zspan(), elems))
+                return Expr.array_lit(ExprArrayLit(spanOfFirst(elems), elems))
 
             on PNode.expr_list_lit as pl
                 # [a, b, c] — list literal.  Element type is left nil for
@@ -1022,7 +1128,7 @@ class ASTBuilder
                 var elems_l: List(Expr) = List(Expr)()
                 for e in pl.elems
                     elems_l.add(.buildExpr(e)?)
-                return Expr.list_lit(ExprListLit(zspan(), nil, elems_l))
+                return Expr.list_lit(ExprListLit(spanOfFirst(elems_l), nil, elems_l))
 
             on PNode.expr_set_lit as ps
                 # {a, b, c} — set literal.  Element type left nil for codegen to
@@ -1030,7 +1136,7 @@ class ASTBuilder
                 var elems_s: List(Expr) = List(Expr)()
                 for e in ps.elems
                     elems_s.add(.buildExpr(e)?)
-                return Expr.set_lit(ExprSetLit(zspan(), nil, elems_s))
+                return Expr.set_lit(ExprSetLit(spanOfFirst(elems_s), nil, elems_s))
 
             on PNode.expr_dict_lit as pd
                 # {k: v, ...} — dict literal.  Parallel key/value PNode lists lower
@@ -1053,13 +1159,13 @@ class ASTBuilder
                 for pnd in pcc.operands
                     const e = .buildExpr(pnd)?
                     operands_list.add(e)
-                return Expr.chained_cmp(ExprChainedCmp(zspan(), ops_list, operands_list))
+                return Expr.chained_cmp(ExprChainedCmp(spanOfFirst(operands_list), ops_list, operands_list))
 
             on PNode.expr_if_expr as pie
                 const cond_e = .buildExpr(pie.cond.at(0))?
                 const then_e = .buildExpr(pie.then_expr.at(0))?
                 const else_e = .buildExpr(pie.else_expr.at(0))?
-                return Expr.if_expr(ExprIf(zspan(), cond_e, then_e, else_e))
+                return Expr.if_expr(ExprIf(spanOf(cond_e), cond_e, then_e, else_e))
 
             else
                 raise "buildExpr: unexpected PNode variant"

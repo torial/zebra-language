@@ -1,0 +1,14 @@
+# BUG-288 batch 2: a CALL expression must carry a source position.
+#
+# Companion to bug288_binary_span_fail. PCall had no position field, so a
+# diagnostic anchored on the call itself reported column 0. Two fixtures rather
+# than one because binary derives its span from an operand and a call derives it
+# from the callee — different arms, and a fix to one does not imply the other.
+def g(): int
+    return 1
+
+def f(): str
+    return g()
+
+def main()
+    print(f())

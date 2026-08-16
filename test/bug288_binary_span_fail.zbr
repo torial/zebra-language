@@ -1,0 +1,13 @@
+# BUG-288 batch 2: a COMPOUND expression must carry a source position.
+#
+# `a + b` is the subject of the type error here, and PBinary had no position
+# field, so the diagnostic fell back to the statement and reported column 0.
+# Batch 1 fixed this shape for LITERALS (`return 42` reports the literal's
+# column); this fixture pins the same guarantee for an operator expression.
+def f(): str
+    var a: int = 1
+    var b: int = 2
+    return a + b
+
+def main()
+    print(f())

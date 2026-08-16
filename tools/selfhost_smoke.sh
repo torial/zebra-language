@@ -483,6 +483,14 @@ smoke_tc_fail test/bug078_double_box_test.zbr "a class is already a reference"
 # These must FAIL compilation with a "type mismatch" substring in stderr.
 smoke_tc_fail test/tc_mismatch_var_test.zbr "type mismatch"
 smoke_tc_fail test/tc_mismatch_return_test.zbr "type mismatch"
+# BUG-288 batch 2: a COMPOUND expression must be able to say WHERE. These pin the
+# same guarantee batch 1 gave literals, for an operator expression and a call --
+# two fixtures rather than one because binary derives its span from an operand and
+# a call from its callee, so a fix to either does not imply the other. Registering
+# them is what puts them in lint_diag_columns' derived candidate set; before that
+# gate could see this shape at all, it was measurable only in an ad-hoc shell probe.
+smoke_tc_fail test/bug288_binary_span_fail.zbr "type mismatch"
+smoke_tc_fail test/bug288_call_span_fail.zbr "type mismatch"
 # with/guard/arena_scope body coverage (checkStmts recursion extension).
 smoke_tc_fail test/tc_mismatch_with_test.zbr "type mismatch"
 smoke_tc_fail test/tc_mismatch_guard_test.zbr "type mismatch"
