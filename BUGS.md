@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-287. Next new bug: BUG-288.**
+**Last bug number generated: BUG-288. Next new bug: BUG-289.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -14,6 +14,72 @@
 > *somewhere*, so a duplicate satisfies it twice over.
 
 ---
+
+### BUG-288: AstBuilder constructs 96 of ~146 node kinds with a ZERO span, so most diagnostics cannot say where
+
+**Found 2026-08-15** while trying to shrink `tools/diag_column_baseline.txt` (18
+diagnostics that report column 0). The debt is not 18 problems and it is not in
+the diagnostic code — it is one root cause in AST construction.
+
+`selfhost/AstBuilder.zbr` builds nodes with `zspan()`, which is literally
+`Span(0, 0, 0, 0)`, at **96 sites**, against **50** that pass a real `Span(...)`.
+Every literal kind is in the zero group:
+
+```
+Expr.string_lit(ExprStringLit(zspan(), StringKind.plain, ...))
+Expr.bool_lit(ExprBoolLit(zspan(), true))
+Expr.if_expr(ExprIf(zspan(), cond_e, then_e, else_e))
+```
+
+So `return "hello"` in an `int` method reports `file:2:0` — a plausible-looking
+coordinate that is simply wrong. It defeats caret rendering and sends an editor
+to the wrong column. UNGIT "nothing fabricated".
+
+**The blocker is one level deeper than AstBuilder, and "thread the PNode down"
+is the WRONG fix — there is nothing to thread.** The parser never recorded the
+position in the first place:
+
+```
+expr_int: str      expr_str: str      expr_bool: bool     expr_char: str
+expr_nil: ^PPos    expr_this: ^PPos   expr_zig_lit: ^PZigLit    <- BUG-249 / BUG-284
+```
+
+A literal parse node's whole payload is its text. `buildStringLit(text: str)`
+cannot pass a position on because it was never given one.
+
+**Measured scope, derived from the union rather than counted by hand** (76 PNode
+variants; the scanner asserts `PPos` positions, a scalar does not, and a bogus
+name is unresolved, before reporting):
+
+| group | count | what it needs |
+|---|---|---|
+| already carry a position | 37 | nothing — all statements, all declarations, plus the BUG-249/284 fixes |
+| **scalar payload** (`expr_int`, `expr_float`, `expr_bool`, `expr_str`, `expr_char`, `expr_raw_str`, `expr_format`) | **7** | a payload struct, exactly as BUG-284 introduced `PZigLit {text, line, col}` |
+| struct payload, no `line`/`span` field | 25 | one field added to a struct that already exists — mechanically cheaper |
+
+So it is **two batches, not 96 scattered edits**, and the 7-variant batch is the
+one that matters: every literal is in it, and literals are what the
+`diag-columns` entries are anchored on. Land each batch with the
+`diag-columns` baseline shrunk by the entries it clears; that gate is the
+witness, and it fails on growth.
+
+Note the statement group already has positions, which is why the six BUG-253
+entries report `line:0` rather than `0:0` — the line is known and only the
+column is missing. Those are a separate, smaller question from the literal work.
+
+**Groundwork already landed** (`selfhost/TypeChecker.zbr`, this session):
+`exprSpanLine`/`exprSpanCol` read only 7 of 35 Expr variants and fell through to
+0 for the rest. They now name all 35 and carry `# expr-walker: exhaustive`, so
+the gate holds them complete. That change is **inert today by itself** — it
+reads spans that are still zero — and was landed as the interface this fix needs
+rather than as a fix. Do not read the widened walkers as having moved any
+baseline entry; they did not.
+
+**Measuring it.** `python tools/lint_diag_columns.py` is the witness; 18 entries
+baselined. The three families there are 9 × `type mismatch: expected X, …`,
+6 × the BUG-253 statement checks, and 2 reporting `0:0` (no position at all).
+The first family alone is over half the debt and all four of its emit sites are
+in `TypeChecker.zbr` around lines 3398–3680.
 
 ### BUG-271: unknown method on a builtin type is deferred to Zig but stamped `void`, so it can never return a value
 
