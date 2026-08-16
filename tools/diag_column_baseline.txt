@@ -2,4 +2,3 @@
 # Fixtures whose front-end diagnostic reports column 0 (or no line
 # at all). This is DEBT: each is a real diagnostic a user can hit
 # that cannot say where. Shrink this list; it should never grow.
-bug078_double_box_test	0:0	'^Payload' is invalid â€” a class is already a reference; drop the '^' and use 'Payload'

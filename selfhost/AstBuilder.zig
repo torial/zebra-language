@@ -4602,7 +4602,7 @@ pub const ASTBuilder = struct {
                 payload = self.parseTypeRef(pv.type_name);
             }
 // zbr:selfhost/AstBuilder.zbr:408
-            variants.append(_allocator, UnionVariant.init(zspan(), pv.name, payload)) catch unreachable;
+            variants.append(_allocator, UnionVariant.init(Span.init(pv.line, pv.col, pv.line, pv.col), pv.name, payload)) catch unreachable;
         }
 // zbr:selfhost/AstBuilder.zbr:409
         return Decl{ .union_ = _box_b: { const _bp_b = _allocator.create(Ast.DeclUnion) catch @panic("OOM"); _bp_b.* = DeclUnion.init(nameSpan(u.line, u.col, u.name), zmods(), u.name, variants); break :_box_b _bp_b; } };

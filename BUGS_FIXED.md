@@ -6,6 +6,174 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-288: AstBuilder constructs 96 of ~146 node kinds with a ZERO span, so most diagnostics cannot say where — FIXED 2026-08-16
+
+**FIXED 2026-08-16 across three batches. `diag_column_baseline.txt` is 18 → 0**, so the
+gate has changed from a ratchet into an absolute assertion: every front-end diagnostic the
+smoke suite declares must-fail can now say where. A new entry is a regression, not debt.
+
+| batch | what | baseline |
+|---|---|---|
+| 1 | 7 scalar literal payloads → `^PLit` / `^PBoolLit` | 18 → 14 |
+| 2 | 25 compound-expression spans **derived** in AstBuilder | 14 → 14 (+2 new fixtures, see below) |
+| 3 | statement diagnostics re-anchored on their sub-expression; 3 structs given a column | 14 → 1 |
+| — | `PUnionVariant` position (the last entry, a TypeRef diagnostic) | 1 → **0** |
+
+**The scope table below was WRONG TWICE and both corrections are instructive.** It first
+said "37 already carry a position" — 21 of those had a line and no column. Then batch 3
+predicted adding `col` to 19 structs across 28 sites; **three needed it**. For everything
+else the better anchor already existed: the sub-expression the diagnostic is *about*,
+which batches 1 and 2 had just given a real position. So the fix got smaller as it went,
+and the diagnostics got *more useful* rather than merely more precise — `var x: int = true`
+now points at `true`, not at `x`.
+
+**Verified by caret, not by non-zero.** The gate's own "CANNOT SEE" note says it asserts a
+position was computed, not that it points at the right token — so the coordinates were
+checked against the source by hand: `var x: int = true` → caret under `true`; a bare
+`return` → under `return`; `var (a, b) = x` → under `x`; `item: ^Payload` → under `item`.
+
+**And batch 2 is the method lesson.** None of the 14 entries was expression-anchored, so
+it would have landed with the gate reading the same number — indistinguishable from doing
+nothing. Two fixtures were written and registered BEFORE the fix, their broken coordinates
+recorded, and the gate was watched going RED first. When a change's witness cannot see it,
+extend the witness first and watch it fail.
+
+
+
+**Found 2026-08-15** while trying to shrink `tools/diag_column_baseline.txt` (18
+diagnostics that report column 0). The debt is not 18 problems and it is not in
+the diagnostic code — it is one root cause in AST construction.
+
+`selfhost/AstBuilder.zbr` builds nodes with `zspan()`, which is literally
+`Span(0, 0, 0, 0)`, at **96 sites**, against **50** that pass a real `Span(...)`.
+Every literal kind is in the zero group:
+
+```
+Expr.string_lit(ExprStringLit(zspan(), StringKind.plain, ...))
+Expr.bool_lit(ExprBoolLit(zspan(), true))
+Expr.if_expr(ExprIf(zspan(), cond_e, then_e, else_e))
+```
+
+So `return "hello"` in an `int` method reports `file:2:0` — a plausible-looking
+coordinate that is simply wrong. It defeats caret rendering and sends an editor
+to the wrong column. UNGIT "nothing fabricated".
+
+**The blocker is one level deeper than AstBuilder, and "thread the PNode down"
+is the WRONG fix — there is nothing to thread.** The parser never recorded the
+position in the first place:
+
+```
+expr_int: str      expr_str: str      expr_bool: bool     expr_char: str
+expr_nil: ^PPos    expr_this: ^PPos   expr_zig_lit: ^PZigLit    <- BUG-249 / BUG-284
+```
+
+A literal parse node's whole payload is its text. `buildStringLit(text: str)`
+cannot pass a position on because it was never given one.
+
+**Measured scope, derived from the union rather than counted by hand** (76 PNode
+variants; the scanner asserts `PPos` positions, a scalar does not, and a bogus
+name is unresolved, before reporting):
+
+| group | count | state |
+|---|---|---|
+| line **and** column | 23 | fine |
+| **LINE ONLY** — every `stmt_*` kind | **21** | reports `file:LINE:0` — **batch 3, where ALL 14 remaining entries live** |
+| struct payload, no position at all | 25 | **BATCH 2, DONE 2026-08-16** |
+| **scalar payload** — every literal | **7** | **BATCH 1, DONE 2026-08-16** |
+
+**READ THIS BEFORE PICKING UP BATCH 3 — it holds every remaining entry.** The 14
+in `diag_column_baseline.txt` break down as: **6 × `bug253_*`** (bare return,
+compound assign, three destructuring forms, uninit collection — all statement
+checks); **6 anchored on `dv.span`, the DECLARED VARIABLE** (`tc_mismatch_var`,
+the four `tc_iface_*_mismatch`, `diag_type_mismatch`); **1 × `in_scope_tc_fail`**
+(a `using` statement); and **1 × `bug078_double_box`**, which is a **TypeRef**
+diagnostic and belongs to none of these groups — it needs its own look.
+
+So batch 3 is not the leftovers, it is the remainder of the value. Batches 1 and
+2 were still worth doing (see each below for what they fixed and how it was
+measured), but a session picking this up for baseline movement should start at 3.
+
+**CORRECTION, 2026-08-16.** An earlier version of this table said "37 already
+carry a position" and called the work two batches. That was wrong, and wrong in
+the direction that would have misled whoever picked it up: the scan asked
+whether a payload has a `line` field, and 21 of those 37 have a line and **no
+column**. Every statement kind is in that group, which is the actual reason the
+six BUG-253 entries report `line:0` rather than `0:0` — and why
+`var x: str = 42` still reports `2:0` after batch 1, since that diagnostic
+anchors on `dv.span`, the declared variable, not on the expression. Isolated with
+a direct probe: `return 42` gives `2:12`, `var x: str = 42` gives `2:0`.
+
+Land each batch with the `diag-columns` baseline shrunk by the entries it clears;
+that gate is the witness and it fails on growth. **A batch that lands without
+moving that number has not worked**, whatever else is green.
+
+**BATCH 2 LANDED 2026-08-16** — a COMPOUND expression carries a position, derived
+in AstBuilder rather than recorded in the parser.
+
+`return a + b` in a `str` method reported `10:0` — pointing at the indentation.
+25 `zspan()` calls in AstBuilder became real spans (85 → 58 calls remaining).
+
+**WHY DERIVE, NOT RECORD.** For every infix and postfix form the leftmost
+sub-expression's start IS the expression's start, so derivation is EXACT:
+`a + b` starts where `a` does, `g()` where `g` does, `xs[0]` where `xs` does.
+Recording in the parser would mean capturing a position BEFORE parsing the left
+operand at each precedence level — seven sites for `PBinary` alone, threaded
+through control flow rather than appended to. The helper is `spanOf(e: Expr)`,
+generated from the Ast union and marked `# expr-walker: exhaustive`, plus
+`spanOfFirst(es)` which returns `zspan()` for an empty collection because an
+empty `[]` genuinely has no sub-expression to derive from.
+
+**THE KNOWN IMPRECISION, stated rather than hidden.** For PREFIX and BRACKETED
+forms the derived span points at the first sub-expression, not the opening token:
+`-x` reports `x`, `[1, 2]` reports `1`. That is off by a token. It is not a
+fabrication — it points inside the expression the diagnostic is about, where
+`10:0` pointed at the indentation. Exact opening-token spans are a later pass and
+nothing in the baseline needs them.
+
+**THE WITNESS HAD TO BE BUILT FIRST, and that is the transferable part.** None of
+the 14 baseline entries is expression-anchored, so this batch would have landed
+with the gate reading exactly the same number — indistinguishable from having
+done nothing. Two fixtures were therefore written and registered BEFORE the fix,
+with their broken coordinates recorded (`bug288_binary_span_fail` 10:0,
+`bug288_call_span_fail` 11:0); the gate correctly went RED on 2 new position-less
+entries; the fix took them to **10:12 and 11:12** and the gate back to 14 with
+**51 candidates instead of 49**. Coverage grew, debt did not. Two fixtures rather
+than one because binary derives from an operand and a call from its callee — a
+fix to either does not imply the other.
+
+Verified: QUICK **22/22 in one invocation**, smoke **337/337**, round-trip
+byte-identical.
+
+**BATCH 1 LANDED 2026-08-16** — the seven literal variants now carry `^PLit`
+(text) or `^PBoolLit` (value), each with line and col. `diag-columns`
+**18 → 14**, baseline diff 4 deletions / 0 insertions. Cleared:
+`bug106_heterogeneous_list_test` (which reported `0:0` — no position at all),
+`tc_mismatch_guard_test`, `tc_mismatch_return_test`, `tc_mismatch_with_test`.
+Verified QUICK 22/22 in one invocation, `output_sweep` 356 files behaviour
+identical, `compile_check` 260/0/2, round-trip byte-identical.
+
+Two decisions worth keeping. The synthesized `true` in the `for`-in desugaring
+keeps `Span(0,0,0,0)` on purpose — the user never wrote it, so "no position" is
+the true statement, and minting a `(line, 0)` there would add a fresh instance of
+the invented coordinate the batch exists to remove. And the arithmetic check
+caught its own instrument: `zspan()` **calls** in AstBuilder went 92 → 85, the 7
+predicted, while a raw `grep -c 'zspan()'` said 96 → 90 because it counts lines
+and the new comments quote the word. Count calls, not mentions.
+
+**Groundwork already landed** (`selfhost/TypeChecker.zbr`, this session):
+`exprSpanLine`/`exprSpanCol` read only 7 of 35 Expr variants and fell through to
+0 for the rest. They now name all 35 and carry `# expr-walker: exhaustive`, so
+the gate holds them complete. That change is **inert today by itself** — it
+reads spans that are still zero — and was landed as the interface this fix needs
+rather than as a fix. Do not read the widened walkers as having moved any
+baseline entry; they did not.
+
+**Measuring it.** `python tools/lint_diag_columns.py` is the witness; 18 entries
+baselined. The three families there are 9 × `type mismatch: expected X, …`,
+6 × the BUG-253 statement checks, and 2 reporting `0:0` (no position at all).
+The first family alone is over half the debt and all four of its emit sites are
+in `TypeChecker.zbr` around lines 3398–3680.
+
 ### BUG-282: `--output-dir` at a path that does not exist PANICS instead of refusing — ✅ FIXED 2026-08-14
 
 **Found 2026-08-11** as a side-effect of probing BUG-281 — I typo'd nothing, I simply

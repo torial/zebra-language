@@ -727,11 +727,19 @@ python tools/lint_diag_columns.py  # THE DIAGNOSTIC-POSITION GATE (QUICK tier, ~
                                 #   where the suite already declares "this must be
                                 #   refused". A hand-listed set would rot and silently
                                 #   shrink coverage.
-                                #   BASELINED at 18 (49 candidates, 45 producing
-                                #   diagnostics). Each entry is a real diagnostic a user
-                                #   can hit that cannot say where — branch
-                                #   exhaustiveness, bare return, destructuring, interface
-                                #   mismatches. Shrink it; do not grow it.
+                                #   THE BASELINE IS ZERO as of 2026-08-16 (51 candidates,
+                                #   47 producing diagnostics). It was 18; BUG-288's three
+                                #   batches cleared every one. THAT CHANGES THE GATE'S
+                                #   KIND: it was a ratchet failing only on growth, and it
+                                #   is now an ABSOLUTE ASSERTION — every must-fail fixture
+                                #   in the smoke suite can say where. A new entry is not
+                                #   debt to record, it is a regression to fix.
+                                #   WHICH MAKES THE REFUSAL GUARDS LOAD-BEARING. With a
+                                #   non-empty baseline a collapsed scan still showed a
+                                #   suspicious drop; with an empty one it prints
+                                #   "0 known, 0 NEW" and passes — indistinguishable from
+                                #   success. Read the candidate and produced counts before
+                                #   believing a clean run.
                                 #   PRINTS ITS DENOMINATOR ON EVERY PATH, pass or fail:
                                 #   a gate that hides how much it examined when it fails
                                 #   leaves you unable to tell "18 of 49" from "18 of 18",

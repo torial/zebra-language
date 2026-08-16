@@ -30,9 +30,20 @@ says "this must be refused". A hand-maintained list would rot and silently shrin
 coverage -- the argument output_sweep makes for deriving its exclusions, and
 divergence_check makes for deriving its must-reject set.
 
-BASELINED, like bug_fixture_check and registration_check: the existing debt is recorded
-and only NEW col-0 diagnostics fail. Shrink the list; never grow it. Each baseline entry
-is a real diagnostic a user can hit today, not a hypothetical.
+THE BASELINE IS NOW EMPTY (2026-08-16). It was 18. BUG-288's three batches took it to
+zero, so this gate has changed KIND: it was a ratchet that only failed on growth, and it
+is now an ABSOLUTE ASSERTION -- every front-end diagnostic the smoke suite declares
+must-fail can say where. Any regression fails immediately, with nothing to hide behind.
+
+That makes the refusal guards load-bearing rather than decorative. With a non-empty
+baseline, a scan that silently collapsed would still have printed a suspicious drop; with
+an empty one it would print "0 known, 0 NEW" and pass, which is indistinguishable from
+success. So: fewer than MIN_CANDIDATES derived is a REFUSAL, not a pass; zero fixtures
+producing a parseable diagnostic is a REFUSAL; and the denominator prints on every path
+so "0 of 51" cannot be mistaken for "0 of 0". If you are reading a clean run here, check
+the candidate and produced counts before believing it.
+
+Keep it at zero. A new entry is not debt to be recorded, it is a regression to be fixed.
 
 CANNOT SEE: whether a non-zero column is the RIGHT column. It asserts a position was
 computed, not that it points at the right token. Nor does it see diagnostics from

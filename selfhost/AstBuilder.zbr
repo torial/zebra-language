@@ -405,7 +405,7 @@ class ASTBuilder
             var payload: TypeRef? = nil
             if pv.type_name != ""
                 payload = .parseTypeRef(pv.type_name)
-            variants.add(UnionVariant(zspan(), pv.name, payload))
+            variants.add(UnionVariant(Span(pv.line, pv.col, pv.line, pv.col), pv.name, payload))
         return Decl.union_(DeclUnion(nameSpan(u.line, u.col, u.name), zmods(), u.name, variants))
 
     # ── Sig ───────────────────────────────────────────────────────────────────

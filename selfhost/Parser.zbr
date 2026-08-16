@@ -124,9 +124,15 @@ struct PUnionDecl
 struct PUnionVariant
     var name: str
     var type_name: str
-    cue init(name: str, type_name: str)
+    # BUG-288: the variant NAME's position. Without it AstBuilder built UnionVariant
+    # with zspan(), so `item: ^Payload` -- the double-box refusal -- reported 0:0.
+    var line: int
+    var col: int
+    cue init(name: str, type_name: str, line: int, col: int)
         .name = name
         .type_name = type_name
+        .line = line
+        .col = col
 
 struct PTypeAlias
     var name: str
@@ -1772,6 +1778,8 @@ class Parser
                 .skipEol()
                 if .isDedent()
                     break
+                const vname_line = .peek().line
+                const vname_col = .peek().col
                 const vname = .eatId()?
                 var vtype: str = ""
                 if .textIs(":")
@@ -1786,7 +1794,7 @@ class Parser
                         .advance()
                         vtype = vtype + "?"
                 .skipEol()
-                variants.add(PUnionVariant(vname, vtype))
+                variants.add(PUnionVariant(vname, vtype, vname_line, vname_col))
             if .isDedent()
                 .advance()
         return PNode.union_decl(PUnionDecl(name, variants, _dl, _dc))
