@@ -591,6 +591,26 @@ bash tools/keyword_ident_check.sh  # THE ESCAPED-IDENTIFIER GATE (BUG-280, QUICK
                                 #   and grepping the output found NINE; a tenth surfaced
                                 #   during the fix. So the probe is now the permanent
                                 #   instrument rather than a one-off.
+                                #   THE STATIC ALTERNATIVE WAS TRIED AND IT DOES NOT
+                                #   WORK — measured 2026-08-15, recorded so nobody
+                                #   re-proposes it. The obvious cheap lint is "an
+                                #   expression passed through `emitName` somewhere must
+                                #   not reach output BARE elsewhere", oracle derived from
+                                #   the escaping call sites themselves. Run against the
+                                #   commit BEFORE BUG-281 E it finds NOTHING: `mname` was
+                                #   passed through emitName ZERO times then, so it was
+                                #   never in the guarded set. The lint can only enforce
+                                #   consistency with a decision ALREADY made; the bugs
+                                #   that actually occur are the decision never made — a
+                                #   name escaped NOWHERE that should be escaped
+                                #   everywhere. It is also noisy in the other direction:
+                                #   on today's tree it flags 10 sites, 0 real, because
+                                #   `.` + mname for an Atomic/ThreadPool pass-through and
+                                #   `um_cname + "." + mname` as a LOOKUP KEY are both
+                                #   correctly bare. Structural, not tunable. The probe
+                                #   works precisely because it reads the OUTPUT and so
+                                #   needs no advance knowledge of which variable carries
+                                #   the name.
                                 #   HOW IT DECIDES: strips string-literal CONTENTS, then
                                 #   flags any keyword left as a whole word. That single
                                 #   rule makes `@"align"` pass AND the reflection string
