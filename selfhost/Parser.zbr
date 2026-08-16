@@ -72,17 +72,17 @@ union PNode
     expr_pipeline: ^PPipeline
 
     # Expressions (inline - no heap indirection)
-    expr_int: str
-    expr_float: str
-    expr_bool: bool
+    expr_int: ^PLit
+    expr_float: ^PLit
+    expr_bool: ^PBoolLit
     expr_nil: ^PPos
     expr_this: ^PPos
     expr_result: ^PPos
-    expr_str: str
-    expr_char: str
+    expr_str: ^PLit
+    expr_char: ^PLit
     expr_zig_lit: ^PZigLit
-    expr_raw_str: str
-    expr_format: str
+    expr_raw_str: ^PLit
+    expr_format: ^PLit
     expr_id: ^PExprId
 
     # Expressions (heap-boxed - recursive)
@@ -702,6 +702,35 @@ struct PPos
     var line: int
     var col: int
     cue init(line: int, col: int)
+        .line = line
+        .col = col
+
+# BUG-288 batch 1: the payload for every LITERAL parse node.
+#
+# `expr_int`, `expr_float`, `expr_str`, `expr_char`, `expr_raw_str` and `expr_format` each
+# had `str` as their ENTIRE payload, so there was nowhere to put a position and AstBuilder
+# had no choice but `zspan()`. That is why `return "hello"` in an `int` method reported
+# `file:2:0` — not "position unknown", but a plausible-looking coordinate that is simply
+# wrong, which defeats caret rendering and sends an editor to the wrong column.
+#
+# ONE struct rather than six identical ones. `PZigLit` stays separate because it predates
+# this and renaming it would be churn for no reader's benefit.
+struct PLit
+    var text: str
+    var line: int
+    var col: int
+    cue init(text: str, line: int, col: int)
+        .text = text
+        .line = line
+        .col = col
+
+# The same, for `expr_bool`, whose payload is a bool rather than text.
+struct PBoolLit
+    var value: bool
+    var line: int
+    var col: int
+    cue init(value: bool, line: int, col: int)
+        .value = value
         .line = line
         .col = col
 
@@ -2269,7 +2298,9 @@ class Parser
             for bs in body_stmts
                 wrapped.add(bs)
             var true_cond = List(PNode)()
-            true_cond.add(PNode.expr_bool(true))
+            # Synthesized, not written by the user: no position, and never the
+            # subject of a diagnostic. BUG-288 keeps 0 here deliberately.
+            true_cond.add(PNode.expr_bool(PBoolLit(true, 0, 0)))
             return PNode.stmt_while(PWhile(true_cond, wrapped, line))
         const cond_expr = .parseExpr()?
         .skipEol()
@@ -3065,11 +3096,15 @@ class Parser
 
     def parseAtom(): PNode throws
         if .textIs("true")
+            const t_line = .peek().line
+            const t_col = .peek().col
             .advance()
-            return PNode.expr_bool(true)
+            return PNode.expr_bool(PBoolLit(true, t_line, t_col))
         else if .textIs("false")
+            const f_line = .peek().line
+            const f_col = .peek().col
             .advance()
-            return PNode.expr_bool(false)
+            return PNode.expr_bool(PBoolLit(false, f_line, f_col))
         else if .textIs("nil")
             const nil_line = .peek().line
             const nil_col = .peek().col
@@ -3087,22 +3122,30 @@ class Parser
             return PNode.expr_result(PPos(res_line, res_col))
         else if .isIntLit()
             const text = .peek().text
+            const int_line = .peek().line
+            const int_col = .peek().col
             .advance()
-            return PNode.expr_int(text)
+            return PNode.expr_int(PLit(text, int_line, int_col))
         else if .isFloatLit()
             const text = .peek().text
+            const flt_line = .peek().line
+            const flt_col = .peek().col
             .advance()
-            return PNode.expr_float(text)
+            return PNode.expr_float(PLit(text, flt_line, flt_col))
         else if .isStringStart()
             return .parseStringInterp()?
         else if .isStringSingle() or .isStringDouble()
             const text = .peek().text
+            const s_line = .peek().line
+            const s_col = .peek().col
             .advance()
-            return PNode.expr_str(text)
+            return PNode.expr_str(PLit(text, s_line, s_col))
         else if .isCharLit()
             const text = .peek().text
+            const ch_line = .peek().line
+            const ch_col = .peek().col
             .advance()
-            return PNode.expr_char(text)
+            return PNode.expr_char(PLit(text, ch_line, ch_col))
         else if .isZigLit()
             const text = .peek().text
             const zl_line = .peek().line
@@ -3111,12 +3154,16 @@ class Parser
             return PNode.expr_zig_lit(PZigLit(text, zl_line, zl_col))
         else if .isRawString()
             const text = .peek().text
+            const rs_line = .peek().line
+            const rs_col = .peek().col
             .advance()
-            return PNode.expr_raw_str(text)
+            return PNode.expr_raw_str(PLit(text, rs_line, rs_col))
         else if .isDocString()
             const text = .peek().text
+            const ds_line = .peek().line
+            const ds_col = .peek().col
             .advance()
-            return PNode.expr_str(text)
+            return PNode.expr_str(PLit(text, ds_line, ds_col))
         else if .isAtLbracket()
             # @[elem, elem, ...] — array literal
             .advance()
@@ -3374,7 +3421,7 @@ class Parser
         # string_start_X  {expr rcurly_special [string_part_X expr rcurly_special]*}  string_stop_X
         var parts = List(PNode)()
         # Leading literal from string_start token (includes text before first ${)
-        parts.add(PNode.expr_str(.peek().text))
+        parts.add(PNode.expr_str(PLit(.peek().text, .peek().line, .peek().col)))
         .advance()
         # Parse interleaved expressions and literal parts
         while not .isStringStop() and not .isEof()
@@ -3382,18 +3429,18 @@ class Parser
             parts.add(.parseExpr()?)
             # Consume optional format spec token `:spec` (e.g. `:08x`, `:.2f`)
             if .isStringPartFormat()
-                parts.add(PNode.expr_format(.peek().text))
+                parts.add(PNode.expr_format(PLit(.peek().text, .peek().line, .peek().col)))
                 .advance()
             # Consume rcurly_special (the closing } of ${...})
             if .isRcurlySpecial()
                 .advance()
             # If followed by a string_part, consume it: literal
             if .isStringPart()
-                parts.add(PNode.expr_str(.peek().text))
+                parts.add(PNode.expr_str(PLit(.peek().text, .peek().line, .peek().col)))
                 .advance()
         # Trailing literal from string_stop token
         if .isStringStop()
-            parts.add(PNode.expr_str(.peek().text))
+            parts.add(PNode.expr_str(PLit(.peek().text, .peek().line, .peek().col)))
             .advance()
         return PNode.expr_string_interp(PStringInterp(parts))
 

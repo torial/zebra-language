@@ -812,14 +812,16 @@ class ASTBuilder
 
     def buildExpr(pn: PNode): Expr throws
         branch pn
-            on PNode.expr_int as text
-                return Expr.int_lit(ExprIntLit(zspan(), text, IntBase.decimal))
+            # BUG-288: literals carry their REAL position now. `zspan()` here was the
+            # reason a diagnostic anchored on a literal reported column 0.
+            on PNode.expr_int as lit
+                return Expr.int_lit(ExprIntLit(Span(lit.line, lit.col, lit.line, lit.col), lit.text, IntBase.decimal))
 
-            on PNode.expr_float as text
-                return Expr.float_lit(ExprFloatLit(zspan(), text))
+            on PNode.expr_float as lit
+                return Expr.float_lit(ExprFloatLit(Span(lit.line, lit.col, lit.line, lit.col), lit.text))
 
-            on PNode.expr_bool as v
-                return Expr.bool_lit(ExprBoolLit(zspan(), v))
+            on PNode.expr_bool as bl
+                return Expr.bool_lit(ExprBoolLit(Span(bl.line, bl.col, bl.line, bl.col), bl.value))
 
             # BUG-249: carry the token's REAL position. These three were the last
             # payload-less expression variants, so `zspan()` was the only thing
@@ -833,12 +835,12 @@ class ASTBuilder
             on PNode.expr_result as rp
                 return Expr.result_(Span(rp.line, rp.col, rp.line, rp.col))
 
-            on PNode.expr_str as text
-                return .buildStringLit(text)?
+            on PNode.expr_str as lit
+                return .buildStringLit(lit.text, lit.line, lit.col)?
 
-            on PNode.expr_char as text
+            on PNode.expr_char as lit
                 # Keep raw token text (e.g. c'A', c'\'') — codegen strips c prefix
-                return Expr.char_lit(ExprCharLit(zspan(), text))
+                return Expr.char_lit(ExprCharLit(Span(lit.line, lit.col, lit.line, lit.col), lit.text))
 
             on PNode.expr_zig_lit as zl
                 # Strip zig"..." / zig'...' wrapper so stored text is emit-ready.
@@ -847,9 +849,9 @@ class ASTBuilder
                 # which is how a 0:0 went unnoticed for so long.
                 return Expr.zig_lit(ExprZigLit(Span(zl.line, zl.col, zl.line, zl.col), stripZigQuotes(zl.text)))
 
-            on PNode.expr_raw_str as text
+            on PNode.expr_raw_str as lit
                 # Strip r"..." / r'...' wrapper, double backslashes for Zig emit.
-                return Expr.string_lit(ExprStringLit(zspan(), StringKind.raw, stripRawAndEscape(text)))
+                return Expr.string_lit(ExprStringLit(Span(lit.line, lit.col, lit.line, lit.col), StringKind.raw, stripRawAndEscape(lit.text)))
 
             on PNode.expr_id as id
                 # Propagate the identifier's real source position (diagnostics): the
@@ -989,10 +991,10 @@ class ASTBuilder
                 var parts: List(StringPart) = List(StringPart)()
                 for part in psi.parts
                     branch part
-                        on PNode.expr_str as text
-                            parts.add(StringPart.literal(stripStringQuotes(text)))
+                        on PNode.expr_str as lit
+                            parts.add(StringPart.literal(stripStringQuotes(lit.text)))
                         on PNode.expr_format as fspec
-                            parts.add(StringPart.format(fspec[1..fspec.len]))
+                            parts.add(StringPart.format(fspec.text[1..fspec.text.len]))
                         else
                             const part_expr = .buildExpr(part)?
                             parts.add(StringPart.expr_(part_expr))
@@ -1062,10 +1064,11 @@ class ASTBuilder
             else
                 raise "buildExpr: unexpected PNode variant"
 
-    def buildStringLit(text: str): Expr throws
+    def buildStringLit(text: str, line: int, col: int): Expr throws
+        const sp = Span(line, col, line, col)
         if text.startsWith("\"\"\"")
-            return Expr.string_lit(ExprStringLit(zspan(), StringKind.plain, text))
-        return Expr.string_lit(ExprStringLit(zspan(), StringKind.plain, stripStringQuotes(text)))
+            return Expr.string_lit(ExprStringLit(sp, StringKind.plain, text))
+        return Expr.string_lit(ExprStringLit(sp, StringKind.plain, stripStringQuotes(text)))
 
     def buildLambdaExpr(pl: PLambda): Expr throws
         # Convert PLambda → ExprLambda

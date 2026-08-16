@@ -112,7 +112,7 @@ class ParserTest
                                 assert ret.value.len == 1, "return: expected value"
                                 branch ret.value.at(0)
                                     on PNode.expr_int as text
-                                        assert text == "42", "return: expected '42', got '" + text + "'"
+                                        assert text.text == "42", "return: expected '42', got '" + text.text + "'"
                                     else
                                         assert false, "return: expected expr_int"
                             else
@@ -161,12 +161,12 @@ class ParserTest
                                         assert b.right.len == 1, "arith: right missing"
                                         branch b.left.at(0)
                                             on PNode.expr_int as t
-                                                assert t == "1", "arith: left should be '1'"
+                                                assert t.text == "1", "arith: left should be '1'"
                                             else
                                                 assert false, "arith: left should be expr_int"
                                         branch b.right.at(0)
                                             on PNode.expr_int as t
-                                                assert t == "2", "arith: right should be '2'"
+                                                assert t.text == "2", "arith: right should be '2'"
                                             else
                                                 assert false, "arith: right should be expr_int"
                                     else
@@ -242,7 +242,7 @@ class ParserTest
                                 assert v.init_expr.len == 1, "var: expected init expr"
                                 branch v.init_expr.at(0)
                                     on PNode.expr_int as t
-                                        assert t == "0", "var: init should be '0'"
+                                        assert t.text == "0", "var: init should be '0'"
                                     else
                                         assert false, "var: init should be expr_int"
                             else

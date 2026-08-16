@@ -3,7 +3,6 @@
 # at all). This is DEBT: each is a real diagnostic a user can hit
 # that cannot say where. Shrink this list; it should never grow.
 bug078_double_box_test	0:0	'^Payload' is invalid â€” a class is already a reference; drop the '^' and use 'Payload'
-bug106_heterogeneous_list_test	0:0	list literal has heterogeneous element types: 'str' is not compatible with 'int'
 bug253_bare_return_fail	6:0	return without value in non-void method
 bug253_compound_assign_fail	8:0	compound assignment requires numeric type, got 'str'
 bug253_destruct_arity_fail	11:0	destructuring expects 3 names but tuple has 2 elements
@@ -16,7 +15,4 @@ tc_iface_generic_mismatch_test	12:0	type mismatch: expected Printable, found Box
 tc_iface_i2i_mismatch_test	13:0	type mismatch: expected IBase, found IFoo (which does not implement IBase)
 tc_iface_mismatch_test	9:0	type mismatch: expected Printable, found Cat (which does not implement Printable)
 tc_iface_transitive_mismatch_test	13:0	type mismatch: expected IBase, found Dog (which does not implement IBase)
-tc_mismatch_guard_test	3:0	type mismatch: expected int, got str
-tc_mismatch_return_test	2:0	type mismatch: expected int, got str
 tc_mismatch_var_test	2:0	type mismatch: expected int, found bool
-tc_mismatch_with_test	9:0	type mismatch: expected int, got str
