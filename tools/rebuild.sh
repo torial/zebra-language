@@ -80,6 +80,31 @@ export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 step() { printf '\n\033[1m── %s\033[0m\n' "$1"; }
 fail() { printf '\033[31mrebuild: %s\033[0m\n' "$1" >&2; exit 1; }
 
+# Run `zig build`, and on failure SHOW THE ERROR rather than the epilogue.
+#
+# This used to be `zig build 2>&1 | tail -6`. On success that is the right summary; on
+# FAILURE the last six lines of a zig build are the build-graph epilogue ("install
+# transitive failure", the re-issued build command, the seed) and the compile errors are
+# further up, so the one thing the reader needs is the one thing that scrolls away. On
+# 2026-08-16 that turned a one-line diagnosis ("unreachable else prong; all cases already
+# handled") into two wasted rebuild cycles: the caret line survived, the message above it
+# did not.
+#
+# UNGIT "nothing withheld" — the tool HAS the error; it must not print boilerplate
+# instead. The full log path is named too, because a 40-line cap is a judgement call and
+# the reader deserves the escape hatch when it guesses wrong.
+zbuild_or_fail() { # $1 = message for fail()
+    local log="/tmp/_rebuild_build.log"
+    if zig build > "$log" 2>&1; then
+        tail -6 "$log"
+        return 0
+    fi
+    grep -E -B1 -A4 'error:' "$log" 2>/dev/null | head -40 >&2 \
+        || tail -20 "$log" >&2
+    printf '  (full build log: %s)\n' "$log" >&2
+    fail "$1"
+}
+
 step "system load"
 bash "$SCRIPT_DIR/sysload.sh" 2>/dev/null || echo "(sysload unavailable)"
 
@@ -104,9 +129,7 @@ if [[ $REGEN -eq 1 ]]; then
     for f in selfhost/stdlib_preamble.zig selfhost/napi_preamble.zig; do
         if [[ -f "$f" && ( ! -f "$BOOT" || "$f" -nt "$BOOT" ) ]]; then
             step "rebuilding the bootstrap first ($f is newer; it is embedded at build time)"
-            if ! zig build 2>&1 | tail -6; then
-                fail "zig build failed — the bootstrap still embeds the OLD $f, so regenerating now would emit a stale runtime"
-            fi
+            zbuild_or_fail "zig build failed — the bootstrap still embeds the OLD $f, so regenerating now would emit a stale runtime"
             break
         fi
     done
@@ -182,9 +205,7 @@ if [[ $REGEN -eq 1 ]]; then
 fi
 
 step "building zebra.exe"
-if ! zig build 2>&1 | tail -6; then
-    fail "zig build failed"
-fi
+zbuild_or_fail "zig build failed"
 
 step "result"
 if [[ -x zig-out/bin/zebra.exe ]]; then

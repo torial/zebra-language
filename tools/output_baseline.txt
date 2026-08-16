@@ -174,6 +174,140 @@ c
 -- lines, the other sibling --
 x
 bug226_tokenize_forheader_test: OK
+=== bug227_tokenize_any_test sha1=1eb81f75a916 ===
+bug227: OK
+=== bug235_exposing_test sha1=64cadf20c66f ===
+7
+9
+=== bug238_import_except_test sha1=b45737b8a716 ===
+8
+9
+=== bug239_empty_list_literal_test sha1=159abcf36981 ===
+bug239_empty_list_literal_test: ok
+=== bug241_progress_io_test sha1=4d54487c5c98 ===
+bug241: OK
+=== bug242_csv_roundtrip_test sha1=2cf6c5597430 ===
+bug242: OK
+=== bug245_shell_process_run_test sha1=2ca53053449c ===
+bug245: OK
+=== bug248_this_check_scope_test sha1=c6244e0a6d5c ===
+bug248: OK
+=== bug253_frontend_diagnostics_test sha1=86bd4b8317e5 ===
+void-bare
+bug253: OK
+=== bug253_tuple_index_high_test sha1=688094fe925b ===
+e
+4
+bug253-tuple: OK
+=== bug253_uninit_collection_field_test sha1=80c0fea13584 ===
+1
+bug253-uninit: OK
+=== bug255_unfuzzed_constructs_test sha1=f881c822c3c5 ===
+bug255: OK
+=== bug256_bitwise_not_test sha1=2395b95e11bf ===
+bug256: OK
+=== bug260_bindlist_param_test sha1=aa80f1a2a92a ===
+1
+3
+4
+bug260: OK
+=== bug265_extern_no_deps_test sha1=92cfceb39d57 ===
+42
+=== bug267_ziglit_local_use_test sha1=2533347e72f8 ===
+42
+bug267: OK
+=== bug268_branch_int_test sha1=24f94c58f62e ===
+two
+three-or-four
+three-or-four
+other
+yes
+no
+seven-big
+a
+bug268: OK
+=== bug269_extern_cstr_test sha1=707cb2834483 ===
+7
+bug269: OK
+=== bug270_extern_int_ambiguity_test sha1=2a1a23db69da ===
+42
+bug270: OK
+=== bug271_deferred_method_type_test sha1=2845a8bc9381 ===
+2
+17
+f
+bug271: OK
+=== bug273_assert_diagnostic_test sha1=601d2d0f2270 ===
+bug273: OK
+=== bug275_try_in_container_test sha1=b8c76fd35610 ===
+-1
+-1
+-1
+42
+bug275: OK
+=== bug276_http_request_str_test sha1=ef13c5b319aa ===
+bug276: OK
+=== bug277_member_name_forced_str_test sha1=d268b5a3e8f6 ===
+path=7
+text=1.5
+message=true
+name=home
+bug277: OK
+=== bug278_ensure_result_walker_test sha1=56d4600d9a0f ===
+abc
+0
+1
+bug278: OK
+=== bug280_freed_words_test sha1=cad67dff026c ===
+11
+1
+7
+e 3
+8
+13
+42
+x9
+T
+boom
+Rec(error=1, try=2)
+true
+freed words: OK
+=== bug280_keyword_idents sha1=2c93ec3fdae7 ===
+6 v
+9
+7 8
+11
+3n
+Der(align=1, volatile=2)
+true
+p
+12
+3
+6
+8
+101
+6
+10
+11
+42
+111
+bug280: OK
+=== bug283_zig_lit_typeref_test sha1=64c83bf56dca ===
+7
+0
+1
+true
+42
+bug283: OK
+=== bug286_namespace_ctor_test sha1=a5f1553e0847 ===
+90
+10
+6
+bug286: OK
+=== bug287_sibling_method_shadow_test sha1=dcae8ebeca82 ===
+113
+42
+bug287: OK
 === build_declarative_test sha1=6859218cdc5a ===
 build declarative: ok
 === build_smoke_test sha1=8bfb8015d704 ===
@@ -257,6 +391,8 @@ crossmod_types_test OK
 Hello, Zebra!
 bad ciphertext rejected
 crypto_test OK
+=== csv_test sha1=61283abc5f61 ===
+csv_test: all assertions passed
 === ctor_arg_ref_test sha1=432458fa5e5f ===
 ctor_arg_ref_test OK
 === datetime_inzone_test sha1=00f146c2ede7 ===
@@ -385,6 +521,8 @@ false
 HELLO!
 false
 Hello, world!
+=== extern_c_call_test sha1=92cfceb39d57 ===
+42
 === features sha1=160cf01a3828 ===
 42
 3
@@ -911,6 +1049,8 @@ postfix_bang_test PASS
   Calc.mul                                         1  <TIME> ms
   helper                                           1  <TIME> ms
 profile_attr OK
+=== progress_test sha1=e5fd9cfe0e80 ===
+done
 === raise_auto sha1=b1d5781111d8 ===
 10
 === random_instance_test sha1=7bf5be3167b7 ===
@@ -1048,6 +1188,8 @@ set_literal: OK
 2
 === shared_var_test sha1=d0d34ef0a08b ===
 shared_var: OK
+=== shell_test sha1=c84593c008c8 ===
+shell_test: OK
 === sig_test sha1=4fa2478bb5ca ===
 sig_test: all OK
 === simd_test sha1=2dfcb065e19f ===
