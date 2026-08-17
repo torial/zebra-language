@@ -10,7 +10,7 @@ upgrades the cell with the steepest temperature gradient, which is exactly steep
 on mean temperature (`dJ/dk = -|grad T|^2`, and conduction is self-adjoint so the adjoint
 field is the forward field). Trees are what that does.
 
-## What varies the morphology, and what does not
+## What varies the morphology
 
 ### It varies with conductivity contrast
 
@@ -33,36 +33,58 @@ At `k = 100` every branch is exactly one cell wide and there is no width variati
 fit, because extending to unserved heat always beats thickening an already-excellent path.
 That is a result, and the program says so rather than fitting noise.
 
-### It does NOT vary much with the growth exponent, and that is the interesting part
+### It DOES vary with the growth exponent — but only where the tree can screen
 
-Switching from deterministic steepest descent to stochastic selection with
-`P ∝ |grad T|^eta` — the parameter that in dielectric-breakdown models takes you from
-compact Eden clusters through DLA to needles — barely moves anything here:
+**This section previously reported a null, and the null was wrong.** It was measured at a
+single conductivity ratio (k = 4), where the exponent genuinely does nothing, and
+generalised from that one slice. Sweeping both axes shows a clean phase diagram.
 
-| selection | frontier score spread | box dimension |
-|---|---|---|
-| `eta = 0` (uniform) | 1.0x | 1.475 |
-| `eta = 1` | 4.0x mean, 7.2x worst | 1.505 |
-| `eta = 4` | 68.5x mean, **216x worst** | 1.423 |
-| deterministic | — | 1.386 |
+Box dimension, stochastic mode, uniform sources, seed 12345:
 
-**The first hypothesis was that the scores had too little spread for the exponent to bite.
-That was measured and is false** — at `eta = 4` the weights span 216x and the morphology
-still does not move. What `eta` does do is interpolate correctly between uniform-frontier
-growth and deterministic steepest descent; the two endpoints simply land in nearly the same
-place.
+| k \ eta | 0 | 1 | 2 | 4 |
+|---|---|---|---|---|
+| 2 | 1.535 | 1.502 | 1.530 | 1.523 |
+| 4 | 1.535 | 1.502 | 1.495 | 1.483 |
+| 10 | 1.535 | 1.437 | 1.439 | 1.354 |
+| 30 | 1.535 | 1.415 | 1.338 | 1.200 |
+| 100 | 1.535 | 1.338 | 1.185 | **1.142** |
 
-The proposed mechanism is **screening**. In DBM the field is source-free, so tips shield
-fjords and the selection rule has enormous leverage. Here heat is generated in *every*
-cell, so fresh heat appears immediately adjacent to every frontier cell and no part of the
-frontier can be starved. The volumetric source term suppresses the screening that `eta`
-acts on.
+`eta` spread by contrast: 0.012, 0.052, 0.181, 0.335, **0.393** — monotonic, and only the
+last three exceed the classifier's ~0.1 resolution.
 
-**That is a prediction, not a conclusion, and it has not been tested.** The experiment that
-would test it: concentrate the generation far from the sink (or remove it and drive the
-problem from a hot boundary instead), restoring long-range transport and therefore
-screening. If the mechanism is right, the `eta` axis should open up. If it does not, the
-explanation above is wrong.
+**SCREENING REQUIRES TWO THINGS AT ONCE, and that is the finding.** The aggregate must
+perturb the field (high contrast) *and* the selection rule must be sensitive to the
+perturbation (high `eta`). Either alone does nothing, which is exactly why the `eta = 0`
+column and the `k = 2` row are both flat. At low contrast the tree barely bends the field,
+every frontier cell looks alike, and no exponent can amplify a difference that is not
+there.
+
+The morphologies at the corner are textbook, and visibly so. At `k = 100, eta = 0` the top
+22 rows of the domain are **empty** — a compact blob hugging the sink, an Eden cluster. At
+`k = 100, eta = 4` long sparse tendrils reach most of the way up. That is the Eden -> DLA
+transition, and it was completely invisible at `k = 4`.
+
+**THE eta = 0 COLUMN IS AN INTERNAL CONTROL, not just a data point.** At `eta = 0` selection
+is uniform over the frontier and therefore field-independent, so the morphology must not
+depend on conductivity at all. It reads 1.535 at every one of the five ratios, to three
+decimals. An implementation that had leaked the field into the `eta = 0` path would show
+drift there.
+
+### The source-term hypothesis was wrong, and backwards
+
+The previous version of this document proposed that volumetric generation suppresses
+screening — that heat appearing next to every frontier cell prevents starvation, and that
+removing the sources would open the `eta` axis. A source-free mode was added to test it
+(`src = edge`: no bulk generation, top row held hot, which makes the problem a dielectric
+breakdown model).
+
+At the same `k = 100`, the `eta` spread is **0.393 with uniform sources and 0.142
+source-free**. Sources make `eta` *more* effective here, not less. The hypothesis was not
+merely unsupported; it pointed the wrong way. The controlling variable is conductivity
+contrast, and the source mode is a second-order effect on top of it.
+
+Recorded rather than deleted, because the useful part is that the hypothesis was specific
+enough to be killed by one sweep.
 
 ## The scaling law, and a prediction that failed
 
@@ -100,8 +122,13 @@ dimension every run (`mode = selftest`):
 
 On a 49-cell grid the usable box sizes span barely one decade, so this is finite-size bias,
 not a coding error. **It discriminates well** — 0.95 / 1.75 / 1.85 are cleanly separated —
-so differences of ~0.1 between specimens are real and differences of ~0.05 are not. That
-is precisely why the `eta` result above is reported as a null rather than a trend.
+so differences of ~0.1 between specimens are real and differences of ~0.05 are not.
+
+That threshold is load-bearing in both directions and it caught a mistake each way. It is
+why the `k = 2` row (spread 0.012) is reported as flat rather than as a faint trend — and
+it is also why the original single-slice measurement at `k = 4` (spread 0.052) should never
+have been written up as a null in the first place: 0.05 is *below* the resolution, so the
+honest statement was "no effect resolvable here", not "no effect".
 
 **The branch-width instrument lied first.** Its first version accepted every horizontal run
 of conductor as a cross-section — but a horizontal run through a *horizontal* branch is its
@@ -120,10 +147,13 @@ breaks the symmetry, exactly as Bénard cells choose a phase.
 ## Reproducing
 
 ```
-zebra run examples/constructal.zbr [N] [kRatio] [budgetFrac] [mode] [eta] [seed]
-zebra run examples/constructal.zbr 49 4 0.12 opt              # the engineered spreader
-zebra run examples/constructal.zbr 49 4 0.12 grow 1.0 12345   # stochastic growth
-zebra run examples/constructal.zbr 49 4 0.12 selftest         # validate the classifier
+zebra run examples/constructal.zbr [N] [kRatio] [budgetFrac] [mode] [eta] [seed] [srcMode]
+
+zebra run examples/constructal.zbr 49 4   0.12 opt                    # engineered spreader
+zebra run examples/constructal.zbr 49 100 0.12 grow 0.0 12345 uniform # compact Eden blob
+zebra run examples/constructal.zbr 49 100 0.12 grow 4.0 12345 uniform # sparse DLA tendrils
+zebra run examples/constructal.zbr 49 100 0.12 grow 2.0 12345 edge    # source-free (DBM)
+zebra run examples/constructal.zbr 49 4   0.12 selftest                # validate classifier
 ```
 
 Every specimen is seeded and reproducible.

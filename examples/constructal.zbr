@@ -53,7 +53,7 @@
 #
 # A clean law where the premise holds, dissolving smoothly where it does not.
 #
-#   zebra run constructal.zbr [N] [kRatio] [budgetFrac] [mode] [eta] [seed]
+#   zebra run constructal.zbr [N] [kRatio] [budgetFrac] [mode] [eta] [seed] [srcMode]
 #   defaults: 49 100 0.12 opt 1.0 12345
 #   mode "opt"  — deterministic steepest descent (the engineered spreader)
 #   mode "grow" — stochastic, P ∝ |grad T|^eta (the zoo of natural forms)
@@ -67,7 +67,7 @@ def faceK(ka: float, kb: float): float
     # very structure we are trying to resolve.
     return 2.0 * ka * kb / (ka + kb)
 
-def solve(t: List(float), k: List(float), sink: List(bool), n: int, sweeps: int, gen: float)
+def solve(t: List(float), k: List(float), sink: List(bool), hot: List(bool), genf: List(float), n: int, sweeps: int, thot: float)
     var omega: float = 1.85
     var s = 0
     while s < sweeps
@@ -78,9 +78,13 @@ def solve(t: List(float), k: List(float), sink: List(bool), n: int, sweeps: int,
                 var i = idx(x, y, n)
                 if sink.at(i)
                     t.set(i, 0.0)
+                else if hot.at(i)
+                    # Dirichlet source boundary: heat enters here rather than being
+                    # generated in the bulk. This is what makes the field source-FREE.
+                    t.set(i, thot)
                 else
                     var ki = k.at(i)
-                    var num: float = gen
+                    var num: float = genf.at(i)
                     var den: float = 0.0
                     # A face on the domain edge is adiabatic: it contributes nothing, which
                     # is exactly what "insulated" means in a finite-volume balance.
@@ -539,51 +543,90 @@ def main()
     if args.len > 6
         seed = args.at(6).toInt()
     var rng = Random.new(seed)
-    if mode == "selftest"
-        selfTestDimension(n)
-        return
 
+    # source mode: "uniform" (bulk generation), "top" (generation only far from the
+    # sink), "edge" (NO generation; the top row is held hot -- a source-free Laplace
+    # field, i.e. the dielectric breakdown model).
+    var srcmode: str = "uniform"
+    if args.len > 7
+        srcmode = args.at(7)
     var klow: float = 1.0
     var khigh: float = klow * kratio
-    var gen: float = 1.0
+    var thot: float = 1000.0
     var cells = n * n
     var budget = (cells.toFloat() * bfrac).toInt()
 
     var k = List(float)()
     var t = List(float)()
     var sink = List(bool)()
+    var hot = List(bool)()
+    var genf = List(float)()
     var i = 0
     while i < cells
         k.add(klow)
         t.add(0.0)
         sink.add(false)
+        hot.add(false)
+        genf.add(0.0)
         i += 1
+    var gy = 0
+    while gy < n
+        var gx = 0
+        while gx < n
+            var gi = idx(gx, gy, n)
+            if srcmode == "uniform"
+                genf.set(gi, 1.0)
+            else if srcmode == "top"
+                if gy < n / 5
+                    genf.set(gi, 5.0)
+            else
+                # "edge": no bulk generation at all; the top row is a Dirichlet source.
+                if gy == 0
+                    hot.set(gi, true)
+            gx += 1
+        gy += 1
 
     # ONE sink cell, at the middle of the bottom edge: the classic volume-to-point problem.
     # A single outlet is what forces a tree; give the slab a whole cold edge and the optimal
     # answer is boring parallel stripes.
+    if mode == "selftest"
+        selfTestDimension(n)
+        return
     var sx = n / 2
     var sy = n - 1
     sink.set(idx(sx, sy, n), true)
 
-    print("constructal heat tree — " + n.toString() + "x" + n.toString() + ", k ratio ${kratio:.0f}, budget ${bfrac:.3f}")
+    print("constructal heat tree — " + n.toString() + "x" + n.toString() + ", k ratio ${kratio:.0f}, budget ${bfrac:.3f}, source " + srcmode)
     print("sink: one cell at (" + sx.toString() + "," + sy.toString() + "); all other edges adiabatic")
     print("")
 
-    solve(t, k, sink, n, 4000, gen)
+    solve(t, k, sink, hot, genf, n, 4000, thot)
     var t0max = maxT(t, n)
     var t0mean = meanT(t, n)
     var sym = symmetryError(t, n)
     var relsym = sym / t0max
     var flux = sinkFlux(t, k, sink, n)
-    var gentot = gen * (cells - 1).toFloat()
-    var imbal = (flux - gentot) / gentot
-    if imbal < 0.0
-        imbal = -imbal
+    var gentot: float = 0.0
+    var gi2 = 0
+    while gi2 < cells
+        if not sink.at(gi2) and not hot.at(gi2)
+            gentot += genf.at(gi2)
+        gi2 += 1
+    # In "edge" mode nothing is generated in the bulk, so generation-vs-sink is not the
+    # right balance and the check is reported as not applicable rather than as a
+    # meaningless zero. A control that cannot apply must say so, not print 0 and pass.
+    var imbal: float = -1.0
+    if gentot > 0.0
+        imbal = (flux - gentot) / gentot
+        if imbal < 0.0
+            imbal = -imbal
 
     print("CONTROLS — the solver, before any conductor is placed")
     print("  symmetry (relative)  ${relsym:.8f}   must be ~0; an indexing bug breaks this")
-    print("  energy imbalance     ${imbal:.6f}   sink flux vs total generation")
+    if imbal >= 0.0
+        print("  energy imbalance     ${imbal:.6f}   sink flux vs total generation")
+    else
+        print("  energy imbalance     n/a — source-free mode, nothing is generated in the bulk")
     print("  baseline T_max       ${t0max:.2f}")
     print("")
 
@@ -671,15 +714,15 @@ def main()
         else
             k.set(chosen, khigh)
             placed += 1
-            solve(t, k, sink, n, 60, gen)
+            solve(t, k, sink, hot, genf, n, 60, thot)
 
-    solve(t, k, sink, n, 2500, gen)
+    solve(t, k, sink, hot, genf, n, 2500, thot)
     var t1max = maxT(t, n)
     var t1mean = meanT(t, n)
 
     var dim = boxDimension(k, n, klow)
     var tips = countTips(k, sink, n, klow)
-    print("specimen: mode=" + mode + " eta=${eta:.2f} k=${kratio:.0f} seed=" + seed.toString())
+    print("specimen: mode=" + mode + " eta=${eta:.2f} k=${kratio:.0f} src=" + srcmode + " seed=" + seed.toString())
     print("  box-counting dimension  ${dim:.3f}    tips " + tips.toString())
     if nRatio > 0.0
         var avgR = sumRatio / nRatio
