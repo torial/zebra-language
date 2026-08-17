@@ -374,7 +374,8 @@ smoke test/contract_ensure_falloff_test.zbr
 # so result.len, result.startsWith, etc. emit correct codegen.
 smoke test/contract_result_member_test.zbr
 # result/old as plain identifiers outside ensure (context-sensitive keyword test).
-smoke test/contract_ident_test.zbr
+# contract_ident_test moved DOWN to the smoke_run block (smoke_run is not defined
+# until later in this file, and bash resolves a function at call time).
 
 # Class-level (shared/static) var fields: pub var in Zig, read/write by class name.
 smoke test/shared_var_test.zbr
@@ -1446,6 +1447,12 @@ smoke_warn    test/bug104_unknown_directive_test.zbr "unknown @-directive"
 # stopped exactly where the defect lived. Lives here rather than beside the other
 # bug0xx entries because `smoke_run` is not defined until further down this file.
 smoke_run     test/bug088_try_return_test.zbr "bug088_try_return_test: ok"
+# contract_ident_test: `old` and `result` are CONTEXT-SENSITIVE keywords — reserved only
+# inside an `ensure` body, ordinary identifiers everywhere else. That is what makes them
+# free to keep: the feature costs the user nothing in namespace. Upgraded from emit-only
+# 2026-08-17, because the claim is about what the program EVALUATES (10 + 3), and an
+# emit-only registration asserted only that it parsed.
+smoke_run     test/contract_ident_test.zbr "13"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

@@ -64,6 +64,86 @@ arguments, which Zebra makes immutable.
 exit gives a DIFFERENT answer — otherwise the doc has been edited without the defect
 being removed.
 
+---
+
+#### IMPLEMENTATION NOTES — `old <parameter>` is to be REFUSED (Sean's call, 2026-08-17)
+
+Sean approved turning the inert form into a refusal: *"refusal helps us to UNGIT"*, and
+*"the message is critical"*. Recorded in full so this does not have to be re-derived.
+
+**PHASE DECISION: the FRONT END, not CodeGen.** A CodeGen-phase error would be invisible
+to `zebra -c` (front-end only), i.e. a 55th entry in `frontend_gap.py`'s 23-of-54 — the
+gap NEXT_STEPS' organizing goal exists to shrink. A refusal that only fires on a full
+compile is a weaker version of the feature, and for a DIAGNOSTIC where the user meets it
+is most of its value.
+
+**INSERTION POINT: `checkDecl`, `selfhost/TypeChecker.zbr:4012` (`on Decl.method as dm`).**
+This is the whole reason the change is small: `dm.params` AND `dm.ensure_` are both in
+scope there (`Ast.zbr:308-311` puts them on the same node). So the check needs NO
+`InferCtx` change and no param-vs-local distinction — which matters, because a LOCAL can
+be mutated, so `old <local>` is legitimate and refusing it would be a false accusation.
+An earlier plan to add a param-name set to `InferCtx` was unnecessary; `inferExpr` was
+the wrong altitude.
+
+Note `dm.ensure_` is NOT currently walked by the TypeChecker at all — contracts are
+type-checked nowhere in the selfhost front end. Walking them wholesale for the first time
+has an UNMEASURED blast radius (new errors across the corpus); the check must therefore
+scan for `old` nodes specifically rather than type-check the clause.
+
+**TRAVERSAL: shared, already extracted.** `CgHelpers.collectOldNodes(expr, out)` — moved
+there 2026-08-17 from `CodeGen.collectAndEmitOldSnapshots`, whose own comment recorded
+that it *"had drifted from its own twin below"*. Both phases want "the old nodes, in
+order" and differ only in the action, so the walk is shared and the action stays with each
+caller. The `# expr-walker: exhaustive` marker moved with it, so `lint_expr_walkers` still
+covers it — in one place instead of two. `Resolver.zbr:26` already imports from
+`CgHelpers`, so a front-end phase doing this is established, not novel.
+
+**TWO TRAPS ALREADY PAID FOR:**
+
+1. **THE EXTRACTION DOES NOT REGENERATE YET, AND THE CAUSE IS NOT YET KNOWN.** Two
+   attempts both failed the same way: the bootstrap emits a `CodeGen.zig` that Zig
+   refuses, with the trace naming `genMethod` at `CodeGen.zig:12455:41` and then
+   `:12456:41`. **`CgHelpers.zbr` itself compiles clean (`--emit-zig` rc=0) — the
+   failure is in the CodeGen call site.**
+
+   My first hypothesis was that collecting `List(Expr)` and `branch`-ing on the LOOP
+   VARIABLE hit BUG-201 (nested-container dispatch on a mutable-loop receiver). I
+   rewrote it to collect the PAYLOAD type (`List(ExprOld)`, no `branch` at the call
+   site at all, `ExprOld` added to the `use Ast exposing …` line in both files) — and
+   **it failed identically**. So that hypothesis is REFUTED, not confirmed; recorded
+   as a dead end so nobody spends the attempt again.
+
+   **The next step is to get the actual error text**, which `rebuild.sh` filters out of
+   its log — only the "referenced by" trace survives. Regenerate CodeGen unfiltered
+   (or read `/tmp/bs-zig/CodeGen.zig:12455` directly) before forming a third
+   hypothesis. Both of mine were formed without the error message, which is the whole
+   reason they were wrong.
+
+   **The working tree was REVERTED to green rather than left broken.** The 265-line
+   attempt is saved as
+   `C:\Users\Sean\wiki\pages\claude\zebra_collectOldNodes_WIP_2026-08-17.patch` —
+   `git apply` it to resume. It contains the full `collectOldNodes` traversal (which
+   is believed correct and compiles on its own) plus the CodeGen call-site rewrite
+   (which does not regenerate). Re-deriving the traversal is ~110 lines of careful
+   copying; do not redo it from scratch.
+2. **Order is preserved but NOT because it names anything.** The `_old_N` uid is assigned
+   by AstBuilder and is stable, so re-ordering would not rename snapshots — it would
+   change the SEQUENCE of emitted `const` lines, i.e. a byte diff for no behavioural
+   reason. Keep the order; do not sort.
+
+**VERIFY THE EXTRACTION IS OUTPUT-NEUTRAL BEFORE ADDING THE CHECK.** Emit the four
+contract fixtures (`contract_old_test`, `contract_old_compound_test`, `turbo_test`,
+`contract_ident_test`) before and after and diff. **AND CONFIRM THE REBUILD ACTUALLY
+SUCCEEDED FIRST** — on 2026-08-17 the diff read "identical" for all four because
+`rebuild.sh` had FAILED and restored `selfhost/*.zig` from its pre-run snapshot, so the
+emit was produced by the unchanged binary and compared against itself.
+
+**STILL OWED when the check lands:**
+- a must-fail fixture asserting the MESSAGE, not merely that it errored;
+- **QUICKSTART §24 must be fixed in the SAME change** — its own example becomes a compile
+  error the moment this lands, and `doc_example_check` reads live docs. The doc fix stops
+  being optional tidying and becomes a hard dependency.
+
 ### BUG-124: Bootstrap codegen — `^T?` constructor arg boxes as `*?T` instead of `?*T` for value-typed T
 
 > **Triaged 2026-08-17 — KEPT OPEN pending a pin, not because it is believed broken.**

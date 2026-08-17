@@ -82,6 +82,69 @@ makes the TC authoritative about what is known and unblocks the rest. **#5a is n
 group (self-contained, immediate user-visible payoff, no dependencies); then revisit #4 with
 Sean once the front end's coverage is actually worth promising something about.
 
+### F1 — SPIKE: move stdlib method-name checking out of CodeGen so `-c` can see it (2026-08-17)
+
+**Sean's framing:** *"do we have places that are in the CodeGen that we could push into
+the CgHelpers to free up more `-c` functionality?"* Yes, and the largest class is one
+shape repeated ~35 times.
+
+**THE MEASUREMENT.** `selfhost/CodeGen.zbr` contains **49** `@compileError` emissions.
+About **35** are the identical shape:
+
+    @compileError("selfhost: unknown Path.<method>")
+    @compileError("selfhost: unknown File.<method>")
+    ... sys, Json, Http, HttpResponse, Ws, Regex, DateTime, Hash, Crypto, Random,
+        Terminal, Log, Csv, Timer, Progress, Profile, Base64, Uri, Compress, Mime,
+        Tcp, Udp, Sqlite, Net, Gui, Shell, Dir, Reflect, Arg, Build, ...
+
+Each is a **pure name lookup** — namespace + method name, both present in the AST. No
+emit context, no inference, no allocator. That is exactly `CgHelpers`' stated contract
+("pure analysis passes on the Zebra AST: no I/O, no allocator dependencies").
+
+**WHAT IT COSTS TODAY.** `Path.bogus()` produces a Zig `@compileError` against GENERATED
+code. So `zebra -c` exits **0** (front-end only — it never compiles the emitted Zig), and
+when the user does hit it the message points at generated Zig rather than at their source
+line. That is `tools/frontend_gap.py`'s 23-of-54 gap, and the same UNGIT failure as
+BUG-259: the system knows and does not say, where the user is already looking.
+
+**THE PRECEDENT ALREADY EXISTS — this is not a new architecture.**
+`selfhost/Resolver.zbr:26` already does `use CgHelpers exposing isStdlibNs`, so a
+FRONT-END phase consuming shared AST helpers is proven in-tree. The namespace-level
+knowledge is already shared; only the per-namespace METHOD tables are not. It also lines
+up with the root cause recorded in the divergence notes: *"Resolver.isBuiltin vs
+CodeGen.isStdlibNamespace drift — unify."*
+
+**WHY THIS IS A SPIKE AND NOT A GRIND-THROUGH-35.** Three hazards, in severity order:
+
+1. **Getting a table wrong REFUSES VALID CODE**, which is the expensive direction — a
+   false accusation against a correct program, not a miss. If an extracted table omits a
+   method CodeGen actually handles, the front end rejects a working call.
+2. **A hand-copied table above a default is rule 1b** — "a comment or list enumerating
+   what a default applies to is a hand-maintained oracle wearing documentation as a
+   disguise", the hazard recorded on `isStringExpr` (BUG-277). Copying 35 lists by hand
+   would be minting 35 of them.
+3. The method names are woven into `if mname == "..."` CONTROL FLOW inside each
+   `genXCall`, so extraction means turning control flow into data, 35 times.
+
+**SO THE SPIKE'S REAL QUESTION IS NOT "can we move it" BUT "can the table be DERIVED
+rather than copied?"** — the rule `lint_zig_keywords` (oracle = zig's own tokenizer
+table) and `grammar_export --check` (oracle = the Earley rule table) are both built on.
+If the table can be derived from the emit branches, the remaining 34 are a mechanical
+grind with a real gate behind them. **If it cannot be derived, the honest outcome may be
+a LINT that cross-checks the two lists rather than a move** — and that is a legitimate
+result of the spike, not a failure of it.
+
+**DO ONE NAMESPACE END TO END.** `Path` is the smallest (see `genPathCall`,
+`CodeGen.zbr:~17100`). Deliverable: the front end refuses `Path.bogus()` with a Zebra
+diagnostic carrying a source position, `zebra -c` catches it, and the table is derived or
+the derivation is proven impossible with the reason written down.
+
+**CONTROL BEFORE BELIEVING IT WORKS:** a probe calling every method `genPathCall` really
+does handle must still compile. A spike that only tests the REJECT direction has
+confirmed nothing about the 2.-hazard above — that is the negative-control rule
+(*"probe a failure and you overestimate the damage; probe a success and you
+underestimate it"*).
+
 ### UNGIT pass — migrate every SILENT surface into a LOUD one (Fable, 2026-08-08)
 
 Same organizing goal, arrived at from a different door: an UNGIT review of
