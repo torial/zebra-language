@@ -1,0 +1,70 @@
+# @boundary runs
+#
+# INTENT AUTHORED FROM QUICKSTART §24 ("Contracts"), BEFORE RUNNING.
+#
+# §24 opens with "Contracts are Zebra's identity feature", and yet nothing asserts
+# their SEMANTICS. `contract_mode_check` is thorough about what the FLAGS do —
+# --release keeps them, --turbo strips them, assert survives both — but "the checks
+# are present in the emitted code" is a different claim from "the checks are correct
+# at the boundary they guard". A contract that fired one value early would satisfy
+# every gate in the tier.
+#
+# Every row below sits ON the boundary, where an off-by-one lives:
+#
+#   - `require x >= 0` must ACCEPT exactly 0. A `>` mistake refuses a legal call, and
+#     refusing a legal call is the expensive direction: it is a false accusation
+#     against correct user code.
+#   - `ensure result == old n + 1` pins that `old` snapshots at ENTRY. The doc's stated
+#     reason is the case "when the caller-supplied value is later mutated or shadowed",
+#     so a naive implementation reading `n` at EXIT gives the same answer here only
+#     because nothing mutates it — this row asserts the easy case works at all, and
+#     the mutation case is left for a probe that can distinguish them.
+#   - `result.len` pins the doc's explicit promise that `result`'s type IS the declared
+#     return type, so str methods resolve on it.
+#   - the invariant is checked "after `cue init` completes and after every public
+#     method returns" — both points are exercised.
+def clamped(x: int): int
+    require
+        x >= 0
+    ensure
+        result >= 0
+    return x
+
+def bumped(n: int): int
+    ensure
+        result == old n + 1
+    return n + 1
+
+def label(s: str): str
+    ensure
+        result.len >= s.len
+    return s + "!"
+
+class Counter
+    var count: int
+
+    cue init()
+        count = 0
+
+    invariant
+        count >= 0
+
+    def bump()
+        count += 1
+
+def main()
+    # ON the boundary: >= 0 accepts 0 exactly.
+    print(clamped(0))
+    # Comfortably inside, so a broken boundary is distinguishable from a broken check.
+    print(clamped(7))
+
+    # `old` snapshots the entry value.
+    print(bumped(41))
+
+    # `result` carries the declared return type.
+    print(label("ab"))
+
+    # invariant survives `cue init` and a public method.
+    var c = Counter()
+    c.bump()
+    print(c.count)

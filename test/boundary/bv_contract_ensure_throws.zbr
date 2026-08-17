@@ -1,0 +1,36 @@
+# @boundary runs
+#
+# INTENT AUTHORED FROM QUICKSTART §24, BEFORE RUNNING. One sentence, asserted:
+#
+#   "`ensure` does **not** fire on the error path of a `throws` function — only on
+#    successful return."
+#
+# THIS IS THE SHARPEST CLAIM IN §24 AND THE EASIEST TO GET WRONG. An `ensure` clause
+# lowers to a check before returning; a `throws` function has two exits, and the
+# obvious implementation — emit the check at every return site — is correct on one of
+# them and catastrophic on the other, because on the error path there IS no `result`
+# to evaluate. Depending on how the emitted Zig is shaped that is either a compile
+# error against generated code or, worse, a check run against an undefined value.
+#
+# The failure would be INVISIBLE to every other gate: a `throws` function whose error
+# path is never taken in the corpus compiles and runs perfectly, and the corpus
+# overwhelmingly exercises success paths, because that is what tests assert.
+#
+# Both exits are taken here, in one program, so neither can pass by not being reached.
+def risky(fail: bool): int throws
+    ensure
+        result > 0
+    if fail
+        raise "boom"
+    return 5
+
+def main()
+    # Success path: `ensure` fires and is satisfied (5 > 0). The `catch` is present so
+    # the two rows are written identically and differ only in which exit is taken.
+    var ok = risky(false) catch 0
+    print(ok)
+
+    # Error path: `ensure` must NOT fire. If it does, it evaluates `result` on a path
+    # that never produced one.
+    var bad = risky(true) catch 77
+    print(bad)
