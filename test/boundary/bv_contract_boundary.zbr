@@ -30,10 +30,22 @@ def clamped(x: int): int
         result >= 0
     return x
 
-def bumped(n: int): int
-    ensure
-        result == old n + 1
-    return n + 1
+# BUG-292: this row used to copy QUICKSTART §24's own example, `old n` on a PARAMETER.
+# It was inert. Zebra parameters cannot be mutated (`cannot assign to constant`) and
+# cannot be shadowed (`local constant 'n' shadows function parameter`), so a parameter is
+# identical at entry and exit and `old n` means exactly `n` — the row passed under any
+# implementation of `old`, including one that never snapshotted anything.
+#
+# Rewritten onto MUTABLE state, where the two implementations disagree: reading `total`
+# at EXIT gives `41 == 41 + 41` on the first call and panics. That is the property the
+# row is supposed to have.
+class Ledger
+    var total: int = 0
+
+    def add(d: int)
+        ensure
+            total == old total + d
+        total = total + d
 
 def label(s: str): str
     ensure
@@ -58,8 +70,13 @@ def main()
     # Comfortably inside, so a broken boundary is distinguishable from a broken check.
     print(clamped(7))
 
-    # `old` snapshots the entry value.
-    print(bumped(41))
+    # `old` snapshots the ENTRY value of mutable state. Two calls, so the second one
+    # runs with a non-zero starting value and an exit-reading implementation cannot
+    # coincide with the correct one by starting from 0.
+    var lg = Ledger()
+    lg.add(41)
+    lg.add(1)
+    print(lg.total)
 
     # `result` carries the declared return type.
     print(label("ab"))

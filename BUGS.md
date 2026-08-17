@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-291. Next new bug: BUG-292.**
+**Last bug number generated: BUG-292. Next new bug: BUG-293.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -14,6 +14,55 @@
 > *somewhere*, so a duplicate satisfies it twice over.
 
 ---
+
+### BUG-292: QUICKSTART's canonical `old` example demonstrates it in the one position where it CANNOT do anything — DOC defect
+
+**Found 2026-08-17** writing `test/boundary/bv_contract_boundary.zbr`. The compiler is
+correct; §24 is not. Found by authoring a probe from the document and noticing the row
+could not fail.
+
+§24 introduces `old` with this example and this rationale:
+
+```zebra
+def increment(n: int): int
+    ensure
+        result == old n + 1          # snapshot pre-call value of `n`
+    return n + 1
+```
+
+> `old expr` snapshots `expr` at function entry … Useful when the caller-supplied value
+> is later **mutated or shadowed** inside the function.
+
+**Both named cases are impossible for a parameter**, measured:
+
+| the doc's case | what the compiler says |
+|---|---|
+| `n = 999` — "later mutated" | `error: cannot assign to constant` |
+| `var n = 999` — "or shadowed" | `error: local constant 'n' shadows function parameter from outer scope` |
+
+A parameter cannot change between entry and exit, so in the example above `old n` is
+**exactly equivalent to `n`**. The canonical demonstration of the feature is the one
+place it provably makes no difference, and the sentence explaining when to reach for it
+describes two things the language refuses.
+
+**`old` is real and works** — on mutable state. `test/contract_old_test.zbr` is the
+honest shape and it discriminates: `ensure balance == old balance + amount` with
+`balance = balance + amount`, where reading at exit would give `100 == 200` and panic.
+
+**Why this matters beyond tidiness.** A reader copying the documented form gets an
+`ensure` that passes under any implementation of `old`, including a broken one. That is
+how a feature ends up with test coverage that cannot fail — `contract_old_compound_test`
+has the same inertness (`val in @[old val, n]` where `val = n`, so correct gives
+`3 in [0,3]` and exit-reading gives `3 in [3,3]`; both true), and so did the first draft
+of the boundary probe, which copied the doc.
+
+**Fix:** make §24's example use a field, as `contract_old_test` does, and correct the
+rationale — `old` earns its keep on state the METHOD mutates, not on caller-supplied
+arguments, which Zebra makes immutable.
+
+**Control when fixing:** the replacement example must be one where reading the value at
+exit gives a DIFFERENT answer — otherwise the doc has been edited without the defect
+being removed.
 
 ### BUG-124: Bootstrap codegen — `^T?` constructor arg boxes as `*?T` instead of `?*T` for value-typed T
 
