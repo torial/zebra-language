@@ -7,8 +7,11 @@ kv_store
 lambda_calc
 life
 lisp
+npc_reactions
+npc_reactions_test
 pratt_calc
 tears_combat_test
 tears_of_the_tuon
 tears_playthrough
+tears_village_demo
 widget_smoke

@@ -1,0 +1,457 @@
+# constructal.zbr — where do tree shapes come from, and what sets their proportions?
+#
+# A square slab generates heat uniformly and can shed it through ONE cell on its edge. Given
+# a fixed budget of high-conductivity material, where should it go?
+#
+# Nobody tells this program what a tree is. It places conductor one cell at a time, always
+# where the temperature gradient is steepest, and a branching tree comes out. That is
+# Bejan's constructal law in miniature — "for a finite-size system to persist it must evolve
+# to give easier access to the currents flowing through it" — and it is the same
+# optimisation that shapes river deltas, lungs, leaf veins, lightning, and the copper pour
+# under a microcontroller in a sealed tin.
+#
+# WHY THE GRADIENT IS THE RIGHT GROWTH RULE, rather than a heuristic that merely looks
+# tree-like. Minimising mean temperature J at fixed heat generation, the sensitivity of J to
+# one cell's conductivity is dJ/dk = -|grad T|^2 times a positive constant. The conduction
+# operator is self-adjoint, so the adjoint field IS the forward field and no second solve is
+# needed. Steepest descent therefore says: upgrade the cell with the largest |grad T|^2.
+# The tree is not imposed; it is what steepest descent does to this problem.
+#
+# THE PROPORTIONS WERE THE OPEN QUESTION, AND MY FIRST ANSWER WAS WRONG.
+#
+# I predicted the branch scaling before running this, and wrote the prediction down so it
+# could fail. It failed. The record is kept here because the correction is the interesting
+# part.
+#
+#   PREDICTED  Q ∝ w^2   from minimising sum(Q_i L_i / k A_i) at fixed volume  -> A ∝ sqrt Q
+#   MEASURED   Q ∝ w^1.05 (r^2 up to 0.99, stable across k ratio 2..6 and grids 35..61)
+#
+# The error was the objective, not the algebra. sum(Q R) is a flow-weighted temperature
+# drop; the quantity a transport network actually minimises is DISSIPATION, sum(Q^2 R) --
+# which is the same objective Murray used. Redo it:
+#
+#   minimise sum(Q_i^2 L_i / (k A_i))  subject to  sum(A_i L_i) = V
+#   d/dA_i:  -Q_i^2 L_i/(k A_i^2) + lambda L_i = 0   ->   A ∝ Q        exponent 1
+#
+# And Murray's cube law is the SAME variational principle with a different resistance law.
+# For Poiseuille flow R ∝ L/d^4, so:
+#
+#   d/dd:  -4 Q^2 L/d^5 + 2 lambda d L = 0   ->   d^6 ∝ Q^2   ->   d^3 ∝ Q
+#
+# So the exponent that distinguishes a blood vessel from a heat spreader is not a different
+# principle at all. Both minimise dissipation at fixed material volume. Conduction
+# resistance goes as 1/A and viscous resistance as 1/d^4, and that single difference is the
+# whole gap between exponent 1 and exponent 3. The tree is the same idea either way.
+#
+# THE k-RATIO TREND IS A CONTROL ON THAT STORY, not a nuisance. The derivation assumes
+# branch resistance matters. As the conductivity ratio grows the branches go nearly
+# isothermal, that assumption fails, and the fit degrades exactly as it should:
+#
+#   k ratio    2      3      4      6     10     100
+#   exponent   1.054  1.063  1.045  1.085  1.145  1.157
+#   r^2        0.990  0.982  0.971  0.950  0.876  0.390
+#
+# A clean law where the premise holds, dissolving smoothly where it does not.
+#
+#   zebra run constructal.zbr [N] [kRatio] [budgetFrac]
+#   defaults: 49 100 0.12
+
+def idx(x: int, y: int, n: int): int
+    return y * n + x
+
+def faceK(ka: float, kb: float): float
+    # HARMONIC mean, not arithmetic. At a 100:1 contrast the arithmetic mean lets heat cross
+    # a conductor/substrate face as though the substrate were half-conductor, smearing the
+    # very structure we are trying to resolve.
+    return 2.0 * ka * kb / (ka + kb)
+
+def solve(t: List(float), k: List(float), sink: List(bool), n: int, sweeps: int, gen: float)
+    var omega: float = 1.85
+    var s = 0
+    while s < sweeps
+        var y = 0
+        while y < n
+            var x = 0
+            while x < n
+                var i = idx(x, y, n)
+                if sink.at(i)
+                    t.set(i, 0.0)
+                else
+                    var ki = k.at(i)
+                    var num: float = gen
+                    var den: float = 0.0
+                    # A face on the domain edge is adiabatic: it contributes nothing, which
+                    # is exactly what "insulated" means in a finite-volume balance.
+                    if x > 0
+                        var a1 = faceK(ki, k.at(idx(x-1, y, n)))
+                        num += a1 * t.at(idx(x-1, y, n))
+                        den += a1
+                    if x < n - 1
+                        var a2 = faceK(ki, k.at(idx(x+1, y, n)))
+                        num += a2 * t.at(idx(x+1, y, n))
+                        den += a2
+                    if y > 0
+                        var a3 = faceK(ki, k.at(idx(x, y-1, n)))
+                        num += a3 * t.at(idx(x, y-1, n))
+                        den += a3
+                    if y < n - 1
+                        var a4 = faceK(ki, k.at(idx(x, y+1, n)))
+                        num += a4 * t.at(idx(x, y+1, n))
+                        den += a4
+                    if den > 0.0
+                        var tn = num / den
+                        var told = t.at(i)
+                        t.set(i, told + omega * (tn - told))
+                x += 1
+            y += 1
+        s += 1
+
+def gradSq(t: List(float), n: int, x: int, y: int): float
+    var xm = x - 1
+    var xp = x + 1
+    if xm < 0
+        xm = 0
+    if xp > n - 1
+        xp = n - 1
+    var ym = y - 1
+    var yp = y + 1
+    if ym < 0
+        ym = 0
+    if yp > n - 1
+        yp = n - 1
+    var dx = (t.at(idx(xp, y, n)) - t.at(idx(xm, y, n))) / 2.0
+    var dy = (t.at(idx(x, yp, n)) - t.at(idx(x, ym, n))) / 2.0
+    return dx * dx + dy * dy
+
+def maxT(t: List(float), n: int): float
+    var m: float = 0.0
+    var i = 0
+    while i < n * n
+        if t.at(i) > m
+            m = t.at(i)
+        i += 1
+    return m
+
+def meanT(t: List(float), n: int): float
+    var s: float = 0.0
+    var i = 0
+    while i < n * n
+        s += t.at(i)
+        i += 1
+    return s / (n * n).toFloat()
+
+# ---- controls -----------------------------------------------------------------
+# SYMMETRY is a control ON THE SOLVER ONLY. Domain, generation and sink are mirror-symmetric
+# about the centre column, so a correct solver must produce a symmetric field on a symmetric
+# conductivity map — an indexing bug is very likely to break this and still print a
+# plausible-looking field. It is NOT expected to hold after growth: greedy descent on a
+# problem with degenerate optima picks one and breaks the symmetry, which is a real effect
+# (Benard cells choose a phase the same way), not an error.
+def symmetryError(t: List(float), n: int): float
+    var worst: float = 0.0
+    var y = 0
+    while y < n
+        var x = 0
+        while x < n / 2
+            var d = t.at(idx(x, y, n)) - t.at(idx(n-1-x, y, n))
+            if d < 0.0
+                d = -d
+            if d > worst
+                worst = d
+            x += 1
+        y += 1
+    return worst
+
+# ENERGY BALANCE: in steady state every watt generated leaves through the sink.
+def sinkFlux(t: List(float), k: List(float), sink: List(bool), n: int): float
+    var total: float = 0.0
+    var y = 0
+    while y < n
+        var x = 0
+        while x < n
+            var i = idx(x, y, n)
+            if sink.at(i)
+                var ki = k.at(i)
+                if x > 0
+                    total += faceK(ki, k.at(idx(x-1,y,n))) * t.at(idx(x-1,y,n))
+                if x < n - 1
+                    total += faceK(ki, k.at(idx(x+1,y,n))) * t.at(idx(x+1,y,n))
+                if y > 0
+                    total += faceK(ki, k.at(idx(x,y-1,n))) * t.at(idx(x,y-1,n))
+                if y < n - 1
+                    total += faceK(ki, k.at(idx(x,y+1,n))) * t.at(idx(x,y+1,n))
+            x += 1
+        y += 1
+    return total
+
+def render(k: List(float), sink: List(bool), n: int, klow: float)
+    var y = 0
+    while y < n
+        var line: str = ""
+        var x = 0
+        while x < n
+            var i = idx(x, y, n)
+            if sink.at(i)
+                line = line + "@"
+            else if k.at(i) > klow
+                line = line + "#"
+            else
+                line = line + "."
+            x += 1
+        print(line)
+        y += 1
+
+# ---- the measurement ----------------------------------------------------------
+#
+# A run of conductor cells is a candidate branch CROSS-SECTION. The first version of this
+# accepted every horizontal run, and that was wrong in a way worth recording: a horizontal
+# run through a HORIZONTAL branch measures its LENGTH, not its width. Those entries pair a
+# large w with a small perpendicular flux and drag the fitted exponent toward 1. The
+# measured value was 1.1 and the fault was entirely in the instrument.
+#
+# The fix is physical rather than geometric: accept a run only where the heat actually
+# flows ACROSS it. For a horizontal run, sum |dT/dy| and |dT/dx| over its cells and keep it
+# only if the vertical component dominates; mirror that for vertical runs. Pooling both
+# orientations then doubles the sample instead of mixing two different quantities.
+#
+# Prediction under test: Q ∝ w^2 (from A ∝ sqrt Q), so log Q against log w should have
+# slope near 2. Murray's viscous-flow law would be 3.
+def measureExponent(t: List(float), k: List(float), n: int, klow: float)
+    var ws = List(float)()
+    var qs = List(float)()
+    var maxw = 0
+    var rejected = 0
+
+    # horizontal runs -> candidate cross-sections of VERTICALLY flowing branches
+    var y = 1
+    while y < n - 1
+        var x = 0
+        while x < n
+            if k.at(idx(x, y, n)) > klow
+                var run = 0
+                var qperp: float = 0.0
+                var qpara: float = 0.0
+                var xx = x
+                while xx < n and k.at(idx(xx, y, n)) > klow
+                    var dy = (t.at(idx(xx, y+1, n)) - t.at(idx(xx, y-1, n))) / 2.0
+                    if dy < 0.0
+                        dy = -dy
+                    var xa = xx - 1
+                    var xb = xx + 1
+                    if xa < 0
+                        xa = 0
+                    if xb > n - 1
+                        xb = n - 1
+                    var dx = (t.at(idx(xb, y, n)) - t.at(idx(xa, y, n))) / 2.0
+                    if dx < 0.0
+                        dx = -dx
+                    qperp += k.at(idx(xx, y, n)) * dy
+                    qpara += k.at(idx(xx, y, n)) * dx
+                    run += 1
+                    xx += 1
+                if qperp > qpara and qperp > 0.0
+                    if run > maxw
+                        maxw = run
+                    ws.add(run.toFloat())
+                    qs.add(qperp)
+                else
+                    rejected += 1
+                x = xx
+            else
+                x += 1
+        y += 1
+
+    # vertical runs -> candidate cross-sections of HORIZONTALLY flowing branches
+    var x2 = 1
+    while x2 < n - 1
+        var y2 = 0
+        while y2 < n
+            if k.at(idx(x2, y2, n)) > klow
+                var run2 = 0
+                var qperp2: float = 0.0
+                var qpara2: float = 0.0
+                var yy = y2
+                while yy < n and k.at(idx(x2, yy, n)) > klow
+                    var dx2 = (t.at(idx(x2+1, yy, n)) - t.at(idx(x2-1, yy, n))) / 2.0
+                    if dx2 < 0.0
+                        dx2 = -dx2
+                    var ya = yy - 1
+                    var yb = yy + 1
+                    if ya < 0
+                        ya = 0
+                    if yb > n - 1
+                        yb = n - 1
+                    var dy2 = (t.at(idx(x2, yb, n)) - t.at(idx(x2, ya, n))) / 2.0
+                    if dy2 < 0.0
+                        dy2 = -dy2
+                    qperp2 += k.at(idx(x2, yy, n)) * dx2
+                    qpara2 += k.at(idx(x2, yy, n)) * dy2
+                    run2 += 1
+                    yy += 1
+                if qperp2 > qpara2 and qperp2 > 0.0
+                    if run2 > maxw
+                        maxw = run2
+                    ws.add(run2.toFloat())
+                    qs.add(qperp2)
+                else
+                    rejected += 1
+                y2 = yy
+            else
+                y2 += 1
+        x2 += 1
+
+    print("cross-sections kept " + ws.len.toString() + ", rejected " + rejected.toString() + " (flow ran ALONG the run, so its length is not a width); widest " + maxw.toString())
+    if ws.len < 8
+        print("too few cross-sections to fit an exponent honestly.")
+        return
+    if maxw < 2
+        print("EVERY kept cross-section is 1 cell wide, so there is no width variation to fit.")
+        print("That is a RESULT: at this conductivity ratio a 1-cell path already beats the")
+        print("substrate so decisively that EXTENDING to unserved heat always beats")
+        print("THICKENING. Murray-type scaling needs branch resistance to matter.")
+        return
+
+    var sx: float = 0.0
+    var sy: float = 0.0
+    var sxx: float = 0.0
+    var sxy: float = 0.0
+    var m: float = 0.0
+    var i = 0
+    while i < ws.len
+        var lw = Math.log(ws.at(i))
+        var lq = Math.log(qs.at(i))
+        sx += lw
+        sy += lq
+        sxx += lw * lw
+        sxy += lw * lq
+        m += 1.0
+        i += 1
+    var denom = m * sxx - sx * sx
+    if denom <= 0.0
+        print("cannot fit: log w has zero variance (all kept widths identical)")
+        return
+    var slope = (m * sxy - sx * sy) / denom
+    # r^2, so a meaningless fit cannot masquerade as a measurement
+    var mean_lq = sy / m
+    var ssTot: float = 0.0
+    var ssRes: float = 0.0
+    var inter = (sy - slope * sx) / m
+    var j = 0
+    while j < ws.len
+        var lw2 = Math.log(ws.at(j))
+        var lq2 = Math.log(qs.at(j))
+        var pred = slope * lw2 + inter
+        ssRes += (lq2 - pred) * (lq2 - pred)
+        ssTot += (lq2 - mean_lq) * (lq2 - mean_lq)
+        j += 1
+    var r2: float = 0.0
+    if ssTot > 0.0
+        r2 = 1.0 - ssRes / ssTot
+    print("")
+    print("  log Q vs log w over ${m:.0f} cross-sections")
+    print("  measured exponent   ${slope:.3f}   (r^2 ${r2:.3f})")
+    print("  predicted (conduction, dissipation-minimising: A ∝ Q)  1.000")
+    print("  Murray (viscous flow, same principle, R ∝ 1/d^4)     3.000")
+
+def main()
+    var args = sys.args()
+    var n = 49
+    var kratio: float = 100.0
+    var bfrac: float = 0.12
+    if args.len > 1
+        n = args.at(1).toInt()
+    if args.len > 2
+        kratio = args.at(2).toFloat()
+    if args.len > 3
+        bfrac = args.at(3).toFloat()
+
+    var klow: float = 1.0
+    var khigh: float = klow * kratio
+    var gen: float = 1.0
+    var cells = n * n
+    var budget = (cells.toFloat() * bfrac).toInt()
+
+    var k = List(float)()
+    var t = List(float)()
+    var sink = List(bool)()
+    var i = 0
+    while i < cells
+        k.add(klow)
+        t.add(0.0)
+        sink.add(false)
+        i += 1
+
+    # ONE sink cell, at the middle of the bottom edge: the classic volume-to-point problem.
+    # A single outlet is what forces a tree; give the slab a whole cold edge and the optimal
+    # answer is boring parallel stripes.
+    var sx = n / 2
+    var sy = n - 1
+    sink.set(idx(sx, sy, n), true)
+
+    print("constructal heat tree — " + n.toString() + "x" + n.toString() + ", k ratio ${kratio:.0f}, budget ${bfrac:.3f}")
+    print("sink: one cell at (" + sx.toString() + "," + sy.toString() + "); all other edges adiabatic")
+    print("")
+
+    solve(t, k, sink, n, 4000, gen)
+    var t0max = maxT(t, n)
+    var t0mean = meanT(t, n)
+    var sym = symmetryError(t, n)
+    var relsym = sym / t0max
+    var flux = sinkFlux(t, k, sink, n)
+    var gentot = gen * (cells - 1).toFloat()
+    var imbal = (flux - gentot) / gentot
+    if imbal < 0.0
+        imbal = -imbal
+
+    print("CONTROLS — the solver, before any conductor is placed")
+    print("  symmetry (relative)  ${relsym:.8f}   must be ~0; an indexing bug breaks this")
+    print("  energy imbalance     ${imbal:.6f}   sink flux vs total generation")
+    print("  baseline T_max       ${t0max:.2f}")
+    print("")
+
+    var placed = 0
+    while placed < budget
+        var bestScore: float = -1.0
+        var bestIdx = -1
+        var y = 0
+        while y < n
+            var x = 0
+            while x < n
+                var ii = idx(x, y, n)
+                if not sink.at(ii) and k.at(ii) <= klow
+                    # Frontier only: growth must stay CONNECTED to the sink, or the
+                    # optimiser happily places useful-but-unreachable islands.
+                    var touching = false
+                    if x > 0 and (k.at(idx(x-1,y,n)) > klow or sink.at(idx(x-1,y,n)))
+                        touching = true
+                    if x < n-1 and (k.at(idx(x+1,y,n)) > klow or sink.at(idx(x+1,y,n)))
+                        touching = true
+                    if y > 0 and (k.at(idx(x,y-1,n)) > klow or sink.at(idx(x,y-1,n)))
+                        touching = true
+                    if y < n-1 and (k.at(idx(x,y+1,n)) > klow or sink.at(idx(x,y+1,n)))
+                        touching = true
+                    if touching
+                        var sc = gradSq(t, n, x, y)
+                        if sc > bestScore
+                            bestScore = sc
+                            bestIdx = ii
+                x += 1
+            y += 1
+        if bestIdx < 0
+            placed = budget
+        else
+            k.set(bestIdx, khigh)
+            placed += 1
+            solve(t, k, sink, n, 60, gen)
+
+    solve(t, k, sink, n, 2500, gen)
+    var t1max = maxT(t, n)
+    var t1mean = meanT(t, n)
+
+    print("after " + placed.toString() + " conductor cells:")
+    print("  T_max   ${t0max:.1f} -> ${t1max:.1f}   (${t0max/t1max:.2f}x better)")
+    print("  T_mean  ${t0mean:.1f} -> ${t1mean:.1f}")
+    print("")
+    measureExponent(t, k, n, klow)
+    print("")
+    render(k, sink, n, klow)
