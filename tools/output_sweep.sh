@@ -119,6 +119,28 @@ if [ "$UPDATE" = 1 ] && [ "$MODE" != "default" ]; then
     exit 2
 fi
 
+# --only NARROWS the corpus; --update-baseline REPLACES the baseline wholesale
+# (`cp "$OUT/manifest.txt" "$BASELINE"` below, and the exclusions file is regenerated
+# from scratch beside it). Together they therefore DESTROY every entry for a file that
+# was not matched — a one-file update would leave a one-file baseline, and the gate would
+# be green forever while measuring 1 program instead of 356.
+#
+# Nothing downstream would report this. The MAX_EMPTY_FRACTION_PCT control below counts
+# EMPTY outputs, not MISSING ones, so a small baseline of perfectly good records sails
+# past it. That is the same shape as every entry in this file's history: the check that
+# would have noticed is looking for the wrong absence.
+#
+# Refuse rather than merge. Merging is the friendlier behaviour and it is also how a
+# stale record survives a re-baseline forever; "regenerated on every re-baseline, so it
+# cannot silently rot" is a property worth keeping. Found 2026-08-17.
+if [ "$UPDATE" = 1 ] && [ -n "$ONLY" ]; then
+    echo "REFUSING: --update-baseline cannot be combined with --only." >&2
+    echo "--update-baseline REWRITES the baseline from what this run measured, so" >&2
+    echo "restricting the run to '$ONLY' would discard every other file's record." >&2
+    echo "Use --show --only to inspect one file, or re-baseline the whole corpus." >&2
+    exit 2
+fi
+
 # The vacuity control FOR THIS TOOL. If `run_one` ever stops capturing program output —
 # a changed chatter prefix, a compiler that writes to a different stream, a filter that
 # eats too much — every entry becomes the empty string, every entry then MATCHES, and the
@@ -201,8 +223,26 @@ norm() { # collapse what varies between runs on the same machine
     # first baseline missed profile_attr_test because both of its two runs happened to be
     # equally fast, and the very first real gate run then failed on it. Normalising the
     # value is the actual fix; more samples (below) only reduce the odds.
+    # THREAD IDs in a panic header are normalised for the same reason durations are, and
+    # the consequence is much larger than it looks. `thread 7440 panic: ...` differs on
+    # every run, so a program that CRASHES DETERMINISTICALLY looked nondeterministic to the
+    # sampler and was auto-excluded — which meant the only gate that RUNS programs was
+    # automatically discarding a class of the failures it exists to catch. Found 2026-08-17
+    # via BUG-290: test/stdlib_misc_test.zbr has been failing at runtime, unseen, since at
+    # least 07-31, and its panic text even CHANGED while excluded ("reached unreachable
+    # code" -> "assert failed at :33") with no gate reporting anything.
+    #
+    # Safe because no legitimate output carries the shape: `grep -cE "thread [0-9]"` over
+    # output_baseline.txt is 0. The pattern is deliberately anchored on ` panic` so a
+    # fixture printing "thread 3" as data is untouched.
+    #
+    # This does NOT force crashers into the baseline wholesale, which would be the wrong
+    # fix: arena_concurrency_hazard_test stays excluded on its own merits, because the
+    # NUMBER of panicking threads varies run to run (1, 1, 4 — measured), and that is real
+    # nondeterminism rather than a volatile field.
     sed -E 's#[A-Za-z]:[\\/][^ ")]*#<PATH>#g
             s#0x[0-9a-fA-F]{6,}#<ADDR>#g
+            s#thread [0-9]+ panic#thread <TID> panic#g
             s#[0-9]+\.[0-9]+ *(ms|us|µs|ns)\b#<TIME> \1#g
             s#[0-9]+ *(ms|us|µs|ns)\b#<TIME> \1#g'
 }

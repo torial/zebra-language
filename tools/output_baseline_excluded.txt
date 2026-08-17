@@ -4,18 +4,16 @@
 # that disagrees once and is then unanimous is kept, and counted as a
 # transient in the run summary rather than dropped in silence.
 # Regenerated on every re-baseline, so it cannot silently rot.
-arena_concurrency_hazard_test	< thread 46912 panic: attempt to use null value
+arena_concurrency_hazard_test	> thread <TID> panic: @memcpy arguments alias
 bug193_listdir_test	(filesystem enumeration: counts files that change as the repo does)
-bug259_runtime_exit_code_test	< thread 64320 panic: assert failed at test/bug259_runtime_exit_code_test.zbr:29
 dir_walk_test	(filesystem enumeration: counts files that change as the repo does)
 http_echo_test	(network: contacts a remote host — outcome not ours to control)
 http_serve_test	(network: contacts a remote host — outcome not ours to control)
 http_test	(network: contacts a remote host — outcome not ours to control)
 https_test	(network: contacts a remote host — outcome not ours to control)
-log_json_test	< {"ts":1786870645,"level":"info","msg":"hello world"}
-profile_test	< outer 45
+log_json_test	< {"ts":1786991157,"level":"info","msg":"hello world"}
+profile_test	< outer 50
 server_test	(network: contacts a remote host — outcome not ours to control)
-stdlib_misc_test	< thread 7440 panic: assert failed at test/stdlib_misc_test.zbr:33
 tcp_advanced_test	(network: contacts a remote host — outcome not ours to control)
 tcp_serve_test	(network: contacts a remote host — outcome not ours to control)
 tcp_test	(network: contacts a remote host — outcome not ours to control)

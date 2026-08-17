@@ -900,7 +900,44 @@ bash tools/output_sweep.sh --gate  # THE BEHAVIOUR WITNESS — the only heavy ga
                                 #   invisible to all of them at any corpus size (BUG-226:
                                 #   a for-header `tokenize` emitted {any} and printed
                                 #   `{ 97 }` for `a` — perfectly good Zig).
-                                #   327 of the 335 compile-clean files, golden-baselined.
+                                #   358 of the 374 compile-clean files, golden-baselined.
+                                #   A CRASH IS NOT A FLAKE, and conflating the two cost
+                                #   real coverage silently (2026-08-17, BUG-290). A panic
+                                #   header carries a THREAD ID — `thread 7440 panic: …` —
+                                #   so a program that crashes DETERMINISTICALLY produced
+                                #   different output on all three samples and was
+                                #   auto-excluded as nondeterministic. The only gate that
+                                #   RUNS programs was therefore discarding, automatically,
+                                #   a class of the failures it exists to catch.
+                                #   test/stdlib_misc_test.zbr sat in that hole from at
+                                #   least 07-31, failing at runtime the whole time, and
+                                #   its panic text CHANGED while excluded ("reached
+                                #   unreachable code" -> "assert failed at :33") with no
+                                #   gate reporting anything. It is what hid BUG-290.
+                                #   The fix is one normalisation (`thread <TID> panic`),
+                                #   NOT a blanket "include crashers": the TID is a
+                                #   volatile FIELD like a duration, and the existing rule
+                                #   is to normalise those rather than exclude the file.
+                                #   Safe because no legitimate output has the shape —
+                                #   `grep -cE "thread [0-9]" output_baseline.txt` is 0.
+                                #   BOTH DIRECTIONS WERE MEASURED in the same re-baseline:
+                                #   stdlib_misc_test and bug259_runtime_exit_code_test
+                                #   moved INTO the baseline (deterministic crashes, now
+                                #   pinned and visible), while
+                                #   arena_concurrency_hazard_test STAYED excluded — its
+                                #   panicking-thread COUNT varies run to run (1, 1, 4),
+                                #   which is real nondeterminism. 18 -> 16 exclusions,
+                                #   356 -> 358 baselined, 0 transients, nothing else moved.
+                                #   REFUSES `--only` WITH `--update-baseline`. The update
+                                #   path REPLACES the baseline from what the run measured
+                                #   (`cp manifest.txt $BASELINE`), so restricting the run
+                                #   would have left a ONE-FILE baseline — green forever
+                                #   while measuring one program. Nothing downstream could
+                                #   see it: the 25%-empty control counts EMPTY records,
+                                #   not MISSING ones, so a short baseline of perfectly
+                                #   good entries sails past. Refusing beats merging,
+                                #   because merging is how a stale record survives a
+                                #   re-baseline forever.
                                 #   NONDETERMINISM IS DERIVED, never hand-listed:
                                 #   --update-baseline takes THREE samples and, if they
                                 #   disagree, a three-sample CONFIRMATION ROUND — only a
@@ -987,7 +1024,8 @@ rendering or semantics fix should always land with one, and why "compile_check i
 independent witness" means *witness to compilability*, not to correctness of behaviour.
 
 **`tools/output_sweep.sh` (added 2026-07-30) closes most of that gap** — see its entry
-below. Behaviour coverage went from 126 files to 327. It does not remove the need for a
+below. Behaviour coverage went from 126 files to 327, and to **358** once a crash stopped
+being mistaken for a flake (2026-08-17). It does not remove the need for a
 `smoke_run` on a new fix: the sweep is a *golden* baseline, so it can only tell you
 behaviour CHANGED, never that it was right to begin with.
 
@@ -1011,7 +1049,7 @@ than "what do we know":
 | front end doesn't error | `smoke` (bare helper — emit only, does **not** compile) | 101 |
 | emitted Zig compiles | `compile_check`, `full_sweep`, `divergence` | 335 |
 | compiler is self-consistent | `bootstrap_check` (round-trip) | selfhost only |
-| **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **327** |
+| **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
 | **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 12 probes / ~140 assertions |
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
 | **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 2 of 53 walkers, opt-in |
