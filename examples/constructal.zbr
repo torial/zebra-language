@@ -53,8 +53,10 @@
 #
 # A clean law where the premise holds, dissolving smoothly where it does not.
 #
-#   zebra run constructal.zbr [N] [kRatio] [budgetFrac]
-#   defaults: 49 100 0.12
+#   zebra run constructal.zbr [N] [kRatio] [budgetFrac] [mode] [eta] [seed]
+#   defaults: 49 100 0.12 opt 1.0 12345
+#   mode "opt"  — deterministic steepest descent (the engineered spreader)
+#   mode "grow" — stochastic, P ∝ |grad T|^eta (the zoo of natural forms)
 
 def idx(x: int, y: int, n: int): int
     return y * n + x
@@ -353,6 +355,166 @@ def measureExponent(t: List(float), k: List(float), n: int, klow: float)
     print("  predicted (conduction, dissipation-minimising: A ∝ Q)  1.000")
     print("  Murray (viscous flow, same principle, R ∝ 1/d^4)     3.000")
 
+# ---- the classifier -----------------------------------------------------------
+#
+# BOX-COUNTING DIMENSION. Cover the conductor set with boxes of side s and count how many
+# are occupied; D = -d(log N)/d(log s). This is the number that actually separates the
+# morphology classes, and it separates them where the eye cannot: a compact blob tends to
+# 2, a Laplacian/DLA-like aggregate to about 1.7, a bare needle to 1.
+#
+# Small s is where the measurement is honest -- at s comparable to the whole grid every set
+# looks like one box -- so the fit is restricted to s <= n/4, and the number of box sizes
+# actually used is printed. A dimension quoted from two points is not a measurement.
+def boxDimension(k: List(float), n: int, klow: float): float
+    var ls = List(float)()
+    var ln = List(float)()
+    var s = 1
+    while s <= n / 4
+        var boxes = 0
+        var by = 0
+        while by < n
+            var bx = 0
+            while bx < n
+                var hit = false
+                var yy = by
+                while yy < by + s and yy < n
+                    var xx = bx
+                    while xx < bx + s and xx < n
+                        if k.at(idx(xx, yy, n)) > klow
+                            hit = true
+                        xx += 1
+                    yy += 1
+                if hit
+                    boxes += 1
+                bx += s
+            by += s
+        if boxes > 0
+            ls.add(Math.log(s.toFloat()))
+            ln.add(Math.log(boxes.toFloat()))
+        s += 1
+    if ls.len < 3
+        return -1.0
+    var sx: float = 0.0
+    var sy: float = 0.0
+    var sxx: float = 0.0
+    var sxy: float = 0.0
+    var m: float = 0.0
+    var i = 0
+    while i < ls.len
+        sx += ls.at(i)
+        sy += ln.at(i)
+        sxx += ls.at(i) * ls.at(i)
+        sxy += ls.at(i) * ln.at(i)
+        m += 1.0
+        i += 1
+    var den = m * sxx - sx * sx
+    if den <= 0.0
+        return -1.0
+    return -(m * sxy - sx * sy) / den
+
+# Count the tips (conductor cells with exactly one conductor/sink neighbour). A needle has
+# one; a bushy aggregate has many. Cheap, and orthogonal to the dimension.
+def countTips(k: List(float), sink: List(bool), n: int, klow: float): int
+    var tips = 0
+    var y = 0
+    while y < n
+        var x = 0
+        while x < n
+            if k.at(idx(x, y, n)) > klow
+                var deg = 0
+                if x > 0 and (k.at(idx(x-1,y,n)) > klow or sink.at(idx(x-1,y,n)))
+                    deg += 1
+                if x < n-1 and (k.at(idx(x+1,y,n)) > klow or sink.at(idx(x+1,y,n)))
+                    deg += 1
+                if y > 0 and (k.at(idx(x,y-1,n)) > klow or sink.at(idx(x,y-1,n)))
+                    deg += 1
+                if y < n-1 and (k.at(idx(x,y+1,n)) > klow or sink.at(idx(x,y+1,n)))
+                    deg += 1
+                if deg == 1
+                    tips += 1
+            x += 1
+        y += 1
+    return tips
+
+# CONTROL ON THE CLASSIFIER ITSELF. Box-counting dimension is quoted constantly and
+# validated almost never. On a 49-cell grid the usable box sizes span barely one decade,
+# and finite-size bias at that resolution is large enough to swallow the very differences
+# the catalogue is trying to report. So: measure shapes whose dimension is known exactly,
+# print the error, and let the reader see how much resolution there actually is before
+# believing any specimen's number.
+def selfTestDimension(n: int)
+    var klow: float = 1.0
+    var khigh: float = 100.0
+    print("CLASSIFIER SELF-TEST — box-counting dimension on shapes of KNOWN dimension")
+    print("(if these are far off, no specimen's dimension below means anything)")
+
+    # filled square: D = 2 exactly
+    var a = List(float)()
+    var i = 0
+    while i < n * n
+        a.add(klow)
+        i += 1
+    var y = 0
+    while y < n / 2
+        var x = 0
+        while x < n / 2
+            a.set(idx(x, y, n), khigh)
+            x += 1
+        y += 1
+    var d1 = boxDimension(a, n, klow)
+    print("  filled square    measured ${d1:.3f}   exact 2.000")
+
+    # straight line: D = 1 exactly
+    var b = List(float)()
+    var j = 0
+    while j < n * n
+        b.add(klow)
+        j += 1
+    var x2 = 0
+    while x2 < n
+        b.set(idx(x2, n / 2, n), khigh)
+        x2 += 1
+    var d2 = boxDimension(b, n, klow)
+    print("  horizontal line  measured ${d2:.3f}   exact 1.000")
+
+    # diagonal line: D = 1 exactly, and a different pixel pattern from the horizontal one
+    var c = List(float)()
+    var j2 = 0
+    while j2 < n * n
+        c.add(klow)
+        j2 += 1
+    var x3 = 0
+    while x3 < n
+        c.set(idx(x3, x3, n), khigh)
+        x3 += 1
+    var d3 = boxDimension(c, n, klow)
+    print("  diagonal line    measured ${d3:.3f}   exact 1.000")
+
+    # Sierpinski carpet by the digit rule: D = log 8 / log 3 = 1.8928
+    var e = List(float)()
+    var j3 = 0
+    while j3 < n * n
+        e.add(klow)
+        j3 += 1
+    var y4 = 0
+    while y4 < n
+        var x4 = 0
+        while x4 < n
+            var inCarpet = true
+            var px = x4
+            var py = y4
+            while px > 0 or py > 0
+                if px % 3 == 1 and py % 3 == 1
+                    inCarpet = false
+                px = px / 3
+                py = py / 3
+            if inCarpet
+                e.set(idx(x4, y4, n), khigh)
+            x4 += 1
+        y4 += 1
+    var d4 = boxDimension(e, n, klow)
+    print("  Sierpinski carpet measured ${d4:.3f}   exact 1.893")
+
 def main()
     var args = sys.args()
     var n = 49
@@ -364,6 +526,22 @@ def main()
         kratio = args.at(2).toFloat()
     if args.len > 3
         bfrac = args.at(3).toFloat()
+    # "opt"  = deterministic steepest descent (the optimiser; eta is IRRELEVANT here,
+    #          because argmax of f^eta is argmax of f for any positive eta)
+    # "grow" = stochastic Laplacian growth, probability proportional to |grad T|^eta
+    var mode: str = "opt"
+    var eta: float = 1.0
+    var seed = 12345
+    if args.len > 4
+        mode = args.at(4)
+    if args.len > 5
+        eta = args.at(5).toFloat()
+    if args.len > 6
+        seed = args.at(6).toInt()
+    var rng = Random.new(seed)
+    if mode == "selftest"
+        selfTestDimension(n)
+        return
 
     var klow: float = 1.0
     var khigh: float = klow * kratio
@@ -409,8 +587,19 @@ def main()
     print("  baseline T_max       ${t0max:.2f}")
     print("")
 
+    # WHY eta HAS SO LITTLE LEVERAGE HERE, measured rather than asserted. A selection rule
+    # P ∝ score^eta can only reshape the outcome if the scores SPREAD. Track the ratio of
+    # best to worst frontier score; if it stays near 1 the exponent has nothing to bite on.
+    var worstRatio: float = 1.0
+    var sumRatio: float = 0.0
+    var nRatio: float = 0.0
     var placed = 0
     while placed < budget
+        # Collect the frontier once, with scores; then EITHER take the max (optimiser)
+        # OR sample proportional to score^eta (growth process). Same field, same frontier,
+        # two selection rules -- which is the whole point of the catalogue.
+        var candIdx = List(int)()
+        var candW = List(float)()
         var bestScore: float = -1.0
         var bestIdx = -1
         var y = 0
@@ -435,12 +624,52 @@ def main()
                         if sc > bestScore
                             bestScore = sc
                             bestIdx = ii
+                        if mode == "grow" and sc > 0.0
+                            candIdx.add(ii)
+                            # score^eta via exp/log: eta is a float and may be fractional.
+                            candW.add(Math.exp(eta * Math.log(sc)))
                 x += 1
             y += 1
-        if bestIdx < 0
+        # dynamic range of the frontier scores this step
+        if candIdx.len > 1
+            var mn: float = candW.at(0)
+            var mx: float = candW.at(0)
+            var ri = 1
+            while ri < candW.len
+                if candW.at(ri) < mn
+                    mn = candW.at(ri)
+                if candW.at(ri) > mx
+                    mx = candW.at(ri)
+                ri += 1
+            if mn > 0.0
+                var rr = mx / mn
+                sumRatio += rr
+                nRatio += 1.0
+                if rr > worstRatio
+                    worstRatio = rr
+        var chosen = bestIdx
+        if mode == "grow" and candIdx.len > 0
+            var tot: float = 0.0
+            var ci = 0
+            while ci < candW.len
+                tot += candW.at(ci)
+                ci += 1
+            if tot > 0.0
+                var r = rng.nextFloat() * tot
+                var acc: float = 0.0
+                var cj = 0
+                chosen = candIdx.at(candIdx.len - 1)
+                while cj < candW.len
+                    acc += candW.at(cj)
+                    if acc >= r
+                        chosen = candIdx.at(cj)
+                        cj = candW.len
+                    else
+                        cj += 1
+        if chosen < 0
             placed = budget
         else
-            k.set(bestIdx, khigh)
+            k.set(chosen, khigh)
             placed += 1
             solve(t, k, sink, n, 60, gen)
 
@@ -448,6 +677,13 @@ def main()
     var t1max = maxT(t, n)
     var t1mean = meanT(t, n)
 
+    var dim = boxDimension(k, n, klow)
+    var tips = countTips(k, sink, n, klow)
+    print("specimen: mode=" + mode + " eta=${eta:.2f} k=${kratio:.0f} seed=" + seed.toString())
+    print("  box-counting dimension  ${dim:.3f}    tips " + tips.toString())
+    if nRatio > 0.0
+        var avgR = sumRatio / nRatio
+        print("  frontier score spread   mean ${avgR:.2f}x, worst ${worstRatio:.1f}x  (eta needs spread to bite)")
     print("after " + placed.toString() + " conductor cells:")
     print("  T_max   ${t0max:.1f} -> ${t1max:.1f}   (${t0max/t1max:.2f}x better)")
     print("  T_mean  ${t0mean:.1f} -> ${t1mean:.1f}")
