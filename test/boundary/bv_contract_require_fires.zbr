@@ -1,0 +1,39 @@
+# @boundary panics require
+#
+# INTENT AUTHORED FROM QUICKSTART §24, BEFORE RUNNING.
+#
+# THE POSITIVE CONTROL FOR THE OTHER TWO CONTRACT PROBES, and it exists because they
+# are vacuous without it. Every row in bv_contract_boundary and
+# bv_contract_ensure_throws SATISFIES its contract — which means all of them would
+# print exactly the same output if `require`/`ensure` were no-ops, or stripped, or
+# never emitted at all. Two green probes asserting nothing whatsoever about the
+# feature they are named for.
+#
+# So this file takes a `require` one step PAST its boundary and asserts the program
+# dies. `clamped(-1)` against `require x >= 0`: the smallest possible violation, so
+# it also pins the boundary from the other side — together with
+# bv_contract_boundary's `clamped(0)` row, the accept/refuse edge is nailed at
+# exactly the documented place rather than somewhere nearby.
+#
+# THE ASSERTED SUBSTRING IS `require`, and that is an intent claim, not an
+# observation. §24 says failure "panics with a clear message", and the global rule
+# for any refusal is that it names the reason. A panic that does not name the
+# construct the author wrote is not clear — so if this row fails on the message
+# rather than on the panic, that is a real finding about diagnostic quality and not
+# a probe that needs relaxing.
+#
+# NOTE FOR WHOEVER RUNS THE SUITE UNDER `--turbo`: this probe MUST fail there,
+# because --turbo strips contracts by design. The suite does not pass that flag and
+# should not; contract_mode_check owns the flag matrix.
+def clamped(x: int): int
+    require
+        x >= 0
+    ensure
+        result >= 0
+    return x
+
+def main()
+    # One below the documented boundary. bv_contract_boundary asserts 0 is ACCEPTED;
+    # this asserts -1 is REFUSED. Neither probe means much without the other.
+    print(clamped(-1))
+    print("UNREACHABLE — a violated require did not stop the program")

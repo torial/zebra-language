@@ -1051,7 +1051,7 @@ than "what do we know":
 | emitted Zig compiles | `compile_check`, `full_sweep`, `divergence` | 335 |
 | compiler is self-consistent | `bootstrap_check` (round-trip) | selfhost only |
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
-| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 27 probes / 291 assertions | <!-- doc-gen: 27 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 291 = cat test/boundary/*.expected | grep -c . -->
+| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 28 probes / 291 assertions | <!-- doc-gen: 28 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 291 = cat test/boundary/*.expected | grep -c . -->
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
 | **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 2 of 53 walkers, opt-in |
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
