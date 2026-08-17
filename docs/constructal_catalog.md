@@ -75,6 +75,51 @@ The corner morphologies are textbook and visible by eye. At `k = 100, eta = 0` t
 rows are **empty** — a compact blob hugging the sink. At `k = 100, eta = 4` sparse tendrils
 reach most of the way up.
 
+### The asymmetry is a BOUNDARY-CONDITION effect, not a distribution effect
+
+Rather than propose a fourth mechanism, source distribution was made a continuous axis:
+generation confined to the top fraction `f` of the domain with **total generation held
+constant**, so `f` is a pure distribution knob and does not confound "how spread out" with
+"how much heat there is to move". `f = 1` reproduces uniform exactly (verified to three
+decimals); `f -> 0` approaches a line source facing the sink. 224 runs, 8 seeds per cell.
+
+`eta`-leverage = dim(eta=0) − dim(eta=4):
+
+| sources | k = 30 | k = 100 |
+|---|---|---|
+| `f = 1.00` (uniform) | +0.296±.015 | **+0.380±.014** |
+| `f = 0.50` | +0.279±.018 | +0.340±.016 |
+| `f = 0.25` | +0.252±.014 | +0.252±.018 |
+| `f = 0.10` | +0.227±.016 | +0.242±.016 |
+| `f = 0.05` | +0.237±.018 | +0.269±.019 |
+| `f = 0.02` (one row) | +0.234±.017 | +0.290±.019 |
+| `edge` (one row, pinned) | **+0.152±.016** | **+0.183±.024** |
+
+**Two effects, not one.**
+
+1. A **real distribution effect in the broad range**: leverage falls as sources concentrate
+   from `f = 1` to `f ≈ 0.25` (0.380 -> 0.252 at k = 100, far outside error). Below that it
+   plateaus and wobbles; there is no further systematic decline.
+
+2. **A sharp jump at the boundary condition, at fixed geometry.** At `f = 0.02` the band
+   computes to `int(49 × 0.02) = 0`, clamped to **1 row** — geometrically identical to
+   `edge`. The only difference is the boundary condition: `f = 0.02` is a generating band
+   whose temperature is free to rise (fixed **flux**, Neumann), `edge` is a row pinned at
+   T = 1000 (fixed **temperature**, Dirichlet). Same row, same total heat. The leverage
+   differs by **0.107 ± 0.031 (3.5 sd)** at k = 100 and **0.082 ± 0.023 (3.5 sd)** at
+   k = 30.
+
+So the uniform-vs-source-free asymmetry was never mainly about how distributed the sources
+are. **Neumann vs Dirichlet is the sharper variable**, and all three earlier hypotheses
+were looking at the wrong axis — which is why each of them died.
+
+This is an OBSERVATION, not a mechanism. Why a pinned source should give the growth
+exponent roughly a third less leverage than a floating one at identical geometry is open. A
+pinned row is an infinite reservoir that cannot heat up, so the field near it is clamped
+regardless of what the aggregate does; that is a plausible starting point and it is
+explicitly not being reported as an explanation. Three plausible stories have already died
+here, one measurement each.
+
 ### Three mechanisms proposed, three refuted
 
 This is the part worth keeping. Each explanation was specific enough to test, and each
@@ -86,9 +131,10 @@ died:
 | volumetric sources suppress screening, so removing them opens the `eta` axis | build a source-free mode and compare | **false and backwards** — sources give ~2x MORE leverage, not less |
 | uniform sources win because they create more gradient heterogeneity | compare frontier spread across modes | **false** — edge has 3.5x MORE spread (2438x vs 695x at k=100) and half the effect |
 
-So the uniform-vs-source-free asymmetry is **measured and unexplained**. It is stated that
-way deliberately. After three plausible stories died to one measurement each, a fourth
-story offered without a test would be worth nothing.
+These three are why the section above reports an OBSERVATION and stops. The pattern is the
+lesson: each story was plausible, fitted everything known at the time, and was killed by a
+single measurement designed to kill it. The fix was not a better story — it was making the
+suspected variable continuous and letting the data pick the axis.
 
 The edge-mode non-monotonicity flagged in an earlier draft (`eta` = 1, 2, 4 reading 1.358,
 1.364, 1.323) is **not real**: that rise is 0.006, a tenth of the resolution, and it came
@@ -172,6 +218,9 @@ can be re-derived or disputed rather than taken on trust:
 - `docs/data/constructal_sweep49.tsv` — one row per run: k, eta, src, seed, dimension, tips
 - `docs/data/constructal_aggregate.py` — the aggregator, which computes the pooled
   seed-to-seed sd and refuses to call a difference resolved unless it clears 2 sd
+- `docs/data/constructal_srcdist.tsv` — the 224-run source-distribution sweep
+- `docs/data/constructal_srcdist_aggregate.py` — its aggregator, which reports each
+  leverage with a standard error and marks anything under 2 se as NOT resolved
 
 A run that produced no number is written as `FAILED` rather than left blank, so a failure
 can never be silently averaged in as a zero.
