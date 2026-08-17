@@ -1275,10 +1275,8 @@ stdlib_file OK
 stdlib_hash OK
 === stdlib_math_test sha1=0a7cac40dbf5 ===
 stdlib_math OK
-=== stdlib_misc_test sha1=91cfe56478e7 ===
-thread <TID> panic: assert failed at test/stdlib_misc_test.zbr:33
-
-(empty stack trace)
+=== stdlib_misc_test sha1=7d3764fbab36 ===
+stdlib_misc OK
 === stdlib_path_test sha1=2b037211e1bd ===
 path tests passed
 === stdlib_str_test sha1=6b2c40ee798e ===

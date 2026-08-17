@@ -9833,9 +9833,10 @@ struct Generator
             w.emit(allocate_depth.toString())
             w.emit(".dupe(u8, _co_")
             w.emit(uid_str)
-            w.emit(") catch _co_")
-            w.emit(uid_str)
-            w.emit(";\n")
+            # BUG-291: this used to be `catch _co_<uid>`, which on OOM assigned the
+            # ARENA-owned slice to a target that outlives the arena — a silent
+            # use-after-free. The non-string branch below already panics; they must agree.
+            w.emit(") catch @panic(\"OOM copy-out\");\n")
         else if allocate_depth > 0 and not is_prim
             var uid = w.nextUid()
             var uid_str = uid.toString()
@@ -17168,12 +17169,23 @@ struct Generator
             w.emit("))")
             return
         if mname == "absolute"
+            # BUG-290: std.fs.path.resolve NORMALISES but does not ABSOLUTISE. Measured on
+            # Zig 0.16.0: "a/../b" -> "b" but "." / ".." / "foo" come back UNCHANGED and no
+            # error is raised, so this was an identity function on exactly the input the
+            # name promises to handle. The 0.16 migration swapped realpathAlloc (which does
+            # resolve against the cwd) for resolve (which does not). Supply the cwd.
+            #
+            # No isAbsolute branch: resolve acts like a series of `cd`s, so a later
+            # ABSOLUTE component overrides the cwd.
+            #
+            # The old `catch _pp` returned the INPUT on failure, making a real error
+            # indistinguishable from "already absolute" — H3 in emitted code.
             w.emit("(blk_pa: { const _pp = ")
             if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit("; break :blk_pa std.fs.path.resolve(_allocator, &[_][]const u8{_pp}) catch _pp; })")
+            w.emit("; const _pcwd = std.process.currentPathAlloc(_io, _allocator) catch @panic(\"Path.absolute: cwd unavailable\"); break :blk_pa std.fs.path.resolve(_allocator, &[_][]const u8{ _pcwd, _pp }) catch @panic(\"Path.absolute: resolve failed\"); })")
             return
         w.emit("@compileError(\"selfhost: unknown Path.")
         w.emit(mname)

@@ -6,6 +6,132 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-291: `<<-` copy-out of a STRING falls back to the arena-owned slice on OOM — a silent use-after-free — ✅ FIXED 2026-08-17
+
+**Found 2026-08-17** by surveying for BUG-290's *class* (a `catch` that yields a fallback
+VALUE on an error path) rather than stopping at the instance.
+
+The whole purpose of `<<-` is to copy a value **out** of an arena into the parent
+allocator so it outlives the arena's teardown. The string branch does not do that when
+the allocation fails:
+
+```zig
+// src/CodeGen.zig:13664   (and selfhost/CodeGen.zbr:9836)
+target = _parent_alloc_N.dupe(u8, _co_X) catch _co_X;
+```
+
+On failure it assigns `_co_X` — the **arena-owned** slice — to a target that outlives the
+arena. After teardown, that target points at freed memory. Silent, and in every build
+mode (unlike `unreachable`, which at least traps in Debug — the hazard
+`lint_oom_unreachable` exists for).
+
+**The evidence that this is an oversight and not a decision is six lines away, in the
+same function.** The non-string branch of the same `if` already does the right thing:
+
+```zig
+target = _zbr_deep_copy(@TypeOf(_co_X), _parent_alloc_N, _co_X, 0) catch @panic("OOM copy-out");
+```
+
+Same operator, adjacent branches, opposite error handling. Both compilers carry both.
+
+**Fix:** make the string branch match its own sibling — `catch @panic("OOM copy-out")`.
+
+**Control when fixing:** the emitted Zig for a `str` `<<-` must contain no `catch _co_`,
+and the non-string branch must be unchanged. Note the honest limit: this is an
+**OOM-only** path, so no gate here can exercise it without allocation-failure injection —
+verification is by emit diff and by symmetry with the sibling branch, not by a run. Say
+so rather than implying it was executed.
+
+**Class note.** A survey of emitted error paths across both compilers found 157
+`catch @panic`, 31 `catch unreachable`, 53 `catch return`, 15 `catch null` — and only
+**three** sites yielding a fallback VALUE: this one, BUG-290's `catch _pp` (fixed), and
+`src/CodeGen.zig:3952` (`bufPrint(...) catch _s` in TUI highlight rendering, which
+degrades to unhighlighted text and is a reasonable graceful-degradation, not this bug).
+`hazard_lint`'s H3 covers this shape in **our tooling** but not in **emitted code**, which
+is why three instances survived. A lint over emit strings would close it.
+
+### BUG-290: `Path.absolute()` never makes a relative path absolute — it is an identity function for exactly the input it exists to handle — ✅ FIXED 2026-08-17
+
+**Found 2026-08-17.** Measured on Windows with Zig **0.16.0**; one platform, so the
+platform scope is not established.
+
+```zebra
+var dot = "."
+var abs = Path.absolute(dot)
+print("absolute = ${abs}")      # prints:  .
+print("len = ${abs.len}")       # prints:  1
+```
+
+Both compilers emit the same thing (`src/CodeGen.zig:8136`, `selfhost/CodeGen.zbr:17170`):
+
+```zig
+(blk: { const _pp = <arg>;
+        break :blk std.fs.path.resolve(_allocator, &[_][]const u8{_pp}) catch _pp; })
+```
+
+**Root cause: `std.fs.path.resolve` normalises but does not absolutise.** It does *not*
+error, so nothing is being swallowed. Measured directly against 0.16.0:
+
+| input | result | |
+|---|---|---|
+| `.` | `.` | **unchanged** |
+| `..` | `..` | **unchanged** |
+| `foo` | `foo` | **unchanged** |
+| `a/../b` | `b` | normalised |
+| `C:/foo` | `C:\foo` | normalised |
+| `C:\foo\..\bar` | `C:\bar` | normalised |
+| `C:\Windows` | `C:\Windows` | unchanged (already canonical) |
+
+So the function works on absolute input and is an identity on relative input — which is
+the only case a caller would use it for. `BUGS_FIXED.md:5169` records
+`realpath (sys.cwd/Path.absolute → 0.16 API)` as closed; the API swap landed and the
+**semantics change came with it, unnoticed**.
+
+**A second, latent defect in the same expression.** `catch _pp` returns the input
+unchanged on error. It is not firing here — but it means a genuine failure would be
+indistinguishable from "already absolute". That is `hazard_lint`'s H3 shape (a silent
+fallback on a path feeding a comparison, biased toward "nothing changed") living in
+emitted code, where H3 does not look. Fix it in the same pass; do not leave a
+value-returning error path behind.
+
+**Control when fixing:** `Path.absolute(".")` must return a rooted path (`abs.len > 1`
+and not starting with `.`), an already-absolute path must come back unchanged-or-
+normalised, and a genuinely failing resolve must NOT return its input. All three, or the
+easy wrong fix (prepend cwd unconditionally) breaks the second.
+
+**Why nothing caught it, which is the part worth keeping.**
+`test/stdlib_misc_test.zbr:33` asserts exactly this (`assert not abs.startsWith(".")`)
+and has been **failing at runtime**, unseen, because the file sits in
+`tools/output_baseline_excluded.txt` — the set `output_sweep` drops as nondeterministic.
+It qualified for exclusion because its panic message embeds a **thread ID**, so its output
+genuinely differs across the three samples. The derivation rule "output differs across
+samples ⇒ nondeterministic ⇒ exclude" is satisfied perfectly by a crash, so the one gate
+that runs programs automatically discards a class of the failures it exists to catch.
+
+Nothing else covers it: the file is registered with the bare `smoke` helper (emit-only —
+it does not compile or run) and sits in `full_sweep_baseline.txt` (compiles). Its panic
+text even *changed* while excluded — `reached unreachable code` (2026-07-31) →
+`assert failed at …:33` (2026-08-16) — with no gate reporting anything.
+
+`arena_concurrency_hazard_test` also panics and is also excluded, but it is **not** the
+same case and should not be read as one: its own header declares it a §28j HAZARD DEMO,
+deliberately unregistered because it "intentionally crashes ~77% of runs", documenting the
+rule that `allocate Arena()` scopes are single-threaded-only
+(`docs/concurrency_allocation_design.md`). It stays excluded on its own merits — the
+NUMBER of panicking threads varies run to run (measured 1, 1, 4), which is real
+nondeterminism rather than a volatile field. Related to **BUG-289**, the other open
+question about that same excluded set.
+
+**FIXED 2026-08-17** in `tools/output_sweep.sh`: the thread ID is normalised like any
+other volatile field (`thread <TID> panic`), so a deterministic crash stops being
+mistaken for a flake. Behaviour coverage 356 -> 358; `stdlib_misc_test` and
+`bug259_runtime_exit_code_test` moved into the baseline, `arena_concurrency_hazard_test`
+correctly stayed out.
+
+*(No regression fixture yet. `bug_fixture_check` does not flag that — it scopes to
+FIXED bugs, so an open ticket without a fixture is invisible to it. The fixture is owed
+when this is fixed, not now.)*
+
 ### BUG-271: unknown method on a builtin type is deferred to Zig but stamped `void`, so it can never return a value — ✅ FIXED 2026-08-06 (closed 2026-08-17)
 
 **Found 2026-08-06** extending the sqlite preamble in the zebra-sprocket router

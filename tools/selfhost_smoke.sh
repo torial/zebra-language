@@ -1425,6 +1425,10 @@ smoke_run     test/bug287_sibling_method_shadow_test.zbr "bug287: OK"
 # namespace named for a Zig keyword. A bootstrap gap by design — the keyword half is
 # selfhost-only, and divergence gates on selfhost gaps.
 smoke_run     test/bug286_namespace_ctor_test.zbr "bug286: OK"
+# BUG-290: Path.absolute() must ABSOLUTISE, not merely normalise. Asserts BOTH legs —
+# a relative path comes back rooted, and an already-absolute one is unchanged — because
+# the easy wrong fix (prepend cwd unconditionally) passes the first and breaks the second.
+smoke_run     test/bug290_path_absolute_test.zbr "bug290: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

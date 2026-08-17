@@ -1,0 +1,34 @@
+# BUG-290 regression: Path.absolute() must ABSOLUTISE, not merely normalise.
+#
+# std.fs.path.resolve normalises ("a/../b" -> "b") but leaves ".", ".." and "foo"
+# UNCHANGED and raises no error, so before the fix this was an identity function on
+# exactly the input the name promises to handle.
+#
+# Both directions are asserted deliberately. The easy wrong fix -- prepend the cwd
+# unconditionally -- passes the relative leg and corrupts the absolute one.
+def main()
+    var dot = "."
+
+    # 1. A RELATIVE path must come back rooted.
+    var abs = Path.absolute(dot)
+    assert Path.isAbsolute(abs)
+    assert not abs.startsWith(dot)
+    assert abs.len > 1
+
+    # 2. An ALREADY-ABSOLUTE path must survive. Idempotence is the check that
+    #    catches a cwd being prepended to something already rooted.
+    var again = Path.absolute(abs)
+    assert Path.isAbsolute(again)
+    assert again == abs
+
+    # 3. It must agree with sys.cwd(), which is the other half of the same 0.16
+    #    migration (realpathAlloc -> process.currentPathAlloc / fs.path.resolve).
+    var cwd = sys.cwd()
+    assert cwd.len > 0
+    assert abs == cwd
+
+    # NOT COVERED, and deliberately not faked: the error path. `catch _pp` used to
+    # return the INPUT on failure, making a real error indistinguishable from
+    # "already absolute". Exercising that needs allocation-failure injection, which
+    # this harness has no way to do -- see BUG-291 for the same shape elsewhere.
+    print("bug290: OK")

@@ -8134,10 +8134,25 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "absolute")) {
-            // Path.absolute(p) → resolved absolute path; returns p unchanged on error
+            // Path.absolute(p) → absolute path.
+            //
+            // BUG-290: `std.fs.path.resolve` NORMALISES but does not ABSOLUTISE. Measured
+            // against Zig 0.16.0: "a/../b" -> "b" and "C:/foo" -> "C:\foo", but ".", ".."
+            // and "foo" come back UNCHANGED and no error is raised. The 0.16 migration
+            // swapped `realpathAlloc` (which does resolve against the cwd) for `resolve`
+            // (which does not), so this was an identity function on exactly the input the
+            // name promises to handle. The cwd must therefore be supplied explicitly.
+            //
+            // No isAbsolute branch is needed: `resolve` behaves like a series of `cd`s, so
+            // a later ABSOLUTE component overrides the cwd and an already-absolute
+            // argument comes back normalised.
+            //
+            // The old `catch _pp` returned the INPUT on failure, which made a real error
+            // indistinguishable from "already absolute" — hazard_lint's H3 shape living in
+            // emitted code, where H3 does not look. A failure must not produce a value.
             try g.w.writeAll("(blk: { const _pp = ");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
-            try g.w.writeAll("; break :blk std.fs.path.resolve(_allocator, &[_][]const u8{_pp}) catch _pp; })");
+            try g.w.writeAll("; const _pcwd = std.process.currentPathAlloc(_io, _allocator) catch @panic(\"Path.absolute: cwd unavailable\"); break :blk std.fs.path.resolve(_allocator, &[_][]const u8{ _pcwd, _pp }) catch @panic(\"Path.absolute: resolve failed\"); })");
             return true;
         }
         return false;
@@ -13646,7 +13661,10 @@ const Generator = struct {
                 try g.w.writeAll(";\n");
                 try g.writeIndent();
                 try g.genExpr(s.target);
-                try g.w.print(" = _parent_alloc_{d}.dupe(u8, _co_{x}) catch _co_{x};\n", .{ depth, uid, uid });
+                // BUG-291: on failure this used to assign `_co_` — the ARENA-owned slice —
+                // to a target that outlives the arena, i.e. a silent use-after-free. The
+                // non-string branch below already panics; these must agree.
+                try g.w.print(" = _parent_alloc_{d}.dupe(u8, _co_{x}) catch @panic(\"OOM copy-out\");\n", .{ depth, uid });
             } else {
                 try g.w.print("const _co_{x} = ", .{uid});
                 try g.genExpr(s.value);
