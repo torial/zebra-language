@@ -1406,6 +1406,13 @@ patched to avoid colliding with it.
 
 ### BUG-237: a union used WITHOUT being `exposing`-imported silently mis-emits `^T` payloads ⚠ OPEN
 
+> **Triaged 2026-08-17 — still OPEN; `lint_stale_bugs` scores this a false positive.**
+> The commit it counts as "claiming a fix" is the **BUG-232 unblock** noted at the bottom
+> of this entry — adding `StringPart` to an exposing list, which is the WORKAROUND this
+> ticket exists to remove, not a fix for it. Same false-positive class as BUG-106, and
+> that tool ranks suspicion rather than closing anything, exactly so this stays a
+> judgement call. Recorded so the next triage pass does not re-derive it.
+
 **ROOT CAUSE FOUND 2026-07-31** — it is not about union payloads in general. It is that
 **referencing a union that is not in the module's `use X exposing ...` list silently
 skips its boxed-variant registration.**
