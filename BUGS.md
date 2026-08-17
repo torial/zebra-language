@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-289. Next new bug: BUG-290.**
+**Last bug number generated: BUG-290. Next new bug: BUG-291.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -14,6 +14,79 @@
 > *somewhere*, so a duplicate satisfies it twice over.
 
 ---
+
+### BUG-290: `Path.absolute()` never makes a relative path absolute — it is an identity function for exactly the input it exists to handle
+
+**Found 2026-08-17.** Measured on Windows with Zig **0.16.0**; one platform, so the
+platform scope is not established.
+
+```zebra
+var dot = "."
+var abs = Path.absolute(dot)
+print("absolute = ${abs}")      # prints:  .
+print("len = ${abs.len}")       # prints:  1
+```
+
+Both compilers emit the same thing (`src/CodeGen.zig:8136`, `selfhost/CodeGen.zbr:17170`):
+
+```zig
+(blk: { const _pp = <arg>;
+        break :blk std.fs.path.resolve(_allocator, &[_][]const u8{_pp}) catch _pp; })
+```
+
+**Root cause: `std.fs.path.resolve` normalises but does not absolutise.** It does *not*
+error, so nothing is being swallowed. Measured directly against 0.16.0:
+
+| input | result | |
+|---|---|---|
+| `.` | `.` | **unchanged** |
+| `..` | `..` | **unchanged** |
+| `foo` | `foo` | **unchanged** |
+| `a/../b` | `b` | normalised |
+| `C:/foo` | `C:\foo` | normalised |
+| `C:\foo\..\bar` | `C:\bar` | normalised |
+| `C:\Windows` | `C:\Windows` | unchanged (already canonical) |
+
+So the function works on absolute input and is an identity on relative input — which is
+the only case a caller would use it for. `BUGS_FIXED.md:5169` records
+`realpath (sys.cwd/Path.absolute → 0.16 API)` as closed; the API swap landed and the
+**semantics change came with it, unnoticed**.
+
+**A second, latent defect in the same expression.** `catch _pp` returns the input
+unchanged on error. It is not firing here — but it means a genuine failure would be
+indistinguishable from "already absolute". That is `hazard_lint`'s H3 shape (a silent
+fallback on a path feeding a comparison, biased toward "nothing changed") living in
+emitted code, where H3 does not look. Fix it in the same pass; do not leave a
+value-returning error path behind.
+
+**Control when fixing:** `Path.absolute(".")` must return a rooted path (`abs.len > 1`
+and not starting with `.`), an already-absolute path must come back unchanged-or-
+normalised, and a genuinely failing resolve must NOT return its input. All three, or the
+easy wrong fix (prepend cwd unconditionally) breaks the second.
+
+**Why nothing caught it, which is the part worth keeping.**
+`test/stdlib_misc_test.zbr:33` asserts exactly this (`assert not abs.startsWith(".")`)
+and has been **failing at runtime**, unseen, because the file sits in
+`tools/output_baseline_excluded.txt` — the set `output_sweep` drops as nondeterministic.
+It qualified for exclusion because its panic message embeds a **thread ID**, so its output
+genuinely differs across the three samples. The derivation rule "output differs across
+samples ⇒ nondeterministic ⇒ exclude" is satisfied perfectly by a crash, so the one gate
+that runs programs automatically discards a class of the failures it exists to catch.
+
+Nothing else covers it: the file is registered with the bare `smoke` helper (emit-only —
+it does not compile or run) and sits in `full_sweep_baseline.txt` (compiles). Its panic
+text even *changed* while excluded — `reached unreachable code` (2026-07-31) →
+`assert failed at …:33` (2026-08-16) — with no gate reporting anything.
+
+`arena_concurrency_hazard_test` is in the same position (panics, excluded, referenced in
+`selfhost/main.zbr` only inside a comment). Related to **BUG-289**, which is the other
+open question about that same excluded set. **The exclusion mechanism needs a
+crash/nondeterminism split — a program that exits non-zero is not a flaky one — but that
+is a separate ticket from this stdlib defect.**
+
+*(No regression fixture yet. `bug_fixture_check` does not flag that — it scopes to
+FIXED bugs, so an open ticket without a fixture is invisible to it. The fixture is owed
+when this is fixed, not now.)*
 
 ### BUG-289: two deterministic programs disagreed with themselves inside a full output_sweep — cause unknown
 
