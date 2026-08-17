@@ -1,0 +1,52 @@
+# @boundary runs
+#
+# INTENT AUTHORED FROM QUICKSTART §11 ("Optional types and nil"), BEFORE RUNNING.
+#
+# This probe is unusual and deliberately so: it asserts the documented LIMITS as well
+# as the documented behaviour. §11 does not merely say narrowing works — it names, in
+# a dated note (2026-07-16), four shapes that are NOT narrowed and tells the reader to
+# use `x!` for them:
+#
+#   - `and`-chains: "narrow only via `x!` in the 2nd operand"
+#   - the `== nil` else-branch
+#   - non-local receivers (`if obj.field != nil`)
+#   - a block that reassigns `x`
+#
+# A documented limitation is a promise too, and it is the half that rots first: when
+# narrowing later grows to cover an `and`-chain, the row below keeps passing (`x!` is
+# always valid) while the DOC silently becomes wrong about its own restriction. So the
+# rows are written so that widening narrowing cannot break them — they assert the
+# workaround still works, which is what a reader following the doc will have written.
+#
+# What this probe canNOT see, stated rather than implied: it cannot detect that
+# narrowing has grown BEYOND the doc. Only a probe asserting the un-narrowed form is
+# still refused could do that, and refusing it is not something the doc promises.
+def main()
+    var x: int? = 42
+    var z: int? = nil
+
+    # Documented: a plain `<local> != nil` narrows the WHOLE then-block, so both a
+    # bare use and arithmetic on it must compile without `!`.
+    if x != nil
+        print(x)
+        print(x + 1)
+
+    # Documented: "`x!` (explicit force-unwrap) also still works and is equivalent
+    # here" — so the same block written the explicit way must give the same answer.
+    if x != nil
+        print(x!)
+
+    # Documented NON-narrowed shape: an `and`-chain, where the doc says to reach for
+    # `x!` in the second operand.
+    if x != nil and x! > 40
+        print("and-chain via bang")
+
+    # Documented: the optional-unwrap binding form binds a NON-optional.
+    if x as n
+        print("bound ${n}")
+
+    # Boundary: the nil value must not enter the then-block at all.
+    if z != nil
+        print("UNREACHABLE — a nil optional entered its own non-nil branch")
+    else
+        print("z is nil")

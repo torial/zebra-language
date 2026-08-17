@@ -1,0 +1,55 @@
+# @boundary runs
+#
+# INTENT AUTHORED FROM QUICKSTART §7 ("`struct except` — context forking"), BEFORE
+# RUNNING. Every expected line below is derived from what the document promises, not
+# from what the compiler printed. If a row disagrees, the finding is real either way:
+# the compiler is wrong, or the document is.
+#
+# The doc makes four separate promises about `except`, and this probe asserts each:
+#
+#   1. "`this except` produces a new value with the listed fields overridden;
+#       all other fields are copied."          -> unlisted fields survive
+#   2. "Two forms — the indented block above, or an inline comma list on one line."
+#   3. "Works as a var-init (`var c = base except …`) or a reassignment
+#       (`c = base except …`)."
+#   4. It is an IMMUTABLE update — the doc calls the section "context forking" and
+#       says it "produces a NEW value", so the source must be unchanged afterwards.
+#
+# (4) is the one worth having. It is the promise a reader relies on without noticing,
+# it is the one an in-place optimisation would silently break, and nothing else in the
+# corpus asserts it — a mutating `except` would still pass every row about the COPY.
+struct Config
+    var indent: int
+    var owner: str
+    var verbose: bool
+
+    # The doc's own example, verbatim in shape: an indented block that references the
+    # field being overridden (`indent = indent + 1`), i.e. the OLD value is readable
+    # while computing the new one.
+    def indented(): Config
+        var c = this except
+            indent = indent + 1
+        return c
+
+def main()
+    var base = Config(indent: 0, owner: "root", verbose: false)
+
+    # 1. indented form, via a method; owner/verbose must be COPIED, not defaulted.
+    var a = base.indented()
+    print("${a.indent} ${a.owner} ${a.verbose}")
+
+    # 2. inline comma list, overriding two of three.
+    var b = base except indent = 5, verbose = true
+    print("${b.indent} ${b.owner} ${b.verbose}")
+
+    # 3. reassignment form, overriding one field.
+    var c = base
+    c = c except owner = "next"
+    print("${c.indent} ${c.owner} ${c.verbose}")
+
+    # 4. THE IMMUTABILITY ROW: after three derivations from it, `base` is untouched.
+    print("${base.indent} ${base.owner} ${base.verbose}")
+
+    # 5. Boundary: override EVERY field, so nothing is copied at all.
+    var d = base except indent = 9, owner = "all", verbose = true
+    print("${d.indent} ${d.owner} ${d.verbose}")
