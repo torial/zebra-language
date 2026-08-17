@@ -403,7 +403,9 @@ smoke test/json_parse_strict_tc_test.zbr
 smoke test/dir_walk_test.zbr
 
 # BUG-088: def-level try/catch in non-void return function must not implicitly fall off.
-smoke test/bug088_try_return_test.zbr
+# BUG-088 moved DOWN to the smoke_run block — `smoke_run` is not defined until later in
+# this file, and bash resolves a function at call time, so invoking it here fails with
+# "command not found" and aborts the whole suite mid-run.
 
 # @profile method attribute: wraps body with _profile_start/defer _profile_end.
 smoke test/profile_attr_test.zbr
@@ -1429,6 +1431,21 @@ smoke_run     test/bug286_namespace_ctor_test.zbr "bug286: OK"
 # a relative path comes back rooted, and an already-absolute one is unchanged — because
 # the easy wrong fix (prepend cwd unconditionally) passes the first and breaks the second.
 smoke_run     test/bug290_path_absolute_test.zbr "bug290: OK"
+# BUG-123 / BUG-202: names that collide with something the EMITTER introduces rather than
+# with anything in the Zebra source — `init` (the generated main's parameter) and `key` (a
+# preamble helper's parameter). Both were invisible until the emitted Zig failed to build.
+smoke_run     test/bug123_user_init_test.zbr "bug123: OK"
+smoke_run     test/bug202_preamble_name_collision_test.zbr "bug202: OK"
+# BUG-104: an unknown @-directive must be REPORTED, not silently dropped. smoke_warn, not
+# smoke_run, because the broken behaviour also compiled and ran cleanly — only the absence
+# of the message distinguished them, so asserting the message is the whole test.
+smoke_warn    test/bug104_unknown_directive_test.zbr "unknown @-directive"
+# BUG-088: upgraded from bare `smoke` (emit-only) 2026-08-17. The bug was that ZIG refused
+# the emitted code ("function with non-void return type implicitly returns"), so an
+# emit-only registration did not assert the fix at all — it checked the front end and
+# stopped exactly where the defect lived. Lives here rather than beside the other
+# bug0xx entries because `smoke_run` is not defined until further down this file.
+smoke_run     test/bug088_try_return_test.zbr "bug088_try_return_test: ok"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

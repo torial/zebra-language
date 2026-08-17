@@ -1,0 +1,17 @@
+# BUG-104 regression: an unknown `@directive` must be REPORTED, not silently ignored.
+#
+# The original defect was silence — AstBuilder dropped an unrecognised directive with
+# no output at all, so a typo'd `@reflectabel` behaved exactly like no annotation and
+# the program compiled to something the author did not ask for.
+#
+# The fix is a WARNING rather than an error, deliberately: an unknown directive is
+# forward-compatibility surface (a newer directive read by an older compiler), so
+# refusing outright would make the language harder to evolve than the defect warrants.
+# What matters is that it is not SILENT.
+#
+# Asserted with `smoke_warn`, which requires the compile to SUCCEED and the message to
+# appear — both halves. A plain smoke_run would pass on the broken compiler too, since
+# the broken behaviour also compiled and ran.
+@bogusdirective
+def main()
+    print("bug104: OK")

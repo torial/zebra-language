@@ -6,6 +6,195 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-088: def-level `try/catch` in non-void return function falls off the end — ✅ FIXED (closed 2026-08-17)
+- **Severity:** Medium (correctness — Zig refuses to compile the generated code)
+- **Status:** Fixed
+- **Symptom:** A method using the `def...catch` form (catch clause attached to the def itself, not a nested try/catch block) with a non-void return type fails to compile. The generated Zig has a `return` inside the success path, an unreachable `break`, then an `if (_try_err_1 != null) return ...;` afterwards — but no return on the path through both blocks where neither error occurred and the success block didn't already return. Zig errors with "function with non-void return type implicitly returns" + "unreachable code" at the orphan `break`.
+- **Reproducer:** A `def f(): str` with `var v = try X()` followed by `return "ok"` and a `catch` clause returning `"err"` — see `test/bug088_try_return_test.zbr`.
+- **Root cause:** `body_ends_in_break` in `genTryCatch` didn't handle `.return_` as a terminal statement; the orphan `break :_try_blk` was always emitted.
+- **Fix:** `genTryCatch` now checks if the last stmt is `.return_`; if so, skips the `break :_try_blk` and emits `unreachable;` after the catch block. Both `src/CodeGen.zig` and `selfhost/codegen.zbr` updated. Also fixed `genBranch` to emit `=> |_| {` for `as _` discard on boxed union variants (was generating invalid `const _ = …`).
+- **Discovered:** While writing `contract_result_throws_test.zbr` for the BUG-087 fix.
+
+---
+
+### BUG-231: named arguments do not parse inside `${...}` interpolation ⚠ OPEN — ✅ FIXED (closed 2026-08-17)
+
+**Severity:** medium (documented feature unavailable in a documented context).
+**Found:** 2026-07-30 by the A3 boundary suite. **Both compilers reject it.**
+
+```zebra
+def defaulted(a: int, b: int = 2, c: int = 3): int
+    return a * 100 + b * 10 + c
+
+var outside = defaulted(1, c: 7)     # fine — 127
+print("${defaulted(1, c: 7)}")       # selfhost : unexpected expression token: ': 7)'
+                                     # bootstrap: syntax error near ': 7)'
+```
+
+Named arguments are QUICKSTART section 4; interpolation is section 3. The
+expression sub-parser used inside `${...}` does not accept the `name:` form. The
+workaround is to bind the call to a local first.
+
+Same family as BUG-232 — both are the interpolation sub-parser being a weaker path
+than the ordinary expression parser. Worth fixing together.
+
+**Expect TWO probes to go red from ONE fix.** `bv_named_arg_interp.zbr` and
+`bv_arity_interp_unchecked.zbr` both pin interpolation-path behaviour, so whoever
+fixes this family will very likely break both at once (and may also free the
+hoisted `named` row in `bv_arity_ok.zbr` to be written inline again). That is the
+`@boundary-pending` tripwire working as designed, not a regression — rewrite both
+probes to assert the intent rather than re-baselining them.
+
+Pinned by `test/boundary/bv_named_arg_interp.zbr`, which carries the statement-form
+call as a control so the failure is attributable to the interpolation and nothing
+else.
+
+---
+
+### BUG-203: explicit `@derive(Eq)` `.eql(value)` call doesn't address the value argument — ✅ FIXED (closed 2026-08-17)
+Calling a derived `eql` explicitly with a value argument fails to compile:
+`a.eql(b)` → `error: expected type '*const Color', found 'Color'`. The derived
+`eql(other: *const Self)` takes its argument by const-pointer, and an explicit
+`.eql(b)` passes `b` (a value) without taking its address. The **`==` operator
+works** (`a == b`, which the Eq trait rewires to `a.eql(b)`, DOES address the
+argument), as do `toString()`, `hash()`, and struct-keyed `HashMap` — so only the
+explicit `.eql(value)` form is affected. Repro:
+```
+@derive(Eq) struct Color { var r: int; var g: int; var b: int }
+def main()
+    var a = Color(r:1, g:2, b:3)
+    var b = Color(r:1, g:2, b:3)
+    print(a == b)        # OK → true
+    print(a.eql(b))      # FAIL: expected '*const Color', found 'Color'
+```
+**Fix direction:** the explicit-member-call path should address a value argument
+passed to a `*const Self` parameter the same way the `==` rewrite already does
+(mirror the arg-addressing in genMemberCall). **Workaround:** use `==`.
+Low severity (idiomatic `==` works; `.eql()` is the lower-level form). Found
+2026-07-25 during the QUICKSTART dogfood. Related: `docs/emit_compile_triage.md`
+`derive_test` entry.
+
+### BUG-202: user top-level function name collides with preamble-internal parameter names — ✅ FIXED (closed 2026-08-17)
+A user `def` whose name matches a parameter used inside a preamble helper emits Zig
+that fails to compile with `error: function parameter shadows declaration of '<name>'`.
+Found writing `examples/game_of_life.zbr`: a top-level `def key(x, y, w)` collided with
+the preamble's `_json_get_str(v, key: []const u8)` (and `_json_get_int/float/bool/obj`),
+which all take a parameter literally named `key`. Zig treats a file-scope `pub fn key`
+and a same-scope fn parameter `key` as a shadow → hard error. Same class as `fill`
+(collides with `_pad_fill(fill: …)`), hit earlier during §28f set-literal testing.
+**Impact:** common identifiers (`key`, `val`, `fill`, …) are unusable as user function
+names. **Workaround:** rename the user function (the example uses `cellKey`).
+**Fix direction / disposition (2026-07-25):** SUBSUMED by the single-file-emit epic
+(`docs/single_file_emit_design.md`) — deferred, do NOT hand-rename the preamble.
+Verified: the repro (`def key(...)`) FAILS under default multi-file emit but COMPILES
+CLEAN under `--single-file`, because single-file mode wraps user decls in
+`const _Mod = struct {…}`, so user `key` becomes `_Mod.key` and a file-scope preamble
+param `key` shadows nothing. When single-file becomes the default emission mode, this
+class disappears wholesale. The alternative — prefixing preamble identifiers — is worse
+than it looks: Zig forbids shadowing a container decl with ANY local, so a preamble
+body `var key`/`const key` collides too (not just params); plus perpetual per-helper
+maintenance and pre-`HELPERS_START` dual-maintenance. Disproportionate for a
+low-severity papercut with a clean architectural cure already in flight. **Workaround
+until then:** rename the user function (e.g. `key` → `cellKey`). Discovered 2026-07-24.
+
+### BUG-123: Generated `pub fn main(init: std.process.Init)` shadows user-defined `init` function — ✅ FIXED (closed 2026-08-17)
+
+- **Status:** Fixed (2026-05-21)
+- **Symptom:** An MVU program with `def init(): Model` would fail to compile. Inside the generated `main`, the parameter `init: std.process.Init` shadowed the user's top-level `init` function.
+- **Fix:** Renamed the parameter from `init` to `_zinit` in `genMain` in `src/CodeGen.zig` (4 sites) and matching locations in `selfhost/codegen.zbr` (4 sites). Both compilers regenerated. Bootstrap 5/5.
+
+---
+
+### BUG-122: Selfhost codegen — `opt_ptr_field_bindings` not seeded for local variables with inferred types — ✅ FIXED (closed 2026-08-17)
+
+- **Severity:** Low (workaround exists; only hits when a local var holds a struct with `^T?` fields and those fields are accessed via `to!`)
+- **Status:** Fixed (2026-05-26) — both sub-problems resolved via `infer_ctx` in `genLocalVar`
+
+#### Background
+
+`opt_ptr_field_bindings` is a `StrSet` on `Generator` tracking `"bindingName.fieldName"` pairs for fields typed `^T?` (optional heap-pointer). The `to_non_nil` (`to!`) codegen handler (codegen.zbr ~line 6245) emits `.?.*` instead of `.?` when the key is present, because Zig needs the extra `.*` deref for pointer fields.
+
+The set is seeded in three places:
+- **Named parameters** (line ~2613): at method entry, for each `TypeRef.named` param, scans `opt_ref_fields` for `"TypeName.*"` and adds `"paramName.*"`.
+- **`capture` bindings** (line ~4195): when a union arm is bound with `if x is T as cap`, seeds for the variant payload's struct fields.
+- **`if x as n` / `if x is T as n` bindings** (line ~5122): same seeding for optional-unwrap and type-check bindings.
+
+**Local `var` declarations are not seeded.** So `var x = someFunc()` where `someFunc` returns `DeclTypeAlias?` does NOT get `"x.constraint"` added to `opt_ptr_field_bindings`, and `x to!.constraint to!` emits `.?` without `.*`, producing a Zig type error (`expected 'ast.Expr', found '*ast.Expr'`).
+
+#### Two sub-problems
+
+**Sub-problem 1 — explicit type annotation** (`var x: DeclTypeAlias = ...`)
+
+When `n.type_` on a `StmtVar` is `TypeRef.named as nt`, the fix is identical to the parameter seeding logic already at line 2613. In `genLocalVar`, after emitting the declaration:
+
+```zebra
+if n.type_ is TypeRef.named as nt
+    var nt_dot = nt.name + "."
+    var orf = opt_ref_fields.items()
+    var orfi = 0
+    while orfi < orf.count()
+        var orf_e: str = orf.at(orfi)
+        if orf_e.startsWith(nt_dot)
+            opt_ptr_field_bindings.add(makeDottedKey(n.name, extractAfterDot(orf_e)))
+        orfi += 1
+```
+
+Scope cleanup: `opt_ptr_field_bindings` is reset at method entry (line ~1565: `opt_ptr_field_bindings = StrSet()`), so no per-scope removal is needed for local vars — they live for the method duration and cannot bleed across method boundaries.
+
+This sub-problem is **easy (~1h)** and has no known risks.
+
+**Sub-problem 2 — inferred type** (`var x = someFunc()` where return type is `SomeStruct?`)
+
+The codegen does not currently know what a call expression returns. To seed `opt_ptr_field_bindings` for this case, you need to resolve the return type at the call site.
+
+**Recommended approach:** add a `local_var_types: HashMap(str, str)` (var name → struct type name) to `Generator`. Populate it in `genLocalVar` by inspecting the RHS expression:
+
+- `Expr.call` whose callee is a known function: look up the return type in `module_types` / `dep_types`. The key lookup is `module_types.funcReturnType(funcName)` — this method does not exist yet and would need to be added to `ModuleTypes` in `typechecker.zbr`. It mirrors how `inferExpr` for `Expr.call` already looks up `module_types.methodReturn(...)`.
+- `Expr.member_call` (method call): look up via `module_types.methodReturn(typeName, methodName)`, strip `?` if the type is optional, then use the base struct name.
+
+Once `local_var_types` is populated, the `to_non_nil` handler (line ~6245) should additionally check: if `tnn_obj` is in `local_var_types`, get the struct name, form `"structName.memberName"`, and check `opt_ref_fields` directly — eliminating the need for the key to be pre-seeded.
+
+```zebra
+# In to_non_nil handler, after the opt_ptr_field_bindings check:
+if tnn_obj != nil
+    var lv_type = local_var_types.get(tnn_obj to!)
+    if lv_type != nil
+        var orf_key = makeDottedKey(lv_type to!, tnn_m.member)
+        if opt_ref_fields.contains_(orf_key)
+            w.emit(".*")
+```
+
+**Complexity:** `local_var_types` must propagate into `indented()` child generators (branches, loops, etc.) so bindings declared in an outer scope are visible in inner scopes. The simplest approach is to pass a reference to the parent's `local_var_types` into child generators, or to copy it at `indented()` creation. Since the set only grows within a method and resets at method boundaries, copy-on-enter is safe.
+
+`funcReturnType` on `ModuleTypes` is the new surface that needs implementing in `typechecker.zbr`. It needs to handle: plain functions, methods, and the `?`-strip for optional returns. This is roughly 30-50 lines in `typechecker.zbr` and a corresponding update to `selfhost/typechecker.zig` via `update-selfhost`.
+
+Estimated effort: **~half a day** once sub-problem 1 is done as a warm-up.
+
+#### Current workaround
+
+Extract the code that accesses `^T?` fields into a helper method where the struct is a **named parameter** (not a local variable). This forces `opt_ptr_field_bindings` to be seeded at method entry.
+
+Example: `genTypeAliasConstraint(alias_decl: DeclTypeAlias, ...)` — `alias_decl` is a parameter so `"alias_decl.constraint"` is seeded. See selfhost/codegen.zbr ~line 3557.
+
+#### Files to change when fixing
+
+- `selfhost/typechecker.zbr` — add `funcReturnType(name: str): str?` (or similar) to `ModuleTypes`
+- `selfhost/codegen.zbr` — add `local_var_types: HashMap(str, str)` to `Generator`; populate in `genLocalVar`; consult in `to_non_nil` handler; propagate into `indented()`
+- `selfhost/typechecker.zig`, `selfhost/codegen.zig` — regenerated via `zig build update-selfhost`
+- Add a test: a local var holding a struct with `^T?` field, accessed via `to!`, without extracting into a helper
+
+- **Discovered:** 2026-05-18 during type alias `^Expr?` constraint access in selfhost codegen.
+
+---
+
+### BUG-104: Unknown `@directive` silently ignored by AstBuilder — ✅ FIXED (closed 2026-08-17)
+- **Severity:** Low (typical case is benign; impacts merge-oracle and forward-compat)
+- **Status:** Closed — fixed 2026-05-06
+- **Resolution:** `src/AstBuilder.zig` now emits `warning: unknown @-directive '@foo'; ignored` via `std.debug.print` to stderr when an unrecognized `@name` directive is encountered. `selfhost/parser.zbr` emits the same message via `sys.errln`. Compilation continues normally; only the unknown directive is ignored. Bootstrap 5/5, smoke 44/44.
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P1-2]).
+
+---
+
 ### BUG-230: an ANNOTATED, NON-EMPTY list literal does not compile — ✅ FIXED 2026-07-30 (closed 2026-08-17)
 
 > **Closed 2026-08-17, seventeen days late.** Fixed by `ccb728a` and left sitting in the

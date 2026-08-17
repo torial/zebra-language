@@ -1,0 +1,22 @@
+# BUG-202 regression: a top-level `def` may share a name with a parameter used inside a
+# preamble helper.
+#
+# Found writing examples/game_of_life.zbr: a perfectly ordinary `def key(x, y, w)` emitted
+# Zig that failed with "function parameter shadows declaration of 'key'". The user's
+# function is at module scope and the preamble's parameter is inside a helper, so nothing
+# in the Zebra source hints at a conflict — the collision exists only in the emitted Zig.
+#
+# The entry records that a local `var key` collides too, not only a parameter, so both
+# positions are exercised here.
+def key(x: int, y: int, w: int): int
+    return y * w + x
+
+def uses_local_named_key(): int
+    var key = 5
+    return key * 2
+
+def main()
+    var k = key(2, 3, 10)
+    var l = uses_local_named_key()
+    if k == 32 and l == 10
+        print("bug202: OK")

@@ -1,0 +1,21 @@
+# BUG-123 regression: a user-defined `init` must not be shadowed by the generated entry
+# point.
+#
+# Codegen emits `pub fn main(init: std.process.Init)`, so a user function named `init`
+# was shadowed by that PARAMETER and every call to it resolved to the wrong thing.
+#
+# `init` is an ordinary word a user will reach for (constructors, setup routines), and
+# nothing in Zebra reserves it — so the collision was invisible until it bit.
+def init(): int
+    return 7
+
+def helper(): int
+    # Called from a nested scope too: the shadowing was by a parameter of `main`, so a
+    # call from OUTSIDE main must keep working as well as one from inside.
+    return init() + 1
+
+def main()
+    var direct = init()
+    var nested = helper()
+    if direct == 7 and nested == 8
+        print("bug123: OK")
