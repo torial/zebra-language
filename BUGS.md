@@ -57,27 +57,6 @@ silent coverage loss into a printed number — but it does not explain the
 underlying disagreement, and a rising transient count is the signal to come
 back to this ticket.
 
-### BUG-271: unknown method on a builtin type is deferred to Zig but stamped `void`, so it can never return a value
-
-**Found 2026-08-06** extending the sqlite preamble in the zebra-sprocket router
-project. The resolver's deferral of unknown methods to Zig is what makes
-preamble-seam extensions possible at all -- but the emitted binding annotates
-the result as `void`:
-
-```
-var segs = d.query_segments("SELECT 1")
-```
-
-```
-const segs: void = d.query_segments("SELECT 1");
-```
-
-So a method that genuinely exists in a modified preamble compiles, runs, and
-cannot hand its result back to Zebra. Emitting `const segs = ...` (letting Zig
-infer) would make the deferral fully usable. Worked around in zebra-sprocket by
-routing through the known `query()` signature with a `"@segments "` SQL-prefix
-marker, which keeps the known `List(SqliteRow)` return type.
-
 ### BUG-281: SEVEN emit families print Zig keywords bare — SIX closed, G open (bootstrap-only)
 <!-- bug-open-ok: six of seven families are closed and pinned by test/bug280_keyword_idents.zbr; G is bootstrap-only and the selfhost is immune to it for free -->
 

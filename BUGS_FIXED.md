@@ -6,6 +6,45 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-271: unknown method on a builtin type is deferred to Zig but stamped `void`, so it can never return a value — ✅ FIXED 2026-08-06 (closed 2026-08-17)
+
+**Found 2026-08-06** extending the sqlite preamble in the zebra-sprocket router
+project. The resolver's deferral of unknown methods to Zig is what makes
+preamble-seam extensions possible at all -- but the emitted binding annotates
+the result as `void`:
+
+```
+var segs = d.query_segments("SELECT 1")
+```
+
+```
+const segs: void = d.query_segments("SELECT 1");
+```
+
+So a method that genuinely exists in a modified preamble compiles, runs, and
+cannot hand its result back to Zebra. Emitting `const segs = ...` (letting Zig
+infer) would make the deferral fully usable. Worked around in zebra-sprocket by
+routing through the known `query()` signature with a `"@segments "` SQL-prefix
+marker, which keeps the known `List(SqliteRow)` return type.
+
+**FIXED in `85df014`** at `tcTypeAnnotation`, which now returns `""` for `void` and lets
+Zig infer. That function exists to stop Zig defaulting an untyped local to
+`comptime_int` / `*const [N:0]u8` (BUG-159, BUG-173); `void` is never one of those, so the
+annotation bought nothing there and could only be wrong.
+
+**Closed 2026-08-17, nine days late, and the lateness is the point.** The fix landed with a
+detailed commit and a gated fixture, and the entry stayed at the top of the OPEN ledger the
+whole time — the third instance of this after BUG-283 and BUG-270. `lint_bug_numbers`'
+resolved-entry leg is heading-only by design (bodies say FIXED about *other* bugs, which
+scored 30 of 53 and got the check ignored), so an entry whose heading never gains a marker
+is invisible to it.
+
+**Verified before closing rather than taken on the commit's word**: emitting
+`test/bug271_deferred_method_type_test.zbr` today produces **zero** occurrences of
+`: void =`, and the fixture carries a `smoke_run` registration asserting `bug271: OK`, so
+it has been re-checked on every smoke run since it landed.
+
+
 ### BUG-288: AstBuilder constructs 96 of ~146 node kinds with a ZERO span, so most diagnostics cannot say where — FIXED 2026-08-16
 
 **FIXED 2026-08-16 across three batches. `diag_column_baseline.txt` is 18 → 0**, so the

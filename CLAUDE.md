@@ -482,6 +482,38 @@ the FULL_SWEEP baseline. When a corpus file changes compile status, re-baseline
 whose file is no longer a candidate, and the gate correctly reports it as "stopped being
 measured", which is a coverage loss rather than a behaviour change.
 
+python tools/lint_stale_bugs.py    # THE STALE-OPEN-BUG SCANNER — REPORT ONLY, not a
+                                #   gate, and deliberately so. It ranks OPEN entries by
+                                #   evidence from OUTSIDE the ledger — commits whose
+                                #   subject claims to have landed the number, and tracked
+                                #   regression fixtures — because the thing it hunts is
+                                #   invisible to `bug-numbers`.
+                                #   WHY IT HAD TO LOOK OUTSIDE. `lint_bug_numbers`'
+                                #   resolved-entry leg is HEADING-ONLY on purpose: bodies
+                                #   routinely say FIXED about OTHER bugs, which scored 30
+                                #   of 53 and is a noise ratio that gets a gate ignored. So
+                                #   an entry whose heading never gains a marker is
+                                #   structurally invisible there — and that is exactly how
+                                #   BUG-283, BUG-270 and BUG-271 each sat closed-but-open,
+                                #   the last one for NINE DAYS at the top of the ledger.
+                                #   Two of the three were found by someone picking the bug
+                                #   up to work on it and discovering it already done.
+                                #   NOT A GATE, because it produces real false positives
+                                #   and must: BUG-106 ranks top on an old "BUG-106 fixed"
+                                #   commit, but today's entry is a NEW conflict filed under
+                                #   the same number and is legitimately open. A tool that
+                                #   would close that is worse than none. It ranks
+                                #   suspicion, names its evidence, and closes nothing.
+                                #   CARRIES A BOUNDARY CONTROL, because its first version
+                                #   got this wrong in the repo's signature failure mode:
+                                #   `git log --grep BUG-14` is a SUBSTRING match and
+                                #   collected 24 "fixes" belonging to BUG-140..149 — a
+                                #   confident wrong NUMBER, not an error. It now refuses to
+                                #   run unless `BUG-14` rejects `BUG-142`, and unless a
+                                #   known-landed number (BUG-288) still shows its commits.
+                                #   VERIFY BY RUNNING THE CASE before closing anything: a
+                                #   fixture existing is not a fix, which is the whole
+                                #   reason `registration_check` exists.
 python tools/lint_bug_numbers.py   # THE BUG-NUMBER COLLISION GATE (static, instant, QUICK).
                                 #   Two agents work in this tree and both allocate a
                                 #   number the same way — read BUGS.md, take the next.
@@ -988,7 +1020,7 @@ than "what do we know":
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 73 scripts | <!-- doc-gen: 73 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 74 scripts | <!-- doc-gen: 74 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 51 tracked documents <!-- doc-gen: 51 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
