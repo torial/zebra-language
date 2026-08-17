@@ -133,6 +133,14 @@ fi
 # Refuse rather than merge. Merging is the friendlier behaviour and it is also how a
 # stale record survives a re-baseline forever; "regenerated on every re-baseline, so it
 # cannot silently rot" is a property worth keeping. Found 2026-08-17.
+#
+# THE ATTACK WAS RUN, not reasoned about. A copy of this script with THIS BLOCK REMOVED
+# and its baseline paths redirected to scratch, invoked as
+# `--update-baseline --only stdlib_misc_test`, took the baseline from 358 entries to 1.
+# It printed no warning, and the MAX_EMPTY_FRACTION_PCT control below passed cleanly
+# ("empty-output files: 0 of 1") — confirming it counts empty records rather than missing
+# ones. Watching the guard refuse only proves the guard is reachable; it does not prove
+# there was anything behind it.
 if [ "$UPDATE" = 1 ] && [ -n "$ONLY" ]; then
     echo "REFUSING: --update-baseline cannot be combined with --only." >&2
     echo "--update-baseline REWRITES the baseline from what this run measured, so" >&2
