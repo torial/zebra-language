@@ -33,58 +33,66 @@ At `k = 100` every branch is exactly one cell wide and there is no width variati
 fit, because extending to unserved heat always beats thickening an already-excellent path.
 That is a result, and the program says so rather than fitting noise.
 
-### It DOES vary with the growth exponent — but only where the tree can screen
+### It DOES vary with the growth exponent — measured over 8 seeds per cell
 
-**This section previously reported a null, and the null was wrong.** It was measured at a
-single conductivity ratio (k = 4), where the exponent genuinely does nothing, and
-generalised from that one slice. Sweeping both axes shows a clean phase diagram.
+**An earlier version of this document reported a null here. The null was wrong**: it was
+measured at one conductivity ratio (k = 4) with **one seed**, and generalised. Everything
+below is 8 seeds per cell, 256 runs.
 
-Box dimension, stochastic mode, uniform sources, seed 12345:
+```
+pooled seed-to-seed sd = 0.0285   ->   a difference below 0.057 (2 sd) is NOT resolvable
+```
 
-| k \ eta | 0 | 1 | 2 | 4 |
-|---|---|---|---|---|
-| 2 | 1.535 | 1.502 | 1.530 | 1.523 |
-| 4 | 1.535 | 1.502 | 1.495 | 1.483 |
-| 10 | 1.535 | 1.437 | 1.439 | 1.354 |
-| 30 | 1.535 | 1.415 | 1.338 | 1.200 |
-| 100 | 1.535 | 1.338 | 1.185 | **1.142** |
+That number is the whole methodology. The original "null" was a spread of **0.052** — below
+the resolution of the data that produced it. The honest statement was always "no effect
+resolvable here", never "no effect".
 
-`eta` spread by contrast: 0.012, 0.052, 0.181, 0.335, **0.393** — monotonic, and only the
-last three exceed the classifier's ~0.1 resolution.
+Box dimension, mean +- sd over 8 seeds:
 
-**SCREENING REQUIRES TWO THINGS AT ONCE, and that is the finding.** The aggregate must
-perturb the field (high contrast) *and* the selection rule must be sensitive to the
-perturbation (high `eta`). Either alone does nothing, which is exactly why the `eta = 0`
-column and the `k = 2` row are both flat. At low contrast the tree barely bends the field,
-every frontier cell looks alike, and no exponent can amplify a difference that is not
-there.
+| src | k \ eta | 0 | 1 | 2 | 4 | eta effect |
+|---|---|---|---|---|---|---|
+| uniform | 2 | 1.506±.035 | 1.503±.021 | 1.515±.019 | 1.527±.011 | −0.021 *not resolved* |
+| uniform | 10 | 1.506±.035 | 1.462±.026 | 1.420±.020 | 1.347±.023 | **+0.160** |
+| uniform | 30 | 1.506±.035 | 1.427±.034 | 1.299±.027 | 1.210±.022 | **+0.296** |
+| uniform | 100 | 1.506±.035 | 1.341±.026 | 1.210±.030 | 1.126±.017 | **+0.380** |
+| edge | 2 | 1.506±.035 | 1.515±.031 | 1.531±.018 | 1.525±.016 | −0.019 *not resolved* |
+| edge | 10 | 1.506±.035 | 1.466±.010 | 1.405±.016 | 1.398±.017 | **+0.109** |
+| edge | 30 | 1.507±.035 | 1.399±.042 | 1.388±.035 | 1.354±.030 | **+0.152** |
+| edge | 100 | 1.506±.035 | 1.358±.044 | 1.364±.036 | 1.323±.059 | **+0.183** |
 
-The morphologies at the corner are textbook, and visibly so. At `k = 100, eta = 0` the top
-22 rows of the domain are **empty** — a compact blob hugging the sink, an Eden cluster. At
-`k = 100, eta = 4` long sparse tendrils reach most of the way up. That is the Eden -> DLA
-transition, and it was completely invisible at `k = 4`.
+Three things are established:
 
-**THE eta = 0 COLUMN IS AN INTERNAL CONTROL, not just a data point.** At `eta = 0` selection
-is uniform over the frontier and therefore field-independent, so the morphology must not
-depend on conductivity at all. It reads 1.535 at every one of the five ratios, to three
-decimals. An implementation that had leaked the field into the `eta = 0` path would show
-drift there.
+1. **The exponent's effect is real and grows monotonically with conductivity contrast**,
+   in both source modes, and is unresolvable at `k = 2`.
+2. **The `eta = 0` column is an internal control and it passes.** Selection there is
+   uniform over the frontier and therefore field-independent, so morphology must not
+   depend on conductivity *or* on the source mode — and it reads 1.506 ± 0.035 in all
+   eight cells.
+3. **Uniform sources give roughly double the exponent's leverage of a source-free field**,
+   at every resolved contrast (+0.160/+0.296/+0.380 against +0.109/+0.152/+0.183).
 
-### The source-term hypothesis was wrong, and backwards
+The corner morphologies are textbook and visible by eye. At `k = 100, eta = 0` the top 22
+rows are **empty** — a compact blob hugging the sink. At `k = 100, eta = 4` sparse tendrils
+reach most of the way up.
 
-The previous version of this document proposed that volumetric generation suppresses
-screening — that heat appearing next to every frontier cell prevents starvation, and that
-removing the sources would open the `eta` axis. A source-free mode was added to test it
-(`src = edge`: no bulk generation, top row held hot, which makes the problem a dielectric
-breakdown model).
+### Three mechanisms proposed, three refuted
 
-At the same `k = 100`, the `eta` spread is **0.393 with uniform sources and 0.142
-source-free**. Sources make `eta` *more* effective here, not less. The hypothesis was not
-merely unsupported; it pointed the wrong way. The controlling variable is conductivity
-contrast, and the source mode is a second-order effect on top of it.
+This is the part worth keeping. Each explanation was specific enough to test, and each
+died:
 
-Recorded rather than deleted, because the useful part is that the hypothesis was specific
-enough to be killed by one sweep.
+| hypothesis | test | outcome |
+|---|---|---|
+| the frontier scores lack the dynamic range for `eta` to bite | instrument the best/worst ratio | **false** — at `eta = 4` weights span 216x and morphology still barely moves |
+| volumetric sources suppress screening, so removing them opens the `eta` axis | build a source-free mode and compare | **false and backwards** — sources give ~2x MORE leverage, not less |
+| uniform sources win because they create more gradient heterogeneity | compare frontier spread across modes | **false** — edge has 3.5x MORE spread (2438x vs 695x at k=100) and half the effect |
+
+So the uniform-vs-source-free asymmetry is **measured and unexplained**. It is stated that
+way deliberately. After three plausible stories died to one measurement each, a fourth
+story offered without a test would be worth nothing.
+
+The edge-mode non-monotonicity flagged in an earlier draft (`eta` = 1, 2, 4 reading 1.358,
+1.364, 1.323) is **not real**: that rise is 0.006, a tenth of the resolution, and it came
+from a single seed. Withholding judgement on it was correct.
 
 ## The scaling law, and a prediction that failed
 
@@ -157,3 +165,13 @@ zebra run examples/constructal.zbr 49 4   0.12 selftest                # validat
 ```
 
 Every specimen is seeded and reproducible.
+
+The 256-run multi-seed sweep behind the table above is kept as raw rows, so the statistics
+can be re-derived or disputed rather than taken on trust:
+
+- `docs/data/constructal_sweep49.tsv` — one row per run: k, eta, src, seed, dimension, tips
+- `docs/data/constructal_aggregate.py` — the aggregator, which computes the pooled
+  seed-to-seed sd and refuses to call a difference resolved unless it clears 2 sd
+
+A run that produced no number is written as `FAILED` rather than left blank, so a failure
+can never be silently averaged in as a zero.
