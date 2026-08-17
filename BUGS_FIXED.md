@@ -6,6 +6,75 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-230: an ANNOTATED, NON-EMPTY list literal does not compile — ✅ FIXED 2026-07-30 (closed 2026-08-17)
+
+> **Closed 2026-08-17, seventeen days late.** Fixed by `ccb728a` and left sitting in the
+> OPEN ledger — the fourth closed-but-open entry after BUG-283, BUG-270 and BUG-271.
+> `lint_stale_bugs` had it flagged (score 2, two commits claiming a fix); nobody had acted
+> on the report.
+>
+> **Verified by RUNNING, not by reading the commit**, which is that tool's own standing
+> instruction. `var nums: List(int) = [1, 2, 3]` now prints `3` under the selfhost and
+> emits rc=0 under the bootstrap — both compilers, since the entry below records that both
+> failed identically. Covered by `test/boundary/bv_list_literal_annotated.zbr`.
+>
+> Found while probing whether BUG-230 and BUG-240 were one family. They are not: of the
+> seven annotated collection-literal forms, only `var s: Set(T) = {}` (BUG-240) is still
+> broken. The hypothesis was wrong and the probe was still worth running.
+
+**Severity:** high (a three-line, entirely reasonable program fails to build).
+**Found:** 2026-07-30 by the A3 boundary suite, from the one-element List boundary.
+**Both compilers fail identically.**
+
+```zebra
+var nums = [1, 2, 3]              # inferred            -> compiles
+var nums: List(int) = []          # annotated, empty    -> compiles
+var nums: List(int) = [1, 2, 3]   # annotated, NON-EMPTY -> error: expected type '*T',
+                                  #                        found '*const T'
+```
+
+**Root cause** (from the emitted Zig): a list literal lowers to
+`std.ArrayList(T).empty` followed by one generated `append` per element. The
+const-vs-var mutation analysis does not count those *generated* appends as
+mutations, so a binding the user never mutates afterwards is emitted as Zig
+`const` — and its own initialisation then fails, because `append` requires
+`*ArrayList`. Adding any user mutation (`nums.add(4)`) makes it compile, which is
+why the error appears to be about whichever read-only method follows (`.count()`,
+`.sort()`, `.map()`, `.all()`, `.find()`) and is not.
+
+**IT IS SHIPPING BROKEN CODE TODAY.** `examples/widget_smoke.zbr:30` uses exactly
+this form (`var items: List(str) = ["Apple", "Banana", "Cherry"]`) and **does not
+compile** — its emitted Zig fails at `items.append`. Verified by emitting and running
+`zig build-exe` on the result.
+
+**Why no existing gate sees it, which is the transferable part.** Two independent
+reasons, and correcting an earlier over-claim of mine: both compilers do the identical
+wrong thing, so `divergence_check` cannot see it *by construction*; and the corpus the
+heavy gates sweep is `test/*.zbr`, which does not use the form. The one file that does
+is in **`examples/`, and NO gate sweeps `examples/` at all** — so a broken example has
+been shipping unnoticed. That is a coverage hole worth more than this bug: `examples/`
+is the first thing a new user reads, and 0.9 is the ready-for-others release.
+
+Note also that `zebra -c examples/widget_smoke.zbr` exits 0. That is correct and
+documented — `-c` is front-end-only — but it means check mode cannot be used to
+confirm this class. I briefly mis-read that exit 0 as "the example is fine."
+
+This is the "self-consistency is not correctness" class, and it is the first bug found
+by A3 rather than by accident.
+
+**Likely fix:** treat a literal's generated element-appends as mutations when
+deciding `const` vs `var` (or emit the literal through the same path the
+un-annotated form already uses, which is correct today).
+
+**Open question, NOT part of this bug's claim:** `nums.sort()` — a *mutating*
+method — also fails to mark the binding mutated, while `nums.add(4)` does. That
+suggests a second gap in the same analysis, but it was not investigated and
+BUG-230 stands without it. Recorded so it is not lost, not asserted.
+
+Pinned by `test/boundary/bv_list_literal_annotated.zbr`.
+
+---
+
 ### BUG-291: `<<-` copy-out of a STRING falls back to the arena-owned slice on OOM — a silent use-after-free — ✅ FIXED 2026-08-17
 
 **Found 2026-08-17** by surveying for BUG-290's *class* (a `catch` that yields a fallback
