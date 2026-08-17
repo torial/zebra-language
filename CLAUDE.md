@@ -416,7 +416,8 @@ python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate poin
                                 #   FRONT END ONLY (`zebra -c`) — a doc fragment has no
                                 #   modules around it, so a full compile would drown syntax
                                 #   errors in missing-dependency noise.
-                                #   Baselined at 27, so it fails only on NEW breakage. That
+                                #   Baselined at 11 <!-- doc-gen: 11 = grep -vc '^#' tools/doc_example_baseline.txt -->
+                                #   (was 27), so it fails only on NEW breakage. That
                                 #   baseline is REAL DEBT a reader hits, in three families:
                                 #   `print` WITHOUT PARENS (pre-`()`-mandatory Cobra syntax),
                                 #   the REMOVED `to!` operator, and assorted stale forms.
@@ -1050,7 +1051,7 @@ than "what do we know":
 | emitted Zig compiles | `compile_check`, `full_sweep`, `divergence` | 335 |
 | compiler is self-consistent | `bootstrap_check` (round-trip) | selfhost only |
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
-| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 12 probes / ~140 assertions |
+| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 23 probes / 273 assertions | <!-- doc-gen: 23 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 273 = cat test/boundary/*.expected | grep -c . -->
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
 | **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 2 of 53 walkers, opt-in |
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
