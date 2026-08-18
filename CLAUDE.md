@@ -1075,6 +1075,32 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
+**FULL tier 2026-08-17: 30/30 PASS, IN ONE INVOCATION** (`JOBS=2 bash tools/gates.sh
+--full`, start to finish, on the committed tree). smoke **344/344**, round-trip
+byte-identical, `compile_check` **266/0/2** in BOTH runtime shapes, `output_sweep` 358
+behaviour-identical, `full_sweep` 0 vs 374, `examples_sweep` 0 vs 17, `divergence`
+**0 selfhost gaps**, `boundary` 29 pass / 0 fail, `contract-mode` 13/13,
+`release-mode` clean. The tier is now **30** gates (was 29).
+
+Landed with it: BUG-292's `collectOldNodes` extraction, plus **BUG-293** and
+**BUG-294**, both found BY the extraction rather than by a sweep.
+
+**Two things from that run worth keeping.** First, `divergence` went **red** on the
+first FULL attempt and the fix was not to quiet it: BUG-294's probe is a selfhost gap
+*by construction*, and registering it `smoke_tc_fail` would have silenced the gate
+through its derived `MUST_REJECT` list — a list whose meaning is *"the selfhost is
+SUPPOSED to reject this"*, which is the opposite of the truth. It moved to
+`test/boundary/` as an `@boundary-pending` tripwire instead. **A derived exemption is
+still a lie if you enter the wrong declaration to reach it.**
+
+Second, **BUG-294 was found by the round-trip and could not have been found by
+anything else here.** smoke was 343/343 with the defect live in the compiler's own
+source, because the binary smoke runs is built from the BOOTSTRAP's emit, which is
+correct. Only `bootstrap_check` builds selfhost-B from selfhost-A's OWN emit. The
+claim above that a green round-trip does not prove correctness has a mirror image
+that is just as load-bearing: **a green smoke suite says nothing about what the
+selfhost emits for the selfhost.**
+
 **BUG-288 BATCHES 1 AND 2 LANDED 2026-08-16** — literals, then compound expressions,
 carry real source positions. `diag-columns` **18 → 14**, and the candidate set grew
 **49 → 51**. QUICK **22/22 in one invocation** (smoke **337/337**, round-trip
