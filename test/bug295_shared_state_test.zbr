@@ -1,0 +1,24 @@
+# BUG-295 (b) — a module imported by more than one module AND declaring module-level
+# state is NAMED at the end of compilation (Sean's ask, 2026-08-18).
+#
+# WHAT THE NOTE SAYS WAS MEASURED, NOT ASSUMED, AND THE OBVIOUS GUESS WAS WRONG. A
+# diamond leaf's initialiser does NOT run once per importer: the root emits one
+# `_initModuleVars()` per entry of a DEDUPLICATED transitive list, so it runs exactly
+# once, before main. Warning about repeated initialisation would have sent a reader
+# hunting a bug that does not exist.
+#
+# What IS true is the sharing, and this fixture demonstrates it rather than asserting
+# it: the LEFT parent bumps twice, the RIGHT parent reads, and it sees 2. One instance,
+# shared. That is the direct consequence of "first import wins".
+#
+# The silent control is bug295_diamond_test.zbr — a shared leaf with NO state must
+# produce nothing, or this note is noise. Real-world check: the selfhost compiling
+# ITSELF is silent, because CodeGen (14 top-level vars) has exactly one importer per
+# compilation.
+use bug295_shared_state_left exposing leftBump
+use bug295_shared_state_right exposing rightRead
+
+def main()
+    leftBump()
+    leftBump()
+    print("bug295-shared=${rightRead()}")

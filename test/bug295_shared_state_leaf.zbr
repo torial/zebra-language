@@ -1,0 +1,10 @@
+# BUG-295 (b) — the shared STATEFUL leaf. Imported by two parents, and it declares
+# module-level state, which is the combination worth a word: that state is ONE
+# instance, not a copy per importer.
+var sharedCounter: int = 0
+
+def bumpShared()
+    sharedCounter = sharedCounter + 1
+
+def readShared(): int
+    return sharedCounter

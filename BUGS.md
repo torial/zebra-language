@@ -50,6 +50,45 @@
 > cycle re-enters. It must compile SILENTLY; a detector that fires on the most ordinary
 > shape in a dependency graph gets suppressed wholesale rather than read.
 >
+> **PART (b) LANDED 2026-08-18 — the DIAMOND note, and the measurement changed it.**
+> Sean asked for two things: that a shared leaf be imported once, and an
+> end-of-compilation warning naming shared modules with their side-effect risk.
+>
+> **(a) needed no change, which is the more useful answer.** The leaf is already
+> compiled once (`visited`) AND its initialiser runs exactly once before `main` — the
+> root emits one `_initModuleVars()` per entry of a DEDUPLICATED transitive list.
+> Measured with a leaf whose initialiser prints: one line, not two.
+>
+> **(b) says something different from what it would have said unmeasured.** The
+> plausible warning is *"a shared module may be initialised more than once"*. That is
+> FALSE, per the above, and shipping it would have put a confident wrong claim in the
+> compiler's own voice and sent a reader hunting a bug that does not exist. What is
+> TRUE is the sharing: a probe bumped a leaf's counter twice through one importer and
+> read **2** through the other. One instance, shared — the direct consequence of
+> "first import wins".
+>
+> ```
+> note: 1 module(s) imported by more than one module AND declaring module-level state:
+>   p_leaf — imported by p_left, p_right
+>   their state is ONE instance shared by every importer, not a copy per
+>   importer: a mutation through one is visible through the others. Each is
+>   initialised exactly once, before main.
+> ```
+>
+> **SCOPED TO STATEFUL MODULES, or it would be a wall.** Most modules in a healthy
+> graph are shared; `Ast` is imported eight times by the selfhost. A module with no
+> top-level `var` has no instance to share, and the set is DERIVED from the AST rather
+> than guessed. Real-world check: **the selfhost compiling ITSELF is silent** — and
+> silent for the right reason, which was verified rather than assumed, since "correctly
+> scoped" and "detection is broken" look identical from outside: `CodeGen` has 14
+> top-level vars and exactly one importer per compilation (`codegen_test` and
+> `pipeline_test` are separate programs).
+>
+> **One edge case that had to be right:** import edges are counted at the RESOLUTION
+> site, before `compileDep`'s already-visited early return. The imports that get
+> SKIPPED are precisely the ones that make a module shared, so counting only first
+> visits would have reported no diamonds ever.
+>
 > **WHAT REMAINS OPEN:** (1) the stack overflow itself is still unexplained — see the
 > refuted hypothesis and three failed reproductions below — and this diagnostic makes
 > the cycle VISIBLE without making it SAFE; if the overflow's cause also affects acyclic

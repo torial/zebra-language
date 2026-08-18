@@ -59,6 +59,14 @@ class MultiCompiler
     # cannot tell them apart; this stack can, and it carries the PATH for free, since
     # the stack IS the chain.
     var in_progress: List(str)
+    # BUG-295 (b): one entry per distinct import EDGE, "dep|importer". Recorded even
+    # when the dep is skipped as already-visited -- the skipped imports are exactly the
+    # ones that make a module SHARED, so counting only first visits would see nothing.
+    var import_edges: List(str)
+    # Modules declaring a module-level `var`. A shared module of pure functions and
+    # types has no instance to share, so it is not worth a word; this is what keeps the
+    # end-of-compilation note from listing every module in a healthy dependency graph.
+    var stateful_mods: List(str)
     # Sean's call: report, do not refuse. A cycle is currently UNDEFINED rather than
     # wrong — Zebra has no answer for module-init order across one — so the honest
     # move is to say so where the user is already looking, and decide error-vs-warning
@@ -93,6 +101,8 @@ class MultiCompiler
     cue init(preamble_path: str, output_dir: str)
         .visited = List(str)()
         .in_progress = List(str)()
+        .import_edges = List(str)()
+        .stateful_mods = List(str)()
         .cycle_is_error = false
         .dep_class_names = List(str)()
         .dep_types = ModuleTypes()
@@ -165,6 +175,80 @@ class MultiCompiler
         sys.errln("  fix: move the names they share into a third module that both import.")
         if cycle_is_error
             sys.exit(1)
+
+    def hasListed(xs: List(str), v: str): bool
+        var i: int = 0
+        while i < xs.len
+            if xs.at(i) == v
+                return true
+            i = i + 1
+        return false
+
+    # One entry per distinct (dep, importer) pair. Duplicated `use` lines in one file
+    # must not make a module look shared with itself.
+    def recordImportEdge(dep_path: str, parent_path: str)
+        var edge: str = .moduleNameOf(dep_path) + "|" + .moduleNameOf(parent_path)
+        if not .hasListed(import_edges, edge)
+            import_edges.add(edge)
+
+    # The edge is "dep|importer"; split on the separator rather than slicing, which
+    # is the idiom this codebase already uses (see extractAfterDot).
+    def importersOf(mod_name: str): List(str)
+        var out: List(str) = List(str)()
+        var i: int = 0
+        while i < import_edges.len
+            var e: str = import_edges.at(i)
+            var parts: List(str) = e.split("|")
+            if parts.len == 2
+                if parts.at(0) == mod_name
+                    out.add(parts.at(1))
+            i = i + 1
+        return out
+
+    # BUG-295 (b), Sean's ask. Named for what it IS rather than what it looks like:
+    # a module imported from two places is a DIAMOND, which is ordinary and fine, and
+    # the only thing worth saying about it is that its module-level state is ONE
+    # INSTANCE SHARED BY EVERY IMPORTER.
+    #
+    # BOTH FACTS BELOW WERE MEASURED BEFORE THIS WAS WRITTEN, and the obvious guess was
+    # wrong. A leaf's initialiser does NOT run once per importer -- the root emits one
+    # `_initModuleVars()` per entry of a DEDUPLICATED transitive list, so it runs
+    # exactly once, before main. Warning about repeated initialisation would have sent
+    # someone hunting a bug that does not exist. What IS true is the sharing: a probe
+    # mutated a leaf's counter twice through one importer and read 2 through the other.
+    #
+    # SCOPED TO STATEFUL MODULES ON PURPOSE. Most modules in a healthy graph are shared
+    # -- `Ast` is imported eight times by the selfhost -- and listing them all would be
+    # a wall nobody reads. A module with no `var` has no instance to share.
+    def reportSharedStatefulModules()
+        var listed: List(str) = List(str)()
+        var i: int = 0
+        while i < stateful_mods.len
+            var m: str = stateful_mods.at(i)
+            if not .hasListed(listed, m)
+                var imps: List(str) = .importersOf(m)
+                if imps.len >= 2
+                    listed.add(m)
+            i = i + 1
+        if listed.len == 0
+            return
+        sys.errln("note: " + listed.len.toString() + " module(s) imported by more than one module AND declaring module-level state:")
+        var j: int = 0
+        while j < listed.len
+            var mn: str = listed.at(j)
+            var imps2: List(str) = .importersOf(mn)
+            var who: str = ""
+            var k: int = 0
+            while k < imps2.len
+                if k > 0
+                    who = who + ", "
+                who = who + imps2.at(k)
+                k = k + 1
+            sys.errln("  " + mn + " — imported by " + who)
+            j = j + 1
+        sys.errln("  their state is ONE instance shared by every importer, not a copy per")
+        sys.errln("  importer: a mutation through one is visible through the others. Each is")
+        sys.errln("  initialised exactly once, before main.")
 
     def compileDep(zbr_path: str, is_root: bool) throws
         # BUG-295: check the IN-PROGRESS stack before the visited early-return -- on a
@@ -318,6 +402,13 @@ class MultiCompiler
                 # are harmless but unused.
                 if not is_root
                     populateModuleTypes(dep_types, module)
+                # BUG-295 (b): does this module declare module-level state? Derived
+                # from the AST, not guessed from a name -- a top-level `var` is the
+                # only thing that makes a shared module worth mentioning.
+                for mdecl in module.decls
+                    if mdecl is Decl.var_
+                        if not .hasListed(stateful_mods, .moduleNameOf(zbr_path))
+                            stateful_mods.add(.moduleNameOf(zbr_path))
             else
                 raise "expected module"
         # The `raise` above aborts compilation, so a missed pop there cannot mislead
@@ -332,6 +423,7 @@ class MultiCompiler
         if src_dir != ""
             dep_path = src_dir + "/" + dep_name + ".zbr"
         if File.exists(dep_path)
+            .recordImportEdge(dep_path, parent_path)
             .compileDep(dep_path, false)?
             return
         # BUG-125: dep not adjacent to the source.  Try the --module-path dir.
@@ -2571,6 +2663,8 @@ def main()
         mc.module_path = module_path
         mc.node_addon = mode_node
         mc.compileDep(path, true)?
+        # BUG-295 (b): after the whole graph is known, name the shared STATEFUL modules.
+        mc.reportSharedStatefulModules()
 
         # §28b step 5 (the flip): reject implicit error propagation (a throws call
         # the user did not mark with `?`) unless --allow-implicit-try.  compileDep

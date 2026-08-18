@@ -37,3 +37,6 @@ bug295_cycle_lib  # the other half of BUG-295's import cycle; exercised through 
 bug295_diamond_lib_leaf  # helper module imported by other tests; has no main()
 bug295_diamond_lib_left  # helper module imported by other tests; has no main()
 bug295_diamond_lib_right  # helper module imported by other tests; has no main()
+bug295_shared_state_leaf  # helper module imported by other tests; has no main()
+bug295_shared_state_left  # helper module imported by other tests; has no main()
+bug295_shared_state_right  # helper module imported by other tests; has no main()

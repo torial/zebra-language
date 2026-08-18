@@ -740,6 +740,17 @@ smoke_warn test/bug295_cycle_test.zbr "import cycle: bug295_cycle_test -> bug295
 # shape in any dependency graph gets suppressed wholesale rather than read.
 smoke_run test/bug295_diamond_test.zbr "bug295-diamond=17"
 
+# BUG-295 (b): a module imported by MORE THAN ONE module AND declaring module-level
+# state is NAMED at the end of compilation. The note's content was MEASURED first and
+# the obvious guess was wrong: the leaf's initialiser runs exactly ONCE (the root emits
+# one _initModuleVars per entry of a DEDUPLICATED transitive list), so the risk is not
+# repeated initialisation -- it is that the state is ONE INSTANCE SHARED by every
+# importer. This fixture demonstrates that rather than asserting it: left bumps twice,
+# right reads 2.
+smoke_warn test/bug295_shared_state_test.zbr "imported by bug295_shared_state_left, bug295_shared_state_right"
+# ...and it RUNS, proving the sharing the note describes.
+smoke_run test/bug295_shared_state_test.zbr "bug295-shared=2"
+
 # BUG-294: the selfhost does not auto-deref a `^T` field read off a FOR-LOOP
 # VARIABLE (the bootstrap emits `o.p.*`, the selfhost emits `o.p`). Found by the
 # ROUND-TRIP, which is the only gate that puts the selfhost's own emit in front of
