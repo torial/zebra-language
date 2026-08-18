@@ -89,7 +89,71 @@
 > SKIPPED are precisely the ones that make a module shared, so counting only first
 > visits would have reported no diamonds ever.
 >
-> **WHAT REMAINS OPEN:** (1) the stack overflow itself is still unexplained — see the
+> ---
+>
+> ### DECISION 2026-08-18: HOLD AT WARNING. Do not promote to a refusal yet.
+>
+> Sean's call, after walking the user experience of both modes. The analysis below is
+> recorded in full so the question does not have to be re-derived.
+>
+> **THE VENDORED-DEPENDENCY CASE IS WHY.** A refusal has to be actionable, and
+> *"move the names they share into a third module"* is not advice a user can take about
+> code they do not own. Measured — the two dependency routes behave oppositely:
+>
+> | vendoring style | route | cycle detected? |
+> |---|---|---|
+> | `--module-path lib` | `scanDepForTypes` → **returns before `compileDep`** | **NO** — 0 reports |
+> | copied into the tree (adjacent files) | `compileDep` | **yes** |
+>
+> **THE `--module-path` EXEMPTION IS ACCIDENTAL, NOT DESIGNED**, and that is the part
+> most worth remembering. Those deps escape because they are parsed for TYPES ONLY and
+> never compiled — not because anyone decided vendored code should be unjudged. It
+> reverses silently the day module-path deps are made to compile properly. Both new
+> diagnostics are blind there: a vendored stateful shared module gets no diamond note
+> either.
+>
+> **THE DANGEROUS CASE IS VENDORING BY COPYING INTO THE TREE**, which is how people
+> vendor in a language with no package manager. Those files are adjacent, so they are
+> compiled, so a cycle among them IS detected — and under refusal that is a wall the
+> user cannot climb without forking someone else's library and losing the patch on the
+> next update.
+>
+> **PRECONDITIONS FOR PROMOTING TO A REFUSAL** — all three, not any one:
+>
+> 1. **An escape hatch that prices the workaround.** `--allow-import-cycles`, modelled
+>    directly on `--allow-implicit-try`: §28b made implicit error propagation a hard
+>    error and shipped exactly that flag ("accepts the old implicit form for one
+>    release"). This repo has already solved this shape once; copy it.
+> 2. **A DIFFERENT MESSAGE when the user does not own the cycle.** If every module in
+>    the cycle sits under `--module-path` or a vendor directory, the actionable advice
+>    is *report upstream, or pin around it*, plus the flag — not "extract a module".
+> 3. **Close or deliberately document the `--module-path` blind spot.** Preferably make
+>    it WARN (so you learn your dependency has a cycle) and never error. Leaving it as a
+>    side effect of type-scanning is the kind of unchosen behaviour that becomes a
+>    surprise later.
+>
+> **UX, captured from real runs so it need not be re-run:**
+>
+> | mode | what the user gets |
+> |---|---|
+> | **warning** (ships) | both diagnostics print; the program **builds and runs** |
+> | **refusal** (`cycle_is_error = true`) | same text with `error:`, stops there, **exit 1** |
+> | after taking the advice | extracting the shared name into an import-free third module **clears it** — verified by doing it, still in refusal mode, program ran |
+>
+> **One asymmetry worth knowing:** in refusal mode the DIAMOND note never prints,
+> because the compile aborts at the cycle before reaching end-of-compilation. The two
+> diagnostics are not both visible on a failing build.
+>
+> **And the warning is doing real work right now**, which is the honest argument for
+> holding: the `config ↔ logger` transcript used to evaluate this is a program that
+> compiles and runs correctly today. Refusing it would break a working build over
+> something Zebra cannot yet say what is wrong with. Promote when module-level state in
+> a cycle gets a defined answer — or gets forbidden — not before.
+>
+> **WHAT REMAINS OPEN:** (0) the `--module-path` blind spot — a cycle wholly inside a
+> vendored tree is invisible to BOTH new diagnostics, and closing it at WARNING level
+> is small, decoupled from the refuse/allow decision, and was offered but not done.
+> (1) the stack overflow itself is still unexplained — see the
 > refuted hypothesis and three failed reproductions below — and this diagnostic makes
 > the cycle VISIBLE without making it SAFE; if the overflow's cause also affects acyclic
 > code, the warning hides nothing but fixes nothing either. (2) whether to promote the

@@ -199,6 +199,25 @@ loud; it does not make a language refuse to have opinions.
     passed by asserting broken behaviour, went red on the fix, and were rewritten to
     assert intent.
 
+- [~] **BUG-295 — import cycles: DIAGNOSTICS LANDED, refusal DEFERRED by decision**
+  (`2b18579`, `39bad44`, 2026-08-18). A cycle is reported with its full path and the
+  rule stated (*first import wins; the second module sees a PARTIAL view*), and a
+  shared module that declares module-level state is named at end of compilation. Both
+  fire on real code; the selfhost compiling itself is silent.
+  **HELD AT WARNING, deliberately — the reasoning is recorded in BUG-295 and should not
+  be re-derived.** Short version: a refusal must be actionable, and *"extract a third
+  module"* is not advice a user can take about a VENDORED dependency. Measured: a cycle
+  reached via `--module-path` is invisible today (type-scanned, never compiled) while
+  one vendored by COPYING INTO THE TREE is detected — so refusal would wall exactly the
+  population that cannot fix it. Promoting needs three things together: an escape hatch
+  modelled on `--allow-implicit-try` (§28b already solved this shape), a different
+  message when the cycle is not yours, and a deliberate answer for the `--module-path`
+  blind spot. `MultiCompiler.cycle_is_error` flips the switch in one line and both
+  directions are verified, so the decision is cheap to revisit and expensive to get
+  wrong.
+  **Small, decoupled follow-up:** make a vendored (`--module-path`) cycle WARN, so the
+  blind spot is closed without touching the refuse/allow question.
+
 - [ ] **U1 — `for-else` silently DROPS the `else` block** on HashMap /
   string-split / chars iterators (BUG-16; QUICKSTART §26, §27#11). This is the
   sharpest item: not a wrong answer but *code the author wrote, deleted with no
