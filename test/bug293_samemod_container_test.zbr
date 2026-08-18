@@ -1,0 +1,16 @@
+# BUG-293 — THE POSITIVE CONTROL, and it is the half that makes the negative
+# fixture mean anything.
+#
+# This is the byte-identical call to bug293_xmod_container_test.zbr with ONE
+# thing varied: the callee lives in this file instead of another module. It must
+# compile and print 2. If it ever stops passing, the sibling's failure is no
+# longer evidence about the module boundary — it is evidence that mutated
+# container parameters are broken generally, which is a different bug.
+def addTwo(out: List(int))
+    out.add(1)
+    out.add(2)
+
+def main()
+    var xs: List(int) = List()
+    addTwo(xs)
+    print("bug293-same=${xs.len}")

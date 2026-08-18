@@ -706,6 +706,35 @@ smoke_run test/bug238_import_except_test.zbr "8"
 # direction can catch a return to that leniency.
 smoke_run test/bug235_exposing_test.zbr "7"
 
+# BUG-293: a MUTATED container param cannot be called across a module boundary --
+# the callee emits `out: *std.ArrayList(i64)` (it can see its own body) while the
+# caller emits a bare `fill(xs)` (its body lookup stops at the boundary).
+#
+# THE PAIR IS THE POINT. The same-module call is the positive control: one thing
+# varied, and it is the boundary. Without it, the negative fixture below would also
+# pass if mutated container params were broken generally -- a different bug.
+smoke_run test/bug293_samemod_container_test.zbr "bug293-same=2"
+# PINS BROKEN BEHAVIOUR. This passes TODAY by failing to compile. When BUG-293 is
+# fixed it goes RED -- that is the signal to rewrite it as
+# `smoke_run ... "bug293-cross=2"`, not to re-baseline around it.
+smoke_run_fail test/bug293_xmod_container_test.zbr "expected type '*T', found 'T'"
+
+# BUG-294: the selfhost does not auto-deref a `^T` field read off a FOR-LOOP
+# VARIABLE (the bootstrap emits `o.p.*`, the selfhost emits `o.p`). Found by the
+# ROUND-TRIP, which is the only gate that puts the selfhost's own emit in front of
+# `zig` -- smoke stayed green throughout, because the compiler smoke runs was built
+# from the bootstrap's emit.
+#
+# The controls carry the weight here: the first draft of this pair used a class
+# holder and its controls failed too, which would have made the negative fixture
+# meaningless. Four working receivers, all printing 7.
+smoke_run test/bug294_hat_deref_controls_test.zbr "bug294-local=7"
+# The SUBJECT half deliberately lives in test/boundary/bv_hat_deref_loopvar.zbr, not
+# here: as a tracked test/*.zbr it is a SELFHOST GAP by construction and turned
+# `divergence --gate` red (baseline 0). It is pinned there as an @boundary-pending
+# tripwire instead. See that file's header for why silencing divergence via
+# smoke_tc_fail would have been a lie.
+
 # BUG-229: the tui emit must ASSIGN _tui_env, not merely declare it.
 smoke_gui_emit_contains test/bug229_tui_env_assigned_test.zbr tui "_tui_env = "
 smoke_tc_fail test/bug235_bare_use_test.zbr "undefined name: 'Widget'"

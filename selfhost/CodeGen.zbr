@@ -22,8 +22,8 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend
-use CgHelpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
+use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
+use CgHelpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, collectOldNodes
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
 
@@ -9395,97 +9395,50 @@ struct Generator
     # The twin of containsResultRef above, with the same failure mode one level over:
     # a missed variant emits `_old_N` with no `const _old_N` to match it. Kept in step
     # with it by the lint rather than by remembering to edit both.
-    # expr-walker: exhaustive
-    # expr-walker-ok: zig_lit — a raw Zig literal cannot contain a Zebra `old` node.
-    # expr-walker-ok: ident — same reasoning as its twin above: this hunts the node KIND
-    #   Expr.old_, which AstBuilder builds from an `old` construct with a snapshot uid,
-    #   never from an identifier. Verified at AstBuilder.zbr:942, not assumed.
+    # THE TRAVERSAL MOVED to CgHelpers.collectOldNodes on 2026-08-17, because the
+    # front-end `old <parameter>` check (BUG-292) needs the same walk. Both phases want
+    # "the old nodes, in order" and differ only in what they do with them, so the WALK is
+    # shared and the ACTION stays here. The note above about being kept in step with its
+    # twin "by the lint rather than by remembering" is exactly why a THIRD hand-written
+    # copy in the TypeChecker was not acceptable.
+    #
+    # The exhaustive-walker marker moved with the traversal, so lint_expr_walkers still
+    # covers it — in one place instead of two. (Deliberately not spelled literally here:
+    # this comment block sits directly above a def, which is exactly where that lint looks
+    # for the marker, and a prose mention would read as a declaration.)
     def collectAndEmitOldSnapshots(e: Expr)
-        branch e
-            on Expr.old_ as o
-                writeIndent()
-                w.emit("const _old_")
-                w.emit(o.uid.toString())
-                w.emit(" = ")
-                genExpr(o.operand)
-                w.emit(";\n")
-            on Expr.unary as u
-                collectAndEmitOldSnapshots(u.operand)
-            on Expr.binary as b
-                collectAndEmitOldSnapshots(b.left)
-                collectAndEmitOldSnapshots(b.right)
-            on Expr.call as c
-                collectAndEmitOldSnapshots(c.callee)
-                for arg in c.args
-                    collectAndEmitOldSnapshots(arg.value)
-            on Expr.member as mem
-                collectAndEmitOldSnapshots(mem.object)
-            on Expr.index as ix
-                collectAndEmitOldSnapshots(ix.object)
-                collectAndEmitOldSnapshots(ix.index)
-            on Expr.cast as ca
-                collectAndEmitOldSnapshots(ca.expr)
-            on Expr.to_non_nil as tnn
-                collectAndEmitOldSnapshots(tnn.expr)
-            on Expr.is_nil as isn
-                collectAndEmitOldSnapshots(isn.expr)
-            on Expr.orelse_ as or_
-                collectAndEmitOldSnapshots(or_.expr)
-                collectAndEmitOldSnapshots(or_.fallback)
-            on Expr.catch_ as ca2
-                collectAndEmitOldSnapshots(ca2.expr)
-                collectAndEmitOldSnapshots(ca2.fallback)
-            on Expr.if_expr as ie
-                collectAndEmitOldSnapshots(ie.cond)
-                collectAndEmitOldSnapshots(ie.then_expr)
-                collectAndEmitOldSnapshots(ie.else_expr)
-            on Expr.try_ as tr
-                collectAndEmitOldSnapshots(tr.expr)
-            on Expr.array_lit as al
-                for elem in al.elems
-                    collectAndEmitOldSnapshots(elem)
-            on Expr.list_lit as ll
-                for elem in ll.elems
-                    collectAndEmitOldSnapshots(elem)
-            on Expr.set_lit as sl
-                for elem in sl.elems
-                    collectAndEmitOldSnapshots(elem)
-            on Expr.tuple_lit as tl
-                for elem in tl.elems
-                    collectAndEmitOldSnapshots(elem)
-            on Expr.dict_lit as dl
-                for entry in dl.entries
-                    collectAndEmitOldSnapshots(entry.key)
-                    collectAndEmitOldSnapshots(entry.value)
-            on Expr.string_interp as si
-                for part in si.parts
-                    if part is StringPart.expr_ as ex
-                        collectAndEmitOldSnapshots(ex)
-            on Expr.type_check as tc
-                collectAndEmitOldSnapshots(tc.expr)
-            on Expr.slice as sl
-                collectAndEmitOldSnapshots(sl.object)
-                if sl.start != nil
-                    collectAndEmitOldSnapshots(sl.start!)
-                if sl.stop_ != nil
-                    collectAndEmitOldSnapshots(sl.stop_!)
-            on Expr.except_ as ex
-                collectAndEmitOldSnapshots(ex.base)
-                for f in ex.fields
-                    collectAndEmitOldSnapshots(f.value)
-            on Expr.chained_cmp as cc
-                for op in cc.operands
-                    collectAndEmitOldSnapshots(op)
-            on Expr.opt_chain as oc
-                collectAndEmitOldSnapshots(oc.base)
-                for oa in oc.args
-                    collectAndEmitOldSnapshots(oa.value)
-            on Expr.lambda as lam
-                # expr-walker-ok: lambda — stmts body not walked; expr body is.
-                if lam.body_ is LambdaBody.expr_ as lbe
-                    collectAndEmitOldSnapshots(lbe)
-            else
-                pass
+        # Yields the PAYLOAD type (ExprOld), not Expr, so the call site needs no
+        # `branch` at all.
+        #
+        # The helper RETURNS the list rather than taking an out-param, and that is not
+        # style: a mutated `List(T)` out-param cannot be called across a module boundary
+        # today (BUG-293 — the caller cannot see the callee's body, so it never emits the
+        # required `&`). Two earlier attempts here passed an out-param and failed
+        # regeneration; the hypothesis recorded at the time (BUG-201, dispatch on a
+        # mutable-loop receiver) was REFUTED — the payload-type rewrite failed identically.
+        var _old_nodes: List(ExprOld) = collectOldNodes(e)
+        for o in _old_nodes
+            emitOldSnapshot(o)
+
+    # The per-node emit is a SEPARATE method taking `o` as a PARAMETER, and that is
+    # also forced rather than chosen — BUG-294. `ExprOld.operand` is `^Expr`, and the
+    # selfhost fails to auto-deref a `^T` field read when the receiver is a `for`-loop
+    # variable: it emits `o.operand` where the bootstrap emits `o.operand.*`. Measured,
+    # with three controls — the same read derefs correctly off a PARAMETER, off a plain
+    # local, and off a loop variable copied into one.
+    #
+    # This is why the loop body was moved out rather than left inline. Reading the field
+    # off a parameter is the ordinary shape and needs no workaround comment at the read
+    # itself; inlining it again reintroduces the defect, and SMOKE CANNOT SEE IT — the
+    # compiler the bootstrap builds is fine, so only the round-trip (selfhost-B, built
+    # from selfhost-A's own emit) goes red. It did.
+    def emitOldSnapshot(o: ExprOld)
+        writeIndent()
+        w.emit("const _old_")
+        w.emit(o.uid.toString())
+        w.emit(" = ")
+        genExpr(o.operand)
+        w.emit(";\n")
 
     # Emit old snapshots, an `_ensure_armed` flag, and a defer block for each
     # ensure expression.  When any ensure references `result`, also emit

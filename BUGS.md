@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-292. Next new bug: BUG-293.**
+**Last bug number generated: BUG-294. Next new bug: BUG-295.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -12,6 +12,225 @@
 >
 > No gate could see this: `doc_lint` D4 only checks that a cited BUG-NNN exists
 > *somewhere*, so a duplicate satisfies it twice over.
+
+---
+
+### BUG-294: the selfhost does not auto-deref a `^T` field read when the receiver is a FOR-LOOP VARIABLE
+
+- **Severity:** Medium — loud (the generated Zig does not compile), and **selfhost
+  only**: the bootstrap emits the deref correctly, so this is a divergence in which
+  the shipping compiler is the wrong one.
+- **Status:** OPEN. Pinned by `test/boundary/bv_hat_deref_loopvar.zbr` plus a
+  four-receiver control fixture.
+
+**Found 2026-08-17** by the **round-trip**, and how it was found is most of its value.
+
+#### Symptom, measured
+
+For one line — `sumOf(o.p)` where `o` is a `for`-loop variable and `Node.p: ^Point`:
+
+| compiler | emitted |
+|---|---|
+| bootstrap | `_zbr_fn_sumOf(o.p.*)` |
+| **selfhost** | `_zbr_fn_sumOf(o.p)` |
+
+`zig` then rejects it: `expected type 'T', found '*T'`.
+
+#### It is the LOOP VARIABLE, not `^T` reads generally
+
+Four receiver shapes deref correctly and are pinned as controls:
+
+| receiver | emitted | |
+|---|---|---|
+| parameter | `o.p.*` | ✓ |
+| plain local | `first.p.*` | ✓ |
+| loop variable copied into a local | `copied.p.*` | ✓ |
+| loop variable passed whole to a method | `viaParam(o)` | ✓ |
+| **`for`-loop variable, field read** | `o.p` | ✗ |
+
+This also explains why the construct has worked forever elsewhere in the compiler:
+`^T` payloads are normally reached through a `branch … as o` binding, where QUICKSTART
+documents `^T` as *transparent*. A plain `for` over a `List` of payload structs is a
+shape the compiler's own source had never used.
+
+#### Why no gate could see it, which is the transferable part
+
+The compiler that smoke runs is built from the **bootstrap's** emit, and the bootstrap
+is correct — so the binary behaves perfectly and **smoke stayed green (343/343)** with
+this defect live in the source. Only `bootstrap_check` builds selfhost-B from
+**selfhost-A's own emit**, i.e. only the round-trip ever hands the selfhost's output to
+`zig`. It went red immediately.
+
+That is the round-trip's documented purpose stated in the negative, and worth keeping:
+*a green smoke suite says nothing about what the selfhost emits for the selfhost.*
+
+#### A note on the fixture, because the first draft was wrong
+
+The controls initially failed too, which would have made the negative fixture
+meaningless. Two ways this fixture can silently stop controlling:
+
+- `o.p.x` does **not** discriminate — Zig auto-derefs field access through a
+  single-item pointer, so it compiles either way. The `^T` value has to land where a
+  `T` is required.
+- The holder must be a **struct** with a `^Struct` payload boxed by assignment. A
+  `^int` payload does not box on assignment at all, and a **class** holder brings in
+  the class auto-box rule (`concept_zebra-class-auto-box-rule`) — either makes the
+  controls fail for an unrelated reason.
+
+#### Control when fixing
+
+The four control receivers must keep printing 7 (a fix that over-applies would break
+them by double-dereferencing), and `test/boundary/bv_hat_deref_loopvar.zbr` — an
+`@boundary-pending BUG-294` tripwire — **goes red when fixed**, which is the signal to
+rewrite it as `@boundary runs` asserting `bug294-loop=7`. Verify with the round-trip,
+not with smoke: smoke runs a compiler built from the BOOTSTRAP's emit, which is
+correct, so it cannot see this class at all.
+
+**The fix is SELFHOST-ONLY.** The bootstrap already emits `o.p.*` for every receiver
+shape, verified directly — so there is no bootstrap half to mirror, and the standing
+rule (the bootstrap need only still COMPILE the selfhost source) is unaffected.
+
+**Where the pin lives, and why it is not in `test/`.** As a tracked `test/*.zbr` this
+probe is a SELFHOST GAP by construction, which is exactly what `divergence_check
+--gate` fails on — and it turned that gate red against its 0-gap baseline. Registering
+it `smoke_tc_fail` would have silenced divergence through its derived `MUST_REJECT`
+list, but that list asserts *"the selfhost is SUPPOSED to reject this"*, which is the
+opposite of the truth here. `test/boundary/` is outside the main corpus (0 of 482
+files) and is the suite whose stated purpose is pinning known-broken behaviour as a
+tripwire. **Nothing was weakened to make a gate green** — and note that BUG-293's
+fixture needs none of this, because the bootstrap fails it too, so it lands as an
+agree-fail rather than a gap.
+
+---
+
+### BUG-293: a MUTATED container parameter cannot be called across a module boundary — the caller never emits `&`
+
+- **Severity:** Medium — loud (the generated Zig does not compile), so nothing is
+  silently corrupted; but it makes a normal out-param shape unusable across
+  modules, and the diagnostic points at a Zig type error rather than naming the
+  cause.
+- **Both compilers.** Reproduced in the selfhost and in the bootstrap.
+- **Status:** OPEN. Pinned by `test/bug293_xmod_container_test.zbr` (+ its lib and
+  a same-module positive control).
+
+**Found 2026-08-17**, striking a gap rather than finding a wound: it is what blocked
+BUG-292's `collectOldNodes` extraction through two attempts. Both hypotheses recorded
+at the time were wrong, and for one reason — they were formed without the error text,
+which `rebuild.sh` filters out of its log. The text was on disk in `/tmp/bs-rebuildA.err`
+the whole time.
+
+#### Repro (6 lines, two files)
+
+```zebra
+# lib.zbr
+def fill(out: List(int))
+    out.add(1)
+    out.add(2)
+```
+
+```zebra
+# main.zbr
+use lib exposing fill
+
+def main()
+    var xs: List(int) = List()
+    fill(xs)
+    print("cross=${xs.len}")
+```
+
+```
+error: expected type '*T', found 'T'
+```
+
+The **same call in the same file compiles and prints 2**. That control is the whole
+finding: one thing varied, and it is the module boundary.
+
+#### Root cause — two sides of one convention consulting different oracles
+
+BUG-091's convention: a container parameter the callee MUTATES lowers to
+`*std.ArrayList(T)`, and every call site must pass `&arg`.
+
+- The **callee's** emit (`genMethod`) sees its own body, finds the mutation, and
+  writes `out: *std.ArrayList(i64)`.
+- The **caller's** emit asks `paramNeedsAddrOf(p, body)` — and that predicate needs
+  the *callee's* body:
+
+  ```zebra
+  if body as b
+      var ms: StrSet = scanMutations(b, nil)
+      return ms.contains_(p.name)
+  return false          # body unavailable ⇒ "no addr-of"
+  ```
+
+- §27b gave `lookupFnParams` a cross-module fallback
+  (`dep_types.classOf(...).fnParamList(...)`). **`lookupFnBody` never got one.**
+
+The selfhost mechanism above is read from the source AND confirmed by the defaulted-arg
+experiment below. For the **bootstrap** what is MEASURED is the symptom — it emits the
+same bare call — plus the fact that its `paramNeedsAddrOf` has the identical
+`body orelse return false`. Its body lookup is `lookupCalleeBody`, which goes through
+`g.resolve.exprs`; that it yields nothing for an imported symbol is *inferred from
+reading*, not separately probed. Confirm before fixing that half.
+
+So across a boundary the body is `nil`, the predicate answers `false`, and no `&` is
+emitted against a pointer parameter.
+
+**The two failure paths were discriminated, not assumed.** "params not found" and
+"body not found" emit identical text for a positional call. A defaulted parameter
+separates them: `def fill2(out: List(int), n: int = 7)` called cross-module as
+`fill2(xs)` emits `_zbr_fn_fill2(xs, 7)` — the default *was* filled, so the parameter
+list was found and only the body was missing.
+
+Note the direction of the fallback, which is the reason this is worth writing down:
+the unavailable-body case returns **false**, the answer that means "do nothing". A
+silent fallback on a predicate feeding a decision biases toward "nothing changed" —
+here it happened to fail loudly at `zig`, which is luck rather than design.
+
+#### Why no gate could see it
+
+This is an **unstruck gap**, not a wound — no corpus file passes a mutated container
+across a module boundary. That is an INFERENCE rather than a survey, but a sound one:
+the shape is a hard compile failure, so a corpus file carrying it would already be red
+in `compile_check` (266/0/2) and `full_sweep` (0 regressions).
+
+`divergence_check` could not have found it either, and for the OPPOSITE reason to
+BUG-294's: both compilers do the identical wrong thing here. Measured classification —
+the cross-module fixture is scored **multi-module (bootstrap N/A)** and excluded from
+the comparison outright, and the same-module control is **agree-pass**. Neither is a
+gap. BUG-294's fixture *is* a selfhost gap and turned that gate red; this one cannot.
+The two bugs sit on opposite sides of that gate, which is a quick way to tell them
+apart.
+
+**A naming trap paid for here, worth one line.** The fixtures originally called their
+helper `fill`, and the BOOTSTRAP scored the control as a gap — not for any reason
+related to this bug, but because its INLINED preamble contains
+`_pad_fill(fill: anytype)`, so a top-level `fill` shadows it (BUG-220, which the
+selfhost fixed via the `_zbr_fn_` prefix). Renamed to `addTwo`. **A fixture that fails
+for an unrelated reason is not a fixture** — and on the bootstrap path any common word
+can collide with the 186 KB of preamble spliced in beside it.
+
+#### Fix sketch (not implemented)
+
+Do **not** ship whole dep bodies to the call site to re-run `scanMutations` there. The
+answer is already known by the side that owns the body — the callee's own emit
+computed it. The seam-correct shape is to let the decision travel with the
+declaration: the type-info node already carries `fn_param_lists: HashMap(str, List(Param))`
+across modules (`TypeChecker.zbr:214`), so a sibling entry recording *which parameters
+need addr-of*, populated where the body is in scope, closes it without duplicating the
+analysis. Must land in `src/CodeGen.zig` as well as the selfhost — the bootstrap is
+the regen authority and has to compile the selfhost source.
+
+#### Control when fixing
+
+The paired fixtures are the control. `bug293_samemod_container_test` must still print
+`bug293-same=2` (otherwise the boundary is no longer what is being measured), and
+`bug293_xmod_container_test` — registered `smoke_run_fail` today — **will go red when
+the bug is fixed**. That is the signal to rewrite it as a `smoke_run` asserting
+`bug293-cross=2`, not to re-baseline around it.
+
+Also verify the fix does not over-apply: a container parameter the callee does **not**
+mutate must still be passed by value cross-module, or every read-only container
+argument acquires a spurious `&`.
 
 ---
 
@@ -100,32 +319,28 @@ covers it — in one place instead of two. `Resolver.zbr:26` already imports fro
 
 **TWO TRAPS ALREADY PAID FOR:**
 
-1. **THE EXTRACTION DOES NOT REGENERATE YET, AND THE CAUSE IS NOT YET KNOWN.** Two
-   attempts both failed the same way: the bootstrap emits a `CodeGen.zig` that Zig
-   refuses, with the trace naming `genMethod` at `CodeGen.zig:12455:41` and then
-   `:12456:41`. **`CgHelpers.zbr` itself compiles clean (`--emit-zig` rc=0) — the
-   failure is in the CodeGen call site.**
+1. **THE OUT-PARAM SHAPE CANNOT CROSS A MODULE BOUNDARY — RESOLVED 2026-08-17, and
+   the cause is BUG-293.** Two attempts failed the same way and both hypotheses
+   recorded here were wrong; the cause is that a mutated `List(T)` parameter lowers to
+   `*std.ArrayList(T)` while the caller never emits the `&`, because it decides
+   addr-of from the CALLEE'S BODY and the body lookup stops at the module boundary.
+   See BUG-293 for the mechanism, the discriminating experiment, and the fix sketch.
 
-   My first hypothesis was that collecting `List(Expr)` and `branch`-ing on the LOOP
-   VARIABLE hit BUG-201 (nested-container dispatch on a mutable-loop receiver). I
-   rewrote it to collect the PAYLOAD type (`List(ExprOld)`, no `branch` at the call
-   site at all, `ExprOld` added to the `use Ast exposing …` line in both files) — and
-   **it failed identically**. So that hypothesis is REFUTED, not confirmed; recorded
-   as a dead end so nobody spends the attempt again.
+   **What was wrong with the diagnosis, since the pattern repeats.** Both hypotheses
+   (BUG-201, then the payload-type rewrite) were formed **without ever reading the
+   error text**, because `rebuild.sh` filters it out of its log and leaves only the
+   "referenced by" trace. The text was sitting in `/tmp/bs-rebuildA.err` the entire
+   time and names the fault outright:
+   `expected type '*T', found 'T'` at `collectOldNodes(e, _old_nodes)`. Three tool
+   calls, not a third hypothesis. **Read the error before theorising about it.**
 
-   **The next step is to get the actual error text**, which `rebuild.sh` filters out of
-   its log — only the "referenced by" trace survives. Regenerate CodeGen unfiltered
-   (or read `/tmp/bs-zig/CodeGen.zig:12455` directly) before forming a third
-   hypothesis. Both of mine were formed without the error message, which is the whole
-   reason they were wrong.
-
-   **The working tree was REVERTED to green rather than left broken.** The 265-line
-   attempt is saved as
-   `C:\Users\Sean\wiki\pages\claude\zebra_collectOldNodes_WIP_2026-08-17.patch` —
-   `git apply` it to resume. It contains the full `collectOldNodes` traversal (which
-   is believed correct and compiles on its own) plus the CodeGen call-site rewrite
-   (which does not regenerate). Re-deriving the traversal is ~110 lines of careful
-   copying; do not redo it from scratch.
+   **THE EXTRACTION HAS LANDED**, routed around BUG-293 rather than blocked on it: the
+   out-param recursion (`collectOldNodesInto`) stays PRIVATE to `CgHelpers`, where
+   same-module analysis already emits the `&` correctly, and the exported entry point
+   `collectOldNodes(expr): List(ExprOld)` **returns** the list. Cross-module `List(T)`
+   return was probed first and is clean, including the empty case. The split is
+   documented at the traversal with a pointer to BUG-293, so it can be collapsed back
+   into one function when that is fixed — and not before.
 2. **Order is preserved but NOT because it names anything.** The `_old_N` uid is assigned
    by AstBuilder and is stable, so re-ordering would not rename snapshots — it would
    change the SEQUENCE of emitted `const` lines, i.e. a byte diff for no behavioural

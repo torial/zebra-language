@@ -1,0 +1,48 @@
+# BUG-294 — THE CONTROLS. Four receiver shapes that DO auto-deref a `^T` field
+# read, so the sibling fixture's failure is about the FOR-LOOP VARIABLE
+# specifically and not about `^T` reads in general.
+#
+# TWO THINGS THIS FIXTURE HAD TO GET RIGHT, both found by the controls failing
+# on the first draft:
+#
+# 1. The read must put the `^T` VALUE where a `T` is required. `o.p.x` does NOT
+#    discriminate — Zig auto-derefs field access through a single-item pointer,
+#    so it compiles with or without the bug. Passing `o.p` to `def f(pt: Point)`
+#    is what forces the deref to be emitted.
+# 2. The holder is a STRUCT with a `^Struct` payload, boxed by ASSIGNMENT in the
+#    ctor (the `ref_struct_test.zbr` idiom). A `^int` payload will not box on
+#    assignment at all, and a CLASS holder brings in the class auto-box rule
+#    (concept_zebra-class-auto-box-rule) — either one makes the controls fail for
+#    a reason that has nothing to do with this bug.
+struct Point
+    var x: int
+    var y: int
+
+struct Node
+    var p: ^Point
+    cue init(pt: Point)
+        p = pt
+
+def sumOf(pt: Point): int
+    return pt.x + pt.y
+
+# CONTROL B: receiver is a PARAMETER.
+def viaParam(o: Node): int
+    return sumOf(o.p)
+
+def main()
+    var xs: List(Node) = List()
+    xs.add(Node(Point(x: 3, y: 4)))
+
+    # CONTROL C: receiver is a plain LOCAL.
+    var first: Node = xs.at(0)
+    print("bug294-local=${sumOf(first.p)}")
+    print("bug294-param=${viaParam(first)}")
+
+    for o in xs
+        # CONTROL D: the loop variable COPIED into a local first.
+        var copied: Node = o
+        print("bug294-copied=${sumOf(copied.p)}")
+        # CONTROL E: the loop variable PASSED whole to a method — no `^T` field
+        # read at the call site, so the deref happens off a parameter instead.
+        print("bug294-passed=${viaParam(o)}")

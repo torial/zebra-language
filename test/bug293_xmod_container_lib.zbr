@@ -1,0 +1,9 @@
+# BUG-293 — helper module for bug293_xmod_container_test.zbr.
+#
+# `out` is a container parameter that this function MUTATES, so BUG-091's
+# convention lowers it to `*std.ArrayList(i64)` and obliges every call site to
+# pass `&arg`. Nothing here is unusual; the defect is entirely on the caller's
+# side of the module boundary.
+def addTwo(out: List(int))
+    out.add(1)
+    out.add(2)

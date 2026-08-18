@@ -1,0 +1,45 @@
+# @boundary rejects expected type 'T', found '*T'
+# @boundary-pending BUG-294  a `^T` field read off a for-loop variable emits without its deref
+#
+# INTENT (what this SHOULD do): print `bug294-loop=7`. `^T` is heap-indirection and
+# reading the field yields a `T`; the bootstrap emits `sumOf(o.p.*)` and gets exactly
+# that. The selfhost emits `sumOf(o.p)` and hands the generated Zig a `*Point` where a
+# `Point` is required, so it refuses. The directive above therefore records CURRENT
+# behaviour, which is the `@boundary-pending` contract: green and honest about today,
+# ticket printed every run, and it BREAKS when BUG-294 is fixed. When it breaks, do
+# not "fix" it — rewrite it to assert the intent, `@boundary runs` with `bug294-loop=7`.
+#
+# WHY IT LIVES HERE RATHER THAN IN test/. As a tracked `test/*.zbr` it is a SELFHOST
+# GAP by construction — bootstrap compiles it, selfhost does not — which is precisely
+# what `divergence_check --gate` fails on, and it turned that gate red (its baseline is
+# 0 selfhost gaps). Registering it `smoke_tc_fail` would have silenced divergence via
+# its derived MUST_REJECT list, but that list means "the selfhost is SUPPOSED to reject
+# this", which is the opposite of the truth here. `test/boundary/` is outside the main
+# corpus (0 of 482 files) and is the suite whose documented purpose is pinning
+# known-broken behaviour as a tripwire. Nothing was weakened to make a gate green.
+#
+# WHY NO GATE SAW THIS BUG UNTIL NOW: the compiler smoke runs is built from the
+# BOOTSTRAP's emit, which is correct, so smoke stayed green (343/343) with the defect
+# live in the compiler's own source. Only the round-trip — selfhost-B built from
+# selfhost-A's OWN emit — ever hands the selfhost's output to `zig`.
+#
+# Controls: test/bug294_hat_deref_controls_test.zbr — parameter, plain local, copied
+# loop variable and whole-struct pass all deref correctly, and that file records two
+# ways a control here silently stops controlling.
+struct Point
+    var x: int
+    var y: int
+
+struct Node
+    var p: ^Point
+    cue init(pt: Point)
+        p = pt
+
+def sumOf(pt: Point): int
+    return pt.x + pt.y
+
+def main()
+    var xs: List(Node) = List()
+    xs.add(Node(Point(x: 3, y: 4)))
+    for o in xs
+        print("bug294-loop=${sumOf(o.p)}")
