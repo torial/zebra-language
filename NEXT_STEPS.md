@@ -165,6 +165,23 @@ must stay documented, not "fixed" — `-7/2 == -3` (C/Zig truncation, self-
 consistent) is not a defect and is out of scope. Ungitting makes *silence*
 loud; it does not make a language refuse to have opinions.
 
+- [x] **BUG-292 — `old <parameter>` is REFUSED. DONE 2026-08-17 (`31ff0d0`).** The
+  first UNGIT migration of this batch to actually land, and the template holds: a
+  silent surface (a post-condition that passes under any implementation of `old`,
+  including a broken one) became a 62 ms front-end diagnostic against the user's own
+  line, with a caret. `zebra -c` catches it.
+  **What it cost was placement, not logic.** The traversal is shared with CodeGen, and
+  the plan recorded in BUGS.md said to put it in `CgHelpers` — which closes a cycle,
+  because `CgHelpers` imports `TypeChecker`. That surfaced **BUG-295** (an import cycle
+  builds clean and yields a compiler that stack-overflows, no diagnostic) and a second
+  manifestation of **BUG-294**. It lives in the new `selfhost/AstWalk.zbr`.
+  **Two receipts worth carrying into the remaining U-items.** (1) Landing a refusal is
+  the cheapest moment to find every document that taught the thing you just refused —
+  `doc_example_check` failed with 1 NEW and named `STYLE_GUIDE.md`, a file I had not
+  looked at, carrying the same example and the same wrong rationale. Run it
+  deliberately after the next one. (2) A refusal needs a POSITIVE control that
+  discriminates, or you have only proved the compiler can say no.
+
 - [ ] **U1 — `for-else` silently DROPS the `else` block** on HashMap /
   string-split / chars iterators (BUG-16; QUICKSTART §26, §27#11). This is the
   sharpest item: not a wrong answer but *code the author wrote, deleted with no
