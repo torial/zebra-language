@@ -1,24 +1,20 @@
-# BUG-293 — a mutated `List(T)` parameter cannot be called across a module
-# boundary. THIS FIXTURE PINS BROKEN BEHAVIOUR ON PURPOSE.
+# BUG-293 — a mutated `List(T)` parameter called ACROSS A MODULE BOUNDARY.
 #
-# It is registered `smoke_run_fail` and it PASSES TODAY by failing to compile:
+# FIXED 2026-08-18. This fixture pinned broken behaviour while the bug was open
+# (registered `smoke_run_fail`, passing by failing to compile with
+# `expected type '*T', found 'T'`); it fired the moment the fix landed, exactly as
+# its own header said it would, and now asserts the intent: prints bug293-cross=2.
 #
-#   error: expected type '*T', found 'T'
+# WHAT WAS WRONG: the callee's emit declares `out: *std.ArrayList(i64)` because it can
+# see its own body and knows the param is mutated. The CALLER decides whether to pass
+# `&arg` by scanning that same body — and the body lookup stopped at the module
+# boundary while the param lookup did not (§27b gave `lookupFnParams` a cross-module
+# fallback; `lookupFnBody` never got one). Two sides of one convention consulting
+# different oracles.
 #
-# The callee's own emit declares `out: *std.ArrayList(i64)` (it can see its own
-# body and knows the param is mutated); this call site emits a bare `addTwo(xs)`,
-# because the caller decides addr-of by inspecting the CALLEE'S BODY and the body
-# lookup stops at the module boundary — while the parameter lookup does not
-# (§27b gave `lookupFnParams` a cross-module fallback; `lookupFnBody` never got
-# one). Two sides of one convention consulting different oracles.
-#
-# WHEN BUG-293 IS FIXED THIS FIXTURE WILL GO RED. That is the signal, not a
-# regression: rewrite it as a `smoke_run` asserting `bug293-cross=2`, exactly as
-# the sibling positive control already does for the same-module direction. Do NOT
-# re-baseline around it.
-#
-# The paired control is bug293_samemod_container_test.zbr — same call, same
-# module, must print 2.
+# Controls: bug293_samemod_container_test (same call, same module — one thing varied)
+# and bug293_xmod_readonly_test (a NON-mutated container param must still cross by
+# value, which is the over-application direction).
 use bug293_xmod_container_lib exposing addTwo
 
 def main()

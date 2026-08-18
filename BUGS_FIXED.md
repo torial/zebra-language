@@ -6,6 +6,189 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-293: a MUTATED container parameter could not be called across a module boundary — ✅ FIXED (closed 2026-08-18)
+
+- **Severity:** Medium — loud (the generated Zig does not compile), so nothing is
+  silently corrupted; but it makes a normal out-param shape unusable across
+  modules, and the diagnostic points at a Zig type error rather than naming the
+  cause.
+- **Both compilers.** Reproduced in the selfhost and in the bootstrap.
+- **Status:** OPEN. Pinned by `test/bug293_xmod_container_test.zbr` (+ its lib and
+  a same-module positive control).
+
+**Found 2026-08-17**, striking a gap rather than finding a wound: it is what blocked
+BUG-292's `collectOldNodes` extraction through two attempts. Both hypotheses recorded
+at the time were wrong, and for one reason — they were formed without the error text,
+which `rebuild.sh` filters out of its log. The text was on disk in `/tmp/bs-rebuildA.err`
+the whole time.
+
+#### Repro (6 lines, two files)
+
+```zebra
+# lib.zbr
+def fill(out: List(int))
+    out.add(1)
+    out.add(2)
+```
+
+```zebra
+# main.zbr
+use lib exposing fill
+
+def main()
+    var xs: List(int) = List()
+    fill(xs)
+    print("cross=${xs.len}")
+```
+
+```
+error: expected type '*T', found 'T'
+```
+
+The **same call in the same file compiles and prints 2**. That control is the whole
+finding: one thing varied, and it is the module boundary.
+
+#### Root cause — two sides of one convention consulting different oracles
+
+BUG-091's convention: a container parameter the callee MUTATES lowers to
+`*std.ArrayList(T)`, and every call site must pass `&arg`.
+
+- The **callee's** emit (`genMethod`) sees its own body, finds the mutation, and
+  writes `out: *std.ArrayList(i64)`.
+- The **caller's** emit asks `paramNeedsAddrOf(p, body)` — and that predicate needs
+  the *callee's* body:
+
+  ```zebra
+  if body as b
+      var ms: StrSet = scanMutations(b, nil)
+      return ms.contains_(p.name)
+  return false          # body unavailable ⇒ "no addr-of"
+  ```
+
+- §27b gave `lookupFnParams` a cross-module fallback
+  (`dep_types.classOf(...).fnParamList(...)`). **`lookupFnBody` never got one.**
+
+The selfhost mechanism above is read from the source AND confirmed by the defaulted-arg
+experiment below. For the **bootstrap** what is MEASURED is the symptom — it emits the
+same bare call — plus the fact that its `paramNeedsAddrOf` has the identical
+`body orelse return false`. Its body lookup is `lookupCalleeBody`, which goes through
+`g.resolve.exprs`; that it yields nothing for an imported symbol is *inferred from
+reading*, not separately probed. Confirm before fixing that half.
+
+So across a boundary the body is `nil`, the predicate answers `false`, and no `&` is
+emitted against a pointer parameter.
+
+**The two failure paths were discriminated, not assumed.** "params not found" and
+"body not found" emit identical text for a positional call. A defaulted parameter
+separates them: `def fill2(out: List(int), n: int = 7)` called cross-module as
+`fill2(xs)` emits `_zbr_fn_fill2(xs, 7)` — the default *was* filled, so the parameter
+list was found and only the body was missing.
+
+Note the direction of the fallback, which is the reason this is worth writing down:
+the unavailable-body case returns **false**, the answer that means "do nothing". A
+silent fallback on a predicate feeding a decision biases toward "nothing changed" —
+here it happened to fail loudly at `zig`, which is luck rather than design.
+
+#### Why no gate could see it
+
+This is an **unstruck gap**, not a wound — no corpus file passes a mutated container
+across a module boundary. That is an INFERENCE rather than a survey, but a sound one:
+the shape is a hard compile failure, so a corpus file carrying it would already be red
+in `compile_check` (266/0/2) and `full_sweep` (0 regressions).
+
+`divergence_check` could not have found it either, and for the OPPOSITE reason to
+BUG-294's: both compilers do the identical wrong thing here. Measured classification —
+the cross-module fixture is scored **multi-module (bootstrap N/A)** and excluded from
+the comparison outright, and the same-module control is **agree-pass**. Neither is a
+gap. BUG-294's fixture *is* a selfhost gap and turned that gate red; this one cannot.
+The two bugs sit on opposite sides of that gate, which is a quick way to tell them
+apart.
+
+**A naming trap paid for here, worth one line.** The fixtures originally called their
+helper `fill`, and the BOOTSTRAP scored the control as a gap — not for any reason
+related to this bug, but because its INLINED preamble contains
+`_pad_fill(fill: anytype)`, so a top-level `fill` shadows it (BUG-220, which the
+selfhost fixed via the `_zbr_fn_` prefix). Renamed to `addTwo`. **A fixture that fails
+for an unrelated reason is not a fixture** — and on the bootstrap path any common word
+can collide with the 186 KB of preamble spliced in beside it.
+
+#### Fix sketch (not implemented)
+
+Do **not** ship whole dep bodies to the call site to re-run `scanMutations` there. The
+answer is already known by the side that owns the body — the callee's own emit
+computed it. The seam-correct shape is to let the decision travel with the
+declaration: the type-info node already carries `fn_param_lists: HashMap(str, List(Param))`
+across modules (`TypeChecker.zbr:214`), so a sibling entry recording *which parameters
+need addr-of*, populated where the body is in scope, closes it without duplicating the
+analysis. Must land in `src/CodeGen.zig` as well as the selfhost — the bootstrap is
+the regen authority and has to compile the selfhost source.
+
+#### Control when fixing
+
+The paired fixtures are the control. `bug293_samemod_container_test` must still print
+`bug293-same=2` (otherwise the boundary is no longer what is being measured), and
+`bug293_xmod_container_test` — registered `smoke_run_fail` today — **will go red when
+the bug is fixed**. That is the signal to rewrite it as a `smoke_run` asserting
+`bug293-cross=2`, not to re-baseline around it.
+
+Also verify the fix does not over-apply: a container parameter the callee does **not**
+mutate must still be passed by value cross-module, or every read-only container
+argument acquires a spurious `&`.
+
+
+#### THE FIX (2026-08-18) — give the body the same route the param list already had
+
+Exactly the sketch above, and it turned out to be a mirror rather than a design: the
+type-info node already carried `fn_param_lists` across the boundary for §27b's
+defaulted-argument fill. It now carries `fn_bodies` beside it, registered at the same
+three sites (`topfn.stmts` is in scope precisely where `topfn.params` is recorded), and
+`lookupFnBody` gained the cross-module fallback `lookupFnParams` has had all along.
+
+**The alternative was rejected for a reason worth keeping.** The obvious "seam-correct"
+move is to have the callee's side compute a `needs_addr_of` flag and export *that*
+rather than the body. It is cheaper and it does not ship bodies around — but computing
+it requires `scanMutations`, which lives in `CgHelpers`, which imports `TypeChecker`;
+so the TypeChecker cannot call it without closing the cycle that **BUG-295** documents.
+Shipping the body lets the decision stay where the analysis already lives (CodeGen,
+which imports CgHelpers) and costs nothing at runtime: the dep AST is arena-allocated
+and alive for the whole compilation, so the map holds a reference, not a copy.
+
+**THE OVER-APPLICATION CONTROL IS THE FIXTURE THAT MATTERS.** A fix that degraded into
+"any container param crossing a module boundary gets `&`" would pass the bug's own
+fixture and be wrong. `test/bug293_xmod_readonly_test.zbr` calls a NON-mutating
+cross-module function in the same program, and the emit discriminates exactly:
+
+```zig
+_zbr_fn_addTwo(&xs);      // mutated  -> &
+_zbr_fn_sumList(xs)       // read-only -> by value
+```
+
+**SELFHOST-ONLY.** The bootstrap has the identical defect (its `paramNeedsAddrOf` has
+the same `body orelse return false`, and `lookupCalleeBody` resolves through
+`g.resolve.exprs`), and it is NOT fixed. The standing rule only requires the bootstrap
+to COMPILE the selfhost source, which it does — round-trip byte-identical.
+
+**A prediction I made here was WRONG, corrected by measuring.** I wrote that
+`bug293_xmod_container_test` would now appear as a **bootstrap gap** in `divergence`
+(selfhost leads). It does not, and cannot: `divergence` classifies both cross-module
+fixtures as **multi-module (bootstrap N/A)** and excludes them from the comparison
+outright, because the bootstrap's `--emit-zig` writes ONE file and cannot emit a
+dependency at all. Measured: `1 agree-pass · 1 library(no-main) · 2 multi-module`,
+0 gaps in either direction.
+
+The general point, since this is the second time in two days a divergence prediction
+of mine missed: **a fixture's classification is a property of the HARNESS, not only of
+the bug.** BUG-294's probe was a selfhost gap and turned the gate red; BUG-293's is
+invisible to the same gate — not because the bugs differ in kind, but because one
+shape is single-module and the other is not. Check the classification; do not infer
+it.
+
+**The fixture pair fired as designed:** `bug293_xmod_container_test` was
+`smoke_run_fail`, passing by failing to compile; it went red on the fix and now asserts
+`bug293-cross=2`. Verified: round-trip byte-identical.
+
+---
+
 ### BUG-294: `^T` field reads lost their deref — name-keyed registries, seeded by emission order — ✅ FIXED (closed 2026-08-18)
 
 - **Severity:** Medium — loud (the generated Zig does not compile), and **selfhost

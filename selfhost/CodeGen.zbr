@@ -15243,6 +15243,26 @@ struct Generator
                         var init_key2: str = sname + ".init"
                         if init_key2 == key
                             return di2.stmts
+        # BUG-293: cross-module fallback, the exact mirror of lookupFnParams' §27b
+        # fallback directly above. Without it the body lookup STOPPED AT THE MODULE
+        # BOUNDARY while the param lookup did not, so `paramNeedsAddrOf` answered
+        # `false` for want of a body and the call site emitted a bare `f(xs)` against
+        # a `*std.ArrayList(T)` parameter -- the callee, which CAN see its own body,
+        # had already emitted the pointer. Two sides of one convention consulting
+        # different oracles, disagreeing exactly at the seam.
+        #
+        # Note the direction of the old fallback: no body meant "no addr-of", the
+        # answer that means do nothing. It happened to fail loudly at `zig` rather
+        # than silently, which was luck rather than design.
+        var fb_parts: List(str) = key.split(".")
+        var fb_class: str = ""
+        var fb_method: str = key
+        if fb_parts.len >= 2
+            fb_class = fb_parts.at(0)
+            fb_method = fb_parts.at(1)
+        if .dep_types.classOf(fb_class) as fb_ct
+            if fb_ct.fnBody(fb_method) as fb_body
+                return fb_body
         return nil
 
     def genArgListFull(args: List(Arg), params: List(Param)?, body: List(Stmt)?)

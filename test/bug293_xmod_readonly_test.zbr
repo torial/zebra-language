@@ -1,0 +1,13 @@
+# BUG-293 — the OVER-APPLICATION control. A cross-module container param that the
+# callee does NOT mutate must still be passed BY VALUE.
+#
+# The fix routes the callee's body to the caller so `paramNeedsAddrOf` can ask
+# "is this param mutated?". If it ever degrades into "is this a container crossing a
+# module boundary?", the sibling bug293_xmod_container_test still passes and only
+# THIS file catches it.
+use bug293_xmod_container_lib exposing addTwo, sumList
+
+def main()
+    var xs: List(int) = List()
+    addTwo(xs)                       # mutating: needs &
+    print("bug293-readonly=${sumList(xs)}")   # read-only: must NOT get &

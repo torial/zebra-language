@@ -196,6 +196,15 @@ class ClassTypes
     # Full Param list (incl. default exprs) per method/ctor ("init" for the
     # constructor), so cross-module callers can fill defaulted args (§27b).
     var fn_param_lists: HashMap(str, List(Param))
+    # BUG-293: the method BODY, for the same reason and by the same route as
+    # fn_param_lists above. A container param the callee MUTATES lowers to
+    # `*std.ArrayList(T)`, so every call site must pass `&arg` -- and the caller
+    # decides that by scanning the CALLEE'S BODY. §27b gave the param list a
+    # cross-module route and left the body without one, so a cross-module call
+    # emitted a bare `f(xs)` against a pointer parameter and the generated Zig did
+    # not compile. Storing the body is a reference into the dep's arena-allocated
+    # AST, which is alive for the whole compilation anyway.
+    var fn_bodies: HashMap(str, List(Stmt))
     # True iff this entry is a `class` (not a struct/union/interface/mixin).
     # Used to reject `^ClassName` — a class is already a reference (`*T`).
     var is_class: bool
@@ -213,6 +222,7 @@ class ClassTypes
         method_param_types = HashMap()
         ctor_params = List(Type_)()
         fn_param_lists = HashMap()
+        fn_bodies = HashMap()
 
     def setField(field_name: str, t: Type_)
         .field_types.put(internString(field_name), t)
@@ -232,6 +242,14 @@ class ClassTypes
     def fnParamList(method_name: str): List(Param)?
         if .fn_param_lists.contains(method_name)
             return .fn_param_lists.fetch(method_name)
+        return nil
+
+    def setFnBody(method_name: str, body: List(Stmt))
+        .fn_bodies.put(internString(method_name), body)
+
+    def fnBody(method_name: str): List(Stmt)?
+        if .fn_bodies.contains(method_name)
+            return .fn_bodies.fetch(method_name)
         return nil
 
     def methodParamTypeAt(method_name: str, idx: int): Type_?
@@ -804,6 +822,9 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     ct.setMethodParamTypes(m.name, ptypes_pipe)
                 # Full Param list (incl. default exprs) for cross-module default-fill (§27b).
                 ct.setFnParamList(m.name, m.params)
+                # BUG-293: the body travels with the declaration (see fn_bodies).
+                if m.stmts as m_body
+                    ct.setFnBody(m.name, m_body)
             on Decl.init as ini
                 # Ctor params — first init wins (Zebra supports only one cue init per class).
                 if ct.ctorParamCount() == 0
@@ -813,6 +834,8 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                         else
                             ct.addCtorParam(Type_.unknown_)
                 ct.setFnParamList("init", ini.params)
+                if ini.stmts as ini_body
+                    ct.setFnBody("init", ini_body)
             else
                 pass
 
@@ -922,6 +945,10 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     module_fns.setMethodParamTypes(topfn.name, tl_ptypes)
                 # Full Param list (incl. defaults) for cross-module default-fill (§27b).
                 module_fns.setFnParamList(topfn.name, topfn.params)
+                # BUG-293: same route for a top-level `def` -- this is the one the
+                # cross-module container out-param case actually travels.
+                if topfn.stmts as topfn_body
+                    module_fns.setFnBody(topfn.name, topfn_body)
                 # Register as generic function if it declares type params.
                 if topfn.type_params.len > 0
                     mt.addGenericFn(topfn.name)

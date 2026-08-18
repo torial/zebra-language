@@ -717,10 +717,13 @@ smoke_run test/bug235_exposing_test.zbr "7"
 # varied, and it is the boundary. Without it, the negative fixture below would also
 # pass if mutated container params were broken generally -- a different bug.
 smoke_run test/bug293_samemod_container_test.zbr "bug293-same=2"
-# PINS BROKEN BEHAVIOUR. This passes TODAY by failing to compile. When BUG-293 is
-# fixed it goes RED -- that is the signal to rewrite it as
-# `smoke_run ... "bug293-cross=2"`, not to re-baseline around it.
-smoke_run_fail test/bug293_xmod_container_test.zbr "expected type '*T', found 'T'"
+# FIXED 2026-08-18: was smoke_run_fail pinning the broken behaviour, fired on the fix,
+# now asserts the intent.
+smoke_run test/bug293_xmod_container_test.zbr "bug293-cross=2"
+# THE OVER-APPLICATION CONTROL: a cross-module container param the callee does NOT
+# mutate must still be passed BY VALUE. A fix that degraded into "any container
+# crossing a module boundary gets &" would pass the case above and fail only here.
+smoke_run test/bug293_xmod_readonly_test.zbr "bug293-readonly=3"
 
 # BUG-294: the selfhost does not auto-deref a `^T` field read off a FOR-LOOP
 # VARIABLE (the bootstrap emits `o.p.*`, the selfhost emits `o.p`). Found by the

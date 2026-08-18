@@ -7,3 +7,14 @@
 def addTwo(out: List(int))
     out.add(1)
     out.add(2)
+
+# BUG-293 NEGATIVE CONTROL, read-only: this function does NOT mutate `xs`, so it
+# must keep taking `std.ArrayList(i64)` BY VALUE and the cross-module call site must
+# NOT acquire a `&`. The fix works by giving the caller the callee's body; a fix that
+# over-applied (say, "any container param crossing a module boundary gets &") would
+# pass the mutating case and break this one.
+def sumList(xs: List(int)): int
+    var total: int = 0
+    for v in xs
+        total = total + v
+    return total
