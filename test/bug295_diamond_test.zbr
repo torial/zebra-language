@@ -1,0 +1,13 @@
+# BUG-295 — THE NEGATIVE CONTROL, and it is what makes the cycle diagnostic worth
+# having. `bug295_diamond_lib_leaf` is imported by TWO different parents, so it is
+# skipped on its second visit exactly like a cycle's re-entry — the skip that
+# `visited` alone cannot distinguish.
+#
+# It must compile SILENTLY. A detector that fires here would be reporting the most
+# ordinary shape in any dependency graph, and a diagnostic at that noise ratio gets
+# suppressed wholesale rather than read.
+use bug295_diamond_lib_left exposing leftValue
+use bug295_diamond_lib_right exposing rightValue
+
+def main()
+    print("bug295-diamond=${leftValue() + rightValue()}")

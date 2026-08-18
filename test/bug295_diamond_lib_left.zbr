@@ -1,0 +1,3 @@
+use bug295_diamond_lib_leaf exposing leafValue
+def leftValue(): int
+    return leafValue() + 1

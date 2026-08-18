@@ -725,6 +725,21 @@ smoke_run test/bug293_xmod_container_test.zbr "bug293-cross=2"
 # crossing a module boundary gets &" would pass the case above and fail only here.
 smoke_run test/bug293_xmod_readonly_test.zbr "bug293-readonly=3"
 
+# ── BUG-295: an import CYCLE is REPORTED (Sean's "first import wins", made explicit) ──
+# `visited` made each module compile once, so a cycle's re-entry looked identical to a
+# benign diamond and the compiler said nothing. An in-progress stack tells the two
+# apart and carries the path.
+#
+# WARNING, not a refusal: a cycle is undefined rather than wrong, and
+# MultiCompiler.cycle_is_error flips it in one line (both directions verified before
+# shipping -- error mode exits 1 on the cycle and does NOT refuse the diamond).
+smoke_warn test/bug295_cycle_test.zbr "import cycle: bug295_cycle_test -> bug295_cycle_lib -> bug295_cycle_test"
+# THE NEGATIVE CONTROL, and the one that decides whether the diagnostic is trustworthy:
+# a leaf imported by TWO parents is skipped on its second visit exactly like a cycle's
+# re-entry. It must compile SILENTLY -- a detector that fires on the most ordinary
+# shape in any dependency graph gets suppressed wholesale rather than read.
+smoke_run test/bug295_diamond_test.zbr "bug295-diamond=17"
+
 # BUG-294: the selfhost does not auto-deref a `^T` field read off a FOR-LOOP
 # VARIABLE (the bootstrap emits `o.p.*`, the selfhost emits `o.p`). Found by the
 # ROUND-TRIP, which is the only gate that puts the selfhost's own emit in front of

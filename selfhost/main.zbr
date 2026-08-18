@@ -52,6 +52,18 @@ use Checker exposing runCheck
 
 class MultiCompiler
     var visited: List(str)
+    # BUG-295: the modules currently BEING compiled, innermost last. `visited` alone
+    # cannot detect an import cycle, because it conflates two very different skips:
+    # a module already FINISHED (a diamond dependency — benign, and the common case)
+    # and a module still IN PROGRESS (a cycle — the only one that can bite). One set
+    # cannot tell them apart; this stack can, and it carries the PATH for free, since
+    # the stack IS the chain.
+    var in_progress: List(str)
+    # Sean's call: report, do not refuse. A cycle is currently UNDEFINED rather than
+    # wrong — Zebra has no answer for module-init order across one — so the honest
+    # move is to say so where the user is already looking, and decide error-vs-warning
+    # after watching it fire on real code. Flip this one line to refuse.
+    var cycle_is_error: bool
     var dep_class_names: List(str)
     var dep_types: ModuleTypes
     var preamble_path: str
@@ -80,6 +92,8 @@ class MultiCompiler
 
     cue init(preamble_path: str, output_dir: str)
         .visited = List(str)()
+        .in_progress = List(str)()
+        .cycle_is_error = false
         .dep_class_names = List(str)()
         .dep_types = ModuleTypes()
         .preamble_path = preamble_path
@@ -110,10 +124,60 @@ class MultiCompiler
             i = i + 1
         return false
 
+    # Index of `p` in the in-progress stack, or -1. Exact path comparison, never a
+    # substring test — one module path can be a prefix of another.
+    def inProgressIndex(p: str): int
+        var i: int = 0
+        while i < in_progress.len
+            if in_progress.at(i) == p
+                return i
+            i = i + 1
+        return -1
+
+    def popInProgress()
+        var rebuilt: List(str) = List(str)()
+        var i: int = 0
+        while i < in_progress.len - 1
+            rebuilt.add(in_progress.at(i))
+            i = i + 1
+        in_progress = rebuilt
+
+    # `A -> B -> A`, from the first occurrence of the re-entered module to the end,
+    # then back to it. The repeat at both ends is deliberate: it is what makes the
+    # cycle visible rather than leaving the reader to spot it.
+    def importCyclePath(start: int, p: str): str
+        var out: str = ""
+        var i: int = start
+        while i < in_progress.len
+            out = out + .moduleNameOf(in_progress.at(i)) + " -> "
+            i = i + 1
+        return out + .moduleNameOf(p)
+
+    def reportImportCycle(start: int, p: str)
+        var kind: str = "warning"
+        if cycle_is_error
+            kind = "error"
+        sys.errln(kind + ": import cycle: " + .importCyclePath(start, p))
+        sys.errln("  a module in a cycle is compiled ONCE and the first import wins, so")
+        sys.errln("  the second module sees a PARTIAL view of the first. That is well")
+        sys.errln("  defined for functions and types and UNDEFINED for module-level state:")
+        sys.errln("  no initialisation order satisfies both directions.")
+        sys.errln("  fix: move the names they share into a third module that both import.")
+        if cycle_is_error
+            sys.exit(1)
+
     def compileDep(zbr_path: str, is_root: bool) throws
+        # BUG-295: check the IN-PROGRESS stack before the visited early-return -- on a
+        # cycle the re-entry is also `alreadyVisited`, so testing that first would
+        # return and say nothing, which is exactly today's silence.
+        var cyc: int = .inProgressIndex(zbr_path)
+        if cyc >= 0
+            .reportImportCycle(cyc, zbr_path)
+            return
         if .alreadyVisited(zbr_path)
             return
         visited.add(zbr_path)
+        in_progress.add(zbr_path)
         sys.errln("compiling: " + zbr_path)
 
         var src: str = File.read(zbr_path)
@@ -256,6 +320,9 @@ class MultiCompiler
                     populateModuleTypes(dep_types, module)
             else
                 raise "expected module"
+        # The `raise` above aborts compilation, so a missed pop there cannot mislead
+        # a later lookup -- there is no later.
+        .popInProgress()
 
     def compileDep_use(u: PUse, parent_path: str) throws
         # Resolve dep path: same directory: parent. Try .zbr first, then .c.

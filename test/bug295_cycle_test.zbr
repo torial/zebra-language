@@ -1,0 +1,27 @@
+# BUG-295 — an import CYCLE is now REPORTED instead of being silently tolerated.
+#
+# Before this, the compiler said nothing: `compileDep`'s `visited` set made each
+# module compile once, and the second entry into a cycle looked identical to a
+# benign diamond dependency. One set cannot tell "already finished" from "still in
+# progress"; an in-progress stack can, and it carries the path for free.
+#
+# THE RULE IS NOW EXPLICIT (Sean's framing, 2026-08-18): a module is compiled ONCE
+# and the FIRST IMPORT WINS, so the second module in a cycle sees a PARTIAL view of
+# the first. That is fine for functions and types and UNDEFINED for module-level
+# state, since no initialisation order satisfies both directions.
+#
+# It is a WARNING, not a refusal: a cycle is currently undefined rather than wrong,
+# and `MultiCompiler.cycle_is_error` flips it to a hard error in one line. Both
+# directions were verified before shipping — error mode exits 1 on this shape and
+# does NOT refuse a diamond.
+#
+# Registered `smoke_warn`: exit 0, with the diagnostic on stderr.
+# The negative control is bug295_diamond_test.zbr — a module imported TWICE by
+# different parents must stay SILENT, or this diagnostic is noise.
+use bug295_cycle_lib exposing echoBack
+
+def seed(): int
+    return 5
+
+def main()
+    print("bug295-cycle=${echoBack(1)}")

@@ -15,7 +15,47 @@
 
 ---
 
-### BUG-295: a module import CYCLE builds cleanly and produces a compiler that STACK-OVERFLOWS, with no diagnostic
+### BUG-295: a module import CYCLE builds cleanly and produces a compiler that STACK-OVERFLOWS — ⚠ HALF FIXED (diagnostic landed 2026-08-18; the overflow is still unexplained)
+
+> **THE "NO DIAGNOSTIC" HALF IS CLOSED.** A cycle is now REPORTED, with its full path
+> and the rule spelled out, and the corresponding `smoke_warn` fixture pins the message:
+>
+> ```
+> warning: import cycle: t_a -> t_b -> t_c -> t_a
+>   a module in a cycle is compiled ONCE and the first import wins, so
+>   the second module sees a PARTIAL view of the first. That is well
+>   defined for functions and types and UNDEFINED for module-level state:
+>   no initialisation order satisfies both directions.
+>   fix: move the names they share into a third module that both import.
+> ```
+>
+> **THE MECHANISM IS SEAN'S, AND IT IS A REFINEMENT RATHER THAN A REPLACEMENT.** His
+> framing: keep a set of imported modules and ignore later imports — *"first import
+> wins"*, made explicit. `compileDep`'s `visited` set ALREADY did exactly that, which
+> is why the compiler never hung; the missing piece is that one set conflates two very
+> different skips — a module already FINISHED (a diamond dependency, benign, the common
+> case) and a module still IN PROGRESS (the cycle). An in-progress stack separates them
+> and carries the path for free, because the stack IS the chain. The dedup was not
+> touched.
+>
+> **It WARNS rather than refuses** (Sean's call): a cycle is undefined rather than
+> wrong, so the honest move is to say so and decide after watching it fire on real
+> code. `MultiCompiler.cycle_is_error` flips it in one line — **both directions were
+> verified before shipping**, because an untested switch is exactly the kind of
+> affordance that is wrong when someone reaches for it: error mode exits 1 on a cycle
+> and does NOT refuse a diamond.
+>
+> **THE NEGATIVE CONTROL IS THE LOAD-BEARING FIXTURE.** `bug295_diamond_test` imports a
+> leaf from two parents, so it is skipped on its second visit by the same code path a
+> cycle re-enters. It must compile SILENTLY; a detector that fires on the most ordinary
+> shape in a dependency graph gets suppressed wholesale rather than read.
+>
+> **WHAT REMAINS OPEN:** (1) the stack overflow itself is still unexplained — see the
+> refuted hypothesis and three failed reproductions below — and this diagnostic makes
+> the cycle VISIBLE without making it SAFE; if the overflow's cause also affects acyclic
+> code, the warning hides nothing but fixes nothing either. (2) whether to promote the
+> warning to a refusal, which is a language-semantics decision. (3) the adjacent finding
+> that a cycle carrying a class type mis-boxes (`expected 'Ctx', found '*Ctx'`).
 
 - **Severity:** Medium — no wrong answers, but the failure mode is a silent crash with
   no message naming the cause, and the construct is accepted all the way through the

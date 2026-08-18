@@ -1,0 +1,4 @@
+# BUG-295 — the shared leaf of the diamond in bug295_diamond_test.zbr. Imported by
+# TWO parents, which is the case the cycle detector must NOT report.
+def leafValue(): int
+    return 7

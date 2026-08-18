@@ -1,0 +1,6 @@
+# BUG-295 — the other half of the import cycle in bug295_cycle_test.zbr.
+# This module imports its own importer back, which is the whole point.
+use bug295_cycle_test exposing seed
+
+def echoBack(n: int): int
+    return seed() + n

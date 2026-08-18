@@ -33,3 +33,7 @@ typechecker  # module of the tc_* typechecker experiment; imported, not run dire
 val_lib  # helper module imported by other tests; has no main()
 witness_zig_backend_literal  # asymmetry witness — asserted by tools/check_mode_check.sh, which REQUIRES it to pass -c and fail --check-full; a smoke registration would contradict that
 bug293_xmod_container_lib  # helper module imported by bug293_xmod_container_test; has no main()
+bug295_cycle_lib  # the other half of BUG-295's import cycle; exercised through bug295_cycle_test
+bug295_diamond_lib_leaf  # helper module imported by other tests; has no main()
+bug295_diamond_lib_left  # helper module imported by other tests; has no main()
+bug295_diamond_lib_right  # helper module imported by other tests; has no main()
