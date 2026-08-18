@@ -1,0 +1,28 @@
+# BUG-292: `old <parameter>` is refused, because it is inert.
+#
+# A parameter cannot change between entry and exit — Zebra rejects both ways of
+# trying (`n = 999` is "cannot assign to constant", `var n = 999` is "shadows
+# function parameter"). So `old n` is exactly `n`, and an `ensure` written this way
+# passes under ANY implementation of `old`, including a broken one.
+#
+# This is the shape QUICKSTART §24 used to DEMONSTRATE the feature with, which is how
+# the defect was found: the canonical example sat in the one position where it
+# provably cannot do anything.
+#
+# Registered `smoke_tc_fail` asserting the MESSAGE, not merely that it errored — the
+# message is the whole deliverable here, since the refusal exists to teach the fix.
+#
+# NOTE the registration is also what keeps `divergence` honest: smoke_tc_fail is the
+# DERIVED source of that gate's "selfhost rejects by design" list, and that is exactly
+# true of this file (the bootstrap does not have the check). Contrast BUG-294's probe,
+# where the same registration would have been a lie.
+#
+# Positive control: test/bug292_old_field_test.zbr — `old` on a FIELD still compiles
+# and RUNS, so this refusal cannot be passing because `old` broke generally.
+def increment(n: int): int
+    ensure
+        result == old n + 1
+    return n + 1
+
+def main()
+    print("v=${increment(1)}")

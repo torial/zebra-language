@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-294. Next new bug: BUG-295.**
+**Last bug number generated: BUG-295. Next new bug: BUG-296.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -14,6 +14,64 @@
 > *somewhere*, so a duplicate satisfies it twice over.
 
 ---
+
+### BUG-295: a module import CYCLE builds cleanly and produces a compiler that STACK-OVERFLOWS, with no diagnostic
+
+- **Severity:** Medium — no wrong answers, but the failure mode is a silent crash with
+  no message naming the cause, and the construct is accepted all the way through the
+  build.
+- **Status:** OPEN. Not pinned by a fixture — see "why there is no fixture" below.
+
+**Found 2026-08-17** while placing `collectOldNodes` for BUG-292. The TypeChecker
+needed a traversal that lives in `CgHelpers`, and `CgHelpers` already imports
+`TypeChecker` (`InferCtx`, `Type_`, `inferExpr`), so the import would close a cycle.
+
+**A two-module cycle works.** Probed first, deliberately:
+
+```zebra
+# a.zbr                          # b.zbr
+use b exposing helperB           use a exposing helperA
+def helperA(n: int): int         def helperB(n: int): int
+    return n + 1                     return helperA(n) + 10
+def main()
+    print("a=${helperB(1)}")
+```
+
+prints `a=12`. So cycles are not rejected, and nothing warns.
+
+**At compiler scale the same construct produces a broken binary.** Adding
+`use CgHelpers exposing collectOldNodes` to `selfhost/TypeChecker.zbr` regenerates and
+builds with no error, and the resulting `zebra.exe` dies on hello-world:
+
+```
+Stack overflow (no address available)
+```
+
+**ISOLATED, not inferred.** The first attempt carried a new check as well, so the
+obvious suspect was my own code. Adding the bare `use` line **with zero call sites**
+reproduces it exactly. The import alone is sufficient.
+
+Mechanism not confirmed. The likely candidate is module-init: emitted modules call
+each other's `_initModuleVars()`, and a cycle there recurses forever — which would
+also explain why the toy passes, since neither toy module has module-level state.
+That is a hypothesis, and this ledger has a bad record with hypotheses formed before
+reading the evidence, so treat it as unverified.
+
+**Why there is no fixture.** Any fixture would be two `.zbr` files that build a
+compiler-scale cycle, and the failure is a stack overflow in a BUILT BINARY rather
+than a compile error — nothing in the corpus harness runs that shape. The cheap
+version (the toy above) PASSES, so it would pin the wrong thing. The honest pin is a
+refusal: see below.
+
+**Suggested fix — refuse, don't repair.** The front end knows the module graph after
+`use` resolution, so a cycle is a 62 ms check. `error: import cycle: TypeChecker ->
+CgHelpers -> TypeChecker` naming the path is worth far more than making cycles work,
+and it is the UNGIT-shaped answer: the system knows, so it should say. If cycles are
+later wanted deliberately, the refusal is the place to relax.
+
+**Workaround, and it is what BUG-292 shipped:** put the shared code in a module both
+sides can import without closing a loop — `selfhost/AstWalk.zbr`, which imports `Ast`
+and nothing else.
 
 ### BUG-294: the selfhost does not auto-deref a `^T` field read when the receiver is a FOR-LOOP VARIABLE
 
@@ -52,6 +110,29 @@ This also explains why the construct has worked forever elsewhere in the compile
 `^T` payloads are normally reached through a `branch … as o` binding, where QUICKSTART
 documents `^T` as *transparent*. A plain `for` over a `List` of payload structs is a
 shape the compiler's own source had never used.
+
+#### SECOND MANIFESTATION — the same read, same source, different MODULE
+
+Found later the same day, moving this traversal around for BUG-292. Identical source
+text emits differently depending on whether the `^T` payload type is IMPORTED or
+declared in the SAME module:
+
+| where `collectOldNodesInto` lived | `Expr` is | emitted |
+|---|---|---|
+| `CgHelpers.zbr` (`use Ast exposing Expr, …`) | imported | `collectOldNodesInto(u.operand.*, out)` ✓ |
+| `Ast.zbr` (declares `Expr`) | same-module | `collectOldNodesInto(u.operand, out)` ✗ |
+
+Here `u` is a `branch … as u` binding — the shape QUICKSTART documents as transparent
+and the shape the compiler relies on everywhere — so the loop-variable framing above
+is too narrow. **What the two cases share is that the deref decision consults type
+information that resolves differently for a same-module type than an imported one.**
+Whatever the fix is, it should be verified against BOTH shapes; a fix aimed only at
+the loop variable will leave this one live.
+
+This is also why the BUG-292 traversal does NOT live in `Ast.zbr`, which was otherwise
+the natural home (a leaf everyone imports, and `src/Ast.zig` hosts free helpers beside
+its declarations). It lives in `selfhost/AstWalk.zbr`, which imports `Ast` — keeping
+the payload types IMPORTED, i.e. the shape that emits correctly.
 
 #### Why no gate could see it, which is the transferable part
 
@@ -353,11 +434,54 @@ SUCCEEDED FIRST** — on 2026-08-17 the diff read "identical" for all four becau
 `rebuild.sh` had FAILED and restored `selfhost/*.zig` from its pre-run snapshot, so the
 emit was produced by the unchanged binary and compared against itself.
 
-**STILL OWED when the check lands:**
-- a must-fail fixture asserting the MESSAGE, not merely that it errored;
-- **QUICKSTART §24 must be fixed in the SAME change** — its own example becomes a compile
-  error the moment this lands, and `doc_example_check` reads live docs. The doc fix stops
-  being optional tidying and becomes a hard dependency.
+**LANDED 2026-08-17.** `zebra -c` now refuses it, with a real source position and a
+caret, in the ~62 ms front-end class:
+
+```
+bug292_old_param_test.zbr:24:23: error: 'old n' is always equal to 'n' — a parameter
+cannot change between entry and exit. Use 'old' on state the method mutates (a field),
+or drop it
+```
+
+Everything owed was delivered with it:
+- `test/bug292_old_param_test.zbr`, `smoke_tc_fail` asserting the MESSAGE, not merely
+  that it errored — the refusal exists to teach the fix, so the text is the deliverable;
+- `test/bug292_old_field_test.zbr`, the POSITIVE CONTROL: `old` on a field still
+  compiles and RUNS, and it discriminates (reading at exit gives `20 == 30` and panics),
+  so the refusal cannot be passing because `old` broke generally;
+- **QUICKSTART §24 rewritten in the same change** — its example was the inert form and
+  became a compile error the moment this landed. It now demonstrates `old` on a FIELD
+  and documents the refusal, with the counterexample marked `# error:` so
+  `doc_example_check` reads it as a counterexample rather than breakage.
+
+One more inert assertion fixed on the way: `contract_old_test` was registered emit-only
+(`smoke`), so nothing asserted what its contract EVALUATED. Now `smoke_run "100"`.
+**A contract can be inert and still emit perfectly** — which is the whole shape of this
+bug, one level up.
+
+**THE DEFECT WAS IN TWO DOCUMENTS, AND THE GATE FOUND THE SECOND.** `STYLE_GUIDE.md`
+§16.3 carried the identical example *and the identical wrong rationale* — "use `old` in
+`ensure` when the parameter is mutated or shadowed inside the function" — which names
+two things the language refuses. I did not look for it; `doc_example_check` failed with
+`1 NEW` the moment the refusal landed and named the file.
+
+That is the gate's whole thesis paying out. The 224 fenced blocks were unverified until
+2026-08-03 precisely because nobody reads every doc when they change a rule, and a
+prose claim about behaviour has no other witness. **Landing a refusal is the cheapest
+time to find every document that taught the thing you just refused** — the compiler
+does the search for you. Worth doing deliberately next time rather than by luck: after
+any new refusal, run `doc_example_check` before assuming the doc work is one file.
+
+**WHERE THE TRAVERSAL LIVES, and why it is not where this note originally said.** The
+plan above says `CgHelpers`. That is wrong, and the note's own precedent argument is
+what misled: `Resolver.zbr:26` imports `CgHelpers` safely because nothing imports the
+Resolver back — but **`CgHelpers` imports `TypeChecker`**, so the same move from the
+TypeChecker closes a cycle. A two-module cycle compiles and runs, so this looked
+survivable; in the real compiler the bare `use` line, with no call sites at all,
+produced a `zebra.exe` that stack-overflows on hello-world (**BUG-295**). `Ast.zbr` was
+tried next and changed the EMIT (BUG-294's second manifestation). It lives in
+**`selfhost/AstWalk.zbr`** — imports `Ast`, imported by CodeGen and TypeChecker, closes
+no loop.
 
 ### BUG-124: Bootstrap codegen — `^T?` constructor arg boxes as `*?T` instead of `?*T` for value-typed T
 

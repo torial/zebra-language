@@ -11,7 +11,8 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp
+use Ast exposing StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
+use AstWalk exposing collectOldNodes
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -4007,9 +4008,59 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
             else
                 pass
 
+# ── BUG-292: `old <parameter>` is inert, so refuse it ────────────────────────
+#
+# `old expr` snapshots `expr` at method entry so an `ensure` can compare entry to
+# exit. A PARAMETER cannot change in between — Zebra refuses both ways of trying
+# (`n = 999` is "cannot assign to constant"; `var n = 999` is "shadows function
+# parameter"). So `old n` is exactly `n`, and an `ensure` written that way passes
+# under ANY implementation of `old`, including a broken one.
+#
+# That is not hypothetical tidiness: QUICKSTART §24 demonstrated the feature in
+# precisely this position, `test/contract_old_compound_test.zbr` inherited the same
+# inertness, and so did the first draft of the boundary probe — because it copied
+# the documentation faithfully. A feature whose canonical example cannot fail is a
+# feature with no coverage.
+#
+# FRONT END, NOT CODEGEN, deliberately: a CodeGen-phase error is invisible to
+# `zebra -c` (front-end only), which would make this a 55th entry in the gap
+# NEXT_STEPS' organizing goal exists to shrink. For a diagnostic, where the user
+# meets it is most of its value.
+#
+# SCOPED TO `old` NODES ONLY. `dm.ensure_` is not walked by this phase at all today
+# — contracts are type-checked nowhere in the selfhost front end — so walking the
+# clause wholesale would have an unmeasured blast radius across the corpus. This
+# collects `old` nodes and inspects their operands; it infers nothing.
+#
+# A LOCAL is NOT refused, and that is the whole reason the check reads `dm.params`
+# rather than "is this an identifier": a local CAN be mutated, so `old <local>` is
+# legitimate and refusing it would be a false accusation against correct code.
+#
+# `o` is a PARAMETER here rather than a loop variable — required, not stylistic.
+# `ExprOld.operand` is `^Expr`, and the selfhost does not auto-deref a `^T` field
+# read off a `for`-loop variable (BUG-294). Reading it off a parameter is the
+# documented-working shape.
+def checkOldIsNotParam(o: ExprOld, params: List(Param), file: str, ctx: InferCtx)
+    branch o.operand
+        on Expr.ident as id
+            var idn: str = id.name
+            for p in params
+                var pn: str = p.name
+                if pn == idn
+                    ctx.addErr(file, o.span.line, o.span.col, "'old " + idn + "' is always equal to '" + idn + "' — a parameter cannot change between entry and exit. Use 'old' on state the method mutates (a field), or drop it")
+        else
+            pass
+
 def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
     branch decl
         on Decl.method as dm
+            # BUG-292. OUTSIDE the `if dm.stmts` guard on purpose: an abstract or
+            # interface method has no body but may still declare an `ensure`, and the
+            # clause is just as inert there.
+            for ens in dm.ensure_
+                var olds: List(ExprOld) = collectOldNodes(ens)
+                for o in olds
+                    checkOldIsNotParam(o, dm.params, file, ctx)
             if dm.stmts as dm_stmts
                 var saved_class: str = ctx.current_class
                 if dm.return_type != nil

@@ -2108,15 +2108,37 @@ def sqrt(x: float): float
 ### `old` snapshots in `ensure`
 
 ```zebra
-def increment(n: int): int
-    ensure
-        result == old n + 1          # snapshot pre-call value of `n`
-    return n + 1
+class Account
+    var balance: int = 0
+
+    def deposit(amount: int)
+        ensure
+            balance == old balance + amount   # `balance` BEFORE the method ran
+        balance = balance + amount
 ```
 
 `old expr` snapshots `expr` at function entry; the snapshot is referenced by
-the post-condition.  Useful when the caller-supplied value is later mutated
-or shadowed inside the function.
+the post-condition.  It earns its keep on **state the method mutates** — a
+field, or anything else whose value at exit differs from its value at entry.
+
+**`old` on a parameter is a compile error, deliberately.**  A parameter cannot
+change between entry and exit: Zebra rejects both ways of trying (`n = 999` is
+*cannot assign to constant*; `var n = 999` is *shadows function parameter*).  So
+`old n` would be exactly `n`, and a post-condition written that way passes under
+any implementation of `old` — including a broken one.
+
+```zebra
+# error: 'old n' is always equal to 'n' — a parameter cannot change between
+#        entry and exit. Use 'old' on state the method mutates (a field), or drop it
+def increment(n: int): int
+    ensure
+        result == old n + 1
+    return n + 1
+```
+
+This section used to *demonstrate* `old` with exactly that inert example, which
+is how the gap was found (BUG-292): the canonical illustration of the feature sat
+in the one position where it provably cannot do anything.
 
 ### Class invariants
 

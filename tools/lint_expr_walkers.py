@@ -55,8 +55,22 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 AST = REPO / "selfhost" / "Ast.zbr"
-SEARCH = ["selfhost/CgHelpers.zbr", "selfhost/CodeGen.zbr", "selfhost/TypeChecker.zbr",
-          "selfhost/Resolver.zbr", "selfhost/Checker.zbr", "selfhost/AstBuilder.zbr"]
+# DERIVED, not listed. This was a hardcoded list of six files until 2026-08-17, and it
+# failed the exact way this gate exists to prevent: `collectOldNodesInto` was moved to a
+# NEW module (selfhost/AstWalk.zbr, for BUG-292) and silently left coverage -- opted-in
+# walkers went 7 -> 6 while the marker count in the tree stayed 7. Nothing failed; the
+# gate just checked less. A hand-maintained oracle guarding against drift is rule 1b, and
+# the fix is to stop maintaining it by hand.
+#
+# Globbing is safe BECAUSE the gate is opt-in: only functions carrying
+# `# expr-walker: exhaustive` are checked, so widening the search cannot add noise -- it
+# can only stop losing walkers. Ast.zbr is excluded as the ORACLE (it declares the
+# variants; it does not walk them).
+SEARCH = sorted(
+    p.relative_to(REPO).as_posix()
+    for p in (REPO / "selfhost").glob("*.zbr")
+    if p.name != "Ast.zbr"
+)
 
 # Two variants bear identifiers WITHOUT holding child expressions, so no structural
 # derivation can find them. Both are hardcoded, and both are named:

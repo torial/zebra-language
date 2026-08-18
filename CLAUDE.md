@@ -21,7 +21,7 @@ history lives.
 - `selfhost/` — the in-progress self-hosted compiler written in Zebra (`*.zbr`).
   Each phase mirrors a file in `src/` (e.g. `Parser.zbr` ↔ `src/Parser.zig`).
   Compiler module files are **PascalCase** to match the Zig `src/` naming
-  (`Ast`, `AstBuilder`, `CgHelpers`, `Checker`, `CodeGen`, `Parser`, `Resolver`,
+  (`Ast`, `AstWalk`, `AstBuilder`, `CgHelpers`, `Checker`, `CodeGen`, `Parser`, `Resolver`,
   `TypeChecker`, `Token`, `Lexer`; `main` stays lowercase per Zig convention).
   Paired `*.zig` files are generated artifacts (`Parser.zbr` → `Parser.zig`).
 - `test/` — integration test suite (`.zbr` fixtures + runners).
@@ -823,6 +823,16 @@ python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUI
                                 #   how BUG-267 hid from structural reasoning) and `ident`
                                 #   (structurally a leaf, yet a usage walker that skips it
                                 #   is broken by definition).
+                                #   THE SEARCH SET IS DERIVED (a glob over selfhost/*.zbr,
+                                #   minus Ast.zbr, which is the ORACLE). It was a HARDCODED
+                                #   LIST OF SIX FILES until 2026-08-17, and it failed the
+                                #   exact way this gate exists to prevent: a walker moved
+                                #   to a NEW module (AstWalk.zbr) and silently left
+                                #   coverage -- opted-in went 7 -> 6 while the marker count
+                                #   in the tree stayed 7. Nothing went red; the gate just
+                                #   checked less. Globbing is safe BECAUSE it is opt-in:
+                                #   only marked walkers are checked, so widening the search
+                                #   cannot add noise, only stop losing walkers.
                                 #   CANNOT SEE: whether a handled variant is handled
                                 #   CORRECTLY, and names inside a zig"…" string. Refuses to
                                 #   report if <25 variants extract, if its list_lit/int_lit
@@ -1421,7 +1431,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **374** <!-- doc-gen: 374 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **481** <!-- doc-gen: 481 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **483** <!-- doc-gen: 483 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

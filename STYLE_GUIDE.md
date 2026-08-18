@@ -992,14 +992,27 @@ def g(user: User)
 
 ### 16.3 `old` snapshots ✅ ESTABLISHED
 
-Use `old expr` in `ensure` when the parameter is mutated or shadowed inside
-the function and you need the original value:
+Use `old expr` in `ensure` for **state the method mutates** — a field, or anything
+else whose value at exit differs from its value at entry:
 ```zebra
-def increment(n: int): int
-    ensure
-        result == old n + 1
-    return n + 1
+class Account
+    var balance: int = 0
+
+    def deposit(amount: int)
+        ensure
+            balance == old balance + amount   # `balance` BEFORE the method ran
+        balance = balance + amount
 ```
+
+**Do not reach for `old` on a parameter — it is a compile error.** A parameter
+cannot change between entry and exit (`n = 999` is *cannot assign to constant*;
+`var n = 999` is *shadows function parameter*), so `old n` would be exactly `n`
+and the post-condition would hold under any implementation of `old`, including a
+broken one.
+
+This section previously advised the opposite — *"when the parameter is mutated or
+shadowed"* — and illustrated it with `result == old n + 1`, describing two things
+the language refuses. See BUG-292; QUICKSTART §24 carried the same example.
 
 ---
 

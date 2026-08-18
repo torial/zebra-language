@@ -1,0 +1,22 @@
+# BUG-292 — THE POSITIVE CONTROL for the `old <parameter>` refusal.
+#
+# `old` on a FIELD is the honest use and must keep working. If this ever stops
+# passing, the sibling's refusal is no longer evidence that `old <param>` is
+# rejected — it is evidence that `old` is broken generally, a different bug.
+#
+# It DISCRIMINATES, which the doc's old example did not: reading `balance` at exit
+# instead of entry would make the ensure `10 == 20` and panic. A control that would
+# pass either way is not a control.
+class Account
+    var balance: int = 0
+
+    def deposit(amount: int)
+        ensure
+            balance == old balance + amount
+        balance = balance + amount
+
+def main()
+    var a = Account()
+    a.deposit(10)
+    a.deposit(10)
+    print("bug292-balance=${a.balance}")

@@ -105,7 +105,7 @@ build_compiler() {
 
 # typechecker is part of the selfhost dep graph as of Phase 16c. It is
 # included here so the round-trip fixed-point check covers it.
-FILES=(Token Lexer Ast Parser Resolver AstBuilder CgHelpers TypeChecker CodeGen Checker main)
+FILES=(Token Lexer Ast AstWalk Parser Resolver AstBuilder CgHelpers TypeChecker CodeGen Checker main)
 
 if [[ ! -x "$ZEBRA" ]]; then
     echo "bootstrap_check: $ZEBRA missing. Run 'zig build' first." >&2

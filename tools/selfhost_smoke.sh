@@ -361,6 +361,9 @@ smoke test/float_suffix_test.zbr
 # ensure without old: defer block checks post-state condition.
 smoke test/contract_ensure_test.zbr
 # ensure + old: snapshot pre-call value, check post-state with _old_N.
+# The run-and-compare upgrade for this one lives further down, with the other BUG-292
+# registrations -- `smoke_run` is not DEFINED until line ~590, and bash resolves a
+# function at call time, so a smoke_run call up here is "command not found".
 smoke test/contract_old_test.zbr
 # ensure + old nested in compound expr (array_lit): regression for collectAndEmitOldSnapshots.
 smoke test/contract_old_compound_test.zbr
@@ -729,6 +732,28 @@ smoke_run_fail test/bug293_xmod_container_test.zbr "expected type '*T', found 'T
 # holder and its controls failed too, which would have made the negative fixture
 # meaningless. Four working receivers, all printing 7.
 smoke_run test/bug294_hat_deref_controls_test.zbr "bug294-local=7"
+
+# ── BUG-292: `old <parameter>` is refused ────────────────────────────────────────
+# A parameter cannot change between entry and exit, so `old n` is exactly `n` and the
+# ensure passes under ANY implementation of `old` -- including a broken one. That is
+# the shape QUICKSTART §24 used to demonstrate the feature with.
+#
+# Asserts the MESSAGE, not merely that it errored: the refusal exists to teach the
+# fix, so the text IS the deliverable.
+#
+# smoke_tc_fail is ALSO what keeps `divergence` honest -- it is the DERIVED source of
+# that gate's "selfhost rejects by design" list, and the selfhost genuinely is supposed
+# to reject this (the bootstrap has no such check). Contrast BUG-294's probe above,
+# where the same registration would have been a lie.
+smoke_tc_fail test/bug292_old_param_test.zbr "'old n' is always equal to 'n'"
+# THE POSITIVE CONTROL: `old` on a FIELD still compiles AND RUNS. Without it the
+# refusal above would also pass if `old` had broken generally. It discriminates --
+# reading `balance` at exit rather than entry makes the ensure 20 == 30 and panics.
+smoke_run test/bug292_old_field_test.zbr "bug292-balance=20"
+# Same reason the doc example was inert, one level up: contract_old_test was
+# registered emit-only, so nothing asserted what its contract EVALUATED. A contract
+# can be inert and still emit perfectly.
+smoke_run test/contract_old_test.zbr "100"
 # The SUBJECT half deliberately lives in test/boundary/bv_hat_deref_loopvar.zbr, not
 # here: as a tracked test/*.zbr it is a SELFHOST GAP by construction and turned
 # `divergence --gate` red (baseline 0). It is pinned there as an @boundary-pending
