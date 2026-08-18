@@ -6,6 +6,262 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-272: a parameter used only inside `ensure … old p` is discarded — ✅ CLOSED UNREACHABLE (2026-08-18)
+
+**Found 2026-08-06** by `tools/lint_expr_walkers.py` on its first run — the only finding
+across the two walkers that opted in, and the same gap I had reached by hand, which is
+some evidence the oracle is calibrated.
+
+```
+class C
+    var v: int = 0
+    def bump(p: int)
+        ensure
+            v != old p
+        v = v + 1
+```
+
+**Plain build fails.** The emit discards `p` and then snapshots it:
+
+```zig
+pub fn bump(self: *C, p: i64) void {
+    _ = p;                    // <- walker says "unused"
+    const _old_0 = p;         // <- but the old-snapshot reads it
+```
+```
+error: pointless discard of local constant
+```
+
+**Same family as BUG-260/BUG-267** — `nameUsedInExpr` has no `old_` case, so a use inside
+an `old` expression is invisible.
+
+**Why it is NOT just a missing branch.** Measured both ways:
+
+| build | snapshot emitted? | is `p` really used? | `_ = p;` |
+|---|---|---|---|
+| plain | yes | **yes** | wrong — breaks the build |
+| `--turbo` | no (contracts stripped) | **no** | **required** |
+
+So `old x` is a use *only when contracts survive*. Adding a plain `on Expr.old_` case
+fixes the default build and breaks `--turbo`, where the parameter genuinely becomes
+unused and the discard is what makes it compile. `nameUsedInExpr` is a pure helper in
+`CgHelpers.zbr` with no view of `strip_contracts`, so this needs a signature change or a
+decision moved to the call site — not a new branch.
+
+Waived in the walker lint with that reason (`# expr-walker-ok: old_`), so it stays visible
+rather than silently accepted.
+
+**Control when fixing:** the program above must compile and run with NO flags **and** with
+`--turbo`; and a parameter that is unused in both modes must still get its discard in
+both. Three of those four combinations pass today, which is why a one-directional fix
+would look convincing.
+
+#### CLOSED 2026-08-18 — UNREACHABLE, not repaired. Read the distinction.
+
+**The walker gap still exists.** `nameUsedInExpr` still has no `on Expr.old_` case, and
+the `# expr-walker-ok: old_` waiver is still in place. Nothing about the analysis was
+fixed.
+
+**What changed is that nothing can steer into it any more.** The dilemma needs a name
+that is BOTH usable inside `old` AND subject to a `_ = x;` discard. Measured:
+
+| candidate | usable inside `old`? | discardable? | verdict |
+|---|---|---|---|
+| parameter | **no** — BUG-292 refuses `old <parameter>` in the front end | yes | unreachable |
+| local | **no** — the snapshot hoists to function ENTRY, so a body-declared local is `use of undeclared identifier` there | yes | unreachable |
+| field | yes | no — fields are not discarded | harmless |
+
+The exact repro in the body above now stops at:
+
+```
+zz_272.zbr:5:22: error: 'old p' is always equal to 'p' — a parameter cannot change
+between entry and exit. Use 'old' on state the method mutates (a field), or drop it
+```
+
+**And identically under `--turbo`**, which is the half that matters here: the refusal is
+a front-end check on what the user WROTE, not on what gets emitted, so it does not
+inherit the flag-dependence that made this bug hard. Verified both ways.
+
+**IT COMES BACK** if `old` is ever made usable on a discardable name — relaxing the
+BUG-292 refusal, or supporting `old <local>`. Whoever does that owns the waived branch.
+The guard in the meantime is `test/bug292_old_param_test.zbr`, which asserts the
+refusal's message.
+
+**A stale citation fixed on the way:** the waiver in `CgHelpers.zbr` said "BUG-269",
+which is a different bug (`extern` returning `str`). It now cites BUG-272.
+
+---
+
+### BUG-292: `old <parameter>` was inert and undocumented-as-such; now REFUSED — ✅ FIXED (closed 2026-08-17)
+
+**Found 2026-08-17** writing `test/boundary/bv_contract_boundary.zbr`. The compiler is
+correct; §24 is not. Found by authoring a probe from the document and noticing the row
+could not fail.
+
+§24 introduces `old` with this example and this rationale:
+
+```zebra
+def increment(n: int): int
+    ensure
+        result == old n + 1          # snapshot pre-call value of `n`
+    return n + 1
+```
+
+> `old expr` snapshots `expr` at function entry … Useful when the caller-supplied value
+> is later **mutated or shadowed** inside the function.
+
+**Both named cases are impossible for a parameter**, measured:
+
+| the doc's case | what the compiler says |
+|---|---|
+| `n = 999` — "later mutated" | `error: cannot assign to constant` |
+| `var n = 999` — "or shadowed" | `error: local constant 'n' shadows function parameter from outer scope` |
+
+A parameter cannot change between entry and exit, so in the example above `old n` is
+**exactly equivalent to `n`**. The canonical demonstration of the feature is the one
+place it provably makes no difference, and the sentence explaining when to reach for it
+describes two things the language refuses.
+
+**`old` is real and works** — on mutable state. `test/contract_old_test.zbr` is the
+honest shape and it discriminates: `ensure balance == old balance + amount` with
+`balance = balance + amount`, where reading at exit would give `100 == 200` and panic.
+
+**Why this matters beyond tidiness.** A reader copying the documented form gets an
+`ensure` that passes under any implementation of `old`, including a broken one. That is
+how a feature ends up with test coverage that cannot fail — `contract_old_compound_test`
+has the same inertness (`val in @[old val, n]` where `val = n`, so correct gives
+`3 in [0,3]` and exit-reading gives `3 in [3,3]`; both true), and so did the first draft
+of the boundary probe, which copied the doc.
+
+**Fix:** make §24's example use a field, as `contract_old_test` does, and correct the
+rationale — `old` earns its keep on state the METHOD mutates, not on caller-supplied
+arguments, which Zebra makes immutable.
+
+**Control when fixing:** the replacement example must be one where reading the value at
+exit gives a DIFFERENT answer — otherwise the doc has been edited without the defect
+being removed.
+
+---
+
+#### IMPLEMENTATION NOTES — `old <parameter>` is to be REFUSED (Sean's call, 2026-08-17)
+
+Sean approved turning the inert form into a refusal: *"refusal helps us to UNGIT"*, and
+*"the message is critical"*. Recorded in full so this does not have to be re-derived.
+
+**PHASE DECISION: the FRONT END, not CodeGen.** A CodeGen-phase error would be invisible
+to `zebra -c` (front-end only), i.e. a 55th entry in `frontend_gap.py`'s 23-of-54 — the
+gap NEXT_STEPS' organizing goal exists to shrink. A refusal that only fires on a full
+compile is a weaker version of the feature, and for a DIAGNOSTIC where the user meets it
+is most of its value.
+
+**INSERTION POINT: `checkDecl`, `selfhost/TypeChecker.zbr:4012` (`on Decl.method as dm`).**
+This is the whole reason the change is small: `dm.params` AND `dm.ensure_` are both in
+scope there (`Ast.zbr:308-311` puts them on the same node). So the check needs NO
+`InferCtx` change and no param-vs-local distinction — which matters, because a LOCAL can
+be mutated, so `old <local>` is legitimate and refusing it would be a false accusation.
+An earlier plan to add a param-name set to `InferCtx` was unnecessary; `inferExpr` was
+the wrong altitude.
+
+Note `dm.ensure_` is NOT currently walked by the TypeChecker at all — contracts are
+type-checked nowhere in the selfhost front end. Walking them wholesale for the first time
+has an UNMEASURED blast radius (new errors across the corpus); the check must therefore
+scan for `old` nodes specifically rather than type-check the clause.
+
+**TRAVERSAL: shared, already extracted.** `CgHelpers.collectOldNodes(expr, out)` — moved
+there 2026-08-17 from `CodeGen.collectAndEmitOldSnapshots`, whose own comment recorded
+that it *"had drifted from its own twin below"*. Both phases want "the old nodes, in
+order" and differ only in the action, so the walk is shared and the action stays with each
+caller. The `# expr-walker: exhaustive` marker moved with it, so `lint_expr_walkers` still
+covers it — in one place instead of two. `Resolver.zbr:26` already imports from
+`CgHelpers`, so a front-end phase doing this is established, not novel.
+
+**TWO TRAPS ALREADY PAID FOR:**
+
+1. **THE OUT-PARAM SHAPE CANNOT CROSS A MODULE BOUNDARY — RESOLVED 2026-08-17, and
+   the cause is BUG-293.** Two attempts failed the same way and both hypotheses
+   recorded here were wrong; the cause is that a mutated `List(T)` parameter lowers to
+   `*std.ArrayList(T)` while the caller never emits the `&`, because it decides
+   addr-of from the CALLEE'S BODY and the body lookup stops at the module boundary.
+   See BUG-293 for the mechanism, the discriminating experiment, and the fix sketch.
+
+   **What was wrong with the diagnosis, since the pattern repeats.** Both hypotheses
+   (BUG-201, then the payload-type rewrite) were formed **without ever reading the
+   error text**, because `rebuild.sh` filters it out of its log and leaves only the
+   "referenced by" trace. The text was sitting in `/tmp/bs-rebuildA.err` the entire
+   time and names the fault outright:
+   `expected type '*T', found 'T'` at `collectOldNodes(e, _old_nodes)`. Three tool
+   calls, not a third hypothesis. **Read the error before theorising about it.**
+
+   **THE EXTRACTION HAS LANDED**, routed around BUG-293 rather than blocked on it: the
+   out-param recursion (`collectOldNodesInto`) stays PRIVATE to `CgHelpers`, where
+   same-module analysis already emits the `&` correctly, and the exported entry point
+   `collectOldNodes(expr): List(ExprOld)` **returns** the list. Cross-module `List(T)`
+   return was probed first and is clean, including the empty case. The split is
+   documented at the traversal with a pointer to BUG-293, so it can be collapsed back
+   into one function when that is fixed — and not before.
+2. **Order is preserved but NOT because it names anything.** The `_old_N` uid is assigned
+   by AstBuilder and is stable, so re-ordering would not rename snapshots — it would
+   change the SEQUENCE of emitted `const` lines, i.e. a byte diff for no behavioural
+   reason. Keep the order; do not sort.
+
+**VERIFY THE EXTRACTION IS OUTPUT-NEUTRAL BEFORE ADDING THE CHECK.** Emit the four
+contract fixtures (`contract_old_test`, `contract_old_compound_test`, `turbo_test`,
+`contract_ident_test`) before and after and diff. **AND CONFIRM THE REBUILD ACTUALLY
+SUCCEEDED FIRST** — on 2026-08-17 the diff read "identical" for all four because
+`rebuild.sh` had FAILED and restored `selfhost/*.zig` from its pre-run snapshot, so the
+emit was produced by the unchanged binary and compared against itself.
+
+**LANDED 2026-08-17.** `zebra -c` now refuses it, with a real source position and a
+caret, in the ~62 ms front-end class:
+
+```
+bug292_old_param_test.zbr:24:23: error: 'old n' is always equal to 'n' — a parameter
+cannot change between entry and exit. Use 'old' on state the method mutates (a field),
+or drop it
+```
+
+Everything owed was delivered with it:
+- `test/bug292_old_param_test.zbr`, `smoke_tc_fail` asserting the MESSAGE, not merely
+  that it errored — the refusal exists to teach the fix, so the text is the deliverable;
+- `test/bug292_old_field_test.zbr`, the POSITIVE CONTROL: `old` on a field still
+  compiles and RUNS, and it discriminates (reading at exit gives `20 == 30` and panics),
+  so the refusal cannot be passing because `old` broke generally;
+- **QUICKSTART §24 rewritten in the same change** — its example was the inert form and
+  became a compile error the moment this landed. It now demonstrates `old` on a FIELD
+  and documents the refusal, with the counterexample marked `# error:` so
+  `doc_example_check` reads it as a counterexample rather than breakage.
+
+One more inert assertion fixed on the way: `contract_old_test` was registered emit-only
+(`smoke`), so nothing asserted what its contract EVALUATED. Now `smoke_run "100"`.
+**A contract can be inert and still emit perfectly** — which is the whole shape of this
+bug, one level up.
+
+**THE DEFECT WAS IN TWO DOCUMENTS, AND THE GATE FOUND THE SECOND.** `STYLE_GUIDE.md`
+§16.3 carried the identical example *and the identical wrong rationale* — "use `old` in
+`ensure` when the parameter is mutated or shadowed inside the function" — which names
+two things the language refuses. I did not look for it; `doc_example_check` failed with
+`1 NEW` the moment the refusal landed and named the file.
+
+That is the gate's whole thesis paying out. The 224 fenced blocks were unverified until
+2026-08-03 precisely because nobody reads every doc when they change a rule, and a
+prose claim about behaviour has no other witness. **Landing a refusal is the cheapest
+time to find every document that taught the thing you just refused** — the compiler
+does the search for you. Worth doing deliberately next time rather than by luck: after
+any new refusal, run `doc_example_check` before assuming the doc work is one file.
+
+**WHERE THE TRAVERSAL LIVES, and why it is not where this note originally said.** The
+plan above says `CgHelpers`. That is wrong, and the note's own precedent argument is
+what misled: `Resolver.zbr:26` imports `CgHelpers` safely because nothing imports the
+Resolver back — but **`CgHelpers` imports `TypeChecker`**, so the same move from the
+TypeChecker closes a cycle. A two-module cycle compiles and runs, so this looked
+survivable; in the real compiler the bare `use` line, with no call sites at all,
+produced a `zebra.exe` that stack-overflows on hello-world (**BUG-295**). `Ast.zbr` was
+tried next and changed the EMIT (BUG-294's second manifestation). It lives in
+**`selfhost/AstWalk.zbr`** — imports `Ast`, imported by CodeGen and TypeChecker, closes
+no loop.
+
+---
+
 ### BUG-293: a MUTATED container parameter could not be called across a module boundary — ✅ FIXED (closed 2026-08-18)
 
 - **Severity:** Medium — loud (the generated Zig does not compile), so nothing is

@@ -1,0 +1,31 @@
+# BUG-272 — CLOSED UNREACHABLE. This fixture is the guard on that "unreachable".
+#
+# The bug: a parameter used ONLY inside `ensure … old p` was discarded (`_ = p;`) and
+# then read by the snapshot, so a plain build failed with "pointless discard of local
+# constant" — while under `--turbo` the snapshot is stripped, the parameter really IS
+# unused, and the discard is REQUIRED. Fixing the walker one way broke the other.
+#
+# It is unreachable because BUG-292 now REFUSES `old <parameter>` in the front end, so
+# this program never reaches codegen. That is why the assertion below is the BUG-292
+# diagnostic rather than anything about discards.
+#
+# WHY A SEPARATE FIXTURE FROM bug292_old_param_test: that one pins the refusal in
+# general. This one pins THE EXACT SHAPE BUG-272 needed — a parameter whose ONLY use is
+# inside `old`, in a class method with a field, which is what made the discard decision
+# flag-dependent. If `old` is ever made usable on a discardable name (relaxing the
+# refusal, or supporting `old <local>`), this file is what goes red, and the waived
+# `# expr-walker-ok: old_` branch in CgHelpers.zbr becomes live again.
+#
+# Registered smoke_tc_fail: the selfhost is SUPPOSED to reject this, which is also what
+# keeps `divergence` honest (the bootstrap has no such check).
+class C
+    var v: int = 0
+    def bump(p: int)
+        ensure
+            v != old p
+        v = v + 1
+
+def main()
+    var c = C()
+    c.bump(5)
+    print("v=${c.v}")

@@ -724,56 +724,6 @@ the newly-handled construct must be detected, AND something that genuinely lacks
 property must still answer no. A one-sided fix here silently over-reports, which for
 `exprHasTry` would wrap non-throwing expressions.
 
-### BUG-272: a parameter used only inside `ensure … old p` is discarded, and the obvious fix breaks `--turbo`
-
-**Found 2026-08-06** by `tools/lint_expr_walkers.py` on its first run — the only finding
-across the two walkers that opted in, and the same gap I had reached by hand, which is
-some evidence the oracle is calibrated.
-
-```
-class C
-    var v: int = 0
-    def bump(p: int)
-        ensure
-            v != old p
-        v = v + 1
-```
-
-**Plain build fails.** The emit discards `p` and then snapshots it:
-
-```zig
-pub fn bump(self: *C, p: i64) void {
-    _ = p;                    // <- walker says "unused"
-    const _old_0 = p;         // <- but the old-snapshot reads it
-```
-```
-error: pointless discard of local constant
-```
-
-**Same family as BUG-260/BUG-267** — `nameUsedInExpr` has no `old_` case, so a use inside
-an `old` expression is invisible.
-
-**Why it is NOT just a missing branch.** Measured both ways:
-
-| build | snapshot emitted? | is `p` really used? | `_ = p;` |
-|---|---|---|---|
-| plain | yes | **yes** | wrong — breaks the build |
-| `--turbo` | no (contracts stripped) | **no** | **required** |
-
-So `old x` is a use *only when contracts survive*. Adding a plain `on Expr.old_` case
-fixes the default build and breaks `--turbo`, where the parameter genuinely becomes
-unused and the discard is what makes it compile. `nameUsedInExpr` is a pure helper in
-`CgHelpers.zbr` with no view of `strip_contracts`, so this needs a signature change or a
-decision moved to the call site — not a new branch.
-
-Waived in the walker lint with that reason (`# expr-walker-ok: old_`), so it stays visible
-rather than silently accepted.
-
-**Control when fixing:** the program above must compile and run with NO flags **and** with
-`--turbo`; and a parameter that is unused in both modes must still get its discard in
-both. Three of those four combinations pass today, which is why a one-directional fix
-would look convincing.
-
 ### BUG-267: `zig"…"` literals do not participate in MUTATION analysis (usage half ✅ FIXED 2026-08-06)
 <!-- bug-open-ok: PARTIAL — the usage half is fixed and the heading says so, but the MUTATION half is still open, so this belongs in the open ledger. Move it when the write half lands. -->
 

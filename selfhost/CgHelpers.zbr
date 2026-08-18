@@ -533,12 +533,23 @@ def zigLitMentionsWord(code: str, name: str): bool
     return false
 
 # expr-walker: exhaustive
-# expr-walker-ok: old_ — BUG-269. `old x` IS a use, but only when contracts survive.
-#   Under `--turbo` the snapshot is never emitted, so the parameter really is unused and
-#   the discard is REQUIRED; adding a plain `old_` case here would fix the default build
+# expr-walker-ok: old_ — BUG-272 (the citation used to say BUG-269, which is a
+#   different bug entirely). `old x` IS a use, but only when contracts survive: under
+#   `--turbo` the snapshot is never emitted, so the name really is unused and the
+#   discard is REQUIRED. Adding a plain `old_` case here would fix the default build
 #   and break `--turbo`. The walker is a pure helper with no view of `strip_contracts`,
-#   so this needs a signature or a call-site decision, not a missing branch. Measured
-#   both ways before waiving — see BUG-269 for the repro.
+#   so it needs a signature or a call-site decision, not a missing branch.
+#
+#   THE WAIVER STAYS, BUT THE HAZARD IS NOW UNREACHABLE (2026-08-18). The dilemma needs
+#   a name that is BOTH usable inside `old` AND subject to a `_ = x;` discard. That was
+#   parameters only — and BUG-292 now REFUSES `old <parameter>` outright, in the front
+#   end, identically with and without `--turbo` (verified). `old <local>` does not
+#   reach it either: the snapshot hoists to function entry, so a body-declared local is
+#   an undeclared identifier there. A FIELD is never discarded. So the gap remains in
+#   this walker and nothing can currently steer into it.
+#
+#   IT COMES BACK if `old` is ever made usable on a discardable name — relaxing the
+#   BUG-292 refusal, or supporting `old <local>`. Whoever does that owns this branch.
 def nameUsedInExpr(name: str, expr: Expr): bool
     branch expr
         on Expr.ident as id

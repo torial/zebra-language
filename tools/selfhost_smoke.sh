@@ -753,6 +753,11 @@ smoke_run test/bug294_hat_deref_declorder_test.zbr "bug294-declorder=7"
 # to reject this (the bootstrap has no such check). Contrast BUG-294's probe above,
 # where the same registration would have been a lie.
 smoke_tc_fail test/bug292_old_param_test.zbr "'old n' is always equal to 'n'"
+# BUG-272 (closed UNREACHABLE): the exact shape that bug needed -- a parameter whose
+# ONLY use is inside `old`, in a class method with a field. It is refused before it can
+# reach the discard decision that made BUG-272 flag-dependent. If `old` is ever made
+# usable on a discardable name, THIS is what goes red.
+smoke_tc_fail test/bug272_old_param_discard_test.zbr "'old p' is always equal to 'p'"
 # THE POSITIVE CONTROL: `old` on a FIELD still compiles AND RUNS. Without it the
 # refusal above would also pass if `old` had broken generally. It discriminates --
 # reading `balance` at exit rather than entry makes the ensure 20 == 30 and panics.
