@@ -1,31 +1,29 @@
-# @boundary rejects expected type 'T', found '*T'
-# @boundary-pending BUG-294  a `^T` field read off a for-loop variable emits without its deref
+# @boundary runs
 #
-# INTENT (what this SHOULD do): print `bug294-loop=7`. `^T` is heap-indirection and
-# reading the field yields a `T`; the bootstrap emits `sumOf(o.p.*)` and gets exactly
-# that. The selfhost emits `sumOf(o.p)` and hands the generated Zig a `*Point` where a
-# `Point` is required, so it refuses. The directive above therefore records CURRENT
-# behaviour, which is the `@boundary-pending` contract: green and honest about today,
-# ticket printed every run, and it BREAKS when BUG-294 is fixed. When it breaks, do
-# not "fix" it — rewrite it to assert the intent, `@boundary runs` with `bug294-loop=7`.
+# INTENT: reading a `^T` field off a for-loop variable yields a `T`, so this prints
+# `bug294-loop=7`. `^T` is heap-indirection; the deref is the compiler's job.
 #
-# WHY IT LIVES HERE RATHER THAN IN test/. As a tracked `test/*.zbr` it is a SELFHOST
-# GAP by construction — bootstrap compiles it, selfhost does not — which is precisely
-# what `divergence_check --gate` fails on, and it turned that gate red (its baseline is
-# 0 selfhost gaps). Registering it `smoke_tc_fail` would have silenced divergence via
-# its derived MUST_REJECT list, but that list means "the selfhost is SUPPOSED to reject
-# this", which is the opposite of the truth here. `test/boundary/` is outside the main
-# corpus (0 of 482 files) and is the suite whose documented purpose is pinning
-# known-broken behaviour as a tripwire. Nothing was weakened to make a gate green.
+# THIS PROBE WAS `@boundary-pending BUG-294` AND IT FIRED ON ITS OWN when the bug was
+# fixed (2026-08-18) -- "expected the compiler to REJECT this, but it built and ran."
+# That failure is the whole point of a pending probe, and it is now rewritten to assert
+# the intent rather than the defect, exactly as the convention prescribes. Fourth
+# pending tripwire to fire on a real fix.
 #
-# WHY NO GATE SAW THIS BUG UNTIL NOW: the compiler smoke runs is built from the
-# BOOTSTRAP's emit, which is correct, so smoke stayed green (343/343) with the defect
-# live in the compiler's own source. Only the round-trip — selfhost-B built from
-# selfhost-A's OWN emit — ever hands the selfhost's output to `zig`.
+# WHAT IT WAS PINNING: the selfhost emitted `sumOf(o.p)` where the bootstrap emitted
+# `sumOf(o.p.*)`, so the generated Zig got a `*Point` where a `Point` was required. The
+# cause was not the loop: the deref decision was driven by name-keyed side tables whose
+# non-optional half was never seeded for a loop variable -- only a hardcoded special
+# case for `DictEntry.key`/`.value` existed. Fixed by DERIVING the loop variable's `^T`
+# fields from the element struct type, beside the `^T?` derivation that was already
+# there.
 #
-# Controls: test/bug294_hat_deref_controls_test.zbr — parameter, plain local, copied
-# loop variable and whole-struct pass all deref correctly, and that file records two
-# ways a control here silently stops controlling.
+# WHY THIS SHAPE AND NOT `o.p.x`: Zig auto-derefs field access through a single-item
+# pointer, so `o.p.x` compiles with or without the bug and cannot discriminate. The
+# `^T` value has to land where a `T` is required.
+#
+# Controls: test/bug294_hat_deref_controls_test.zbr -- parameter, plain local, copied
+# loop variable and whole-struct pass, all of which ALREADY worked, so this probe is
+# the one that moved.
 struct Point
     var x: int
     var y: int

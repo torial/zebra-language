@@ -732,6 +732,10 @@ smoke_run_fail test/bug293_xmod_container_test.zbr "expected type '*T', found 'T
 # holder and its controls failed too, which would have made the negative fixture
 # meaningless. Four working receivers, all printing 7.
 smoke_run test/bug294_hat_deref_controls_test.zbr "bug294-local=7"
+# BUG-294 second manifestation: a `^T` field read from a function declared BEFORE the
+# struct. The registry was filled as a side effect of EMITTING the struct, so the deref
+# depended on emission order. THE DECLARATION ORDER IN THAT FILE IS THE ASSERTION.
+smoke_run test/bug294_hat_deref_declorder_test.zbr "bug294-declorder=7"
 
 # ── BUG-292: `old <parameter>` is refused ────────────────────────────────────────
 # A parameter cannot change between entry and exit, so `old n` is exactly `n` and the
@@ -754,11 +758,11 @@ smoke_run test/bug292_old_field_test.zbr "bug292-balance=20"
 # registered emit-only, so nothing asserted what its contract EVALUATED. A contract
 # can be inert and still emit perfectly.
 smoke_run test/contract_old_test.zbr "100"
-# The SUBJECT half deliberately lives in test/boundary/bv_hat_deref_loopvar.zbr, not
-# here: as a tracked test/*.zbr it is a SELFHOST GAP by construction and turned
-# `divergence --gate` red (baseline 0). It is pinned there as an @boundary-pending
-# tripwire instead. See that file's header for why silencing divergence via
-# smoke_tc_fail would have been a lie.
+# The for-loop half lives in test/boundary/bv_hat_deref_loopvar.zbr. It was an
+# @boundary-pending tripwire while BUG-294 was open (as a tracked test/*.zbr it was a
+# SELFHOST GAP by construction and turned `divergence --gate` red); the bug was FIXED
+# 2026-08-18, the tripwire fired on its own, and it now asserts the intent -- prints
+# bug294-loop=7.
 
 # BUG-229: the tui emit must ASSIGN _tui_env, not merely declare it.
 smoke_gui_emit_contains test/bug229_tui_env_assigned_test.zbr tui "_tui_env = "

@@ -854,6 +854,31 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     if tc_result as tcr
         g = g.withTcResult(tcr)
     g.library_mode = library_mode
+    # BUG-294: register THIS module's `^T` / `^T?` fields BEFORE any decl is emitted.
+    #
+    # These two sets drive the auto-deref decision for a field read (`obj.field` where
+    # the field is `^T` must emit `obj.field.*`). They were populated for DEPENDENCY
+    # structs here (see `populateRefFields` in the `Decl.use_` arm below) but for the
+    # CURRENT module's structs only inside `genStruct` — i.e. as a side effect of
+    # EMITTING the struct. So the answer depended on whether a function happened to be
+    # generated before or after the struct it reads:
+    #
+    #     def readIt(s: Shape): int      <- declared BEFORE the structs: NO deref, and
+    #         branch s                      the generated Zig does not compile
+    #             on Shape.held as h
+    #                 return sumOf(h.p)
+    #
+    # Moving the same function below the struct declarations made it emit correctly.
+    # That is the same hazard BUG-286 fixed for namespace names, and its comment states
+    # the rule outright: "Registering at emit time would make the answer depend on
+    # whether the namespace happens to precede its first use in the file."
+    #
+    # The oracle is `buildModuleTypes`, which already derives these keys from the AST
+    # and — unlike genStruct's version — distinguishes `^T` from `^T?` (the latter
+    # parses as ref_to(nilable)). genStruct put BOTH in `ref_fields`, so a `^T?` field
+    # was registered as if it were non-optional and `opt_ref_fields` was never
+    # populated for a local struct at all.
+    populateRefFields(g.ref_fields, g.opt_ref_fields, g.module_types)
     # Pre-populate union/enum names and throws_methods from module declarations
     for decl in m.decls
         branch decl
@@ -3645,15 +3670,9 @@ struct Generator
             derive_eq_structs.add(n.name)
         if n.mods.is_derive_debug
             toString_types.add(n.name)
-        # Track ^T fields for auto-deref
-        for decl in n.members
-            if decl is Decl.var_ as fld
-                if fld.type_ != nil
-                    branch fld.type_!
-                        on TypeRef.ref_to
-                            ref_fields.add(makeDottedKey(n.name, fld.name))
-                        else
-                            pass
+        # ^T field tracking for auto-deref moved to the PRE-PASS (BUG-294): doing it
+        # here made the deref depend on emission order, and it also put `^T?` fields in
+        # the non-optional bucket. See the populateRefFields call in generate().
         writeIndent()
         w.emit("pub const ")
         emitTypeName(n.name)                                # BUG-281 B
@@ -7895,13 +7914,20 @@ struct Generator
                 else
                     genExpr(fi.iter)
                 w.emit(".items) |" + vname + "| {\n")
-                # Track for-loop variable deref fields based on element type
-                var iter_member = getMemberFieldName(fi.iter)
-                if iter_member != nil
-                    if iter_member! == "entries"
-                        # List(DictEntry): key and value are ^Expr
-                        for_loop_deref.add(makeDottedKey(vname, "key"))
-                        for_loop_deref.add(makeDottedKey(vname, "value"))
+                # BUG-294: the loop variable's `^T` fields are DERIVED from the
+                # element struct type, below, beside the `^T?` derivation that was
+                # already there. This used to be a hardcoded special case:
+                #
+                #     if iter_member! == "entries"        # List(DictEntry)
+                #         for_loop_deref.add(... "key")
+                #         for_loop_deref.add(... "value")
+                #
+                # -- one field name, two hardcoded members, correct for exactly the
+                # one call site it was written for. Every other `for x in listOfStructs`
+                # whose element has a `^T` field emitted the read WITHOUT its deref, and
+                # the generated Zig did not compile. A comment enumerating what a
+                # default applies to is a hand-maintained oracle wearing documentation
+                # as a disguise (the isStringExpr hazard, rule 1b).
                 # If iterating a List(str), mark the loop variable: a string
                 if fi.iter is Expr.ident as iter_id
                     if localIsListStr(iter_id.name)
@@ -7928,6 +7954,21 @@ struct Generator
                                 if for_orf_e.startsWith(for_st_dot)
                                     ig.opt_ptr_field_bindings.add(makeDottedKey(vname, extractAfterDot(for_orf_e)))
                                 for_oi += 1
+                            # BUG-294: the same derivation for NON-optional `^T` fields.
+                            # Only the `^T?` half existed, so `for o in xs` followed by
+                            # `f(o.field)` emitted no `.*` -- the exact shape
+                            # test/boundary/bv_hat_deref_loopvar.zbr pins. Note this
+                            # feeds `for_loop_deref`, not `ptr_field_bindings`: the
+                            # read site checks for_loop_vars FIRST and consults only
+                            # for_loop_deref for a loop variable, so seeding the other
+                            # set would be silently ignored.
+                            var for_rf = ref_fields.items()
+                            var for_ri: int = 0
+                            while for_ri < for_rf.len
+                                var for_rf_e: str = for_rf.at(for_ri)
+                                if for_rf_e.startsWith(for_st_dot)
+                                    ig.for_loop_deref.add(makeDottedKey(vname, extractAfterDot(for_rf_e)))
+                                for_ri += 1
                         # BUG-196: a nested-CONTAINER element (List(List(T)) / List(HashMap))
                         # — bind the loop var to the element type so `.len`/`.at`/`.add`
                         # dispatch on the binding. The inner container was previously

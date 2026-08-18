@@ -1,0 +1,40 @@
+# BUG-294, SECOND MANIFESTATION — a `^T` field read from a function declared BEFORE
+# the struct it reads.
+#
+# The deref decision is driven by name-keyed registries, and the current module's `^T`
+# fields used to be registered as a SIDE EFFECT OF EMITTING the struct (`genStruct`).
+# So the answer depended on emission order: move this function below the struct
+# declarations and it compiled; leave it above and the generated Zig got a `*Point`
+# where a `Point` was required.
+#
+# That is the same hazard BUG-286 fixed for namespace names, whose comment states the
+# rule: "Registering at emit time would make the answer depend on whether the namespace
+# happens to precede its first use in the file."
+#
+# THE ORDER BELOW IS THE ASSERTION. Do not tidy the declarations into dependency order
+# — putting the structs first is exactly what makes this fixture stop testing anything.
+def sumOf(pt: Point): int
+    return pt.x + pt.y
+
+def readIt(s: Shape): int
+    branch s
+        on Shape.held as h
+            return sumOf(h.p)
+        else
+            return 0
+
+struct Point
+    var x: int
+    var y: int
+
+struct Holder
+    var p: ^Point
+    cue init(pt: Point)
+        p = pt
+
+union Shape
+    held: ^Holder
+
+def main()
+    var s: Shape = Shape.held(Holder(Point(x: 3, y: 4)))
+    print("bug294-declorder=${readIt(s)}")

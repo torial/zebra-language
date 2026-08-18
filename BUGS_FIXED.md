@@ -6,6 +6,163 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-294: `^T` field reads lost their deref — name-keyed registries, seeded by emission order — ✅ FIXED (closed 2026-08-18)
+
+- **Severity:** Medium — loud (the generated Zig does not compile), and **selfhost
+  only**: the bootstrap emits the deref correctly, so this is a divergence in which
+  the shipping compiler is the wrong one.
+- **Status:** OPEN. Pinned by `test/boundary/bv_hat_deref_loopvar.zbr` plus a
+  four-receiver control fixture.
+
+**Found 2026-08-17** by the **round-trip**, and how it was found is most of its value.
+
+#### Symptom, measured
+
+For one line — `sumOf(o.p)` where `o` is a `for`-loop variable and `Node.p: ^Point`:
+
+| compiler | emitted |
+|---|---|
+| bootstrap | `_zbr_fn_sumOf(o.p.*)` |
+| **selfhost** | `_zbr_fn_sumOf(o.p)` |
+
+`zig` then rejects it: `expected type 'T', found '*T'`.
+
+#### It is the LOOP VARIABLE, not `^T` reads generally
+
+Four receiver shapes deref correctly and are pinned as controls:
+
+| receiver | emitted | |
+|---|---|---|
+| parameter | `o.p.*` | ✓ |
+| plain local | `first.p.*` | ✓ |
+| loop variable copied into a local | `copied.p.*` | ✓ |
+| loop variable passed whole to a method | `viaParam(o)` | ✓ |
+| **`for`-loop variable, field read** | `o.p` | ✗ |
+
+This also explains why the construct has worked forever elsewhere in the compiler:
+`^T` payloads are normally reached through a `branch … as o` binding, where QUICKSTART
+documents `^T` as *transparent*. A plain `for` over a `List` of payload structs is a
+shape the compiler's own source had never used.
+
+#### SECOND MANIFESTATION — the same read, same source, different MODULE
+
+Found later the same day, moving this traversal around for BUG-292. Identical source
+text emits differently depending on whether the `^T` payload type is IMPORTED or
+declared in the SAME module:
+
+| where `collectOldNodesInto` lived | `Expr` is | emitted |
+|---|---|---|
+| `CgHelpers.zbr` (`use Ast exposing Expr, …`) | imported | `collectOldNodesInto(u.operand.*, out)` ✓ |
+| `Ast.zbr` (declares `Expr`) | same-module | `collectOldNodesInto(u.operand, out)` ✗ |
+
+Here `u` is a `branch … as u` binding — the shape QUICKSTART documents as transparent
+and the shape the compiler relies on everywhere — so the loop-variable framing above
+is too narrow. **What the two cases share is that the deref decision consults type
+information that resolves differently for a same-module type than an imported one.**
+Whatever the fix is, it should be verified against BOTH shapes; a fix aimed only at
+the loop variable will leave this one live.
+
+This is also why the BUG-292 traversal does NOT live in `Ast.zbr`, which was otherwise
+the natural home (a leaf everyone imports, and `src/Ast.zig` hosts free helpers beside
+its declarations). It lives in `selfhost/AstWalk.zbr`, which imports `Ast` — keeping
+the payload types IMPORTED, i.e. the shape that emits correctly.
+
+#### Why no gate could see it, which is the transferable part
+
+The compiler that smoke runs is built from the **bootstrap's** emit, and the bootstrap
+is correct — so the binary behaves perfectly and **smoke stayed green (343/343)** with
+this defect live in the source. Only `bootstrap_check` builds selfhost-B from
+**selfhost-A's own emit**, i.e. only the round-trip ever hands the selfhost's output to
+`zig`. It went red immediately.
+
+That is the round-trip's documented purpose stated in the negative, and worth keeping:
+*a green smoke suite says nothing about what the selfhost emits for the selfhost.*
+
+#### A note on the fixture, because the first draft was wrong
+
+The controls initially failed too, which would have made the negative fixture
+meaningless. Two ways this fixture can silently stop controlling:
+
+- `o.p.x` does **not** discriminate — Zig auto-derefs field access through a
+  single-item pointer, so it compiles either way. The `^T` value has to land where a
+  `T` is required.
+- The holder must be a **struct** with a `^Struct` payload boxed by assignment. A
+  `^int` payload does not box on assignment at all, and a **class** holder brings in
+  the class auto-box rule (`concept_zebra-class-auto-box-rule`) — either makes the
+  controls fail for an unrelated reason.
+
+#### Control when fixing
+
+The four control receivers must keep printing 7 (a fix that over-applies would break
+them by double-dereferencing), and `test/boundary/bv_hat_deref_loopvar.zbr` — an
+`@boundary-pending BUG-294` tripwire — **goes red when fixed**, which is the signal to
+rewrite it as `@boundary runs` asserting `bug294-loop=7`. Verify with the round-trip,
+not with smoke: smoke runs a compiler built from the BOOTSTRAP's emit, which is
+correct, so it cannot see this class at all.
+
+**The fix is SELFHOST-ONLY.** The bootstrap already emits `o.p.*` for every receiver
+shape, verified directly — so there is no bootstrap half to mirror, and the standing
+rule (the bootstrap need only still COMPILE the selfhost source) is unaffected.
+
+**Where the pin lives, and why it is not in `test/`.** As a tracked `test/*.zbr` this
+probe is a SELFHOST GAP by construction, which is exactly what `divergence_check
+--gate` fails on — and it turned that gate red against its 0-gap baseline. Registering
+it `smoke_tc_fail` would have silenced divergence through its derived `MUST_REJECT`
+list, but that list asserts *"the selfhost is SUPPOSED to reject this"*, which is the
+opposite of the truth here. `test/boundary/` is outside the main corpus (0 of 482
+files) and is the suite whose stated purpose is pinning known-broken behaviour as a
+tripwire. **Nothing was weakened to make a gate green** — and note that BUG-293's
+fixture needs none of this, because the bootstrap fails it too, so it lands as an
+agree-fail rather than a gap.
+
+
+#### THE FIX (2026-08-18) — one root, both manifestations
+
+The deref decision is driven by name-keyed side tables (`ref_fields` /
+`opt_ref_fields` -> `for_loop_deref` / `ptr_field_bindings`) rather than by asking the
+type. Both manifestations were holes in how those tables get SEEDED, and each hole had
+its own flavour of the same mistake:
+
+1. **The loop-variable half was a hardcoded special case.** The `^T?` derivation existed
+   (infer the iterable's element type, get the struct name, scan `opt_ref_fields`); the
+   non-optional half did not. In its place:
+
+   ```zebra
+   if iter_member! == "entries"        # List(DictEntry)
+       for_loop_deref.add(... "key")
+       for_loop_deref.add(... "value")
+   ```
+
+   One field name, two hardcoded members, correct for exactly the one call site it was
+   written for. Replaced by the derivation, sitting beside its `^T?` twin.
+
+2. **The current module's fields were registered as a side effect of EMITTING the
+   struct** (`genStruct`), so the answer depended on whether a function was generated
+   before or after the struct it reads. Dependencies were already pre-registered via
+   `populateRefFields`; the local module now is too, from `buildModuleTypes` — which
+   additionally distinguishes `^T` from `^T?`, where `genStruct` put both in the
+   non-optional bucket and left `opt_ref_fields` empty for local structs entirely.
+
+**The removed special case was verified subsumed, not merely deleted.** `DictEntry.key`
+and `.value` are `^Expr`, so the derivation covers them — and the compiler's own source
+is full of `for entry in dl.entries`, so the ROUND-TRIP is the witness that inference
+really does resolve that iterable to `List(DictEntry)`. It passes byte-identical.
+
+**Pinned by three fixtures and a boundary probe**, and the probe is the interesting one:
+`test/boundary/bv_hat_deref_loopvar.zbr` was an `@boundary-pending BUG-294` tripwire and
+**fired on its own** when the fix landed ("expected the compiler to REJECT this, but it
+built and ran"), which is exactly what a pending probe is for. It now asserts the intent.
+Fourth pending tripwire to fire on a real fix.
+
+`test/bug294_hat_deref_declorder_test.zbr` pins manifestation 2 — **its declaration
+order IS the assertion**; tidying the structs above the functions makes it stop testing
+anything.
+
+**Verified:** round-trip byte-identical (the load-bearing one, since the compiler's own
+source depends on the removed special case), boundary 29/0, controls unchanged.
+
+---
+
 ### BUG-088: def-level `try/catch` in non-void return function falls off the end — ✅ FIXED (closed 2026-08-17)
 - **Severity:** Medium (correctness — Zig refuses to compile the generated code)
 - **Status:** Fixed
