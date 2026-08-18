@@ -1085,6 +1085,30 @@ The last row is the one that keeps the rest honest; see its header for why.
 meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
 
+**TWO MORE FULL TIERS, 30/30 EACH IN ONE INVOCATION, overnight 2026-08-18** — BUG-294
+(`8d26aad`) then BUG-293 (`e7b9679`). smoke 348 -> 349, `compile_check` **270/0/2** in
+both runtime shapes, `output_sweep` 358 behaviour-identical, `full_sweep` 0 vs 374,
+`divergence` **0 selfhost gaps**, `boundary` 29/0 throughout.
+
+**The transferable half is that both bugs were SEEDING failures, not logic failures.**
+Each had a correct decision procedure fed by a registry that was populated wrongly:
+
+- BUG-294 — `for_loop_deref` was seeded by a HARDCODED special case (`if iter_member ==
+  "entries"`, adding `key` and `value`), correct for the single call site it was written
+  for; and the current module's `^T` fields were registered as a side effect of EMITTING
+  the struct, so the answer depended on generation order. Both replaced by derivations.
+  Note the second is the SAME hazard **BUG-286** fixed for namespace names — its comment
+  already states the rule, and it recurred anyway in a neighbouring registry.
+- BUG-293 — `fn_param_lists` crossed the module boundary (§27b) and the BODY did not, so
+  `paramNeedsAddrOf` answered "no addr-of" for want of evidence.
+
+**And a gate had silently stopped checking, caught only by arithmetic.**
+`lint_expr_walkers` carried a HARDCODED list of six files; moving a walker to a new
+module took opted-in from 7 to 6 while the marker count in the tree stayed 7. Nothing
+went red. Its search set is now derived by glob. **When a count moves for a reason you
+can explain, reconcile it against an independent oracle anyway** — the explanation and
+the loss looked identical.
+
 **FULL tier 2026-08-17: 30/30 PASS, IN ONE INVOCATION** (`JOBS=2 bash tools/gates.sh
 --full`, start to finish, on the committed tree). smoke **344/344**, round-trip
 byte-identical, `compile_check` **266/0/2** in BOTH runtime shapes, `output_sweep` 358

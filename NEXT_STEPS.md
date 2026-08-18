@@ -182,6 +182,23 @@ loud; it does not make a language refuse to have opinions.
   deliberately after the next one. (2) A refusal needs a POSITIVE control that
   discriminates, or you have only proved the compiler can say no.
 
+- [x] **BUG-294 + BUG-293 — FIXED overnight 2026-08-18** (`8d26aad`, `e7b9679`), both
+  FULL tier 30/30 in one invocation. Not UNGIT items themselves, but they came out of
+  BUG-292's placement hunt and both share its moral: **the defect was in how a decision
+  gets SEEDED, not in the decision.**
+  - BUG-294 (`^T` deref) had two manifestations and ONE root — the deref is driven by
+    name-keyed side tables, and the loop-variable half was a hardcoded special case for
+    `DictEntry.key`/`.value` while the current module's fields were registered as a side
+    effect of EMITTING the struct. Fixed by deriving both. The removed special case was
+    proven subsumed by the round-trip, not merely deleted.
+  - BUG-293 (cross-module container out-param) was a mirror: `fn_param_lists` crossed
+    the module boundary under §27b and the BODY did not, so the caller could not tell
+    whether to pass `&`. It now travels the same route.
+  - **Two pending tripwires fired on their own** when the fixes landed, which is the
+    convention working: `bv_hat_deref_loopvar` and `bug293_xmod_container_test` both
+    passed by asserting broken behaviour, went red on the fix, and were rewritten to
+    assert intent.
+
 - [ ] **U1 — `for-else` silently DROPS the `else` block** on HashMap /
   string-split / chars iterators (BUG-16; QUICKSTART §26, §27#11). This is the
   sharpest item: not a wrong answer but *code the author wrote, deleted with no
