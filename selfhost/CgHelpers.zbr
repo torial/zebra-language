@@ -222,6 +222,21 @@ def typeRefStr(tr: TypeRef): str
 #
 # List(^Expr) cases (list_lit, array_lit, tuple_lit) are skipped -- see note.
 
+# expr-walker: exhaustive
+# expr-walker-ok: lambda — DELIBERATE, and the counterfactual was RUN rather than
+#   argued. A `?` inside a lambda body belongs to the LAMBDA's error context, not the
+#   enclosing method's: the lambda is emitted as its own error-returning function, and
+#   the enclosing body only becomes throws if it CALLS it with `?` — which is an
+#   `Expr.try_` in the body and is caught by the arm above. Adding a lambda arm here
+#   marks the enclosing method throws spuriously. Measured 2026-08-18 by adding it:
+#   `def build(): int` with `var f = def(x: int): int = mayFail(x)?` and no other `?`
+#   went from printing 7 to `error: cannot print error union without a specifier`,
+#   because build() had acquired an error union it never produces.
+# expr-walker-ok: ident — `try` is its own variant (Expr.try_), built from the `?`
+#   postfix. A bare identifier cannot BE one; this walker hunts a node KIND, not a name.
+# expr-walker-ok: zig_lit — a raw `zig"…"` literal is opaque text and cannot contain a
+#   Zebra `try` node (the BUG-267 shape: whatever is in there is invisible to a
+#   structural walk, and a Zig `try` in it is Zig's business, not ours).
 def exprHasTry(expr: Expr): bool
     branch expr
         on Expr.try_
@@ -1900,6 +1915,10 @@ def stmtMutatesSelf(s: Stmt): bool
             return true
 
 # True if `e` contains ANY call (a callee may take *self). Mirrors src/CodeGen.zig.
+# expr-walker: exhaustive
+# expr-walker-ok: ident — this hunts a node KIND (any call), and a bare identifier is
+#   not a call. `f` alone is an ident; `f()` is Expr.call, which IS handled.
+# expr-walker-ok: zig_lit — opaque text; a call inside it is Zig's, not Zebra's.
 def exprHasSelfCall(e: Expr): bool
     branch e
         on Expr.call

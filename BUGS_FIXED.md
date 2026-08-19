@@ -627,9 +627,47 @@ was found by a probe here failing for a different reason than predicted.
 `bodyUsesAnyField`/`bodyUsesAnyMethod` checks cannot mask it) and
 `bug274_this_in_contract_test` (+ `smoke_turbo`).
 
-**THE REST OF THE SURVEY IS STILL OPEN** and this entry stays for it: `exprHasTry` (10
-gaps) and `exprHasSelfCall` (2) are untouched, and their counts carry the same `ident`
-inflation. Verified: round-trip byte-identical, smoke 354/354.
+#### THE REST OF THE SURVEY, CLOSED 2026-08-18 — and its numbers had ROTTED
+
+`exprHasTry` and `exprHasSelfCall` are now opted in too, and the outcome is **no new
+arms**, which is a legitimate result and not a shrug:
+
+| walker | survey said | actually, today | resolution |
+|---|---|---|---|
+| `exprHasTry` | 10 gaps | **3** | all waived with receipts |
+| `exprHasSelfCall` | 2 gaps | **0** | already exhaustive (15 arms) |
+
+**THE SURVEY'S COUNTS WERE STALE**, and re-deriving them from the lint instead of
+trusting the table is what showed it — the walkers were extended between 2026-08-07 and
+now. Working from the recorded numbers would have meant adding arms for variants
+already handled, and this entry's own warning against working it by counting turns out
+to apply to its own table.
+
+**`exprHasTry`'s lambda gap is a DELIBERATE non-fix, and the counterfactual was RUN.**
+A `?` inside a lambda body belongs to the LAMBDA's error context: the lambda is emitted
+as its own error-returning function, and the enclosing body becomes throws only if it
+CALLS it with `?`, which is an `Expr.try_` the existing arm already catches. Adding the
+arm marks the enclosing method throws spuriously — measured by adding it and rebuilding:
+
+```
+def build(): int
+    var f = def(x: int): int = mayFail(x)?
+    return 7
+```
+
+went from printing `7` to `error: cannot print error union without a specifier`,
+because `build()` had acquired an error union it never produces. Arm reverted, waiver
+written with that receipt.
+
+`ident` and `zig_lit` are waived on both walkers for the same reasons as
+`exprMentionsThis`: these hunt a node KIND, and a bare identifier cannot BE a `try` or
+a call; a raw `zig"…"` literal is opaque text.
+
+**BUG-274 IS NOW COMPLETE.** Four broad walkers surveyed, one fixed with ten arms, two
+waived-with-receipts, one already clean. Opted-in walkers 2 → 10.
+
+Verified: round-trip byte-identical, smoke 354/354 at the time of the exprMentionsThis
+fix.
 
 ---
 
