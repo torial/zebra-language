@@ -128,4 +128,3 @@
 218	`str + int` is diagnosed in an annotated context but LEAKS to Zig in a
 219	`sys.run` DEADLOCKS when a child writes more than a pipe buffer to std
 222	stdlib calls accept TOO FEW arguments — `s.count()` compiles and panic
-279	`zig build test` is red on committed code, in no gate tier — ⚠ LEGS 1+

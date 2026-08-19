@@ -785,11 +785,18 @@ build would put `full_sweep` and `smoke` in the red for known, filed debt.
 > false, which is the exact category that gate was built to catch, and the same reason
 > this bug existed at all.
 >
-> Baselined (127 unpinned; the diff is one line, BUG-279 and nothing else — checked, so
-> the re-baseline cannot have absorbed unrelated drift). **It should be REMOVED from the
-> baseline the moment the unit/integration legs are gated**, because at that point the
-> pins really do run. That is the clearing condition, and it is the same act as the
-> recommendation below.
+> **CLEARED 2026-08-19, by the very fix it argued for.** It was baselined for a few
+> hours with the clearing condition written down — *"remove it the moment the
+> unit/integration legs are gated, because at that point the pins really do run"* — and
+> that is exactly what happened: `tools/zig_test_check.sh` carries a `# pins: BUG-279`
+> claim, the `# pins:` mechanism only counts when the script is REGISTERED IN gates.sh,
+> and it now is. Debt 127 -> 126, the diff a single line, checked both times so a
+> re-baseline could not absorb unrelated drift.
+>
+> Worth keeping as a pattern: the gate did not merely complain, it **named the condition
+> under which it would stop complaining**, and satisfying that condition was the same act
+> as fixing the underlying structural gap. A baseline entry with a written clearing
+> condition is a to-do with an owner; one without is just debt.
 >
 > **Recommended (Sean's call, not taken unilaterally):** add unit + integration +
 > escape-hatches to the QUICK tier as one gate, and list `zig build test` itself in
