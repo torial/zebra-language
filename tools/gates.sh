@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# There are 22 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 22 = grep -c '^run "' tools/gates.sh -->
+# There are 23 gates in the QUICK tier alone, with genuinely different blind spots  <!-- doc-gen: 23 = grep -c '^run "' tools/gates.sh -->
 # (CLAUDE.md explains each), plus EIGHT more in FULL — 30 total. The count in this
 # sentence has been wrong before: it said "seven" while twelve were registered, and
 # doc_lint cannot catch that class -- a number in prose has no referent to resolve.
@@ -176,6 +176,17 @@ run "doc-example"    "0 NEW"     python tools/doc_example_check.py --quiet
 # grammar.txt -- was generating 9 constructs the parser does not have and never reaching
 # 40 that it does.
 run "grammar-export" "matches"    python tools/grammar_export.py --check
+
+# BUG-279: the ZIG-side test binaries (unit + integration), which were in NO tier and
+# NOT in CLAUDE.md's uncovered table either -- the one state that table exists to make
+# impossible. Three unrelated failures sat on committed code as a result, and two of
+# them were hiding STALE TESTS asserting removed syntax.
+#
+# Deliberately NOT `zig build test`, which is a SUPERSET: it also runs selfhost_smoke
+# (~14 min) and compile_check (~6 min), both already gated here, so the command would
+# cost ~20 minutes of duplication to buy ~4 seconds of new coverage. `test-zig` is the
+# uncovered part alone. escape_hatches joins it once BUG-279 leg 3 clears.
+run "zig-test"       "tests passed"  bash tools/zig_test_check.sh
 run "smoke"          "passed"    bash tools/selfhost_smoke.sh
 run "round-trip"     "PASS"      bash tools/bootstrap_check.sh
 # The only gate that RUNS emitted output, hence the only one that can see BUG-221 —

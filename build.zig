@@ -237,6 +237,23 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(unit_tests).step);
     test_step.dependOn(&b.addRunArtifact(integ_tests).step);
 
+    // BUG-279: the ZIG-side tests alone, with none of the heavy legs `test` also pulls
+    // in. `zig build test` is a SUPERSET — it adds selfhost_smoke (~14 min) and
+    // compile_check (~6 min), BOTH of which the gate tiers already run — so putting the
+    // command itself in a tier would buy ~4 seconds of coverage for ~20 minutes of
+    // duplicated work. These two binaries are covered by NOTHING else.
+    //
+    // That gap is not theoretical: three unrelated failures sat on committed code
+    // because these tests were in neither a tier nor CLAUDE.md's uncovered table, and
+    // two of them turned out to be hiding STALE TESTS asserting removed syntax.
+    //
+    // escape_hatches_check is deliberately NOT here yet — it is currently red on a
+    // page_allocator count review that belongs to another author (BUG-279 leg 3). Add
+    // it once that clears; the gate is written to pick it up with one line.
+    const zigtest_step = b.step("test-zig", "Run ONLY the Zig unit + integration tests (no smoke, no compile_check)");
+    zigtest_step.dependOn(&b.addRunArtifact(unit_tests).step);
+    zigtest_step.dependOn(&b.addRunArtifact(integ_tests).step);
+
     // Selfhost smoke: run tools/selfhost_smoke.sh after building zebra.exe.
     // Exercises the full lex→parse→resolve→TC→codegen pipeline on 10 fixtures
     // without invoking `zig run` — fast enough for the default test step.

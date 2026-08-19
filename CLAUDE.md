@@ -806,6 +806,33 @@ python tools/lint_diag_columns.py  # THE DIAGNOSTIC-POSITION GATE (QUICK tier, ~
                                 #   CANNOT SEE whether a non-zero column is the RIGHT
                                 #   column: it asserts a position was computed, not that
                                 #   it points at the token. 0 NEW = clean.
+bash tools/zig_test_check.sh       # THE ZIG-SIDE TEST GATE (BUG-279, QUICK tier, ~11s):
+                                #   the unit (120) and integration (11) test binaries,
+                                #   which were in NO tier and NOT in the uncovered table
+                                #   either -- the one state that table exists to make
+                                #   impossible. THREE unrelated failures sat on
+                                #   committed code because of it.
+                                #   DELIBERATELY NOT `zig build test`, which is a
+                                #   SUPERSET: it also runs selfhost_smoke (~14 min) and
+                                #   compile_check (~6 min), BOTH already gated, so the
+                                #   command costs ~20 minutes of duplication to buy ~4
+                                #   SECONDS of new coverage. This runs the uncovered
+                                #   part alone, via a `test-zig` step added to build.zig.
+                                #   WHAT THE BROKEN COMPILE WAS HIDING is the reason to
+                                #   care: once the binary ran, two unit tests failed,
+                                #   both asserting syntax the language had REMOVED (bare
+                                #   `print "..."`, the `to!` operator). Each would have
+                                #   failed the day its feature was dropped. They are now
+                                #   INVERTED -- asserting the rejection -- per the
+                                #   precedent U4a set when `aspect` was freed.
+                                #   CONTROLS ON VACUITY: a step that ran nothing also
+                                #   exits 0 silently, so it classifies on the count zig
+                                #   reports and REFUSES (exit 2) if none is present or
+                                #   fewer than 100 ran. Verified by gutting the step's
+                                #   dependencies and watching it refuse.
+                                #   NOT INCLUDED: escape_hatches_check, currently red on
+                                #   a page_allocator review owned elsewhere (leg 3); one
+                                #   line adds it when that clears.
 python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUICK tier).
                                 #   A function that searches the Expr tree for a name is
                                 #   correct only if it descends into every variant that
@@ -1089,7 +1116,7 @@ than "what do we know":
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 74 scripts | <!-- doc-gen: 74 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 75 scripts | <!-- doc-gen: 75 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 51 tracked documents <!-- doc-gen: 51 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
