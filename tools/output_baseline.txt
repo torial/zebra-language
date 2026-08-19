@@ -115,6 +115,9 @@ ok
 ok
 === bug097_ptr_param_chain_test sha1=7a85f4764bbd ===
 ok
+=== bug104_unknown_directive_test sha1=f4cb2f2c73e7 ===
+warning: unknown @-directive '@bogusdirective'; ignored
+bug104: OK
 === bug105_enum_member_positive_test sha1=78988010b890 ===
 red
 === bug116_char_methods_test sha1=79cafc7841e3 ===
@@ -132,6 +135,8 @@ BUG-120 sys.readLine: OK
 === bug121_arena_copyout_test sha1=26639c0fd94d ===
 BUG-121 <<- arena copy-out: OK
 BUG-121 <<- outside arena: OK
+=== bug123_user_init_test sha1=2a0c6bd5526b ===
+bug123: OK
 === bug168_crossmod_prim_return_test sha1=97642600109c ===
 hi zebra!|pre-hi x|hi ahi b|42|5
 bug168: OK
@@ -149,6 +154,8 @@ bug195: 62
 bug196: 43
 === bug198_union_optional_field_test sha1=e0c79ae45b07 ===
 bug198: OK
+=== bug202_preamble_name_collision_test sha1=6232c292ad18 ===
+bug202: OK
 === bug221_transitive_init_test sha1=5a013c495082 ===
 missing
 === bug224_format_multiarg_test sha1=b178570153bd ===
@@ -243,6 +250,10 @@ f
 bug271: OK
 === bug273_assert_diagnostic_test sha1=601d2d0f2270 ===
 bug273: OK
+=== bug274_this_in_contract_test sha1=6682aea8f548 ===
+bug274-contract=1
+=== bug274_this_in_expr_variants_test sha1=a79a1548debf ===
+bug274=7
 === bug275_try_in_container_test sha1=b8c76fd35610 ===
 -1
 -1
@@ -312,6 +323,42 @@ bug286: OK
 113
 42
 bug287: OK
+=== bug290_path_absolute_test sha1=d20f6ad83798 ===
+bug290: OK
+=== bug292_old_field_test sha1=7670380cc81d ===
+bug292-balance=20
+=== bug293_samemod_container_test sha1=9adf484d2ce0 ===
+bug293-same=2
+=== bug293_xmod_container_test sha1=704c52b414eb ===
+bug293-cross=2
+=== bug293_xmod_readonly_test sha1=a737cf196a3b ===
+bug293-readonly=3
+=== bug294_hat_deref_controls_test sha1=5bcb3de62ffa ===
+bug294-local=7
+bug294-param=7
+bug294-copied=7
+bug294-passed=7
+=== bug294_hat_deref_declorder_test sha1=ad180244f980 ===
+bug294-declorder=7
+=== bug295_cycle_test sha1=6afc631070c0 ===
+warning: import cycle: bug295_cycle_test -> bug295_cycle_lib -> bug295_cycle_test
+  a module in a cycle is compiled ONCE and the first import wins, so
+  the second module sees a PARTIAL view of the first. That is well
+  defined for functions and types and UNDEFINED for module-level state:
+  no initialisation order satisfies both directions.
+  fix: move the names they share into a third module that both import.
+bug295-cycle=6
+=== bug295_diamond_test sha1=816340bf1411 ===
+bug295-diamond=17
+=== bug295_shared_state_test sha1=2dc985b71e3d ===
+note: 1 module(s) imported by more than one module AND declaring module-level state:
+  bug295_shared_state_leaf — imported by bug295_shared_state_left, bug295_shared_state_right
+  their state is ONE instance shared by every importer, not a copy per
+  importer: a mutation through one is visible through the others. Each is
+  initialised exactly once, before main.
+bug295-shared=2
+=== bug296_param_in_contract_test sha1=caacf9b1f7f7 ===
+bug296=1
 === build_declarative_test sha1=6859218cdc5a ===
 build declarative: ok
 === build_smoke_test sha1=8bfb8015d704 ===

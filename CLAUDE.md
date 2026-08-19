@@ -201,6 +201,26 @@ bash tools/bootstrap_check.sh   # selfhost round-trip (A/B byte-identical). Blin
                                 #   (1) wrong-but-still-valid Zig (A & B share the bend
                                 #   → identical wrong output, clean diff); (2) any program
                                 #   it never compiles (the test corpus, ad-hoc probes).
+bash tools/positive_set.sh         # THE POSITIVE-SET ENUMERATOR (not a gate) — the
+                                #   tests selfhost_smoke declares must SUCCEED, derived
+                                #   from its own registrations (smoke / smoke_run /
+                                #   smoke_turbo / …; the *_fail helpers are negatives and
+                                #   are excluded). One derivation, TWO consumers, for the
+                                #   same reason corpus_ls.sh exists.
+                                #   IT ALSO OWNS THE SKIP LIST (c_interop_test,
+                                #   zig_interop_test, forgot_parens_test) — tests that
+                                #   need external C/source the standalone emit never
+                                #   materializes. HARNESS LIMITS, NOT BUGS. That list
+                                #   used to live inside compile_check.sh, and when
+                                #   full_sweep gained the same assertion it did not
+                                #   inherit them: c_interop_test, correctly CFAIL in a
+                                #   standalone sweep, would have been reported as a
+                                #   MUST-PASS FAILURE. A gate that libels a working file
+                                #   is one people learn to disbelieve.
+                                #   REFUSES rather than printing an empty set (<100
+                                #   entries = collapsed derivation). That guard fired on
+                                #   its author within minutes of being written, when a
+                                #   dropped newline collapsed 276 files into one string.
 JOBS=3 bash tools/compile_check.sh   # THE INDEPENDENT WITNESS: emits every positive
                                 #   test/*.zbr with the selfhost and runs `zig build-exe`
                                 #   on the output. Catches emit bugs the other two miss
@@ -1050,7 +1070,28 @@ JOBS=2 bash tools/full_sweep.sh --examples --gate  # gate label: `examples_sweep
                                 #   `DEPMISS` ≠ broken: a search-path dep that --output-dir
                                 #   never emitted (lsystem RUNS fine). A gate that libels a
                                 #   working file is one people learn to disbelieve.
-JOBS=2 bash tools/full_sweep.sh --gate   # THE FULL-CORPUS WITNESS: emits + zig-
+JOBS=2 bash tools/full_sweep.sh --gate   # THE FULL-CORPUS WITNESS — and since
+                                #   2026-08-19 it carries TWO legs, because it absorbed
+                                #   compile_check's property rather than duplicating its
+                                #   work. MEASURED: compile_check's positive set (276) is
+                                #   a strict SUBSET of this corpus (499) with ZERO unique
+                                #   entries, and both ran the same
+                                #   `zig build-exe -fno-emit-bin -lc` over the same
+                                #   selfhost emit — so the FULL tier emitted and compiled
+                                #   276 files TWICE, ~8 minutes per run.
+                                #   THE TWO LEGS DIFFER IN KIND, which is why this was
+                                #   not a plain deletion. RELATIVE: 0 regressions vs the
+                                #   baseline — a file OUTSIDE the baseline cannot make it
+                                #   red however broken. ABSOLUTE: every test the smoke
+                                #   suite registers as positive must pass, baseline or
+                                #   not. Dropping compile_check without the second leg
+                                #   would have traded an absolute guarantee for a
+                                #   relative one, silently.
+                                #   Prints both numbers every run.
+                                #   compile_check remains the manual `--only` tool, and
+                                #   compile_check-inline STAYS in the tier: the INLINE
+                                #   runtime shape is watched by nothing else.
+                                #   (was:) emits + zig-
                                 #   typechecks EVERY test/*.zbr (403), not just the ~210
                                 #   compile_check covers. --gate fails on REGRESSION vs
                                 #   tools/full_sweep_baseline.txt (the set that currently
@@ -1116,7 +1157,7 @@ than "what do we know":
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 75 scripts | <!-- doc-gen: 75 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 76 scripts | <!-- doc-gen: 76 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 51 tracked documents <!-- doc-gen: 51 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -1501,7 +1542,7 @@ the table below stands unchanged.
 **Previous sweep 2026-08-02** — 18/18, before those two gates existed.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
-**374** <!-- doc-gen: 374 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
+**390** <!-- doc-gen: 390 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
 while the tracked corpus is **499** <!-- doc-gen: 499 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green

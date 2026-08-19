@@ -287,7 +287,23 @@ if [[ "$MODE" == "full" ]]; then
     # an optimize flag, so users shipped Debug believing otherwise.
     run "release-mode"   "all checks pass" bash tools/release_mode_check.sh
     run "contract-mode"  "checks pass" bash tools/contract_mode_check.sh
-    run "compile_check" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh
+    # compile_check (DEFAULT runtime shape) was REMOVED from this tier 2026-08-19 —
+    # its property now rides on full_sweep, which was already doing the identical work.
+    #
+    # MEASURED, not assumed: compile_check's positive set (276 after skips) is a strict
+    # SUBSET of full_sweep's corpus (499) with ZERO unique entries, and both run the same
+    # `zig build-exe -fno-emit-bin -lc` over the same selfhost emit. The tier was emitting
+    # and compiling those 276 files TWICE, for ~8 minutes.
+    #
+    # THE TWO GATES DIFFERED IN KIND, NOT JUST CORPUS, which is why this was not a plain
+    # deletion: full_sweep is RELATIVE (regression vs a baseline, so a file outside the
+    # baseline cannot make it red) and compile_check is ABSOLUTE (0 FAILED over the
+    # positive set). Dropping it alone would have traded an absolute guarantee for a
+    # relative one. full_sweep now asserts BOTH and prints both numbers.
+    #
+    # compile_check remains the manual tight-loop tool it is documented as (`--only`),
+    # and its --no-runtime-module twin STAYS here: that shape is genuinely unwatched
+    # elsewhere.
     # The same corpus with the INLINE runtime. Since 2026-07-28 the split runtime is
     # the DEFAULT, so this is the mode that would otherwise go unwatched — and it is
     # still live: --no-runtime-module selects it, and the GUI and node-addon paths

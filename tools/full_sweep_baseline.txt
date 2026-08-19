@@ -29,6 +29,7 @@ bug093_strlen_test
 bug094_hashmap_kv_test
 bug096_list_class_ctor_test
 bug097_ptr_param_chain_test
+bug104_unknown_directive_test
 bug105_enum_member_positive_test
 bug116_char_methods_test
 bug117_list_join_test
@@ -37,6 +38,7 @@ bug119_list_field_param_test
 bug119_once_method_test
 bug120_sys_readline_test
 bug121_arena_copyout_test
+bug123_user_init_test
 bug168_crossmod_prim_return_test
 bug172_list_char_test
 bug173_string_coerce_test
@@ -46,6 +48,7 @@ bug193_listdir_test
 bug195_map_param_test
 bug196_nested_list_test
 bug198_union_optional_field_test
+bug202_preamble_name_collision_test
 bug221_transitive_init_test
 bug224_format_multiarg_test
 bug226_tokenize_forheader_test
@@ -71,6 +74,8 @@ bug269_extern_cstr_test
 bug270_extern_int_ambiguity_test
 bug271_deferred_method_type_test
 bug273_assert_diagnostic_test
+bug274_this_in_contract_test
+bug274_this_in_expr_variants_test
 bug275_try_in_container_test
 bug276_http_request_str_test
 bug277_member_name_forced_str_test
@@ -80,6 +85,17 @@ bug280_keyword_idents
 bug283_zig_lit_typeref_test
 bug286_namespace_ctor_test
 bug287_sibling_method_shadow_test
+bug290_path_absolute_test
+bug292_old_field_test
+bug293_samemod_container_test
+bug293_xmod_container_test
+bug293_xmod_readonly_test
+bug294_hat_deref_controls_test
+bug294_hat_deref_declorder_test
+bug295_cycle_test
+bug295_diamond_test
+bug295_shared_state_test
+bug296_param_in_contract_test
 build_declarative_test
 build_smoke_test
 capture_boundary

@@ -120,6 +120,40 @@ if [ "$GATE" = 1 ]; then
   fi
   newp=$(comm -13 "$BASELINE" "$OUT/pass.txt")
   [ -n "$newp" ] && { echo "· new passes (run --update-baseline to lock them in):"; echo "$newp"; }
-  echo "✓ full-sweep gate PASS — 0 regressions vs baseline ($(wc -l < "$BASELINE") tests)"
+
+  # ── ABSOLUTE leg: every POSITIVE test must pass, baseline or no baseline ──────
+  #
+  # This is compile_check's property, asserted here because the work is identical and
+  # was being done TWICE. Measured 2026-08-19: compile_check's 278 files are a strict
+  # SUBSET of this sweep's corpus (499) with zero unique entries, and both run the same
+  # `zig build-exe -fno-emit-bin -lc` over the same selfhost emit. So a FULL tier
+  # emitted and compiled those 278 files twice, for ~8 minutes.
+  #
+  # WHAT WOULD HAVE BEEN LOST by simply dropping compile_check, and why this leg exists:
+  # the two gates differ in KIND, not just corpus. This sweep is RELATIVE (regression vs
+  # a baseline), so a file outside the baseline cannot make it red however broken it is.
+  # compile_check is ABSOLUTE (0 FAILED) over the positive set. Dropping it without this
+  # leg would have quietly traded an absolute guarantee for a relative one.
+  #
+  # The set comes from tools/positive_set.sh -- the same enumerator compile_check uses,
+  # extracted so the two cannot drift on what "positive" means.
+  # UNITS: results.txt/pass.txt hold BARE BASENAMES ("allocate_slice4_test"), while the
+  # enumerator returns PATHS ("test/allocate_slice4_test.zbr"). Compare basenames or the
+  # leg matches nothing and reports the entire positive set as failing -- which is
+  # exactly what the first version did. It failed LOUDLY (all 276), which is the
+  # forgiving kind of wrong; a units bug that mismatched only SOME entries would have
+  # looked like a plausible finding.
+  # One `comm` rather than a grep-per-file loop: 276 process spawns is seconds of pure
+  # overhead on Git Bash, and pass.txt is already sorted by the sweep above.
+  POSN=$(bash "$REPO/tools/positive_set.sh" | wc -l | tr -d ' ')
+  posfail=$(comm -23     <(bash "$REPO/tools/positive_set.sh" | sed 's|.*/||; s|\.zbr$||' | sort -u)     "$OUT/pass.txt")
+  if [ -n "$posfail" ]; then
+    echo "✗ POSITIVE-SET FAILURE — these are registered as MUST-PASS and did not:"
+    printf '%s' "$posfail" | sed 's/^/    /'
+    echo "  (this is compile_check's absolute leg; it does not care about the baseline)"
+    exit 1
+  fi
+
+  echo "✓ full-sweep gate PASS — 0 regressions vs baseline ($(wc -l < "$BASELINE") tests); positive set $POSN/$POSN pass"
   exit 0
 fi

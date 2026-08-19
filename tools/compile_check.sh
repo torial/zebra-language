@@ -71,9 +71,9 @@ if [ "${1:-}" = "--worker" ]; then
   wdir="$OUT/w-$name"; rm -rf "$wdir"; mkdir -p "$wdir"
   main="$wdir/$name.zig"
   if [ "$mode" = bootstrap ]; then
-    "$zebra" $sf_flag --emit-zig "$REPO/$rel" > "$main" 2>/dev/null || { echo "SKIP $name"; exit 0; }
+    "$zebra" $sf_flag --emit-zig "$REPO/$rel" > "$main" 2>/dev/null || { echo "EMITFAIL $name"; exit 0; }
   else
-    "$zebra" $sf_flag --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>&1 || { echo "SKIP $name"; exit 0; }
+    "$zebra" $sf_flag --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>&1 || { echo "EMITFAIL $name"; exit 0; }
   fi
   [ -f "$main" ] || { echo "SKIP $name"; exit 0; }          # library module (no main)
   grep -q "pub fn main" "$main" || { echo "SKIP $name"; exit 0; }
@@ -103,8 +103,10 @@ export CC_SINGLE_FILE="$SF"                   # picked up by --worker
 export CC_INLINE_RT="$RM"                     # picked up by --worker
 mkdir -p "$OUT"
 
-tests=$(grep -hE '^(smoke|smoke_turbo|smoke_test|smoke_run|smoke_run_bootstrap|smoke_warn) +test/' "$SMOKE" \
-        | awk '{print $2}' | sort -u)
+# The derivation moved to tools/positive_set.sh so full_sweep can assert the identical
+# property over the same set. Two copies of "what counts as a positive test" would
+# drift silently the first time a registration helper is added.
+tests=$(bash "$REPO/tools/positive_set.sh") || exit 2
 
 # Build the filtered worklist (apply SKIP / BOOTSTRAP_SKIP / --only up front).
 worklist=""; skip=0
@@ -128,11 +130,28 @@ results=$(printf '%s' "$worklist" | grep -v '^$' \
           | xargs -P"$JOBS" -I{} bash "$0" --worker "$MODE" {})
 
 pass=$(printf '%s\n' "$results" | grep -c '^PASS ' || true)
-fail=$(printf '%s\n' "$results" | grep -c '^FAIL ' || true)
+cfail=$(printf '%s
+' "$results" | grep -c '^FAIL ' || true)
+# EMITFAIL IS A FAILURE, and it used to be counted as a SKIP -- a false green in this
+# gate. Every file in the worklist is a POSITIVE test the smoke suite declares must
+# succeed; if the compiler cannot EMIT it, that is the most serious result possible
+# here, and it was landing in the same bucket as "library module, no main".
+#
+# Found 2026-08-19 while merging this gate's property into full_sweep: a tier run said
+# "275 passed, 0 FAILED, 1 skipped" where standalone gave 276/0/0. The difference was
+# one transient emit failure under load, absorbed silently into the skip count with
+# "0 FAILED" printed beside it. A real emit regression would hide identically.
+# full_sweep already separates EMITFAIL from NOMAIN; this now does too.
+emitfail=$(printf '%s
+' "$results" | grep -c '^EMITFAIL ' || true)
+fail=$((cfail + emitfail))
 wskip=$(printf '%s\n' "$results" | grep -c '^SKIP ' || true)
 skip=$((skip + wskip))
 failed=$(printf '%s\n' "$results" | awk '/^FAIL /{printf " %s", $2}')
 
-echo "compile-check: $pass passed, $fail FAILED, $skip skipped (jobs=$JOBS${ONLY:+, only=$ONLY}${MODE:+, mode=$MODE}$([ "$SF" = 1 ] && echo ", single-file"))"
-[ -n "$failed" ] && echo "FAILED:$failed"
+echo "compile-check: $pass passed, $fail FAILED ($cfail compile, $emitfail emit), $skip skipped (jobs=$JOBS${ONLY:+, only=$ONLY}${MODE:+, mode=$MODE}$([ "$SF" = 1 ] && echo ", single-file"))"
+[ -n "$failed" ] && echo "FAILED (emitted, but zig refused):$failed"
+emitfailed=$(printf '%s
+' "$results" | awk '/^EMITFAIL /{printf " %s", $2}')
+[ -n "$emitfailed" ] && echo "EMITFAIL (compiler could not emit a MUST-PASS test):$emitfailed"
 [ "$fail" -eq 0 ]
