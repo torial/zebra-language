@@ -148,7 +148,7 @@ a session arriving cold can tell what to *skip* rather than guessing:
 | `design` | a design/decision note | read only when touching that subsystem; may describe intent that is not built. Each carries its own `Status:` line |
 | `generated` | produced by a tool | **skip.** Edit the tool, not the file |
 
-**13 of the 51 documents are `historical` or `generated`** <!-- doc-gen: 13 = for f in *.md docs/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
+**13 of the 51 documents are `historical` or `generated`** <!-- doc-gen: 51 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> <!-- doc-gen: 13 = for f in *.md docs/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
 i.e. skippable with confidence. That is the point: the surface area of this repo's
 documentation is what let one wrong claim live in four files at once, and "which of these
 is current?" was previously answerable only by reading them.
@@ -278,6 +278,26 @@ python tools/doc_lint.py           # THE DOC-DRIFT GATE (static, instant, no bui
                                 #   in CLAUDE.md (an undocumented gate is how a tier's
                                 #   meaning drifts — it found 3 on the day it was written);
                                 #   D4 a cited BUG-NNN exists in one of the two ledgers.
+                                #   D8 (2026-08-18) a line carrying a doc-gen ORACLE
+                                #   must not also carry an UN-oracled multi-digit
+                                #   number. D6 checks the numbers that HAVE an oracle;
+                                #   what it cannot see is a line where one number is
+                                #   instrumented and its neighbour is not — the checked
+                                #   half keeps passing, which READS as "this line is
+                                #   verified", while the other rots beside it. Caught on
+                                #   this file's own walker row (`7 of 54`, oracle on the
+                                #   7; the 7 was corrected the moment it moved, the 54
+                                #   had been wrong for some time). First run found 3,
+                                #   one worse than stale: a row reading "161 blocks in
+                                #   25 live docs" whose oracle counted DOCUMENTS, so the
+                                #   visible claim had no instrument while appearing to
+                                #   have one — and both figures were wrong (156, 28).
+                                #   NARROW ON PURPOSE: demanding an oracle for every
+                                #   integer everywhere is unusable noise, but numbers
+                                #   sharing a line were measured at the same moment and
+                                #   rot together. 3 hits, 0 false positives, 51 docs.
+                                #   Fix either way — add an oracle, or reword so the
+                                #   number is not asserted.
                                 #   Append-only records (BUGS.md, BUGS_FIXED.md, the journal,
                                 #   CHANGELOG, dated audits) are REPORTED but not gated: an
                                 #   entry naming a tool deleted three months later is accurate
@@ -1063,7 +1083,7 @@ than "what do we know":
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
 | **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 29 probes / 291 assertions | <!-- doc-gen: 29 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 291 = cat test/boundary/*.expected | grep -c . -->
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
-| **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 10 of 59 walkers, opt-in | <!-- doc-gen: 10 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
+| **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 10 opted in; the gate prints the ratio | <!-- doc-gen: 10 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
@@ -1075,7 +1095,7 @@ than "what do we know":
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords × both compilers |
-| **the docs' EXAMPLES actually parse** | `doc_example_check` | 161 blocks in 25 live docs | <!-- doc-gen: 51 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' -->
+| **the docs' EXAMPLES actually parse** | `doc_example_check` | `live` docs only; the gate prints its own block and doc counts | <!-- doc-gen: 51 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
 

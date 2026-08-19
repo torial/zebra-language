@@ -318,6 +318,52 @@ def check_gen(path, text):
     return hits
 
 
+# --------------------------------------------------------------------------- D8
+# D8 -- on a line that ALREADY carries a doc-gen oracle, every other multi-digit
+# integer must carry one too.
+#
+# WHY THIS EXACT SHAPE. D6 checks the numbers that HAVE an oracle. What it cannot see
+# is a line where one number is instrumented and its neighbour is not: the checked half
+# keeps passing, which READS as "this line is verified", while the unchecked half rots
+# beside it. Caught 2026-08-18 on CLAUDE.md's own walker row -- `7 of 54 walkers`, with
+# an oracle on the 7. The 7 was corrected by D6 the moment it moved; the 54 had been
+# wrong for some time and nothing said so.
+#
+# On its first run it found three, one worse than staleness: a row reading "161 blocks
+# in 25 live docs" whose oracle checked NEITHER number (it counted documents), so the
+# visible claim had no instrument while appearing to have one. Both were stale.
+#
+# WHY THE SCOPE IS NARROW: demanding an oracle for every integer in every document
+# would be unusable noise. But if you instrumented ONE number on a line, its neighbours
+# are the same kind of claim, measured at the same moment, and they rot together.
+# Restricting to already-oracled lines is what makes this gate-grade -- 3 hits, 0 false
+# positives, across 51 documents.
+#
+# THE FIX GOES EITHER WAY, and D6's own guidance already says so: add an oracle, or
+# NAME THE LIST instead -- reword so the bare number is not asserted. A count you
+# cannot express as a command is usually one you should not state in prose.
+_INT = re.compile(r"(?<![\w.])(\d{2,})(?![\w.])")
+
+
+def check_partial_oracle(path, text):
+    """D8 -- an oracled line must not carry un-oracled sibling numbers."""
+    rel = path.relative_to(REPO).as_posix()
+    hits = []
+    for i, ln in enumerate(text.splitlines(), 1):
+        oracles = {m.group(1).strip() for m in DOC_GEN.finditer(ln)}
+        if not oracles:
+            continue
+        prose = ln[:ln.index("<!--")]
+        loose = [n for n in _INT.findall(prose) if n not in oracles]
+        if loose:
+            hits.append(Finding("D8", rel, i,
+                                f"partially-oracled line: {sorted(oracles)} is checked, "
+                                f"but {loose} on the same line is not -- add an oracle, "
+                                f"or reword so the number is not asserted"))
+    return hits
+
+
+
 # --------------------------------------------------------------- positive controls
 # Same discipline as tools/hazard_lint.py: a checker that has stopped checking must not
 # look like a checker that found nothing.
@@ -329,6 +375,8 @@ CONTROLS = {
     "D2": _OK + "described in `docs/definitely_not_a_real_doc.md`\n",
     "D4": _OK + "this was fixed in BUG-9997\n",
     "D6": _OK + "There are 99 gates <!-- doc-gen: 99 = echo 3 -->\n",
+    # 12 is oracled and correct; the 77 beside it is not -- the D8 shape.
+    "D8": _OK + "77 of the 12 things <!-- doc-gen: 12 = echo 12 -->\n",
     "D7": "# A document with no status marker at all\n",
 }
 
@@ -345,7 +393,8 @@ def selftest(verbose=False):
     for code, text in CONTROLS.items():
         fake = REPO / "CONTROL.md"
         hits = (check_refs(fake, text, _CONTROL_TRACKED) + check_bugs(fake, text, known)
-                + check_gen(fake, text) + check_status(fake, text))
+                + check_gen(fake, text) + check_status(fake, text)
+                + check_partial_oracle(fake, text))
         fired = {h.code for h in hits}
         if code not in fired:
             dead.add(code)
@@ -417,6 +466,7 @@ def main():
         hits.extend(check_refs(f, text, keep))
         hits.extend(check_bugs(f, text, known))
         hits.extend(check_gen(f, text))
+        hits.extend(check_partial_oracle(f, text))
 
     # D6 ALSO scans the tooling. The three stale counts that motivated it were in
     # tools/gates.sh, not in a document -- a comment describing a script's own contents
@@ -424,7 +474,9 @@ def main():
     for f in sorted(REPO.glob("tools/*.sh")) + sorted(REPO.glob("tools/*.py")):
         if f.name == "doc_lint.py":
             continue      # our own docstring example and control data are not claims
-        hits.extend(check_gen(f, f.read_text(encoding="utf-8", errors="replace")))
+        _tool_text = f.read_text(encoding="utf-8", errors="replace")
+        hits.extend(check_gen(f, _tool_text))
+        hits.extend(check_partial_oracle(f, _tool_text))
     hits.extend(check_gates(claude_text))
 
     live = [h for h in hits if not archival.get(h.doc)]

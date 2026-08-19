@@ -778,6 +778,19 @@ build would put `full_sweep` and `smoke` in the red for known, filed debt.
 > are **unit, integration and escape-hatches**, and they are cheap — 120+11 tests in ~4s
 > combined, per the summary above.
 >
+> **AND THE bug-fixture GATE INDEPENDENTLY CONFIRMED THAT ARGUMENT.** Marking legs 1+2
+> fixed turned it red: *"1 newly FIXED bug with no test that runs"*. It is RIGHT. The
+> pins for those legs are the two inverted Parser tests — and they only execute under
+> `zig build test`, which no tier runs. So "a test that actually RUNS" is genuinely
+> false, which is the exact category that gate was built to catch, and the same reason
+> this bug existed at all.
+>
+> Baselined (127 unpinned; the diff is one line, BUG-279 and nothing else — checked, so
+> the re-baseline cannot have absorbed unrelated drift). **It should be REMOVED from the
+> baseline the moment the unit/integration legs are gated**, because at that point the
+> pins really do run. That is the clearing condition, and it is the same act as the
+> recommendation below.
+>
 > **Recommended (Sean's call, not taken unilaterally):** add unit + integration +
 > escape-hatches to the QUICK tier as one gate, and list `zig build test` itself in
 > CLAUDE.md's uncovered table with a date. That covers exactly the uncovered set at a
