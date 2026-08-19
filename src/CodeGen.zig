@@ -17807,7 +17807,11 @@ fn generateSnippet(src: []const u8, alloc: Allocator) anyerror![]u8 {
     errdefer out.deinit(alloc);
 
     var aw = std.Io.Writer.Allocating.fromArrayList(alloc, &out);
-    _ = try generate(module, &resolve, null, alloc, &aw.writer, .stub, null, false, null, false, false, false, false, null, false);
+    // BUG-279 leg 2: `generate` grew a 16th parameter (emit_node_addon) and this
+    // helper was never updated, so the unit-test binary did not COMPILE. Passing
+    // false keeps the node-addon post-pass off, which is what every codegen test
+    // here assumes.
+    _ = try generate(module, &resolve, null, alloc, &aw.writer, .stub, null, false, null, false, false, false, false, null, false, false);
     out = aw.toArrayList();
     return out.toOwnedSlice(alloc);
 }

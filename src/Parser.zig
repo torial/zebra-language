@@ -367,10 +367,24 @@ test "parse: for-in loop" {
     try expectAccepts("class Foo\n\tdef run\n\t\tfor item in items\n\t\t\tpass\n");
 }
 
-test "parse: print statement with interpolated string" {
-    // StmtPrint → kw_print ExprList eol
-    // Atom → string_start_double InterpBodyD string_stop_double
-    try expectAccepts("class Foo\n\tdef run\n\t\tprint \"hi ${name}!\"\n");
+test "parse: bare `print` without parens is REJECTED (BUG-279)" {
+    // INVERTED 2026-08-18. This asserted `print "hi ${name}!"` — the pre-`()`-mandatory
+    // Cobra form — and had been wrong since `()` became required on every call. It
+    // could not report that, because the unit-test binary had not COMPILED since the
+    // closure-factory work (BUG-279 legs 1 and 2). Fixing those two compile errors is
+    // what let this finally speak.
+    //
+    // Inverted rather than deleted, matching how U4a handled the freed keywords: the
+    // six `aspect` acceptance tests were replaced by their inverse so the removal
+    // itself stays pinned. A deleted test asserts nothing; this one fails if bare
+    // `print` is ever quietly re-accepted.
+    try expectRejects("class Foo\n\tdef run\n\t\tprint \"hi ${name}!\"\n");
+}
+
+test "parse: parenthesised print is the supported form" {
+    // The positive half, so the inversion above cannot pass because printing broke
+    // generally.
+    try expectAccepts("class Foo\n\tdef run\n\t\tprint(\"hi ${name}!\")\n");
 }
 
 test "parse: chained method call as statement" {
@@ -495,9 +509,15 @@ test "parse: self-method call" {
     try expectAccepts("class Foo\n\tdef run\n\t\t.doIt(42)\n");
 }
 
-test "parse: to! non-nil assertion" {
-    // Expr9 → Expr9 kw_to bang
-    try expectAccepts("class Foo\n\tdef run\n\t\tx = foo() to!\n");
+test "parse: the removed `to!` operator is REJECTED (BUG-279)" {
+    // INVERTED 2026-08-18. `to!` was REMOVED in the §28 review (the postfix `!`
+    // force-unwrap below is what replaced it), and this test kept asserting the old
+    // operator is accepted. Like its sibling above it could not report that, because
+    // the unit-test binary had not compiled since the closure-factory work.
+    //
+    // Inverted rather than deleted so the REMOVAL stays pinned: if `to!` is ever
+    // re-admitted to the grammar, this is what notices.
+    try expectRejects("class Foo\n\tdef run\n\t\tx = foo() to!\n");
 }
 
 test "parse: postfix ! force-unwrap" {

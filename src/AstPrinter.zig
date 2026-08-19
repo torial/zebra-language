@@ -299,6 +299,16 @@ const Printer = struct {
                 try p.w(")", .{});
             },
             .alias_applied => |aa| try p.w("{s}(...)", .{aa.name}),
+            // BUG-279 leg 1: the inline `def(P): R` function type was added to
+            // Ast.TypeRef for the closure-factory work and this printer never grew a
+            // case, so `zig build test` did not COMPILE. Printed in the same
+            // parenthesised style as `.tuple` above; `ret == null` means void.
+            .fn_type => |f| {
+                try p.w("(fn", .{});
+                for (f.params) |prm| { try p.w(" ", .{}); try p.printTypeRef(prm); }
+                if (f.ret) |r| { try p.w(" ->", .{}); try p.printTypeRef(r.*); }
+                try p.w(")", .{});
+            },
         }
     }
 

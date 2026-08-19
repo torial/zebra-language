@@ -727,7 +727,62 @@ shapes **before** touching codegen, and watch `keyword_ident_check.sh` go red fi
 fixture deliberately does *not* carry them today — a corpus file neither compiler can
 build would put `full_sweep` and `smoke` in the red for known, filed debt.
 
-### BUG-279: `zig build test` is red on committed code, in no gate tier, for three unrelated reasons
+### BUG-279: `zig build test` is red on committed code, in no gate tier — ⚠ LEGS 1+2 FIXED 2026-08-18; leg 3 is someone else's review
+
+> **LEGS 1 AND 2 FIXED 2026-08-18, verified per-step rather than by silence:**
+>
+> ```
+> Build Summary: 8/10 steps succeeded (1 failed); 131/131 tests passed
+> +- run test unit          120 pass (120 total)
+> +- run test integration    11 pass  (11 total)
+> +- run bash success  6m    compile_check: 276 passed, 0 FAILED
+> +- run bash failure        escape_hatches_check      <- leg 3, below
+> +- run bash success 14m    selfhost smoke: 359/359
+> ```
+>
+> Leg 1: `AstPrinter.printTypeRef` gained the `.fn_type` case (printed like `.tuple`;
+> `ret == null` is void). Leg 2: the codegen test helper now passes the 16th argument,
+> `emit_node_addon = false`. **The ticket's line number for leg 2 was STALE** — 17750 is
+> `findMainClass` today — so the call was found by searching, not by trusting the
+> coordinate.
+>
+> **THE CONTROL IN THIS TICKET EARNED ITS KEEP, and it is the reason the real find
+> surfaced.** It demanded the run PHASE be reached, "not merely the compile error
+> disappearing". Once the binary ran, **two unit tests failed — both asserting syntax the
+> language had REMOVED**:
+>
+> | stale test | asserted |
+> |---|---|
+> | `parse: print statement with interpolated string` | `print "hi ${name}!"` — the pre-`()`-mandatory Cobra form |
+> | `parse: to! non-nil assertion` | `x = foo() to!` — the operator §28 removed |
+>
+> Each would have failed the day its feature was dropped, if anyone could have run it.
+> **That is the true cost of legs 1 and 2**: not two compile errors, but two false claims
+> about the language sheltering behind them — one of them a construct the grammar is
+> supposed to REJECT.
+>
+> Both were **inverted, not deleted**, following the precedent U4a set when `aspect` was
+> freed ("the six Parser acceptance tests … replaced by their inverse"). A deleted test
+> asserts nothing; an inverted one pins the removal. A positive `print(...)` control was
+> added so the inversion cannot pass because printing broke generally. 119 -> 120 tests.
+>
+> **LEG 3 IS UNTOUCHED AND DELIBERATELY SO.** It still fires (70 vs 72). Every
+> `page_allocator` use in the preamble carries a lifetime comment (arena-rewind survival,
+> cross-thread channels/pools), but WHICH TWO ARE NEW needs the author who added them —
+> the ticket assigns this as a review, not an edit, and that has not changed.
+>
+> **THE STRUCTURAL QUESTION NOW HAS A MEASUREMENT.** `zig build test` is a SUPERSET:
+> unit + integration + `selfhost_smoke.sh` + `escape_hatches_check.sh` + `compile_check`.
+> Smoke and compile_check are already in the tiers, so putting the command in a tier
+> wholesale would run ~20 minutes of work TWICE. The three legs covered by nothing else
+> are **unit, integration and escape-hatches**, and they are cheap — 120+11 tests in ~4s
+> combined, per the summary above.
+>
+> **Recommended (Sean's call, not taken unilaterally):** add unit + integration +
+> escape-hatches to the QUICK tier as one gate, and list `zig build test` itself in
+> CLAUDE.md's uncovered table with a date. That covers exactly the uncovered set at a
+> fraction of the cost and makes this drift impossible, which is the ticket's stated
+> goal. <!-- bug-open-ok: leg 3 is a review someone else owns; the tier decision is Sean's -->
 
 **Found 2026-08-09** by running it after a front-end change, on the assumption it was
 part of the contract. It is not: `gates.sh` does not run it in either tier, and
