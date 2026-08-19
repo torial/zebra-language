@@ -1,0 +1,23 @@
+# BUG-274 (second gap) — `this` used ONLY inside a method's own require/ensure.
+#
+# The three checks that decide `_ = self;` all walk the BODY STATEMENTS, and a contract
+# clause is not one of them. So a method whose only self-use is in a contract emitted
+# the discard and then read `self` from the emitted check.
+#
+# THE FIX IS AT THE CALL SITE, NOT IN THE WALKER, and that is BUG-272's lesson spent:
+# under `--turbo` the contract is not emitted, `self` really IS unused, and the discard
+# is REQUIRED. The decision needs `strip_contracts`, which is visible at the call site
+# and not inside a pure walker. Paired with a `smoke_turbo` registration so both
+# directions stay pinned.
+class Guarded
+    var limit: int = 10
+
+    # `this.limit` appears ONLY in the ensure. The body touches no field.
+    def clamp(n: int): int
+        ensure
+            result <= this.limit
+        return 1
+
+def main()
+    var g = Guarded()
+    print("bug274-contract=${g.clamp(99)}")

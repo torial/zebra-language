@@ -1,0 +1,29 @@
+# BUG-296 — a PARAMETER used only inside require/ensure was discarded and then read.
+#
+# The sibling of BUG-274's second gap, one seam over: `nameUsedInStmts(p.name, mstmts)`
+# walks the body statements, and a contract clause is not one of them. So:
+#
+#     def bump(n: int)
+#         require
+#             n > 0
+#         v = 1
+#
+# emitted `_ = n;` and then the require read `n` — "pointless discard of function
+# parameter". No `old` is involved anywhere, which is what makes this DISTINCT from
+# BUG-272 (that one was specifically `old <parameter>`, and is closed unreachable
+# because BUG-292 now refuses it).
+#
+# Same `not strip_contracts` guard as its sibling, for the same reason, and registered
+# with `smoke_turbo` so the stripped direction stays pinned too.
+class Counter
+    var v: int = 0
+
+    def bump(n: int)
+        require
+            n > 0
+        v = 1
+
+def main()
+    var c = Counter()
+    c.bump(3)
+    print("bug296=${c.v}")

@@ -740,6 +740,23 @@ smoke_warn test/bug295_cycle_test.zbr "import cycle: bug295_cycle_test -> bug295
 # shape in any dependency graph gets suppressed wholesale rather than read.
 smoke_run test/bug295_diamond_test.zbr "bug295-diamond=17"
 
+# ── BUG-274 / BUG-296: `_ = self;` and `_ = p;` vs what the walker can SEE ──────
+# exprMentionsThis defaults to FALSE and its answer drives `_ = self;`, so a variant it
+# does not model discards a self the body really uses. Ten variants were missing; every
+# one REPRODUCED "pointless discard of function parameter" before its arm existed.
+smoke_run test/bug274_this_in_expr_variants_test.zbr "bug274=7"
+# The second gap, one level up: the three checks all walk BODY STATEMENTS, and a
+# contract clause is not one of them.
+smoke_run test/bug274_this_in_contract_test.zbr "bug274-contract=1"
+# BUG-296, the sibling for a PARAMETER. No `old` involved -- distinct from BUG-272.
+smoke_run test/bug296_param_in_contract_test.zbr "bug296=1"
+# BOTH DIRECTIONS PINNED. Under --turbo the contract is not emitted, the name really IS
+# unused, and the discard is REQUIRED -- so a fix that counted contracts
+# unconditionally would fix the default build and break turbo. That is the trap
+# BUG-272 documented; these two keep it shut.
+smoke_turbo test/bug274_this_in_contract_test.zbr
+smoke_turbo test/bug296_param_in_contract_test.zbr
+
 # BUG-295 (b): a module imported by MORE THAN ONE module AND declaring module-level
 # state is NAMED at the end of compilation. The note's content was MEASURED first and
 # the obvious guess was wrong: the leaf's initialiser runs exactly ONCE (the root emits

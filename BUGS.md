@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-295. Next new bug: BUG-296.**
+**Last bug number generated: BUG-296. Next new bug: BUG-297.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -772,100 +772,6 @@ table. Leaving it in neither is how all three of these landed.
 *run* phase, not merely by the compile error disappearing — a test binary that builds
 and then fails is a different state from one that never built, and the second is what
 has been hiding here.
-
-### BUG-274: four broad Expr walkers default to FALSE and have gaps — the BUG-260 shape, surveyed
-
-**Found 2026-08-07** by running `lint_expr_walkers`'s analysis read-only across ALL 53
-functions that branch over `Expr`, rather than only the two that had opted in. This is a
-SURVEY, not a reproduction: each gap below is a candidate, and each needs its own
-judgement about whether the missing variant can actually carry the thing that walker
-looks for.
-
-**The survey answered two questions.** First, the opt-in design was right: **36 of 53
-walkers handle 4 or fewer variants** and are legitimately narrow (`getVariantKey` wants
-`member` and nothing else), so blanket checking would have been mostly noise. Second, the
-danger is not "has gaps" — it is "has gaps AND defaults to FALSE":
-
-| walker | handles | gaps | file |
-|---|---|---|---|
-| `exprMentionsThis` | 16 | **12** | CodeGen.zbr |
-| `exprHasTry` | 17 | 10 | CgHelpers.zbr |
-| ~~`containsResultRef`~~ | 22 | 6 | **CLOSED — BUG-278, 3 of 4 reproduced** |
-| `exprHasSelfCall` | 25 | 2 | CgHelpers.zbr |
-
-**Every gap count in that table is inflated by one, and the inflation is the LINT's, not
-the code's.** `lint_expr_walkers` hardcodes `ident` as ident-bearing — correctly, because a
-walker asking *"does this use the name X?"* that skips idents is broken by definition. But
-`containsResultRef` and `collectAndEmitOldSnapshots` ask a different question, *"does this
-contain a node of KIND K?"*, and an `ident` can never be one: `AstBuilder` builds
-`Expr.result_` from `PNode.expr_result` and `Expr.old_` from an `old` construct, never from
-an identifier. Both now carry an `expr-walker-ok: ident` waiver with that reasoning. Before
-working `exprHasTry` (10) or `exprMentionsThis` (12), check which of their gaps are the
-same artifact — and note this ticket already warns against working it by counting.
-
-Five other broad walkers default conservatively (`true` / `pass`), so their gaps are
-harmless — the same asymmetry that made BUG-260 silent while the identical omission in
-its sibling was merely cautious.
-
-**`exprMentionsThis` is the one to look at first.** The project memory records
-"`stmtMentionsThis` must stay EXACT" as a live constraint from the differential fuzzer
-work, and this walker has twelve unmodelled ident-bearing variants under a FALSE default.
-
-**Precedent that these are not hypothetical:** `test/contract_old_compound_test.zbr`
-exists because `collectAndEmitOldSnapshots` failed to recurse into `array_lit` and missed
-an `old` snapshot — the identical class, already fixed once, in a walker that still shows
-4 gaps.
-
-**How to work it:** annotate one walker at a time with `# expr-walker: exhaustive`, let
-the lint enumerate its gaps, and for each ask whether that variant can carry what the
-walker seeks. Deliberate omissions get `# expr-walker-ok: <variant> <reason>`. Do NOT
-bulk-add cases — a walker that answers a different question (does this mention `this`?
-does it contain `try`?) has different right answers per variant.
-
-**PROBED 2026-08-08 — `exprMentionsThis`'s gaps are NOT reachable via its main consumer,
-so gap-count OVERSTATES risk and this ticket should not be worked by counting.**
-
-Its answer feeds `bodyMentionsThis`, which decides whether to emit `_ = self;`. A wrong
-FALSE would emit that discard beside a real use of `self` and Zig would reject the pair —
-the exact BUG-260 symptom, and loud rather than silent. So it is directly testable, and I
-tested it: `this` used ONLY inside a `list_lit`, `array_lit`, `tuple_lit` or `set_lit`,
-as a return value, a `for` iterable and a `while` condition. **All compile.**
-
-The probe was verified able to see before its negative was believed: a method that
-genuinely does not mention `this` DOES get `_ = self;` (control = 1), and the list-literal
-probe does not (0). So the walker detects `this` inside those constructs by some route —
-either another mechanism reaches it first, or the answer is not consumed there.
-
-**What this does and does not establish.** It does not prove the twelve gaps are harmless;
-it proves I could not construct a reproducer through the consumer that matters, having
-first shown the probe can distinguish the two cases. Treat the remaining three walkers
-(`exprHasTry`, `containsResultRef`, `exprHasSelfCall`) the same way: find the consumer,
-work out what a wrong FALSE would produce, and try to produce it. A walker whose wrong
-answer nothing acts on is a cosmetic finding.
-
-**Do NOT bulk-add the missing cases to `exprMentionsThis`** — it carries a live "must stay
-EXACT" constraint from the differential-fuzzer work, and there is now measured evidence
-that its gaps are unreached rather than latent. Changing a hot path on gap-count alone
-would be change without evidence.
-
-**PROBED 2026-08-08 — `containsResultRef` CLOSED as BUG-278, and the method worked.** Its
-consumer emits `var _result: T` only when it says yes, while `genExpr` emits `_result`
-unconditionally, so a wrong FALSE produces `use of undeclared identifier '_result'`. Three
-of its four remaining candidates reproduced on the first attempt (`slice`, `opt_chain`,
-`except_`). Two lessons for the two walkers still open:
-
-1. **Diff the twin before editing.** `collectAndEmitOldSnapshots` does the same walk for
-   `old()` and had *already* diverged — it handled `slice` and `except_`, this one did not.
-   Neither had drifted from a spec; they had drifted from *each other*.
-2. **Grade by loudness, not by gap count.** These gaps were real and worth fixing, but the
-   symptom is a hard Zig error, not a wrong program. That is a different severity from
-   BUG-260 and belongs in the triage, since `exprMentionsThis`'s probe found the same
-   thing (loud, and unreachable besides).
-
-**Control when fixing:** each walker needs BOTH directions, as BUG-260 and BUG-267 did —
-the newly-handled construct must be detected, AND something that genuinely lacks the
-property must still answer no. A one-sided fix here silently over-reports, which for
-`exprHasTry` would wrap non-throwing expressions.
 
 ### BUG-267: `zig"…"` literals do not participate in MUTATION analysis (usage half ✅ FIXED 2026-08-06)
 <!-- bug-open-ok: PARTIAL — the usage half is fixed and the heading says so, but the MUTATION half is still open, so this belongs in the open ledger. Move it when the write half lands. -->

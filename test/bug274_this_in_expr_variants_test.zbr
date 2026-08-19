@@ -1,0 +1,53 @@
+# BUG-274 — `exprMentionsThis` had TEN unmodelled ident-bearing variants under a FALSE
+# default. Its answer drives `_ = self;`, so a missed variant discards a `self` the
+# body genuinely uses and the generated Zig dies on "pointless discard of function
+# parameter".
+#
+# EVERY METHOD BELOW REPRODUCED THAT ERROR before its arm existed. The bug's own entry
+# warns against working it by counting variants, so each was probed and run rather than
+# reasoned about — and one candidate (`slice`) initially looked clean only because my
+# first probe had bad syntax, not because the gap was absent.
+#
+# Each method uses `this` ONLY inside the variant it is named for, and nothing else in
+# the method touches a field or another method — otherwise the separate
+# `bodyUsesAnyField` / `bodyUsesAnyMethod` checks would mask the gap.
+class Shapes
+    var v: int = 5
+
+    def viaListLit(): int
+        var xs = [this.v, 1]
+        return xs.len
+
+    def viaArrayLit(): int
+        var a = @[this.v, 9]
+        return a.len
+
+    def viaSetLit(): int
+        var s = {this.v, 9}
+        return s.len
+
+    def viaTupleLit(): int
+        var t = (this.v, 9)
+        return t.0
+
+    def viaDictLit(): int
+        var d = {"k": this.v}
+        return d.len
+
+    def viaSlice(s: str): str
+        return s[this.v..3]
+
+    def viaTypeCheck(): bool
+        return this is Shapes
+
+    def viaOptChain(): int
+        var x = this?.v
+        return 1
+
+    def viaLambda(): int
+        var f = def(x: int): int = x + this.v
+        return f(1)
+
+def main()
+    var s = Shapes()
+    print("bug274=${s.viaListLit() + s.viaArrayLit() + s.viaSetLit() + s.viaDictLit()}")

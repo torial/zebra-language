@@ -565,6 +565,15 @@ def getXmUnionParts(callee: Expr): List(str)?
 # a member access on "this" (self/this field access).
 # Used to detect whether `self` is used in a method body.
 
+# expr-walker: exhaustive
+# expr-walker-ok: ident — `this` is its OWN variant (Expr.this_), built by AstBuilder
+#   from the `this` keyword and never from an identifier, so a bare ident cannot BE
+#   `this`. Implicit field access (`v` meaning `this.v`) is a real way to use self, but
+#   it is caught by the SEPARATE `bodyUsesAnyField` check at the call site, not here —
+#   see the guard in genMethod, which ands the three together.
+# expr-walker-ok: zig_lit — identifiers inside a raw `zig"…"` literal live in a STRING,
+#   so no structural walk can see them (the BUG-267 shape). A zig literal that touches
+#   `self` is already outside what this analysis can model.
 def exprMentionsThis(e: Expr): bool
     branch e
         on Expr.this_
@@ -605,11 +614,79 @@ def exprMentionsThis(e: Expr): bool
                         return true
             return false
         on Expr.except_ as ex
-            return exprMentionsThis(ex.base)
+            if exprMentionsThis(ex.base)
+                return true
+            # BUG-274: the field VALUES were not walked -- `this except v = this.n`
+            # mentions `this` on the right of the `=` too.
+            for exf in ex.fields
+                if exprMentionsThis(exf.value)
+                    return true
+            return false
         on Expr.chained_cmp as cc
             for op in cc.operands
                 if exprMentionsThis(op)
                     return true
+            return false
+        # ── BUG-274: ten variants added 2026-08-18, every one REPRODUCED first ──
+        # This walker defaults to FALSE, and its answer drives `_ = self;`. A missed
+        # variant therefore emits a discard for a `self` the body really uses, and the
+        # generated Zig dies on "pointless discard of function parameter". Each arm
+        # below has a probe that produced exactly that error before it existed; none
+        # was added by reading the AST and counting, which this bug's own entry warns
+        # against.
+        on Expr.list_lit as ll
+            for el in ll.elems
+                if exprMentionsThis(el)
+                    return true
+            return false
+        on Expr.array_lit as al
+            for el in al.elems
+                if exprMentionsThis(el)
+                    return true
+            return false
+        on Expr.set_lit as sl
+            for el in sl.elems
+                if exprMentionsThis(el)
+                    return true
+            return false
+        on Expr.tuple_lit as tl
+            for el in tl.elems
+                if exprMentionsThis(el)
+                    return true
+            return false
+        on Expr.dict_lit as dl
+            for de in dl.entries
+                if exprMentionsThis(de.key)
+                    return true
+                if exprMentionsThis(de.value)
+                    return true
+            return false
+        on Expr.slice as slc
+            if exprMentionsThis(slc.object)
+                return true
+            if slc.start != nil
+                if exprMentionsThis(slc.start!)
+                    return true
+            if slc.stop_ != nil
+                if exprMentionsThis(slc.stop_!)
+                    return true
+            return false
+        on Expr.type_check as tc
+            return exprMentionsThis(tc.expr)
+        on Expr.old_ as o
+            return exprMentionsThis(o.operand)
+        on Expr.opt_chain as oc
+            if exprMentionsThis(oc.base)
+                return true
+            for oa in oc.args
+                if exprMentionsThis(oa.value)
+                    return true
+            return false
+        on Expr.lambda as lam
+            # A lambda body can close over `this` (`def(x) = x + this.v`), and the
+            # enclosing method still needs its `self`.
+            if lam.body_ is LambdaBody.expr_ as lbe
+                return exprMentionsThis(lbe)
             return false
         else
             pass
@@ -4856,10 +4933,50 @@ struct Generator
                             pass
             # Suppress unused-parameter errors for self and params
             # Check explicit Expr.this_ usage AND implicit field access (bare ident matching a field)
-            if has_self and not bodyMentionsThis(mstmts) and not bodyUsesAnyField(mstmts, owner_members) and not bodyUsesAnyMethod(mstmts, owner_members) and (owner_invariants.len == 0 or strip_contracts)
+            # BUG-274 (second gap): `this` used ONLY inside this method's own
+            # require/ensure was invisible here, because the three checks above walk
+            # the BODY STATEMENTS and a contract clause is not one of them. A probe
+            # with `ensure n == old this.v + n` and an otherwise self-free body emitted
+            # `_ = self;` and then used self.
+            #
+            # THE `not strip_contracts` GUARD IS LOAD-BEARING, and it is the lesson
+            # BUG-272 paid for: under `--turbo` the contract is not emitted, so `self`
+            # really IS unused and the discard is REQUIRED. Counting contracts
+            # unconditionally would fix the default build and break --turbo. The
+            # decision belongs HERE rather than in the walker precisely because
+            # `strip_contracts` is visible here and not there — which is what that
+            # ticket said the fix would need.
+            #
+            # Mirrors the existing `owner_invariants` clause on the same line, which
+            # already carries the identical `or strip_contracts` escape.
+            var contract_uses_this: bool = false
+            if not strip_contracts
+                for rq_e in m.require_
+                    if exprMentionsThis(rq_e)
+                        contract_uses_this = true
+                for en_e in m.ensure_
+                    if exprMentionsThis(en_e)
+                        contract_uses_this = true
+            if has_self and not bodyMentionsThis(mstmts) and not contract_uses_this and not bodyUsesAnyField(mstmts, owner_members) and not bodyUsesAnyMethod(mstmts, owner_members) and (owner_invariants.len == 0 or strip_contracts)
                 bg.line("_ = self;")
+            # BUG-296: a parameter used ONLY inside require/ensure was discarded and
+            # then read by the emitted contract -- "pointless discard of function
+            # parameter". Same seam as the `self` check above: both walk the BODY
+            # STATEMENTS, and a contract clause is not one of them.
+            #
+            # `not strip_contracts` is again load-bearing: under --turbo the contract is
+            # not emitted, the parameter really IS unused, and the discard is REQUIRED.
+            # Both directions are pinned by fixtures.
             for p in m.params
-                if not nameUsedInStmts(p.name, mstmts)
+                var p_in_contract: bool = false
+                if not strip_contracts
+                    for rq_p in m.require_
+                        if mightUseNameInExpr(p.name, rq_p)
+                            p_in_contract = true
+                    for en_p in m.ensure_
+                        if mightUseNameInExpr(p.name, en_p)
+                            p_in_contract = true
+                if not nameUsedInStmts(p.name, mstmts) and not p_in_contract
                     bg.writeIndent()
                     bg.w.emit("_ = ")
                     bg.w.emit(zigSafeName(p.name))

@@ -445,6 +445,194 @@ it.
 
 ---
 
+### BUG-296: a PARAMETER used only inside require/ensure is discarded and then read — ✅ FIXED (closed 2026-08-18)
+
+- **Severity:** Medium — loud (the generated Zig does not compile), but it makes a
+  perfectly reasonable contract unwritable: validating an argument you do not otherwise
+  use is the *point* of `require`.
+- **Status:** FIXED. Pinned by `test/bug296_param_in_contract_test.zbr` plus a
+  `smoke_turbo` registration for the opposite direction.
+
+**Found 2026-08-18** while fixing BUG-274, by a probe that was aimed at something else
+and failed for a different reason than predicted — worth reading the error rather than
+assuming which discard it was.
+
+```zebra
+class Counter
+    var v: int = 0
+    def bump(n: int)
+        require
+            n > 0
+        v = 1
+```
+
+```
+error: pointless discard of function parameter
+        _ = n;
+```
+
+**Cause — the same seam as BUG-274's second gap, one over.**
+`nameUsedInStmts(p.name, mstmts)` walks the method's BODY STATEMENTS, and a contract
+clause is not one of them. So a parameter whose only use is in `require`/`ensure` looks
+unused, gets `_ = n;`, and the emitted check then reads it.
+
+**DISTINCT FROM BUG-272**, which is the first thing to check given how similar they
+look. That one was specifically `old <parameter>` and is closed UNREACHABLE because
+BUG-292 refuses it. This needs no `old` anywhere — `n > 0` in a plain `require` is
+enough — so it was live and reachable the whole time.
+
+**Fix:** at the call site, treat a name appearing in `m.require_` / `m.ensure_` as used
+— **but only when `not strip_contracts`**. That guard is the whole difficulty and it is
+BUG-272's lesson spent: under `--turbo` the contract is not emitted, the parameter
+really IS unused, and the discard is REQUIRED. A fix that counted contracts
+unconditionally would repair the default build and break turbo, which is exactly why
+BUG-272 said the decision had to move to the call site rather than into the walker —
+`strip_contracts` is visible there and not inside a pure helper.
+
+**Control when fixing:** both directions, or the fix is half-tested. The fixture runs
+plain (prints `bug296=1`) and is registered with `smoke_turbo` so the stripped path
+stays pinned. Residual, recorded rather than hidden: the check uses
+`mightUseNameInExpr`, which has no `old_` arm, so a parameter used ONLY inside an
+`old(...)` sub-expression would still be missed. `old <parameter>` is refused outright,
+so the reachable remainder is narrow (e.g. `old arr[n]`); it was not probed.
+
+
+---
+
+### BUG-274: broad Expr walkers default to FALSE and have gaps — `exprMentionsThis` ✅ FIXED (2026-08-18); the survey stands for the rest
+
+**Found 2026-08-07** by running `lint_expr_walkers`'s analysis read-only across ALL 53
+functions that branch over `Expr`, rather than only the two that had opted in. This is a
+SURVEY, not a reproduction: each gap below is a candidate, and each needs its own
+judgement about whether the missing variant can actually carry the thing that walker
+looks for.
+
+**The survey answered two questions.** First, the opt-in design was right: **36 of 53
+walkers handle 4 or fewer variants** and are legitimately narrow (`getVariantKey` wants
+`member` and nothing else), so blanket checking would have been mostly noise. Second, the
+danger is not "has gaps" — it is "has gaps AND defaults to FALSE":
+
+| walker | handles | gaps | file |
+|---|---|---|---|
+| `exprMentionsThis` | 16 | **12** | CodeGen.zbr |
+| `exprHasTry` | 17 | 10 | CgHelpers.zbr |
+| ~~`containsResultRef`~~ | 22 | 6 | **CLOSED — BUG-278, 3 of 4 reproduced** |
+| `exprHasSelfCall` | 25 | 2 | CgHelpers.zbr |
+
+**Every gap count in that table is inflated by one, and the inflation is the LINT's, not
+the code's.** `lint_expr_walkers` hardcodes `ident` as ident-bearing — correctly, because a
+walker asking *"does this use the name X?"* that skips idents is broken by definition. But
+`containsResultRef` and `collectAndEmitOldSnapshots` ask a different question, *"does this
+contain a node of KIND K?"*, and an `ident` can never be one: `AstBuilder` builds
+`Expr.result_` from `PNode.expr_result` and `Expr.old_` from an `old` construct, never from
+an identifier. Both now carry an `expr-walker-ok: ident` waiver with that reasoning. Before
+working `exprHasTry` (10) or `exprMentionsThis` (12), check which of their gaps are the
+same artifact — and note this ticket already warns against working it by counting.
+
+Five other broad walkers default conservatively (`true` / `pass`), so their gaps are
+harmless — the same asymmetry that made BUG-260 silent while the identical omission in
+its sibling was merely cautious.
+
+**`exprMentionsThis` is the one to look at first.** The project memory records
+"`stmtMentionsThis` must stay EXACT" as a live constraint from the differential fuzzer
+work, and this walker has twelve unmodelled ident-bearing variants under a FALSE default.
+
+**Precedent that these are not hypothetical:** `test/contract_old_compound_test.zbr`
+exists because `collectAndEmitOldSnapshots` failed to recurse into `array_lit` and missed
+an `old` snapshot — the identical class, already fixed once, in a walker that still shows
+4 gaps.
+
+**How to work it:** annotate one walker at a time with `# expr-walker: exhaustive`, let
+the lint enumerate its gaps, and for each ask whether that variant can carry what the
+walker seeks. Deliberate omissions get `# expr-walker-ok: <variant> <reason>`. Do NOT
+bulk-add cases — a walker that answers a different question (does this mention `this`?
+does it contain `try`?) has different right answers per variant.
+
+**PROBED 2026-08-08 — `exprMentionsThis`'s gaps are NOT reachable via its main consumer,
+so gap-count OVERSTATES risk and this ticket should not be worked by counting.**
+
+Its answer feeds `bodyMentionsThis`, which decides whether to emit `_ = self;`. A wrong
+FALSE would emit that discard beside a real use of `self` and Zig would reject the pair —
+the exact BUG-260 symptom, and loud rather than silent. So it is directly testable, and I
+tested it: `this` used ONLY inside a `list_lit`, `array_lit`, `tuple_lit` or `set_lit`,
+as a return value, a `for` iterable and a `while` condition. **All compile.**
+
+The probe was verified able to see before its negative was believed: a method that
+genuinely does not mention `this` DOES get `_ = self;` (control = 1), and the list-literal
+probe does not (0). So the walker detects `this` inside those constructs by some route —
+either another mechanism reaches it first, or the answer is not consumed there.
+
+**What this does and does not establish.** It does not prove the twelve gaps are harmless;
+it proves I could not construct a reproducer through the consumer that matters, having
+first shown the probe can distinguish the two cases. Treat the remaining three walkers
+(`exprHasTry`, `containsResultRef`, `exprHasSelfCall`) the same way: find the consumer,
+work out what a wrong FALSE would produce, and try to produce it. A walker whose wrong
+answer nothing acts on is a cosmetic finding.
+
+**Do NOT bulk-add the missing cases to `exprMentionsThis`** — it carries a live "must stay
+EXACT" constraint from the differential-fuzzer work, and there is now measured evidence
+that its gaps are unreached rather than latent. Changing a hot path on gap-count alone
+would be change without evidence.
+
+**PROBED 2026-08-08 — `containsResultRef` CLOSED as BUG-278, and the method worked.** Its
+consumer emits `var _result: T` only when it says yes, while `genExpr` emits `_result`
+unconditionally, so a wrong FALSE produces `use of undeclared identifier '_result'`. Three
+of its four remaining candidates reproduced on the first attempt (`slice`, `opt_chain`,
+`except_`). Two lessons for the two walkers still open:
+
+1. **Diff the twin before editing.** `collectAndEmitOldSnapshots` does the same walk for
+   `old()` and had *already* diverged — it handled `slice` and `except_`, this one did not.
+   Neither had drifted from a spec; they had drifted from *each other*.
+2. **Grade by loudness, not by gap count.** These gaps were real and worth fixing, but the
+   symptom is a hard Zig error, not a wrong program. That is a different severity from
+   BUG-260 and belongs in the triage, since `exprMentionsThis`'s probe found the same
+   thing (loud, and unreachable besides).
+
+**Control when fixing:** each walker needs BOTH directions, as BUG-260 and BUG-267 did —
+the newly-handled construct must be detected, AND something that genuinely lacks the
+property must still answer no. A one-sided fix here silently over-reports, which for
+`exprHasTry` would wrap non-throwing expressions.
+
+#### exprMentionsThis FIXED 2026-08-18 — ten gaps, every one REPRODUCED first
+
+This entry warns against working the table by counting, so none of it was. The walker
+was opted into `lint_expr_walkers` to get its ACTUAL gap list, then each candidate got
+a probe that was RUN:
+
+| variant | probe result before the fix |
+|---|---|
+| `list_lit` `array_lit` `set_lit` `tuple_lit` `dict_lit` | `pointless discard of function parameter` |
+| `slice` `type_check` `opt_chain` `lambda` `old_` | same |
+| `ident` | **artifact** — `this` is its own variant (`Expr.this_`) and can never BE an ident; implicit field access is caught by the separate `bodyUsesAnyField` check. Waived with that reason. |
+| `zig_lit` | **artifact** — identifiers live in a STRING (the BUG-267 shape). Waived. |
+
+So the inflation this entry predicted was exactly 2 of 12, and the other ten were real.
+
+**AN INSTRUMENT LIED FIRST, AND A CONTROL CAUGHT IT.** The first pass probed with
+`zebra -c` and reported **0 for every variant** — including the one already known
+broken. `-c` is front-end only and never invokes `zig`, so it structurally cannot see a
+discard error. Re-run through a compiling path: ten of ten fired. *A probe for a
+BACK-END error cannot be run through the front-end-only check mode.*
+
+**A SECOND GAP, one level up from the walker:** `this` used ONLY inside the method's own
+`require`/`ensure` was invisible, because all three checks that decide `_ = self;` walk
+the BODY STATEMENTS and a contract clause is not one of them. Fixed at the call site
+under `not strip_contracts` — see BUG-296, which is the same defect for a PARAMETER and
+was found by a probe here failing for a different reason than predicted.
+
+**Also fixed in passing:** the `except_` arm walked only `.base`, so
+`this except v = this.n` missed the field VALUES.
+
+**Pinned by** `bug274_this_in_expr_variants_test` (all ten shapes, each isolated so the
+`bodyUsesAnyField`/`bodyUsesAnyMethod` checks cannot mask it) and
+`bug274_this_in_contract_test` (+ `smoke_turbo`).
+
+**THE REST OF THE SURVEY IS STILL OPEN** and this entry stays for it: `exprHasTry` (10
+gaps) and `exprHasSelfCall` (2) are untouched, and their counts carry the same `ident`
+inflation. Verified: round-trip byte-identical, smoke 354/354.
+
+---
+
 ### BUG-294: `^T` field reads lost their deref — name-keyed registries, seeded by emission order — ✅ FIXED (closed 2026-08-18)
 
 - **Severity:** Medium — loud (the generated Zig does not compile), and **selfhost
