@@ -552,7 +552,7 @@ if [[ ${#FAILED[@]} -eq 0 ]]; then
     # amount of time.
     case "$MODE" in
         static) echo "  (static tier — NOTHING here built, emitted or ran the compiler." ;
-                echo "   It cannot see a miscompile, a crash or a wrong answer. Next: --fast, ~2 min)" ;;
+                echo "   It cannot see a miscompile, a crash or a wrong answer. Next: --fast, ~2.5 min)" ;;
         fast)   echo "  (fast tier — smoke and round-trip did NOT run: no fixture was executed and" ;
                 echo "   the compiler was never round-tripped. Next: the default tier, ~14 min)" ;;
         quick)  echo "  (quick tier — the corpus was never swept; run --full before committing a codegen change)" ;;
