@@ -201,6 +201,14 @@ environment is doing, and no explanation here has been tested. Recorded as an ob
 the heavy tiers are predictable to within a factor of two, and anyone budgeting an hour
 for `--daily` should budget ninety minutes.
 
+The untested hypothesis, named so a later run can DISCRIMINATE rather than re-argue it:
+`src/CodeGen.zig` was rebuilt twice that night (falsifying BUG-124 needs a mutated
+bootstrap), which invalidates zig's cache for everything downstream. That fits
+`divergence`, which compiles the corpus with BOTH compilers; it does NOT obviously fit
+`output_sweep`, which runs already-built binaries. **A fourth `--daily` landing near
+37 min on a warm untouched tree is the observation that would settle it** — cheap, and
+nobody has to reason about it in the meantime.
+
 **The cut is on build-dependence, and cost is the wrong axis even though cost is the
 motivation.** Timings are taken on a WARM tree: `zig-test`, `ffi-lib` and `diag-columns`
 each measure ~1 s only because the binaries happen to be current, and cost a full build on
