@@ -1,0 +1,25 @@
+# BUG-084 regression fixture — a NEGATIVE test, and the parity it pins is the point.
+#
+# The selfhost Lexer tracked `[`/`]` in parenDepth; the Zig Tokenizer tracks only
+# `(`/`)`. Since parenDepth is what suppresses end-of-line, the two front ends disagreed
+# about whether a bracket could span lines: the selfhost accepted the form below and the
+# bootstrap rejected it. The fix removed bracket tracking from the selfhost, so BOTH now
+# suppress EOL only inside parentheses and multi-line `[...]` is consistently unsupported.
+#
+# WHY A MUST-FAIL FIXTURE IS THE RIGHT PIN. Reverting the fix makes the selfhost ACCEPT
+# this file, and `smoke_tc_fail` is red the moment it does -- an acceptance is exactly
+# what the divergence was. A positive fixture could not see it: everything that compiles
+# today would still compile with the bug back.
+#
+# Verified against BOTH compilers when this was written (2026-08-20): selfhost says
+# "unexpected expression token" at 23:17, the bootstrap "syntax error near". The messages
+# differ; the ACCEPT/REJECT verdict is what has to agree, and does.
+#
+# If multi-line bracket literals are ever deliberately supported, this file is the thing
+# that will go red -- and the right response then is to change BOTH lexers and delete it,
+# not to loosen it.
+
+def main()
+    var xs = [1,
+        2]
+    print(xs.len)

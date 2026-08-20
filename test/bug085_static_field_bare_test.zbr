@@ -1,0 +1,49 @@
+# BUG-085 regression fixture — a BARE static field name must not emit `self.field`.
+#
+# The bug: genIdent/isFieldName keyed off `in_method`, which is true for static methods
+# too, so a bare `count` inside a `static def` emitted `self.count` in a Zig `fn` that has
+# no self parameter. The fix checks the field's own `static` modifier at the genIdent
+# site, which also covers bare static access from an INSTANCE method -- both halves are
+# exercised below, because the alternative fix (an in_static_method flag) would have
+# passed the first and failed the second.
+#
+# WHY IT RUNS rather than just compiling: reverting the fix produces invalid Zig, which a
+# compile check catches -- but an emit that resolved to the WRONG storage would compile
+# fine and print the wrong number. The asserts are what make that visible.
+
+class Tally
+    static var count: int = 0
+    static var tag: str = "start"
+    var step: int = 2
+
+    static def add(n: int)
+        count = count + n          # bare static field, WRITE, inside a static def
+
+    static def readCount(): int
+        return count               # bare static field, READ, inside a static def
+
+    static def retag(t: str)
+        tag = t                    # bare static str field, static def
+
+    def bump(): int
+        count = count + step       # bare STATIC field and bare INSTANCE field, together,
+        return count               # inside an instance method
+
+def main()
+    assert Tally.count == 0
+
+    Tally.add(5)
+    assert Tally.count == 5
+    assert Tally.readCount() == 5
+
+    var t = Tally()
+    assert t.bump() == 7           # 5 + step(2), read back through the static
+    assert Tally.count == 7
+
+    Tally.add(3)
+    assert Tally.readCount() == 10
+
+    Tally.retag("done")
+    assert Tally.tag == "done"
+
+    print("bug085: OK count=${Tally.count} tag=${Tally.tag}")

@@ -1,0 +1,72 @@
+# BUG-079 regression fixture — chaining onto a struct-returning CALL in the three
+# STATEMENT positions the fix covers: var-init, return, and assignment.
+#
+# THE CHAINED METHOD MUST MUTATE, and that is the whole difficulty of this fixture. A
+# non-mutating method lowers to a BY-VALUE receiver (`fn m(self: Builder)`), and Zig is
+# perfectly happy to call one on a temporary -- so a fixture built from `withVal`-style
+# methods passes with the fix REMOVED and pins nothing. Measured, not assumed: with
+# hoistCallChain disabled, an earlier draft of this file still emitted
+# `_zbr_fn_makeBuilder(5).withVal(10)` and still printed the right answers.
+#
+# A method that assigns to a field lowers to `fn m(self: *Builder)`, the temporary is
+# `*const`, and the compiler must materialise it into a mutable local first. With the
+# hoist disabled that is:
+#
+#     error: expected type '*T', found '*const T'
+#
+# which is the ticket's symptom verbatim.
+#
+# EXPRESSION position (call arguments) is BUG-027's fixture -- a different mechanism (a
+# labeled block, not a hoist), so one file covering both would stay green if either half
+# regressed.
+
+struct Builder
+    var value: int
+
+    cue init(v: int)
+        value = v
+
+    # MUTATES -> pointer receiver. This is the method that makes the chain illegal
+    # without materialisation.
+    def bumpAndGet(): int
+        value = value + 1
+        return value
+
+    def addAndGet(n: int): int
+        value = value + n
+        return value
+
+    def getVal(): int
+        return value
+
+def makeBuilder(n: int): Builder
+    return Builder(n)
+
+# var-init position
+def viaVarInit(): int
+    var one = makeBuilder(5).bumpAndGet()
+    var two = makeBuilder(10).addAndGet(7)
+    return one + two
+
+# return position
+def viaReturn(): int
+    return makeBuilder(41).bumpAndGet()
+
+# assignment position
+def viaAssign(): int
+    var r = 0
+    r = makeBuilder(19).bumpAndGet()
+    return r
+
+def main()
+    assert viaVarInit() == 23           # 6 + 17
+    assert viaReturn() == 42
+    assert viaAssign() == 20
+
+    # two chains off the same producer must not share a temporary
+    var a = makeBuilder(1).bumpAndGet()
+    var b = makeBuilder(100).bumpAndGet()
+    assert a == 2
+    assert b == 101
+
+    print("bug079: OK ${a} ${b}")

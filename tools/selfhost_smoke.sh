@@ -1563,6 +1563,39 @@ smoke_run     test/bug088_try_return_test.zbr "bug088_try_return_test: ok"
 # emit-only registration asserted only that it parsed.
 smoke_run     test/contract_ident_test.zbr "13"
 
+# -- Regression pins for five entries that said "Fixed" in their bodies while sitting in
+# -- the OPEN ledger (2026-08-20). Each was verified by RUNNING the case, and each fixture
+# -- was watched going RED against a compiler with its fix mutated out -- a fixture nobody
+# -- has seen fail is a claim, not a pin.
+#
+# BUG-085: a bare STATIC field name inside a `static def` emitted `self.field` in a Zig
+# fn with no self. Runs rather than emits, because the reverted form is a Zig compile
+# error but a wrongly-RESOLVED static would compile and print the wrong number.
+smoke_run     test/bug085_static_field_bare_test.zbr "bug085: OK"
+# BUG-079: chaining onto a struct-returning call in the three STATEMENT positions
+# (var-init / return / assign), which the fix hoists via hoistCallChain.
+smoke_run     test/bug079_chain_statement_positions_test.zbr "bug079: OK"
+# BUG-027: the same chain in EXPRESSION position (call arguments), fixed by a different
+# mechanism -- a labeled block -- plus the throws leg that makes it emit `break :blk try`.
+# Deliberately a separate file from BUG-079: one file covering both would stay green if
+# either mechanism regressed.
+smoke_run     test/bug027_chain_expression_position_test.zbr "bug027: OK"
+# BUG-083: a GENERIC class declaring `implements` must emit the conformance check.
+# Pinned on the EMIT because the check's job is to make a NON-conforming class fail to
+# build, and the smoke suite has no zig-level must-fail harness; the run leg is here too
+# so the fixture is not purely a string match on generated text.
+smoke_run           test/bug083_generic_implements_test.zbr "bug083: OK"
+smoke_emit_contains test/bug083_generic_implements_test.zbr "Printable.check(@This())"
+# BUG-084: the selfhost Lexer tracked `[`/`]` in parenDepth and the Zig Tokenizer did
+# not, so the two disagreed on whether a bracket may span lines. A MUST-FAIL fixture is
+# the only shape that can see it: reverting the fix makes the selfhost ACCEPT this file.
+smoke_tc_fail test/bug084_bracket_paren_depth_fail.zbr "unexpected expression token"
+# BUG-124: BOOTSTRAP-only -- the bug is in the Zig compiler genBoxedArgExpr, and the
+# selfhost has always been correct here, so a normal smoke_run would pin nothing. Watched
+# going RED against a bootstrap built with genType(inner) restored:
+#   error: expected type '?*T', found '*?T'   <- the ticket'"'"'s symptom verbatim
+smoke_run_bootstrap test/bug124_boxed_nilable_ctor_test.zbr "bug124: OK"
+
 echo ""
 if [[ $FAIL -eq 0 ]]; then
     echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"

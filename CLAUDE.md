@@ -218,8 +218,19 @@ passing**, because a pin that has come good is a registration nobody updated. Th
 precisely what let this bug rot: node-addon was in no tier, its last recorded sweep was
 2026-08-04, and it had regressed silently by 08-19.
 
-**The tier names a cadence; nothing enforces it.** `--daily` is a set, not a schedule.
-Running it once a day is a habit or a cron job, and that choice is Sean's.
+**THE CONVENTION (Sean, 2026-08-19): `--daily` IS THE LAST THING RUN WHEN OVERNIGHT WORK
+STOPS.** Not a scheduled job — a closing move. Whatever was being worked on overnight ends
+with a full `--daily`, so the tree is left in a state someone can trust in the morning and
+the exhaustive set gets run against the day's actual changes rather than against whatever
+happened to be committed when a timer fired. It also puts the run where its cost is free:
+nobody is waiting on it.
+
+The corollary is the cheap rungs during the work — `--static` after a doc edit, `--fast`
+mid-change, the default after a `.zbr` edit — and the expensive one at the end. The ladder
+is built for exactly that shape.
+
+**Nothing enforces it.** `--daily` is a set, not a schedule; the cadence is the habit
+above.
 
 ## Every document says what it is (read this before reading the docs)
 
@@ -1682,7 +1693,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **390** <!-- doc-gen: 390 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **499** <!-- doc-gen: 499 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **506** <!-- doc-gen: 506 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

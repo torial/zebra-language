@@ -1,0 +1,47 @@
+# BUG-124 regression fixture — BOOTSTRAP-ONLY, hence `smoke_run_bootstrap`.
+#
+# The bug lived in the Zig-implemented compiler's `genBoxedArgExpr`: a `^T?` constructor
+# argument whose T is a VALUE type (a union or struct, not a class) was boxed with the
+# NILABLE wrapper still attached -- `_allocator.create(?Val)`, giving a `*?Val` where the
+# field wants `?*Val`. The fix strips the wrapper and creates the payload type.
+#
+# WHY THE ENTRY SAT OPEN FOR MONTHS. The selfhost has always been correct here, and
+# `selfhost_smoke` runs the SELFHOST -- so no existing harness would ever have executed a
+# case that could fail. The evidence was code PRESENCE (the fix is visible in the source),
+# which is weaker than running the case; the 2026-08-17 triage said exactly that and kept
+# the entry open rather than closing on it.
+#
+# THE TYPE MUST BE A VALUE TYPE. `genBoxedArgExpr` returns early for a class name -- a
+# class is already a pointer -- so a class-typed field never reaches the boxing path and
+# would pin nothing. `Val` is a union.
+#
+# WHY A CROSS-MODULE PAIR. Reading back through a SAME-MODULE `^Val?` is a bootstrap gap
+# unrelated to this ticket (`var v: Val = c.opt_val!` in one file gives "expected type
+# 'T', found '*T'" there, while the selfhost handles it fine). The cross-module form works
+# in both, and is the shape test/val_test.zbr already uses for BUG-122. The boxing this
+# ticket is about happens in the LIB's `makeContainer`, so the split costs no coverage.
+#
+# A STRUCT payload was in the first draft and was REMOVED, not quietly dropped: `^Pair?`
+# with `PairBox(p)` fails on BOTH compilers today ("expected type '?*T', found 'T'") --
+# a value-typed STRUCT is not auto-boxed into a nilable heap field the way a union is.
+# That is a real gap, it is NOT BUG-124 (which is about the box's type ARGUMENT, on a
+# path that does fire), and it is filed separately rather than smuggled in here.
+
+use bug124_boxed_ctor_lib exposing Val, Container, makeContainer
+
+def main()
+    var c = makeContainer(7)
+    var v: Val = c.opt_val!
+    if v is Val.int_val as n
+        assert n == 7
+
+    var c2 = makeContainer(99)
+    var v2: Val = c2.opt_val!
+    if v2 is Val.int_val as n2
+        assert n2 == 99
+
+    # nil-ness is part of the contract too: a boxed value must read as PRESENT, not as a
+    # pointer-to-optional that merely happens to be non-nil
+    assert c.opt_val != nil
+
+    print("bug124: OK")

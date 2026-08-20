@@ -6,6 +6,211 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-124: Bootstrap codegen — `^T?` constructor arg boxes as `*?T` instead of `?*T` for value-typed T — ✅ CLOSED 2026-08-20
+
+> **✅ CLOSED 2026-08-20 — verified by RUNNING the case on the bootstrap, and PINNED.**
+> `test/bug124_boxed_nilable_ctor_test.zbr` + `test/bug124_boxed_ctor_lib.zbr`, registered
+> `smoke_run_bootstrap` — the first fixture in the suite aimed at this bug's compiler.
+>
+> **Watched going RED against a bootstrap rebuilt with the fix reverted**
+> (`genType(payload)` → `genType(inner)` in `genBoxedArgExpr`):
+>
+> ```
+> error: expected type '?*T', found '*?T'
+> note: pointer type child '?Val' cannot cast into pointer type child 'Val'
+> ```
+>
+> which is the symptom in this entry, verbatim.
+>
+> **The 2026-08-17 triage was right to hold it open.** The evidence then was that the fix
+> is VISIBLE IN THE SOURCE, and code-presence is not a run: `selfhost_smoke` executes the
+> SELFHOST, which was never wrong here, so nothing in the harness could have failed. What
+> closes it is `smoke_run_bootstrap`, which existed and had two users.
+>
+> **Two things the fixture had to work around, both recorded in its header:** it is a
+> CROSS-MODULE pair, because reading back through a same-module `^Val?` is an unrelated
+> bootstrap gap; and its payload is a union rather than a struct, because the struct form
+> does not compile on either compiler — now filed as **BUG-299**, found by writing this pin.
+> **Triaged 2026-08-17 — KEPT OPEN pending a pin, not because it is believed broken.**
+> The body below says *Fixed (2026-05-26)* and the named mechanism is present in the
+> source (`genBoxedArgExpr` uses `payload`). That is code-PRESENCE evidence, which is
+> weaker than running the case, and `lint_stale_bugs` flagged it. It is bootstrap-only,
+> and `selfhost_smoke` runs the SELFHOST — so there is no existing harness that would
+> execute a fixture for it. **The remaining work is the pin, and that is real work**;
+> closing it without one would move it into `bug_fixture_check`'s debt column, which is
+> the ledger telling the truth about exactly this.
+
+- **Severity:** Low (only affects bootstrap compiler for value-typed union/struct `^T?` constructor args; selfhost is correct)
+- **Status:** Fixed (2026-05-26) — `genBoxedArgExpr` uses `payload` (nilable-stripped) instead of `inner` for `create()` type; same for same-module union-variant boxing path
+
+#### Symptom
+
+When the bootstrap compiler (`zebra-bootstrap.exe`, the Zig-implemented compiler) generates a constructor call where a `^T?` parameter receives a value-typed union or struct (not a class), it wraps it as `*?T` instead of `?*T`.
+
+Example: `Container(v)` where `Container.opt_val: ^Val?` and `Val` is a union type emits something like:
+
+```zig
+// Bootstrap (wrong)
+const _bp = _allocator.create(?Val) catch @panic("OOM");
+_bp.* = v;  // _bp is *?Val but Container wants ?*Val
+```
+
+instead of the correct selfhost output:
+
+```zig
+// Selfhost (correct)
+const _bv = v;
+const _bp = _allocator.create(@TypeOf(_bv)) catch @panic("OOM");
+_bp.* = _bv;  // _bp is *Val, then break gives ?*Val
+```
+
+#### Root cause
+
+`src/CodeGen.zig` boxing logic for `^T?` arguments. When T is a value type (union, struct, primitive), the bootstrap compiler wraps the whole optional type instead of just T, producing `*?T`. The selfhost `_bx0:` labeled-block approach avoids this by creating a pointer to the concrete value first.
+
+#### Files to change when fixing
+
+- `src/CodeGen.zig` — fix boxing for `^T?` arguments when T is value-typed; use `@TypeOf(value)` or strip the `?` before `create()`
+- `src/TypeChecker.zig` — may need `isValueType()` helper to distinguish class (heap-allocated) from value-typed (union/struct/primitive)
+
+#### Discovered
+
+2026-05-26 during BUG-122 testing: `val_test.zbr` (`val_lib.Val` union in `Container.opt_val: ^Val?`) compiled incorrectly through bootstrap.
+
+---
+
+*Last updated: 2026-05-26 — BUG-122 fixed (opt_ptr_field_bindings seeded for local vars); BUG-124 fixed (^T? boxing uses payload not inner); multi-error parse recovery added to both src/ and selfhost/ compilers*
+
+---
+
+### BUG-027: Method chaining on struct temporaries requires manual intermediate vars — ✅ CLOSED 2026-08-20
+
+> **✅ CLOSED 2026-08-20 — verified by running the case, and PINNED.**
+> `test/bug027_chain_expression_position_test.zbr` (`smoke_run`). The fixture was watched
+> going RED against a compiler with the labeled block disabled (`if m.object is Expr.call`
+> → `if false`): `error: expected type '*T', found '*const T'`, the ticket's symptom.
+>
+> **The first draft of that fixture pinned nothing, and the reason is worth keeping.** It
+> chained `withVal`-style methods that do not mutate — those lower to a BY-VALUE receiver
+> (`fn m(self: Builder)`), which Zig accepts on a temporary — so it passed with the fix
+> removed. Only a method that ASSIGNS TO A FIELD forces `fn m(self: *Builder)` and makes
+> the temporary illegal. Measured, not reasoned: the mutated compiler emitted
+> `_zbr_fn_makeBuilder(5).withVal(10)` and printed the right answers.
+>
+> The known remaining sub-issue below (a throws chain in call-arg position inside a
+> labeled `try` block) is NOT pinned, deliberately — it is still broken.
+- **Severity:** Low (ergonomic / language design)
+- **Status:** Fixed — expression-position call-arg chains now emit a labeled block `(blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })` in both Zig backend (`src/CodeGen.zig`) and selfhost (`selfhost/codegen.zbr`). Bootstrap 5/5. Throws sub-issue also fixed: `exprCallIsThrows` now handles call-expression receivers (looks up TC type, scans class/struct members); labeled block emits `break :blk_N try _mc_N.method(args)` when the chained method `throws`. Selfhost mirrors this via `inferExpr`+`isClassMethodThrows`.
+- **Remaining sub-issue (deferred):** Expression-position chain `foo(f().throws_method())` inside a `try { }` block (`try_block_label != null`) — the labeled block emits the `try` prefix on `break`, but there is no catch redirect into the try-block's error variable. This path is rare (requires both a labeled try block and a throws chain in call-arg position) and not hit by current tests. Workaround: extract to a named variable before the call-arg site.
+- **Symptom A (method-chain-on-temporary):** `display(makeBuilder(5).withVal(10))` fails: the struct temporary `makeBuilder(5)` becomes `*const Builder`, but `.withVal(10)` requires `*Builder`.
+  **Fixed positions:** `var r = f().method()` (var-init), `return f().method()` (return), `x = f().method()` (assign) — hoisted via `hoistCallChain` in selfhost / statement-position fix in Zig backend. `foo(f().method(args))` (call-arg / expression) — now fixed via labeled block in both backends. `foo(f().throws_method())` — now emits `try` in both backends.
+- **Symptom B (TC auto-deref annotation gap):** When a local variable is assigned from a `throws`-returning function via `?` propagation (`var x = foo()?`), the TypeChecker doesn't record the inferred type in `expr_types`. Downstream `^T` field accesses on `x` then silently omit the required `.*` deref because TC type is `.unknown`. Workaround: annotate explicitly — `var x as T = foo()?`. Fix tracked separately as BUG-077.
+- **Root cause (A):** Zig temporary value semantics — caller's stack slot for a struct returned by value is `const`.
+- **Root cause (B):** `inferCall` for `?`-propagated throws calls doesn't write back to `expr_types` for the receiving variable.
+
+---
+
+### BUG-079: Method chaining on struct-returning calls silently mis-compiles or is unnecessarily banned — ✅ CLOSED 2026-08-20
+
+> **✅ CLOSED 2026-08-20 — verified by running the case, and PINNED.**
+> `test/bug079_chain_statement_positions_test.zbr` (`smoke_run`) covers the three
+> statement positions the fix hoists: var-init, return and assign. Watched going RED with
+> all three `hoistCallChain` guards disabled — `error: expected type '*T', found
+> '*const T'` at the var-init chain.
+>
+> Same fixture-design trap as BUG-027: the chained method must MUTATE, or it lowers to a
+> by-value receiver and the fixture passes with the fix removed. See that entry.
+- **Severity:** Medium (ergonomics + correctness; blocks natural call-chaining style)
+- **Status:** Fixed — commits de0ec8e + 8c16fd9; auto-hoist in `genLocalVar`, `genReturn`, `genAssign` via `hoistCallChain`; expression-position (call args, compound expressions) remains open (BUG-027)
+- **Target:** Pre-1.0 (ribbon ceremony blocker)
+- **Symptom:** `f().method()` where `f()` returns a struct type is either silently mis-compiled or must be avoided by convention. The compiler does not enforce materialization; the hazard is invisible to the user until a runtime fault or a wrong-Zig-type error appears.
+- **Example:**
+  ```zebra
+  # Broken — f() returns a struct temporary; .bar() has no stable address
+  var result = makeWidget().label()
+
+  # Required workaround
+  var w = makeWidget()
+  var result = w.label()
+  ```
+- **Root cause:** In the Zig codegen, a struct return value is a temporary on the Zig stack. Methods on Zebra classes/structs are emitted as `fn method(self: *T, ...)` — they require a pointer receiver. Calling `.method()` on a temporary is either rejected by the Zig compiler (`cannot take address of temporary`) or produces a dangling pointer if the optimizer moves the value.
+- **Fix direction (two options):**
+  1. **Compiler error:** In the TypeChecker or Resolver, detect `ExprCall` nodes whose callee is `ExprMember { object: ExprCall }` (chained call on a call result) and emit a hard error: `"method chaining on a struct return value is not allowed — assign to a variable first"`.
+  2. **Auto-materialize:** In CodeGen, when emitting a method call whose object is itself a call expression, auto-insert a `const _tmp = <inner_call>; _tmp.method(...)` — transparent to the user but produces valid Zig.
+- **Preferred fix:** Option 2 (auto-materialize) — better ergonomics, no user-visible restriction. Option 1 is faster to implement and safer as an interim gate.
+- **Note:** This limitation is currently documented as a CLAUDE.md agent convention ("always materialize intermediates") rather than as a language/compiler constraint. That is the wrong layer — the language should either enforce or transparently handle it.
+
+---
+
+### BUG-083: `genGenericClass` skips `implements` conformance checks — ✅ CLOSED 2026-08-20
+
+> **✅ CLOSED 2026-08-20 — verified, and PINNED ON THE EMIT.**
+> `test/bug083_generic_implements_test.zbr`, registered twice: `smoke_run` (it runs) and
+> `smoke_emit_contains … "Printable.check(@This())"` (the mechanism). Watched going RED
+> with `genGenericClass`'s `if n.ifaces.len > 0` disabled: the string disappears.
+>
+> **Why not a behaviour pin.** The check exists to make a NON-conforming generic class
+> fail to BUILD, so the only fixture that could catch the regression by running is one
+> that must not compile — and the smoke suite's `*_fail` helpers are front-end and
+> runtime, with no zig-level must-fail harness. Asserting the emitted comptime block is
+> the direct test and cannot pass vacuously.
+>
+> This is `smoke_emit_contains`'s first use; the helper had been defined and never called.
+- **Severity:** Low (conformance gap, not correctness gap — the class still compiles)
+- **Status:** Fixed — `src/CodeGen.zig` and `selfhost/codegen.zbr` both emit `comptime { IFoo.check(@This()); }` in `genGenericClass`; `test/generic_iface_test.zbr` covers this; bootstrap 5/5.
+- **Symptom:** A generic class declared `class Stack(T) implements IFoo` does not emit a `comptime { IFoo.check(@This()); }` block inside the generated Zig struct. The missing check means the compiler won't catch at compile time that `Stack(T)` is missing a required method — the error will only surface when a caller tries to use a `Stack(T)` value through the interface (if ever).
+- **Root cause:** `genGenericClass` in both `src/CodeGen.zig` and `selfhost/codegen.zbr` handles `invariants` but has no `implements`/`ifaces` block. `genClass` delegates to `genGenericClass` early and never runs its own `implements` block. This was a pre-existing gap before interface vtable codegen was added.
+- **Fix:** Added `implements.len > 0 → comptime { IFoo.check(@This()); }` block in `genGenericClass` (both backends), parallel to `genClass` and `genStruct`.
+
+---
+
+### BUG-084: Selfhost `Lexer.zbr` tracks `[`/`]` in `parenDepth`; Zig `Tokenizer.zig` does not — ✅ CLOSED 2026-08-20
+
+> **✅ CLOSED 2026-08-20 — verified against BOTH compilers, and PINNED.**
+> `test/bug084_bracket_paren_depth_fail.zbr` (`smoke_tc_fail`) is a MUST-FAIL fixture,
+> which is the only shape that can see this regression: reverting the fix makes the
+> selfhost ACCEPT a multi-line `[...]`, and everything that compiles today would still
+> compile with the bug back.
+>
+> Both front ends reject it at 23:17 (selfhost "unexpected expression token", bootstrap
+> "syntax error near") — the messages differ, the ACCEPT/REJECT verdict agrees, and that
+> verdict is what the parity claim is about. Carries a control: the SAME literal on ONE
+> line is accepted, so the rejection is caused by the line break rather than by the
+> literal.
+- **Severity:** Low — root divergence fixed; both backends now behave identically
+- **Status:** Fixed — removed `[`/`]` and `@[` from `parenDepth` tracking in `selfhost/Lexer.zbr`; aligned with `src/Tokenizer.zig` (only `(`/`)` tracked); 26/26 smoke tests pass; bootstrap 5/5
+- **Root cause:** Selfhost `Lexer.zbr` tracked both `[`/`]` and `(`/`)` in `parenDepth`. Zig `Tokenizer.zig` only tracks `(`/`)`. The divergence was accidental — the original selfhost port added `[`/`]` tracking without a design reason, and the `@[` emit path (added for array literals) was patched to compensate rather than root-cause fixed.
+- **Fix:** Removed `parenDepth = parenDepth ± 1` from the `[`/`]` handling and the `@[` `scanAt` path in `selfhost/Lexer.zbr`. Both backends now only suppress EOL inside `(`...`)`. Multi-line `@[...]` is consistently unsupported in both backends (same behavior).
+
+---
+
+### BUG-085: `static def` methods — bare static field names incorrectly emit `self.field` — ✅ CLOSED 2026-08-20
+
+> **✅ CLOSED 2026-08-20 — verified by running the case, and PINNED.**
+> `test/bug085_static_field_bare_test.zbr` (`smoke_run`) exercises BOTH halves the fix
+> claimed: a bare static field inside a `static def`, and a bare static field alongside a
+> bare instance field inside an INSTANCE method — the second is what distinguishes this
+> fix from the `in_static_method` flag that was rejected.
+>
+> Watched going RED with the guard disabled (`if isSharedField(id.name)` → `if false`):
+> `error: use of undeclared identifier 'self'`, the ticket's symptom verbatim.
+>
+> **Naming drift, recorded rather than silently fixed:** the body below says the selfhost
+> helper is `isStaticField` in `selfhost/codegen.zbr`. It is `isSharedField` in
+> `selfhost/CodeGen.zbr` today (the module was renamed to PascalCase, and the helper
+> renamed at some point after this entry was written). The mechanism is the one described.
+- **Severity:** Low (ergonomic; workaround available)
+- **Status:** Fixed — `src/CodeGen.zig` and `selfhost/codegen.zbr` `genIdent`; `test/shared_var_test.zbr` updated to exercise the fix; bootstrap 5/5.
+- **Symptom:** Inside a `static def` method, a bare field name (e.g. `count`) was treated by `genIdent`/`isFieldName` as an instance field and emitted as `self.count`. But static methods have no `self` parameter in the generated Zig — so the generated code was `self.count` in a `fn increment() void` with no `self`, causing a Zig compile error.
+- **Root cause:** `genIdent` checked `in_method: bool` (set for both instance and static methods) and `isFieldName` returned true for any declared class field. There was no guard for the static case.
+- **Fix:** Rather than adding an `in_static_method` flag (which would miss bare `static var` access from instance methods), the fix checks the field's own `static` modifier at the `genIdent` site:
+  - **Zig backend:** After `if (sym.kind == .var_)`, added `if (sym.decl.var_.mods.static_) { emit owner.name; return; }`. Safe because `sym.kind == .var_` guarantees `sym.decl` is the `.var_` union variant.
+  - **Selfhost:** Added `isStaticField(name: str): bool` helper (iterates `owner_members`, returns `fld.mods.is_static`). `genIdent` now calls `isStaticField` and emits `owner.name` instead of `self_name.name` for static fields.
+- **Benefit:** Fixes bare `static var` access from BOTH static methods AND instance methods — strictly more correct than the `in_static_method` flag approach.
+- **Files:** `src/CodeGen.zig` (`genIdent`), `selfhost/codegen.zbr` (`genIdent`, new `isStaticField`).
+
+---
+
 ### BUG-272: a parameter used only inside `ensure … old p` is discarded — ✅ CLOSED UNREACHABLE (2026-08-18)
 
 **Found 2026-08-06** by `tools/lint_expr_walkers.py` on its first run — the only finding

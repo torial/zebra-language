@@ -1,0 +1,73 @@
+# BUG-027 regression fixture — chaining onto a struct-returning call in EXPRESSION
+# position (a call argument), which the statement-position hoist cannot reach and which
+# is fixed by a different mechanism: a labeled block
+#
+#     (blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })
+#
+# THE CHAINED METHOD MUST MUTATE. A non-mutating method lowers to a by-value receiver and
+# Zig accepts it on a temporary, so a fixture built from those passes with the labeled
+# block REMOVED and pins nothing -- verified against a compiler with the block disabled,
+# where an earlier draft of this file still printed the right answers. A field assignment
+# forces `fn m(self: *Builder)`, the temporary is `*const`, and the block has to
+# materialise it.
+#
+# THE THROWS LEG is here because the entry records a second fix in the same place --
+# `exprCallIsThrows` learning to handle a CALL-EXPRESSION receiver, so the block emits
+# `break :blk_N try _mc_N.method(args)`. Without it the block breaks an error union into
+# a plain value.
+#
+# NOT covered, deliberately: a throws chain in call-arg position inside a labeled `try`
+# block. The entry records that as a known remaining sub-issue, so a fixture would pin
+# behaviour the ticket says is still broken.
+
+struct Builder
+    var value: int
+
+    cue init(v: int)
+        value = v
+
+    # MUTATES -> pointer receiver
+    def bumpAndGet(): int
+        value = value + 1
+        return value
+
+    def addAndGet(n: int): int
+        value = value + n
+        return value
+
+    # the throws leg: mutates AND throws
+    def addChecked(n: int): int throws
+        value = value + n
+        return value
+
+def makeBuilder(n: int): Builder
+    return Builder(n)
+
+def acceptInt(v: int): int
+    return v
+
+def addTwo(a: int, b: int): int
+    return a + b
+
+class Maker
+    def build(): int
+        # chained call in ARGUMENT position where the CHAINED method throws
+        var v: int = acceptInt(makeBuilder(6).addChecked(25)?)
+        return v
+    catch
+        return -1
+
+def main()
+    # single chain in call-arg position
+    assert acceptInt(makeBuilder(5).bumpAndGet()) == 6
+    # with arguments on the chained method
+    assert acceptInt(makeBuilder(10).addAndGet(7)) == 17
+    # two chains in two argument slots of the SAME call must not share a temporary
+    assert addTwo(makeBuilder(1).bumpAndGet(), makeBuilder(100).bumpAndGet()) == 103
+    # nested: a chain inside a call that is itself an argument
+    assert acceptInt(addTwo(makeBuilder(2).bumpAndGet(), 8)) == 11
+
+    var m = Maker()
+    assert m.build() == 31
+
+    print("bug027: OK")

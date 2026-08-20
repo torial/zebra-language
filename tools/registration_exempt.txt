@@ -8,6 +8,7 @@
 MathUtils  # helper module imported by other tests; has no main()
 StringHelper  # helper module imported by other tests; has no main()
 bug082_lib  # helper module imported by other tests; has no main()
+bug124_boxed_ctor_lib  # helper module imported by bug124_boxed_nilable_ctor_test; has no main()
 bug168_crossmod_prim_return_lib  # helper module imported by other tests; has no main()
 bug221_transitive_init_leaf  # support module for a bug fixture; exercised through its importer
 bug221_transitive_init_mid  # support module for a bug fixture; exercised through its importer

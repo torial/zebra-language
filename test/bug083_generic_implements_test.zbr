@@ -1,0 +1,45 @@
+# BUG-083 regression fixture — a GENERIC class declaring `implements` must emit the
+# interface conformance check, the same as a plain class or struct.
+#
+# `genClass` delegates to `genGenericClass` early and never runs its own `implements`
+# block, and `genGenericClass` had no such block of its own -- so `class Box(T) implements
+# Printable` compiled happily while conforming to nothing. The missing check is not a
+# wrong answer, it is an ABSENT question: the class still works, and a missing method only
+# surfaces later at some caller, if ever.
+#
+# WHY THIS ONE IS PINNED ON THE EMIT rather than on behaviour. The check's whole job is to
+# make a NON-conforming generic class fail to build, so the only fixture that could catch
+# the regression by running is one that must NOT compile -- and a file that must fail
+# needs a harness that asserts the failure at the ZIG level, which the smoke suite does
+# not have (its *_fail helpers are front-end and runtime). Asserting the emitted
+# `Printable.check(@This())` is present tests the mechanism directly and cannot pass
+# vacuously: with the fix reverted the string is simply absent.
+#
+# Registered with `smoke_emit_contains`, whose first user this is.
+
+interface Printable
+    def label(): str
+
+class Tag
+    var n: int
+    cue init(v: int)
+        n = v
+
+# generic class + implements: the shape that skipped the check
+class Box(T) implements Printable
+    var value: T
+
+    cue init(v: T)
+        value = v
+
+    def label(): str
+        return "box"
+
+    def get(): T
+        return value
+
+def main()
+    var b = Box(Tag)(Tag(7))
+    assert b.label() == "box"
+    assert b.get().n == 7
+    print("bug083: OK")
