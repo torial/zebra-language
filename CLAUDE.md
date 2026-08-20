@@ -162,19 +162,34 @@ way a guard gets declared tested without being tested.
 Five tiers, **cumulative**: each runs everything below it. `--list` prints the live
 per-tier counts, computed from the registrations rather than written down.
 
-| tier | gates | cost | run it when |
+| tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
-| `--static` | 12 | **14 s** (measured) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 21 | **2m27s** (measured) | mid-change, before you believe anything |
-| (default) | 23 | **14 min** (measured) | after any `.zbr` edit |
-| `--full` | 30 | ~40 min (the daily run's full portion) | before committing a codegen change |
-| `--daily` | 33 | **56m43s** (measured) | once a day |
+| `--static` | 12 | **14 s** | you edited docs, ledgers, or `tools/` |
+| `--fast` | 21 | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 23 | **7–20 min** | after any `.zbr` edit |
+| `--full` | 30 | **36–55 min** | before committing a codegen change |
+| `--daily` | 33 | **37–57 min** | once a day |
 
-**The default tier was documented as "~6 min" and is 14.** Measured 2026-08-19, per gate:
-`smoke` 647 s and `round-trip` 183 s are **99% of it**; the other 21 gates total about
-two minutes, and 14 of them finish in under two seconds combined. That distribution is
-the whole argument for a ladder — there was already an instant tier sitting inside QUICK,
-unreachable because the only way to ask for it was to run everything.
+**THE COSTS ARE RANGES BECAUSE THEY MEASURED A 3x SPREAD, and the honest version took
+three attempts.** The default tier was documented as "~6 min"; it was then measured at
+14 min, then at 19m35s inside a `--daily` run, then at **7m05s** on an idle tree with warm
+caches. All three are real. `smoke` alone accounts for nearly all of it — **214 s, 647 s
+and 774 s** across those runs — with `round-trip` (141–285 s) second. Together they are
+**85–99%** of the default tier in every measurement; the other 21 gates total about two
+minutes regardless, and 14 of them finish in under two seconds combined.
+
+**So the two things that vary are the two heaviest gates, and everything cheap is
+stable.** That is why `--static` and `--fast` have tight numbers while the tiers above
+them have ranges, and it is the ladder's actual argument: the rungs that answer fastest
+are also the rungs whose cost you can predict. A single figure labelled "measured" would
+have been true of one afternoon and wrong by a factor of three the next morning — the same
+over-read this section warns about two paragraphs earlier, which is how it got written
+wrong twice before landing here.
+
+`--full` is not measured directly (no run used the flag): both figures are a `--daily`
+wall clock minus its three daily-only gates, which is sound because the runner is
+sequential — 2206 s − 68 s and 3383 s − 77 s. Per-gate seconds sum to within ~20 s of wall
+clock in both runs, so the overhead outside the gates is preflight and printing.
 
 **The cut is on build-dependence, and cost is the wrong axis even though cost is the
 motivation.** Timings are taken on a WARM tree: `zig-test`, `ffi-lib` and `diag-columns`
@@ -1264,8 +1279,15 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
-**FIRST `--daily` TIER, 2026-08-19 — 33 gates in ONE invocation, 56m43s at JOBS=2: 30
-PASS, 1 XFAIL, 2 FAIL.** smoke **359/359**, round-trip byte-identical, `output_sweep` 374
+**`--daily` CONFIRMED CLEAN, 2026-08-19 — 32/33 PASS + 1 XFAIL in ONE invocation,
+36m56s at JOBS=2**, on the committed tree with the `examples_sweep` fix. Every gate green:
+smoke, round-trip, `compile_check-inline` **276/0/0**, `output_sweep` 374 identical,
+`full_sweep` 0 vs 390 + positive set 276/276, `examples_sweep` 0 vs 17, `divergence`
+**0 selfhost gaps**, `gramgen` 960/0/0. `node-addon` XFAILed against BUG-297, as
+registered — the pin's accounting reconciles in a real tier (32 + 1 = 33 expected).
+
+**FIRST `--daily` TIER, the run before it — 33 gates in ONE invocation, 56m43s at JOBS=2:
+30 PASS, 1 XFAIL, 2 FAIL.** smoke **359/359**, round-trip byte-identical, `output_sweep` 374
 files behaviour identical, `full_sweep` 0 regressions vs 390 **plus positive set 276/276**,
 `divergence` **0 selfhost gaps**, `boundary` 29/0, `contract-mode` 13/13, `release-mode`
 clean, `gramgen` 960 programs / 0 hangs / 0 crashes. `node-addon` XFAILed against BUG-297,
@@ -1283,11 +1305,12 @@ so), test/ still printing `positive set 276/276 pass`.
 
 **The other failure did not reproduce and is recorded rather than explained.**
 `compile_check-inline` reported `iter_collision_test` as "emitted, but zig refused" at
-275/1. Standalone: 1/1. Full re-run of the same gate on the same tree: **276/0/0**. That
-is the second single-file non-reproducing failure in this gate in two days under tier
-load (the first was 2026-08-19's `275 passed / 1 skipped`), and the honest statement is
-that the rate is worth watching — not that "it was load", which is a story that fits every
-observation and predicts nothing.
+275/1. Standalone: 1/1. Full re-run of the same gate on the same tree: **276/0/0**, and
+**276/0/0** again in the clean tier run above. That is the second single-file
+non-reproducing failure in this gate in two days under tier load (the first was
+2026-08-19's `275 passed / 1 skipped`), and the honest statement is that the rate is worth
+watching — not that "it was load", which is a story that fits every observation and
+predicts nothing. A third occurrence stops being a transient and becomes the finding.
 
 **TWO MORE FULL TIERS, 30/30 EACH IN ONE INVOCATION, overnight 2026-08-18** — BUG-294
 (`8d26aad`) then BUG-293 (`e7b9679`). smoke 348 -> 349, `compile_check` **270/0/2** in
