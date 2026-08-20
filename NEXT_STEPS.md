@@ -1355,7 +1355,12 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
   - [ ] **Follow-ups (optional):** address G2 (selfhost accepts body-less `struct`/`extend`);
     dead-rule cleanup in `grammar.txt`; add a front-end-only oracle mode (parse/`--check` rather
     than full `--emit-zig`) so resolver/TC divergences aren't swamped by legit "undefined name"
-    rejections; consider gating a fixed-seed gramgen batch (assert no crashes/hangs) per session.
+    rejections; ~~consider gating a fixed-seed gramgen batch (assert no crashes/hangs) per
+    session~~ — **DONE 2026-08-19**: `gramgen --gate` is registered in the new `--daily` tier
+    of `gates.sh` (960 deterministic programs, gated on hangs and crashes only, since
+    accept/reject divergences are expected). "Per session" was the right cadence to ask for
+    and the wrong thing to encode: a cadence nobody can run is a paragraph. It is now a tier
+    with a name.
 
 - [ ] **`indexOf` nil-safe API (principled `int?`)** [deferred 2026-07-22, Sean's call: revisit
   during hands-on language testing]. `str.indexOf`/`lastIndexOf` currently return `int` with a `-1`

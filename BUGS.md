@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-296. Next new bug: BUG-297.**
+**Last bug number generated: BUG-298. Next new bug: BUG-299.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -12,6 +12,106 @@
 >
 > No gate could see this: `doc_lint` D4 only checks that a cited BUG-NNN exists
 > *somewhere*, so a duplicate satisfies it twice over.
+
+---
+
+### BUG-298: `gui_scaffold_check` reports "startup path clean" when the scaffold build produced NO app — leg 2 skips instead of failing — OPEN (found 2026-08-19)
+
+Leg 2 of `tools/gui_scaffold_check.sh` runs the built app and classifies the startup
+fault. When it cannot find an `app.exe` it prints
+
+```
+  --    leg 2: skipped (no built app.exe — leg 1 still gates the regression)
+```
+
+and the gate still exits 0 with `gui scaffold check: startup path clean`. **But "no
+app.exe" has two very different causes and the gate cannot tell them apart:** the harness
+genuinely not building one, and the build having FAILED. In the second case the gate
+reports clean about a scaffold that does not exist.
+
+**Observed, not hypothesised.** On 2026-08-19 the check reported `startup path clean`
+while `zebra --gui-backend=tui examples/counter.zbr` was exiting 1 on
+
+```
+error: unable to read results of configure phase from
+'…\Temp\counter_gui_tui\.zig-cache\tmp\16ce6e37c914cf04': FileNotFound
+```
+
+— a corrupted scratch cache in the temp scaffold root. Moving that directory aside made
+the build work and produce `app.exe`, after which the app ran and refused a non-tty
+console (rc=3), which is the documented healthy outcome. So the underlying tui path was
+fine; what was broken was the gate's ability to say that it had not checked it.
+
+**Leg 1 kept working throughout, and that is what made it look green** — it reads the
+scaffolded `main.zig`, which a previous run had left on disk. A gate asserting against a
+stale artifact from an earlier date is the shape this repo keeps re-finding.
+
+**Why this matters more than one skipped leg.** `gui_scaffold_check` is the ONLY automated
+GUI coverage in the repo — four GUI crashes have sat under fully green gates and all four
+were at startup. Half of it silently not running returns that number to "no gate touches a
+GUI".
+
+**Suggested fix.** Distinguish the two causes: if the build exited non-zero for a reason
+OTHER than the app's own non-tty refusal, that is a FAILURE, not a skip. The refusal is
+already identified by leg 2's own classifier, so the information exists — it is just
+consulted after the point where the skip has already been taken. A gate that cannot run
+its runtime leg should say `INCONCLUSIVE` and exit non-zero, not `clean`.
+
+**Control when fixing.** Corrupt or remove the scaffold's `.zig-cache` and confirm the
+gate goes RED rather than printing `startup path clean`; then restore and confirm it goes
+green with leg 2 actually running (rc=3, non-tty refusal). It is registered in the
+`--daily` tier, so both states are observable there.
+
+---
+
+### BUG-297: `--target node-addon` emits an undeclared reference to the owning class for a STATIC-block export — OPEN (found 2026-08-19)
+
+`zebra --target node-addon` on a `@node_export` inside a class `static` block emits a
+reference to the class that is never declared, and the build fails on the compiler's own
+diagnostic:
+
+```
+test/node_addon/math.zbr:31: error: use of undeclared identifier 'Calc'
+```
+
+**Isolated to the node-addon target, and to the class path specifically.** Three probes:
+
+| probe | result |
+|---|---|
+| `zebra -c test/node_addon/math.zbr` | clean — the front end is fine |
+| `zebra --target node-addon test/node_addon/math.zbr` | **fails as above** |
+| the sibling fixture `strings.zbr` (no class) | passes |
+
+The failing shape is the last block of `test/node_addon/math.zbr`, which exists to
+exercise the `Owner.method` call path:
+
+```zebra
+class Calc
+    static
+        @node_export
+        def square(n: int): int
+            return n * n
+```
+
+**HOW IT WAS FOUND, which is the part worth keeping.** It was not found by a gate — it was
+found by *wiring a gate*. `tools/node_addon_test.sh` was in NO tier: it sat under
+CLAUDE.md's "run these deliberately" list, where its last recorded sweep is **2026-08-04,
+PASS**. Nothing has run it since, so the regression's window is those two weeks and
+nothing narrows it further. This is the same shape as BUG-279 (`zig build test` red, in
+neither a tier nor the uncovered table) two days earlier, and the second instance is what
+motivated the `--daily` tier rather than another reminder.
+
+**It is PINNED, not excluded.** `gates.sh` registers it as
+`pin_daily "node-addon" "BUG-297"`: it RUNS on every `--daily`, prints `XFAIL` with this
+ticket, and does not fail the tier — but it **fails the tier the day it starts passing**,
+so the pin cannot outlive the bug. Excluding it is what let it rot in the first place.
+
+**Control when fixing.** `bash tools/node_addon_test.sh` must report every fixture ok
+(`math` is the one to watch; `strings` and the negative `bad` already pass), and the
+`pin_daily` registration must then become `run_daily` — the tier will say so loudly if it
+is forgotten. Worth adding a class-static fixture to the node-addon set at the same time:
+`math.zbr` is currently the only file covering that path, which is why one regression took
+the whole gate red.
 
 ---
 

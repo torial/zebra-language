@@ -63,8 +63,11 @@ bash tools/doctor.sh --fix     # ...and clear what is safely clearable
 bash tools/rebuild.sh          # make a selfhost/*.zbr edit REAL (regen + build)
 bash tools/rebuild.sh --no-regen   # build only (no .zbr changed)
 bash tools/rebuild.sh --module CodeGen   # THE INNER LOOP: regen ONE module + build, ~10s
-bash tools/gates.sh            # QUICK tier (~6 min): lints + smoke + round-trip
-bash tools/gates.sh --full     # FULL tier (~50 min): + compile_check, full_sweep, divergence
+bash tools/gates.sh --static   # STATIC (~15s): needs NO BUILD — for a docs/tools/ledger edit
+bash tools/gates.sh --fast     # FAST (~2 min): everything except smoke + round-trip
+bash tools/gates.sh            # QUICK (~14 min): + smoke + round-trip. After any .zbr edit
+bash tools/gates.sh --full     # FULL (~40 min): + the heavy corpus witnesses
+bash tools/gates.sh --daily    # DAILY: + gramgen, gui-scaffold, node-addon. Once a day
 bash tools/gates.sh --list     # what each tier runs and what it cannot see
 ```
 
@@ -135,6 +138,73 @@ RENDERING, but startup is now covered** by `tools/gui_scaffold_check.sh` (BUG-22
 GUI crashes have sat under fully green gates, and all four were at *startup* — which
 needs neither a human nor a terminal to detect. Rendering, input, layout, resize and
 colours still require Sean running it.
+
+## The tier ladder — and why it is cut on BUILD-DEPENDENCE, not on seconds
+
+`bash tools/tier_selfcheck.sh` (~2 min, NOT a gate) asks whether the ladder can still
+fail. `gate_selfcheck.sh` falsifies the individual gates; this falsifies the thing that
+decides WHICH gates run, because a selector is a new way to print green — filter wrongly
+and the board shows fewer PASSes and no failures, which reads exactly like success. Six
+mutations on a COPY of `gates.sh`, each of which must be caught: an impure gate tagged
+static, a purity detector that stopped matching, a collapsed per-tier count, a gate that
+silently did not run, a pin that started passing — plus an unmutated control, without
+which every "detection" could be an unrelated breakage. Run it after touching `gates.sh`.
+
+**Its control caught two real things on its first two runs**, both of them the harness's
+fault rather than the ladder's, and both worth knowing: a probe file named `*.sh` turned
+`doc-lint` red BY EXISTING (it matched a live script-count oracle), and a mutation that
+replaced only one branch of the purity pattern left another branch matching, so the guard
+correctly did not fire — a cooperative attacker, which this repo has written down as the
+way a guard gets declared tested without being tested.
+
+
+
+Five tiers, **cumulative**: each runs everything below it. `--list` prints the live
+per-tier counts, computed from the registrations rather than written down.
+
+| tier | gates | cost | run it when |
+|---|---|---|---|
+| `--static` | 12 | **14 s** (measured) | you edited docs, ledgers, or `tools/` |
+| `--fast` | 21 | **2m27s** (measured) | mid-change, before you believe anything |
+| (default) | 23 | **14 min** (measured) | after any `.zbr` edit |
+| `--full` | 30 | ~40 min (the daily run's full portion) | before committing a codegen change |
+| `--daily` | 33 | **56m43s** (measured) | once a day |
+
+**The default tier was documented as "~6 min" and is 14.** Measured 2026-08-19, per gate:
+`smoke` 647 s and `round-trip` 183 s are **99% of it**; the other 21 gates total about
+two minutes, and 14 of them finish in under two seconds combined. That distribution is
+the whole argument for a ladder — there was already an instant tier sitting inside QUICK,
+unreachable because the only way to ask for it was to run everything.
+
+**The cut is on build-dependence, and cost is the wrong axis even though cost is the
+motivation.** Timings are taken on a WARM tree: `zig-test`, `ffi-lib` and `diag-columns`
+each measure ~1 s only because the binaries happen to be current, and cost a full build on
+a cold one. A tier whose advertised cost stops being true exactly when you most want it —
+mid-edit, nothing rebuilt — is a tier that lies. Build-dependence is stable, derivable,
+and answers the question you actually have: *does this change need a compiler to judge?*
+
+**It was MEASURED, not reasoned.** The 12 static gates were established by hiding
+`zig-out/bin/zebra*.exe` and running the candidates: all 12 passed with no compiler
+present, and two controls (`str-ownership`, `diag-columns`) REFUSED — so the experiment
+can discriminate. Re-run that by hand when adding a static gate. Every run also re-derives
+the cheap half (`_static_purity_check`): a tool registered `run_static` must not mention
+`zig-out`, `zebra.exe` or `zig build`, and the check refuses if its own control — a known
+build-dependent tool that must match — stops firing.
+
+**`--static` is the one tier that does not refuse on a `doctor` failure.** Everything
+doctor gates is about the BINARY being stale or unbuildable, and no static gate reads the
+binary — which is not an assertion, it is what the purity check has just verified. The
+warning is printed loudly; every tier above static still refuses.
+
+**A KNOWN-RED gate is PINNED, not excluded.** `pin_daily "node-addon" "BUG-297"` runs the
+gate, prints `XFAIL`, does not fail the tier — and **fails the tier the day it starts
+passing**, because a pin that has come good is a registration nobody updated. That is the
+`@boundary-pending` idiom applied to a whole gate, and it exists because exclusion is
+precisely what let this bug rot: node-addon was in no tier, its last recorded sweep was
+2026-08-04, and it had regressed silently by 08-19.
+
+**The tier names a cadence; nothing enforces it.** `--daily` is a set, not a schedule.
+Running it once a day is a habit or a cron job, and that choice is Sean's.
 
 ## Every document says what it is (read this before reading the docs)
 
@@ -1157,7 +1227,8 @@ than "what do we know":
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 76 scripts | <!-- doc-gen: 76 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 77 scripts | <!-- doc-gen: 77 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 51 tracked documents <!-- doc-gen: 51 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -1169,9 +1240,54 @@ The last row is the one that keeps the rest honest; see its header for why.
 
 ## What the gates do NOT cover — and when it was last checked
 
-`gates.sh` deliberately excludes three things so that "gates green" keeps a precise
-meaning. That precision is only worth anything if the excluded set is actually run
+`gates.sh` deliberately excludes three things from `--full` so that "gates green" keeps a
+precise meaning. That precision is only worth anything if the excluded set is actually run
 sometimes, so record the date here when you do.
+
+**AS OF 2026-08-19 THOSE THREE ARE THE `--daily` TIER** — `gramgen`, `gui-scaffold`,
+`node-addon`. They are still out of `--full`; what changed is that they have a name and a
+cadence instead of a paragraph asking someone to remember. The paragraph did not work:
+their last recorded sweep was 2026-08-04, and wiring the tier immediately found that
+**node-addon had regressed in between (BUG-297)** — `--target node-addon` on a class
+STATIC-block export emits a reference to the owning class that is never declared. It is
+PINNED rather than excluded, so it is visible on every daily run and the pin fails the
+tier the day the bug is fixed.
+
+Two smaller findings from the same wiring, neither of them a compiler regression:
+`gramgen` is clean (960 programs, 0 hangs, 0 crashes), and `gui-scaffold` **printed
+"startup path clean" while its leg 2 had not run at all — BUG-298**. Leg 2 skips when it
+finds no `app.exe`, which is also exactly what a FAILED build looks like; here a corrupted
+scratch cache in the temp scaffold root was making the build fail, while leg 1 went on
+asserting against a `main.zig` left on disk by an earlier run. The tui path itself is
+fine: clearing that directory made the build produce an app, which then refused a non-tty
+console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
+automated GUI coverage, half of it silently not running takes that number back to zero —
+read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**FIRST `--daily` TIER, 2026-08-19 — 33 gates in ONE invocation, 56m43s at JOBS=2: 30
+PASS, 1 XFAIL, 2 FAIL.** smoke **359/359**, round-trip byte-identical, `output_sweep` 374
+files behaviour identical, `full_sweep` 0 regressions vs 390 **plus positive set 276/276**,
+`divergence` **0 selfhost gaps**, `boundary` 29/0, `contract-mode` 13/13, `release-mode`
+clean, `gramgen` 960 programs / 0 hangs / 0 crashes. `node-addon` XFAILed against BUG-297,
+as registered.
+
+**THE TIER'S FIRST RUN FOUND A REGRESSION TWELVE HOURS OLD, IN A GATE, THAT NO TIER HAD
+RUN SINCE IT CHANGED.** `examples_sweep` could not pass at all: `f5640dd` gave `full_sweep`
+its new absolute positive-set leg and did not guard it for `--examples`, so the gate
+compared the 276-file **test/** positive set against the **examples/** pass list and
+reported every one as a MUST-PASS failure. That commit's verification list covered
+`full_sweep` and not its `--examples` sibling — the two are the same script, which is why
+the leg was worth sharing and exactly why a leg has to name its corpus. Fixed and
+re-verified both ways: examples 0 regressions vs 17 (RELATIVE leg only, and it now SAYS
+so), test/ still printing `positive set 276/276 pass`.
+
+**The other failure did not reproduce and is recorded rather than explained.**
+`compile_check-inline` reported `iter_collision_test` as "emitted, but zig refused" at
+275/1. Standalone: 1/1. Full re-run of the same gate on the same tree: **276/0/0**. That
+is the second single-file non-reproducing failure in this gate in two days under tier
+load (the first was 2026-08-19's `275 passed / 1 skipped`), and the honest statement is
+that the rate is worth watching — not that "it was load", which is a story that fits every
+observation and predicts nothing.
 
 **TWO MORE FULL TIERS, 30/30 EACH IN ONE INVOCATION, overnight 2026-08-18** — BUG-294
 (`8d26aad`) then BUG-293 (`e7b9679`). smoke 348 -> 349, `compile_check` **270/0/2** in

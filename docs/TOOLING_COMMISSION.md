@@ -152,7 +152,7 @@ lists everything else. An untracked `.zbr` might be an abandoned probe or a fixt
 someone is three minutes from committing — the tool cannot tell, so it does not guess. A
 cleanup tool that deletes unfinished work once will never be run again.
 
-**D6, the count oracle** — `<!-- doc-gen: 23 = grep -c '^run "' tools/gates.sh -->`.
+**D6, the count oracle** — `<!-- doc-gen: 33 = grep -cE '^(run|pin)_[a-z]+ "' tools/gates.sh -->`.
 Counts rot because a bare number has no referent; three rotted in one day. **It found a
 vacuous check on its first use:** the oracle said 12 gates while D3's parser said 13, and
 that one-digit disagreement exposed D3's regex as `[a-z0-9\-]+` — no underscore — so
@@ -204,7 +204,11 @@ reach is narrower than the sentence, the sentence loses.
 **Prose counts are known-unfixable by these tools and are corrected by hand.** `gates.sh`
 claimed "seven gates" against twelve registered, and "Twelve probes" against twenty. A
 bare number has no referent to resolve, so `doc_lint` lists this in its uncovered set;
-the header now names the oracle (`grep -c '^run "' tools/gates.sh`) beside the number.
+the header stopped carrying the number at all: `--list` now COMPUTES the per-tier gate
+counts from the registrations when it prints (2026-08-19). Deriving a number is strictly
+better than instrumenting it, and this one had a second problem an oracle could not fix --
+doc_lint scans `*.md` and `docs/*.md`, never `.sh`, so the oracle attached to the header's
+count had never actually run.
 
 This document did it too, within an hour of saying so: it opened with "five bugs" above a
 six-row table and "six checks" above seven. The practical lesson is not to try harder —

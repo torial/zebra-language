@@ -59,7 +59,14 @@ BUG_REF = re.compile(r"\bBUG-(\d{2,4})\b")
 # "is this documented?" check, and D3 reported clean the whole time. Found 2026-08-01 by
 # a D6 count oracle disagreeing with D3's own parse (12 vs 13), which is the entire
 # argument for pinning counts: the discrepancy is the signal.
-GATE_REG = re.compile(r'^\s*run\s+"([a-z0-9_\-]+)"', re.M)
+#
+# THE SUFFIX IS NOT OPTIONAL, and the control below is why this line is still right.
+# 2026-08-19: gates.sh moved from `run "label"` to `run_<tier> "label"` (and `pin_<tier>`)
+# when the tier ladder landed. This regex stopped matching, D3 parsed ZERO gates, and the
+# control caught it on the first run of the new static tier -- the gate REFUSED rather
+# than reporting "0 stale", which is exactly the difference between an instrument that
+# fails loudly and one that goes quiet. Kept as one pattern covering both forms.
+GATE_REG = re.compile(r'^\s*(?:run|pin)_[a-z]+\s+"([a-z0-9_\-]+)"', re.M)
 
 # Same suppression discipline as tools/hazard_lint.py: an HTML comment on the flagged
 # line, and a REASON is required. The commonest legitimate case is a PROPOSED tool
@@ -270,7 +277,7 @@ def check_gates(claude_text):
 # Trying harder does not work. A bare number has no referent, so nothing can check it and
 # nobody notices when the thing it counted grew. Give it a referent:
 #
-#     There are 12 gates <!-- doc-gen: 12 = grep -c '^run "' tools/gates.sh -->
+#     There are 33 gates <!-- doc-gen: 33 = grep -cE '^(run|pin)_[a-z]+ "' tools/gates.sh -->
 #
 # and this check runs the command and compares. The number stays in readable prose; the
 # oracle sits beside it. If you cannot express the count as a command, that is a signal
@@ -402,11 +409,20 @@ def selftest(verbose=False):
             print(f"  [{'ok  ' if code not in dead else 'DEAD'}] {code} control -> "
                   f"fired {sorted(fired) or 'nothing'}")
     # D3 has no text-snippet control; it is exercised by construction on every run
-    # (it reads the real gates.sh), so an empty registered-set is the failure to catch.
-    if not GATE_REG.findall((REPO / "tools/gates.sh").read_text(encoding="utf-8")):
+    # (it reads the real gates.sh), so a collapsed registered-set is the failure to catch.
+    #
+    # A FLOOR, NOT `> 0`. The old control accepted any non-empty parse, so a pattern that
+    # matched ONE registration out of thirty-three would have looked healthy while D3
+    # checked almost nothing. That became a live risk when registrations gained a tier
+    # suffix: `run_static` and `run_daily` are different tokens, and a regex can easily
+    # match one family and miss the rest. The floor is well below the real count (33) and
+    # well above what a half-broken pattern yields.
+    _D3_FLOOR = 10
+    if len(set(GATE_REG.findall((REPO / "tools/gates.sh").read_text(encoding="utf-8")))) < _D3_FLOOR:
         dead.add("D3")
         if verbose:
-            print("  [DEAD] D3 control -> parsed ZERO gates out of tools/gates.sh")
+            print(f"  [DEAD] D3 control -> parsed fewer than {_D3_FLOOR} gates out of "
+                  f"tools/gates.sh (the registration pattern has stopped matching)")
     elif verbose:
         print(f"  [ok  ] D3 control -> parsed "
               f"{len(set(GATE_REG.findall((REPO / 'tools/gates.sh').read_text(encoding='utf-8'))))} "

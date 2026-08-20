@@ -145,15 +145,29 @@ if [ "$GATE" = 1 ]; then
   # looked like a plausible finding.
   # One `comm` rather than a grep-per-file loop: 276 process spawns is seconds of pure
   # overhead on Git Bash, and pass.txt is already sorted by the sweep above.
-  POSN=$(bash "$REPO/tools/positive_set.sh" | wc -l | tr -d ' ')
-  posfail=$(comm -23     <(bash "$REPO/tools/positive_set.sh" | sed 's|.*/||; s|\.zbr$||' | sort -u)     "$OUT/pass.txt")
-  if [ -n "$posfail" ]; then
-    echo "✗ POSITIVE-SET FAILURE — these are registered as MUST-PASS and did not:"
-    printf '%s' "$posfail" | sed 's/^/    /'
-    echo "  (this is compile_check's absolute leg; it does not care about the baseline)"
-    exit 1
-  fi
+  # THE POSITIVE SET IS A test/ SET, so this leg is meaningless under --examples: it
+  # would compare the 276 test files against the EXAMPLES pass list and report every
+  # one of them as a MUST-PASS failure. That is exactly what it did on the night it
+  # landed -- `examples_sweep` could not pass at all -- and the reason nobody saw it is
+  # that the commit verified full_sweep and not its --examples sibling. Running two
+  # corpora through one script is still right (the emit/build/baseline logic cannot
+  # drift between them), but every LEG has to say which corpus it is about.
+  if [ "$EXAMPLES" = 0 ]; then
+    POSN=$(bash "$REPO/tools/positive_set.sh" | wc -l | tr -d ' ')
+    posfail=$(comm -23     <(bash "$REPO/tools/positive_set.sh" | sed 's|.*/||; s|\.zbr$||' | sort -u)     "$OUT/pass.txt")
+    if [ -n "$posfail" ]; then
+      echo "✗ POSITIVE-SET FAILURE — these are registered as MUST-PASS and did not:"
+      printf '%s' "$posfail" | sed 's/^/    /'
+      echo "  (this is compile_check's absolute leg; it does not care about the baseline)"
+      exit 1
+    fi
 
-  echo "✓ full-sweep gate PASS — 0 regressions vs baseline ($(wc -l < "$BASELINE") tests); positive set $POSN/$POSN pass"
+    echo "✓ full-sweep gate PASS — 0 regressions vs baseline ($(wc -l < "$BASELINE") tests); positive set $POSN/$POSN pass"
+  else
+    # NAME THE MISSING LEG rather than reprinting the test/ sweep's sentence. An
+    # operator reading two identical PASS lines would reasonably assume both corpora
+    # got both assertions.
+    echo "✓ full-sweep gate PASS — 0 regressions vs baseline ($(wc -l < "$BASELINE") examples); RELATIVE leg only (the positive set is a test/ set)"
+  fi
   exit 0
 fi
