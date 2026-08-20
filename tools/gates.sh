@@ -13,8 +13,8 @@
 #   bash tools/gates.sh --static     # ~15s   — no build needed AT ALL
 #   bash tools/gates.sh --fast       # ~2.5m  — everything except smoke + round-trip
 #   bash tools/gates.sh              # 7-20m  — QUICK, the default. After any .zbr edit
-#   bash tools/gates.sh --full       # 36-55m — before committing a codegen change
-#   bash tools/gates.sh --daily      # 37-57m — ONCE A DAY: full + the excluded set
+#   bash tools/gates.sh --full       # 36-83m — before committing a codegen change
+#   bash tools/gates.sh --daily      # 37-85m — ONCE A DAY: full + the excluded set
 #   bash tools/gates.sh --list       # what each tier runs, and what it cannot see
 #
 # THE TIERS ARE CUMULATIVE: each runs everything below it. So a gate documented as

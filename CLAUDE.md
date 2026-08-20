@@ -167,8 +167,8 @@ per-tier counts, computed from the registrations rather than written down.
 | `--static` | 12 | **14 s** | you edited docs, ledgers, or `tools/` |
 | `--fast` | 21 | **~2.5 min** | mid-change, before you believe anything |
 | (default) | 23 | **7–20 min** | after any `.zbr` edit |
-| `--full` | 30 | **36–55 min** | before committing a codegen change |
-| `--daily` | 33 | **37–57 min** | once a day |
+| `--full` | 30 | **36–83 min** | before committing a codegen change |
+| `--daily` | 33 | **37–85 min** | once a day |
 
 **THE COSTS ARE RANGES BECAUSE THEY MEASURED A 3x SPREAD, and the honest version took
 three attempts.** The default tier was documented as "~6 min"; it was then measured at
@@ -186,10 +186,20 @@ have been true of one afternoon and wrong by a factor of three the next morning 
 over-read this section warns about two paragraphs earlier, which is how it got written
 wrong twice before landing here.
 
-`--full` is not measured directly (no run used the flag): both figures are a `--daily`
+`--full` is not measured directly (no run has used the flag): every figure is a `--daily`
 wall clock minus its three daily-only gates, which is sound because the runner is
-sequential — 2206 s − 68 s and 3383 s − 77 s. Per-gate seconds sum to within ~20 s of wall
-clock in both runs, so the overhead outside the gates is preflight and printing.
+sequential — 2206 s − 68 s, 3383 s − 77 s, 5056 s − 83 s. Per-gate seconds sum to within
+~30 s of wall clock in all three runs, so the overhead outside the gates is preflight and
+printing.
+
+**THE UPPER BOUND MOVED AGAIN ON 2026-08-20 (57 → 85 min), and the cause is NOT the two
+gates that explain the QUICK spread.** `smoke` was 604 s and `round-trip` 208 s in that
+run — squarely mid-range — while `output_sweep` went 623 s → **1402 s** and `divergence`
+675 s → **1169 s**, on a machine with nothing else running. Those two are the RUN-the-
+corpus and BOTH-compilers gates, so they are the ones most exposed to whatever the
+environment is doing, and no explanation here has been tested. Recorded as an observation:
+the heavy tiers are predictable to within a factor of two, and anyone budgeting an hour
+for `--daily` should budget ninety minutes.
 
 **The cut is on build-dependence, and cost is the wrong axis even though cost is the
 motivation.** Timings are taken on a WARM tree: `zig-test`, `ffi-lib` and `diag-columns`
@@ -1289,6 +1299,20 @@ fine: clearing that directory made the build produce an app, which then refused 
 console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**DAILY tier 2026-08-20: 32/33 PASS + 1 XFAIL in ONE invocation, 84m42s at JOBS=2** —
+run as the CLOSING MOVE of a night's bug work, which is the convention Sean set that day
+(see the tier-ladder section). Every gate green on the committed tree: smoke **366/366**
+(up from 359 — seven new regression registrations), round-trip byte-identical,
+`compile_check-inline` **281/0/0**, `output_sweep` 374 behaviour-identical, `full_sweep`
+0 vs 390 + positive set, `examples_sweep` 0 vs 17, `divergence` **0 selfhost gaps**,
+`gramgen` 960/0/0, `gui-scaffold` clean. `node-addon` XFAILed against BUG-297.
+
+That run closed a night in which six ledger entries moved from OPEN to CLOSED (BUG-027,
+079, 083, 084, 085, 124) — each with a fixture that was watched going RED against a
+compiler with its own fix mutated out — plus BUG-299 filed and BUG-233 investigated. The
+tier is what says the tree is still sound afterwards, and it is the reason those closures
+can be believed rather than merely asserted.
 
 **`--daily` CONFIRMED CLEAN, 2026-08-19 — 32/33 PASS + 1 XFAIL in ONE invocation,
 36m56s at JOBS=2**, on the committed tree with the `examples_sweep` fix. Every gate green:
