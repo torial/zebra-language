@@ -36,8 +36,43 @@ people to re-run it, and re-running until green is precisely how a real regressi
 waved through. It also cost real time here: occurrence 3 was investigated as a suspected
 regression from a same-day compiler change before it was shown to be nothing.
 
-**RULED OUT:** a shared workdir. `divergence_check.sh` gives each worker its own
-`$OUT/ws-<name>` / `$OUT/wb-<name>`, so two workers cannot collide on the emit directory.
+**OCCURRENCES 4 AND 5, from the `--daily` of 2026-08-21** (32/33 otherwise green, all
+heavy sweeps clean including `divergence` at 0 selfhost gaps and `output_sweep` 374
+identical):
+
+| # | gate | file(s) | verdict in-tier | verdict alone |
+|---|---|---|---|---|
+| 4 | `compile_check-inline` | `type_alias_test` AND `with_call_test` | 280 passed / 2 FAILED | both clean |
+| 5 | **`smoke`** | `field_order_test` | non-zero exit, 368/369 | **8/8 clean** |
+
+**OCCURRENCE 5 FALSIFIES THE PARALLELISM ASSUMPTION IN THIS TICKET'S ORIGINAL TEXT.**
+`selfhost_smoke.sh` runs SEQUENTIALLY. So "parallel workers sharing one Zig cache" cannot
+be the mechanism, and the shared-`ZIG_GLOBAL_CACHE_DIR` experiment proposed below would
+not have settled anything. What the five occurrences actually share is not parallelism —
+it is a LONG, HEAVY run. Occurrence 4 is also the first with TWO files in one gate.
+
+**FOUR MECHANISMS TESTED AND DEAD.** Recorded so nobody re-proposes them:
+
+| hypothesis | how it died |
+|---|---|
+| a shared workdir | `divergence_check.sh` gives each worker its own `$OUT/ws-<name>`; no collision possible |
+| a stale `.run.pdb` blocking the linker's rewrite | all three of the day's failing files had one. Ran them WITH the stale pdb present and again after deleting it: **rc=0 both ways** |
+| disk pressure | 351 GB free on C: |
+| Defender real-time scanning holding just-written files | `Get-MpComputerStatus` → **RealTimeProtectionEnabled: False** |
+
+**AND IT IS PROBABLY THE SAME PHENOMENON AS BUG-300.** That ticket is a *delete* against
+the temp dir failing; this one is a *build* against the temp dir failing. Both are
+load-conditional, both involve file operations in `%TEMP%`, and neither reproduces in
+isolation — 47 leaked executables (747 MB) were sitting in TEMP after the same run in
+which an isolated repeat of the leak test leaked nothing. Treating them as one
+"file operations in TEMP fail at a low rate under sustained load" is a better frame than
+two independent flakes, and it predicts that fixing either mechanism fixes both.
+
+**THE REMAINING UNTESTED CANDIDATE is memory pressure.** The run started with 6.1 GB free
+and `full_sweep` is documented RAM-bound at `JOBS=2`. The discriminator is cheap and has
+not been run: sample free RAM through a heavy gate, or run the same gate at `JOBS=1` and
+compare the failure rate over several runs. File-handle exhaustion is the other candidate
+and would need a handle count sampled the same way.
 
 **THE UNTESTED HYPOTHESIS, named so a later run can discriminate rather than re-argue.**
 Both affected gates invoke `zig build-exe` from parallel workers, and every worker shares
@@ -138,6 +173,20 @@ locked a moment later, so the compiler's `File.delete` is running while Windows 
 holds the just-executed image — the classic delete-a-running-exe shape. But that would be
 a race, and it reproduces 5/5; and the identical committed code passed twice within hours.
 Something in the environment moved, and nothing here establishes what.
+
+**UPDATE 2026-08-21 — THE LEAK IS LOAD-CONDITIONAL, and that is new information.** After
+a `--daily` run, **47 scratch executables totalling 747 MB** were sitting in `%TEMP%`,
+including several written during the run itself. An isolated repeat of the same test
+immediately afterwards leaked **nothing** (3/3 clean, and again after the retry
+workaround landed). So the bounded-retry workaround holds in isolation and does not hold
+under sustained load.
+
+That is the same conditionality as **BUG-302** (heavy gates failing an arbitrary file and
+never reproducing), and the two are plausibly one phenomenon: file operations against
+`%TEMP%` failing at a low rate under sustained load — a delete here, a build there. See
+BUG-302 for the four mechanisms already eliminated by measurement (shared workdir, a stale
+`.pdb`, disk pressure, and Defender real-time scanning, which is switched OFF on this
+machine).
 
 **Fix direction (untested):** deleting an executable immediately after `sys.exec_inherit`
 returns is not reliable on Windows. A short retry with backoff, or deferring the unlink,
