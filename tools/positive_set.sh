@@ -35,7 +35,7 @@ fi
 # correctly CFAIL in a standalone sweep -- would have been reported as a must-pass
 # FAILURE. A gate that libels a working file is one people learn to disbelieve, which
 # is why full_sweep has a DEPMISS bucket at all.
-SKIP=" c_interop_test zig_interop_test forgot_parens_test "
+SKIP=" c_interop_test forgot_parens_test "
 
 out=$(grep -hE '^(smoke|smoke_turbo|smoke_test|smoke_run|smoke_run_bootstrap|smoke_warn) +test/' "$SMOKE" \
       | awk '{print $2}' | sort -u)

@@ -1725,7 +1725,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **390** <!-- doc-gen: 390 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **508** <!-- doc-gen: 508 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **509** <!-- doc-gen: 509 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.
@@ -1740,8 +1740,8 @@ The size of that gap is now **measured rather than estimated**, which it was not
 paragraph was first written (it said "57 are in no known category" against a corpus of 421).
 `registration_check` is the instrument: every tracked `test/*.zbr` must have its status
 asserted by *something* — a smoke registration, the full_sweep pass baseline, or an entry in
-`tools/registration_exempt.txt` **with a reason**. As of 2026-08-05 that leaves **19**
-<!-- doc-gen: 19 = python tools/registration_check.py 2>/dev/null | grep -oE '[0-9]+ unasserted' | grep -oE '^[0-9]+' -->
+`tools/registration_exempt.txt` **with a reason**. As of 2026-08-05 that leaves **18**
+<!-- doc-gen: 18 = python tools/registration_check.py 2>/dev/null | grep -oE '[0-9]+ unasserted' | grep -oE '^[0-9]+' -->
 unasserted, against 27 exempt-with-reason. Down from 57. Shrink it, never grow it — and note
 the number now carries an oracle, so this paragraph cannot quietly go stale the way the last
 version did.

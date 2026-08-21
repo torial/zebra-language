@@ -6,6 +6,94 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-262: the selfhost never materializes a native `.zig` dep, so `use SomeZigModule` fails — ✅ CLOSED 2026-08-21
+
+> **✅ CLOSED 2026-08-21 — landed on the SECOND attempt, and the difference is one line's
+> position.**
+> `test/bug262_native_zig_dep_test.zbr` + `test/bug262_native_zig_dep.zig` (`smoke_run`).
+>
+> **The fix:** `.zig` deps are collected during the dep walk and copied beside the emitted
+> output in `writeNativeZigDeps`, called immediately after `writeRuntimeModule` — the one
+> point every emit route (`--emit-zig`, `--output-dir`, run-mode temp dir, `-c`, the fast
+> backend) passes through.
+>
+> **THE ORDERING IS THE FIX, not a detail.** The branch sits AFTER the prebuilt-library
+> scan. Attempt one put it beside the `.c` case, where it reads more naturally, and turned
+> `ffi_lib_check` red — `undefined symbol: zebra_lib_answer` — because that gate builds
+> `zzlib.lib` FROM `zzlib.zig` and then asserts the emit does not `@import` it. A `.zig`
+> may be the SOURCE OF a library rather than a module, so a prebuilt library WINS over a
+> same-named `.zig`. That is the OPPOSITE of the `.c` rule, and the constraint was already
+> written down — in a gate — before anyone knew to look for it.
+>
+> Verified this time: the fix is present in the GENERATED `selfhost/main.zig` and not just
+> the `.zbr` (2 occurrences each), `zig_interop_test` runs under the shipping compiler, and
+> `ffi_lib_check` is 3/3 including its negative control.
+>
+> **COVERAGE GAINED, which is the reason this was worth finishing.** `zig_interop_test`
+> sat in `tools/positive_set.sh`'s SKIP list described as a HARNESS LIMIT — *"needs
+> external source the standalone emit never materializes"*. True, and its cause was this
+> bug. The file has left the skip list and is registered `smoke_run`. **A "harness limit"
+> that turns out to be a compiler defect is worth re-reading the other skips for.**
+>
+> Selfhost-only, deliberately: the bootstrap emits beside the SOURCE, where the dep already
+> is, so it never had the bug. The shipping compiler was the broken one.
+>
+> The fixture's dep needed a `.gitignore` exception (`test/**/*.zig` is ignored because
+> per-fixture `.zig` files are generated artifacts; hand-written ones are listed as
+> exceptions). Note `.gitignore` has no INLINE comments — a trailing `# ...` becomes part
+> of the pattern and silently fails to match.
+> **THE DIAGNOSIS IS CONFIRMED AND THE FIRST FIX WAS WRONG IN ONE SPECIFIC WAY. Anyone
+> picking this up should start from here rather than from the original entry below.**
+>
+> **Confirmed:** `zebra.exe test/zig_interop_test.zbr` fails
+> `unable to load 'ZigMath.zig': FileNotFound` while `zebra-bootstrap.exe` runs it. The
+> bootstrap emits BESIDE THE SOURCE, where the dep already sits; the selfhost emits to a
+> temp directory and copies nothing there. There is no `.zig` branch in the selfhost's dep
+> resolution at all.
+>
+> **The fix that worked:** collect `.zig` deps during the dep walk, then copy each one
+> beside the emitted output in `writeNativeZigDeps`, called immediately after
+> `writeRuntimeModule` — the single point every emit route (`--emit-zig`, `--output-dir`,
+> run-mode temp dir, `-c`, the fast backend) passes through. Verified: `zig_interop_test`
+> ran, and the standalone `--output-dir` emit produced `ZigMath.zig` beside the output and
+> `zig build-exe` on it returned 0.
+>
+> **WHY IT WAS REVERTED — the ordering, and it is not a detail.** The new branch `return`ed
+> as soon as it found a `<dep>.zig`, which put it AHEAD of the prebuilt-library scan. That
+> broke `ffi_lib_check`:
+>
+> ```
+> error: lld-link: undefined symbol: zebra_lib_answer
+> ```
+>
+> because that gate writes `zzlib.zig` as **the source it builds `zzlib.lib` from**, and
+> then compiles a Zebra program that must LINK the library. With the new branch, `use
+> zzlib` found the `.zig`, treated it as an importable module, and never linked. The gate
+> even carries a leg asserting the emit must NOT `@import("zzlib.zig")` for a prebuilt
+> library — the constraint was already written down, in a gate, and the fix walked into it.
+>
+> **So the rule the next attempt must encode:** a prebuilt library WINS over a `.zig` of
+> the same name; only a bare `.zig` with no library beside it is an importable dep. That is
+> the OPPOSITE of the `.c` rule ("a `foo.c` beside a stale `foo.lib` keeps compiling the
+> source"), and the reason is that a `.zig` may be the SOURCE OF the library rather than a
+> module. Put the branch after the library scan.
+>
+> **A COVERAGE PRIZE IS ATTACHED, which is why this is worth finishing.**
+> `zig_interop_test` sits in `tools/positive_set.sh`'s SKIP list described as a HARNESS
+> LIMIT — *"needs external source the standalone emit never materializes"*. That
+> description is true and its cause is THIS BUG, not the harness. With the fix in place the
+> file left the skip list, `registration_check`'s unasserted debt went 19 → 18, and
+> `full_sweep`'s absolute leg gained a file. A "harness limit" that turns out to be a
+> compiler defect is worth re-reading the other two skips for.
+>
+> **Fixture shape that worked:** a trivial `test/bug262_*.zig` exporting one function plus
+> a `.zbr` that `use`s it — with QUALIFIED calls, not `exposing`. An `exposing` list on a
+> native dep aliases the Zebra-MANGLED name (`_zbr_fn_triple`), which a hand-written Zig
+> module does not have; that is **BUG-263** and it is still open, so pinning it here makes
+> the fixture fail for the wrong reason.
+
+---
+
 ### BUG-250: `HttpResponse(status, body)` — the 2-arg constructor fails a full compile — ✅ CLOSED 2026-08-20
 
 > **✅ CLOSED 2026-08-20 — TWO defects, both fixed in both compilers, both falsified.**

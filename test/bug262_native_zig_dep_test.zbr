@@ -1,0 +1,27 @@
+# BUG-262 regression fixture — a native `.zig` dep must be MATERIALISED beside the emit.
+#
+# `genUse` emits `@import("bug262_native_zig_dep.zig")` for a `use` that resolves to a
+# `.zig` file, and that import resolves RELATIVE TO THE EMITTED FILE -- unlike a `.c` dep,
+# which zig takes as a build ARGUMENT and can live anywhere. The selfhost emits to a temp
+# directory and copied nothing there:
+#
+#   unable to load 'ZigMath.zig': FileNotFound
+#
+# The BOOTSTRAP never hit it because it emits beside the source, where the dep already is.
+# The SHIPPING compiler was the broken one, which is why it survived so long.
+#
+# ORDERING IS PART OF THE FIX AND THIS FIXTURE DOES NOT PIN IT — tools/ffi_lib_check.sh
+# does. A `.zig` may be the SOURCE OF a prebuilt library rather than a module, so the
+# library scan must win; an earlier attempt put the `.zig` branch first and turned that
+# gate red with `undefined symbol: zebra_lib_answer`. Both gates are needed.
+#
+# QUALIFIED calls, not `exposing`: an exposing list on a native dep aliases the
+# Zebra-MANGLED name (`_zbr_fn_triple`), which a hand-written Zig module does not have.
+# That is BUG-263 and still open; pinning it here would fail for the wrong reason.
+
+use bug262_native_zig_dep
+
+def main()
+    assert bug262_native_zig_dep.triple(5) == 15
+    assert bug262_native_zig_dep.triple(0) == 0
+    print("bug262: OK ${bug262_native_zig_dep.triple(14)}")

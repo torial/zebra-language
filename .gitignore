@@ -61,6 +61,7 @@ fix_016*.py
 test/**/*.zig
 !test/main.zig
 !test/ZigMath.zig
+!test/bug262_native_zig_dep.zig
 !test/bench_zig.zig
 !test/error_map_test.zig
 !test/fuzzy_selfhost_selfhost.zig

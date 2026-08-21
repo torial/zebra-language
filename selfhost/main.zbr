@@ -77,6 +77,7 @@ class MultiCompiler
     var preamble_path: str
     var output_dir: str
     var c_sources: List(str)   # paths to .c deps discovered via `use`
+    var zig_sources: List(str) # BUG-262: native .zig deps, COPIED beside the emit (see below)
     var lib_sources: List(str) # BUG-266: prebuilt .lib/.a/.so/.dylib deps to LINK
     var c_i_dirs: List(str)    # deduplicated -I dirs for C deps that have a .h
     var strip_contracts: bool  # --turbo: strip require/ensure/invariant from all output
@@ -109,6 +110,7 @@ class MultiCompiler
         .preamble_path = preamble_path
         .output_dir = output_dir
         .c_sources = List(str)()
+        .zig_sources = List(str)()
         .lib_sources = List(str)()
         .c_i_dirs = List(str)()
         .strip_contracts = false
@@ -394,6 +396,12 @@ class MultiCompiler
                     # a stale scaffold silently kept an old dependency pin.
                     if runtimeModule()
                         .writeRuntimeModule(zig_path)
+                    # BUG-262: a native `.zig` dep is @import-ed BY the emitted file, so it
+                    # must land beside it. Placed here for the same reason the runtime
+                    # module is: every emit route (--emit-zig, --output-dir, the run-mode
+                    # temp dir, -c, the fast backend) resolves its destination through
+                    # zbrToZig, so one copy site covers all of them.
+                    .writeNativeZigDeps(zig_path)
 
                 # Step 7: Contribute this module's types to dep_types so
                 # subsequent deps (and the root) can resolve cross-module
@@ -504,6 +512,37 @@ class MultiCompiler
                 addNativeLibUse(u.path)
                 return
             lx = lx + 1
+        # BUG-262: a native `.zig` dep, and it is LAST on purpose.
+        #
+        # It differs from the `.c` case in HOW zig consumes it: a `.c` is passed to
+        # `zig build-exe` as an ARGUMENT and can live anywhere, while a `.zig` is reached
+        # through the `@import("<dep>.zig")` genUse already emits -- so it has to sit NEXT
+        # TO the emitted file. The selfhost emits to a TEMP directory and copied nothing
+        # there, so `use ZigMath` failed with `unable to load 'ZigMath.zig': FileNotFound`
+        # while the BOOTSTRAP (which emits beside the source) worked. The shipping compiler
+        # was the broken one, which is why it survived so long.
+        #
+        # WHY AFTER THE LIBRARY SCAN, and not beside the `.c` branch where it reads more
+        # naturally: a `.zig` may be the SOURCE OF a prebuilt library rather than an
+        # importable module. `tools/ffi_lib_check.sh` is exactly that shape -- it builds
+        # `zzlib.lib` from `zzlib.zig` and then asserts the emit does NOT @import it. So
+        # the rule here is the OPPOSITE of the `.c` rule ("a foo.c beside a stale foo.lib
+        # keeps compiling the source"): a prebuilt library WINS over a same-named `.zig`,
+        # and only a bare `.zig` with no library beside it is an importable dep. An earlier
+        # attempt put this branch first and turned that gate red.
+        var zig_dep_path: str = dep_name + ".zig"
+        if src_dir != ""
+            zig_dep_path = src_dir + "/" + dep_name + ".zig"
+        if File.exists(zig_dep_path)
+            var zs_seen: bool = false
+            var zsi: int = 0
+            while zsi < zig_sources.len
+                if zig_sources.at(zsi) == zig_dep_path
+                    zs_seen = true
+                zsi = zsi + 1
+            if not zs_seen
+                zig_sources.add(zig_dep_path)
+            return
 
     def alreadyTypeScanned(p: str): bool
         var i: int = 0
@@ -647,6 +686,31 @@ class MultiCompiler
         else if sys.getenv("TMP") as tp
             tdir = tp
         return tdir + "/" + base + ".zig"
+
+    # BUG-262: place every collected native `.zig` dep beside the emitted output.
+    #
+    # Unconditional overwrite, matching writeRuntimeModule's reasoning: a dep left over
+    # from an earlier run in the same directory is the stale-artifact hazard
+    # `compileGuiProject` shipped once by writing only when the file was absent.
+    #
+    # The no-op guard is on the PATH, not on existence -- when the emit lands beside the
+    # source, src and dst are the same file and copying it onto itself would truncate the
+    # user's own dep.
+    def writeNativeZigDeps(zig_path: str)
+        var out_dir: str = .dirOf(zig_path)
+        var i: int = 0
+        while i < zig_sources.len
+            var src_path: str = zig_sources.at(i)
+            # moduleNameOf strips a directory prefix and a `.zbr` suffix; for a path that
+            # already ends in `.zig` it returns the BASENAME unchanged, which is what is
+            # wanted. Appending ".zig" would give ZigMath.zig.zig.
+            var base: str = .moduleNameOf(src_path)
+            var dst_path: str = base
+            if out_dir != ""
+                dst_path = out_dir + "/" + base
+            if dst_path != src_path
+                File.write(dst_path, File.read(src_path))
+            i = i + 1
 
     def moduleNameOf(zbr_path: str): str
         # Return the Zig module basename for a .zbr path: strip any dir prefix

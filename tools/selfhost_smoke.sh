@@ -1351,6 +1351,16 @@ smoke_run_bounded test/http_echo_test.zbr "http_test: OK" 120
 # correspondence Entry 24; the split is falsifiable (taking the wrong half of the split
 # fails the '&' assertion behaviourally, watched before landing).
 smoke_run_bounded test/query_string_test.zbr "query_string: OK" 120
+# BUG-262: a native `.zig` dep must be MATERIALISED beside the emitted output -- the
+# selfhost emits to a temp dir and copied nothing there, while the bootstrap (emitting
+# beside the source) worked. The ORDERING half of the fix (a prebuilt library beats a
+# same-named .zig) is pinned by tools/ffi_lib_check.sh, not here; an earlier attempt got
+# it backwards and turned that gate red.
+smoke_run test/bug262_native_zig_dep_test.zbr "bug262: OK 42"
+# Freed by the BUG-262 fix: this sat in positive_set.sh SKIP as a harness limit -- "the
+# standalone emit never materializes the .zig source". It does now, and the emitted output
+# builds clean, so the file rejoins the asserted set.
+smoke_run test/zig_interop_test.zbr "Basic math operations:"
 
 # BUG-255. Lambdas, capture blocks and except-fields were among 40 nonterminals missing from
 # grammar.txt, so fuzz/gramgen.py had NEVER generated a program using them. The drift is
