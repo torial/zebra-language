@@ -1595,6 +1595,14 @@ smoke_tc_fail test/bug084_bracket_paren_depth_fail.zbr "unexpected expression to
 # going RED against a bootstrap built with genType(inner) restored:
 #   error: expected type '?*T', found '*?T'   <- the ticket'"'"'s symptom verbatim
 smoke_run_bootstrap test/bug124_boxed_nilable_ctor_test.zbr "bug124: OK"
+# BUG-250: `HttpResponse(status, text)` -- the natural constructor form, which emitted a
+# CALL ON A TYPE. Registered for BOTH compilers because TWO fixes are pinned: the codegen
+# route (both) and the BOOTSTRAP TypeChecker typing the call. The expected string includes
+# the interpolated text on purpose -- with the TC half reverted the bootstrap still
+# COMPILES and prints the byte array `{ 109, 97, 100, 101 }`, which the asserts inside the
+# fixture cannot see because only the FORMATTING is wrong.
+smoke_run           test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made returned factory"
+smoke_run_bootstrap test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made returned factory"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

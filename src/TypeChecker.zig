@@ -3259,6 +3259,12 @@ const TypeChecker = struct {
                 if (std.mem.eql(u8, ident.name, "CodeEditor")) return .code_editor;
                 // StringBuilder() bare constructor call.
                 if (std.mem.eql(u8, ident.name, "StringBuilder")) return .string_builder;
+                // BUG-250: HttpResponse(status, text) bare constructor call. Without this
+                // the call types as .unknown, and the failure is NOT a compile error --
+                // `${r.text}` interpolates through the {any} fallback and prints the byte
+                // ARRAY (`{ 109, 97, 100, 101 }` for "made"). Valid Zig, wrong output:
+                // BUG-226's class, which no compile-only gate can see.
+                if (std.mem.eql(u8, ident.name, "HttpResponse")) return .http_response;
                 if (tc.resolve.exprs.get(ident)) |sym| {
                     _ = try tc.inferExpr(e.callee);
                     if (sym.kind == .method) {

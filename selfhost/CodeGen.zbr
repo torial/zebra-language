@@ -11732,6 +11732,15 @@ struct Generator
             if ce_ctor.name == "CodeEditor"
                 w.emit("_code_editor_new()")
                 return
+        # BUG-250: HttpResponse bare constructor — `HttpResponse(status, text)` emitted
+        # `HttpResponse(200, "x")` verbatim, which Zig reads as a CALL ON A TYPE:
+        # `error: type 'type' not a function`. It routes to the SAME emit as the
+        # documented `.new(status, text)` factory (genMemberCall reaches that one), so
+        # the two spellings cannot drift apart.
+        if c.callee is Expr.ident as hr_ctor
+            if hr_ctor.name == "HttpResponse"
+                genHttpResponseFactory("new", c.args)
+                return
         # Cross-module constructor: Module.ClassName(args) → Module.ClassName.init(args)
         # Two detection paths:
         # 1. isCrossModuleCtorCall: obj_name == member_name (same-name unwrap)

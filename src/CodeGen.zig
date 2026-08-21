@@ -15701,6 +15701,18 @@ const Generator = struct {
                 }
             }
         }
+        // BUG-250: `HttpResponse(status, text)` — the natural constructor form. It used
+        // to emit `HttpResponse(200, "x")` verbatim, which is a CALL ON A TYPE in Zig:
+        // `error: type 'type' not a function`. Routed to the SAME emit as the documented
+        // `HttpResponse.new(status, text)` factory rather than duplicating the struct
+        // literal, so the two spellings cannot drift.
+        //
+        // NOT part of the zero-arg builtin-constructor block below: that one is guarded
+        // by `e.args.len == 0`, and this constructor takes two.
+        if (e.callee.* == .ident and std.mem.eql(u8, e.callee.ident.name, "HttpResponse")) {
+            _ = try g.genHttpResponseFactory("new", e.args);
+            return;
+        }
         // Builtin collection constructors: `List()` → `std.ArrayList(...).empty`,
         // `HashMap()` → `std.StringHashMap(...).init(_allocator)`.
         // These appear in assignment RHS and field initializers when no type annotation

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-299. Next new bug: BUG-300.**
+**Last bug number generated: BUG-300. Next new bug: BUG-301.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -12,6 +12,52 @@
 >
 > No gate could see this: `doc_lint` D4 only checks that a cited BUG-NNN exists
 > *somewhere*, so a duplicate satisfies it twice over.
+
+---
+
+### BUG-300: BUG-244 HAS REGRESSED — every `zebra <file>.zbr` run leaks a ~20 MB executable into TMPDIR again — OPEN (found 2026-08-20)
+
+`tools/runtime_module_check.sh` is RED on the committed tree:
+
+```
+FAIL  a successful run left 1 scratch file(s) in C:\Users\Sean\AppData\Local\Temp
+```
+
+**This is the exact bug `60fa160` closed on 2026-08-15** ("BUG-244: stop leaking a ~20 MB
+executable into TMPDIR on every run"). The gate that pins it is in the QUICK tier and is
+now failing, which is the system working — but the fix itself has stopped taking effect.
+
+**What survives a clean run:** `hw.zig.fast.exe` (19,988,480 bytes) and `hw.zig.run.pdb`.
+**What does not:** `hw.zig`. Both deletes sit in the SAME conditional
+(`if rc == 0 and not keep_temp and output_dir == ""` — `selfhost/main.zbr`, the BUG-244
+block), so the block RAN and `File.delete(zig_path)` succeeded while
+`File.delete(fast_exe)` silently did not. `File.delete` cannot report failure, which is
+why this is invisible without the gate.
+
+**Measured, so the next person does not repeat it:**
+
+| probe | result |
+|---|---|
+| 5 consecutive runs | leaked 5/5 — **deterministic, not a race** |
+| the same 5 runs against a compiler built from **HEAD** with all local changes reverted | leaked 3/3 — **not caused by any uncommitted work** |
+| `rm` from the shell immediately after the run | **succeeds** — the handle IS released by then |
+| the same gate in the two `--daily` runs earlier the SAME DAY | **PASSED** |
+
+**The last two rows are the whole puzzle and neither is explained.** The file is not
+locked a moment later, so the compiler's `File.delete` is running while Windows still
+holds the just-executed image — the classic delete-a-running-exe shape. But that would be
+a race, and it reproduces 5/5; and the identical committed code passed twice within hours.
+Something in the environment moved, and nothing here establishes what.
+
+**Fix direction (untested):** deleting an executable immediately after `sys.exec_inherit`
+returns is not reliable on Windows. A short retry with backoff, or deferring the unlink,
+would make the existing BUG-244 logic robust instead of timing-dependent — and would hold
+whether or not the environmental trigger is ever identified.
+
+**Control when fixing:** `bash tools/runtime_module_check.sh` must pass, and the fix must
+be watched going RED with the retry removed. Note the `.pdb` alongside: it is named for
+the LLVM path (`.run.pdb`) although only the fast path ran, which nothing here explains
+either and may be a thread to pull.
 
 ---
 
@@ -1070,6 +1116,60 @@ fixtures while being unable to emit valid Zig for its own source. Nothing before
 a module-scope `List(str)` with `.add` must still emit `.append(allocator, …)`. Both
 directions — the easy wrong fix is to stop treating module-var `.add` as List at all.
 
+### BUG-262: the selfhost never materializes a native `.zig` dep, so `use SomeZigModule` fails — OPEN (a fix was written, verified, and REVERTED 2026-08-20 — read this first)
+
+> **THE DIAGNOSIS IS CONFIRMED AND THE FIRST FIX WAS WRONG IN ONE SPECIFIC WAY. Anyone
+> picking this up should start from here rather than from the original entry below.**
+>
+> **Confirmed:** `zebra.exe test/zig_interop_test.zbr` fails
+> `unable to load 'ZigMath.zig': FileNotFound` while `zebra-bootstrap.exe` runs it. The
+> bootstrap emits BESIDE THE SOURCE, where the dep already sits; the selfhost emits to a
+> temp directory and copies nothing there. There is no `.zig` branch in the selfhost's dep
+> resolution at all.
+>
+> **The fix that worked:** collect `.zig` deps during the dep walk, then copy each one
+> beside the emitted output in `writeNativeZigDeps`, called immediately after
+> `writeRuntimeModule` — the single point every emit route (`--emit-zig`, `--output-dir`,
+> run-mode temp dir, `-c`, the fast backend) passes through. Verified: `zig_interop_test`
+> ran, and the standalone `--output-dir` emit produced `ZigMath.zig` beside the output and
+> `zig build-exe` on it returned 0.
+>
+> **WHY IT WAS REVERTED — the ordering, and it is not a detail.** The new branch `return`ed
+> as soon as it found a `<dep>.zig`, which put it AHEAD of the prebuilt-library scan. That
+> broke `ffi_lib_check`:
+>
+> ```
+> error: lld-link: undefined symbol: zebra_lib_answer
+> ```
+>
+> because that gate writes `zzlib.zig` as **the source it builds `zzlib.lib` from**, and
+> then compiles a Zebra program that must LINK the library. With the new branch, `use
+> zzlib` found the `.zig`, treated it as an importable module, and never linked. The gate
+> even carries a leg asserting the emit must NOT `@import("zzlib.zig")` for a prebuilt
+> library — the constraint was already written down, in a gate, and the fix walked into it.
+>
+> **So the rule the next attempt must encode:** a prebuilt library WINS over a `.zig` of
+> the same name; only a bare `.zig` with no library beside it is an importable dep. That is
+> the OPPOSITE of the `.c` rule ("a `foo.c` beside a stale `foo.lib` keeps compiling the
+> source"), and the reason is that a `.zig` may be the SOURCE OF the library rather than a
+> module. Put the branch after the library scan.
+>
+> **A COVERAGE PRIZE IS ATTACHED, which is why this is worth finishing.**
+> `zig_interop_test` sits in `tools/positive_set.sh`'s SKIP list described as a HARNESS
+> LIMIT — *"needs external source the standalone emit never materializes"*. That
+> description is true and its cause is THIS BUG, not the harness. With the fix in place the
+> file left the skip list, `registration_check`'s unasserted debt went 19 → 18, and
+> `full_sweep`'s absolute leg gained a file. A "harness limit" that turns out to be a
+> compiler defect is worth re-reading the other two skips for.
+>
+> **Fixture shape that worked:** a trivial `test/bug262_*.zig` exporting one function plus
+> a `.zbr` that `use`s it — with QUALIFIED calls, not `exposing`. An `exposing` list on a
+> native dep aliases the Zebra-MANGLED name (`_zbr_fn_triple`), which a hand-written Zig
+> module does not have; that is **BUG-263** and it is still open, so pinning it here makes
+> the fixture fail for the wrong reason.
+
+---
+
 ### BUG-263: `use foo exposing bar` emits no aliases when `foo` is a native dep
 
 **Found 2026-08-05** while fixing BUG-261, by reading the bootstrap branch being
@@ -1089,34 +1189,6 @@ identifier rather than silently, which is why it has gone unnoticed.
 would open a selfhost gap in `divergence_check`, which is currently 0 and is the
 property the port exists to preserve. Either fix both compilers together or
 neither. Filed rather than fixed for that reason.
-
-### BUG-262: the selfhost never materializes a native `.zig` dep, so `use SomeZigModule` fails
-
-**Found 2026-08-05** while verifying that BUG-261's fix did not disturb the native
-`.zig` path. It did not — this is pre-existing and independent.
-
-`test/zig_interop_test.zbr` (`use ZigMath`, with a tracked `test/ZigMath.zig`):
-
-| | result |
-|---|---|
-| `zebra-bootstrap.exe test/zig_interop_test.zbr` | runs, prints its output |
-| `zebra.exe test/zig_interop_test.zbr` | `unable to load 'ZigMath.zig': FileNotFound` |
-
-`genUse` correctly emits `@import("ZigMath.zig")` — the emit is not the bug. The
-selfhost writes its generated Zig to a **temp directory** and never copies the
-native `.zig` dep beside it, so the import has nothing to resolve against. The
-`.c` case escapes this because a `.c` is passed to `zig build-exe` as an argument
-rather than resolved by path from the emitted file.
-
-Note `selfhost/main.zbr`'s dep walk has **no `.zig` candidate at all** (it tries
-`.zbr`, then `module_path/.zbr`, then `.c`); a native `.zig` dep falls through it
-silently and is never recorded anywhere. The fix is to detect it there and copy
-it into the output dir alongside the emitted `.zig`.
-
-**Same class as BUG-261** — native-dependency support that exists in `src/` and
-did not reach the shipping compiler. `zig_interop_test` is in
-`registration_baseline.txt` as known debt and in `compile_check`'s SKIP list, so
-nothing currently goes red on it.
 
 ### BUG-254: the BOOTSTRAP is over-strict on mixed numeric arithmetic — `1 + 2.0` is rejected — OPEN
 
@@ -1444,30 +1516,6 @@ framing idiom or a `readSome`/`readLine`. Until then Tcp has no honest run cover
 
 ---
 
-### BUG-250: `HttpResponse(status, body)` — the 2-arg constructor fails a full compile — OPEN
-
-**Found 2026-08-04**, writing the Http run fixture.
-
-```zebra
-var a = HttpResponse(200, "x")     # error: type 'type' not a function
-var b = HttpResponse.ok("x")       # fine
-```
-
-`-c` **accepts both**; only a full compile rejects the constructor form — so this is also an
-instance of the front-end gap measured in `tools/frontend_gap.py` (23 of 54 failures are
-invisible to `-c`).
-
-**It is not hypothetical: `test/http_serve_test.zbr` uses the broken form**, in a
-`handleRequest` that returns `HttpResponse(200, "Hello, World!")`.
-
-QUICKSTART documents the factories (`HttpResponse.ok(body)` / `.notFound(body)`) and those
-work; the 2-arg constructor is documented nowhere but is what the corpus reached for, which
-suggests it is expected to exist. **Decide: implement it, or remove it from the corpus and
-say the factories are the API.**
-
-The new `test/http_echo_test.zbr` uses the factory form and passes 5/5.
-
-
 ### BUG-106 (front-end check) — CONFLICT: the fixture serves two incompatible roles — NEEDS A DECISION
 
 **Not a new defect. A collision, surfaced 2026-08-04**, and recorded because acting on it
@@ -1507,7 +1555,41 @@ and the comment in `selfhost/main.zbr` naming all three would go stale with it.
 coupling is what made this invisible. Sean's call.
 
 
-### BUG-246: `Atomic(T).add()` inside a `capture` block mis-resolves to `.append()` — OPEN
+### BUG-246: an UNANNOTATED `Atomic(T)(v)` local mis-resolves `.add()` to `.append()` — OPEN (the `capture` block is a red herring)
+
+> **RE-DIAGNOSED 2026-08-20. The heading changed because the original one names the wrong
+> cause, and following it costs the next person the same hour it cost me.**
+>
+> **The capture block has nothing to do with it.** Measured, three shapes:
+>
+> | shape | result |
+> |---|---|
+> | `var t = Atomic(int)(0)` then `t.add(5)` — no lambda at all | **FAILS**, `no field or member function named 'append'` |
+> | `var t: Atomic(int) = Atomic(int)(0)` then `t.add(5)` | passes |
+> | the ticket's capture block, with the OUTER declaration annotated | passes |
+>
+> So the defect is that an **unannotated generic stdlib constructor is not typed**: with no
+> type for `t`, the member call falls through to the stdlib heuristics and `.add` matches
+> List's `.append`. The original repro simply had an unannotated outer `var`.
+>
+> **Same class as BUG-250** (a builtin constructor call the TypeChecker does not type),
+> which is worth knowing because that one was fixed by typing the call.
+>
+> **WHERE THE NEXT ATTEMPT SHOULD NOT START.** `TypeChecker.zbr`'s
+> `typeFromExpr`/`typeFromRef` arms handle `List`, `HashMap`, `Chan` and `Set` and return
+> `Type_.unknown_` for `Atomic` — in BOTH arms. Adding an `Atomic` case there looks like
+> the fix and is not sufficient on its own: the ANNOTATED form already works while its
+> `typeFromRef` arm also returns `unknown_`, so the annotated path is getting its dispatch
+> from somewhere else. Find that mechanism first; the fix is to make the unannotated path
+> reach the same place.
+>
+> A capture-binding change (binding a capture's declared type into the lambda's
+> InferCtx, which `genLambdaEx` does for params and not for captures) was written, built
+> and then REVERTED: it is defensible on its own terms but it did not fix this ticket, and
+> shipping an inference change with no case that proves it load-bearing is how a
+> regression arrives with nothing to blame. Recorded here as a real gap someone may still
+> want to close, with a fixture, deliberately.
+
 
 **Found 2026-08-03**, writing the §1b `Ws` fixture.
 

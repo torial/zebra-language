@@ -6,6 +6,58 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-250: `HttpResponse(status, body)` — the 2-arg constructor fails a full compile — ✅ CLOSED 2026-08-20
+
+> **✅ CLOSED 2026-08-20 — TWO defects, both fixed in both compilers, both falsified.**
+> `test/bug250_httpresponse_ctor_test.zbr`, registered `smoke_run` AND
+> `smoke_run_bootstrap`.
+>
+> **1. Codegen (both compilers).** A bare `HttpResponse(...)` call was emitted verbatim,
+> which Zig reads as a CALL ON A TYPE. It now routes to the SAME emit as the documented
+> `HttpResponse.new(status, text)` factory, so the two spellings cannot drift. Watched
+> going RED with both routes reverted: `error: type 'type' not a function` at the
+> constructor line, on both compilers.
+>
+> **2. The BOOTSTRAP TypeChecker (found only because the fixture PRINTS).** With codegen
+> fixed, the bootstrap compiled and then printed `{ 109, 97, 100, 101 }` for `${a.text}`
+> instead of `made` — the call typed as unknown, so interpolation took the `{any}`
+> fallback. Valid Zig, wrong output: BUG-226's class. **An `assert a.text == "made"` does
+> NOT catch it** — the comparison is on the string and only the FORMATTING is wrong, which
+> is why the fixture's expected output carries the interpolated text.
+>
+> **THE ENTRY'S CLAIM ABOUT `test/http_serve_test.zbr` WAS RIGHT AND ITS INFERENCE WAS
+> WRONG.** That file does use the broken form — and it PASSES, and always did. Its
+> `handleRequest` is never called, Zig analyses functions lazily, so the constructor was
+> never compiled. The same lazy-analysis trap recorded for BUG-269's probe. It was not
+> "shipping broken"; it was shipping VACUOUS, which is worse in the way this repo cares
+> about: it looked like coverage.
+>
+> Also corrected: the failure was never position-dependent. var-init, annotated var-init
+> and return position all failed identically; the vacuous test is what made it look like
+> only some positions were affected.
+**Found 2026-08-04**, writing the Http run fixture.
+
+```zebra
+var a = HttpResponse(200, "x")     # error: type 'type' not a function
+var b = HttpResponse.ok("x")       # fine
+```
+
+`-c` **accepts both**; only a full compile rejects the constructor form — so this is also an
+instance of the front-end gap measured in `tools/frontend_gap.py` (23 of 54 failures are
+invisible to `-c`).
+
+**It is not hypothetical: `test/http_serve_test.zbr` uses the broken form**, in a
+`handleRequest` that returns `HttpResponse(200, "Hello, World!")`.
+
+QUICKSTART documents the factories (`HttpResponse.ok(body)` / `.notFound(body)`) and those
+work; the 2-arg constructor is documented nowhere but is what the corpus reached for, which
+suggests it is expected to exist. **Decide: implement it, or remove it from the corpus and
+say the factories are the API.**
+
+The new `test/http_echo_test.zbr` uses the factory form and passes 5/5.
+
+---
+
 ### BUG-124: Bootstrap codegen — `^T?` constructor arg boxes as `*?T` instead of `?*T` for value-typed T — ✅ CLOSED 2026-08-20
 
 > **✅ CLOSED 2026-08-20 — verified by RUNNING the case on the bootstrap, and PINNED.**
@@ -4244,8 +4296,6 @@ segfault that was already understood and already fixed twenty feet away.
 
 ---
 
----
-
 ### BUG-220: ANY top-level `def` whose name matches a preamble identifier fails to compile ✅ FIXED 2026-07-28
 A user function named `f` emits Zig that will not compile:
 
@@ -4331,8 +4381,6 @@ the risk for a niche case.)
 
 Note (2) — namespaced emission — remains the deeper fix and would also cover the export cases;
 this does not remove the argument for it, it just stops the bleeding now.
-
----
 
 ---
 
@@ -7742,8 +7790,6 @@ Note: like the bootstrap, `listDir` does NOT path-normalize — pass a native pa
 Test: `test/bug119_list_field_param_test.zbr` (smoke_run: "bug119_list_field_param: OK").
 Bootstrap verified: `zig build update-selfhost` + smoke 117/117 passing + bootstrap 5/5.
 - **Discovered:** 2026-05-06 while compiling `IDE/ZebraIDE.zbr`.
-
----
 
 ---
 
