@@ -1361,6 +1361,12 @@ smoke_run test/bug262_native_zig_dep_test.zbr "bug262: OK 42"
 # standalone emit never materializes the .zig source". It does now, and the emitted output
 # builds clean, so the file rejoins the asserted set.
 smoke_run test/zig_interop_test.zbr "Basic math operations:"
+# BUG-240: an ANNOTATED EMPTY set literal. A bare `{}` is ambiguous and the parser
+# resolves it to dict_lit unconditionally, so only the annotation can say which was meant
+# -- genLocalVar special-cased that for HashMap and not for Set. Covers BOTH backing
+# shapes (Set(str) -> StringHashMap(void), Set(int) -> AutoHashMap) because they are
+# different genType branches, plus the two controls that already worked.
+smoke_run test/bug240_empty_set_annotated_test.zbr "bug240: OK 2 1 2 0"
 
 # BUG-255. Lambdas, capture blocks and except-fields were among 40 nonterminals missing from
 # grammar.txt, so fuzz/gramgen.py had NEVER generated a program using them. The drift is

@@ -1,0 +1,48 @@
+# BUG-240 regression fixture — an ANNOTATED EMPTY set literal must compile.
+#
+# `var s: Set(str) = {}` failed while `var s: Set(str) = {"a"}` and
+# `var d: HashMap(str,int) = {}` both worked, which is what made it look exotic. It is
+# not: a bare `{}` is ambiguous (empty set vs empty dict) and the parser resolves it to
+# `dict_lit` UNCONDITIONALLY, so only the annotation can say which was meant. `genLocalVar`
+# already knew that and special-cased it — for `HashMap` only. An annotated empty SET fell
+# through to the generic dict lowering and emitted
+#
+#   AutoHashMap([]const u8, []const u8)   against a declared   StringHashMap(void)
+#
+# BOTH BACKING SHAPES ARE COVERED HERE ON PURPOSE. `Set(str)` lowers to
+# `StringHashMap(void)` (content-hashed) and `Set(int)` to `AutoHashMap(i64, void)`; they
+# are different branches of genType, and a fix that only reached the string one would look
+# complete.
+#
+# The controls are the point of the file as much as the failing case: the non-empty form
+# parses as `set_lit` and never reaches this branch, and the HashMap form is the sibling
+# that already worked. If either of those breaks, the fix went too wide.
+#
+# SELFHOST-ONLY, and not a parity gap: `Set(T)` is a selfhost feature. The bootstrap does
+# not parse this file at all (`syntax error near '{'`), which is the documented
+# §28f bootstrap gap rather than a regression.
+
+def main()
+    # the shape that failed — both backing maps
+    var s: Set(str) = {}
+    var t: Set(int) = {}
+    assert s.len == 0
+    assert t.len == 0
+
+    # and it must be a USABLE set afterwards, not merely a compiling declaration
+    s.add("x")
+    s.add("y")
+    s.add("x")                      # duplicate: a set, not a list
+    t.add(7)
+    assert s.len == 2
+    assert t.len == 1
+    assert s.contains("x")
+    assert not s.contains("zzz")
+
+    # controls that already worked and must keep working
+    var nonempty: Set(str) = {"a", "b"}
+    assert nonempty.len == 2
+    var d: HashMap(str, int) = {}
+    assert d.len == 0
+
+    print("bug240: OK ${s.len} ${t.len} ${nonempty.len} ${d.len}")

@@ -6426,12 +6426,24 @@ struct Generator
                                 lli += 1
                             w.emit("break :" + lbl230 + " " + lname230 + "; };\n")
                             return
-                    if gtll.name == "HashMap"
+                    if gtll.name == "HashMap" or gtll.name == "Set"
                         # §28f: `var m: HashMap(K,V) = {}` — only the annotation can type an
                         # EMPTY dict literal, so handle it here (just the typed init; no puts,
                         # so no const/var-mutation hazard). NON-empty typed dict literals fall
                         # through to the genExpr labeled-block, which is self-contained (its
                         # internal `var` does the puts) and therefore const-safe.
+                        #
+                        # BUG-240: `Set` needs the SAME branch. A bare `{}` is ambiguous
+                        # (empty set vs empty dict) and the parser resolves it to dict_lit
+                        # unconditionally, so ONLY the annotation can say which was meant --
+                        # exactly the HashMap situation. Without this, an annotated empty set
+                        # fell through to the generic dict lowering and emitted
+                        # AutoHashMap([]const u8, []const u8) against a declared
+                        # StringHashMap(void). genType already lowers Set(T) to the correct
+                        # void-valued map for both str (StringHashMap) and non-str
+                        # (AutoHashMap), so emitting the ANNOTATED type's .init(_allocator)
+                        # is right for either. A NON-empty `{"a"}` parses as set_lit and
+                        # never reaches here, which is why only the empty form was broken.
                         if ie is Expr.dict_lit as dl_init
                             if dl_init.entries.len == 0
                                 w.emit(": ")
