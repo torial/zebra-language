@@ -2542,6 +2542,7 @@ const TypeChecker = struct {
             if (std.mem.eql(u8, e.member, "method"))  return .string;
             if (std.mem.eql(u8, e.member, "path"))    return .string;
             if (std.mem.eql(u8, e.member, "content")) return .string;
+            if (std.mem.eql(u8, e.member, "query"))   return .string;   // Entry 24 / query strings
         }
         // HttpResponse field access.
         if (obj_type == .http_response) {

@@ -8,10 +8,11 @@
 # Bounded retry rather than a fixed sleep, and reachability asserted separately from the
 # payload — same reasoning as tcp_echo_test.zbr and ws_echo_test.zbr.
 #
-# USES THE FACTORY FORM DELIBERATELY. `HttpResponse(200, body)` -- the 2-arg
-# constructor that test/http_serve_test.zbr uses -- passes `-c` and then FAILS a full
-# compile with `type 'type' not a function`. Filed as BUG-250. `HttpResponse.ok()` /
-# `.notFound()` are the documented factories and they work.
+# Uses the FACTORY form (`HttpResponse.ok()` / `.notFound()`). It once had to: the 2-arg
+# constructor `HttpResponse(200, body)` passed `-c` and then failed a full compile with
+# `type 'type' not a function`. That was BUG-250, FIXED 2026-08-20 -- both spellings now
+# work and route to the same emit. Kept as-is because the factories are the documented
+# API; test/bug250_httpresponse_ctor_test.zbr pins the constructor form.
 def handleRequest(req: HttpRequest): HttpResponse
     if req.path == "/hello"
         return HttpResponse.ok("hello-from-zebra")

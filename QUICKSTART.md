@@ -1081,7 +1081,8 @@ var hex  = "${n:08x}"               # 000000ff  (zero-padded 8-digit hex)
 var flt  = "${fval:.2f}"            # 3.14      (2 decimal places)
 var rpad = "${greeting:>20}"        #                hello  (right-align, width 20)
 var lpad = "${tag:-<15}"            # ok-------------       (left-align, fill '-')
-var cpt  = "${codepoint:c}"         # Unicode scalar as character
+var cpt  = "${some_char:c}"         # a `char` value -> its codepoint, UTF-8 encoded
+var byte = "${206:c}"               # an `int` value  -> ONE BYTE (see the note below)
 # align chars: < left  > right  ^ center
 # type chars:  x/X hex  o octal  b binary  f float  e/E scientific  s string
 
@@ -1092,12 +1093,37 @@ sb.append(" world")
 var result = sb.build()              # str (drains the builder)
 ```
 
+> **`:c` depends on the ARGUMENT'S TYPE, and the difference matters.** On a `char`
+> (a `u21` codepoint) it emits the codepoint UTF-8-encoded — one to four bytes. On an
+> `int` it emits **exactly one byte**, whatever that byte is. Both behaviours are
+> deliberate and they are the same split Go (`string(rune)` vs `byte(n)`), Rust
+> (`char::from_u32` vs `as u8`) and Python (`chr` vs `bytes([n])`) make with two
+> different spellings; Zebra keys it off the type instead.
+>
+> This is what lets you assemble UTF-8 a byte at a time — a percent-decoder wants the
+> BYTE form, because `%CE%B8` is two bytes that together are one codepoint:
+>
+> ```zebra
+> var sb = StringBuilder()
+> sb.append("${206:c}")            # 0xCE
+> sb.append("${184:c}")            # 0xB8
+> print(sb.build())                # θ  — one codepoint, two bytes
+> ```
+>
+> Taking 206 as a *codepoint* instead would give `Î`, silently corrupting the text. The
+> documentation used to describe `:c` as "Unicode scalar as character", which is the
+> codepoint reading and is wrong for an `int`.
+>
+> **Known limit (BUG-301):** the byte form works for a compile-time constant. A
+> **runtime** `int` currently fails to compile — `expected type 'u8', found 'i64'` — so a
+> decoder computing its byte from hex digits cannot use it yet.
+
 - `in` operator: `if "needle" in haystack` — substring test.
 - Inside `${…}`, non-string values get an implicit `.toString()` call.
 - **Format specifiers** — `${expr:spec}` where `spec` follows
   `[fill][align][width][.precision][type]`.  Fill is any character; align is
   `<` (left), `>` (right), or `^` (center); type chars: `x`/`X` hex, `o`
-  octal, `b` binary, `f` float, `e`/`E` scientific, `c` Unicode scalar, `s`
+  octal, `b` binary, `f` float, `e`/`E` scientific, `c` char-or-byte (below), `s`
   string.  Examples: `${n:08x}` → `000000ff`, `${v:.2f}` → `3.14`,
   `${s:>20}` right-aligns in a 20-char field, `${s:-<15}` left-aligns with
   `-` fill.

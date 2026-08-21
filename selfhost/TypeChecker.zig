@@ -1424,7 +1424,10 @@ pub fn _http_with_header(resp: HttpResponse, key: []const u8, val: []const u8) H
     _new[resp.headers.len] = .{ key, val };
     return .{ .status = resp.status, .text = resp.text, .headers = _new };
 }
-pub const HttpRequest = struct { method: []const u8, path: []const u8, content: []const u8 };
+// `query` is the RAW text after the first '?', empty when there is none. It is not
+// decoded here: percent-decoding is the caller's business, and doing it in the parser
+// would make `a=1&b=%26` ambiguous by turning an escaped separator into a real one.
+pub const HttpRequest = struct { method: []const u8, path: []const u8, content: []const u8, query: []const u8 = "" };
 pub fn _http_serve(port: u16, handler: anytype) void {
     const _HFn = *const fn(HttpRequest) HttpResponse;
     const _fn: _HFn = handler;
@@ -1452,7 +1455,12 @@ pub fn _http_serve(port: u16, handler: anytype) void {
             var _rp = std.mem.splitScalar(u8, _head[0.._rl_end], ' ');
             const _method = _rp.next() orelse "GET";
             const _raw_path = _rp.next() orelse "/";
-            const _path = _raw_path[0 .. (std.mem.indexOfScalar(u8, _raw_path, '?') orelse _raw_path.len)];
+            // Split ONCE at the first '?' and keep BOTH halves. This used to cut the
+            // path and discard the remainder, so a handler could not reach `?q=` at all
+            // -- which is why callers reached for `/search/{q}` path-param stand-ins.
+            const _q_at = std.mem.indexOfScalar(u8, _raw_path, '?');
+            const _path = if (_q_at) |_qi| _raw_path[0.._qi] else _raw_path;
+            const _query = if (_q_at) |_qi| _raw_path[_qi + 1 ..] else "";
             // Parse Content-Length.
             var _cl: usize = 0;
             var _hdr_it = std.mem.splitSequence(u8, _head, "\r\n");
@@ -1477,7 +1485,7 @@ pub fn _http_serve(port: u16, handler: anytype) void {
                 }
                 _body = _bb[0.._bi];
             }
-            const _req = HttpRequest{ .method = _method, .path = _path, .content = _body };
+            const _req = HttpRequest{ .method = _method, .path = _path, .content = _body, .query = _query };
             const _resp = ctx.handler_fn(_req);
             const _st: []const u8 = switch (_resp.status) {
                 200 => "OK", 201 => "Created", 204 => "No Content",
@@ -7265,7 +7273,7 @@ pub fn inferExpr(_p_e: Expr, _p_ctx: *InferCtx) Type_ {
 // zbr:selfhost/TypeChecker.zbr:2153
                 if ((obj_t == .http_request)) {
 // zbr:selfhost/TypeChecker.zbr:2154
-                    if (((std.mem.eql(u8, m.member, "method") or std.mem.eql(u8, m.member, "path")) or std.mem.eql(u8, m.member, "content"))) {
+                    if ((((std.mem.eql(u8, m.member, "method") or std.mem.eql(u8, m.member, "path")) or std.mem.eql(u8, m.member, "content")) or std.mem.eql(u8, m.member, "query"))) {
 // zbr:selfhost/TypeChecker.zbr:2155
                         return Type_.string_;
                     }

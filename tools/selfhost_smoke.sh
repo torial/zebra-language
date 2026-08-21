@@ -1346,6 +1346,11 @@ smoke_run test/bug248_this_check_scope_test.zbr "bug248: OK"
 # alongside it: it deadlocks (BUG-251), and a hanging fixture in the QUICK tier is worse
 # than an uncovered namespace -- it teaches people to re-run gates until they pass.
 smoke_run_bounded test/http_echo_test.zbr "http_test: OK" 120
+# HttpRequest.query -- a real round trip. Bounded for the same reason http_echo_test is:
+# a fixture that starts a server must never be able to hang the tier. Asked for in
+# correspondence Entry 24; the split is falsifiable (taking the wrong half of the split
+# fails the '&' assertion behaviourally, watched before landing).
+smoke_run_bounded test/query_string_test.zbr "query_string: OK" 120
 
 # BUG-255. Lambdas, capture blocks and except-fields were among 40 nonterminals missing from
 # grammar.txt, so fuzz/gramgen.py had NEVER generated a program using them. The drift is

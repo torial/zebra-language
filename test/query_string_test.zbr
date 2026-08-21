@@ -1,0 +1,53 @@
+# HttpRequest.query — a REAL client+server round trip, bounded so it can never hang a gate.
+#
+# `_http_serve` used to cut the request target at the first '?' and DROP the remainder, and
+# `HttpRequest` had no field to put it in — so a handler could not reach `?q=` at all. That
+# is why callers reached for `/search/{q}` path-param stand-ins. Asked for by the Opus
+# working on graze (correspondence Entry 24, 2026-08-20), whose interim fix lived in a
+# derived copy of the preamble in another repo; this is the upstream version.
+#
+# IT MUST BE A ROUND TRIP, not a compile smoke. A handler that is never called is never
+# type-checked -- `test/http_serve_test.zbr` has used a broken constructor for months and
+# passes for exactly that reason (BUG-250). The same trap caught the graze side while
+# probing for this field: a probe reading `req.query` compiled against a preamble with no
+# such field, because nothing called the handler. Modelled on http_echo_test.zbr.
+
+def handleRequest(req: HttpRequest): HttpResponse
+    if req.path == "/search"
+        # path and query reported SEPARATELY: the split must keep both halves, and the
+        # path must still be the cut one so routing on `==` keeps working
+        return HttpResponse.ok("path=[" + req.path + "] query=[" + req.query + "]")
+    if req.path == "/plain"
+        return HttpResponse.ok("plain query=[" + req.query + "]")
+    return HttpResponse.notFound("not found")
+
+def fetch(url: str): str
+    var attempts: int = 0
+    while attempts < 20
+        var r = Http.get(url)
+        if r as resp
+            return resp.text
+        sys.sleep(50)
+        attempts = attempts + 1
+    return "<unreachable>"
+
+def main()
+    sys.go(def()
+        Http.serve(19923, handleRequest)
+    )
+
+    # a query is delivered VERBATIM, separators and all
+    var got = fetch("http://127.0.0.1:19923/search?q=resurrection&n=2")
+    assert got.contains("path=[/search]"), "the path is still cut at '?'"
+    assert got.contains("query=[q=resurrection&n=2]"), "the whole query survives, '&' included"
+
+    # percent escapes are NOT decoded by the parser -- decoding is the caller's job, and
+    # doing it here would make an escaped separator indistinguishable from a real one
+    var esc = fetch("http://127.0.0.1:19923/search?a=1%26b&c=%CE%B8")
+    assert esc.contains("query=[a=1%26b&c=%CE%B8]"), "escapes are passed through raw"
+
+    # no '?' at all -> empty, not missing: the field defaults to ""
+    var none = fetch("http://127.0.0.1:19923/plain")
+    assert none.contains("plain query=[]"), "a request with no query yields an empty one"
+
+    print("query_string: OK")

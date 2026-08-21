@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-300. Next new bug: BUG-301.**
+**Last bug number generated: BUG-302. Next new bug: BUG-303.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -12,6 +12,96 @@
 >
 > No gate could see this: `doc_lint` D4 only checks that a cited BUG-NNN exists
 > *somewhere*, so a duplicate satisfies it twice over.
+
+---
+
+### BUG-302: the heavy PARALLEL gates fail one file per run at a low rate, and it never reproduces — THIRD occurrence, so it is now a finding — OPEN (2026-08-20)
+
+CLAUDE.md has said since 2026-08-19 that a third occurrence "stops being a transient and
+becomes the finding". This is the third.
+
+| # | when | gate | file | verdict in-tier | verdict alone |
+|---|---|---|---|---|---|
+| 1 | 2026-08-19, `--daily` | `compile_check-inline` | `iter_collision_test` | 275 passed / 1 skipped | 1/1, then 276/0/0 on a full re-run |
+| 2 | 2026-08-20, first `--daily` | `compile_check-inline` | `iter_collision_test` | 275/1 | 276/0/0 |
+| 3 | 2026-08-20, `--full` | `divergence` | `contract_old_test` | `self=CFAIL`, 1 selfhost gap | 0 gaps via the harness's OWN `--only` path; emit+`build-exe` by hand also clean |
+
+**THE SHAPE IS CONSISTENT AND THE FILES ARE NOT.** One file, one gate, inside a heavy
+sweep at `JOBS=2`; passes immediately afterwards by every route including the gate's own.
+Two different gates and two different fixtures, so it is not a property of either.
+
+**WHY IT MATTERS MORE THAN ONE RED LINE.** These are the two gates whose whole job is to
+be believed about the corpus. A gate that fails one file per run at a low rate teaches
+people to re-run it, and re-running until green is precisely how a real regression gets
+waved through. It also cost real time here: occurrence 3 was investigated as a suspected
+regression from a same-day compiler change before it was shown to be nothing.
+
+**RULED OUT:** a shared workdir. `divergence_check.sh` gives each worker its own
+`$OUT/ws-<name>` / `$OUT/wb-<name>`, so two workers cannot collide on the emit directory.
+
+**THE UNTESTED HYPOTHESIS, named so a later run can discriminate rather than re-argue.**
+Both affected gates invoke `zig build-exe` from parallel workers, and every worker shares
+ONE global Zig cache (`%LocalAppData%\zig`). The QUICK gates that never do this have never
+shown the symptom. Contention on that cache — a lock timeout, or a partially-written entry
+being read — would produce exactly this: a single arbitrary file failing, with no defect in
+the file and nothing reproducible afterwards.
+
+**The discriminating experiment, cheap and not yet run:** re-run one of these gates with a
+per-worker `ZIG_GLOBAL_CACHE_DIR`. If the rate goes to zero, the cause is cache contention
+and the fix is to give each worker its own; if it does not, the hypothesis is dead and the
+next suspect is the emit step rather than the build step. Running at `JOBS=1` is the
+cruder version of the same test.
+
+**Do NOT "fix" this by adding a retry.** A gate that retries until green is the thing this
+ledger exists to prevent. If the cause turns out to be cache contention, isolate the
+caches; the failure should stay loud.
+
+---
+
+### BUG-301: `${expr:c}` works for a literal and fails for a RUNTIME int — no way to build a byte from a computed value — OPEN (found 2026-08-20)
+
+```zebra
+var b = "${206:c}"              # fine -- emits one byte, 0xCE
+var n = hi * 16 + lo
+var c = "${n:c}"                # error: expected type 'u8', found 'i64'
+```
+
+The `:c` spec on an `int` emits Zig's `{c}` (`printAsciiChar`, which takes a **u8**), and
+codegen passes the Zebra `int` (`i64`) through unnarrowed. A literal coerces at comptime;
+a runtime value does not, and the user sees a raw Zig type error against generated code.
+
+**WHY IT MATTERS BEYOND THE ERROR MESSAGE.** `${n:c}` is the ONLY way to put an arbitrary
+byte into a string, and byte assembly is what UTF-8-correct decoding needs — `%CE%B8` is
+two bytes that together form one codepoint, so a percent-decoder must build bytes, not
+codepoints. With this broken, a decoder can only handle values it can name as literals: in
+practice a table over printable ASCII, leaving every `%XX` ≥ 128 undecodable. That is
+exactly where the Graze decoder stopped (correspondence Entry 24), and it is why that
+entry reads as "no int→char in reach" — the capability is there and unreachable from a
+computed value.
+
+**Where:** `bitCastType` (`selfhost/CodeGen.zbr`, and the bootstrap's twin) narrows the
+argument for `x`/`X`/`o`/`b` and has no case for `c`. The existing cast emits
+`@as(T, @bitCast(x))`, which is **invalid** i64→u8 — Zig requires equal bit widths — so
+this needs a different cast kind, not just another entry in that table.
+
+**AND THAT CARRIES A SEMANTIC DECISION, which is why this is filed rather than fixed:**
+what should a runtime value outside 0..255 do?
+
+| option | behaviour | precedent |
+|---|---|---|
+| `@truncate` | always defined, silently wraps | Go `byte(n)`, Rust `as u8` |
+| `@intCast` | panics in Debug/ReleaseSafe — **UB in ReleaseFast**, which is what `zebra --release` ships | — |
+| front-end refusal | rejects a statically-known bad literal; still needs one of the above at runtime | Python `bytes([n])` raises |
+
+`@intCast` alone is the one to avoid: it puts undefined behaviour in the shipping
+configuration, which is the hazard `tools/lint_oom_unreachable.py` exists to keep out.
+Recommendation is `@truncate` plus a front-end refusal for a known-out-of-range literal —
+but the semantics are Sean's call.
+
+**Control when fixing:** a decoder that builds `θ` from `%CE%B8` with hex digits parsed at
+runtime must round-trip, and `${300:c}` must do whatever the decision says rather than
+whatever Zig happens to do. Note `:c` on a `char` value is a DIFFERENT path (it emits
+Zig's `{u}`, the codepoint form) and must keep working — see QUICKSTART's note.
 
 ---
 
@@ -1574,6 +1664,23 @@ coupling is what made this invisible. Sean's call.
 >
 > **Same class as BUG-250** (a builtin constructor call the TypeChecker does not type),
 > which is worth knowing because that one was fixed by typing the call.
+>
+> **THE CLASS WAS SWEPT 2026-08-20 AND IT IS BOUNDED — three untyped, one reachable.**
+> Codegen emits bare constructors for seven generic stdlib types; the TypeChecker types
+> four. The gap is `Atomic`, `ThreadPool`, `ObjectPool` — and only `Atomic` actually
+> breaks:
+>
+> | untyped constructor | reachable defect? |
+> |---|---|
+> | `Atomic(int)(0)` | **YES** — `.add` falls through to List's heuristic and emits `.append` |
+> | `ThreadPool(2)` | no — `submit`/`wait` collide with nothing (probed: runs) |
+> | `ObjectPool(T)(n)` | no — `take`/`give`/`inUse` collide with nothing (probed: runs) |
+>
+> **So the trigger is not "untyped" alone — it is untyped AND a method name that COLLIDES
+> with a stdlib heuristic.** `.add` is the collider because List has one. That predicts the
+> next occurrence: any new stdlib type with an `add`-shaped method inherits this the day it
+> is added, whether or not anyone touches Atomic. Typing the three constructors removes the
+> class rather than the instance.
 >
 > **WHERE THE NEXT ATTEMPT SHOULD NOT START.** `TypeChecker.zbr`'s
 > `typeFromExpr`/`typeFromRef` arms handle `List`, `HashMap`, `Chan` and `Set` and return

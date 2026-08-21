@@ -2151,7 +2151,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             # tolerable for names as rare as `stdout`, reckless for three of the most
             # common field names there are. Naming the type is exact and costs the same.
             if obj_t is Type_.http_request
-                if m.member == "method" or m.member == "path" or m.member == "content"
+                if m.member == "method" or m.member == "path" or m.member == "content" or m.member == "query"
                     return Type_.string_
             if obj_t is Type_.named as tn
                 # Enum member access: Color.red → Type_.named("Color").

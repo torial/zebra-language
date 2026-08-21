@@ -146,8 +146,18 @@ echo "── Step 1: regenerate .zig into /tmp/bs-zig (zebra — Zig-compiled co
 BS_ZIG=/tmp/bs-zig
 rm -rf "$BS_ZIG"
 mkdir -p "$BS_ZIG"
+# STDERR IS KEPT, and that is not a nicety. It used to go to /dev/null, so a compile
+# error in the compiler'"'"'s OWN source surfaced only as "regeneration failed" with no
+# reason -- the caller then has to re-run the emit by hand to learn what broke, in the
+# innermost loop of every selfhost change. A refusal that cannot say why is the thing
+# this repo keeps writing down and then shipping anyway. Cost 20 minutes on 2026-08-20
+# (a top-level def written as a method: "'"'"'this'"'"' used outside a class/struct method").
 for f in "${FILES[@]}"; do
-    "$ZEBRA" --emit-zig "selfhost/$f.zbr" > "$BS_ZIG/$f.zig" 2>/dev/null
+    if ! "$ZEBRA" --emit-zig "selfhost/$f.zbr" > "$BS_ZIG/$f.zig" 2>"/tmp/bs-emit-$f.err"; then
+        echo "FAIL: regenerating selfhost/$f.zbr — the compiler refused its own source:" >&2
+        grep -aiE '''error|panic''' "/tmp/bs-emit-$f.err" | head -5 >&2
+        exit 1
+    fi
 done
 
 echo "── Step 2: build selfhost-A (from /tmp/bs-zig)"

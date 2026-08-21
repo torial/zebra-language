@@ -2286,6 +2286,37 @@ def compileGuiProject(zig_path: str, mode_run: bool, backend: str): int
         argv.add("run")
     return sys.exec_inherit(argv)
 
+# BUG-300 WORKAROUND — retry the scratch unlink instead of assuming it took.
+#
+# THIS IS A WORKAROUND AND IS LABELLED ONE. BUG-244 made `zebra <file>.zbr` clean up its
+# ~20 MB scratch executable; on 2026-08-20 that stopped working -- 5/5 deterministic, and
+# 3/3 against a compiler built from HEAD, so it was not a source regression. Then it
+# stopped reproducing again with no relevant change. What moves it is NOT established;
+# see BUG-300. This makes the existing BUG-244 cleanup robust against the timing rather
+# than dependent on it.
+#
+# What IS established: `rm` from a shell immediately afterwards succeeds, so the handle is
+# released a moment later and the compiler's unlink simply runs too early -- the classic
+# delete-a-just-executed-image shape on Windows. `File.delete` cannot report failure,
+# which is why this was invisible without the gate.
+#
+# COSTS NOTHING ON THE COMMON PATH: when the first delete works, `File.exists` is false
+# and this returns without ever sleeping. Bound is 12 x 25 ms; a file still held after
+# 300 ms is a different problem and is left alone rather than spun on.
+#
+# TOP-LEVEL, not a method: both call sites are inside `def main()`, and a `.method()`
+# contextual-self call there is "'this' used outside a class/struct method" -- which is
+# exactly how the first version of this failed, silently, inside a regen whose stderr
+# goes to /dev/null.
+def deleteScratch(path: str)
+    var tries: int = 0
+    while tries < 12
+        File.delete(path)
+        if not File.exists(path)
+            return
+        sys.sleep(25)
+        tries = tries + 1
+
 def main()
     var args = Arg.parse()
 
@@ -2837,8 +2868,8 @@ def main()
                 # branch that deletes. The passing legs were passing only because their
                 # contracts fired and the non-zero exit kept the files.
                 if rc == 0 and not keep_temp and output_dir == ""
-                    File.delete(fast_exe)
-                    File.delete(zig_path)
+                    deleteScratch(fast_exe)                 # BUG-300
+                    deleteScratch(zig_path)
                 if rc != 0
                     sys.exit(1)
                 sys.exit(0)
@@ -2936,8 +2967,8 @@ def main()
             # failure. This branch is taken by any program with a C dep, sqlite, an
             # extern, or --release, so leaving it out would fix only half the leak.
             if rc2 == 0 and not keep_temp and output_dir == ""
-                File.delete(llvm_exe)
-                File.delete(zig_path)
+                deleteScratch(llvm_exe)                     # BUG-300
+                deleteScratch(zig_path)
             if rc2 != 0
                 sys.exit(1)
         sys.exit(0)
