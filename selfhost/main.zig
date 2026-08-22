@@ -85,6 +85,42 @@ pub const _Stringable = struct {
 };
 pub const _ZebraErrorCtx = struct { message: []const u8 = "", details: ?_Stringable = null };
 pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
+// Shifts. A BARE `a << b` DOES NOT COMPILE in Zig: the shift amount must coerce to
+// Log2Int(T) -- u6 for a 64-bit operand -- so `a << b` on two i64s is
+// `error: expected type 'u6', found 'i64'`. CodeGen carried `.shl => "<<"` for months
+// and it had never been type-checked, because no parser rule could reach it.
+//
+// std.math.shl/shr are TOTAL: no UB and no panic at ANY shift amount. Measured on i64
+// -8: shl by 70 -> 0, shr by 70 -> -1 (saturates to the sign bit, which is what Python
+// does too). A negative amount shifts the other way.
+//
+// THE SHIFT KIND FOLLOWS THE OPERAND TYPE, which is the whole reason Zebra needs no
+// `>>>`: @TypeOf(a) is i64 for a signed operand (arithmetic shift, sign-extends) and u64
+// for an unsigned one (logical shift, zero-fills). Same 64 bits in, different result out
+// -- measured: i64 -8 >> 1 = -4, u64 0xFF..F8 >> 1 = 9223372036854775804.
+//
+// Written as FUNCTIONS rather than an inline labeled block so that nested shifts work:
+// Zig forbids shadowing, so `1 << b << b` lowered to nested blocks would collide on the
+// temporary's name. A call argument is also evaluated exactly once, so a side-effecting
+// left operand stays correct.
+// A LITERAL-ONLY shift (`1 << 3`) arrives as comptime_int, which has no Log2Int -- and
+// std.math.shl answers that with `comptime unreachable`, i.e. the build dies inside zig's
+// own std rather than saying anything about the user's program. Zebra's `int` is i64, so
+// a comptime_int operand becomes i64 and everything else keeps its own type.
+// Found by test/bitwise_semantics_test.zbr, which shifts literals; the golden-vector
+// fixture never would have, because all 24 of its operands are typed `uint` variables.
+inline fn _zbr_shift_t(comptime T: type) type {
+    return if (T == comptime_int) i64 else T;
+}
+pub inline fn _zbr_shl(a: anytype, b: anytype) _zbr_shift_t(@TypeOf(a)) {
+    const T = _zbr_shift_t(@TypeOf(a));
+    return std.math.shl(T, @as(T, a), b);
+}
+pub inline fn _zbr_shr(a: anytype, b: anytype) _zbr_shift_t(@TypeOf(a)) {
+    const T = _zbr_shift_t(@TypeOf(a));
+    return std.math.shr(T, @as(T, a), b);
+}
+
 pub fn _zebra_lt(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.lessThan(u8, a, b);
     return a < b;

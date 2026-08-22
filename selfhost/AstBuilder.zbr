@@ -1262,6 +1262,10 @@ class ASTBuilder
             return BinaryOp.bit_or
         if op == "^"
             return BinaryOp.bit_xor
+        if op == "<<"
+            return BinaryOp.shl
+        if op == ">>"
+            return BinaryOp.shr
         raise "toBinaryOp: unknown op: " + op
 
     def toUnaryOp(op: str): UnaryOp throws

@@ -2526,7 +2526,7 @@ const Builder = struct {
     fn buildExpr(b: Builder, node: TN) anyerror!Ast.Expr {
         return switch (ntOf(node)) {
             .Expr, .Expr2, .Expr3, .Expr4,
-            .Expr4a, .Expr4b, .Expr4c,
+            .Expr4a, .Expr4b, .Expr4c, .Expr4d,
             .Expr5, .Expr6, .Expr7, .Expr8, .Expr9 => b.buildExprLevel(node),
             .Atom       => b.buildAtom(node),
             else => std.debug.panic("buildExpr: unexpected NT {s}", .{@tagName(ntOf(node))}),
@@ -2667,6 +2667,8 @@ const Builder = struct {
                 .ampersand    => mk.bin(b, s, .bit_and, left, right),
                 .vertical_bar => mk.bin(b, s, .bit_or,  left, right),
                 .caret        => mk.bin(b, s, .bit_xor, left, right),
+                .double_lt    => mk.bin(b, s, .shl,     left, right),
+                .double_gt    => mk.bin(b, s, .shr,     left, right),
                 .dotdot    => mk.bin(b, s, .dotdot,  left, right), // range: a..b
                 .kw_orelse => .{ .orelse_ = try b.box(Ast.ExprOrelse, .{
                     .span = s, .expr = left, .fallback = right,

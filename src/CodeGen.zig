@@ -16652,6 +16652,16 @@ const Generator = struct {
                     try g.w.writeAll(")");
                 }
             },
+            .shl, .shr => {
+                // NOT `(a << b)`. Zig wants the shift amount as Log2Int(T) -- u6 for a
+                // 64-bit operand -- so the bare form is a compile error. binaryOpStr
+                // still maps .shl to "<<" for diagnostics; it must never reach an emit.
+                try g.w.writeAll(if (e.op == .shl) "_zbr_shl(" else "_zbr_shr(");
+                try g.genExpr(e.left);
+                try g.w.writeAll(", ");
+                try g.genExpr(e.right);
+                try g.w.writeAll(")");
+            },
             else => {
                 try g.w.writeAll("(");
                 try g.genExpr(e.left);

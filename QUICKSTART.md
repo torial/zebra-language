@@ -317,19 +317,20 @@ Float suffix literals: `1.5_f32`, `2.5_f64`, `0.5f32`, `3.0f64` emit
 | 2 — unary | `not`  `-x`  `~x` | Logical not; negation; bitwise complement |
 | 3 — multiplicative | `*`  `/`  `%` | |
 | 4 — additive | `+`  `-` | String concat is also `+` |
-| 5 — bitwise and | `&` | |
-| 6 — bitwise xor | `^` | |
-| 7 — bitwise or | `\|` | |
-| 8 — comparison | `<`  `<=`  `>`  `>=`  `is`  `in` | `is`: type check; `in`: containment |
-| 9 — equality | `==`  `!=` | |
-| 10 — logical and | `and` | Short-circuits |
-| 11 — logical or | `or` | Short-circuits |
-| 12 — nil/error fallback | `orelse`  `catch` | `orelse`: `T?`; `catch`: error union |
-| 13 — pipeline | `->` | Left-to-right chaining |
+| 5 — shift | `<<`  `>>` | `a << -b` **needs the space** — see below |
+| 6 — bitwise and | `&` | |
+| 7 — bitwise xor | `^` | |
+| 8 — bitwise or | `\|` | |
+| 9 — comparison | `<`  `<=`  `>`  `>=`  `is`  `in` | `is`: type check; `in`: containment |
+| 10 — equality | `==`  `!=` | |
+| 11 — logical and | `and` | Short-circuits |
+| 12 — logical or | `or` | Short-circuits |
+| 13 — nil/error fallback | `orelse`  `catch` | `orelse`: `T?`; `catch`: error union |
+| 14 — pipeline | `->` | Left-to-right chaining |
 
 ### §3.2 Bitwise operators
 
-`&` `|` `^` `~` operate on any integer type. **The result keeps the operand's type**, which
+`&` `|` `^` `~` `<<` `>>` operate on any integer type. **The result keeps the operand's type**, which
 is the rule worth remembering — it is why Zebra needs no separate unsigned-shift operator.
 
 ```zebra
@@ -349,6 +350,39 @@ def main()
 binds `&` `^` `|` tighter than comparison so the obvious reading is the right one. Among
 themselves the order is the conventional one: `&` tighter than `^` tighter than `|`, so
 `1 | 2 ^ 3 & 6` is `1 | (2 ^ (3 & 6))`.
+
+### Shifts
+
+`<<` and `>>` bind tighter than `&` and looser than `+`, so `1 << 2 + 1` is `1 << 3`.
+
+**`>>` follows the operand's type**, which is why Zebra has no separate `>>>`:
+
+```zebra
+def main()
+    var neg: int = -8                     # 0xFFFF_FFFF_FFFF_FFF8
+    print(neg >> 1)                       # -4  — ARITHMETIC: sign bit extends
+
+    var pos: uint = 18446744073709551608  # the SAME 64 bits, read unsigned
+    print(pos >> 1)                       # 9223372036854775804  — LOGICAL: zeros in
+```
+
+Java needs `>>>` because it has no unsigned type. Zebra has `uint`, so the type carries
+the distinction. Keep hash and mask work in `uint` and shifts do the right thing; an
+accumulator that drifts into `int` gets an arithmetic shift and a silently wrong result,
+which is the one way to get this wrong quietly.
+
+**Shifts are total.** Any shift amount is defined — no undefined behaviour, no panic:
+
+| expression | result |
+|---|---|
+| `x << n` where `n` ≥ 64 | `0` |
+| `x >> n` where `n` ≥ 64 | `0` for `uint`; `-1` or `0` for `int` (saturates to the sign bit) |
+| `x << -n` | shifts the other way |
+
+C leaves out-of-range shifts undefined; Zebra does not.
+
+> **`a << -b` needs the space.** `<<-` is the arena deep-copy-out operator and wins the
+> longest match, so `a<<-b` lexes as `a` `<<-` `b`. Write `a << -b`.
 
 A non-integer operand is refused by name:
 

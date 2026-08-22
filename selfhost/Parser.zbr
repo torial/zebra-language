@@ -2950,8 +2950,26 @@ class Parser
         return left
 
     def parseBitAnd(): PNode throws
-        var left = .parseAddSub()?
+        var left = .parseShift()?
         while .textIs("&")
+            const op = .peek().text
+            .advance()
+            const right = .parseShift()?
+            var l = List(PNode)()
+            l.add(left)
+            var r = List(PNode)()
+            r.add(right)
+            left = PNode.expr_binary(PBinary(op, l, r))
+        return left
+
+    # Shifts bind TIGHTER than `&` and LOOSER than `+` -- Python's order.
+    #
+    # `a << -b` NEEDS THE SPACE. `<<-` is the arena deep-copy-out token and out-munches
+    # `<<` in the lexer, so `a<<-b` lexes as `a` `<<-` `b`. The tokenizer has carried a
+    # note about that trade since §28d; this is the first construct that can hit it.
+    def parseShift(): PNode throws
+        var left = .parseAddSub()?
+        while .textIs("<<") or .textIs(">>")
             const op = .peek().text
             .advance()
             const right = .parseAddSub()?

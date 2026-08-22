@@ -212,6 +212,7 @@ pub const NT = enum {
     Expr4a,   // |
     Expr4b,   // ^
     Expr4c,   // &
+    Expr4d,   // <<  >>
     Expr5,    // +  -
     Expr6,    // *  /  //  %
     Expr7,    // **
@@ -1057,8 +1058,15 @@ const expr_rules: []const Rule = &.{
     .{ .lhs = .Expr4b, .rhs = &.{ n(.Expr4c) } },
 
     // Expr4c → bitwise AND     (highest of the three; shifts will slot in below)
-    .{ .lhs = .Expr4c, .rhs = &.{ n(.Expr4c), t(.ampersand), n(.Expr5) } },
-    .{ .lhs = .Expr4c, .rhs = &.{ n(.Expr5) } },
+    .{ .lhs = .Expr4c, .rhs = &.{ n(.Expr4c), t(.ampersand), n(.Expr4d) } },
+    .{ .lhs = .Expr4c, .rhs = &.{ n(.Expr4d) } },
+
+    // Expr4d → shifts. Python's order: tighter than `&`, looser than `+`.
+    // NOTE `a << -b` NEEDS THE SPACE: `<<-` is the arena deep-copy-out token and
+    // out-munches `<<` in the tokenizer (src/Tokenizer.zig:902).
+    .{ .lhs = .Expr4d, .rhs = &.{ n(.Expr4d), t(.double_lt), n(.Expr5) } },
+    .{ .lhs = .Expr4d, .rhs = &.{ n(.Expr4d), t(.double_gt), n(.Expr5) } },
+    .{ .lhs = .Expr4d, .rhs = &.{ n(.Expr5) } },
 
     // Expr5 → additive, and range (`a..b` — used in branch on-clauses and literals)
     .{ .lhs = .Expr5, .rhs = &.{ n(.Expr5), t(.plus),   n(.Expr6) } },

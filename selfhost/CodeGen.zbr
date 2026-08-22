@@ -11174,6 +11174,20 @@ struct Generator
             genExpr(b.right)
             w.emit(")")
             return
+        if b.op == BinaryOp.shl or b.op == BinaryOp.shr
+            # NOT `(a << b)`. Zig wants the shift amount as Log2Int(T) -- u6 for a 64-bit
+            # operand -- so the bare form is `error: expected type 'u6', found 'i64'`.
+            # binaryOpStr still answers "<<" for diagnostics; it must not reach an emit.
+            # _zbr_shl/_zbr_shr live in the preamble and are TOTAL at any shift amount.
+            if b.op == BinaryOp.shl
+                w.emit("_zbr_shl(")
+            else
+                w.emit("_zbr_shr(")
+            genExpr(b.left)
+            w.emit(", ")
+            genExpr(b.right)
+            w.emit(")")
+            return
         w.emit("(")
         genExpr(b.left)
         w.emit(" ")

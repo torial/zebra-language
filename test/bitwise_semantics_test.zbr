@@ -64,5 +64,54 @@ def main()
         fails = fails + 1
         print("FAIL relative precedence of & ^ |")
 
+    # -- 6. THE DISCRIMINATING PAIR: the SAME 64 bits, shifted right under both types.
+    # This is the leg that proves Zebra needs no `>>>`. A signed operand gets an
+    # ARITHMETIC shift (sign-extends); an unsigned one gets a LOGICAL shift (zero-fills).
+    # Fable's vectors are u64 only, so they pin the logical half and say nothing at all
+    # about this one -- and getting it wrong is a silently wrong hash, not an error.
+    var neg: int = -8                        # 0xFFFF_FFFF_FFFF_FFF8
+    var pos: uint = 18446744073709551608     # the SAME 64 bits, read unsigned
+    if (neg >> 1) <> -4
+        fails = fails + 1
+        print("FAIL signed >> is not arithmetic")
+    if (pos >> 1) <> 9223372036854775804
+        fails = fails + 1
+        print("FAIL unsigned >> is not logical")
+
+    # -- 7. OUT-OF-RANGE shift amounts are TOTAL -- no panic, no UB. Shifting past the
+    # width saturates: to 0 for <<, and to the SIGN BIT for arithmetic >>, which is what
+    # Python does too. C calls this undefined; we do not.
+    if (neg << 70) <> 0
+        fails = fails + 1
+        print("FAIL << past width should be 0")
+    if (neg >> 70) <> -1
+        fails = fails + 1
+        print("FAIL arithmetic >> past width should saturate to -1")
+
+    # -- 8. Shifts are LEFT-associative and nest. Worth pinning because the emit is a
+    # CALL (_zbr_shl) rather than an operator, and the first design considered -- a
+    # labeled block -- could not express this at all: Zig forbids shadowing, so nested
+    # blocks would have collided on the temporary's name.
+    if (1 << 1 << 1) <> 4
+        fails = fails + 1
+        print("FAIL nested shifts")
+
+    # -- 9. PRECEDENCE, Python's: shifts bind TIGHTER than `&` and LOOSER than `+`.
+    #   1 << 2 + 1  ==  1 << 3  ==  8      (looser than +)
+    #   3 & 1 << 1  ==  3 & 2   ==  2      (tighter than &)
+    if (1 << 2 + 1) <> 8
+        fails = fails + 1
+        print("FAIL shift should bind LOOSER than +")
+    if (3 & 1 << 1) <> 2
+        fails = fails + 1
+        print("FAIL shift should bind TIGHTER than &")
+
+    # -- 10. `a << -b` NEEDS THE SPACE: `<<-` is the arena deep-copy-out token and
+    # out-munches `<<` in the lexer. Spaced, a negative amount shifts the other way.
+    var one: int = 1
+    if (8 << -one) <> 4
+        fails = fails + 1
+        print("FAIL spaced negative shift amount")
+
     if fails == 0
         print("bitwise semantics: OK")

@@ -436,7 +436,11 @@ Expr4a               → Expr4a vertical_bar Expr4b
 Expr4b               → Expr4b caret Expr4c
                      |  Expr4c
 
-Expr4c               → Expr4c ampersand Expr5
+Expr4c               → Expr4c ampersand Expr4d
+                     |  Expr4d
+
+Expr4d               → Expr4d double_lt Expr5
+                     |  Expr4d double_gt Expr5
                      |  Expr5
 
 Expr5                → Expr5 plus Expr6

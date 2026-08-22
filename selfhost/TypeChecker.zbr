@@ -2848,6 +2848,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return bitwiseResultType(lt, rt, b, "|", ctx)
                 on BinaryOp.bit_xor
                     return bitwiseResultType(lt, rt, b, "^", ctx)
+                # A shift's result type is the LEFT operand's -- that is what selects
+                # arithmetic vs logical shift, and why Zebra needs no `>>>`. The shift
+                # AMOUNT is just an integer and does not influence the result type.
+                on BinaryOp.shl
+                    return bitwiseResultType(lt, rt, b, "<<", ctx)
+                on BinaryOp.shr
+                    return bitwiseResultType(lt, rt, b, ">>", ctx)
                 else
                     return Type_.unknown_
         # BUG-253. INFERENCE ONLY — no diagnostics in this change, deliberately.
