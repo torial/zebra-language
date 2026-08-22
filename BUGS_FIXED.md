@@ -6,6 +6,137 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-251: `conn.read()` reads to EOF, which silently deadlocks a request/response server — ✅ CLOSED 2026-08-21
+
+> **✅ CLOSED 2026-08-21 — `read` is the next chunk, `readAll` drains. Sean's call.**
+>
+> The semantics now match Go's split (`Conn.Read` vs `io.ReadAll`), which is what he
+> recalled wanting from an earlier conversation:
+>
+> | call | behaviour |
+> |---|---|
+> | `conn.read()` | next available chunk; blocks until ≥1 byte, `""` at EOF |
+> | `conn.readAll()` | drain until the peer closes (the previous `read`) |
+> | `conn.readLine()` / `readBytes(n)` | unchanged framing primitives |
+>
+> **THE POINT IS WHICH SPELLING IS SAFE BY DEFAULT.** `read` is what a newcomer reaches
+> for first, and it was the one that hung — silently, with no error on either side. Now the
+> obvious way to write a server is the working way, and the drain has to be asked for by
+> name. No in-repo caller had to change, because Tcp had no run coverage at all until the
+> same day.
+>
+> **Falsified as a HANG, which is the honest shape for this defect.**
+> `test/tcp_echo_roundtrip_test.zbr` covers all four calls across three servers — the
+> natural `read()` request/response, the `readLine`/`readBytes` framed exchange, and a
+> `readAll()` drain. With `_tcp_read` reverted to `streamRemaining` the fixture **times
+> out (rc=124)**; restored, it passes. A fix that collapsed the two calls into one would
+> fail the drain assertion.
+>
+> `""` at end-of-stream rather than an error: a closed peer is an ordinary outcome for a
+> chunk read, and the caller distinguishes it by the empty result.
+>
+> **Both compilers.** `readAll` dispatches in the selfhost and the bootstrap, and the
+> selfhost TypeChecker types it as `str` alongside the other three.
+>
+> Two things from the road here are worth keeping. The entry's original conclusion —
+> *"Tcp cannot express request/response at all … a design gap"* — was **wrong**: framing
+> already worked, and the reason it looked like a design gap is that QUICKSTART documented
+> **no `TcpConn` method at all**, so `read()` was the only one a reader could find. And the
+> preamble is read from DISK by the selfhost at emit time, so this whole change could be
+> tested and falsified without a rebuild; the bootstrap embeds it at build time, which is
+> what the rebuild guard correctly refused over.
+> **RE-DIAGNOSED 2026-08-21. Two of this entry's conclusions do not survive measurement,
+> and one half of it is now fixed.**
+>
+> **CONFIRMED:** `_tcp_read` is `streamRemaining` — it reads to EOF, exactly as the entry
+> deduced from behaviour. A server that reads before replying waits for the client to
+> close while the client waits for the reply. Neither side errors.
+>
+> **WRONG:** *"Tcp cannot express request/response at all without a framing or half-close
+> mechanism … that is a design gap."* The framing already exists and works. Measured:
+>
+> ```
+> handler: var line = conn.readLine();  conn.write("ECHO:" + line + "\n")
+> client:  conn.write("ping\n");        var reply = conn.readLine()
+> -> reply=[ECHO:ping], rc=0
+> ```
+>
+> `readBytes(n)` works for length-framed protocols too. So this is not a design gap; it is
+> a FOOTGUN plus a documentation hole.
+>
+> **AND THE DOCUMENTATION HOLE IS MOST OF WHY IT LOOKED LIKE A DESIGN GAP.** QUICKSTART's
+> Tcp table documented `Tcp.connect` and `Tcp.serve` and **not a single `TcpConn` method** —
+> so a reader had no way to discover `readLine`/`readBytes` at all, and `read()` was the
+> only visible option. The table now lists all five with the deadlock warning and the
+> framed idiom beside it.
+>
+> **FIXED HALF — Tcp has run coverage for the first time.**
+> `test/tcp_echo_roundtrip_test.zbr` (`smoke_run_bounded`, 120 s) does a real
+> client/server round trip: line-framed request/reply plus an exact-width `readBytes`
+> frame. Before it, Tcp had never opened a socket in a test while
+> `stdlib_run_coverage` counted it as covered, on the strength of a `Tcp.serve` call inside
+> a function nothing calls.
+>
+> **WHAT REMAINS IS A DECISION, not an implementation.** `read()`-to-EOF is a legitimate
+> primitive and also the one a newcomer reaches for first. Options:
+>
+> | option | cost |
+> |---|---|
+> | document only (**done**) | the footgun stays; a first-time user still hangs once |
+> | add `readSome()` returning the first available chunk | additive, no breakage; two similar names to explain |
+> | redefine `read()` as first-chunk, add `readAll()` for the current behaviour | matches most socket APIs; a semantic change to a shipped call |
+>
+> There is no in-repo caller to break — Tcp had no run coverage until today — so the third
+> is cheaper here than it looks. Sean's call; the entry stays open on that question.
+
+**Found 2026-08-04** while giving `Tcp` its first real run fixture. The fixture had to be
+**withdrawn rather than registered**, because a hanging fixture in the QUICK tier is worse
+than an uncovered namespace: it teaches people to re-run gates until they pass.
+
+**Repro** (server reads first, then replies — the ordinary request/response shape):
+
+```zebra
+def echoHandler(conn: TcpConn)
+    var data = conn.read()          # <- blocks
+    conn.write("ECHO:" + data)
+    conn.close()
+
+def main()
+    sys.go(def()
+        Tcp.serve(19921, echoHandler)
+    )
+    var c = Tcp.connect("127.0.0.1", 19921)
+    if c as conn
+        conn.write("ping")
+        var reply = conn.read()     # <- and so does this
+        conn.close()
+```
+Hangs. Killed at 200 s.
+
+**Isolated — both halves work SEPARATELY**, which is what makes the diagnosis specific:
+
+| probe | result |
+|---|---|
+| client connects, no read | ✅ `connected=true`, exits 0 |
+| server WRITES first, client reads | ✅ `got=SERVER-HELLO`, exits 0 |
+| **server READS first, then replies** | ❌ **hangs** |
+
+**Reading:** `TcpConn.read()` appears to read **to EOF** rather than returning the first
+available chunk. A server that reads before replying therefore waits for the client to
+close, while the client waits for the reply — a deadlock, not a slow path. If that is the
+intended semantic then `Tcp` cannot express request/response at all without a framing or
+half-close mechanism, and **that is a design gap rather than an implementation bug**.
+
+**Why this went unnoticed:** `test/tcp_serve_test.zbr` is the only Tcp fixture and its
+`main` merely prints a string — the `Tcp.serve` call sits in a `startServer()` that nothing
+calls (quality audit §1). `stdlib_run_coverage` counts Tcp as covered on that basis. It has
+never opened a socket.
+
+**Needed:** a decision on `read()`'s contract (chunk vs to-EOF), then either a documented
+framing idiom or a `readSome`/`readLine`. Until then Tcp has no honest run coverage.
+
+---
+
 ### BUG-233: a lambda parameter that shadows an enclosing one emits invalid Zig — ✅ CLOSED (selfhost) 2026-08-21
 
 > **✅ CLOSED 2026-08-21 in the SELFHOST — and the class had TWO emit sites, not one.**

@@ -3245,33 +3245,33 @@ On a `TcpConn`:
 | Call                    | Returns | Notes                                                     |
 |-------------------------|---------|-----------------------------------------------------------|
 | `conn.write(s)`         | void    |                                                           |
-| `conn.readLine()`       | `str`   | Up to `\n` (strips `\r\n`). **The request/response primitive.** |
+| `conn.read()`           | `str`   | Next available chunk; blocks until ≥1 byte, `""` at EOF    |
+| `conn.readAll()`        | `str`   | Drains until the peer closes                               |
+| `conn.readLine()`       | `str`   | Up to `\n` (strips `\r\n`) — delimiter-framed protocols     |
 | `conn.readBytes(n)`     | `str`   | Exactly `n` bytes — length-framed protocols                |
-| `conn.read()`           | `str`   | **Reads to EOF** — see the warning below                   |
 | `conn.close()`          | void    |                                                           |
 
-> **`conn.read()` reads until the peer closes, and that DEADLOCKS a request/response
-> server.** It is the right primitive for "give me the whole thing once the other side is
-> done" — a client draining a response whose sender then hangs up. It is the wrong one for
-> a server that must reply, because:
+> **`read` vs `readAll` is the same split Go makes** (`Conn.Read` vs `io.ReadAll`), and
+> the difference matters for servers. `read()` gives you the next chunk that arrived;
+> `readAll()` waits for the peer to hang up. So the ordinary request/response shape is
+> just:
 >
 > ```zebra
 > def handler(conn: TcpConn)
->     var data = conn.read()          # waits for the CLIENT to close...
->     conn.write("reply: " + data)    # ...which the client will not do until it gets this
-> ```
->
-> Neither side errors. It simply hangs. **Use a framed read instead** — `readLine()` for
-> delimiter-framed protocols, `readBytes(n)` for length-framed ones:
->
-> ```zebra
-> def handler(conn: TcpConn)
->     var line = conn.readLine()
->     conn.write("ECHO:" + line + "\n")
+>     var req = conn.read()
+>     conn.write("reply: " + req)
 >     conn.close()
 > ```
 >
-> `test/tcp_echo_roundtrip_test.zbr` is that shape end to end. Tracked as BUG-251.
+> Reach for `readAll()` only when the sender closing IS the end-of-message signal — a
+> client draining a response, say. Using it in a server deadlocks: it waits for the client
+> to close while the client waits for the reply, and neither side errors.
+>
+> **A chunk is not a message.** `read()` returns what has arrived, which may be a partial
+> message or several concatenated — TCP is a byte stream. When the protocol has a shape,
+> frame it: `readLine()` for delimiter-framed, `readBytes(n)` for length-framed.
+>
+> `test/tcp_echo_roundtrip_test.zbr` exercises all four.
 
 > **Concurrency caveat (`Tcp.serve`).** Each accepted connection is handled on its
 > **own thread**, so handlers run *concurrently*. The handler is a non-capturing

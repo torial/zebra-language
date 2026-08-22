@@ -1,60 +1,102 @@
-# Tcp — the FIRST honest run coverage for the namespace, and a pin on the framed idiom.
+# Tcp — the FIRST run coverage the namespace has ever had, and the pin on BUG-251's
+# read/readAll split.
 #
-# `test/tcp_serve_test.zbr` is a compile smoke: its `Tcp.serve` call sits in a
-# `startServer()` that nothing calls, yet `stdlib_run_coverage` counted Tcp as covered on
-# that basis. Before this file, Tcp had NEVER OPENED A SOCKET in a test (quality audit §1).
+# `test/tcp_serve_test.zbr` is a compile smoke: its `Tcp.serve` sits in a `startServer()`
+# that nothing calls, yet `stdlib_run_coverage` counted Tcp as covered on that basis.
+# Before this file, Tcp had NEVER OPENED A SOCKET in a test (quality audit §1).
 #
-# WHAT IT PINS, and why it uses `readLine` rather than `read`:
+# THE FIRST SERVER IS THE SHAPE THAT USED TO DEADLOCK. `read()` returned everything up to
+# EOF, so a server that read a request before replying waited for the client to close while
+# the client waited for the reply -- neither erroring, just hanging. Since 2026-08-21
+# `read()` returns the NEXT AVAILABLE CHUNK and `readAll()` drains, which is Go's split
+# (`Conn.Read` vs `io.ReadAll`). This server is now the ordinary, obvious way to write one,
+# and that is exactly why it is the fixture: the spelling a newcomer reaches for first must
+# be the one that works.
 #
-# `TcpConn.read()` reads TO EOF (`streamRemaining` in the preamble). That is the right
-# primitive for "read the whole response until the peer closes", and it DEADLOCKS in the
-# most natural request/response shape — a server that reads before replying waits for the
-# client to close while the client waits for the reply. Neither side errors; it just
-# hangs. See BUG-251.
+# THE SECOND SERVER PINS THE OTHER HALF. `readAll()` still drains to EOF -- correct when
+# the sender hangs up to signal the end of a message -- so both behaviours are asserted and
+# a fix that collapsed them into one would fail here.
 #
-# Request/response therefore needs FRAMING, and Zebra has it: `readLine()` (delimiter) and
-# `readBytes(n)` (length). Both are exercised below. The point of the file is that the
-# framed idiom WORKS — the ticket had concluded Tcp "cannot express request/response at
-# all", which is not true; what was missing was documentation and a test.
+# `readLine()` and `readBytes(n)` are covered too: they are the framing primitives, and
+# they were the ONLY way to write a working request/response server before the split.
 #
-# BOUNDED by its registration (`smoke_run_bounded`) because a fixture that opens sockets
-# must never be able to hang the tier — BUG-251's original fixture was withdrawn rather
-# than registered for exactly that reason, and an unbounded one teaches people to re-run
-# gates until they pass.
+# BOUNDED by its registration (`smoke_run_bounded`, 120 s) because a fixture that opens
+# sockets must never be able to hang the tier. BUG-251's original fixture was withdrawn
+# rather than registered for exactly that reason.
 
-def handler(conn: TcpConn)
-    # line-framed request, line-framed reply
+def chunkHandler(conn: TcpConn)
+    # the natural shape: read the request, then reply
+    var req = conn.read()
+    conn.write("ECHO:" + req)
+    conn.close()
+
+def framedHandler(conn: TcpConn)
     var line = conn.readLine()
-    conn.write("ECHO:" + line + "\n")
-    # then a fixed-width frame, so readBytes is covered by something that RUNS
+    conn.write("LINE:" + line + "\n")
     conn.write("0123456789")
+    conn.close()
+
+def drainHandler(conn: TcpConn)
+    # writes a multi-part message and hangs up; the client drains it with readAll()
+    conn.write("part-one|")
+    conn.write("part-two|")
+    conn.write("part-three")
     conn.close()
 
 def main()
     sys.go(def()
-        Tcp.serve(19942, handler)
+        Tcp.serve(19942, chunkHandler)
     )
-    sys.sleep(300)
+    sys.go(def()
+        Tcp.serve(19943, framedHandler)
+    )
+    sys.go(def()
+        Tcp.serve(19944, drainHandler)
+    )
+    sys.sleep(400)
 
+    # ── read(): request/response without any framing ─────────────────────────
+    var got: str = ""
     var attempts: int = 0
-    var reached: bool = false
-    var reply: str = ""
-    var fixed: str = ""
-
-    while attempts < 20 and not reached
+    while attempts < 20 and got == ""
         var c = Tcp.connect("127.0.0.1", 19942)
         if c as conn
-            reached = true
-            conn.write("ping\n")
-            reply = conn.readLine()
-            fixed = conn.readBytes(10)
+            conn.write("ping")
+            got = conn.read()
             conn.close()
         else
             sys.sleep(50)
         attempts = attempts + 1
+    assert got == "ECHO:ping", "read() returns the reply without waiting for EOF"
 
-    assert reached, "client reached the in-process Tcp server within 20 attempts"
-    assert reply == "ECHO:ping", "line-framed request/response round-trips"
+    # ── readLine() / readBytes(): the framing primitives ─────────────────────
+    var line: str = ""
+    var fixed: str = ""
+    var a2: int = 0
+    while a2 < 20 and line == ""
+        var c2 = Tcp.connect("127.0.0.1", 19943)
+        if c2 as conn2
+            conn2.write("ping\n")
+            line = conn2.readLine()
+            fixed = conn2.readBytes(10)
+            conn2.close()
+        else
+            sys.sleep(50)
+        a2 = a2 + 1
+    assert line == "LINE:ping", "readLine round-trips a delimiter-framed exchange"
     assert fixed == "0123456789", "readBytes reads an exact-width frame"
+
+    # ── readAll(): drain until the peer hangs up ─────────────────────────────
+    var whole: str = ""
+    var a3: int = 0
+    while a3 < 20 and whole == ""
+        var c3 = Tcp.connect("127.0.0.1", 19944)
+        if c3 as conn3
+            whole = conn3.readAll()
+            conn3.close()
+        else
+            sys.sleep(50)
+        a3 = a3 + 1
+    assert whole == "part-one|part-two|part-three", "readAll drains every write up to EOF"
 
     print("tcp_echo_roundtrip: OK")

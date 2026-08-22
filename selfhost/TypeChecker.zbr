@@ -2468,7 +2468,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.optional(Type_.string_)
                         on Type_.tcp_conn
                             var tcpmname: str = mem.member
-                            if tcpmname == "read" or tcpmname == "readLine" or tcpmname == "readBytes"
+                            if tcpmname == "read" or tcpmname == "readAll" or tcpmname == "readLine" or tcpmname == "readBytes"
                                 return Type_.string_
                             return Type_.void_  # write, close
                         on Type_.udp_socket

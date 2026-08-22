@@ -12467,6 +12467,11 @@ struct Generator
                         genExpr(m.object)
                         w.emit(")")
                         return
+                    if mname == "readAll"                       # BUG-251
+                        w.emit("_tcp_read_all(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
                     if mname == "readLine"
                         w.emit("_tcp_read_line(")
                         genExpr(m.object)

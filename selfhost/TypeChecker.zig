@@ -2039,7 +2039,29 @@ pub fn _tcp_write(conn: TcpConn, data: []const u8) void {
     _wt.interface.writeAll(data) catch |e| @panic(@errorName(e));
     _wt.interface.flush() catch |e| @panic(@errorName(e));
 }
+// BUG-251. `read` returns the NEXT AVAILABLE CHUNK; `readAll` drains to EOF. This is Go's
+// split (`Conn.Read` vs `io.ReadAll`) and Sean's call, 2026-08-21.
+//
+// It used to be the other way round -- `read` was the drain -- which silently DEADLOCKED
+// the most natural server there is: read a request, write a reply. The server waited for
+// the client to close; the client waited for the reply; neither errored. The dangerous
+// part was that `read` is what a newcomer reaches for first, so the default spelling was
+// the one that hangs.
+//
+// Returns "" at end of stream rather than raising: a closed peer is an ordinary outcome
+// for a chunk read, and the caller distinguishes it by the empty result.
 pub fn _tcp_read(conn: TcpConn) []const u8 {
+    const _cap: usize = 65536;
+    const _buf = std.heap.page_allocator.alloc(u8, _cap) catch @panic("OOM");
+    var _rb: [4096]u8 = undefined;
+    var _rd = conn.stream.reader(_io, &_rb);
+    var _slices: [1][]u8 = .{_buf};
+    const _got = _rd.interface.readVec(&_slices) catch return _buf[0..0];
+    return _buf[0.._got];
+}
+// The previous `read`: drain until the peer closes. Correct when the sender hangs up to
+// signal the end of a message, wrong for request/response -- see above.
+pub fn _tcp_read_all(conn: TcpConn) []const u8 {
     var _rb: [65536]u8 = undefined;
     var _rd = conn.stream.reader(_io, &_rb);
     var out_list: std.ArrayList(u8) = .empty;
@@ -7772,7 +7794,7 @@ pub fn inferExpr(_p_e: Expr, _p_ctx: *InferCtx) Type_ {
 // zbr:selfhost/TypeChecker.zbr:2470
                                 const tcpmname: []const u8 = mem.member;
 // zbr:selfhost/TypeChecker.zbr:2471
-                                if (((std.mem.eql(u8, tcpmname, "read") or std.mem.eql(u8, tcpmname, "readLine")) or std.mem.eql(u8, tcpmname, "readBytes"))) {
+                                if ((((std.mem.eql(u8, tcpmname, "read") or std.mem.eql(u8, tcpmname, "readAll")) or std.mem.eql(u8, tcpmname, "readLine")) or std.mem.eql(u8, tcpmname, "readBytes"))) {
 // zbr:selfhost/TypeChecker.zbr:2472
                                     return Type_.string_;
                                 }

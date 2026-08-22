@@ -9658,6 +9658,12 @@ const Generator = struct {
             try g.w.writeAll(")");
             return true;
         }
+        if (std.mem.eql(u8, method, "readAll")) {          // BUG-251
+            try g.w.writeAll("_tcp_read_all(");
+            try g.genExpr(obj);
+            try g.w.writeAll(")");
+            return true;
+        }
         if (std.mem.eql(u8, method, "read")) {
             try g.w.writeAll("_tcp_read(");
             try g.genExpr(obj);
