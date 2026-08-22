@@ -1372,6 +1372,11 @@ smoke_run test/bug240_empty_set_annotated_test.zbr "bug240: OK 2 1 2 0"
 # `noCollision` case in the fixture pins: an unconditional rename would rewrite every
 # lambda's emit and churn both golden baselines. Nested lambdas get distinct prefixes.
 smoke_run test/bug233_lambda_param_shadow_test.zbr "bug233: OK"
+# Tcp -- the FIRST run coverage the namespace has ever had. test/tcp_serve_test.zbr is a
+# compile smoke whose Tcp.serve sits in a function nothing calls, yet stdlib_run_coverage
+# counted Tcp as covered on that basis. Bounded, because a socket fixture must never be
+# able to hang the tier (BUG-251's original fixture was withdrawn rather than registered).
+smoke_run_bounded test/tcp_echo_roundtrip_test.zbr "tcp_echo_roundtrip: OK" 120
 
 # BUG-255. Lambdas, capture blocks and except-fields were among 40 nonterminals missing from
 # grammar.txt, so fuzz/gramgen.py had NEVER generated a program using them. The drift is

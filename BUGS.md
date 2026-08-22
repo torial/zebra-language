@@ -1583,7 +1583,51 @@ for. Nothing needs retiring.
 was; with the flip reverted it MUST be accepted again, and was. The tree was restored to
 byte-identical `.zbr` and generated `.zig` before this note was written.*
 
-### BUG-251: a request/response `Tcp` server DEADLOCKS — `conn.read()` appears to block until EOF — OPEN
+### BUG-251: `conn.read()` reads to EOF, which silently deadlocks a request/response server — OPEN (re-diagnosed 2026-08-21; the "cannot express request/response" reading was WRONG)
+
+> **RE-DIAGNOSED 2026-08-21. Two of this entry's conclusions do not survive measurement,
+> and one half of it is now fixed.**
+>
+> **CONFIRMED:** `_tcp_read` is `streamRemaining` — it reads to EOF, exactly as the entry
+> deduced from behaviour. A server that reads before replying waits for the client to
+> close while the client waits for the reply. Neither side errors.
+>
+> **WRONG:** *"Tcp cannot express request/response at all without a framing or half-close
+> mechanism … that is a design gap."* The framing already exists and works. Measured:
+>
+> ```
+> handler: var line = conn.readLine();  conn.write("ECHO:" + line + "\n")
+> client:  conn.write("ping\n");        var reply = conn.readLine()
+> -> reply=[ECHO:ping], rc=0
+> ```
+>
+> `readBytes(n)` works for length-framed protocols too. So this is not a design gap; it is
+> a FOOTGUN plus a documentation hole.
+>
+> **AND THE DOCUMENTATION HOLE IS MOST OF WHY IT LOOKED LIKE A DESIGN GAP.** QUICKSTART's
+> Tcp table documented `Tcp.connect` and `Tcp.serve` and **not a single `TcpConn` method** —
+> so a reader had no way to discover `readLine`/`readBytes` at all, and `read()` was the
+> only visible option. The table now lists all five with the deadlock warning and the
+> framed idiom beside it.
+>
+> **FIXED HALF — Tcp has run coverage for the first time.**
+> `test/tcp_echo_roundtrip_test.zbr` (`smoke_run_bounded`, 120 s) does a real
+> client/server round trip: line-framed request/reply plus an exact-width `readBytes`
+> frame. Before it, Tcp had never opened a socket in a test while
+> `stdlib_run_coverage` counted it as covered, on the strength of a `Tcp.serve` call inside
+> a function nothing calls.
+>
+> **WHAT REMAINS IS A DECISION, not an implementation.** `read()`-to-EOF is a legitimate
+> primitive and also the one a newcomer reaches for first. Options:
+>
+> | option | cost |
+> |---|---|
+> | document only (**done**) | the footgun stays; a first-time user still hangs once |
+> | add `readSome()` returning the first available chunk | additive, no breakage; two similar names to explain |
+> | redefine `read()` as first-chunk, add `readAll()` for the current behaviour | matches most socket APIs; a semantic change to a shipped call |
+>
+> There is no in-repo caller to break — Tcp had no run coverage until today — so the third
+> is cheaper here than it looks. Sean's call; the entry stays open on that question.
 
 **Found 2026-08-04** while giving `Tcp` its first real run fixture. The fixture had to be
 **withdrawn rather than registered**, because a hanging fixture in the QUICK tier is worse

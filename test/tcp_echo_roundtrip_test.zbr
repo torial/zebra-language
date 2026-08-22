@@ -1,0 +1,60 @@
+# Tcp — the FIRST honest run coverage for the namespace, and a pin on the framed idiom.
+#
+# `test/tcp_serve_test.zbr` is a compile smoke: its `Tcp.serve` call sits in a
+# `startServer()` that nothing calls, yet `stdlib_run_coverage` counted Tcp as covered on
+# that basis. Before this file, Tcp had NEVER OPENED A SOCKET in a test (quality audit §1).
+#
+# WHAT IT PINS, and why it uses `readLine` rather than `read`:
+#
+# `TcpConn.read()` reads TO EOF (`streamRemaining` in the preamble). That is the right
+# primitive for "read the whole response until the peer closes", and it DEADLOCKS in the
+# most natural request/response shape — a server that reads before replying waits for the
+# client to close while the client waits for the reply. Neither side errors; it just
+# hangs. See BUG-251.
+#
+# Request/response therefore needs FRAMING, and Zebra has it: `readLine()` (delimiter) and
+# `readBytes(n)` (length). Both are exercised below. The point of the file is that the
+# framed idiom WORKS — the ticket had concluded Tcp "cannot express request/response at
+# all", which is not true; what was missing was documentation and a test.
+#
+# BOUNDED by its registration (`smoke_run_bounded`) because a fixture that opens sockets
+# must never be able to hang the tier — BUG-251's original fixture was withdrawn rather
+# than registered for exactly that reason, and an unbounded one teaches people to re-run
+# gates until they pass.
+
+def handler(conn: TcpConn)
+    # line-framed request, line-framed reply
+    var line = conn.readLine()
+    conn.write("ECHO:" + line + "\n")
+    # then a fixed-width frame, so readBytes is covered by something that RUNS
+    conn.write("0123456789")
+    conn.close()
+
+def main()
+    sys.go(def()
+        Tcp.serve(19942, handler)
+    )
+    sys.sleep(300)
+
+    var attempts: int = 0
+    var reached: bool = false
+    var reply: str = ""
+    var fixed: str = ""
+
+    while attempts < 20 and not reached
+        var c = Tcp.connect("127.0.0.1", 19942)
+        if c as conn
+            reached = true
+            conn.write("ping\n")
+            reply = conn.readLine()
+            fixed = conn.readBytes(10)
+            conn.close()
+        else
+            sys.sleep(50)
+        attempts = attempts + 1
+
+    assert reached, "client reached the in-process Tcp server within 20 attempts"
+    assert reply == "ECHO:ping", "line-framed request/response round-trips"
+    assert fixed == "0123456789", "readBytes reads an exact-width frame"
+
+    print("tcp_echo_roundtrip: OK")
