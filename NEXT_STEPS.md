@@ -110,7 +110,27 @@ semantics fixture used `^Cell` on a CLASS and the compiler refused it by name �
 is already a reference; drop the '^'"* — which is the diagnostic behaving exactly as it
 should, and is why that leg now uses a `struct`.
 
-**SLICE 2 STILL OWES `<< >>`**, and all three hard decisions live there:
+**SLICE 2 LANDED 2026-08-22: `<< >>`, BOTH COMPILERS. THE OPERATOR SET IS COMPLETE.**
+
+`>>` follows the operand type (arithmetic on `int`, logical on `uint`), so no `>>>` was
+needed. Lowered through `_zbr_shl`/`_zbr_shr` in the preamble, wrapping `std.math.shl/shr`,
+which are TOTAL -- no UB, no panic, at any shift amount.
+
+**The one real bug was found by the intent-authored fixture, and the golden vectors could
+not have found it.** A literal-only shift (`1 << 3`) arrives as `comptime_int`, which has
+no `Log2Int`; `std.math` answers with `comptime unreachable`, so the build dies inside
+zig's own std naming `math.zig` rather than the user's program. All 24 of Fable's vectors
+use typed `uint` variables, so every shift there has a concrete type. Only the hand-written
+fixture shifts bare literals -- which is what a person writes first. **An external oracle
+is stronger about VALUES; an intent-authored fixture is the only thing covering SHAPES.**
+
+Falsified by emitting `shr` for `shl`: 5 failures, all shift-left legs, `>>` legs green;
+golden 22 of 24, the 2 misses being vectors where `a<<s` and `a>>s` are both 0 (s=63/62,
+small operand) so the swap is genuinely invisible. `gramgen` 960/0/0 on the new rules --
+which only became possible after regenerating `grammar.txt`, since that is what it derives
+its programs from.
+
+The old decisions, for the record -- all three were settled by measurement:
 - **lowering** — `std.math.shl`/`shr` are TOTAL (no UB, no panic at any shift amount) and
   were measured: `shl(i64,-8,70)` = 0, `shr(i64,-8,70)` = -1 (saturates to the sign bit,
   matching Python), `shl(i64,-8,-1)` = -4 (a negative amount reverses direction).
@@ -122,6 +142,19 @@ should, and is why that leg now uses a `struct`.
   hash. Pin it with the same bit pattern shifted under both types.
 
 `a << -b` needs the space: `<<-` is the arena deep-copy-out token and out-munches `<<`.
+That is now pinned by leg 10 of `test/bitwise_semantics_test.zbr`.
+
+**REMAINING for bitwise, none of it blocking 0.9:**
+- **Compound assignment `&= |= ^= <<= >>=`** is still parser-blocked in the SELFHOST only.
+  The bootstrap has had `AssignOp -> caret_equals` and the `AstBuilder` mapping to
+  `.caret_eq` all along; the selfhost's `parseExprOrAssignStmt` has no case, so `x ^= 1`
+  is `error: unexpected expression token: '^='`. Same lexer-yes/parser-no shape the binary
+  operators had.
+- **Hex literals are SELFHOST-only-blocked too**, and this one is a genuine divergence
+  worth closing: the bootstrap grammar has `Atom -> hex_lit` plus `hex_lit_unsign` and
+  `hex_lit_explicit` (the `_u` / `_8 _16 _32 _64` suffixes), and `zebra-bootstrap` accepts
+  `0xFF` and `0x9E3779B97F4A7C15_u` today. The selfhost refuses both. No corpus file uses
+  a hex literal, which is why `divergence` never reported it.
 
 
 
