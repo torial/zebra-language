@@ -6,6 +6,266 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-302: heavy gates fail files that pass in isolation — SEVEN occurrences, five gates; MEASURED at 2 of 3 `full_sweep` runs, so "low rate" is wrong — CLOSED 2026-08-22
+
+> **CLOSED 2026-08-22 — zig could not read ITS OWN STDLIB, and three gates called that
+> "your emitted Zig is bad".**
+>
+> **The error, which no one had ever seen:**
+>
+> ```
+> .../.zvm/0.16.0/lib/std/debug.zig:1:1: error: unable to load 'debug.zig': Unexpected
+> .../.zvm/0.16.0/lib/std/std.zig:71:27: note: file imported here
+> ```
+>
+> `Unexpected` is zig's catch-all for an unmapped OS error; on Windows it appears under
+> concurrent builds sharing the stdlib. **The failing path is inside the ZIG
+> INSTALLATION** — our program was never compiled at all. Reporting `CFAIL` ("emitted bad
+> Zig") is a claim about code zig never read.
+>
+> **WHY IT SURVIVED SEVEN OCCURRENCES: every gate destroyed the evidence.**
+> `full_sweep.check_one` ends `rm -rf "$wdir"`, taking `build.err` with it for every file,
+> pass or fail. `divergence_check.sh:54` was worse — `>/dev/null 2>&1`, so the error was
+> never written down at all. The bug was **undiagnosable by construction**; no amount of
+> re-running could have produced the message above. What finally worked was not another
+> hypothesis, it was preserving one file.
+>
+> **THE MEASUREMENT THAT SETTLED IT.** One instrumented `full_sweep` run, 20 `CFAIL`s:
+>
+> | | |
+> |---|---|
+> | genuine compile errors in our output | **19** — the stable, baselined, expected set |
+> | zig could not read its own stdlib | **1** — `allocate_copyout_deep_test` |
+>
+> and the single infra error was **precisely the file reported as a REGRESSION** against
+> the baseline. It compiles cleanly in isolation, on the same binary.
+>
+> **THE FIX** is one predicate in `tools/zig_build_lib.sh`, shared by `full_sweep`,
+> `divergence_check` and `compile_check` rather than pasted into each — the argument
+> `corpus_ls.sh` makes for the corpus, and the lesson `isZigKeyword` paid for with a
+> hand-maintained list guarding against a bug caused by a hand-maintained list. It retries
+> ONLY this failure (three tries), buckets a persistent one as `INFRA`/`CINFRA` instead of
+> `CFAIL`, and **prints the retry count every run including zero**. Divergence excludes
+> `CINFRA` from gap accounting the way it already excludes `NOMAIN`, and names it.
+>
+> `FileNotFound` is deliberately NOT retried: that means a dep of ours was never emitted,
+> it is deterministic, and `DEPMISS` already covers it.
+>
+> **CONTROLLED WITH THE REAL ATTACKER, NOT A MUTATION** (`tools/zz_bug302_control`): a
+> stub `zig` that emits the verbatim error, fails on its first invocation and succeeds
+> after. Four legs — infra-once retries to PASS; **a genuine compile error is NOT retried**
+> (CFAIL, 0 retries); a persistent infra error becomes INFRA; and the predicate is run
+> against the 20 REAL captured errors and must split them 1/19. The control sources the
+> SHIPPED predicate, so it cannot pass against logic the gates do not have. Leg 2 is the
+> load-bearing one: a retry that fired on real errors would mask breakage and triple
+> runtime.
+>
+> **RECEIPT.** The verification run hit the failure **three times** and absorbed all three:
+> `INFRA: 0`, `zig-infra retries: 3`, `PASS: 404 / CFAIL: 19`, gate **PASS — 0 regressions
+> vs 390, positive set 288/288**. Before the fix that run would have been red. Prior rate
+> was 2 of 3 `full_sweep` runs producing a false regression.
+>
+> **What it cost before being found:** seven occurrences across five gates, a failed
+> `--daily` whose whole purpose is to leave a trustworthy tree, one occurrence
+> investigated as a suspected compiler regression, and a standing instruction to re-check
+> failures by hand — which is indistinguishable from re-running until green.
+>
+> **The transferable half, and it is not about zig.** A gate that classifies a failure
+> must keep the failure's own account of itself. All three of these threw the error away
+> and then asserted a cause — and the cause they asserted was always the alarming one,
+> about our code, never about their own environment. This is the same shape already
+> recorded for `output_sweep`, which auto-excluded deterministic crashers because a panic's
+> thread ID made them look nondeterministic: **a slow or unreadable build is not a broken
+> program, and a crash is not a flake.** When a checker cannot say WHY, it will eventually
+> say something false about WHO.
+CLAUDE.md has said since 2026-08-19 that a third occurrence "stops being a transient and
+becomes the finding". This is the third.
+
+| # | when | gate | file | verdict in-tier | verdict alone |
+|---|---|---|---|---|---|
+| 1 | 2026-08-19, `--daily` | `compile_check-inline` | `iter_collision_test` | 275 passed / 1 skipped | 1/1, then 276/0/0 on a full re-run |
+| 2 | 2026-08-20, first `--daily` | `compile_check-inline` | `iter_collision_test` | 275/1 | 276/0/0 |
+| 3 | 2026-08-20, `--full` | `divergence` | `contract_old_test` | `self=CFAIL`, 1 selfhost gap | 0 gaps via the harness's OWN `--only` path; emit+`build-exe` by hand also clean |
+
+**THE SHAPE IS CONSISTENT AND THE FILES ARE NOT.** One file, one gate, inside a heavy
+sweep at `JOBS=2`; passes immediately afterwards by every route including the gate's own.
+Two different gates and two different fixtures, so it is not a property of either.
+
+**WHY IT MATTERS MORE THAN ONE RED LINE.** These are the two gates whose whole job is to
+be believed about the corpus. A gate that fails one file per run at a low rate teaches
+people to re-run it, and re-running until green is precisely how a real regression gets
+waved through. It also cost real time here: occurrence 3 was investigated as a suspected
+regression from a same-day compiler change before it was shown to be nothing.
+
+**OCCURRENCES 4 AND 5, from the `--daily` of 2026-08-21** (32/33 otherwise green, all
+heavy sweeps clean including `divergence` at 0 selfhost gaps and `output_sweep` 374
+identical):
+
+| # | gate | file(s) | verdict in-tier | verdict alone |
+|---|---|---|---|---|
+| 4 | `compile_check-inline` | `type_alias_test` AND `with_call_test` | 280 passed / 2 FAILED | both clean |
+| 5 | **`smoke`** | `field_order_test` | non-zero exit, 368/369 | **8/8 clean** |
+
+**OCCURRENCE 6, 2026-08-22 `--daily` — THE LARGEST BY AN ORDER OF MAGNITUDE, AND THE
+FIRST TO FAIL THE TIER.** Every prior occurrence cost one file in one gate and the tier
+still passed or failed on other grounds. This one failed **three gates on four files**:
+
+| gate | file | verdict in-tier | verdict alone |
+|---|---|---|---|
+| `full_sweep` | `bug260_bindlist_param_test` | REGRESSION vs baseline | emits clean; **runs**, prints `bug260: OK` |
+| `examples_sweep` | `lisp` | `CFAIL`, REGRESSION | emits clean; **runs**, prints its Scheme output |
+| `divergence` | `dispatch_diag` | `self=CFAIL`, selfhost gap | emits clean |
+| `divergence` | `generic_tostring_test` | `self=CFAIL`, selfhost gap | emits clean |
+
+Verified against the SAME binary the tier used — `zig-out/bin/zebra.exe` mtime `08-21
+20:26`, unchanged throughout the run (checked, because source in `src/` and `selfhost/`
+was edited mid-run for the bitwise work and the first question had to be whether that
+reached a compiler; it did not, nothing rebuilt).
+
+**WHAT THIS ADDS TO THE PICTURE:**
+
+- **It is not confined to compile-only gates.** `examples_sweep` and `full_sweep` join
+  `compile_check-inline`, `divergence` and `smoke`. That is FIVE distinct gates now.
+- **The failures are CONCURRENT, not independent.** Four files failed inside one tier
+  after five runs of at most one each. If each file failed independently at a low rate,
+  four in one run is wildly improbable — so the events are correlated, which points at a
+  MACHINE STATE that persists across a stretch of the run rather than at a per-file dice
+  roll. That is a genuinely new constraint and it is INCONSISTENT WITH the "low-rate
+  independent flake" reading the earlier entries assumed.
+
+  **Deliberately not stated more strongly than that**, because a shared external cause is
+  exactly what the confound below would also look like — correlated failures argue for a
+  common cause, and they do not by themselves say whether that cause is the machine or the
+  person working on it. The timeline weighs against the latter but rests on durations
+  reconstructed by subtraction, not on timestamps.
+- **It reached the ONE gate whose baseline makes a false red expensive.** `full_sweep`
+  reported a REGRESSION against its baseline. Someone reading only the summary line would
+  go looking for a compiler bug in `bug260_bindlist_param_test`, which is exactly the cost
+  occurrence 3 already demonstrated, now with a name that implicates a recent fix.
+
+**A CONFOUND I INTRODUCED, recorded because omitting it would make this occurrence look
+cleaner than it is.** I was working in the tree while the tier ran: a standalone
+`zig build-exe` at ~23:12 (which touches the SHARED zig cache) and several one-file
+`zebra.exe` invocations at ~23:00–23:19. That is exactly the kind of parallel load
+CLAUDE.md warns about, and it has to be weighed before blaming the machine.
+
+**The timeline does not support it as the cause.** Reconstructing from the recorded
+durations, my activity overlapped `compile_check-inline` (993 s, ~23:10–23:26) — which
+**passed 285/0** — and stopped by ~23:19. `output_sweep` then ran ~23:27–23:58 and passed.
+The three gates that failed ran AFTER I had stopped: `full_sweep` ~23:58–00:10,
+`examples_sweep`, then `divergence` ~00:12–00:38. So the interference and the failures do
+not overlap, and the gate that DID overlap is the one that came back clean.
+
+Worth stating plainly anyway: this is weaker evidence than a run nobody touched. **The
+memory experiment below must be run on an otherwise-idle machine**, or it will measure me
+instead of the phenomenon.
+
+**THE UNTESTED CANDIDATE IS STILL MEMORY, and this occurrence sharpens it.** The tier
+opened at **6.0 GB free of 31.8 GB (81% used)** and the machine sat at **5.0 GB free (84%
+used) while completely idle afterwards** — so the run began with roughly a sixth of RAM
+available and the heavy gates ran two compilers in parallel inside that. Correlated
+failures across a stretch of the run fit a resource that is exhausted for a period and
+then recovers; they do not fit a per-file dice roll.
+
+**THE DISCRIMINATING EXPERIMENT, still unrun and still cheap:** sample free RAM on a fixed
+interval THROUGH a heavy gate and align the samples against the per-file failures the gate
+reports. If failures cluster in the low-RAM troughs, that is the answer; if they are
+uniform across the trace, memory is dead and the next candidate is needed. Either outcome
+is worth having, and neither requires reasoning about it in the meantime. Run it before
+any more speculation — four mechanisms have already been killed by measurement here
+(shared workdir, stale `.pdb`, disk pressure, Defender) and a fifth by occurrence 5
+(parallelism), every one of them plausible in prose.
+
+**OCCURRENCE 7 — AND THE FIRST MEASURED RATE, 2026-08-22.** `full_sweep` was run three
+times in ~90 minutes on the same tree (once in the tier, twice by hand). The counts move
+in lockstep and identify the shape exactly:
+
+| run | PASS | CFAIL | regressions |
+|---|---|---|---|
+| in `--daily` | 401 | 20 | 1 — `bug260_bindlist_param_test` |
+| re-run #1 | 403 | 20 | 1 |
+| re-run #2 | **404** | **19** | **0** — `positive set 288/288 pass` |
+
+(PASS rises by 2 after run 1 because two new fixtures were added between; the meaningful
+figure is CFAIL, which fell by exactly 1 as the regression cleared — ONE file flips per
+run, never a cluster within `full_sweep` itself.)
+
+**TWO OF THREE RUNS PRODUCED A FALSE REGRESSION.** Every earlier entry here describes "a
+low rate"; at 2-in-3 in one gate that description is simply wrong, and the ticket's
+priority should follow. A gate that cries regression on two runs in three is not
+occasionally annoying — it cannot be used for the decision it exists to support, which is
+"did my change break the corpus?".
+
+**This also detaches the rate from tier load.** Runs 2 and 3 were single-gate invocations
+with nothing else executing, so the earlier "heavy tier at JOBS=2" framing does not
+survive either. What is left is a gate that at JOBS=2 loses one arbitrary file per run,
+roughly two runs in three, in isolation.
+
+**IT IS NOT MY BITWISE CHANGE.** All four files the tier named emit clean against BOTH the
+binary the tier used (`08-21 20:26`) and the rebuilt one carrying the new operators
+(`08-22 00:50`), checked separately.
+
+**REVISED NEXT STEP — cheaper and better targeted than the RAM trace:** `full_sweep` now
+reproduces at ~2/3 per run in ~12 minutes with no tier around it. Run it N times at JOBS=2
+recording which file flips, then N times at **JOBS=1**. If the flip vanishes at JOBS=1 the
+cause is concurrency inside this one harness and the RAM hypothesis is dead; if it
+survives, it is per-process and the trace is worth taking. Either way it needs no
+114-minute tier and no idle-machine window — which is what has kept this bug unmeasured.
+
+**Cost so far:** this tier was the CLOSING MOVE of a night's work, whose entire purpose is
+to leave a tree the morning can trust. It left three red gates that mean nothing, which is
+the precise opposite. Until this is fixed, a `--daily` failure on a heavy sweep must be
+re-checked file-by-file before it is believed — and that instruction is itself the damage,
+because it is indistinguishable from "re-run until green".
+
+**OCCURRENCE 5 FALSIFIES THE PARALLELISM ASSUMPTION IN THIS TICKET'S ORIGINAL TEXT.**
+`selfhost_smoke.sh` runs SEQUENTIALLY. So "parallel workers sharing one Zig cache" cannot
+be the mechanism, and the shared-`ZIG_GLOBAL_CACHE_DIR` experiment proposed below would
+not have settled anything. What the five occurrences actually share is not parallelism —
+it is a LONG, HEAVY run. Occurrence 4 is also the first with TWO files in one gate.
+
+**FOUR MECHANISMS TESTED AND DEAD.** Recorded so nobody re-proposes them:
+
+| hypothesis | how it died |
+|---|---|
+| a shared workdir | `divergence_check.sh` gives each worker its own `$OUT/ws-<name>`; no collision possible |
+| a stale `.run.pdb` blocking the linker's rewrite | all three of the day's failing files had one. Ran them WITH the stale pdb present and again after deleting it: **rc=0 both ways** |
+| disk pressure | 351 GB free on C: |
+| Defender real-time scanning holding just-written files | `Get-MpComputerStatus` → **RealTimeProtectionEnabled: False** |
+
+**AND IT IS PROBABLY THE SAME PHENOMENON AS BUG-300.** That ticket is a *delete* against
+the temp dir failing; this one is a *build* against the temp dir failing. Both are
+load-conditional, both involve file operations in `%TEMP%`, and neither reproduces in
+isolation — 47 leaked executables (747 MB) were sitting in TEMP after the same run in
+which an isolated repeat of the leak test leaked nothing. Treating them as one
+"file operations in TEMP fail at a low rate under sustained load" is a better frame than
+two independent flakes, and it predicts that fixing either mechanism fixes both.
+
+**THE REMAINING UNTESTED CANDIDATE is memory pressure.** The run started with 6.1 GB free
+and `full_sweep` is documented RAM-bound at `JOBS=2`. The discriminator is cheap and has
+not been run: sample free RAM through a heavy gate, or run the same gate at `JOBS=1` and
+compare the failure rate over several runs. File-handle exhaustion is the other candidate
+and would need a handle count sampled the same way.
+
+**THE UNTESTED HYPOTHESIS, named so a later run can discriminate rather than re-argue.**
+Both affected gates invoke `zig build-exe` from parallel workers, and every worker shares
+ONE global Zig cache (`%LocalAppData%\zig`). The QUICK gates that never do this have never
+shown the symptom. Contention on that cache — a lock timeout, or a partially-written entry
+being read — would produce exactly this: a single arbitrary file failing, with no defect in
+the file and nothing reproducible afterwards.
+
+**The discriminating experiment, cheap and not yet run:** re-run one of these gates with a
+per-worker `ZIG_GLOBAL_CACHE_DIR`. If the rate goes to zero, the cause is cache contention
+and the fix is to give each worker its own; if it does not, the hypothesis is dead and the
+next suspect is the emit step rather than the build step. Running at `JOBS=1` is the
+cruder version of the same test.
+
+**Do NOT "fix" this by adding a retry.** A gate that retries until green is the thing this
+ledger exists to prevent. If the cause turns out to be cache contention, isolate the
+caches; the failure should stay loud.
+
+---
+
 ### BUG-303: a `Gui.panel` callback that is a PLAIN function fails to compile — `callback.call(self)` on a `fn` — ✅ CLOSED 2026-08-21
 
 > **✅ CLOSED 2026-08-21 — a pointer-vs-value mismatch, swept across all 12 sites.**

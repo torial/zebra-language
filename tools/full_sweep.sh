@@ -37,6 +37,8 @@ set -u
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
+# shellcheck source=tools/zig_build_lib.sh
+. "$REPO/tools/zig_build_lib.sh"
 GATE=0; UPDATE=0; EXAMPLES=0
 for a in "$@"; do case "$a" in
   --gate) GATE=1;;
@@ -69,7 +71,13 @@ check_one() {
     echo "NOMAIN $name"; rm -rf "$wdir"; return
   fi
   local berr="$wdir/build.err"
-  if timeout 90 zig build-exe -fno-emit-bin -lc "$main" >/dev/null 2>"$berr"; then
+  # BUG-302: zig can fail because it could not read its OWN stdlib, which is not a
+  # verdict on our emitted code. zbr_zig_build retries exactly that case and nothing
+  # else; see tools/zig_build_lib.sh for the receipt.
+  zbr_zig_build "$main" "$berr" 90
+  local rc=$?
+  [ "${ZBR_RETRIES:-0}" -gt 0 ] && echo "$name" >> "$OUT/retries.txt"
+  if [ $rc -eq 0 ]; then
     echo "PASS $name"
   # A DEPENDENCY THAT WAS NEVER EMITTED IS NOT A BROKEN PROGRAM, and calling it one
   # is worse than not checking at all -- a gate that libels a working file is a gate
@@ -79,12 +87,17 @@ check_one() {
   # math.zig that is never written. Bucketed separately and never gated.
   elif grep -q "unable to load .*FileNotFound" "$berr"; then
     echo "DEPMISS $name"
+  elif zbr_zig_infra_error "$berr"; then
+    # Survived all three tries. Still not a verdict on our code, so it must not be
+    # counted as one -- but it is not a pass either, and it gets named loudly.
+    cp "$berr" "$OUT/infra-$name.err" 2>/dev/null
+    echo "INFRA $name"
   else
     echo "CFAIL $name"
   fi
   rm -rf "$wdir"
 }
-export -f check_one; export ZEBRA OUT REPO
+export -f check_one zbr_zig_build zbr_zig_infra_error; export ZEBRA OUT REPO
 
 # TRACKED files only -- a filesystem glob makes this gate's result depend on whatever
 # untracked scratch is lying around (see tools/corpus_ls.sh). Found 2026-08-01 with
@@ -95,7 +108,17 @@ bash "$REPO/tools/corpus_ls.sh" "$CORPUS_DIR" \
 
 grep '^PASS ' "$OUT/results.txt" | awk '{print $2}' | sort > "$OUT/pass.txt"
 echo "── $CORPUS_LABEL ──"
-for b in PASS CFAIL DEPMISS EMITFAIL NOMAIN; do echo "$b: $(grep -c "^$b " "$OUT/results.txt")"; done
+for b in PASS CFAIL DEPMISS EMITFAIL NOMAIN INFRA; do echo "$b: $(grep -c "^$b " "$OUT/results.txt")"; done
+# ALWAYS printed, zero included: a number that only appears when it is bad is a number
+# nobody has a baseline for.
+_retries=0
+[ -f "$OUT/retries.txt" ] && _retries=$(wc -l < "$OUT/retries.txt" | tr -d ' ')
+echo "zig-infra retries: $_retries (transient stdlib read failures -- BUG-302)"
+[ "$_retries" -gt 0 ] && echo "  retried: $(sort "$OUT/retries.txt" | uniq -c | tr '\n' ' ')"
+if grep -q '^INFRA ' "$OUT/results.txt"; then
+  echo "  x INFRA (zig could not read its own stdlib after 3 tries): $(grep -c '^INFRA ' "$OUT/results.txt")"
+  grep '^INFRA ' "$OUT/results.txt" | awk '{print "      " $2}'
+fi
 
 # NAME what is not passing, not just count it. On test/ the non-passing set is large
 # and mostly deliberate (negative tests, library modules), so a count is right there.

@@ -343,6 +343,7 @@ run_fast "check-mode"     "all checks pass" bash tools/check_mode_check.sh
 # rather than committing a binary to the corpus, and carries a negative control (remove
 # the library, the value must stop appearing) so a pass cannot be incidental.
 run_fast "ffi-lib"        "checks pass"     bash tools/ffi_lib_check.sh
+run_fast "bug302-control" "all legs pass"  bash tools/bug302_infra_retry_check.sh
 # The walker-drift gate. A function searching the Expr tree for a name is only correct
 # if it descends into every variant that HOLDS expressions; miss one and it silently
 # answers "not used" for a whole construct, which surfaces as a Zig error in code the

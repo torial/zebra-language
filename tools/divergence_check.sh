@@ -33,6 +33,8 @@
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${TMPDIR:-/tmp}/zbr-divergence"
+# shellcheck source=tools/zig_build_lib.sh
+. "$REPO/tools/zig_build_lib.sh"
 BOOT="$REPO/zig-out/bin/zebra-bootstrap.exe"
 SELF="$REPO/zig-out/bin/zebra.exe"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
@@ -51,7 +53,19 @@ emit_and_check() { # $1=compiler $2=mode(boot|self) $3=absfile $4=workdir
   fi
   [ -s "$main" ] || { echo EMITFAIL; return; }
   grep -q "pub fn main" "$main" || { echo NOMAIN; return; }
-  if zig build-exe -fno-emit-bin -lc "$main" >/dev/null 2>&1; then echo CPASS; else echo CFAIL; fi
+  # BUG-302: this line used to be `... >/dev/null 2>&1 ... else echo CFAIL`, which
+  # discarded the error AND called every failure a verdict on our code. A transient
+  # "zig cannot read its own stdlib" therefore surfaced as a SELFHOST GAP -- the gate's
+  # loudest possible claim, meaning "the selfhost regressed against the reference".
+  # Occurrence 6 (2026-08-22) reported exactly two such phantom gaps.
+  local berr="$wdir/build.err"
+  zbr_zig_build "$main" "$berr" 90
+  local _rc=$?
+  # Workers are separate processes, so the count accumulates in a file (see the summary).
+  [ "${ZBR_RETRIES:-0}" -gt 0 ] && printf '%s\n' "$name" >> "$OUT/retries.txt"
+  if [ $_rc -eq 0 ]; then echo CPASS
+  elif zbr_zig_infra_error "$berr"; then echo CINFRA
+  else echo CFAIL; fi
 }
 
 if [ "${1:-}" = "--worker" ]; then
@@ -179,8 +193,8 @@ else
 fi
 
 # classify
-self_gap=""; boot_gap=""; agree_fail=""; multi_selffail=""
-np=0; naf=0; nsg=0; nbg=0; nnomain=0; nmulti=0; nexpected=0
+self_gap=""; boot_gap=""; agree_fail=""; multi_selffail=""; infra_names=""
+np=0; naf=0; nsg=0; nbg=0; nnomain=0; nmulti=0; nexpected=0; ninfra=0
 # Names the smoke suite registers as "the selfhost must REJECT this" (smoke_tc_fail).
 MUST_REJECT="$(grep -oE '^smoke_tc_fail +test/[A-Za-z0-9_]+\.zbr' "$REPO/tools/selfhost_smoke.sh" 2>/dev/null                | sed -E 's#^smoke_tc_fail +test/##; s#\.zbr$##')"
 while IFS='|' read -r name b s; do
@@ -192,6 +206,13 @@ while IFS='|' read -r name b s; do
   fi
   # normalize NOMAIN (library) — skip from divergence accounting
   if [ "$b" = NOMAIN ] || [ "$s" = NOMAIN ]; then nnomain=$((nnomain+1)); continue; fi
+  # BUG-302: zig could not read its OWN stdlib, three tries running. That says nothing
+  # about either compiler, so it cannot be scored as a gap in either direction -- but it
+  # is NAMED below rather than silently dropped, because a rising count is the signal
+  # that the environment is degrading.
+  if [ "$b" = CINFRA ] || [ "$s" = CINFRA ]; then
+    ninfra=$((ninfra+1)); infra_names="$infra_names $name"; continue
+  fi
   # A file the SELFHOST IS SUPPOSED TO REJECT is not a gap when it rejects it.
   #
   # This gate reads "bootstrap OK, selfhost fails" as "the selfhost regressed against
@@ -222,6 +243,11 @@ echo "═══ selfhost ↔ bootstrap divergence ═══ (jobs=$JOBS${ONLY:+,
 echo "single-module files: $np agree-pass · $naf agree-fail · $nnomain library(no-main) · $nexpected selfhost-rejects-by-design"
 echo "multi-module (selfhost-only, bootstrap N/A): $nmulti"
 echo
+_dretries=0
+[ -f "$OUT/retries.txt" ] && _dretries=$(wc -l < "$OUT/retries.txt" | tr -d ' ')
+echo "zig-infra retries: $_dretries (transient stdlib read failures -- BUG-302)"
+echo "zig-infra (zig could not read its own stdlib; excluded, not a gap): $ninfra"
+[ -n "$infra_names" ] && echo "   $infra_names"
 echo "▶ SELFHOST GAPS ($nsg) — bootstrap OK, selfhost fails (selfhost lags):"
 [ -n "$self_gap" ] && echo "   $self_gap" || echo "   (none)"
 echo

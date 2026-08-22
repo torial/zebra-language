@@ -178,11 +178,18 @@ per-tier counts, computed from the registrations rather than written down.
 
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
-| `--static` | 12 | **14 s** | you edited docs, ledgers, or `tools/` |
-| `--fast` | 21 | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 23 | **7–20 min** | after any `.zbr` edit |
-| `--full` | 30 | **36–83 min** | before committing a codegen change |
-| `--daily` | 33 | **37–85 min** | once a day |
+| `--static` | 12 <!-- doc-gen: 12 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **14 s** | you edited docs, ledgers, or `tools/` |
+| `--fast` | 22 <!-- doc-gen: 22 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 24 <!-- doc-gen: 24 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 31 <!-- doc-gen: 31 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 34 <!-- doc-gen: 34 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–85 min** | once a day |
+
+**The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
+of the five went stale the moment one gate was registered (`bug302-control`) — silently,
+in the table whose whole job is to say what each tier covers. `--list` already computed
+these live "rather than written down"; the table beside it was written down. That is the
+D8 hazard in miniature: a number with no instrument, sitting next to prose that sounds
+measured.
 
 **THE COSTS ARE RANGES BECAUSE THEY MEASURED A 3x SPREAD, and the honest version took
 three attempts.** The default tier was documented as "~6 min"; it was then measured at
@@ -1230,6 +1237,51 @@ JOBS=2 bash tools/full_sweep.sh --gate   # THE FULL-CORPUS WITNESS — and since
                                 #   — RAM-bound); per-session/pre-release like compile_check.
 ```
 
+## A failing `zig build-exe` is not automatically a verdict on OUR code
+
+`tools/zig_build_lib.sh` holds ONE definition of "zig failed for a reason that is not about
+our emitted output", used by `full_sweep`, `divergence_check` and `compile_check`. It is a
+library, not a gate: source it, call `zbr_zig_build "$main" "$berr" 90`, read `ZBR_RC`, and
+**report `ZBR_RETRIES` every run including zero**.
+
+It exists because BUG-302 cost seven occurrences across five gates before anyone saw the
+error, which turned out to be zig failing to read **its own standard library**:
+
+```
+.../.zvm/0.16.0/lib/std/debug.zig:1:1: error: unable to load 'debug.zig': Unexpected
+```
+
+`Unexpected` is zig's catch-all for an unmapped OS error; on Windows it shows up under
+concurrent builds sharing the stdlib. The failing path is inside the ZIG INSTALLATION, so
+our program was never compiled — yet all three gates classified it as `CFAIL`/`FAIL`
+("emitted bad Zig"), and in `divergence` that became a **SELFHOST GAP**, the loudest claim
+it can make.
+
+**THE REASON IT TOOK SEVEN OCCURRENCES IS THAT EVERY GATE DELETED THE EVIDENCE.**
+`full_sweep.check_one` ends `rm -rf "$wdir"`, taking `build.err` with it for every file;
+`divergence_check` sent stderr to `/dev/null` outright. The bug was undiagnosable by
+construction — no amount of re-running could have produced that message. It was found by
+preserving one file, not by another hypothesis. **A gate that classifies a failure must
+keep the failure's own account of itself.**
+
+Measured 2026-08-22: in one instrumented run, 20 `CFAIL`s were 19 genuine errors in our
+output plus exactly ONE infra error — and that one file was precisely the "REGRESSION"
+against the baseline. Prior rate was 2 of 3 `full_sweep` runs producing a false red.
+
+- Retries **only** this failure, three tries. `FileNotFound` is deliberately excluded: that
+  means a dep of ours was never emitted, it is deterministic, and `DEPMISS` covers it.
+- A persistent one is `INFRA` (`CINFRA` in divergence, where it is excluded from gap
+  accounting the way `NOMAIN` already is) — never `CFAIL`.
+- **The retry count prints every run, zero included.** A rising rate is the early warning
+  that the environment changed; a number that only appears when it is bad is a number
+  nobody has a baseline for. Same discipline as `output_sweep`'s transients.
+
+`bug302-control` (FAST tier, `tools/bug302_infra_retry_check.sh`) falsifies it with the REAL attacker rather than a mutation:
+a stub `zig` emitting the verbatim error, failing once then succeeding. Four legs, and
+**leg 2 is the load-bearing one** — a genuine compile error must NOT be retried, or the
+retry masks breakage and triples runtime. It sources the SHIPPED predicate, so it cannot
+pass against logic the gates do not have.
+
 Why this matters: a green round-trip means the compiler is *self-consistent*, NOT that
 what it emits is *correct*. The independent witness (`zig`, which has no idea what Zebra
 intended) is the only gate that checks correctness of arbitrary emitted programs. A real
@@ -1286,7 +1338,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 77 scripts | <!-- doc-gen: 77 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 79 scripts | <!-- doc-gen: 79 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 51 tracked documents <!-- doc-gen: 51 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

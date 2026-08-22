@@ -32,6 +32,8 @@
 set -u
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=tools/zig_build_lib.sh
+. "$REPO/tools/zig_build_lib.sh"
 SMOKE="$REPO/tools/selfhost_smoke.sh"
 OUT="${TMPDIR:-/tmp}/zbr-compile-check"
 
@@ -77,8 +79,17 @@ if [ "${1:-}" = "--worker" ]; then
   fi
   [ -f "$main" ] || { echo "SKIP $name"; exit 0; }          # library module (no main)
   grep -q "pub fn main" "$main" || { echo "SKIP $name"; exit 0; }
-  if zig build-exe -fno-emit-bin -lc "$main" >/dev/null 2>&1; then
+  # BUG-302: a failure to read ZIG'S OWN stdlib is not a verdict on our emitted code.
+  # Retried by the shared predicate; a persistent one is reported as INFRA so it cannot
+  # be read as "the compiler emitted bad Zig".
+  berr="$wdir/build.err"
+  zbr_zig_build "$main" "$berr" 90
+  _rc=$?
+  [ "${ZBR_RETRIES:-0}" -gt 0 ] && printf '%s\n' "$name" >> "$OUT/retries.txt"
+  if [ $_rc -eq 0 ]; then
     echo "PASS $name"
+  elif zbr_zig_infra_error "$berr"; then
+    echo "INFRA $name"
   else
     echo "FAIL $name"
   fi
@@ -154,4 +165,18 @@ echo "compile-check: $pass passed, $fail FAILED ($cfail compile, $emitfail emit)
 emitfailed=$(printf '%s
 ' "$results" | awk '/^EMITFAIL /{printf " %s", $2}')
 [ -n "$emitfailed" ] && echo "EMITFAIL (compiler could not emit a MUST-PASS test):$emitfailed"
+# BUG-302. Printed EVERY run, zero included. An INFRA line lands in none of the counters
+# above, so without this it would vanish silently -- and a file that quietly stopped being
+# checked is the exact silent-cap failure the EMITFAIL split above exists to prevent.
+infra=$(printf '%s
+' "$results" | grep -c '^INFRA ' || true)
+_cretries=0
+[ -f "$OUT/retries.txt" ] && _cretries=$(wc -l < "$OUT/retries.txt" | tr -d ' ')
+echo "zig-infra retries: $_cretries (transient stdlib read failures -- BUG-302)"
+echo "zig-infra (zig could not read its own stdlib; NOT a verdict on our code): $infra"
+if [ "$infra" -gt 0 ]; then
+  printf '%s
+' "$results" | awk '/^INFRA /{printf "   %s
+", $2}'
+fi
 [ "$fail" -eq 0 ]
