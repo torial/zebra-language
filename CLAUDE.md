@@ -1374,6 +1374,30 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-08-22: 33/34 PASS + 1 XFAIL in ONE invocation, 74 min at JOBS=2** —
+the first full tier since BUG-302 was fixed, i.e. the first one whose red would have meant
+something. smoke **376/376**, round-trip byte-identical, `output_sweep` 374 behaviour
+identical, `full_sweep` 0 regressions vs 390 + positive set 288/288, `examples_sweep` 0 vs
+19, `divergence` **0 selfhost gaps**, `gramgen` 960/0/0. `node-addon` XFAILed against
+BUG-297.
+
+It closed a day that landed bitwise `& | ^ ~ << >>` in both compilers and BUG-302.
+
+**AND THE BUG-302 FIX PROVED ITSELF DURING THIS VERY RUN — which was found by accident,
+because the tier board could not show it.** `gates.sh` surfaces one line per gate, so the
+per-gate retry counts never reached the summary. The evidence was a `retries.txt`
+timestamped inside the tier window naming `hashmap_dispatch_collision_test` and
+`shared_var_test`: **the zig-stdlib read failure fired twice and was absorbed, with the
+gate passing.** Under the previous behaviour that is up to two phantom regressions and a
+red daily — exactly what happened to the 2026-08-22 00:39 run, whose three red gates were
+all false.
+
+That accident also exposed the counter itself being wrong: `compile_check` and
+`divergence` do `mkdir -p "$OUT"` with no `rm -rf` (only `full_sweep` clears), so
+`retries.txt` accumulated across runs and a one-file run reported 2 retries it had not
+made. Per-run now, and the counts ride ON `compile-check`'s summary line rather than after
+it. **A number that only grows is not a counter, and nothing about it looks wrong.**
+
 **DAILY tier 2026-08-20: 32/33 PASS + 1 XFAIL in ONE invocation, 84m42s at JOBS=2** —
 run as the CLOSING MOVE of a night's bug work, which is the convention Sean set that day
 (see the tier-ladder section). Every gate green on the committed tree: smoke **366/366**
