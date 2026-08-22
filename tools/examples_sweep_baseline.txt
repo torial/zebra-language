@@ -1,3 +1,4 @@
+constructal
 counter
 editor_min
 file_dialog_smoke
@@ -9,6 +10,7 @@ life
 lisp
 npc_reactions
 npc_reactions_test
+panel_smoke
 pratt_calc
 tears_combat_test
 tears_of_the_tuon

@@ -28,6 +28,11 @@
 # failure — so known negatives / library / triage-backlog files need no skip-list,
 # and the gate stays low-maintenance (re-baseline when the pass set intentionally
 # grows, e.g. after fixing an emit bug). Heavy (~20-30 min); per-session / pre-release.
+# pins: BUG-303 -- with --examples this sweep IS that bug's regression test. The defect was
+# a GUI-path emit (a capture-lambda reaching a stdlib callback as a FUNCTION POINTER), and
+# examples/ is the only corpus carrying one. panel_smoke went from broken to a locked-in
+# baseline entry here; nothing under test/ can reach the path, because the closure-thunk
+# route is only taken for stdlib callback consumers.
 set -u
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"

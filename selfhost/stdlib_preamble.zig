@@ -278,9 +278,9 @@ pub fn _zbr_hash(comptime s: []const u8) u32 {
         /// map(f) — apply f to the ok value; propagate err unchanged.
         /// f may be a fn pointer or a capture-closure struct with a `call` method.
         pub fn map(self: @This(), f: anytype) _Result(
-            @TypeOf(if (comptime @typeInfo(@TypeOf(f)) == .@"fn") f(@as(T, undefined)) else f.call(@as(T, undefined))), E
+            @TypeOf(if (comptime _zbr_is_fnlike(@TypeOf(f))) f(@as(T, undefined)) else f.call(@as(T, undefined))), E
         ) {
-            const _is_fn = comptime @typeInfo(@TypeOf(f)) == .@"fn";
+            const _is_fn = comptime _zbr_is_fnlike(@TypeOf(f));
             return switch (self) {
                 .ok  => |v| .{ .ok = if (_is_fn) f(v) else f.call(v) },
                 .err => |e| .{ .err = e },
@@ -288,9 +288,9 @@ pub fn _zbr_hash(comptime s: []const u8) u32 {
         }
         /// flatMap(f) — apply f to the ok value; f must return Result(U, E).
         pub fn flatMap(self: @This(), f: anytype) @TypeOf(
-            if (comptime @typeInfo(@TypeOf(f)) == .@"fn") f(@as(T, undefined)) else f.call(@as(T, undefined))
+            if (comptime _zbr_is_fnlike(@TypeOf(f))) f(@as(T, undefined)) else f.call(@as(T, undefined))
         ) {
-            const _is_fn = comptime @typeInfo(@TypeOf(f)) == .@"fn";
+            const _is_fn = comptime _zbr_is_fnlike(@TypeOf(f));
             return switch (self) {
                 .ok  => |v| if (_is_fn) f(v) else f.call(v),
                 .err => |e| .{ .err = e },
@@ -2063,6 +2063,33 @@ pub fn _csv_write_row(w: *_CsvWriter, row: std.ArrayList([]const u8)) void {
 }
 pub fn _csv_build(w: *const _CsvWriter) []const u8 { return w.buf.items; }
 pub const TcpConn = struct { stream: std.Io.net.Stream };
+// BUG-303: is this callback DIRECTLY callable -- a function, or a pointer to one?
+//
+// Every dual-dispatch site in this runtime asks "plain fn, or closure struct with .call?"
+// and they all used to ask it by comparing typeInfo against the fn tag. That is true for a
+// function VALUE and FALSE for a POINTER to one, so a callback arriving as
+// `*const fn(Gui) void` fell through to the `.call` branch and failed to compile:
+//
+//   error: no field or member function named 'call' in 'fn (zebra_rt.GuiContext) void'
+//
+// -- and note the error names the POINTEE, which is the tell.
+//
+// Zebra emits exactly that pointer shape for a lambda WITH A CAPTURE BLOCK: the capture
+// goes through a thunk table (`_zbr_thunks_N`) whose elements are `*const fn(...)`. A
+// capture-free lambda emits a closure struct and a top-level `def` emits a function value,
+// and both of those already worked -- which is why `examples/counter.zbr` was fine while
+// `examples/panel_smoke.zbr` was not.
+//
+// Widened at every site rather than patched at the failing one: this predicate is a strict
+// superset of the old one, so it can only turn a compile error into a working call, never
+// the reverse.
+inline fn _zbr_is_fnlike(comptime T: type) bool {
+    const _i = @typeInfo(T);
+    if (_i == .@"fn") return true;
+    if (_i == .pointer) return @typeInfo(_i.pointer.child) == .@"fn";
+    return false;
+}
+
 pub fn _tcp_connect(host: []const u8, port: u16) ?TcpConn {
     const stream = blk: {
         if (std.Io.net.IpAddress.parse(host, port)) |addr| {
@@ -2965,7 +2992,7 @@ pub const GuiContext = struct {
     pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
         const _vis = self._b.beginChildFn(id, w, h);
         if (_vis) {
-            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);
         }
         self._b.endChildFn();
     }
@@ -2987,13 +3014,13 @@ pub const GuiContext = struct {
     pub fn getDpi(self: GuiContext) f64 { return @floatCast(self._b.getDpiFn()); }
     pub fn panel(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginPanelFn(label)) {
-            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);
             self._b.endPanelFn();
         }
     }
     pub fn window(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginWindowFn(label)) {
-            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);
             self._b.endWindowFn();
         }
     }
@@ -3031,7 +3058,7 @@ pub fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
     const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend } };
-    if (comptime @typeInfo(@TypeOf(frame)) == .@"fn") {
+    if (comptime _zbr_is_fnlike(@TypeOf(frame))) {
         while (_gui_active_backend.newFrameFn()) {
             frame(_g);
             _gui_active_backend.endFrameFn();
@@ -3048,7 +3075,7 @@ pub fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anyty
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
     const MsgType = comptime blk: {
-        if (@typeInfo(@TypeOf(_mvu_update)) == .@"fn")
+        if (_zbr_is_fnlike(@TypeOf(_mvu_update)))
             break :blk @typeInfo(@TypeOf(_mvu_update)).@"fn".params[1].type.?
         else
             break :blk @typeInfo(@TypeOf(@TypeOf(_mvu_update).call)).@"fn".params[2].type.?;
@@ -3061,12 +3088,12 @@ pub fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anyty
             if (q.len < 32) { q.buf[q.len] = (@as(*const MsgType, @ptrCast(@alignCast(mp)))).* ; q.len += 1; }
         }
     }.send;
-    var _model = if (comptime @typeInfo(@TypeOf(_mvu_init)) == .@"fn") _mvu_init() else blk: { var _m = _mvu_init; break :blk _m.call(); };
+    var _model = if (comptime _zbr_is_fnlike(@TypeOf(_mvu_init))) _mvu_init() else blk: { var _m = _mvu_init; break :blk _m.call(); };
     const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend }, ._send_fn = _sfn, ._send_ptr = &_pq };
     while (_gui_active_backend.newFrameFn()) {
-        if (comptime @typeInfo(@TypeOf(_mvu_view)) == .@"fn") _mvu_view(_g, _model) else { var _mv = _mvu_view; _mv.call(_g, _model); }
+        if (comptime _zbr_is_fnlike(@TypeOf(_mvu_view))) _mvu_view(_g, _model) else { var _mv = _mvu_view; _mv.call(_g, _model); }
         for (_pq.buf[0.._pq.len]) |msg| {
-            if (comptime @typeInfo(@TypeOf(_mvu_update)) == .@"fn")
+            if (comptime _zbr_is_fnlike(@TypeOf(_mvu_update)))
                 _model = _mvu_update(_model, msg)
             else { var _mu = _mvu_update; _model = _mu.call(_model, msg); }
         }

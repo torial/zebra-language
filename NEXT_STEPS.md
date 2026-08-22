@@ -19,6 +19,49 @@ one-line archive rows). Full history for anything archived lives in git, `BUGS.m
 
 # ▶ Open work — scan me first
 
+## 0.9 — BITWISE OPERATORS (Sean, 2026-08-21). MEASURED, so nobody re-derives the state.
+
+`~a` **already works** (BUG-256, 2026-08-04). The five BINARY operators do not, and they
+fail in exactly the shape `~` did before that fix — **the lexer already produces the
+tokens; the parser has no rule**:
+
+| form | today |
+|---|---|
+| `~a` | works |
+| `a & b`, `a \| b`, `a ^ b`, `a << 2`, `a >> 2` | `error: unexpected expression token: '&'` (etc.) |
+
+`ampersand`, `ampersand_equals`, `tilde` and `caret_equals` are all in the token set, and
+`&=` / `^=` are already grammar productions — so the language has **half-committed to the
+C/Python spelling already**. Diverging now would make the set internally inconsistent, and
+that is the main argument for keeping it.
+
+**THE ONE REAL CONFLICT: `^` is the heap-indirection TYPE prefix (`^T`).** Python and Zig
+do not have this problem. It is resolvable the way unary and binary `-` coexist — at the
+start of an operand `^` means "pointer to", after a complete operand it means xor — but
+note Zebra passes TYPES AS CALL ARGUMENTS (`Atomic(int)(0)`), so `f(^Bar)` and `f(a ^ b)`
+are both expression-position. A precedence parser handles it; it is still a genuine wart
+rather than a free lunch. If it proves confusing, `xor` as a word operator is the clean
+escape, and arguably fits better anyway since Zebra already uses `and`/`or`/`not`.
+
+**DECIDE PRECEDENCE WITH IT.** Python puts `&` BELOW `==`, so `a & b == c` silently parses
+as `a & (b == c)` — a well-known footgun. Either take C-like precedence, or refuse mixing
+bitwise with comparison in the front end and name the fix, in the style of the other
+diagnostics here.
+
+**GOLDEN VECTORS EXIST — use them rather than hand-computing.** Fable supplied
+`zebra_bits_golden_vectors.json` (2026-08-21): 24 `primitive_ops` vectors with
+xor/and/or/not64/shl64/shr plus FNV and xorshift steps, and hash-function vectors.
+
+Two things to know before wiring them in, both from the file itself:
+- **They are u64.** Several `a` values exceed i64 max, and `not64` is u64-interpreted, so
+  they cannot all be written as Zebra `int` (i64) literals. `uint` exists in the type
+  system (`Type_.uint_`) and is the natural home for the full set; the i64-representable
+  subset can pin the signed path meanwhile.
+- Its note flags the overflow idiom: *"Zig default arith panics on overflow; wrapping mul
+  or masking required"* for the FNV step — relevant to how `<<` is lowered.
+
+
+
 Every genuinely-open item, grouped. Each links to its detail section below or to
 the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
 

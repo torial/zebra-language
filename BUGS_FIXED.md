@@ -6,6 +6,70 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-303: a `Gui.panel` callback that is a PLAIN function fails to compile — `callback.call(self)` on a `fn` — ✅ CLOSED 2026-08-21
+
+> **✅ CLOSED 2026-08-21 — a pointer-vs-value mismatch, swept across all 12 sites.**
+>
+> **The cause.** Every dual-dispatch site asked *"plain fn, or closure struct with
+> `.call`?"* by comparing `@typeInfo(@TypeOf(cb))` against the fn tag. That is true for a
+> function VALUE and **false for a POINTER to one**, so a pointer fell through to the
+> `.call` branch. The error naming the POINTEE (`fn (GuiContext) void`) rather than a
+> pointer type is the tell, and it is what made this look like a comptime-branch-analysis
+> problem at first — it is not; the predicate was simply answering the wrong question.
+>
+> **Why only this example.** Zebra emits a function POINTER for a lambda WITH A CAPTURE
+> BLOCK: the capture goes through a thunk table (`_zbr_thunks_N`) whose elements are
+> `*const fn(...)`. A capture-free lambda emits a closure struct; a top-level `def` emits a
+> function value. Both of those already worked, which is exactly why `examples/counter.zbr`
+> was fine and `panel_smoke` was not — and why the ticket's own "sweep the class first"
+> instruction mattered.
+>
+> **Swept, not patched.** The predicate is now one `_zbr_is_fnlike` helper applied at all
+> **12** occurrences, not just the three GUI callbacks — the MVU dispatch and the
+> functional-trio sites had the identical latent defect. It is a strict SUPERSET of the old
+> test, so it can only turn a compile error into a working call, never the reverse.
+>
+> Watched RED with the pointer arm disabled (the exact `.call` error), restored, and
+> `examples/counter.zbr` re-checked as the control — the shapes that already worked still
+> compile.
+>
+> **Pinned by `examples_sweep`:** `panel_smoke` moved from broken to a new pass and is
+> locked into `tools/examples_sweep_baseline.txt`. That is the right pin here — the failure
+> was a GUI-path emit, and `examples/` is the only corpus that carries one.
+>
+> **`examples/panel_smoke.zbr` compiles for the first time**, after three independent
+> defects stacked in it were cleared in one sitting: BUG-233's lambda-parameter shadowing,
+> an implicit capture that was the EXAMPLE's own error rather than a compiler bug, and this.
+```
+zebra_rt.zig:2968:94: error: no field or member function named 'call' in 'fn (zebra_rt.GuiContext) void'
+    if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+```
+
+The runtime dispatches a panel callback two ways — call it directly when it is a plain
+`fn`, otherwise call `.call` on it (the closure-struct shape). The `comptime` guard picks
+the right one, but the `.call` branch is still analysed for a plain `fn` and fails.
+
+**NEWLY REACHABLE, NOT NEWLY BROKEN.** `examples/panel_smoke.zbr` never got this far: it
+failed earlier on BUG-233's lambda-parameter shadowing, twice (the lambda's `call` method
+and then the GUI thunk's `dispatch`). With both fixed and the example's own implicit-capture
+error corrected, this is the third defect in the stack. Nothing here changed the runtime.
+
+**Severity:** medium-high for 0.9 — it is on the GUI path, and `examples/panel_smoke.zbr`
+still does not compile because of it. `examples/counter.zbr` uses the closure shape and is
+unaffected, which is why this has never been seen.
+
+**Fix direction (untested):** the guard needs to keep the wrong branch out of ANALYSIS, not
+merely out of execution — an `if (comptime …)` still semantically analyses both arms here.
+A `switch` on `@typeInfo`, or hoisting the two cases into separate comptime-selected
+functions, is the usual shape. Whether the same pattern appears in the other widget
+callbacks is NOT yet swept and should be, before fixing this one site.
+
+**Control when fixing:** `examples/panel_smoke.zbr` must emit and `zig build-exe` clean
+under the selfhost, and `examples/counter.zbr` (the closure shape, which works today) must
+keep working — one of each dispatch kind.
+
+---
+
 ### BUG-251: `conn.read()` reads to EOF, which silently deadlocks a request/response server — ✅ CLOSED 2026-08-21
 
 > **✅ CLOSED 2026-08-21 — `read` is the next chunk, `readAll` drains. Sean's call.**
