@@ -130,6 +130,20 @@ is a warning. **`gates.sh` runs it as a preflight and refuses to report on an
 untrustworthy tree** — a green gate that measured the wrong compiler is worse than no
 gate at all.
 
+**IF YOU SCRIPT A WAIT AROUND `gates.sh`, IT HAS TWO TERMINAL LINES, NOT ONE.** A green run
+ends `gates: N/M PASS (tier)`; a red one ends `gates: N FAILED — name name`. They share no
+substring beyond `gates:`, so a waiter that greps only the PASS form waits forever on
+exactly the runs you most want to hear about — and a sleeping waiter is indistinguishable
+from a gate still working.
+
+Receipt, 2026-08-22: a wait-loop matching `gates: N/M PASS` sat polling for **11.5 hours**
+after the `--daily` it was watching had finished in 1h54m, because that run ended
+`gates: 3 FAILED`. It burned no CPU, which is why nothing looked wrong; it was reported as
+a daily "going long". The same defect was found and fixed in a SECOND loop an hour after
+this one was launched, and the fix was never carried back to the instance still running —
+so the lesson had been written down while the bug was live. Match `gates:` and classify
+after, or wait on the process rather than its output.
+
 `gates.sh` runs the set in order with one summary line each and exits non-zero on
 any failure. It deliberately does **not** fold in the GUI paths, `fuzz/gramgen.py`,
 or `node_addon_test.sh`, so that "gates green" keeps a precise meaning — see its
