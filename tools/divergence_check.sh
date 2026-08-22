@@ -120,6 +120,10 @@ while [ $# -gt 0 ]; do case "$1" in
   *) shift;;
 esac; done
 JOBS="${JOBS:-4}"; mkdir -p "$OUT"
+# Per-RUN counter. $OUT is not cleared between runs here (unlike full_sweep), so
+# without this the BUG-302 retry count would report every retry since the temp dir was
+# created -- a number that only ever grows and is wrong from the second run onward.
+rm -f "$OUT/retries.txt"
 
 # --classify: score an existing --results file WITHOUT re-enumerating the corpus.
 # Enumeration plus the per-file skip loop costs ~2 minutes here (490 files, and every

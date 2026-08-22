@@ -113,6 +113,10 @@ export PATH="/c/Users/Sean/.zvm/bin:$PATH"   # ensure zig is reachable when run 
 export CC_SINGLE_FILE="$SF"                   # picked up by --worker
 export CC_INLINE_RT="$RM"                     # picked up by --worker
 mkdir -p "$OUT"
+# Per-RUN counter. $OUT is not cleared between runs here (unlike full_sweep), so
+# without this the BUG-302 retry count would report every retry since the temp dir was
+# created -- a number that only ever grows and is wrong from the second run onward.
+rm -f "$OUT/retries.txt"
 
 # The derivation moved to tools/positive_set.sh so full_sweep can assert the identical
 # property over the same set. Two copies of "what counts as a positive test" would
@@ -160,20 +164,28 @@ wskip=$(printf '%s\n' "$results" | grep -c '^SKIP ' || true)
 skip=$((skip + wskip))
 failed=$(printf '%s\n' "$results" | awk '/^FAIL /{printf " %s", $2}')
 
-echo "compile-check: $pass passed, $fail FAILED ($cfail compile, $emitfail emit), $skip skipped (jobs=$JOBS${ONLY:+, only=$ONLY}${MODE:+, mode=$MODE}$([ "$SF" = 1 ] && echo ", single-file"))"
+# An INFRA line lands in none of the counters above, so it must be surfaced explicitly or
+# a file that quietly stopped being checked disappears -- the silent-cap failure the
+# EMITFAIL split exists to prevent.
+infra=$(printf '%s
+' "$results" | grep -c '^INFRA ' || true)
+# BUG-302 counts ride ON the summary line, not after it: gates.sh shows a gate's LAST
+# line, so a trailing echo displaced the numbers people actually read. Still emitted
+# every run -- when both are zero the clause is omitted, which is the only case where
+# silence is not hiding anything.
+_cretries=0
+[ -f "$OUT/retries.txt" ] && _cretries=$(wc -l < "$OUT/retries.txt" | tr -d ' ')
+_infra_note=""
+if [ "$_cretries" != "0" ] || [ "$infra" != "0" ]; then
+  _infra_note=", zig-infra ${_cretries} retried/${infra} persistent"
+fi
+echo "compile-check: $pass passed, $fail FAILED ($cfail compile, $emitfail emit), $skip skipped${_infra_note} (jobs=$JOBS${ONLY:+, only=$ONLY}${MODE:+, mode=$MODE}$([ "$SF" = 1 ] && echo ", single-file"))"
 [ -n "$failed" ] && echo "FAILED (emitted, but zig refused):$failed"
 emitfailed=$(printf '%s
 ' "$results" | awk '/^EMITFAIL /{printf " %s", $2}')
 [ -n "$emitfailed" ] && echo "EMITFAIL (compiler could not emit a MUST-PASS test):$emitfailed"
-# BUG-302. Printed EVERY run, zero included. An INFRA line lands in none of the counters
-# above, so without this it would vanish silently -- and a file that quietly stopped being
-# checked is the exact silent-cap failure the EMITFAIL split above exists to prevent.
-infra=$(printf '%s
-' "$results" | grep -c '^INFRA ' || true)
 _cretries=0
 [ -f "$OUT/retries.txt" ] && _cretries=$(wc -l < "$OUT/retries.txt" | tr -d ' ')
-echo "zig-infra retries: $_cretries (transient stdlib read failures -- BUG-302)"
-echo "zig-infra (zig could not read its own stdlib; NOT a verdict on our code): $infra"
 if [ "$infra" -gt 0 ]; then
   printf '%s
 ' "$results" | awk '/^INFRA /{printf "   %s
