@@ -2683,6 +2683,13 @@ struct Generator
     var in_try_expr          : bool     # suppress auto-try when already inside Expr.try_
     var self_name            : str      # "self" for methods, "_self" for init
     var capture_fields       : StrSet   # captured var names → emit self.name in genIdent
+    # BUG-233: lambda params RENAMED because they shadow an enclosing param/local. Zig
+    # forbids the shadowing that Zebra (and Python) allow, so codegen has to rename -- but
+    # ONLY on a detected collision, because renaming every lambda param would rewrite the
+    # emit of every lambda in the corpus and churn both golden baselines for a defect that
+    # occurs on collision alone.
+    var lp_renamed           : StrSet   # original names that were renamed in THIS lambda
+    var lp_prefix            : str      # the prefix they were renamed with (uid-unique)
     var closure_vars         : StrSet   # local vars holding capture-lambdas → .call() dispatch
     # Phase 16c additions — ModuleTypes for this module and merged deps.
     # Plumbed now, consumed incrementally: heuristics retire (16c..17).
@@ -2792,6 +2799,8 @@ struct Generator
         .in_try_expr           = false
         .self_name             = "self"
         .capture_fields        = StrSet()
+        .lp_renamed            = StrSet()          # BUG-233
+        .lp_prefix             = ""
         .closure_vars          = StrSet()
         .module_types          = module_types
         .dep_types             = dep_types
@@ -2896,6 +2905,14 @@ struct Generator
     def withCaptureFields(cf: StrSet): Generator
         var g = this except
             capture_fields = cf
+        return g
+
+    # BUG-233. The prefix carries the lambda's uid so two NESTED lambdas that both take
+    # `g` do not rename to the same thing and re-create the shadowing one level down.
+    def withLambdaParamRenames(names: StrSet, prefix: str): Generator
+        var g = this except
+            lp_renamed = names
+            lp_prefix = prefix
         return g
 
     # Phase 7b context helpers
@@ -10838,6 +10855,15 @@ struct Generator
         genIdentRaw(id)
 
     def genIdentRaw(id: ExprIdent)
+        # BUG-233: a lambda parameter renamed to dodge Zig's shadowing rule. FIRST, because
+        # the rename is the innermost binding -- inside the lambda this name IS the
+        # parameter, whatever else it may mean outside. No zigSafeName: the prefix makes
+        # the result impossible to confuse with a Zig keyword, and the declaration side
+        # emits the identical spelling.
+        if lp_renamed.contains_(id.name)
+            w.emit(lp_prefix)
+            w.emit(id.name)
+            return
         # BUG-281 C: the capture field is DECLARED through emitName (genLambdaEx), so a
         # bare read here would disagree with its own declaration inside one struct.
         if capture_fields.contains_(id.name)
@@ -11563,9 +11589,11 @@ struct Generator
                 var dg = bg.indented()
                 dg.writeIndent()
                 dg.w.emit("fn dispatch(ctx: *anyopaque")
+                var ti = 0
                 for p in lam.params
                     dg.w.emit(", ")
-                    dg.w.emit(zigSafeName(p.name))
+                    dg.w.emit("_zbr_ta" + ti.toString())     # BUG-233: generated, never the user's name
+                    ti = ti + 1
                     dg.w.emit(": ")
                     if p.type_ != nil
                         dg.genType(p.type_!)
@@ -11588,7 +11616,7 @@ struct Generator
                 for p2 in lam.params
                     if pi > 0
                         ig.w.emit(", ")
-                    ig.w.emit(zigSafeName(p2.name))
+                    ig.w.emit("_zbr_ta" + pi.toString())     # BUG-233: matches the declaration above
                     pi = pi + 1
                 ig.w.emit(");\n")
                 dg.writeIndent()
@@ -15577,11 +15605,33 @@ struct Generator
                 else
                     w.emit("self: @This()")
                 first = false
+            # BUG-233: Zebra allows a lambda parameter to shadow an enclosing parameter or
+            # local (so does Python, which it draws from); ZIG FORBIDS IT --
+            #   error: function parameter 'g' shadows function parameter from outer scope
+            # -- and `examples/panel_smoke.zbr` has shipped broken on exactly that, because
+            # re-using a receiver's name inside a UI callback is about as natural as Zebra
+            # lambda code gets.
+            #
+            # RENAME ONLY ON A DETECTED COLLISION. `isLocalOrParamName` is evaluated on the
+            # ENCLOSING generator (this one -- `lg` is derived further down), which is
+            # exactly the scope Zig will complain about. Renaming unconditionally would
+            # have been simpler and wrong: it rewrites the emit of every lambda in the
+            # corpus and churns output_sweep's golden baseline and the round-trip's
+            # byte-identity, for a defect that only happens on collision.
+            var lp_names = StrSet()
+            var lp_pfx: str = "_zbr_lp" + w.nextUid().toString() + "_"
+            for pchk in lam.params
+                if isLocalOrParamName(pchk.name)
+                    lp_names.add(pchk.name)
             for p in lam.params
                 if not first
                     w.emit(", ")
                 first = false
-                w.emit(zigSafeName(p.name))
+                if lp_names.contains_(p.name)
+                    w.emit(lp_pfx)
+                    w.emit(p.name)
+                else
+                    w.emit(zigSafeName(p.name))
                 w.emit(": ")
                 if p.type_ != nil
                     genType(p.type_!)
@@ -15609,7 +15659,7 @@ struct Generator
                     lam_ctx.bind(lp.name, typeFromRef(lp.type_!))
                 else
                     lam_ctx.bind(lp.name, Type_.unknown_)
-            var lg = asMethod().withCaptureFields(cf).withInferCtx(lam_ctx)
+            var lg = asMethod().withCaptureFields(cf).withInferCtx(lam_ctx).withLambdaParamRenames(lp_names, lp_pfx)
             # Return type
             if lam.return_type != nil
                 genType(lam.return_type!)

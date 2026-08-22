@@ -22,6 +22,11 @@ def view(g: Gui, model: Model)
             g.send(Msg.reset)
     )
     g.panel("Status", def(g: Gui)
+        # `model` belongs to the ENCLOSING function, and Zebra lambdas do not capture
+        # implicitly -- a bare read emits Zig's "'model' not accessible from inner
+        # function". An explicit `capture` block is the documented mechanism.
+        capture
+            var model: Model = model
         g.text("Count: " + model.count.toString())
     )
 

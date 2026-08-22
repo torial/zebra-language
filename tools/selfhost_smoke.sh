@@ -1367,6 +1367,11 @@ smoke_run test/zig_interop_test.zbr "Basic math operations:"
 # shapes (Set(str) -> StringHashMap(void), Set(int) -> AutoHashMap) because they are
 # different genType branches, plus the two controls that already worked.
 smoke_run test/bug240_empty_set_annotated_test.zbr "bug240: OK 2 1 2 0"
+# BUG-233: a lambda parameter shadowing an enclosing param/local. Zig forbids what Zebra
+# (and Python) allow, so codegen renames -- ONLY on a detected collision, which the
+# `noCollision` case in the fixture pins: an unconditional rename would rewrite every
+# lambda's emit and churn both golden baselines. Nested lambdas get distinct prefixes.
+smoke_run test/bug233_lambda_param_shadow_test.zbr "bug233: OK"
 
 # BUG-255. Lambdas, capture blocks and except-fields were among 40 nonterminals missing from
 # grammar.txt, so fuzz/gramgen.py had NEVER generated a program using them. The drift is

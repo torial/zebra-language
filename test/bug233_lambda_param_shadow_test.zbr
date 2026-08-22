@@ -1,0 +1,67 @@
+# BUG-233 regression fixture — a lambda parameter may shadow an enclosing one.
+#
+# Shadowing an outer name in a nested lambda is ordinary in Zebra, and in Python, which it
+# draws from. ZIG FORBIDS IT:
+#
+#   error: function parameter 'x' shadows function parameter from outer scope
+#
+# so codegen has to rename. `examples/panel_smoke.zbr` shipped broken on exactly this,
+# because re-using a receiver's name inside a UI callback is about as natural as Zebra
+# lambda code gets.
+#
+# RENAMED ONLY ON A DETECTED COLLISION, and `noCollision` below is what pins that. An
+# unconditional rename would be simpler and wrong: it rewrites the emit of EVERY lambda in
+# the corpus, churning output_sweep's golden baseline and the round-trip's byte-identity
+# for a defect that happens only on collision. Verified in the emit when this landed --
+# the colliding params became `_zbr_lp1_x` / `_zbr_lp2_y` / `_zbr_lp3_y` while
+# `noCollision`'s parameter stayed a bare `b`.
+#
+# NESTED LAMBDAS NEED DISTINCT NAMES, which is why the prefix carries the lambda's uid.
+# A fixed prefix would rename both `y`s below to the same thing and re-create the
+# shadowing one level down -- the fix would appear to work on the simple case and fail on
+# the nested one.
+#
+# SELFHOST-ONLY. The BOOTSTRAP still has this defect, so a `--gui-backend` build (which
+# delegates to it) is still affected; see the entry.
+
+def apply(n: int, f: def(int): int): int
+    return f(n)
+
+def outer(x: int): int
+    # the lambda parameter deliberately shadows the enclosing PARAMETER
+    return apply(x, def(x: int): int
+        return x * 2
+    )
+
+def nested(y: int): int
+    # two lambdas, both taking `y`, one inside the other's argument position
+    return apply(y, def(y: int): int
+        return apply(y, def(y: int): int
+            return y + 1
+        )
+    )
+
+def shadowsLocal(): int
+    var v: int = 10
+    # shadows an enclosing LOCAL rather than a parameter
+    return apply(v, def(v: int): int
+        return v + 5
+    )
+
+def noCollision(a: int): int
+    # CONTROL: no shadowing at all -- this lambda's emit must not change
+    return apply(a, def(b: int): int
+        return b * 3
+    )
+
+def main()
+    assert outer(21) == 42
+    assert nested(5) == 6
+    assert shadowsLocal() == 15
+    assert noCollision(4) == 12
+
+    # the renamed parameter must still be the INNER binding, not the outer value
+    assert outer(1) == 2
+    assert nested(0) == 1
+
+    print("bug233: OK")

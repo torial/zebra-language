@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-302. Next new bug: BUG-303.**
+**Last bug number generated: BUG-303. Next new bug: BUG-304.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -12,6 +12,38 @@
 >
 > No gate could see this: `doc_lint` D4 only checks that a cited BUG-NNN exists
 > *somewhere*, so a duplicate satisfies it twice over.
+
+---
+
+### BUG-303: a `Gui.panel` callback that is a PLAIN function fails to compile — `callback.call(self)` on a `fn` — OPEN (found 2026-08-21)
+
+```
+zebra_rt.zig:2968:94: error: no field or member function named 'call' in 'fn (zebra_rt.GuiContext) void'
+    if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+```
+
+The runtime dispatches a panel callback two ways — call it directly when it is a plain
+`fn`, otherwise call `.call` on it (the closure-struct shape). The `comptime` guard picks
+the right one, but the `.call` branch is still analysed for a plain `fn` and fails.
+
+**NEWLY REACHABLE, NOT NEWLY BROKEN.** `examples/panel_smoke.zbr` never got this far: it
+failed earlier on BUG-233's lambda-parameter shadowing, twice (the lambda's `call` method
+and then the GUI thunk's `dispatch`). With both fixed and the example's own implicit-capture
+error corrected, this is the third defect in the stack. Nothing here changed the runtime.
+
+**Severity:** medium-high for 0.9 — it is on the GUI path, and `examples/panel_smoke.zbr`
+still does not compile because of it. `examples/counter.zbr` uses the closure shape and is
+unaffected, which is why this has never been seen.
+
+**Fix direction (untested):** the guard needs to keep the wrong branch out of ANALYSIS, not
+merely out of execution — an `if (comptime …)` still semantically analyses both arms here.
+A `switch` on `@typeInfo`, or hoisting the two cases into separate comptime-selected
+functions, is the usual shape. Whether the same pattern appears in the other widget
+callbacks is NOT yet swept and should be, before fixing this one site.
+
+**Control when fixing:** `examples/panel_smoke.zbr` must emit and `zig build-exe` clean
+under the selfhost, and `examples/counter.zbr` (the closure shape, which works today) must
+keep working — one of each dispatch kind.
 
 ---
 
@@ -1862,111 +1894,6 @@ like a user error.
 This entry remains open on its own merits: the next person to reference an unexposed
 union will lose the same hours, and a compiler that silently emits wrong code for a
 missing import clause is a poor trade for the convenience of not writing the name.
-
----
-
-### BUG-233: a lambda parameter that shadows an enclosing one emits invalid Zig ⚠ OPEN
-
-**Severity:** medium (valid Zebra rejected; the error is a raw Zig one).
-**Found:** 2026-07-30 by the **A5 examples sweep on its very first run** — the gate
-that had never existed. `examples/panel_smoke.zbr` has been shipping broken.
-
-```zebra
-def view(g: Gui, model: Model)
-    g.panel("Controls", def(g: Gui)      # lambda param deliberately named `g`
-        if g.button("+1")
-            ...
-```
-
-Emits a nested container whose `call` reuses the enclosing parameter name:
-
-```zig
-pub fn _zbr_fn_view(g: Gui, model: Model) void {
-    g.panel("Controls", struct { pub fn call(g: Gui) void {   // <-- Zig: shadowing
-```
-
-```
-panel_smoke.zig:45:46: error: function parameter 'g' shadows function parameter from outer scope
-```
-
-Shadowing an outer name in a nested lambda is ordinary in Zebra (and in Python,
-which Zebra draws from). **Zig forbids it**, so codegen has to rename — it does not.
-Re-using the receiver's name inside a UI callback is about as natural as Zebra
-lambda code gets, which is why an example does it.
-
-**Same family as BUG-220** (user names colliding with emitted names), and the fix is
-probably the same shape: give the lambda parameter a reserved prefix, or rename only
-on detected collision. BUG-220 chose `_zbr_fn_` for top-level defs for exactly this
-class of reason.
-
----
-
-**INVESTIGATED 2026-08-20 — not fixed; here is what the next attempt should start from.**
-
-**A minimal NON-GUI repro, which this entry did not have.** The only recorded case was
-`examples/panel_smoke.zbr`, which needs the GUI path to reproduce. It is seven lines:
-
-```zebra
-def runWith(n: int, f: def(int): int): int
-    return f(n)
-
-def outer(x: int): int
-    return runWith(x, def(x: int): int      # lambda param shadows the enclosing one
-        return x * 2
-    )
-
-def main()
-    assert outer(21) == 42
-```
-
-```
-error: function parameter 'x' shadows function parameter from outer scope
-```
-
-**BOTH COMPILERS, verified.** The selfhost and the bootstrap produce the identical error
-on that file. That matters for scoping the fix rather than being a detail: the reported
-case is a GUI example, `--gui-backend=*` delegates to **zebra-bootstrap**, so a
-selfhost-only fix would leave `examples/panel_smoke.zbr` exactly as broken as it is now.
-This is one of the cases where the standing "ship selfhost-only when parity is a tax"
-allowance does not apply — parity IS the fix here.
-
-**"Give it a reserved prefix" is the WRONG half of the ticket's suggestion.** Renaming
-every lambda parameter changes the emitted Zig for every lambda in the corpus, which
-churns both heavy golden baselines (`output_sweep`, and the round-trip's byte-identity)
-for a defect that occurs only on collision. Rename ONLY on detected collision and no
-existing program's emit moves at all.
-
-**Detection is already available.** `isLocalOrParamName(name)` on the ENCLOSING generator
-answers exactly the question — it consults `param_names` plus `infer_ctx.hasLocal` — and
-in `genLambdaEx` the enclosing generator is still `self` at the point the parameter list
-is emitted (`lg` is derived a few lines later).
-
-**The actual work is the SUBSTITUTION, not the detection.** The parameter is emitted once
-via `zigSafeName(p.name)`, but every reference in the body resolves through
-`genIdentRaw`, which has no notion of a renamed local. So the fix needs a per-lambda
-rename MAP threaded onto the lambda's generator — the `capture_fields` pattern
-(`asMethod().withCaptureFields(cf).withInferCtx(lam_ctx)`) is the shape to copy — plus an
-early arm in `genIdentRaw` ahead of the capture-field arm.
-
-**The obvious shortcut does not work, and it is worth writing down so nobody re-derives
-it:** emit the parameter renamed and immediately re-bind it (`const x = _zbr_lp_x;`) so
-the body can keep using the bare name. Zig forbids a *local* shadowing an outer-scope
-parameter too, so the re-binding is the same error one line lower.
-
-**Nested lambdas need the renamed name to be UNIQUE, not merely prefixed** — two nested
-lambdas both taking `g` would otherwise collide with each other under one fixed prefix.
-The lambda's uid is already in hand for the struct label.
-
-**Why it was not landed in the session that found all this:** it is a codegen change in
-two compilers, one of them the regen authority, whose reported symptom is only fully
-verifiable by a human running a GUI app. That is a poor thing to land unattended
-overnight. The repro above turns it into a bounded, gate-verifiable task for whoever
-picks it up: the fixture can be an ordinary `smoke_run`, no GUI required.
-
-**Why nothing caught it:** it is not in `test/*.zbr`, and every heavy gate globs
-that. `examples/` had no gate until A5 (`tools/full_sweep.sh --examples`), which is
-now in the FULL tier. Not baselined — it is one of the two named non-passing entries
-the sweep prints on every run.
 
 ---
 
