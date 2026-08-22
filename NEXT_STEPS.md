@@ -43,10 +43,22 @@ are both expression-position. A precedence parser handles it; it is still a genu
 rather than a free lunch. If it proves confusing, `xor` as a word operator is the clean
 escape, and arguably fits better anyway since Zebra already uses `and`/`or`/`not`.
 
-**DECIDE PRECEDENCE WITH IT.** Python puts `&` BELOW `==`, so `a & b == c` silently parses
-as `a & (b == c)` — a well-known footgun. Either take C-like precedence, or refuse mixing
-bitwise with comparison in the front end and name the fix, in the style of the other
-diagnostics here.
+**PRECEDENCE — DECIDED 2026-08-21: PYTHON'S, NOT C'S.** An earlier draft of this entry
+had this exactly backwards and recommended the footgun; corrected here so it does not
+drive an implementation the wrong way.
+
+| | `x & 1 == 0` parses as | |
+|---|---|---|
+| **C** | `x & (1 == 0)` | `&` binds LOOSER than `==`. Ritchie acknowledged it as a mistake — `&` predated `&&`, and by the time `&&` arrived the precedence could not be changed without breaking code |
+| **Python** | `(x & 1) == 0` | `\| ^ & << >>` all bind TIGHTER than comparison |
+
+Zebra takes Python's. In the grammar that is three new levels between `Expr4`
+(comparisons) and `Expr5` (additive) — `Expr4a → |`, `Expr4b → ^`, `Expr4c → &` — and
+the RHS of every comparison rule drops to `Expr4a`.
+
+Reversing it does not silently change an answer, which is the property worth having:
+under C's precedence `x & 1 == 0` is `int & bool`, and the bitwise operand check rejects
+that outright. Pinned by `test/bitwise_semantics_test.zbr` leg 1.
 
 **GOLDEN VECTORS EXIST — use them rather than hand-computing.** Fable supplied
 `zebra_bits_golden_vectors.json` (2026-08-21): 24 `primitive_ops` vectors with
@@ -59,6 +71,57 @@ Two things to know before wiring them in, both from the file itself:
   subset can pin the signed path meanwhile.
 - Its note flags the overflow idiom: *"Zig default arith panics on overflow; wrapping mul
   or masking required"* for the FNV step — relevant to how `<<` is lowered.
+
+**SLICE 1 LANDED 2026-08-22: `& | ^`, BOTH COMPILERS.** The parser was the ENTIRE gap, in both compilers.
+Everything downstream already existed and had simply never been reachable: the
+`bit_and`/`bit_or`/`bit_xor` AST tags in both ASTs, `binaryOpStr` in the selfhost, the
+`.bit_and => "&"` emit at `src/CodeGen.zig:692`, and — decisively — the typing rule at
+`src/TypeChecker.zig:4306`, whose comment already read *"preserve the operand type"*.
+Type-following was not a new decision; it was a decision someone made months ago and
+never wired a parser to.
+
+That also means none of that code had ever been TYPE-CHECKED, and one piece of it was
+wrong: `.shl => "<<"` emits a bare Zig `<<`, and Zig requires the shift amount to coerce
+to `Log2Int(T)` — `u6` for 64-bit. `a << b` on two `i64`s is a compile error
+(*expected type 'u6', found 'i64'*). Classic unreached-code false-green.
+
+**Verification.** Two fixtures, both `smoke_run` (running them is the point — `&` and `|`
+are one character apart, both emit valid Zig and both yield a number, so a swapped operator
+is invisible to every compile-only gate in the tree):
+
+- `test/bitwise_golden_vectors_test.zbr` — 96 assertions over 24 vectors, GENERATED from
+  Fable's `test/data_bits_golden_vectors.json`. An EXTERNAL oracle: computed by a different
+  implementation, so it cannot agree with a bug of ours.
+- `test/bitwise_semantics_test.zbr` — the decisions the vectors CANNOT discriminate:
+  precedence, signed operands, unsigned operands, `^` sharing a file with `^T`, and the
+  relative order of `&`/`^`/`|`.
+
+**Falsified, not merely passed.** Mutating `binaryOpStr`'s `bit_and` to emit `"|"` turned
+both red, and turned red PRECISELY: in the golden fixture only the `and` legs failed while
+xor/or/not64 stayed green, and in the semantics fixture only the `&`-dependent legs. A
+mutation that reddened everything would have proved much less. Restored and re-verified
+green.
+
+Both compilers agree: the bootstrap emits `(a & 1)`, `(a ^ 5)`, `(a | 3)` and the selfhost
+runs the same program to `0, 15, 9, prec ok`. No selfhost-only divergence to account for.
+
+One note for whoever writes slice 2: `^T` needs a VALUE type. The first draft of the
+semantics fixture used `^Cell` on a CLASS and the compiler refused it by name — *"a class
+is already a reference; drop the '^'"* — which is the diagnostic behaving exactly as it
+should, and is why that leg now uses a `struct`.
+
+**SLICE 2 STILL OWES `<< >>`**, and all three hard decisions live there:
+- **lowering** — `std.math.shl`/`shr` are TOTAL (no UB, no panic at any shift amount) and
+  were measured: `shl(i64,-8,70)` = 0, `shr(i64,-8,70)` = -1 (saturates to the sign bit,
+  matching Python), `shl(i64,-8,-1)` = -4 (a negative amount reverses direction).
+- **out-of-range** — Fable's vectors all use in-range amounts, so they go green under any
+  choice. Needs its own fixture or it ships undecided.
+- **`>>` under implicit conversion** — `int → uint` and `uint → int` are BOTH implicit
+  today (measured), so a shift's kind can depend on a type that is not visible at the use
+  site. An accumulator that lands in `int` gets an arithmetic shift and a silently wrong
+  hash. Pin it with the same bit pattern shifted under both types.
+
+`a << -b` needs the space: `<<-` is the arena deep-copy-out token and out-munches `<<`.
 
 
 

@@ -1,0 +1,481 @@
+# Bitwise golden vectors -- & | ^ and ~ over u64.
+#
+# EXTERNALLY AUTHORED ORACLE. Every expected value here was computed by a
+# DIFFERENT implementation (Fable, test/data_bits_golden_vectors.json,
+# 2026-08-21) and this file is GENERATED from that JSON. That matters more than
+# usual: `&` and `|` are one character apart, both emit valid Zig, and both
+# produce a number -- so a swapped operator is invisible to every compile-only
+# gate in the tree (the BUG-226 class). An oracle we wrote ourselves could agree
+# with our own bug; this one cannot.
+#
+# `~` is included as a POSITIVE CONTROL: it already worked (BUG-256), so if the
+# not64 leg ever fails, the harness is broken rather than the new operators.
+#
+# Unsigned throughout because 8 of the 24 `a`/`b` values exceed i64 max.
+# Shifts are deliberately NOT here -- they land with `<<`/`>>` in slice 2.
+
+def main()
+    var fails: int = 0
+    var checks: int = 0
+
+    var a1: uint = 81
+    var b1: uint = 226
+    checks = checks + 1
+    if (a1 ^ b1) <> 179
+        fails = fails + 1
+        print("FAIL xor vector 1")
+    checks = checks + 1
+    if (a1 & b1) <> 64
+        fails = fails + 1
+        print("FAIL and vector 1")
+    checks = checks + 1
+    if (a1 | b1) <> 243
+        fails = fails + 1
+        print("FAIL or vector 1")
+    checks = checks + 1
+    if ~a1 <> 18446744073709551534
+        fails = fails + 1
+        print("FAIL not64 vector 1")
+
+    var a2: uint = 10562030260240197749
+    var b2: uint = 14260675685315198141
+    checks = checks + 1
+    if (a2 ^ b2) <> 6303850309395944648
+        fails = fails + 1
+        print("FAIL xor vector 2")
+    checks = checks + 1
+    if (a2 & b2) <> 9259427818079725621
+        fails = fails + 1
+        print("FAIL and vector 2")
+    checks = checks + 1
+    if (a2 | b2) <> 15563278127475670269
+        fails = fails + 1
+        print("FAIL or vector 2")
+    checks = checks + 1
+    if ~a2 <> 7884713813469353866
+        fails = fails + 1
+        print("FAIL not64 vector 2")
+
+    var a3: uint = 166
+    var b3: uint = 28
+    checks = checks + 1
+    if (a3 ^ b3) <> 186
+        fails = fails + 1
+        print("FAIL xor vector 3")
+    checks = checks + 1
+    if (a3 & b3) <> 4
+        fails = fails + 1
+        print("FAIL and vector 3")
+    checks = checks + 1
+    if (a3 | b3) <> 190
+        fails = fails + 1
+        print("FAIL or vector 3")
+    checks = checks + 1
+    if ~a3 <> 18446744073709551449
+        fails = fails + 1
+        print("FAIL not64 vector 3")
+
+    var a4: uint = 115
+    var b4: uint = 208
+    checks = checks + 1
+    if (a4 ^ b4) <> 163
+        fails = fails + 1
+        print("FAIL xor vector 4")
+    checks = checks + 1
+    if (a4 & b4) <> 80
+        fails = fails + 1
+        print("FAIL and vector 4")
+    checks = checks + 1
+    if (a4 | b4) <> 243
+        fails = fails + 1
+        print("FAIL or vector 4")
+    checks = checks + 1
+    if ~a4 <> 18446744073709551500
+        fails = fails + 1
+        print("FAIL not64 vector 4")
+
+    var a5: uint = 902908032
+    var b5: uint = 6413155321046575548
+    checks = checks + 1
+    if (a5 ^ b5) <> 6413155321940959548
+        fails = fails + 1
+        print("FAIL xor vector 5")
+    checks = checks + 1
+    if (a5 & b5) <> 4262016
+        fails = fails + 1
+        print("FAIL and vector 5")
+    checks = checks + 1
+    if (a5 | b5) <> 6413155321945221564
+        fails = fails + 1
+        print("FAIL or vector 5")
+    checks = checks + 1
+    if ~a5 <> 18446744072806643583
+        fails = fails + 1
+        print("FAIL not64 vector 5")
+
+    var a6: uint = 13760716127051806379
+    var b6: uint = 185
+    checks = checks + 1
+    if (a6 ^ b6) <> 13760716127051806226
+        fails = fails + 1
+        print("FAIL xor vector 6")
+    checks = checks + 1
+    if (a6 & b6) <> 169
+        fails = fails + 1
+        print("FAIL and vector 6")
+    checks = checks + 1
+    if (a6 | b6) <> 13760716127051806395
+        fails = fails + 1
+        print("FAIL or vector 6")
+    checks = checks + 1
+    if ~a6 <> 4686027946657745236
+        fails = fails + 1
+        print("FAIL not64 vector 6")
+
+    var a7: uint = 142
+    var b7: uint = 1235240924
+    checks = checks + 1
+    if (a7 ^ b7) <> 1235240786
+        fails = fails + 1
+        print("FAIL xor vector 7")
+    checks = checks + 1
+    if (a7 & b7) <> 140
+        fails = fails + 1
+        print("FAIL and vector 7")
+    checks = checks + 1
+    if (a7 | b7) <> 1235240926
+        fails = fails + 1
+        print("FAIL or vector 7")
+    checks = checks + 1
+    if ~a7 <> 18446744073709551473
+        fails = fails + 1
+        print("FAIL not64 vector 7")
+
+    var a8: uint = 57440
+    var b8: uint = 106254486
+    checks = checks + 1
+    if (a8 ^ b8) <> 106279158
+        fails = fails + 1
+        print("FAIL xor vector 8")
+    checks = checks + 1
+    if (a8 & b8) <> 16384
+        fails = fails + 1
+        print("FAIL and vector 8")
+    checks = checks + 1
+    if (a8 | b8) <> 106295542
+        fails = fails + 1
+        print("FAIL or vector 8")
+    checks = checks + 1
+    if ~a8 <> 18446744073709494175
+        fails = fails + 1
+        print("FAIL not64 vector 8")
+
+    var a9: uint = 1980291394
+    var b9: uint = 7356069408272749682
+    checks = checks + 1
+    if (a9 ^ b9) <> 7356069409514835248
+        fails = fails + 1
+        print("FAIL xor vector 9")
+    checks = checks + 1
+    if (a9 & b9) <> 369102914
+        fails = fails + 1
+        print("FAIL and vector 9")
+    checks = checks + 1
+    if (a9 | b9) <> 7356069409883938162
+        fails = fails + 1
+        print("FAIL or vector 9")
+    checks = checks + 1
+    if ~a9 <> 18446744071729260221
+        fails = fails + 1
+        print("FAIL not64 vector 9")
+
+    var a10: uint = 108
+    var b10: uint = 16911138214485233124
+    checks = checks + 1
+    if (a10 ^ b10) <> 16911138214485233032
+        fails = fails + 1
+        print("FAIL xor vector 10")
+    checks = checks + 1
+    if (a10 & b10) <> 100
+        fails = fails + 1
+        print("FAIL and vector 10")
+    checks = checks + 1
+    if (a10 | b10) <> 16911138214485233132
+        fails = fails + 1
+        print("FAIL or vector 10")
+    checks = checks + 1
+    if ~a10 <> 18446744073709551507
+        fails = fails + 1
+        print("FAIL not64 vector 10")
+
+    var a11: uint = 17085985281550733283
+    var b11: uint = 9555177937919059775
+    checks = checks + 1
+    if (a11 ^ b11) <> 7604137356193622236
+        fails = fails + 1
+        print("FAIL xor vector 11")
+    checks = checks + 1
+    if (a11 & b11) <> 9518512931638085411
+        fails = fails + 1
+        print("FAIL and vector 11")
+    checks = checks + 1
+    if (a11 | b11) <> 17122650287831707647
+        fails = fails + 1
+        print("FAIL or vector 11")
+    checks = checks + 1
+    if ~a11 <> 1360758792158818332
+        fails = fails + 1
+        print("FAIL not64 vector 11")
+
+    var a12: uint = 50189
+    var b12: uint = 53617
+    checks = checks + 1
+    if (a12 ^ b12) <> 5500
+        fails = fails + 1
+        print("FAIL xor vector 12")
+    checks = checks + 1
+    if (a12 & b12) <> 49153
+        fails = fails + 1
+        print("FAIL and vector 12")
+    checks = checks + 1
+    if (a12 | b12) <> 54653
+        fails = fails + 1
+        print("FAIL or vector 12")
+    checks = checks + 1
+    if ~a12 <> 18446744073709501426
+        fails = fails + 1
+        print("FAIL not64 vector 12")
+
+    var a13: uint = 183
+    var b13: uint = 2627047998799253524
+    checks = checks + 1
+    if (a13 ^ b13) <> 2627047998799253667
+        fails = fails + 1
+        print("FAIL xor vector 13")
+    checks = checks + 1
+    if (a13 & b13) <> 20
+        fails = fails + 1
+        print("FAIL and vector 13")
+    checks = checks + 1
+    if (a13 | b13) <> 2627047998799253687
+        fails = fails + 1
+        print("FAIL or vector 13")
+    checks = checks + 1
+    if ~a13 <> 18446744073709551432
+        fails = fails + 1
+        print("FAIL not64 vector 13")
+
+    var a14: uint = 55681
+    var b14: uint = 160
+    checks = checks + 1
+    if (a14 ^ b14) <> 55585
+        fails = fails + 1
+        print("FAIL xor vector 14")
+    checks = checks + 1
+    if (a14 & b14) <> 128
+        fails = fails + 1
+        print("FAIL and vector 14")
+    checks = checks + 1
+    if (a14 | b14) <> 55713
+        fails = fails + 1
+        print("FAIL or vector 14")
+    checks = checks + 1
+    if ~a14 <> 18446744073709495934
+        fails = fails + 1
+        print("FAIL not64 vector 14")
+
+    var a15: uint = 17145597246422319093
+    var b15: uint = 2404305743
+    checks = checks + 1
+    if (a15 ^ b15) <> 17145597244320527546
+        fails = fails + 1
+        print("FAIL xor vector 15")
+    checks = checks + 1
+    if (a15 & b15) <> 2253048645
+        fails = fails + 1
+        print("FAIL and vector 15")
+    checks = checks + 1
+    if (a15 | b15) <> 17145597246573576191
+        fails = fails + 1
+        print("FAIL or vector 15")
+    checks = checks + 1
+    if ~a15 <> 1301146827287232522
+        fails = fails + 1
+        print("FAIL not64 vector 15")
+
+    var a16: uint = 2354280031
+    var b16: uint = 16315224556317805959
+    checks = checks + 1
+    if (a16 ^ b16) <> 16315224553974332376
+        fails = fails + 1
+        print("FAIL xor vector 16")
+    checks = checks + 1
+    if (a16 & b16) <> 2348876807
+        fails = fails + 1
+        print("FAIL and vector 16")
+    checks = checks + 1
+    if (a16 | b16) <> 16315224556323209183
+        fails = fails + 1
+        print("FAIL or vector 16")
+    checks = checks + 1
+    if ~a16 <> 18446744071355271584
+        fails = fails + 1
+        print("FAIL not64 vector 16")
+
+    var a17: uint = 5430244478824290312
+    var b17: uint = 39843964
+    checks = checks + 1
+    if (a17 ^ b17) <> 5430244478785347700
+        fails = fails + 1
+        print("FAIL xor vector 17")
+    checks = checks + 1
+    if (a17 & b17) <> 39393288
+        fails = fails + 1
+        print("FAIL and vector 17")
+    checks = checks + 1
+    if (a17 | b17) <> 5430244478824740988
+        fails = fails + 1
+        print("FAIL or vector 17")
+    checks = checks + 1
+    if ~a17 <> 13016499594885261303
+        fails = fails + 1
+        print("FAIL not64 vector 17")
+
+    var a18: uint = 42968
+    var b18: uint = 9645595947164844168
+    checks = checks + 1
+    if (a18 ^ b18) <> 9645595947164886864
+        fails = fails + 1
+        print("FAIL xor vector 18")
+    checks = checks + 1
+    if (a18 & b18) <> 136
+        fails = fails + 1
+        print("FAIL and vector 18")
+    checks = checks + 1
+    if (a18 | b18) <> 9645595947164887000
+        fails = fails + 1
+        print("FAIL or vector 18")
+    checks = checks + 1
+    if ~a18 <> 18446744073709508647
+        fails = fails + 1
+        print("FAIL not64 vector 18")
+
+    var a19: uint = 3957854121
+    var b19: uint = 17046
+    checks = checks + 1
+    if (a19 ^ b19) <> 3957869887
+        fails = fails + 1
+        print("FAIL xor vector 19")
+    checks = checks + 1
+    if (a19 & b19) <> 640
+        fails = fails + 1
+        print("FAIL and vector 19")
+    checks = checks + 1
+    if (a19 | b19) <> 3957870527
+        fails = fails + 1
+        print("FAIL or vector 19")
+    checks = checks + 1
+    if ~a19 <> 18446744069751697494
+        fails = fails + 1
+        print("FAIL not64 vector 19")
+
+    var a20: uint = 14143180299783266595
+    var b20: uint = 8010120268277508932
+    checks = checks + 1
+    if (a20 ^ b20) <> 12353095040073206375
+        fails = fails + 1
+        print("FAIL xor vector 20")
+    checks = checks + 1
+    if (a20 & b20) <> 4900102763993784576
+        fails = fails + 1
+        print("FAIL and vector 20")
+    checks = checks + 1
+    if (a20 | b20) <> 17253197804066990951
+        fails = fails + 1
+        print("FAIL or vector 20")
+    checks = checks + 1
+    if ~a20 <> 4303563773926285020
+        fails = fails + 1
+        print("FAIL not64 vector 20")
+
+    var a21: uint = 1360031911
+    var b21: uint = 14976935399022406614
+    checks = checks + 1
+    if (a21 ^ b21) <> 14976935398232841073
+        fails = fails + 1
+        print("FAIL xor vector 21")
+    checks = checks + 1
+    if (a21 & b21) <> 1074798726
+        fails = fails + 1
+        print("FAIL and vector 21")
+    checks = checks + 1
+    if (a21 | b21) <> 14976935399307639799
+        fails = fails + 1
+        print("FAIL or vector 21")
+    checks = checks + 1
+    if ~a21 <> 18446744072349519704
+        fails = fails + 1
+        print("FAIL not64 vector 21")
+
+    var a22: uint = 13217432428114092763
+    var b22: uint = 1945279594
+    checks = checks + 1
+    if (a22 ^ b22) <> 13217432428434079409
+        fails = fails + 1
+        print("FAIL xor vector 22")
+    checks = checks + 1
+    if (a22 & b22) <> 812646474
+        fails = fails + 1
+        print("FAIL and vector 22")
+    checks = checks + 1
+    if (a22 | b22) <> 13217432429246725883
+        fails = fails + 1
+        print("FAIL or vector 22")
+    checks = checks + 1
+    if ~a22 <> 5229311645595458852
+        fails = fails + 1
+        print("FAIL not64 vector 22")
+
+    var a23: uint = 13428757021736968712
+    var b23: uint = 1186036256252681918
+    checks = checks + 1
+    if (a23 ^ b23) <> 12261369858155281590
+        fails = fails + 1
+        print("FAIL xor vector 23")
+    checks = checks + 1
+    if (a23 & b23) <> 1176711709917184520
+        fails = fails + 1
+        print("FAIL and vector 23")
+    checks = checks + 1
+    if (a23 | b23) <> 13438081568072466110
+        fails = fails + 1
+        print("FAIL or vector 23")
+    checks = checks + 1
+    if ~a23 <> 5017987051972582903
+        fails = fails + 1
+        print("FAIL not64 vector 23")
+
+    var a24: uint = 1783109292895814240
+    var b24: uint = 48991
+    checks = checks + 1
+    if (a24 ^ b24) <> 1783109292895796543
+        fails = fails + 1
+        print("FAIL xor vector 24")
+    checks = checks + 1
+    if (a24 & b24) <> 33344
+        fails = fails + 1
+        print("FAIL and vector 24")
+    checks = checks + 1
+    if (a24 | b24) <> 1783109292895829887
+        fails = fails + 1
+        print("FAIL or vector 24")
+    checks = checks + 1
+    if ~a24 <> 16663634780813737375
+        fails = fails + 1
+        print("FAIL not64 vector 24")
+
+    if checks <> 96
+        fails = fails + 1
+        print("FAIL harness: expected 96 checks, ran " + checks.toString())
+    if fails == 0
+        print("bitwise golden: OK")

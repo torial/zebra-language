@@ -1856,6 +1856,59 @@ def arithOperandCheck(lt: Type_, rt: Type_, b: ExprBinary, opname: str, ctx: Inf
                    "arithmetic '" + opname + "' requires numeric operands, got '"
                    + typeTag(bad_t) + "'")
 
+# Bitwise operands must be integers, and the RESULT PRESERVES THE OPERAND TYPE -- the
+# rule src/TypeChecker.zig:4306 has encoded all along ("preserve the operand type").
+# That preservation is the whole reason Zebra needs no `>>>`: `>>` is arithmetic on a
+# signed operand and logical on an unsigned one, so an unsigned hash stays unsigned and
+# shifts in zeros. Measured, on the SAME 64 bits: i64 -8 >> 1 = -4, u64 0xFF..F8 >> 1 =
+# 9223372036854775804.
+#
+# Follows the BUG-253 discipline below: the mistake predicate answers only "is this
+# DEFINITELY wrong here?", never "is this right?". float_ is definitely wrong; unknown_
+# is not, because selfhost inference is weaker than the bootstrap's (§28a) and erroring
+# on unknown would convert every inference gap into a false compile error.
+def isIntegerType(t: Type_): bool
+    branch t
+        on Type_.int_
+            return true
+        on Type_.uint_
+            return true
+        on Type_.int_n as _
+            return true
+        on Type_.uint_n as _
+            return true
+        else
+            return false
+
+def isBitwiseOperandMistake(t: Type_): bool
+    if isAbstractType(t)
+        return false
+    return not isIntegerType(t)
+
+def bitwiseResultType(lt: Type_, rt: Type_, b: ExprBinary, opname: str, ctx: InferCtx): Type_
+    var bad: Type_? = nil
+    if isBitwiseOperandMistake(lt)
+        bad = lt
+    else if isBitwiseOperandMistake(rt)
+        bad = rt
+    if bad as bad_t
+        # Binary nodes carry a zero span (AstBuilder's zspan()), so borrow the nearest
+        # operand's -- same reason arithOperandCheck does.
+        var eln: int = b.span.line
+        var ecl: int = b.span.col
+        if eln == 0
+            eln = exprSpanLine(b.left)
+            ecl = exprSpanCol(b.left)
+        if eln == 0
+            eln = exprSpanLine(b.right)
+            ecl = exprSpanCol(b.right)
+        ctx.addErr(ctx.file, eln, ecl,
+                   "bitwise '" + opname + "' requires integer operands, got '"
+                   + typeTag(bad_t) + "'")
+    if isIntegerType(lt)
+        return lt
+    return rt
+
 # BUG-253. Operand predicates for the three unary operators, each answering only
 # "is this DEFINITELY wrong here?" -- never "is this right?". They must return false for
 # unknown_/context_dependent, because selfhost inference is weaker than the bootstrap's
@@ -2783,6 +2836,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.bool_
                 on BinaryOp.in_
                     return Type_.bool_
+                # Bitwise PRESERVES the operand type -- the rule the bootstrap has had at
+                # src/TypeChecker.zig:4306 all along. That is what makes `>>` follow the
+                # type (arithmetic on int, logical on uint) instead of needing a `>>>`
+                # operator the way Java does, and it is why an unsigned hash stays unsigned.
+                # Without these arms the branch falls to `else -> unknown_`, which is not an
+                # error but silently discards the type.
+                on BinaryOp.bit_and
+                    return bitwiseResultType(lt, rt, b, "&", ctx)
+                on BinaryOp.bit_or
+                    return bitwiseResultType(lt, rt, b, "|", ctx)
+                on BinaryOp.bit_xor
+                    return bitwiseResultType(lt, rt, b, "^", ctx)
                 else
                     return Type_.unknown_
         # BUG-253. INFERENCE ONLY — no diagnostics in this change, deliberately.

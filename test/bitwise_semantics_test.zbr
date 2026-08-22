@@ -1,0 +1,68 @@
+# The bitwise decisions Fable's golden vectors CANNOT discriminate, pinned here.
+#
+# The vectors are all single operations on u64, so they go green under either precedence
+# and say nothing about signed operands or about `^` coexisting with the `^T` type prefix.
+# Each leg below fails differently if the corresponding decision is reversed.
+
+struct Cell
+    var v: int = 0
+
+# `^Cell` is heap-indirection in TYPE position -- it needs a VALUE type (a class is
+# already a reference, and the compiler says so by name if you try). It shares a character
+# with infix xor, and this file uses both, so if the parser ever confuses the prefix and
+# infix roles this stops compiling.
+def cellValue(c: ^Cell): int
+    return c.v
+
+def main()
+    var fails: int = 0
+
+    # ── 1. PRECEDENCE: bitwise binds TIGHTER than comparison (Python), not looser (C).
+    # Under C's precedence this is `x & (1 == 0)` -- `int & bool` -- which our TypeChecker
+    # rejects outright, so reversing the decision does not silently change the answer here,
+    # it stops the file compiling. That is the loud failure, and it is the one we want.
+    var x: int = 12
+    if not (x & 1 == 0)
+        fails = fails + 1
+        print("FAIL precedence: `x & 1 == 0` did not parse as `(x & 1) == 0`")
+
+    # ── 2. SIGNED operands keep signed results (the type is PRESERVED, not coerced).
+    # Fable's vectors are u64 only, so this half is unpinned by them. Values measured
+    # against zig directly before the operators existed in Zebra.
+    var s: int = -8
+    if (s & 12) <> 8
+        fails = fails + 1
+        print("FAIL signed and")
+    if (s | 12) <> -4
+        fails = fails + 1
+        print("FAIL signed or")
+    if (s ^ 12) <> -12
+        fails = fails + 1
+        print("FAIL signed xor")
+
+    # ── 3. UNSIGNED operands keep unsigned results -- the same bit pattern, read the
+    # other way. This pair is what makes type-following visible in the corpus rather than
+    # merely documented, and it is what lets `>>` avoid needing a `>>>` in slice 2.
+    var u: uint = 18446744073709551608
+    if (u & 12) <> 8
+        fails = fails + 1
+        print("FAIL unsigned and")
+    if (~u) <> 7
+        fails = fails + 1
+        print("FAIL unsigned not")
+
+    # ── 4. `^` in both roles in one program.
+    var c = Cell()
+    c.v = 5
+    if (c.v ^ 3) <> 6
+        fails = fails + 1
+        print("FAIL xor after member access")
+
+    # ── 5. Chaining and grouping across the three levels: & tighter than ^ tighter than |.
+    # 1 | 2 ^ 3 & 6  ==  1 | (2 ^ (3 & 6))  ==  1 | (2 ^ 2)  ==  1 | 0  ==  1
+    if (1 | 2 ^ 3 & 6) <> 1
+        fails = fails + 1
+        print("FAIL relative precedence of & ^ |")
+
+    if fails == 0
+        print("bitwise semantics: OK")

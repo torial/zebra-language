@@ -1633,6 +1633,13 @@ smoke_run_bootstrap test/bug124_boxed_nilable_ctor_test.zbr "bug124: OK"
 # COMPILES and prints the byte array `{ 109, 97, 100, 101 }`, which the asserts inside the
 # fixture cannot see because only the FORMATTING is wrong.
 smoke_run           test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made returned factory"
+
+# Bitwise slice 1 (& | ^). smoke_run, not a bare emit check: `&` and `|` are one character
+# apart, both emit valid Zig, and both yield a number -- so a swapped operator survives
+# every compile-only gate in the tree (the BUG-226 class). Only running it and comparing
+# output can see that.
+smoke_run        test/bitwise_golden_vectors_test.zbr "bitwise golden: OK"
+smoke_run            test/bitwise_semantics_test.zbr "bitwise semantics: OK"
 smoke_run_bootstrap test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made returned factory"
 
 echo ""

@@ -205,6 +205,13 @@ pub const NT = enum {
     Expr2,    // and
     Expr3,    // not  (right-recursive)
     Expr4,    // ==  <>  <  >  <=  >=  is  in  not in
+    // Bitwise sits BETWEEN comparison and additive -- PYTHON's precedence, not C's.
+    // In C, `&` binds LOOSER than `==`, so `x & 1 == 0` means `x & (1 == 0)`; Ritchie
+    // acknowledged that as a mistake (`&` predated `&&`). Python binds `| ^ &` TIGHTER
+    // than comparison, so `x & 1 == 0` is `(x & 1) == 0` -- what a reader expects.
+    Expr4a,   // |
+    Expr4b,   // ^
+    Expr4c,   // &
     Expr5,    // +  -
     Expr6,    // *  /  //  %
     Expr7,    // **
@@ -1024,19 +1031,34 @@ const expr_rules: []const Rule = &.{
     .{ .lhs = .Expr3, .rhs = &.{ n(.Expr4) } },
 
     // Expr4 → comparisons
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.eq),            n(.Expr5) } },
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.ne),            n(.Expr5) } },
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.bang_equals),  n(.Expr5) } }, // != alias for <>
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.eq),            n(.Expr4a) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.ne),            n(.Expr4a) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.bang_equals),  n(.Expr4a) } }, // != alias for <>
 
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.lt),            n(.Expr5) } },
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.gt),            n(.Expr5) } },
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.le),            n(.Expr5) } },
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.ge),            n(.Expr5) } },
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_is),           n(.Expr5) } },
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_is), t(.kw_not), n(.Expr5) } },
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_in),           n(.Expr5) } },
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_not), t(.kw_in), n(.Expr5) } },
-    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr5) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.lt),            n(.Expr4a) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.gt),            n(.Expr4a) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.le),            n(.Expr4a) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.ge),            n(.Expr4a) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_is),           n(.Expr4a) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_is), t(.kw_not), n(.Expr4a) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_in),           n(.Expr4a) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4), t(.kw_not), t(.kw_in), n(.Expr4a) } },
+    .{ .lhs = .Expr4, .rhs = &.{ n(.Expr4a) } },
+
+    // Expr4a → bitwise OR      (lowest of the three)
+    .{ .lhs = .Expr4a, .rhs = &.{ n(.Expr4a), t(.vertical_bar), n(.Expr4b) } },
+    .{ .lhs = .Expr4a, .rhs = &.{ n(.Expr4b) } },
+
+    // Expr4b → bitwise XOR
+    // `^` is also the heap-indirection TYPE prefix (`^T`), but a TypeRef is reachable from
+    // expression position ONLY as the postfix `expr to T`, so prefix-`^` and infix-`^`
+    // never compete for the same slot -- the same way unary and binary `-` coexist.
+    .{ .lhs = .Expr4b, .rhs = &.{ n(.Expr4b), t(.caret), n(.Expr4c) } },
+    .{ .lhs = .Expr4b, .rhs = &.{ n(.Expr4c) } },
+
+    // Expr4c → bitwise AND     (highest of the three; shifts will slot in below)
+    .{ .lhs = .Expr4c, .rhs = &.{ n(.Expr4c), t(.ampersand), n(.Expr5) } },
+    .{ .lhs = .Expr4c, .rhs = &.{ n(.Expr5) } },
 
     // Expr5 → additive, and range (`a..b` — used in branch on-clauses and literals)
     .{ .lhs = .Expr5, .rhs = &.{ n(.Expr5), t(.plus),   n(.Expr6) } },

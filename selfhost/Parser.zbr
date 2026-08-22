@@ -2803,7 +2803,7 @@ class Parser
         return .parseComparison()?
 
     def parseComparison(): PNode throws
-        var left = .parseAddSub()?
+        var left = .parseBitOr()?
         var op: str = ""
         if .textIs("==")
             op = "=="
@@ -2826,7 +2826,7 @@ class Parser
             if .textIs("not")
                 .advance()
                 negate_is = true
-            const right = .parseAddSub()?
+            const right = .parseBitOr()?
             var l = List(PNode)()
             l.add(left)
             var r = List(PNode)()
@@ -2844,7 +2844,7 @@ class Parser
             if not .textIs("in")
                 raise .errorAt("expected 'in' after 'not' in comparison")
             .advance()
-            const right = .parseAddSub()?
+            const right = .parseBitOr()?
             var l = List(PNode)()
             l.add(left)
             var r = List(PNode)()
@@ -2859,7 +2859,7 @@ class Parser
             return PNode.expr_unary(PUnary("not", inner))
         if op != ""
             .advance()
-            const right = .parseAddSub()?
+            const right = .parseBitOr()?
             # Check if this is a chainable comparison op that may start/extend a chain.
             # Chainable: == != < <= > >=  (not: is, in)
             if op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
@@ -2887,7 +2887,7 @@ class Parser
                     while next_op != ""
                         chain_ops.add(next_op)
                         .advance()
-                        const next_right = .parseAddSub()?
+                        const next_right = .parseBitOr()?
                         chain_nodes.add(next_right)
                         next_op = ""
                         if .textIs("==")
@@ -2909,6 +2909,57 @@ class Parser
             var r = List(PNode)()
             r.add(right)
             return PNode.expr_binary(PBinary(op, l, r))
+        return left
+
+    # ── Bitwise: | then ^ then & , binding TIGHTER than comparison ────────────────
+    #
+    # PYTHON's precedence, deliberately, not C's. In C `&` binds looser than `==`, so
+    # `x & 1 == 0` silently means `x & (1 == 0)`; Ritchie called that a mistake (`&`
+    # predated `&&`). Python binds these tighter than comparison, so `x & 1 == 0` is
+    # `(x & 1) == 0` -- what the reader expects.
+    #
+    # `|` cannot collide with the `catch |e|` binding: parseCatch consumes BOTH bars
+    # itself before calling parseOr, and the grammar gives `|` no other delimiter role.
+    def parseBitOr(): PNode throws
+        var left = .parseBitXor()?
+        while .textIs("|")
+            const op = .peek().text
+            .advance()
+            const right = .parseBitXor()?
+            var l = List(PNode)()
+            l.add(left)
+            var r = List(PNode)()
+            r.add(right)
+            left = PNode.expr_binary(PBinary(op, l, r))
+        return left
+
+    # `^` is also the heap-indirection TYPE prefix (`^T`). No ambiguity: a TypeRef reaches
+    # expression position only as the postfix `expr to T`, so prefix-^ and infix-^ never
+    # compete for one slot -- the same way unary and binary `-` coexist.
+    def parseBitXor(): PNode throws
+        var left = .parseBitAnd()?
+        while .textIs("^")
+            const op = .peek().text
+            .advance()
+            const right = .parseBitAnd()?
+            var l = List(PNode)()
+            l.add(left)
+            var r = List(PNode)()
+            r.add(right)
+            left = PNode.expr_binary(PBinary(op, l, r))
+        return left
+
+    def parseBitAnd(): PNode throws
+        var left = .parseAddSub()?
+        while .textIs("&")
+            const op = .peek().text
+            .advance()
+            const right = .parseAddSub()?
+            var l = List(PNode)()
+            l.add(left)
+            var r = List(PNode)()
+            r.add(right)
+            left = PNode.expr_binary(PBinary(op, l, r))
         return left
 
     def parseAddSub(): PNode throws

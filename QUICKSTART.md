@@ -314,15 +314,47 @@ Float suffix literals: `1.5_f32`, `2.5_f64`, `0.5f32`, `3.0f64` emit
 | Level | Operators | Notes |
 |-------|-----------|-------|
 | 1 — postfix | `x!`  `x?`  `.method()`  `[i]`  `?.` | Force-unwrap, optional-chain |
-| 2 — unary | `not`  `-x` | Logical not; arithmetic negation |
+| 2 — unary | `not`  `-x`  `~x` | Logical not; negation; bitwise complement |
 | 3 — multiplicative | `*`  `/`  `%` | |
 | 4 — additive | `+`  `-` | String concat is also `+` |
-| 5 — comparison | `<`  `<=`  `>`  `>=`  `is`  `in` | `is`: type check; `in`: containment |
-| 6 — equality | `==`  `!=` | |
-| 7 — logical and | `and` | Short-circuits |
-| 8 — logical or | `or` | Short-circuits |
-| 9 — nil/error fallback | `orelse`  `catch` | `orelse`: `T?`; `catch`: error union |
-| 10 — pipeline | `->` | Left-to-right chaining |
+| 5 — bitwise and | `&` | |
+| 6 — bitwise xor | `^` | |
+| 7 — bitwise or | `\|` | |
+| 8 — comparison | `<`  `<=`  `>`  `>=`  `is`  `in` | `is`: type check; `in`: containment |
+| 9 — equality | `==`  `!=` | |
+| 10 — logical and | `and` | Short-circuits |
+| 11 — logical or | `or` | Short-circuits |
+| 12 — nil/error fallback | `orelse`  `catch` | `orelse`: `T?`; `catch`: error union |
+| 13 — pipeline | `->` | Left-to-right chaining |
+
+### §3.2 Bitwise operators
+
+`&` `|` `^` `~` operate on any integer type. **The result keeps the operand's type**, which
+is the rule worth remembering — it is why Zebra needs no separate unsigned-shift operator.
+
+```zebra
+def main()
+    var flags: int = 12
+    print(flags & 1)          # 0
+    print(flags | 3)          # 15
+    print(flags ^ 5)          # 9
+    print(~flags)             # -13  (signed operand -> signed result)
+
+    var bits: uint = 12
+    print(~bits)              # 18446744073709551603  (same 64 bits, read unsigned)
+```
+
+**Precedence follows Python, not C.** `x & 1 == 0` means `(x & 1) == 0`. In C it would mean
+`x & (1 == 0)` — a mistake Ritchie acknowledged but could not fix once `&&` existed. Zebra
+binds `&` `^` `|` tighter than comparison so the obvious reading is the right one. Among
+themselves the order is the conventional one: `&` tighter than `^` tighter than `|`, so
+`1 | 2 ^ 3 & 6` is `1 | (2 ^ (3 & 6))`.
+
+A non-integer operand is refused by name:
+
+```
+error: bitwise '&' requires integer operands, got 'float'
+```
 
 `orelse` and `catch` have the same precedence (level 9); they associate left-to-right.
 `->`  (pipeline) is the lowest non-assignment operator, so `a + b -> f` means `f(a + b)`.

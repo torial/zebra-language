@@ -417,17 +417,26 @@ Expr2                → Expr2 kw_and Expr3
 Expr3                → kw_not Expr3
                      |  Expr4
 
-Expr4                → Expr4 eq Expr5
-                     |  Expr4 ne Expr5
-                     |  Expr4 bang_equals Expr5
-                     |  Expr4 lt Expr5
-                     |  Expr4 gt Expr5
-                     |  Expr4 le Expr5
-                     |  Expr4 ge Expr5
-                     |  Expr4 kw_is Expr5
-                     |  Expr4 kw_is kw_not Expr5
-                     |  Expr4 kw_in Expr5
-                     |  Expr4 kw_not kw_in Expr5
+Expr4                → Expr4 eq Expr4a
+                     |  Expr4 ne Expr4a
+                     |  Expr4 bang_equals Expr4a
+                     |  Expr4 lt Expr4a
+                     |  Expr4 gt Expr4a
+                     |  Expr4 le Expr4a
+                     |  Expr4 ge Expr4a
+                     |  Expr4 kw_is Expr4a
+                     |  Expr4 kw_is kw_not Expr4a
+                     |  Expr4 kw_in Expr4a
+                     |  Expr4 kw_not kw_in Expr4a
+                     |  Expr4a
+
+Expr4a               → Expr4a vertical_bar Expr4b
+                     |  Expr4b
+
+Expr4b               → Expr4b caret Expr4c
+                     |  Expr4c
+
+Expr4c               → Expr4c ampersand Expr5
                      |  Expr5
 
 Expr5                → Expr5 plus Expr6

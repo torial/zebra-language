@@ -1252,6 +1252,16 @@ class ASTBuilder
             return BinaryOp.or_
         if op == "in"
             return BinaryOp.in_
+        # Bitwise. Same shape as BUG-256's `~`: the BinaryOp tags existed, binaryOpStr
+        # already emitted "&"/"|"/"^", and the bootstrap TypeChecker already typed them --
+        # but no parser rule could construct one, so every line of it was unreachable and
+        # had never been type-checked. The parser was the whole gap.
+        if op == "&"
+            return BinaryOp.bit_and
+        if op == "|"
+            return BinaryOp.bit_or
+        if op == "^"
+            return BinaryOp.bit_xor
         raise "toBinaryOp: unknown op: " + op
 
     def toUnaryOp(op: str): UnaryOp throws

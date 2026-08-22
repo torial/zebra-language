@@ -15,7 +15,7 @@
 
 ---
 
-### BUG-302: the heavy PARALLEL gates fail one file per run at a low rate, and it never reproduces — THIRD occurrence, so it is now a finding — OPEN (2026-08-20)
+### BUG-302: heavy gates fail files that pass in isolation — SEVEN occurrences, five gates; MEASURED at 2 of 3 `full_sweep` runs, so "low rate" is wrong — OPEN (2026-08-20)
 
 CLAUDE.md has said since 2026-08-19 that a third occurrence "stops being a transient and
 becomes the finding". This is the third.
@@ -44,6 +44,118 @@ identical):
 |---|---|---|---|---|
 | 4 | `compile_check-inline` | `type_alias_test` AND `with_call_test` | 280 passed / 2 FAILED | both clean |
 | 5 | **`smoke`** | `field_order_test` | non-zero exit, 368/369 | **8/8 clean** |
+
+**OCCURRENCE 6, 2026-08-22 `--daily` — THE LARGEST BY AN ORDER OF MAGNITUDE, AND THE
+FIRST TO FAIL THE TIER.** Every prior occurrence cost one file in one gate and the tier
+still passed or failed on other grounds. This one failed **three gates on four files**:
+
+| gate | file | verdict in-tier | verdict alone |
+|---|---|---|---|
+| `full_sweep` | `bug260_bindlist_param_test` | REGRESSION vs baseline | emits clean; **runs**, prints `bug260: OK` |
+| `examples_sweep` | `lisp` | `CFAIL`, REGRESSION | emits clean; **runs**, prints its Scheme output |
+| `divergence` | `dispatch_diag` | `self=CFAIL`, selfhost gap | emits clean |
+| `divergence` | `generic_tostring_test` | `self=CFAIL`, selfhost gap | emits clean |
+
+Verified against the SAME binary the tier used — `zig-out/bin/zebra.exe` mtime `08-21
+20:26`, unchanged throughout the run (checked, because source in `src/` and `selfhost/`
+was edited mid-run for the bitwise work and the first question had to be whether that
+reached a compiler; it did not, nothing rebuilt).
+
+**WHAT THIS ADDS TO THE PICTURE:**
+
+- **It is not confined to compile-only gates.** `examples_sweep` and `full_sweep` join
+  `compile_check-inline`, `divergence` and `smoke`. That is FIVE distinct gates now.
+- **The failures are CONCURRENT, not independent.** Four files failed inside one tier
+  after five runs of at most one each. If each file failed independently at a low rate,
+  four in one run is wildly improbable — so the events are correlated, which points at a
+  MACHINE STATE that persists across a stretch of the run rather than at a per-file dice
+  roll. That is a genuinely new constraint and it is INCONSISTENT WITH the "low-rate
+  independent flake" reading the earlier entries assumed.
+
+  **Deliberately not stated more strongly than that**, because a shared external cause is
+  exactly what the confound below would also look like — correlated failures argue for a
+  common cause, and they do not by themselves say whether that cause is the machine or the
+  person working on it. The timeline weighs against the latter but rests on durations
+  reconstructed by subtraction, not on timestamps.
+- **It reached the ONE gate whose baseline makes a false red expensive.** `full_sweep`
+  reported a REGRESSION against its baseline. Someone reading only the summary line would
+  go looking for a compiler bug in `bug260_bindlist_param_test`, which is exactly the cost
+  occurrence 3 already demonstrated, now with a name that implicates a recent fix.
+
+**A CONFOUND I INTRODUCED, recorded because omitting it would make this occurrence look
+cleaner than it is.** I was working in the tree while the tier ran: a standalone
+`zig build-exe` at ~23:12 (which touches the SHARED zig cache) and several one-file
+`zebra.exe` invocations at ~23:00–23:19. That is exactly the kind of parallel load
+CLAUDE.md warns about, and it has to be weighed before blaming the machine.
+
+**The timeline does not support it as the cause.** Reconstructing from the recorded
+durations, my activity overlapped `compile_check-inline` (993 s, ~23:10–23:26) — which
+**passed 285/0** — and stopped by ~23:19. `output_sweep` then ran ~23:27–23:58 and passed.
+The three gates that failed ran AFTER I had stopped: `full_sweep` ~23:58–00:10,
+`examples_sweep`, then `divergence` ~00:12–00:38. So the interference and the failures do
+not overlap, and the gate that DID overlap is the one that came back clean.
+
+Worth stating plainly anyway: this is weaker evidence than a run nobody touched. **The
+memory experiment below must be run on an otherwise-idle machine**, or it will measure me
+instead of the phenomenon.
+
+**THE UNTESTED CANDIDATE IS STILL MEMORY, and this occurrence sharpens it.** The tier
+opened at **6.0 GB free of 31.8 GB (81% used)** and the machine sat at **5.0 GB free (84%
+used) while completely idle afterwards** — so the run began with roughly a sixth of RAM
+available and the heavy gates ran two compilers in parallel inside that. Correlated
+failures across a stretch of the run fit a resource that is exhausted for a period and
+then recovers; they do not fit a per-file dice roll.
+
+**THE DISCRIMINATING EXPERIMENT, still unrun and still cheap:** sample free RAM on a fixed
+interval THROUGH a heavy gate and align the samples against the per-file failures the gate
+reports. If failures cluster in the low-RAM troughs, that is the answer; if they are
+uniform across the trace, memory is dead and the next candidate is needed. Either outcome
+is worth having, and neither requires reasoning about it in the meantime. Run it before
+any more speculation — four mechanisms have already been killed by measurement here
+(shared workdir, stale `.pdb`, disk pressure, Defender) and a fifth by occurrence 5
+(parallelism), every one of them plausible in prose.
+
+**OCCURRENCE 7 — AND THE FIRST MEASURED RATE, 2026-08-22.** `full_sweep` was run three
+times in ~90 minutes on the same tree (once in the tier, twice by hand). The counts move
+in lockstep and identify the shape exactly:
+
+| run | PASS | CFAIL | regressions |
+|---|---|---|---|
+| in `--daily` | 401 | 20 | 1 — `bug260_bindlist_param_test` |
+| re-run #1 | 403 | 20 | 1 |
+| re-run #2 | **404** | **19** | **0** — `positive set 288/288 pass` |
+
+(PASS rises by 2 after run 1 because two new fixtures were added between; the meaningful
+figure is CFAIL, which fell by exactly 1 as the regression cleared — ONE file flips per
+run, never a cluster within `full_sweep` itself.)
+
+**TWO OF THREE RUNS PRODUCED A FALSE REGRESSION.** Every earlier entry here describes "a
+low rate"; at 2-in-3 in one gate that description is simply wrong, and the ticket's
+priority should follow. A gate that cries regression on two runs in three is not
+occasionally annoying — it cannot be used for the decision it exists to support, which is
+"did my change break the corpus?".
+
+**This also detaches the rate from tier load.** Runs 2 and 3 were single-gate invocations
+with nothing else executing, so the earlier "heavy tier at JOBS=2" framing does not
+survive either. What is left is a gate that at JOBS=2 loses one arbitrary file per run,
+roughly two runs in three, in isolation.
+
+**IT IS NOT MY BITWISE CHANGE.** All four files the tier named emit clean against BOTH the
+binary the tier used (`08-21 20:26`) and the rebuilt one carrying the new operators
+(`08-22 00:50`), checked separately.
+
+**REVISED NEXT STEP — cheaper and better targeted than the RAM trace:** `full_sweep` now
+reproduces at ~2/3 per run in ~12 minutes with no tier around it. Run it N times at JOBS=2
+recording which file flips, then N times at **JOBS=1**. If the flip vanishes at JOBS=1 the
+cause is concurrency inside this one harness and the RAM hypothesis is dead; if it
+survives, it is per-process and the trace is worth taking. Either way it needs no
+114-minute tier and no idle-machine window — which is what has kept this bug unmeasured.
+
+**Cost so far:** this tier was the CLOSING MOVE of a night's work, whose entire purpose is
+to leave a tree the morning can trust. It left three red gates that mean nothing, which is
+the precise opposite. Until this is fixed, a `--daily` failure on a heavy sweep must be
+re-checked file-by-file before it is believed — and that instruction is itself the damage,
+because it is indistinguishable from "re-run until green".
 
 **OCCURRENCE 5 FALSIFIES THE PARALLELISM ASSUMPTION IN THIS TICKET'S ORIGINAL TEXT.**
 `selfhost_smoke.sh` runs SEQUENTIALLY. So "parallel workers sharing one Zig cache" cannot
