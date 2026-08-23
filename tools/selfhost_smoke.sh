@@ -1640,6 +1640,12 @@ smoke_run           test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made 
 # output can see that.
 smoke_run        test/bitwise_golden_vectors_test.zbr "bitwise golden: OK"
 smoke_run            test/bitwise_semantics_test.zbr "bitwise semantics: OK"
+
+# Compound assignment (all 9) + hex literals. smoke_run, because BUG-305's dangerous form
+# emitted VALID Zig computing a DIFFERENT NUMBER (0xFF_32 -> 65330), which no compile-only
+# gate can see. Every shift leg takes its amount from a function call: Zig const-folds a
+# literal, so `x <<= 2` passes against the compiler BUG-304 describes.
+smoke_run  test/bug304_305_compound_hex_test.zbr "bug304/305: OK"
 smoke_run_bootstrap test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made returned factory"
 
 echo ""

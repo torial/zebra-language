@@ -658,6 +658,28 @@ class ASTBuilder
             on PNode.stmt_assign as pa
                 const target_expr = .buildExpr(pa.target.at(0))?
                 const value_expr = .buildExpr(pa.value.at(0))?
+                # `/=` and `%=` DESUGAR to `x = x / y` / `x = x % y` rather than getting
+                # their own emit path, because the correct lowering is TYPE-DEPENDENT and
+                # genBinary already knows how to decide. Zig refuses a bare `x /= y` on
+                # signed ints ("must use @divTrunc, @divFloor, or @divExact") and likewise
+                # `%=`; on floats the plain operator is right. Writing that choice a second
+                # time inside genAssign, which has no type oracle, would be a hand-copied
+                # decision procedure -- the isZigKeyword mistake in a new place.
+                #
+                # The other seven compound operators keep their native emit: `&= |= ^=` are
+                # valid Zig as-is, `<<= >>=` are lowered in genAssign because the helper
+                # call is type-independent, and `//= **=` already had emit paths.
+                #
+                # COST, and it is the same one `//=` and `**=` already pay: the target is
+                # evaluated TWICE in the emitted Zig, so a side-effecting target such as
+                # `a[next()] /= 2` would call `next()` twice. Pre-existing hazard, widened
+                # by two operators; worth fixing for all of them together, not here.
+                if pa.op == "/=" or pa.op == "%="
+                    var bop = BinaryOp.div
+                    if pa.op == "%="
+                        bop = BinaryOp.mod
+                    const folded = Expr.binary(ExprBinary(Span(pa.line, 0, pa.line, 0), bop, target_expr, value_expr))
+                    return Stmt.assign(StmtAssign(Span(pa.line, 0, pa.line, 0), target_expr, AssignOp.assign, folded))
                 const op = .toAssignOp(pa.op)?
                 return Stmt.assign(StmtAssign(Span(pa.line, 0, pa.line, 0), target_expr, op, value_expr))
 
@@ -921,7 +943,12 @@ class ASTBuilder
             # BUG-288: literals carry their REAL position now. `zspan()` here was the
             # reason a diagnostic anchored on a literal reported column 0.
             on PNode.expr_int as lit
-                return Expr.int_lit(ExprIntLit(Span(lit.line, lit.col, lit.line, lit.col), lit.text, IntBase.decimal))
+                # DERIVED, not hardcoded: this read IntBase.decimal unconditionally, which
+                # was harmless only while no hex literal could reach it.
+                var ibase = IntBase.decimal
+                if lit.text.startsWith("0x") or lit.text.startsWith("0X")
+                    ibase = IntBase.hex
+                return Expr.int_lit(ExprIntLit(Span(lit.line, lit.col, lit.line, lit.col), lit.text, ibase))
 
             on PNode.expr_float as lit
                 return Expr.float_lit(ExprFloatLit(Span(lit.line, lit.col, lit.line, lit.col), lit.text))
@@ -1221,6 +1248,24 @@ class ASTBuilder
             return AssignOp.minus_eq
         if op == "*="
             return AssignOp.star_eq
+        if op == "/="
+            return AssignOp.slash_eq
+        if op == "//="
+            return AssignOp.slashslash_eq
+        if op == "%="
+            return AssignOp.percent_eq
+        if op == "**="
+            return AssignOp.starstar_eq
+        if op == "&="
+            return AssignOp.ampersand_eq
+        if op == "|="
+            return AssignOp.vertical_bar_eq
+        if op == "^="
+            return AssignOp.caret_eq
+        if op == "<<="
+            return AssignOp.double_lt_eq
+        if op == ">>="
+            return AssignOp.double_gt_eq
         raise "toAssignOp: unknown op: " + op
 
     def toBinaryOp(op: str): BinaryOp throws

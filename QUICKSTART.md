@@ -328,6 +328,50 @@ Float suffix literals: `1.5_f32`, `2.5_f64`, `0.5f32`, `3.0f64` emit
 | 13 — nil/error fallback | `orelse`  `catch` | `orelse`: `T?`; `catch`: error union |
 | 14 — pipeline | `->` | Left-to-right chaining |
 
+### §3.1b Hex literals
+
+```zebra
+def main()
+    print(0xFF)                              # 255
+    print(0xDEADBEEF & 0xFF)                 # 239
+
+    var golden: uint = 0x9E3779B97F4A7C15    # above i64 max -- annotate
+    print(golden)                            # 11400714819323198485
+```
+
+Suffixes set the literal's type: `_u` is `uint`, `_u32` is `uint32`, and a bare size
+(`_8 _16 _32 _64`) is the signed form. `0xFF_32` is 255 as a 32-bit int.
+
+> **The suffix types the LITERAL, not the variable.** `var b = 0xFF_u` still infers `b` as
+> `int`, which is fine until the value exceeds i64 — so for large constants, annotate the
+> variable (`var golden: uint = …`) rather than relying on `_u`.
+
+### §3.1c Compound assignment
+
+All twelve, on any type the underlying operator accepts:
+
+| | |
+|---|---|
+| arithmetic | `+=`  `-=`  `*=`  `/=`  `//=`  `%=`  `**=` |
+| bitwise | `&=`  `\|=`  `^=`  `<<=`  `>>=` |
+
+```zebra
+def main()
+    var h: uint = 0xCBF29CE484222325
+    h ^= 0xFF
+    h <<= 5
+    h >>= 2
+    print(h)
+```
+
+`/=` follows the operand type the same way `/` does — integers truncate toward zero,
+floats do not (`7.0 /= 2.0` is `3.5`). `>>=` follows the operand type exactly as `>>`
+does: arithmetic on `int`, logical on `uint`.
+
+> **`x op= y` evaluates `x` twice for `/=`, `%=`, `//=`, `**=`, `<<=` and `>>=`**, because
+> those lower to `x = x op y`. It matters only when the target itself has side effects —
+> `a[next()] /= 2` calls `next()` twice. Hoist the index first if that bites.
+
 ### §3.2 Bitwise operators
 
 `&` `|` `^` `~` `<<` `>>` operate on any integer type. **The result keeps the operand's type**, which

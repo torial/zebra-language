@@ -1053,6 +1053,18 @@ class Parser
         branch .peek().kind
             on TokenKind.integer_lit
                 return true
+            # Hex. The LEXER has emitted these three since forever and the AST's
+            # ExprIntLit has carried an IntBase field to receive them, but no parser rule
+            # consumed one -- so `0xFF` was `error: unexpected expression token: '0xFF'`
+            # in the selfhost while the bootstrap grammar has had `Atom -> hex_lit` all
+            # along. No corpus file uses a hex literal, which is why `divergence` never
+            # reported the gap.
+            on TokenKind.hex_lit
+                return true
+            on TokenKind.hex_lit_unsign
+                return true
+            on TokenKind.hex_lit_explicit
+                return true
             else
                 return false
 
@@ -2692,6 +2704,30 @@ class Parser
             op = "-="
         else if .textIs("*=")
             op = "*="
+        # The other NINE. Every one already had a lexer token, an AssignOp variant and an
+        # assignOpStr mapping; only this chain was missing, so `x ^= 1` was
+        # `error: unexpected expression token: '^='` while the bootstrap accepted it.
+        # Same lexer-yes/parser-no shape as `~` (BUG-256) and the binary bitwise operators.
+        # Order does not matter here: the LEXER has already produced one token per operator,
+        # so `//=` cannot be mis-read as `/=`.
+        else if .textIs("/=")
+            op = "/="
+        else if .textIs("//=")
+            op = "//="
+        else if .textIs("%=")
+            op = "%="
+        else if .textIs("**=")
+            op = "**="
+        else if .textIs("&=")
+            op = "&="
+        else if .textIs("|=")
+            op = "|="
+        else if .textIs("^=")
+            op = "^="
+        else if .textIs("<<=")
+            op = "<<="
+        else if .textIs(">>=")
+            op = ">>="
         if .textIs("<-") or .textIs("<<-")
             # §28d (2026-07-02): `<<-` = arena deep copy-out, `<-` = channel
             # send/recv only.  One stmt kind; `deep` records the token and

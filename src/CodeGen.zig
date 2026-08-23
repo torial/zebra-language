@@ -11262,6 +11262,19 @@ const Generator = struct {
     fn genAssign(g: Generator, s: *Ast.StmtAssign) anyerror!void {
         try g.writeIndent();
         switch (s.op) {
+            .double_lt_eq, .double_gt_eq => {
+                // BUG-304. x <<= y  →  x = _zbr_shl(x, y).
+                // A bare `x <<= y` does NOT compile: Zig wants the shift amount as
+                // Log2Int(T), i.e. u6 for a 64-bit operand. It LOOKS fine with a literal
+                // amount because Zig const-folds it, which is exactly how this survived --
+                // the first probe used `x <<= 2` and came back green.
+                try g.genExpr(s.target);
+                try g.w.writeAll(if (s.op == .double_lt_eq) " = _zbr_shl(" else " = _zbr_shr(");
+                try g.genExpr(s.target);
+                try g.w.writeAll(", ");
+                try g.genExpr(s.value);
+                try g.w.writeAll(")");
+            },
             .slashslash_eq => {
                 // x //= y  →  x = @divTrunc(x, y)
                 try g.genExpr(s.target);
@@ -14018,7 +14031,7 @@ const Generator = struct {
             }
         }
         sw: switch (expr.*) {
-            .int_lit       => |e| try g.w.writeAll(e.text),
+            .int_lit       => |e| try g.emitIntLit(e.text),
             .float_lit     => |e| try genFloatLit(g, e.text),
             .bool_lit      => |e| try g.w.writeAll(if (e.value) "true" else "false"),
             .char_lit      => |e| {
@@ -16671,6 +16684,44 @@ const Generator = struct {
                 try g.genExpr(e.right);
                 try g.w.writeAll(")");
             },
+        }
+    }
+
+    /// BUG-305. A hex literal's SUFFIX must not reach Zig verbatim.
+    ///
+    ///   0xFF      -> 0xFF              Zig understands it; pass through
+    ///   0xFF_u    -> @as(u64, 0xFF)    Zig: "invalid digit 'u' for hex base"
+    ///   0xFF_u32  -> @as(u32, 0xFF)
+    ///   0xFF_32   -> @as(i32, 0xFF)    <-- THE DANGEROUS ONE
+    ///
+    /// The last form is why this is a bug and not a gap: Zig treats `_` as a DIGIT
+    /// SEPARATOR, so `0xFF_32` compiles cleanly and means 0xFF32 = 65330, not 255 as an
+    /// i32. Valid Zig computing the wrong number -- the BUG-226 class, invisible to
+    /// compile_check, full_sweep and divergence, all of which only ask whether the emit
+    /// compiles. No corpus file used a hex literal, so output_sweep never saw it either.
+    ///
+    /// Same shape as the float suffixes (`1.5_f32` -> `@as(f32, 1.5)`), which already
+    /// worked. Mirrored in selfhost/CgHelpers.zbr:hexLitZig.
+    fn emitIntLit(g: Generator, text: []const u8) anyerror!void {
+        if (!std.mem.startsWith(u8, text, "0x") and !std.mem.startsWith(u8, text, "0X")) {
+            try g.w.writeAll(text);
+            return;
+        }
+        const us = std.mem.indexOfScalar(u8, text, '_') orelse {
+            try g.w.writeAll(text);
+            return;
+        };
+        const digits = text[0..us];
+        const suffix = text[us + 1 ..];
+        if (suffix.len == 0) {
+            try g.w.writeAll(digits);
+            return;
+        }
+        if (suffix[0] == 'u') {
+            const bits = if (suffix.len > 1) suffix[1..] else "64";
+            try g.w.print("@as(u{s}, {s})", .{ bits, digits });
+        } else {
+            try g.w.print("@as(i{s}, {s})", .{ suffix, digits });
         }
     }
 

@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
-use CgHelpers exposing StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
+use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
 use AstWalk exposing collectOldNodes
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
@@ -7010,6 +7010,23 @@ struct Generator
             genExpr(a.value)
             w.emit(");\n")
             return
+        # BUG-304. `x <<= n` CANNOT emit bare: Zig wants the shift amount as Log2Int(T),
+        # so `x <<= n` on two i64s is `error: expected type 'u6', found 'i64'`. It LOOKS
+        # fine with a literal amount because Zig const-folds it -- which is how the same
+        # defect nearly went unnoticed in the bootstrap. Lowered the way `//=` and `**=`
+        # already are: rewrite as a plain assignment of the helper call.
+        if a.op == AssignOp.double_lt_eq or a.op == AssignOp.double_gt_eq
+            genExpr(a.target)
+            w.emit(" = ")
+            if a.op == AssignOp.double_lt_eq
+                w.emit("_zbr_shl(")
+            else
+                w.emit("_zbr_shr(")
+            genExpr(a.target)
+            w.emit(", ")
+            genExpr(a.value)
+            w.emit(");\n")
+            return
         if a.op == AssignOp.starstar_eq
             genExpr(a.target)
             w.emit(" = std.math.pow(i64, ")
@@ -10064,7 +10081,7 @@ struct Generator
     def genExpr(e: Expr)
         branch e
             on Expr.int_lit as il
-                w.emit(il.text)
+                w.emit(hexLitZig(il.text))
             on Expr.float_lit as fl
                 genFloatLit(fl.text)
             on Expr.bool_lit as bl

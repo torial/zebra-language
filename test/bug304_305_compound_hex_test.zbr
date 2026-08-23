@@ -1,0 +1,130 @@
+# Compound assignment (all 9) and hex literals, including BUG-304 and BUG-305.
+#
+# BUG-304: `x <<= n` cannot emit bare -- Zig wants the shift amount as Log2Int(T), so a
+# bare compound shift on two i64s is `error: expected type 'u6', found 'i64'`. IT LOOKS
+# FINE WITH A LITERAL AMOUNT, because Zig const-folds it. So every shift leg below takes
+# its amount from a FUNCTION CALL; with a literal, this fixture would pass against the
+# broken compiler and prove nothing.
+#
+# BUG-305: `0xFF_32` meant 65330 instead of 255. Zig reads `_` as a digit separator, so
+# the emitted literal compiled cleanly and computed a different number -- the BUG-226
+# class, invisible to every compile-only gate. This fixture must RUN, not merely compile.
+
+def amt(): int
+    return 2
+
+def main()
+    var fails: int = 0
+
+    # -- compound assignment, all nine, shift amounts from a call (see BUG-304 above)
+    var a: int = 12
+    a /= amt()
+    if a <> 6
+        fails = fails + 1
+        print("FAIL /=")
+
+    var b: int = 13
+    b //= amt()
+    if b <> 6
+        fails = fails + 1
+        print("FAIL //=")
+
+    var c: int = 13
+    c %= 5
+    if c <> 3
+        fails = fails + 1
+        print("FAIL %=")
+
+    var d: int = 2
+    d **= 3
+    if d <> 8
+        fails = fails + 1
+        print("FAIL **=")
+
+    var e: int = 12
+    e &= 10
+    if e <> 8
+        fails = fails + 1
+        print("FAIL &=")
+
+    var f: int = 12
+    f |= 3
+    if f <> 15
+        fails = fails + 1
+        print("FAIL |=")
+
+    var g: int = 12
+    g ^= 5
+    if g <> 9
+        fails = fails + 1
+        print("FAIL ^=")
+
+    var h: int = 3
+    h <<= amt()
+    if h <> 12
+        fails = fails + 1
+        print("FAIL <<=")
+
+    var i: int = 48
+    i >>= amt()
+    if i <> 12
+        fails = fails + 1
+        print("FAIL >>=")
+
+    # -- `/=` MUST NOT truncate a float. This is the leg that justifies desugaring `/=`
+    # to `x = x / y` instead of hardcoding @divTrunc in genAssign: the correct lowering
+    # is type-dependent, and genBinary already knows how to choose.
+    var fl: float = 7.0
+    fl /= 2.0
+    if fl <> 3.5
+        fails = fails + 1
+        print("FAIL /= truncated a float")
+
+    # -- `>>=` follows the operand type, exactly as the binary form does
+    var neg: int = -8
+    neg >>= 1
+    if neg <> -4
+        fails = fails + 1
+        print("FAIL >>= on int is not arithmetic")
+
+    var pos: uint = 18446744073709551608
+    pos >>= 1
+    if pos <> 9223372036854775804
+        fails = fails + 1
+        print("FAIL >>= on uint is not logical")
+
+    # -- hex literals
+    if 0xFF <> 255
+        fails = fails + 1
+        print("FAIL plain hex")
+
+    if 0xFF_u <> 255
+        fails = fails + 1
+        print("FAIL hex _u suffix")
+
+    # THE BUG-305 LEG. Before the fix this printed 65330 -- `0xFF_32` reached Zig verbatim
+    # and `_` is a digit separator there, so it meant 0xFF32.
+    if 0xFF_32 <> 255
+        fails = fails + 1
+        print("FAIL hex size suffix (BUG-305: silently meant 0xFF32 = 65330)")
+
+    # -- the constant that motivated hex at all: golden-ratio, above i64 max.
+    # ANNOTATED, because the suffix sets the LITERAL's type, not the variable's --
+    # inference still yields int, so an unannotated `= 0x9E..._u` overflows i64.
+    var golden: uint = 0x9E3779B97F4A7C15
+    if golden <> 11400714819323198485
+        fails = fails + 1
+        print("FAIL golden-ratio hex constant")
+
+    # -- hex composes with the operators it exists to serve
+    var mask: uint = 0xFF
+    var val: uint = 0xDEADBEEF
+    if (val & mask) <> 0xEF
+        fails = fails + 1
+        print("FAIL hex mask")
+    if (val >> 8 & mask) <> 0xBE
+        fails = fails + 1
+        print("FAIL hex shift+mask")
+
+    if fails == 0
+        print("bug304/305: OK")

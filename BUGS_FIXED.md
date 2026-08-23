@@ -6,6 +6,126 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-305: a hex literal's SIZE SUFFIX silently emits a DIFFERENT NUMBER — CLOSED 2026-08-22
+
+> **CLOSED 2026-08-22 — hex suffixes translate to `@as(T, value)` in BOTH compilers.**
+>
+> | written | emitted | value |
+> |---|---|---|
+> | `0xFF` | `0xFF` | 255 — Zig understands it, passed through |
+> | `0xFF_u` | `@as(u64, 0xFF)` | 255 — was `invalid digit 'u' for hex base` |
+> | `0xFF_u32` | `@as(u32, 0xFF)` | 255 |
+> | `0xFF_32` | `@as(i32, 0xFF)` | **255 — was 65330** |
+>
+> Same shape as the float suffixes (`1.5_f32` -> `@as(f32, 1.5)`), which already worked.
+>
+> **THE `_32` LEG IS THE ONE THAT MATTERED, and it is the one a compile gate cannot see.**
+> Reverting the fix makes `0xFF_u` fail LOUDLY, which masks the silent case — so it was
+> falsified SEPARATELY: against the mutated compiler `0xFF_32` compiles cleanly, prints
+> **65330**, and is caught only by comparing the value. BUG-226 class.
+>
+> **Selfhost hex support landed with it.** `isIntLit` now accepts `hex_lit`,
+> `hex_lit_unsign` and `hex_lit_explicit` — the lexer had emitted all three since forever
+> and `ExprIntLit` had carried an `IntBase` field to receive them, but no parser rule
+> consumed one, so `0xFF` was `unexpected expression token` in the selfhost while the
+> bootstrap grammar had `Atom -> hex_lit` all along. `AstBuilder` also hardcoded
+> `IntBase.decimal`; it now derives the base from the text.
+>
+> **KNOWN LIMIT, deliberately not fixed here:** the suffix sets the LITERAL's type, not the
+> variable's. `var b = 0xFF_u` emits `const b: i64 = @as(u64, 0xFF)`, which is fine while
+> the value fits in i64 and overflows above it. For a constant like
+> `0x9E3779B97F4A7C15`, annotate: `var golden: uint = 0x9E3779B97F4A7C15`. Making
+> inference honour the suffix means teaching the TypeChecker to read it, which is a
+> separate change; see NEXT_STEPS.
+`0xFF_32` means "255 as a 32-bit int" in Zebra. The bootstrap emits the token VERBATIM,
+and Zig reads `_` as a digit separator — so the program gets `0xFF32` = **65330**, not
+255. Off by a factor of 256, no error, no warning.
+
+```zebra
+def main()
+    var c = 0xFF_32
+    print(c)          # prints 65330; should be 255
+```
+
+Emitted Zig, and it compiles cleanly:
+
+```zig
+const c = 0xFF_32;    // Zig: 0xFF32 == 65330
+```
+
+**This is the BUG-226 class — valid Zig computing the wrong number — so it is invisible to
+`compile_check`, `full_sweep` and `divergence`, all of which only ask whether the emit
+compiles.** `output_sweep` would catch it, but no corpus file uses a hex literal, which is
+also why `divergence` never reported the selfhost's total lack of hex support.
+
+The sibling form fails LOUDLY instead, which is the lesser problem:
+
+```
+error: invalid digit 'u' for hex base    <-  0xFF_u
+```
+
+**The fix has a precedent in this repo.** Float suffix literals (`1.5_f32`, `3.0f64`)
+already emit `@as(fNN, val)`. Hex should do the same: `0xFF_u` -> `@as(u64, 0xFF)`,
+`0xFF_32` -> `@as(i32, 0xFF)`. Plain `0xFF` needs no wrapper — Zig understands it.
+
+**Control when fixing:** a RUN fixture, not a compile check. `0xFF_32` must print 255.
+A compile-only gate passes today with the wrong value.
+
+---
+
+### BUG-304: `x <<= <runtime>` emits invalid Zig — CLOSED 2026-08-22
+
+> **CLOSED 2026-08-22 — lowered to `x = _zbr_shl(x, n)` in BOTH compilers.**
+>
+> Mirrors how `//=` already emits `x = @divTrunc(x, y)` and `**=` emits `std.math.pow`.
+>
+> **THE FIXTURE'S SHIFT AMOUNTS ALL COME FROM A FUNCTION CALL, and that is the whole
+> point.** Measured against the mutated compiler: `x <<= 2` prints **12 — correct** — while
+> `x <<= amt()` fails with `expected type 'u6', found 'i64'`. Zig const-folds a literal
+> amount, and a comptime value coerces to `u6`. A fixture written with `<<= 2` would have
+> passed against the broken compiler and proved nothing: a cooperative attacker.
+>
+> That is also how the bug nearly escaped. The first probe used a literal and came back
+> green, which is the probe-direction rule with a receipt — **probe a success and you
+> underestimate the damage.**
+>
+> Pinned by `test/bug304_305_compound_hex_test.zbr` (`smoke_run`), watched failing at the
+> `h <<= amt()` leg with the fix mutated out, and restored.
+The bootstrap emits a bare `x <<= n;`. Zig requires a shift amount to coerce to
+`Log2Int(T)` — `u6` for a 64-bit operand — so this is:
+
+```
+error: expected type 'u6', found 'i64'
+```
+
+Same defect the binary `<<` had (fixed 2026-08-22 via `_zbr_shl`/`_zbr_shr`); the compound
+form goes through a different emit path and was not covered.
+
+**IT LOOKS FINE WITH A LITERAL SHIFT AMOUNT, which is how it was nearly missed.**
+`x <<= 2` compiles, because Zig const-folds the 2 and a comptime value coerces to `u6`.
+Only a genuinely runtime amount reproduces it:
+
+```zebra
+def shiftBy(): int
+    return 2
+
+def main()
+    var x: int = 12
+    x <<= shiftBy()      # error: expected type 'u6', found 'i64'
+    print(x)
+```
+
+That is the probe-direction rule with receipts: **probe a success and you underestimate
+the damage.** The first probe used a literal and came back green.
+
+**Fix:** lower to `x = _zbr_shl(x, n)`, mirroring how `//=` already emits
+`x = @divTrunc(x, n)` and `**=` emits `x = std.math.pow(...)`.
+
+**Control when fixing:** the shift amount must come from a function call, or the fixture
+proves nothing.
+
+---
+
 ### BUG-302: heavy gates fail files that pass in isolation — SEVEN occurrences, five gates; MEASURED at 2 of 3 `full_sweep` runs, so "low rate" is wrong — CLOSED 2026-08-22
 
 > **CLOSED 2026-08-22 — zig could not read ITS OWN STDLIB, and three gates called that
