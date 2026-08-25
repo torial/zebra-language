@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# pins: BUG-300 the three failure-shape legs below ARE the regression test -- no
+# test/*.zbr can express it, because what is asserted is what the compiler leaves
+# behind in TMPDIR after it exits, not anything about the program it compiled.
 # runtime_module_check.sh — end-to-end gate for runtime-module emission (#1),
 # which has been the DEFAULT since 2026-07-28 (`--no-runtime-module` opts out).
 #
@@ -247,6 +250,41 @@ if [ -n "$wintmp" ]; then
         pass "a successful run leaves no scratch build in the temp dir"
     else
         fail "a successful run left $left scratch file(s) in $tdir"
+    fi
+
+    # BUG-300, 2026-08-23. THE SUCCESS PATH WAS THE ONLY ONE CHECKED, and it was the one
+    # that already worked. Three separate leaks lived in the paths below:
+    #   - the .pdb sibling had NO delete call at all (435 files / 1.4 GB measured)
+    #   - a FAILING run kept its 20 MB binary by policy
+    #   - the COMPILE-FAILURE exit had no cleanup whatever, so the most ordinary failure
+    #     a user can hit orphaned a full binary
+    # A gate that only exercises success cannot see any of them.
+    #
+    # THE POLICY BEING PINNED: the emitted .zig SURVIVES a failure (it is the diagnostic
+    # artifact); executables and .pdb NEVER survive (`zig build-exe <the .zig>` rebuilds
+    # them). Each leg below asserts BOTH halves -- a fix that deleted everything would
+    # pass a "no binary" check while destroying the evidence.
+    for shape in compile runtime; do
+        if [ "$shape" = compile ]; then
+            printf 'def main()\n    var x = 1\n    x.nosuch()\n' > "$hw/zzfail.zbr"
+        else
+            printf 'def main()\n    print("x")\n    sys.exit(3)\n' > "$hw/zzfail.zbr"
+        fi
+        rm -f "$tdir"/zzfail.zig "$tdir"/zzfail.zig.*.exe "$tdir"/zzfail.zig.*.pdb 2>/dev/null
+        "$ZEBRA" "$hw/zzfail.zbr" >/dev/null 2>&1
+        bins=$(ls "$tdir"/zzfail.zig.*.exe "$tdir"/zzfail.zig.*.pdb 2>/dev/null | wc -l)
+        src=$(ls "$tdir"/zzfail.zig 2>/dev/null | wc -l)
+        if [ "$bins" -ne 0 ]; then
+            fail "a $shape-failure run left $bins binary/pdb file(s) in $tdir"
+        elif [ "$src" -ne 1 ]; then
+            fail "a $shape-failure run did NOT keep the emitted .zig — the evidence is gone"
+        else
+            pass "a $shape-failure run keeps the .zig and no binary"
+        fi
+        rm -f "$tdir"/zzfail.zig "$tdir"/zzfail.zig.*.exe "$tdir"/zzfail.zig.*.pdb "$hw/zzfail.zbr" 2>/dev/null
+    done
+    if false; then
+        :
     fi
 
     # ...and the OPPOSITE direction, which is what stops this becoming a fix that

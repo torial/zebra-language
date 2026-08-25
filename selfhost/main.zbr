@@ -2373,12 +2373,24 @@ def compileGuiProject(zig_path: str, mode_run: bool, backend: str): int
 # exactly how the first version of this failed, silently, inside a regen whose stderr
 # goes to /dev/null.
 def deleteScratch(path: str)
+    # Early out: a `.pdb` only exists on the LLVM path, so most calls have nothing to do
+    # and must not pay a syscall for it.
+    if not File.exists(path)
+        return
+    # EXPONENTIAL, not flat. The old bound was 12 x 25 ms = 300 ms, which held in
+    # isolation and did NOT hold under sustained load -- measured 2026-08-23, 9 executables
+    # leaked during a single --daily. Windows releases the image of a just-executed process
+    # asynchronously, and under load that lag exceeds 300 ms. 5-10-20-...-640 reaches ~1.3 s
+    # in ten tries while still costing NOTHING on the common path, where the first delete
+    # works and the loop exits before it ever sleeps.
     var tries: int = 0
-    while tries < 12
+    var wait: int = 5
+    while tries < 10
         File.delete(path)
         if not File.exists(path)
             return
-        sys.sleep(25)
+        sys.sleep(wait)
+        wait = wait * 2
         tries = tries + 1
 
 def main()
@@ -2921,8 +2933,11 @@ def main()
                 rargv.add(fast_exe)
                 var rc: int = sys.exec_inherit(rargv)
                 # BUG-244: remove the scratch build ONLY on a clean exit. If the program
-                # failed, the emitted .zig and the binary ARE the debugging evidence and
-                # deleting them would take away the one thing worth looking at.
+                # failed, the emitted .zig IS the debugging evidence and deleting it would
+                # take away the one thing worth looking at. The BINARY is not evidence --
+                # `zig build-exe <the .zig>` reproduces it in one command -- so it goes
+                # either way. (Changed 2026-08-23; the old policy kept the binary too and
+                # cost ~20 MB per failing run.)
                 # `--keep-temp` opts out entirely.
                 # ...and ONLY when the output is scratch. `--output-dir` means "put the
                 # output HERE", so deleting it there destroys what the user asked for.
@@ -2931,9 +2946,19 @@ def main()
                 # stripped contracts make the program EXIT 0, which is exactly the
                 # branch that deletes. The passing legs were passing only because their
                 # contracts fired and the non-zero exit kept the files.
-                if rc == 0 and not keep_temp and output_dir == ""
+                # NOT gated on rc: see the note above. The executable goes either way.
+                if not keep_temp and output_dir == ""
                     deleteScratch(fast_exe)                 # BUG-300
-                    deleteScratch(zig_path)
+                    # The DEBUG-INFO sibling. Measured 2026-08-23: 435 `.pdb` files
+                    # totalling 1.4 GB in %TEMP% -- a bigger leak than the executables
+                    # BUG-300 is named after, at a 100% rate rather than a transient one,
+                    # because no call site existed. The fast path does not normally emit
+                    # one (-fno-llvm), so this is a no-op there and costs one File.exists.
+                    deleteScratch(zig_path + ".fast.pdb")
+                    # The EMITTED SOURCE is the diagnostic artifact, so it -- and only it --
+                    # survives a failure.
+                    if rc == 0
+                        deleteScratch(zig_path)
                 if rc != 0
                     sys.exit(1)
                 sys.exit(0)
@@ -3020,6 +3045,15 @@ def main()
             var remapped: str = remapZigErrors(r2.stderr, zig_path)
             sys.err(remapped)
         if r2.exit_code != 0
+            # The compile FAILED, so the .zig stays for inspection -- but both candidate
+            # binaries go. The fast path may already have produced a .fast.exe before
+            # falling back here, and nothing used to remove it: a plain compile error
+            # leaked ~20 MB, on the most ordinary failure a user can hit.
+            if not keep_temp and output_dir == ""
+                deleteScratch(zig_path + ".fast.exe")
+                deleteScratch(zig_path + ".fast.pdb")
+                deleteScratch(llvm_exe)
+                deleteScratch(zig_path + ".run.pdb")
             sys.exit(1)
         if not mode_c
             # Run the freshly built exe with inherited stdio — output streams live
@@ -3030,9 +3064,13 @@ def main()
             # BUG-244, same rule as the fast path above: clean on success, keep on
             # failure. This branch is taken by any program with a C dep, sqlite, an
             # extern, or --release, so leaving it out would fix only half the leak.
-            if rc2 == 0 and not keep_temp and output_dir == ""
+            if not keep_temp and output_dir == ""
                 deleteScratch(llvm_exe)                     # BUG-300
-                deleteScratch(zig_path)
+                # THIS is the one that was leaking 1.4 GB: the LLVM path emits a .pdb
+                # beside every executable and nothing ever removed it.
+                deleteScratch(zig_path + ".run.pdb")
+                if rc2 == 0
+                    deleteScratch(zig_path)
             if rc2 != 0
                 sys.exit(1)
         sys.exit(0)

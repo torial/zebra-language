@@ -6,6 +6,112 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-300: BUG-244 HAS REGRESSED — every `zebra <file>.zbr` run leaks a ~20 MB executable into TMPDIR again — CLOSED 2026-08-23
+
+> **CLOSED 2026-08-23 — it was FOUR leaks, and the one this ticket is named after was the
+> smallest.** Measured on a clean `%TEMP%`, before and after, using a full smoke run
+> (377/377) as the load:
+>
+> | leak | before | cause |
+> |---|---|---|
+> | `.pdb` sibling | **435 files / 1.4 GB** | **no delete call ever existed** |
+> | binary kept on a FAILING run | 20 MB x every failure | deliberate policy (see below) |
+> | binary orphaned at the COMPILE-FAILURE exit | 20 MB x every compile error | that exit cleaned up **nothing** |
+> | `.exe` transient under load | ~2 per smoke, 9 per `--daily` | the filed bug |
+>
+> **After: 0 executables, 0 `.pdb`, from a full smoke run.** Including the transients.
+>
+> **THE TICKET'S OWN LEAD WAS RIGHT AND IS NOW CONFIRMED.** It said this and BUG-302 were
+> "plausibly one phenomenon: file operations against `%TEMP%` failing at a low rate under
+> sustained load". BUG-302 was closed the day before as exactly that — zig failing to read
+> its own stdlib with `Unexpected`, an unmapped Windows OS error, under concurrent builds.
+> Same class, different syscall. The fix here is the same shape too: the flat 12 x 25 ms
+> retry became exponential (5-10-20-...-640, ~1.3 s over ten tries), which absorbed the
+> residual 2-per-smoke that 300 ms did not. It still costs NOTHING on the common path —
+> the first delete works and the loop exits before it ever sleeps.
+>
+> **THE `.pdb` HALF WAS NEVER A RACE.** 435 files at a 100% rate, because `deleteScratch`
+> was wired for `fast_exe`, `zig_path` and `llvm_exe` and never for the debug-info sibling
+> the LLVM path emits beside every executable. Bigger than the leak the ticket is named
+> after, and nobody had measured it.
+>
+> **THE COMPILE-FAILURE EXIT is the one a user meets most.** `if r2.exit_code != 0 ->
+> sys.exit(1)` had no cleanup at all, so the most ordinary failure there is — a plain
+> compile error — orphaned a full 20 MB binary.
+>
+> **A DELIBERATE DECISION WAS CHANGED, and it is flagged rather than buried.** The old
+> comment read *"the emitted .zig and the binary ARE the debugging evidence"* and kept
+> both. The policy is now: **the `.zig` survives a failure; executables and `.pdb` never
+> do.** Reasons: `zig build-exe <the .zig>` reproduces the binary in one command, so
+> keeping it buys a rebuild and costs 20 MB every time; and the old policy became
+> incoherent once the `.pdb` was removed, since a binary without debug info is poor
+> evidence anyway. **Sean's call to reverse if he wants post-mortem binaries.**
+>
+> **THE GATE ONLY EVER EXERCISED SUCCESS**, which is why three of the four survived it.
+> `runtime_module_check` now covers the compile-failure and runtime-failure shapes, and
+> each leg asserts BOTH halves — no binary AND the `.zig` still present — so a fix that
+> simply deleted everything would fail the evidence half rather than pass the leak half.
+>
+> Falsified independently: reverting the compile-failure cleanup reddens only the compile
+> leg; reverting the failure policy reddens only the runtime leg.
+`tools/runtime_module_check.sh` is RED on the committed tree:
+
+```
+FAIL  a successful run left 1 scratch file(s) in C:\Users\Sean\AppData\Local\Temp
+```
+
+**This is the exact bug `60fa160` closed on 2026-08-15** ("BUG-244: stop leaking a ~20 MB
+executable into TMPDIR on every run"). The gate that pins it is in the QUICK tier and is
+now failing, which is the system working — but the fix itself has stopped taking effect.
+
+**What survives a clean run:** `hw.zig.fast.exe` (19,988,480 bytes) and `hw.zig.run.pdb`.
+**What does not:** `hw.zig`. Both deletes sit in the SAME conditional
+(`if rc == 0 and not keep_temp and output_dir == ""` — `selfhost/main.zbr`, the BUG-244
+block), so the block RAN and `File.delete(zig_path)` succeeded while
+`File.delete(fast_exe)` silently did not. `File.delete` cannot report failure, which is
+why this is invisible without the gate.
+
+**Measured, so the next person does not repeat it:**
+
+| probe | result |
+|---|---|
+| 5 consecutive runs | leaked 5/5 — **deterministic, not a race** |
+| the same 5 runs against a compiler built from **HEAD** with all local changes reverted | leaked 3/3 — **not caused by any uncommitted work** |
+| `rm` from the shell immediately after the run | **succeeds** — the handle IS released by then |
+| the same gate in the two `--daily` runs earlier the SAME DAY | **PASSED** |
+
+**The last two rows are the whole puzzle and neither is explained.** The file is not
+locked a moment later, so the compiler's `File.delete` is running while Windows still
+holds the just-executed image — the classic delete-a-running-exe shape. But that would be
+a race, and it reproduces 5/5; and the identical committed code passed twice within hours.
+Something in the environment moved, and nothing here establishes what.
+
+**UPDATE 2026-08-21 — THE LEAK IS LOAD-CONDITIONAL, and that is new information.** After
+a `--daily` run, **47 scratch executables totalling 747 MB** were sitting in `%TEMP%`,
+including several written during the run itself. An isolated repeat of the same test
+immediately afterwards leaked **nothing** (3/3 clean, and again after the retry
+workaround landed). So the bounded-retry workaround holds in isolation and does not hold
+under sustained load.
+
+That is the same conditionality as **BUG-302** (heavy gates failing an arbitrary file and
+never reproducing), and the two are plausibly one phenomenon: file operations against
+`%TEMP%` failing at a low rate under sustained load — a delete here, a build there. See
+BUG-302 for the four mechanisms already eliminated by measurement (shared workdir, a stale
+`.pdb`, disk pressure, and Defender real-time scanning, which is switched OFF on this
+machine).
+
+**Fix direction (untested):** deleting an executable immediately after `sys.exec_inherit`
+returns is not reliable on Windows. A short retry with backoff, or deferring the unlink,
+would make the existing BUG-244 logic robust instead of timing-dependent — and would hold
+whether or not the environmental trigger is ever identified.
+
+**Control when fixing:** `bash tools/runtime_module_check.sh` must pass, and the fix must
+be watched going RED with the retry removed. Note the `.pdb` alongside: it is named for
+the LLVM path (`.run.pdb`) although only the fast path ran, which nothing here explains
+either and may be a thread to pull.
+
+---
+
 ### BUG-305: a hex literal's SIZE SUFFIX silently emits a DIFFERENT NUMBER — CLOSED 2026-08-22
 
 > **CLOSED 2026-08-22 — hex suffixes translate to `@as(T, value)` in BOTH compilers.**
