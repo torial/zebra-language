@@ -1170,7 +1170,51 @@ already implements, and which the list-literal check uses) instead of `Type.eql`
 urgency — the bootstrap is the regen authority, not the shipping compiler, so this affects
 `--zig-backend` users and the GUI paths rather than ordinary builds.
 
-### BUG-253: the selfhost TypeChecker has roughly HALF the bootstrap's diagnostics — OPEN (umbrella)
+### BUG-253: selfhost TypeChecker diagnostic parity — 35 of 37 as of 2026-08-23 (was 19); ONE confirmed gap left — OPEN (umbrella)
+
+> **RE-MEASURED 2026-08-23. THE HEADLINE BELOW IS STALE AND WAS MISLEADING BY A LOT.**
+>
+> | | 2026-08-04 | 2026-08-23 |
+> |---|---|---|
+> | bootstrap diagnostics | 37 | 37 |
+> | selfhost | 19 | **35** |
+> | no counterpart found | 26 | **7** |
+>
+> "Roughly HALF" is now 95%. Both gaps this ticket CONFIRMED BY EXPERIMENT are closed —
+> `var b = a - 1` where `a: str` reports *"arithmetic '-' requires numeric operands, got
+> 'str'"*, and a bare `return` from `def f(): int` reports *"return without value in
+> non-void method"* — both in Zebra's vocabulary with real coordinates. Nobody updated the
+> ticket as the work landed, so it has been overstating the distance for weeks. **A stale
+> umbrella is not free: it makes the remaining work look like a campaign when it is one
+> diagnostic.**
+>
+> **TRIAGE OF THE REMAINING 7, by experiment rather than by the matcher:**
+>
+> | candidate | verdict |
+> |---|---|
+> | `raise details must implement 'toString as str'` (2 forms) | **GENUINE GAP** — bootstrap names it exactly, selfhost accepts silently |
+> | `arithmetic operands must have the same type` | **FALSE POSITIVE** — this is BUG-254; the bootstrap is OVER-STRICT and the selfhost is right |
+> | `type alias constraint must be 'bool'` | UNTRIAGED — my probe was malformed (both compilers rejected it on syntax) |
+> | `type argument does not implement` | UNTRIAGED — same, malformed probe |
+> | `SIMD operands must have the same type` | untested |
+> | `cannot determine type for value assigned to` | untested |
+>
+> **THE CONFIRMED GAP IS BLOCKED ON STRUCTURE, not on effort — recorded so the next
+> attempt does not rediscover it.** The check needs to ask "does this named type have a
+> `toString`?". The selfhost has exactly that oracle — `TypeChecker.hasMethod` — but it is
+> a CLASS METHOD reading the `method_ctxs` field, while `raise` is checked in `walkStmt`,
+> a TOP-LEVEL `def`. A `.hasMethod(...)` call there is
+> `error: 'this' used outside a class/struct method`, which is the same trap
+> `deleteScratch` documents in `selfhost/main.zbr`. There is no module-level state in this
+> file to route around it, so landing this means threading an oracle through `InferCtx` or
+> moving the raise check into a method-context pass. Attempted 2026-08-23 and reverted
+> rather than half-landed; the bootstrap refused the file and left the generated `.zig`
+> untouched, so nothing was left inconsistent.
+>
+> **`hasMethod` currently has NO CALLERS**, which is worth knowing before relying on it:
+> whether `method_ctxs` is populated by the time the raise walk runs is unverified. Any
+> implementation needs a two-sided probe — a class WITH `toString` must still compile, one
+> WITHOUT must be refused — or a silently-empty table would look like a working check.
 
 **Found 2026-08-04**, by asking the question BUG-252 raised: *"which other bootstrap
 diagnostics never reached the selfhost?"* Three had already been found by accident
