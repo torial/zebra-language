@@ -8,6 +8,9 @@ Open bugs live in `BUGS.md`.
 
 ### BUG-301: `${expr:c}` works for a literal and fails for a RUNTIME int — no way to build a byte from a computed value — CLOSED 2026-08-23
 
+> **SEMANTICS CONFIRMED BY SEAN, 2026-08-25:** truncate. The ticket left the call to him;
+> this is that call, so `${n:c}` wrapping rather than trapping is settled, not provisional.
+>
 > **CLOSED 2026-08-23 — `_zbr_byte` in the preamble, wired in BOTH compilers.**
 >
 > **Semantics: TRUNCATING, per this ticket's own recommendation — flagged for Sean, since
@@ -179,6 +182,10 @@ green with leg 2 actually running (rc=3, non-tty refusal). It is registered in t
 
 ### BUG-300: BUG-244 HAS REGRESSED — every `zebra <file>.zbr` run leaks a ~20 MB executable into TMPDIR again — CLOSED 2026-08-23
 
+> **POLICY CONFIRMED BY SEAN, 2026-08-25:** keep the emitted `.zig` (it helps with
+> diagnostics), do not keep the binaries. The change of decision recorded below stands;
+> recorded here so it is not re-litigated from the old comment.
+>
 > **CLOSED 2026-08-23 — it was FOUR leaks, and the one this ticket is named after was the
 > smallest.** Measured on a clean `%TEMP%`, before and after, using a full smoke run
 > (377/377) as the load:
