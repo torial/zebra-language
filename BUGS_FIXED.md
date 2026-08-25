@@ -6,6 +6,90 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-298: `gui_scaffold_check` reports "startup path clean" when the scaffold build produced NO app — leg 2 skips instead of failing — CLOSED 2026-08-23
+
+> **CLOSED 2026-08-23 — the root defect was not the skip, it was that `build_rc` was
+> captured and NEVER USED AS A GATE CONDITION.**
+>
+> `build_rc=$?` sat one line under the build and was read only inside a message. So a dead
+> build reached a green summary in three steps: leg 1 reads the scaffolded `main.zig`, and
+> a PREVIOUS run leaves one on disk; leg 2 skips for want of an `app.exe`; the summary
+> prints "startup path clean". Every step is individually reasonable and the composition
+> is a lie.
+>
+> **Two fixes.** A failed build is now fatal, checked BEFORE anything reads an artifact —
+> the entire failure mode is a stale artifact making a dead run look alive, so the order
+> matters. And a skipped runtime leg no longer prints "clean"; it prints
+> `leg 1 clean; RUNTIME leg did NOT run`. Half a GUI gate reporting as a whole one takes
+> the repo's only automated GUI coverage back to zero without anyone noticing, which is
+> precisely what happened on 2026-08-19.
+>
+> **THE FIRST VERSION OF THIS FIX WAS WRONG, AND ONLY THE NEGATIVE CONTROL CAUGHT IT.**
+> `if [ "$build_rc" -ne 0 ]; then fail` looks obviously right and turns the gate
+> PERMANENTLY RED: `--gui-backend=tui` scaffolds, builds **and runs** the app, and the
+> documented healthy outcome is the app refusing a non-tty console with rc=3, which
+> `zig build run` reports as its own exit 1. So `build_rc` is non-zero on the HEALTHY
+> path.
+>
+> That is the same error class as the bug being fixed — one signal, two causes — and the
+> ATTACKER PASSED CLEANLY against it. A broken build failed exactly as intended; only
+> running the healthy example exposed that everything else failed too. **An attacker alone
+> cannot show that a guard is too broad.**
+>
+> The real discriminator is whether the app RAN, in the build tool's own vocabulary:
+> `process exited with error code` is present on the healthy run and absent on a genuine
+> compile failure. Verified against both captured logs (1 vs 0) before being relied on,
+> rather than assumed.
+>
+> **Both directions now hold**: healthy example -> `exit 0, startup path clean`; an example
+> that cannot compile -> `exit 1, build failed`, with the build log attached.
+Leg 2 of `tools/gui_scaffold_check.sh` runs the built app and classifies the startup
+fault. When it cannot find an `app.exe` it prints
+
+```
+  --    leg 2: skipped (no built app.exe — leg 1 still gates the regression)
+```
+
+and the gate still exits 0 with `gui scaffold check: startup path clean`. **But "no
+app.exe" has two very different causes and the gate cannot tell them apart:** the harness
+genuinely not building one, and the build having FAILED. In the second case the gate
+reports clean about a scaffold that does not exist.
+
+**Observed, not hypothesised.** On 2026-08-19 the check reported `startup path clean`
+while `zebra --gui-backend=tui examples/counter.zbr` was exiting 1 on
+
+```
+error: unable to read results of configure phase from
+'…\Temp\counter_gui_tui\.zig-cache\tmp\16ce6e37c914cf04': FileNotFound
+```
+
+— a corrupted scratch cache in the temp scaffold root. Moving that directory aside made
+the build work and produce `app.exe`, after which the app ran and refused a non-tty
+console (rc=3), which is the documented healthy outcome. So the underlying tui path was
+fine; what was broken was the gate's ability to say that it had not checked it.
+
+**Leg 1 kept working throughout, and that is what made it look green** — it reads the
+scaffolded `main.zig`, which a previous run had left on disk. A gate asserting against a
+stale artifact from an earlier date is the shape this repo keeps re-finding.
+
+**Why this matters more than one skipped leg.** `gui_scaffold_check` is the ONLY automated
+GUI coverage in the repo — four GUI crashes have sat under fully green gates and all four
+were at startup. Half of it silently not running returns that number to "no gate touches a
+GUI".
+
+**Suggested fix.** Distinguish the two causes: if the build exited non-zero for a reason
+OTHER than the app's own non-tty refusal, that is a FAILURE, not a skip. The refusal is
+already identified by leg 2's own classifier, so the information exists — it is just
+consulted after the point where the skip has already been taken. A gate that cannot run
+its runtime leg should say `INCONCLUSIVE` and exit non-zero, not `clean`.
+
+**Control when fixing.** Corrupt or remove the scaffold's `.zig-cache` and confirm the
+gate goes RED rather than printing `startup path clean`; then restore and confirm it goes
+green with leg 2 actually running (rc=3, non-tty refusal). It is registered in the
+`--daily` tier, so both states are observable there.
+
+---
+
 ### BUG-300: BUG-244 HAS REGRESSED — every `zebra <file>.zbr` run leaks a ~20 MB executable into TMPDIR again — CLOSED 2026-08-23
 
 > **CLOSED 2026-08-23 — it was FOUR leaks, and the one this ticket is named after was the

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# pins: BUG-298 the build-failure guard and the "did the RUNTIME leg run" summary
+# below ARE the regression test -- what is asserted is this gate not claiming to
+# have checked something it did not, which no test/*.zbr can express.
 # gui_scaffold_check.sh — the first gate that looks at a GUI path at all.
 #
 # WHY THIS EXISTS
@@ -54,6 +57,28 @@ BUILD_LOG=$(mktemp); trap 'rm -f "$BUILD_LOG"' EXIT
 timeout 600 "$ZEBRA" --gui-backend=tui "$EXAMPLE" > "$BUILD_LOG" 2>&1
 build_rc=$?
 
+# BUG-298. A FAILED BUILD IS FATAL, full stop. This was captured and then used only inside
+# a message, so a build that failed could still reach a green summary: leg 1 reads the
+# scaffolded main.zig, and a PREVIOUS run leaves one on disk, so leg 1 kept passing while
+# leg 2 "skipped (no built app.exe)" -- and the gate printed "startup path clean" about a
+# scaffold that did not exist. Observed 2026-08-19 with a corrupted .zig-cache in the temp
+# scaffold root; the tui path itself was fine, and what was broken was the gate's ability
+# to say it had not checked it.
+#
+# Checked BEFORE anything reads an artifact, because the whole failure mode is a stale
+# artifact making a dead run look alive.
+# A NON-ZERO rc DOES NOT MEAN THE BUILD FAILED, and assuming it does breaks the gate on
+# the HEALTHY path — caught by a negative control before it shipped. `--gui-backend=tui`
+# scaffolds, builds AND RUNS the app, and the documented healthy outcome is the app
+# refusing a non-tty console with rc=3, which `zig build run` reports as its own exit 1.
+# So the discriminator is whether the app RAN, in the build tool own vocabulary. Verified
+# against both captured logs: present on the healthy run, absent on a real compile failure.
+if [ "$build_rc" -ne 0 ] && ! grep -q "process exited with error code" "$BUILD_LOG"; then
+    bad "the scaffold BUILD FAILED (rc=$build_rc) — nothing below was checked:"
+    tail -12 "$BUILD_LOG" | sed 's/^/        /'
+    echo; printf '\033[31mgui scaffold check: build failed\033[0m\n'; exit 1
+fi
+
 stem="$(basename "$EXAMPLE" .zbr)"
 # The scaffold does NOT land in the repo — the compiler writes it to its temp root (on
 # this machine C:\Presolved\tmp\<stem>_gui_tui). Searching only the repo found nothing and
@@ -104,6 +129,7 @@ app=""
 [ -z "$app" ] && app=$(find . -maxdepth 4 -name 'app.exe' 2>/dev/null | head -1)
 if [ -z "$app" ] || [ ! -x "$app" ]; then
     note "leg 2: skipped (no built app.exe — leg 1 still gates the regression)"
+    LEG2_RAN=0
 else
     out=$(timeout 15 "$app" < /dev/null 2>&1); rc=$?
     # CLASSIFY BY THE FAULT, NOT BY THE EXIT CODE, and not by the word "panic".
@@ -123,6 +149,7 @@ else
     elif [ "$rc" -eq 0 ]; then
         pass "app started and exited cleanly (rc=0)"
     else
+        LEG2_RAN=0
         note "leg 2: inconclusive (rc=$rc, no known marker) — leg 1 still gates:"
         printf '%s' "$out" | head -3 | sed 's/^/        /'
     fi
@@ -135,5 +162,13 @@ echo
 
 if [ "$FAIL" -gt 0 ]; then
     printf '\033[31mgui scaffold check: %d failure(s)\033[0m\n' "$FAIL"; exit 1
+fi
+# BUG-298: SAY WHICH LEGS ACTUALLY RAN. "startup path clean" is a claim about the RUNTIME
+# leg; printing it when that leg never executed is the exact false-green this gate was
+# caught giving. Half a GUI gate reporting as a whole one takes the repo's only automated
+# GUI coverage back to zero without anyone noticing.
+if [ "${LEG2_RAN:-1}" -eq 0 ]; then
+    printf '\033[33mgui scaffold check: leg 1 clean; RUNTIME leg did NOT run (see above)\033[0m\n'
+    exit 0
 fi
 printf '\033[32mgui scaffold check: startup path clean\033[0m\n'
