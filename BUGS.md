@@ -15,53 +15,6 @@
 
 ---
 
-### BUG-301: `${expr:c}` works for a literal and fails for a RUNTIME int — no way to build a byte from a computed value — OPEN (found 2026-08-20)
-
-```zebra
-var b = "${206:c}"              # fine -- emits one byte, 0xCE
-var n = hi * 16 + lo
-var c = "${n:c}"                # error: expected type 'u8', found 'i64'
-```
-
-The `:c` spec on an `int` emits Zig's `{c}` (`printAsciiChar`, which takes a **u8**), and
-codegen passes the Zebra `int` (`i64`) through unnarrowed. A literal coerces at comptime;
-a runtime value does not, and the user sees a raw Zig type error against generated code.
-
-**WHY IT MATTERS BEYOND THE ERROR MESSAGE.** `${n:c}` is the ONLY way to put an arbitrary
-byte into a string, and byte assembly is what UTF-8-correct decoding needs — `%CE%B8` is
-two bytes that together form one codepoint, so a percent-decoder must build bytes, not
-codepoints. With this broken, a decoder can only handle values it can name as literals: in
-practice a table over printable ASCII, leaving every `%XX` ≥ 128 undecodable. That is
-exactly where the Graze decoder stopped (correspondence Entry 24), and it is why that
-entry reads as "no int→char in reach" — the capability is there and unreachable from a
-computed value.
-
-**Where:** `bitCastType` (`selfhost/CodeGen.zbr`, and the bootstrap's twin) narrows the
-argument for `x`/`X`/`o`/`b` and has no case for `c`. The existing cast emits
-`@as(T, @bitCast(x))`, which is **invalid** i64→u8 — Zig requires equal bit widths — so
-this needs a different cast kind, not just another entry in that table.
-
-**AND THAT CARRIES A SEMANTIC DECISION, which is why this is filed rather than fixed:**
-what should a runtime value outside 0..255 do?
-
-| option | behaviour | precedent |
-|---|---|---|
-| `@truncate` | always defined, silently wraps | Go `byte(n)`, Rust `as u8` |
-| `@intCast` | panics in Debug/ReleaseSafe — **UB in ReleaseFast**, which is what `zebra --release` ships | — |
-| front-end refusal | rejects a statically-known bad literal; still needs one of the above at runtime | Python `bytes([n])` raises |
-
-`@intCast` alone is the one to avoid: it puts undefined behaviour in the shipping
-configuration, which is the hazard `tools/lint_oom_unreachable.py` exists to keep out.
-Recommendation is `@truncate` plus a front-end refusal for a known-out-of-range literal —
-but the semantics are Sean's call.
-
-**Control when fixing:** a decoder that builds `θ` from `%CE%B8` with hex digits parsed at
-runtime must round-trip, and `${300:c}` must do whatever the decision says rather than
-whatever Zig happens to do. Note `:c` on a `char` value is a DIFFERENT path (it emits
-Zig's `{u}`, the codepoint form) and must keep working — see QUICKSTART's note.
-
----
-
 ### BUG-299: a value-typed STRUCT is not auto-boxed into a `^Struct?` field, though a UNION is — OPEN (found 2026-08-20)
 
 Assigning a struct VALUE to a `^T?` (nilable heap-indirection) field fails on BOTH

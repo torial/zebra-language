@@ -95,6 +95,24 @@ pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
 // a comptime_int operand becomes i64 and everything else keeps its own type.
 // Found by test/bitwise_semantics_test.zbr, which shifts literals; the golden-vector
 // fixture never would have, because all 24 of its operands are typed `uint` variables.
+// BUG-301. `${n:c}` renders one BYTE and Zig's {c} takes a u8, so a computed `int` has to
+// narrow. Neither builtin does it alone: @truncate REFUSES a signed source, and @bitCast
+// REFUSES a width change (i64 -> u8 is not a bitcast). Hence bitcast to the same-width
+// unsigned, then truncate.
+//
+// A HELPER RATHER THAN AN INLINE EMIT, because the inline form broke the LITERAL case that
+// already worked: `@bitCast` cannot take a comptime_int, so `"${206:c}"` became
+// `error: cannot @bitCast from 'comptime_int'`. The `@as(i64, x)` here coerces a literal
+// and passes a runtime i64 through unchanged, so both paths share one shape.
+//
+// TRUNCATING, NOT CHECKED: @intCast is undefined behaviour in ReleaseFast, which is what
+// `zebra --release` ships, and keeping UB out of the shipping configuration is what
+// tools/lint_oom_unreachable.py exists for. Truncation is always defined and matches Go's
+// `byte(n)` and Rust's `as u8`. 0x1CE renders as 0xCE; -50 renders as 206.
+pub inline fn _zbr_byte(x: anytype) u8 {
+    return @truncate(@as(u64, @bitCast(@as(i64, x))));
+}
+
 inline fn _zbr_shift_t(comptime T: type) type {
     return if (T == comptime_int) i64 else T;
 }

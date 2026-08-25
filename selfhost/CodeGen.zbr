@@ -166,11 +166,37 @@ def zigFmtSpec(spec: str, ex_type: Type_): str
         out = out + ":" + fill_s + align_s + width_s + prec_s
     return out
 
+# BUG-301. `:c` renders one BYTE, and Zig's {c} takes a u8. An int literal coerced at
+# comptime so `"${206:c}"` worked; a COMPUTED value did not, and the user got a raw Zig
+# type error against code they never wrote:
+#
+#     error: expected type 'u8', found 'i64'
+#
+# That made `${n:c}` -- the only way to put an arbitrary byte in a string -- reachable
+# only from literals, so a percent-decoder could handle printable ASCII and nothing else.
+# UTF-8 needs byte assembly (`%CE%B8` is two bytes forming one codepoint), which is
+# exactly where the Graze decoder stopped.
+#
+# The narrowing is TRUNCATING, not checked: @intCast is undefined behaviour in
+# ReleaseFast, which is what `zebra --release` ships, and keeping UB out of the shipping
+# configuration is what tools/lint_oom_unreachable.py exists for. Truncation is always
+# defined and matches Go's `byte(n)` and Rust's `as u8`. Out-of-range wraps: 0x1CE renders
+# as 0xCE, and -50 as 206.
 def bitCastType(spec: str, ex_type: Type_): str
     if spec.len == 0
         return ""
-    if not (spec.endsWith("x") or spec.endsWith("X") or spec.endsWith("o") or spec.endsWith("b"))
+    if not (spec.endsWith("x") or spec.endsWith("X") or spec.endsWith("o")
+            or spec.endsWith("b") or spec.endsWith("c"))
         return ""
+    # `:c` always narrows to a single byte, whatever the integer width.
+    if spec.endsWith("c")
+        branch ex_type
+            on Type_.int_
+                return "u8"
+            on Type_.int_n as _
+                return "u8"
+            else
+                return ""
     branch ex_type
         on Type_.int_
             return "u64"
@@ -11430,6 +11456,11 @@ struct Generator
         # First pass: build format string and collect cast types for each expr slot
         var fmt_str: str = ""
         var cast_types: List(str) = List(str)()
+        # BUG-301: `:c` needs @truncate, the others @bitCast. Tracked explicitly rather
+        # than encoded into the type string -- @bitCast REFUSES a width change (i64 -> u8
+        # is not a bitcast) and @truncate REFUSES a signed source, so the two shapes are
+        # not interchangeable and a stringly-typed flag would hide that.
+        var cast_trunc: List(bool) = List(bool)()
         var needs_tostring: List(bool) = List(bool)()
         var i: int = 0
         while i < si.parts.len
@@ -11453,6 +11484,7 @@ struct Generator
                         var zig_spec: str = zigFmtSpec(fmt_spec, ex_type)
                         fmt_str = fmt_str + "{" + zig_spec + "}"
                         cast_types.add(bitCastType(fmt_spec, ex_type))
+                        cast_trunc.add(fmt_spec.endsWith("c"))
                         needs_tostring.add(false)
                     else
                         # Implicit toString: named type with toString() method → {s}.
@@ -11474,6 +11506,7 @@ struct Generator
                             # → build timeout).  printFmtSpec falls back to `{any}`.
                             fmt_str = fmt_str + printFmtSpec(e)
                         cast_types.add("")
+                        cast_trunc.add(false)
                         needs_tostring.add(ts)
                 on StringPart.format as _
                     pass
@@ -11492,11 +11525,19 @@ struct Generator
                 var cast: str = cast_types.at(arg_idx)
                 var ts: bool = needs_tostring.at(arg_idx)
                 if cast != ""
-                    w.emit("@as(")
-                    w.emit(cast)
-                    w.emit(", @bitCast(")
-                    genExpr(e)
-                    w.emit("))")
+                    if cast_trunc.at(arg_idx)
+                        # BUG-301. One preamble helper rather than an inline cast: the
+                        # inline form broke the LITERAL case (@bitCast cannot take a
+                        # comptime_int), and _zbr_byte handles both shapes.
+                        w.emit("_zbr_byte(")
+                        genExpr(e)
+                        w.emit(")")
+                    else
+                        w.emit("@as(")
+                        w.emit(cast)
+                        w.emit(", @bitCast(")
+                        genExpr(e)
+                        w.emit("))")
                 else if ts
                     genExpr(e)
                     w.emit(".toString()")

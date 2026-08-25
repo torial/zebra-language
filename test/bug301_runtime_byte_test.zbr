@@ -1,0 +1,106 @@
+# BUG-301: `${expr:c}` must render a byte from a COMPUTED value, not only a literal.
+#
+# The control the ticket asks for: percent-decode `%CE%B8` into U+03B8 (θ) with the hex
+# digits parsed at RUNTIME. That is the case that matters -- `%CE%B8` is two bytes forming
+# ONE codepoint, so a decoder must assemble BYTES, not codepoints. With `:c` reachable only
+# from literals, a decoder could handle printable ASCII via a lookup table and nothing at
+# or above 128, which is exactly where the Graze decoder stopped.
+#
+# EVERY BYTE HERE COMES FROM ARITHMETIC. A fixture written with `${206:c}` would pass
+# against the broken compiler -- a literal coerces at comptime, which is the whole reason
+# this went unnoticed.
+
+def hexDigit(c: str): int
+    if c == "0"
+        return 0
+    if c == "1"
+        return 1
+    if c == "2"
+        return 2
+    if c == "3"
+        return 3
+    if c == "4"
+        return 4
+    if c == "5"
+        return 5
+    if c == "6"
+        return 6
+    if c == "7"
+        return 7
+    if c == "8"
+        return 8
+    if c == "9"
+        return 9
+    if c == "A"
+        return 10
+    if c == "B"
+        return 11
+    if c == "C"
+        return 12
+    if c == "D"
+        return 13
+    if c == "E"
+        return 14
+    if c == "F"
+        return 15
+    return -1
+
+# Decode a %XX-escaped string, byte by byte.
+def percentDecode(src: str): str
+    var out = ""
+    var i: int = 0
+    while i < src.len
+        const ch = src.substring(i, i + 1)
+        if ch == "%" and i + 2 < src.len
+            const hi = hexDigit(src.substring(i + 1, i + 2))
+            const lo = hexDigit(src.substring(i + 2, i + 3))
+            if hi >= 0 and lo >= 0
+                const b = hi * 16 + lo
+                out = out + "${b:c}"
+                i = i + 3
+            else
+                out = out + ch
+                i = i + 1
+        else
+            out = out + ch
+            i = i + 1
+    return out
+
+def main()
+    var fails: int = 0
+
+    # -- 1. THE TICKET'S CONTROL: two computed bytes forming one codepoint.
+    const theta = percentDecode("%CE%B8")
+    if theta <> "θ"
+        fails = fails + 1
+        print("FAIL percent-decode of %CE%B8")
+    # a 2-byte UTF-8 codepoint is 2 BYTES long, and `.len` counts bytes
+    if theta.len <> 2
+        fails = fails + 1
+        print("FAIL decoded byte length")
+
+    # -- 2. mixed ASCII and multi-byte, so the loop is exercised past one escape
+    if percentDecode("a%20b") <> "a b"
+        fails = fails + 1
+        print("FAIL percent-decode ASCII")
+
+    # -- 3. the LITERAL path must still work. The first fix emitted an inline
+    # `@bitCast`, which cannot take a comptime_int, and broke exactly this.
+    const lit = "${206:c}"
+    if lit.len <> 1
+        fails = fails + 1
+        print("FAIL literal :c")
+
+    # -- 4. TRUNCATING, not checked: out of range wraps rather than trapping, because
+    # @intCast would be undefined behaviour in ReleaseFast, which `--release` ships.
+    var over: int = 462           # 0x1CE -> 0xCE
+    var under: int = -50          # two's complement -> 206
+    if "${over:c}" <> "${under:c}"
+        fails = fails + 1
+        print("FAIL truncation is not consistent")
+    if "${over:c}".len <> 1
+        fails = fails + 1
+        print("FAIL out-of-range did not narrow to one byte")
+
+    if fails == 0
+        print("bug301: OK")

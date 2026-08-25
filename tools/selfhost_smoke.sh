@@ -1646,6 +1646,11 @@ smoke_run            test/bitwise_semantics_test.zbr "bitwise semantics: OK"
 # gate can see. Every shift leg takes its amount from a function call: Zig const-folds a
 # literal, so `x <<= 2` passes against the compiler BUG-304 describes.
 smoke_run  test/bug304_305_compound_hex_test.zbr "bug304/305: OK"
+
+# BUG-301. smoke_run, and every byte in it comes from ARITHMETIC: a fixture written with
+# `${206:c}` passes against the broken compiler, because a literal coerces at comptime.
+# That is exactly why this bug went unnoticed -- the literal path always worked.
+smoke_run     test/bug301_runtime_byte_test.zbr "bug301: OK"
 smoke_run_bootstrap test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made returned factory"
 
 echo ""

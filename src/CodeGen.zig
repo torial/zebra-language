@@ -16821,6 +16821,9 @@ const Generator = struct {
         // Zig prepends '+' for positive signed ints, which is wrong for hex dumps.
         var cast_types = std.ArrayList(?[]const u8).empty;
         defer cast_types.deinit(g.alloc);
+        // BUG-301: does this argument need @truncate (`:c`) rather than @bitCast?
+        var cast_trunc = std.ArrayList(bool).empty;
+        defer cast_trunc.deinit(g.alloc);
 
         // Per-arg flag: true when the expr has a named type with toString() —
         // emit `.toString()` call suffix and use {s} format.
@@ -16854,6 +16857,7 @@ const Generator = struct {
                         fmt_buf = faw.toArrayList();
                         try fmt_buf.append(g.alloc, '}');
                         try cast_types.append(g.alloc, castTypeForBitSpec(raw_spec, ex_type));
+                        try cast_trunc.append(g.alloc, raw_spec.len > 0 and raw_spec[raw_spec.len - 1] == 'c');
                         try needs_tostring.append(g.alloc, false);
                         i += 1; // skip the consumed format part
                     } else {
@@ -16871,6 +16875,7 @@ const Generator = struct {
                             try fmt_buf.appendSlice(g.alloc, spec);
                         }
                         try cast_types.append(g.alloc, null);
+                        try cast_trunc.append(g.alloc, false);
                         try needs_tostring.append(g.alloc, ts);
                     }
                 },
@@ -16899,9 +16904,20 @@ const Generator = struct {
                     const cast = if (arg_idx < cast_types.items.len) cast_types.items[arg_idx] else null;
                     const ts = arg_idx < needs_tostring.items.len and needs_tostring.items[arg_idx];
                     if (cast) |ut| {
-                        try g.w.print("@as({s}, @bitCast(", .{ut});
-                        try g.genExpr(ex);
-                        try g.w.writeAll("))");
+                        // BUG-301. `:c` cannot use @bitCast: i64 -> u8 is a WIDTH change,
+                        // which @bitCast refuses, and @truncate refuses a SIGNED source.
+                        // _zbr_byte does bitcast-to-same-width-unsigned then truncate, and
+                        // also absorbs comptime_int, which @bitCast refuses outright -- an
+                        // inline cast here broke the literal case that already worked.
+                        if (arg_idx < cast_trunc.items.len and cast_trunc.items[arg_idx]) {
+                            try g.w.writeAll("_zbr_byte(");
+                            try g.genExpr(ex);
+                            try g.w.writeAll(")");
+                        } else {
+                            try g.w.print("@as({s}, @bitCast(", .{ut});
+                            try g.genExpr(ex);
+                            try g.w.writeAll("))");
+                        }
                     } else if (ts) {
                         try g.genExpr(ex);
                         try g.w.writeAll(".toString()");
@@ -17766,6 +17782,16 @@ fn castTypeForBitSpec(spec: []const u8, tc_type: TypeChecker.Type) ?[]const u8 {
     // The type character is the last non-digit, non-fill character in the spec;
     // for our purposes it's sufficient to check the final character.
     const last = spec[spec.len - 1];
+    // BUG-301: `:c` renders one BYTE and Zig's {c} takes a u8, so a COMPUTED int has to
+    // narrow. A literal coerced at comptime and a runtime value did not, so `${n:c}` --
+    // the only way to put an arbitrary byte in a string -- was reachable only from
+    // literals. See _zbr_byte in the preamble for the lowering and why it truncates.
+    if (last == 'c') {
+        return switch (tc_type) {
+            .int, .int_n => "u8",
+            else => null,
+        };
+    }
     if (last != 'x' and last != 'X' and last != 'o' and last != 'b') return null;
     return switch (tc_type) {
         .int        => "u64",

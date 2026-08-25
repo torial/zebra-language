@@ -6,6 +6,93 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-301: `${expr:c}` works for a literal and fails for a RUNTIME int — no way to build a byte from a computed value — CLOSED 2026-08-23
+
+> **CLOSED 2026-08-23 — `_zbr_byte` in the preamble, wired in BOTH compilers.**
+>
+> **Semantics: TRUNCATING, per this ticket's own recommendation — flagged for Sean, since
+> the entry left the call to him.** `@intCast` is undefined behaviour in ReleaseFast, which
+> is what `zebra --release` ships, and keeping UB out of the shipping configuration is what
+> `tools/lint_oom_unreachable.py` exists for. Truncation is always defined and matches Go's
+> `byte(n)` and Rust's `as u8`: `462` renders as `0xCE`, and `-50` as `206`. The front-end
+> refusal for a statically-known out-of-range literal is NOT implemented — a follow-up, not
+> a blocker, since the runtime dead end is what made the capability unreachable.
+>
+> **THREE ZIG CONSTRAINTS DECIDED THE LOWERING, and none of them was guessable:**
+>
+> | attempt | zig says |
+> |---|---|
+> | `@truncate(x)` on an i64 | *expected unsigned integer type, found 'i64'* |
+> | `@bitCast` i64 -> u8 | refuses a WIDTH change |
+> | `@bitCast` on a literal | *cannot @bitCast from 'comptime_int'* |
+>
+> So the lowering is bitcast-to-same-width-unsigned, then truncate — and it lives in a
+> HELPER rather than inline because of the third row. **The first fix emitted the cast
+> inline and broke the LITERAL case that already worked**, which the fixture caught
+> immediately because it tests both paths. `@as(i64, x)` inside the helper coerces a
+> literal and passes a runtime `i64` through unchanged, so both shapes share one form.
+>
+> **THE FIXTURE IS A REAL PERCENT-DECODER**, building `θ` from `%CE%B8` with the hex digits
+> parsed at RUNTIME — the control this ticket asked for. Every byte comes from arithmetic
+> on purpose: **a fixture written with `${206:c}` PASSES AGAINST THE BROKEN COMPILER**,
+> because a literal coerces at comptime. That is precisely why this went unnoticed, and it
+> is the same cooperative-attacker shape as BUG-304's shift amounts.
+>
+> Falsified: removing the `c` case reproduces this ticket's error verbatim —
+> `expected type 'u8', found 'i64'`, pointing into `std/Io/Writer.zig` at
+> `printAsciiChar`, in Zig's vocabulary about code the user never wrote.
+>
+> **BOTH COMPILERS.** The bootstrap had the identical defect and matters here: `--gui-backend`
+> and `--target node-addon` both route through it. Its emit now compiles AND RUNS. One note
+> from wiring it — the emit must dispatch on the SPEC, not on the cast type string:
+> `castTypeForBitSpec` also answers `"u8"` for `:x` on an `int8`, so a type-string test
+> would have quietly routed a hex argument through the byte helper. Same value, wrong
+> reason.
+```zebra
+var b = "${206:c}"              # fine -- emits one byte, 0xCE
+var n = hi * 16 + lo
+var c = "${n:c}"                # error: expected type 'u8', found 'i64'
+```
+
+The `:c` spec on an `int` emits Zig's `{c}` (`printAsciiChar`, which takes a **u8**), and
+codegen passes the Zebra `int` (`i64`) through unnarrowed. A literal coerces at comptime;
+a runtime value does not, and the user sees a raw Zig type error against generated code.
+
+**WHY IT MATTERS BEYOND THE ERROR MESSAGE.** `${n:c}` is the ONLY way to put an arbitrary
+byte into a string, and byte assembly is what UTF-8-correct decoding needs — `%CE%B8` is
+two bytes that together form one codepoint, so a percent-decoder must build bytes, not
+codepoints. With this broken, a decoder can only handle values it can name as literals: in
+practice a table over printable ASCII, leaving every `%XX` ≥ 128 undecodable. That is
+exactly where the Graze decoder stopped (correspondence Entry 24), and it is why that
+entry reads as "no int→char in reach" — the capability is there and unreachable from a
+computed value.
+
+**Where:** `bitCastType` (`selfhost/CodeGen.zbr`, and the bootstrap's twin) narrows the
+argument for `x`/`X`/`o`/`b` and has no case for `c`. The existing cast emits
+`@as(T, @bitCast(x))`, which is **invalid** i64→u8 — Zig requires equal bit widths — so
+this needs a different cast kind, not just another entry in that table.
+
+**AND THAT CARRIES A SEMANTIC DECISION, which is why this is filed rather than fixed:**
+what should a runtime value outside 0..255 do?
+
+| option | behaviour | precedent |
+|---|---|---|
+| `@truncate` | always defined, silently wraps | Go `byte(n)`, Rust `as u8` |
+| `@intCast` | panics in Debug/ReleaseSafe — **UB in ReleaseFast**, which is what `zebra --release` ships | — |
+| front-end refusal | rejects a statically-known bad literal; still needs one of the above at runtime | Python `bytes([n])` raises |
+
+`@intCast` alone is the one to avoid: it puts undefined behaviour in the shipping
+configuration, which is the hazard `tools/lint_oom_unreachable.py` exists to keep out.
+Recommendation is `@truncate` plus a front-end refusal for a known-out-of-range literal —
+but the semantics are Sean's call.
+
+**Control when fixing:** a decoder that builds `θ` from `%CE%B8` with hex digits parsed at
+runtime must round-trip, and `${300:c}` must do whatever the decision says rather than
+whatever Zig happens to do. Note `:c` on a `char` value is a DIFFERENT path (it emits
+Zig's `{u}`, the codepoint form) and must keep working — see QUICKSTART's note.
+
+---
+
 ### BUG-298: `gui_scaffold_check` reports "startup path clean" when the scaffold build produced NO app — leg 2 skips instead of failing — CLOSED 2026-08-23
 
 > **CLOSED 2026-08-23 — the root defect was not the skip, it was that `build_rc` was
