@@ -19,6 +19,96 @@ one-line archive rows). Full history for anything archived lives in git, `BUGS.m
 
 # ▶ Open work — scan me first
 
+## 0.9 — RETIRE THE IMGUI GUI BACKEND (Sean, 2026-08-25). SURVIVORS: **tui** and **libui-ng**.
+
+Decision: **imgui dies**, along with the imgui IDE and the vendored ImGuiColorTextEdit.
+`tui` and `libui_ng` are the two backends going forward.
+
+**MEASURED FIRST, so nobody re-derives the scope.** It is smaller than the 278 textual
+mentions suggest, because almost all of it is one contiguous emitted-template block.
+
+| what | where | size |
+|---|---|---|
+| the `.glfw` arm — THE imgui backend | `src/CodeGen.zig:3252-3674` | **422 lines**, one `writeAll` of a `\\` template |
+| `.sdl2, .dx12` arm | `src/CodeGen.zig:3675-3852` | **178 lines** |
+| enum members | `GuiBackend = enum { stub, glfw, sdl2, dx12, tui, libui_ng }` | 3 to drop |
+| build template line | `src/main.zig:1217` (`exe.linkLibrary(zgui_dep.artifact("imgui"))`) | 1 |
+| vendored | `vendor/ImGuiColorTextEdit` (43 tracked files), `vendor/fonts` (36 files, 15 MB) | |
+| the IDE | `IDE/ZebraIDE.zbr` + `IDE/ZebraIDE_gui/` | 5 tracked `.zbr` |
+
+**`sdl2`/`dx12` ARE NOT IMGUI — checked, because the assumption was that they were.** That
+arm is 178 lines of DUPLICATED STUB under a single comment:
+
+```
+// TODO: sdl2/dx12 GUI backend not yet implemented; using stub.
+```
+
+They were never implemented at all, so they are an independent deletion rather than
+imgui's dependents. **Same shape as `aspect` in the reserved-words work** (BUG/U4a): an
+enum member reserved for something never built, costing real surface area — every
+`--gui-backend` value is a promise the CLI appears to make.
+
+**THREE FACTS THAT MAKE THIS CHEAP:**
+1. **`selfhost/*.zbr` mentions imgui ZERO times.** The selfhost never implemented it;
+   `--gui-backend=glfw` delegates to the bootstrap, and the bootstrap is being retired
+   anyway. This is code that dies with it regardless.
+2. **No gate covers it.** `gui_scaffold_check` is tui-only, so nothing goes red — and
+   nothing is verifying it today either.
+3. **No corpus file builds with it.** Only docs and the IDE reference `--gui-backend=glfw`.
+
+**DO NOT "FIX" THE HISTORICAL DOCS.** `SELFHOST_JOURNAL.md` and `CHANGELOG.md` are
+`doc-status: historical`; an entry describing a backend that existed in May is accurate
+history, and rewriting it falsifies the record. `doc_lint` already exempts them. What DOES
+need updating: `QUICKSTART.md` (the backend table), `IDE/README.md`,
+`docs/BETA_REVIEW_CHECKLIST.md`, `docs/UI_QUICKSTART.md`.
+
+**ORDER:** delete the arms and enum members first and let `doc_lint` name every stale
+reference — that is the tool doing the inventory rather than a hand-written list, which is
+the same argument `corpus_ls.sh` makes.
+
+## POST-0.9, PRE-1.0 — ADOPT ZIGZAG'S FALLIBLE `init`/`update`/`view` (Sean, 2026-08-25)
+
+We are pinned to `git+https://github.com/meszmate/zigzag#v0.1.5`, which **is the latest
+release** (2026-05-06) — there is nothing to bump to. The resolved hash reads
+`zigzag-0.1.2-…`; that is upstream's `.zon` version lagging its own tag, not a stale pin.
+Main is ~20+ commits ahead through 2026-08-14.
+
+**THE CHANGE TO ADOPT: PR #132, "let init, update and view return error unions".**
+
+**It is OPT-IN and backward compatible** — both signatures compile simultaneously,
+detected per-function at comptime, existing code unchanged. An earlier note in this file
+called it a "BREAKING MVU signature change" and advised waiting; that was read off the
+commit TITLE, and the PR says otherwise. Corrected rather than left, because this queue is
+what the next session works from.
+
+**WHY IT IS WORTH ADOPTING, in this repo's own terms.** The stated motivation is 245
+instances of `catch ""` / `catch "?"` / `catch "Error"` in their examples — allocation
+failures becoming rendering artifacts *indistinguishable from legitimate output*. That is
+UNGIT "nothing fabricated" exactly, and the same defect class as `gui_scaffold_check`
+printing "startup path clean" about a scaffold that did not exist (BUG-298).
+
+Note the direction of the purity argument, because it is easy to get backwards: a fallible
+`update` does NOT erode MVU's replayability. The alternative is not a pure `update`, it is
+one that **silently produces a wrong model**. A propagated error is honest and replays as
+"it failed here"; a swallowed OOM destroys replay fidelity far more thoroughly. `update`
+still does no I/O and holds no hidden state either way.
+
+**WHAT IT TOUCHES HERE:** the tui template in `src/CodeGen.zig` (the `.tui` arm, ~3853+)
+declares `init`/`update`/`view`, plus the `build.zig.zon` fingerprint whose regeneration
+procedure is documented at `src/main.zig:1281`.
+
+**ALSO WORTH TRACKING, not adopting:** their recent Windows resize-detection and Kitty
+graphics fixes. This repo is Windows-primary, so that work is directly relevant — and it
+is the platform long tail we would inherit if we ever forked, which is the main argument
+against doing so. If insulation is wanted without a fork, VENDOR A PINNED COPY the way
+`sqlite` is vendored; the shape already exists under
+`examples/counter_gui/zig-pkg/zigzag-0.1.2-…`.
+
+**THE THING TO WATCH is not this change but whether the opt-in discipline HOLDS.** A
+framework that adds capability without forcing migrations can be followed at our own pace;
+the day that stops being true is the day the vendor-and-pin question becomes urgent.
+
+
 ## 0.9 — BITWISE OPERATORS (Sean, 2026-08-21). MEASURED, so nobody re-derives the state.
 
 `~a` **already works** (BUG-256, 2026-08-04). The five BINARY operators do not, and they
