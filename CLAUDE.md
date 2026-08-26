@@ -213,6 +213,23 @@ sequential — 2206 s − 68 s, 3383 s − 77 s, 5056 s − 83 s. Per-gate secon
 ~30 s of wall clock in all three runs, so the overhead outside the gates is preflight and
 printing.
 
+**SMOKE'S OWN SPREAD MEASURED DIRECTLY, 2026-08-23 — 720 s to 1490 s ON IDENTICAL
+BINARIES.** Four consecutive standalone runs of `selfhost_smoke.sh`, two on each of two
+builds differing by one function, on an idle machine: 1369 s, 720 s (build A) and 850 s,
+1490 s (build B). Ranges overlap completely; the build with the EXTRA work averaged
+FASTER. Earlier the same night the same suite ran 343 s and 359 s.
+
+Two things follow. **A 2x swing is normal here, so a single timing proves nothing** — this
+sequence was run to decide whether a code change had caused a regression, and one
+measurement in either direction would have "confirmed" whichever answer was expected. Take
+pairs. And **the 2700 s `GATE_TIMEOUT` is closer than it looks**: a run at the top of the
+observed range plus the tier's other work is within a factor of two of it, and smoke
+timing out is indistinguishable from smoke hanging.
+
+What moved between the 350 s pair and the 700-1500 s quartet is NOT established. It is
+recorded as an observation rather than given a cause it has not earned — the same
+discipline the `output_sweep` note above uses for its unexplained disagreement.
+
 **THE UPPER BOUND MOVED AGAIN ON 2026-08-20 (57 → 85 min), and the cause is NOT the two
 gates that explain the QUICK spread.** `smoke` was 604 s and `round-trip` 208 s in that
 run — squarely mid-range — while `output_sweep` went 623 s → **1402 s** and `divergence`

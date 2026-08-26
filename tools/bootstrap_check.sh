@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# pins: BUG-264 the round trip IS the regression test. StrSet is not a user-facing type
+# (a bare `StrSet()` in user code is "undefined name"), so no test/*.zbr can express
+# this -- the compiler's own source is the fixture, and selfhost/CodeGen.zbr carries
+# two module-scope StrSets again precisely so this stays covered.
 # bootstrap_check.sh — verify selfhost round-trip and level-2 fixed point.
 #
 # BLIND SPOT (important): this checks SELF-CONSISTENCY, not correctness. It diffs the

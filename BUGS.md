@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-305. Next new bug: BUG-306.**
+**Last bug number generated: BUG-306. Next new bug: BUG-307.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -12,6 +12,42 @@
 >
 > No gate could see this: `doc_lint` D4 only checks that a cited BUG-NNN exists
 > *somewhere*, so a duplicate satisfies it twice over.
+
+---
+
+### BUG-306: `inferExpr` cannot see MODULE-SCOPE declarations, so every type-based dispatch guard needs a bespoke oracle — OPEN (found 2026-08-23)
+
+**Two bugs from one gap, and the patches sit TEN LINES APART in the same function.**
+
+`inferExpr` is documented in `selfhost/CodeGen.zbr` as seeing "only locals/params". Every
+guard that decides a method lowering by asking the receiver's TYPE therefore misses a
+module-scope variable, silently, and falls through to whatever the default branch is. In
+`genMemberCall` that default is "treat `.add` as a `List` append".
+
+| bug | type | patch |
+|---|---|---|
+| BUG-153 | a module-global `Atomic` | `isModuleGlobalAtomic` |
+| BUG-264 | a module-scope `StrSet` | `isModuleGlobalStrSet` |
+
+Both oracles do the same thing — walk `module_decls` looking for a `Decl.var_` with a
+matching name and the right `TypeRef` — and both exist only because the general question
+cannot be asked. **A third type will need a third.**
+
+**WHY IT STAYS INVISIBLE.** The wrong branch is the RIGHT ANSWER for the common case:
+every module-scope collection in the compiler's own source was a `List(str)` until someone
+declared a `StrSet`. So the guard is not merely missing a case, it is confidently correct
+until the moment it is confidently wrong, and nothing distinguishes those two states from
+inside.
+
+**THE STRUCTURAL FIX** is to let `inferExpr` resolve a module-scope declaration, at which
+point the existing `Type_.named` test in each guard starts working and both bespoke
+oracles can be deleted. That is a change to inference rather than to a lowering, which is
+why BUG-264 was fixed with the cheap precedented patch instead — recorded here so the
+third instance does not get a third one-off.
+
+**Not made a gate.** What would catch this class is the ROUND-TRIP, and only because the
+compiler's own source happens to use the constructs; there is no general instrument. See
+BUG-264 for why no `test/*.zbr` fixture can express it: `StrSet` is not a user-facing type.
 
 ---
 
@@ -982,44 +1018,6 @@ recommended shape, so this is a documented limit rather than a blocker.
 only inside a query bind list). It is NOT fixed by this — that construct is a list literal,
 not a `zig_lit` — but it is worth checking against whatever fix lands here.
 
-
-### BUG-264: the selfhost lowers a module-scope `StrSet.add` as `List.append`, so it cannot re-emit its own source
-
-**Found 2026-08-05** by the round-trip gate, while adding a module-scope `StrSet` to
-`selfhost/CodeGen.zbr` for BUG-261. Worked around there (`List(str)` instead); the
-underlying defect is untouched.
-
-A file-scope `var s: StrSet = StrSet()` followed by `s.add(x)`:
-
-| | emit |
-|---|---|
-| bootstrap | `pub var _zbr_mv_s: *StrSet = undefined;` … `_zbr_mv_s.add(path);` — **correct** |
-| selfhost | types it `StrSet`, then lowers the call as a List: `_zbr_mv_s.append(_zbr_rt._allocator, path)` |
-
-The selfhost's output does not compile:
-
-```
-error: method invocation only supports up to one level of implicit pointer dereferencing
-note: struct declared here -- pub const StrSet = struct {
-```
-
-So the type is resolved correctly and only the **method lowering** is wrong: `.add` on a
-module-scope var is treated as `List.add` unconditionally. `_implicit_try_sites` and
-`_inference_guess_sites`, the only pre-existing module-scope collections in that file, are
-both `List(str)` — so the wrong branch has always been the right answer until now, which
-is presumably why this has never fired.
-
-**A selfhost-LEADS-vs-LAGS inversion worth noting:** here the bootstrap is right and the
-shipping compiler is wrong, the same direction as BUG-254.
-
-**Only the round-trip gate can see this class.** `zig build` builds `zebra.exe` from the
-*bootstrap's* (correct) emit, so the compiler builds, runs, and passes all 313 smoke
-fixtures while being unable to emit valid Zig for its own source. Nothing before step 3 of
-`bootstrap_check` looks at what the selfhost emits for that file.
-
-**Control when fixing:** a module-scope `StrSet` with `.add`/`.contains_` must round-trip;
-a module-scope `List(str)` with `.add` must still emit `.append(allocator, …)`. Both
-directions — the easy wrong fix is to stop treating module-var `.add` as List at all.
 
 ### BUG-263: `use foo exposing bar` emits no aliases when `foo` is a native dep
 

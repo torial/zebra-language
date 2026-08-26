@@ -6,6 +6,85 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-264: the selfhost lowers a module-scope `StrSet.add` as `List.append`, so it cannot re-emit its own source — CLOSED 2026-08-23
+
+> **CLOSED 2026-08-23 — and the workaround it forced is GONE, which is how it was
+> verified.**
+>
+> **Root cause was not new: it is BUG-153's gap, ten lines above the fix.** `inferExpr`
+> sees only locals and params, so a module-scope var is invisible to the `Type_.named` test
+> that would otherwise stop `.add` being rewritten as a `List` append. BUG-153 patched that
+> for `Atomic`; `StrSet` is the identical case. Filed as **BUG-306** so the third type does
+> not get a third one-off oracle.
+>
+> `isModuleGlobalStrSet` covers **both declaration forms** — annotated
+> (`var s: StrSet = StrSet()`) and bare (`var s = StrSet()`, which carries no annotation at
+> all). The `Atomic` twin handles only the annotated form, so a bare ctor would have
+> slipped straight through.
+>
+> **VERIFIED BY DELETING THE WORKAROUND.** This ticket recorded `List(str)` in
+> `selfhost/CodeGen.zbr` as *forced rather than chosen*, with `_hasNativeUse` doing a
+> linear scan in place of set membership. Both collections are `StrSet` again and
+> `_hasNativeUse` is replaced by `.contains_`, so the compiler's own source now carries the
+> exact construct that used to break it. The proof and the cleanup are the same act.
+>
+> Emit is now `pub var _zbr_mv__c_no_header_uses: *StrSet` — matching what this ticket
+> records the BOOTSTRAP as producing — and the round-trip is byte-identical.
+>
+> **Falsified against the documented error, not merely against a red gate.** Removing the
+> guard while leaving the `StrSet` declarations in place reproduces this entry's message
+> verbatim:
+>
+> ```
+> error: no field or member function named 'append' in 'CgHelpers._zbr_ty_StrSet'
+>     _zbr_mv__c_with_header_uses.append(_zbr_rt._allocator, path) catch @panic("OOM");
+> note: method invocation only supports up to one level of implicit pointer dereferencing
+> ```
+>
+> **NO `test/*.zbr` FIXTURE IS POSSIBLE**, and that is worth stating: `StrSet` is not a
+> user-facing type — a bare `StrSet()` in user code is `undefined name: 'StrSet'`. It
+> reaches the compiler through `CgHelpers`, so the compiler's own source IS the fixture and
+> the round-trip is the only gate that can see this. Exactly as this ticket predicted:
+> `zig build` passes (it builds from the bootstrap's correct emit), the compiler runs, and
+> every smoke fixture is green.
+**Found 2026-08-05** by the round-trip gate, while adding a module-scope `StrSet` to
+`selfhost/CodeGen.zbr` for BUG-261. Worked around there (`List(str)` instead); the
+underlying defect is untouched.
+
+A file-scope `var s: StrSet = StrSet()` followed by `s.add(x)`:
+
+| | emit |
+|---|---|
+| bootstrap | `pub var _zbr_mv_s: *StrSet = undefined;` … `_zbr_mv_s.add(path);` — **correct** |
+| selfhost | types it `StrSet`, then lowers the call as a List: `_zbr_mv_s.append(_zbr_rt._allocator, path)` |
+
+The selfhost's output does not compile:
+
+```
+error: method invocation only supports up to one level of implicit pointer dereferencing
+note: struct declared here -- pub const StrSet = struct {
+```
+
+So the type is resolved correctly and only the **method lowering** is wrong: `.add` on a
+module-scope var is treated as `List.add` unconditionally. `_implicit_try_sites` and
+`_inference_guess_sites`, the only pre-existing module-scope collections in that file, are
+both `List(str)` — so the wrong branch has always been the right answer until now, which
+is presumably why this has never fired.
+
+**A selfhost-LEADS-vs-LAGS inversion worth noting:** here the bootstrap is right and the
+shipping compiler is wrong, the same direction as BUG-254.
+
+**Only the round-trip gate can see this class.** `zig build` builds `zebra.exe` from the
+*bootstrap's* (correct) emit, so the compiler builds, runs, and passes all 313 smoke
+fixtures while being unable to emit valid Zig for its own source. Nothing before step 3 of
+`bootstrap_check` looks at what the selfhost emits for that file.
+
+**Control when fixing:** a module-scope `StrSet` with `.add`/`.contains_` must round-trip;
+a module-scope `List(str)` with `.add` must still emit `.append(allocator, …)`. Both
+directions — the easy wrong fix is to stop treating module-var `.add` as List at all.
+
+---
+
 ### BUG-301: `${expr:c}` works for a literal and fails for a RUNTIME int — no way to build a byte from a computed value — CLOSED 2026-08-23
 
 > **SEMANTICS CONFIRMED BY SEAN, 2026-08-25:** truncate. The ticket left the call to him;

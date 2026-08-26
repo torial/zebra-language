@@ -2555,8 +2555,8 @@ def singleFile(): bool
 # `_implicit_try_sites` directly above is a module-scope `List(str)` for what is
 # probably the same underlying reason.  Membership is a linear scan, which costs
 # nothing here: one entry per C dependency, so realistically 0-3.
-var _c_no_header_uses: List(str) = List(str)()
-var _c_with_header_uses: List(str) = List(str)()
+var _c_no_header_uses: StrSet = StrSet()
+var _c_with_header_uses: StrSet = StrSet()
 
 def _hasNativeUse(xs: List(str), path: str): bool
     var i: int = 0
@@ -2574,10 +2574,10 @@ def addNativeCUse(path: str, has_header: bool)
         _c_no_header_uses.add(path)
 
 def isCWithHeaderUse(path: str): bool
-    return _hasNativeUse(_c_with_header_uses, path)
+    return _c_with_header_uses.contains_(path)
 
 def isCNoHeaderUse(path: str): bool
-    return _hasNativeUse(_c_no_header_uses, path)
+    return _c_no_header_uses.contains_(path)
 
 # ── Prebuilt libraries (BUG-266) ──────────────────────────────────────────────
 # A `use foo` that resolved to `foo.lib` / `foo.a` / `foo.so` / `foo.dylib`: a
@@ -3142,6 +3142,36 @@ struct Generator
     # global isn't tracked by infer_ctx or the per-method atomic_locals set, so the
     # `.add` rewrite consults this directly to keep an Atomic's `.add` (vs List's
     # `.append`).  Non-mutating (returns bool) — safe to call on a const receiver.
+    # BUG-264. THE SAME HOLE AS BUG-153, one guard below: `inferExpr` sees only locals and
+    # params, so a MODULE-SCOPE collection is invisible to the `Type_.named` test that would
+    # otherwise stop `.add` being rewritten as a List append. BUG-153 patched that for
+    # `Atomic`; `StrSet` is the identical case and was left open because every pre-existing
+    # module-scope collection in the compiler's own source happened to be a `List(str)` --
+    # so the wrong branch was the right answer until someone declared a `StrSet`.
+    #
+    # The receiver TYPE resolves correctly (`StrSet`); only the method LOWERING was wrong.
+    # Reading the declaration directly is what the Atomic twin does, and it is the reason
+    # this is a small fix rather than a change to inference.
+    #
+    # BOTH DECLARATION FORMS: annotated (`var s: StrSet = StrSet()`) and bare
+    # (`var s = StrSet()`, which carries no type annotation at all -- see the note at the
+    # `Detect StrSet from init expression` site). The Atomic twin handles only the
+    # annotated form; a bare `StrSet()` would have slipped straight through.
+    def isModuleGlobalStrSet(nm: str): bool
+        for gd in module_decls
+            if gd is Decl.var_ as gv
+                if gv.name == nm
+                    if gv.type_ != nil
+                        if gv.type_! is TypeRef.named as gvn
+                            if gvn.name == "StrSet"
+                                return true
+                    if gv.init_expr != nil
+                        if gv.init_expr! is Expr.call as gvc
+                            if gvc.callee is Expr.ident as gvi
+                                if gvi.name == "StrSet"
+                                    return true
+        return false
+
     def isModuleGlobalAtomic(nm: str): bool
         for gd in module_decls
             if gd is Decl.var_ as gv
@@ -13742,7 +13772,9 @@ struct Generator
             var is_atomic = false
             if add_obj_name != nil
                 var add_nm = add_obj_name!
-                is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(.module_types, .dep_types, add_nm)
+                # BUG-264: `or isModuleGlobalStrSet` -- a module-scope var is neither a
+                # local nor a field, so both existing tests miss it.
+                is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(.module_types, .dep_types, add_nm) or .isModuleGlobalStrSet(add_nm)
                 is_class_ref = isUpperCase(add_nm)
                 # BUG-153: a module-global Atomic isn't tracked by inferExpr (which
                 # only sees locals/params), so guard the List `.add`→`.append` rewrite
