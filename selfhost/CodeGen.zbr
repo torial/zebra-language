@@ -2043,7 +2043,21 @@ def napiWrapperStr(owner: str, mth: DeclMethod): str
     if not retVoid
         sb.append("const _ret = ")
     if owner.len > 0
-        sb.append(owner)
+        # BUG-297. The OWNING CLASS must be written in its emitted form. A user type is
+        # emitted as `_zbr_ty_<name>` (BUG-281 B), so appending the bare Zebra name here
+        # produced `Calc.square(...)` against a declaration named `_zbr_ty_Calc` --
+        # `use of undeclared identifier 'Calc'`, remapped to .zbr coordinates so it read
+        # like a front-end error about the user's own source.
+        #
+        # This is the BUG-281 family again: reading found the emit sites it found, and
+        # this one is on the node-addon path, which no tier ran until 2026-08-19. The
+        # class path specifically -- the sibling fixture with no class always passed.
+        #
+        # zbrTypeSymbol, not typeZigName: the latter is a METHOD and this is a top-level
+        # def, so a contextual-self call is "'this' used outside a class/struct method".
+        # An owner here is always a user class, which is exactly the case the plain
+        # symbol builder covers.
+        sb.append(zbrTypeSymbol(owner))
         sb.append(".")
     sb.append(nm)
     sb.append("(")

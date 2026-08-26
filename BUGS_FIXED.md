@@ -6,6 +6,95 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-297: `--target node-addon` emits an undeclared reference to the owning class for a STATIC-block export — CLOSED 2026-08-25
+
+> **CLOSED 2026-08-25 — one line, and it is the BUG-281 family's EIGHTH site.**
+>
+> The N-API wrapper emitted the owning class by its BARE Zebra name:
+>
+> ```zig
+> const _ret = Calc.square(_a0);        // ...against a decl named _zbr_ty_Calc
+> ```
+>
+> A user type emits as `_zbr_ty_<name>` (BUG-281 B). `napiWrapperStr` appended `owner`
+> unchanged, so the call referenced a symbol that is never declared — and because the zig
+> error is remapped to `.zbr` coordinates, it read like a front-end complaint about the
+> user's own source. Now `zbrTypeSymbol(owner)`; emit is `_zbr_ty_Calc.square(_a0)` and no
+> bare class reference survives anywhere in the output.
+>
+> **`zbrTypeSymbol`, NOT the fuller `typeZigName`**, and the reason is worth recording:
+> `typeZigName` is a CLASS METHOD while `napiWrapperStr` is a TOP-LEVEL def, so a
+> contextual-self call there is `'this' used outside a class/struct method` — the same
+> blocker that stopped BUG-253. It is not a blocker here because an owner in this position
+> is always a user class, which is exactly what the plain symbol builder covers. **If a
+> node-addon export ever needs a NAMESPACE-qualified owner, that is where it will bite.**
+>
+> **WHY IT NEEDED TWO CONDITIONS TO HIDE.** The node-addon target was in NO tier until it
+> was wired on 2026-08-19, AND the defect is class-specific — the sibling fixture
+> `strings.zbr`, which has no class, passed throughout. Either condition alone surfaces it.
+> Same two-lock shape as `examples/widget_smoke.zbr` shipping broken: no gate swept
+> `examples/`, and `zebra -c` exits 0 on it because check mode is front-end only.
+>
+> **RETIRING THE PIN EXPOSED A SECOND, HIDDEN DEFECT.** The registration read
+> `pin_daily "node-addon" "BUG-297" "node-addon tests: ok"` — and the gate has never
+> printed that string; it prints `node-addon tests: PASS`. The XFAIL was masking a stale
+> match expectation, so a naive `pin_daily` -> `run_daily` swap would have turned the gate
+> red on the EXPECTATION rather than on the code. Both fixed together. That is the pin
+> mechanism earning its keep twice: it kept the bug visible, and retiring it surfaced
+> something nobody had looked at.
+>
+> Falsified: reverting the single call reproduces this entry's error verbatim —
+> `test/node_addon/math.zbr:31: error: use of undeclared identifier 'Calc'`. Gate green
+> with all three legs, including the negative fixture that must still be rejected.
+`zebra --target node-addon` on a `@node_export` inside a class `static` block emits a
+reference to the class that is never declared, and the build fails on the compiler's own
+diagnostic:
+
+```
+test/node_addon/math.zbr:31: error: use of undeclared identifier 'Calc'
+```
+
+**Isolated to the node-addon target, and to the class path specifically.** Three probes:
+
+| probe | result |
+|---|---|
+| `zebra -c test/node_addon/math.zbr` | clean — the front end is fine |
+| `zebra --target node-addon test/node_addon/math.zbr` | **fails as above** |
+| the sibling fixture `strings.zbr` (no class) | passes |
+
+The failing shape is the last block of `test/node_addon/math.zbr`, which exists to
+exercise the `Owner.method` call path:
+
+```zebra
+class Calc
+    static
+        @node_export
+        def square(n: int): int
+            return n * n
+```
+
+**HOW IT WAS FOUND, which is the part worth keeping.** It was not found by a gate — it was
+found by *wiring a gate*. `tools/node_addon_test.sh` was in NO tier: it sat under
+CLAUDE.md's "run these deliberately" list, where its last recorded sweep is **2026-08-04,
+PASS**. Nothing has run it since, so the regression's window is those two weeks and
+nothing narrows it further. This is the same shape as BUG-279 (`zig build test` red, in
+neither a tier nor the uncovered table) two days earlier, and the second instance is what
+motivated the `--daily` tier rather than another reminder.
+
+**It is PINNED, not excluded.** `gates.sh` registers it as
+`pin_daily "node-addon" "BUG-297"`: it RUNS on every `--daily`, prints `XFAIL` with this
+ticket, and does not fail the tier — but it **fails the tier the day it starts passing**,
+so the pin cannot outlive the bug. Excluding it is what let it rot in the first place.
+
+**Control when fixing.** `bash tools/node_addon_test.sh` must report every fixture ok
+(`math` is the one to watch; `strings` and the negative `bad` already pass), and the
+`pin_daily` registration must then become `run_daily` — the tier will say so loudly if it
+is forgotten. Worth adding a class-static fixture to the node-addon set at the same time:
+`math.zbr` is currently the only file covering that path, which is why one regression took
+the whole gate red.
+
+---
+
 ### BUG-264: the selfhost lowers a module-scope `StrSet.add` as `List.append`, so it cannot re-emit its own source — CLOSED 2026-08-23
 
 > **CLOSED 2026-08-23 — and the workaround it forced is GONE, which is how it was

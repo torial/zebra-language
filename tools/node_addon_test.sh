@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# pins: BUG-297 the math.zbr leg IS the regression test -- it carries a class static
+# @node_export specifically to exercise the Owner.method call path, which is the
+# only shape that reproduced. The sibling strings.zbr (no class) passed throughout.
 # node_addon_test.sh — end-to-end test for `zebra --target node-addon`.
 #
 # For each positive fixture in test/node_addon/<name>.zbr: build it to a .node

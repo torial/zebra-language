@@ -104,57 +104,6 @@ this defect.
 
 ---
 
-### BUG-297: `--target node-addon` emits an undeclared reference to the owning class for a STATIC-block export — OPEN (found 2026-08-19)
-
-`zebra --target node-addon` on a `@node_export` inside a class `static` block emits a
-reference to the class that is never declared, and the build fails on the compiler's own
-diagnostic:
-
-```
-test/node_addon/math.zbr:31: error: use of undeclared identifier 'Calc'
-```
-
-**Isolated to the node-addon target, and to the class path specifically.** Three probes:
-
-| probe | result |
-|---|---|
-| `zebra -c test/node_addon/math.zbr` | clean — the front end is fine |
-| `zebra --target node-addon test/node_addon/math.zbr` | **fails as above** |
-| the sibling fixture `strings.zbr` (no class) | passes |
-
-The failing shape is the last block of `test/node_addon/math.zbr`, which exists to
-exercise the `Owner.method` call path:
-
-```zebra
-class Calc
-    static
-        @node_export
-        def square(n: int): int
-            return n * n
-```
-
-**HOW IT WAS FOUND, which is the part worth keeping.** It was not found by a gate — it was
-found by *wiring a gate*. `tools/node_addon_test.sh` was in NO tier: it sat under
-CLAUDE.md's "run these deliberately" list, where its last recorded sweep is **2026-08-04,
-PASS**. Nothing has run it since, so the regression's window is those two weeks and
-nothing narrows it further. This is the same shape as BUG-279 (`zig build test` red, in
-neither a tier nor the uncovered table) two days earlier, and the second instance is what
-motivated the `--daily` tier rather than another reminder.
-
-**It is PINNED, not excluded.** `gates.sh` registers it as
-`pin_daily "node-addon" "BUG-297"`: it RUNS on every `--daily`, prints `XFAIL` with this
-ticket, and does not fail the tier — but it **fails the tier the day it starts passing**,
-so the pin cannot outlive the bug. Excluding it is what let it rot in the first place.
-
-**Control when fixing.** `bash tools/node_addon_test.sh` must report every fixture ok
-(`math` is the one to watch; `strings` and the negative `bad` already pass), and the
-`pin_daily` registration must then become `run_daily` — the tier will say so loudly if it
-is forgotten. Worth adding a class-static fixture to the node-addon set at the same time:
-`math.zbr` is currently the only file covering that path, which is why one regression took
-the whole gate red.
-
----
-
 ### BUG-295: a module import CYCLE builds cleanly and produces a compiler that STACK-OVERFLOWS — ⚠ HALF FIXED (diagnostic landed 2026-08-18; the overflow is still unexplained)
 
 > **THE "NO DIAGNOSTIC" HALF IS CLOSED.** A cycle is now REPORTED, with its full path

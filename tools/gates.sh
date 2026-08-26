@@ -493,7 +493,13 @@ run_daily "gui-scaffold" "startup path clean" bash tools/gui_scaffold_check.sh
 # emits a reference to the owning class that is never declared. It is REGISTERED rather
 # than excluded precisely because exclusion is what let it rot unnoticed -- and it fails
 # this tier the day it starts passing, so the pin cannot outlive the bug.
-pin_daily "node-addon"   "BUG-297" "node-addon tests: ok" bash tools/node_addon_test.sh
+# BUG-297 fixed 2026-08-25, so the pin is retired -- gates.sh FAILS the tier when a
+# pinned gate starts passing, on the principle that a pin which has come good is a
+# registration nobody updated. Note the expectation also changed: the pin carried
+# "node-addon tests: ok", which the gate has NEVER printed (it prints PASS). The
+# XFAIL was masking a stale match string, so retiring the pin without fixing it
+# would have turned the gate red on the expectation rather than on the code.
+run_daily "node-addon"   "node-addon tests: PASS" bash tools/node_addon_test.sh
 # -- Did every gate actually RUN? ---------------------------------------------
 #
 # The summary used to print "$PASSED/$PASSED PASS" -- both numbers the same, which is a
