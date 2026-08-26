@@ -63,7 +63,17 @@ rm -rf "$OUT"; mkdir -p "$OUT"
 check_one() {
   local rel="$1"; local name; name=$(basename "$rel" .zbr)
   local wdir="$OUT/w-$name"; rm -rf "$wdir"; mkdir -p "$wdir"
-  if ! timeout 40 "$ZEBRA" --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>&1; then
+  # BUG-302's LESSON, APPLIED ONE LAYER UP. The zig-failure path keeps its `build.err`;
+  # this one sent the COMPILER's stderr to /dev/null and then announced EMITFAIL --
+  # 55 files per daily run, every one unexplained. Same defect, same shape, and it
+  # survived three line-by-line reviews of this function during the BUG-302 work.
+  #
+  # Found by `hearsay` (C:/Projects/hearsay), a linter written specifically for this
+  # class: a diagnostic stream discarded on a path that then issues a verdict.
+  local eerr="$wdir/emit.err"
+  if ! timeout 40 "$ZEBRA" --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>"$eerr"; then
+    mkdir -p "$OUT/evidence" 2>/dev/null
+    cp "$eerr" "$OUT/evidence/$name.emit.err" 2>/dev/null
     echo "EMITFAIL $name"; rm -rf "$wdir"; return
   fi
   local main="$wdir/$name.zig"
@@ -93,6 +103,11 @@ check_one() {
     cp "$berr" "$OUT/infra-$name.err" 2>/dev/null
     echo "INFRA $name"
   else
+    # A GENUINE compile failure is still a failure whose REASON was being deleted with
+    # the workdir. INFRA kept its evidence and CFAIL did not, which is backwards: an
+    # infra error is diagnosed by its shape, a CFAIL by its CONTENT.
+    mkdir -p "$OUT/evidence" 2>/dev/null
+    cp "$berr" "$OUT/evidence/$name.cfail.err" 2>/dev/null
     echo "CFAIL $name"
   fi
   rm -rf "$wdir"
@@ -115,6 +130,10 @@ _retries=0
 [ -f "$OUT/retries.txt" ] && _retries=$(wc -l < "$OUT/retries.txt" | tr -d ' ')
 echo "zig-infra retries: $_retries (transient stdlib read failures -- BUG-302)"
 [ "$_retries" -gt 0 ] && echo "  retried: $(sort "$OUT/retries.txt" | uniq -c | tr '\n' ' ')"
+_nemit=$(grep -c "^EMITFAIL " "$OUT/results.txt" || true)
+if [ "${_nemit:-0}" -gt 0 ]; then
+  echo "  EMITFAIL reasons kept in $OUT/evidence/*.emit.err  ($_nemit file(s))"
+fi
 if grep -q '^INFRA ' "$OUT/results.txt"; then
   echo "  x INFRA (zig could not read its own stdlib after 3 tries): $(grep -c '^INFRA ' "$OUT/results.txt")"
   grep '^INFRA ' "$OUT/results.txt" | awk '{print "      " $2}'

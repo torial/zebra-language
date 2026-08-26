@@ -35,6 +35,14 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${TMPDIR:-/tmp}/zbr-divergence"
 # shellcheck source=tools/zig_build_lib.sh
 . "$REPO/tools/zig_build_lib.sh"
+
+# BUG-302 one layer up. An EMITFAIL used to discard the compiler's stderr and then name
+# the file as having failed to emit -- a verdict with its evidence deleted.
+_keep_emit_err() {   # $1 = wdir, $2 = name
+  [ -s "$1/emit.err" ] || return 0
+  mkdir -p "$OUT/evidence" 2>/dev/null
+  cp "$1/emit.err" "$OUT/evidence/$2.emit.err" 2>/dev/null
+}
 BOOT="$REPO/zig-out/bin/zebra-bootstrap.exe"
 SELF="$REPO/zig-out/bin/zebra.exe"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
@@ -47,9 +55,11 @@ emit_and_check() { # $1=compiler $2=mode(boot|self) $3=absfile $4=workdir
   local main="$wdir/$name.zig"
   rm -rf "$wdir"; mkdir -p "$wdir"
   if [ "$mode" = boot ]; then
-    "$zebra" --emit-zig "$f" > "$main" 2>/dev/null || { echo EMITFAIL; return; }
+    # BUG-302 one layer up: keep the compiler's own account of the failure. See the
+    # note in full_sweep.check_one.
+    "$zebra" --emit-zig "$f" > "$main" 2>"$wdir/emit.err" || { _keep_emit_err "$wdir" "$name"; echo EMITFAIL; return; }
   else
-    "$zebra" --emit-zig "$f" --output-dir "$wdir" >/dev/null 2>&1 || { echo EMITFAIL; return; }
+    "$zebra" --emit-zig "$f" --output-dir "$wdir" >/dev/null 2>"$wdir/emit.err" || { _keep_emit_err "$wdir" "$name"; echo EMITFAIL; return; }
   fi
   [ -s "$main" ] || { echo EMITFAIL; return; }
   grep -q "pub fn main" "$main" || { echo NOMAIN; return; }

@@ -73,9 +73,10 @@ if [ "${1:-}" = "--worker" ]; then
   wdir="$OUT/w-$name"; rm -rf "$wdir"; mkdir -p "$wdir"
   main="$wdir/$name.zig"
   if [ "$mode" = bootstrap ]; then
-    "$zebra" $sf_flag --emit-zig "$REPO/$rel" > "$main" 2>/dev/null || { echo "EMITFAIL $name"; exit 0; }
+    # BUG-302 one layer up: keep the compiler's own account. See full_sweep.check_one.
+    "$zebra" $sf_flag --emit-zig "$REPO/$rel" > "$main" 2>"$wdir/emit.err" || { mkdir -p "$OUT/evidence" 2>/dev/null; cp "$wdir/emit.err" "$OUT/evidence/$name.emit.err" 2>/dev/null; echo "EMITFAIL $name"; exit 0; }
   else
-    "$zebra" $sf_flag --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>&1 || { echo "EMITFAIL $name"; exit 0; }
+    "$zebra" $sf_flag --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>"$wdir/emit.err" || { mkdir -p "$OUT/evidence" 2>/dev/null; cp "$wdir/emit.err" "$OUT/evidence/$name.emit.err" 2>/dev/null; echo "EMITFAIL $name"; exit 0; }
   fi
   [ -f "$main" ] || { echo "SKIP $name"; exit 0; }          # library module (no main)
   grep -q "pub fn main" "$main" || { echo "SKIP $name"; exit 0; }
@@ -91,6 +92,8 @@ if [ "${1:-}" = "--worker" ]; then
   elif zbr_zig_infra_error "$berr"; then
     echo "INFRA $name"
   else
+    mkdir -p "$OUT/evidence" 2>/dev/null
+    cp "$berr" "$OUT/evidence/$name.fail.err" 2>/dev/null
     echo "FAIL $name"
   fi
   rm -rf "$wdir"
