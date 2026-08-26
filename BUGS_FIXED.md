@@ -6,6 +6,230 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-103: TC `extractFromDecls`/`extractFromMembers` silently skip unknown declaration variants — CLOSED 2026-08-26
+
+> **CLOSED 2026-08-26 — the FIX landed 2026-05-06; what was missing was something that
+> could FAIL.** This entry's own triage said so: *"KEPT OPEN pending a pin, not because it
+> is believed broken … the natural pin is a check that every `Ast.Decl` variant is handled,
+> in the shape of `lint_expr_walkers`."* That is now `tools/lint_decl_exhaustive.py`,
+> registered as the STATIC gate `decl-exhaustive`.
+>
+> **It guards the PROPERTY, not the fix.** The compile-error guarantee holds only while the
+> switches stay exhaustive; a single `else => {}` restores the original silent-skip AND
+> stops Zig complaining. That reintroduction is invisible to every other gate — the code
+> compiles, every test passes, and a future `Ast.Decl` variant is quietly dropped, which is
+> the exact defect this ticket describes.
+>
+> Oracle is `src/Ast.zig`'s own `Decl` union (14 variants), never a hand-written list — a
+> second copy being the very thing the bug is about.
+>
+> **NESTED SWITCHES ARE NOT THE SUBJECT, and checking that mattered:** `extractFromDecls`
+> legitimately contains two `else =>` arms on inner `TypeRef` switches. A proximity-based
+> check would have called the fix regressed on sight. Arms are matched at the `Decl`
+> switch's own brace depth.
+>
+> **Verified RED both ways** before being trusted: reintroducing a catch-all reports
+> *"BUG-103 regressed"*, and deleting one variant's arm reports *"missing Decl variant(s):
+> enum_"*. Clean on restore.
+> **Triaged 2026-08-17 — KEPT OPEN pending a pin, not because it is believed broken.**
+> The body below says *Closed — fixed 2026-05-06*, and `lint_stale_bugs` flagged it. The
+> defect only triggers on adding a NEW `Ast.Decl` variant, so it cannot be expressed as a
+> Zebra program at all — no fixture can exist in the current harness, and the evidence is
+> the annotation plus the source, never a run. **Close it only alongside something that
+> can fail**: the natural pin is a check that every `Ast.Decl` variant is handled, in the
+> shape of `lint_expr_walkers` (whose oracle is `Ast.zbr` itself).
+- **Severity:** Low (only triggers on adding a new `Ast.Decl` variant; latent reliability hazard)
+- **Status:** Closed — fixed 2026-05-06
+- **Resolution:** All 4 `else => {}` catch-alls in the metadata-collection passes replaced with fully exhaustive arms listing every `Ast.Decl` variant explicitly. Adding a new `Ast.Decl` variant now causes a Zig compile error at all 4 sites (same guarantee `checkTopDecl` already had). Behavioral change: none — all new arms are `{}`. Bootstrap 5/5, smoke 44/44, full test suite.
+  - `extractFromDecls` (4 new arms: `.use`, `.interface`, `.mixin`, `.extend`, `.sig_`, `.var_`, `.init`)
+  - `extractFromMembers` (10 new arms: everything except `.method`, `.var_`, `.init`)
+  - `collectExtMethodsInDecls` inner switch (extend members: 12 new arms)
+  - `collectExtMethodsInDecls` outer switch (top-level decls: 11 new arms)
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P1-1]).
+
+---
+
+### BUG-212: selfhost emits `var` (not `const`) for a builtin-pointer local used only as a method receiver — CLOSED 2026-08-26
+
+> **CLOSED 2026-08-26 — it was TWO defects, and the second was unreachable until the
+> first was fixed.**
+>
+> **Half 1, the reported one.** `code_editor` is now classified by `isByValueHandleType`,
+> alongside the build handles whose comment already states the rule: an opaque handle whose
+> methods emit `_code_editor_*(e, ...)` passes the POINTER by value, so the local is never
+> reassigned and must be `const`. This ticket's diagnosis was correct.
+>
+> Safe in the by-value tier rather than needing a never-var one, and CHECKED rather than
+> assumed: that tier still returns `var` for an explicit in-place mutator, and CodeEditor's
+> entire surface (`get_text`, `set_text`, `set_readonly`, `set_cursor_position`,
+> `set_error_markers`, `get_cursor_line`, `get_cursor_col`, `render`) collides with NONE of
+> the names `isMutatingMethod` recognises. A type here with a `set` or `add` would land in
+> the wrong answer.
+>
+> **Half 2, found by fixing half 1.** The program then compiled and printed `{ 104, 105 }`
+> — the BYTES of "hi". `_code_editor_get_text` returns `[]const u8`, but the TypeChecker had
+> no return type for the call, so the interpolator chose `{any}`. Valid Zig, wrong output:
+> the BUG-226 class, invisible to every compile-only gate. It could not have been seen
+> before, because the program did not compile at all.
+>
+> **This ticket is only fixed when its OWN EXAMPLE WORKS**, not when it stops erroring —
+> the example is `var e = CodeEditor()` with `setText`/`getText`. Closing on "compiles now"
+> would have shipped a ticket whose repro prints garbage.
+>
+> **THE FIRST FIXTURE WAS HALF-FAKE and the falsification caught it.** Its half-2 leg read
+> `e.getText() <> "hi"` — a string COMPARISON, which passes against the broken compiler
+> because the defect is in the FORMATTER. With the TypeChecker fix reverted it still
+> reported OK. Rewritten as `"${e.getText()}" <> "hi"`, it reddens with
+> *FAIL getText renders as bytes, not a str*. The fixture was corrected BEFORE the compiler
+> fix was restored, so it was watched failing.
+>
+> Third instance of that shape in these sessions, after BUG-304's shift amounts and
+> BUG-301's `:c` — each time the obvious way to write the test bypasses the exact machinery
+> that was broken.
+>
+> **NOTED, NOT FILED: the CodeEditor CURSOR API IS A STUB.**
+> `_code_editor_set_cursor_position` discards all three arguments and both getters
+> `return 1` unconditionally. The fixture therefore asserts the cursor accessors are INTS
+> and deliberately does NOT assert their values — pinning `1` would pin the stub, and a
+> fixture named for BUG-212 would then fail the day somebody implements cursors. A stub
+> returning a plausible number rather than refusing is arguably its own UNGIT
+> "nothing fabricated" defect; raised for Sean rather than filed unilaterally.
+`var e = CodeEditor()` followed by `e.setText(...)` / `e.getText()` (and no reassignment)
+emits `var e = _code_editor_new();`, which Zig rejects: `error: local variable is never
+mutated`. `e` is a `*_CodeEditor` (a pointer) — calling `_code_editor_*(e, …)` passes the
+pointer by value and never reassigns `e`, so it should be `const`. The mutation analysis
+appears to treat a method call on the local as mutating its receiver, which is correct for
+by-value struct receivers but wrong for these builtin heap-handle value types (code_editor;
+likely also other pointer builtins). **Impact:** low — the IDE and normal code assign such
+handles straight into a field (`m.editor = CodeEditor.forZebra()`), never a bare local, so
+this only bites `var x = CodeEditor()` used purely as a receiver. Workaround: assign into a
+field/struct, or add another use. **Fix direction:** in the const/var mutation scan, don't
+count a method call as mutating the receiver when the receiver's inferred type is a
+pointer-builtin value type (code_editor, …). Verify against the bootstrap's behavior.
+
+---
+
+### BUG-246: an UNANNOTATED `Atomic(T)(v)` local mis-resolves `.add()` to `.append()` — CLOSED 2026-08-26
+
+> **CLOSED 2026-08-26 — generic stdlib constructors are now tracked from the INIT
+> EXPRESSION, not only from a type annotation.**
+>
+> The local-tracking block in `CodeGen.zbr` is gated on `if n.type_ != nil`, so
+> `var t = Atomic(int)(0)` was never registered in `atomic_locals` and `.add` fell through
+> to the List rewrite. The re-diagnosis in this entry was right: the capture block is a red
+> herring, and the real discriminator is the ANNOTATION.
+>
+> **Why the existing `isStrSetCtor` did not already cover it.** That helper is a
+> single-level check for a zero-arg `StrSet()`. `Atomic(int)(0)` parses as a call whose
+> CALLEE IS ITSELF A CALL — the inner `Atomic(int)` names the type, the outer `(0)`
+> constructs. The new `genericStdlibCtorName` reads that second level and answers for any
+> generic stdlib ctor.
+>
+> **SCOPE MEASURED, NOT ASSUMED — and my first claim was WRONG.** I described this as one
+> fix closing the gap for `Atomic`, `Chan` and `ThreadPool` alike, since all three are
+> registered by the same annotation-gated block. Tested against the UNFIXED compiler:
+>
+> | type | without the fix |
+> |---|---|
+> | `Atomic` | **breaks** — `no field or member function named 'append'` |
+> | `Chan` | works (prints 7) |
+> | `ThreadPool` | works |
+>
+> Only `Atomic` manifests, because the hazard is the `.add` -> `.append` rewrite and only
+> `Atomic` has an `.add`. The other two share the registration gap and cannot express it.
+> They are registered anyway — defensive, and covered in the fixture as REGRESSION
+> coverage — but this fix is demonstrated for one type, not three.
+>
+> **BUG-306 STAYS OPEN.** That ticket asks for `inferExpr` to see module-scope
+> declarations, which would let the bespoke `isModuleGlobalAtomic` / `isModuleGlobalStrSet`
+> oracles be deleted. This change did something narrower: it fixed the LOCAL tracking path.
+> Closing 306 on it would be exactly the overclaim corrected two paragraphs up.
+>
+> Pinned by `test/bug246_unannotated_generic_ctor_test.zbr` (`smoke_run`), which tests BOTH
+> declaration forms — the annotated one always worked, so a fixture using only that shape
+> passes against the broken compiler.
+> **RE-DIAGNOSED 2026-08-20. The heading changed because the original one names the wrong
+> cause, and following it costs the next person the same hour it cost me.**
+>
+> **The capture block has nothing to do with it.** Measured, three shapes:
+>
+> | shape | result |
+> |---|---|
+> | `var t = Atomic(int)(0)` then `t.add(5)` — no lambda at all | **FAILS**, `no field or member function named 'append'` |
+> | `var t: Atomic(int) = Atomic(int)(0)` then `t.add(5)` | passes |
+> | the ticket's capture block, with the OUTER declaration annotated | passes |
+>
+> So the defect is that an **unannotated generic stdlib constructor is not typed**: with no
+> type for `t`, the member call falls through to the stdlib heuristics and `.add` matches
+> List's `.append`. The original repro simply had an unannotated outer `var`.
+>
+> **Same class as BUG-250** (a builtin constructor call the TypeChecker does not type),
+> which is worth knowing because that one was fixed by typing the call.
+>
+> **THE CLASS WAS SWEPT 2026-08-20 AND IT IS BOUNDED — three untyped, one reachable.**
+> Codegen emits bare constructors for seven generic stdlib types; the TypeChecker types
+> four. The gap is `Atomic`, `ThreadPool`, `ObjectPool` — and only `Atomic` actually
+> breaks:
+>
+> | untyped constructor | reachable defect? |
+> |---|---|
+> | `Atomic(int)(0)` | **YES** — `.add` falls through to List's heuristic and emits `.append` |
+> | `ThreadPool(2)` | no — `submit`/`wait` collide with nothing (probed: runs) |
+> | `ObjectPool(T)(n)` | no — `take`/`give`/`inUse` collide with nothing (probed: runs) |
+>
+> **So the trigger is not "untyped" alone — it is untyped AND a method name that COLLIDES
+> with a stdlib heuristic.** `.add` is the collider because List has one. That predicts the
+> next occurrence: any new stdlib type with an `add`-shaped method inherits this the day it
+> is added, whether or not anyone touches Atomic. Typing the three constructors removes the
+> class rather than the instance.
+>
+> **WHERE THE NEXT ATTEMPT SHOULD NOT START.** `TypeChecker.zbr`'s
+> `typeFromExpr`/`typeFromRef` arms handle `List`, `HashMap`, `Chan` and `Set` and return
+> `Type_.unknown_` for `Atomic` — in BOTH arms. Adding an `Atomic` case there looks like
+> the fix and is not sufficient on its own: the ANNOTATED form already works while its
+> `typeFromRef` arm also returns `unknown_`, so the annotated path is getting its dispatch
+> from somewhere else. Find that mechanism first; the fix is to make the unannotated path
+> reach the same place.
+>
+> A capture-binding change (binding a capture's declared type into the lambda's
+> InferCtx, which `genLambdaEx` does for params and not for captures) was written, built
+> and then REVERTED: it is defensible on its own terms but it did not fix this ticket, and
+> shipping an inference change with no case that proves it load-bearing is how a
+> regression arrives with nothing to blame. Recorded here as a real gap someone may still
+> want to close, with a fixture, deliberately.
+
+
+**Found 2026-08-03**, writing the §1b `Ws` fixture.
+
+```zebra
+var t = Atomic(int)(0)
+sys.go(def()
+    capture
+        var t: Atomic(int) = t
+    var _ = t.add(1)
+)
+```
+```
+error: no field or member function named 'append' in 'zebra_rt._Atomic(i64)'
+```
+
+This is the **BUG-120 family** — the `.add()` → `.append()` List rewrite firing on a
+receiver that is not a List. BUG-120 fixed the case of a lowercase class instance by
+consulting `InferCtx` at the call site; a variable re-declared inside a `capture` block
+evidently does not get the same treatment, so the heuristic wins again.
+
+**Narrow, and the boundary is known:** `store` and `load` on a captured `Atomic` work
+(verified). Only `add` is affected, because only `add` collides with the List method name.
+
+**Impact is larger than it looks** — this is the documented idiom for a shared counter
+across threads, and it cannot be written. `Chan(T)` is the workaround (sum on the
+receiving side), which is what `test/chan_thread_test.zbr` does.
+
+**QUICKSTART's shared-counter example was removed rather than repaired** when the
+surrounding `lambda` errors were fixed (BUG-245's note); restore it when this is fixed.
+
+---
+
 ### BUG-297: `--target node-addon` emits an undeclared reference to the owning class for a STATIC-block export — CLOSED 2026-08-25
 
 > **CLOSED 2026-08-25 — one line, and it is the BUG-281 family's EIGHTH site.**

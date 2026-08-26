@@ -2490,6 +2490,21 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.string_
                             if mname == "test" or mname == "match"
                                 return Type_.bool_
+                        on Type_.code_editor
+                            # BUG-212, second half. `_code_editor_get_text` returns
+                            # []const u8, but with no TC type for the call the interpolator
+                            # picked {any} and printed a BYTE ARRAY -- `{ 104, 105 }` for
+                            # "hi". Valid Zig, wrong output: the BUG-226 class, invisible
+                            # to every compile-only gate.
+                            #
+                            # It was unreachable until the const/var half landed, because
+                            # the program did not compile at all. Fixing one defect exposed
+                            # the next, so this ticket's own example only WORKS with both.
+                            var cemn: str = mem.member
+                            if cemn == "getText"
+                                return Type_.string_
+                            if cemn == "getCursorLine" or cemn == "getCursorCol"
+                                return Type_.int_
                         on Type_.string_builder
                             var sbmname: str = mem.member
                             if sbmname == "build" or sbmname == "toString"

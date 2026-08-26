@@ -49,13 +49,22 @@ expect() {  # <name> <want-rc> <want-substring>   (the probe is already mutated)
     fi
 }
 
-echo "tier self-check — each mutation on a copy of gates.sh:"
+# DERIVED, never written down -- see the note at the top of this block.
+_NSTATIC=$(grep -cE '^[[:space:]]*(run|pin)_static "' "$REPO/tools/gates.sh")
+if [ "${_NSTATIC:-0}" -lt 5 ]; then
+    echo "tier-selfcheck: REFUSING — counted only ${_NSTATIC:-0} static gates in gates.sh;" \
+         "the registration regex has stopped matching, so every expectation below would be" \
+         "measuring nothing." >&2
+    exit 2
+fi
+
+echo "tier self-check — each mutation on a copy of gates.sh (${_NSTATIC} static gates):"
 
 # CONTROL 0 -- the UNMUTATED copy must pass. Without it, every mutation below could be
 # "detected" for an unrelated reason (a broken copy, a bad path) and this suite would
 # still look green: refusals would be observed, just not the ones claimed.
 fresh
-expect "control: unmutated copy passes" 0 "12/12 PASS"
+expect "control: unmutated copy passes" 0 "${_NSTATIC}/${_NSTATIC} PASS"
 
 # M1 -- a build-dependent gate registered as static must be REFUSED, not run. This is the
 # decay the static tier is actually exposed to: a lint that grows an emit-and-check leg.
@@ -82,7 +91,7 @@ expect "M3 expectation collapses to zero" 2 "REFUSING"
 # smaller, plausible-looking green board.
 fresh
 sed -i 's|^_run() {|_run() { if [[ "${2:-}" == "fallthrough" ]]; then return 0; fi;|' "$PROBE"
-expect "M4 one gate silently skipped" 1 "RAN 11 OF 12"
+expect "M4 one gate silently skipped" 1 "RAN $((_NSTATIC - 1)) OF ${_NSTATIC}"
 
 # M5 -- a PINNED gate that starts passing must FAIL the tier. A pin that has come good is
 # a registration nobody updated, and it must not be able to outlive its bug.

@@ -1,0 +1,42 @@
+# BUG-246: an UNANNOTATED generic stdlib constructor must still be TRACKED.
+#
+# `var t = Atomic(int)(0)` carries no type annotation, and the local-tracking block in
+# CodeGen was gated on `if n.type_ != nil` -- so `t` was never registered as an Atomic and
+# `.add` fell through to the List rewrite:
+#
+#     no field or member function named 'append' in 'zebra_rt._Atomic(i64)'
+#
+# THE ANNOTATED FORM ALWAYS WORKED, which is why this survived: the obvious probe passes.
+# Both forms are pinned below for exactly that reason.
+#
+# MEASURED SCOPE, so the next reader is not misled: Chan and ThreadPool share the same
+# registration gap but do NOT manifest it, because the hazard is the `.add` -> `.append`
+# rewrite and only Atomic has an `.add`. They are covered here as REGRESSION coverage for
+# the shared fix, not as bugs that were failing.
+
+def main()
+    var fails: int = 0
+
+    # -- the reported bug: unannotated Atomic
+    var t = Atomic(int)(0)
+    t.add(5)
+    if t.load() <> 5
+        fails = fails + 1
+        print("FAIL unannotated Atomic.add")
+
+    # -- the form that always worked; a fix that broke it would be a regression
+    var a: Atomic(int) = Atomic(int)(0)
+    a.add(7)
+    if a.load() <> 7
+        fails = fails + 1
+        print("FAIL annotated Atomic.add")
+
+    # -- same registration path, no `.add` method, so never broken. Regression coverage.
+    var c = Chan(int)(4)
+    c.send(9)
+    if c.recv() <> 9
+        fails = fails + 1
+        print("FAIL unannotated Chan")
+
+    if fails == 0
+        print("bug246: OK")

@@ -3508,7 +3508,9 @@ while not done.load()
 > below for the full correction.
 >
 > A **shared-counter** example using `total.add(1)` was removed rather than repaired: an
-> `Atomic(T)` captured into a thread currently mis-resolves `.add()` to `.append()`
+> `Atomic(T)` used through an UNANNOTATED local once mis-resolved `.add()` to
+> `.append()` (BUG-246, fixed 2026-08-26). Both `var a = Atomic(int)(0)` and the
+> annotated form work.
 > (**BUG-246**). `store`/`load` are unaffected, which is why the flag example above stands.
 > For accumulating across threads, use `Chan(T)` and sum on the receiving side.
 
@@ -3908,7 +3910,8 @@ sys.go(def()
 Captured variables are copied into the thread closure at spawn time. Re-declaring with
 the same name (`var ch: Chan(int) = ch`) is the standard idiom.
 
-> **Known bug:** an `Atomic(T)` captured this way mis-resolves `.add()` to `.append()`
+> **Fixed 2026-08-26 (BUG-246):** an `Atomic(T)` in an UNANNOTATED local used to
+> mis-resolve `.add()` to `.append()`
 > (`no field or member function named 'append' in '_Atomic(i64)'`) — the BUG-120 rewrite
 > heuristic firing inside a `capture` block. See **BUG-246**. Use `Chan(T)` for
 > thread-to-thread values until it is fixed, as the producer/consumer example below does.

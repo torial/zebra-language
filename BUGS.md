@@ -324,26 +324,6 @@ later wanted deliberately, the refusal is the place to relax.
 sides can import without closing a loop — `selfhost/AstWalk.zbr`, which imports `Ast`
 and nothing else.
 
-### BUG-103: TC `extractFromDecls`/`extractFromMembers` silently skip unknown declaration variants
-
-> **Triaged 2026-08-17 — KEPT OPEN pending a pin, not because it is believed broken.**
-> The body below says *Closed — fixed 2026-05-06*, and `lint_stale_bugs` flagged it. The
-> defect only triggers on adding a NEW `Ast.Decl` variant, so it cannot be expressed as a
-> Zebra program at all — no fixture can exist in the current harness, and the evidence is
-> the annotation plus the source, never a run. **Close it only alongside something that
-> can fail**: the natural pin is a check that every `Ast.Decl` variant is handled, in the
-> shape of `lint_expr_walkers` (whose oracle is `Ast.zbr` itself).
-- **Severity:** Low (only triggers on adding a new `Ast.Decl` variant; latent reliability hazard)
-- **Status:** Closed — fixed 2026-05-06
-- **Resolution:** All 4 `else => {}` catch-alls in the metadata-collection passes replaced with fully exhaustive arms listing every `Ast.Decl` variant explicitly. Adding a new `Ast.Decl` variant now causes a Zig compile error at all 4 sites (same guarantee `checkTopDecl` already had). Behavioral change: none — all new arms are `{}`. Bootstrap 5/5, smoke 44/44, full test suite.
-  - `extractFromDecls` (4 new arms: `.use`, `.interface`, `.mixin`, `.extend`, `.sig_`, `.var_`, `.init`)
-  - `extractFromMembers` (10 new arms: everything except `.method`, `.var_`, `.init`)
-  - `collectExtMethodsInDecls` inner switch (extend members: 12 new arms)
-  - `collectExtMethodsInDecls` outer switch (top-level decls: 11 new arms)
-- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P1-1]).
-
----
-
 ### BUG-289: two deterministic programs disagreed with themselves inside a full output_sweep — cause unknown
 
 **Found 2026-08-15** during an `output_sweep --update-baseline`. `log_test` and
@@ -1347,91 +1327,6 @@ and the comment in `selfhost/main.zbr` naming all three would go stale with it.
 coupling is what made this invisible. Sean's call.
 
 
-### BUG-246: an UNANNOTATED `Atomic(T)(v)` local mis-resolves `.add()` to `.append()` — OPEN (the `capture` block is a red herring)
-
-> **RE-DIAGNOSED 2026-08-20. The heading changed because the original one names the wrong
-> cause, and following it costs the next person the same hour it cost me.**
->
-> **The capture block has nothing to do with it.** Measured, three shapes:
->
-> | shape | result |
-> |---|---|
-> | `var t = Atomic(int)(0)` then `t.add(5)` — no lambda at all | **FAILS**, `no field or member function named 'append'` |
-> | `var t: Atomic(int) = Atomic(int)(0)` then `t.add(5)` | passes |
-> | the ticket's capture block, with the OUTER declaration annotated | passes |
->
-> So the defect is that an **unannotated generic stdlib constructor is not typed**: with no
-> type for `t`, the member call falls through to the stdlib heuristics and `.add` matches
-> List's `.append`. The original repro simply had an unannotated outer `var`.
->
-> **Same class as BUG-250** (a builtin constructor call the TypeChecker does not type),
-> which is worth knowing because that one was fixed by typing the call.
->
-> **THE CLASS WAS SWEPT 2026-08-20 AND IT IS BOUNDED — three untyped, one reachable.**
-> Codegen emits bare constructors for seven generic stdlib types; the TypeChecker types
-> four. The gap is `Atomic`, `ThreadPool`, `ObjectPool` — and only `Atomic` actually
-> breaks:
->
-> | untyped constructor | reachable defect? |
-> |---|---|
-> | `Atomic(int)(0)` | **YES** — `.add` falls through to List's heuristic and emits `.append` |
-> | `ThreadPool(2)` | no — `submit`/`wait` collide with nothing (probed: runs) |
-> | `ObjectPool(T)(n)` | no — `take`/`give`/`inUse` collide with nothing (probed: runs) |
->
-> **So the trigger is not "untyped" alone — it is untyped AND a method name that COLLIDES
-> with a stdlib heuristic.** `.add` is the collider because List has one. That predicts the
-> next occurrence: any new stdlib type with an `add`-shaped method inherits this the day it
-> is added, whether or not anyone touches Atomic. Typing the three constructors removes the
-> class rather than the instance.
->
-> **WHERE THE NEXT ATTEMPT SHOULD NOT START.** `TypeChecker.zbr`'s
-> `typeFromExpr`/`typeFromRef` arms handle `List`, `HashMap`, `Chan` and `Set` and return
-> `Type_.unknown_` for `Atomic` — in BOTH arms. Adding an `Atomic` case there looks like
-> the fix and is not sufficient on its own: the ANNOTATED form already works while its
-> `typeFromRef` arm also returns `unknown_`, so the annotated path is getting its dispatch
-> from somewhere else. Find that mechanism first; the fix is to make the unannotated path
-> reach the same place.
->
-> A capture-binding change (binding a capture's declared type into the lambda's
-> InferCtx, which `genLambdaEx` does for params and not for captures) was written, built
-> and then REVERTED: it is defensible on its own terms but it did not fix this ticket, and
-> shipping an inference change with no case that proves it load-bearing is how a
-> regression arrives with nothing to blame. Recorded here as a real gap someone may still
-> want to close, with a fixture, deliberately.
-
-
-**Found 2026-08-03**, writing the §1b `Ws` fixture.
-
-```zebra
-var t = Atomic(int)(0)
-sys.go(def()
-    capture
-        var t: Atomic(int) = t
-    var _ = t.add(1)
-)
-```
-```
-error: no field or member function named 'append' in 'zebra_rt._Atomic(i64)'
-```
-
-This is the **BUG-120 family** — the `.add()` → `.append()` List rewrite firing on a
-receiver that is not a List. BUG-120 fixed the case of a lowercase class instance by
-consulting `InferCtx` at the call site; a variable re-declared inside a `capture` block
-evidently does not get the same treatment, so the heuristic wins again.
-
-**Narrow, and the boundary is known:** `store` and `load` on a captured `Atomic` work
-(verified). Only `add` is affected, because only `add` collides with the List method name.
-
-**Impact is larger than it looks** — this is the documented idiom for a shared counter
-across threads, and it cannot be written. `Chan(T)` is the workaround (sum on the
-receiving side), which is what `test/chan_thread_test.zbr` does.
-
-**QUICKSTART's shared-counter example was removed rather than repaired** when the
-surrounding `lambda` errors were fixed (BUG-245's note); restore it when this is fixed.
-
-
----
-
 ### BUG-243: fifteen corpus files have never compiled, and no gate could say so
 
 **Found 2026-08-02**, working §2 of `docs/INSTRUMENT_PASS_PLAN.md`. An umbrella ticket:
@@ -1620,20 +1515,6 @@ competes directly with the pre-0.9 churn freeze and the honest documentation is 
 the value. Cross-ref [[§28e]] and BUG-223, which is the same incoherence at zero cost.
 
 ---
-
-### BUG-212: selfhost emits `var` (not `const`) for a builtin-pointer local used only as a method receiver ⬜ OPEN
-`var e = CodeEditor()` followed by `e.setText(...)` / `e.getText()` (and no reassignment)
-emits `var e = _code_editor_new();`, which Zig rejects: `error: local variable is never
-mutated`. `e` is a `*_CodeEditor` (a pointer) — calling `_code_editor_*(e, …)` passes the
-pointer by value and never reassigns `e`, so it should be `const`. The mutation analysis
-appears to treat a method call on the local as mutating its receiver, which is correct for
-by-value struct receivers but wrong for these builtin heap-handle value types (code_editor;
-likely also other pointer builtins). **Impact:** low — the IDE and normal code assign such
-handles straight into a field (`m.editor = CodeEditor.forZebra()`), never a bare local, so
-this only bites `var x = CodeEditor()` used purely as a receiver. Workaround: assign into a
-field/struct, or add another use. **Fix direction:** in the const/var mutation scan, don't
-count a method call as mutating the receiver when the receiver's inferred type is a
-pointer-builtin value type (code_editor, …). Verify against the bootstrap's behavior.
 
 ### BUG-201: nested-container dispatch on call-result / mutable-loop receivers ⛔ OPEN (found probing BUG-196)
 Two distinct facets surfaced when probing BUG-196, each its own mechanism:

@@ -437,6 +437,7 @@ run_static "registration"   "0 NEW"    python tools/registration_check.py
 # gate here runs Debug, where it traps cleanly — so this hazard is invisible to all of
 # them and live only in what users distribute. A static lint is the only witness.
 run_static "oom-unreachable" "0 hazard" python tools/lint_oom_unreachable.py
+run_static "decl-exhaustive" "0 issue" python tools/lint_decl_exhaustive.py
 # A3: the boundary-value suite. The ONLY gate here whose expectations were written from
 # INTENT rather than recorded from behaviour — output_sweep is a golden baseline and so
 # can never find something that was wrong on day one. 29 probes, ~30s, and it found  <!-- doc-gen: 29 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' -->

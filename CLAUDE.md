@@ -178,11 +178,11 @@ per-tier counts, computed from the registrations rather than written down.
 
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
-| `--static` | 12 <!-- doc-gen: 12 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **14 s** | you edited docs, ledgers, or `tools/` |
-| `--fast` | 22 <!-- doc-gen: 22 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 24 <!-- doc-gen: 24 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 31 <!-- doc-gen: 31 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 34 <!-- doc-gen: 34 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–85 min** | once a day |
+| `--static` | 13 <!-- doc-gen: 13 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **14 s** | you edited docs, ledgers, or `tools/` |
+| `--fast` | 23 <!-- doc-gen: 23 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 25 <!-- doc-gen: 25 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 32 <!-- doc-gen: 32 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 35 <!-- doc-gen: 35 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–85 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -1116,6 +1116,35 @@ python tools/registration_check.py # THE UNASSERTED-FILE GATE (BUG-243, static, 
                                 #   those fixes were unverified. Baselined like bug-fixture:
                                 #   fails only on NEW debt (24 known). Shrink it, never grow it.
                                 #   QUICK tier.
+python tools/lint_decl_exhaustive.py  # THE Ast.Decl EXHAUSTIVENESS GATE (static,
+                                #   instant, no build) -- BUG-103's PIN, and the reason
+                                #   that ticket sat open for months after being FIXED.
+                                #   The 2026-05-06 fix replaced four `else => {}`
+                                #   catch-alls in the metadata passes with exhaustive
+                                #   arms, so adding an Ast.Decl variant becomes a Zig
+                                #   COMPILE ERROR rather than a silent skip. But the
+                                #   defect only fires when someone ADDS a variant, so it
+                                #   cannot be written as a Zebra program: no test/*.zbr
+                                #   fixture can exist, and the evidence was an annotation
+                                #   plus a reading of the source, never a run.
+                                #   WHAT IT GUARDS is the property, not the fix: the
+                                #   compile-error guarantee holds only while the switches
+                                #   stay exhaustive, and ONE `else => {}` restores the
+                                #   original silent-skip while Zig stops complaining. That
+                                #   reintroduction is invisible to every other gate -- the
+                                #   code compiles, every test passes, and a future variant
+                                #   is quietly dropped.
+                                #   ORACLE = src/Ast.zig's own `Decl` union, never a
+                                #   hand-written list; a second copy is precisely the thing
+                                #   this bug is about. NESTED switches are not the subject:
+                                #   extractFromDecls legitimately carries `else =>` arms on
+                                #   inner TypeRef switches, so arms are matched at the
+                                #   Decl switch's own BRACE DEPTH, not by proximity.
+                                #   Verified RED both ways: reintroducing a catch-all, and
+                                #   deleting one variant's arm. Refuses (exit 2) if <8
+                                #   variants extract or a site cannot be found -- a regex
+                                #   that stopped matching must blame itself. 0 = clean.
+                                #   CANNOT SEE whether an arm does the right thing.
 python tools/lint_oom_unreachable.py  # THE RELEASE-ONLY-UB GATE (A4): `unreachable` is
                                 #   undefined behaviour in ReleaseFast, which is what
                                 #   `zebra --release` ships. Every gate here runs Debug,
@@ -1355,7 +1384,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 79 scripts | <!-- doc-gen: 79 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 80 scripts | <!-- doc-gen: 80 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 51 tracked documents <!-- doc-gen: 51 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -1832,7 +1861,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **390** <!-- doc-gen: 390 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **516** <!-- doc-gen: 516 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **518** <!-- doc-gen: 518 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

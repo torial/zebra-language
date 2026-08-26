@@ -1,0 +1,43 @@
+# BUG-212, both halves. The ticket's own example is this program, and it needs BOTH fixes
+# to WORK -- the first only makes it compile.
+#
+# 1. `var e = CodeEditor()` was rejected by zig: "local variable is never mutated". The
+#    local holds a `*_CodeEditor` and every method emits `_code_editor_*(e, ...)`, passing
+#    that POINTER by value, so the local is never reassigned and must be `const`.
+#
+# 2. With that fixed the program compiled and printed `{ 104, 105 }` -- the BYTES of "hi".
+#    `_code_editor_get_text` returns []const u8 but the TypeChecker had no return type for
+#    the call, so the interpolator chose {any}. Valid Zig, wrong output: the BUG-226 class,
+#    which no compile-only gate can see. It was UNREACHABLE until (1) landed.
+#
+# So this fixture must RUN and compare, not merely build.
+
+def main()
+    var fails: int = 0
+
+    var e = CodeEditor()
+    e.setText("hi")
+
+    # half 2: a string, not a byte array.
+    #
+    # THROUGH INTERPOLATION, deliberately. A direct `e.getText() <> "hi"` compares strings
+    # and passes against the BROKEN compiler -- the {any} defect lives in the FORMATTER,
+    # not in comparison. The first version of this fixture did exactly that and reddened
+    # only for half 1; the falsification caught it.
+    if "${e.getText()}" <> "hi"
+        fails = fails + 1
+        print("FAIL getText renders as bytes, not a str")
+
+    # The cursor accessors are typed int. Their SEMANTICS are not asserted, because the
+    # runtime is a STUB: `_code_editor_set_cursor_position` discards all three arguments
+    # and both getters `return 1` unconditionally. Pinning 1 here would be pinning the
+    # stub, so this asserts only what the fix is about -- that the call is an INT and
+    # participates in arithmetic, rather than inferring unknown and printing as {any}.
+    e.setCursorPosition(0, 0)
+    var line = e.getCursorLine()
+    if (line + 1) <> (1 + line)
+        fails = fails + 1
+        print("FAIL getCursorLine is not an int")
+
+    if fails == 0
+        print("bug212: OK")

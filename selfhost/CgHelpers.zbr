@@ -1614,6 +1614,7 @@ def isByValueHandleType(t: Type_): bool
         # `never mutated`); the bootstrap already marks these const.
         on Type_.build_ctx       return true
         on Type_.build_target    return true
+        on Type_.code_editor     return true
         # BUG-242. A parsed CSV table is a by-value handle exactly like the above:
         # every reader emits `_csv_<op>(t, …)` taking `_CsvTable` BY VALUE, so the local
         # never needs `var` and Zig rejects it with "local variable is never mutated".

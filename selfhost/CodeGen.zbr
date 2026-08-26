@@ -6419,6 +6419,19 @@ struct Generator
         if n.init_expr != nil
             if isStrSetCtor(n.init_expr!)
                 strset_locals.add(n.name)
+        # BUG-246 / BUG-306: the same, for the GENERIC stdlib types. The tracking block
+        # above is gated on `if n.type_ != nil`, so a bare `var t = Atomic(int)(0)` was
+        # never registered and `.add` fell through to the List rewrite --
+        # `no field or member function named 'append' in 'zebra_rt._Atomic(i64)'`.
+        # Chan and ThreadPool shared the gap; only Atomic had been reported.
+        if n.init_expr != nil
+            var gctor: str = .genericStdlibCtorName(n.init_expr!)
+            if gctor == "Chan"
+                chan_locals.add(n.name)
+            if gctor == "Atomic"
+                atomic_locals.add(n.name)
+            if gctor == "ThreadPool"
+                thread_pool_locals.add(n.name)
         # §28b: inferred `var e = map.entries()` → List((K, V)) tuple-list local,
         # so `for k, v in e` destructures and str elements print as strings.
         if n.init_expr != nil
@@ -6776,6 +6789,25 @@ struct Generator
                 if c.callee is Expr.ident as id
                     return id.name == "StringBuilder"
         return false
+
+    # BUG-306 / BUG-246. Which GENERIC STDLIB TYPE does this constructor build, if any?
+    #
+    # `Atomic(int)(0)` parses as a call whose CALLEE IS ITSELF A CALL: the inner
+    # `Atomic(int)` names the type, the outer `(0)` constructs it. That second level is why
+    # `isStrSetCtor` below -- a single-level check for a zero-arg `StrSet()` -- does not
+    # generalise, and it is the whole reason an UNANNOTATED `var t = Atomic(int)(0)` slipped
+    # past the tracking sets while an annotated one did not.
+    #
+    # ONE ORACLE FOR ALL THREE. Chan, Atomic and ThreadPool were tracked only from a type
+    # ANNOTATION, so every one of them had this hole; BUG-246 is simply the one somebody
+    # hit. Answering the general question here is what BUG-306 asks for, instead of a
+    # fourth bespoke `isModuleGlobalX`.
+    def genericStdlibCtorName(e: Expr): str
+        if e is Expr.call as outer
+            if outer.callee is Expr.call as inner
+                if inner.callee is Expr.ident as gid
+                    return gid.name
+        return ""
 
     def isStrSetCtor(e: Expr): bool
         if e is Expr.call as c

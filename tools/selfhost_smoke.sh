@@ -1651,6 +1651,15 @@ smoke_run  test/bug304_305_compound_hex_test.zbr "bug304/305: OK"
 # `${206:c}` passes against the broken compiler, because a literal coerces at comptime.
 # That is exactly why this bug went unnoticed -- the literal path always worked.
 smoke_run     test/bug301_runtime_byte_test.zbr "bug301: OK"
+
+# BUG-246. Both declaration forms, because the ANNOTATED one always worked -- a fixture
+# testing only `var t: Atomic(int) = ...` passes against the broken compiler.
+smoke_run test/bug246_unannotated_generic_ctor_test.zbr "bug246: OK"
+
+# BUG-212, both halves. The getText leg goes through INTERPOLATION on purpose: a direct
+# string comparison passes against the broken compiler, because the {any} defect is in the
+# formatter. The first draft of this fixture did exactly that and tested only half 1.
+smoke_run  test/bug212_code_editor_const_test.zbr "bug212: OK"
 smoke_run_bootstrap test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made returned factory"
 
 echo ""
