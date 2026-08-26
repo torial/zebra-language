@@ -106,7 +106,7 @@ export -f check_one zbr_zig_build zbr_zig_infra_error; export ZEBRA OUT REPO
 bash "$REPO/tools/corpus_ls.sh" "$CORPUS_DIR" \
   | xargs -P "${JOBS:-2}" -I{} bash -c 'check_one "$@"' _ {} > "$OUT/results.txt" 2>/dev/null
 
-grep '^PASS ' "$OUT/results.txt" | awk '{print $2}' | sort > "$OUT/pass.txt"
+grep '^PASS ' "$OUT/results.txt" | awk '{print $2}' | LC_ALL=C sort > "$OUT/pass.txt"
 echo "── $CORPUS_LABEL ──"
 for b in PASS CFAIL DEPMISS EMITFAIL NOMAIN INFRA; do echo "$b: $(grep -c "^$b " "$OUT/results.txt")"; done
 # ALWAYS printed, zero included: a number that only appears when it is bad is a number
@@ -142,6 +142,22 @@ fi
 
 if [ "$GATE" = 1 ]; then
   [ -f "$BASELINE" ] || { echo "no baseline — run: bash tools/full_sweep.sh --update-baseline"; exit 2; }
+  # `comm` SILENTLY PRODUCES GARBAGE on unsorted input -- it does not fail, it invents
+  # differences. On 2026-08-26 the baseline held two entries in a non-byte collation
+  # (`fuzz_f1_...` before `fuzz_f11_...`; byte order puts `1` before `_`), and this gate
+  # reported fuzz_f11_unused_capture_ternary_test as a REGRESSION while it sat in pass.txt
+  # the whole time. The only visible symptom was one line of `comm:` chatter buried under
+  # the counts.
+  #
+  # So the sortedness is now ASSERTED, not assumed. A gate that cannot trust its inputs
+  # must say so rather than name an innocent file -- a gate that libels a working file is
+  # one people learn to disbelieve, which is the same argument the DEPMISS bucket makes.
+  if ! LC_ALL=C sort -c "$BASELINE" 2>/dev/null; then
+      echo "full-sweep: REFUSING -- $BASELINE is not in byte order, and \`comm\` reports"
+      echo "  fabricated differences against an unsorted file. Re-sort it with"
+      echo "  \`LC_ALL=C sort -o $BASELINE $BASELINE\` (the SET is what matters, not the order)."
+      exit 2
+  fi
   reg=$(comm -23 "$BASELINE" "$OUT/pass.txt")
   if [ -n "$reg" ]; then
     echo "✗ REGRESSION — baseline-passing tests that now FAIL:"; echo "$reg"; exit 1

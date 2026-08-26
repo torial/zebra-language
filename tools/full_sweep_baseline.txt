@@ -169,8 +169,8 @@ for_indexed_test
 for_tuple_test
 forgot_parens_test
 forin_throws_test
-fuzz_f1_primitive_names_test
 fuzz_f11_unused_capture_ternary_test
+fuzz_f1_primitive_names_test
 fuzz_f2_unused_local_test
 fuzz_f3_comptime_local_test
 fuzz_f4_interp_fmt_test
