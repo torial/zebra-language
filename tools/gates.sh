@@ -159,13 +159,30 @@ _run() {
     # Announce BEFORE running and leave the line open, so an in-progress gate is
     # visibly in progress. stderr so it survives a caller piping stdout.
     printf '  %-16s ...' "$label" >&2
-    timeout "${GATE_TIMEOUT:-2700}" "$@" >"$log" 2>&1; rc=$?
+    # CEILING RAISED 2700 -> 5400 on 2026-08-26, from measurement rather than comfort.
+    # Two DIFFERENT gates hit 2700 s in two days, both on an IDLE machine, both passing
+    # when run alone: `smoke` (08-23) and `divergence` (08-26). Standalone divergence then
+    # measured 2467 s against a history of 1454-1813 s -- 8.6% of headroom, which the
+    # tier's own load is enough to erase.
+    #
+    # The gates that grew are the zig-build-heavy ones (output_sweep 1016->1719,
+    # full_sweep 726->1251, divergence 1491->2467) while `smoke`, which shells out least,
+    # got FASTER in the same run. So this is not a machine-wide slowdown, and 5400 is not a
+    # guess at one: it is ~2x the slowest observed run, the same ratio 2700 gave back when
+    # the heavy gates ran ~1400 s.
+    timeout "${GATE_TIMEOUT:-5400}" "$@" >"$log" 2>&1; rc=$?
     t1=$((SECONDS - t0))
     out="$(cat "$log")"; rm -f "$log"
     printf '\r  %-16s ' "$label" >&2
     if [[ $rc -eq 124 ]]; then
-        printf '\033[31mHANG\033[0m  killed after %ss\n' "${GATE_TIMEOUT:-2700}"
-        FAILED+=("$label(timeout)")
+        # "HANG" was the wrong word and it cost real diagnosis time: divergence was
+        # killed at the ceiling while running FINE, and the board asserted it had hung.
+        # A gate killed at its limit and a gate stuck in a loop are DIFFERENT claims, and
+        # only one of them is knowable from here -- so state what is known and name the
+        # discriminator instead of asserting the alarming reading.
+        printf '\033[31mKILLED\033[0m at the %ss ceiling - SLOW or hung, this cannot tell which.\n' "${GATE_TIMEOUT:-5400}"
+        printf '                   re-run it alone: a hang stays stuck, a slow gate finishes.\n'
+        FAILED+=("$label(killed-at-ceiling)")
         return
     fi
     local last
@@ -215,6 +232,14 @@ _run() {
         # reports a failure without saying which is one investigation longer than needed.
         echo "$out" | grep -aiE '^[[:space:]]*(FAIL|✗|error:)' | head -8 | sed 's/^/      ! /'
         echo "$out" | tail -12 | sed 's/^/        /'
+    fi
+    # NEAR-CEILING WARNING. The runner knew divergence had taken 91% of its ceiling and
+    # said nothing until the run that failed -- the first signal was the loudest one, with
+    # no warning shot. UNGIT "nothing withheld": surface it while the gate is still GREEN.
+    local _ceil=${GATE_TIMEOUT:-5400}
+    if [[ $t1 -gt $(( _ceil * 80 / 100 )) ]]; then
+        printf '  \033[33m!!\033[0m    %s took %ss of the %ss ceiling (>80%%) - raise it or split the gate\n' \
+               "$label" "$t1" "$_ceil"
     fi
 }
 
