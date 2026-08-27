@@ -6,6 +6,75 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-310: `File.append` SILENTLY TRUNCATES the file when the read fails for any reason other than absence — CLOSED 2026-08-26
+
+**A transient read error destroys the file's existing contents.**
+
+```zig
+pub fn _file_append(path: []const u8, content: []const u8) void {
+    const existing: []const u8 = ...readFileAlloc(_io, p, ...) catch "";   // <-- any error
+    const combined = _str_concat(existing, content, _allocator);
+    const wf = ...createFile(_io, p, .{}) catch @panic("File.append error"); // <-- TRUNCATES
+    wf.writeStreamingAll(_io, combined) catch @panic("File.append write error");
+}
+```
+
+Zig 0.16 removed `File.seekFromEnd`, so append is read + concat + rewrite. The `catch ""`
+is deliberate for the "file does not exist yet" case, and the comment says so — but
+`readFileAlloc` also returns `AccessDenied`, `SharingViolation` and transient I/O errors,
+and the catch does not discriminate. On any of those, `existing` becomes empty, `createFile`
+truncates, and the file is left holding **only the appended fragment**.
+
+Same shape as BUG-302 and BUG-307: one signal standing for two causes, and the code assumes
+the benign one. Here the cost is data loss rather than a misleading label.
+
+**GAP, NOT WOUND.** No incident is known; this was found by reading, not by a failure. It is
+recorded as an unstruck gap per the armor-at-the-seams distinction — cheap to armor, and
+the blast radius is a user's data.
+
+**Fix:** discriminate, exactly as BUG-307 did for delete —
+`catch |e| if (e == error.FileNotFound) "" else @panic(...)`. Lines 823 and 825 already
+panic on failure, so refusing an unexpected READ error is consistent with the function's
+own existing contract rather than a new policy.
+
+**Verified 2026-08-26.** Fix confirmed present in the EMITTED runtime, not just in the source: `zebra_rt.zig` from a fresh emit carries the new form and **zero** occurrences of the old one (a preamble edit is invisible until regen, and the build order matters -- see CLAUDE.md). Quick tier 25/25, smoke 383/383, round-trip byte-identical.
+
+### BUG-309: a regex OOM is reported as "NO MATCH", so a failed check reads as a passed one — CLOSED 2026-08-26
+
+**The three core regex entry points turn an allocation failure into a negative verdict.**
+
+`matchAt` is typed `error{OutOfMemory}!?usize` — OOM is its *only* failure. All three
+callers discard it into `null`:
+
+| line | function | on OOM |
+|---|---|---|
+| 2580 | `_regex_find` | reports **no match** |
+| 2589 | `_regex_findAll` | silently returns **fewer** matches |
+| 2600 | `_regex_replace` | silently leaves the text **unreplaced** |
+
+```zig
+if (re.matchAt(input, i, re.flags.lazy_match) catch null) |e| return input[i..e];
+```
+
+**The inconsistency is two lines away in the same functions.** `out.append(...) catch
+@panic("OOM")` — so the file's own convention is already to panic on OOM for the *output
+buffer*, and only the *match itself* fails quiet. A detector that cannot see reporting no
+findings is this repository's signature failure mode; here it is in the shipped runtime,
+and if Zebra's regex is ever used to validate or sanitise input, an OOM means the check
+**passes**.
+
+**Found by measurement, not by eye.** Of 34 `FABRICATE`-class catch sites in the preamble
+(a failure yielding a value indistinguishable from a real one), exactly **3** sit inside an
+`if`/`while` CONDITION — these three. The other 31 are in statement position where the
+fabricated value is cosmetic. Tooling: `C:/Projects/hearsay/tools/survey_zig.py` and
+`flows_probe.py`.
+
+**Fix:** `catch @panic("OOM")`, matching the adjacent line. This aligns with existing local
+policy rather than setting new policy; propagating instead would change the user-visible
+signatures of `find`/`findAll`/`replace`, which return plain values today.
+
+**Verified 2026-08-26.** Fix confirmed present in the EMITTED runtime, not just in the source: `zebra_rt.zig` from a fresh emit carries the new form and **zero** occurrences of the old one (a preamble edit is invisible until regen, and the build order matters -- see CLAUDE.md). Quick tier 25/25, smoke 383/383, round-trip byte-identical.
+
 ### BUG-307: selfhost-compiled `File.delete` PANICS on a file that is already gone — CLOSED 2026-08-26
 
 **The shipping compiler crashed where the reference compiler carried on.**

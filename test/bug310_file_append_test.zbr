@@ -1,0 +1,40 @@
+# BUG-310 — File.append silently TRUNCATED the file when the read failed for any reason
+# other than the file being absent.
+#
+# Append is read-existing + concat + rewrite (Zig 0.16 removed File.seekFromEnd), and the
+# rewrite uses createFile, which TRUNCATES. The read was `catch ""`, catching everything --
+# so an AccessDenied, a SharingViolation or a transient I/O error produced an empty
+# `existing`, and the file was left holding only the appended fragment. Now only
+# FileNotFound yields "", and anything else refuses rather than truncating.
+#
+# WHAT THIS FIXTURE CANNOT DO: it does not reproduce the data loss. Provoking a read
+# failure that is not FileNotFound needs a lock or a permission denial, neither of which is
+# reachable from Zebra source here. It is a CONTROL on the fix.
+#
+# THE CONTROL IS NOT DECORATION. The fix narrows a catch-all to one specific error, and the
+# obvious way to get that wrong is to narrow it too far -- to stop tolerating the absent
+# file, which is the case the `catch ""` existed for in the first place. Leg 1 is exactly
+# that case, and it would fail loudly against an over-narrowed fix.
+def main()
+    var p = "bug310_scratch.txt"
+
+    # Start clean; delete tolerates absence (BUG-307).
+    File.delete(p)
+
+    # leg 1: append to a file that does NOT exist must create it, not refuse.
+    File.append(p, "one")
+    if File.read(p) <> "one"
+        print("FAIL: append to a missing file must create it")
+        File.delete(p)
+        return
+
+    # leg 2: append to an EXISTING file must PRESERVE what was there. This is the
+    # property the truncation bug destroyed.
+    File.append(p, "-two")
+    if File.read(p) <> "one-two"
+        print("FAIL: append truncated the existing contents")
+        File.delete(p)
+        return
+
+    File.delete(p)
+    print("bug310: OK")

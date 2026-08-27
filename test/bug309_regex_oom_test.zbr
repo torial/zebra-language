@@ -1,0 +1,33 @@
+# BUG-309 — a regex OOM used to be reported as "no match".
+#
+# `matchAt` is typed `error{OutOfMemory}!?usize`, so OOM is its ONLY failure, and
+# find/findAll/replace each discarded it into `null`: a failed check read as a passed one.
+# Fixed to `catch @panic("regex: out of memory")`, matching what the very next line in each
+# of those functions already does for its own output buffer.
+#
+# WHAT THIS FIXTURE CANNOT DO, stated plainly: it does not reproduce the bug. Forcing an
+# allocation failure inside the engine is not reachable from Zebra source. This is a
+# CONTROL on the fix, not a reproduction. What it does prove is the half that a wrong fix
+# would break -- that a GENUINE no-match still returns empty and does not panic. Those two
+# outcomes were indistinguishable before; the whole point of the fix is that they are not
+# indistinguishable now, and this pins the benign one.
+def main()
+    var re: Regex = Regex.compile("\\d+")
+
+    # A real match.
+    if re.find("abc 42 def") <> "42"
+        print("FAIL: find")
+        return
+
+    # A real MISS. This is the important leg: the fix must not have turned "no match"
+    # into a panic.
+    if re.find("no digits here") <> ""
+        print("FAIL: genuine no-match must stay empty")
+        return
+
+    # replace still substitutes.
+    if re.replace("a1b22c", "#") <> "a#b#c"
+        print("FAIL: replace")
+        return
+
+    print("bug309: OK")

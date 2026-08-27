@@ -790,7 +790,16 @@ pub fn _objpool_create(comptime T: type, cap: i64) *_ObjectPool(T) {
 // read-existing + concat + rewrite (creates the file if absent).
 pub fn _file_append(path: []const u8, content: []const u8) void {
     const p = _zbr_norm_path(path);
-    const existing: []const u8 = std.Io.Dir.cwd().readFileAlloc(_io, p, _allocator, .unlimited) catch "";
+    // BUG-310. `catch ""` here is deliberate for "the file does not exist yet" -- and was
+    // catching EVERYTHING. createFile below TRUNCATES, so an AccessDenied, a
+    // SharingViolation or a transient read error left the file holding only the appended
+    // fragment: silent data loss. Discriminate, exactly as BUG-307 did for delete. The
+    // two lines below already panic on failure, so refusing an unexpected READ error is
+    // this function's existing contract rather than a new policy.
+    const existing: []const u8 = std.Io.Dir.cwd().readFileAlloc(_io, p, _allocator, .unlimited) catch |_fa_err| switch (_fa_err) {
+        error.FileNotFound => "",
+        else => @panic("File.append: cannot read existing file (refusing to truncate it)"),
+    };
     const combined = _str_concat(existing, content, _allocator);
     const wf = std.Io.Dir.cwd().createFile(_io, p, .{}) catch @panic("File.append error");
     defer wf.close(_io);
@@ -2549,7 +2558,7 @@ pub fn _regex_match(re: Regex, input: []const u8) bool {
 pub fn _regex_find(re: Regex, input: []const u8) []const u8 {
     var i: usize = 0;
     while (i <= input.len) : (i += 1) {
-        if (re.matchAt(input, i, re.flags.lazy_match) catch null) |e| return input[i..e];
+        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| return input[i..e];
     }
     return "";
 }
@@ -2558,7 +2567,7 @@ pub fn _regex_find_all(re: Regex, input: []const u8) std.ArrayList([]const u8) {
     var out: std.ArrayList([]const u8) = .empty;
     var i: usize = 0;
     while (i < input.len) {
-        if (re.matchAt(input, i, re.flags.lazy_match) catch null) |e| {
+        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| {
             out.append(std.heap.page_allocator, input[i..e]) catch @panic("OOM");
             i = if (e > i) e else i + 1;
         } else i += 1;
@@ -2569,7 +2578,7 @@ pub fn _regex_replace(re: Regex, input: []const u8, sub: []const u8) []const u8 
     var out: std.ArrayList(u8) = .empty;
     var i: usize = 0;
     while (i < input.len) {
-        if (re.matchAt(input, i, re.flags.lazy_match) catch null) |e| {
+        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| {
             out.appendSlice(std.heap.page_allocator, sub) catch @panic("OOM");
             i = if (e > i) e else i + 1;
         } else {
