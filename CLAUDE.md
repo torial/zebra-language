@@ -203,7 +203,7 @@ per-tier counts, computed from the registrations rather than written down.
 | `--fast` | 23 <!-- doc-gen: 23 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
 | (default) | 25 <!-- doc-gen: 25 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
 | `--full` | 32 <!-- doc-gen: 32 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 35 <!-- doc-gen: 35 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–85 min** | once a day |
+| `--daily` | 35 <!-- doc-gen: 35 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–110 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -1440,6 +1440,33 @@ fine: clearing that directory made the build produce an app, which then refused 
 console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**DAILY tier 2026-08-26: 35/35 PASS — NO XFAIL, in ONE invocation, 110 min at JOBS=2.**
+The first fully green daily with nothing pinned: `node-addon` passes for real now that
+BUG-297 is fixed, so the tier's arithmetic is 35 = 35 rather than 34 + 1. smoke **384/384**,
+round-trip byte-identical, `compile_check-inline` **295/0/0**, `output_sweep` 374 behaviour
+identical, `full_sweep` and `examples_sweep` 0 regressions, `divergence` **0 selfhost
+gaps**, `gramgen` 960/0/0, `gui-scaffold` clean.
+
+**AND THE UPPER BOUND MOVED AGAIN, 85 → 110 min.** The table above now reads 37–110. No
+cause is offered: this run followed several rebuilds of both compilers, which invalidates
+zig's cache downstream — the same untested hypothesis already recorded for the 08-20 run,
+and still untested. Recorded as an observation.
+
+It closed a day that fixed BUG-297, 298, 300, 301, 264, 246, 212, 103 and then 307, 309,
+310, 308 — and the last four all came out of ONE red gate. `output_sweep` reported a
+`File.delete error` panic appended to `try_outer_vars`; chasing it found a selfhost parity
+gap that crashed on an absent file (307), and reading the neighbourhood found two
+fabricating catches in the shipped runtime (309, 310) plus a retry loop that could never
+retry (308).
+
+**THE DAY'S TRANSFERABLE LESSON IS ABOUT EXIT CODES, and it cost a real result.** The first
+daily was run as `gates.sh --daily 2>&1 | tee log | tail -60`; the harness reported exit 0
+and the tier had FAILED. **The pipeline's status is `tail`'s.** Worse, the obvious
+`grep -E "^gates:"` recovery ALSO reads as success — the PASS terminal line is uncoloured
+and the FAIL line is ANSI-colour-prefixed, so anchoring at `^gates:` matches only the green
+form. Two independent ways to read a red daily as green, stacked. Capture the code with no
+pipe (`gates.sh ... > log; rc=$?`) and match `gates:` unanchored.
 
 **DAILY tier 2026-08-22: 33/34 PASS + 1 XFAIL in ONE invocation, 74 min at JOBS=2** —
 the first full tier since BUG-302 was fixed, i.e. the first one whose red would have meant
