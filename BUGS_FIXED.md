@@ -6,6 +6,51 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-308: `File.delete` panics on every failure except `FileNotFound`, so a retry loop around it is unreachable code — CLOSED 2026-08-26
+
+**A retry loop was written to survive a failure the primitive cannot report.**
+
+`deleteScratch` in `selfhost/main.zbr` retries `File.delete` ten times with exponential
+backoff, because "Windows releases the image of a just-executed process asynchronously, and
+under load that lag exceeds 300 ms" — i.e. it exists to survive a **locked file**. But the
+emitted delete is:
+
+```zig
+deleteFile(_io, path) catch |_fd_err| { if (_fd_err != error.FileNotFound) @panic("File.delete error"); }
+```
+
+A lock is not `FileNotFound`, so the first attempt **panics** and the loop never reaches its
+second try. `deleteScratch` also calls `File.exists` first and returns if absent, so the
+one error it tolerates is the one that cannot occur on that path. The backoff is dead code
+for the only failure it was written for.
+
+**Verified directly, without needing load.** A directory is also not `FileNotFound`:
+`File.delete("some_dir")` compiled with the *tolerant* (bootstrap) emit panics —
+`thread 27476 panic: File.delete error`. So the mechanism is proven; what remains inferred
+is only that the daily's specific panic was a lock (it is load-dependent and did not
+reproduce on an idle re-run, 374 files behaviour-identical).
+
+**The panic also says nothing.** No path, no underlying error — `@panic("File.delete
+error")` is the whole message. UNGIT "nothing withheld": the runtime knows which file and
+which errno and reports neither.
+
+**API decision (Sean, 2026-08-26): option 1.** Options considered:
+1. `File.tryDelete(path): bool` — a non-panicking primitive a retry loop can actually use.
+   Cleanest, but it is new surface area.
+2. Make `File.delete` `throws` so a program can `catch` it. Most consistent with Zebra's
+   error model, but it changes an existing signature.
+3. Widen the tolerated set to include lock/sharing errors. **Rejected** — that hides real
+   failures and is the fabrication direction.
+
+Recommendation: (1), and give the panic a message naming the path and the error regardless
+of which is chosen.
+
+**Related:** BUG-307 (the parity half of the same emit) is fixed.
+
+**Fixed 2026-08-26 in BOTH compilers** — `deleteScratch` cannot use a builtin the bootstrap does not know, because the bootstrap regenerates `selfhost/main.zbr`. Verified in the EMIT: both compilers now emit `File.delete failed on '{s}': {s}` and **zero** occurrences of the old bare string, and the regenerated `selfhost/main.zig` carries the `blk_ftd` form. Fixture `test/bug308_try_delete_test.zbr` (`smoke_run`), whose leg 3 is the control: `tryDelete` on a directory must report **false**, without which legs 1 and 2 are satisfied by a function that returns true unconditionally. Quick tier 25/25, smoke 384/384.
+
+**It also exposed a gap in `rebuild.sh`.** Its stale-bootstrap guard listed only the two preamble files; everything in `src/` is compiled into the bootstrap with the same staleness. The regen ran an older bootstrap and failed with `expected 'bool', got 'void'` — a type error naming the very feature being added, which reads as "your new code is wrong". List widened; falsified by `tools/rebuild_guard_check.sh`, because the successful rebuild could not prove it (the loop breaks on its first match, and the preamble happened to be newest).
+
 ### BUG-310: `File.append` SILENTLY TRUNCATES the file when the read fails for any reason other than absence — CLOSED 2026-08-26
 
 **A transient read error destroys the file's existing contents.**

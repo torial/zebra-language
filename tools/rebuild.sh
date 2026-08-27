@@ -125,8 +125,18 @@ if [[ $REGEN -eq 1 ]]; then
     # preamble file is actually newer than the binary — a .zbr-only edit (the
     # common case) pays nothing, and a tree whose selfhost/*.zig is currently
     # broken is not blocked from being regenerated back to health.
+    #
+    # THE LIST WAS TOO NARROW UNTIL 2026-08-26. The preamble files are EMBEDDED at build
+    # time; everything in src/ is COMPILED INTO the binary. Both make the bootstrap stale
+    # in exactly the same way, and only the first was covered. Adding File.tryDelete to
+    # src/TypeChecker.zig and then using it from selfhost/main.zbr regenerated against a
+    # bootstrap 35 minutes older than the change, and the regen failed with
+    # `expected 'bool', got 'void'` -- a type error about the very feature being added,
+    # which reads as "your new code is wrong" rather than "your compiler is stale".
+    # That is the reassuring-but-wrong reading again, so the fix belongs here rather than
+    # in a paragraph asking people to remember.
     BOOT=zig-out/bin/zebra-bootstrap.exe
-    for f in selfhost/stdlib_preamble.zig selfhost/napi_preamble.zig; do
+    for f in selfhost/stdlib_preamble.zig selfhost/napi_preamble.zig src/*.zig build.zig; do
         if [[ -f "$f" && ( ! -f "$BOOT" || "$f" -nt "$BOOT" ) ]]; then
             step "rebuilding the bootstrap first ($f is newer; it is embedded at build time)"
             zbuild_or_fail "zig build failed — the bootstrap still embeds the OLD $f, so regenerating now would emit a stale runtime"

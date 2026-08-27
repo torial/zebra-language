@@ -15967,7 +15967,9 @@ struct Generator
             w.emit(")")
             return
         if mname == "delete"
-            w.emit("(std.Io.Dir.cwd().deleteFile(_io, ")
+            # BUG-308: bind the path so the panic can NAME it. `@panic("File.delete
+            # error")` told a 2am reader neither which file nor why.
+            w.emit("(blk_fd: { const _fd_p = ")
             if args.len > 0
                 genExpr(args.at(0).value)
             else
@@ -15981,7 +15983,23 @@ struct Generator
             # INVISIBLE TO EVERY COMPILE-ONLY GATE BY CONSTRUCTION: both forms are valid
             # Zig, so `divergence` reported 0 selfhost gaps with the defect live. It was
             # `output_sweep`, the only gate that RUNS the corpus, that surfaced the panic.
-            w.emit(") catch |_fd_err| { if (_fd_err != error.FileNotFound) @panic(\"File.delete error\"); })")
+            w.emit("; std.Io.Dir.cwd().deleteFile(_io, _fd_p) catch |_fd_err| { if (_fd_err != error.FileNotFound) std.debug.panic(\"File.delete failed on '{s}': {s}\", .{ _fd_p, @errorName(_fd_err) }); }; break :blk_fd {}; })")
+            return
+        # BUG-308: the delete a RETRY LOOP can actually use. `delete` PANICS on every
+        # failure except FileNotFound, so deleteScratch's exponential backoff could never
+        # reach its second attempt against a locked file -- dead code for the one failure
+        # it was written to survive.
+        #
+        # TRUE iff the file is ABSENT AFTERWARDS. Already-gone counts as success, matching
+        # delete's own tolerance; the other reading ("did a delete occur") would make a
+        # loop spin forever on a file it had just removed.
+        if mname == "tryDelete"
+            w.emit("(blk_ftd: { std.Io.Dir.cwd().deleteFile(_io, ")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(") catch |_ftd_err| break :blk_ftd (_ftd_err == error.FileNotFound); break :blk_ftd true; })")
             return
         if mname == "size"
             w.emit("(blk_fsz: { const _sz_stat = std.Io.Dir.cwd().statFile(_io, ")

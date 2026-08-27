@@ -2360,7 +2360,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             # prints as a string ({s}), not a byte array ({any}).
                             if mem.member == "read"
                                 return Type_.string_
-                            if mem.member == "exists" or mem.member == "isFile" or mem.member == "isDir"
+                            # tryDelete: BUG-308, a delete a retry loop can actually use.
+                            if mem.member == "exists" or mem.member == "isFile" or mem.member == "isDir" or mem.member == "tryDelete"
                                 return Type_.bool_
                             if mem.member == "size"
                                 return Type_.int_

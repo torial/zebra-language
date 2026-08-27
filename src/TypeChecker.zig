@@ -3374,6 +3374,7 @@ const TypeChecker = struct {
                     if (std.mem.eql(u8, mem.member, "readLines")) return .unknown; // List(str)
                     if (std.mem.eql(u8, mem.member, "listDir"))   return .unknown; // List(str)
                     if (std.mem.eql(u8, mem.member, "exists"))    return .bool;
+                    if (std.mem.eql(u8, mem.member, "tryDelete")) return .bool; // BUG-308
                     if (std.mem.eql(u8, mem.member, "isFile"))    return .bool;
                     if (std.mem.eql(u8, mem.member, "isDir"))     return .bool;
                     if (std.mem.eql(u8, mem.member, "size"))      return .int;

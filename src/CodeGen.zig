@@ -7852,9 +7852,27 @@ const Generator = struct {
         }
         if (std.mem.eql(u8, method, "delete")) {
             // File.delete(path) → delete file (ignores not-found)
-            try g.w.writeAll("(std.Io.Dir.cwd().deleteFile(_io, ");
+            // BUG-308: the path is BOUND so the panic can NAME it. `@panic("File.delete
+            // error")` told a 2am reader neither WHICH file nor WHY -- and every failure
+            // that is not FileNotFound still lands here, so the message is the only thing
+            // the reader gets.
+            try g.w.writeAll("(blk_fd: { const _fd_p = ");
             if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
-            try g.w.writeAll(") catch |_fd_err| { if (_fd_err != error.FileNotFound) @panic(\"File.delete error\"); })");
+            try g.w.writeAll("; std.Io.Dir.cwd().deleteFile(_io, _fd_p) catch |_fd_err| { if (_fd_err != error.FileNotFound) std.debug.panic(\"File.delete failed on '{s}': {s}\", .{ _fd_p, @errorName(_fd_err) }); }; break :blk_fd {}; })");
+            return true;
+        }
+        if (std.mem.eql(u8, method, "tryDelete")) {
+            // BUG-308: the delete a RETRY LOOP can actually use. `delete` PANICS on every
+            // failure except FileNotFound, so `deleteScratch`'s exponential backoff could
+            // never reach its second attempt against a locked file -- it was dead code for
+            // the one failure it was written to survive.
+            //
+            // TRUE iff the file is ABSENT AFTERWARDS. Already-gone counts as success, which
+            // matches delete's own FileNotFound tolerance; the other reading ("did a delete
+            // occur") would make a loop spin forever on a file it had just removed.
+            try g.w.writeAll("(blk_ftd: { std.Io.Dir.cwd().deleteFile(_io, ");
+            if (args.len >= 1) try g.genExpr(args[0].value) else try g.w.writeAll("\"\"");
+            try g.w.writeAll(") catch |_ftd_err| break :blk_ftd (_ftd_err == error.FileNotFound); break :blk_ftd true; })");
             return true;
         }
         if (std.mem.eql(u8, method, "rename")) {

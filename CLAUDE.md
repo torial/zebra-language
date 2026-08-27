@@ -89,7 +89,28 @@ distinct traps, one at each end:
   bootstrap emits the **old** runtime, and every gate downstream measures it. Observed
   2026-07-28: a preamble edit followed by `rebuild.sh` reported OK and changed zero
   generated files. The order is `zig build` → regen → `zig build`; `rebuild.sh` now
-  does the leading build itself when a preamble file is newer than the binary.
+  does the leading build itself when one of the bootstrap's INPUTS is newer than the binary.
+
+**"Inputs" meant only the two preambles until 2026-08-26, and the gap cost a failed regen
+that blamed the wrong thing.** The preambles are *embedded* at build time; everything in
+`src/` is *compiled into* the binary. Identical staleness, and only the first was covered.
+Adding `File.tryDelete` to `src/TypeChecker.zig` and using it from `selfhost/main.zbr`
+regenerated against an older bootstrap and failed with `expected 'bool', got 'void'` —
+**a type error naming the very feature being added**, which reads as "your new code is
+wrong" rather than "your compiler is stale". Same reassuring-but-wrong direction as
+BUG-302's `CFAIL`. The list is now
+`stdlib_preamble.zig napi_preamble.zig src/*.zig build.zig`.
+
+`bash tools/rebuild_guard_check.sh` (~1 s, no build, NOT a gate) falsifies that condition
+against controlled timestamps — because **the real rebuild could not**: the loop breaks on
+its first match, and after the fix the preamble happened to be newest, so the run fired
+citing the preamble and the `src/` arm was never exercised. "The rebuild worked" was not
+evidence that it would. Six legs, two of which carry the weight: a **control** (with
+nothing newer it must NOT fire — otherwise an always-fires guard passes every other leg),
+and the promise that **a `.zbr`-only edit still pays nothing**, which is exactly what
+widening the list could have broken. Its copy of the condition is its weakness, so leg 0
+compares that copy textually against the shipped tool and REFUSES (exit 2) rather than
+passing against logic `rebuild.sh` does not have.
 
 **`--module NAME` is the inner loop, and it is ~10 s against several minutes.** The full
 regen re-emits every selfhost module and rebuilds the intermediate compilers first; when
@@ -1384,7 +1405,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 80 scripts | <!-- doc-gen: 80 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 81 scripts | <!-- doc-gen: 81 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 51 tracked documents <!-- doc-gen: 51 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -1861,7 +1882,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **390** <!-- doc-gen: 390 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **521** <!-- doc-gen: 521 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **522** <!-- doc-gen: 522 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

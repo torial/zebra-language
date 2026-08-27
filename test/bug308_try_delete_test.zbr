@@ -1,0 +1,44 @@
+# BUG-308 — File.tryDelete: a delete a RETRY LOOP can actually use.
+#
+# `File.delete` panics on every failure except FileNotFound. `deleteScratch` in
+# selfhost/main.zbr retries it ten times with exponential backoff specifically to survive a
+# Windows file LOCK -- and a lock is not FileNotFound, so the first attempt aborted the
+# compiler and the loop never reached its second try. The backoff was dead code for the one
+# failure it was written for.
+#
+# CONTRACT: tryDelete returns TRUE iff the file is ABSENT AFTERWARDS. A file that was
+# already gone counts as success, matching delete's own FileNotFound tolerance. The other
+# reading ("did a delete actually occur") would make a retry loop spin forever on a file it
+# had just removed -- which is why the already-absent leg below is a real assertion about
+# the contract and not just a smoke test.
+def main()
+    var p = "bug308_scratch.txt"
+    File.delete(p)
+
+    # leg 1: already absent counts as success.
+    if not File.tryDelete(p)
+        print("FAIL: tryDelete on an absent file must report success")
+        return
+
+    # leg 2: a real file is removed AND reported.
+    File.write(p, "payload")
+    if not File.tryDelete(p)
+        print("FAIL: tryDelete on a real file must report success")
+        return
+    if File.exists(p)
+        print("FAIL: tryDelete reported success but the file is still there")
+        return
+
+    # leg 3: THE CONTROL. tryDelete must be able to answer FALSE, or leg 1 and leg 2 are
+    # satisfied by a function that returns true unconditionally. A directory is not
+    # FileNotFound, so deleteFile refuses it -- and tryDelete must REPORT that rather than
+    # panic, which is the entire difference from File.delete.
+    var d = "bug308_scratch_dir"
+    Dir.create(d)
+    if File.tryDelete(d)
+        print("FAIL: tryDelete must report false when it cannot delete")
+        Dir.delete(d)
+        return
+    Dir.delete(d)
+
+    print("bug308: OK")
