@@ -6,6 +6,43 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-307: selfhost-compiled `File.delete` PANICS on a file that is already gone — CLOSED 2026-08-26
+
+**The shipping compiler crashed where the reference compiler carried on.**
+
+| compiler | emitted for `File.delete(p)` | `File.delete("not_there.txt")` |
+|---|---|---|
+| `src/CodeGen.zig:7857` (bootstrap) | `catch \|_fd_err\| { if (_fd_err != error.FileNotFound) @panic(…) }` | prints `survived` |
+| `selfhost/CodeGen.zbr` (**shipped**) | `catch @panic("File.delete error")` | `thread N panic: File.delete error` |
+
+`src/` gained the tolerance in `2e74c67`; this side never did — `git log -S'_fd_err' --
+selfhost/CodeGen.zbr` returns **nothing at all**. A plain selfhost-parity gap of exactly
+the kind the equivalence rule in CLAUDE.md exists to prevent.
+
+**INVISIBLE TO EVERY COMPILE-ONLY GATE BY CONSTRUCTION.** Both forms are valid Zig, so
+`divergence --gate` reported **0 selfhost gaps** with the defect live, and `full_sweep` /
+`compile_check` were equally blind. This is the BUG-226 class — correct-compiling code that
+behaves wrongly — and only a gate that RUNS things can see it. `output_sweep` did, during
+the 2026-08-26 `--daily`, as an unexplained `File.delete error` panic appended to
+`try_outer_vars`.
+
+**How it was found is worth keeping, because the first two readings were both wrong.** The
+daily's pipeline exit code was `tail`'s, not `gates.sh`'s, so a FAILED daily reported
+success — the two-terminal-lines hazard this file already documents, striking anyway. Then
+`gates.sh:175` (`out="$(cat "$log")"; rm -f "$log"`) was read as having destroyed the
+evidence; it had not — lines 233-234 print the failing lines and a tail, and the diff was
+in the log the whole time.
+
+**Fixture: `test/bug307_delete_missing_test.zbr`** (`smoke_run`, marker `bug307: OK`).
+Watched RED against the pre-fix compiler with the real attacker — the emitted binary
+panicking — not a mutation. **Leg 2 is a control**: tolerating a missing file is trivially
+satisfiable by making delete do nothing, and leg 1 cannot tell the difference, so the
+fixture also proves a delete still deletes.
+
+**Left open as BUG-308:** the tolerance is *only* for `FileNotFound`. Every other
+failure — a Windows lock included — still panics, which makes any retry loop around
+`File.delete` unreachable code.
+
 ### BUG-103: TC `extractFromDecls`/`extractFromMembers` silently skip unknown declaration variants — CLOSED 2026-08-26
 
 > **CLOSED 2026-08-26 — the FIX landed 2026-05-06; what was missing was something that

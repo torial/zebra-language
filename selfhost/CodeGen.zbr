@@ -15972,7 +15972,16 @@ struct Generator
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit(") catch @panic(\"File.delete error\"))")
+            # BUG-307: this used to be a bare `catch @panic(...)`, so a selfhost-compiled
+            # program CRASHED deleting a file that was already gone, while the same source
+            # built by the bootstrap printed nothing and carried on. src/CodeGen.zig gained
+            # the FileNotFound tolerance in 2e74c67 and this side never did -- `git log -S`
+            # on this file for `_fd_err` returns nothing at all.
+            #
+            # INVISIBLE TO EVERY COMPILE-ONLY GATE BY CONSTRUCTION: both forms are valid
+            # Zig, so `divergence` reported 0 selfhost gaps with the defect live. It was
+            # `output_sweep`, the only gate that RUNS the corpus, that surfaced the panic.
+            w.emit(") catch |_fd_err| { if (_fd_err != error.FileNotFound) @panic(\"File.delete error\"); })")
             return
         if mname == "size"
             w.emit("(blk_fsz: { const _sz_stat = std.Io.Dir.cwd().statFile(_io, ")

@@ -1633,6 +1633,7 @@ smoke_run_bootstrap test/bug124_boxed_nilable_ctor_test.zbr "bug124: OK"
 # COMPILES and prints the byte array `{ 109, 97, 100, 101 }`, which the asserts inside the
 # fixture cannot see because only the FORMATTING is wrong.
 smoke_run           test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made returned factory"
+smoke_run test/bug307_delete_missing_test.zbr "bug307: OK"
 
 # Bitwise slice 1 (& | ^). smoke_run, not a bare emit check: `&` and `|` are one character
 # apart, both emit valid Zig, and both yield a number -- so a swapped operator survives
@@ -1661,6 +1662,7 @@ smoke_run test/bug246_unannotated_generic_ctor_test.zbr "bug246: OK"
 # formatter. The first draft of this fixture did exactly that and tested only half 1.
 smoke_run  test/bug212_code_editor_const_test.zbr "bug212: OK"
 smoke_run_bootstrap test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made returned factory"
+smoke_run test/bug307_delete_missing_test.zbr "bug307: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

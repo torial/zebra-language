@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-306. Next new bug: BUG-307.**
+**Last bug number generated: BUG-308. Next new bug: BUG-309.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -14,6 +14,47 @@
 > *somewhere*, so a duplicate satisfies it twice over.
 
 ---
+
+### BUG-308: `File.delete` panics on every failure except `FileNotFound`, so a retry loop around it is unreachable code — OPEN (found 2026-08-26)
+
+**A retry loop was written to survive a failure the primitive cannot report.**
+
+`deleteScratch` in `selfhost/main.zbr` retries `File.delete` ten times with exponential
+backoff, because "Windows releases the image of a just-executed process asynchronously, and
+under load that lag exceeds 300 ms" — i.e. it exists to survive a **locked file**. But the
+emitted delete is:
+
+```zig
+deleteFile(_io, path) catch |_fd_err| { if (_fd_err != error.FileNotFound) @panic("File.delete error"); }
+```
+
+A lock is not `FileNotFound`, so the first attempt **panics** and the loop never reaches its
+second try. `deleteScratch` also calls `File.exists` first and returns if absent, so the
+one error it tolerates is the one that cannot occur on that path. The backoff is dead code
+for the only failure it was written for.
+
+**Verified directly, without needing load.** A directory is also not `FileNotFound`:
+`File.delete("some_dir")` compiled with the *tolerant* (bootstrap) emit panics —
+`thread 27476 panic: File.delete error`. So the mechanism is proven; what remains inferred
+is only that the daily's specific panic was a lock (it is load-dependent and did not
+reproduce on an idle re-run, 374 files behaviour-identical).
+
+**The panic also says nothing.** No path, no underlying error — `@panic("File.delete
+error")` is the whole message. UNGIT "nothing withheld": the runtime knows which file and
+which errno and reports neither.
+
+**Needs an API decision, which is why this is filed rather than fixed.** Options:
+1. `File.tryDelete(path): bool` — a non-panicking primitive a retry loop can actually use.
+   Cleanest, but it is new surface area.
+2. Make `File.delete` `throws` so a program can `catch` it. Most consistent with Zebra's
+   error model, but it changes an existing signature.
+3. Widen the tolerated set to include lock/sharing errors. **Rejected** — that hides real
+   failures and is the fabrication direction.
+
+Recommendation: (1), and give the panic a message naming the path and the error regardless
+of which is chosen.
+
+**Related:** BUG-307 (the parity half of the same emit) is fixed.
 
 ### BUG-306: `inferExpr` cannot see MODULE-SCOPE declarations, so every type-based dispatch guard needs a bespoke oracle — OPEN (found 2026-08-23)
 

@@ -1,0 +1,26 @@
+# BUG-307 — File.delete on a MISSING file must not crash.
+#
+# The selfhost emitted a bare `catch @panic("File.delete error")` while the bootstrap
+# emitted a FileNotFound-tolerant form, so the same source crashed under the shipping
+# compiler and survived under the reference one. Both are valid Zig, so every compile-only
+# gate was blind to it by construction -- `divergence` reported 0 selfhost gaps with the
+# defect live. `output_sweep`, the only gate that RUNS the corpus, is what surfaced it.
+#
+# LEG 2 IS THE CONTROL, and it is not decoration. Tolerating a missing file is trivially
+# satisfiable by making delete do nothing at all, and leg 1 cannot tell the difference. A
+# fix that neutered File.delete would pass leg 1 and fail leg 2.
+def main()
+    # leg 1: the attacker -- the exact call that panicked.
+    File.delete("bug307_definitely_not_there.txt")
+
+    # leg 2: the control -- a real file must actually go away.
+    var p = "bug307_scratch.txt"
+    File.write(p, "payload")
+    if not File.exists(p)
+        print("FAIL: write did not create the file")
+        return
+    File.delete(p)
+    if File.exists(p)
+        print("FAIL: delete did not delete")
+        return
+    print("bug307: OK")
