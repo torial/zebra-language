@@ -753,6 +753,63 @@ output pinned byte-for-byte.
 It also fixes a defect that adding more files cannot: every test we write is shaped by what
 we already believe matters.
 
+### AUTOMATIC ARENA SCOPING — and why it makes the transform interface a PREREQUISITE
+
+Sean's proposal: place an `allocate Arena()` scope automatically where a function's
+allocations provably do not outlive the call. Sean also noted, correctly, that it would
+have to be tracked in the transform list -- and that instinct is load-bearing rather than
+tidy-minded.
+
+**This transformation is DANGEROUS if the escape analysis is wrong.** A value the compiler
+wrongly proves does not escape is freed while still referenced: use-after-free, in release,
+silently. Compare BUG-313, where the failure at least announces itself as a wrong number;
+this one hands out reclaimed memory.
+
+So being listable, queryable and disableable is a **safety requirement**, not documentation.
+This transformation cannot ship as invisible compiler magic, which makes the transform
+interface a **prerequisite** for it rather than a companion to it. Sequence: interface
+first, auto-scoping second.
+
+Related lever, measured 2026-08-26 and available today with no compiler work: in a
+multi-threaded build EVERY allocation takes a mutex (`_TsAlloc` wraps the shared arena);
+`--single-threaded` makes `builtin.single_threaded` comptime-true and the wrapper is
+compiled out. For allocation-heavy single-threaded programs that is serialization removed
+from the hottest path. (Mechanism confirmed in the emit; the speedup is NOT yet measured.)
+
+### THE TRANSFORM INTERFACE AS THE PLUGIN MECHANISM (Sean, 2026-08-26)
+
+Sean's: let the transform interface BE the extension point, so people other than the core
+maintainers can extend the language within its constraints.
+
+**This is better than a general plugin API for a precise reason: it is a CONSTRAINED
+extension point.** Anything a plugin can do it does through `match` / `rewrite` /
+`metadata` / `trigger` -- so every third-party transform is automatically listable,
+disableable and self-describing, because the interface does not permit otherwise.
+Extensibility without surrendering the Hoare property. It also sidesteps the objection
+recorded above against plugin boundaries inside a compiler: this is not a new seam through
+the compiler's internals, it is one narrow, already-necessary interface.
+
+**Design for this early: a wrong user transform is a MISCOMPILE, and it will be blamed on
+Zebra.** So the interface likely needs a fifth part beside the four: a **preserved
+property** the rewrite declares and that can be checked against real inputs. That is Meyer
+applied to a transformation rather than a function -- and Zebra is unusually well placed
+for it, since `bootstrap_check`'s round-trip is already a preserved-property test at
+whole-compiler scale.
+
+### PARNAS TABLES — ADOPTED (Sean, 2026-08-26)
+
+Adopted on the strength of the `File.delete` worked example above, where a three-row table
+makes BUG-307 and BUG-308 visible on inspection after both sat invisible in the code for
+months.
+
+Where to apply first: any function with an **error taxonomy** -- most of the `File`,
+`Dir` and process surface. The check the table enables is mechanical: rows exhaustive over
+the error set, rows mutually exclusive, every row exercised by a fixture.
+
+`contract_mode_check`'s four-way `--release` x `--turbo` matrix is already a Parnas table
+built without the name; its own notes say the asymmetric cells are the point, which is
+exactly the completeness property a table makes visible.
+
 ### SMALLER, RECORDED
 
 - **Version string: `0.9_zig0.16`**, not `0.9_0.16` -- the bare form reads as a four-part
