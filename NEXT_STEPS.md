@@ -414,6 +414,57 @@ and it is done.
 That last one is the real design constraint, and it points at the static directions (6-8)
 being the ones that can actually be gated.
 
+## STANDING ITEM — THE FOUNDERS THREAD IS OPEN, NOT DONE (Sean, 2026-08-26)
+
+**Sean's convention: this is not a section to be completed and closed. Work other tickets,
+then come back every few days and see whether the intervening work has spurred new
+insight.** The evidence that this is the right shape is that the best items here did not
+come from a planning session -- they came from bouncing an idea back and forth until it
+turned into something neither of us started with:
+
+- Sean's `algorithms.sorting.<bigO>.<name>` became **complexity as reflection data**, which
+  then became **a static cost diagnostic** -- Knuth's mandate delivered before the program
+  runs.
+- "does a `List` local get freed?" became a **measured 20x allocation lever**.
+- "track auto-scoping in the transform list" became the argument that the transform
+  interface is a **prerequisite** for auto-scoping rather than a companion to it.
+
+**Nothing enforces the cadence.** This is a habit, in the same sense that "`--daily` is the
+last thing run when overnight work stops" is a habit -- stated so it can be kept, not
+automated. When picking it up again, the useful prompt is not "what is left on the list" but
+**"what has the last few days' work taught us that changes an item here?"**
+
+### THE TRIGGER RULE, derived 2026-08-26 — when may a transform fire automatically?
+
+Sean proposed detecting statically that a program never threads, and applying
+`--single-threaded` inherently. That is safe, and the reason it is safe generalises into the
+rule the transform interface needs for its `trigger` field:
+
+> **A transform may fire AUTOMATICALLY when its precondition is INDEPENDENTLY ENFORCED.
+> Otherwise it must be opt-in.**
+
+| transform | precondition | independently enforced? | trigger |
+|---|---|---|---|
+| infer `--single-threaded` | no thread spawn reachable | **yes** — the flag already makes a spawn a COMPILE ERROR, so a wrong analysis fails the build rather than miscompiling | automatic |
+| automatic arena scoping | no allocation outlives the call | **no** — a wrong escape analysis frees live memory, in release, silently | opt-in, until escape analysis has its own verifier |
+
+Two transforms of the same shape with opposite safety profiles, separated by a criterion
+rather than by taste. It also gives a research direction for anything we *want* automatic:
+find the independent enforcement first, and the transform becomes safe by construction.
+
+### TRANSFORM PROVENANCE — intrinsic vs third-party (Sean, 2026-08-26)
+
+When a miscompile is reported, the first question is **which transform produced this**, and
+whether it was ours determines who owns the defect. So:
+
+- `metadata` carries an **origin** (intrinsic / plugin name + version).
+- A diagnostic arising from transformed code should be able to **name the transform that
+  touched it**.
+- Plugins are **added and removed explicitly**, not picked up by directory scanning. A
+  plugin present-but-undeclared is invisible at exactly the moment it matters -- the same
+  argument `corpus_ls.sh` makes about untracked files, and `registration_check` about
+  unasserted ones.
+
 ## POST-0.9, PRE-1.0 — BRAINSTORM: WHAT THE FOUNDERS ACTUALLY RECOMMENDED (Sean, 2026-08-26)
 
 Sean's: mine the foundational SE literature for things worth *employing*, not quoting. The
