@@ -536,6 +536,91 @@ So BUG-313's fix is two-sided, and the second half is cheaper than the first:
   bound, next to the indexing section, where someone writing a numeric loop is already
   looking. UNGIT: the safer path should be the one you find first.
 
+### THE RANGE-CHECK RESOLUTION — the paper already answered BUG-313 (p.271)
+
+Reading past the famous quote found the answer to the question BUG-313 poses. Discussing
+bounds checks, Knuth writes:
+
+> "Wirth [94] and Hoare [39] have pointed out that **a well-designed `for` statement can
+> permit even a rather simple-minded compiler to avoid most range checks within loops.**
+>
+> I believe that range checking **should be used far more often than it currently is, but
+> not everywhere.**"
+
+**This dissolves the tradeoff BUG-313 was filed with.** That entry frames it as a choice --
+check every `.at()` and pay a compare-and-branch, or stay fast and unsafe. It is not a
+choice; it is three parts:
+
+| | Knuth's phrasing |
+|---|---|
+| `.at()` checked by default | "far more often than it currently is" |
+| an explicitly-unchecked accessor for hot paths | "but not everywhere" |
+| **`for i in 0..xs.len` ELIDES the check** | a well-designed `for` lets the compiler prove the bound |
+
+The third line is the prize and it is the one nobody proposed: **the safe form becomes the
+fast form.** A hand-managed index cannot be proved in range, so it must be checked; a range
+`for` can be. The dogfood code's 171 hand-rolled `while` loops would therefore pay for
+checks that the range-`for` would not need. So "make the safe loop obvious" is not merely
+ergonomics -- it is what makes checking affordable enough to leave on.
+
+Attribution correction: this was recorded here first as "the Dijkstra reading". It is
+**Wirth and Hoare's**, cited by Knuth.
+
+### THE ORACLE ARGUMENT FOR AN `algorithms` NAMESPACE (Sean, 2026-08-26)
+
+Sean's proposal: a stdlib `algorithms` namespace implementing the major classes from *The
+Art of Computer Programming*, as a dogfooding exercise that stresses the language outside
+compiler work.
+
+The obvious virtues are real -- TAOCP is array- and numeric-heavy, which is precisely the
+coverage gap `construct_histogram` measured; and it exercises the language somewhere other
+than its own implementation. **But the strongest argument is a different one.**
+
+**IT GIVES US AN ORACLE WE DO NOT CONTROL.** Every test in this repository asserts what
+*we* decided is correct. That is why `boundary_check` is singular: its expectations were
+written from the language reference BEFORE the compiler was run, so it can find something
+that was wrong on day one. Everything else is a golden baseline and can only find drift.
+
+TAOCP algorithms have externally-defined correct behaviour, published invariants, and
+worked examples. A wrong answer is *definitively* wrong rather than wrong-by-our-own-
+declaration. That is `boundary_check`'s property, available at scale, from a source with no
+stake in our compiler. **Volume 2's random-number generators are the sharpest case: they
+come with exact expected outputs, and there is no arguing with them.**
+
+Secondary: TAOCP algorithms are specified with loop invariants, which is Meyer's
+`require`/`ensure` territory and would be the first serious exercise of Zebra's contracts
+outside the compiler.
+
+### COMPLEXITY AS REFLECTION DATA, AND THE STATIC COST DIAGNOSTIC
+
+Sean's first shape was `algorithms.sorting.<bigO>.<name>` -- put the cost in the import
+path so it is visible where the programmer already is. **The instinct is right and is
+exactly Knuth's mandate moved EARLIER than he moved it**; the mechanism has problems:
+
+- complexity is not one number (quicksort: n log n average, n^2 worst -- which goes in the
+  path?), and space complexity is a second axis;
+- it makes a *property* into an *identity*, so improving an implementation changes its
+  import path and breaks callers.
+
+So keep the instinct and change the mechanism -- identity in the path, cost in the
+reflection data, which is the substrate already proposed above for the Hoare criterion:
+
+```
+algorithms.sorting.quick          # identity
+Reflect.complexity(quick)         # { best, average, worst, space }
+```
+
+**AND THEN IT COMPOSES INTO SOMETHING NEITHER OF US STARTED WITH.** If complexity is
+queryable metadata and the compiler already has the call graph, then *a quadratic sort
+called inside a linear loop is a compile-time diagnostic*. That is "tell the programmer
+what parts of their program are costing the most" delivered **statically** -- before the
+program runs, with no profiler, no instrumentation, and no measurement infrastructure to
+keep honest. It is also deterministic, which means unlike anything timing-based it could
+actually be GATED (this repo's timings swing 2x on identical binaries).
+
+The `algorithms` namespace is what would make it real: the first body of code carrying
+honest complexity annotations to reason over.
+
 ### Smaller observations from the same sample, recorded not filed
 
 - **`continue` appears in NEITHER corpus** -- zero uses across 522 test files and 1116 lines
