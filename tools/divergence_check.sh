@@ -209,8 +209,18 @@ fi
 # classify
 self_gap=""; boot_gap=""; agree_fail=""; multi_selffail=""; infra_names=""
 np=0; naf=0; nsg=0; nbg=0; nnomain=0; nmulti=0; nexpected=0; ninfra=0
-# Names the smoke suite registers as "the selfhost must REJECT this" (smoke_tc_fail).
-MUST_REJECT="$(grep -oE '^smoke_tc_fail +test/[A-Za-z0-9_]+\.zbr' "$REPO/tools/selfhost_smoke.sh" 2>/dev/null                | sed -E 's#^smoke_tc_fail +test/##; s#\.zbr$##')"
+# Names the smoke suite registers as "the front end must REJECT this".
+#
+# This was an inline regex until 2026-08-26, and it was LOSSY: it required a flat
+# `test/<name>.zbr`, so every registration under `test/fail_fixtures/` was invisible and
+# the list came back 48 where the suite registers 54. Harmless only because
+# `corpus_ls.sh test` does not recurse -- an unstruck gap. Now one derivation with two
+# consumers, the same argument corpus_ls.sh and positive_set.sh already make.
+MUST_REJECT="$(bash "$REPO/tools/must_reject_set.sh")" || {
+    echo "divergence: REFUSING — must_reject_set.sh would not report. Every rejection" >&2
+    echo "  would otherwise score as UNEXPECTED, which is the loudest claim this gate makes." >&2
+    exit 2
+}
 while IFS='|' read -r name b s; do
   [ -z "$name" ] && continue
   if [ "$b" = MULTI ]; then

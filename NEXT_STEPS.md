@@ -251,6 +251,241 @@ That is now pinned by leg 10 of `test/bitwise_semantics_test.zbr`.
 Every genuinely-open item, grouped. Each links to its detail section below or to
 the tracker. `[ ]` = open, `[~]` = partially done / has an open tail.
 
+## 0.9 — BRAINSTORM: THE COMPILER SHOULD TELL YOU WHAT COSTS THE MOST, BY DEFAULT (Sean, 2026-08-26)
+
+> "After working with such tools for seven years, I've become convinced that all compilers
+> written from now on should be designed to provide all programmers with feedback indicating
+> what parts of their programs are costing the most; indeed, **this feedback should be
+> supplied automatically unless it has been specifically turned off.**"
+> — Knuth, *Structured Programming with go to Statements*,
+> ACM Computing Surveys **6**(4), pp. 261-301, December 1974
+
+Sean's, via Casey Muratori's *The Root of The Root of All Evil* (BSC 2026). This is the SAME
+paper that produced "premature optimization is the root of all evil", and the quote above is
+the constructive half nobody quotes. Read together, Knuth is not saying don't optimise — he
+is saying **don't guess**, and then putting the obligation on the COMPILER to remove the need
+to guess.
+
+**CITATION CORRECTED, and the correction is instructive.** This was first written here as
+*An Empirical Study of FORTRAN Programs* (1971) from memory. That is a real Knuth paper, and
+the 1974 one draws on it — but it is not the source of either quote. The filename in Sean's
+link (`p261-knuth.pdf`) is what gave it away: Computing Surveys 6(4) begins at page 261.
+Verified against the venue; a plausible-sounding citation from recall is exactly the kind of
+thing this repo does not let stand.
+
+**READ 2026-08-26** (Sean supplied the PDF; `pdftotext -layout` extracts it cleanly — note
+poppler IS installed and on PATH for Bash, though the Read tool cannot see it). What follows
+is against the paper, not against the one quote.
+
+### What Knuth actually argues, which is THREE things, not one
+
+His own abstract states the programme: "(a) improved syntax for iterations and error exits,
+making it possible to write a larger class of programs clearly and efficiently without go to
+statements; (b) a methodology of program design, beginning with readable and correct, but
+possibly inefficient programs that are systematically transformed if necessary into efficient
+and correct, but possibly less readable code."
+
+The profiling mandate is (c), and it exists to serve (b). The full passage, and the sentence
+that is doing the real work is NOT the famous one:
+
+> "It is often a mistake to make a priori judgments about what parts of a program are really
+> critical, since **the universal experience of programmers who have been using measurement
+> tools has been that their intuitive guesses fail.** After working with such tools for seven
+> years, I've become convinced that all compilers written from now on should be designed to
+> provide all programmers with feedback indicating what parts of their programs are costing
+> the most; indeed, this feedback should be supplied automatically unless it has been
+> specifically turned off."
+
+And the famous line, in its actual context, is a *bridge* to that claim rather than a caution
+against optimising: "We should forget about small efficiencies, say about 97% of the time:
+premature optimization is the root of all evil. Yet we should not pass up our opportunities in
+that critical 3%... he will be wise to look carefully at the critical code; **but only after
+that code has been identified.**"
+
+**So the mandate rests on an empirical claim about people, not a preference about tools:
+intuition about hot code fails, reliably, and the compiler is the thing positioned to fix
+that.** Zebra's `@profile` annotation requires the programmer to have already guessed
+correctly — it is precisely the failure mode Knuth names.
+
+### THE DEEPEST ITEM, and it is a LANGUAGE requirement, not a tooling one
+
+> "This veil was first lifted from my eyes in the Fall of 1973, when I ran across a remark by
+> Hoare that, ideally, **a language should be designed so that an optimizing compiler can
+> describe its optimizations in the source language.** Of course! Why hadn't I ever thought
+> of it?"
+
+Knuth builds his "programming system of the future" on this: an interactive
+program-manipulation system where you write the readable-correct version and transform it,
+with the transformations expressible in the language itself.
+
+**Zebra transforms user code constantly and describes none of it.** TCO-wrapping a
+value-returning `fn` in `while(true)`; auto-boxing on `^T` assignment; choosing `const` vs
+`var` from mutation analysis; materializing temporaries for method chains; auto-propagating
+`throws`. Every one is a decision the compiler makes and the user cannot see — and at least
+one has already bitten as a HAZARD rather than a nicety (a `branch` arm that falls through
+inside a TCO wrapper HANGS; see `lint_fallthrough` and the TCO memory note).
+
+Hoare's criterion says those should be describable IN ZEBRA. That is the same claim as UNGIT
+"nothing withheld", arrived at from the opposite direction, and it is a far better feature
+than a profiler: **`zebra --explain` showing what the compiler did to your code, in your
+language.** It teaches the cost model instead of reporting a number, it is deterministic
+(so it can be GATED, unlike timings), and it needs no measurement infrastructure at all.
+
+### Where Zebra already stands against (a) and (b)
+
+- **(a) is largely satisfied**: no `goto`; iteration and error exits are structured
+  (`throws`/`raise`/`try`, `branch` with exhaustiveness).
+- **(b) is not addressed at all.** There is no supported notion of "here is the readable
+  version, here is the transformed version, and here is the proof they agree". The nearest
+  thing in the repo is the round-trip gate, which asserts exactly that property for the
+  COMPILER's own output — which is suggestive.
+
+### What already exists (measured 2026-08-26, so nobody re-derives it)
+
+| piece | where | shape |
+|---|---|---|
+| `@profile` method modifier | `QUICKSTART.md` §"Method modifiers" | wraps a body in `Profile.start/end` |
+| `Profile.report()` | `selfhost/stdlib_preamble.zig` | sorts entries by total ns, descending |
+| per-entry data | same | `{ total_ns, call_count }`, keyed by `"Class.method"` |
+
+So the RUNTIME is largely built. **The whole gap is the trigger**: it is opt-in, per-method,
+and hand-annotated. A user must already suspect a function before they can measure it —
+which is precisely the guessing Knuth is arguing against. Nothing is automatic, and there is
+nothing to turn off.
+
+### Two assets that make this much cheaper here than it looks
+
+**1. `--turbo` is already the "specifically turned off" switch, and the pattern is GATED.**
+Contracts are on by default and stripped by an explicit flag; `tools/contract_mode_check.sh`
+asserts that four-way matrix (and asserts, deliberately, that `--release` ALONE does not
+strip them). Automatic cost feedback wants exactly that shape, and it can copy a mechanism
+that already exists, already has a gate, and has already survived one wrong belief about it
+(BUG-257).
+
+**2. Source attribution across the Zebra→Zig boundary is ALREADY SOLVED.** The emit carries
+`// zbr:<file>:<line>` comments next to generated statements. Mapping a cost measured in
+emitted Zig back to the Zebra line that caused it is usually the hard part of this feature,
+and it is done.
+
+### Directions worth arguing about
+
+*Runtime measurement*
+1. Instrument every user function automatically rather than the `@profile`-annotated ones;
+   `--turbo`/`--release` strips it. The smallest change that satisfies the quote literally.
+2. Sampling instead of instrumentation — much lower overhead, which matters if this is ON by
+   default; costs exactness on short runs.
+3. Attribute per CALL SITE, not per function. "`fmt` is 40% of runtime" is much less useful
+   than "40% of runtime is `fmt`, called from `render`".
+4. Print the top 3 at exit, one line each, not a wall. Automatic feedback that is a wall is
+   feedback people turn off — and the quote's whole force is that it stays on.
+5. A `zebra profile <file>` subcommand: build, run, report, no flag to remember.
+
+*Static — no run required, and available in `-c`*
+6. Cost estimates from structure alone: loop nesting depth, allocations inside loops, string
+   `+` inside loops. The compiler knows all of it at emit time.
+7. **Code-size attribution**: which functions generated the most Zig. Free, deterministic,
+   and a decent proxy nobody has looked at.
+8. Report what the compiler DID to the code — TCO applied here, `^T` auto-boxed there, a copy
+   inserted, dynamic dispatch not devirtualised. This teaches the cost model rather than just
+   reporting a number, and it is pure UNGIT: the compiler knows and does not say.
+
+*Contracts, which is Zebra's own heritage*
+9. `@cost(allocs=0)` as a compile-time or run-time obligation, in the same family as
+   `require`/`ensure`. A performance property that FAILS rather than being merely reported.
+10. Budget regression: record a program's profile, fail when it moves — `output_sweep`'s
+    golden-baseline argument applied to cost instead of behaviour.
+
+*Delivery*
+11. Cost shown inline in diagnostics, on the source line, where the reader already is.
+12. Differential profiling between two runs ("what got slower"), which is the question people
+    actually have.
+13. Fold in the existing `memStats` so allocation and time are one report, not two.
+
+### The honest objections
+
+- **On-by-default instrumentation changes what you measure.** Sampling (2) or emit-time
+  static reports (6-8) dodge this; naive wrapping does not.
+- **A default that is noisy gets disabled**, which loses the argument entirely. Whatever
+  ships must be small enough to leave on — hence (4).
+- **This repo has no gate that measures TIME**, and CLAUDE.md is emphatic that timings here
+  swing 2x on identical binaries. Any cost feature that we gate must be gated on
+  DETERMINISTIC counts (allocations, call counts, emitted bytes), never on nanoseconds.
+
+That last one is the real design constraint, and it points at the static directions (6-8)
+being the ones that can actually be gated.
+
+## POST-0.9, PRE-1.0 — BRAINSTORM: WHAT THE FOUNDERS ACTUALLY RECOMMENDED (Sean, 2026-08-26)
+
+Sean's: mine the foundational SE literature for things worth *employing*, not quoting. The
+companion to the Knuth item above, and the reason it is worth doing is not reverence — it is
+that **several of these were arrived at here independently**, which is decent evidence the
+ideas are load-bearing rather than decorative. Where that has happened it is noted, because
+"we already do this" is the most useful entry in a list like this.
+
+### Already here, arrived at independently
+
+| idea | who | where it lives in Zebra |
+|---|---|---|
+| Design by Contract | Meyer (Eiffel) | `require`/`ensure`/`invariant`, gated by `contract_mode_check` |
+| Null tracking as a language property | Hoare's "billion-dollar mistake" | nil tracking, `if x != nil` narrowing |
+| Guarded commands must be exhaustive | Dijkstra | `branch` exhaustiveness — default-on since the §28 review |
+| CSP | Hoare | `Chan(T)` + `sys.go` |
+| Pipelines / do one thing well | McIlroy | the `->` pipeline operator |
+| Removing features is progress | Wirth (Oberon) | `lint_reserved_words` — seven keywords freed so far |
+| Programming as theory building | Naur | this repo's habit of recording WHY, not just what |
+
+That last row is the one worth sitting with. Naur's claim is that a program IS the theory in
+the builders' heads, and that documentation cannot fully carry it — which is precisely why
+this repo's comments record *the failure that motivated the code* rather than restating the
+code. It was not adopted from Naur; it was rediscovered by getting burned.
+
+### Candidates worth arguing about
+
+*Dijkstra*
+1. **`branch` with no matching guard should be a defined outcome, not a fall-through.** In
+   guarded commands, "no guard true" is an ERROR — a named one. Worth checking what Zebra
+   does today (see BUG-288 / the exhaustiveness diagnostics, which cannot currently say
+   WHERE).
+2. **Weakest-precondition reasoning as the semantics under `require`/`ensure`.** Zebra
+   inherited contracts from Eiffel's ergonomics; wp is the theory that makes them composable.
+   Would inform what `ensure` may legally refer to.
+3. "The competent programmer is fully aware of the limited size of his own skull" — the
+   argument for the move-checking-inward programme already in this file.
+
+*Meyer, beyond contracts*
+4. **Command-Query Separation as a lint**: a method either changes state or returns a value,
+   never both. Mechanically checkable, and Zebra already knows which methods mutate (it uses
+   that for `const` vs `var` emission).
+5. **Uniform Access**: a field and a zero-argument method should be indistinguishable at the
+   call site. Affects whether `x.size` and `x.size()` should both work.
+
+*Parnas*
+6. **Information hiding as the module criterion** — decompose by "what is likely to change",
+   not by execution order. A lens for the `selfhost/` module split.
+7. **"A rational design process and how to fake it"**: documentation written as though the
+   design were derived cleanly, even though it never is. This repo does the opposite
+   (records the mess) and that is a deliberate disagreement worth stating rather than
+   drifting into.
+
+*Knuth, beyond the profiling quote*
+8. Literate programming — the inverse of `doc_example_check`, which already asserts the
+   docs' code is real. The remaining half is code that carries its prose.
+
+*Brooks*
+9. **Essential vs accidental complexity as a feature-acceptance test** for 1.0: does this
+   feature remove essential complexity from users, or only accidental complexity we created?
+10. **The second-system effect** as an explicit hazard for 1.0 scope.
+
+*Lamport*
+11. A written specification of the concurrency model (threads, `Chan`, `Atomic`, the two-tier
+    allocator). Zebra has the primitives and no stated memory model.
+
+### The honest filter
+
+Most "founder wisdom" lists are decorative. The test for anything above earning a place:
+**does it become a gate, a lint, a diagnostic, or a removed feature?** Items 1, 4, 5 and 9
+can. Items 3 and 7 are stances, not mechanisms — worth stating once and not re-litigating.
+
 ## Language & compiler direction — 2026-07-28 assessment
 
 Sean asked what would make Zebra a daily driver on technical grounds (ecosystem/user-base

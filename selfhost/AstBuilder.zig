@@ -5117,7 +5117,7 @@ pub const ASTBuilder = struct {
                     else_opt = else_stmts_built;
                 }
 // zbr:selfhost/AstBuilder.zbr:616
-                var si = StmtIf.init(Span.init(pif.line, 0, pif.line, 0), _box_25: { const _bp_25 = blk2: { break :blk2 _allocator.create(@TypeOf(cond_expr)) catch @panic("OOM"); }; _bp_25.* = cond_expr; break :_box_25 _bp_25; }, then_stmts, else_ifs, else_opt);
+                var si = StmtIf.init(Span.init(pif.line, pif.col, pif.line, pif.col), _box_25: { const _bp_25 = blk2: { break :blk2 _allocator.create(@TypeOf(cond_expr)) catch @panic("OOM"); }; _bp_25.* = cond_expr; break :_box_25 _bp_25; }, then_stmts, else_ifs, else_opt);
 // zbr:selfhost/AstBuilder.zbr:617
                 si.is_capture = pif.is_capture;
 // zbr:selfhost/AstBuilder.zbr:618
@@ -5130,7 +5130,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:622
                 const stmts = (try self.buildStmts(pw.stmts));
 // zbr:selfhost/AstBuilder.zbr:623
-                return Stmt{ .while_ = _box_27: { const _bp_27 = _allocator.create(Ast.StmtWhile) catch @panic("OOM"); _bp_27.* = StmtWhile.init(Span.init(pw.line, 0, pw.line, 0), _box_28: { const _bp_28 = blk2: { break :blk2 _allocator.create(@TypeOf(cond_expr)) catch @panic("OOM"); }; _bp_28.* = cond_expr; break :_box_28 _bp_28; }, stmts); break :_box_27 _bp_27; } };
+                return Stmt{ .while_ = _box_27: { const _bp_27 = _allocator.create(Ast.StmtWhile) catch @panic("OOM"); _bp_27.* = StmtWhile.init(Span.init(pw.line, pw.col, pw.line, pw.col), _box_28: { const _bp_28 = blk2: { break :blk2 _allocator.create(@TypeOf(cond_expr)) catch @panic("OOM"); }; _bp_28.* = cond_expr; break :_box_28 _bp_28; }, stmts); break :_box_27 _bp_27; } };
             },
             .stmt_for_in => |pfor_ptr| {
                 const pfor = pfor_ptr.*;
@@ -5157,10 +5157,10 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:635
                     const filter_expr = (try self.buildExpr(pfor.filter.items[@as(usize, @intCast(0))]));
 // zbr:selfhost/AstBuilder.zbr:636
-                    return Stmt{ .for_in = _box_29: { const _bp_29 = _allocator.create(Ast.StmtForIn) catch @panic("OOM"); _bp_29.* = StmtForIn.init(Span.init(pfor.line, 0, pfor.line, 0), vars, _box_2a: { const _bp_2a = blk2: { break :blk2 _allocator.create(@TypeOf(iter_expr)) catch @panic("OOM"); }; _bp_2a.* = iter_expr; break :_box_2a _bp_2a; }, _box_2b: { const _bp_2b = blk2: { break :blk2 _allocator.create(@TypeOf(filter_expr)) catch @panic("OOM"); }; _bp_2b.* = filter_expr; break :_box_2b _bp_2b; }, stmts, else_stmts); break :_box_29 _bp_29; } };
+                    return Stmt{ .for_in = _box_29: { const _bp_29 = _allocator.create(Ast.StmtForIn) catch @panic("OOM"); _bp_29.* = StmtForIn.init(Span.init(pfor.line, pfor.col, pfor.line, pfor.col), vars, _box_2a: { const _bp_2a = blk2: { break :blk2 _allocator.create(@TypeOf(iter_expr)) catch @panic("OOM"); }; _bp_2a.* = iter_expr; break :_box_2a _bp_2a; }, _box_2b: { const _bp_2b = blk2: { break :blk2 _allocator.create(@TypeOf(filter_expr)) catch @panic("OOM"); }; _bp_2b.* = filter_expr; break :_box_2b _bp_2b; }, stmts, else_stmts); break :_box_29 _bp_29; } };
                 }
 // zbr:selfhost/AstBuilder.zbr:637
-                return Stmt{ .for_in = _box_2c: { const _bp_2c = _allocator.create(Ast.StmtForIn) catch @panic("OOM"); _bp_2c.* = StmtForIn.init(Span.init(pfor.line, 0, pfor.line, 0), vars, _box_2d: { const _bp_2d = blk2: { break :blk2 _allocator.create(@TypeOf(iter_expr)) catch @panic("OOM"); }; _bp_2d.* = iter_expr; break :_box_2d _bp_2d; }, null, stmts, else_stmts); break :_box_2c _bp_2c; } };
+                return Stmt{ .for_in = _box_2c: { const _bp_2c = _allocator.create(Ast.StmtForIn) catch @panic("OOM"); _bp_2c.* = StmtForIn.init(Span.init(pfor.line, pfor.col, pfor.line, pfor.col), vars, _box_2d: { const _bp_2d = blk2: { break :blk2 _allocator.create(@TypeOf(iter_expr)) catch @panic("OOM"); }; _bp_2d.* = iter_expr; break :_box_2d _bp_2d; }, null, stmts, else_stmts); break :_box_2c _bp_2c; } };
             },
             .stmt_for_num => |pfn_ptr| {
                 const pfn = pfn_ptr.*;
@@ -5182,10 +5182,10 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:647
                     const step_expr = (try self.buildExpr(pfn.step.items[@as(usize, @intCast(0))]));
 // zbr:selfhost/AstBuilder.zbr:648
-                    return Stmt{ .for_num = _box_2e: { const _bp_2e = _allocator.create(Ast.StmtForNum) catch @panic("OOM"); _bp_2e.* = StmtForNum.init(Span.init(pfn.line, 0, pfn.line, 0), pfn.var_name, _box_2f: { const _bp_2f = blk2: { break :blk2 _allocator.create(@TypeOf(start_expr)) catch @panic("OOM"); }; _bp_2f.* = start_expr; break :_box_2f _bp_2f; }, _box_30: { const _bp_30 = blk2: { break :blk2 _allocator.create(@TypeOf(stop_expr)) catch @panic("OOM"); }; _bp_30.* = stop_expr; break :_box_30 _bp_30; }, _box_31: { const _bp_31 = blk2: { break :blk2 _allocator.create(@TypeOf(step_expr)) catch @panic("OOM"); }; _bp_31.* = step_expr; break :_box_31 _bp_31; }, stmts, else_stmts); break :_box_2e _bp_2e; } };
+                    return Stmt{ .for_num = _box_2e: { const _bp_2e = _allocator.create(Ast.StmtForNum) catch @panic("OOM"); _bp_2e.* = StmtForNum.init(Span.init(pfn.line, pfn.col, pfn.line, pfn.col), pfn.var_name, _box_2f: { const _bp_2f = blk2: { break :blk2 _allocator.create(@TypeOf(start_expr)) catch @panic("OOM"); }; _bp_2f.* = start_expr; break :_box_2f _bp_2f; }, _box_30: { const _bp_30 = blk2: { break :blk2 _allocator.create(@TypeOf(stop_expr)) catch @panic("OOM"); }; _bp_30.* = stop_expr; break :_box_30 _bp_30; }, _box_31: { const _bp_31 = blk2: { break :blk2 _allocator.create(@TypeOf(step_expr)) catch @panic("OOM"); }; _bp_31.* = step_expr; break :_box_31 _bp_31; }, stmts, else_stmts); break :_box_2e _bp_2e; } };
                 }
 // zbr:selfhost/AstBuilder.zbr:649
-                return Stmt{ .for_num = _box_32: { const _bp_32 = _allocator.create(Ast.StmtForNum) catch @panic("OOM"); _bp_32.* = StmtForNum.init(Span.init(pfn.line, 0, pfn.line, 0), pfn.var_name, _box_33: { const _bp_33 = blk2: { break :blk2 _allocator.create(@TypeOf(start_expr)) catch @panic("OOM"); }; _bp_33.* = start_expr; break :_box_33 _bp_33; }, _box_34: { const _bp_34 = blk2: { break :blk2 _allocator.create(@TypeOf(stop_expr)) catch @panic("OOM"); }; _bp_34.* = stop_expr; break :_box_34 _bp_34; }, null, stmts, else_stmts); break :_box_32 _bp_32; } };
+                return Stmt{ .for_num = _box_32: { const _bp_32 = _allocator.create(Ast.StmtForNum) catch @panic("OOM"); _bp_32.* = StmtForNum.init(Span.init(pfn.line, pfn.col, pfn.line, pfn.col), pfn.var_name, _box_33: { const _bp_33 = blk2: { break :blk2 _allocator.create(@TypeOf(start_expr)) catch @panic("OOM"); }; _bp_33.* = start_expr; break :_box_33 _bp_33; }, _box_34: { const _bp_34 = blk2: { break :blk2 _allocator.create(@TypeOf(stop_expr)) catch @panic("OOM"); }; _bp_34.* = stop_expr; break :_box_34 _bp_34; }, null, stmts, else_stmts); break :_box_32 _bp_32; } };
             },
             .stmt_var => |pv_ptr| {
                 const pv = pv_ptr.*;
@@ -5217,14 +5217,14 @@ pub const ASTBuilder = struct {
                         bop = BinaryOp.mod;
                     }
 // zbr:selfhost/AstBuilder.zbr:681
-                    const folded = Expr{ .binary = _box_38: { const _bp_38 = _allocator.create(Ast.ExprBinary) catch @panic("OOM"); _bp_38.* = ExprBinary.init(Span.init(pa.line, 0, pa.line, 0), bop, _box_39: { const _bp_39 = blk2: { break :blk2 _allocator.create(@TypeOf(target_expr)) catch @panic("OOM"); }; _bp_39.* = target_expr; break :_box_39 _bp_39; }, _box_3a: { const _bp_3a = blk2: { break :blk2 _allocator.create(@TypeOf(value_expr)) catch @panic("OOM"); }; _bp_3a.* = value_expr; break :_box_3a _bp_3a; }); break :_box_38 _bp_38; } };
+                    const folded = Expr{ .binary = _box_38: { const _bp_38 = _allocator.create(Ast.ExprBinary) catch @panic("OOM"); _bp_38.* = ExprBinary.init(Span.init(pa.line, pa.col, pa.line, pa.col), bop, _box_39: { const _bp_39 = blk2: { break :blk2 _allocator.create(@TypeOf(target_expr)) catch @panic("OOM"); }; _bp_39.* = target_expr; break :_box_39 _bp_39; }, _box_3a: { const _bp_3a = blk2: { break :blk2 _allocator.create(@TypeOf(value_expr)) catch @panic("OOM"); }; _bp_3a.* = value_expr; break :_box_3a _bp_3a; }); break :_box_38 _bp_38; } };
 // zbr:selfhost/AstBuilder.zbr:682
-                    return Stmt{ .assign = _box_3b: { const _bp_3b = _allocator.create(Ast.StmtAssign) catch @panic("OOM"); _bp_3b.* = StmtAssign.init(Span.init(pa.line, 0, pa.line, 0), _box_3c: { const _bp_3c = blk2: { break :blk2 _allocator.create(@TypeOf(target_expr)) catch @panic("OOM"); }; _bp_3c.* = target_expr; break :_box_3c _bp_3c; }, AssignOp.assign, _box_3d: { const _bp_3d = blk2: { break :blk2 _allocator.create(@TypeOf(folded)) catch @panic("OOM"); }; _bp_3d.* = folded; break :_box_3d _bp_3d; }); break :_box_3b _bp_3b; } };
+                    return Stmt{ .assign = _box_3b: { const _bp_3b = _allocator.create(Ast.StmtAssign) catch @panic("OOM"); _bp_3b.* = StmtAssign.init(Span.init(pa.line, pa.col, pa.line, pa.col), _box_3c: { const _bp_3c = blk2: { break :blk2 _allocator.create(@TypeOf(target_expr)) catch @panic("OOM"); }; _bp_3c.* = target_expr; break :_box_3c _bp_3c; }, AssignOp.assign, _box_3d: { const _bp_3d = blk2: { break :blk2 _allocator.create(@TypeOf(folded)) catch @panic("OOM"); }; _bp_3d.* = folded; break :_box_3d _bp_3d; }); break :_box_3b _bp_3b; } };
                 }
 // zbr:selfhost/AstBuilder.zbr:683
                 const op = (try self.toAssignOp(pa.op));
 // zbr:selfhost/AstBuilder.zbr:684
-                return Stmt{ .assign = _box_3e: { const _bp_3e = _allocator.create(Ast.StmtAssign) catch @panic("OOM"); _bp_3e.* = StmtAssign.init(Span.init(pa.line, 0, pa.line, 0), _box_3f: { const _bp_3f = blk2: { break :blk2 _allocator.create(@TypeOf(target_expr)) catch @panic("OOM"); }; _bp_3f.* = target_expr; break :_box_3f _bp_3f; }, op, _box_40: { const _bp_40 = blk2: { break :blk2 _allocator.create(@TypeOf(value_expr)) catch @panic("OOM"); }; _bp_40.* = value_expr; break :_box_40 _bp_40; }); break :_box_3e _bp_3e; } };
+                return Stmt{ .assign = _box_3e: { const _bp_3e = _allocator.create(Ast.StmtAssign) catch @panic("OOM"); _bp_3e.* = StmtAssign.init(Span.init(pa.line, pa.col, pa.line, pa.col), _box_3f: { const _bp_3f = blk2: { break :blk2 _allocator.create(@TypeOf(target_expr)) catch @panic("OOM"); }; _bp_3f.* = target_expr; break :_box_3f _bp_3f; }, op, _box_40: { const _bp_40 = blk2: { break :blk2 _allocator.create(@TypeOf(value_expr)) catch @panic("OOM"); }; _bp_40.* = value_expr; break :_box_40 _bp_40; }); break :_box_3e _bp_3e; } };
             },
             .stmt_assert => |pas_ptr| {
                 const pas = pas_ptr.*;
@@ -5235,10 +5235,10 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:689
                     const msg = (try self.buildExpr(pas.message.items[@as(usize, @intCast(0))]));
 // zbr:selfhost/AstBuilder.zbr:690
-                    return Stmt{ .assert_ = _box_41: { const _bp_41 = _allocator.create(Ast.StmtAssert) catch @panic("OOM"); _bp_41.* = StmtAssert.init(Span.init(pas.line, 0, pas.line, 0), _box_42: { const _bp_42 = blk2: { break :blk2 _allocator.create(@TypeOf(cond_expr)) catch @panic("OOM"); }; _bp_42.* = cond_expr; break :_box_42 _bp_42; }, _box_43: { const _bp_43 = blk2: { break :blk2 _allocator.create(@TypeOf(msg)) catch @panic("OOM"); }; _bp_43.* = msg; break :_box_43 _bp_43; }); break :_box_41 _bp_41; } };
+                    return Stmt{ .assert_ = _box_41: { const _bp_41 = _allocator.create(Ast.StmtAssert) catch @panic("OOM"); _bp_41.* = StmtAssert.init(Span.init(pas.line, pas.col, pas.line, pas.col), _box_42: { const _bp_42 = blk2: { break :blk2 _allocator.create(@TypeOf(cond_expr)) catch @panic("OOM"); }; _bp_42.* = cond_expr; break :_box_42 _bp_42; }, _box_43: { const _bp_43 = blk2: { break :blk2 _allocator.create(@TypeOf(msg)) catch @panic("OOM"); }; _bp_43.* = msg; break :_box_43 _bp_43; }); break :_box_41 _bp_41; } };
                 }
 // zbr:selfhost/AstBuilder.zbr:691
-                return Stmt{ .assert_ = _box_44: { const _bp_44 = _allocator.create(Ast.StmtAssert) catch @panic("OOM"); _bp_44.* = StmtAssert.init(Span.init(pas.line, 0, pas.line, 0), _box_45: { const _bp_45 = blk2: { break :blk2 _allocator.create(@TypeOf(cond_expr)) catch @panic("OOM"); }; _bp_45.* = cond_expr; break :_box_45 _bp_45; }, null); break :_box_44 _bp_44; } };
+                return Stmt{ .assert_ = _box_44: { const _bp_44 = _allocator.create(Ast.StmtAssert) catch @panic("OOM"); _bp_44.* = StmtAssert.init(Span.init(pas.line, pas.col, pas.line, pas.col), _box_45: { const _bp_45 = blk2: { break :blk2 _allocator.create(@TypeOf(cond_expr)) catch @panic("OOM"); }; _bp_45.* = cond_expr; break :_box_45 _bp_45; }, null); break :_box_44 _bp_44; } };
             },
             .stmt_assert_eq => |pac_ptr| {
                 const pac = pac_ptr.*;
@@ -5247,7 +5247,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:695
                 const rhs = (try self.buildExpr(pac.rhs));
 // zbr:selfhost/AstBuilder.zbr:696
-                const sp = Span.init(pac.line, 0, pac.line, 0);
+                const sp = Span.init(pac.line, pac.col, pac.line, pac.col);
 // zbr:selfhost/AstBuilder.zbr:697
                 return Stmt{ .assert_eq_ = _box_46: { const _bp_46 = _allocator.create(Ast.StmtAssertCmp) catch @panic("OOM"); _bp_46.* = StmtAssertCmp.init(sp, _box_47: { const _bp_47 = blk2: { break :blk2 _allocator.create(@TypeOf(lhs)) catch @panic("OOM"); }; _bp_47.* = lhs; break :_box_47 _bp_47; }, _box_48: { const _bp_48 = blk2: { break :blk2 _allocator.create(@TypeOf(rhs)) catch @panic("OOM"); }; _bp_48.* = rhs; break :_box_48 _bp_48; }); break :_box_46 _bp_46; } };
             },
@@ -5258,7 +5258,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:701
                 const rhs = (try self.buildExpr(pac.rhs));
 // zbr:selfhost/AstBuilder.zbr:702
-                const sp = Span.init(pac.line, 0, pac.line, 0);
+                const sp = Span.init(pac.line, pac.col, pac.line, pac.col);
 // zbr:selfhost/AstBuilder.zbr:703
                 return Stmt{ .assert_ne_ = _box_49: { const _bp_49 = _allocator.create(Ast.StmtAssertCmp) catch @panic("OOM"); _bp_49.* = StmtAssertCmp.init(sp, _box_4a: { const _bp_4a = blk2: { break :blk2 _allocator.create(@TypeOf(lhs)) catch @panic("OOM"); }; _bp_4a.* = lhs; break :_box_4a _bp_4a; }, _box_4b: { const _bp_4b = blk2: { break :blk2 _allocator.create(@TypeOf(rhs)) catch @panic("OOM"); }; _bp_4b.* = rhs; break :_box_4b _bp_4b; }); break :_box_49 _bp_49; } };
             },
@@ -5267,7 +5267,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:706
                 const expr = (try self.buildExpr(pau.expr));
 // zbr:selfhost/AstBuilder.zbr:707
-                const sp = Span.init(pau.line, 0, pau.line, 0);
+                const sp = Span.init(pau.line, pau.col, pau.line, pau.col);
 // zbr:selfhost/AstBuilder.zbr:708
                 return Stmt{ .assert_true_ = _box_4c: { const _bp_4c = _allocator.create(Ast.StmtAssertUnary) catch @panic("OOM"); _bp_4c.* = StmtAssertUnary.init(sp, _box_4d: { const _bp_4d = blk2: { break :blk2 _allocator.create(@TypeOf(expr)) catch @panic("OOM"); }; _bp_4d.* = expr; break :_box_4d _bp_4d; }); break :_box_4c _bp_4c; } };
             },
@@ -5276,7 +5276,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:711
                 const expr = (try self.buildExpr(pau.expr));
 // zbr:selfhost/AstBuilder.zbr:712
-                const sp = Span.init(pau.line, 0, pau.line, 0);
+                const sp = Span.init(pau.line, pau.col, pau.line, pau.col);
 // zbr:selfhost/AstBuilder.zbr:713
                 return Stmt{ .assert_false_ = _box_4e: { const _bp_4e = _allocator.create(Ast.StmtAssertUnary) catch @panic("OOM"); _bp_4e.* = StmtAssertUnary.init(sp, _box_4f: { const _bp_4f = blk2: { break :blk2 _allocator.create(@TypeOf(expr)) catch @panic("OOM"); }; _bp_4f.* = expr; break :_box_4f _bp_4f; }); break :_box_4e _bp_4e; } };
             },
@@ -5289,17 +5289,17 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:718
                     const det = (try self.buildExpr(pr.message.items[@as(usize, @intCast(1))]));
 // zbr:selfhost/AstBuilder.zbr:719
-                    return Stmt{ .raise_ = _box_50: { const _bp_50 = _allocator.create(Ast.StmtRaise) catch @panic("OOM"); _bp_50.* = StmtRaise.init(Span.init(pr.line, 0, pr.line, 0), _box_51: { const _bp_51 = blk2: { break :blk2 _allocator.create(@TypeOf(msg)) catch @panic("OOM"); }; _bp_51.* = msg; break :_box_51 _bp_51; }, _box_52: { const _bp_52 = blk2: { break :blk2 _allocator.create(@TypeOf(det)) catch @panic("OOM"); }; _bp_52.* = det; break :_box_52 _bp_52; }); break :_box_50 _bp_50; } };
+                    return Stmt{ .raise_ = _box_50: { const _bp_50 = _allocator.create(Ast.StmtRaise) catch @panic("OOM"); _bp_50.* = StmtRaise.init(Span.init(pr.line, pr.col, pr.line, pr.col), _box_51: { const _bp_51 = blk2: { break :blk2 _allocator.create(@TypeOf(msg)) catch @panic("OOM"); }; _bp_51.* = msg; break :_box_51 _bp_51; }, _box_52: { const _bp_52 = blk2: { break :blk2 _allocator.create(@TypeOf(det)) catch @panic("OOM"); }; _bp_52.* = det; break :_box_52 _bp_52; }); break :_box_50 _bp_50; } };
                 }
 // zbr:selfhost/AstBuilder.zbr:720
                 if ((@as(i64, @intCast(pr.message.items.len)) == 1)) {
 // zbr:selfhost/AstBuilder.zbr:721
                     const msg = (try self.buildExpr(pr.message.items[@as(usize, @intCast(0))]));
 // zbr:selfhost/AstBuilder.zbr:722
-                    return Stmt{ .raise_ = _box_53: { const _bp_53 = _allocator.create(Ast.StmtRaise) catch @panic("OOM"); _bp_53.* = StmtRaise.init(Span.init(pr.line, 0, pr.line, 0), _box_54: { const _bp_54 = blk2: { break :blk2 _allocator.create(@TypeOf(msg)) catch @panic("OOM"); }; _bp_54.* = msg; break :_box_54 _bp_54; }, null); break :_box_53 _bp_53; } };
+                    return Stmt{ .raise_ = _box_53: { const _bp_53 = _allocator.create(Ast.StmtRaise) catch @panic("OOM"); _bp_53.* = StmtRaise.init(Span.init(pr.line, pr.col, pr.line, pr.col), _box_54: { const _bp_54 = blk2: { break :blk2 _allocator.create(@TypeOf(msg)) catch @panic("OOM"); }; _bp_54.* = msg; break :_box_54 _bp_54; }, null); break :_box_53 _bp_53; } };
                 }
 // zbr:selfhost/AstBuilder.zbr:723
-                return Stmt{ .raise_ = _box_55: { const _bp_55 = _allocator.create(Ast.StmtRaise) catch @panic("OOM"); _bp_55.* = StmtRaise.init(Span.init(pr.line, 0, pr.line, 0), null, null); break :_box_55 _bp_55; } };
+                return Stmt{ .raise_ = _box_55: { const _bp_55 = _allocator.create(Ast.StmtRaise) catch @panic("OOM"); _bp_55.* = StmtRaise.init(Span.init(pr.line, pr.col, pr.line, pr.col), null, null); break :_box_55 _bp_55; } };
             },
             .stmt_try_catch => |ptc_ptr| {
                 const ptc = ptc_ptr.*;
@@ -5321,7 +5321,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:733
                 clauses.append(_allocator, clause) catch unreachable;
 // zbr:selfhost/AstBuilder.zbr:734
-                return Stmt{ .try_catch = _box_56: { const _bp_56 = _allocator.create(Ast.StmtTryCatch) catch @panic("OOM"); _bp_56.* = StmtTryCatch.init(Span.init(ptc.line, 0, ptc.line, 0), body_stmts, clauses); break :_box_56 _bp_56; } };
+                return Stmt{ .try_catch = _box_56: { const _bp_56 = _allocator.create(Ast.StmtTryCatch) catch @panic("OOM"); _bp_56.* = StmtTryCatch.init(Span.init(ptc.line, ptc.col, ptc.line, ptc.col), body_stmts, clauses); break :_box_56 _bp_56; } };
             },
             .stmt_branch => |pb_ptr| {
                 const pb = pb_ptr.*;
@@ -5337,7 +5337,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:742
                 const is_scoped = isScopedAllocatorExpr(source_expr);
 // zbr:selfhost/AstBuilder.zbr:743
-                return Stmt{ .allocate_ = _box_57: { const _bp_57 = _allocator.create(Ast.StmtAllocate) catch @panic("OOM"); _bp_57.* = StmtAllocate.init(Span.init(pa.line, 0, pa.line, 0), source_expr, is_scoped, stmts); break :_box_57 _bp_57; } };
+                return Stmt{ .allocate_ = _box_57: { const _bp_57 = _allocator.create(Ast.StmtAllocate) catch @panic("OOM"); _bp_57.* = StmtAllocate.init(Span.init(pa.line, pa.col, pa.line, pa.col), source_expr, is_scoped, stmts); break :_box_57 _bp_57; } };
             },
             .stmt_copy_out => |pco_ptr| {
                 const pco = pco_ptr.*;
@@ -5346,7 +5346,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:747
                 const value_expr = (try self.buildExpr(pco.value.items[@as(usize, @intCast(0))]));
 // zbr:selfhost/AstBuilder.zbr:748
-                return Stmt{ .copy_out = _box_58: { const _bp_58 = _allocator.create(Ast.StmtCopyOut) catch @panic("OOM"); _bp_58.* = StmtCopyOut.init(Span.init(pco.line, 0, pco.line, 0), target_expr, value_expr, pco.deep); break :_box_58 _bp_58; } };
+                return Stmt{ .copy_out = _box_58: { const _bp_58 = _allocator.create(Ast.StmtCopyOut) catch @panic("OOM"); _bp_58.* = StmtCopyOut.init(Span.init(pco.line, pco.col, pco.line, pco.col), target_expr, value_expr, pco.deep); break :_box_58 _bp_58; } };
             },
             .stmt_guard => |pg_ptr| {
                 const pg = pg_ptr.*;
@@ -5355,7 +5355,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:752
                 const else_stmts: std.ArrayList(Stmt) = (try self.buildStmts(pg.else_stmts));
 // zbr:selfhost/AstBuilder.zbr:753
-                return Stmt{ .guard_ = _box_59: { const _bp_59 = _allocator.create(Ast.StmtGuard) catch @panic("OOM"); _bp_59.* = StmtGuard.init(Span.init(pg.line, 0, pg.line, 0), _box_5a: { const _bp_5a = blk2: { break :blk2 _allocator.create(@TypeOf(cond_expr)) catch @panic("OOM"); }; _bp_5a.* = cond_expr; break :_box_5a _bp_5a; }, else_stmts); break :_box_59 _bp_59; } };
+                return Stmt{ .guard_ = _box_59: { const _bp_59 = _allocator.create(Ast.StmtGuard) catch @panic("OOM"); _bp_59.* = StmtGuard.init(Span.init(pg.line, pg.col, pg.line, pg.col), _box_5a: { const _bp_5a = blk2: { break :blk2 _allocator.create(@TypeOf(cond_expr)) catch @panic("OOM"); }; _bp_5a.* = cond_expr; break :_box_5a _bp_5a; }, else_stmts); break :_box_59 _bp_59; } };
             },
             .stmt_with => |pw_ptr| {
                 const pw = pw_ptr.*;
@@ -5371,7 +5371,7 @@ pub const ASTBuilder = struct {
                     new_body.append(_allocator, self.rewriteWithStmt(s, target_expr)) catch unreachable;
                 }
 // zbr:selfhost/AstBuilder.zbr:762
-                return Stmt{ .with_ = _box_5b: { const _bp_5b = _allocator.create(Ast.StmtWith) catch @panic("OOM"); _bp_5b.* = StmtWith.init(Span.init(pw.line, 0, pw.line, 0), _box_5c: { const _bp_5c = blk2: { break :blk2 _allocator.create(@TypeOf(target_expr)) catch @panic("OOM"); }; _bp_5c.* = target_expr; break :_box_5c _bp_5c; }, new_body); break :_box_5b _bp_5b; } };
+                return Stmt{ .with_ = _box_5b: { const _bp_5b = _allocator.create(Ast.StmtWith) catch @panic("OOM"); _bp_5b.* = StmtWith.init(Span.init(pw.line, pw.col, pw.line, pw.col), _box_5c: { const _bp_5c = blk2: { break :blk2 _allocator.create(@TypeOf(target_expr)) catch @panic("OOM"); }; _bp_5c.* = target_expr; break :_box_5c _bp_5c; }, new_body); break :_box_5b _bp_5b; } };
             },
             .stmt_in => |pi_ptr| {
                 const pi = pi_ptr.*;
@@ -5387,7 +5387,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:770
                 const init_expr = (try self.buildExpr(pd.init_expr.items[@as(usize, @intCast(0))]));
 // zbr:selfhost/AstBuilder.zbr:771
-                return Stmt{ .destruct = _box_5f: { const _bp_5f = _allocator.create(Ast.StmtDestruct) catch @panic("OOM"); _bp_5f.* = StmtDestruct.init(Span.init(pd.line, 0, pd.line, 0), pd.names, _box_60: { const _bp_60 = blk2: { break :blk2 _allocator.create(@TypeOf(init_expr)) catch @panic("OOM"); }; _bp_60.* = init_expr; break :_box_60 _bp_60; }, pd.is_struct); break :_box_5f _bp_5f; } };
+                return Stmt{ .destruct = _box_5f: { const _bp_5f = _allocator.create(Ast.StmtDestruct) catch @panic("OOM"); _bp_5f.* = StmtDestruct.init(Span.init(pd.line, pd.col, pd.line, pd.col), pd.names, _box_60: { const _bp_60 = blk2: { break :blk2 _allocator.create(@TypeOf(init_expr)) catch @panic("OOM"); }; _bp_60.* = init_expr; break :_box_60 _bp_60; }, pd.is_struct); break :_box_5f _bp_5f; } };
             },
             .stmt_expr => |inner_ptr| {
                 const inner = inner_ptr.*;
@@ -5558,7 +5558,7 @@ pub const ASTBuilder = struct {
             else_opt = (try self.buildStmts(pb.else_stmts));
         }
 // zbr:selfhost/AstBuilder.zbr:859
-        return Stmt{ .branch_ = _box_6a: { const _bp_6a = _allocator.create(Ast.StmtBranch) catch @panic("OOM"); _bp_6a.* = StmtBranch.init(Span.init(pb.line, 0, pb.line, 0), _box_6b: { const _bp_6b = blk2: { break :blk2 _allocator.create(@TypeOf(subject_expr)) catch @panic("OOM"); }; _bp_6b.* = subject_expr; break :_box_6b _bp_6b; }, cases, else_opt); break :_box_6a _bp_6a; } };
+        return Stmt{ .branch_ = _box_6a: { const _bp_6a = _allocator.create(Ast.StmtBranch) catch @panic("OOM"); _bp_6a.* = StmtBranch.init(Span.init(pb.line, pb.col, pb.line, pb.col), _box_6b: { const _bp_6b = blk2: { break :blk2 _allocator.create(@TypeOf(subject_expr)) catch @panic("OOM"); }; _bp_6b.* = subject_expr; break :_box_6b _bp_6b; }, cases, else_opt); break :_box_6a _bp_6a; } };
     }
 
     pub fn tryBuildStructPat(self: *ASTBuilder, e: Expr) ?StructPat {

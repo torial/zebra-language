@@ -1331,6 +1331,47 @@ construction — no amount of re-running could have produced that message. It wa
 preserving one file, not by another hypothesis. **A gate that classifies a failure must
 keep the failure's own account of itself.**
 
+**AND SOMETHING MUST READ IT — keeping it is only half (2026-08-26).** After `EMITFAIL`
+started preserving the compiler's stderr, the board still said `EMITFAIL x55` and nothing
+consulted the 55 files. A reader had to know the directory existed, know which of the 55
+mattered, and open them by hand; UNGIT "nothing withheld" is about the surface the user is
+ALREADY LOOKING AT. `bash tools/evidence_digest.sh` (report only, fails nothing) reconciles
+the kept evidence against what the smoke suite DECLARES, and `full_sweep --gate` runs it and
+folds the two actionable figures onto its own terminal line, because `gates.sh` surfaces a
+gate's LAST LINE and anything printed above it is swallowed on a PASS.
+
+Its first run turned a bare 55 into three actions: two exhaustiveness negatives that were
+correctly rejected and registered by nothing, and `tc_merge_fixture`, which holds git
+conflict markers and cannot compile standalone by construction. `registration_check` went
+**18 → 15** unasserted.
+
+**IT RECONCILES BOTH DIRECTIONS, and that is the whole design.** Counting undeclared
+refusals alone reaches 0 the day the debt is cleared and then prints `N declared, 0
+undeclared` forever — identical output whether it works or whether the lookup silently
+stopped matching. A tool that goes vacuous BY SUCCEEDING is the worst version, because
+nobody is suspicious on the day a number improves. So it also asserts that every declared
+must-reject fixture DID refuse: **a negative test that has started passing** is otherwise
+invisible — its registration quietly stops asserting anything the day its bug is fixed.
+That direction keeps a non-trivial denominator (51) forever, which is what makes the other
+direction's zero mean something. Both were watched going red.
+
+Two traps it was built around, both found by measuring rather than reasoning. **The three
+evidence suffixes are not one population**: `.emit.err` is OUR compiler refusing the SOURCE,
+`.cfail.err`/`.fail.err` are ZIG refusing our OUTPUT. The first draft globbed all three and
+named 33 files as undeclared debt, ~30 of them working files already tracked by
+`full_sweep`'s baseline — and a gate that libels a working file is one people learn to
+disbelieve. And `divergence`'s evidence is **not reconciled at all**: it emits with both
+compilers into one directory and the filenames do not record which one failed, so its count
+is reported unreconciled rather than silently folded in or silently dropped.
+
+`tools/must_reject_set.sh` is the derivation behind it — the mirror of `positive_set.sh`,
+and now the single source for `divergence_check` too. That gate carried its own inline copy
+which was LOSSY (`test/[A-Za-z0-9_]+\.zbr` requires a flat path, so every registration under
+`test/fail_fixtures/` was invisible: 48 where the suite registers 54). Harmless only because
+`corpus_ls.sh test` does not recurse — an unstruck gap, armored because a shared derivation
+costs nothing extra to get right. It REFUSES below a floor rather than returning a short
+list, since a collapsed set makes every rejection look unexpected downstream.
+
 Measured 2026-08-22: in one instrumented run, 20 `CFAIL`s were 19 genuine errors in our
 output plus exactly ONE infra error — and that one file was precisely the "REGRESSION"
 against the baseline. Prior rate was 2 of 3 `full_sweep` runs producing a false red.
@@ -1405,7 +1446,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 81 scripts | <!-- doc-gen: 81 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 83 scripts | <!-- doc-gen: 83 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 51 tracked documents <!-- doc-gen: 51 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -1924,9 +1965,10 @@ The size of that gap is now **measured rather than estimated**, which it was not
 paragraph was first written (it said "57 are in no known category" against a corpus of 421).
 `registration_check` is the instrument: every tracked `test/*.zbr` must have its status
 asserted by *something* — a smoke registration, the full_sweep pass baseline, or an entry in
-`tools/registration_exempt.txt` **with a reason**. As of 2026-08-05 that leaves **18**
-<!-- doc-gen: 18 = python tools/registration_check.py 2>/dev/null | grep -oE '[0-9]+ unasserted' | grep -oE '^[0-9]+' -->
-unasserted, against 27 exempt-with-reason. Down from 57. Shrink it, never grow it — and note
+`tools/registration_exempt.txt` **with a reason**. As of 2026-08-26 that leaves **15**
+<!-- doc-gen: 15 = python tools/registration_check.py 2>/dev/null | grep -oE '[0-9]+ unasserted' | grep -oE '^[0-9]+' -->
+unasserted, against 37 exempt-with-reason. Down from 57, and from 18 on 2026-08-26 when
+reading full_sweep's newly-kept evidence named the last three. Shrink it, never grow it — and note
 the number now carries an oracle, so this paragraph cannot quietly go stale the way the last
 version did.
 

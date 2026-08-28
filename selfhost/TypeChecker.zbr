@@ -4085,7 +4085,7 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                                 if cv == vname
                                     found = true
                             if not found
-                                ctx.addErr(file, sb.span.line, 0, "branch on '" + sb_tname + "' does not cover variant '" + vname + "' (add 'on " + sb_tname + "." + vname + "' or an 'else' clause)")
+                                ctx.addErr(file, sb.span.line, sb.span.col, "branch on '" + sb_tname + "' does not cover variant '" + vname + "' (add 'on " + sb_tname + "." + vname + "' or an 'else' clause)")
                 # Enum exhaustiveness error: no else, not all members covered.
                 if sb.else_ == nil and sb_tname != "" and ctx.hasEnumAny(sb_tname)
                     var sb_mems: List(str) = ctx.memberNamesForEnumAny(sb_tname)
@@ -4102,7 +4102,7 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                                 if cv == mname
                                     found = true
                             if not found
-                                ctx.addErr(file, sb.span.line, 0, "branch on '" + sb_tname + "' does not cover member '" + mname + "' (add 'on " + sb_tname + "." + mname + "' or an 'else' clause)")
+                                ctx.addErr(file, sb.span.line, sb.span.col, "branch on '" + sb_tname + "' does not cover member '" + mname + "' (add 'on " + sb_tname + "." + mname + "' or an 'else' clause)")
                 # --warn-non-exhaustive: warn when else silently catches union variants.
                 if ctx.warn_non_exhaustive and sb.else_ != nil and sb_tname != "" and ctx.module_types.hasUnion(sb_tname)
                     var sb_wvars: List(str) = ctx.module_types.variantNamesForUnion(sb_tname)

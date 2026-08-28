@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-310. Next new bug: BUG-311.**
+**Last bug number generated: BUG-312. Next new bug: BUG-313.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -12,6 +12,75 @@
 >
 > No gate could see this: `doc_lint` D4 only checks that a cited BUG-NNN exists
 > *somewhere*, so a duplicate satisfies it twice over.
+
+---
+
+### BUG-312: a `List(List(T))` parameter loses pointer/mutable codegen when a SHARED helper is called on it from two different wrapper functions — both compilers (found 2026-08-27)
+
+**Found from outside the project**, same porting session as BUG-311. A `List(List(float))` parameter (e.g. a weight matrix) correctly becomes `*std.ArrayList(...)` (mutable, by pointer) when the function that receives it calls `.set()` on its rows directly, or calls exactly one shared helper on it from exactly one place. It becomes `std.ArrayList(...)` (**by value, no pointer**) — silently, with no diagnostic until the *caller* fails to type-check — when a shared helper function taking that same `List(List(T))` type is invoked on the SAME underlying variable from **two different outer functions**.
+
+```zebra
+def matvec(M: List(List(float)), v: List(float), out: List(float))
+    # ... reads M via .at(), never .set() on M itself ...
+
+def matTvec(M: List(List(float)), v: List(float), out: List(float))
+    # ... also only reads M ...
+
+def mlpFwd(x: List(float), W1: List(List(float)), ..., out: List(float))
+    matvec(W1, x, out)             # (A) matvec called with W1, from mlpFwd
+
+def mlpBwd(dout: List(float), W1: List(List(float)), ..., dx: List(float))
+    matTvec(W1, dout, dx)          # (B) matTvec called with W1, from mlpBwd - DIFFERENT caller
+
+def main
+    var W1: List(List(float)) = [[1.0, 0.5], [0.5, 1.0]]
+    mlpFwd(x, W1, ...)             # first
+    mlpBwd(dout, W1, ...)          # second, same W1 -> compile error at THIS call
+```
+
+Fails with `error: expected type '*T', found '*const T'` at the **second** call site (`mlpBwd(..., W1, ...)`), not at either function's definition. Emitting Zig and inspecting the generated signature shows why: `mlpBwd`'s own `W1` parameter compiles to `std.ArrayList(std.ArrayList(f64))` (by value) instead of a pointer, even though `mlpBwd` passes it straight through to `matTvec` with no different usage from `mlpFwd`'s `matvec` call. Confirmed on **both compilers** (bootstrap's more detailed diagnostic is what made the actual generated signature visible; selfhost gives the same error with less detail).
+
+**Isolated what does NOT trigger it**, each independently confirmed correct:
+- A single `List(List(T))` parameter, direct `.set()` mutation, one caller — fine.
+- Two or more `List(List(T))` parameters in the same function, all directly mutated — fine.
+- One read-only + one mutated `List(List(T))` parameter in the same function — fine.
+- A shared helper (`matvec`) called on a matrix from **only one** outer function, while a **different** outer function inlines its own direct operations on the same matrix instead of calling a shared helper — fine (this is the workaround below).
+- Removing only the two `matTvec` calls from `mlpBwd` (leaving `mlpFwd`'s `matvec` call on the same `W1` untouched) makes the whole program compile and run correctly.
+
+So the trigger is specifically: the same `List(List(T))`-typed *argument* reaching the same *shared helper function* through two different call chains — not the argument's mutability, not the parameter count, not read-vs-write.
+
+**Severity:** High for this use case (hand-rolled numeric code with weight matrices used in both a forward and a backward pass is exactly this shape) — but narrow enough to work around: inline the matrix operation directly into each caller instead of factoring it into a shared helper, whenever the same matrix argument would otherwise reach that helper from more than one place. No workaround needed for helpers only ever called from one site.
+
+**Control when fixing:** the three-function repro above (`matvec`/`matTvec`/`mlpFwd`/`mlpBwd`) must compile and run on both compilers, printing a numeric result rather than erroring at the second call site.
+
+---
+
+### BUG-311: a TUPLE containing a generic container type emits a bare, unparameterized `List` in selfhost codegen — bootstrap is unaffected — OPEN (found 2026-08-27)
+
+**Found from outside the project** (an external user porting a numeric microbenchmark from Python, not a fuzz/gate run) — a tuple return type whose elements are `List(T)` compiles clean through parsing and resolution, then emits Zig that doesn't type-check, on the selfhost compiler only.
+
+```zebra
+def two(): (List(float), List(float))
+    var a: List(float) = [1.0, 2.0]
+    var b: List(float) = [3.0, 4.0]
+    return (a, b)
+
+def main
+    var r = two()
+    print(r.0.at(0))
+    print(r.1.at(0))
+```
+
+| compiler | result |
+|---|---|
+| selfhost (`zebra.exe`) | parses OK, resolves OK, then: `error: use of undeclared identifier 'List'` — pointing at the EMITTED Zig, not the source: `pub fn two() struct { List, std.ArrayList([]const u8) } { ... }`. The tuple's second slot is emitted as `std.ArrayList([]const u8)` (a string-list shape) regardless of the source declaring `List(float)` twice — both slots are wrong, and they're wrong in *different* ways. |
+| bootstrap (`zebra-bootstrap.exe`) | compiles and runs, prints `1` then `3` — correct. |
+
+**Why this is a codegen bug, not a rejected-at-the-front-door unsupported form.** The front end fully accepts the tuple-of-`List` type (`parsed OK`, `resolved OK`) — the failure only surfaces in the generated Zig, which means whatever emits tuple element types is falling back to a bare `List` (and, in the second slot, to a string-list default) instead of carrying the element's type argument through. A single `List(T)` return works fine (confirmed separately); it's specifically the tuple-of-generics packaging that loses the parameter.
+
+**Severity:** Medium — tuples are the documented idiom for multi-value returns (`test/tuple_test.zbr`), and returning two related collections (e.g. paired forward-pass outputs, or any function structured like NumPy/PyTorch code returning `(values, indices)`) is an ordinary shape to want, not an edge case. The workaround is straightforward and was used to complete the porting task that surfaced this: pass pre-allocated `List` output parameters instead of returning them in a tuple.
+
+**Control when fixing:** the probe above must compile and print `1` / `3` on selfhost, matching bootstrap's existing correct output. Worth checking as a fix-time regression net: a tuple of two *different* generic element types (e.g. `(List(int), List(str))`), since the observed failure emitted two different wrong shapes for the two slots rather than the same wrong shape twice.
 
 ---
 

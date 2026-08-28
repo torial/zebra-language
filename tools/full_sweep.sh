@@ -225,7 +225,19 @@ if [ "$GATE" = 1 ]; then
       exit 1
     fi
 
-    echo "✓ full-sweep gate PASS — 0 regressions vs baseline ($(wc -l < "$BASELINE") tests); positive set $POSN/$POSN pass"
+    # THE EVIDENCE IS READ HERE, rather than left on disk for someone to find. Keeping the
+    # reason was half the fix; the board still said "EMITFAIL x55" and the reader had to
+    # know the directory existed and which of the 55 mattered. UNGIT "nothing withheld" is
+    # about the surface the user is ALREADY LOOKING AT — and gates.sh surfaces a gate's
+    # LAST LINE, so the two figures that can demand action ride on that line. The full
+    # digest prints above it for anyone reading the log.
+    _dig="$(bash "$REPO/tools/evidence_digest.sh" 2>/dev/null)"
+    printf '%s\n' "$_dig"
+    # An unparseable digest prints `?`, not 0. Unknown and zero are different answers, and
+    # a `?` on the board is a question someone asks; a fabricated 0 is one nobody asks.
+    _undecl="$(printf '%s' "$_dig" | grep -oE 'declared NOWHERE:[[:space:]]+[0-9]+' | grep -oE '[0-9]+$')"
+    _nowpass="$(printf '%s' "$_dig" | grep -oE 'produced NO evidence:[[:space:]]+[0-9]+' | grep -oE '[0-9]+$')"
+    echo "✓ full-sweep gate PASS — 0 regressions vs baseline ($(wc -l < "$BASELINE") tests); positive set $POSN/$POSN pass; evidence ${_undecl:-?} undeclared, ${_nowpass:-?} negative(s)-now-passing"
   else
     # NAME THE MISSING LEG rather than reprinting the test/ sweep's sentence. An
     # operator reading two identical PASS lines would reasonably assume both corpora

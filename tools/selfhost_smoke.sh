@@ -1113,6 +1113,13 @@ smoke_run test/branch_exhaustive_test.zbr "branch_exhaustive: OK"
 smoke_run test/tuple_test.zbr "tuple_test: OK"
 # Audit A3: exhaustive union branch + else must compile (else prong omitted).
 smoke_run test/branch_exhaustive_else_test.zbr "branch_exhaustive_else: OK"
+
+# The NEGATIVE siblings of the two above. Both were correctly REJECTED by the compiler and
+# declared by nothing, so full_sweep counted each as one of 55 unexplained EMITFAILs and
+# registration_check counted them as unasserted debt. Found 2026-08-26 by reading the
+# evidence full_sweep had only just started keeping.
+smoke_tc_fail test/branch_missing_test.zbr "does not cover variant"
+smoke_tc_fail test/branch_infer_miss_test.zbr "does not cover variant"
 # Audit B1: indexed for-in `for i, v in list` (i = index, v = element).
 smoke_run test/for_indexed_test.zbr "for_indexed: OK"
 # Audit B9: `is Union.Variant as n` on an OPTIONAL union (unwrap then tag-check).
