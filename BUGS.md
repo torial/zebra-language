@@ -42,6 +42,21 @@ So the release build reads out of bounds, **invents a value**, and continues. Th
 memory-unsafety and UNGIT "nothing fabricated" in one line, at the language level rather
 than in a tool.
 
+**A SECOND DOOR, AND IT IS THE EASIER ONE TO WALK THROUGH: a NEGATIVE index.** `.at(i)`
+also inserts `@intCast(i)` to convert Zebra's `int` (i64) to `usize` -- 131 of them in one
+469-line dogfood file. Measured the same way (`var i = xs.len - 3`, i.e. -1, computed at
+runtime):
+
+| build | result |
+|---|---|
+| debug | `thread panic: integer does not fit in destination type` |
+| `--release` | `read: 0` then `SURVIVED a negative index` |
+
+The negative value wraps to a huge `usize` and reads out of bounds. This door matters more
+than the first because `xs.at(-1)` is a reflex for anyone arriving from Python, where it
+means "the last element". Here it silently returns a fabricated value in shipped builds.
+Any fix must close BOTH: a length check alone still lets a negative index through the cast.
+
 **THE DOC IS NOT MERELY STALE — IT STEERS USERS TOWARD THE UNSAFE THING.** `.at()` is
 recommended *over* alternatives on the strength of a guarantee it does not provide. A
 second instance sits in BUGS_FIXED.md: "use `list.at(i)` (bounds-checked, emits
