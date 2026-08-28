@@ -13,6 +13,37 @@
 > No gate could see this: `doc_lint` D4 only checks that a cited BUG-NNN exists
 > *somewhere*, so a duplicate satisfies it twice over.
 
+> ### FILING PRACTICE — read this before adding an entry
+>
+> **1. Leave the workaround in the CALLING code, with the bug number beside it.**
+> A bug report says what broke. A workaround comment says what the author did
+> *instead* — and that is the measurable cost of the defect, in a form nothing else
+> captures. Receipt (2026-08-26): three entries in `C:/Projects/tinylm`'s Zebra sources
+> — BUG-311, BUG-312 and one unfiled quirk — recorded that the author could not return a
+> tuple of containers, could not share a generic `matvec` helper, and could not put
+> functions in a class. Reading those three comments established in minutes that the
+> code's whole shape was dictated by our defects rather than chosen, which no amount of
+> reading the ledger would have shown. Prefer `# BUG-NNN: <what I had to do instead>`
+> next to the distorted code.
+>
+> **2. A workaround also dates the defect's cost.** When the bug is fixed, the comment
+> is the test: remove the workaround and see whether the natural form now works. Without
+> it nobody knows which code was bent, so nobody straightens it and the tax is paid
+> forever.
+>
+> **3. Reproduce before filing, and say so if you could not.** The same session tried to
+> file that third quirk and *could not reproduce it* — top-level `def` and `static def`
+> both mutated a list parameter correctly, nested `List(List(float))` included. It was
+> NOT filed. An unreproducible entry costs a future reader more than a missing one, and
+> "I could not reproduce this, here is exactly what I tried" is a legitimate thing to
+> write in the ledger.
+>
+> **4. Measure both build modes for anything touching memory or arithmetic.** Every gate
+> here builds Debug. BUG-313 is invisible in Debug and silently fabricates a value in
+> `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
+> green gates. If an entry claims a safety property, it must say which mode it was
+> measured in.
+
 ---
 
 ### BUG-313: `List.at()` is NOT bounds-checked in `--release`, and the docs recommend it BECAUSE it is — OPEN (found 2026-08-26)
