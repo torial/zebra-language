@@ -621,6 +621,162 @@ actually be GATED (this repo's timings swing 2x on identical binaries).
 The `algorithms` namespace is what would make it real: the first body of code carrying
 honest complexity annotations to reason over.
 
+### MEMORY: dead locals are NEVER reclaimed, and `allocate Arena()` is the lever (measured 2026-08-26)
+
+Sean asked, while chasing the NN performance gap, whether a `List` local is freed when its
+function returns, and proposed per-type allocators to control fragmentation. Measured:
+
+`_prog_alloc()` returns `_arena.allocator()` -- a single **program-lifetime arena**. The
+only `deinit` in an emitted program is `defer _zbr_rt._arena.deinit()` at the end of `main`.
+So **nothing is ever freed until the process exits.**
+
+| 200 calls x 20000 floats, all locals dead on return | arena bytes |
+|---|---|
+| plain calls | **37,170,786** |
+| each iteration wrapped in `allocate Arena()` | **1,790,872** |
+
+200 x 20000 x 8 = 32 MB, so essentially 100% of the allocation is retained in the first
+case. The scoped form reclaims, 20x.
+
+**THIS REFRAMES THE PER-TYPE-ALLOCATOR IDEA.** Partitioning by type controls fragmentation;
+Zebra has no fragmentation, because it never frees. The lever is **scope**, not partition.
+And note §28j is about the allocator's THREAD-SAFETY, not reclamation -- the planned
+two-tier design is per-thread arenas, which are still arenas.
+
+**Actionable now:** wrap each training iteration in `allocate Arena()`, with `<<-` copy-out
+for values that must survive (weights, gradients). The likely dominant cost in a long
+training run is not arithmetic but an ever-growing working set destroying cache locality.
+
+**Worth investigating (not yet measured):** whether the compiler could place an
+`allocate` scope automatically where escape analysis proves no allocation outlives the
+call. That is the Hoare criterion again -- a transformation the compiler is positioned to
+make and the user cannot see.
+
+### THE TRANSFORM INTERFACE (Sean's design, 2026-08-26)
+
+Sean proposed wrapping each compiler transformation in an interface: the code shape to
+match, the code to generate, the metadata for reflection, and the transform command.
+**Agreed, with names:** `match` / `rewrite` / `metadata` / `trigger`.
+
+The reason to insist on it is not tidiness. **A transform that cannot describe itself cannot
+be listed, cannot be disabled, and cannot be tested.** Today's five known transformations
+(TCO-wrapping, `^T` auto-boxing, const-vs-var from mutation analysis, temp materialization,
+`throws` auto-propagation) are ad-hoc code in CodeGen, which is exactly why nobody can
+enumerate them and why the TCO fall-through hazard needed a lint rather than a diagnostic.
+
+**Opt-in reporting is right** (automated workflows must not have to parse new output), with
+one refinement: the *list of applicable transforms* should stay queryable even when the
+*report* is off. "What could have happened here?" is then answerable at zero cost.
+
+### RUN SPEED AS A DESIGN CONSTRAINT, with a number (Sean, 2026-08-26)
+
+Sean's target: **within 30-50% of hand-written Zig**, alongside compile speed (cf. V and
+FRED using TCC, where fast iteration is a headline feature). Current dogfood evidence: ~8x
+faster than Python, not close to Zig.
+
+The value of the number is that it is unambiguous -- "minimal performance cost" is not
+falsifiable and 30-50% is. It also needs a benchmark corpus that is NOT the compiler, which
+is what the `algorithms` namespace would provide.
+
+First suspects from today's measurement, in order: (1) allocation retention, above -- and
+it is testable immediately by re-running a dogfood benchmark inside an `allocate` scope;
+(2) `.at()` bounds behaviour once BUG-313 is fixed, where the range-`for` elision matters;
+(3) whether hand-rolled index loops defeat optimisations a range-`for` would enable.
+
+### A WARNING TIER, which several of these items need (Sean, 2026-08-26)
+
+Zebra has no warnings today: everything is an error or silence. The complexity budget wants
+to be a warning class with `--warnings-as-errors` for those who want the tighter contract.
+So do cost diagnostics, transformation notices, and any future advisory. **Building the tier
+once unblocks all of them**; adding each as a bespoke flag does not.
+
+### ITERATORS / GENERATORS — a real gap, with a real receipt
+
+`yield` was removed and nothing replaced it. Sean's case: parsing a large string with
+`.split()`, forced to materialise a full `List(str)` to walk it once; writing a custom
+lazy splitter in .NET cut RAM pressure **and** increased speed.
+
+That is the Perlis test failing -- materialising a list you will walk once and discard is
+attention to the irrelevant. Liskov's CLU had iterators for exactly this. Reopen with the
+dogfood evidence rather than in the abstract.
+
+### THE WRITTEN MEMORY MODEL — what it would actually contain
+
+Not formality: today these answers exist only as folklore plus one hazard test, so nobody
+can reason about a concurrent Zebra program without reading the runtime. Roughly two pages
+answering:
+
+- what does `sys.go` guarantee about writes made **before** the spawn?
+- is `Atomic` sequentially consistent, or acquire/release?
+- what edge does a `Chan` send/receive establish?
+- may an `allocate Arena()` scope cross a thread boundary? (**Today: no** -- 77% crash,
+  captured by `arena_concurrency_hazard_test`, and the rule "allocate-scopes are
+  single-threaded-only" lives in a NEXT_STEPS bullet rather than in the language docs.)
+- what does sharing a `List` across threads guarantee? (Today: nothing, unstated.)
+
+### PARNAS TABLES — a worked example, not a description
+
+Parnas's argument: for a function whose behaviour splits into cases, prose and nested `if`s
+both hide whether the cases are **complete** and **disjoint**. A table makes both
+mechanically checkable.
+
+Zebra's `File.delete` after BUG-307/308 is a live example:
+
+| condition | result |
+|---|---|
+| file exists, delete succeeds | returns; file is gone |
+| file absent (`FileNotFound`) | returns; treated as success |
+| any other error (lock, `IsDir`, `AccessDenied`) | **panics**, naming path and error |
+
+Reading it as a table immediately exposes what prose did not: the third row is why a retry
+loop around `delete` was unreachable (BUG-308), and the second row is why `deleteScratch`'s
+one tolerated error was the one that could not occur on its path. **Both defects are visible
+in the table and were invisible in the code for months.**
+
+The tooling claim is that such a table can be checked: rows exhaustive over the error set,
+rows mutually exclusive, and every row exercised by a fixture. `contract_mode_check` already
+does this informally -- its four-way `--release` x `--turbo` matrix IS a Parnas table, and
+the entry says the asymmetric cells are the point. Worth naming the pattern and reusing it.
+
+### KNUTH'S TRIP TEST — the highest-yield tool on this list
+
+TeX has `trip` and METAFONT has `trap`: single, deliberately fiendish programs exercising
+every feature IN COMBINATION, with byte-pinned output. Knuth credits them for TeX's
+convergence to near-zero defects.
+
+**This is the direct answer to what `construct_histogram` measured.** Our 522 tests each
+exercise one thing, and ZERO combine float + `.at()` + `while`. Isolated tests are
+structurally incapable of finding interaction defects. `trip.zbr` would be the corpus's
+opposite by design: generics inside contracts inside `branch` arms inside TCO'd recursion,
+output pinned byte-for-byte.
+
+It also fixes a defect that adding more files cannot: every test we write is shaped by what
+we already believe matters.
+
+### SMALLER, RECORDED
+
+- **Version string: `0.9_zig0.16`**, not `0.9_0.16` -- the bare form reads as a four-part
+  version, and the Zig version is semantically load-bearing here (BUG-280's keyword list
+  already drifted across a Zig bump; `--release` semantics depend on it). It belongs in the
+  string because it changes behaviour.
+- **Total-size budget: adopt the BUDGET, defer the plugin architecture.** A size ceiling is
+  free and forces the conversation at every feature. Modularity is one possible *response*
+  to exceeding it, not the mandated one -- and plugin boundaries inside a compiler are
+  unusually expensive, because this project's defects cluster at seams (BUG-293/294 were
+  both seeding failures across a boundary). Let the budget reveal the fault lines before
+  pouring concrete into them.
+- **Reward checks: declined for now, on Sean's read** -- a $2.56 cheque is a trophy because
+  of who signed it, so the mechanism does not transfer without the stature. Revisit if that
+  changes.
+- **`BUGS_FIXED.md` wants organising before a public release.** It is already TAOCP-style
+  errata treated as a first-class artifact rather than an apology; that is worth keeping
+  deliberately and structuring by version once versions exist.
+- **Read the primary source before quoting it.** Knuth, Royce and Brooks are all
+  systematically misquoted, and this session made the mistake twice in one afternoon: the
+  wrong Knuth paper cited from memory (caught by the filename `p261-knuth.pdf`), and the
+  range-check argument attributed to Dijkstra when it is Wirth and Hoare's. Same discipline
+  as "do not trust the instrument", pointed at literature.
+
 ### Smaller observations from the same sample, recorded not filed
 
 - **`continue` appears in NEITHER corpus** -- zero uses across 522 test files and 1116 lines
