@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-312. Next new bug: BUG-313.**
+**Last bug number generated: BUG-313. Next new bug: BUG-314.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -14,6 +14,75 @@
 > *somewhere*, so a duplicate satisfies it twice over.
 
 ---
+
+### BUG-313: `List.at()` is NOT bounds-checked in `--release`, and the docs recommend it BECAUSE it is — OPEN (found 2026-08-26)
+
+**A documented safety guarantee that does not hold in the builds users ship, and which
+fabricates a value rather than trapping.**
+
+`QUICKSTART.md` says:
+
+```
+var x = items.at(0)                  # index (bounds-checked) — preferred
+```
+
+`.at(i)` lowers to `list.items[@intCast(i)]` — raw slice indexing. Zig bounds-checks that
+in Debug and ReleaseSafe and **not** in ReleaseFast, and `zebra --release` passes
+`-OReleaseFast` (`src/main.zig:1520`).
+
+Measured, both modes, same program (a 2-element list read at index 2, index derived at
+runtime from `xs.len` so it cannot be folded):
+
+| build | result |
+|---|---|
+| debug | `thread panic: index out of bounds: index 2, len 2` |
+| `--release` | `read: 0` then `SURVIVED an out-of-range read` |
+
+So the release build reads out of bounds, **invents a value**, and continues. That is
+memory-unsafety and UNGIT "nothing fabricated" in one line, at the language level rather
+than in a tool.
+
+**THE DOC IS NOT MERELY STALE — IT STEERS USERS TOWARD THE UNSAFE THING.** `.at()` is
+recommended *over* alternatives on the strength of a guarantee it does not provide. A
+second instance sits in BUGS_FIXED.md: "use `list.at(i)` (bounds-checked, emits
+`.items[i]`)" — a sentence whose two halves contradict each other under ReleaseFast. The
+mechanism was stated correctly and the guarantee inferred from it wrongly.
+
+**HOW IT WAS FOUND, because the route is reusable.** Not by a sweep — no gate can see it,
+since every gate builds Debug (the same blind spot BUG-228 lived in for four days). It came
+out of dogfooding plus Hoare's criterion:
+
+1. `construct_histogram` on real numeric code (`C:/Projects/tinylm`) showed `.at()` at 342
+   uses in 1116 lines, and float+`.at()`+`while` together in 6 of 6 files vs **0 of 522**
+   corpus files.
+2. Asking Hoare's question — *what did the compiler DO to this code?* — showed `.at()`
+   lowering to unchecked `items[...]`.
+3. Testing both optimisation modes made it a finding rather than a suspicion.
+
+**BLAST RADIUS.** Any program doing index arithmetic. Sean's neural-network code makes 342
+`.at()` calls with hand-computed indices; an off-by-one there reads arbitrary memory in
+release instead of trapping, and silently produces wrong numbers — which in a training loop
+looks like a bad model, not a compiler bug.
+
+**Fix options (needs a decision):**
+1. **Emit an explicit check inside `.at()`**, independent of optimisation mode, so the
+   documented guarantee holds in every build. Costs a compare-and-branch per index — real,
+   but this is the accessor the docs call "preferred", and the alternative is a promise we
+   do not keep. Pair it with an explicitly-unchecked accessor for hot loops, so the fast
+   path is something a user CHOOSES rather than something they get by surprise.
+2. Make `--release` use `-OReleaseSafe`. Cheapest change, keeps Zig's own checks, but
+   silently reprices every program's performance and is a much broader decision than this
+   bug.
+3. Document the truth and keep the behaviour. **Rejected** unless paired with (1) or (2):
+   the current text does not merely fail to warn, it actively recommends `.at()` on safety
+   grounds.
+
+Recommendation: (1), with the doc corrected either way and **not** waiting on the fix — a
+wrong safety claim is worse than a missing one.
+
+**Control when fixing:** the probe above must panic in BOTH modes, and a positive control
+(an in-range read) must still work in both. `tools/release_mode_check.sh` is the only gate
+that builds with `--release` and is the natural home for it.
 
 ### BUG-312: a `List(List(T))` parameter loses pointer/mutable codegen when a SHARED helper is called on it from two different wrapper functions — both compilers (found 2026-08-27)
 
