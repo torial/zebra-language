@@ -480,6 +480,75 @@ code. It was not adopted from Naur; it was rediscovered by getting burned.
 11. A written specification of the concurrency model (threads, `Chan`, `Atomic`, the two-tier
     allocator). Zebra has the primitives and no stated memory model.
 
+### THE AUDIT THAT CAME OUT OF THIS, and its first receipt (2026-08-26)
+
+Two founders, two questions, in sequence. Run against real dogfood code they found a
+shipped memory-safety bug in under an hour, and **neither question alone would have found
+it**:
+
+**1. Knuth — what do REAL programs do that our tests do not?**
+`tools/construct_histogram.py <dir>` diffs the construct distribution of a real program
+against `test/`. On 1116 lines of neural-network Zebra (`C:/Projects/tinylm`):
+
+| construct | real, per 1k lines | corpus | ratio |
+|---|---|---|---|
+| `float` | 331.5 | 3.6 | **92x** |
+| `while` | 152.3 | 4.0 | **38x** |
+
+and the combination is starker than either number: files exercising float + `.at()` +
+`while` together are **6 of 6** real files against **0 of 522** corpus files (the one
+apparent corpus match is `tc_types.zbr`, where "float" is the enum variant name `float_`).
+
+**2. Hoare — what did the COMPILER DO to that code?**
+`.at(j)` lowers to `row.items[@intCast(j)]`: raw slice indexing. Zig checks that in Debug
+and ReleaseSafe and **not** in ReleaseFast, which is what `--release` passes. Measured both
+ways: a 2-element list read at index 2 panics in debug and, in `--release`, returns `0` and
+carries on. **BUG-313.**
+
+**WHY THE PAIR IS THE POINT.** The histogram alone says "`.at()` is popular" -- not a
+finding. The transformation audit alone, run against our own corpus, shows the identical
+lowering on code that barely indexes anything and looks unremarkable. The defect lives in
+the intersection: *a construct we do not test, examined for what the compiler silently does
+to it.* Knuth's empiricism aimed by Hoare's criterion.
+
+Neither is a gate and neither should be. They are an **audit** — run against each new real
+program, because each one is a fresh sample of the distribution users actually write.
+
+### THE DIJKSTRA READING, which changes what BUG-313's fix should be
+
+The dogfood code contains **171 `while` loops**, 35 of them the exact `while i < n` /
+`i += 1` shape, every one hand-managing an index.
+
+Zebra already has the safe form. Verified: `for i in 0..xs.len` compiles and runs with a
+**runtime** bound, and nests with runtime bounds at both levels. The language is not
+missing the construct; the construct is not being reached for. `QUICKSTART` demonstrates
+`for i in 0..10` only with a **literal**, which is plausibly why.
+
+That is Dijkstra's argument in one observation: **a structured construct eliminates an
+error class that discipline can only mitigate.** Every hand-rolled index loop is an
+opportunity for the off-by-one that BUG-313 turns from a trap into a silent fabricated
+value. Bounds-checking `.at()` makes that failure *loud*; a range-`for` makes it
+*impossible*.
+
+So BUG-313's fix is two-sided, and the second half is cheaper than the first:
+- **check the index** (the filed fix), and
+- **make the safe loop the obvious one** -- document `for i in 0..list.len` with a runtime
+  bound, next to the indexing section, where someone writing a numeric loop is already
+  looking. UNGIT: the safer path should be the one you find first.
+
+### Smaller observations from the same sample, recorded not filed
+
+- **`continue` appears in NEITHER corpus** -- zero uses across 522 test files and 1116 lines
+  of real code. `lint_reserved_words` cannot see this: the word is parsed, just never
+  exercised. Either a feature nobody needs or a gap nobody has noticed.
+- **A `float` prints without its fractional part**: `7.0` renders as `7` (full precision is
+  kept -- `1.0/3.0` gives `0.3333333333333333`). Languages disagree here (JS drops it,
+  Python keeps it), so this is a design question rather than a defect, but it makes a float
+  and an int indistinguishable in output, which matters when eyeballing tensor values.
+- **The six dogfood files should become fixtures.** They compile, they are real, and they
+  are the only evidence we hold of the distribution users write. Registering them moves the
+  numeric path from *present* to *asserted*.
+
 ### The honest filter
 
 Most "founder wisdom" lists are decorative. The test for anything above earning a place:
