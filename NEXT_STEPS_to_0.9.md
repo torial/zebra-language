@@ -227,7 +227,29 @@ removal into a formality.
 bootstrap is fixed/gone"), the `--zig-backend` escape hatch, and roughly half the
 "which compiler is right?" questions in this file.
 
-## 0.9 — BITWISE OPERATORS (Sean, 2026-08-21). MEASURED, so nobody re-derives the state.
+## 0.9 — BITWISE OPERATORS — **DONE**, and this section was STALE until 2026-08-29
+
+**All six operators work in the shipping compiler** -- verified by running them, not by
+reading: `12 & 10` = 8, `|` = 14, `^` = 6, `<< 2` = 48, `>> 2` = 3, `~12` = -13. They landed
+2026-08-22 in both compilers and are pinned by four smoke fixtures
+(`bug256_bitwise_not_test`, `bitwise_golden_vectors_test`, `bitwise_semantics_test`, and a
+negative `bug253_unary_bitnot_fail`). The text below said the five binary operators "do not"
+work and was **eight days out of date**.
+
+**Recorded rather than quietly corrected, because a stale blocker is not free** -- the
+2026-07-28 audit in this same file says it "makes the distance look longer than it is and
+invites re-litigating decisions already shipped". This one made 0.9 look further away than
+it was, in the file whose job is to say how far away it is.
+
+**One narrow residue, bootstrap-only:** `~a` where `a` is an UNTYPED literal (`var a = 12`,
+i.e. `comptime_int`) fails in the bootstrap with a leaked Zig error --
+`error: bitwise not operation on type 'comptime_int'`. Explicitly typed (`var a: int = 12`)
+works. The selfhost handles both. Left unfixed **by policy**: the bootstrap is frozen (see
+"FREEZE THE BOOTSTRAP" above) -- no new features, no parity work, fixes only for things that
+break regeneration. Worth knowing that it is a leaked Zig message rather than a Zebra
+diagnostic, which is the UNGIT failure the freeze is choosing not to pay for.
+
+### The original entry, kept for its measurements
 
 `~a` **already works** (BUG-256, 2026-08-04). The five BINARY operators do not, and they
 fail in exactly the shape `~` did before that fix — **the lexer already produces the
