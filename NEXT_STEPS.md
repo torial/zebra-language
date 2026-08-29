@@ -474,20 +474,43 @@ now clearly needed rather than merely tidy, and part 3 (range-`for` elision) mov
 `for i in 0..xs.len` should pay nothing, and today it pays the same ~91% as a hand-managed
 index.
 
-**Hypothesis PROPOSED AND IMMEDIATELY WEAKENED, recorded with both halves.** The natural
-explanation is that the cost is not the compare-and-branch but the loss of VECTORIZATION,
-since an unpredictable early exit in the loop body blocks it. A first look does **not**
-support that: counting vector float instructions in the emitted asm gives **145 (checked)
-vs 165 (unchecked)** -- a 12% difference, not the wholesale loss the hypothesis predicts.
+**HYPOTHESIS REFUTED BY LOOKING AT THE ASM (2026-08-26).** The natural story was that the
+cost is lost VECTORIZATION rather than the branch. It is not. The two inner loops, isolated
+by content after two failed attempts to find them by symbol and by loop-span heuristics:
 
-That measurement is weak and does not refute it either: it counts the WHOLE program rather
-than the hot loop, so setup code dilutes it. Recorded as inconclusive rather than resolved,
-because the tempting move here was to let a plausible story stand on a number that does not
-actually carry it. To settle it, count inside the matvec loop specifically.
+```
+unchecked, 6 instructions        checked, 8 instructions
+                                 cmp    rax, rbx          <- the bounds check
+                                 je     .LBB5_133         <- branch to panic
+vmovsd xmm1, [rcx + 8*rdx]       vmovsd xmm2, [rdi + 8*rbx]
+vmulsd xmm1, xmm1, [rsi + 8*rdx] vmulsd xmm2, xmm2, [r9 + 8*rbx]
+vaddsd xmm0, xmm0, xmm1          vaddsd xmm1, xmm1, xmm2
+inc / cmp / jne                  inc / cmp / jne
+```
 
-The practical consequence is unchanged either way -- both the unchecked accessor and the
-elision are worth building -- but WHICH of them recovers the 91% is still unknown, and that
-matters for deciding which to build first.
+**Both are SCALAR** -- `vmulsd`/`vaddsd`, not `vmulpd`/`vaddpd`. Neither build vectorizes
+this loop, so there was no vectorization to lose. The cost is exactly two instructions, one
+`cmp` and one conditional branch, added to a six-instruction body: 33% more instructions
+producing ~91% more time, which the basic-block split and the longer dependency chain
+account for.
+
+**AND LLVM ALREADY ELIDES HALF OF IT.** The loop performs TWO indexed reads (`row.at(j)`
+and `v.at(j)`) and emits only ONE check -- the optimizer hoisted or merged the other,
+unprompted, from a hand-managed `while` index.
+
+**That is the strongest argument yet for the elision, and it changes the ordering.** If
+LLVM removes one check with no help at all, giving it a provable bound from a range-`for`
+should let it remove the rest -- so the elision plausibly recovers the whole 91%,
+automatically, for code already written in the safe form. The unchecked accessor recovers
+the same but only where a user opts in, and it hands back the safety.
+
+**Method note worth more than the result: three instruments failed before one worked.**
+Symbol lookup failed (`matvec` was inlined and survives only as a reflection string); a
+whole-function instruction count was too diluted to say anything (2346 vs 2319); a
+"smallest backward jump" heuristic found the integer-to-string formatting loop in one build
+and the real loop in the other, and dutifully reported a comparison between them. What
+worked was searching for the loop by its CONTENT -- the accumulator pattern
+`vaddsd xmm, xmm, xmm` -- and then READING the two bodies instead of counting them.
 
 ### RUN EVERY GATE RED ONCE, AND READ WHAT IT SAYS (2026-08-26)
 
