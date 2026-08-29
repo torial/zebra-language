@@ -745,6 +745,98 @@ code. It was not adopted from Naur; it was rediscovered by getting burned.
 11. A written specification of the concurrency model (threads, `Chan`, `Atomic`, the two-tier
     allocator). Zebra has the primitives and no stated memory model.
 
+### PRIMARY SOURCES, NIGHT OF 2026-08-26 — and they settle BUG-313 part 2
+
+Two more papers read in full rather than quoted from memory. Both turned out to be about
+work done the same day, which is either a good sign about the choice of papers or a bad one
+about the novelty of our mistakes.
+
+#### Hoare, *The Emperor's Old Clothes* (Turing lecture, CACM 24(2), 1981)
+
+**On bounds checking, and it is about us:**
+
+> "…every occurrence of every subscript of every subscripted variable was on every occasion
+> checked at run time against both the upper and the lower declared bounds of the array.
+> Many years later we asked our customers whether they wished us to provide an option to
+> switch off these checks in the interests of efficiency on production runs. **Unanimously,
+> they urged us not to** — they already knew how frequently subscript errors occur on
+> production runs where failure to detect them could be disastrous. **I note with fear and
+> horror that even in 1980, language designers and users have not learned this lesson. In
+> any respectable branch of engineering, failure to observe such elementary precautions
+> would have long been against the law.**"
+
+Zebra shipped precisely the option his customers refused: checks present in debug, absent in
+`--release`. BUG-313, described in 1981.
+
+**THIS SETTLES PART 2 OF BUG-313's DESIGN: do not build the unchecked accessor.**
+
+There is an apparent conflict between the two founders, and resolving it is the useful part.
+Knuth (1974, citing Wirth and Hoare) says range checking "should be used far more often than
+it currently is, **but not everywhere**". Hoare's users, offered exactly that escape hatch,
+refused it. The two are reconcilable and the reconciliation is the design:
+
+| | whose job |
+|---|---|
+| **Elide where the bound is PROVABLE** | the compiler's -- Knuth's "not everywhere", and the elision item |
+| **Offer a user-facing off switch** | nobody's -- Hoare's users refused it, and the temptation is the point |
+
+A check the compiler proves unnecessary costs nothing and gives up nothing. A switch the
+programmer flips gives up safety at exactly the moment they are most confident and least
+correct. **We now know the price of that safety: ~17%, and it is the entire gap to
+hand-written Zig.** That is the number to defend, not to escape.
+
+**On approaching a release, which is where Zebra is:**
+
+> "When any new language design project is nearing completion, there is always a mad rush to
+> get new features added before standardization. The rush is mad indeed, because it leads
+> into a trap from which there is no escape. **A feature which is omitted can always be added
+> later, when its design and its implications are well understood. A feature which is
+> included before it is fully understood can never be removed later.**"
+
+Read against this file's own 0.9 docket, that is a warning with our name on it. It also
+gives the `reserved-words` gate a pedigree: seven keywords have been REMOVED, and Hoare's
+point is that removal is the operation you will not get to perform later.
+
+The lecture closes on a parable whose master tailor advises **removing layers** rather than
+adding embroidery, and is dismissed as out of touch for it. That is the size-budget item, in
+1981, as a bedtime story.
+
+#### Lampson, *Hints for Computer System Design* (1983)
+
+**The single most on-point sentence found tonight:**
+
+> "The interface must not promise **more than the implementer knows how to deliver**."
+
+That is BUG-313 exactly -- QUICKSTART promised `.at()` was "bounds-checked", the
+implementation delivered it only in debug -- and it is stated as a general design rule
+forty-three years ago. Worth adopting verbatim as a review question: *does this interface
+promise anything the implementation does not deliver in every configuration we ship?*
+
+**On cost visibility, which is the Knuth mandate from the other direction.** On an
+over-general design he writes that "it is hard for the programmer to tell what will be fast
+and what will be slow", and of an O(n^2) field lookup reached through a convenient
+abstraction: "**only a lively awareness of its cost will avoid this disaster**". Knuth argues
+the compiler should supply that awareness; Lampson observes what happens when nothing does.
+Both land on the complexity-as-reflection-data item.
+
+**Other hints that map onto things here, listed so they are not rediscovered:**
+
+| Lampson | already in Zebra as |
+|---|---|
+| "Plan to throw one away" | the bootstrap, being retired |
+| "Exterminate features" (Thacker) | `lint_reserved_words` |
+| "End-to-end" -- application-level checking is what is logically necessary, other checks are for performance | the gate ladder: only `output_sweep`/`smoke_run` RUN anything, and the compile-only gates are the "for performance" ones |
+| "Keep basic interfaces stable" / "keep a place to stand" | the 0.9 versioning question |
+| "Separate normal and worst case" -- normal must be fast, worst must make progress | not addressed; a lens for the allocator work |
+
+**The end-to-end row is worth pausing on.** Lampson's claim is that intermediate checks are
+*not logically necessary* -- they are performance optimisations, because only the end-to-end
+check proves anything. Our ladder has independently arrived at the same shape and says so in
+its own words: the compile-only gates cannot see a program that compiles and prints the wrong
+answer (BUG-226), and `output_sweep` exists because of it. What Lampson adds is the
+justification for keeping the cheap intermediate gates anyway: they are not there to prove
+correctness, they are there to find failures sooner.
+
 ### THE AUDIT THAT CAME OUT OF THIS, and its first receipt (2026-08-26)
 
 Two founders, two questions, in sequence. Run against real dogfood code they found a
