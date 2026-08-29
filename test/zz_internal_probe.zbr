@@ -1,0 +1,23 @@
+# Probe: does `internal` mean the same thing in both compilers?
+#
+# Documented meaning (QUICKSTART): `internal` excludes the member from cross-module
+# interface tables. It does NOT restrict access within the module -- that is `private`.
+#
+# So reading an `internal` field from a DIFFERENT CLASS IN THE SAME MODULE must compile.
+# Bootstrap: `if (mods.private)` gates access (src/TypeChecker.zig:2491) and internal is
+# not private, so this is allowed; internal is skipped from the cross-module tables at
+# :770 and :804, which is its whole job.
+# Selfhost: Parser.zbr maps `internal` onto pending_private, and there is no separate
+# internal flag anywhere under selfhost/, so it should REFUSE this.
+
+class Holder
+    internal var secret: int = 42
+
+class Reader
+    def read(h: Holder): int
+        return h.secret
+
+def main()
+    var h = Holder()
+    var r = Reader()
+    print(r.read(h: h))

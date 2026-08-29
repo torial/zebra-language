@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-315. Next new bug: BUG-316.**
+**Last bug number generated: BUG-316. Next new bug: BUG-317.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,71 @@
 > measured in.
 
 ---
+
+### BUG-316: `internal` means something different in each compiler, and the selfhost's diagnostic misreports what the user wrote — OPEN (found 2026-08-29)
+
+Found by auditing the modifier next to `protected` (BUG-315), which is why that entry
+left a note saying nobody had checked this one. Nothing found it earlier because
+**zero corpus files use the modifier**, so no gate — `divergence_check` included, since
+it compiles the corpus — could ever have seen it.
+
+**Documented meaning** (QUICKSTART): `internal` excludes the member from cross-module
+interface tables. It does NOT restrict access within the module; that is `private`.
+
+**The bootstrap implements exactly that.** `internal` is skipped when building the
+cross-module tables (`src/TypeChecker.zig:770` and `:804`) and is absent from the
+access check, which reads `if (mods.private)` at `:2491`.
+
+**The selfhost has no `internal` concept at all.** `selfhost/Parser.zbr:1916` folds it
+into `pending_private`, and no separate flag for it exists anywhere under `selfhost/`.
+So the modifier is silently promoted to `private`.
+
+**Measured, with a control that proves the probe discriminates:**
+
+| probe | bootstrap | selfhost |
+|---|---|---|
+| `internal` field read from a sibling class in the SAME module | **rc=0, accepts** | **rc=1, refuses** |
+| `private` field read from a sibling class (control) | rc=1 | rc=1 |
+
+The control matters: with `private` both compilers refuse, so the divergence is
+specific to `internal` rather than the probe being malformed.
+
+**TWO DEFECTS, and the second is the worse one.**
+
+1. The selfhost is **stricter than the reference**, violating the standing rule that the
+   two compilers must be functionally equivalent. A program that compiles under the
+   bootstrap is refused by the shipping compiler.
+2. The message reads **`error: 'secret' is private`** for a field the user declared
+   `internal`. That is UNGIT "nothing fabricated" at the diagnostic surface: it reports a
+   modifier the source does not contain, so the author's first move is to search their own
+   code for a `private` that is not there.
+
+**Which one is right:** the bootstrap. It matches the documentation, and the
+documented behaviour is coherent (module-scoped visibility, C#-like). The selfhost is
+the side to change.
+
+**Shape of the fix:** thread a distinct `is_internal` through
+`parseMemberDecl` -> `parseDeclField` / `parseMethodDecl` -> the PNode -> AstBuilder ->
+the Decl modifiers -> TypeChecker, where it must be excluded from the cross-module
+tables but must NOT be added to `private_member_keys`
+(`selfhost/TypeChecker.zbr:402`). Five layers; the parser signatures at
+`Parser.zbr:1986` and `:2041` already carry `is_private`/`is_public` and would gain a
+third.
+
+**Control when fixing:** `test/zz_internal_probe.zbr` is the probe as run (rename it
+into a real fixture). It must compile and RUN under BOTH compilers, and the `private`
+variant must still be refused by both — a fix that made `internal` universally
+permissive would pass a one-sided test. Also assert the cross-module half, which
+neither probe covers: an `internal` member must be invisible from ANOTHER module, or
+the fix has made it a no-op.
+
+**THE GENERAL GAP THIS EXPOSES, worth more than the bug.** A language feature with zero
+corpus uses is unverified by construction, and nothing currently reports that.
+`registration_check` asks whether every tracked test is asserted by something; the
+mirror question — whether every keyword and modifier is EXERCISED by something — is
+equally derivable (`Token.zbr`'s keyword table intersected with corpus usage) and has
+no instrument. `protected` and `internal` were the two modifiers nobody used, and both
+turned out to be defective.
 
 ### BUG-314: `.add()` on a `List` fetched from a parent container via `.at()` does not write back — only `.set()` does — OPEN (found 2026-08-28)
 
