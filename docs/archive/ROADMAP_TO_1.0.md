@@ -1,5 +1,30 @@
-<!-- doc-status: live -->
-# Zebra → 1.0: a clear-eyed roadmap
+<!-- doc-status: historical -->
+# Zebra → 1.0: a clear-eyed roadmap  — ARCHIVED 2026-08-29
+
+> **Archived, not deleted.** Its content was integrated on 2026-08-29 and its own
+> framing pointer had gone false: it says "NEXT_STEPS.md remains the authoritative
+> per-item queue", and NEXT_STEPS.md is now a router over five files.
+>
+> Where each part went:
+> * the reframe ("not what is left to write, but what gates declaring the surface
+>   stable") → the header of `NEXT_STEPS_to_1.0.md`
+> * the honest risks → `docs/PRINCIPLES.md`
+> * the post-1.0 deferral list (WASM/Http/Zig-builtins at 1.5, kernel + VCS at 2.0)
+>   → `NEXT_STEPS_post_1.0.md`
+> * real-world validation via the GameEngine → `NEXT_STEPS_post_1.0.md`, marked
+>   **deferred by decision** rather than stalled (Sean, 2026-08-29: the engine work
+>   is paused pending a personal-review pre-0.9 state and is the intended first
+>   tire-kick after)
+> * the API freeze → folded into §15, which already carried it
+>
+> **Two of its pre-flight items are now resolved and are NOT open questions:**
+> BUG-139 is closed, and "bootstrap-vs-selfhost textual divergence — reconcile or
+> declare a non-goal" is answered by the bootstrap being retired (see
+> `NEXT_STEPS_to_0.9.md`, "FREEZE THE BOOTSTRAP"). Its BUG-221 blocker is also fixed,
+> which is what makes its "one technical bug plus the freeze" conclusion land on
+> just the freeze.
+>
+> Read it for the 2026-06-23 snapshot; do not act from it.
 
 *Drafted 2026-06-23. A strategy view, not a feature list — `NEXT_STEPS.md`
 remains the authoritative per-item queue.*
