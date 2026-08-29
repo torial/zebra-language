@@ -434,6 +434,61 @@ last thing run when overnight work stops" is a habit -- stated so it can be kept
 automated. When picking it up again, the useful prompt is not "what is left on the list" but
 **"what has the last few days' work taught us that changes an item here?"**
 
+### BUG-313's COST, MEASURED (2026-08-26) — and it makes the elision essential
+
+**~91% overhead on maximally index-dense code.** Minimum of 10 interleaved rounds, a
+512-column `matvec` inner loop (two `.at()` reads plus a multiply-add per iteration),
+`--release --single-threaded`, with a 0-iteration baseline subtracted:
+
+| | wall | loop (baseline subtracted) |
+|---|---|---|
+| baseline, 0 iterations | 85 ms | -- |
+| **checked** | 784 ms | **699 ms** |
+| unchecked (same emit, check removed) | 450 ms | 365 ms |
+
+**This is a WORST CASE and should be read as one.** The loop does almost nothing except
+index; real code does more work per index and will see less. What it bounds is the ceiling,
+and the ceiling is high enough to matter against a 30-50%-of-Zig target.
+
+**Three instrument failures on the way to that number, all caught by arithmetic:**
+
+1. **The first benchmark measured process startup.** 0 iterations cost 165 ms; 100
+   iterations cost *less* (149 ms, pure noise); 400 cost 208 ms. Fixed overhead was ~10x the
+   signal. An early "64% overhead" reading from that setup was measuring nothing.
+2. **Doubling the work did not double the time** (100 iters 254 ms, 200 iters 242 ms), which
+   is what exposed (1). Iterations were made mutually dependent so nothing could be elided,
+   and a 0-iteration build was added as an explicit baseline.
+3. **The first mutant differed in TWO ways.** It removed the check *and* changed the cast
+   from `@intCast` to `@bitCast`. Those are not the same: `@intCast` tells LLVM the value
+   fits the target range, `@bitCast` tells it nothing. The "unchecked" build came out **3.6x
+   SLOWER than checked** -- a backwards result that was the mutant's fault, not the
+   compiler's. Rebuilt with `@intCast` retained, i.e. exactly the pre-fix emit.
+
+The third is the reusable one: **a mutant that differs in two ways attributes the whole
+delta to one of them**, and here the wrong reading was the flattering one (checking is
+free!). Same shape as the cooperative-attacker rule, in a benchmark rather than a test.
+
+**WHAT THE NUMBER DECIDES.** Part 2 of the design (an explicitly-unchecked accessor) is
+now clearly needed rather than merely tidy, and part 3 (range-`for` elision) moves from
+"the nice half" to the one that carries the argument: a hot loop written as
+`for i in 0..xs.len` should pay nothing, and today it pays the same ~91% as a hand-managed
+index.
+
+**Hypothesis PROPOSED AND IMMEDIATELY WEAKENED, recorded with both halves.** The natural
+explanation is that the cost is not the compare-and-branch but the loss of VECTORIZATION,
+since an unpredictable early exit in the loop body blocks it. A first look does **not**
+support that: counting vector float instructions in the emitted asm gives **145 (checked)
+vs 165 (unchecked)** -- a 12% difference, not the wholesale loss the hypothesis predicts.
+
+That measurement is weak and does not refute it either: it counts the WHOLE program rather
+than the hot loop, so setup code dilutes it. Recorded as inconclusive rather than resolved,
+because the tempting move here was to let a plausible story stand on a number that does not
+actually carry it. To settle it, count inside the matvec loop specifically.
+
+The practical consequence is unchanged either way -- both the unchecked accessor and the
+elision are worth building -- but WHICH of them recovers the 91% is still unknown, and that
+matters for deciding which to build first.
+
 ### RUN EVERY GATE RED ONCE, AND READ WHAT IT SAYS (2026-08-26)
 
 `gate_selfcheck` and `tier_selfcheck` prove a gate CAN fail. That is not the same as
