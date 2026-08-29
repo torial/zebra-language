@@ -879,6 +879,108 @@ candidate below is checked against real open questions at the end.
 Six questions, six answers, and none of them "it depends". That is the property worth
 keeping if the wording changes.
 
+#### ITERATION 2 -- SEAN'S REJECTS AND TENSIONS (2026-08-29). IN PROGRESS, NOT DECIDED.
+
+Working notes from a live brainstorm. **Nothing here is settled**; it is recorded so the
+round is not re-derived. Sean's contributions are marked; the rest is Claude's reaction.
+
+**THE ORGANISING IDEA THAT CAME OUT OF IT.** Safety is non-negotiable AND the programmer must
+never fight the compiler for it (Sean: give up compiler speed for runtime resource use, "but
+not wanting something like the rust borrow checker, which kills thinking flow"). Those two
+together admit only one shape: safety is checked at RUN time, and the speed is won back BY
+THE COMPILER.
+
+> **The compiler pays, never the programmer.**
+
+That unifies commitment (1), the anti-borrow-checker stance, BUG-313 and the Cocke transform
+-- which it recasts as strategically required rather than locally faster. It rejects lifetime
+annotations, mandatory effect systems, `unsafe` blocks, and termination obligations.
+
+**SEAN'S REJECTS**, scored for rejection power:
+
+- *No resource-intensive solution where a lighter one exists; waste is failing to evaluate
+  data structures and algorithms for the Pareto frontier.* (Sean's rewrite of "no heavy
+  waste", and much stronger -- his examples, Quicksort-not-Bubblesort and hoisting the bounds
+  check out of the loop, span library choice AND compiler transform.) **Guard needed: the sin
+  is the UNEXAMINED choice, not the suboptimal one**, or it licenses exactly the premature
+  optimisation Knuth argues against. Open: Pareto in WHICH dimensions (time, space,
+  predictability, code complexity). **Consequence: this promotes the `algorithms`/TAoCP
+  namespace from dogfood to obligation** -- if "a lighter one was available" is a defect, the
+  language owes people the lighter one in reach.
+- *No verbosity for clarity's sake.* Sean's analogy: C.S. Lewis says in a paragraph what
+  others take pages to say; "worth the upfront language design time to figure out how to make
+  the semantics rich and concise." **Note that is a COST VOLUNTEERED (design latency), which
+  is the property demanded of every other line here.** Encapsulation for terse-and-regular:
+  **"concision through precision, never through cleverness"** (memorable), *high semantic
+  density, low spelling variance* (technical). The enemy is DIALECTS, not verbosity; the test
+  is whether a construct lets one idea be written two ways.
+- *Founders over fads*, reformulated twice. Claude's version -- prefer ideas that survived
+  contact with a working system built by their advocate -- avoids the appeal to authority
+  (Sean: "ultimately the fads are an appeal to a MARKETING authority"). Sean's addition is the
+  sharper half: *be skeptical of claims that cite no measured results and no engineering
+  trade-offs.* **That is the same test this document applies to ITSELF** -- a concept must
+  name what it gives up; a methodology that names no cost fails identically. State it once:
+  **a claim that names no cost is marketing, whether it comes from us or at us.** (Sean's
+  example: Clean Code promises maintainability loudly and never prices the added abstraction
+  layers or the lost machine sympathy.)
+- *Simple things simple, hard things possible* -- **AXED by agreement.** Nearly universal
+  aspiration, low rejection power, and Perl is the cautionary tale of achieving it.
+
+**TENSIONS ACCEPTED** (Sean's proposal that the concept carry these explicitly -- a concept
+that lists its tensions cannot be quietly violated by resolving one in secret):
+
+| # | tension | stance |
+|---|---|---|
+| T1 | expressive density vs. small surface | **the grammar freeze resolves it** (below) |
+| T2 | safety always vs. no wasted resources | the compiler pays, never the programmer; ~17% named aloud |
+| T3 | compile time vs. runtime resource use | trade compile time freely, NEVER flow of thought |
+| T4 | founders-over-fads vs. AI-first being brand new | receipts not age -- this repo is the working system |
+| T5 | shipping speed vs. design latency | pay upfront for density (Sean's Lewis point) |
+| T6 | AI regularity vs. human expressive freedom | **unresolved, and probably real** |
+
+**GRAMMAR FREEZE (Sean) -- the best structural idea of the round.** Freeze the grammar at or
+near 1.0; extension happens through the stdlib and Transforms rather than new syntax.
+Precedent: Oberon and C both froze and outlived more expressive contemporaries. Two
+consequences worth naming now: (1) **the transform interface becomes load-bearing
+infrastructure**, not a tidy-up, and deserves the design weight the grammar has today;
+(2) **the instrument already exists** -- `grammar_export.py --check` derives grammar.txt from
+the Earley rule table and refuses below 400 rules, so a freeze is a pin on that table rather
+than a new gate. **Open question to settle AT freeze time, not at first crisis: the amendment
+procedure** for when the grammar turns out to be wrong afterwards. Every frozen language
+faces this, and the cautionary tales are the ones that improvised it.
+
+**TOOLS AS A USER-FACING SURFACE (Sean).** Document the tooling, and triage which
+compiler-development tools should ship to Zebra's own users. First-pass candidates: `doctor`
+(is this tree trustworthy), per-Knuth cost reporting, a transform `--explain`, and the
+reconciliation discipline behind `evidence_digest`. Filter: **does it tell the user something
+the compiler already knows** -- i.e. UNGIT, so the triage has a criterion rather than taste.
+
+**AUDIENCE, SEAN'S REDRAFT** (supersedes Claude's; the "only ever sees one corner" exclusion
+is WITHDRAWN -- a specialist working in one area is a fine case, and that clause was inferred
+from the dogfooding record rather than intended):
+
+> Zebra is for someone who wants to build whole systems with as few hoops as possible --
+> alone, nearly so, or with a large team -- and who wants the compiler to carry the
+> engineering knowledge they shouldn't have to re-derive. It is not for those who want a
+> dynamic language or an Object Oriented language or a compiler nanny.
+>
+> It is built to be read, written and reasoned about by an AI collaborator as a first-class
+> user -- which means regularity beats cleverness, and a diagnostic is a feature, not an
+> apology.
+
+Two open objections, neither fatal. **"alone, nearly so, or with a large team" excludes
+nobody on the team-size axis**, so the bound has moved from team size to language philosophy
+-- defensible, and truer to intent, but the package-ecosystem and visibility-modifier
+rejections no longer follow from anything and need another source. And **"not an Object
+Oriented language" will mislead**, since Zebra has classes, interfaces and inheritance; the
+intent is presumably not OO-DOGMA (everything-is-an-object, inheritance-first modelling,
+patterns-as-architecture) and should say which.
+
+On AI-assistability looking like zeitgeist, Sean's answer is decisive for this project: he
+may be the language's only user, and he works with AI. The criterion is therefore not a bet
+on a trend but a description of the actual development model -- which is also why it is
+testable HERE and almost nowhere else.
+
 **KNOWN GAP: THE DRAFT NAMES NO AUDIENCE** (raised by Sean, 2026-08-29). Left open rather
 than filled, because it is an identity question. Three things are worth having settled first:
 
