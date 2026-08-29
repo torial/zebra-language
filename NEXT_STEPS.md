@@ -434,17 +434,36 @@ last thing run when overnight work stops" is a habit -- stated so it can be kept
 automated. When picking it up again, the useful prompt is not "what is left on the list" but
 **"what has the last few days' work taught us that changes an item here?"**
 
-### BUG-313's COST, MEASURED (2026-08-26) — and it makes the elision essential
+### BUG-313's COST: ~17%, and the FIRST measurement of it was wrong (2026-08-26)
 
-**~91% overhead on maximally index-dense code.** Minimum of 10 interleaved rounds, a
-512-column `matvec` inner loop (two `.at()` reads plus a multiply-add per iteration),
-`--release --single-threaded`, with a 0-iteration baseline subtracted:
+**CORRECTED. The first figure published here was 91% and it was an artifact of one noisy
+batch.** The honest number is **~17%**, and the correction is the more useful result,
+because the method that produced the wrong number looked rigorous.
 
-| | wall | loop (baseline subtracted) |
-|---|---|---|
-| baseline, 0 iterations | 85 ms | -- |
-| **checked** | 784 ms | **699 ms** |
-| unchecked (same emit, check removed) | 450 ms | 365 ms |
+Measured IN-PROCESS (`tools/bench/index_bench.zbr`): best-of-25 timed rounds inside the program,
+5 independent paired runs, `--release --single-threaded`.
+
+| run | checked | unchecked | overhead |
+|---|---|---|---|
+| 1 | 241 | 200 | 20.5% |
+| 2 | 248 | 217 | 14.3% |
+| 3 | 264 | 222 | 18.9% |
+| 4 | 238 | 209 | 13.9% |
+| 5 | 236 | 204 | 15.7% |
+
+**Checked is slower in 5 of 5 pairs, by 14-21%.** The consistent SIGN across independent
+pairs is what makes this trustworthy, more than any single ratio.
+
+**WHY THE FIRST MEASUREMENT LIED.** It timed the whole PROCESS and subtracted a
+zero-work baseline. That looked careful -- interleaved, minimum-of-10, baseline subtracted --
+and still produced 91%, because on an IDLE machine the MINIMUM over 15 rounds moves
+517 / 555 / 560 ms for the same binary. Process-level noise alone is ~8%, and one unlucky
+batch put the checked build at 784 ms where later runs put it at 503.
+
+**A minimum is only as good as the number of samples it is drawn from, and process startup
+adds noise that no amount of interleaving removes.** Timing inside the process removes
+loader, first-touch and scheduler-entry costs from the sample entirely, and makes rounds
+cheap enough to take a best-of-25 rather than a best-of-10.
 
 **This is a WORST CASE and should be read as one.** The loop does almost nothing except
 index; real code does more work per index and will see less. What it bounds is the ceiling,
@@ -471,7 +490,7 @@ free!). Same shape as the cooperative-attacker rule, in a benchmark rather than 
 **WHAT THE NUMBER DECIDES.** Part 2 of the design (an explicitly-unchecked accessor) is
 now clearly needed rather than merely tidy, and part 3 (range-`for` elision) moves from
 "the nice half" to the one that carries the argument: a hot loop written as
-`for i in 0..xs.len` should pay nothing, and today it pays the same ~91% as a hand-managed
+`for i in 0..xs.len` should pay nothing, and today it pays the same ~17% as a hand-managed
 index.
 
 **HYPOTHESIS REFUTED BY LOOKING AT THE ASM (2026-08-26).** The natural story was that the
@@ -491,8 +510,10 @@ inc / cmp / jne                  inc / cmp / jne
 **Both are SCALAR** -- `vmulsd`/`vaddsd`, not `vmulpd`/`vaddpd`. Neither build vectorizes
 this loop, so there was no vectorization to lose. The cost is exactly two instructions, one
 `cmp` and one conditional branch, added to a six-instruction body: 33% more instructions
-producing ~91% more time, which the basic-block split and the longer dependency chain
-account for.
+producing ~17% more time -- an unremarkable ratio once the number is right, and one that
+no longer needs the basic-block split or dependency chain invoked to explain it. (The
+earlier text reached for those to explain 91%, which is a reminder that a wrong measurement
+recruits plausible mechanisms to justify itself.)
 
 **AND LLVM ALREADY ELIDES HALF OF IT.** The loop performs TWO indexed reads (`row.at(j)`
 and `v.at(j)`) and emits only ONE check -- the optimizer hoisted or merged the other,
@@ -500,7 +521,7 @@ unprompted, from a hand-managed `while` index.
 
 **That is the strongest argument yet for the elision, and it changes the ordering.** If
 LLVM removes one check with no help at all, giving it a provable bound from a range-`for`
-should let it remove the rest -- so the elision plausibly recovers the whole 91%,
+should let it remove the rest -- so the elision plausibly recovers the whole ~17%,
 automatically, for code already written in the safe form. The unchecked accessor recovers
 the same but only where a user opts in, and it hands back the safety.
 
