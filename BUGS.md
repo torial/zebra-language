@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-316. Next new bug: BUG-317.**
+**Last bug number generated: BUG-317. Next new bug: BUG-318.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,58 @@
 > measured in.
 
 ---
+
+### BUG-317: `--emit-zig` writes the generated Zig to STDERR in the selfhost and STDOUT in the bootstrap, so `> out.zig` silently produces an empty file — OPEN (found 2026-08-29)
+
+Raised by Sean while reading a session note: "`--emit-zig` going to stdout seems
+counter-intuitive. Wouldn't it make sense to just emit the zig file explicitly?" Measuring
+it found something worse than counter-intuitive.
+
+**Measured on `Token.zbr`, streams separated:**
+
+| | selfhost (`zebra.exe`) | bootstrap (`zebra-bootstrap.exe`) |
+|---|---|---|
+| stdout | **0 bytes** | 212,634 bytes (the generated Zig) |
+| stderr | **17,981 bytes — including the entire generated Zig** | 0 bytes |
+| file beside the source | none | none |
+| file elsewhere | `%TEMP%/Token.zig` | — |
+| exit code | 0 | 0 |
+
+**THREE DEFECTS, and the first is the one that bites.**
+
+1. **The obvious command silently fails.** `zebra --emit-zig f.zbr > out.zig` creates an
+   EMPTY file and exits 0, because the source is on stderr. Nothing reports a problem: the
+   user has a zero-byte `.zig` and a successful exit. UNGIT "nothing fabricated" -- rc=0 is
+   a claim the tool did what was asked.
+2. **The two compilers are exact opposites**, which makes every harness that drives both
+   wrong for one of them. This is not theoretical: it cost three iterations of a throwaway
+   comparison harness on the day it was found, and each failure looked like a finding about
+   the COMPILERS rather than about the flag.
+3. **The output file lands in the system temp directory**, not beside the source and not in
+   the working directory. A user who wants the emitted Zig has to read a progress line to
+   discover where it went -- and that progress line is on the same stream as the source, so
+   redirecting one redirects the other.
+
+**The fix Sean proposes is the right one: write the file explicitly.** `--emit-zig` should
+produce `<name>.zig` in the working directory (or beside the source), print only progress to
+stderr, and put NOTHING on stdout. If piping is ever wanted, that is a separate explicit
+`--stdout` / `-o -`, the way every other compiler spells it. `--output-dir` already behaves
+sanely and is the model.
+
+**BEFORE CHANGING IT, COUNT THE CALLERS.** Fifteen tools invoke `--emit-zig`
+(`bootstrap_check`, `compile_check`, `divergence_check`, `full_sweep`, `selfhost_smoke`,
+`rebuild`, `gate_selfcheck` and others). Several capture the stream, so a change of
+destination is a breaking change to the gate fleet and must land with them, not before
+them. That is the reason this is filed rather than fixed on the spot.
+
+**Control when fixing:** `zebra --emit-zig f.zbr > out.zig` must produce a NON-EMPTY,
+compiling `out.zig` -- watched failing first, since today it yields zero bytes. And a
+matching check for the bootstrap while it lives, since the two currently disagree; the
+divergence is what makes any shared harness unreliable.
+
+**Not investigated:** whether the emitted-to-`%TEMP%` file is also what `zebra run` uses
+internally, in which case the temp location is deliberate for that path and only the flag's
+user-facing behaviour is wrong.
 
 ### BUG-316: `internal` means something different in each compiler, and the selfhost's diagnostic misreports what the user wrote — OPEN (found 2026-08-29)
 
