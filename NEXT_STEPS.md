@@ -801,6 +801,60 @@ The lecture closes on a parable whose master tailor advises **removing layers** 
 adding embroidery, and is dismissed as out of touch for it. That is the size-budget item, in
 1981, as a bedtime story.
 
+#### Parnas, *On the Criteria To Be Used in Decomposing Systems into Modules* (CACM, 1972)
+
+**His criterion is not "split by phase", it is the opposite of that**, and he names our
+decomposition as the anti-pattern:
+
+> "In the first decomposition the criterion used was **to make each major step in the
+> processing a module**. One might say that to get the first decomposition one **makes a
+> flowchart**. This is the most common approach to decomposition or modularization. It is an
+> outgrowth of all programmer training… The flowchart was a useful abstraction for systems
+> with on the order of 5,000-10,000 instructions, but as we move beyond that it does not
+> appear to be sufficient."
+
+The criterion he proposes instead is that "each module hides some design decision from the
+rest of the system", and his first specific rule is:
+
+> "A data structure, its internal linkings, accessing procedures and modifying procedures
+> are part of a **single module**. They are **not shared by many modules** as is
+> conventionally done."
+
+**ZEBRA'S SELFHOST IS THE FIRST DECOMPOSITION.** Lexer -> Parser -> AstBuilder -> Resolver ->
+TypeChecker -> CodeGen is a flowchart, and `Ast` is a data structure shared by everything.
+Measured: **899 pattern-match sites on Ast variants across five modules** (CodeGen 334,
+CgHelpers 280, TypeChecker 192, Checker 68, AstWalk 25).
+
+**And it predicts our defect classes, which is what makes this more than a taxonomy:**
+
+| what we have | Parnas's account of it |
+|---|---|
+| `lint_expr_walkers` exists at all | a GATE armoring a seam that information hiding would have removed |
+| BUG-267, BUG-260 -- walker drift | an Ast variant added; some traversers updated, others not, because no module owns it |
+| BUG-293 / BUG-294 -- seeding failures | a registry populated in one pipeline stage and consumed in another |
+| BUG-306 -- `inferExpr` cannot see module-scope decls | the same structure, from the other side |
+
+**NOT A PROPOSAL TO RESTRUCTURE THE COMPILER.** The pipeline decomposition has real virtues
+here -- it matches how compilation is taught, it makes the round-trip gate expressible, and
+899 call sites is not a refactor anyone should start on a whim. Recorded because it explains
+a recurring class rather than treating each instance as a surprise, and because it gives a
+criterion for boundaries we have NOT yet drawn.
+
+**IT ALSO VALIDATES THE TRANSFORM-INTERFACE-AS-PLUGIN-BOUNDARY, on Parnas's own terms.**
+Sean proposed the transform interface as the extension point. Parnas's test is whether a
+boundary corresponds to **a design decision likely to change**:
+
+- a `transform` (match / rewrite / metadata / trigger) IS such a decision -- which
+  transformations exist, and when they fire, is exactly what varies between versions and
+  between third parties;
+- a "plugin per compiler phase" would be the flowchart decomposition again, and would freeze
+  the seam where our defects already cluster.
+
+So the earlier recommendation -- adopt the size budget, defer the plugin architecture, and
+if modularity is needed put the boundary at the transform -- turns out to be Parnas's
+criterion rather than a hunch. Good; a hunch that survives contact with the source is worth
+more than one that does not.
+
 #### Lampson, *Hints for Computer System Design* (1983)
 
 **The single most on-point sentence found tonight:**
