@@ -856,6 +856,55 @@ The lecture closes on a parable whose master tailor advises **removing layers** 
 adding embroidery, and is dismissed as out of touch for it. That is the size-budget item, in
 1981, as a bedtime story.
 
+#### Naur, *Programming as Theory Building* (1985) — the one this project is a live test of
+
+> "A person who has or possesses a theory in this sense **knows how to do certain things and
+> in addition can support the actual doing with explanations, justifications, and answers to
+> queries**."
+>
+> "**The death of a program happens when the programmer team possessing its theory is
+> dissolved.**"
+>
+> "…program revival, that is reestablishing the theory of a program merely from the
+> documentation, is **strictly impossible**."
+>
+> "Documentation cannot — and so need not — say everything. Its purpose is to help the next
+> programmer **build an accurate theory** about the system."
+
+**This project dissolves its team every session.** Sean is continuous; the other half of the
+pair is not. By Naur's definition Zebra dies and is revived constantly, and the entire
+CLAUDE.md apparatus -- the receipts, the "found 2026-08-01 with…" notes, the bug ledgers
+that record what a defect COST rather than only what it was -- is a standing bet against his
+"strictly impossible".
+
+**Today produced evidence on both sides of that bet, and both halves matter.**
+
+*For the bet:* the receipts transmit. A session arriving cold used `corpus_ls.sh`'s recorded
+receipt to understand why an untracked file must not count, used BUG-302's write-up to
+recognise the same defect one layer up in `EMITFAIL`, and used the round-trip's documented
+blind spot to know what a green board did not prove. None of that is derivable from the code.
+
+*Against it:* **hazards that are written down were repeated anyway.** The heredoc-eats-
+backslashes rule is in memory and was violated five times in one day. The
+`$?`-after-a-pipeline trap is described in CLAUDE.md and cost a misread daily three times.
+The documentation transmitted the FACT and not the THEORY -- which is Naur's point precisely,
+and the reason the eventual fix was not a better note but a TOOL (`zzsafe`, H10) that makes
+the mistake structurally harder.
+
+**The refinement worth keeping.** Naur's target is documentation that records *what the
+system does*; this repo mostly records *what went wrong and why the code is shaped around
+it*, which is much closer to his "explanations, justifications, and answers to queries" --
+i.e. theory-shaped content rather than description. That is probably why revival works here
+better than he predicts. But the failure mode above shows the ceiling: **a recorded rule
+transmits knowledge, not judgement.** Where judgement is what fails, the answer is a
+construct that removes the choice, not a better sentence -- which is the same conclusion
+Dijkstra, Wirth and Hoare reach about language design, arriving here from documentation.
+
+**A criterion falls out of it, for what belongs in a comment:** not "what does this do" but
+"what would let the next person ANSWER A QUERY about it" -- why it is this way, what breaks
+if changed, what was tried. That is the test the good comments in this repo already pass and
+the weak ones do not.
+
 #### Wirth, *A Plea for Lean Software* (IEEE Computer, 1995)
 
 **On why software grows**, he cites two laws and then names the mechanism:
