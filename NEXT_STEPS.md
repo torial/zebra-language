@@ -745,6 +745,61 @@ code. It was not adopted from Naur; it was rediscovered by getting burned.
 11. A written specification of the concurrency model (threads, `Chan`, `Atomic`, the two-tier
     allocator). Zebra has the primitives and no stated memory model.
 
+### DRAFT: A WRITTEN SYSTEM CONCEPT — Sean's to accept, rewrite or reject
+
+Wirth's test for a feature is not "is it useful" but "is it compatible with the original
+system concept", and his claim is that the incompatibility usually *passes unrecognized*
+rather than being argued and lost. That test needs something to test against, and Zebra has
+never written one down. **This is a DRAFT proposed by Claude, not a decision** -- the
+identity of the language is Sean's call. It is offered because a concept nobody has written
+cannot adjudicate anything, and the 0.9 docket is exactly where it would be used.
+
+The test of a good concept is not that it sounds nice but that **it settles arguments**. The
+candidate below is checked against real open questions at the end.
+
+---
+
+> **Zebra is a high-level language that does not make you choose between saying what you
+> mean and knowing what it costs.**
+>
+> Three commitments follow, in priority order:
+>
+> **1. Safety is not optional at run time.** Where the compiler can prove a check
+> unnecessary it removes it. Where it cannot, the check stays, and there is no switch to
+> turn it off. (Hoare 1981: his users, offered exactly that switch, refused it.)
+>
+> **2. The compiler says what it did.** Any transformation applied to a program is
+> describable in Zebra itself, and queryable. A transformation that cannot describe itself
+> does not ship. (Hoare via Knuth 1974.)
+>
+> **3. Cost is legible before the program runs.** The language does not hide asymptotics or
+> allocation behind convenient syntax, and the compiler reports what parts of a program cost
+> the most without being asked. (Knuth 1974; Lampson 1983 on abstractions whose cost only a
+> "lively awareness" avoids.)
+>
+> The performance claim that makes (1) affordable: **within 30-50% of hand-written Zig**,
+> measured, not asserted. As of 2026-08-26 the measured gap on numeric array code is ~18%.
+
+---
+
+**Does it adjudicate? Checked against questions actually open today:**
+
+| question | the concept's answer |
+|---|---|
+| build an unchecked `.atUnchecked()` accessor? | **No** -- violates (1). This is the answer Hoare's users gave. |
+| automatic arena scoping? | **Only after the transform interface** -- (2) forbids invisible transformation, and this one frees live memory when wrong. |
+| infer `--single-threaded` automatically? | **Yes** -- (2) is satisfied because the precondition is independently enforced (a spawn becomes a compile error). |
+| complexity in the import path vs reflection data? | **Reflection** -- (3) wants cost legible, and (2) wants it queryable rather than encoded in a name that then cannot change. |
+| retire the imgui backend? | **Yes** -- carries no commitment; three backends for one job is the "bells and whistles" Wirth names. |
+| keep `.at()` bounds-checked by default at ~17%? | **Yes** -- (1) is first in priority order precisely so this is not re-argued each time it is measured. |
+
+Six questions, six answers, and none of them "it depends". That is the property worth
+keeping if the wording changes.
+
+**What it deliberately does NOT claim:** that Zebra is fast, small, simple, or general.
+Those are consequences or trade-offs, not the concept, and a concept that claims everything
+adjudicates nothing.
+
 ### PRIMARY SOURCES, NIGHT OF 2026-08-26 — and they settle BUG-313 part 2
 
 Two more papers read in full rather than quoted from memory. Both turned out to be about
