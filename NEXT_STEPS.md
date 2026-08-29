@@ -879,6 +879,42 @@ candidate below is checked against real open questions at the end.
 Six questions, six answers, and none of them "it depends". That is the property worth
 keeping if the wording changes.
 
+**KNOWN GAP: THE DRAFT NAMES NO AUDIENCE** (raised by Sean, 2026-08-29). Left open rather
+than filled, because it is an identity question. Three things are worth having settled first:
+
+*The test that separates a concept from a slogan is REJECTION POWER* -- a concept earns its
+keep only where it says no to something genuinely attractive, since Wirth's whole mechanism
+is that features get adopted BECAUSE users want them. Equivalently: it must name what you are
+willing to LOSE. Every concept that worked gave something up (Oberon features, C safety,
+Python speed). One that gives up nothing is not one.
+
+*By that test "high level like Python, without sacrificing performance or quality" is a
+slogan* -- it forbids nothing, because every proposal that will ever arrive claims to be more
+expressive and no slower. High-level-ness IS concept material, but only inverted from a
+benefit claimed into a cost accepted: "when expressiveness and speed conflict, Zebra takes the
+expressive form and makes the cost visible, rather than offering a faster unsafe form
+alongside it." That version rejects `.atUnchecked()`, `unsafe` blocks, and checks-off-in-
+release. Same subject, opposite direction, and it settles arguments.
+
+*The same test convicts this draft's own headline.* "does not make you choose between saying
+what you mean and knowing what it costs" is the identical all-upside shape. The three
+numbered commitments carry the adjudication; the headline is a wrapper. Commitment (1) is the
+one behaving properly, because it names the price out loud -- no off switch, ~17% accepted.
+
+*If an audience IS named, it should be a bound, not a market* -- "not for ___" is the half
+that rejects. What the dogfooding record actually shows (selfhost, game engine, web
+framework, LSP, IDE, ML runtime, n-gram analysis) is ONE PERSON BUILDING A WHOLE SYSTEM END
+TO END, which is Oberon's audience -- a coincidence worth noticing given Wirth is where the
+test came from. It rejects usefully: no heavyweight package ecosystem (a solo builder
+vendors), no fine-grained visibility modifiers (those police boundaries between TEAMS), no GC
+(whole-system reasoning needs predictable cost).
+
+**AND THE TWO PULL APART, which is the point of writing it down.** Python's audience is
+largely people who will never see the whole system -- that is what its high-level framing is
+FOR. Adopting Python's positioning would quietly import Python's audience, after which a
+hundred small feature decisions start going the other way. Precisely the incompatibility
+Wirth says passes unrecognized rather than being argued and lost.
+
 **What it deliberately does NOT claim:** that Zebra is fast, small, simple, or general.
 Those are consequences or trade-offs, not the concept, and a concept that claims everything
 adjudicates nothing.
