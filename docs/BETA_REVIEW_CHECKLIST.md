@@ -39,14 +39,15 @@ fully green boards. `tools/gui_scaffold_check.sh` now covers *startup* (BUG-229)
 startup crash needs neither a human nor a terminal. **Rendering, input, layout, resize and
 colour are covered by nothing but you.**
 
-Backends: `stub`, `glfw`, `tui` (per `zebra --help`). `--gui-backend=*` **delegates to
+Backends: `stub`, `tui`, `libui_ng` (per `zebra --help`). `tui` and `libui_ng` are
+native to the selfhost; `stub` **delegates to
 `zebra-bootstrap`**, so every item here exercises the *bootstrap's* codegen, not the
 selfhost's — a path most of the FULL tier never touches.
 
 ### A1. Per-backend smoke — `examples/counter.zbr`
 
 - [ ] `--gui-backend=tui` — renders, increments, decrements, quits cleanly
-- [ ] `--gui-backend=glfw` — same
+- [ ] `--gui-backend=libui_ng` — same
 - [ ] `--gui-backend=stub` — builds and exits without a window (the CI-shaped path)
 - [ ] libui-ng backend — same, via its own build path
 - [ ] The count **displayed** matches the count in the model after 10+ clicks

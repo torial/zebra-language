@@ -1337,7 +1337,7 @@ fn compileGuiProject(zig_path: []const u8, mode: Mode, gui_backend: CodeGen.GuiB
     try std.Io.Dir.cwd().copyFile(zig_path, std.Io.Dir.cwd(), main_zig, _io, .{});
 
     // 3. Write build.zig and build.zig.zon — but only on first creation.
-    // If a customised build.zig already exists (e.g. IDE/ZebraIDE_gui/ with
+    // If a customised build.zig already exists (e.g. a project with its own C++
     // C++ sources), preserve it so project-specific settings survive regens.
     const _build_zig_src:     []const u8 = switch (gui_backend) {
         .tui      => gui_tui_project_build_zig,

@@ -2856,7 +2856,6 @@ from both compilers in a structured format.
 | `--turbo` | Strip all contract checks (`require`/`ensure`/`invariant`) |
 | `--cpu=VALUE` | Pass `-mcpu=VALUE` to Zig (e.g. `native`, `x86_64+avx2`) — see §32 |
 | `--gui-backend=libui_ng` | Use native OS controls (default: stub) |
-| `--gui-backend=imgui` | Use Dear ImGui backend |
 | `--gui-backend=tui` | Use terminal UI backend |
 | `--zig-backend file.zbr` | Delegate to `zebra-bootstrap.exe` (Zig compiler) |
 | `--listen PORT` | (debug mode) expose DAP on `PORT` instead of launching IDE |
@@ -2866,15 +2865,15 @@ from both compilers in a structured format.
 ## 30. GUI programming
 
 Zebra has a built-in GUI API with an **MVU (Model-View-Update)** architecture.
-Three backends are available: native OS controls via **libui-ng**, a terminal
-UI via **ZigZag TUI**, and Dear ImGui (OpenGL/GLFW) for GPU-accelerated rendering.
+Two backends are available: native OS controls via **libui-ng**, and a terminal
+UI via **ZigZag TUI**. (A third, Dear ImGui via OpenGL/GLFW, was removed on
+2026-08-29 -- see NEXT_STEPS "RETIRE THE IMGUI GUI BACKEND".)
 
 ### Running a GUI program
 
 ```bash
 zebra --gui-backend=libui_ng myapp.zbr  # Native OS controls (Win32/GTK3/Cocoa) — recommended
 zebra --gui-backend=tui      myapp.zbr  # Terminal UI (ZigZag — no GPU, no dependencies)
-zebra --gui-backend=glfw     myapp.zbr  # Dear ImGui (OpenGL/GLFW)
 zebra myapp.zbr                         # Default: stub backend (prints to stderr, for tests)
 ```
 
@@ -2939,7 +2938,7 @@ def main()
 - `view(g, model)` — renders widgets; call `g.send(msg)` to queue messages
 - Messages are queued during `view` and processed after it returns
 
-### `Gui.run` — frame-callback form (ImGui/TUI only)
+### `Gui.run` — frame-callback form (TUI only)
 
 ```zebra
 Gui.run(title: str, width: int, height: int, frame: def(g: Gui))
@@ -2957,7 +2956,7 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 |---|---|---|
 | **State model** | Explicit typed struct — immutable transitions | Anything (mutable via `capture`) |
 | **Testability** | High — `update` is a pure function | Low — state lives in closure |
-| **Backend support** | All backends | ImGui + TUI only |
+| **Backend support** | All backends | TUI only |
 | **Best for** | Production apps, anything you want to test | Quick prototypes, IDE-style tools |
 | **State that spans frames** | In the model struct | In a `capture` block |
 
@@ -2967,10 +2966,14 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 - The app has clear, discrete state transitions.
 
 **Use frame-callback when:**
-- You're building a dev tool or ImGui-style editor where state is naturally mutable.
-- You need the `CodeEditor` widget or low-level draw calls (`g.ll.*`), which are
-  ImGui-only.
+- You're building a dev tool or immediate-mode editor where state is naturally mutable.
 - You want minimal boilerplate for a quick prototype.
+
+> **Changed 2026-08-29 with the imgui removal.** Low-level draw calls (`g.ll.*`) were
+> imgui-only and are **gone** -- there is no replacement. The `CodeEditor` widget is
+> NOT gone and never depended on this form: `libui_ng` provides a real Scintilla-backed
+> editor, while `tui` and `stub` carry a text-buffer stub. This section previously said
+> both were ImGui-only, which was wrong about the editor.
 
 ### Widget reference
 
@@ -2986,12 +2989,12 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 | `g.combobox(label, items, selected)`       | int      | Drop-down; `items: List(str)`, returns new index |
 | `g.spinbox(label, value, min, max)`        | int      | Integer spinner with bounds                |
 | `g.separator()`                            | void     | Horizontal rule                            |
-| `g.sameLine()`                             | void     | Next widget on same line (ImGui/TUI only)  |
+| `g.sameLine()`                             | void     | Next widget on same line                   |
 | `g.spacing()`                              | void     | Extra vertical space                       |
 | `g.indent()` / `g.unindent()`             | void     | Indentation level                          |
-| `g.panel(label, callback)`                 | void     | Collapsible child window (ImGui only)      |
+| `g.panel(label, callback)`                 | void     | Collapsible child window                   |
 | `g.beginPanel(id)` / `g.endPanel(id)`     | void     | libui-ng titled group box (retained-mode open/close pair)  |
-| `g.window(label, callback)`                | void     | Floating sub-window (ImGui only)           |
+| `g.window(label, callback)`                | void     | Floating sub-window                        |
 | `g.textColored(s, r, g, b, a)`            | void     | Colored text label                         |
 | `g.selectable(label, selected)`            | bool     | Selectable list item                       |
 | `g.send(msg)`                              | void     | Dispatch a message (MVU only)              |
@@ -3020,7 +3023,7 @@ using g.hbox("row", false)
 
 `g.beginPanel(id)` / `g.endPanel(id)` draw a titled group box around their
 contents (the libui-ng `uiGroup` widget).  Unlike `g.panel(label, callback)`
-(which is callback-based and ImGui-only), the `begin`/`end` pair is
+(which is callback-based and TUI-only), the `begin`/`end` pair is
 retained-mode and works on all backends that support group boxes.
 
 ```zebra
@@ -3087,7 +3090,7 @@ backend by implementing the fn-ptr slots and changing `_gui_active_backend`
 — no changes to user Zebra code required.
 
 Available backends: `stub` (no-op, for tests), `libui_ng` (native OS controls),
-`glfw`/`sdl2`/`dx12` (Dear ImGui), `tui` (ZigZag terminal).
+`tui` (ZigZag terminal).
 
 ---
 

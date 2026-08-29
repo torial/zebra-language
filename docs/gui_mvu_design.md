@@ -133,7 +133,8 @@ User stated preference (answered via AskUserQuestion): **"Replace entirely (Reco
 
 Implications:
 - `test/gui_test.zbr` and `test/test_gui_simple.zbr` use the old 4-arg form → must be rewritten
-- `IDE/ZebraIDE.zbr` uses the old form → needs migration or temporary shim
+- ~~ZebraIDE uses the old form → needs migration or temporary shim~~ —
+  **moot: the IDE was removed with the imgui backend on 2026-08-29**
 - `test/lowlevel_smoke_test.zbr` uses the old form
 
 Options:
@@ -148,8 +149,11 @@ Options:
 
 ## Open question 3: ZebraIDE migration
 
-ZebraIDE (`IDE/ZebraIDE.zbr`) is 460+ lines using the old frame-callback model with `capture` state.
-It's the primary stress test for the GUI API.
+**RESOLVED BY DELETION, 2026-08-29.** ZebraIDE was 460+ lines using the old frame-callback
+model with `capture` state, and was the primary stress test for the GUI API. It was built on
+the imgui backend and was removed with it. **That leaves the GUI API without its largest
+consumer** -- worth knowing, because the migration question below was really a question about
+whether the API could carry a real application, and nothing now answers it.
 
 Options:
 1. **Migrate to MVU now**: Extract Model struct, write update/view. ~1-2 hours of work.

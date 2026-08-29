@@ -13,7 +13,7 @@ widget API see QUICKSTART.md §30.
 Zebra apps real OS windows, buttons, menus, and a code editor (via Scintilla).
 
 The backend is **retained-mode**: widgets are created once on the first frame
-and updated in place on subsequent frames. This is different from the ImGui/glfw
+and updated in place on subsequent frames. This is different from an immediate-mode
 backend, which re-creates the widget hierarchy every frame.
 
 ### Invocation
@@ -174,7 +174,8 @@ var editor: CodeEditor  = CodeEditor.forZebra()   # ✗ same, and copies the han
 var editor: CodeEditor? = nil                     # ✓ then `m.editor = CodeEditor.forZebra()` in init
 ```
 
-Verified against the current compiler in all three forms. `IDE/ZebraIDE.zbr` uses
+Verified against the current compiler in all three forms. ZebraIDE (removed with the
+imgui backend, 2026-08-29) used
 the working form for all four of its editors.
 
 ---

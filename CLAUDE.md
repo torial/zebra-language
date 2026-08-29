@@ -26,7 +26,6 @@ history lives.
   Paired `*.zig` files are generated artifacts (`Parser.zbr` → `Parser.zig`).
 - `test/` — integration test suite (`.zbr` fixtures + runners).
 - `tools/` — ancillary tools (build/runner scripts, etc.).
-- `IDE/` — self-hosted IDE experiments using the Dear ImGui GUI backend.
 - `examples/` — sample Zebra programs.
 - `build.zig` / `build.zig.zon` — Zig build driver.
 - `zbuild` / `zbuild.bat` — convenience wrappers around `zig build`.

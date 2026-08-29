@@ -19,7 +19,46 @@ one-line archive rows). Full history for anything archived lives in git, `BUGS.m
 
 # ▶ Open work — scan me first
 
-## 0.9 — RETIRE THE IMGUI GUI BACKEND (Sean, 2026-08-25). SURVIVORS: **tui** and **libui-ng**.
+## 0.9 — RETIRE THE IMGUI GUI BACKEND — **DONE 2026-08-29** <!-- doc-lint-ok: the file references below are a record of what was DELETED, not pointers to live work; the paths are dangling BY DESIGN -->
+
+**Landed in two commits.** Compiler: 601 lines out of `src/CodeGen.zig` (the `.glfw` arm,
+which was the imgui backend, plus the `.sdl2`/`.dx12` arm, which was never imgui's dependent
+-- 178 lines of duplicated stub for backends never built). `GuiBackend` is now
+`{ stub, tui, libui_ng }`. Files: 99 tracked, 35,125 lines -- `IDE/` (20),
+`vendor/ImGuiColorTextEdit` (43), `vendor/fonts` (36, 15 MB). `vendor/sqlite` untouched.
+
+**THREE THINGS THE PLAN BELOW DID NOT ANTICIPATE, recorded because they are the reusable
+part:**
+
+1. **This was exit criterion 3 of the bootstrap sunset, not a separate task.** `glfw` was
+   the LAST GUI backend delegating to zebra-bootstrap; `tui` and `libui_ng` are already
+   native (`selfhost/main.zbr:2695`). The plan noted imgui code "dies with the bootstrap
+   regardless" -- the converse, that retiring imgui is what LETS the bootstrap die, was not
+   recorded and is the more useful direction.
+2. **The build template was measured as ONE line and is a 65-line PAIR** pinning `zgui`,
+   `zglfw` and `zopengl`. After the cull it would have served only `.stub` -- a backend
+   whose every widget call is a no-op -- so a GUI app that renders nothing was pulling three
+   GUI dependencies. Replaced with a dependency-free template.
+3. **Four user-facing surfaces still advertised the dead backends**, one self-contradicting:
+   `unknown gui backend 'glfw' (stub|glfw|sdl2|dx12|tui|libui_ng)` refused a value and
+   offered it in the same breath. A removal is not finished while the diagnostics still
+   promise what was removed.
+
+**AND THE DOCS WERE WRONG IN THE GENEROUS DIRECTION, which a search-and-delete pass would
+have propagated.** QUICKSTART said the `CodeEditor` widget and `g.ll.*` were both
+"ImGui-only". Reading codegen: `g.ll.*` is indeed gone (0 occurrences, no replacement), but
+the CodeEditor is NOT -- `libui_ng` carries a real Scintilla-backed editor and `tui`/`stub`
+carry a text-buffer stub. Deleting both claims would have removed a working feature from the
+documentation. **Derive capability claims from the code, not from the doc being edited.**
+
+`gui_scaffold_check` passes with both legs running, so `tui` -- the only automated GUI
+coverage that exists -- survived intact.
+
+---
+
+**The original plan, kept for its measurements:**
+
+### RETIRE THE IMGUI GUI BACKEND (Sean, 2026-08-25). SURVIVORS: **tui** and **libui-ng**.
 
 Decision: **imgui dies**, along with the imgui IDE and the vendored ImGuiColorTextEdit.
 `tui` and `libui_ng` are the two backends going forward.
@@ -34,7 +73,7 @@ mentions suggest, because almost all of it is one contiguous emitted-template bl
 | enum members | `GuiBackend = enum { stub, glfw, sdl2, dx12, tui, libui_ng }` | 3 to drop |
 | build template line | `src/main.zig:1217` (`exe.linkLibrary(zgui_dep.artifact("imgui"))`) | 1 |
 | vendored | `vendor/ImGuiColorTextEdit` (43 tracked files), `vendor/fonts` (36 files, 15 MB) | |
-| the IDE | `IDE/ZebraIDE.zbr` + `IDE/ZebraIDE_gui/` | 5 tracked `.zbr` |
+| the IDE | `IDE/ZebraIDE.zbr` + `IDE/ZebraIDE_gui/` | 5 tracked `.zbr` | <!-- doc-lint-ok: deleted 2026-08-29; this row is the record of WHAT was removed, so the path is dangling by design -->
 
 **`sdl2`/`dx12` ARE NOT IMGUI — checked, because the assumption was that they were.** That
 arm is 178 lines of DUPLICATED STUB under a single comment:
@@ -59,7 +98,7 @@ enum member reserved for something never built, costing real surface area — ev
 **DO NOT "FIX" THE HISTORICAL DOCS.** `SELFHOST_JOURNAL.md` and `CHANGELOG.md` are
 `doc-status: historical`; an entry describing a backend that existed in May is accurate
 history, and rewriting it falsifies the record. `doc_lint` already exempts them. What DOES
-need updating: `QUICKSTART.md` (the backend table), `IDE/README.md`,
+need updating: `QUICKSTART.md` (the backend table), `IDE/README.md`, <!-- doc-lint-ok: the IDE was deleted rather than updated; kept as the original plan text -->
 `docs/BETA_REVIEW_CHECKLIST.md`, `docs/UI_QUICKSTART.md`.
 
 **ORDER:** delete the arms and enum members first and let `doc_lint` name every stale
@@ -2213,7 +2252,8 @@ tracker, `C:\Projects\bugbook`), filed 2026-08-08.
 ### ~~FREE WIN — `-c` is excluded from the fast backend~~ — **DONE 2026-07-28 (`3fabc50`)**
 
 `selfhost/main.zbr:2414` read `if not mode_c and not release and …`, so check mode — the
-compiler's most latency-sensitive command, and the one `IDE/ZebraIDE.zbr`'s Check button runs —
+compiler's most latency-sensitive command, and the one ZebraIDE's Check button ran (the IDE
+was removed with the imgui backend, 2026-08-29) —
 was **explicitly excluded** from the `-fno-llvm -fno-lld` path and took the slowest available
 route. The exclusion turned out not to be load-bearing: the comment's argument (the self-hosted
 linker does not error on unresolved C symbols) is about C deps, which the condition already

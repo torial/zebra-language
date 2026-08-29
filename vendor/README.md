@@ -13,31 +13,14 @@ copy of an upstream project, with Zebra-specific modifications applied on top.
 
 ## Contents
 
-### ImGuiColorTextEdit
+### ImGuiColorTextEdit — REMOVED 2026-08-29
 
-**Upstream:** https://github.com/pthom/ImGuiColorTextEdit  
-**Upstream-Commit:** `19cedec`  
-**License:** MIT (see `ImGuiColorTextEdit/LICENSE`)
+Vendored for ZebraIDE's code-editing pane, which was built on the Dear ImGui GUI
+backend. That backend was retired (NEXT_STEPS, "RETIRE THE IMGUI GUI BACKEND") and
+the 43 vendored files went with it, along with `vendor/fonts` (36 files, 15 MB) which
+nothing surviving referenced.
 
-A C++17 rewrite of the ImGuiColorTextEdit syntax-highlighted code editor widget.
-Used in ZebraIDE for the code editing pane.
+The capability is not lost: `--gui-backend=libui_ng` provides a real Scintilla-backed
+code editor, and `tui`/`stub` carry a text-buffer stub. What went with imgui is the
+low-level draw API (`g.ll.*`), which has no replacement.
 
-**Zebra-specific files (do not upstream):**
-
-| File | Purpose |
-|------|---------|
-| `ZebraLanguage.h` | Header for the Zebra language definition |
-| `ZebraLanguage.cpp` | Keyword list, type names, `^`/`?` custom tokenizer |
-
-**Planned additions:**
-
-| Feature | File(s) | Status |
-|---------|---------|--------|
-| Error marker gutter | `ZebraLanguage.cpp` + shim | Pending |
-| `// zbr: N` gutter annotation | shim | Pending |
-| Code folding API | `TextEditor.h/.cpp` | Pending — pthom has no fold support yet |
-| Fold range provider | `ZebraFolding.h/.cpp` | Pending |
-
-**Integration:** The editor is compiled as C++ source alongside the zgui project
-(added to `build.zig` when GUI backend is glfw). The Zig shim calls `ZebraLanguage()`
-on editor creation and `SetLanguage()` to activate Zebra highlighting.

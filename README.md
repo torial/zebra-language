@@ -43,7 +43,6 @@ zig-out/bin/zebra.exe --gui-backend=tui      run examples/counter.zbr
 - **[NEXT_STEPS.md](NEXT_STEPS.md)** — authoritative priority queue.
 - **[STDLIB_ROADMAP.md](STDLIB_ROADMAP.md)** — standard library plan.
 - **[docs/DEBUGGING.md](docs/DEBUGGING.md)** — debugger setup (VS Code, ZebraIDE, lldb-dap).
-- **[IDE/README.md](IDE/README.md)** — self-hosted IDE experiments.
 - **[docs/archive/HERITAGE.md](docs/archive/HERITAGE.md)** — how this repo relates
   to the archived `cobra-language` repo it was split from.
 
