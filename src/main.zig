@@ -4,7 +4,7 @@
 //!   zebra <source-file>                        Compile and run.
 //!   zebra -c <source-file>                     Compile only; leave binary alongside source.
 //!   zebra --emit-zig <source-file>             Print generated Zig source to stdout.
-//!   zebra --gui-backend=stub|glfw <source>     Select GUI backend (default: stub).
+//!   zebra --gui-backend=stub|tui|libui_ng <source>  Select GUI backend (default: stub).
 //!
 //! Semantic pipeline:
 //!   1. Tokenize
@@ -201,18 +201,15 @@ pub fn main(init: std.process.Init) void {
             const val = arg["--gui-backend=".len..];
             if (std.mem.eql(u8, val, "stub")) {
                 gui_backend = .stub;
-            } else if (std.mem.eql(u8, val, "glfw")) {
-                gui_backend = .glfw;
-            } else if (std.mem.eql(u8, val, "sdl2")) {
-                gui_backend = .sdl2;
-            } else if (std.mem.eql(u8, val, "dx12")) {
-                gui_backend = .dx12;
             } else if (std.mem.eql(u8, val, "tui")) {
                 gui_backend = .tui;
             } else if (std.mem.eql(u8, val, "libui_ng") or std.mem.eql(u8, val, "libui-ng")) {
                 gui_backend = .libui_ng;
             } else {
-                std.debug.print("zebra: unknown gui backend '{s}' (stub|glfw|sdl2|dx12|tui|libui_ng)\n", .{val});
+                // The list must name only what is ACCEPTED. Before 2026-08-29 this read
+                // "unknown gui backend 'glfw' (stub|glfw|...)" -- refusing a value and
+                // offering it in the same breath.
+                std.debug.print("zebra: unknown gui backend '{s}' (stub|tui|libui_ng)\n", .{val});
                 std.process.exit(1);
             }
         } else if (std.mem.eql(u8, arg, "--module-path")) {
@@ -291,7 +288,7 @@ pub fn main(init: std.process.Init) void {
             \\  zebra --shared <source-file>               compile to shared library + .h header
             \\  zebra --release <source-file>              compile with -OReleaseFast
             \\  zebra --turbo <source-file>                strip require/ensure/invariant checks
-            \\  zebra --gui-backend=stub|glfw|tui <source> select GUI backend (default: stub)
+            \\  zebra --gui-backend=stub|tui|libui_ng <source> select GUI backend (default: stub)
             \\  zebra --module-path DIR <source>           add DIR to module search path
             \\  zebra --cpu=CPU <source>                   pass -mcpu=CPU to Zig (e.g. native, x86_64+avx2)
             \\  zebra --version                            print version and exit
@@ -1178,44 +1175,30 @@ fn backend(
 
 // ── GUI project compilation ───────────────────────────────────────────────────
 //
-// When using a non-stub GUI backend, the generated .zig file imports zgui,
-// zglfw, and zopengl, which require a `zig build` project with declared
+// When using a non-stub GUI backend, the generated .zig file imports the
+// backend's runtime, which requires a `zig build` project with declared
 // dependencies.  `compileGuiProject` creates a minimal project directory
 // alongside the generated .zig file and invokes `zig build run` or
 // `zig build install`.
 
 /// Minimal `build.zig` written into the generated GUI project.
+// The `stub` backend builds a GUI app with NO GUI: every widget call is a no-op, so the
+// project needs no dependencies at all. Before 2026-08-29 it shared the imgui scaffold and
+// pulled in zgui, zglfw and zopengl to render nothing.
 const gui_project_build_zig =
     \\const std = @import("std");
     \\pub fn build(b: *std.Build) void {
     \\    const target   = b.standardTargetOptions(.{});
     \\    const optimize = b.standardOptimizeOption(.{});
-    \\    const zgui_dep = b.dependency("zgui", .{
-    \\        .target   = target,
-    \\        .optimize = optimize,
-    \\        .backend  = .glfw_opengl3,
-    \\    });
-    \\    const zglfw_dep = b.dependency("zglfw", .{
-    \\        .target   = target,
-    \\        .optimize = optimize,
-    \\    });
-    \\    const zopengl_dep = b.dependency("zopengl", .{
-    \\        .target = target,
-    \\    });
     \\    const app_mod = b.createModule(.{
     \\        .root_source_file = b.path("src/main.zig"),
     \\        .target           = target,
     \\        .optimize         = optimize,
     \\    });
-    \\    app_mod.addImport("zgui",    zgui_dep.module("root"));
-    \\    app_mod.addImport("zglfw",   zglfw_dep.module("root"));
-    \\    app_mod.addImport("zopengl", zopengl_dep.module("root"));
     \\    const exe = b.addExecutable(.{
     \\        .name        = "app",
     \\        .root_module = app_mod,
     \\    });
-    \\    exe.linkLibrary(zgui_dep.artifact("imgui"));
-    \\    exe.linkLibrary(zglfw_dep.artifact("glfw"));
     \\    b.installArtifact(exe);
     \\    const run_step = b.addRunArtifact(exe);
     \\    b.step("run", "Run the app").dependOn(&run_step.step);
@@ -1223,34 +1206,19 @@ const gui_project_build_zig =
     \\
 ;
 
-/// `build.zig.zon` written into the generated GUI project.
-/// All three dependency hashes are pinned to the proven-working commits.
+/// `build.zig.zon` for the dependency-free stub project.
 const gui_project_build_zig_zon =
     \\.{
     \\    .name                 = .app,
     \\    .version              = "0.0.1",
     \\    .minimum_zig_version  = "0.15.0",
     \\    .fingerprint          = 0xc96e70cfa59200d7,
-    \\    .dependencies = .{
-    \\        .zglfw = .{
-    \\            .url  = "https://github.com/zig-gamedev/zglfw/archive/0dd29d8073487c9fe1e45e6b729b3aac271d5a71.tar.gz",
-    \\            .hash = "zglfw-0.10.0-dev-zgVDNIG4IQBWN_sfMD-xfC9bJS2hbBN2W7jNlDLovcdC",
-    \\        },
-    \\        .zopengl = .{
-    \\            .url  = "https://github.com/zig-gamedev/zopengl/archive/db9d615c742086b39954eef064f957e92dafc7e2.tar.gz",
-    \\            .hash = "zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM",
-    \\        },
-    \\        .zgui = .{
-    \\            .url  = "https://github.com/zig-gamedev/zgui/archive/d6c4f53c2fbd54673790dc2a5208160a3586ef29.tar.gz",
-    \\            .hash = "zgui-0.6.0-dev--L6sZCJKbgBZGCzVMcwD0bNGmpK6yO-UoIESHX5JiRet",
-    \\        },
-    \\    },
+    \\    .dependencies = .{},
     \\    .paths = .{ "build.zig", "build.zig.zon", "src" },
     \\}
     \\
 ;
 
-/// Minimal `build.zig` written into the generated TUI project.
 const gui_tui_project_build_zig =
     \\const std = @import("std");
     \\pub fn build(b: *std.Build) void {
