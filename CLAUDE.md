@@ -439,7 +439,15 @@ python tools/hazard_lint.py        # THE TOOLING GATE (static, instant, no build
                                 #   constant sentinel on a path feeding a comparison —
                                 #   always biases toward "nothing changed"; H4 a
                                 #   compiler-SPECIFIC emit header (two compilers, two
-                                #   headers); H5 `git checkout -- .`. Suppress with
+                                #   headers); H5 `git checkout -- .`; H10 `$?` after a
+                                #   PIPELINE (that is the LAST command's status -- a
+                                #   `--daily 2>&1 | tee log | tail -60` reported exit 0
+                                #   while the tier had FAILED, three times in one day);
+                                #   H11 `comm`/`join` without a pinned LC_ALL=C (sorted
+                                #   is a property of a file AND a collation -- a
+                                #   default-locale sort compared against an LC_ALL=C one
+                                #   fabricated a list of seven innocent failures).
+                                #   Suppress with
                                 #   `# hazard-ok:<code> <reason>` — a reason is REQUIRED,
                                 #   because an unexplained suppression is how a gate goes
                                 #   quiet. It runs its own positive controls before every

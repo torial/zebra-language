@@ -319,8 +319,65 @@ def check_h6(path, text, lines, tree):
     return hits
 
 
+# --------------------------------------------------------------------------- H10
+# RECEIPT (2026-08-26, three times in one session): `gates.sh --daily 2>&1 | tee log |
+# tail -60` reported exit 0 while the tier had FAILED. A pipeline's status is the LAST
+# command's, so `$?` after one is `tail`'s. The daily was read as green and its three red
+# gates missed; the same mistake then hid a failed rebuild and a failed release-mode check.
+#
+# CLAUDE.md already warned that gates.sh has two terminal lines. This is the other half:
+# even a correct grep cannot help if the exit code was thrown away before you looked.
+PIPE_RC = re.compile(r"\$\?")
+
+
+def check_h10(path, text, lines, tree=None):
+    out = []
+    for i, ln in enumerate(lines, 1):
+        if not PIPE_RC.search(ln):
+            continue
+        before = ln.split("$?")[0]
+        prev = lines[i - 2] if i >= 2 else ""
+        # a pipeline on this line before the $?, or on the line above
+        cand = before if "|" in before else prev
+        cand = re.sub(r"\|\|", "", cand)                  # || is not a pipeline
+        cand = re.sub(r"#.*$", "", cand)
+        if re.search(r"[^|>]\|[^|]", cand):
+            out.append(Hazard("H10", path, i,
+                              "`$?` after a PIPELINE is the LAST command's status, not the "
+                              "one you meant. Capture it without a pipe "
+                              "(`cmd > log; rc=$?`) or use PIPESTATUS"))
+    return out
+
+
+# --------------------------------------------------------------------------- H11
+# RECEIPT (2026-08-26): full_sweep's positive-set leg compared a list sorted in the DEFAULT
+# locale against pass.txt, which is built with `LC_ALL=C sort`. `comm` then fabricated a
+# failure list naming seven must-pass fixtures that all compile clean, with "comm: file 2 is
+# not in sorted order" buried above them. The same defect had been fixed in that file's
+# baseline leg THE SAME MORNING -- three comm calls, one fixed.
+#
+# "Sorted" is not a property of a file; it is a property of a file AND a collation. Anything
+# that consumes ordering must pin it, and so must everything that produced the input.
+COLLATION_TOOL = re.compile(r"(?<![\w-])(comm|join)\s")
+
+
+def check_h11(path, text, lines, tree=None):
+    out = []
+    for i, ln in enumerate(lines, 1):
+        s = re.sub(r"#.*$", "", ln)
+        if not COLLATION_TOOL.search(s):
+            continue
+        if "LC_ALL=C" in s:
+            continue
+        out.append(Hazard("H11", path, i,
+                          "`comm`/`join` depends on COLLATION, not just on sortedness. Pin "
+                          "it (`LC_ALL=C comm ...` and `LC_ALL=C sort` on every input), or "
+                          "it silently fabricates differences"))
+    return out
+
+
 PY_CHECKS = [check_h1, check_h2, check_h3, check_h4, check_h5, check_h6]
-SH_CHECKS = [check_h2, check_h4, check_h5]
+SH_CHECKS = [check_h2, check_h4, check_h5, check_h10, check_h11]
 
 
 def scan_text(path, text):
@@ -370,6 +427,8 @@ CONTROLS = {
     "H6": ("ctl_h6.py", 'REPO = 1\nwt = 2\nrel = "a.zbr"\n'
                         'a = REPO / rel\nb = wt / rel\n'),
     "H9": ("ctl_h9.py", 'import pathlib  # hazard-ok\n'),
+    "H10": ("ctl_h10.sh", 'bash gates.sh | tail -5\nrc=$?\n'),
+    "H11": ("ctl_h11.sh", 'comm -23 a.txt b.txt\n'),
 }
 
 
