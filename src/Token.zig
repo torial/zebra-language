@@ -217,7 +217,6 @@ pub const TokenKind = enum {
     kw_abstract,
     kw_export,
     kw_extern,
-    kw_internal,
     kw_public,
     kw_private,
     kw_readonly,
@@ -348,7 +347,13 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "abstract",    .kw_abstract },
     .{ "export",      .kw_export },
     .{ "extern",      .kw_extern },
-    .{ "internal",    .kw_internal },
+    // no "internal": BUG-316. It named a real middle visibility level (hidden
+    // cross-module, visible within the module -- pub(crate) / package-private), but
+    // the two compilers disagreed about it, it was NEVER used in any commit in the
+    // whole history, and 32k lines of multi-module Zebra in selfhost/ never needed it.
+    // Removed 2026-08-29 rather than fixed. If module-scoped visibility comes back,
+    // design it once and implement it in the SELFHOST -- shipping it in one compiler
+    // and not the other is what made it a divergence instead of a feature.
     .{ "public",      .kw_public },
     .{ "private",     .kw_private },
     // no "protected": BUG-315. It was a synonym for `private` and its documented

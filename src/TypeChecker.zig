@@ -767,7 +767,7 @@ fn extractFromMembers(
     for (members) |m| switch (m) {
         .method => |meth| {
             // private/internal members are not visible cross-module.
-            if (meth.mods.private or meth.mods.internal) continue;
+            if (meth.mods.private) continue;
             const ret = simpleTypeFromRef(
                 if (meth.return_type) |*rt| rt else null,
                 resolve, alloc,
@@ -801,7 +801,7 @@ fn extractFromMembers(
         },
         .var_  => |v| {
             // private/internal fields are not visible cross-module.
-            if (v.mods.private or v.mods.internal) continue;
+            if (v.mods.private) continue;
             const t = simpleTypeFromRef(if (v.type_) |*tr| tr else null, resolve, alloc);
             const key = try std.fmt.allocPrint(alloc, "{s}.{s}", .{ class_name, v.name });
             try fields.put(key, t);

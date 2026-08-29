@@ -391,7 +391,6 @@ const Builder = struct {
                 switch (kids[1].leaf.token) {
                     .kw_public    => m.public    = true,
                     .kw_private   => m.private   = true,
-                    .kw_internal  => m.internal  = true,
                     .kw_abstract  => m.abstract  = true,
                     .kw_export    => m.export_   = true,
                     .kw_static    => m.static_   = true,

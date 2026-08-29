@@ -121,7 +121,6 @@ union TokenKind
     kw_abstract
     kw_export
     kw_extern
-    kw_internal
     kw_public
     kw_private
     kw_readonly
@@ -252,8 +251,7 @@ class Keywords
             return TokenKind.kw_export()
         if word == "extern"
             return TokenKind.kw_extern()
-        if word == "internal"
-            return TokenKind.kw_internal()
+        # no "internal": BUG-316, removed 2026-08-29. See src/Token.zig for why.
         if word == "public"
             return TokenKind.kw_public()
         if word == "private"

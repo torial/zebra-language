@@ -987,8 +987,6 @@ class Parser
                 return true
             on TokenKind.kw_private
                 return true
-            on TokenKind.kw_internal
-                return true
             on TokenKind.kw_abstract
                 return true
             on TokenKind.kw_export
@@ -1911,8 +1909,8 @@ class Parser
     def parseMemberDecl(is_static: bool): PNode throws
         var pending_private: bool = false
         var pending_public: bool = false
-        if .textIs("private") or .textIs("public") or .textIs("internal")
-            if .textIs("private") or .textIs("internal")
+        if .textIs("private") or .textIs("public")
+            if .textIs("private")
                 pending_private = true
             else
                 pending_public = true

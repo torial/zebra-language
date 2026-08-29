@@ -1554,6 +1554,7 @@ smoke_run     test/bug280_keyword_idents.zbr "bug280: OK"
 smoke_run     test/bug280_freed_words_test.zbr "freed words: OK"
 smoke_run     test/bug315_protected_freed_test.zbr "bug315: OK"
 smoke_run     test/loop_continue_break_test.zbr "loop-continue-break: OK"
+smoke_run     test/bug316_internal_freed_test.zbr "bug316: OK"
 
 # BUG-283: `${Name}` in a zig"..." literal names a Zebra TYPE and codegen substitutes its
 # current emitted spelling, so user code stops guessing that spelling. THE NEGATIVE TEST

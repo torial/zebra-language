@@ -179,12 +179,29 @@ removal into a formality.
 
    **What remains for criterion 2 is therefore a DECISION, not an unknown:** the committed
    `selfhost/*.zig` are currently the INLINE shape because the bootstrap wrote them. Moving
-   the regen authority means committing the runtime-module shape instead, so `build.zig`
-   must build from a module plus `zebra_rt.zig`. That is concrete work with a known
-   question, which is a much better place to be than an unmeasured one.
+   the regen authority means committing the runtime-module shape instead.
 2. **Regen authority switches to N-1** -- `zig build update-selfhost` and
    `bootstrap_check.sh --update` use the committed-`.zig`-built `zebra.exe`, not
    `zebra-bootstrap.exe`. The round-trip's A/B legs are unchanged and still gate.
+
+   **MEASURED 2026-08-29 AND MUCH CHEAPER THAN THIS ENTRY FIRST CLAIMED.** The earlier
+   wording said `build.zig` "must build from a module plus `zebra_rt.zig`", implying build
+   work. It does not. `build.zig` sets `root_source_file = selfhost/main.zig` and relies on
+   RELATIVE `@import`s, and the selfhost's emit for `main` produces exactly that file set --
+   eleven module `.zig` files plus `zebra_rt.zig`, all in one directory, with `main.zig`
+   importing the runtime by relative path. Zig resolves it with **no build.zig change at
+   all**.
+
+   And it is not speculative: **`bootstrap_check.sh` step 4 already BUILDS selfhost-B from
+   `/tmp/bs-A/main/`**, which is precisely this file set. It has been building on every
+   green round-trip. So criterion 2 is a re-baseline (regen with the selfhost, commit the
+   resulting set, which gains `selfhost/zebra_rt.zig` and shrinks `main.zig` from 9,262 <!-- doc-lint-ok: that path does not exist YET -- it is the file the switchover would ADD, which is the whole point of this paragraph -->
+   lines to ~5,471), not an engineering task.
+
+   The one real decision left inside it: the committed `.zig` diff will be enormous on the
+   switchover -- every file changes shape at once -- so it should land ALONE, in a commit
+   that does nothing else, or the review value of those tracked files (the Thompson
+   protection this whole plan rests on) is lost in the noise exactly when it matters most.
 3. **GUI backends stop delegating** -- **AND THIS IS THE SAME TASK AS RETIRING IMGUI,
    which was not noticed when this plan was written an hour earlier.** `selfhost/main.zbr:2695`
    reads `gui_selfhost = gui_backend == "tui" or gui_backend == "libui_ng"`, so the two
@@ -202,6 +219,21 @@ removal into a formality.
 4. **`divergence_check` is re-pointed or retired.** Its reference disappears with the
    bootstrap. Its value is already questionable (48 informational gaps), but losing a gate
    silently is not acceptable -- decide deliberately.
+
+   **RE-POINTING LOOKS BETTER THAN RETIRING, and the N-1 scheme hands us the reference for
+   free.** Today it asks "bootstrap handles it, selfhost does not" -- an
+   IMPLEMENTATION-vs-implementation question that is only interesting while two
+   implementations exist. Point it instead at the PREVIOUS selfhost (built from the
+   committed `.zig` at the last tag) and it asks "the previous release handled it, this one
+   does not" -- a VERSION-vs-version question, which is a regression detector and is useful
+   forever.
+
+   That is the same tool, the same corpus, the same `--gate` semantics, and a reference that
+   the N-1 bootstrapping scheme already requires us to have. It also fixes the gate's
+   current weakness: "bootstrap gaps" grew 14 -> 23 -> 48 while being documented as
+   informational and don't-chase, i.e. half its output had stopped meaning anything. A
+   version-to-version comparison has no informational half -- every difference is either a
+   regression or an intended change with a commit behind it.
 
 **What retires WITH it, so the work is not lost twice:** `defer`, `errdefer`, `abstract`
 (bootstrap-only keywords), `lint_interp_escape` (its docstring already says "retire when the

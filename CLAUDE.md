@@ -639,7 +639,7 @@ bash tools/contract_mode_check.sh  # THE CONTRACT-STRIPPING CONTRACT (FULL tier,
                                 #   all 13 checks ran.
 python tools/grammar_export.py --check  # THE GRAMMAR-DRIFT GATE (static, instant).
                                 #   `grammar.txt` is now GENERATED from the Earley parser's
-                                #   own rule table (src/ZebraGrammar.zig, 463 comptime rule <!-- doc-gen: 463 = grep -c 'lhs = ' src/ZebraGrammar.zig -->
+                                #   own rule table (src/ZebraGrammar.zig, 461 comptime rule <!-- doc-gen: 461 = grep -c 'lhs = ' src/ZebraGrammar.zig -->
                                 #   literals). It used to be hand-maintained BNF alongside
                                 #   the table — two copies of one thing, one compiled and
                                 #   one prose.

@@ -42,4 +42,3 @@ bug295_shared_state_leaf  # helper module imported by other tests; has no main()
 bug295_shared_state_left  # helper module imported by other tests; has no main()
 bug295_shared_state_right  # helper module imported by other tests; has no main()
 tc_merge_fixture  # NOT a test and cannot compile standalone BY CONSTRUCTION: it holds git conflict markers (<<<<<<< / =======) and is INPUT to `zebra typecheck-merge`. The EMITFAIL is `unexpected top-level token: '<<'`, which is the file doing its job. Do not "fix" it.
-zz_internal_probe  # BUG-316 EVIDENCE, not a test: it compiles under the bootstrap and is REFUSED by the selfhost, which is the divergence it demonstrates. Cannot be registered either way -- smoke_run would fail on the selfhost, smoke_tc_fail would declare the refusal CORRECT, which is the opposite of the finding. Delete it (and this line) when BUG-316 lands and a real two-compiler fixture replaces it.

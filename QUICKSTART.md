@@ -1687,10 +1687,14 @@ print(c.radius)                    # field access — no parens
 print(c.area())                    # method call — parens required
 ```
 
-**Field visibility** — use `public`, `private`, or `internal` on fields and
-methods.  `private` restricts to the owning class; `internal` excludes the
-member from cross-module interface tables.  Default (no keyword) is equivalent
-to `public`.
+**Field visibility** — use `public` or `private` on fields and methods.
+`private` restricts the member to the owning class and excludes it from
+cross-module interface tables.  Default (no keyword) is equivalent to `public`.
+
+There is no `internal` and no `protected`.  `internal` named a middle level
+(hidden cross-module, visible within the module) but the two compilers disagreed
+about it and nothing had ever used it; both were removed on 2026-08-29 (BUG-315,
+BUG-316) so the names are available to your programs.
 
 There is no `protected`, and there is no class-from-class inheritance for one to
 refer to: reuse comes from `adds` (mixins) and `extend`, conformance from

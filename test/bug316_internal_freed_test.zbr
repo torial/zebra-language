@@ -1,0 +1,78 @@
+# BUG-316: `internal` was removed rather than fixed (2026-08-29, Sean's call).
+#
+# It named a REAL middle visibility level -- hidden cross-module, visible within the
+# module, i.e. Rust's pub(crate) or Java's package-private -- so unlike `protected`
+# (BUG-315) it was not vacuous. It was removed anyway, on evidence:
+#
+#   * The two compilers DISAGREED. The bootstrap implemented the documented meaning;
+#     the selfhost folded it into `private` and then reported "'x' is private" about a
+#     field the source declared `internal` -- naming a modifier the program does not
+#     contain.
+#   * It was NEVER USED, in any commit, in the entire history. The only match was the
+#     probe filed with the bug. And the obvious defence -- "nobody used it because it
+#     was broken" -- does not hold: the bootstrap always implemented it correctly, so
+#     there was a long period when it worked and it still went unused.
+#   * 32,000 lines of multi-module Zebra in selfhost/ never needed it.
+#   * Hoare: "A feature which is omitted can always be added later, when its design and
+#     its implications are well understood." Its implications were demonstrably NOT
+#     well understood -- two compilers, two meanings.
+#
+# THIS FIXTURE PINS BOTH DIRECTIONS, which is the part a freed-word test usually gets
+# wrong. It is not enough that `internal` became an ordinary identifier; the visibility
+# level that REMAINS must still work, or the removal could have taken `private` with it
+# and this test would still pass.
+
+class Vault
+    private var secret: int = 7
+    var open_field: int = 3
+
+    def peek(): int
+        return .secret
+
+class Probe
+    var internal: int = 11          # the freed word as a FIELD
+
+    def read(v: Vault): int
+        return v.open_field         # a non-private field is reachable from another class
+
+# the freed word as a parameter, and interpolated
+def describe(internal: str): str
+    return "v=${internal}"
+
+# ... as an enum member and a union variant
+enum Scope
+    internal
+    external
+
+union Slot
+    internal: int
+    other: str
+
+def main()
+    var internal = 5                # ... as a local
+    print(internal + 1)             # 6
+
+    var p = Probe()
+    print(p.internal)               # 11
+
+    print(describe(internal: "ok")) # v=ok
+
+    var sc = Scope.internal
+    if sc == Scope.internal
+        print("enum ok")            # enum ok
+
+    var s: Slot = Slot.internal(9)
+    branch s
+        on Slot.internal as n
+            print(n)                # 9
+        on Slot.other as t
+            print(t)
+
+    # THE OTHER DIRECTION: `private` must still restrict. Reading v.secret from Probe
+    # would be a compile error; reading it through the owning class's own method is the
+    # access `private` is supposed to permit, and it must still work.
+    var v = Vault()
+    print(v.peek())                 # 7
+    print(v.open_field)             # 3
+
+    print("bug316: OK")

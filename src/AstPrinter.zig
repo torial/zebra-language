@@ -116,7 +116,6 @@ const Printer = struct {
     fn printMods(p: *Printer, m: Ast.Modifiers) anyerror!void {
         if (m.public)    try p.w(" public",    .{});
         if (m.private)   try p.w(" private",   .{});
-        if (m.internal)  try p.w(" internal",  .{});
         if (m.abstract)  try p.w(" abstract",  .{});
         if (m.static_)   try p.w(" static",    .{});
         if (m.readonly)  try p.w(" readonly",  .{});

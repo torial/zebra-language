@@ -30,7 +30,6 @@ NamespaceDecl        → kw_namespace UsePath eol indent TopDeclList dedent
 ModList              → ε
                      |  ModList kw_public
                      |  ModList kw_private
-                     |  ModList kw_internal
                      |  ModList kw_abstract
                      |  ModList kw_export
                      |  ModList kw_static
@@ -49,7 +48,6 @@ IsAttrItem           → kw_static
                      |  kw_readonly
                      |  kw_public
                      |  kw_private
-                     |  kw_internal
                      |  id
 
 HasOpt               → ε
