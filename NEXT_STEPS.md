@@ -434,6 +434,39 @@ last thing run when overnight work stops" is a habit -- stated so it can be kept
 automated. When picking it up again, the useful prompt is not "what is left on the list" but
 **"what has the last few days' work taught us that changes an item here?"**
 
+### RUN EVERY GATE RED ONCE, AND READ WHAT IT SAYS (2026-08-26)
+
+`gate_selfcheck` and `tier_selfcheck` prove a gate CAN fail. That is not the same as
+reading what it says WHEN it fails -- and the failure output is simultaneously the part
+most likely to be wrong and the part least likely to be seen.
+
+**Receipt, found within minutes of writing this down.** Falsifying the new BUG-313 legs
+against a real attacker (a compiler rebuilt with the check stripped from `_zbr_at`) made
+`release_mode_check` print:
+
+```
+   FAIL   index past the end was NOT refused in --release
+   FAIL   negative index was NOT refused in --release
+release-mode: 1 check(s) FAILED
+```
+
+Two failures, reported as one. `fail=1` was a FLAG being printed as a COUNT, in all eight
+of that gate's failure paths -- so it had reported "1 check(s) FAILED" for its entire
+existence regardless of how many checks failed. **No green run could ever have shown this.**
+Fixed to a real counter and verified in both directions (2 against the mutant, silent when
+clean).
+
+**The shape generalises.** Everything a gate checks about itself -- a sentinel, a panic
+text, a count, a refusal message -- lives on the failure path. `contract_mode_check`
+classifies on a printed sentinel rather than exit code for exactly this reason (a build
+failure also exits non-zero); `output_sweep` prints its transient count even when zero.
+A gate whose PASS line is honest and whose FAIL line is not is half-instrumented, and the
+half that is broken is the half you consult under pressure.
+
+**The practice:** when adding or touching a gate, break it deliberately once and *read the
+output*, not just the exit code. Ask the same question the instrument-discipline rules ask
+of a clean result -- "what would make this print the wrong thing?" -- of the red one.
+
 ### THE TRIGGER RULE, derived 2026-08-26 — when may a transform fire automatically?
 
 Sean proposed detecting statically that a program never threads, and applying

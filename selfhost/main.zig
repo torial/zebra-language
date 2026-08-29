@@ -123,6 +123,36 @@ pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
 // `zebra --release` ships, and keeping UB out of the shipping configuration is what
 // tools/lint_oom_unreachable.py exists for. Truncation is always defined and matches Go's
 // `byte(n)` and Rust's `as u8`. 0x1CE renders as 0xCE; -50 renders as 206.
+// ── BUG-313: CHECKED INDEXING ───────────────────────────────────────────────────────────
+// `.at(i)` used to lower to raw `items[@intCast(i)]`. Zig checks that in Debug and
+// ReleaseSafe and NOT in ReleaseFast, which is what `zebra --release` passes -- so a
+// shipped build read out of bounds, INVENTED a value, and carried on. Measured both doors:
+// an index past the end returned 0, and a NEGATIVE index (a Python reflex: `xs.at(-1)`)
+// wrapped through the @intCast to a huge usize and also returned 0.
+//
+// Knuth, p.271, citing Wirth and Hoare: "I believe that range checking should be used far
+// more often than it currently is, but not everywhere" -- and that a well-designed `for`
+// lets even a simple compiler avoid most checks inside loops. This is the "far more often"
+// half; the elision half needs the range-`for` to carry a provable bound.
+//
+// THE CONTAINER IS A PARAMETER, not re-emitted at the use site, so a side-effecting
+// receiver (`foo().at(i)`) is evaluated ONCE. Emitting `xs.items[chk(i, xs.items.len)]`
+// would evaluate it twice.
+//
+// THE SIGN TEST MUST COME FIRST: `@intCast` of a negative i64 traps in debug and wraps in
+// ReleaseFast, which is the second door itself. Zig's `or` short-circuits, so the cast is
+// only reached once the sign is known good.
+pub inline fn _zbr_at(xs: anytype, i: i64) std.meta.Elem(@TypeOf(xs)) {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    return xs[@intCast(i)];
+}
+pub inline fn _zbr_set(xs: anytype, i: i64, v: std.meta.Elem(@TypeOf(xs))) void {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    xs[@intCast(i)] = v;
+}
+
 pub inline fn _zbr_byte(x: anytype) u8 {
     return @truncate(@as(u64, @bitCast(@as(i64, x))));
 }
@@ -4062,7 +4092,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:132
         while (_zebra_lt(i, @as(i64, @intCast(self.visited.items.len)))) {
 // zbr:selfhost/main.zbr:133
-            const v: []const u8 = self.visited.items[@as(usize, @intCast(i))];
+            const v: []const u8 = _zbr_at(self.visited.items, i);
 // zbr:selfhost/main.zbr:134
             if (std.mem.eql(u8, v, p)) {
 // zbr:selfhost/main.zbr:135
@@ -4081,7 +4111,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:143
         while (_zebra_lt(i, @as(i64, @intCast(self.in_progress.items.len)))) {
 // zbr:selfhost/main.zbr:144
-            if (std.mem.eql(u8, self.in_progress.items[@as(usize, @intCast(i))], p)) {
+            if (std.mem.eql(u8, _zbr_at(self.in_progress.items, i), p)) {
 // zbr:selfhost/main.zbr:145
                 return i;
             }
@@ -4100,7 +4130,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:152
         while (_zebra_lt(i, (@as(i64, @intCast(self.in_progress.items.len)) - 1))) {
 // zbr:selfhost/main.zbr:153
-            rebuilt.append(_allocator, _intern(self.in_progress.items[@as(usize, @intCast(i))])) catch unreachable;
+            rebuilt.append(_allocator, _intern(_zbr_at(self.in_progress.items, i))) catch unreachable;
 // zbr:selfhost/main.zbr:154
             i = (i + 1);
         }
@@ -4116,7 +4146,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:163
         while (_zebra_lt(i, @as(i64, @intCast(self.in_progress.items.len)))) {
 // zbr:selfhost/main.zbr:164
-            out = _str_concat(_str_concat(out, self.moduleNameOf(self.in_progress.items[@as(usize, @intCast(i))]), _allocator), " -> ", _allocator);
+            out = _str_concat(_str_concat(out, self.moduleNameOf(_zbr_at(self.in_progress.items, i)), _allocator), " -> ", _allocator);
 // zbr:selfhost/main.zbr:165
             i = (i + 1);
         }
@@ -4158,7 +4188,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:183
         while (_zebra_lt(i, @as(i64, @intCast(xs.items.len)))) {
 // zbr:selfhost/main.zbr:184
-            if (std.mem.eql(u8, xs.items[@as(usize, @intCast(i))], v)) {
+            if (std.mem.eql(u8, _zbr_at(xs.items, i), v)) {
 // zbr:selfhost/main.zbr:185
                 return true;
             }
@@ -4187,16 +4217,16 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:201
         while (_zebra_lt(i, @as(i64, @intCast(self.import_edges.items.len)))) {
 // zbr:selfhost/main.zbr:202
-            const e: []const u8 = self.import_edges.items[@as(usize, @intCast(i))];
+            const e: []const u8 = _zbr_at(self.import_edges.items, i);
 // zbr:selfhost/main.zbr:203
             var parts: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty;
             { var _split_iter_1 = std.mem.splitSequence(u8, e, "|"); while (_split_iter_1.next()) |_se_1| { parts.append(_allocator, _se_1) catch @panic("OOM"); } }
 // zbr:selfhost/main.zbr:204
             if ((@as(i64, @intCast(parts.items.len)) == 2)) {
 // zbr:selfhost/main.zbr:205
-                if (std.mem.eql(u8, parts.items[@as(usize, @intCast(0))], mod_name)) {
+                if (std.mem.eql(u8, _zbr_at(parts.items, 0), mod_name)) {
 // zbr:selfhost/main.zbr:206
-                    out.append(_allocator, _intern(parts.items[@as(usize, @intCast(1))])) catch unreachable;
+                    out.append(_allocator, _intern(_zbr_at(parts.items, 1))) catch unreachable;
                 }
             }
 // zbr:selfhost/main.zbr:207
@@ -4214,7 +4244,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:228
         while (_zebra_lt(i, @as(i64, @intCast(self.stateful_mods.items.len)))) {
 // zbr:selfhost/main.zbr:229
-            const m: []const u8 = self.stateful_mods.items[@as(usize, @intCast(i))];
+            const m: []const u8 = _zbr_at(self.stateful_mods.items, i);
 // zbr:selfhost/main.zbr:230
             if ((!self.hasListed(listed, m))) {
 // zbr:selfhost/main.zbr:231
@@ -4240,7 +4270,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:239
         while (_zebra_lt(j, @as(i64, @intCast(listed.items.len)))) {
 // zbr:selfhost/main.zbr:240
-            const mn: []const u8 = listed.items[@as(usize, @intCast(j))];
+            const mn: []const u8 = _zbr_at(listed.items, j);
 // zbr:selfhost/main.zbr:241
             const imps2: std.ArrayList([]const u8) = self.importersOf(mn);
 // zbr:selfhost/main.zbr:242
@@ -4255,7 +4285,7 @@ pub const MultiCompiler = struct {
                     who = _str_concat(who, ", ", _allocator);
                 }
 // zbr:selfhost/main.zbr:247
-                who = _str_concat(who, imps2.items[@as(usize, @intCast(k))], _allocator);
+                who = _str_concat(who, _zbr_at(imps2.items, k), _allocator);
 // zbr:selfhost/main.zbr:248
                 k = (k + 1);
             }
@@ -4381,7 +4411,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:326
                     while (_zebra_lt(vi, @as(i64, @intCast(self.visited.items.len)))) {
 // zbr:selfhost/main.zbr:327
-                        const vpath: []const u8 = self.visited.items[@as(usize, @intCast(vi))];
+                        const vpath: []const u8 = _zbr_at(self.visited.items, vi);
 // zbr:selfhost/main.zbr:328
                         if (!std.mem.eql(u8, vpath, zbr_path)) {
 // zbr:selfhost/main.zbr:329
@@ -4590,7 +4620,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:469
                 while (_zebra_lt(dchk, @as(i64, @intCast(self.c_i_dirs.items.len)))) {
 // zbr:selfhost/main.zbr:470
-                    if (std.mem.eql(u8, self.c_i_dirs.items[@as(usize, @intCast(dchk))], c_dir)) {
+                    if (std.mem.eql(u8, _zbr_at(self.c_i_dirs.items, dchk), c_dir)) {
 // zbr:selfhost/main.zbr:471
                         already_added = true;
                     }
@@ -4621,7 +4651,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:503
         while (_zebra_lt(lx, @as(i64, @intCast(lib_exts.items.len)))) {
 // zbr:selfhost/main.zbr:504
-            const lib_name: []const u8 = _str_concat(_str_concat(dep_name, ".", _allocator), lib_exts.items[@as(usize, @intCast(lx))], _allocator);
+            const lib_name: []const u8 = _str_concat(_str_concat(dep_name, ".", _allocator), _zbr_at(lib_exts.items, lx), _allocator);
 // zbr:selfhost/main.zbr:505
             var lib_path: []const u8 = lib_name;
 // zbr:selfhost/main.zbr:506
@@ -4662,7 +4692,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:539
             while (_zebra_lt(zsi, @as(i64, @intCast(self.zig_sources.items.len)))) {
 // zbr:selfhost/main.zbr:540
-                if (std.mem.eql(u8, self.zig_sources.items[@as(usize, @intCast(zsi))], zig_dep_path)) {
+                if (std.mem.eql(u8, _zbr_at(self.zig_sources.items, zsi), zig_dep_path)) {
 // zbr:selfhost/main.zbr:541
                     zs_seen = true;
                 }
@@ -4685,7 +4715,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:549
         while (_zebra_lt(i, @as(i64, @intCast(self.type_scanned.items.len)))) {
 // zbr:selfhost/main.zbr:550
-            if (std.mem.eql(u8, self.type_scanned.items[@as(usize, @intCast(i))], p)) {
+            if (std.mem.eql(u8, _zbr_at(self.type_scanned.items, i), p)) {
 // zbr:selfhost/main.zbr:551
                 return true;
             }
@@ -4847,7 +4877,7 @@ pub const MultiCompiler = struct {
                 }
             }
 // zbr:selfhost/main.zbr:668
-            base = parts.items[@as(usize, @intCast((@as(i64, @intCast(parts.items.len)) - 1)))];
+            base = _zbr_at(parts.items, (@as(i64, @intCast(parts.items.len)) - 1));
         }
 // zbr:selfhost/main.zbr:669
         if ((std.mem.indexOf(u8, base, "\\") != null)) {
@@ -4862,7 +4892,7 @@ pub const MultiCompiler = struct {
                 }
             }
 // zbr:selfhost/main.zbr:673
-            base = bparts.items[@as(usize, @intCast((@as(i64, @intCast(bparts.items.len)) - 1)))];
+            base = _zbr_at(bparts.items, (@as(i64, @intCast(bparts.items.len)) - 1));
         }
 // zbr:selfhost/main.zbr:674
         if (!std.mem.eql(u8, self.output_dir, "")) {
@@ -4894,7 +4924,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:702
         while (_zebra_lt(i, @as(i64, @intCast(self.zig_sources.items.len)))) {
 // zbr:selfhost/main.zbr:703
-            const src_path: []const u8 = self.zig_sources.items[@as(usize, @intCast(i))];
+            const src_path: []const u8 = _zbr_at(self.zig_sources.items, i);
 // zbr:selfhost/main.zbr:707
             const base: []const u8 = self.moduleNameOf(src_path);
 // zbr:selfhost/main.zbr:708
@@ -4937,7 +4967,7 @@ pub const MultiCompiler = struct {
                 }
             }
 // zbr:selfhost/main.zbr:723
-            base = parts.items[@as(usize, @intCast((@as(i64, @intCast(parts.items.len)) - 1)))];
+            base = _zbr_at(parts.items, (@as(i64, @intCast(parts.items.len)) - 1));
         }
 // zbr:selfhost/main.zbr:724
         if (std.mem.endsWith(u8, base, ".zbr")) {
@@ -4978,7 +5008,7 @@ pub const MultiCompiler = struct {
             return "";
         }
 // zbr:selfhost/main.zbr:740
-        var out: []const u8 = parts.items[@as(usize, @intCast(0))];
+        var out: []const u8 = _zbr_at(parts.items, 0);
 // zbr:selfhost/main.zbr:741
         var i: i64 = 1;
 // zbr:selfhost/main.zbr:742
@@ -4988,7 +5018,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:744
             out = _str_concat(out, "/", _allocator);
 // zbr:selfhost/main.zbr:745
-            out = _str_concat(out, parts.items[@as(usize, @intCast(i))], _allocator);
+            out = _str_concat(out, _zbr_at(parts.items, i), _allocator);
 // zbr:selfhost/main.zbr:746
             i = (i + 1);
         }
@@ -5003,8 +5033,8 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:759
         while (_zebra_lt(i, @as(i64, @intCast(root_members.items.len)))) {
 // zbr:selfhost/main.zbr:760
-            if (root_members.items[@as(usize, @intCast(i))] == .method_) {
-                const rm_ptr = root_members.items[@as(usize, @intCast(i))].method_;
+            if (_zbr_at(root_members.items, i) == .method_) {
+                const rm_ptr = _zbr_at(root_members.items, i).method_;
                 const rm = rm_ptr.*;
 // zbr:selfhost/main.zbr:761
                 const rm_name: []const u8 = rm.name;
@@ -5037,7 +5067,7 @@ pub const MultiCompiler = struct {
                 }
             }
 // zbr:selfhost/main.zbr:773
-            base = parts.items[@as(usize, @intCast((@as(i64, @intCast(parts.items.len)) - 1)))];
+            base = _zbr_at(parts.items, (@as(i64, @intCast(parts.items.len)) - 1));
         }
 // zbr:selfhost/main.zbr:774
         if ((!std.mem.endsWith(u8, base, ".zbr"))) {
@@ -5087,7 +5117,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:790
         while (_zebra_lt(ei, @as(i64, @intCast(entries.items.len)))) {
 // zbr:selfhost/main.zbr:791
-            const ename: []const u8 = entries.items[@as(usize, @intCast(ei))];
+            const ename: []const u8 = _zbr_at(entries.items, ei);
 // zbr:selfhost/main.zbr:792
             if (((std.mem.startsWith(u8, ename, prefix) and std.mem.endsWith(u8, ename, ".zbr")) and !std.mem.eql(u8, ename, base))) {
 // zbr:selfhost/main.zbr:793
@@ -5117,7 +5147,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:804
         while (_zebra_lt(pi, @as(i64, @intCast(partial_paths.items.len)))) {
 // zbr:selfhost/main.zbr:805
-            const ppath: []const u8 = partial_paths.items[@as(usize, @intCast(pi))];
+            const ppath: []const u8 = _zbr_at(partial_paths.items, pi);
 // zbr:selfhost/main.zbr:806
             const psrc_raw: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_io, ppath, _allocator, .unlimited) catch @panic("File.read error"));
 // zbr:selfhost/main.zbr:807
@@ -5141,7 +5171,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:815
         while (_zebra_lt(ri, @as(i64, @intCast(pm.decls.items.len)))) {
 // zbr:selfhost/main.zbr:816
-            const rdecl = pm.decls.items[@as(usize, @intCast(ri))];
+            const rdecl = _zbr_at(pm.decls.items, ri);
 // zbr:selfhost/main.zbr:817
             switch (rdecl) {
                 .class_ => |rcls_ptr| {
@@ -5155,13 +5185,13 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:824
                     while (_zebra_lt(pmi, @as(i64, @intCast(partial_pms.items.len)))) {
 // zbr:selfhost/main.zbr:825
-                        const partial_pm = partial_pms.items[@as(usize, @intCast(pmi))];
+                        const partial_pm = _zbr_at(partial_pms.items, pmi);
 // zbr:selfhost/main.zbr:826
                         var pdi: i64 = 0;
 // zbr:selfhost/main.zbr:827
                         while (_zebra_lt(pdi, @as(i64, @intCast(partial_pm.decls.items.len)))) {
 // zbr:selfhost/main.zbr:828
-                            const pdecl = partial_pm.decls.items[@as(usize, @intCast(pdi))];
+                            const pdecl = _zbr_at(partial_pm.decls.items, pdi);
 // zbr:selfhost/main.zbr:829
                             if (pdecl == .class_) {
                                 const pcls_ptr = pdecl.class_;
@@ -5175,7 +5205,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:833
                                     while (_zebra_lt(memi, @as(i64, @intCast(pcls.members.items.len)))) {
 // zbr:selfhost/main.zbr:834
-                                        const pmem = pcls.members.items[@as(usize, @intCast(memi))];
+                                        const pmem = _zbr_at(pcls.members.items, memi);
 // zbr:selfhost/main.zbr:835
                                         var keep: bool = true;
 // zbr:selfhost/main.zbr:836
@@ -5215,7 +5245,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:849
                         while (_zebra_lt(mi, @as(i64, @intCast(rcls.members.items.len)))) {
 // zbr:selfhost/main.zbr:850
-                            new_members.append(_allocator, rcls.members.items[@as(usize, @intCast(mi))]) catch unreachable;
+                            new_members.append(_allocator, _zbr_at(rcls.members.items, mi)) catch unreachable;
 // zbr:selfhost/main.zbr:851
                             mi = (mi + 1);
                         }
@@ -5224,7 +5254,7 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:853
                         while (_zebra_lt(mi, @as(i64, @intCast(extra_members.items.len)))) {
 // zbr:selfhost/main.zbr:854
-                            new_members.append(_allocator, extra_members.items[@as(usize, @intCast(mi))]) catch unreachable;
+                            new_members.append(_allocator, _zbr_at(extra_members.items, mi)) catch unreachable;
 // zbr:selfhost/main.zbr:855
                             mi = (mi + 1);
                         }
@@ -5245,13 +5275,13 @@ pub const MultiCompiler = struct {
 // zbr:selfhost/main.zbr:862
         while (_zebra_lt(pmi, @as(i64, @intCast(partial_pms.items.len)))) {
 // zbr:selfhost/main.zbr:863
-            const partial_pm = partial_pms.items[@as(usize, @intCast(pmi))];
+            const partial_pm = _zbr_at(partial_pms.items, pmi);
 // zbr:selfhost/main.zbr:864
             var pdi: i64 = 0;
 // zbr:selfhost/main.zbr:865
             while (_zebra_lt(pdi, @as(i64, @intCast(partial_pm.decls.items.len)))) {
 // zbr:selfhost/main.zbr:866
-                const pdecl = partial_pm.decls.items[@as(usize, @intCast(pdi))];
+                const pdecl = _zbr_at(partial_pm.decls.items, pdi);
 // zbr:selfhost/main.zbr:867
                 switch (pdecl) {
                     .class_ => {
@@ -5488,7 +5518,7 @@ pub fn parseDiagLine(s: []const u8) ?LspDiag {
         return null;
     }
 // zbr:selfhost/main.zbr:991
-    const prefix: []const u8 = parts.items[@as(usize, @intCast(0))];
+    const prefix: []const u8 = _zbr_at(parts.items, 0);
 // zbr:selfhost/main.zbr:992
     var message: []const u8 = "";
 // zbr:selfhost/main.zbr:993
@@ -5501,7 +5531,7 @@ pub fn parseDiagLine(s: []const u8) ?LspDiag {
             message = _str_concat(message, sep, _allocator);
         }
 // zbr:selfhost/main.zbr:997
-        message = _str_concat(message, parts.items[@as(usize, @intCast(mi))], _allocator);
+        message = _str_concat(message, _zbr_at(parts.items, mi), _allocator);
 // zbr:selfhost/main.zbr:998
         mi = (mi + 1);
     }
@@ -5521,9 +5551,9 @@ pub fn parseDiagLine(s: []const u8) ?LspDiag {
         return null;
     }
 // zbr:selfhost/main.zbr:1004
-    const last: []const u8 = pparts.items[@as(usize, @intCast((@as(i64, @intCast(pparts.items.len)) - 1)))];
+    const last: []const u8 = _zbr_at(pparts.items, (@as(i64, @intCast(pparts.items.len)) - 1));
 // zbr:selfhost/main.zbr:1005
-    const second: []const u8 = pparts.items[@as(usize, @intCast((@as(i64, @intCast(pparts.items.len)) - 2)))];
+    const second: []const u8 = _zbr_at(pparts.items, (@as(i64, @intCast(pparts.items.len)) - 2));
 // zbr:selfhost/main.zbr:1006
     if ((!diagAllDigits(last))) {
 // zbr:selfhost/main.zbr:1007
@@ -5677,7 +5707,7 @@ pub fn lspReadMessage() ?[]const u8 {
 // zbr:selfhost/main.zbr:1083
             if (_zebra_ge(@as(i64, @intCast(hp.items.len)), 2)) {
 // zbr:selfhost/main.zbr:1084
-                content_len = (std.fmt.parseInt(i64, std.mem.trim(u8, hp.items[@as(usize, @intCast(1))], &std.ascii.whitespace), 10) catch 0);
+                content_len = (std.fmt.parseInt(i64, std.mem.trim(u8, _zbr_at(hp.items, 1), &std.ascii.whitespace), 10) catch 0);
             }
         }
     }
@@ -6019,7 +6049,7 @@ pub fn lspWordAt(text: []const u8, line: i64, col: i64) []const u8 {
         return "";
     }
 // zbr:selfhost/main.zbr:1253
-    const s: []const u8 = lines.items[@as(usize, @intCast(line))];
+    const s: []const u8 = _zbr_at(lines.items, line);
 // zbr:selfhost/main.zbr:1254
     const n: i64 = @as(i64, @intCast(s.len));
 // zbr:selfhost/main.zbr:1255
@@ -6479,13 +6509,13 @@ pub fn lspEnclosingType(text: []const u8, line: i64) []const u8 {
         return "";
     }
 // zbr:selfhost/main.zbr:1472
-    var target: i64 = (@as(i64, @intCast(lines.items[@as(usize, @intCast(ln))].len)) - @as(i64, @intCast(std.mem.trimStart(u8, lines.items[@as(usize, @intCast(ln))], &std.ascii.whitespace).len)));
+    var target: i64 = (@as(i64, @intCast(_zbr_at(lines.items, ln).len)) - @as(i64, @intCast(std.mem.trimStart(u8, _zbr_at(lines.items, ln), &std.ascii.whitespace).len)));
 // zbr:selfhost/main.zbr:1473
     var i: i64 = (ln - 1);
 // zbr:selfhost/main.zbr:1474
     while (_zebra_ge(i, 0)) {
 // zbr:selfhost/main.zbr:1475
-        const raw: []const u8 = lines.items[@as(usize, @intCast(i))];
+        const raw: []const u8 = _zbr_at(lines.items, i);
 // zbr:selfhost/main.zbr:1476
         const t: []const u8 = std.mem.trimStart(u8, raw, &std.ascii.whitespace);
 // zbr:selfhost/main.zbr:1477
@@ -6610,14 +6640,14 @@ pub fn lspTypeOfName(text: []const u8, name: []const u8, from_line: i64) []const
 // zbr:selfhost/main.zbr:1537
     while (_zebra_ge(i, 0)) {
 // zbr:selfhost/main.zbr:1538
-        const a: []const u8 = lspAnnotatedTypeInLine(lines.items[@as(usize, @intCast(i))], name);
+        const a: []const u8 = lspAnnotatedTypeInLine(_zbr_at(lines.items, i), name);
 // zbr:selfhost/main.zbr:1539
         if (!std.mem.eql(u8, a, "")) {
 // zbr:selfhost/main.zbr:1540
             return a;
         }
 // zbr:selfhost/main.zbr:1541
-        const c: []const u8 = lspCtorTypeInLine(lines.items[@as(usize, @intCast(i))], name);
+        const c: []const u8 = lspCtorTypeInLine(_zbr_at(lines.items, i), name);
 // zbr:selfhost/main.zbr:1542
         if (!std.mem.eql(u8, c, "")) {
 // zbr:selfhost/main.zbr:1543
@@ -6943,9 +6973,9 @@ pub fn lspSignatureContext(line: []const u8, col: i64) ?LspSigCtx {
 // zbr:selfhost/main.zbr:1698
             if (_zebra_lt(sp, @as(i64, @intCast(callees.items.len)))) {
 // zbr:selfhost/main.zbr:1699
-                callees.items[@as(usize, @intCast(sp))] = _intern(callee);
+                _zbr_set(callees.items, sp, _intern(callee));
 // zbr:selfhost/main.zbr:1700
-                commas.items[@as(usize, @intCast(sp))] = 0;
+                _zbr_set(commas.items, sp, 0);
             } else {
 // zbr:selfhost/main.zbr:1702
                 callees.append(_allocator, _intern(callee)) catch unreachable;
@@ -6974,7 +7004,7 @@ pub fn lspSignatureContext(line: []const u8, col: i64) ?LspSigCtx {
 // zbr:selfhost/main.zbr:1713
             if (_zebra_gt(sp, 0)) {
 // zbr:selfhost/main.zbr:1714
-                commas.items[@as(usize, @intCast((sp - 1)))] = (commas.items[@as(usize, @intCast((sp - 1)))] + 1);
+                _zbr_set(commas.items, (sp - 1), (_zbr_at(commas.items, (sp - 1)) + 1));
             }
 // zbr:selfhost/main.zbr:1715
             i = (i + 1);
@@ -6986,7 +7016,7 @@ pub fn lspSignatureContext(line: []const u8, col: i64) ?LspSigCtx {
 // zbr:selfhost/main.zbr:1718
     if (_zebra_gt(sp, 0)) {
 // zbr:selfhost/main.zbr:1719
-        return LspSigCtx.init(callees.items[@as(usize, @intCast((sp - 1)))], commas.items[@as(usize, @intCast((sp - 1)))]);
+        return LspSigCtx.init(_zbr_at(callees.items, (sp - 1)), _zbr_at(commas.items, (sp - 1)));
     }
 // zbr:selfhost/main.zbr:1720
     return null;
@@ -7407,7 +7437,7 @@ pub fn runTypecheckMerge(path: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:1947
         while (_zebra_lt(oi, @as(i64, @intCast(ours_diags.items.len)))) {
 // zbr:selfhost/main.zbr:1948
-            std.debug.print("{s}\n", .{_str_concat("    ", ours_diags.items[@as(usize, @intCast(oi))], _allocator)});
+            std.debug.print("{s}\n", .{_str_concat("    ", _zbr_at(ours_diags.items, oi), _allocator)});
 // zbr:selfhost/main.zbr:1949
             oi = (oi + 1);
         }
@@ -7424,7 +7454,7 @@ pub fn runTypecheckMerge(path: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:1955
         while (_zebra_lt(ti, @as(i64, @intCast(theirs_diags.items.len)))) {
 // zbr:selfhost/main.zbr:1956
-            std.debug.print("{s}\n", .{_str_concat("    ", theirs_diags.items[@as(usize, @intCast(ti))], _allocator)});
+            std.debug.print("{s}\n", .{_str_concat("    ", _zbr_at(theirs_diags.items, ti), _allocator)});
 // zbr:selfhost/main.zbr:1957
             ti = (ti + 1);
         }
@@ -8727,7 +8757,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:2991
             while (_zebra_lt(csi, @as(i64, @intCast(mc.c_sources.items.len)))) {
 // zbr:selfhost/main.zbr:2992
-                argv2.append(_allocator, mc.c_sources.items[@as(usize, @intCast(csi))]) catch unreachable;
+                argv2.append(_allocator, _zbr_at(mc.c_sources.items, csi)) catch unreachable;
 // zbr:selfhost/main.zbr:2993
                 csi = (csi + 1);
             }
@@ -8736,7 +8766,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:2997
             while (_zebra_lt(lsi, @as(i64, @intCast(mc.lib_sources.items.len)))) {
 // zbr:selfhost/main.zbr:2998
-                argv2.append(_allocator, mc.lib_sources.items[@as(usize, @intCast(lsi))]) catch unreachable;
+                argv2.append(_allocator, _zbr_at(mc.lib_sources.items, lsi)) catch unreachable;
 // zbr:selfhost/main.zbr:2999
                 lsi = (lsi + 1);
             }
@@ -8745,7 +8775,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:3002
             while (_zebra_lt(idi, @as(i64, @intCast(mc.c_i_dirs.items.len)))) {
 // zbr:selfhost/main.zbr:3003
-                argv2.append(_allocator, _str_concat("-I", mc.c_i_dirs.items[@as(usize, @intCast(idi))], _allocator)) catch unreachable;
+                argv2.append(_allocator, _str_concat("-I", _zbr_at(mc.c_i_dirs.items, idi), _allocator)) catch unreachable;
 // zbr:selfhost/main.zbr:3004
                 idi = (idi + 1);
             }
@@ -8953,7 +8983,7 @@ pub fn resolveNodeApi() ?NodeApiPaths {
 // zbr:selfhost/main.zbr:3117
     while (_zebra_lt(ei, @as(i64, @intCast(entries.items.len)))) {
 // zbr:selfhost/main.zbr:3118
-        const entry: []const u8 = entries.items[@as(usize, @intCast(ei))];
+        const entry: []const u8 = _zbr_at(entries.items, ei);
 // zbr:selfhost/main.zbr:3119
         const hdr: []const u8 = _str_concat(_str_concat(_str_concat(base, "/", _allocator), entry, _allocator), "/include/node/node_api.h", _allocator);
 // zbr:selfhost/main.zbr:3120
@@ -8972,7 +9002,7 @@ pub fn resolveNodeApi() ?NodeApiPaths {
 // zbr:selfhost/main.zbr:3125
     _zebra_sort_natural(@TypeOf(versions.items[0]), versions.items);
 // zbr:selfhost/main.zbr:3126
-    const best: []const u8 = versions.items[@as(usize, @intCast((@as(i64, @intCast(versions.items.len)) - 1)))];
+    const best: []const u8 = _zbr_at(versions.items, (@as(i64, @intCast(versions.items.len)) - 1));
 // zbr:selfhost/main.zbr:3128
     const include: []const u8 = _str_concat(_str_concat(_str_concat(base, "/", _allocator), best, _allocator), "/include/node", _allocator);
 // zbr:selfhost/main.zbr:3129
@@ -9022,7 +9052,7 @@ pub fn findZbrComment(zig_lines: std.ArrayList([]const u8), err_line: i64) []con
 // zbr:selfhost/main.zbr:3152
     while (_zebra_ge(i, 0)) {
 // zbr:selfhost/main.zbr:3153
-        const line: []const u8 = zig_lines.items[@as(usize, @intCast(i))];
+        const line: []const u8 = _zbr_at(zig_lines.items, i);
 // zbr:selfhost/main.zbr:3154
         const trimmed: []const u8 = std.mem.trimStart(u8, line, &std.ascii.whitespace);
 // zbr:selfhost/main.zbr:3155
@@ -9110,7 +9140,7 @@ pub fn remapZigErrors(stderr_text: []const u8, zig_path: []const u8) []const u8 
 // zbr:selfhost/main.zbr:3202
     while (_zebra_lt(li, @as(i64, @intCast(stderr_lines.items.len)))) {
 // zbr:selfhost/main.zbr:3203
-        const line: []const u8 = stderr_lines.items[@as(usize, @intCast(li))];
+        const line: []const u8 = _zbr_at(stderr_lines.items, li);
 // zbr:selfhost/main.zbr:3204
         var emit_raw: bool = true;
 // zbr:selfhost/main.zbr:3205
@@ -9172,7 +9202,7 @@ pub fn remapZigErrors(stderr_text: []const u8, zig_path: []const u8) []const u8 
 // zbr:selfhost/main.zbr:3233
                     if (_zebra_ge(@as(i64, @intCast(colon_parts.items.len)), 4)) {
 // zbr:selfhost/main.zbr:3234
-                        const line_num_str: []const u8 = colon_parts.items[@as(usize, @intCast(0))];
+                        const line_num_str: []const u8 = _zbr_at(colon_parts.items, 0);
 // zbr:selfhost/main.zbr:3235
                         const zig_line: i64 = (std.fmt.parseInt(i64, line_num_str, 10) catch 0);
 // zbr:selfhost/main.zbr:3236
@@ -9187,7 +9217,7 @@ pub fn remapZigErrors(stderr_text: []const u8, zig_path: []const u8) []const u8 
                                 sev_msg = _str_concat(sev_msg, ":", _allocator);
                             }
 // zbr:selfhost/main.zbr:3241
-                            sev_msg = _str_concat(sev_msg, colon_parts.items[@as(usize, @intCast(ai))], _allocator);
+                            sev_msg = _str_concat(sev_msg, _zbr_at(colon_parts.items, ai), _allocator);
 // zbr:selfhost/main.zbr:3242
                             ai = (ai + 1);
                         }

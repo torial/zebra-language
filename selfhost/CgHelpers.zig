@@ -111,6 +111,36 @@ pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
 // `zebra --release` ships, and keeping UB out of the shipping configuration is what
 // tools/lint_oom_unreachable.py exists for. Truncation is always defined and matches Go's
 // `byte(n)` and Rust's `as u8`. 0x1CE renders as 0xCE; -50 renders as 206.
+// ── BUG-313: CHECKED INDEXING ───────────────────────────────────────────────────────────
+// `.at(i)` used to lower to raw `items[@intCast(i)]`. Zig checks that in Debug and
+// ReleaseSafe and NOT in ReleaseFast, which is what `zebra --release` passes -- so a
+// shipped build read out of bounds, INVENTED a value, and carried on. Measured both doors:
+// an index past the end returned 0, and a NEGATIVE index (a Python reflex: `xs.at(-1)`)
+// wrapped through the @intCast to a huge usize and also returned 0.
+//
+// Knuth, p.271, citing Wirth and Hoare: "I believe that range checking should be used far
+// more often than it currently is, but not everywhere" -- and that a well-designed `for`
+// lets even a simple compiler avoid most checks inside loops. This is the "far more often"
+// half; the elision half needs the range-`for` to carry a provable bound.
+//
+// THE CONTAINER IS A PARAMETER, not re-emitted at the use site, so a side-effecting
+// receiver (`foo().at(i)`) is evaluated ONCE. Emitting `xs.items[chk(i, xs.items.len)]`
+// would evaluate it twice.
+//
+// THE SIGN TEST MUST COME FIRST: `@intCast` of a negative i64 traps in debug and wraps in
+// ReleaseFast, which is the second door itself. Zig's `or` short-circuits, so the cast is
+// only reached once the sign is known good.
+pub inline fn _zbr_at(xs: anytype, i: i64) std.meta.Elem(@TypeOf(xs)) {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    return xs[@intCast(i)];
+}
+pub inline fn _zbr_set(xs: anytype, i: i64, v: std.meta.Elem(@TypeOf(xs))) void {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    xs[@intCast(i)] = v;
+}
+
 pub inline fn _zbr_byte(x: anytype) u8 {
     return @truncate(@as(u64, @bitCast(@as(i64, x))));
 }
@@ -4030,7 +4060,7 @@ pub const ThunkList = struct {
 
     pub fn at(self: *ThunkList, i: i64) ClosureThunk {
 // zbr:selfhost/CgHelpers.zbr:125
-        return self._items.items[@as(usize, @intCast(i))];
+        return _zbr_at(self._items.items, i);
     }
 
 };
@@ -4902,11 +4932,11 @@ pub fn zigLitMentionsWord(code: []const u8, name: []const u8) bool {
 // zbr:selfhost/CgHelpers.zbr:560
     while (_zebra_lt(i, n)) {
 // zbr:selfhost/CgHelpers.zbr:561
-        if (isZigIdentChar(code[@intCast(i)])) {
+        if (isZigIdentChar(_zbr_at(code, @as(i64, @intCast(i))))) {
 // zbr:selfhost/CgHelpers.zbr:562
             const start: i64 = i;
 // zbr:selfhost/CgHelpers.zbr:563
-            while ((_zebra_lt(i, n) and isZigIdentChar(code[@intCast(i)]))) {
+            while ((_zebra_lt(i, n) and isZigIdentChar(_zbr_at(code, @as(i64, @intCast(i)))))) {
 // zbr:selfhost/CgHelpers.zbr:564
                 i = (i + 1);
             }
@@ -4919,7 +4949,7 @@ pub fn zigLitMentionsWord(code: []const u8, name: []const u8) bool {
 // zbr:selfhost/CgHelpers.zbr:568
                 while (_zebra_lt(k, m)) {
 // zbr:selfhost/CgHelpers.zbr:569
-                    if ((code[@intCast((start + k))] != name[@intCast(k)])) {
+                    if ((_zbr_at(code, @as(i64, @intCast((start + k)))) != _zbr_at(name, @as(i64, @intCast(k))))) {
 // zbr:selfhost/CgHelpers.zbr:570
                         matched = false;
                         break;
@@ -5690,7 +5720,7 @@ pub fn isZigPrimitiveName(name: []const u8) bool {
 // zbr:selfhost/CgHelpers.zbr:966
     if (_zebra_ge(@as(i64, @intCast(name.len)), 2)) {
 // zbr:selfhost/CgHelpers.zbr:967
-        const c0 = name[@intCast(0)];
+        const c0 = _zbr_at(name, @as(i64, @intCast(0)));
 // zbr:selfhost/CgHelpers.zbr:968
         if (((c0 == 'i') or (c0 == 'u'))) {
 // zbr:selfhost/CgHelpers.zbr:969
@@ -5700,7 +5730,7 @@ pub fn isZigPrimitiveName(name: []const u8) bool {
 // zbr:selfhost/CgHelpers.zbr:971
             while (_zebra_lt(di, @as(i64, @intCast(name.len)))) {
 // zbr:selfhost/CgHelpers.zbr:972
-                switch (name[@intCast(di)]) {
+                switch (_zbr_at(name, @as(i64, @intCast(di)))) {
                     '0'...'9' => {
                         // pass
                     },
@@ -5845,7 +5875,7 @@ pub fn mightUseNameStmt(_p_name: []const u8, _p_stmt: Stmt) bool {
 // zbr:selfhost/CgHelpers.zbr:1047
                 while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
 // zbr:selfhost/CgHelpers.zbr:1048
-                    if (mightUseNameInExpr(name, p.args.items[@as(usize, @intCast(pi))])) {
+                    if (mightUseNameInExpr(name, _zbr_at(p.args.items, pi))) {
 // zbr:selfhost/CgHelpers.zbr:1049
                         return true;
                     }
@@ -6271,7 +6301,7 @@ pub fn nameUsedInStmt(_p_name: []const u8, _p_stmt: Stmt) bool {
 // zbr:selfhost/CgHelpers.zbr:1225
                 while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
 // zbr:selfhost/CgHelpers.zbr:1226
-                    if (nameUsedInExpr(name, p.args.items[@as(usize, @intCast(pi))])) {
+                    if (nameUsedInExpr(name, _zbr_at(p.args.items, pi))) {
 // zbr:selfhost/CgHelpers.zbr:1227
                         return true;
                     }
@@ -7456,7 +7486,7 @@ pub fn scanMutationsInto(stmts: std.ArrayList(Stmt), out: *StrSet, ic: ?*InferCt
 // zbr:selfhost/CgHelpers.zbr:1792
                 while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
 // zbr:selfhost/CgHelpers.zbr:1793
-                    scanMutationsInExpr(p.args.items[@as(usize, @intCast(pi))], out, ic);
+                    scanMutationsInExpr(_zbr_at(p.args.items, pi), out, ic);
 // zbr:selfhost/CgHelpers.zbr:1794
                     pi += 1;
                 }
@@ -7558,7 +7588,7 @@ pub fn stmtMutatesSelf(_p_s: Stmt) bool {
 // zbr:selfhost/CgHelpers.zbr:1845
                 while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
 // zbr:selfhost/CgHelpers.zbr:1846
-                    if (exprHasSelfCall(p.args.items[@as(usize, @intCast(pi))])) {
+                    if (exprHasSelfCall(_zbr_at(p.args.items, pi))) {
 // zbr:selfhost/CgHelpers.zbr:1847
                         return true;
                     }

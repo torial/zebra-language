@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-313. Next new bug: BUG-314.**
+**Last bug number generated: BUG-314. Next new bug: BUG-315.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,89 +46,40 @@
 
 ---
 
-### BUG-313: `List.at()` is NOT bounds-checked in `--release`, and the docs recommend it BECAUSE it is — OPEN (found 2026-08-26)
+### BUG-314: `.add()` on a `List` fetched from a parent container via `.at()` does not write back — only `.set()` does — OPEN (found 2026-08-28)
 
-**A documented safety guarantee that does not hold in the builds users ship, and which
-fabricates a value rather than trapping.**
+**Filed after the fact, from `C:/Projects/tinylm/zebra_train`'s own verify-harness debugging. Not exhaustively bisected like BUG-312 — one clean repro, mechanism inferred from it, flagged for confirmation if it recurs.**
 
-`QUICKSTART.md` says:
+Building a `List(List(float))` row-by-row, two patterns that look interchangeable:
 
+```zebra
+# WORKS - row filled locally, THEN appended
+var row: List(float) = List(float)()
+row.add(0.0)
+row.add(0.0)
+parent.add(row)
+
+# SILENTLY BROKEN - empty row appended first, filled via a fetched reference
+parent.add(List(float)())
+var row = parent.at(t)
+row.add(0.0)
+row.add(0.0)
+# parent.at(t).len is still 0 here
 ```
-var x = items.at(0)                  # index (bounds-checked) — preferred
-```
 
-`.at(i)` lowers to `list.items[@intCast(i)]` — raw slice indexing. Zig bounds-checks that
-in Debug and ReleaseSafe and **not** in ReleaseFast, and `zebra --release` passes
-`-OReleaseFast` (`src/main.zig:1520`).
+Repro (from `zebra_train/build_verify_attn.py`'s original test harness): a `dmergedSeq: List(List(float))` built with the second pattern had `dmergedSeq.at(0).len == 0` after eight `.add()` calls on the fetched `row`, despite every other row in the same harness (built with the first pattern) coming out the correct length. Confirmed by printing `.len` on each list right after construction, before anything downstream touched it.
 
-Measured, both modes, same program (a 2-element list read at index 2, index derived at
-runtime from `xs.len` so it cannot be folded):
+**Mechanism (inferred, not yet traced in the generated Zig):** `.set(i, v)` writes through the list's existing backing array, which the fetched reference and the parent's stored copy both still point at — so it propagates regardless of how the reference was obtained. `.add()` that needs to grow past current capacity must allocate a new backing array and update the list's own pointer/len/cap fields; if `.at()` returns a value-copy of the struct (not a pointer into the parent), that growth updates only the fetched copy's fields, and the parent's stored struct never sees the new pointer/len/cap. This would mean `.set()` and `.add()`-within-capacity are safe via a fetched reference, and only capacity-growing `.add()` is not — untested whether pre-reserving capacity changes the outcome.
 
-| build | result |
-|---|---|
-| debug | `thread panic: index out of bounds: index 2, len 2` |
-| `--release` | `read: 0` then `SURVIVED an out-of-range read` |
+**Why this one is dangerous specifically for training-loop code:** building `List(List(T))` accumulators row-by-row is exactly the shape a sequence-batched forward/backward pass needs (per-position gradients, per-head caches, per-step logs) — this pattern will recur constantly once `zebra_train`'s training loop is written, not just in throwaway test harnesses.
 
-So the release build reads out of bounds, **invents a value**, and continues. That is
-memory-unsafety and UNGIT "nothing fabricated" in one line, at the language level rather
-than in a tool.
+**How it presents:** in the debug build this repro produced a crash — `index out of bounds: index 0, len 0` — the first read of the phantom-empty row. It is NOT silent in debug mode. **But see BUG-313 and `C:/Projects/tinylm/ZEBRA_PERF_NOTES.md` §2 (the `allocate Arena()` scoping caveat) — a `--release` build removes exactly the bounds check that turned this into a loud crash here, and an Arena-scope lifetime mistake (persistent tensors accidentally allocated inside a per-iteration `allocate Arena()` block) can produce the same outward symptom too: a silently-wrong or silently-empty tensor, no error, in a training loop where "the numbers are wrong" is the only visible signal.** Three different defects/mistakes, one shared failure signature once bounds checks are gone — distinguish by mechanism (which list, which build mode, which scope), not by symptom, if this resurfaces.
 
-**A SECOND DOOR, AND IT IS THE EASIER ONE TO WALK THROUGH: a NEGATIVE index.** `.at(i)`
-also inserts `@intCast(i)` to convert Zebra's `int` (i64) to `usize` -- 131 of them in one
-469-line dogfood file. Measured the same way (`var i = xs.len - 3`, i.e. -1, computed at
-runtime):
+**Workaround:** never append an empty/placeholder `List` to a parent container and then fill it through a fetched reference. Always fully build the row locally first (every `.add()` it needs), and only then append the finished row to the parent.
 
-| build | result |
-|---|---|
-| debug | `thread panic: integer does not fit in destination type` |
-| `--release` | `read: 0` then `SURVIVED a negative index` |
+**Control for a future fix:** construct a `List(List(float))`, append an empty inner list, fetch it via `.at()`, `.add()` past its initial (zero) capacity, and confirm the parent's own stored row length reflects the appends — in both debug and `--release` builds.
 
-The negative value wraps to a huge `usize` and reads out of bounds. This door matters more
-than the first because `xs.at(-1)` is a reflex for anyone arriving from Python, where it
-means "the last element". Here it silently returns a fabricated value in shipped builds.
-Any fix must close BOTH: a length check alone still lets a negative index through the cast.
-
-**THE DOC IS NOT MERELY STALE — IT STEERS USERS TOWARD THE UNSAFE THING.** `.at()` is
-recommended *over* alternatives on the strength of a guarantee it does not provide. A
-second instance sits in BUGS_FIXED.md: "use `list.at(i)` (bounds-checked, emits
-`.items[i]`)" — a sentence whose two halves contradict each other under ReleaseFast. The
-mechanism was stated correctly and the guarantee inferred from it wrongly.
-
-**HOW IT WAS FOUND, because the route is reusable.** Not by a sweep — no gate can see it,
-since every gate builds Debug (the same blind spot BUG-228 lived in for four days). It came
-out of dogfooding plus Hoare's criterion:
-
-1. `construct_histogram` on real numeric code (`C:/Projects/tinylm`) showed `.at()` at 342
-   uses in 1116 lines, and float+`.at()`+`while` together in 6 of 6 files vs **0 of 522**
-   corpus files.
-2. Asking Hoare's question — *what did the compiler DO to this code?* — showed `.at()`
-   lowering to unchecked `items[...]`.
-3. Testing both optimisation modes made it a finding rather than a suspicion.
-
-**BLAST RADIUS.** Any program doing index arithmetic. Sean's neural-network code makes 342
-`.at()` calls with hand-computed indices; an off-by-one there reads arbitrary memory in
-release instead of trapping, and silently produces wrong numbers — which in a training loop
-looks like a bad model, not a compiler bug.
-
-**Fix options (needs a decision):**
-1. **Emit an explicit check inside `.at()`**, independent of optimisation mode, so the
-   documented guarantee holds in every build. Costs a compare-and-branch per index — real,
-   but this is the accessor the docs call "preferred", and the alternative is a promise we
-   do not keep. Pair it with an explicitly-unchecked accessor for hot loops, so the fast
-   path is something a user CHOOSES rather than something they get by surprise.
-2. Make `--release` use `-OReleaseSafe`. Cheapest change, keeps Zig's own checks, but
-   silently reprices every program's performance and is a much broader decision than this
-   bug.
-3. Document the truth and keep the behaviour. **Rejected** unless paired with (1) or (2):
-   the current text does not merely fail to warn, it actively recommends `.at()` on safety
-   grounds.
-
-Recommendation: (1), with the doc corrected either way and **not** waiting on the fix — a
-wrong safety claim is worse than a missing one.
-
-**Control when fixing:** the probe above must panic in BOTH modes, and a positive control
-(an in-range read) must still work in both. `tools/release_mode_check.sh` is the only gate
-that builds with `--release` and is the natural home for it.
+---
 
 ### BUG-312: a `List(List(T))` parameter loses pointer/mutable codegen when a SHARED helper is called on it from two different wrapper functions — both compilers (found 2026-08-27)
 

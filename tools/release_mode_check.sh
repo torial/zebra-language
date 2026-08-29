@@ -60,11 +60,11 @@ rc=$?
 if [[ $rc -ne 0 ]]; then
     say FAIL "--release build did not complete (rc=$rc)"
     echo "$out" | tail -8 | sed 's/^/        /'
-    fail=1
+    fail=$((fail + 1))
 elif ! grep -qF -- "sum=499500" <<<"$out"; then
     say FAIL "--release build ran but printed the wrong answer"
     echo "$out" | tail -8 | sed 's/^/        /'
-    fail=1
+    fail=$((fail + 1))
 else
     say ok "--release builds and prints the correct result"
 fi
@@ -96,22 +96,87 @@ dbg_exe="$ZTMP/rel.zig.fast.exe"
 
 if [[ ! -f "$rel_exe" ]]; then
     say FAIL "cannot find the --release binary at $rel_exe — the size check could not run, so this gate knows NOTHING about the optimize flag"
-    fail=1
+    fail=$((fail + 1))
 elif [[ ! -f "$dbg_exe" ]]; then
     say FAIL "cannot find the non-release binary at $dbg_exe — nothing to compare against"
-    fail=1
+    fail=$((fail + 1))
 else
     rs=$(stat -c %s "$rel_exe"); ds=$(stat -c %s "$dbg_exe")
     if [[ "$ds" -le 0 ]]; then
         say FAIL "reference build reported size 0 — the comparison cannot be trusted"
-        fail=1
+        fail=$((fail + 1))
     elif [[ $(( rs * 100 / ds )) -gt 75 ]]; then
         say FAIL "release binary is $((rs/1024)) KB vs $((ds/1024)) KB unoptimised — the -O flag looks LOST (BUG-228)"
-        fail=1
+        fail=$((fail + 1))
     else
         say ok "release binary $((rs/1024)) KB vs $((ds/1024)) KB unoptimised — optimize flag is reaching zig"
     fi
 fi
+
+# ── BUG-313: indexing must REFUSE out of range, in a --release build ─────────────────────
+# This is the only gate that passes --release, and it is the only place this can be tested:
+# `.at()` lowered to raw slice indexing, which Zig checks in Debug and ReleaseSafe and NOT
+# in ReleaseFast. So the defect was INVISIBLE to every other gate in every tier -- they all
+# build Debug -- and a shipped build read out of bounds, invented a value, and carried on.
+#
+# TWO DOORS, and a fix that closes one leaves the other open: an index past the end, and a
+# NEGATIVE index wrapping through the @intCast that converts Zebra's int to usize.
+#
+# CLASSIFIED ON THE PANIC TEXT, never on exit code alone -- a build failure also exits
+# non-zero, and scoring that as "the check fired" would make a broken compiler look like a
+# working guard (the same argument contract_mode_check makes for its sentinel).
+_idx_probe() {   # $1 = label, $2 = zebra source
+    local out
+    out="$("$ZEBRA" --release "$2" 2>&1)"
+    if printf '%s' "$out" | grep -q "index out of range"; then
+        say ok "$1 refused in --release"
+    else
+        say FAIL "$1 was NOT refused in --release -- an out-of-range read returned a fabricated value"
+        printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
+        fail=$((fail + 1))
+    fi
+}
+
+_idx_dir="$(mktemp -d)"
+cat > "$_idx_dir/past_end.zbr" <<'ZBR'
+def main()
+    var xs = List(int)()
+    xs.add(10)
+    xs.add(20)
+    var i = xs.len          # 2 -- one past the last valid index, computed at RUNTIME
+    var v = xs.at(i)
+    print("SURVIVED past-the-end: ${v}")
+ZBR
+cat > "$_idx_dir/negative.zbr" <<'ZBR'
+def main()
+    var xs = List(int)()
+    xs.add(10)
+    xs.add(20)
+    var i = xs.len - 3      # -1 -- a Python reflex; here it wraps through the @intCast
+    var v = xs.at(i)
+    print("SURVIVED negative: ${v}")
+ZBR
+cat > "$_idx_dir/in_range.zbr" <<'ZBR'
+def main()
+    var xs = List(int)()
+    xs.add(10)
+    xs.add(20)
+    print("in-range ok: ${xs.at(1)}")
+ZBR
+
+_idx_probe "index past the end" "$_idx_dir/past_end.zbr"
+_idx_probe "negative index"     "$_idx_dir/negative.zbr"
+
+# CONTROL. Without it, a compiler that refused EVERY index would pass both probes above --
+# "it panics" is not the same claim as "it panics when it should".
+if "$ZEBRA" --release "$_idx_dir/in_range.zbr" 2>&1 | grep -q "in-range ok: 20"; then
+    say ok "in-range indexing still works in --release"
+else
+    say FAIL "in-range indexing BROKE in --release -- the check is refusing valid reads"
+    fail=$((fail + 1))
+fi
+rm -rf "$_idx_dir"
+
 
 echo
 if [[ $fail -eq 0 ]]; then

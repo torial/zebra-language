@@ -821,19 +821,21 @@ var nums = [1, 2, 3]                 # type inferred from the first element
 var labels = ["alpha", "beta"]       # → List(str)
 var empty: List(int) = []            # empty literal needs an annotation
 var n = items.count()                # length
-var x = items.at(0)                  # index — idiomatic (see the warning below)
+var x = items.at(0)                  # index (bounds-checked in every build)
 var y = items[0]                     # also works (postfix index); .at() is idiomatic
 items.set(1, 42)                     # in-place element update (the inverse of .at)
 items.remove(0)                      # remove by index
 var found = items.any(def(x) = x > 2)  # true if any element matches predicate (NB: `has` is a keyword)
 ```
 
-> **`.at()` is NOT bounds-checked in `--release` builds (BUG-313).** It lowers to raw slice
-> indexing, and `--release` passes `-OReleaseFast`, where Zig omits the check. Measured: a
-> 2-element list read at index 2 panics in a debug build and, in `--release`, returns `0`
-> and keeps going. This line previously read "(bounds-checked) — preferred", which
-> recommended `.at()` on the strength of a guarantee it does not provide in shipped builds.
-> Until BUG-313 is fixed, validate indices yourself in code you build with `--release`.
+> **Indexing is bounds-checked in every build, including `--release` (BUG-313, fixed
+> 2026-08-26).** `.at()`, `list[i]`, `.set()` and string indexing all refuse an out-of-range
+> or negative index with `index out of range: N (length M)`. This previously read
+> "(bounds-checked) — preferred", which was true in debug builds and NOT in `--release`,
+> where an out-of-range read returned a fabricated value.
+>
+> A negative index is an error, not a from-the-end index: `xs.at(-1)` refuses rather than
+> returning the last element.
 
 ```zebra
 var ok  = items.all(def(x) = x > 0)  # true if every element matches predicate

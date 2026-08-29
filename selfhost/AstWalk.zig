@@ -109,6 +109,36 @@ pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
 // `zebra --release` ships, and keeping UB out of the shipping configuration is what
 // tools/lint_oom_unreachable.py exists for. Truncation is always defined and matches Go's
 // `byte(n)` and Rust's `as u8`. 0x1CE renders as 0xCE; -50 renders as 206.
+// ── BUG-313: CHECKED INDEXING ───────────────────────────────────────────────────────────
+// `.at(i)` used to lower to raw `items[@intCast(i)]`. Zig checks that in Debug and
+// ReleaseSafe and NOT in ReleaseFast, which is what `zebra --release` passes -- so a
+// shipped build read out of bounds, INVENTED a value, and carried on. Measured both doors:
+// an index past the end returned 0, and a NEGATIVE index (a Python reflex: `xs.at(-1)`)
+// wrapped through the @intCast to a huge usize and also returned 0.
+//
+// Knuth, p.271, citing Wirth and Hoare: "I believe that range checking should be used far
+// more often than it currently is, but not everywhere" -- and that a well-designed `for`
+// lets even a simple compiler avoid most checks inside loops. This is the "far more often"
+// half; the elision half needs the range-`for` to carry a provable bound.
+//
+// THE CONTAINER IS A PARAMETER, not re-emitted at the use site, so a side-effecting
+// receiver (`foo().at(i)`) is evaluated ONCE. Emitting `xs.items[chk(i, xs.items.len)]`
+// would evaluate it twice.
+//
+// THE SIGN TEST MUST COME FIRST: `@intCast` of a negative i64 traps in debug and wraps in
+// ReleaseFast, which is the second door itself. Zig's `or` short-circuits, so the cast is
+// only reached once the sign is known good.
+pub inline fn _zbr_at(xs: anytype, i: i64) std.meta.Elem(@TypeOf(xs)) {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    return xs[@intCast(i)];
+}
+pub inline fn _zbr_set(xs: anytype, i: i64, v: std.meta.Elem(@TypeOf(xs))) void {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    xs[@intCast(i)] = v;
+}
+
 pub inline fn _zbr_byte(x: anytype) u8 {
     return @truncate(@as(u64, @bitCast(@as(i64, x))));
 }

@@ -111,6 +111,36 @@ pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
 // `zebra --release` ships, and keeping UB out of the shipping configuration is what
 // tools/lint_oom_unreachable.py exists for. Truncation is always defined and matches Go's
 // `byte(n)` and Rust's `as u8`. 0x1CE renders as 0xCE; -50 renders as 206.
+// ── BUG-313: CHECKED INDEXING ───────────────────────────────────────────────────────────
+// `.at(i)` used to lower to raw `items[@intCast(i)]`. Zig checks that in Debug and
+// ReleaseSafe and NOT in ReleaseFast, which is what `zebra --release` passes -- so a
+// shipped build read out of bounds, INVENTED a value, and carried on. Measured both doors:
+// an index past the end returned 0, and a NEGATIVE index (a Python reflex: `xs.at(-1)`)
+// wrapped through the @intCast to a huge usize and also returned 0.
+//
+// Knuth, p.271, citing Wirth and Hoare: "I believe that range checking should be used far
+// more often than it currently is, but not everywhere" -- and that a well-designed `for`
+// lets even a simple compiler avoid most checks inside loops. This is the "far more often"
+// half; the elision half needs the range-`for` to carry a provable bound.
+//
+// THE CONTAINER IS A PARAMETER, not re-emitted at the use site, so a side-effecting
+// receiver (`foo().at(i)`) is evaluated ONCE. Emitting `xs.items[chk(i, xs.items.len)]`
+// would evaluate it twice.
+//
+// THE SIGN TEST MUST COME FIRST: `@intCast` of a negative i64 traps in debug and wraps in
+// ReleaseFast, which is the second door itself. Zig's `or` short-circuits, so the cast is
+// only reached once the sign is known good.
+pub inline fn _zbr_at(xs: anytype, i: i64) std.meta.Elem(@TypeOf(xs)) {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    return xs[@intCast(i)];
+}
+pub inline fn _zbr_set(xs: anytype, i: i64, v: std.meta.Elem(@TypeOf(xs))) void {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    xs[@intCast(i)] = v;
+}
+
 pub inline fn _zbr_byte(x: anytype) u8 {
     return @truncate(@as(u64, @bitCast(@as(i64, x))));
 }
@@ -5200,10 +5230,10 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:850
         if (_zebra_lt(self.pos, @as(i64, @intCast(self.tokens.items.len)))) {
 // zbr:selfhost/Parser.zbr:851
-            return self.tokens.items[@as(usize, @intCast(self.pos))];
+            return _zbr_at(self.tokens.items, self.pos);
         }
 // zbr:selfhost/Parser.zbr:852
-        return self.tokens.items[@as(usize, @intCast((@as(i64, @intCast(self.tokens.items.len)) - 1)))];
+        return _zbr_at(self.tokens.items, (@as(i64, @intCast(self.tokens.items.len)) - 1));
     }
 
     pub fn peekAt(self: *Parser, offset: i64) *Token.Token {
@@ -5215,10 +5245,10 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:863
         if (_zebra_lt(idx, @as(i64, @intCast(self.tokens.items.len)))) {
 // zbr:selfhost/Parser.zbr:864
-            return self.tokens.items[@as(usize, @intCast(idx))];
+            return _zbr_at(self.tokens.items, idx);
         }
 // zbr:selfhost/Parser.zbr:865
-        return self.tokens.items[@as(usize, @intCast((@as(i64, @intCast(self.tokens.items.len)) - 1)))];
+        return _zbr_at(self.tokens.items, (@as(i64, @intCast(self.tokens.items.len)) - 1));
     }
 
     pub fn advance(self: *Parser) void {
@@ -6297,13 +6327,13 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:1408
         if (_zebra_gt(@as(i64, @intCast(self.parse_errors.items.len)), 0)) {
 // zbr:selfhost/Parser.zbr:1409
-            var msg: []const u8 = self.parse_errors.items[@as(usize, @intCast(0))];
+            var msg: []const u8 = _zbr_at(self.parse_errors.items, 0);
 // zbr:selfhost/Parser.zbr:1410
             var i: i64 = 1;
 // zbr:selfhost/Parser.zbr:1411
             while (_zebra_lt(i, @as(i64, @intCast(self.parse_errors.items.len)))) {
 // zbr:selfhost/Parser.zbr:1412
-                msg = _str_concat(_str_concat(msg, "\n", _allocator), self.parse_errors.items[@as(usize, @intCast(i))], _allocator);
+                msg = _str_concat(_str_concat(msg, "\n", _allocator), _zbr_at(self.parse_errors.items, i), _allocator);
 // zbr:selfhost/Parser.zbr:1413
                 i = (i + 1);
             }
@@ -8359,7 +8389,7 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:2483
             stop_list.append(_allocator, stop_expr) catch unreachable;
 // zbr:selfhost/Parser.zbr:2484
-            return PNode{ .stmt_for_num = _box_20: { const _bp_20 = _allocator.create(PForNum) catch @panic("OOM"); _bp_20.* = PForNum.init(var_names.items[@as(usize, @intCast(0))], start_list, stop_list, step_list, stmts, else_stmts, line, col); break :_box_20 _bp_20; } };
+            return PNode{ .stmt_for_num = _box_20: { const _bp_20 = _allocator.create(PForNum) catch @panic("OOM"); _bp_20.* = PForNum.init(_zbr_at(var_names.items, 0), start_list, stop_list, step_list, stmts, else_stmts, line, col); break :_box_20 _bp_20; } };
         }
 // zbr:selfhost/Parser.zbr:2486
         var filter_list = std.ArrayList(PNode).empty;
@@ -8694,11 +8724,11 @@ pub const Parser = struct {
 // zbr:selfhost/Parser.zbr:2655
                     const first_tok: []const u8 = self.peek().text;
 // zbr:selfhost/Parser.zbr:2656
-                    const first_char_upper = ((!std.mem.eql(u8, first_tok, "") and _zebra_ge(first_tok[@intCast(0)], 'A')) and _zebra_le(first_tok[@intCast(0)], 'Z'));
+                    const first_char_upper = ((!std.mem.eql(u8, first_tok, "") and _zebra_ge(_zbr_at(first_tok, @as(i64, @intCast(0))), 'A')) and _zebra_le(_zbr_at(first_tok, @as(i64, @intCast(0))), 'Z'));
 // zbr:selfhost/Parser.zbr:2657
                     const is_dotted = (std.mem.eql(u8, self.peekAt(1).text, ".") and self.isOpenCallAt(2));
 // zbr:selfhost/Parser.zbr:2661
-                    const dotted_upper = (((is_dotted and !std.mem.eql(u8, self.peekAt(2).text, "")) and _zebra_ge(self.peekAt(2).text[@intCast(0)], 'A')) and _zebra_le(self.peekAt(2).text[@intCast(0)], 'Z'));
+                    const dotted_upper = (((is_dotted and !std.mem.eql(u8, self.peekAt(2).text, "")) and _zebra_ge(_zbr_at(self.peekAt(2).text, @as(i64, @intCast(0))), 'A')) and _zebra_le(_zbr_at(self.peekAt(2).text, @as(i64, @intCast(0))), 'Z'));
 // zbr:selfhost/Parser.zbr:2662
                     if (((first_char_upper and self.isOpenCall()) or (is_dotted and dotted_upper))) {
 // zbr:selfhost/Parser.zbr:2663

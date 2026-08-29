@@ -111,6 +111,36 @@ pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
 // `zebra --release` ships, and keeping UB out of the shipping configuration is what
 // tools/lint_oom_unreachable.py exists for. Truncation is always defined and matches Go's
 // `byte(n)` and Rust's `as u8`. 0x1CE renders as 0xCE; -50 renders as 206.
+// ── BUG-313: CHECKED INDEXING ───────────────────────────────────────────────────────────
+// `.at(i)` used to lower to raw `items[@intCast(i)]`. Zig checks that in Debug and
+// ReleaseSafe and NOT in ReleaseFast, which is what `zebra --release` passes -- so a
+// shipped build read out of bounds, INVENTED a value, and carried on. Measured both doors:
+// an index past the end returned 0, and a NEGATIVE index (a Python reflex: `xs.at(-1)`)
+// wrapped through the @intCast to a huge usize and also returned 0.
+//
+// Knuth, p.271, citing Wirth and Hoare: "I believe that range checking should be used far
+// more often than it currently is, but not everywhere" -- and that a well-designed `for`
+// lets even a simple compiler avoid most checks inside loops. This is the "far more often"
+// half; the elision half needs the range-`for` to carry a provable bound.
+//
+// THE CONTAINER IS A PARAMETER, not re-emitted at the use site, so a side-effecting
+// receiver (`foo().at(i)`) is evaluated ONCE. Emitting `xs.items[chk(i, xs.items.len)]`
+// would evaluate it twice.
+//
+// THE SIGN TEST MUST COME FIRST: `@intCast` of a negative i64 traps in debug and wraps in
+// ReleaseFast, which is the second door itself. Zig's `or` short-circuits, so the cast is
+// only reached once the sign is known good.
+pub inline fn _zbr_at(xs: anytype, i: i64) std.meta.Elem(@TypeOf(xs)) {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    return xs[@intCast(i)];
+}
+pub inline fn _zbr_set(xs: anytype, i: i64, v: std.meta.Elem(@TypeOf(xs))) void {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    xs[@intCast(i)] = v;
+}
+
 pub inline fn _zbr_byte(x: anytype) u8 {
     return @truncate(@as(u64, @bitCast(@as(i64, x))));
 }
@@ -3999,7 +4029,7 @@ pub const Resolver = struct {
 // zbr:selfhost/Resolver.zbr:104
         if (_zebra_gt(@as(i64, @intCast(self.errors.items.len)), 0)) {
 // zbr:selfhost/Resolver.zbr:105
-            return self.errors.items[@as(usize, @intCast(0))].message;
+            return _zbr_at(self.errors.items, 0).message;
         }
 // zbr:selfhost/Resolver.zbr:106
         return "";
@@ -4115,7 +4145,7 @@ pub const Resolver = struct {
                 var ns_root_parts: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty;
                 { var _split_iter_1 = std.mem.splitSequence(u8, ns.name, "."); while (_split_iter_1.next()) |_se_1| { ns_root_parts.append(_allocator, _se_1) catch @panic("OOM"); } }
 // zbr:selfhost/Resolver.zbr:165
-                self.module_scope.put(_intern(ns_root_parts.items[@as(usize, @intCast(0))]), 0) catch unreachable;
+                self.module_scope.put(_intern(_zbr_at(ns_root_parts.items, 0)), 0) catch unreachable;
 // zbr:selfhost/Resolver.zbr:166
                 self.symbol_count = (self.symbol_count + 1);
             },
@@ -4750,12 +4780,12 @@ pub const Resolver = struct {
             return false;
         }
 // zbr:selfhost/Resolver.zbr:476
-        if (std.mem.eql(u8, parts.items[@as(usize, @intCast(1))], "")) {
+        if (std.mem.eql(u8, _zbr_at(parts.items, 1), "")) {
 // zbr:selfhost/Resolver.zbr:477
             return false;
         }
 // zbr:selfhost/Resolver.zbr:478
-        const prefix = parts.items[@as(usize, @intCast(0))];
+        const prefix = _zbr_at(parts.items, 0);
 // zbr:selfhost/Resolver.zbr:479
         if (((std.mem.eql(u8, prefix, "f16") or std.mem.eql(u8, prefix, "f32")) or std.mem.eql(u8, prefix, "f64"))) {
 // zbr:selfhost/Resolver.zbr:480

@@ -111,6 +111,36 @@ pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
 // `zebra --release` ships, and keeping UB out of the shipping configuration is what
 // tools/lint_oom_unreachable.py exists for. Truncation is always defined and matches Go's
 // `byte(n)` and Rust's `as u8`. 0x1CE renders as 0xCE; -50 renders as 206.
+// ── BUG-313: CHECKED INDEXING ───────────────────────────────────────────────────────────
+// `.at(i)` used to lower to raw `items[@intCast(i)]`. Zig checks that in Debug and
+// ReleaseSafe and NOT in ReleaseFast, which is what `zebra --release` passes -- so a
+// shipped build read out of bounds, INVENTED a value, and carried on. Measured both doors:
+// an index past the end returned 0, and a NEGATIVE index (a Python reflex: `xs.at(-1)`)
+// wrapped through the @intCast to a huge usize and also returned 0.
+//
+// Knuth, p.271, citing Wirth and Hoare: "I believe that range checking should be used far
+// more often than it currently is, but not everywhere" -- and that a well-designed `for`
+// lets even a simple compiler avoid most checks inside loops. This is the "far more often"
+// half; the elision half needs the range-`for` to carry a provable bound.
+//
+// THE CONTAINER IS A PARAMETER, not re-emitted at the use site, so a side-effecting
+// receiver (`foo().at(i)`) is evaluated ONCE. Emitting `xs.items[chk(i, xs.items.len)]`
+// would evaluate it twice.
+//
+// THE SIGN TEST MUST COME FIRST: `@intCast` of a negative i64 traps in debug and wraps in
+// ReleaseFast, which is the second door itself. Zig's `or` short-circuits, so the cast is
+// only reached once the sign is known good.
+pub inline fn _zbr_at(xs: anytype, i: i64) std.meta.Elem(@TypeOf(xs)) {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    return xs[@intCast(i)];
+}
+pub inline fn _zbr_set(xs: anytype, i: i64, v: std.meta.Elem(@TypeOf(xs))) void {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    xs[@intCast(i)] = v;
+}
+
 pub inline fn _zbr_byte(x: anytype) u8 {
     return @truncate(@as(u64, @bitCast(@as(i64, x))));
 }
@@ -4225,7 +4255,7 @@ pub fn spanOfFirst(es: std.ArrayList(Expr)) Span {
         return zspan();
     }
 // zbr:selfhost/AstBuilder.zbr:138
-    return spanOf(es.items[@as(usize, @intCast(0))]);
+    return spanOf(_zbr_at(es.items, 0));
 }
 
 pub fn zmods() Modifiers {
@@ -4267,13 +4297,13 @@ pub fn stripStringQuotes(text: []const u8) []const u8 {
 // zbr:selfhost/AstBuilder.zbr:171
     var body: []const u8 = text[@intCast(1)..@intCast(@as(i64, @intCast(text.len)))];
 // zbr:selfhost/AstBuilder.zbr:172
-    if ((_zebra_gt(@as(i64, @intCast(body.len)), 0) and (body[@intCast((@as(i64, @intCast(body.len)) - 1))] == q))) {
+    if ((_zebra_gt(@as(i64, @intCast(body.len)), 0) and (_zbr_at(body, @as(i64, @intCast((@as(i64, @intCast(body.len)) - 1)))) == q))) {
 // zbr:selfhost/AstBuilder.zbr:173
         var bs: i64 = 0;
 // zbr:selfhost/AstBuilder.zbr:174
         var k: i64 = (@as(i64, @intCast(body.len)) - 2);
 // zbr:selfhost/AstBuilder.zbr:175
-        while ((_zebra_ge(k, 0) and (body[@intCast(k)] == '\\'))) {
+        while ((_zebra_ge(k, 0) and (_zbr_at(body, @as(i64, @intCast(k))) == '\\'))) {
 // zbr:selfhost/AstBuilder.zbr:176
             bs = (bs + 1);
 // zbr:selfhost/AstBuilder.zbr:177
@@ -4318,7 +4348,7 @@ pub fn stripZigQuotes(text: []const u8) []const u8 {
         return "";
     }
 // zbr:selfhost/AstBuilder.zbr:196
-    var out: []const u8 = parts.items[@as(usize, @intCast(1))];
+    var out: []const u8 = _zbr_at(parts.items, 1);
 // zbr:selfhost/AstBuilder.zbr:197
     var i: i64 = 2;
 // zbr:selfhost/AstBuilder.zbr:198
@@ -4326,7 +4356,7 @@ pub fn stripZigQuotes(text: []const u8) []const u8 {
 // zbr:selfhost/AstBuilder.zbr:199
         out = _str_concat(out, quote, _allocator);
 // zbr:selfhost/AstBuilder.zbr:200
-        out = _str_concat(out, parts.items[@as(usize, @intCast(i))], _allocator);
+        out = _str_concat(out, _zbr_at(parts.items, i), _allocator);
 // zbr:selfhost/AstBuilder.zbr:201
         i = (i + 1);
     }
@@ -4363,7 +4393,7 @@ pub fn stripRawAndEscape(text: []const u8) []const u8 {
         return "";
     }
 // zbr:selfhost/AstBuilder.zbr:221
-    var content: []const u8 = parts.items[@as(usize, @intCast(1))];
+    var content: []const u8 = _zbr_at(parts.items, 1);
 // zbr:selfhost/AstBuilder.zbr:222
     var i: i64 = 2;
 // zbr:selfhost/AstBuilder.zbr:223
@@ -4371,7 +4401,7 @@ pub fn stripRawAndEscape(text: []const u8) []const u8 {
 // zbr:selfhost/AstBuilder.zbr:224
         content = _str_concat(content, quote, _allocator);
 // zbr:selfhost/AstBuilder.zbr:225
-        content = _str_concat(content, parts.items[@as(usize, @intCast(i))], _allocator);
+        content = _str_concat(content, _zbr_at(parts.items, i), _allocator);
 // zbr:selfhost/AstBuilder.zbr:226
         i = (i + 1);
     }
@@ -4391,7 +4421,7 @@ pub fn stripRawAndEscape(text: []const u8) []const u8 {
         return content;
     }
 // zbr:selfhost/AstBuilder.zbr:233
-    var out: []const u8 = bs_parts.items[@as(usize, @intCast(0))];
+    var out: []const u8 = _zbr_at(bs_parts.items, 0);
 // zbr:selfhost/AstBuilder.zbr:234
     var j: i64 = 1;
 // zbr:selfhost/AstBuilder.zbr:235
@@ -4399,7 +4429,7 @@ pub fn stripRawAndEscape(text: []const u8) []const u8 {
 // zbr:selfhost/AstBuilder.zbr:236
         out = _str_concat(out, "\\\\", _allocator);
 // zbr:selfhost/AstBuilder.zbr:237
-        out = _str_concat(out, bs_parts.items[@as(usize, @intCast(j))], _allocator);
+        out = _str_concat(out, _zbr_at(bs_parts.items, j), _allocator);
 // zbr:selfhost/AstBuilder.zbr:238
         j = (j + 1);
     }
@@ -4426,7 +4456,7 @@ pub fn stripCharQuotes(text: []const u8) []const u8 {
 // zbr:selfhost/AstBuilder.zbr:251
     if (_zebra_ge(@as(i64, @intCast(parts.items.len)), 2)) {
 // zbr:selfhost/AstBuilder.zbr:252
-        return parts.items[@as(usize, @intCast(1))];
+        return _zbr_at(parts.items, 1);
     }
 // zbr:selfhost/AstBuilder.zbr:253
     return text;
@@ -4569,7 +4599,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:324
                 if (_zebra_gt(@as(i64, @intCast(pv.init_expr.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:325
-                    const initval = (try self.buildExpr(pv.init_expr.items[@as(usize, @intCast(0))]));
+                    const initval = (try self.buildExpr(_zbr_at(pv.init_expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:326
                     return Decl{ .var_ = _box_3: { const _bp_3 = _allocator.create(Ast.DeclVar) catch @panic("OOM"); _bp_3.* = DeclVar.init(Span.init(pv.line, pv.col, pv.line, pv.col), zmods(), pv.name, type_ref, _box_4: { const _bp_4 = blk2: { break :blk2 _allocator.create(@TypeOf(initval)) catch @panic("OOM"); }; _bp_4.* = initval; break :_box_4 _bp_4; }, pv.is_const); break :_box_3 _bp_3; } };
                 }
@@ -4764,7 +4794,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:429
         if (_zebra_gt(@as(i64, @intCast(ta.constraint.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:430
-            const e = (try self.buildExpr(ta.constraint.items[@as(usize, @intCast(0))]));
+            const e = (try self.buildExpr(_zbr_at(ta.constraint.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:431
             return Decl{ .type_alias_ = _box_d: { const _bp_d = _allocator.create(Ast.DeclTypeAlias) catch @panic("OOM"); _bp_d.* = DeclTypeAlias.init(zspan(), ta.name, alias_params, base_ref, _box_e: { const _bp_e = blk2: { break :blk2 _allocator.create(@TypeOf(e)) catch @panic("OOM"); }; _bp_e.* = e; break :_box_e _bp_e; }); break :_box_d _bp_d; } };
         }
@@ -4790,7 +4820,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:444
                 if (_zebra_gt(@as(i64, @intCast(f.init_expr.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:445
-                    const initval = (try self.buildExpr(f.init_expr.items[@as(usize, @intCast(0))]));
+                    const initval = (try self.buildExpr(_zbr_at(f.init_expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:446
                     return Decl{ .var_ = _box_10: { const _bp_10 = _allocator.create(Ast.DeclVar) catch @panic("OOM"); _bp_10.* = DeclVar.init(nameSpan(f.line, f.col, f.name), fmods, f.name, type_ref, _box_11: { const _bp_11 = blk2: { break :blk2 _allocator.create(@TypeOf(initval)) catch @panic("OOM"); }; _bp_11.* = initval; break :_box_11 _bp_11; }, f.is_const); break :_box_10 _bp_10; } };
                 }
@@ -4823,11 +4853,11 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:462
         while (_zebra_lt(vi, @as(i64, @intCast(e.variants.items.len)))) {
 // zbr:selfhost/AstBuilder.zbr:463
-            const vname: []const u8 = e.variants.items[@as(usize, @intCast(vi))];
+            const vname: []const u8 = _zbr_at(e.variants.items, vi);
 // zbr:selfhost/AstBuilder.zbr:464
-            if ((_zebra_lt(vi, @as(i64, @intCast(e.values.items.len))) and _zebra_gt(@as(i64, @intCast(e.values.items[@as(usize, @intCast(vi))].items.len)), 0))) {
+            if ((_zebra_lt(vi, @as(i64, @intCast(e.values.items.len))) and _zebra_gt(@as(i64, @intCast(_zbr_at(e.values.items, vi).items.len)), 0))) {
 // zbr:selfhost/AstBuilder.zbr:465
-                const vval = (try self.buildExpr(e.values.items[@as(usize, @intCast(vi))].items[@as(usize, @intCast(0))]));
+                const vval = (try self.buildExpr(_zbr_at(_zbr_at(e.values.items, vi).items, 0)));
 // zbr:selfhost/AstBuilder.zbr:466
                 members.append(_allocator, EnumMember.init(zspan(), vname, _box_13: { const _bp_13 = blk2: { break :blk2 _allocator.create(@TypeOf(vval)) catch @panic("OOM"); }; _bp_13.* = vval; break :_box_13 _bp_13; })) catch unreachable;
             } else {
@@ -4859,7 +4889,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:481
             if (_zebra_gt(@as(i64, @intCast(p.default_expr.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:482
-                const defval = (try self.buildExpr(p.default_expr.items[@as(usize, @intCast(0))]));
+                const defval = (try self.buildExpr(_zbr_at(p.default_expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:483
                 params.append(_allocator, Param.init(zspan(), ParamMode.normal, p.name, ptype, _box_15: { const _bp_15 = blk2: { break :blk2 _allocator.create(@TypeOf(defval)) catch @panic("OOM"); }; _bp_15.* = defval; break :_box_15 _bp_15; })) catch unreachable;
             } else {
@@ -4947,7 +4977,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:529
             if (_zebra_gt(@as(i64, @intCast(p.default_expr.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:530
-                const defval = (try self.buildExpr(p.default_expr.items[@as(usize, @intCast(0))]));
+                const defval = (try self.buildExpr(_zbr_at(p.default_expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:531
                 params.append(_allocator, Param.init(zspan(), ParamMode.normal, p.name, ptype, _box_17: { const _bp_17 = blk2: { break :blk2 _allocator.create(@TypeOf(defval)) catch @panic("OOM"); }; _bp_17.* = defval; break :_box_17 _bp_17; })) catch unreachable;
             } else {
@@ -5092,7 +5122,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:603
                 if (_zebra_gt(@as(i64, @intCast(pret.value.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:604
-                    const rval = (try self.buildExpr(pret.value.items[@as(usize, @intCast(0))]));
+                    const rval = (try self.buildExpr(_zbr_at(pret.value.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:605
                     return Stmt{ .return_ = _box_22: { const _bp_22 = _allocator.create(Ast.StmtReturn) catch @panic("OOM"); _bp_22.* = StmtReturn.init(Span.init(pret.line, pret.col, pret.line, pret.col), _box_23: { const _bp_23 = blk2: { break :blk2 _allocator.create(@TypeOf(rval)) catch @panic("OOM"); }; _bp_23.* = rval; break :_box_23 _bp_23; }); break :_box_22 _bp_22; } };
                 }
@@ -5102,7 +5132,7 @@ pub const ASTBuilder = struct {
             .stmt_if => |pif_ptr| {
                 const pif = pif_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:609
-                const cond_expr = (try self.buildExpr(pif.cond.items[@as(usize, @intCast(0))]));
+                const cond_expr = (try self.buildExpr(_zbr_at(pif.cond.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:610
                 const then_stmts = (try self.buildStmts(pif.then_stmts));
 // zbr:selfhost/AstBuilder.zbr:611
@@ -5126,7 +5156,7 @@ pub const ASTBuilder = struct {
             .stmt_while => |pw_ptr| {
                 const pw = pw_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:621
-                const cond_expr = (try self.buildExpr(pw.cond.items[@as(usize, @intCast(0))]));
+                const cond_expr = (try self.buildExpr(_zbr_at(pw.cond.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:622
                 const stmts = (try self.buildStmts(pw.stmts));
 // zbr:selfhost/AstBuilder.zbr:623
@@ -5135,7 +5165,7 @@ pub const ASTBuilder = struct {
             .stmt_for_in => |pfor_ptr| {
                 const pfor = pfor_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:626
-                const iter_expr = (try self.buildExpr(pfor.iter.items[@as(usize, @intCast(0))]));
+                const iter_expr = (try self.buildExpr(_zbr_at(pfor.iter.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:627
                 const stmts = (try self.buildStmts(pfor.stmts));
 // zbr:selfhost/AstBuilder.zbr:628
@@ -5155,7 +5185,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:634
                 if (_zebra_gt(@as(i64, @intCast(pfor.filter.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:635
-                    const filter_expr = (try self.buildExpr(pfor.filter.items[@as(usize, @intCast(0))]));
+                    const filter_expr = (try self.buildExpr(_zbr_at(pfor.filter.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:636
                     return Stmt{ .for_in = _box_29: { const _bp_29 = _allocator.create(Ast.StmtForIn) catch @panic("OOM"); _bp_29.* = StmtForIn.init(Span.init(pfor.line, pfor.col, pfor.line, pfor.col), vars, _box_2a: { const _bp_2a = blk2: { break :blk2 _allocator.create(@TypeOf(iter_expr)) catch @panic("OOM"); }; _bp_2a.* = iter_expr; break :_box_2a _bp_2a; }, _box_2b: { const _bp_2b = blk2: { break :blk2 _allocator.create(@TypeOf(filter_expr)) catch @panic("OOM"); }; _bp_2b.* = filter_expr; break :_box_2b _bp_2b; }, stmts, else_stmts); break :_box_29 _bp_29; } };
                 }
@@ -5165,9 +5195,9 @@ pub const ASTBuilder = struct {
             .stmt_for_num => |pfn_ptr| {
                 const pfn = pfn_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:640
-                const start_expr = (try self.buildExpr(pfn.start.items[@as(usize, @intCast(0))]));
+                const start_expr = (try self.buildExpr(_zbr_at(pfn.start.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:641
-                const stop_expr = (try self.buildExpr(pfn.stop_.items[@as(usize, @intCast(0))]));
+                const stop_expr = (try self.buildExpr(_zbr_at(pfn.stop_.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:642
                 const stmts = (try self.buildStmts(pfn.stmts));
 // zbr:selfhost/AstBuilder.zbr:643
@@ -5180,7 +5210,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:646
                 if (_zebra_gt(@as(i64, @intCast(pfn.step.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:647
-                    const step_expr = (try self.buildExpr(pfn.step.items[@as(usize, @intCast(0))]));
+                    const step_expr = (try self.buildExpr(_zbr_at(pfn.step.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:648
                     return Stmt{ .for_num = _box_2e: { const _bp_2e = _allocator.create(Ast.StmtForNum) catch @panic("OOM"); _bp_2e.* = StmtForNum.init(Span.init(pfn.line, pfn.col, pfn.line, pfn.col), pfn.var_name, _box_2f: { const _bp_2f = blk2: { break :blk2 _allocator.create(@TypeOf(start_expr)) catch @panic("OOM"); }; _bp_2f.* = start_expr; break :_box_2f _bp_2f; }, _box_30: { const _bp_30 = blk2: { break :blk2 _allocator.create(@TypeOf(stop_expr)) catch @panic("OOM"); }; _bp_30.* = stop_expr; break :_box_30 _bp_30; }, _box_31: { const _bp_31 = blk2: { break :blk2 _allocator.create(@TypeOf(step_expr)) catch @panic("OOM"); }; _bp_31.* = step_expr; break :_box_31 _bp_31; }, stmts, else_stmts); break :_box_2e _bp_2e; } };
                 }
@@ -5194,7 +5224,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:653
                 if (_zebra_gt(@as(i64, @intCast(pv.init_expr.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:654
-                    const initval = (try self.buildExpr(pv.init_expr.items[@as(usize, @intCast(0))]));
+                    const initval = (try self.buildExpr(_zbr_at(pv.init_expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:655
                     return Stmt{ .var_ = _box_35: { const _bp_35 = _allocator.create(Ast.DeclVar) catch @panic("OOM"); _bp_35.* = DeclVar.init(Span.init(pv.line, pv.col, pv.line, pv.col), zmods(), pv.name, type_ref, _box_36: { const _bp_36 = blk2: { break :blk2 _allocator.create(@TypeOf(initval)) catch @panic("OOM"); }; _bp_36.* = initval; break :_box_36 _bp_36; }, pv.is_const); break :_box_35 _bp_35; } };
                 }
@@ -5204,9 +5234,9 @@ pub const ASTBuilder = struct {
             .stmt_assign => |pa_ptr| {
                 const pa = pa_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:659
-                const target_expr = (try self.buildExpr(pa.target.items[@as(usize, @intCast(0))]));
+                const target_expr = (try self.buildExpr(_zbr_at(pa.target.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:660
-                const value_expr = (try self.buildExpr(pa.value.items[@as(usize, @intCast(0))]));
+                const value_expr = (try self.buildExpr(_zbr_at(pa.value.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:677
                 if ((std.mem.eql(u8, pa.op, "/=") or std.mem.eql(u8, pa.op, "%="))) {
 // zbr:selfhost/AstBuilder.zbr:678
@@ -5229,11 +5259,11 @@ pub const ASTBuilder = struct {
             .stmt_assert => |pas_ptr| {
                 const pas = pas_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:687
-                const cond_expr = (try self.buildExpr(pas.cond.items[@as(usize, @intCast(0))]));
+                const cond_expr = (try self.buildExpr(_zbr_at(pas.cond.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:688
                 if (_zebra_gt(@as(i64, @intCast(pas.message.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:689
-                    const msg = (try self.buildExpr(pas.message.items[@as(usize, @intCast(0))]));
+                    const msg = (try self.buildExpr(_zbr_at(pas.message.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:690
                     return Stmt{ .assert_ = _box_41: { const _bp_41 = _allocator.create(Ast.StmtAssert) catch @panic("OOM"); _bp_41.* = StmtAssert.init(Span.init(pas.line, pas.col, pas.line, pas.col), _box_42: { const _bp_42 = blk2: { break :blk2 _allocator.create(@TypeOf(cond_expr)) catch @panic("OOM"); }; _bp_42.* = cond_expr; break :_box_42 _bp_42; }, _box_43: { const _bp_43 = blk2: { break :blk2 _allocator.create(@TypeOf(msg)) catch @panic("OOM"); }; _bp_43.* = msg; break :_box_43 _bp_43; }); break :_box_41 _bp_41; } };
                 }
@@ -5285,16 +5315,16 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:716
                 if (_zebra_ge(@as(i64, @intCast(pr.message.items.len)), 2)) {
 // zbr:selfhost/AstBuilder.zbr:717
-                    const msg = (try self.buildExpr(pr.message.items[@as(usize, @intCast(0))]));
+                    const msg = (try self.buildExpr(_zbr_at(pr.message.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:718
-                    const det = (try self.buildExpr(pr.message.items[@as(usize, @intCast(1))]));
+                    const det = (try self.buildExpr(_zbr_at(pr.message.items, 1)));
 // zbr:selfhost/AstBuilder.zbr:719
                     return Stmt{ .raise_ = _box_50: { const _bp_50 = _allocator.create(Ast.StmtRaise) catch @panic("OOM"); _bp_50.* = StmtRaise.init(Span.init(pr.line, pr.col, pr.line, pr.col), _box_51: { const _bp_51 = blk2: { break :blk2 _allocator.create(@TypeOf(msg)) catch @panic("OOM"); }; _bp_51.* = msg; break :_box_51 _bp_51; }, _box_52: { const _bp_52 = blk2: { break :blk2 _allocator.create(@TypeOf(det)) catch @panic("OOM"); }; _bp_52.* = det; break :_box_52 _bp_52; }); break :_box_50 _bp_50; } };
                 }
 // zbr:selfhost/AstBuilder.zbr:720
                 if ((@as(i64, @intCast(pr.message.items.len)) == 1)) {
 // zbr:selfhost/AstBuilder.zbr:721
-                    const msg = (try self.buildExpr(pr.message.items[@as(usize, @intCast(0))]));
+                    const msg = (try self.buildExpr(_zbr_at(pr.message.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:722
                     return Stmt{ .raise_ = _box_53: { const _bp_53 = _allocator.create(Ast.StmtRaise) catch @panic("OOM"); _bp_53.* = StmtRaise.init(Span.init(pr.line, pr.col, pr.line, pr.col), _box_54: { const _bp_54 = blk2: { break :blk2 _allocator.create(@TypeOf(msg)) catch @panic("OOM"); }; _bp_54.* = msg; break :_box_54 _bp_54; }, null); break :_box_53 _bp_53; } };
                 }
@@ -5331,7 +5361,7 @@ pub const ASTBuilder = struct {
             .stmt_allocate => |pa_ptr| {
                 const pa = pa_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:740
-                const source_expr = (try self.buildExpr(pa.source.items[@as(usize, @intCast(0))]));
+                const source_expr = (try self.buildExpr(_zbr_at(pa.source.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:741
                 const stmts = (try self.buildStmts(pa.stmts));
 // zbr:selfhost/AstBuilder.zbr:742
@@ -5342,16 +5372,16 @@ pub const ASTBuilder = struct {
             .stmt_copy_out => |pco_ptr| {
                 const pco = pco_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:746
-                const target_expr = (try self.buildExpr(pco.target.items[@as(usize, @intCast(0))]));
+                const target_expr = (try self.buildExpr(_zbr_at(pco.target.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:747
-                const value_expr = (try self.buildExpr(pco.value.items[@as(usize, @intCast(0))]));
+                const value_expr = (try self.buildExpr(_zbr_at(pco.value.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:748
                 return Stmt{ .copy_out = _box_58: { const _bp_58 = _allocator.create(Ast.StmtCopyOut) catch @panic("OOM"); _bp_58.* = StmtCopyOut.init(Span.init(pco.line, pco.col, pco.line, pco.col), target_expr, value_expr, pco.deep); break :_box_58 _bp_58; } };
             },
             .stmt_guard => |pg_ptr| {
                 const pg = pg_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:751
-                const cond_expr = (try self.buildExpr(pg.cond.items[@as(usize, @intCast(0))]));
+                const cond_expr = (try self.buildExpr(_zbr_at(pg.cond.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:752
                 const else_stmts: std.ArrayList(Stmt) = (try self.buildStmts(pg.else_stmts));
 // zbr:selfhost/AstBuilder.zbr:753
@@ -5360,7 +5390,7 @@ pub const ASTBuilder = struct {
             .stmt_with => |pw_ptr| {
                 const pw = pw_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:756
-                const target_expr = (try self.buildExpr(pw.target.items[@as(usize, @intCast(0))]));
+                const target_expr = (try self.buildExpr(_zbr_at(pw.target.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:757
                 const raw_body: std.ArrayList(Stmt) = (try self.buildStmts(pw.stmts));
 // zbr:selfhost/AstBuilder.zbr:759
@@ -5376,7 +5406,7 @@ pub const ASTBuilder = struct {
             .stmt_in => |pi_ptr| {
                 const pi = pi_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:765
-                const in_expr = (try self.buildExpr(pi.expr.items[@as(usize, @intCast(0))]));
+                const in_expr = (try self.buildExpr(_zbr_at(pi.expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:766
                 const in_body: std.ArrayList(Stmt) = (try self.buildStmts(pi.stmts));
 // zbr:selfhost/AstBuilder.zbr:767
@@ -5385,7 +5415,7 @@ pub const ASTBuilder = struct {
             .stmt_destruct => |pd_ptr| {
                 const pd = pd_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:770
-                const init_expr = (try self.buildExpr(pd.init_expr.items[@as(usize, @intCast(0))]));
+                const init_expr = (try self.buildExpr(_zbr_at(pd.init_expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:771
                 return Stmt{ .destruct = _box_5f: { const _bp_5f = _allocator.create(Ast.StmtDestruct) catch @panic("OOM"); _bp_5f.* = StmtDestruct.init(Span.init(pd.line, pd.col, pd.line, pd.col), pd.names, _box_60: { const _bp_60 = blk2: { break :blk2 _allocator.create(@TypeOf(init_expr)) catch @panic("OOM"); }; _bp_60.* = init_expr; break :_box_60 _bp_60; }, pd.is_struct); break :_box_5f _bp_5f; } };
             },
@@ -5445,7 +5475,7 @@ pub const ASTBuilder = struct {
 
     pub fn buildBranch(self: *ASTBuilder, pb: PBranch) anyerror!Stmt {
 // zbr:selfhost/AstBuilder.zbr:804
-        const subject_expr = (try self.buildExpr(pb.subject.items[@as(usize, @intCast(0))]));
+        const subject_expr = (try self.buildExpr(_zbr_at(pb.subject.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:805
         var cases = std.ArrayList(BranchOn).empty;
 // zbr:selfhost/AstBuilder.zbr:806
@@ -5471,9 +5501,9 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:817
                     if (_zebra_ge(@as(i64, @intCast(range_parts.items.len)), 2)) {
 // zbr:selfhost/AstBuilder.zbr:818
-                        const left_expr = self.patternToExpr(range_parts.items[@as(usize, @intCast(0))]);
+                        const left_expr = self.patternToExpr(_zbr_at(range_parts.items, 0));
 // zbr:selfhost/AstBuilder.zbr:819
-                        const right_expr = self.patternToExpr(range_parts.items[@as(usize, @intCast(1))]);
+                        const right_expr = self.patternToExpr(_zbr_at(range_parts.items, 1));
 // zbr:selfhost/AstBuilder.zbr:820
                         values.append(_allocator, Expr{ .binary = _box_65: { const _bp_65 = _allocator.create(Ast.ExprBinary) catch @panic("OOM"); _bp_65.* = ExprBinary.init(zspan(), BinaryOp.dotdot, _box_66: { const _bp_66 = blk2: { break :blk2 _allocator.create(@TypeOf(left_expr)) catch @panic("OOM"); }; _bp_66.* = left_expr; break :_box_66 _bp_66; }, _box_67: { const _bp_67 = blk2: { break :blk2 _allocator.create(@TypeOf(right_expr)) catch @panic("OOM"); }; _bp_67.* = right_expr; break :_box_67 _bp_67; }); break :_box_65 _bp_65; } }) catch unreachable;
                     } else {
@@ -5492,7 +5522,7 @@ pub const ASTBuilder = struct {
                         }
                     }
 // zbr:selfhost/AstBuilder.zbr:827
-                    const base_name = parts.items[@as(usize, @intCast(0))];
+                    const base_name = _zbr_at(parts.items, 0);
 // zbr:selfhost/AstBuilder.zbr:828
                     const base_expr = Expr{ .ident = ExprIdent.init(zspan(), base_name) };
 // zbr:selfhost/AstBuilder.zbr:831
@@ -5502,7 +5532,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:833
                     while (_zebra_lt(i_pat, @as(i64, @intCast(parts.items.len)))) {
 // zbr:selfhost/AstBuilder.zbr:834
-                        built_expr = Expr{ .member = _box_68: { const _bp_68 = _allocator.create(Ast.ExprMember) catch @panic("OOM"); _bp_68.* = ExprMember.init(zspan(), _box_69: { const _bp_69 = blk2: { break :blk2 _allocator.create(@TypeOf(built_expr)) catch @panic("OOM"); }; _bp_69.* = built_expr; break :_box_69 _bp_69; }, parts.items[@as(usize, @intCast(i_pat))]); break :_box_68 _bp_68; } };
+                        built_expr = Expr{ .member = _box_68: { const _bp_68 = _allocator.create(Ast.ExprMember) catch @panic("OOM"); _bp_68.* = ExprMember.init(zspan(), _box_69: { const _bp_69 = blk2: { break :blk2 _allocator.create(@TypeOf(built_expr)) catch @panic("OOM"); }; _bp_69.* = built_expr; break :_box_69 _bp_69; }, _zbr_at(parts.items, i_pat)); break :_box_68 _bp_68; } };
 // zbr:selfhost/AstBuilder.zbr:835
                         i_pat = (i_pat + 1);
                     }
@@ -5527,7 +5557,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:844
             if (_zebra_gt(@as(i64, @intCast(arm.filter_cond.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:845
-                const gexpr = (try self.buildExpr(arm.filter_cond.items[@as(usize, @intCast(0))]));
+                const gexpr = (try self.buildExpr(_zbr_at(arm.filter_cond.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:846
                 filter_exprs.append(_allocator, gexpr) catch unreachable;
             }
@@ -5536,7 +5566,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:849
             if (_zebra_gt(@as(i64, @intCast(arm.struct_pat_node.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:850
-                const call_expr = (try self.buildExpr(arm.struct_pat_node.items[@as(usize, @intCast(0))]));
+                const call_expr = (try self.buildExpr(_zbr_at(arm.struct_pat_node.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:851
                 const sp_opt = self.tryBuildStructPat(call_expr);
 // zbr:selfhost/AstBuilder.zbr:852
@@ -5591,7 +5621,7 @@ pub const ASTBuilder = struct {
                     return null;
                 }
 // zbr:selfhost/AstBuilder.zbr:876
-                if ((_zebra_lt(tname[@intCast(0)], 'A') or _zebra_gt(tname[@intCast(0)], 'Z'))) {
+                if ((_zebra_lt(_zbr_at(tname, @as(i64, @intCast(0))), 'A') or _zebra_gt(_zbr_at(tname, @as(i64, @intCast(0))), 'Z'))) {
 // zbr:selfhost/AstBuilder.zbr:877
                     return null;
                 }
@@ -5637,7 +5667,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:901
         while (_zebra_lt(i, @as(i64, @intCast(s.len)))) {
 // zbr:selfhost/AstBuilder.zbr:902
-            const c = s[@intCast(i)];
+            const c = _zbr_at(s, @as(i64, @intCast(i)));
 // zbr:selfhost/AstBuilder.zbr:903
             if ((_zebra_lt(c, '0') or _zebra_gt(c, '9'))) {
 // zbr:selfhost/AstBuilder.zbr:904
@@ -5757,14 +5787,14 @@ pub const ASTBuilder = struct {
                     return Expr{ .member = _box_6c: { const _bp_6c = _allocator.create(Ast.ExprMember) catch @panic("OOM"); _bp_6c.* = ExprMember.init(pm_span, _box_6d: { const _bp_6d = blk2: { break :blk2 _allocator.create(@TypeOf(this_expr)) catch @panic("OOM"); }; _bp_6d.* = this_expr; break :_box_6d _bp_6d; }, pm.member); break :_box_6c _bp_6c; } };
                 }
 // zbr:selfhost/AstBuilder.zbr:1003
-                const base_expr = (try self.buildExpr(pm.base.items[@as(usize, @intCast(0))]));
+                const base_expr = (try self.buildExpr(_zbr_at(pm.base.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1004
                 return Expr{ .member = _box_6e: { const _bp_6e = _allocator.create(Ast.ExprMember) catch @panic("OOM"); _bp_6e.* = ExprMember.init(pm_span, _box_6f: { const _bp_6f = blk2: { break :blk2 _allocator.create(@TypeOf(base_expr)) catch @panic("OOM"); }; _bp_6f.* = base_expr; break :_box_6f _bp_6f; }, pm.member); break :_box_6e _bp_6e; } };
             },
             .expr_call => |pc_ptr| {
                 const pc = pc_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1007
-                const callee_expr = (try self.buildExpr(pc.callee.items[@as(usize, @intCast(0))]));
+                const callee_expr = (try self.buildExpr(_zbr_at(pc.callee.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1008
                 var args = std.ArrayList(Arg).empty;
 // zbr:selfhost/AstBuilder.zbr:1009
@@ -5774,7 +5804,7 @@ pub const ASTBuilder = struct {
                         const pna_ptr = arg_pn.expr_named_arg;
                         const pna = pna_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1011
-                        const av = (try self.buildExpr(pna.value.items[@as(usize, @intCast(0))]));
+                        const av = (try self.buildExpr(_zbr_at(pna.value.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1012
                         args.append(_allocator, Arg.init(spanOf(av), pna.name, av)) catch unreachable;
                     } else {
@@ -5790,29 +5820,29 @@ pub const ASTBuilder = struct {
             .expr_index => |pix_ptr| {
                 const pix = pix_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1019
-                const obj_expr = (try self.buildExpr(pix.object.items[@as(usize, @intCast(0))]));
+                const obj_expr = (try self.buildExpr(_zbr_at(pix.object.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1020
-                const idx_expr = (try self.buildExpr(pix.index.items[@as(usize, @intCast(0))]));
+                const idx_expr = (try self.buildExpr(_zbr_at(pix.index.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1021
                 return Expr{ .index = _box_71: { const _bp_71 = _allocator.create(Ast.ExprIndex) catch @panic("OOM"); _bp_71.* = ExprIndex.init(spanOf(obj_expr), _box_72: { const _bp_72 = blk2: { break :blk2 _allocator.create(@TypeOf(obj_expr)) catch @panic("OOM"); }; _bp_72.* = obj_expr; break :_box_72 _bp_72; }, _box_73: { const _bp_73 = blk2: { break :blk2 _allocator.create(@TypeOf(idx_expr)) catch @panic("OOM"); }; _bp_73.* = idx_expr; break :_box_73 _bp_73; }); break :_box_71 _bp_71; } };
             },
             .expr_slice => |psl_ptr| {
                 const psl = psl_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1024
-                const obj_expr = (try self.buildExpr(psl.object.items[@as(usize, @intCast(0))]));
+                const obj_expr = (try self.buildExpr(_zbr_at(psl.object.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1026
-                const start_expr = (try self.buildExpr(psl.start.items[@as(usize, @intCast(0))]));
+                const start_expr = (try self.buildExpr(_zbr_at(psl.start.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1027
-                const stop_expr = (try self.buildExpr(psl.stop_.items[@as(usize, @intCast(0))]));
+                const stop_expr = (try self.buildExpr(_zbr_at(psl.stop_.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1028
                 return Expr{ .slice = _box_74: { const _bp_74 = _allocator.create(Ast.ExprSlice) catch @panic("OOM"); _bp_74.* = ExprSlice.init(spanOf(obj_expr), _box_75: { const _bp_75 = blk2: { break :blk2 _allocator.create(@TypeOf(obj_expr)) catch @panic("OOM"); }; _bp_75.* = obj_expr; break :_box_75 _bp_75; }, _box_76: { const _bp_76 = blk2: { break :blk2 _allocator.create(@TypeOf(start_expr)) catch @panic("OOM"); }; _bp_76.* = start_expr; break :_box_76 _bp_76; }, _box_77: { const _bp_77 = blk2: { break :blk2 _allocator.create(@TypeOf(stop_expr)) catch @panic("OOM"); }; _bp_77.* = stop_expr; break :_box_77 _bp_77; }); break :_box_74 _bp_74; } };
             },
             .expr_binary => |pb_ptr| {
                 const pb = pb_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1031
-                const left_expr = (try self.buildExpr(pb.left.items[@as(usize, @intCast(0))]));
+                const left_expr = (try self.buildExpr(_zbr_at(pb.left.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1032
-                const right_expr: Expr = (try self.buildExpr(pb.right.items[@as(usize, @intCast(0))]));
+                const right_expr: Expr = (try self.buildExpr(_zbr_at(pb.right.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1035
                 if (std.mem.eql(u8, pb.op, "is")) {
 // zbr:selfhost/AstBuilder.zbr:1036
@@ -5854,24 +5884,24 @@ pub const ASTBuilder = struct {
             .expr_orelse => |po_ptr| {
                 const po = po_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1054
-                const expr_val = (try self.buildExpr(po.expr.items[@as(usize, @intCast(0))]));
+                const expr_val = (try self.buildExpr(_zbr_at(po.expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1055
-                const fb_val = (try self.buildExpr(po.fallback.items[@as(usize, @intCast(0))]));
+                const fb_val = (try self.buildExpr(_zbr_at(po.fallback.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1056
                 return Expr{ .orelse_ = _box_7f: { const _bp_7f = _allocator.create(Ast.ExprOrelse) catch @panic("OOM"); _bp_7f.* = ExprOrelse.init(spanOf(expr_val), _box_80: { const _bp_80 = blk2: { break :blk2 _allocator.create(@TypeOf(expr_val)) catch @panic("OOM"); }; _bp_80.* = expr_val; break :_box_80 _bp_80; }, _box_81: { const _bp_81 = blk2: { break :blk2 _allocator.create(@TypeOf(fb_val)) catch @panic("OOM"); }; _bp_81.* = fb_val; break :_box_81 _bp_81; }); break :_box_7f _bp_7f; } };
             },
             .expr_pipeline => |pp_ptr| {
                 const pp = pp_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1060
-                const lhs_expr = (try self.buildExpr(pp.lhs.items[@as(usize, @intCast(0))]));
+                const lhs_expr = (try self.buildExpr(_zbr_at(pp.lhs.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1061
-                const rhs_node = pp.rhs.items[@as(usize, @intCast(0))];
+                const rhs_node = _zbr_at(pp.rhs.items, 0);
 // zbr:selfhost/AstBuilder.zbr:1062
                 switch (rhs_node) {
                     .expr_call => |pc_ptr| {
                         const pc = pc_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1064
-                        const callee_expr = (try self.buildExpr(pc.callee.items[@as(usize, @intCast(0))]));
+                        const callee_expr = (try self.buildExpr(_zbr_at(pc.callee.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1065
                         var args = std.ArrayList(Arg).empty;
 // zbr:selfhost/AstBuilder.zbr:1066
@@ -5883,7 +5913,7 @@ pub const ASTBuilder = struct {
                                 const pna_ptr = arg_pn.expr_named_arg;
                                 const pna = pna_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1069
-                                const av = (try self.buildExpr(pna.value.items[@as(usize, @intCast(0))]));
+                                const av = (try self.buildExpr(_zbr_at(pna.value.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1070
                                 args.append(_allocator, Arg.init(spanOf(av), pna.name, av)) catch unreachable;
                             } else {
@@ -5906,7 +5936,7 @@ pub const ASTBuilder = struct {
             .expr_unary => |pu_ptr| {
                 const pu = pu_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1079
-                const operand_expr = (try self.buildExpr(pu.operand.items[@as(usize, @intCast(0))]));
+                const operand_expr = (try self.buildExpr(_zbr_at(pu.operand.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1080
                 if (std.mem.eql(u8, pu.op, "old")) {
 // zbr:selfhost/AstBuilder.zbr:1081
@@ -5931,9 +5961,9 @@ pub const ASTBuilder = struct {
             .expr_catch => |pc_ptr| {
                 const pc = pc_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1092
-                const expr_val = (try self.buildExpr(pc.expr.items[@as(usize, @intCast(0))]));
+                const expr_val = (try self.buildExpr(_zbr_at(pc.expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1093
-                const fb_val = (try self.buildExpr(pc.fallback.items[@as(usize, @intCast(0))]));
+                const fb_val = (try self.buildExpr(_zbr_at(pc.fallback.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1094
                 var ev: ?[]const u8 = null;
 // zbr:selfhost/AstBuilder.zbr:1095
@@ -5954,7 +5984,7 @@ pub const ASTBuilder = struct {
             .expr_opt_chain => |poc_ptr| {
                 const poc = poc_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1104
-                const base_expr = (try self.buildExpr(poc.base.items[@as(usize, @intCast(0))]));
+                const base_expr = (try self.buildExpr(_zbr_at(poc.base.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1105
                 var oc_args = std.ArrayList(Arg).empty;
 // zbr:selfhost/AstBuilder.zbr:1106
@@ -5964,7 +5994,7 @@ pub const ASTBuilder = struct {
                         const pna_ptr = arg_pn.expr_named_arg;
                         const pna = pna_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1108
-                        const av = (try self.buildExpr(pna.value.items[@as(usize, @intCast(0))]));
+                        const av = (try self.buildExpr(_zbr_at(pna.value.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1109
                         oc_args.append(_allocator, Arg.init(spanOf(av), pna.name, av)) catch unreachable;
                     } else {
@@ -5980,13 +6010,13 @@ pub const ASTBuilder = struct {
             .expr_except => |pex_ptr| {
                 const pex = pex_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1116
-                const base_expr = (try self.buildExpr(pex.base.items[@as(usize, @intCast(0))]));
+                const base_expr = (try self.buildExpr(_zbr_at(pex.base.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1117
                 var fields = std.ArrayList(ExceptField).empty;
 // zbr:selfhost/AstBuilder.zbr:1118
                 for (pex.fields.items) |pf| {
 // zbr:selfhost/AstBuilder.zbr:1119
-                    const fval = (try self.buildExpr(pf.value.items[@as(usize, @intCast(0))]));
+                    const fval = (try self.buildExpr(_zbr_at(pf.value.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1120
                     fields.append(_allocator, ExceptField.init(pf.name, fval)) catch unreachable;
                 }
@@ -6083,9 +6113,9 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1174
                 while (_zebra_lt(pdi, @as(i64, @intCast(pd.keys.items.len)))) {
 // zbr:selfhost/AstBuilder.zbr:1175
-                    const dk_e: Expr = (try self.buildExpr(pd.keys.items[@as(usize, @intCast(pdi))]));
+                    const dk_e: Expr = (try self.buildExpr(_zbr_at(pd.keys.items, pdi)));
 // zbr:selfhost/AstBuilder.zbr:1176
-                    const dv_e: Expr = (try self.buildExpr(pd.values.items[@as(usize, @intCast(pdi))]));
+                    const dv_e: Expr = (try self.buildExpr(_zbr_at(pd.values.items, pdi)));
 // zbr:selfhost/AstBuilder.zbr:1177
                     dentries.append(_allocator, DictEntry.init(_box_97: { const _bp_97 = blk2: { break :blk2 _allocator.create(@TypeOf(dk_e)) catch @panic("OOM"); }; _bp_97.* = dk_e; break :_box_97 _bp_97; }, _box_98: { const _bp_98 = blk2: { break :blk2 _allocator.create(@TypeOf(dv_e)) catch @panic("OOM"); }; _bp_98.* = dv_e; break :_box_98 _bp_98; })) catch unreachable;
 // zbr:selfhost/AstBuilder.zbr:1178
@@ -6118,11 +6148,11 @@ pub const ASTBuilder = struct {
             .expr_if_expr => |pie_ptr| {
                 const pie = pie_ptr.*;
 // zbr:selfhost/AstBuilder.zbr:1192
-                const cond_e = (try self.buildExpr(pie.cond.items[@as(usize, @intCast(0))]));
+                const cond_e = (try self.buildExpr(_zbr_at(pie.cond.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1193
-                const then_e = (try self.buildExpr(pie.then_expr.items[@as(usize, @intCast(0))]));
+                const then_e = (try self.buildExpr(_zbr_at(pie.then_expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1194
-                const else_e = (try self.buildExpr(pie.else_expr.items[@as(usize, @intCast(0))]));
+                const else_e = (try self.buildExpr(_zbr_at(pie.else_expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1195
                 return Expr{ .if_expr = _box_9b: { const _bp_9b = _allocator.create(Ast.ExprIf) catch @panic("OOM"); _bp_9b.* = ExprIf.init(spanOf(cond_e), _box_9c: { const _bp_9c = blk2: { break :blk2 _allocator.create(@TypeOf(cond_e)) catch @panic("OOM"); }; _bp_9c.* = cond_e; break :_box_9c _bp_9c; }, _box_9d: { const _bp_9d = blk2: { break :blk2 _allocator.create(@TypeOf(then_e)) catch @panic("OOM"); }; _bp_9d.* = then_e; break :_box_9d _bp_9d; }, _box_9e: { const _bp_9e = blk2: { break :blk2 _allocator.create(@TypeOf(else_e)) catch @panic("OOM"); }; _bp_9e.* = else_e; break :_box_9e _bp_9e; }); break :_box_9b _bp_9b; } };
             },
@@ -6162,7 +6192,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1213
             if (_zebra_gt(@as(i64, @intCast(pp.default_expr.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:1214
-                const defval = (try self.buildExpr(pp.default_expr.items[@as(usize, @intCast(0))]));
+                const defval = (try self.buildExpr(_zbr_at(pp.default_expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1215
                 params.append(_allocator, Param.init(zspan(), ParamMode.normal, pp.name, tr, _box_9f: { const _bp_9f = blk2: { break :blk2 _allocator.create(@TypeOf(defval)) catch @panic("OOM"); }; _bp_9f.* = defval; break :_box_9f _bp_9f; })) catch unreachable;
             } else {
@@ -6182,7 +6212,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1222
         if (_zebra_gt(@as(i64, @intCast(pl.body_expr.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:1223
-            const bexpr = (try self.buildExpr(pl.body_expr.items[@as(usize, @intCast(0))]));
+            const bexpr = (try self.buildExpr(_zbr_at(pl.body_expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1224
             lbody = LambdaBody{ .expr_ = bexpr };
         } else {
@@ -6208,7 +6238,7 @@ pub const ASTBuilder = struct {
                 cv_tr = self.parseTypeRef(cv.type_name);
             }
 // zbr:selfhost/AstBuilder.zbr:1235
-            const cv_init_expr = (try self.buildExpr(cv.init_expr.items[@as(usize, @intCast(0))]));
+            const cv_init_expr = (try self.buildExpr(_zbr_at(cv.init_expr.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:1236
             const dv = DeclVar.init(zspan(), zmods(), cv.name, cv_tr, _box_a0: { const _bp_a0 = blk2: { break :blk2 _allocator.create(@TypeOf(cv_init_expr)) catch @panic("OOM"); }; _bp_a0.* = cv_init_expr; break :_box_a0 _bp_a0; }, (!cv.is_const));
 // zbr:selfhost/AstBuilder.zbr:1237
@@ -6474,7 +6504,7 @@ pub const ASTBuilder = struct {
                 }
             }
 // zbr:selfhost/AstBuilder.zbr:1373
-            const rest_alias = after_alias.items[@as(usize, @intCast(1))];
+            const rest_alias = _zbr_at(after_alias.items, 1);
 // zbr:selfhost/AstBuilder.zbr:1374
             var name_args_parts = std.ArrayList([]const u8).empty;
 // zbr:selfhost/AstBuilder.zbr:1375
@@ -6486,13 +6516,13 @@ pub const ASTBuilder = struct {
                 }
             }
 // zbr:selfhost/AstBuilder.zbr:1377
-            const alias_name = name_args_parts.items[@as(usize, @intCast(0))];
+            const alias_name = _zbr_at(name_args_parts.items, 0);
 // zbr:selfhost/AstBuilder.zbr:1378
             var alias_args = std.ArrayList(Expr).empty;
 // zbr:selfhost/AstBuilder.zbr:1379
             if (_zebra_gt(@as(i64, @intCast(name_args_parts.items.len)), 1)) {
 // zbr:selfhost/AstBuilder.zbr:1380
-                const args_str = name_args_parts.items[@as(usize, @intCast(1))];
+                const args_str = _zbr_at(name_args_parts.items, 1);
 // zbr:selfhost/AstBuilder.zbr:1381
                 {
                     var _it_a = std.mem.splitSequence(u8, args_str, ",");
@@ -6518,7 +6548,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1389
                                 if (_zebra_gt(@as(i64, @intCast(pos_parts.items.len)), 1)) {
 // zbr:selfhost/AstBuilder.zbr:1390
-                                    a2 = pos_parts.items[@as(usize, @intCast(1))];
+                                    a2 = _zbr_at(pos_parts.items, 1);
                                 }
                             }
 // zbr:selfhost/AstBuilder.zbr:1391
@@ -6567,7 +6597,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1413
             while (_zebra_lt(i, @as(i64, @intCast(inner_parts.items.len)))) {
 // zbr:selfhost/AstBuilder.zbr:1414
-                var part: []const u8 = inner_parts.items[@as(usize, @intCast(i))];
+                var part: []const u8 = _zbr_at(inner_parts.items, i);
 // zbr:selfhost/AstBuilder.zbr:1416
                 if (std.mem.startsWith(u8, part, "(")) {
 // zbr:selfhost/AstBuilder.zbr:1417
@@ -6583,7 +6613,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1420
                     if (_zebra_gt(@as(i64, @intCast(stripped.items.len)), 1)) {
 // zbr:selfhost/AstBuilder.zbr:1421
-                        part = stripped.items[@as(usize, @intCast(1))];
+                        part = _zbr_at(stripped.items, 1);
                     }
                 }
 // zbr:selfhost/AstBuilder.zbr:1422
@@ -6601,7 +6631,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1426
                     if (_zebra_gt(@as(i64, @intCast(stripped.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:1427
-                        part = stripped.items[@as(usize, @intCast(0))];
+                        part = _zbr_at(stripped.items, 0);
                     }
                 }
 // zbr:selfhost/AstBuilder.zbr:1428
@@ -6632,7 +6662,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1440
             if (_zebra_gt(@as(i64, @intCast(rest_parts.items.len)), 1)) {
 // zbr:selfhost/AstBuilder.zbr:1441
-                rest_s = rest_parts.items[@as(usize, @intCast(1))];
+                rest_s = _zbr_at(rest_parts.items, 1);
             }
 // zbr:selfhost/AstBuilder.zbr:1442
             const inner = self.parseTypeRefRequired(rest_s);
@@ -6652,7 +6682,7 @@ pub const ASTBuilder = struct {
                 }
             }
 // zbr:selfhost/AstBuilder.zbr:1451
-            const base_s = parts.items[@as(usize, @intCast(0))];
+            const base_s = _zbr_at(parts.items, 0);
 // zbr:selfhost/AstBuilder.zbr:1452
             const inner = self.parseTypeRefRequired(base_s);
 // zbr:selfhost/AstBuilder.zbr:1453
@@ -6671,7 +6701,7 @@ pub const ASTBuilder = struct {
                 }
             }
 // zbr:selfhost/AstBuilder.zbr:1460
-            const gen_name = name_parts.items[@as(usize, @intCast(0))];
+            const gen_name = _zbr_at(name_parts.items, 0);
 // zbr:selfhost/AstBuilder.zbr:1462
             var rest: []const u8 = "";
 // zbr:selfhost/AstBuilder.zbr:1463
@@ -6684,7 +6714,7 @@ pub const ASTBuilder = struct {
                     rest = _str_concat(rest, "(", _allocator);
                 }
 // zbr:selfhost/AstBuilder.zbr:1467
-                rest = _str_concat(rest, name_parts.items[@as(usize, @intCast(ri))], _allocator);
+                rest = _str_concat(rest, _zbr_at(name_parts.items, ri), _allocator);
 // zbr:selfhost/AstBuilder.zbr:1468
                 ri = (ri + 1);
             }
@@ -6710,7 +6740,7 @@ pub const ASTBuilder = struct {
                     args_str = _str_concat(args_str, ")", _allocator);
                 }
 // zbr:selfhost/AstBuilder.zbr:1478
-                args_str = _str_concat(args_str, rparts.items[@as(usize, @intCast(si))], _allocator);
+                args_str = _str_concat(args_str, _zbr_at(rparts.items, si), _allocator);
 // zbr:selfhost/AstBuilder.zbr:1479
                 si = (si + 1);
             }
@@ -6729,7 +6759,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1488
             if (std.mem.eql(u8, gen_name, "__fnptr")) {
 // zbr:selfhost/AstBuilder.zbr:1489
-                const fn_ret2: TypeRef = args.items[@as(usize, @intCast((@as(i64, @intCast(args.items.len)) - 1)))];
+                const fn_ret2: TypeRef = _zbr_at(args.items, (@as(i64, @intCast(args.items.len)) - 1));
 // zbr:selfhost/AstBuilder.zbr:1490
                 var fn_params2 = std.ArrayList(TypeRef).empty;
 // zbr:selfhost/AstBuilder.zbr:1491
@@ -6737,7 +6767,7 @@ pub const ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1492
                 while (_zebra_lt(fpi, (@as(i64, @intCast(args.items.len)) - 1))) {
 // zbr:selfhost/AstBuilder.zbr:1493
-                    fn_params2.append(_allocator, args.items[@as(usize, @intCast(fpi))]) catch unreachable;
+                    fn_params2.append(_allocator, _zbr_at(args.items, fpi)) catch unreachable;
 // zbr:selfhost/AstBuilder.zbr:1494
                     fpi = (fpi + 1);
                 }

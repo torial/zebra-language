@@ -51,6 +51,155 @@ of which is chosen.
 
 **It also exposed a gap in `rebuild.sh`.** Its stale-bootstrap guard listed only the two preamble files; everything in `src/` is compiled into the bootstrap with the same staleness. The regen ran an older bootstrap and failed with `expected 'bool', got 'void'` — a type error naming the very feature being added, which reads as "your new code is wrong". List widened; falsified by `tools/rebuild_guard_check.sh`, because the successful rebuild could not prove it (the loop breaks on its first match, and the preamble happened to be newest).
 
+### BUG-313: `List.at()` is NOT bounds-checked in `--release`, and the docs recommend it BECAUSE it is — CLOSED 2026-08-26
+
+**A documented safety guarantee that does not hold in the builds users ship, and which
+fabricates a value rather than trapping.**
+
+`QUICKSTART.md` says:
+
+```
+var x = items.at(0)                  # index (bounds-checked) — preferred
+```
+
+`.at(i)` lowers to `list.items[@intCast(i)]` — raw slice indexing. Zig bounds-checks that
+in Debug and ReleaseSafe and **not** in ReleaseFast, and `zebra --release` passes
+`-OReleaseFast` (`src/main.zig:1520`).
+
+Measured, both modes, same program (a 2-element list read at index 2, index derived at
+runtime from `xs.len` so it cannot be folded):
+
+| build | result |
+|---|---|
+| debug | `thread panic: index out of bounds: index 2, len 2` |
+| `--release` | `read: 0` then `SURVIVED an out-of-range read` |
+
+So the release build reads out of bounds, **invents a value**, and continues. That is
+memory-unsafety and UNGIT "nothing fabricated" in one line, at the language level rather
+than in a tool.
+
+**A SECOND DOOR, AND IT IS THE EASIER ONE TO WALK THROUGH: a NEGATIVE index.** `.at(i)`
+also inserts `@intCast(i)` to convert Zebra's `int` (i64) to `usize` -- 131 of them in one
+469-line dogfood file. Measured the same way (`var i = xs.len - 3`, i.e. -1, computed at
+runtime):
+
+| build | result |
+|---|---|
+| debug | `thread panic: integer does not fit in destination type` |
+| `--release` | `read: 0` then `SURVIVED a negative index` |
+
+The negative value wraps to a huge `usize` and reads out of bounds. This door matters more
+than the first because `xs.at(-1)` is a reflex for anyone arriving from Python, where it
+means "the last element". Here it silently returns a fabricated value in shipped builds.
+Any fix must close BOTH: a length check alone still lets a negative index through the cast.
+
+**THE DOC IS NOT MERELY STALE — IT STEERS USERS TOWARD THE UNSAFE THING.** `.at()` is
+recommended *over* alternatives on the strength of a guarantee it does not provide. A
+second instance sits in BUGS_FIXED.md: "use `list.at(i)` (bounds-checked, emits
+`.items[i]`)" — a sentence whose two halves contradict each other under ReleaseFast. The
+mechanism was stated correctly and the guarantee inferred from it wrongly.
+
+**HOW IT WAS FOUND, because the route is reusable.** Not by a sweep — no gate can see it,
+since every gate builds Debug (the same blind spot BUG-228 lived in for four days). It came
+out of dogfooding plus Hoare's criterion:
+
+1. `construct_histogram` on real numeric code (`C:/Projects/tinylm`) showed `.at()` at 342
+   uses in 1116 lines, and float+`.at()`+`while` together in 6 of 6 files vs **0 of 522**
+   corpus files.
+2. Asking Hoare's question — *what did the compiler DO to this code?* — showed `.at()`
+   lowering to unchecked `items[...]`.
+3. Testing both optimisation modes made it a finding rather than a suspicion.
+
+**BLAST RADIUS.** Any program doing index arithmetic. Sean's neural-network code makes 342
+`.at()` calls with hand-computed indices; an off-by-one there reads arbitrary memory in
+release instead of trapping, and silently produces wrong numbers — which in a training loop
+looks like a bad model, not a compiler bug.
+
+**Fix options (needs a decision):**
+1. **Emit an explicit check inside `.at()`**, independent of optimisation mode, so the
+   documented guarantee holds in every build. Costs a compare-and-branch per index — real,
+   but this is the accessor the docs call "preferred", and the alternative is a promise we
+   do not keep. Pair it with an explicitly-unchecked accessor for hot loops, so the fast
+   path is something a user CHOOSES rather than something they get by surprise.
+2. Make `--release` use `-OReleaseSafe`. Cheapest change, keeps Zig's own checks, but
+   silently reprices every program's performance and is a much broader decision than this
+   bug.
+3. Document the truth and keep the behaviour. **Rejected** unless paired with (1) or (2):
+   the current text does not merely fail to warn, it actively recommends `.at()` on safety
+   grounds.
+
+Recommendation: (1), with the doc corrected either way and **not** waiting on the fix — a
+wrong safety claim is worse than a missing one.
+
+**Control when fixing:** the probe above must panic in BOTH modes, and a positive control
+(an in-range read) must still work in both. `tools/release_mode_check.sh` is the only gate
+that builds with `--release` and is the natural home for it.
+
+**FIXED 2026-08-26, both compilers.** `.at(i)` and every sibling indexing path now lower
+through two preamble helpers:
+
+```zig
+pub inline fn _zbr_at(xs: anytype, i: i64) std.meta.Elem(@TypeOf(xs))
+pub inline fn _zbr_set(xs: anytype, i: i64, v: std.meta.Elem(@TypeOf(xs))) void
+```
+
+| build | `xs.at(2)` on a 2-element list | `xs.at(-1)` |
+|---|---|---|
+| debug | `index out of range: 2 (length 2)` | `index out of range: -1 (length 2)` |
+| **`--release`** | **`index out of range: 2 (length 2)`** | **`index out of range: -1 (length 2)`** |
+
+**FOUR EMITTERS PER COMPILER, not one.** Mapping by method name found two; the actual set
+is `.at()` (two receiver branches in the selfhost), `.set()`, postfix `list[i]`, and string
+indexing. The first fix converted one of them, rebuilt clean, and *looked* right -- the
+panic message was still Zig's `index out of bounds`, not ours, which is the only reason it
+was caught. **Enumerate by emit SHAPE, not by method name.**
+
+Two design points worth keeping:
+
+- **The container is a parameter, not re-emitted at the use site.** The obvious form
+  `xs.items[chk(i, xs.items.len)]` evaluates the receiver TWICE, so `foo().at(i)` would call
+  `foo()` twice. Verified single-evaluation with a side-effect counter before touching the
+  compiler.
+- **The sign test comes first, and the ordering is load-bearing.** `@intCast` of a negative
+  i64 traps in debug and WRAPS in ReleaseFast -- that wrap is the second door. Zig's `or`
+  short-circuits, so the cast is only reached once the sign is known good. A check written
+  the other way closes one door and holds the other open.
+
+Routing both branches of the bootstrap's postfix handler through one helper **collapsed 21
+lines to 10**: the per-branch index casting disappeared because the helper's signature does
+it. That shape -- two branches doing the same thing differently -- is where one gets fixed
+and the other does not.
+
+**VERIFICATION.** Positive fixture `test/bug313_checked_index_test.zbr` (`smoke_run`)
+exercises all four emitters IN RANGE, including first and last element so an off-by-one in
+the check itself shows up, and a nested `m.at(0).at(1)`. The refusal half cannot live in a
+smoke fixture -- it panics, and only under `--release` -- so it is three legs in
+`tools/release_mode_check.sh`, the only gate that passes the flag:
+
+- index past the end must be refused
+- negative index must be refused
+- **CONTROL: in-range indexing must still work.** Without it a compiler that refused EVERY
+  index passes both refusal probes; "it panics" and "it panics when it should" are
+  different claims.
+
+Falsified against the REAL attacker -- a compiler rebuilt with the check stripped out of
+`_zbr_at` -- not a mutated test: both doors FAILED, the control PASSED, and all three went
+green on restore.
+
+**The compiler self-hosts through its own checked `.at()` calls**, which is a substantial
+correctness signal on its own.
+
+**STILL OPEN, deliberately, and NOT part of this fix:**
+1. **Cost unmeasured.** Every index now pays a compare-and-branch. Knuth's "far more often
+   than it currently is" is the default this implements; whether it is affordable is a
+   separate, unasked question.
+2. **No unchecked accessor.** Knuth's "but not everywhere" has no escape hatch yet. Whether
+   it is urgent depends on (1).
+3. **No elision.** `for i in 0..xs.len` emits the same checked call as a hand-managed index,
+   though it is the one case where the bound is provable. That is the half that makes the
+   safe form the FAST form (Wirth and Hoare via Knuth, p.271); until it lands the range-`for`
+   is safer but not cheaper.
+
 ### BUG-310: `File.append` SILENTLY TRUNCATES the file when the read fails for any reason other than absence — CLOSED 2026-08-26
 
 **A transient read error destroys the file's existing contents.**

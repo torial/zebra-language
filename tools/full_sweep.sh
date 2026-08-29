@@ -177,11 +177,11 @@ if [ "$GATE" = 1 ]; then
       echo "  \`LC_ALL=C sort -o $BASELINE $BASELINE\` (the SET is what matters, not the order)."
       exit 2
   fi
-  reg=$(comm -23 "$BASELINE" "$OUT/pass.txt")
+  reg=$(LC_ALL=C comm -23 "$BASELINE" "$OUT/pass.txt")
   if [ -n "$reg" ]; then
     echo "✗ REGRESSION — baseline-passing tests that now FAIL:"; echo "$reg"; exit 1
   fi
-  newp=$(comm -13 "$BASELINE" "$OUT/pass.txt")
+  newp=$(LC_ALL=C comm -13 "$BASELINE" "$OUT/pass.txt")
   [ -n "$newp" ] && { echo "· new passes (run --update-baseline to lock them in):"; echo "$newp"; }
 
   # ── ABSOLUTE leg: every POSITIVE test must pass, baseline or no baseline ──────
@@ -217,7 +217,13 @@ if [ "$GATE" = 1 ]; then
   # drift between them), but every LEG has to say which corpus it is about.
   if [ "$EXAMPLES" = 0 ]; then
     POSN=$(bash "$REPO/tools/positive_set.sh" | wc -l | tr -d ' ')
-    posfail=$(comm -23     <(bash "$REPO/tools/positive_set.sh" | sed 's|.*/||; s|\.zbr$||' | sort -u)     "$OUT/pass.txt")
+      # COLLATION, not sortedness. pass.txt is built with `LC_ALL=C sort` (above); this
+      # side used a bare `sort -u`, i.e. the DEFAULT locale, and `comm` then compared two
+      # differently-ordered files and FABRICATED a failure list -- it named seven
+      # must-pass fixtures that all compile clean, with "comm: file 2 is not in sorted
+      # order" buried above them. Same defect as the baseline leg (a31c61a, fixed the
+      # same day); this was its sibling and was missed.
+    posfail=$(LC_ALL=C comm -23     <(bash "$REPO/tools/positive_set.sh" | sed 's|.*/||; s|\.zbr$||' | LC_ALL=C sort -u)     "$OUT/pass.txt")
     if [ -n "$posfail" ]; then
       echo "✗ POSITIVE-SET FAILURE — these are registered as MUST-PASS and did not:"
       printf '%s' "$posfail" | sed 's/^/    /'

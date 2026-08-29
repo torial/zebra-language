@@ -10443,13 +10443,15 @@ struct Generator
                     genExpr(ix.index)
                     w.emit(").?")
                 else
+                    # BUG-313: checked. Covers BOTH the List (.items) and the
+                    # string/slice receiver -- _zbr_at takes any slice.
+                    w.emit("_zbr_at(")
                     genExpr(ix.object)
                     if is_list_idx
-                        # BUG-141: List receiver is a std.ArrayList — index its backing slice.
                         w.emit(".items")
-                    w.emit("[@as(usize, @intCast(")
+                    w.emit(", ")
                     genExpr(ix.index)
-                    w.emit("))]")
+                    w.emit(")")
             on Expr.slice as sl2
                 genExpr(sl2.object)
                 w.emit("[")
@@ -13096,11 +13098,15 @@ struct Generator
                         w.emit(".items.len))")
                         return
                     if mname == "at"
+                        # BUG-313: checked (second .at branch).
+                        w.emit("_zbr_at(")
                         genExpr(m.object)
-                        w.emit(".items[@intCast(")
+                        w.emit(".items, ")
                         if args.len > 0
                             genExpr(args.at(0).value)
-                        w.emit(")]")
+                        else
+                            w.emit("0")
+                        w.emit(")")
                         return
                     if mname == "remove"
                         w.emit("_ = ")
@@ -13923,11 +13929,17 @@ struct Generator
                     genExpr(args.at(0).value)
                 w.emit(")")
             else
+                # BUG-313: CHECKED. The container is an ARGUMENT so a side-effecting
+                # receiver is evaluated once; `obj.items[chk(i, obj.items.len)]` would
+                # evaluate it twice.
+                w.emit("_zbr_at(")
                 genExpr(m.object)
-                w.emit(".items[@intCast(")
+                w.emit(".items, ")
                 if args.len > 0
                     genExpr(args.at(0).value)
-                w.emit(")]")
+                else
+                    w.emit("0")
+                w.emit(")")
             return
         if mname == "remove"
             # BUG-032: discriminate HashMap vs List receiver. HashMap.remove(key)
@@ -14137,11 +14149,15 @@ struct Generator
                         if sft2! is TypeRef.generic as sg2
                             if sg2.name == "List" and sg2.args.len > 0
                                 set_is_str = isStringTypeRef(sg2.args.at(0))
+            # BUG-313: checked write. Same two doors as .at().
+            w.emit("_zbr_set(")
             genExpr(m.object)
-            w.emit(".items[@intCast(")
+            w.emit(".items, ")
             if args.len > 0
                 genExpr(args.at(0).value)
-            w.emit(")] = ")
+            else
+                w.emit("0")
+            w.emit(", ")
             if args.len > 1
                 if set_is_str
                     w.emit("_intern(")
@@ -14149,6 +14165,7 @@ struct Generator
                     w.emit(")")
                 else
                     genExpr(args.at(1).value)
+            w.emit(")")
             return
         if mname == "get" and not isNamespaceReceiver(m)
             # BUG-186: skip the HashMap-style `.get` for a namespace receiver

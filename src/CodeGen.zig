@@ -10306,10 +10306,12 @@ const Generator = struct {
             return true;
         }
         if (std.mem.eql(u8, method, "at")) {
+            // BUG-313: checked (str/slice receiver).
+            try g.w.writeAll("_zbr_at(");
             try g.genExpr(obj);
-            try g.w.writeAll("[@as(usize, @intCast(");
-            if (args.len > 0) try g.genExpr(args[0].value);
-            try g.w.writeAll("))]");
+            try g.w.writeAll(", @as(i64, @intCast(");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")))");
             return true;
         }
         return false;
@@ -10426,19 +10428,26 @@ const Generator = struct {
         if (std.mem.eql(u8, method, "at")) {
             // list.at(i) → list.items[i]   (use 'at' since 'get' is a keyword)
             // Index is i64 in Zebra; Zig requires usize for slice indexing.
+            // BUG-313: CHECKED. Raw indexing was unchecked in ReleaseFast and
+            // fabricated a value for both an out-of-range and a NEGATIVE index.
+            // The container is an ARGUMENT so a side-effecting receiver is
+            // evaluated once.
+            try g.w.writeAll("_zbr_at(");
             try g.genExpr(obj);
-            try g.w.writeAll(".items[@as(usize, @intCast(");
-            if (args.len > 0) try g.genExpr(args[0].value);
-            try g.w.writeAll("))]");
+            try g.w.writeAll(".items, ");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(")");
             return true;
         }
         if (std.mem.eql(u8, method, "set")) {
             // BUG-155: list.set(i, x) → list.items[i] = x  (in-place element update;
             // the inverse of `at`).  Mirror `add`'s str-intern / ^T-box handling.
+            // BUG-313: checked write. Same two doors as .at().
+            try g.w.writeAll("_zbr_set(");
             try g.genExpr(obj);
-            try g.w.writeAll(".items[@as(usize, @intCast(");
-            if (args.len > 0) try g.genExpr(args[0].value);
-            try g.w.writeAll("))] = ");
+            try g.w.writeAll(".items, ");
+            if (args.len > 0) try g.genExpr(args[0].value) else try g.w.writeAll("0");
+            try g.w.writeAll(", ");
             if (args.len > 1) {
                 const item_is_ptr = blk: {
                     const itr = item_tr orelse break :blk false;
@@ -10454,6 +10463,7 @@ const Generator = struct {
                     try g.genExpr(args[1].value);
                 }
             }
+            try g.w.writeAll(")");
             return true;
         }
         if (std.mem.eql(u8, method, "remove")) {
@@ -14268,26 +14278,15 @@ const Generator = struct {
                     return;
                 }
                 const obj_is_list = g.objIsList(e.object);
+                // BUG-313: CHECKED. One form covers both receivers -- _zbr_at takes any
+                // slice, and the explicit i64 cast subsumes the per-branch index casting
+                // the two arms used to do separately.
+                try g.w.writeAll("_zbr_at(");
                 try g.genExpr(e.object);
-                // BUG-143: a List is a std.ArrayList — index its `.items` backing
-                // slice (str/array index directly).
                 if (obj_is_list) try g.w.writeAll(".items");
-                try g.w.writeAll("[");
-                if (obj_is_list) {
-                    try g.w.writeAll("@as(usize, @intCast(");
-                    try g.genExpr(e.index);
-                    try g.w.writeAll("))");
-                } else {
-                    // str ([]const u8) requires usize index; i64 variables need a cast.
-                    const idx_needs_cast = if (g.tc) |tc| blk: {
-                        const t = tc.expr_types.get(e.index) orelse .unknown;
-                        break :blk t == .int or t == .uint;
-                    } else false;
-                    if (idx_needs_cast) try g.w.writeAll("@intCast(");
-                    try g.genExpr(e.index);
-                    if (idx_needs_cast) try g.w.writeAll(")");
-                }
-                try g.w.writeAll("]");
+                try g.w.writeAll(", @as(i64, @intCast(");
+                try g.genExpr(e.index);
+                try g.w.writeAll(")))");
             },
             .slice => |e| {
                 try g.genExpr(e.object);

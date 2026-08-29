@@ -109,6 +109,36 @@ pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
 // `zebra --release` ships, and keeping UB out of the shipping configuration is what
 // tools/lint_oom_unreachable.py exists for. Truncation is always defined and matches Go's
 // `byte(n)` and Rust's `as u8`. 0x1CE renders as 0xCE; -50 renders as 206.
+// ── BUG-313: CHECKED INDEXING ───────────────────────────────────────────────────────────
+// `.at(i)` used to lower to raw `items[@intCast(i)]`. Zig checks that in Debug and
+// ReleaseSafe and NOT in ReleaseFast, which is what `zebra --release` passes -- so a
+// shipped build read out of bounds, INVENTED a value, and carried on. Measured both doors:
+// an index past the end returned 0, and a NEGATIVE index (a Python reflex: `xs.at(-1)`)
+// wrapped through the @intCast to a huge usize and also returned 0.
+//
+// Knuth, p.271, citing Wirth and Hoare: "I believe that range checking should be used far
+// more often than it currently is, but not everywhere" -- and that a well-designed `for`
+// lets even a simple compiler avoid most checks inside loops. This is the "far more often"
+// half; the elision half needs the range-`for` to carry a provable bound.
+//
+// THE CONTAINER IS A PARAMETER, not re-emitted at the use site, so a side-effecting
+// receiver (`foo().at(i)`) is evaluated ONCE. Emitting `xs.items[chk(i, xs.items.len)]`
+// would evaluate it twice.
+//
+// THE SIGN TEST MUST COME FIRST: `@intCast` of a negative i64 traps in debug and wraps in
+// ReleaseFast, which is the second door itself. Zig's `or` short-circuits, so the cast is
+// only reached once the sign is known good.
+pub inline fn _zbr_at(xs: anytype, i: i64) std.meta.Elem(@TypeOf(xs)) {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    return xs[@intCast(i)];
+}
+pub inline fn _zbr_set(xs: anytype, i: i64, v: std.meta.Elem(@TypeOf(xs))) void {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    xs[@intCast(i)] = v;
+}
+
 pub inline fn _zbr_byte(x: anytype) u8 {
     return @truncate(@as(u64, @bitCast(@as(i64, x))));
 }
@@ -4043,7 +4073,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:130
         if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:131
-            return self.src[@intCast(self.pos)];
+            return _zbr_at(self.src, @as(i64, @intCast(self.pos)));
         }
 // zbr:selfhost/Lexer.zbr:132
         return '\x00';
@@ -4053,7 +4083,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:135
         if (_zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:136
-            return self.src[@intCast((self.pos + 1))];
+            return _zbr_at(self.src, @as(i64, @intCast((self.pos + 1))));
         }
 // zbr:selfhost/Lexer.zbr:137
         return '\x00';
@@ -4064,7 +4094,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:142
         if (_zebra_lt((self.pos + offset), @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:143
-            return self.src[@intCast((self.pos + offset))];
+            return _zbr_at(self.src, @as(i64, @intCast((self.pos + offset))));
         }
 // zbr:selfhost/Lexer.zbr:144
         return '\x00';
@@ -4086,7 +4116,7 @@ pub const Lexer = struct {
 
     pub fn scanWhile(self: *Lexer, pred: CharPred) void {
 // zbr:selfhost/Lexer.zbr:157
-        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and pred(self.src[@intCast(self.pos)]))) {
+        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and pred(_zbr_at(self.src, @as(i64, @intCast(self.pos)))))) {
 // zbr:selfhost/Lexer.zbr:158
             self.pos = (self.pos + 1);
         }
@@ -4096,21 +4126,21 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:163
         var i: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:164
-        if ((_zebra_ge(i, @as(i64, @intCast(self.src.len))) or (self.src[@intCast(i)] == '\n'))) {
+        if ((_zebra_ge(i, @as(i64, @intCast(self.src.len))) or (_zbr_at(self.src, @as(i64, @intCast(i))) == '\n'))) {
 // zbr:selfhost/Lexer.zbr:165
             return LineKind{ .empty = {} };
         }
 // zbr:selfhost/Lexer.zbr:166
         var hasWs: bool = false;
 // zbr:selfhost/Lexer.zbr:167
-        while ((_zebra_lt(i, @as(i64, @intCast(self.src.len))) and ((self.src[@intCast(i)] == ' ') or (self.src[@intCast(i)] == '\t')))) {
+        while ((_zebra_lt(i, @as(i64, @intCast(self.src.len))) and ((_zbr_at(self.src, @as(i64, @intCast(i))) == ' ') or (_zbr_at(self.src, @as(i64, @intCast(i))) == '\t')))) {
 // zbr:selfhost/Lexer.zbr:168
             hasWs = true;
 // zbr:selfhost/Lexer.zbr:169
             i = (i + 1);
         }
 // zbr:selfhost/Lexer.zbr:170
-        if ((_zebra_ge(i, @as(i64, @intCast(self.src.len))) or (self.src[@intCast(i)] == '\n'))) {
+        if ((_zebra_ge(i, @as(i64, @intCast(self.src.len))) or (_zbr_at(self.src, @as(i64, @intCast(i))) == '\n'))) {
 // zbr:selfhost/Lexer.zbr:171
             if (hasWs) {
 // zbr:selfhost/Lexer.zbr:172
@@ -4120,25 +4150,25 @@ pub const Lexer = struct {
             return LineKind{ .empty = {} };
         }
 // zbr:selfhost/Lexer.zbr:174
-        if ((self.src[@intCast(i)] == '#')) {
+        if ((_zbr_at(self.src, @as(i64, @intCast(i))) == '#')) {
 // zbr:selfhost/Lexer.zbr:175
             return LineKind{ .comment_only = {} };
         }
 // zbr:selfhost/Lexer.zbr:177
-        if ((((self.src[@intCast(i)] == '/') and _zebra_lt((i + 1), @as(i64, @intCast(self.src.len)))) and (self.src[@intCast((i + 1))] == '#'))) {
+        if ((((_zbr_at(self.src, @as(i64, @intCast(i))) == '/') and _zebra_lt((i + 1), @as(i64, @intCast(self.src.len)))) and (_zbr_at(self.src, @as(i64, @intCast((i + 1)))) == '#'))) {
 // zbr:selfhost/Lexer.zbr:178
             var depth: i64 = 0;
 // zbr:selfhost/Lexer.zbr:179
             var j: i64 = i;
 // zbr:selfhost/Lexer.zbr:180
-            while ((_zebra_lt(j, @as(i64, @intCast(self.src.len))) and (self.src[@intCast(j)] != '\n'))) {
+            while ((_zebra_lt(j, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, @as(i64, @intCast(j))) != '\n'))) {
 // zbr:selfhost/Lexer.zbr:181
-                if ((((self.src[@intCast(j)] == '/') and _zebra_lt((j + 1), @as(i64, @intCast(self.src.len)))) and (self.src[@intCast((j + 1))] == '#'))) {
+                if ((((_zbr_at(self.src, @as(i64, @intCast(j))) == '/') and _zebra_lt((j + 1), @as(i64, @intCast(self.src.len)))) and (_zbr_at(self.src, @as(i64, @intCast((j + 1)))) == '#'))) {
 // zbr:selfhost/Lexer.zbr:182
                     depth = (depth + 1);
 // zbr:selfhost/Lexer.zbr:183
                     j = (j + 2);
-                } else if ((((self.src[@intCast(j)] == '#') and _zebra_lt((j + 1), @as(i64, @intCast(self.src.len)))) and (self.src[@intCast((j + 1))] == '/'))) {
+                } else if ((((_zbr_at(self.src, @as(i64, @intCast(j))) == '#') and _zebra_lt((j + 1), @as(i64, @intCast(self.src.len)))) and (_zbr_at(self.src, @as(i64, @intCast((j + 1)))) == '/'))) {
 // zbr:selfhost/Lexer.zbr:185
                     if (_zebra_gt(depth, 0)) {
 // zbr:selfhost/Lexer.zbr:186
@@ -4149,12 +4179,12 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:188
                     if ((depth == 0)) {
 // zbr:selfhost/Lexer.zbr:190
-                        while ((_zebra_lt(j, @as(i64, @intCast(self.src.len))) and ((self.src[@intCast(j)] == ' ') or (self.src[@intCast(j)] == '\t')))) {
+                        while ((_zebra_lt(j, @as(i64, @intCast(self.src.len))) and ((_zbr_at(self.src, @as(i64, @intCast(j))) == ' ') or (_zbr_at(self.src, @as(i64, @intCast(j))) == '\t')))) {
 // zbr:selfhost/Lexer.zbr:191
                             j = (j + 1);
                         }
 // zbr:selfhost/Lexer.zbr:192
-                        if (((_zebra_ge(j, @as(i64, @intCast(self.src.len))) or (self.src[@intCast(j)] == '\n')) or (self.src[@intCast(j)] == '#'))) {
+                        if (((_zebra_ge(j, @as(i64, @intCast(self.src.len))) or (_zbr_at(self.src, @as(i64, @intCast(j))) == '\n')) or (_zbr_at(self.src, @as(i64, @intCast(j))) == '#'))) {
 // zbr:selfhost/Lexer.zbr:193
                             return LineKind{ .block_comment_only = {} };
                         }
@@ -4183,7 +4213,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:207
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:208
-            const c = self.src[@intCast(self.pos)];
+            const c = _zbr_at(self.src, @as(i64, @intCast(self.pos)));
 // zbr:selfhost/Lexer.zbr:209
             if ((c == '\t')) {
 // zbr:selfhost/Lexer.zbr:210
@@ -4253,7 +4283,7 @@ pub const Lexer = struct {
             self.ensureBaseDepth = 0;
         }
 // zbr:selfhost/Lexer.zbr:239
-        while ((_zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0) and _zebra_le(self.indentDepth, self.lambdaStack.items[@as(usize, @intCast((@as(i64, @intCast(self.lambdaStack.items.len)) - 1)))]))) {
+        while ((_zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0) and _zebra_le(self.indentDepth, _zbr_at(self.lambdaStack.items, (@as(i64, @intCast(self.lambdaStack.items.len)) - 1))))) {
 // zbr:selfhost/Lexer.zbr:240
             _ = self.lambdaStack.orderedRemove(@as(usize, @intCast((@as(i64, @intCast(self.lambdaStack.items.len)) - 1))));
         }
@@ -4267,17 +4297,17 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:247
         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and _zebra_gt(self.blockDepth, 0))) {
 // zbr:selfhost/Lexer.zbr:248
-            if ((((self.src[@intCast(self.pos)] == '/') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (self.src[@intCast((self.pos + 1))] == '#'))) {
+            if ((((_zbr_at(self.src, @as(i64, @intCast(self.pos))) == '/') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (_zbr_at(self.src, @as(i64, @intCast((self.pos + 1)))) == '#'))) {
 // zbr:selfhost/Lexer.zbr:249
                 self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:250
                 self.blockDepth = (self.blockDepth + 1);
-            } else if ((((self.src[@intCast(self.pos)] == '#') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (self.src[@intCast((self.pos + 1))] == '/'))) {
+            } else if ((((_zbr_at(self.src, @as(i64, @intCast(self.pos))) == '#') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (_zbr_at(self.src, @as(i64, @intCast((self.pos + 1)))) == '/'))) {
 // zbr:selfhost/Lexer.zbr:252
                 self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:253
                 self.blockDepth = (self.blockDepth - 1);
-            } else if ((self.src[@intCast(self.pos)] == '\n')) {
+            } else if ((_zbr_at(self.src, @as(i64, @intCast(self.pos))) == '\n')) {
 // zbr:selfhost/Lexer.zbr:255
                 self.advanceNewline();
             } else {
@@ -4331,7 +4361,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:282
         const word = self.src[@intCast(start)..@intCast(self.pos)];
 // zbr:selfhost/Lexer.zbr:285
-        if (((@as(i64, @intCast(word.len)) == 1) and (word[@intCast(0)] == 'c'))) {
+        if (((@as(i64, @intCast(word.len)) == 1) and (_zbr_at(word, @as(i64, @intCast(0))) == 'c'))) {
 // zbr:selfhost/Lexer.zbr:286
             const q = self.peek();
 // zbr:selfhost/Lexer.zbr:287
@@ -4343,7 +4373,7 @@ pub const Lexer = struct {
             }
         }
 // zbr:selfhost/Lexer.zbr:292
-        if (((@as(i64, @intCast(word.len)) == 1) and (word[@intCast(0)] == 'r'))) {
+        if (((@as(i64, @intCast(word.len)) == 1) and (_zbr_at(word, @as(i64, @intCast(0))) == 'r'))) {
 // zbr:selfhost/Lexer.zbr:293
             const q = self.peek();
 // zbr:selfhost/Lexer.zbr:294
@@ -4362,7 +4392,7 @@ pub const Lexer = struct {
             }
         }
 // zbr:selfhost/Lexer.zbr:302
-        if ((((@as(i64, @intCast(word.len)) == 2) and (word[@intCast(0)] == 'n')) and (word[@intCast(1)] == 's'))) {
+        if ((((@as(i64, @intCast(word.len)) == 2) and (_zbr_at(word, @as(i64, @intCast(0))) == 'n')) and (_zbr_at(word, @as(i64, @intCast(1))) == 's'))) {
 // zbr:selfhost/Lexer.zbr:303
             const q = self.peek();
 // zbr:selfhost/Lexer.zbr:304
@@ -4400,21 +4430,21 @@ pub const Lexer = struct {
             }
         }
 // zbr:selfhost/Lexer.zbr:322
-        if (((((_zebra_gt(@as(i64, @intCast(word.len)), 3) and (word[@intCast(0)] == 'i')) and (word[@intCast(1)] == 'n')) and (word[@intCast(2)] == 't')) and isDigit(word[@intCast(3)]))) {
+        if (((((_zebra_gt(@as(i64, @intCast(word.len)), 3) and (_zbr_at(word, @as(i64, @intCast(0))) == 'i')) and (_zbr_at(word, @as(i64, @intCast(1))) == 'n')) and (_zbr_at(word, @as(i64, @intCast(2))) == 't')) and isDigit(_zbr_at(word, @as(i64, @intCast(3)))))) {
 // zbr:selfhost/Lexer.zbr:323
             self.emit(TokenKind{ .int_size = {} }, word, ln, cl);
 // zbr:selfhost/Lexer.zbr:324
             return;
         }
 // zbr:selfhost/Lexer.zbr:325
-        if ((((((_zebra_gt(@as(i64, @intCast(word.len)), 4) and (word[@intCast(0)] == 'u')) and (word[@intCast(1)] == 'i')) and (word[@intCast(2)] == 'n')) and (word[@intCast(3)] == 't')) and isDigit(word[@intCast(4)]))) {
+        if ((((((_zebra_gt(@as(i64, @intCast(word.len)), 4) and (_zbr_at(word, @as(i64, @intCast(0))) == 'u')) and (_zbr_at(word, @as(i64, @intCast(1))) == 'i')) and (_zbr_at(word, @as(i64, @intCast(2))) == 'n')) and (_zbr_at(word, @as(i64, @intCast(3))) == 't')) and isDigit(_zbr_at(word, @as(i64, @intCast(4)))))) {
 // zbr:selfhost/Lexer.zbr:326
             self.emit(TokenKind{ .uint_size = {} }, word, ln, cl);
 // zbr:selfhost/Lexer.zbr:327
             return;
         }
 // zbr:selfhost/Lexer.zbr:328
-        if (((((((_zebra_gt(@as(i64, @intCast(word.len)), 5) and (word[@intCast(0)] == 'f')) and (word[@intCast(1)] == 'l')) and (word[@intCast(2)] == 'o')) and (word[@intCast(3)] == 'a')) and (word[@intCast(4)] == 't')) and isDigit(word[@intCast(5)]))) {
+        if (((((((_zebra_gt(@as(i64, @intCast(word.len)), 5) and (_zbr_at(word, @as(i64, @intCast(0))) == 'f')) and (_zbr_at(word, @as(i64, @intCast(1))) == 'l')) and (_zbr_at(word, @as(i64, @intCast(2))) == 'o')) and (_zbr_at(word, @as(i64, @intCast(3))) == 'a')) and (_zbr_at(word, @as(i64, @intCast(4))) == 't')) and isDigit(_zbr_at(word, @as(i64, @intCast(5)))))) {
 // zbr:selfhost/Lexer.zbr:329
             self.emit(TokenKind{ .float_size = {} }, word, ln, cl);
 // zbr:selfhost/Lexer.zbr:330
@@ -4427,7 +4457,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:338
         if (_zebra_gt(@as(i64, @intCast(self.out.items.len)), 0)) {
 // zbr:selfhost/Lexer.zbr:339
-            switch (self.out.items[@as(usize, @intCast((@as(i64, @intCast(self.out.items.len)) - 1)))].kind) {
+            switch (_zbr_at(self.out.items, (@as(i64, @intCast(self.out.items.len)) - 1)).kind) {
                 .dot => {
 // zbr:selfhost/Lexer.zbr:341
                     prevDot = true;
@@ -4488,7 +4518,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:372
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:373
-            const c = self.src[@intCast(self.pos)];
+            const c = _zbr_at(self.src, @as(i64, @intCast(self.pos)));
 // zbr:selfhost/Lexer.zbr:374
             if ((c == '\\')) {
 // zbr:selfhost/Lexer.zbr:375
@@ -4552,7 +4582,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:409
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:410
-            const c = self.src[@intCast(self.pos)];
+            const c = _zbr_at(self.src, @as(i64, @intCast(self.pos)));
 // zbr:selfhost/Lexer.zbr:411
             if ((c == '\\')) {
 // zbr:selfhost/Lexer.zbr:412
@@ -4599,7 +4629,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:436
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:437
-            const c = self.src[@intCast(self.pos)];
+            const c = _zbr_at(self.src, @as(i64, @intCast(self.pos)));
 // zbr:selfhost/Lexer.zbr:439
             if (((c == '$') and (self.peek1() == '{'))) {
 // zbr:selfhost/Lexer.zbr:440
@@ -4703,7 +4733,7 @@ pub const Lexer = struct {
                 return error.ZebraError;
             }
 // zbr:selfhost/Lexer.zbr:506
-            const c = self.src[@intCast(self.pos)];
+            const c = _zbr_at(self.src, @as(i64, @intCast(self.pos)));
 // zbr:selfhost/Lexer.zbr:507
             if (((c == ' ') or (c == '\t'))) {
 // zbr:selfhost/Lexer.zbr:508
@@ -4755,12 +4785,12 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:533
                 self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:534
-                while (((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@intCast(self.pos)] != '}')) and (self.src[@intCast(self.pos)] != '\n'))) {
+                while (((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, @as(i64, @intCast(self.pos))) != '}')) and (_zbr_at(self.src, @as(i64, @intCast(self.pos))) != '\n'))) {
 // zbr:selfhost/Lexer.zbr:535
                     self.pos = (self.pos + 1);
                 }
 // zbr:selfhost/Lexer.zbr:536
-                if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@intCast(self.pos)] == '}'))) {
+                if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, @as(i64, @intCast(self.pos))) == '}'))) {
 // zbr:selfhost/Lexer.zbr:537
                     self.emit(TokenKind{ .string_part_format = {} }, self.src[@intCast(specStart)..@intCast(self.pos)], specLn, specCl);
                     continue;
@@ -4779,16 +4809,16 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:553
         self.pos = (self.pos + 3);
 // zbr:selfhost/Lexer.zbr:555
-        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and ((self.src[@intCast(self.pos)] == ' ') or (self.src[@intCast(self.pos)] == '\t')))) {
+        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and ((_zbr_at(self.src, @as(i64, @intCast(self.pos))) == ' ') or (_zbr_at(self.src, @as(i64, @intCast(self.pos))) == '\t')))) {
 // zbr:selfhost/Lexer.zbr:556
             self.pos = (self.pos + 1);
         }
 // zbr:selfhost/Lexer.zbr:558
-        if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@intCast(self.pos)] != '\n'))) {
+        if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, @as(i64, @intCast(self.pos))) != '\n'))) {
 // zbr:selfhost/Lexer.zbr:559
             while (_zebra_lt((self.pos + 2), @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:560
-                if ((((self.src[@intCast(self.pos)] == '"') and (self.src[@intCast((self.pos + 1))] == '"')) and (self.src[@intCast((self.pos + 2))] == '"'))) {
+                if ((((_zbr_at(self.src, @as(i64, @intCast(self.pos))) == '"') and (_zbr_at(self.src, @as(i64, @intCast((self.pos + 1)))) == '"')) and (_zbr_at(self.src, @as(i64, @intCast((self.pos + 2)))) == '"'))) {
 // zbr:selfhost/Lexer.zbr:561
                     self.pos = (self.pos + 3);
 // zbr:selfhost/Lexer.zbr:562
@@ -4804,7 +4834,7 @@ pub const Lexer = struct {
             return error.ZebraError;
         }
 // zbr:selfhost/Lexer.zbr:567
-        if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@intCast(self.pos)] == '\n'))) {
+        if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, @as(i64, @intCast(self.pos))) == '\n'))) {
 // zbr:selfhost/Lexer.zbr:568
             self.advanceNewline();
         }
@@ -4813,12 +4843,12 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:570
             var p: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:571
-            while ((_zebra_lt(p, @as(i64, @intCast(self.src.len))) and ((self.src[@intCast(p)] == ' ') or (self.src[@intCast(p)] == '\t')))) {
+            while ((_zebra_lt(p, @as(i64, @intCast(self.src.len))) and ((_zbr_at(self.src, @as(i64, @intCast(p))) == ' ') or (_zbr_at(self.src, @as(i64, @intCast(p))) == '\t')))) {
 // zbr:selfhost/Lexer.zbr:572
                 p = (p + 1);
             }
 // zbr:selfhost/Lexer.zbr:573
-            if ((((_zebra_lt((p + 2), @as(i64, @intCast(self.src.len))) and (self.src[@intCast(p)] == '"')) and (self.src[@intCast((p + 1))] == '"')) and (self.src[@intCast((p + 2))] == '"'))) {
+            if ((((_zebra_lt((p + 2), @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, @as(i64, @intCast(p))) == '"')) and (_zbr_at(self.src, @as(i64, @intCast((p + 1)))) == '"')) and (_zbr_at(self.src, @as(i64, @intCast((p + 2)))) == '"'))) {
 // zbr:selfhost/Lexer.zbr:574
                 self.pos = (p + 3);
 // zbr:selfhost/Lexer.zbr:575
@@ -4827,7 +4857,7 @@ pub const Lexer = struct {
                 return;
             }
 // zbr:selfhost/Lexer.zbr:577
-            while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@intCast(self.pos)] != '\n'))) {
+            while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, @as(i64, @intCast(self.pos))) != '\n'))) {
 // zbr:selfhost/Lexer.zbr:578
                 self.pos = (self.pos + 1);
             }
@@ -4846,7 +4876,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:587
         const start = self.pos;
 // zbr:selfhost/Lexer.zbr:589
-        if ((((self.src[@intCast(self.pos)] == '0') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (self.src[@intCast((self.pos + 1))] == 'x'))) {
+        if ((((_zbr_at(self.src, @as(i64, @intCast(self.pos))) == '0') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (_zbr_at(self.src, @as(i64, @intCast((self.pos + 1)))) == 'x'))) {
 // zbr:selfhost/Lexer.zbr:590
             self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:591
@@ -4971,7 +5001,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:657
         if (_zebra_lt((self.pos + 2), @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:658
-            const c2 = self.src[@intCast((self.pos + 2))];
+            const c2 = _zbr_at(self.src, @as(i64, @intCast((self.pos + 2))));
 // zbr:selfhost/Lexer.zbr:659
             if ((((c == '/') and (c1 == '/')) and (c2 == '='))) {
 // zbr:selfhost/Lexer.zbr:660
@@ -5381,7 +5411,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:843
             if ((_zebra_gt(self.parenDepth, 0) and _zebra_gt(@as(i64, @intCast(self.out.items.len)), 0))) {
 // zbr:selfhost/Lexer.zbr:844
-                const lastKind = self.out.items[@as(usize, @intCast((@as(i64, @intCast(self.out.items.len)) - 1)))].kind;
+                const lastKind = _zbr_at(self.out.items, (@as(i64, @intCast(self.out.items.len)) - 1)).kind;
 // zbr:selfhost/Lexer.zbr:845
                 switch (lastKind) {
                     .kw_def => {
@@ -5453,7 +5483,7 @@ pub const Lexer = struct {
 
     pub fn scanToken(self: *Lexer) anyerror!void {
 // zbr:selfhost/Lexer.zbr:878
-        const c = self.src[@intCast(self.pos)];
+        const c = _zbr_at(self.src, @as(i64, @intCast(self.pos)));
 // zbr:selfhost/Lexer.zbr:879
         const ln = self.line;
 // zbr:selfhost/Lexer.zbr:880
@@ -5533,7 +5563,7 @@ pub const Lexer = struct {
                     },
                     .whitespace_only => {
 // zbr:selfhost/Lexer.zbr:920
-                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@intCast(self.pos)] != '\n'))) {
+                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, @as(i64, @intCast(self.pos))) != '\n'))) {
 // zbr:selfhost/Lexer.zbr:921
                             self.pos = (self.pos + 1);
                         }
@@ -5548,7 +5578,7 @@ pub const Lexer = struct {
                     },
                     .comment_only => {
 // zbr:selfhost/Lexer.zbr:927
-                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@intCast(self.pos)] != '\n'))) {
+                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, @as(i64, @intCast(self.pos))) != '\n'))) {
 // zbr:selfhost/Lexer.zbr:928
                             self.pos = (self.pos + 1);
                         }
@@ -5563,14 +5593,14 @@ pub const Lexer = struct {
                     },
                     .block_comment_only => {
 // zbr:selfhost/Lexer.zbr:937
-                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and ((self.src[@intCast(self.pos)] == ' ') or (self.src[@intCast(self.pos)] == '\t')))) {
+                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and ((_zbr_at(self.src, @as(i64, @intCast(self.pos))) == ' ') or (_zbr_at(self.src, @as(i64, @intCast(self.pos))) == '\t')))) {
 // zbr:selfhost/Lexer.zbr:938
                             self.pos = (self.pos + 1);
                         }
 // zbr:selfhost/Lexer.zbr:939
                         (try self.scanBlockComment());
 // zbr:selfhost/Lexer.zbr:940
-                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@intCast(self.pos)] != '\n'))) {
+                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, @as(i64, @intCast(self.pos))) != '\n'))) {
 // zbr:selfhost/Lexer.zbr:941
                             self.pos = (self.pos + 1);
                         }
@@ -5593,7 +5623,7 @@ pub const Lexer = struct {
                 }
             }
 // zbr:selfhost/Lexer.zbr:950
-            const c = self.src[@intCast(self.pos)];
+            const c = _zbr_at(self.src, @as(i64, @intCast(self.pos)));
 // zbr:selfhost/Lexer.zbr:952
             if (((c == ' ') or (c == '\t'))) {
 // zbr:selfhost/Lexer.zbr:953
@@ -5627,7 +5657,7 @@ pub const Lexer = struct {
 // zbr:selfhost/Lexer.zbr:968
             if ((c == '#')) {
 // zbr:selfhost/Lexer.zbr:969
-                while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (self.src[@intCast(self.pos)] != '\n'))) {
+                while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, @as(i64, @intCast(self.pos))) != '\n'))) {
 // zbr:selfhost/Lexer.zbr:970
                     self.pos = (self.pos + 1);
                 }

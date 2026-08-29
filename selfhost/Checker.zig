@@ -115,6 +115,36 @@ pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
 // `zebra --release` ships, and keeping UB out of the shipping configuration is what
 // tools/lint_oom_unreachable.py exists for. Truncation is always defined and matches Go's
 // `byte(n)` and Rust's `as u8`. 0x1CE renders as 0xCE; -50 renders as 206.
+// ── BUG-313: CHECKED INDEXING ───────────────────────────────────────────────────────────
+// `.at(i)` used to lower to raw `items[@intCast(i)]`. Zig checks that in Debug and
+// ReleaseSafe and NOT in ReleaseFast, which is what `zebra --release` passes -- so a
+// shipped build read out of bounds, INVENTED a value, and carried on. Measured both doors:
+// an index past the end returned 0, and a NEGATIVE index (a Python reflex: `xs.at(-1)`)
+// wrapped through the @intCast to a huge usize and also returned 0.
+//
+// Knuth, p.271, citing Wirth and Hoare: "I believe that range checking should be used far
+// more often than it currently is, but not everywhere" -- and that a well-designed `for`
+// lets even a simple compiler avoid most checks inside loops. This is the "far more often"
+// half; the elision half needs the range-`for` to carry a provable bound.
+//
+// THE CONTAINER IS A PARAMETER, not re-emitted at the use site, so a side-effecting
+// receiver (`foo().at(i)`) is evaluated ONCE. Emitting `xs.items[chk(i, xs.items.len)]`
+// would evaluate it twice.
+//
+// THE SIGN TEST MUST COME FIRST: `@intCast` of a negative i64 traps in debug and wraps in
+// ReleaseFast, which is the second door itself. Zig's `or` short-circuits, so the cast is
+// only reached once the sign is known good.
+pub inline fn _zbr_at(xs: anytype, i: i64) std.meta.Elem(@TypeOf(xs)) {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    return xs[@intCast(i)];
+}
+pub inline fn _zbr_set(xs: anytype, i: i64, v: std.meta.Elem(@TypeOf(xs))) void {
+    if (i < 0 or @as(usize, @intCast(i)) >= xs.len)
+        std.debug.panic("index out of range: {d} (length {d})", .{ i, xs.len });
+    xs[@intCast(i)] = v;
+}
+
 pub inline fn _zbr_byte(x: anytype) u8 {
     return @truncate(@as(u64, @bitCast(@as(i64, x))));
 }
@@ -4000,7 +4030,7 @@ pub const UnionInfo = struct {
 // zbr:selfhost/Checker.zbr:40
         while (_zebra_lt(i, @as(i64, @intCast(self.variants.items.len)))) {
 // zbr:selfhost/Checker.zbr:41
-            if (std.mem.eql(u8, self.variants.items[@as(usize, @intCast(i))], v)) {
+            if (std.mem.eql(u8, _zbr_at(self.variants.items, i), v)) {
 // zbr:selfhost/Checker.zbr:42
                 return true;
             }
@@ -4017,9 +4047,9 @@ pub const UnionInfo = struct {
 // zbr:selfhost/Checker.zbr:48
         while (_zebra_lt(i, @as(i64, @intCast(self.variants.items.len)))) {
 // zbr:selfhost/Checker.zbr:49
-            if (std.mem.eql(u8, self.variants.items[@as(usize, @intCast(i))], v)) {
+            if (std.mem.eql(u8, _zbr_at(self.variants.items, i), v)) {
 // zbr:selfhost/Checker.zbr:50
-                return self.variant_lines.items[@as(usize, @intCast(i))];
+                return _zbr_at(self.variant_lines.items, i);
             }
 // zbr:selfhost/Checker.zbr:51
             i = (i + 1);
@@ -4181,7 +4211,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:141
             if (_zebra_ge(@as(i64, @intCast(parts.items.len)), 2)) {
 // zbr:selfhost/Checker.zbr:142
-                return parts.items[@as(usize, @intCast((@as(i64, @intCast(parts.items.len)) - 1)))];
+                return _zbr_at(parts.items, (@as(i64, @intCast(parts.items.len)) - 1));
             }
         }
 // zbr:selfhost/Checker.zbr:143
@@ -4198,7 +4228,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:151
         while (_zebra_lt(i, @as(i64, @intCast(module.decls.items.len)))) {
 // zbr:selfhost/Checker.zbr:152
-            self.collectDecl(module.decls.items[@as(usize, @intCast(i))], file);
+            self.collectDecl(_zbr_at(module.decls.items, i), file);
 // zbr:selfhost/Checker.zbr:153
             i = (i + 1);
         }
@@ -4216,7 +4246,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:160
                 while (_zebra_lt(vi, @as(i64, @intCast(u.variants.items.len)))) {
 // zbr:selfhost/Checker.zbr:161
-                    const vt: UnionVariant = u.variants.items[@as(usize, @intCast(vi))];
+                    const vt: UnionVariant = _zbr_at(u.variants.items, vi);
 // zbr:selfhost/Checker.zbr:162
                     ui.addVariant(vt.name, vt.span.line);
 // zbr:selfhost/Checker.zbr:163
@@ -4245,7 +4275,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:172
                 while (_zebra_lt(ei, @as(i64, @intCast(u.exposed.items.len)))) {
 // zbr:selfhost/Checker.zbr:173
-                    const ename: []const u8 = u.exposed.items[@as(usize, @intCast(ei))];
+                    const ename: []const u8 = _zbr_at(u.exposed.items, ei);
 // zbr:selfhost/Checker.zbr:174
                     self.exposed_names.put(_intern(ename), true) catch unreachable;
 // zbr:selfhost/Checker.zbr:175
@@ -4259,7 +4289,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:178
                 while (_zebra_lt(ni, @as(i64, @intCast(ns.decls.items.len)))) {
 // zbr:selfhost/Checker.zbr:179
-                    self.collectDecl(ns.decls.items[@as(usize, @intCast(ni))], file);
+                    self.collectDecl(_zbr_at(ns.decls.items, ni), file);
 // zbr:selfhost/Checker.zbr:180
                     ni = (ni + 1);
                 }
@@ -4280,7 +4310,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:190
         while (_zebra_lt(i, @as(i64, @intCast(module.decls.items.len)))) {
 // zbr:selfhost/Checker.zbr:191
-            self.walkTopDecl(module.decls.items[@as(usize, @intCast(i))], file);
+            self.walkTopDecl(_zbr_at(module.decls.items, i), file);
 // zbr:selfhost/Checker.zbr:192
             i = (i + 1);
         }
@@ -4336,7 +4366,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:215
                 while (_zebra_lt(ni, @as(i64, @intCast(ns.decls.items.len)))) {
 // zbr:selfhost/Checker.zbr:216
-                    self.walkTopDecl(ns.decls.items[@as(usize, @intCast(ni))], file);
+                    self.walkTopDecl(_zbr_at(ns.decls.items, ni), file);
 // zbr:selfhost/Checker.zbr:217
                     ni = (ni + 1);
                 }
@@ -4357,7 +4387,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:225
         while (_zebra_lt(i, @as(i64, @intCast(members.items.len)))) {
 // zbr:selfhost/Checker.zbr:226
-            switch (members.items[@as(usize, @intCast(i))]) {
+            switch (_zbr_at(members.items, i)) {
                 .method => |m_ptr| {
                     const m = m_ptr.*;
 // zbr:selfhost/Checker.zbr:228
@@ -4399,7 +4429,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:243
         while (_zebra_lt(i, @as(i64, @intCast(stmts.items.len)))) {
 // zbr:selfhost/Checker.zbr:244
-            self.walkStmt(stmts.items[@as(usize, @intCast(i))], file);
+            self.walkStmt(_zbr_at(stmts.items, i), file);
 // zbr:selfhost/Checker.zbr:245
             i = (i + 1);
         }
@@ -4419,7 +4449,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:253
                 while (_zebra_lt(ei, @as(i64, @intCast(si.else_ifs.items.len)))) {
 // zbr:selfhost/Checker.zbr:254
-                    const ef: ElseIf = si.else_ifs.items[@as(usize, @intCast(ei))];
+                    const ef: ElseIf = _zbr_at(si.else_ifs.items, ei);
 // zbr:selfhost/Checker.zbr:255
                     self.walkExpr(ef.cond, file, false);
 // zbr:selfhost/Checker.zbr:256
@@ -4485,7 +4515,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:281
                 while (_zebra_lt(ci, @as(i64, @intCast(sb.cases.items.len)))) {
 // zbr:selfhost/Checker.zbr:282
-                    const bc: BranchOn = sb.cases.items[@as(usize, @intCast(ci))];
+                    const bc: BranchOn = _zbr_at(sb.cases.items, ci);
 // zbr:selfhost/Checker.zbr:283
                     self.walkBranchValues(bc.values, file);
 // zbr:selfhost/Checker.zbr:284
@@ -4561,7 +4591,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:312
                 while (_zebra_lt(cli, @as(i64, @intCast(stc.clauses.items.len)))) {
 // zbr:selfhost/Checker.zbr:313
-                    const cl: CatchClause = stc.clauses.items[@as(usize, @intCast(cli))];
+                    const cl: CatchClause = _zbr_at(stc.clauses.items, cli);
 // zbr:selfhost/Checker.zbr:314
                     self.walkStmts(cl.stmts, file);
 // zbr:selfhost/Checker.zbr:315
@@ -4601,7 +4631,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:329
                 while (_zebra_lt(pi, @as(i64, @intCast(sp.args.items.len)))) {
 // zbr:selfhost/Checker.zbr:330
-                    self.walkExpr(sp.args.items[@as(usize, @intCast(pi))], file, false);
+                    self.walkExpr(_zbr_at(sp.args.items, pi), file, false);
 // zbr:selfhost/Checker.zbr:331
                     pi = (pi + 1);
                 }
@@ -4647,7 +4677,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:348
                 while (_zebra_lt(cti, @as(i64, @intCast(sct.exprs.items.len)))) {
 // zbr:selfhost/Checker.zbr:349
-                    self.walkExpr(sct.exprs.items[@as(usize, @intCast(cti))], file, false);
+                    self.walkExpr(_zbr_at(sct.exprs.items, cti), file, false);
 // zbr:selfhost/Checker.zbr:350
                     cti = (cti + 1);
                 }
@@ -4664,7 +4694,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:356
         while (_zebra_lt(vi, @as(i64, @intCast(values.items.len)))) {
 // zbr:selfhost/Checker.zbr:357
-            self.walkExpr(values.items[@as(usize, @intCast(vi))], file, true);
+            self.walkExpr(_zbr_at(values.items, vi), file, true);
 // zbr:selfhost/Checker.zbr:358
             vi = (vi + 1);
         }
@@ -4762,7 +4792,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:407
                 while (_zebra_lt(ai, @as(i64, @intCast(ec.args.items.len)))) {
 // zbr:selfhost/Checker.zbr:410
-                    const aarg: Arg = ec.args.items[@as(usize, @intCast(ai))];
+                    const aarg: Arg = _zbr_at(ec.args.items, ai);
 // zbr:selfhost/Checker.zbr:411
                     switch (aarg.value) {
                         .member => |avm_ptr| {
@@ -4934,7 +4964,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:479
                 while (_zebra_lt(ci, @as(i64, @intCast(el.captures.items.len)))) {
 // zbr:selfhost/Checker.zbr:480
-                    self.walkCapture(el.captures.items[@as(usize, @intCast(ci))], file);
+                    self.walkCapture(_zbr_at(el.captures.items, ci), file);
 // zbr:selfhost/Checker.zbr:481
                     ci = (ci + 1);
                 }
@@ -4957,7 +4987,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:489
                 while (_zebra_lt(eli, @as(i64, @intCast(ell.elems.items.len)))) {
 // zbr:selfhost/Checker.zbr:490
-                    self.walkExpr(ell.elems.items[@as(usize, @intCast(eli))], file, false);
+                    self.walkExpr(_zbr_at(ell.elems.items, eli), file, false);
 // zbr:selfhost/Checker.zbr:491
                     eli = (eli + 1);
                 }
@@ -4969,7 +4999,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:494
                 while (_zebra_lt(sli, @as(i64, @intCast(esl.elems.items.len)))) {
 // zbr:selfhost/Checker.zbr:495
-                    self.walkExpr(esl.elems.items[@as(usize, @intCast(sli))], file, false);
+                    self.walkExpr(_zbr_at(esl.elems.items, sli), file, false);
 // zbr:selfhost/Checker.zbr:496
                     sli = (sli + 1);
                 }
@@ -4981,7 +5011,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:499
                 while (_zebra_lt(dli, @as(i64, @intCast(edl.entries.items.len)))) {
 // zbr:selfhost/Checker.zbr:500
-                    self.walkDictEntry(edl.entries.items[@as(usize, @intCast(dli))], file);
+                    self.walkDictEntry(_zbr_at(edl.entries.items, dli), file);
 // zbr:selfhost/Checker.zbr:501
                     dli = (dli + 1);
                 }
@@ -4993,7 +5023,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:504
                 while (_zebra_lt(ali, @as(i64, @intCast(eal.elems.items.len)))) {
 // zbr:selfhost/Checker.zbr:505
-                    self.walkExpr(eal.elems.items[@as(usize, @intCast(ali))], file, false);
+                    self.walkExpr(_zbr_at(eal.elems.items, ali), file, false);
 // zbr:selfhost/Checker.zbr:506
                     ali = (ali + 1);
                 }
@@ -5005,7 +5035,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:509
                 while (_zebra_lt(spi, @as(i64, @intCast(esi.parts.items.len)))) {
 // zbr:selfhost/Checker.zbr:510
-                    const part: StringPart = esi.parts.items[@as(usize, @intCast(spi))];
+                    const part: StringPart = _zbr_at(esi.parts.items, spi);
 // zbr:selfhost/Checker.zbr:511
                     if (part == .expr_) {
                         const pe_ptr = part.expr_;
@@ -5024,7 +5054,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:516
                 while (_zebra_lt(ti, @as(i64, @intCast(etup.elems.items.len)))) {
 // zbr:selfhost/Checker.zbr:517
-                    self.walkExpr(etup.elems.items[@as(usize, @intCast(ti))], file, false);
+                    self.walkExpr(_zbr_at(etup.elems.items, ti), file, false);
 // zbr:selfhost/Checker.zbr:518
                     ti = (ti + 1);
                 }
@@ -5041,7 +5071,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:523
                 while (_zebra_lt(cci, @as(i64, @intCast(ecc.operands.items.len)))) {
 // zbr:selfhost/Checker.zbr:524
-                    self.walkExpr(ecc.operands.items[@as(usize, @intCast(cci))], file, false);
+                    self.walkExpr(_zbr_at(ecc.operands.items, cci), file, false);
 // zbr:selfhost/Checker.zbr:525
                     cci = (cci + 1);
                 }
@@ -5055,7 +5085,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:529
                 while (_zebra_lt(exi, @as(i64, @intCast(eex.fields.items.len)))) {
 // zbr:selfhost/Checker.zbr:532
-                    const exf: ExceptField = eex.fields.items[@as(usize, @intCast(exi))];
+                    const exf: ExceptField = _zbr_at(eex.fields.items, exi);
 // zbr:selfhost/Checker.zbr:533
                     switch (exf.value) {
                         .member => |efvm_ptr| {
@@ -5124,7 +5154,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:562
         while (_zebra_lt(ri, @as(i64, @intCast(self.root_key_list.items.len)))) {
 // zbr:selfhost/Checker.zbr:563
-            pending.append(_allocator, _intern(self.root_key_list.items[@as(usize, @intCast(ri))])) catch unreachable;
+            pending.append(_allocator, _intern(_zbr_at(self.root_key_list.items, ri))) catch unreachable;
 // zbr:selfhost/Checker.zbr:564
             ri = (ri + 1);
         }
@@ -5133,7 +5163,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:567
         while (_zebra_lt(mi, @as(i64, @intCast(self.module_fn_key_list.items.len)))) {
 // zbr:selfhost/Checker.zbr:568
-            const mfk: []const u8 = self.module_fn_key_list.items[@as(usize, @intCast(mi))];
+            const mfk: []const u8 = _zbr_at(self.module_fn_key_list.items, mi);
 // zbr:selfhost/Checker.zbr:569
             const fn_name: []const u8 = self.extractFnName(mfk);
 // zbr:selfhost/Checker.zbr:570
@@ -5149,7 +5179,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:575
         while (_zebra_lt(qi, @as(i64, @intCast(pending.items.len)))) {
 // zbr:selfhost/Checker.zbr:576
-            const key: []const u8 = pending.items[@as(usize, @intCast(qi))];
+            const key: []const u8 = _zbr_at(pending.items, qi);
 // zbr:selfhost/Checker.zbr:577
             if ((!self.reachable_set.contains(key))) {
 // zbr:selfhost/Checker.zbr:578
@@ -5163,7 +5193,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:582
                     while (_zebra_lt(ei, @as(i64, @intCast(edges.items.len)))) {
 // zbr:selfhost/Checker.zbr:583
-                        const target: []const u8 = edges.items[@as(usize, @intCast(ei))];
+                        const target: []const u8 = _zbr_at(edges.items, ei);
 // zbr:selfhost/Checker.zbr:584
                         if ((!self.reachable_set.contains(target))) {
 // zbr:selfhost/Checker.zbr:585
@@ -5185,7 +5215,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:593
         while (_zebra_lt(i, @as(i64, @intCast(self.match_key_list.items.len)))) {
 // zbr:selfhost/Checker.zbr:594
-            if ((!self.constructed_set.contains(self.match_key_list.items[@as(usize, @intCast(i))]))) {
+            if ((!self.constructed_set.contains(_zbr_at(self.match_key_list.items, i)))) {
 // zbr:selfhost/Checker.zbr:595
                 return true;
             }
@@ -5197,7 +5227,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:598
         while (_zebra_lt(i, @as(i64, @intCast(self.constructed_key_list.items.len)))) {
 // zbr:selfhost/Checker.zbr:599
-            if ((!self.match_sites.contains(self.constructed_key_list.items[@as(usize, @intCast(i))]))) {
+            if ((!self.match_sites.contains(_zbr_at(self.constructed_key_list.items, i)))) {
 // zbr:selfhost/Checker.zbr:600
                 return true;
             }
@@ -5209,7 +5239,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:603
         while (_zebra_lt(i, @as(i64, @intCast(self.module_fn_key_list.items.len)))) {
 // zbr:selfhost/Checker.zbr:604
-            if ((!self.reachable_set.contains(self.module_fn_key_list.items[@as(usize, @intCast(i))]))) {
+            if ((!self.reachable_set.contains(_zbr_at(self.module_fn_key_list.items, i)))) {
 // zbr:selfhost/Checker.zbr:605
                 return true;
             }
@@ -5244,7 +5274,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:621
         while (_zebra_lt(i, @as(i64, @intCast(self.match_key_list.items.len)))) {
 // zbr:selfhost/Checker.zbr:622
-            const key: []const u8 = self.match_key_list.items[@as(usize, @intCast(i))];
+            const key: []const u8 = _zbr_at(self.match_key_list.items, i);
 // zbr:selfhost/Checker.zbr:623
             if ((!self.constructed_set.contains(key))) {
 // zbr:selfhost/Checker.zbr:624
@@ -5253,9 +5283,9 @@ pub const DeadCodeChecker = struct {
                 var kparts: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty;
                 { var _split_iter_2 = std.mem.splitSequence(u8, key, ":"); while (_split_iter_2.next()) |_se_2| { kparts.append(_allocator, _se_2) catch @panic("OOM"); } }
 // zbr:selfhost/Checker.zbr:626
-                const uname: []const u8 = kparts.items[@as(usize, @intCast(0))];
+                const uname: []const u8 = _zbr_at(kparts.items, 0);
 // zbr:selfhost/Checker.zbr:627
-                const vname: []const u8 = kparts.items[@as(usize, @intCast(1))];
+                const vname: []const u8 = _zbr_at(kparts.items, 1);
 // zbr:selfhost/Checker.zbr:628
                 dead_sb.appendSlice(_allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("  ", BLD, _allocator), "[", _allocator), uname, _allocator), "]", _allocator), RST, _allocator), "  ", _allocator), YLW, _allocator), vname, _allocator), RST, _allocator), "\n", _allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:629
@@ -5265,7 +5295,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:631
                 while (_zebra_lt(si, @as(i64, @intCast(sites.items.len)))) {
 // zbr:selfhost/Checker.zbr:632
-                    dead_sb.appendSlice(_allocator, _str_concat(_str_concat(_str_concat(_str_concat("    ", CYN, _allocator), sites.items[@as(usize, @intCast(si))], _allocator), RST, _allocator), "\n", _allocator)) catch @panic("OOM");
+                    dead_sb.appendSlice(_allocator, _str_concat(_str_concat(_str_concat(_str_concat("    ", CYN, _allocator), _zbr_at(sites.items, si), _allocator), RST, _allocator), "\n", _allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:633
                     si = (si + 1);
                 }
@@ -5285,7 +5315,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:641
         while (_zebra_lt(i, @as(i64, @intCast(self.constructed_key_list.items.len)))) {
 // zbr:selfhost/Checker.zbr:642
-            const key: []const u8 = self.constructed_key_list.items[@as(usize, @intCast(i))];
+            const key: []const u8 = _zbr_at(self.constructed_key_list.items, i);
 // zbr:selfhost/Checker.zbr:643
             if ((!self.match_sites.contains(key))) {
 // zbr:selfhost/Checker.zbr:644
@@ -5294,9 +5324,9 @@ pub const DeadCodeChecker = struct {
                 var kparts: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty;
                 { var _split_iter_3 = std.mem.splitSequence(u8, key, ":"); while (_split_iter_3.next()) |_se_3| { kparts.append(_allocator, _se_3) catch @panic("OOM"); } }
 // zbr:selfhost/Checker.zbr:646
-                const uname: []const u8 = kparts.items[@as(usize, @intCast(0))];
+                const uname: []const u8 = _zbr_at(kparts.items, 0);
 // zbr:selfhost/Checker.zbr:647
-                const vname: []const u8 = kparts.items[@as(usize, @intCast(1))];
+                const vname: []const u8 = _zbr_at(kparts.items, 1);
 // zbr:selfhost/Checker.zbr:648
                 phantom_sb.appendSlice(_allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("  ", BLD, _allocator), "[", _allocator), uname, _allocator), "]", _allocator), RST, _allocator), "  ", _allocator), YLW, _allocator), vname, _allocator), RST, _allocator), "\n\n", _allocator)) catch @panic("OOM");
             }
@@ -5313,7 +5343,7 @@ pub const DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:655
         while (_zebra_lt(i, @as(i64, @intCast(self.module_fn_key_list.items.len)))) {
 // zbr:selfhost/Checker.zbr:656
-            const key: []const u8 = self.module_fn_key_list.items[@as(usize, @intCast(i))];
+            const key: []const u8 = _zbr_at(self.module_fn_key_list.items, i);
 // zbr:selfhost/Checker.zbr:657
             if ((!self.reachable_set.contains(key))) {
 // zbr:selfhost/Checker.zbr:658
@@ -5415,13 +5445,13 @@ pub fn checkerDirOf(path: []const u8) []const u8 {
         return "";
     }
 // zbr:selfhost/Checker.zbr:709
-    var out: []const u8 = parts.items[@as(usize, @intCast(0))];
+    var out: []const u8 = _zbr_at(parts.items, 0);
 // zbr:selfhost/Checker.zbr:710
     var i: i64 = 1;
 // zbr:selfhost/Checker.zbr:711
     while (_zebra_lt(i, (@as(i64, @intCast(parts.items.len)) - 1))) {
 // zbr:selfhost/Checker.zbr:712
-        out = _str_concat(_str_concat(out, "/", _allocator), parts.items[@as(usize, @intCast(i))], _allocator);
+        out = _str_concat(_str_concat(out, "/", _allocator), _zbr_at(parts.items, i), _allocator);
 // zbr:selfhost/Checker.zbr:713
         i = (i + 1);
     }
@@ -5435,7 +5465,7 @@ pub fn checkerLoadDeps(path: []const u8, visited: *std.ArrayList([]const u8), mo
 // zbr:selfhost/Checker.zbr:718
     while (_zebra_lt(vi, @as(i64, @intCast(visited.items.len)))) {
 // zbr:selfhost/Checker.zbr:719
-        if (std.mem.eql(u8, visited.items[@as(usize, @intCast(vi))], path)) {
+        if (std.mem.eql(u8, _zbr_at(visited.items, vi), path)) {
 // zbr:selfhost/Checker.zbr:720
             return;
         }
@@ -5472,8 +5502,8 @@ pub fn checkerLoadDeps(path: []const u8, visited: *std.ArrayList([]const u8), mo
 // zbr:selfhost/Checker.zbr:736
         while (_zebra_lt(di, @as(i64, @intCast(pm.decls.items.len)))) {
 // zbr:selfhost/Checker.zbr:737
-            if (pm.decls.items[@as(usize, @intCast(di))] == .use_) {
-                const u_ptr = pm.decls.items[@as(usize, @intCast(di))].use_;
+            if (_zbr_at(pm.decls.items, di) == .use_) {
+                const u_ptr = _zbr_at(pm.decls.items, di).use_;
                 const u = u_ptr.*;
 // zbr:selfhost/Checker.zbr:738
                 const dep_name: []const u8 = u.path;
@@ -5520,7 +5550,7 @@ pub fn runCheck(root_path: []const u8) anyerror!bool {
 // zbr:selfhost/Checker.zbr:762
     while (_zebra_lt(mi, @as(i64, @intCast(modules.items.len)))) {
 // zbr:selfhost/Checker.zbr:763
-        checker.collectDecls(modules.items[@as(usize, @intCast(mi))]);
+        checker.collectDecls(_zbr_at(modules.items, mi));
 // zbr:selfhost/Checker.zbr:764
         mi = (mi + 1);
     }
@@ -5529,7 +5559,7 @@ pub fn runCheck(root_path: []const u8) anyerror!bool {
 // zbr:selfhost/Checker.zbr:768
     while (_zebra_lt(mi, @as(i64, @intCast(modules.items.len)))) {
 // zbr:selfhost/Checker.zbr:769
-        checker.walkModule(modules.items[@as(usize, @intCast(mi))]);
+        checker.walkModule(_zbr_at(modules.items, mi));
 // zbr:selfhost/Checker.zbr:770
         mi = (mi + 1);
     }
