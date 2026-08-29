@@ -533,6 +533,45 @@ and the real loop in the other, and dutifully reported a comparison between them
 worked was searching for the loop by its CONTENT -- the accumulator pattern
 `vaddsd xmm, xmm, xmm` -- and then READING the two bodies instead of counting them.
 
+### THE GAP TO HAND-WRITTEN ZIG: ~18%, MEASURED FOR THE FIRST TIME (2026-08-26)
+
+Sean's stated target is **within 30-50% of hand-written Zig**. Nobody had ever measured it.
+The number is **~18%, comfortably inside the target**, and essentially all of it is the
+bounds check added by BUG-313.
+
+Identical algorithm, identical work (12000 matvec calls, n=128), identical timing method
+(best-of-25 in-process rounds), `--release --single-threaded` / `-OReleaseFast
+-fsingle-threaded`, identical checksum (1040.384). Run INTERLEAVED:
+
+| run | Zebra (checked) | Zig (flat slice) | Zig (ArrayList layout) |
+|---|---|---|---|
+| 1 | 328 | 277 | 288 |
+| 2 | 308 | 267 | 275 |
+| 3 | 324 | 254 | 256 |
+| 4 | 298 | 264 | 285 |
+
+Zebra is slower in **4 of 4** pairs, by 13-28%.
+
+**TWO INDEPENDENT MEASUREMENTS AGREE, which is what makes this trustworthy.** The bounds
+check costs ~17% (measured separately, checked vs unchecked). Zebra-checked is ~18% behind
+Zig. So **Zebra-unchecked sits at parity with hand-written Zig** -- the codegen itself is
+not the gap, the safety check is.
+
+**THE DATA STRUCTURE IS NOT THE GAP EITHER.** Zig using an ArrayList-of-ArrayLists (exactly
+what Zebra emits) measures 256-288; Zig using a flat slice measures 254-277. Indistinguishable.
+So the emitted representation is not costing anything either -- which is worth knowing before
+anyone proposes changing it.
+
+**METHOD NOTE, and it changed the answer.** Run standalone rather than interleaved, the same
+binaries suggested PARITY (Zebra 236-264 against Zig 253-256). That reading was flattering
+and wrong: the two sets were taken minutes apart under different machine conditions.
+Interleaving put Zebra consistently behind. **A favourable result deserves more scrutiny
+than an unfavourable one**, and on this machine a comparison that is not interleaved is not
+a comparison.
+
+Reference implementation kept at `tools/bench/zig_reference.zig`; the Zebra side is
+`tools/bench/index_bench.zbr`.
+
 ### THE ELISION: NOT BUILT, and the measurement is why (2026-08-26)
 
 Part 3 of BUG-313's design was to make `for i in 0..xs.len` elide its bounds check, on the
