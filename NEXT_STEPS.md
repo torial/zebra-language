@@ -533,6 +533,49 @@ and the real loop in the other, and dutifully reported a comparison between them
 worked was searching for the loop by its CONTENT -- the accumulator pattern
 `vaddsd xmm, xmm, xmm` -- and then READING the two bodies instead of counting them.
 
+### THE ELISION: NOT BUILT, and the measurement is why (2026-08-26)
+
+Part 3 of BUG-313's design was to make `for i in 0..xs.len` elide its bounds check, on the
+Wirth/Hoare argument that a well-designed `for` lets even a simple compiler prove the index.
+**It was not built, and the case for building it now does not survive the numbers.**
+
+| | |
+|---|---|
+| prize | **~17%** ceiling -- the unchecked build IS the perfectly-elided build for that loop |
+| loops it would apply to in the dogfood code | **0** (171 `while`, zero range-`for`) |
+| loops in the whole `test/` corpus | 4 |
+| what enforces its precondition | **nothing** |
+
+**The precondition problem is the deciding one.** The lowering snapshots the bound before
+the loop:
+
+```zig
+var i: i64 = 0;
+const _stop_i: i64 = @as(i64, @intCast(xs.items.len));   // taken ONCE
+while (i < _stop_i) : (i += 1) { s += _zbr_at(xs.items, i); }
+```
+
+If the body shrinks the list, `i` outruns the real length and the CHECK is what saves you.
+So eliding is sound only when the receiver is not mutated in the body and the loop variable
+is not reassigned -- and **nothing independently enforces either**. By the trigger rule
+derived earlier the same day, that makes it opt-in at best, and a wrong analysis silently
+reintroduces the exact memory-unsafety BUG-313 removed.
+
+**The blocker is ADOPTION, not codegen.** A perfect elision today would speed up four loops
+in our corpus and none in the real program. The range-`for` has to be the form people
+actually reach for before the optimisation has anything to optimise -- which is a docs and
+ergonomics problem, already started in `QUICKSTART` and in tinylm's notes.
+
+**Revisit when:** a real program is written in range-`for` form, or the transform interface
+exists (so the elision can ship as a described, disableable transform rather than invisible
+codegen), whichever comes first. The measurement to re-take then is the same in-process
+paired benchmark; the tooling for it is `tools/bench/index_bench.zbr`.
+
+**Worth recording as a positive result:** LLVM already elides one of the two checks in the
+hand-written `while` loop, unprompted. Whatever we build should be measured against that
+baseline rather than against "no elision at all", because a chunk of the available win is
+already being taken automatically.
+
 ### RUN EVERY GATE RED ONCE, AND READ WHAT IT SAYS (2026-08-26)
 
 `gate_selfcheck` and `tier_selfcheck` prove a gate CAN fail. That is not the same as
