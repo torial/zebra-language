@@ -120,15 +120,46 @@ removal into a formality.
 
 **EXIT CRITERIA -- all four, in order:**
 
-1. **The equivalence experiment passes.** Selfhost emit of `selfhost/*.zbr` == bootstrap
-   emit, byte for byte, for every module. Anything else is a real divergence to fix first,
-   and the diff names it.
+1. ~~**The equivalence experiment passes.**~~ **RETIRED 2026-08-29 -- IT WAS THE WRONG
+   TEST, AND THE RIGHT ONE ALREADY PASSES ON EVERY COMMIT.**
+
+   The proposed test was "selfhost emit == bootstrap emit, byte for byte". **That can never
+   pass, by design.** The two compilers emit DIFFERENT SHAPES: the bootstrap inlines the
+   runtime into one file (Token.zig, 4532 lines) while the selfhost emits the runtime-module
+   shape (654 lines plus a shared `zebra_rt.zig`) -- the default since 2026-07-28. A byte
+   comparison across that boundary measures the shape, not the compiler. Three harness
+   iterations went into discovering this; the fourth found the premise was wrong.
+
+   **THE QUESTION THAT MATTERS is not "does it emit the same bytes" but "can a compiler
+   built from the selfhost's own emission regenerate itself consistently" -- and
+   `bootstrap_check.sh` steps 3-5 already answer it, green, on every commit.** Verified
+   directly: `/tmp/bs-zig` (a fresh bootstrap regen) is **byte-identical to the committed
+   `selfhost/*.zig`, all 12 files**. So `zig build` produces a compiler equivalent to
+   selfhost-A, A emits, B is built from A's OWN emit, and B's emit matches A's. That chain
+   IS N-1 bootstrapping, and it has been passing all along.
+
+   **What remains for criterion 2 is therefore a DECISION, not an unknown:** the committed
+   `selfhost/*.zig` are currently the INLINE shape because the bootstrap wrote them. Moving
+   the regen authority means committing the runtime-module shape instead, so `build.zig`
+   must build from a module plus `zebra_rt.zig`. That is concrete work with a known
+   question, which is a much better place to be than an unmeasured one.
 2. **Regen authority switches to N-1** -- `zig build update-selfhost` and
    `bootstrap_check.sh --update` use the committed-`.zig`-built `zebra.exe`, not
    `zebra-bootstrap.exe`. The round-trip's A/B legs are unchanged and still gate.
-3. **GUI backends stop delegating.** `selfhost/main.zbr:2606` routes `--gui-backend` to the
-   bootstrap today. **This is the harder blocker of the two** and it is what actually keeps
-   the binary alive.
+3. **GUI backends stop delegating** -- **AND THIS IS THE SAME TASK AS RETIRING IMGUI,
+   which was not noticed when this plan was written an hour earlier.** `selfhost/main.zbr:2695`
+   reads `gui_selfhost = gui_backend == "tui" or gui_backend == "libui_ng"`, so the two
+   SURVIVING backends are ALREADY native to the selfhost. The only ones that still delegate
+   are `glfw` -- which IS the imgui backend (`src/CodeGen.zig:3252-3674`) -- and explicit
+   `stub`. So the 0.9 item at the top of this file is not merely adjacent to the sunset: it
+   removes the bootstrap's last RUNTIME job. Two docket entries, one piece of work.
+
+   That makes this criterion far cheaper than "the harder blocker of the two", which is what
+   this line said before the code was read rather than the help text. **The help text is why
+   it looked hard**: it claimed `(stub|glfw|tui); delegates to bootstrap` unconditionally,
+   omitting `libui_ng` entirely and describing a delegation that two of three backends do
+   not do. Corrected 2026-08-29. A stale help line cost an hour of planning against the
+   wrong scope -- which is the argument for UNGIT stated in miniature.
 4. **`divergence_check` is re-pointed or retired.** Its reference disappears with the
    bootstrap. Its value is already questionable (48 informational gaps), but losing a gate
    silently is not acceptable -- decide deliberately.
