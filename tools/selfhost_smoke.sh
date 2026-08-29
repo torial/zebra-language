@@ -1553,6 +1553,7 @@ smoke_run     test/bug280_keyword_idents.zbr "bug280: OK"
 # gate would fire on nearly every program. A run fixture is the sound check instead.
 smoke_run     test/bug280_freed_words_test.zbr "freed words: OK"
 smoke_run     test/bug315_protected_freed_test.zbr "bug315: OK"
+smoke_run     test/loop_continue_break_test.zbr "loop-continue-break: OK"
 
 # BUG-283: `${Name}` in a zig"..." literal names a Zebra TYPE and codegen substitutes its
 # current emitted spelling, so user code stops guessing that spelling. THE NEGATIVE TEST

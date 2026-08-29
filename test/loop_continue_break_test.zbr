@@ -1,0 +1,72 @@
+# continue / break -- the first test that TARGETS either.
+#
+# Found by tools/lint_keyword_coverage.py on 2026-08-29: `continue` had ZERO code uses
+# across 547 corpus files, while `break` had 18 -- all of them incidental, in bug fixtures
+# that happen to use it rather than tests of it. So one half of the pair was untested and
+# the other was tested by accident.
+#
+# `continue` is NOT unused in practice: the compiler's own Zebra source uses it 74 times
+# across 9 files, so the round-trip exercises it constantly. What was missing is a program
+# that ASSERTS what it does -- which is a different claim, and the one that catches a
+# semantic change.
+#
+# THE CASE MOST LIKELY TO BE WRONG is the range-`for` (§3 below): a `continue` must still
+# advance the induction variable. In a hand-managed `while` the programmer owns the
+# increment and a `continue` placed before it hangs -- correctly, and by their own doing.
+# In a range-`for` the language owns it, so skipping the advance would be a silent hang
+# with no line to blame.
+
+def evens_skipped(n: int): str
+    # §1 -- continue in a WHILE. The increment is placed BEFORE the continue on purpose:
+    # after it, this loop would never advance. That is correct behaviour and not a defect,
+    # but a fixture that hangs teaches nobody anything.
+    var out = ""
+    var i = 0
+    while i < n
+        i += 1
+        if i % 2 == 0
+            continue
+        out = out + "${i}"
+    return out
+
+def first_over(xs: List(int), limit: int): int
+    # §2 -- break returns the first element over the limit, or -1.
+    var found = -1
+    var i = 0
+    while i < xs.len
+        if xs.at(i) > limit
+            found = xs.at(i)
+            break
+        i += 1
+    return found
+
+def range_skips(n: int): str
+    # §3 -- continue in a RANGE-for. The language owns the advance here, so this is the
+    # assertion that matters: if `continue` skipped it, this would hang rather than fail.
+    var out = ""
+    for i in 0..n
+        if i % 3 == 0
+            continue
+        out = out + "${i}"
+    return out
+
+def nested(): str
+    # §4 -- an inner continue must affect the INNER loop only, and an inner break must not
+    # end the outer one. Both are the shape a wrong implementation gets wrong quietly.
+    var out = ""
+    for i in 0..3
+        for j in 0..3
+            if j == 1
+                continue
+            if j == 2
+                break
+            out = out + "${i}${j} "
+    return out
+
+def main()
+    print(evens_skipped(n: 7))          # 1357
+    print(first_over(xs: [3, 9, 4, 12], limit: 5))   # 9
+    print(first_over(xs: [1, 2], limit: 99))         # -1
+    print(range_skips(n: 7))            # 1245  (0..7 is EXCLUSIVE: 0-6, less 0/3/6)
+    print(nested())                     # 00 10 20
+    print("loop-continue-break: OK")

@@ -4,7 +4,6 @@
 # gate was written over -- `protected` and `internal` -- were BOTH
 # defective (BUG-315, BUG-316).
 abstract
-continue
 defer
 errdefer
 implies
