@@ -569,6 +569,13 @@ Interleaving put Zebra consistently behind. **A favourable result deserves more 
 than an unfavourable one**, and on this machine a comparison that is not interleaved is not
 a comparison.
 
+**CAVEAT, recorded rather than discovered later: these numbers were taken while a `--daily`
+tier was running at JOBS=2.** The absolute milliseconds are therefore inflated and should not
+be compared against measurements from a quiet machine. The RATIO is protected -- both sides
+saw identical contention because the runs were interleaved, which is exactly the property
+interleaving buys -- but a future re-measurement on an idle box should expect lower absolutes
+and is the one to quote if a single number is ever needed.
+
 Reference implementation kept at `tools/bench/zig_reference.zig`; the Zebra side is
 `tools/bench/index_bench.zbr`.
 
