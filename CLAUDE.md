@@ -199,7 +199,7 @@ per-tier counts, computed from the registrations rather than written down.
 
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
-| `--static` | 13 <!-- doc-gen: 13 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **14 s** | you edited docs, ledgers, or `tools/` |
+| `--static` | 13 <!-- doc-gen: 13 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
 | `--fast` | 23 <!-- doc-gen: 23 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
 | (default) | 25 <!-- doc-gen: 25 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
 | `--full` | 32 <!-- doc-gen: 32 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
@@ -227,6 +227,23 @@ are also the rungs whose cost you can predict. A single figure labelled "measure
 have been true of one afternoon and wrong by a factor of three the next morning — the same
 over-read this section warns about two paragraphs earlier, which is how it got written
 wrong twice before landing here.
+
+**AND THE PARAGRAPH ABOVE WAS ITSELF WRONG BY 8x, MEASURED 2026-08-29.** `--static` is not
+14 s. Timed twice on an idle machine: **108 s and 121 s** — a consistent pair, not a fluke.
+The claim that the cheap rungs have "tight numbers whose cost you can predict" was the one
+part of the ladder's argument nobody had re-measured, because a tier that finishes before
+you look away never invites a stopwatch.
+
+**Where the time goes, since the arithmetic is the useful part.** Per-gate seconds sum to
+**37 s**; `doctor` takes **28 s**; the remaining **~43 s** is per-gate process overhead, which
+matches the run's 45 s of `sys` against only 15.6 s of `user`. So barely a seventh of the
+wall clock is computation, and the original 14 s figure is roughly the `user` time — a
+plausible reading of a stopwatch that measured the wrong thing.
+
+**The obvious hypothesis was tested and FAILED**, and is recorded rather than replaced with a
+tidier one: both compilers were rebuilt that day, which invalidates zig's cache, so `doctor`'s
+hello-world compile looked like the culprit. `doctor` runs **28 s cold and 28 s warm**. Cache
+is not the cause. No cause is offered here.
 
 `--full` is not measured directly (no run has used the flag): every figure is a `--daily`
 wall clock minus its three daily-only gates, which is sound because the runner is
@@ -287,6 +304,20 @@ build-dependent tool that must match — stops firing.
 doctor gates is about the BINARY being stale or unbuildable, and no static gate reads the
 binary — which is not an assertion, it is what the purity check has just verified. The
 warning is printed loudly; every tier above static still refuses.
+
+**BUT THE PREFLIGHT IS BUILD-DEPENDENT EVEN WHERE THE GATES ARE NOT (found 2026-08-29), and
+that is a hole in this tier's advertised property.** `doctor.sh` carries 19 references to
+`zig build` / `zig-out` / `zebra.exe` and compiles a hello-world, and it runs as the preflight
+for EVERY tier including `--static`. So the tier's VERDICT is build-independent — the purity
+check proves that, and doctor cannot fail it — while the tier's COST is not: 28 of its ~110
+seconds are spent doing exactly the build-dependent work the tier claims not to need. A rung
+advertised as "needs NO BUILD" that spends a quarter of its time on the binary is making a
+promise about its gates and being read as a promise about the run.
+
+**Proposed, NOT done:** run doctor's cheap checks and skip the hello-world compile when the
+tier is `--static`. Deliberately left as a proposal because it changes the SELECTOR rather
+than an instrument, and `tier_selfcheck.sh` exists precisely because a selector is a new way
+to print green — its six mutations should pass before and after any such change.
 
 **A KNOWN-RED gate is PINNED, not excluded.** `pin_daily "node-addon" "BUG-297"` runs the
 gate, prints `XFAIL`, does not fail the tier — and **fails the tier the day it starts
