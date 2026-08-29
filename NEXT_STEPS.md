@@ -801,6 +801,50 @@ The lecture closes on a parable whose master tailor advises **removing layers** 
 adding embroidery, and is dismissed as out of touch for it. That is the size-budget item, in
 1981, as a bedtime story.
 
+#### Wirth, *A Plea for Lean Software* (IEEE Computer, 1995)
+
+**On why software grows**, he cites two laws and then names the mechanism:
+
+> "Software expands to fill the available memory." (Parkinson)
+> "Software is getting slower more rapidly than hardware becomes faster." (Reiser)
+
+> "A primary cause of complexity is that software vendors **uncritically adopt almost any
+> feature that users want**. Any incompatibility with the original system concept is either
+> ignored or passes unrecognized…"
+
+> "Increasingly, people seem to **misinterpret complexity as sophistication**, which is
+> baffling — the incomprehensible should cause suspicion."
+
+> "To reduce software complexity by concentrating only on the essentials is a proposal
+> **swiftly dismissed as ridiculous** in view of customers' love for bells and whistles. When
+> 'everything goes' is the modus operandi, **methodologies and disciplines are the first
+> casualties**."
+
+**THE PHRASE THAT IS ACTIONABLE IS "the original system concept".** Wirth's test for a
+feature is not "is it useful" but "is it compatible with the concept the system was built
+on" -- and his claim is that the incompatibility usually "passes unrecognized" rather than
+being argued and lost. **Zebra has no written system concept.** Without one, that test cannot
+be applied, and every feature request is evaluated on its own merits, which is exactly the
+ratchet he describes. Writing one -- a paragraph, not a manifesto -- would make the 0.9
+docket answerable rather than a matter of taste. It also pairs with Hoare's warning about
+the mad rush before standardization: the concept is what a rushed feature is measured
+against.
+
+**On the size budget, a precedent with a number.** Oberon -- a complete operating system
+*and* compiler, with storage management, a file system, a window display manager, a network
+with servers, and a document editor -- was "designed and implemented by two people within
+three years". That is the existence proof behind the size-budget item; the budget is not
+asceticism, it is a claim that the whole thing stays comprehensible.
+
+**And a rationale for Zebra's own typing discipline**, in his pull-quote:
+
+> "ABSTRACTION WORKS ONLY WITH LANGUAGES THAT POSTULATE STRICT TYPING OF VARIABLES AND
+> FUNCTIONS. IN THIS RESPECT, C FAILS."
+
+Zebra postulates strict typing, nil tracking and contracts, and emits into a language that
+also has them. On Wirth's argument that is not incidental -- it is the precondition for the
+abstraction boundaries the rest of these items depend on.
+
 #### Parnas, *On the Criteria To Be Used in Decomposing Systems into Modules* (CACM, 1972)
 
 **His criterion is not "split by phase", it is the opposite of that**, and he names our
