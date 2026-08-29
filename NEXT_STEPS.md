@@ -622,6 +622,82 @@ hand-written `while` loop, unprompted. Whatever we build should be measured agai
 baseline rather than against "no elision at all", because a chunk of the available win is
 already being taken automatically.
 
+### THE OTHER HALF OF KNUTH'S SENTENCE: COCKE'S HOIST (2026-08-29) -- MEASURED, BUILD IT
+
+**The section above analysed the WRONG transform, and Sean caught it.** He recalled that
+Knuth discusses doing the bounds check BEFORE the loop, so it is not paid at loop prices.
+Checked against the paper (p.269, Subscript Checking) -- correct, and it names **two**
+mechanisms in one paragraph where I had carried only one:
+
+> "John Cocke observes that time-consuming range checks can be avoided by a smart compiler
+> which first compiles the checks into the program **then moves them out of the loop**.
+> Wirth and Hoare have pointed out that a well-designed `for` statement can permit even a
+> rather simple-minded compiler to avoid most range checks within loops."
+
+The second is the language-design one, and everything above is a fair verdict on it. **The
+first is a pure compiler transform: no new syntax, no user annotation, and -- decisively --
+no unenforced precondition.** That is why it survives the objection that killed the other.
+
+**WHAT WAS MEASURED (three steps, each falsifying the last one's assumption).**
+
+1. In ISOLATION, LLVM already does Cocke's hoist -- **including for our exact emit shape**:
+   `_zbr_at` verbatim from the preamble, `i64` induction variable, the `i < 0` test and the
+   `@intCast`. The checked function's inner loop came out **instruction-identical** to the
+   unchecked one, both 8x unrolled. So our lowering is NOT what blocks the optimizer, which
+   was the obvious first hypothesis and is wrong.
+2. In the REAL emitted benchmark it does NOT hoist. The matvec inner loop keeps
+   `cmp rcx, r9 / je <panic>` and is not unrolled. What differs is nesting: the inner loop
+   sits inside an outer loop that stores to memory, and LLVM gives up.
+3. Hand-applying loop versioning to that ONE loop:
+
+| | today's emit | Cocke-versioned |
+|---|---|---|
+| inner loop | 8 instrs, check inside | **6 instrs, no check** |
+| packed-SIMD ops in the binary | **0** | **3** |
+| best-of-N, in-process | 177 ms | **160 ms** |
+| checksum | 1040.384 | 1040.384 (identical -- the correctness control) |
+
+**~10% off the whole benchmark from one loop, and the larger half is VECTORIZATION, not the
+two instructions.** The check was blocking LLVM from vectorizing at all; removing it turned
+a scalar loop into a packed one. That is a bigger and more general prize than the arithmetic
+suggested, and nothing in the analysis above anticipated it.
+
+**THE TRANSFORM, and why it is exactly semantics-preserving.** Version the loop:
+
+```zig
+if (bound <= xs.items.len) {
+    while (...) { s += xs.items[@intCast(j)]; ... }   // unchecked
+} else {
+    while (...) { s += _zbr_at(xs.items, j); ... }    // TODAY'S EMIT, VERBATIM
+}
+```
+
+The else branch is the current lowering unchanged, so a program that would panic still
+panics -- same message, same reported index, same iteration. There is no `unreachable`, no
+UB, and no behaviour that depends on the analysis being right: **a wrong analysis costs
+speed, never safety.** That is the property the range-`for` elision could not offer, and it
+is why this one can fire automatically under the trigger rule (its precondition is
+independently enforced -- by the guard, at runtime).
+
+**Preconditions for emitting the guard** (all decidable, all already have walkers):
+the index expression is exactly the loop variable; the loop variable is assigned only by its
+own increment; the increment is a positive constant; the container expression is
+loop-invariant. Note the guard makes the *bound* precondition self-enforcing, so the
+analysis only has to be right about the loop variable and the receiver.
+
+**WHAT IS NOT ESTABLISHED, and should not be over-read from the table:**
+- ONE benchmark, ONE loop shape, maximally index-dense. Real code does more work per index
+  and will see less.
+- Code size grows for every versioned loop. Untested: whether to skip versioning for large
+  bodies, and what the threshold is.
+- Whether the win survives when the two containers are the SAME object (aliasing).
+- Whether `--turbo` should raise or lower the threshold. Unmeasured.
+
+**Ordering:** this outranks both remaining BUG-313 parts. It needs no language change, no
+adoption of a new loop form (it fires on the 171 hand-rolled `while` loops in tinylm as
+readily as on a range-`for`), and it is the only one of the three with a measurement behind
+it. Reproduce with `tools/bench/index_bench.zbr`; the hand-versioned emit is the artifact.
+
 ### RUN EVERY GATE RED ONCE, AND READ WHAT IT SAYS (2026-08-26)
 
 `gate_selfcheck` and `tier_selfcheck` prove a gate CAN fail. That is not the same as
