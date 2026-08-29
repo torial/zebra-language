@@ -54,6 +54,31 @@ echo "gui scaffold check — tui startup, on $(basename "$EXAMPLE")"
 echo
 
 BUILD_LOG=$(mktemp); trap 'rm -f "$BUILD_LOG"' EXIT
+
+# CLEAR THE SCAFFOLD SCRATCH FIRST. BUG-298 made a failed build FATAL rather than
+# silently skippable, which was the important half -- but it did not address the CAUSE,
+# and the cause recurs: a corrupted `.zig-cache` under the temp scaffold root makes zig
+# fail with "unable to read results of configure phase", which is a genuine build failure
+# that this gate then correctly reports. Correct, and a false red on the daily.
+# Observed 2026-08-19 and again on the 2026-08-26 overnight tier, where it was the only
+# failing gate and passed immediately once this directory was removed by hand.
+#
+# Safe to delete unconditionally: the compiler creates it, nothing else reads it, and a
+# stale one is exactly the hazard. Scoped by the example basename so a parallel run on a
+# different example is untouched -- the same argument kill_orphans.sh makes for scoping
+# to this tree rather than the machine.
+# THE COMPILER WRITES TO THE **WINDOWS** TEMP DIR, NOT GIT BASH'S /tmp. Those are
+# different directories: $TMPDIR is unset here, so `${TMPDIR:-/tmp}` resolves to Git
+# Bash's own /tmp while the scaffold lands under %TEMP%. The first version of this clear
+# used the former, deleted nothing, and the gate still went green -- caught only by
+# planting a marker file and finding it survived. A cleanup that silently cleans nothing
+# is worse than none, because it looks like the hazard is handled.
+_ex_base="$(basename "$EXAMPLE" .zbr)"
+_tmp_root="${TEMP:-${TMP:-${TMPDIR:-/tmp}}}"
+for _d in "$_tmp_root/${_ex_base}_gui_tui" "$_tmp_root/${_ex_base}_gui_libui_ng"; do
+    [ -d "$_d" ] && rm -rf "$_d"
+done
+
 timeout 600 "$ZEBRA" --gui-backend=tui "$EXAMPLE" > "$BUILD_LOG" 2>&1
 build_rc=$?
 
