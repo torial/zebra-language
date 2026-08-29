@@ -6,6 +6,75 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-315: `protected` is a synonym for `private`, and its documented meaning needs inheritance the language does not have — CLOSED 2026-08-29
+
+**Filed 2026-08-29. DECIDED THE SAME DAY (Sean): remove the keyword.**
+
+Found while drafting the system concept, not by a gate.
+
+`protected` is a reserved word, so it costs every Zebra user the right to name a
+field, parameter or column with it. What it buys:
+
+- **Behaviourally identical to `private`.** `src/TypeChecker.zig:2491` reads
+  `if (mods.private or mods.protected)` — one branch, no distinction. The selfhost
+  comment at `selfhost/TypeChecker.zbr:339` says the same: the key set holds
+  members "marked private/protected", together.
+- **Documented with semantics the grammar cannot express.** QUICKSTART: "`protected`
+  limits to the class and subclasses." There are no subclasses. The class header
+  rule is `ClassHeader -> ImplementsClauseOpt AddsClauseOpt` — conformance via
+  `implements`, reuse via `adds`, and **no class-from-class inheritance anywhere in
+  the grammar**. A corpus sweep finds zero uses of the keyword.
+
+So the surface offers a distinction the system does not make — UNGIT "nothing
+fabricated", at the language level rather than the tooling level.
+
+**WHY NO GATE SAW IT, which is the transferable part.** `lint_reserved_words`
+classifies a keyword as R1 UNREACHABLE (no rule in either compiler mentions the
+token) or R2 PARSED-THEN-REFUSED (accepted, then "not yet implemented").
+`protected` is neither: it parses, it reaches the type checker, and it *does
+something*. It is a third class — **reachable, implemented, and semantically
+vacuous** — and the gate is looking for absence, so a word that is fully present
+sails through it. Same shape as `doc_lint` D4 being *more* satisfied by a duplicate
+bug number: the instrument that would notice is checking for presence.
+
+**Options considered:**
+
+1. **Free the word**, as `aspect`/`weaves`/`lock`/`from`/`trace` were under U4a and
+   `error`/`try` were on 2026-08-13. Costs nothing — zero corpus uses — and returns
+   a common identifier to users. **This is the decision.**
+2. Keep it as an alias for `private`. Rejected: two spellings of one meaning is
+   precisely the "one idea written two ways" that the concision rule rejects.
+3. Give it real semantics. Requires implementation inheritance, deliberately absent.
+
+The QUICKSTART sentence is wrong today regardless of the keyword's fate and must not
+survive: it describes a hierarchy that cannot be written.
+
+**Control, as run.** `test/bug315_protected_freed_test.zbr` names a local, field,
+method, parameter, enum member and union variant `protected`. Watched FAILING against
+the pre-change compiler (`expected identifier, got 'protected'`), and it now prints all
+nine expected values. Registered `smoke_run`.
+
+**And the log could not confirm it ran.** Grepping the QUICK log for `bug315` returns
+zero — but so does grepping for `bug280`, a sibling that certainly passed, because the
+runner prints nothing for passing tests. The check that actually settles it is
+`positive_set.sh`, the derivation the suite itself uses: `bug315` is in it. Without the
+`bug280` control, the zero would have read as a skipped test.
+
+**Two things the fixture taught, both now recorded in it.** A parameter may not shadow a
+sibling declaration, so `Guard.check`'s parameter is `n` — the same reason bug280's
+static parameter is `n`. And union matching is `on Slot.protected as n`, not the
+payload-destructuring form guessed first.
+
+**Sites:** 8 bootstrap (`Token`, `Ast`, `AstBuilder`, `AstPrinter`, `Parser`,
+`TypeChecker`, 2 in `ZebraGrammar`), 5 selfhost (`Token.zbr` ×2, `Parser.zbr` ×2,
+`TypeChecker.zbr` comment), plus `grammar.txt` and QUICKSTART. `reserved-words` 81 → 80.
+QUICK 25/25, smoke 388/388, round-trip byte-identical.
+
+**Not audited in this pass, and it should be:** `internal` is the neighbouring
+modifier and got no scrutiny here. It at least has a stated meaning the language can
+express ("excludes the member from cross-module interface tables"), but nobody has
+checked that it does that.
+
 ### BUG-308: `File.delete` panics on every failure except `FileNotFound`, so a retry loop around it is unreachable code — CLOSED 2026-08-26
 
 **A retry loop was written to survive a failure the primitive cannot report.**
