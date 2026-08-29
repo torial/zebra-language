@@ -1687,10 +1687,15 @@ print(c.radius)                    # field access — no parens
 print(c.area())                    # method call — parens required
 ```
 
-**Field visibility** — use `public`, `private`, `internal`, or `protected` on
-fields and methods.  `private` restricts to the owning class; `internal`
-excludes the member from cross-module interface tables; `protected` limits
-to the class and subclasses.  Default (no keyword) is equivalent to `public`.
+**Field visibility** — use `public`, `private`, or `internal` on fields and
+methods.  `private` restricts to the owning class; `internal` excludes the
+member from cross-module interface tables.  Default (no keyword) is equivalent
+to `public`.
+
+There is no `protected`, and there is no class-from-class inheritance for one to
+refer to: reuse comes from `adds` (mixins) and `extend`, conformance from
+`implements`.  The keyword existed until 2026-08-29, behaved identically to
+`private`, and was removed (BUG-315) so the name is available to your programs.
 
 ```zebra
 class Wallet

@@ -220,7 +220,6 @@ pub const TokenKind = enum {
     kw_internal,
     kw_public,
     kw_private,
-    kw_protected,
     kw_readonly,
 
     // Built-in types
@@ -352,7 +351,9 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "internal",    .kw_internal },
     .{ "public",      .kw_public },
     .{ "private",     .kw_private },
-    .{ "protected",   .kw_protected },
+    // no "protected": BUG-315. It was a synonym for `private` and its documented
+    // meaning ("the class and subclasses") needs inheritance this language does not
+    // have. Do not re-add without a hierarchy to justify it.
     .{ "readonly",    .kw_readonly },
     .{ "bool",        .kw_bool },
     .{ "char",        .kw_char },

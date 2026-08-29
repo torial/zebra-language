@@ -157,7 +157,7 @@ const RECOVERY_STARTERS = [_]TokenKind{
     .kw_class, .kw_interface, .kw_struct,
     .kw_def, .kw_extend, .at_id, .kw_sig, .kw_type,
     // visibility / storage modifiers that can precede a decl
-    .kw_public, .kw_private, .kw_protected, .kw_internal,
+    .kw_public, .kw_private, .kw_internal,
     .kw_abstract, .kw_export, .kw_static, .kw_readonly, .kw_extern,
 };
 

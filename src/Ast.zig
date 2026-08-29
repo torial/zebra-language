@@ -115,7 +115,6 @@ pub const BuildError = std.mem.Allocator.Error;
 pub const Modifiers = packed struct {
     public: bool = false,
     private: bool = false,
-    protected: bool = false,
     internal: bool = false,
     abstract: bool = false,
     static_: bool = false, // type-associated (not instance)

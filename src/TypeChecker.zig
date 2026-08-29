@@ -2488,7 +2488,7 @@ const TypeChecker = struct {
 
     fn checkMemberVisibility(tc: TypeChecker, e: *Ast.ExprMember, member_sym: *const Symbol, class_sym: *const Symbol) !void {
         const mods = TypeChecker.memberMods(member_sym);
-        if (mods.private or mods.protected) {
+        if (mods.private) {
             const inside = if (tc.owner_sym) |os| os == class_sym else false;
             if (!inside) try tc.emitError(e.span, "'{s}' is private", .{e.member});
         }

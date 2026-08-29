@@ -30,7 +30,16 @@
       "Bash(code --install-extension \"$\\(pwd\\)/zebra-language-0.1.0.vsix\" --force)",
       "Bash(code --list-extensions --show-versions)",
       "Skill(artifact-design)",
-      "Artifact"
+      "Artifact",
+      "Read(//tmp/**)",
+      "Bash(bash tools/doctor.sh)",
+      "Read(//c/Projects/zebra-language/**)",
+      "Bash(python -)",
+      "Read(//c/Users/Sean/.claude/jobs/c7df95e9/tmp/**)",
+      "Bash(cat)",
+      "Bash(/c/Users/Sean/AppData/Local/Programs/Python/Python311/python.exe /c/Users/Sean/.claude/jobs/c7df95e9/tmp/patch1.py)",
+      "Bash(/c/Users/Sean/AppData/Local/Programs/Python/Python311/python.exe /c/Users/Sean/.claude/jobs/c7df95e9/tmp/patch2.py)",
+      "Bash(/c/Users/Sean/AppData/Local/Programs/Python/Python311/python.exe /c/Users/Sean/.claude/jobs/c7df95e9/tmp/patch3.py)"
     ]
   }
 }

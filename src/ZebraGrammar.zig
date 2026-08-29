@@ -340,7 +340,6 @@ const mod_rules: []const Rule = &.{
     .{ .lhs = .ModList, .rhs = &.{} }, // ε
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_public) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_private) } },
-    .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_protected) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_internal) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_abstract) } },
     .{ .lhs = .ModList, .rhs = &.{ n(.ModList), t(.kw_export) } },
@@ -369,7 +368,6 @@ const is_clause_rules: []const Rule = &.{
     .{ .lhs = .IsAttrItem, .rhs = &.{ t(.kw_readonly) } },
     .{ .lhs = .IsAttrItem, .rhs = &.{ t(.kw_public) } },
     .{ .lhs = .IsAttrItem, .rhs = &.{ t(.kw_private) } },
-    .{ .lhs = .IsAttrItem, .rhs = &.{ t(.kw_protected) } },
     .{ .lhs = .IsAttrItem, .rhs = &.{ t(.kw_internal) } },
     .{ .lhs = .IsAttrItem, .rhs = &.{ t(.id) } },
 };

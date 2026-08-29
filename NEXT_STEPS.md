@@ -938,6 +938,50 @@ that lists its tensions cannot be quietly violated by resolving one in secret):
 | T5 | shipping speed vs. design latency | pay upfront for density (Sean's Lewis point) |
 | T6 | AI regularity vs. human expressive freedom | **unresolved, and probably real** |
 
+#### ITERATION 3 -- ACCEPTED (2026-08-29)
+
+Three things stopped being proposals in this round.
+
+**1. THE PARETO AXES ARE NAMED, IN PRIORITY ORDER (accepted by Sean).** The waste rule
+("no resource-intensive solution where a lighter one exists") could not adjudicate without
+saying Pareto in WHICH dimensions. It is now:
+
+> **predictability of cost -> memory footprint -> throughput -> implementation complexity**
+
+That ordering is a choice with consequences, which is the point of writing it down. It
+rejects GC pauses, "usually fast" heuristics with bad worst cases, and amortised-spiky
+structures where a steady one exists. **The demonstration that naming the axes does real
+work is that it refines Sean's own example**: with predictability first, plain Quicksort is
+OFF the frontier (O(n^2) worst case) and introsort is on it. The instinct picked the
+direction; the axes picked the algorithm.
+
+**2. STANDING PRACTICE: EVALUATE AGAINST THE AXES (Sean).** NEXT_STEPS items and bug
+entries are to be judged against the axes above, in the way the introsort example judges a
+sort. This is the concept doing work rather than sitting in a file, and it is what makes
+the axes worth having named.
+
+**3. A COMPATIBILITY TRANSFORM IS A MECHANICAL REWRITER, NEVER A PERMANENT ACCEPTOR
+(accepted by Sean).** The grammar-freeze escape valve -- reinstall removed syntax as a
+Transform plugin -- had a hazard: **permanent compatibility plugins are permanent
+dialects**, which is exactly the "one idea written two ways" the concision rule rejects
+(T6 in miniature). So the plugin reads 1.x syntax and **emits 2.x source** rather than
+accepting 1.x forever. Old code keeps working, the living language keeps one spelling, and
+the plugin has a natural end -- once you have run it, you are done.
+
+Deprecation by migration, not by dialect. **This is also an escape from Hoare's trap** ("a
+feature which is included before it is fully understood can never be removed later"): it
+removes a feature from the living language without breaking anyone. Closer than it sounds
+-- `AstPrinter` already exists, so a Zebra-to-Zebra printer is an extension rather than a
+new subsystem.
+
+**FIRST THING THE DRAFT ADJUDICATED THAT IT WAS NOT WRITTEN TO ADJUDICATE: BUG-315.**
+Restoring the small-team bound (Sean: "my interests are NOT into a system that can be used
+by 10+ developers on a project") restores the rejection of visibility modifiers whose job
+is policing team boundaries -- and within minutes that found `protected`, a reserved word
+implemented as a synonym for `private` and documented with semantics requiring inheritance
+the grammar cannot express. Removed the same day. That is the strongest evidence so far
+that a written concept earns its keep.
+
 **GRAMMAR FREEZE (Sean) -- the best structural idea of the round.** Freeze the grammar at or
 near 1.0; extension happens through the stdlib and Transforms rather than new syntax.
 Precedent: Oberon and C both froze and outlived more expressive contemporaries. Two
@@ -968,13 +1012,22 @@ from the dogfooding record rather than intended):
 > user -- which means regularity beats cleverness, and a diagnostic is a feature, not an
 > apology.
 
-Two open objections, neither fatal. **"alone, nearly so, or with a large team" excludes
-nobody on the team-size axis**, so the bound has moved from team size to language philosophy
--- defensible, and truer to intent, but the package-ecosystem and visibility-modifier
-rejections no longer follow from anything and need another source. And **"not an Object
-Oriented language" will mislead**, since Zebra has classes, interfaces and inheritance; the
-intent is presumably not OO-DOGMA (everything-is-an-object, inheritance-first modelling,
-patterns-as-architecture) and should say which.
+**BOTH OBJECTIONS RESOLVED IN ITERATION 3.**
+
+*Team size:* Sean restored the bound -- "my interests are NOT into a system that can be used
+by 10+ developers on a project". Naming the number is what gives it teeth, and it restores
+the rejections that had gone missing (no heavyweight package ecosystem, no visibility
+modifiers whose job is policing team boundaries). Proposed wording: **"alone or in a small
+team -- not ten or more developers on one codebase."**
+
+*Inheritance:* **Claude was wrong, and Sean's instinct was right.** The claim that "Zebra has
+classes, interfaces and inheritance" does not survive the grammar: `ClassHeader ->
+ImplementsClauseOpt AddsClauseOpt`, with no class-from-class inheritance anywhere. What is
+absent is IMPLEMENTATION inheritance. Since "not an Object Oriented language" would still
+mislead a reader of a language that has classes, the phrasing to use is **"a deep class
+hierarchy"** in the exclusion list, with the accurate technical line nearby: *Zebra has
+classes but no class hierarchy -- conformance from interfaces (`implements`), reuse from
+mixins (`adds`) and `extend`; nothing is inherited implicitly.*
 
 On AI-assistability looking like zeitgeist, Sean's answer is decisive for this project: he
 may be the language's only user, and he works with AI. The criterion is therefore not a bet

@@ -336,7 +336,7 @@ class ModuleTypes
     # interface names declared via `implements`. Populated from DeclClass.ifaces
     # by populateModuleTypes (Phase 3C).
     var class_interfaces: HashMap(str, str)
-    # "ClassName.memberName" keys for fields/methods marked private/protected.
+    # "ClassName.memberName" keys for fields/methods marked private.
     # Enforced in inferExpr Expr.member: access from outside the owning class is an error.
     var private_member_keys: HashMap(str, bool)
     # Names of type aliases declared in this module — used by TC to skip mismatch

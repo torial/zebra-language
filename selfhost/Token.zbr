@@ -124,7 +124,6 @@ union TokenKind
     kw_internal
     kw_public
     kw_private
-    kw_protected
     kw_readonly
     kw_bool
     kw_char
@@ -259,8 +258,9 @@ class Keywords
             return TokenKind.kw_public()
         if word == "private"
             return TokenKind.kw_private()
-        if word == "protected"
-            return TokenKind.kw_protected()
+        # no "protected": BUG-315. It was a synonym for `private` and its documented
+        # meaning ("the class and subclasses") needs inheritance this language does not
+        # have. Do not re-add without a hierarchy to justify it.
         if word == "readonly"
             return TokenKind.kw_readonly()
         if word == "bool"

@@ -1,0 +1,86 @@
+# BUG-315: `protected` was a reserved word that bought nothing.
+#
+# It was behaviourally identical to `private` (`if (mods.private or mods.protected)` --
+# one branch, no distinction) and QUICKSTART documented it as limiting access "to the
+# class and subclasses", in a language whose class header rule is
+# `ClassHeader -> ImplementsClauseOpt AddsClauseOpt`: conformance via `implements`,
+# reuse via `adds`, and NO class-from-class inheritance anywhere in the grammar.
+# So it reserved a common identifier to express a hierarchy that cannot be written.
+#
+# WHY THIS FIXTURE IS BEHAVIOURAL RATHER THAN A keyword_ident_check WORD.
+# That gate hunts words ZIG reserves which Zebra does not, so codegen must escape them.
+# `protected` is not a Zig keyword, so nothing needs escaping and the gate has no
+# opinion. What needs proving is the opposite direction: that ZEBRA no longer reserves
+# it, in every position a user could reach. Only running the program shows that.
+#
+# It must be watched FAILING before the change -- today `protected` tokenises as a
+# modifier keyword, so the parse refuses it. A fixture that was green beforehand would
+# prove nothing about the removal.
+
+class Vault
+    var protected: int = 3
+    static var count: int = 0
+
+    def get(): int
+        return .protected
+
+class Guard
+    var base: int = 4
+
+    # the METHOD name
+    def protected(): int
+        return .base + 10
+
+    # The parameter here is NOT named `protected`, and that is not squeamishness:
+    # Guard already has a method by that name, and a parameter shadowing a sibling
+    # declaration is refused by the language ("function parameter shadows declaration
+    # of 'protected'") -- correctly, and independently of any keyword question. The
+    # bug280 fixture named its static parameter `n` for the identical reason. The
+    # parameter position is covered by `describe` below, which has no such sibling.
+    static def check(n: int): int
+        return n * 2
+
+# a parameter, and interpolation of it
+def describe(protected: str): str
+    return "v=${protected}"
+
+# an enum member and a union variant
+enum Level
+    protected
+    open
+
+union Slot
+    protected: int
+    other: str
+
+def main()
+    # a local
+    var protected = 5
+    print(protected + 1)                # 6
+
+    # a field, read through a method and directly
+    var v = Vault()
+    print(v.get())                      # 3
+    print(v.protected)                  # 3
+
+    # a method, instance and static
+    var g = Guard()
+    print(g.protected())                # 14
+    print(Guard.check(n: 7))            # 14
+
+    # a parameter, including inside a string interpolation
+    print(describe(protected: "ok"))    # v=ok
+
+    # enum member and union variant
+    var lv = Level.protected
+    if lv == Level.protected
+        print("enum ok")                # enum ok
+
+    var s: Slot = Slot.protected(9)
+    branch s
+        on Slot.protected as n
+            print(n)                    # 9
+        on Slot.other as t
+            print(t)
+
+    print("bug315: OK")
