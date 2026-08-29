@@ -199,11 +199,11 @@ per-tier counts, computed from the registrations rather than written down.
 
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
-| `--static` | 13 <!-- doc-gen: 13 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 23 <!-- doc-gen: 23 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 25 <!-- doc-gen: 25 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 32 <!-- doc-gen: 32 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 35 <!-- doc-gen: 35 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–110 min** | once a day |
+| `--static` | 14 <!-- doc-gen: 14 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
+| `--fast` | 24 <!-- doc-gen: 24 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 26 <!-- doc-gen: 26 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 33 <!-- doc-gen: 33 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 36 <!-- doc-gen: 36 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–110 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -830,6 +830,68 @@ python tools/lint_bug_numbers.py   # THE BUG-NUMBER COLLISION GATE (static, inst
                                 #   took the whole gate down with a traceback — a gate that
                                 #   CRASHES reports nothing, and the cause looks like the
                                 #   ledger rather than the terminal. 0 NEW = clean.
+python tools/lint_keyword_coverage.py # THE KEYWORD-COVERAGE GATE (static, instant,
+                                #   STATIC tier) -- the MIRROR of `registration_check`. That
+                                #   gate asks whether every tracked TEST is asserted by
+                                #   something; this asks whether every KEYWORD is EXERCISED by
+                                #   something. Nothing asked that until 2026-08-29.
+                                #   RECEIPT, and it is why the gate exists: on the day the
+                                #   question was first asked, the two MODIFIERS with zero
+                                #   corpus uses were `protected` and `internal`, and BOTH were
+                                #   defective -- BUG-315 (a synonym for `private`, documented
+                                #   with semantics needing inheritance the grammar cannot
+                                #   express; removed) and BUG-316 (means different things in
+                                #   each compiler, and the selfhost's diagnostic reports "is
+                                #   private" about a field declared `internal`). Two for two.
+                                #   NO EXISTING GATE COULD SEE IT, and the gap sits between
+                                #   three that each stop just short. `divergence_check`
+                                #   compiles the corpus with both compilers, so a keyword
+                                #   ABSENT from the corpus is invisible to it by construction
+                                #   -- there is nothing to compile. `lint_reserved_words` asks
+                                #   whether a keyword is REACHABLE in either compiler, which
+                                #   both of these were. `registration_check` looks at files,
+                                #   not features.
+                                #   THE ORACLE IS A TYPABLE WORD, NOT AN ENUM VARIANT NAME,
+                                #   and that distinction is the whole reason `zbr_vocab.py`
+                                #   exists. `construct_histogram` derived its vocabulary from
+                                #   selfhost/Token.zbr's `kw_*` enum -- but `kw_arena` is the
+                                #   selfhost's name for a token whose WORD the bootstrap maps
+                                #   as `allocate`, and QUICKSTART says the `arena` keyword is
+                                #   REMOVED. So an enum-derived vocabulary contains a word no
+                                #   program can type and MISSES the one every arena-scoped
+                                #   program uses -- wrong in both directions at once.
+                                #   THREE SOURCES EXIST AND THEY DISAGREE, so all three are
+                                #   read and reconciled rather than one being trusted:
+                                #   src/Token.zig's table (80 words), selfhost/Token.zbr's
+                                #   `if word == "..."` chain (79), and a hand-maintained
+                                #   pipe-delimited statement-keyword STRING in
+                                #   selfhost/Parser.zbr. `allocate` is in the first and third
+                                #   but not the second. The disagreement is PRINTED every run
+                                #   and the gate REFUSES above a ceiling of 6.
+                                #   BASELINED AT 6 -- `abstract`, `continue`, `defer`,
+                                #   `errdefer`, `implies`, `vari`. `continue` is the one to
+                                #   sit with: a basic loop keyword with ZERO code uses across
+                                #   547 files, while its sibling `break` has 18 across 5.
+                                #   Shrink this list; never grow it.
+                                #   CONTROLS, because a scanner that stops seeing code reports
+                                #   EVERY keyword as uncovered: a 7-case both-directions
+                                #   selftest on synthetic input runs before any real scan
+                                #   (a keyword in code counts; in a comment, in a string,
+                                #   inside `${...}`, as a substring, or absent does not), and
+                                #   it refuses on <300 files, <5000 code lines, or `def`
+                                #   appearing under 100 times. The comment/string legs are the
+                                #   dangerous ones -- each would INFLATE coverage and hide a
+                                #   real gap, which is the quiet direction.
+                                #   VERIFIED AGAINST A NAIVE GREP, which disagreed: raw grep
+                                #   finds `defer` in 5 files and `continue` in 1. Every one of
+                                #   those hits is in a COMMENT. The scanner was right and the
+                                #   cross-check was the wrong instrument -- worth knowing
+                                #   before anyone "corrects" this gate with a grep.
+                                #   CANNOT SEE whether a keyword's SEMANTICS are asserted. A
+                                #   file that merely parses `internal` satisfies this gate
+                                #   while proving nothing -- BUG-316 needed a probe with a
+                                #   control, and no coverage tool would have written it. This
+                                #   aims attention. 0 NEW = clean.
 python tools/lint_reserved_words.py # THE RESERVED-WORD GATE (static, instant, QUICK tier):
                                 #   a keyword must either be USED or be JUSTIFIED. A word in
                                 #   the keyword table costs every user of the language the
@@ -1505,7 +1567,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 87 scripts | <!-- doc-gen: 87 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 89 scripts | <!-- doc-gen: 89 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 51 tracked documents <!-- doc-gen: 51 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -2009,7 +2071,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **390** <!-- doc-gen: 390 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **524** <!-- doc-gen: 524 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **525** <!-- doc-gen: 525 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

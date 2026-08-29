@@ -333,6 +333,7 @@ run_static "hazard-lint"    "0 hazard"  python tools/hazard_lint.py
 # renamed or retired. Append-only records (BUGS.md, the journal) are reported but not gated
 # -- an old entry naming a since-deleted tool is accurate history, not a defect.
 run_static "doc-lint"       "0 stale"   python tools/doc_lint.py --quiet
+run_static "keyword-coverage" "0 NEW"  python tools/lint_keyword_coverage.py
 run_fast "doc-example"    "0 NEW"     python tools/doc_example_check.py --quiet
 # The parser's rule table is the authority; grammar.txt is generated from it. Before
 # 2026-08-04 the two had drifted badly enough that fuzz/gramgen.py -- which reads

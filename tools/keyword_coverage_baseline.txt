@@ -1,0 +1,11 @@
+# Keywords no tracked test/ or examples/ file uses.
+# SHRINK THIS LIST; never grow it. Each line is a language feature
+# shipped without a program that exercises it. The two entries this
+# gate was written over -- `protected` and `internal` -- were BOTH
+# defective (BUG-315, BUG-316).
+abstract
+continue
+defer
+errdefer
+implies
+vari
