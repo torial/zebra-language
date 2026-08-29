@@ -243,7 +243,27 @@ plausible reading of a stopwatch that measured the wrong thing.
 **The obvious hypothesis was tested and FAILED**, and is recorded rather than replaced with a
 tidier one: both compilers were rebuilt that day, which invalidates zig's cache, so `doctor`'s
 hello-world compile looked like the culprit. `doctor` runs **28 s cold and 28 s warm**. Cache
-is not the cause. No cause is offered here.
+is not the cause.
+
+**LOAD WAS RAISED AS THE CONFOUND AND THEN RULED OUT — three runs: 108 s, 121 s, 107 s.**
+Sean's caution is correct in general (it is why `smoke` carries a 720-1490 s range two sections
+down) and a consistent PAIR would not have settled it, since two runs inside one busy stretch
+are both slow. So a third was taken deliberately away from any commit — every commit fires
+`zsnapshot`, which writes a ~15 MB zip, and that is real self-inflicted load that plausibly
+overlapped the first two. It measured **107 s**, with CPU sampled at 0% BOTH BEFORE AND AFTER
+the run rather than only before.
+
+**And the `user`/`sys` split explains why load was never a good candidate here.** 15.6 s user
+against 45 s sys and ~108 s wall means the tier is SPAWN- AND I/O-BOUND, not CPU-bound — so CPU
+pressure would barely move it, which is also why the three runs agree so closely. A tier that
+is 14% computation behaves nothing like `smoke`, and the two should not be reasoned about the
+same way.
+
+**One reading that survives, and is worth knowing before "wrong" is said too loudly:** `user`
+time is 15.6 s, almost exactly the original 14 s. The old figure may have been a correct
+measurement of CPU time rather than a wrong measurement of wall clock — in which case both
+numbers are right and answer different questions. What a person waiting on a rung experiences
+is wall clock, so that is what the table now carries.
 
 `--full` is not measured directly (no run has used the flag): every figure is a `--daily`
 wall clock minus its three daily-only gates, which is sound because the runner is
