@@ -942,23 +942,70 @@ that lists its tensions cannot be quietly violated by resolving one in secret):
 
 Three things stopped being proposals in this round.
 
-**1. THE PARETO AXES ARE NAMED, IN PRIORITY ORDER (accepted by Sean).** The waste rule
-("no resource-intensive solution where a lighter one exists") could not adjudicate without
-saying Pareto in WHICH dimensions. It is now:
+**1. THE DECISION FRAMEWORK: FOUR GATES, THEN SEVEN RANKED AXES (settled 2026-08-29).**
 
-> **predictability of cost -> memory footprint -> throughput -> implementation complexity**
+The waste rule ("no resource-intensive solution where a lighter one exists") could not
+adjudicate without saying Pareto in WHICH dimensions. A first version named four resource
+axes -- predictability, footprint, throughput, implementation complexity -- and was then
+applied to the whole of NEXT_STEPS. **ELEVEN OF EIGHTEEN ITEMS SCORED ON NONE OF THEM**,
+which is what forced the structure below rather than a longer list of the same kind.
 
-That ordering is a choice with consequences, which is the point of writing it down. It
-rejects GC pauses, "usually fast" heuristics with bad worst cases, and amortised-spiky
-structures where a steady one exists. **The demonstration that naming the axes does real
-work is that it refines Sean's own example**: with predictability first, plain Quicksort is
-OFF the frontier (O(n^2) worst case) and introsort is on it. The instinct picked the
-direction; the axes picked the algorithm.
+**SAFETY IS NOT AN AXIS. IT IS A GATE, AND THAT DISTINCTION IS THE WHOLE POINT.** An axis is
+by definition tradeable -- that is what ranking means. Commitment (1) says there is no off
+switch. So if safety sits anywhere on a ranked list, someone can eventually argue "binary
+size outranks it in this case", and the concept has authorised precisely what it exists to
+forbid. Same for describability and for flow of thought.
 
-**2. STANDING PRACTICE: EVALUATE AGAINST THE AXES (Sean).** NEXT_STEPS items and bug
-entries are to be judged against the axes above, in the way the introsort example judges a
-sort. This is the concept doing work rather than sitting in a file, and it is what makes
-the axes worth having named.
+> **TIER 1 -- GATES. Pass/fail. A failure is a REJECTION, not a low score.**
+>
+> - **G1** Safety holds at run time; there is no switch to turn it off. *(Hoare 1981)*
+> - **G2** The compiler can describe what it did, in Zebra. A transform that cannot
+>   describe itself does not ship. *(Hoare via Knuth 1974)*
+> - **G3** The compiler pays, never the programmer. No analysis the programmer must fight.
+>   *(Sean's flow-of-thought line; this is what excludes a borrow checker)*
+> - **G4** Inside the audience bound: a whole-system builder, alone or in a small team.
+>
+> **TIER 2 -- AXES. Ranked. A lower axis never outranks a higher one.**
+>
+> 1. **Predictability of cost** -- can you know what this costs before running it?
+> 2. **Legibility** -- does the system surface what it already knows? *(commitment 3, UNGIT)*
+> 3. **Surface area** -- how much language must be learned and maintained? *(Wirth; also
+>    what AI-assistability depends on)*
+> 4. **Runtime working set**
+> 5. **Throughput**
+> 6. **Binary size**
+> 7. **Our implementation cost**
+
+**THE ORDERING PRINCIPLE IS STATED, or the list is just taste: rank by IRREVERSIBILITY,
+then by WHO PAYS.** Surface area is near-permanent (Hoare: "a feature which is included
+before it is fully understood can never be removed later"); binary size is a compile flag
+away; implementation cost is ours alone, so it is last. The principle also PREDICTS Sean's
+call that working set beats binary size rather than merely recording it -- a working set is
+the user's problem at run time, a binary is ours at build time.
+
+**Axes 2 and 3 were Sean's call**, made against Claude's proposal: legibility above surface
+area. Claude argued surface area to #2 on irreversibility, citing Zig's feature churn as
+the failure mode; Sean ranked legibility higher. The consequence, recorded because it is
+what the ordering now DECIDES: a new API that makes cost knowable clears more easily than
+it would have, so the `algorithms` namespace and complexity-as-reflection-data both argue
+their usefulness rather than having to argue their size first.
+
+**What the axes reject, unchanged from the first version:** GC pauses, "usually fast"
+heuristics with bad worst cases, amortised-spiky structures where a steady one exists. **The
+demonstration that naming them does real work is that it refines Sean's own example**: with
+predictability first, plain Quicksort is OFF the frontier (O(n^2) worst case) and introsort
+is on it. The instinct picked the direction; the axes picked the algorithm.
+
+**2. STANDING PRACTICE: EVALUATE AGAINST THE FRAMEWORK (Sean).** NEXT_STEPS items and bug
+entries are judged gates-first, then axes, the way the introsort example judges a sort. This
+is the concept doing work rather than sitting in a file.
+
+**AND IT DOUBLES AS PR TRIAGE (Sean's observation).** The gates are a pre-review checklist:
+a submission that fails one can be triaged WITHOUT reading the implementation, because the
+objection is not about code quality. The axes then say what the change is buying and what it
+is spending, in an order the reviewer did not invent for the occasion. That is the honest
+version of "we'll know it when we see it", and it is worth having before there is a first
+PR rather than after.
 
 **3. A COMPATIBILITY TRANSFORM IS A MECHANICAL REWRITER, NEVER A PERMANENT ACCEPTOR
 (accepted by Sean).** The grammar-freeze escape valve -- reinstall removed syntax as a
