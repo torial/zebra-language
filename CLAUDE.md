@@ -206,10 +206,10 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 14 <!-- doc-gen: 14 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 24 <!-- doc-gen: 24 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 26 <!-- doc-gen: 26 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 33 <!-- doc-gen: 33 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 36 <!-- doc-gen: 36 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–110 min** | once a day |
+| `--fast` | 25 <!-- doc-gen: 25 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 27 <!-- doc-gen: 27 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 34 <!-- doc-gen: 34 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 37 <!-- doc-gen: 37 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–110 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -732,6 +732,43 @@ JOBS=3 bash tools/compile_check.sh --no-runtime-module  # gate label: `compile_c
                                 #   otherwise go unwatched — and it stays live via the opt-out
                                 #   and as the fallback for --single-file / node-addon / every
                                 #   --gui-backend. 217/0/1, identical to the default. FULL tier.
+bash tools/stream_check.sh      # THE STREAM-SEPARATION GATE, registered as `stream-sep`
+                                #   (BUG-318, FAST tier, ~10s) --
+                                #   the only gate that can tell STDOUT from STDERR, and the
+                                #   reason it exists is that nothing could.
+                                #   RECEIPT: until 2026-08-29 Zebra's `print` lowered to
+                                #   `std.debug.print`, which writes to STDERR. Every
+                                #   program's output vanished under `> file` or `| grep`,
+                                #   with exit code 0 -- for a release meaning "ready for
+                                #   others", the first thing a stranger does after print.
+                                #   NO EXISTING GATE COULD SEE IT, structurally rather than
+                                #   by oversight: `output_sweep.sh:183` -- the ONLY gate that
+                                #   reads what programs PRINT -- captures with `2>&1`, so it
+                                #   merges the two streams it would need to distinguish; the
+                                #   smoke harness greps combined output; every other gate
+                                #   asks whether things COMPILE, not where they print.
+                                #   IT ALSO RETIRED A FALSE BELIEF. This file and the session
+                                #   memories recorded "Windows stdout-to-PIPE writes nothing
+                                #   (redirect/file fine)" as a platform quirk, and tooling was
+                                #   shaped around it. It was this bug: a FILE redirect got
+                                #   nothing either, and the runs that appeared to work were
+                                #   capturing 2>&1. `prog | grep` works now.
+                                #   SIX LEGS, BOTH DIRECTIONS, because either alone is
+                                #   satisfiable by sending everything to one stream: print IS
+                                #   on stdout, errln IS on stderr, print is NOT on stderr,
+                                #   errln is NOT on stdout -- plus the two usages the bug
+                                #   actually broke (`prog | grep`, `prog > file`), tested as a
+                                #   user meets them rather than inferred.
+                                #   REFUSES if the program produced nothing on EITHER stream:
+                                #   two empty strings satisfy every absence test, so the
+                                #   positive control runs first. An absence is evidence only
+                                #   after a presence has been demonstrated.
+                                #   VERIFIED WITH THE REAL ATTACKER, not a mutation: reverting
+                                #   the emitted calls to `std.debug.print` gives stdout 0
+                                #   bytes / stderr 57 and fails leg 1.
+                                #   The markers on the two streams are DIFFERENT strings, so a
+                                #   harness that captured one stream twice fails rather than
+                                #   passes. 0 failures = clean.
 bash tools/boundary_check.sh    # THE INTENT WITNESS (A3, QUICK tier, ~30s): the only
                                 #   gate whose expectations were WRITTEN FROM THE LANGUAGE
                                 #   REFERENCE rather than recorded from the compiler. Every
@@ -1573,7 +1610,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 89 scripts | <!-- doc-gen: 89 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 90 scripts | <!-- doc-gen: 90 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 55 tracked documents <!-- doc-gen: 55 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -2077,7 +2114,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **390** <!-- doc-gen: 390 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **526** <!-- doc-gen: 526 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **527** <!-- doc-gen: 527 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

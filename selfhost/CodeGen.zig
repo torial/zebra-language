@@ -3527,6 +3527,34 @@ pub fn _term_ansi(color: []const u8) []const u8 {
     if (std.mem.eql(u8, color, "bold"))    return "\x1b[1m";
     return "";
 }
+// BUG-318: Zebra's `print` used to lower to `std.debug.print`, which writes to STDERR.
+// Every program's output therefore vanished under `> file` or `| grep`, with exit code 0
+// and nothing to indicate a problem. That it was a defect rather than a design is settled
+// by `sys.errln` existing as the documented "write to stderr" API -- redundant if `print`
+// were already stderr -- and by QUICKSTART documenting `--emit-zig` as writing to stdout.
+//
+// Errors are swallowed (`catch {}`), matching `_term_print` below and `std.debug.print`
+// before it. That is a deliberate match to the surrounding convention, not an endorsement:
+// a print that silently does nothing on a full disk is the same shape as the bug being
+// fixed here, one level down. Left as-is because making `print` fallible is a LANGUAGE
+// change, not a codegen one.
+//
+// One syscall per print, where std.debug.print was also unbuffered but lock-protected.
+// Not measured. If a print-heavy program regresses, buffering belongs here, not at the
+// call site -- but measure before assuming, per FINDINGS.
+pub fn _zbr_print(comptime fmt: []const u8, args: anytype) void {
+    var buf: [4096]u8 = undefined;
+    const s = std.fmt.bufPrint(&buf, fmt, args) catch {
+        // Too long for the stack buffer: fall back to an allocation rather than truncating.
+        // Truncating would be the fabrication this bug is about.
+        const heap = std.fmt.allocPrint(_allocator, fmt, args) catch return;
+        defer _allocator.free(heap);
+        std.Io.File.stdout().writeStreamingAll(_io, heap) catch {};
+        return;
+    };
+    std.Io.File.stdout().writeStreamingAll(_io, s) catch {};
+}
+
 pub fn _term_print(msg: []const u8, color: []const u8, newline: bool) void {
     const _f = std.Io.File.stdout();
     if (_term_is_tty() and color.len > 0) {
@@ -20454,7 +20482,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:9103
             if (p.newline) {
 // zbr:selfhost/CodeGen.zbr:9104
-                self.line("std.debug.print(\"\\n\", .{});");
+                self.line("_zbr_print(\"\\n\", .{});");
             } else {
 // zbr:selfhost/CodeGen.zbr:9106
                 self.line("// print (no args)");
@@ -20465,7 +20493,7 @@ pub const Generator = struct {
 // zbr:selfhost/CodeGen.zbr:9108
         self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:9109
-        self.w.emit("std.debug.print(\"");
+        self.w.emit("_zbr_print(\"");
 // zbr:selfhost/CodeGen.zbr:9110
         var ai: i64 = 0;
 // zbr:selfhost/CodeGen.zbr:9111

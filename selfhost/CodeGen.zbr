@@ -9101,12 +9101,12 @@ struct Generator
     def genPrint(p: StmtPrint)
         if p.args.len == 0
             if p.newline
-                line("std.debug.print(\"\\n\", .{});")
+                line("_zbr_print(\"\\n\", .{});")
             else
                 line("// print (no args)")
             return
         writeIndent()
-        w.emit("std.debug.print(\"")
+        w.emit("_zbr_print(\"")
         var ai = 0
         while ai < p.args.len
             if ai > 0

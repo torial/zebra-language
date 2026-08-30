@@ -1,0 +1,23 @@
+# BUG-318 fixture: `print` goes to STDOUT, `sys.errln` goes to STDERR.
+# Also covers BUG-317 (`--emit-zig > out.zig` produced an empty file), which was closed as a
+# duplicate: the emit path ends in `print(zig_src)`, so print-to-stderr emptied it. One fix
+# repaired both, but they are separate OBSERVABLES and leg 7 of tools/stream_check.sh
+# asserts 317's directly -- the emit path could regress without touching print.
+#
+# This file is USELESS on its own -- every existing gate captures the two streams merged
+# (`output_sweep.sh:183` uses `2>&1`, and the smoke harness greps combined output), so a
+# stream mix-up is invisible to all of them BY CONSTRUCTION. That is precisely how BUG-318
+# survived: `print` lowered to `std.debug.print`, which writes to stderr, so every Zebra
+# program's output vanished under `> file` or `| grep` -- with exit code 0.
+#
+# It is driven by `tools/stream_check.sh`, which runs it with the streams SEPARATED and
+# asserts both directions. Do not "simplify" that harness to capture 2>&1; that would
+# restore the blind spot exactly.
+#
+# The markers are deliberately distinct strings rather than the same text on both streams,
+# so a harness that captured one stream twice would fail rather than pass.
+
+def main()
+    print("STDOUT-MARKER-9f3a")
+    sys.errln("STDERR-MARKER-4c7b")
+    print("second stdout line")

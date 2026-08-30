@@ -46,128 +46,31 @@
 
 ---
 
-### BUG-318: `print` writes to STDERR, so every Zebra program's output vanishes under `>` or `|` — OPEN (found 2026-08-29)
+### BUG-317: `--emit-zig > file` produces an empty file — REOPENED 2026-08-29, NOT fixed by BUG-318
 
-**Found while trying to switch the regeneration authority to the selfhost (bootstrap
-sunset, criterion 2), which needs `--emit-zig > file` to work. It does not, and the
-reason turned out to have nothing to do with `--emit-zig`.**
-
-**Zebra's `print()` lowers to `std.debug.print`, and `std.debug.print` writes to
-STDERR.** Both compilers do it -- this is language-wide, not a selfhost defect:
-
-```zebra
-def main()
-    print("hello from zebra")
-```
-```zig
-std.debug.print("{s}\n", .{"hello from zebra"});   // emitted by BOTH compilers
-```
-
-Measured on the built executable, streams separated: **stdout 0 bytes, stderr 17
-bytes, exit code 0.**
-
-**WHAT THIS COSTS A USER.** Every ordinary composition silently produces nothing,
-and nothing reports a problem:
-
-| | |
-|---|---|
-| `prog > out.txt` | empty file, exit 0 |
-| `prog \| grep x` | no matches, exit 0 |
-| `prog \| head` | nothing |
-| capture in any harness that reads stdout | empty |
-
-That is not a wrong answer, so it is not literally G1 -- it is the **total silent loss
-of a program's entire output under its most ordinary use**, with a success exit code.
-For a 0.9 that means "ready for others", this may be the most user-visible defect in
-the ledger: it is the first thing a stranger does after `print`.
-
-**IT IS A DEFECT, NOT A DESIGN, and two things prove that rather than assert it:**
-
-1. **`sys.errln(msg)` exists and is documented as "Write to stderr + newline".** That
-   API is *redundant* if `print` already writes to stderr. Its existence is the
-   language's own statement that `print` is meant to be stdout.
-2. **QUICKSTART documents `--emit-zig` as "Zig source to stdout"** (twice: the CLI
-   table and the command list). The documented behaviour and the actual behaviour
-   disagree, and the docs are the side that describes the intent.
-
-**BUG-317 IS A SYMPTOM OF THIS, not a separate defect.** It was filed as "`--emit-zig`
-writes the generated Zig to stderr in the selfhost and stdout in the bootstrap". The
-real story: the selfhost's emit path ends in `print(zig_src)` (selfhost/main.zbr) and
-`print` is stderr, while the bootstrap writes that path's output directly. Fixing this
-fixes 317; 317 should be closed as a duplicate when this lands, not fixed separately.
-
-**IT ALSO RE-EXPLAINS A DOCUMENTED HAZARD.** This repo records "Windows stdout-to-PIPE
-writes nothing (redirect/file fine)" as a platform quirk, and several tools are shaped
-around it. That diagnosis looks wrong: stdout gets nothing under a FILE redirect too.
-The runs that appeared to work were capturing `2>&1`. **Before shaping any more tooling
-around the Windows-pipe theory, re-test it against this.**
-
-**Why nothing caught it:** `output_sweep` -- the only gate that reads what programs
-PRINT -- captures combined output, so a stream mix-up is invisible to it by
-construction. Every other gate asks whether things compile. The one gate that could
-have seen this cannot distinguish the streams it merges.
-
-**Control when fixing:** a fixture whose stdout is captured *separately from stderr*
-must contain the printed text, and its stderr must not. Watch it fail first -- today
-stdout is empty. And assert the OTHER direction in the same run: `sys.errln` output
-must still be on stderr, or the fix has merely swapped which stream is wrong.
-
-**Scope caution:** ~15 tools invoke the compiler and several capture combined output
-or rely on the current behaviour. `output_sweep`'s golden baseline was recorded with
-`print` on stderr; if it captures `2>&1` the baseline is unaffected, but that must be
-checked rather than assumed before the fix lands.
-
-### BUG-317: `--emit-zig` writes the generated Zig to STDERR in the selfhost and STDOUT in the bootstrap, so `> out.zig` silently produces an empty file — OPEN (found 2026-08-29)
-
-Raised by Sean while reading a session note: "`--emit-zig` going to stdout seems
-counter-intuitive. Wouldn't it make sense to just emit the zig file explicitly?" Measuring
-it found something worse than counter-intuitive.
-
-**Measured on `Token.zbr`, streams separated:**
-
-| | selfhost (`zebra.exe`) | bootstrap (`zebra-bootstrap.exe`) |
-|---|---|---|
-| stdout | **0 bytes** | 212,634 bytes (the generated Zig) |
-| stderr | **17,981 bytes — including the entire generated Zig** | 0 bytes |
-| file beside the source | none | none |
-| file elsewhere | `%TEMP%/Token.zig` | — |
-| exit code | 0 | 0 |
-
-**THREE DEFECTS, and the first is the one that bites.**
-
-1. **The obvious command silently fails.** `zebra --emit-zig f.zbr > out.zig` creates an
-   EMPTY file and exits 0, because the source is on stderr. Nothing reports a problem: the
-   user has a zero-byte `.zig` and a successful exit. UNGIT "nothing fabricated" -- rc=0 is
-   a claim the tool did what was asked.
-2. **The two compilers are exact opposites**, which makes every harness that drives both
-   wrong for one of them. This is not theoretical: it cost three iterations of a throwaway
-   comparison harness on the day it was found, and each failure looked like a finding about
-   the COMPILERS rather than about the flag.
-3. **The output file lands in the system temp directory**, not beside the source and not in
-   the working directory. A user who wants the emitted Zig has to read a progress line to
-   discover where it went -- and that progress line is on the same stream as the source, so
-   redirecting one redirects the other.
-
-**The fix Sean proposes is the right one: write the file explicitly.** `--emit-zig` should
-produce `<name>.zig` in the working directory (or beside the source), print only progress to
-stderr, and put NOTHING on stdout. If piping is ever wanted, that is a separate explicit
-`--stdout` / `-o -`, the way every other compiler spells it. `--output-dir` already behaves
-sanely and is the model.
-
-**BEFORE CHANGING IT, COUNT THE CALLERS.** Fifteen tools invoke `--emit-zig`
-(`bootstrap_check`, `compile_check`, `divergence_check`, `full_sweep`, `selfhost_smoke`,
-`rebuild`, `gate_selfcheck` and others). Several capture the stream, so a change of
-destination is a breaking change to the gate fleet and must land with them, not before
-them. That is the reason this is filed rather than fixed on the spot.
-
-**Control when fixing:** `zebra --emit-zig f.zbr > out.zig` must produce a NON-EMPTY,
-compiling `out.zig` -- watched failing first, since today it yields zero bytes. And a
-matching check for the bootstrap while it lives, since the two currently disagree; the
-divergence is what makes any shared harness unreliable.
-
-**Not investigated:** whether the emitted-to-`%TEMP%` file is also what `zebra run` uses
-internally, in which case the temp location is deliberate for that path and only the flag's
-user-facing behaviour is wrong.
+> **CLOSED AS A DUPLICATE AND REOPENED THE SAME HOUR. The closure was wrong and the reason
+> is worth more than the bug.** I fixed BUG-318 (`print` -> stderr), asserted that it fixed
+> this too since the emit path ends in `print(zig_src)`, and closed this without testing it.
+> Then I wrote a gate leg that DID test it, and it failed: `--emit-zig > file` is still 0
+> bytes.
+>
+> **Why the reasoning was wrong:** BUG-318's fix changes what the selfhost EMITS for a
+> `print` statement. The selfhost compiler's own code is not emitted by the selfhost -- it
+> is emitted by the BOOTSTRAP, which still emits `std.debug.print`. The committed
+> `selfhost/main.zig` carries **138 `std.debug.print` calls** and one `_zbr_print` (the
+> preamble definition). So programs the selfhost COMPILES print to stdout; the selfhost
+> ITSELF still prints to stderr.
+>
+> **This inverts a dependency I had recorded backwards.** I said fixing 317 would unblock
+> the bootstrap sunset's criterion 2. It is the reverse: **criterion 2 fixes 317**, because
+> moving the regeneration authority to the selfhost is exactly what puts `_zbr_print` into
+> the compiler's own code. The cycle breaks because criterion 2 can use `--output-dir`,
+> which works today, rather than `--emit-zig`, which does not.
+>
+> **The general lesson, which this repo already had written down:** a fix verified by
+> reasoning about a shared root cause is not verified. The leg that caught it exists only
+> because the fixture gate refused to accept a FIXED bug with nothing testing it -- so a
+> gate designed to catch missing tests caught a false closure instead.
 
 ### BUG-314: `.add()` on a `List` fetched from a parent container via `.at()` does not write back — only `.set()` does — OPEN (found 2026-08-28)
 

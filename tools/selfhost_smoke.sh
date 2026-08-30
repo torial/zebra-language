@@ -1555,6 +1555,10 @@ smoke_run     test/bug280_freed_words_test.zbr "freed words: OK"
 smoke_run     test/bug315_protected_freed_test.zbr "bug315: OK"
 smoke_run     test/loop_continue_break_test.zbr "loop-continue-break: OK"
 smoke_run     test/bug316_internal_freed_test.zbr "bug316: OK"
+# NOTE: this only proves the fixture RUNS. Whether its output lands on the right STREAM
+# is invisible here -- the smoke harness greps combined output -- and is asserted by
+# tools/stream_check.sh instead. See BUG-318.
+smoke_run     test/stream_separation_test.zbr "STDOUT-MARKER-9f3a"
 
 # BUG-283: `${Name}` in a zig"..." literal names a Zebra TYPE and codegen substitutes its
 # current emitted spelling, so user code stops guessing that spelling. THE NEGATIVE TEST
