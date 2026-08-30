@@ -147,7 +147,23 @@ code. It was not adopted from Naur; it was rediscovered by getting burned.
 11. A written specification of the concurrency model (threads, `Chan`, `Atomic`, the two-tier
     allocator). Zebra has the primitives and no stated memory model.
 
-### DRAFT: A WRITTEN SYSTEM CONCEPT — Sean's to accept, rewrite or reject
+### THE SYSTEM CONCEPT — **ACCEPTED (Sean, 2026-08-29)**
+
+**No longer a draft.** Accepted after three iterations, together with the decision
+framework below (four gates, seven ranked axes) and the accepted-tensions table. The
+audience clause was rewritten by Sean; the ordering of axes 2 and 3 was his call,
+against Claude's proposal.
+
+**It had already adjudicated real features before it was accepted**, which is the
+evidence that it does work rather than merely reads well: restoring the small-team
+bound made visibility modifiers suspect, and within minutes that produced BUG-315
+(`protected` removed) and BUG-316 (`internal` removed). Neither was on any queue.
+
+Use it the way it is written: **gates first — a failure is a rejection, not a low
+score — then the axes, in order.** The material below is the record of how it was
+arrived at, including the arguments that lost.
+
+#### The draft as first proposed, and how it changed
 
 Wirth's test for a feature is not "is it useful" but "is it compatible with the original
 system concept", and his claim is that the incompatibility usually *passes unrecognized*
@@ -400,7 +416,7 @@ may be the language's only user, and he works with AI. The criterion is therefor
 on a trend but a description of the actual development model -- which is also why it is
 testable HERE and almost nowhere else.
 
-**KNOWN GAP: THE DRAFT NAMES NO AUDIENCE** (raised by Sean, 2026-08-29). Left open rather
+**RESOLVED — the audience clause was Sean's rewrite (see ITERATION 3). Kept below because the reasoning is the reusable part.** Originally recorded as: left open rather
 than filled, because it is an identity question. Three things are worth having settled first:
 
 *The test that separates a concept from a slogan is REJECTION POWER* -- a concept earns its
