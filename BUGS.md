@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-322. Next new bug: BUG-323.**
+**Last bug number generated: BUG-323. Next new bug: BUG-324.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,60 @@
 > measured in.
 
 ---
+
+### BUG-323: unknown command-line flags are SILENTLY IGNORED, so a typo'd `--turbo` gives you a build you did not ask for — OPEN (found 2026-08-30)
+
+**The user's stated intent is discarded without a word.** `zebra --no-such-flag f.zbr`
+exits **0** and simply compiles and runs the file. There is no unknown-argument branch in
+`selfhost/main.zbr` at all (grepped: no `unknown`, no `unrecognised`, no
+`startsWith("--")` fallthrough), and `--help` documents no pass-through behaviour. This is
+an omission, not a design.
+
+**Demonstration, on a program whose behaviour DEPENDS on the flag.** `half(7)` violates a
+`require` precondition, so the contract firing is observable in the exit code and the
+stdout:
+
+| invocation | exit | stdout | what the user got |
+|---|---|---|---|
+| (no flag) | 1 | — | contract fires — correct |
+| `--turbo` | **0** | **`3`** | contract stripped — correct |
+| `--trubo` | 1 | — | **typo ignored: contracts still in** |
+| `-turbo` | 1 | — | **single dash ignored: contracts still in** |
+| `--TURBO` | 1 | — | **case ignored: contracts still in** |
+
+Three of the five spellings a person plausibly types produce the *opposite* of the
+requested build, silently, with a successful-looking run.
+
+**THE PRECEDENT IS IN THIS FILE.** BUG-228: `--release` shipped **Debug** for four days
+under 19 green gates, because the branch that emitted the executable passed no optimize
+flag and Zig defaulted. "Everyone shipping with the flag shipped Debug believing
+otherwise — the flag's whole purpose." That was a flag that reached the compiler and was
+dropped internally; this is a flag that never reaches it at all. Same harm, one step
+earlier in the pipeline.
+
+**UNGIT, "nothing ambient": commands take intent explicitly, and refusals name the reason
+and the fix.** A misspelled flag is a refusal the tool declines to make. The cost is
+asymmetric and always in the same direction: the user believes they got the thing they
+asked for, and the evidence that they did not is a behaviour difference they were not
+looking for.
+
+**SCOPE.** Measured on the top-level compile path. `zebra build` forwards arguments to a
+sub-invocation and a deliberate pass-through may be correct *there* — that case is not
+covered by this report and should be decided separately rather than swept in.
+
+**Control when fixing.** An unknown top-level flag must exit non-zero and NAME the
+offending argument. Suggest-the-nearest-match is a nicety, not the requirement; the
+requirement is that it stops. A gate leg belongs with it, and must be watched RED first:
+assert `zebra --no-such-flag f.zbr` exits non-zero AND mentions `--no-such-flag` on
+stderr. Keep a positive leg (a REAL flag still works) or a fix that rejects everything
+passes.
+
+**Found how.** Probing the CLI surface deliberately, because the day's theory predicted
+defects would cluster there: the round-trip gate is a fixed-point test on the compiler's
+EMIT function, so everything the compiler does other than successfully compile its own
+source is invisible to it — which is the entire argument-handling surface and every
+failure path. Three of three bugs found today (BUG-321, BUG-322, this) are in that
+region. See `pages/claude/fieldnotes_compiler-orbit_2026-08-30.md`.
 
 ### BUG-322: `zebra build` fails on a valid build.zbr — SILENTLY in the shipped compiler, with a panic in the fixed-point compiler — OPEN (found 2026-08-30)
 
