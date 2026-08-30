@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-320. Next new bug: BUG-321.**
+**Last bug number generated: BUG-322. Next new bug: BUG-323.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,153 @@
 > measured in.
 
 ---
+
+### BUG-322: `zebra build` fails on a valid build.zbr — SILENTLY in the shipped compiler, with a panic in the fixed-point compiler — OPEN (found 2026-08-30)
+
+**A documented, user-facing subcommand that does not work, and that no gate invokes.**
+Found in free time while probing which compiler commands produce redirectable output.
+
+```
+$ cd proj && ls
+build.zbr  test/
+$ zebra build                       # zig-out/bin/zebra.exe  (SHIPPED)
+$ echo $?
+255                                 # ...and ZERO bytes on stdout AND stderr
+$ zebra build --list-targets        # same: exit 255, no output whatsoever
+```
+
+Same input under `zebra-selfhost-B.exe` (the round-trip's level-2 compiler):
+
+```
+thread 21940 panic: integer does not fit in destination type
+(empty stack trace)
+exit 3
+```
+
+**THE BUILD API IS FINE — it is the SUBCOMMAND that is broken.** The exact same
+`build.zbr`, run as an ordinary program, works:
+
+```
+$ zebra test/build_declarative_test.zbr
+build declarative: ok            (exit 0)
+```
+
+That file is registered in `selfhost_smoke.sh` **three times** (`smoke_run`,
+`smoke_run_bootstrap` x2) and sits in BOTH heavy baselines. So the `Build` library, the
+declarative target graph, and everything the fixture exercises are covered and green. The
+`zebra build` entry point that is supposed to DRIVE them is a different code path, and
+**nothing in `tools/` invokes it** — verified by grep across every gate script.
+
+Reproduced with all referenced sources present (the fixture names `test/*.zbr` relatively;
+those were copied alongside so a missing-file confound is excluded) and with no build file
+at all. Same result either way, which is itself part of the complaint: under the shipped
+compiler **"no build file" and "valid build file" are indistinguishable** — both are exit
+255 with total silence.
+
+**The silent half is the worse half.** UNGIT "nothing withheld": a tool that fails must
+name the reason and the fix. This one exits non-zero having said nothing on either stream,
+so the user has no thread to pull — not a message, not a file name, not a line number. The
+panic in the other compiler is a bug, but it is at least *evidence*.
+
+**It is also a second behavioural divergence between the shipped compiler and the
+fixed-point compiler** (the first being `--emit-zig > file`, BUG-317). The round-trip gate
+cannot see either, because it compares what the two compilers EMIT and both of these are
+differences in what they DO. See `fieldnotes_compiler-orbit_2026-08-30` on the wiki.
+
+**Control when fixing.** A gate leg that runs `zebra build` in a scratch project and
+requires (a) exit 0, (b) non-empty output, and (c) for `--list-targets`, output that
+parses as JSON on **stdout** — JSON that cannot be piped to `jq` is not an interface.
+Watch it go RED first: it passes vacuously today only in the sense that nothing runs it.
+Keep a negative leg (no build file present => a NAMED refusal, non-zero exit, non-empty
+stderr) or a fix that makes the failure silent-but-zero would pass.
+
+**Unknown, deliberately not guessed:** whether the exit-255 silence and the
+integer-overflow panic are the same defect presenting differently, or two. The panic
+message is identical with and without a build file present, which hints the failure
+happens before the file is read, but that has not been traced.
+
+### BUG-321: `--version` and `--help` write to STDERR, so `zebra --help | less` shows nothing — OPEN (found 2026-08-30)
+
+**The last living residue of the print-stream myth.** Found in free time by pointing
+yesterday's `stream-sep` instrument at the COMPILER rather than at programs it produces.
+
+```
+$ zebra --help | less          # nothing
+$ zebra --version > v.txt      # 0 bytes
+$ zebra --version 2>&1 >/dev/null
+zebra 0.1.0 (Phase 22 cutover — selfhost pipeline primary)
+```
+
+Measured on BOTH `zebra.exe` and `zebra-selfhost-B.exe` (5 observables each: `--version`,
+`--help`, a type error, `-c` on a good file, `--emit-zig`). The two compilers agree on
+four of the five and put **0 bytes on stdout** for every one of those four.
+
+**NOT A LOWERING BUG — the source asks for stderr and correctly gets it.**
+`selfhost/main.zbr:2409` is `sys.errln("zebra 0.1.0 …")`, and the usage block is the same.
+`sys.errln` is behaving exactly as specified. The defect is in the ask, which is why
+BUG-318's fix did not touch it: that fixed where `print` GOES, and this code never called
+`print`.
+
+**Why the ask is wrong, and it is a dated artifact.** For months `print` appeared not to
+work — BUG-318 sent it to stderr, and the repo recorded that as a Windows
+"stdout-to-PIPE writes nothing" platform quirk (see `project_print_stream_myth`). Anyone
+writing user-facing output in `main.zbr` would have found `print` silently useless and
+`sys.errln` visibly working. **The workaround outlived the myth that caused it.**
+`main.zbr` carries **80 `sys.errln` against 6 `print`**.
+
+**SCOPE — most of those 80 are CORRECT and must not be touched.** Diagnostics, errors,
+warnings and `note:` advisories belong on stderr; so does progress (`compiling: x.zbr`),
+which is precisely what lets `zebra --emit-zig f.zbr > out.zig` work at all. gcc does the
+same. The defect is the two that violate universal convention:
+
+| call site | today | should be |
+|---|---|---|
+| `--version` banner | stderr | **stdout** |
+| `--help` / usage block | stderr | **stdout** |
+| errors, warnings, `note:` | stderr | stderr — correct, leave alone |
+| progress (`compiling: …`) | stderr | stderr — correct, and load-bearing for `--emit-zig >` |
+
+A usage block printed in response to a BAD invocation is a different case and correctly
+stays on stderr (with a non-zero exit). Only the case where the user ASKED for it moves.
+
+**NO GATE CAN SEE THIS, and the gap is one level up from where we just armored.**
+`tools/stream_check.sh` (built 2026-08-29 for BUG-318) asserts that a compiled Zebra
+program's `print` lands on stdout. It says nothing about the compiler's own output. Same
+blind spot, one storey higher: we checked the programs the tool makes, not the tool.
+
+**Control when fixing.** Extend `stream_check.sh` with a leg that runs the COMPILER:
+`zebra --help` must put bytes on stdout and `zebra --version > file` must be non-empty —
+and the leg must be watched going RED first, since it passes vacuously if the compiler
+prints nothing at all. Keep a NEGATIVE leg asserting a type error still goes to stderr,
+or a fix that redirects everything to stdout passes.
+
+**0.9 relevance.** 0.9 means ready-for-others. `--help | less` is among the first three
+things a stranger does with an unfamiliar compiler.
+
+**BLOCKED ON CRITERION 2 — AND THE OBVIOUS FIX WILL LOOK LIKE IT FAILED.** Verified
+2026-08-30, not inferred. The fix is `sys.errln` -> `print` in `main.zbr`. But the
+committed `selfhost/main.zig` is emitted by the **bootstrap**, and the bootstrap still
+lowers a Zebra `print` to `std.debug.print` — stderr. Measured on a two-line program:
+
+```
+bootstrap emit:   std.debug.print("{s}\n", .{"orbit"});      -> stderr
+selfhost  emit:   _zbr_print("{s}\n", .{"orbit"});           -> stdout
+```
+
+The bootstrap's inlined preamble even *contains* `_zbr_print` (it is in the shared
+`stdlib_preamble.zig`, edited for BUG-318) and never calls it: the runtime helper shipped,
+the lowering did not. BUG-318 was landed selfhost-only, which the standing
+drop-bootstrap-parity rule permits — this is that decision's bill arriving.
+
+So making the two-line source change today, rebuilding, and testing `zebra --version`
+yields **no observable difference**, and the natural reading is "my fix did not work"
+rather than "the compiler that compiled my compiler does not have it yet." Same family as
+the documented preamble/regen ordering trap, new instance.
+
+Order: land criterion 2 (regeneration authority moves to the selfhost), THEN this. Or land
+the source change now and expect it to be inert until then — but say so in the commit, or
+it reads as a fix that did not take.
+
 
 ### BUG-320: index assignment `xs[i] = v` regressed by BUG-313 — plain AND compound — OPEN (found 2026-08-29)
 
