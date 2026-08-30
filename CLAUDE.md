@@ -209,7 +209,7 @@ per-tier counts, computed from the registrations rather than written down.
 | `--fast` | 25 <!-- doc-gen: 25 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
 | (default) | 27 <!-- doc-gen: 27 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
 | `--full` | 34 <!-- doc-gen: 34 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 37 <!-- doc-gen: 37 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–110 min** | once a day |
+| `--daily` | 37 <!-- doc-gen: 37 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -1645,6 +1645,29 @@ fine: clearing that directory made the build produce an app, which then refused 
 console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**DAILY tier 2026-08-30: 37/37 PASS — NO XFAIL, in ONE invocation, 2h10m at JOBS=2.**
+Run as the closing move on the day BUG-315, BUG-316, BUG-318 and BUG-320's plain half were
+fixed, the imgui backend was retired, and NEXT_STEPS was split. smoke **391/391**,
+round-trip byte-identical, `compile_check-inline` **300/0/0**, `output_sweep` /
+`full_sweep` / `examples_sweep` 0 regressions, `divergence` **0 selfhost gaps**, `gramgen`
+960/0/0, `gui-scaffold` clean, `node-addon` PASS, `stream-sep` 7/7.
+
+**`examples_sweep` green is the line that matters most here.** It is the gate that would
+have caught BUG-320 -- a shipped example stopped compiling for ~24 hours because after
+landing BUG-313 only static/fast/quick were run. This tier is the convention that catches
+that class, demonstrated rather than described.
+
+**THE TIER IS 37 GATES, up from 35, and both additions exist because something got through
+that nothing could see:** `keyword-coverage` (a language feature no test exercises --
+`protected` and `internal` were the two, and BOTH were defective) and `stream-sep`
+(`print` went to stderr, invisible because `output_sweep` captures `2>&1` and therefore
+merges the two streams it would have needed to distinguish).
+
+**AND THE UPPER BOUND MOVED AGAIN, 110 min -> 2h10m.** The table above now reads 37-130.
+No cause is offered. This run followed several full rebuilds of both compilers, which
+invalidates zig's cache downstream -- the same untested hypothesis already recorded for the
+08-20 and 08-26 runs, still untested. Recorded as an observation, not a diagnosis.
 
 **DAILY tier 2026-08-26: 35/35 PASS — NO XFAIL, in ONE invocation, 110 min at JOBS=2.**
 The first fully green daily with nothing pinned: `node-addon` passes for real now that
