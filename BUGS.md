@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-318. Next new bug: BUG-319.**
+**Last bug number generated: BUG-320. Next new bug: BUG-321.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,130 @@
 > measured in.
 
 ---
+
+### BUG-320: index assignment `xs[i] = v` regressed by BUG-313 — plain AND compound — OPEN (found 2026-08-29)
+
+**A regression I introduced, found the next day by Sean asking why `xs[i]` was not
+writeable.** It was writeable. BUG-313's bounds-checking change broke it.
+
+```
+before BUG-313:  xs.items[@intCast(0)] = 77      a valid Zig lvalue
+after:           _zbr_at(xs.items, 0) = 77       a function call -> Zig refuses
+```
+
+The read path was converted to the checked accessor `_zbr_at`, and the assignment path
+emits its target with the same `genExpr`, so the LHS became a call. Reads kept working,
+which is why it was invisible.
+
+**BOTH FORMS ARE AFFECTED, measured:**
+
+| | result |
+|---|---|
+| `xs[0] = 77` | `error: invalid left-hand side to assignment` |
+| `xs[0] += 3` | same |
+
+The compound forms in `genAssign` (`//=`, `<<=`, `>>=`, `**=`) all emit
+`genExpr(a.target)` on the left, so every one of them has the same defect for an index
+target.
+
+**THE ERROR IS ZIG'S, LEAKED.** *"invalid left-hand side to assignment"* names nothing a
+Zebra programmer wrote. Whatever the fix, the diagnostic should be Zebra's.
+
+**BUG-181 ALREADY ESTABLISHED THIS EXACT CLASS** and its comment is still in `genAssign`
+three lines above the defect: *"a `.len` member used as an assignment TARGET ... Emit
+`obj.len = v`, NOT the read-form ... which is an invalid assignment LHS in Zig."* The
+lesson was recorded, the special case was written, and BUG-313 reintroduced the same shape
+for indexes anyway -- because the work was about the READ path and nobody asked what else
+used the same emitter.
+
+**WHY NO GATE CAUGHT IT, and this is the part worth keeping.**
+`examples/lsystem.zbr` uses `cell[y * w + x] = glyph` and **stopped compiling**.
+`examples_sweep` would have caught it -- but it is a FULL-tier gate, and after landing
+BUG-313 only static, fast and quick were run. The regression sat about 24 hours in a
+shipped example. This repo's own convention -- *"`--daily` is the last thing run when
+overnight work stops"* -- exists precisely for this, and skipping it is what cost the
+example.
+
+**THE FIX, specified rather than rushed** (Sean's standing "careful > fast on selfhost"):
+
+`genAssign` must special-case an `Expr.index` target instead of emitting it via `genExpr`:
+
+- plain `=` -> `_zbr_set(<recv>, <idx>, <value>)`
+- compound -> `_zbr_set(<recv>, <idx>, <op>(_zbr_at(<recv>, <idx>), <rhs>))`
+
+`_zbr_set` already exists (added by BUG-313) and keeps the bounds check, so the fix does
+not reopen what BUG-313 closed.
+
+**Do NOT duplicate the receiver logic.** Deciding whether the receiver needs `.items`
+takes ~15 lines in the read path (`getMemberFieldName` -> `fieldAwareIsHashMap` /
+`fieldAwareIsList`, with an `inferExpr` fallback for non-name bases per BUG-177). Copying
+that into `genAssign` creates exactly the two-copies-of-one-decision shape that keeps
+producing bugs here. Extract it once and call it from both.
+
+HashMap index assignment is already handled separately by `genHashMapAssign` and must stay
+on that path.
+
+**Control when fixing:** `test/boundary/bug320_index_assign_probe.zbr` pins the failure
+today and FAILS when this is fixed -- rewrite it into a positive test of `xs[i] = v` at
+that point. Add the compound form too, and re-run `examples_sweep`, which is the gate that
+should have caught this.
+
+**Context (Sean, 2026-08-29): `[i]` getter/setter is the intended way forward**, and
+`.at()`/`.set()` become removable duplicates once this lands -- see BUG-319.
+
+### BUG-319: indexing has TWO partial spellings — `.at()` dies on `str`, `[i]` cannot be assigned — OPEN (found 2026-08-29)
+
+**Found by Sean asking "should we get rid of `.at()`? What value does it add?" — a question
+about redundancy that turned out to expose incoherence instead.**
+
+Measured:
+
+| | `.at(i)` | `[i]` read | write |
+|---|---|---|---|
+| `List(T)` | works | works | `.set(i, v)` only — `xs[i] = v` is refused, *"invalid left-hand side to assignment"* |
+| `str` | **FAILS** — leaked Zig error: *"no member named 'items' in 'str'"* | works | — |
+
+**They are not two spellings of one thing. They are two INCOMPLETE spellings with different
+coverage**, which is worse than redundancy: a user cannot learn one form and rely on it.
+`.at()` is the list accessor and dies on strings; `[i]` reads both and writes neither.
+
+**Three separate defects here, and they should not be conflated:**
+
+1. **`s.at(i)` leaks a Zig error.** *"no member named 'items' in 'str'"* names an
+   implementation detail of the emitted ArrayList and is meaningless to someone writing
+   Zebra. Whatever the design answer, this must be a Zebra diagnostic -- UNGIT "nothing
+   fabricated" on the surface a user meets first.
+2. **The read/write asymmetry is unexplained.** `xs[i]` reads but `xs[i] = v` is refused,
+   while `.at()`/`.set()` is a symmetric pair. Nothing documents why.
+3. **QUICKSTART documents `s[i]` as THE byte-indexing form** (see BUG-225, where `s[i]` is
+   decided to be a byte, matching Go), so `[i]` is load-bearing for strings and cannot
+   simply be retired.
+
+**WHY `.at()` CANNOT SIMPLY GO, which was the original question:** `.set()` is the only
+write path. Removing `.at()` leaves a pair with no reader, and `[i] = v` does not exist to
+replace it. The redundancy is in the READ direction only.
+
+**The coherent options, for a language decision rather than a fix:**
+
+- **(a) Complete both.** `.at()`/`.set()` gain `str` support; `[i]`/`[i] = v` gain
+  assignment. Most convenient, most surface -- and surface is axis 3, near-irreversible
+  once frozen.
+- **(b) Methods only.** Retire `[i]` for lists, keep it for `str` where it is the documented
+  form. **Note the freeze argument: `[i]` is GRAMMAR and `.at()` is STDLIB.** Under the
+  planned grammar freeze, grammar is the near-permanent surface and the stdlib stays
+  extensible, so a capability that lives in a method costs less forever than one that lives
+  in the syntax.
+- **(c) Brackets only**, with assignment added. Fewest concepts for a reader, but it moves a
+  capability INTO the frozen grammar, which is the expensive direction.
+
+**Recommendation: (b)**, on the freeze argument alone -- but this is a language call.
+Whichever is chosen, defect 1 (the leaked Zig error) should be fixed regardless, because it
+is wrong under every option.
+
+**Also observed, filed here rather than separately because it is one line of evidence:** the
+diagnostic for `print(s.at(1))` reported **line 2** for an error on line 3 -- the same
+diagnostic-position family as BUG-288, which had cleared `diag-columns` to zero. Worth a
+check that the *line* is right and not only the column.
 
 ### BUG-317: `--emit-zig > file` produces an empty file — REOPENED 2026-08-29, NOT fixed by BUG-318
 

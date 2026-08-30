@@ -1,0 +1,36 @@
+# @boundary rejects invalid left-hand side to assignment
+# @boundary-pending BUG-320  index assignment regressed by BUG-313; pins the failure
+#
+# PINS A REGRESSION I CAUSED, so it cannot happen twice quietly.
+#
+# `xs[i] = v` WORKED until 2026-08-28. BUG-313's bounds-checking change rewrote the index
+# emitter from `.items[@intCast(i)]` -- a valid Zig lvalue -- to `_zbr_at(...)`, a function
+# call. Reads kept working; assignment became "invalid left-hand side to assignment", which
+# is ZIG's message leaking through, not a Zebra diagnostic.
+#
+#     before:  xs.items[@intCast(0)] = 77      valid lvalue
+#     after:   _zbr_at(xs.items, 0) = 77       function call -> Zig refuses
+#
+# BUG-181 had already established this exact class -- "a `.len` member used as an assignment
+# TARGET ... the read-form is an invalid assignment LHS in Zig" -- and the fix for that was a
+# special case in genAssign. BUG-313 reintroduced the same shape for indexes and nobody
+# noticed, because the read path was what was being tested.
+#
+# WHY NO GATE CAUGHT IT, and this is the part worth keeping: `examples/lsystem.zbr` uses
+# `cell[y * w + x] = glyph` and STOPPED COMPILING. `examples_sweep` would have caught it --
+# but it is a FULL-tier gate, and after landing BUG-313 only static/fast/quick were run.
+# The regression sat ~24 hours. This repo's own convention ("--daily is the last thing run
+# when overnight work stops") exists precisely for this, and skipping it cost a shipped
+# example.
+#
+# THIS PROBE ASSERTS THE BROKEN BEHAVIOUR ON PURPOSE. It passes today by requiring the
+# refusal, and FAILS when BUG-320 is fixed -- the signal to rewrite it into a positive test
+# of `xs[i] = v`, not to re-baseline.
+
+def main()
+    var xs: List(int) = List(int)()
+    xs.add(1)
+    xs.add(2)
+    # Should assign 77 to element 0. Today: refused, with a leaked Zig message.
+    xs[0] = 77
+    print(xs[0])
