@@ -1,36 +1,33 @@
-# @boundary rejects invalid left-hand side to assignment
-# @boundary-pending BUG-320  index assignment regressed by BUG-313; pins the failure
+# @boundary runs
 #
-# PINS A REGRESSION I CAUSED, so it cannot happen twice quietly.
+# BUG-320 REGRESSION TEST. `xs[i] = v` worked until 2026-08-28, when BUG-313's
+# bounds-checking change rewrote the index emitter from `.items[@intCast(i)]` -- a valid Zig
+# lvalue -- to `_zbr_at(...)`, a function call. Reads kept working, so nothing looked wrong;
+# `examples/lsystem.zbr` (`cell[y * w + x] = glyph`) silently stopped compiling for ~24
+# hours.
 #
-# `xs[i] = v` WORKED until 2026-08-28. BUG-313's bounds-checking change rewrote the index
-# emitter from `.items[@intCast(i)]` -- a valid Zig lvalue -- to `_zbr_at(...)`, a function
-# call. Reads kept working; assignment became "invalid left-hand side to assignment", which
-# is ZIG's message leaking through, not a Zebra diagnostic.
+# WHY IT ESCAPED: examples_sweep would have caught it, but it is a FULL-tier gate and only
+# static/fast/quick were run after landing BUG-313. This file exists so the next occurrence
+# is caught by a cheap tier instead of by a person.
 #
-#     before:  xs.items[@intCast(0)] = 77      valid lvalue
-#     after:   _zbr_at(xs.items, 0) = 77       function call -> Zig refuses
+# The fix emits `_zbr_set(recv, idx, value)` -- which KEEPS the bounds check BUG-313 added,
+# so this probe also guards against "fixing" the assignment by reverting to a raw lvalue.
 #
-# BUG-181 had already established this exact class -- "a `.len` member used as an assignment
-# TARGET ... the read-form is an invalid assignment LHS in Zig" -- and the fix for that was a
-# special case in genAssign. BUG-313 reintroduced the same shape for indexes and nobody
-# noticed, because the read path was what was being tested.
-#
-# WHY NO GATE CAUGHT IT, and this is the part worth keeping: `examples/lsystem.zbr` uses
-# `cell[y * w + x] = glyph` and STOPPED COMPILING. `examples_sweep` would have caught it --
-# but it is a FULL-tier gate, and after landing BUG-313 only static/fast/quick were run.
-# The regression sat ~24 hours. This repo's own convention ("--daily is the last thing run
-# when overnight work stops") exists precisely for this, and skipping it cost a shipped
-# example.
-#
-# THIS PROBE ASSERTS THE BROKEN BEHAVIOUR ON PURPOSE. It passes today by requiring the
-# refusal, and FAILS when BUG-320 is fixed -- the signal to rewrite it into a positive test
-# of `xs[i] = v`, not to re-baseline.
+# NOT covered here: the COMPOUND forms (`xs[i] += v` and eleven others), still broken and
+# pinned separately in bug320b_compound_index_assign_probe.zbr.
 
 def main()
     var xs: List(int) = List(int)()
     xs.add(1)
     xs.add(2)
-    # Should assign 77 to element 0. Today: refused, with a leaked Zig message.
+
     xs[0] = 77
-    print(xs[0])
+    print(xs[0])          # 77 — the write lands
+    print(xs[1])          # 2  — the neighbour is untouched
+    print(xs.len)         # 2  — assignment does not grow the list
+
+    # A non-int element type, because the emitted helper is generic over the element.
+    var ys: List(str) = List(str)()
+    ys.add("a")
+    ys[0] = "z"
+    print(ys[0])          # z

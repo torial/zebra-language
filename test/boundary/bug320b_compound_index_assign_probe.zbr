@@ -1,0 +1,21 @@
+# @boundary rejects invalid left-hand side to assignment
+# @boundary-pending BUG-320  compound index assignment still emits the read form as an LHS
+#
+# The COMPOUND half of BUG-320, still broken after the plain-assignment fix and pinned so it
+# cannot be forgotten. Every compound branch in genAssign emits `genExpr(a.target)` on the
+# left, which for an index target is `_zbr_at(recv, i)` -- a function call.
+#
+# Deliberately NOT fixed in the same pass: four of the twelve compound operators (`//=`,
+# `**=`, `<<=`, `>>=`) carry their own lowerings a few lines further down genAssign, so
+# routing indexes through them means either duplicating those lowerings -- which is the
+# copy-the-decision shape that CAUSED BUG-320 -- or restructuring genAssign, which deserves
+# to be its own change rather than being smuggled into a regression fix.
+#
+# This passes today by requiring the refusal, and FAILS when compound assignment is fixed --
+# the signal to rewrite it as a positive test, not to re-baseline.
+
+def main()
+    var xs: List(int) = List(int)()
+    xs.add(5)
+    xs[0] += 3
+    print(xs[0])

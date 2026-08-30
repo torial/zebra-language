@@ -113,8 +113,42 @@ today and FAILS when this is fixed -- rewrite it into a positive test of `xs[i] 
 that point. Add the compound form too, and re-run `examples_sweep`, which is the gate that
 should have caught this.
 
-**Context (Sean, 2026-08-29): `[i]` getter/setter is the intended way forward**, and
-`.at()`/`.set()` become removable duplicates once this lands -- see BUG-319.
+**DECIDED (Sean, 2026-08-29): `[i]` getter/setter is the way forward, and `.at()` comes
+OUT of the stdlib.** "This is one of those things that I think will cause confusion to have
+the non square bracket being a required solution anywhere." He accepts the code churn and
+prefers to go slower.
+
+**THE REMOVAL IS BLOCKED ON THE BOOTSTRAP SUNSET, and the constraint is not obvious --
+measured 2026-08-29 before starting, precisely because it would have walled out mid-rewrite:**
+
+| | |
+|---|---|
+| `.at(` sites in `selfhost/*.zbr` (the compiler itself) | **893** |
+| in `test/*.zbr` | 174 |
+| in `examples/*.zbr` | 206 |
+| files touched | 81 |
+
+Converting the compiler's own 893 sites produces NESTED bracket forms, and
+**`m[0][0]` compiles under the selfhost and FAILS under the bootstrap** -- *"Expected
+pointer, slice, array or vector"*, the BUG-177 selfhost-ahead gap. The bootstrap is still
+the regeneration authority and the standing hard limit is that it must be able to COMPILE
+the selfhost source. So a bracket rewrite of `selfhost/*.zbr` would leave a tree that
+cannot be regenerated, discovered somewhere inside a 893-site change.
+
+**ORDER, therefore:**
+
+1. **BUG-320's fix** -- make `xs[i] = v` and the compound forms work. No dependency; do it
+   first, because everything else assumes brackets can write.
+2. **Bootstrap sunset criterion 2** -- move the regeneration authority to the selfhost
+   (`NEXT_STEPS_to_0.9.md`). That lifts the bootstrap-must-compile-selfhost constraint,
+   because the bootstrap stops being the authority.
+3. **`.at()` / `.set()` removal** -- 1,273 sites, mechanical, and only safe after (2).
+
+`test/` and `examples/` could technically convert earlier, but splitting the pass buys
+nothing and doubles the review.
+
+**One thing to preserve in step 3:** a user class may define its own `.at()` method --
+codegen has an `at_is_user_method` branch. A blind textual rewrite would break those.
 
 ### BUG-319: indexing has TWO partial spellings — `.at()` dies on `str`, `[i]` cannot be assigned — OPEN (found 2026-08-29)
 

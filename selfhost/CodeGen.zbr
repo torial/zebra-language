@@ -22,7 +22,7 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
+use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
 use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
 use AstWalk exposing collectOldNodes
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
@@ -7104,6 +7104,37 @@ struct Generator
                     genExpr(a.value)
                     w.emit(";\n")
                     return
+        # BUG-320: an INDEX target must not be emitted with genExpr. Since BUG-313 the
+        # index read form is `_zbr_at(recv, i)` -- a function CALL -- so `xs[i] = v` became
+        # `_zbr_at(xs.items, 0) = 77`, which Zig refuses with "invalid left-hand side to
+        # assignment". That is BUG-181's class exactly (see the `.len` target case above),
+        # and it recurred because the READ path was changed without asking what else emitted
+        # a target through it.
+        #
+        # SCOPE: plain `=` only. The COMPOUND forms (`xs[i] += v` and the eleven others) are
+        # still broken -- every compound branch below emits `genExpr(a.target)` on the left
+        # and hits the same wall. They are NOT fixed here because four of them (`//=`, `**=`,
+        # `<<=`, `>>=`) carry their own lowerings a few lines down, and routing indexes
+        # through those means either duplicating the lowerings or restructuring genAssign.
+        # Duplicating is what caused this bug; restructuring deserves its own change.
+        # Pinned in test/boundary/bug320_index_assign_probe.zbr.
+        #
+        # HashMap targets are NOT handled here -- genHashMapAssign owns them.
+        if a.op == AssignOp.assign
+            if a.target is Expr.index as _ixa
+                var _ixkind = classifyIndexReceiver(_ixa)
+                if _ixkind != 1
+                    w.emit("_zbr_set(")
+                    genExpr(_ixa.object)
+                    if _ixkind == 2
+                        w.emit(".items")
+                    w.emit(", ")
+                    genExpr(_ixa.index)
+                    w.emit(", ")
+                    genExpr(a.value)
+                    w.emit(");\n")
+                    return
+
         if a.op == AssignOp.slashslash_eq
             genExpr(a.target)
             w.emit(" = @divTrunc(")
@@ -7299,6 +7330,24 @@ struct Generator
     # `name` is a field of the CURRENT class, its declared type is authoritative
     # — do NOT fall through to the global name-based fieldIsHashMap, which
     # false-positives on a same-named HashMap field of another class.
+    # BUG-320. Classify an index receiver ONCE, for both the read and the assign path.
+    # 1 = HashMap, 2 = List (needs `.items`), 0 = plain slice/string.
+    # The inferExpr fallback is BUG-177's: a non-name base -- `f()[i]`, or a nested
+    # `x[i][j]` -- is invisible to the name-based lookup, so `.items` was omitted and Zig
+    # rejected the ArrayList index.
+    def classifyIndexReceiver(ix: ExprIndex): int
+        var nm = getMemberFieldName(ix.object)
+        if nm != nil
+            if fieldAwareIsHashMap(nm!)
+                return 1
+            if fieldAwareIsList(nm!)
+                return 2
+            return 0
+        if .infer_ctx != nil
+            if inferExpr(ix.object, .infer_ctx!) is Type_.list_
+                return 2
+        return 0
+
     def fieldAwareIsHashMap(name: str): bool
         if .infer_ctx != nil
             if (.infer_ctx!).hasLocal(name)
