@@ -1,0 +1,52 @@
+# @boundary runs
+# @boundary-pending BUG-314  `.at()` returns a COPY; this pins the wrong behaviour
+#
+# PINS THE CURRENT, WRONG BEHAVIOUR ON PURPOSE. This probe PASSES today by asserting the
+# defect, prints its ticket every run, and FAILS when BUG-314 is fixed -- which is the
+# signal to rewrite it, not to re-baseline.
+#
+# `.at()` on a List(List(T)) returns a COPY of the inner list, so mutating the fetched
+# value is silently lost by the parent:
+#
+#     var r = parent.at(0)     ->  var r = _zbr_at(parent.items, 0);   // COPY
+#     r.add(1.0)               ->  r.append(alloc, 1.0)                 // grows the COPY
+#
+# THE TWO PATHS TO THE SAME THING DISAGREE, and that is the finding worth keeping:
+#
+#     for row in p    ->  for (p.items) |row|      const copy  -> mutation is a Zig
+#                                                                  TYPE ERROR (leaked,
+#                                                                  "expected '*T', found
+#                                                                  '*const T'")
+#     var r = p.at(0) ->  _zbr_at(p.items, 0)      MUTABLE copy -> mutation SILENTLY LOST
+#
+# Both copy. Only the mutability differs, so one path is visibly broken by accident while
+# the other corrupts quietly. The loop is not "correct" -- it is the same defect wearing a
+# type error.
+#
+# THE FIX IS A SEMANTICS DECISION, NOT A BUG FIX, which is why this is pinned rather than
+# repaired: making `.at()` yield `&p.items[i]` would make both work as users expect AND
+# make aliasing observable in a language whose containers are otherwise value-typed. That
+# is Sean's call. The strictly-safe alternative -- keep the copy but make it const, so the
+# silent case becomes the loop's type error -- turns corruption into a diagnostic and
+# commits to nothing.
+
+def main()
+    var parent: List(List(float)) = List(List(float))()
+    parent.add(List(float)())
+
+    var r = parent.at(0)
+    r.add(1.0)
+    r.add(2.0)
+
+    # The fetched copy DID receive both values...
+    print(r.len)
+    # ...and the parent saw none of them. `2` here is the bug being fixed.
+    print(parent.at(0).len)
+
+    # The working pattern, for contrast: fill locally, then append.
+    var p2: List(List(float)) = List(List(float))()
+    var row: List(float) = List(float)()
+    row.add(1.0)
+    row.add(2.0)
+    p2.add(row)
+    print(p2.at(0).len)

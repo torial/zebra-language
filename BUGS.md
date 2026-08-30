@@ -76,6 +76,43 @@
 
 **Filed after the fact, from `C:/Projects/tinylm/zebra_train`'s own verify-harness debugging. Not exhaustively bisected like BUG-312 — one clean repro, mechanism inferred from it, flagged for confirmation if it recurs.**
 
+> **MECHANISM CONFIRMED 2026-08-29, at the emit, and it is not what the title implies.**
+> `.at()` returns a **copy** of the inner list, not a reference:
+>
+> ```zig
+> var r2 = _zbr_at(p2.items, 0);          // COPY of the ArrayList struct
+> r2.append(_zbr_rt._allocator, 1.0);     // grows the COPY's buffer
+> ```
+>
+> The parent keeps its own pointer and length, so the writes are invisible to it.
+> Minimal repro prints `2` for the fetched value's own `.len` and `0` for the parent's --
+> the data is not lost, it is in a copy nobody can reach.
+>
+> **THE TWO PATHS TO THE SAME THING DISAGREE, and this is the part worth keeping:**
+>
+> | | emits | mutation |
+> |---|---|---|
+> | `for row in p` | `for (p.items) \|row\|` — CONST copy | Zig TYPE ERROR, leaked verbatim: `expected type '*T', found '*const T'` |
+> | `var r = p.at(0)` | `_zbr_at(p.items, 0)` — MUTABLE copy | **silently lost** |
+>
+> **Both copy.** Only the mutability differs, so one path is visibly broken by accident
+> while the other corrupts quietly. The loop is not the "correct" path -- it is the same
+> defect wearing a type error, and a leaked Zig one at that.
+>
+> **NOT FIXED, DELIBERATELY, because the fix is a SEMANTICS DECISION and not mine.**
+> Making `.at()` yield `&p.items[i]` would make both paths work as users expect **and make
+> aliasing observable** in a language whose containers are otherwise value-typed. That is a
+> language call.
+>
+> **The strictly-safe alternative, if the semantics question is not wanted:** keep the copy
+> but bind it CONST, so the silent case becomes the loop's error. That turns corruption into
+> a diagnostic and commits to nothing -- and it should come with a real Zebra message rather
+> than the leaked Zig one the loop produces today.
+>
+> **Pinned meanwhile:** `test/boundary/bug314_at_copy_probe.zbr`, `@boundary-pending`. It
+> asserts the WRONG behaviour on purpose, prints its ticket every run, and FAILS when this
+> is fixed -- which is the signal to rewrite the probe, not to re-baseline it.
+
 Building a `List(List(float))` row-by-row, two patterns that look interchangeable:
 
 ```zebra
