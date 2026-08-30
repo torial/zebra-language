@@ -167,9 +167,63 @@ removal into a formality.
    **What remains for criterion 2 is therefore a DECISION, not an unknown:** the committed
    `selfhost/*.zig` are currently the INLINE shape because the bootstrap wrote them. Moving
    the regen authority means committing the runtime-module shape instead.
-2. **Regen authority switches to N-1** -- `zig build update-selfhost` and
-   `bootstrap_check.sh --update` use the committed-`.zig`-built `zebra.exe`, not
-   `zebra-bootstrap.exe`. The round-trip's A/B legs are unchanged and still gate.
+2. **Regen authority switches to N-1** -- **THE CHANGE IS TWO LINES:
+   `tools/bootstrap_check.sh:160` and `:195`, where `$ZEBRA` is used to emit. Point
+   `ZEBRA=` at `zig-out/bin/zebra.exe` instead of `zebra-bootstrap.exe`.** Everything else
+   follows.
+
+   **ATTEMPTED AND BACKED OUT 2026-08-29. Read this before trying again.** The first attempt
+   built a SEPARATE tool (`tools/regen_selfhost.sh`, kept -- it is useful for measuring)
+   that emitted with the selfhost and installed the result. It applied cleanly, `zig build`
+   succeeded, and then **the round-trip silently reverted it**: `bootstrap_check.sh` full
+   mode is ITSELF an authority -- its own header says a successful run "leaves
+   `selfhost/*.zig` in the deterministic selfhost-B-emitted fixed point", and that chain
+   starts at step 1, which emits with `$ZEBRA`. Running the check that was supposed to
+   VALIDATE the switch is what undid it.
+
+   The result was a MIXED TREE: `main.zig` selfhost-emitted, eleven modules
+   bootstrap-emitted, `_zbr_ty_Span` referenced but not exported. It did not build. Two
+   things caught it and neither was a person: `doctor` REFUSED the gate tier because the
+   binary no longer matched the sources, and the build failed loudly because the two
+   emitters use different symbol names (`_zbr_fn_` prefixing). **A mixed tree that
+   COMPILED would have been far worse.**
+
+   **What the bootstrap seed actually buys, measured rather than assumed.** selfhost-A is
+   built FROM bootstrap-emitted Zig, but A's SOURCE is the same `.zbr` -- so A behaves
+   exactly as the selfhost does. The seed is a different ENCODING of the same program, not
+   an independent implementation of it. If `CodeGen.zbr` had a codegen bug today, A would
+   have it, A's emit would have it, B would inherit it, and **the round-trip would still
+   pass**. It proves fixed-point convergence, not correctness.
+
+   So the seed buys exactly one thing: the committed `selfhost/*.zig` are produced by an
+   independent implementation, so a selfhost codegen regression cannot write itself into
+   the committed artifacts.
+
+   **The risk of switching, stated plainly:** a codegen regression becomes SELF-PROPAGATING
+   in the committed files. Detection moves from "a second implementation would have emitted
+   something different" to "the gates over 500+ corpus files fail". Recovery moves from the
+   bootstrap to GIT -- which is exactly N-1, and exactly what GCC, Rust and Go accept.
+
+   **What gets BETTER, and it was under-weighted:** today the committed `selfhost/*.zig`
+   are **not what the shipping compiler produces**. The artifacts a reviewer inspects come
+   from a compiler nobody runs. That is a permanent silent inconsistency, and the switch
+   removes it. The 33,000-line diff is a ONE-TIME encoding change; the inconsistency it
+   removes is forever.
+
+   **HOW TO DO IT, when there is time for a `--daily`:**
+   1. Change `ZEBRA=` in `tools/bootstrap_check.sh` (used at :160 and :195).
+   2. `bash tools/bootstrap_check.sh` -- full mode installs the new fixed point itself.
+      Do NOT use a separate regen tool; that is what got reverted.
+   3. `bash tools/rebuild.sh --no-regen` -- rebuilds AND re-stamps.
+      A plain `zig build` leaves `zig-out/.selfhost-stamp` describing the previous sources
+      and `doctor` then refuses every tier, which reads as a serious alarm and is not one.
+   4. `bash tools/gates.sh --daily`, as the closing move.
+   5. Expect ~33,000 changed lines, ~29% whitespace. It will NOT be reviewed line by line;
+      say so in the commit rather than implying otherwise.
+   6. **It closes BUG-317 for free** -- the compiler's own `print` calls become `_zbr_print`
+      (138/1 -> 134/5), so `--emit-zig > file` works. Retire the XFAIL pin in
+      `tools/stream_check.sh` and assert the positive; the pin will fail the gate the day
+      the fix lands, which is the signal to do it.
 
    **MEASURED 2026-08-29 AND MUCH CHEAPER THAN THIS ENTRY FIRST CLAIMED.** The earlier
    wording said `build.zig` "must build from a module plus `zebra_rt.zig`", implying build
