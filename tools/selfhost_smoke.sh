@@ -1652,6 +1652,7 @@ smoke_run test/bug309_regex_oom_test.zbr "bug309: OK"
 smoke_run test/bug310_file_append_test.zbr "bug310: OK"
 smoke_run test/bug308_try_delete_test.zbr "bug308: OK"
 smoke_run test/bug313_checked_index_test.zbr "bug313: OK"
+smoke_run test/bug326_sys_exit_range_test.zbr "bug326: OK"
 
 # Bitwise slice 1 (& | ^). smoke_run, not a bare emit check: `&` and `|` are one character
 # apart, both emit valid Zig, and both yield a number -- so a swapped operator survives

@@ -6,6 +6,49 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-326: `sys.exit(N)` SEGFAULTS for N outside 0..255 and loses buffered stdout — FIXED 2026-09-01
+
+**`sys.exit(-1)` is an ordinary thing to write, and it crashed the program.** Found while
+tracing BUG-322, whose panic turned out to be this bug one level down.
+
+Measured with controls, before the fix:
+
+| `sys.exit(N)` | exit | stdout |
+|---|---|---|
+| 0, 1, 2, 255 | correct | `ran` — preserved |
+| **256** | **139 (SEGV)** | **empty — lost** |
+| **-1** | **139 (SEGV)** | **empty — lost** |
+
+The `print("ran")` that preceded the call did not appear, so the failure destroys evidence
+as well as the exit code.
+
+**MECHANISM.** `selfhost/CodeGen.zbr` emitted `std.process.exit(@intCast(<expr>))`, and
+`std.process.exit` takes a **u8**. `@intCast` of a negative or >255 `i64` is not a
+compile error and does not trap cleanly in the shipped build — it takes the program down.
+
+**FIX — truncate the way C's `exit()` does, rather than refuse.** A caller who writes -1
+already expects 255 on POSIX:
+
+```zig
+std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, <expr>)))))
+```
+
+-1 -> 255, 256 -> 0, 0..255 unchanged. The inner `@as(i64, ...)` is load-bearing:
+`@bitCast` will not accept a `comptime_int`, so a literal argument needs a runtime type
+first. Verified across all six values above; stdout preserved in every case.
+
+**Deliberately a CodeGen-only change.** The alternative was a runtime helper in
+`stdlib_preamble.zig`, which would have required the build -> regen -> build ordering and
+its documented footguns. Nothing about this fix needs the runtime.
+
+**Fixture:** `test/bug326_sys_exit_range_test.zbr`, which exits **0** by way of
+`sys.exit(256)` — exercising the crashing path while staying a well-behaved `smoke_run`.
+
+**Not covered:** the -1 -> 255 direction is not pinned by a fixture, because a non-zero
+exit is failure to the smoke harness. If a gate leg is added later, assert it there.
+
+---
+
 ### BUG-318: `print` writes to STDERR, so every Zebra program's output vanishes under `>` or `|` — FIXED 2026-08-29
 
 **Found while trying to switch the regeneration authority to the selfhost (bootstrap

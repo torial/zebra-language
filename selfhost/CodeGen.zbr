@@ -16173,12 +16173,23 @@ struct Generator
             w.emit("})")
             return
         if mname == "exit"
-            w.emit("std.process.exit(@intCast(")
+            # BUG-326: `std.process.exit` takes a u8, and @intCast on anything outside
+            # 0..255 does not error -- it SEGFAULTS the user's program (exit 139) and
+            # loses whatever was buffered on stdout. Measured: 0/1/2/255 fine, -1 and 256
+            # both crash with the preceding print() never appearing.
+            #
+            # `sys.exit(-1)` is an ordinary thing to write, so the fix is to TRUNCATE the
+            # way C's exit() does rather than to refuse: -1 -> 255, 256 -> 0, 0..255
+            # unchanged. That is what a caller who wrote -1 already expects on POSIX.
+            #
+            # The @as(i64, ...) is load-bearing: @bitCast will not take a comptime_int, so
+            # a literal argument must be given a runtime type first.
+            w.emit("std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, ")
             if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
-            w.emit("))")
+            w.emit(")))))")
             return
         if mname == "memStats"
             # §28i: sys.memStats() → MemStats{ .arenaBytes = arena footprint }.

@@ -879,6 +879,25 @@ class MultiCompiler
 # Lines not included in the wanted side are replaced with a blank line so
 # diagnostic line numbers stay aligned with the original conflict-marked file.
 # Handles both standard (3-way) and diff3 (|||||||) conflict styles.
+# BUG-322: the bootstrap delegations (repl / debug / build / --zig-backend) hardcoded the
+# RELATIVE path "zig-out/bin/zebra-bootstrap.exe", which resolves ONLY when zebra is run
+# from the repo root. Anywhere else std.process.spawn failed, _sys_exec_inherit returned
+# its -1 sentinel, and that -1 reached sys.exit -- so `zebra repl` and `zebra build`
+# CRASHED for every user outside this repo. Measured 2026-09-01.
+#
+# Prefer the repo-relative path when it is actually present, so development behaviour is
+# unchanged; otherwise look beside OUR OWN executable, which is where an install puts it.
+# Same shape as the stdlib_preamble lookup further down this file.
+def bootstrapExePath(): str
+    var repo_rel: str = "zig-out/bin/zebra-bootstrap.exe"
+    if File.exists(repo_rel)
+        return repo_rel
+    var d: str = Path.dirname(sys.selfExe())
+    if d == ""
+        d = "."
+    return d + "/zebra-bootstrap.exe"
+
+
 def extractConflictSide(src: str, want_ours: bool): str
     var sb: StringBuilder = StringBuilder()
     var state: int = 0   # 0=normal  1=in_ours  2=in_base(diff3)  3=in_theirs
@@ -2494,9 +2513,17 @@ def main()
     if args.positional(0) as repl_pos
         if repl_pos == "repl"
             var repl_argv: List(str) = List(str)()
-            repl_argv.add("zig-out/bin/zebra-bootstrap.exe")
+            repl_argv.add(bootstrapExePath())
             repl_argv.add("repl")
             var repl_rc: int = sys.exec_inherit(repl_argv)
+            # -1 is _sys_exec_inherit's "could not spawn" sentinel. Letting it reach
+            # sys.exit is what produced the crash this bug was filed for; say what
+            # went wrong and where we looked instead.
+            if repl_rc == -1
+                sys.errln("zebra: could not launch the bootstrap compiler for `repl`")
+                sys.errln("  looked for: " + bootstrapExePath())
+                sys.errln("  `repl` is still delegated to it; other subcommands are not")
+                sys.exit(127)
             sys.exit(repl_rc)
 
     # -- debug subcommand --------------------------------------------------
@@ -2521,7 +2548,7 @@ def main()
                 dpi = dpi + 1
             if dbg_file as debug_file
                 var dbg_argv: List(str) = List(str)()
-                dbg_argv.add("zig-out/bin/zebra-bootstrap.exe")
+                dbg_argv.add(bootstrapExePath())
                 dbg_argv.add("debug")
                 # Forward --listen PORT if present
                 if args.contains("--listen")
@@ -2533,6 +2560,14 @@ def main()
                     dbg_argv.add("--cpu=" + cpu_flag)
                 dbg_argv.add(debug_file)
                 var dbg_rc: int = sys.exec_inherit(dbg_argv)
+                # -1 is _sys_exec_inherit's "could not spawn" sentinel. Letting it reach
+                # sys.exit is what produced the crash this bug was filed for; say what
+                # went wrong and where we looked instead.
+                if dbg_rc == -1
+                    sys.errln("zebra: could not launch the bootstrap compiler for `debug`")
+                    sys.errln("  looked for: " + bootstrapExePath())
+                    sys.errln("  `debug` is still delegated to it; other subcommands are not")
+                    sys.exit(127)
                 sys.exit(dbg_rc)
             else
                 sys.errln("usage: zebra debug [--listen PORT] <file.zbr>")
@@ -2545,7 +2580,7 @@ def main()
     if args.positional(0) as bld_pos
         if bld_pos == "build"
             var bld_argv: List(str) = List(str)()
-            bld_argv.add("zig-out/bin/zebra-bootstrap.exe")
+            bld_argv.add(bootstrapExePath())
             bld_argv.add("build")
             var bld_file_opt: str = args.option("--build-file", "")
             if bld_file_opt != ""
@@ -2555,6 +2590,14 @@ def main()
             if cpu_flag != ""
                 bld_argv.add("--cpu=" + cpu_flag)
             var bld_rc: int = sys.exec_inherit(bld_argv)
+            # -1 is _sys_exec_inherit's "could not spawn" sentinel. Letting it reach
+            # sys.exit is what produced the crash this bug was filed for; say what
+            # went wrong and where we looked instead.
+            if bld_rc == -1
+                sys.errln("zebra: could not launch the bootstrap compiler for `build`")
+                sys.errln("  looked for: " + bootstrapExePath())
+                sys.errln("  `build` is still delegated to it; other subcommands are not")
+                sys.exit(127)
             sys.exit(bld_rc)
 
     # -- test subcommand ---------------------------------------------------
@@ -3088,7 +3131,7 @@ def main()
     # Requires running from repo root where zig-out/bin/ exists.
 
     var argv = List(str)()
-    argv.add("zig-out/bin/zebra-bootstrap.exe")
+    argv.add(bootstrapExePath())
     if mode_c
         argv.add("-c")
     if release

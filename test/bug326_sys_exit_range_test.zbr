@@ -1,0 +1,16 @@
+# BUG-326 regression pin: sys.exit() with a value outside 0..255 SEGFAULTED the program
+# (exit 139) and lost everything buffered on stdout. Measured before the fix: 0/1/2/255
+# were fine, -1 and 256 both crashed with the preceding print() never appearing.
+#
+# THE FIXTURE EXITS 0 ON PURPOSE, and that is what makes it usable as a smoke_run. 256
+# truncates to 0 the way C's exit() does, so this exercises the crashing path -- a value
+# outside u8 -- while still terminating cleanly enough for the harness to check output.
+# If the bug returns, this segfaults, prints nothing, and smoke fails on the missing
+# marker rather than on an exit code the harness would have to special-case.
+#
+# The negative direction (-1 -> 255) cannot be pinned the same way without the harness
+# treating a non-zero exit as failure; it is covered by tools/ checks instead.
+
+def main()
+    print("bug326: OK")
+    sys.exit(256)

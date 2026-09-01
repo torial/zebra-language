@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-325. Next new bug: BUG-326.**
+**Last bug number generated: BUG-326. Next new bug: BUG-327.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -277,6 +277,54 @@ stderr) or a fix that makes the failure silent-but-zero would pass.
 integer-overflow panic are the same defect presenting differently, or two. The panic
 message is identical with and without a build file present, which hints the failure
 happens before the file is read, but that has not been traced.
+
+**ROOT CAUSE FOUND AND FIXED 2026-09-01 — and it was never really about `build`.**
+
+All FOUR bootstrap delegations in `selfhost/main.zbr` (repl, debug, build, `--zig-backend`)
+hardcoded the **relative** path `zig-out/bin/zebra-bootstrap.exe`. It resolves only when
+zebra is run from the repo root. Anywhere else `std.process.spawn` fails,
+`_sys_exec_inherit` returns its `-1` sentinel (`zebra_rt.zig:602`), and that `-1` reached
+`sys.exit`, which crashed (BUG-326 — the same investigation found it).
+
+Measured before the fix:
+
+| | from repo root | from a user's project |
+|---|---|---|
+| `zebra repl` | REPL starts | **panic, exit 3** |
+| `zebra build` | `no build.zbr found`, exit 1 | **panic, exit 3** |
+| `zebra debug` | usage | usage (validates args before delegating) |
+
+So **`zebra repl` — plausibly the first thing a newcomer types — crashed for every user
+outside this repo.** The original report saw only `build`, and only the silent exit-255
+symptom, because it was written from inside the repo where the path resolves.
+
+**FIX.** A `bootstrapExePath()` helper: prefer the repo-relative path when it is actually
+present (development behaviour unchanged), otherwise resolve beside our own executable via
+`Path.dirname(sys.selfExe())` — the pattern `main.zbr` already used for
+`stdlib_preamble.zig` and the sqlite vendor path. Plus an explicit guard at each
+`exec_inherit` site: `-1` now prints what could not be launched and where we looked, and
+exits 127, instead of being passed to `sys.exit`.
+
+Verified after:
+
+| | from repo root | from a user's project |
+|---|---|---|
+| `zebra repl` | unchanged | **exit 0, REPL starts** |
+| `zebra build` | unchanged | **exit 1 with the bootstrap's real diagnostic** |
+
+**THE UNDERLYING BUILD DEFECT IS NOW VISIBLE, AND IS SEPARATE.** With the crash gone,
+`zebra build` surfaces what the bootstrap actually says:
+`build.zig:1039:28: error: root source file struct 'fs' ...`. That is a real, pre-existing
+failure in the build machinery which the panic had been hiding. **Not fixed here** — it
+wants its own ticket and its own repro, and conflating it with the delegation crash is how
+this entry came to describe two problems as one.
+
+**A note for the bootstrap sunset.** This bug is a property of DELEGATING at all. Each of
+the four delegations is a place the bootstrap is still load-bearing at RUNTIME, and now
+that they fail honestly from outside the repo, each can be ported or dropped and TESTED
+from a user's directory — which was not previously possible.
+
+---
 
 ### BUG-321: `--version` and `--help` write to STDERR, so `zebra --help | less` shows nothing — OPEN (found 2026-08-30)
 
