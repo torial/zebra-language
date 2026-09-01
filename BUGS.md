@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-326. Next new bug: BUG-327.**
+**Last bug number generated: BUG-327. Next new bug: BUG-328.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,77 @@
 > measured in.
 
 ---
+
+### BUG-327: `zebra build` cannot work — TWO defects, and fixing the outer one exposes an INFINITE LOOP — OPEN (found 2026-09-01)
+
+**A documented subcommand that has never worked, with a second bug hiding underneath the
+first.** Surfaced when BUG-322's delegation crash stopped masking it. Investigated to root
+cause; **deliberately NOT fixed**, and the partial fix was REVERTED — see why below.
+
+**LAYER 1 — stale Zig APIs in the runtime preamble.** The generated `build.zig` could not
+compile at all:
+
+```
+build.zig:1039:28: error: root source file struct 'fs' has no member named 'selfExePathAlloc'
+build.zig:1046:21: error: member function expected 2 argument(s), found 3
+    std.Io.Dir.cwd().createDirPath(_io, ".zig-cache/zbr", .{}) catch {};
+```
+
+`std.fs.selfExePathAlloc` has **zero definitions** in Zig 0.16.0 (grepped the installed
+toolchain), and `createDirPath` lost its options parameter. Both are in the `_build_*`
+region of `selfhost/stdlib_preamble.zig`. The correct API was already in the same file
+forty lines away -- `_sys_self_exe()`, which backs the working `sys.selfExe()`, uses
+`std.process.executablePathAlloc(_io, _allocator)`. One call site drifted across a version
+bump while its sibling did not.
+
+**LAYER 2 — and this is why the fix was reverted. THE BUILD RE-INVOKES ITSELF FOREVER.**
+With both APIs corrected, `zebra build` compiles its `build.zig` and then loops:
+
+```
+build declarative: ok
+build: smoke_app: emit-zig test/toplevel_main_test.zbr
+build declarative: ok
+build: smoke_app: emit-zig test/toplevel_main_test.zbr        (forever, until timeout)
+```
+
+The generated build program does
+
+```zig
+const self_exe = <executable path of the running program>;
+const argv = [_][]const u8{ self_exe, "--emit-zig", t.entry, "--output-dir", ... };
+```
+
+but the running program is **`build.zig.fast.exe`**, not `zebra.exe`. It asks *"where am
+I?"* when it needs *"where is the compiler?"*, so it re-runs the build, which re-runs the
+build. **The removed API had the same semantics**, so this loop was always present -- the
+compile error was the only thing preventing it.
+
+**WHY THE PARTIAL FIX WAS BACKED OUT.** Before: a fast, clear compile error, exit 1. After
+the API fix: an infinite loop until timeout, with no useful output. **A hang is worse than
+an error** -- it is unbounded, it produces nothing to act on, and it burns the machine.
+Shipping that unattended was not a trade worth making, so `selfhost/stdlib_preamble.zig`
+was restored to its committed state. The API corrections are RIGHT and should land -- but
+only together with a fix for layer 2, or `zebra build` gets worse rather than better.
+
+**WHAT LAYER 2 NEEDS IS A DESIGN DECISION, which is why it is not made here.** The
+generated build program must locate the Zebra compiler. Candidates, none obviously right:
+pass the compiler path in as a generated constant at emit time; read it from an
+environment variable the driver sets; take it as an argument; or have the build program
+not shell out to a compiler at all. That is a call about how `zebra build` is architected,
+not a bug fix.
+
+**WHY IT SURVIVED, and it is the same seam as the others found this week.** No gate
+invokes `zebra build` -- verified by grep across every script in `tools/`. The Build API is
+covered three times in the smoke suite and sits in both heavy baselines, but as a
+**library**, by running `build_declarative_test.zbr` as an ordinary program. The
+**subcommand that drives it** is a different code path with no coverage, so a hard compile
+error inside it survived 37 green gates. See
+`wiki/pages/concepts/concept_self-verification-blind-spot.md`.
+
+**Control when fixing.** A gate leg that scaffolds a small project OUTSIDE the repo and
+asserts `zebra build` exits 0 and produces the named binary. It must be run from a user
+directory, or it re-passes for the BUG-322 reason. And it must have a TIMEOUT, or layer 2
+turns the gate into a hang instead of a failure.
 
 ### BUG-325: `--emit-zig` writes DEPENDENCY `.zig` files into the SOURCE directory, silently — OPEN (found 2026-08-30)
 
