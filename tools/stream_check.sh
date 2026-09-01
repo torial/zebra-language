@@ -82,25 +82,22 @@ piped=$("$EXE" 2>/dev/null | grep -c "$OUT_MARK")
 grep -q "$OUT_MARK" "$OUT/redir.txt" && chk "\`prog > file\` captures the output" 0 \
                                      || chk "\`prog > file\` captures the output" 1
 
-# LEG 7 — BUG-317, closed as a duplicate of 318 and tested here rather than separately.
-# Its symptom was its own observable: `zebra --emit-zig f.zbr > out.zig` produced an EMPTY
-# file and exited 0, because that path ends in `print(zig_src)` and print was stderr. One
-# fix repaired both, but "the compiler can emit to a redirect" is not implied by "a program
-# prints to stdout" -- the emit path could regress on its own.
-# PINNED as an XFAIL against BUG-317, the @boundary-pending idiom applied to one leg: it
-# is EXPECTED to fail today and FAILS THE GATE THE DAY IT STARTS PASSING, so the fix cannot
-# land unnoticed. BUG-318's fix does NOT repair this -- the selfhost compiler's own code is
-# emitted by the BOOTSTRAP, which still emits std.debug.print (138 calls in the committed
-# main.zig). Moving the regen authority to the selfhost (sunset criterion 2) is what fixes
-# it. Delete this pin and assert the positive when that lands.
+# LEG 7 — BUG-317, FIXED 2026-08-30 by the bootstrap sunset's criterion 2. This was an
+# XFAIL pin; it is now a positive assertion, because the pin failed the gate the day the
+# bug was fixed, which is exactly what a pin is for.
+#
+# WHY CRITERION 2 FIXED IT, since the connection is not obvious: `--emit-zig f.zbr > out`
+# ends in `print(zig_src)`. The compiler's OWN code used to be emitted by the BOOTSTRAP,
+# which lowers a Zebra `print` to std.debug.print -- stderr -- so the redirect captured
+# nothing and exited 0. The regen authority is now the selfhost, whose lowering is
+# _zbr_print (stdout). The source never changed; the compiler that compiled it did.
 EMIT="$OUT/emitted.zig"
 "$ZEBRA" --emit-zig "$SRC" > "$EMIT" 2>/dev/null
 emit_bytes=$(wc -c < "$EMIT" 2>/dev/null | tr -d ' ')
 if [ "${emit_bytes:-0}" -gt 200 ] && grep -q 'pub fn main' "$EMIT" 2>/dev/null; then
-    printf '  FAIL  `--emit-zig > file` now WORKS (%s bytes) — BUG-317 is fixed; retire this pin\n' "$emit_bytes"
-    fail=$((fail + 1))
+    chk "\`--emit-zig > file\` captures the emitted source ($emit_bytes bytes)" 0
 else
-    printf '  xfail `--emit-zig > file` is empty (%s bytes) — BUG-317, pinned\n' "${emit_bytes:-0}"
+    chk "\`--emit-zig > file\` captures the emitted source (${emit_bytes:-0} bytes)" 1
 fi
 
 if [ "$fail" -eq 0 ]; then

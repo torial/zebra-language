@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-324. Next new bug: BUG-325.**
+**Last bug number generated: BUG-325. Next new bug: BUG-326.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,86 @@
 > measured in.
 
 ---
+
+### BUG-325: `--emit-zig` writes DEPENDENCY `.zig` files into the SOURCE directory, silently — OPEN (found 2026-08-30)
+
+**It corrupted this repo's own `selfhost/` during the criterion-2 landing, and the damage
+compiled.** `zebra --emit-zig main.zbr > out.zig` is documented as emitting to stdout. The
+ROOT module does. Every dependency is written **next to the source**, with no message:
+
+```
+$ ls hyp/
+dep.zbr  hmain.zbr
+$ cd hyp && zebra-bootstrap --emit-zig hmain.zbr > /tmp/out.zig
+$ ls hyp/
+dep.zbr  dep.zig  hmain.zbr        # <- dep.zig appeared, unasked, unreported
+```
+
+**THE INCIDENT.** Immediately after criterion 2 installed the selfhost-emitted fixed point,
+a one-line check ran the FROZEN bootstrap over the compiler's own source to confirm it
+could still compile it:
+
+```
+zebra-bootstrap.exe --emit-zig selfhost/main.zbr > /tmp/boot_main.zig
+```
+
+`main.zig` went to the redirect as expected. **The other ELEVEN modules were rewritten in
+place, in bootstrap shape**, leaving `main.zig` + `zebra_rt.zig` selfhost-emitted and
+`Token`..`Checker` bootstrap-emitted. That is precisely the mixed tree that caused the
+2026-08-29 back-out, reached by a command that only reads, as far as its documentation says.
+
+**AND IT COMPILED**, which CLAUDE.md already names as the far-worse case: the inline-shape
+modules carry their own spliced runtime while `main.zig` imports `zebra_rt.zig`, so the
+program links with TWO runtime instances and their allocator state is not shared. Caught by
+`git status` showing only one modified file when twelve were expected — arithmetic, not a
+gate.
+
+**Detection that did work, recorded because it is the argument for keeping it:**
+`doctor`'s stamp compares sha1(selfhost/*.zig) against the binary, so eleven silently
+rewritten files break it. Doctor would have refused the next gate tier.
+
+**RELATED, AND WHY THIS IS FILED AS A BUG RATHER THAN A CAUTION.** The wiki records
+`feedback_sweep_wip_hazard` — "`--emit-zig` corpus sweeps pollute the tree; stash/worktree
+first" — and `bootstrap_check.sh`'s step 1 comment says it emits into `/tmp/bs-zig`
+"so the checked-in selfhost/*.zig is never polluted". So the ROOT file's pollution was
+known and worked around. The DEPENDENCY side-effect is the same hazard one level down, and
+nothing named it.
+
+**UNGIT, "nothing ambient".** A command whose documented contract is "write to stdout"
+must not also write files the user did not name, into a directory the user did not
+nominate, without saying so. `--output-dir` exists and does exactly the right thing; the
+bare form should either refuse a multi-module program, or name every file it is about to
+write.
+
+**Control when fixing.** A scratch project with one dependency: after
+`zebra --emit-zig main.zbr > out.zig`, the source directory must contain no new `.zig`.
+Watch it RED against this repro first. Keep a positive leg (`--output-dir` still emits ALL
+modules, into the directory named) or a fix that simply stops emitting deps would pass
+while breaking the working path.
+
+**SCOPED 2026-08-30, AND IT IS BOOTSTRAP-ONLY.** The paragraph here first said "affects
+both compilers ... should be checked rather than assumed." It was checked. Same two-file
+project, same command, the two compilers:
+
+| compiler | root | dependency |
+|---|---|---|
+| `zebra-bootstrap.exe` | stdout | **`dep.zig` written into the source directory** |
+| `zebra.exe` (selfhost) | stdout (973 bytes) | **nothing written** |
+
+So the defect lives in the FROZEN compiler only, and the selfhost — the one that is now
+the regeneration authority and the one users run — is clean. That drops the severity a
+long way: the remaining exposure is anyone invoking `--zig-backend`, or running the
+bootstrap by hand as the criterion-2 landing did.
+
+**It is still worth fixing or fencing**, because the bootstrap is exactly what someone
+reaches for when the selfhost is broken — i.e. when the tree is already fragile — and this
+rewrites eleven files in place at that moment. The cheap fence is a note in `--help` and in
+the sunset docket; the real fix is the same emit-driver change, in a compiler being
+retired. Sean's call whether a frozen compiler earns the change.
+
+**Do NOT generalise from "the selfhost is clean" to "the selfhost never writes files it was
+not asked to."** That was measured on ONE two-module project, with the root going to
+stdout. `--output-dir` writes many files by design and is a different path.
 
 ### BUG-324: a FAILED compile still leaves a runnable `.exe`, and it segfaults with no output — OPEN (found 2026-08-30)
 

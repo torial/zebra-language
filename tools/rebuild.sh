@@ -5,7 +5,7 @@
 # ---------------
 # Editing a `.zbr` in selfhost/ does nothing on its own. The compiler you run is
 # built from the *generated* `selfhost/*.zig`, so a source change only takes
-# effect after: regenerate the .zig via the bootstrap, then rebuild zebra.exe.
+# effect after: regenerate the .zig via the selfhost (N-1), then rebuild zebra.exe.
 # That sequence has three documented footguns, each of which has actually cost
 # real time:
 #
@@ -17,7 +17,8 @@
 #      reasons unrelated to your change.
 #   3. An orphaned `zebra.exe`/`zig.exe` from a timed-out run keeps a file lock
 #      on zig-out/bin, and the build dies with `AccessDenied` on compiler_rt.dll.
-#   4. The regen runs `zebra-bootstrap.exe`, which EMBEDS the preamble files at
+#   4. The regen runs `zebra.exe` (N-1 since 2026-08-30). The BOOTSTRAP still EMBEDS
+#      the preamble files at
 #      its own build time (build.zig:37-59, `b.addOptions`). So after a preamble
 #      edit, regenerating with the existing binary emits the OLD runtime — and
 #      every gate downstream then measures it. Observed 2026-07-28: a preamble
@@ -34,7 +35,11 @@
 # --module is the fast inner loop: ~25 s against several minutes, because the full regen
 # re-emits every selfhost module and rebuilds the intermediate compilers first. It is
 # sound for the common case (you edited one .zbr) because the regeneration is done by the
-# BOOTSTRAP, whose output for the other modules your edit cannot have changed.
+# SELFHOST built from the COMMITTED .zig -- the previous generation of itself -- whose
+# output for the other modules your edit cannot have changed. NOTE: --module now emits
+# the WHOLE program and installs one file, because emitting a module as a ROOT produces
+# different output than emitting it as a DEPENDENCY (measured: 648 vs 643 lines for
+# Token.zig, the extra being `fn _zbr_error_msg()`).
 #
 # The footgun it guards is not speed, it is SCOPE: editing two modules and regenerating
 # one leaves the tree half-updated, and every gate downstream then measures a compiler
@@ -153,7 +158,10 @@ if [[ $REGEN -eq 1 ]]; then
         #     confusion produced 80% of a published, later-retracted result.
         #   * the emitted text is written with LF only. Python is not the only thing that
         #     can put a CR in a .zig; be explicit anyway.
-        BOOT=zig-out/bin/zebra-bootstrap.exe
+        # N-1 (criterion 2, 2026-08-30): the regen authority is the SELFHOST, matching
+        # tools/bootstrap_check.sh. Emitting one module here with a DIFFERENT compiler than
+        # the full regen uses would leave that module in the other emitter's shape.
+        BOOT=zig-out/bin/zebra.exe
         [[ -x "$BOOT" ]] || fail "$BOOT missing — run a full 'bash tools/rebuild.sh' first"
 
         # SCOPE CHECK. A half-regenerated tree is the failure this guards.
@@ -182,22 +190,38 @@ if [[ $REGEN -eq 1 ]]; then
 
         for m in $MODULES; do
             [[ -f "selfhost/$m.zbr" ]] || fail "selfhost/$m.zbr does not exist"
-            step "regenerating selfhost/$m.zig via the bootstrap (regen authority)"
-            tmp="$(mktemp)"
-            if ! "$BOOT" --emit-zig "selfhost/$m.zbr" > "$tmp" 2>/tmp/_rebuild_mod_err; then
+            step "regenerating selfhost/$m.zig via the selfhost (N-1 regen authority)"
+            # EMIT THE WHOLE PROGRAM AND INSTALL ONE FILE. Emitting "selfhost/$m.zbr" directly
+            # makes it a ROOT, and a root gets scaffolding a DEPENDENCY does not -- measured:
+            # Token.zig is 643 lines as a dependency and 648 as a root, the extra five being
+            # `fn _zbr_error_msg()`. The full regen emits from main.zbr, so a per-module emit here
+            # would install a file the full regen would never produce, and the tree would differ
+            # depending on which command last touched it. That is the mixed-tree hazard, and the
+            # first version of this change walked straight into it -- caught because regenerating
+            # an UNCHANGED module must be byte-identical, and it was not.
+            #
+            # Costs one whole-program emit (~11 s) instead of ~1 s. Still far cheaper than the full
+            # rebuild, which is what --module exists to avoid.
+            #
+            # --output-dir, never a stdout redirect: this compiler writes ZERO BYTES to one
+            # (BUG-317), and the bare form also writes DEPENDENCIES next to the source (BUG-325),
+            # which would rewrite selfhost/ behind your back.
+            tmpd="$(mktemp -d)"
+            if ! "$BOOT" --emit-zig --output-dir "$tmpd" selfhost/main.zbr >/dev/null 2>/tmp/_rebuild_mod_err; then
                 tail -5 /tmp/_rebuild_mod_err >&2
-                rm -f "$tmp"
+                rm -rf "$tmpd"
                 fail "the bootstrap refused selfhost/$m.zbr — selfhost/$m.zig left untouched"
             fi
+            tmp="$tmpd/$m.zig"
             # The bootstrap prints progress chatter before the emitted source; the header
             # is where the actual Zig starts. Its ABSENCE with rc=0 is the silent-failure
             # case, so it is checked rather than assumed.
-            if ! grep -qF "// Generated by" "$tmp"; then
-                rm -f "$tmp"
+            if ! grep -qF "// Generated by" "$tmp" 2>/dev/null; then
+                rm -rf "$tmpd"
                 fail "the bootstrap emitted no source for $m despite rc=0 — refusing to write a truncated selfhost/$m.zig"
             fi
-            sed -n '/\/\/ Generated by/,$p' "$tmp" | tr -d '\r' > "selfhost/$m.zig"
-            rm -f "$tmp"
+            tr -d '\r' < "$tmp" > "selfhost/$m.zig"
+            rm -rf "$tmpd"
             echo "  selfhost/$m.zig  ($(wc -l < "selfhost/$m.zig") lines)"
         done
     else
@@ -207,7 +231,7 @@ if [[ $REGEN -eq 1 ]]; then
     rm -rf /tmp/bs-zig
 
     # Footgun 1: call bootstrap_check.sh DIRECTLY. Never `zig build update-selfhost`.
-    step "regenerating selfhost/*.zig via the bootstrap (regen authority)"
+    step "regenerating selfhost/*.zig via the selfhost (N-1 regen authority)"
     if ! bash "$SCRIPT_DIR/bootstrap_check.sh" --update 2>&1 | tail -3; then
         fail "regeneration failed — selfhost/*.zig was restored from the pre-run snapshot"
     fi
