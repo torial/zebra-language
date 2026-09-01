@@ -501,6 +501,54 @@ Repro (from `zebra_train/build_verify_attn.py`'s original test harness): a `dmer
 
 **Control for a future fix:** construct a `List(List(float))`, append an empty inner list, fetch it via `.at()`, `.add()` past its initial (zero) capacity, and confirm the parent's own stored row length reflects the appends — in both debug and `--release` builds.
 
+**PRIOR ART, and it does NOT solve this one — Zig devlog 2026-08-27, "Pointer Stability
+for ArrayLists"** (raised by Sean 2026-08-30). Upstream added `lockPointers()` /
+`unlockPointers()` to `std.ArrayList`, the mechanism hash maps already had: while locked,
+any operation that could move elements trips an assertion with a stack trace instead of
+silently invalidating your pointer.
+
+**It does not address this bug.** BUG-314 is a COPY, not a stale pointer — `_zbr_at`
+returns a copy of the ArrayList struct and `r2.append(...)` grows the copy's buffer. There
+is no pointer to invalidate, so the lock has nothing to fire on. It guards a hazard the
+current design avoids by construction, at the price of the writes vanishing.
+
+**What it DOES address is the objection to the fix.** The reason `.at()`/`[i]` yielding
+`&p.items[i]` was hesitated over is that a reference into a container goes stale when the
+backing buffer moves — and under Zebra's arena the old buffer is never freed, so the stale
+read returns plausible OLD DATA rather than crashing. The lock converts that into a panic
+at the offending append, which is the right place for it. So it de-risks the `[i]`
+getter/setter direction rather than replacing it.
+
+**Three catches, all MEASURED on 2026-08-30, not inferred:**
+
+1. **Not in our Zig.** We are on 0.16.0. `lockPointers` appears **0** times in
+   `lib/std/array_list.zig` and **12** times in `lib/std/hash_map.zig` — the hash-map hits
+   being the control that proves the grep can find the symbol. Master/0.17 material.
+2. **It is COMPILED OUT in the builds we ship.** The mechanism is `std.debug.SafetyLock`:
+   `state: State = if (runtime_safety) .unlocked else .unknown`, and every method opens
+   `if (!runtime_safety) return;`. Zebra's `--release` is ReleaseFast, so the guard does
+   not exist there — while every gate tier except `release_mode_check` runs Debug. That is
+   the BUG-228 asymmetry exactly, and the shape `lint_oom_unreachable` exists to cover: a
+   check that is live wherever we test and absent wherever users run.
+3. **It is stricter than the hazard, and our List is ordered.** The entry notes
+   `orderedRemove()` and `pop()` trip the assertion *even when the backing memory does not
+   move*. Emitting lock/unlock around a reference's lifetime would therefore panic on
+   `xs.remove(j)` while holding `xs[i]` — a program that was never unsafe.
+
+**It is detection, not stability.** It reports that a pointer died; it does not keep one
+alive. The generational-handle idea raised during the 2026-08-29 discussion remains the
+only option on the table that gives actual stability.
+
+**The transferable idea, which we can have TODAY on 0.16.0.** We control our own safety
+story in a way upstream's version does not: Zebra already separates contracts (stripped by
+`--turbo`) from `assert` (deliberately survives — see `contract_mode_check`). A
+Zebra-side pointer-stability check could be assert-class and therefore **alive in shipped
+builds**, which is precisely where Zig's is not. That is a design option available without
+waiting on a toolchain upgrade, and it is the part of this worth stealing.
+
+Ref: https://ziglang.org/devlog/2026/#2026-08-27
+
+
 ---
 
 ### BUG-312: a `List(List(T))` parameter loses pointer/mutable codegen when a SHARED helper is called on it from two different wrapper functions — both compilers (found 2026-08-27)
