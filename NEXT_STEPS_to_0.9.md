@@ -210,6 +210,62 @@ removal into a formality.
    removes it. The 33,000-line diff is a ONE-TIME encoding change; the inconsistency it
    removes is forever.
 
+   **STOP -- THE PROCEDURE BELOW DOES NOT WORK. MEASURED 2026-08-30, BEFORE RUNNING IT.**
+   Two independent blockers, neither of which is about which binary is the authority.
+
+   **BLOCKER 1: the two lines emit via a STDOUT REDIRECT, and the compiler being switched TO
+   cannot write to one.** Both `:160` and `:195` are
+   `"$ZEBRA" --emit-zig "selfhost/$f.zbr" > "$BS_ZIG/$f.zig"`. That is BUG-317. Running the
+   exact command with each candidate:
+
+   | authority | `--emit-zig > file` |
+   |---|---|
+   | `zebra-bootstrap.exe` (today's) | 215,587 bytes -- works |
+   | **`zebra.exe`** (what this entry says to switch to) | **0 bytes** |
+   | `zebra-selfhost-B.exe` | 19,153 bytes -- works |
+
+   So the change as written **regenerates twelve EMPTY files**. The entry's own note that
+   criterion 2 "closes BUG-317 for free" describes the AFTER state and is the trap: the fix
+   for 317 is this switch, and this switch's mechanism is broken by 317. Literal
+   chicken-and-egg. (Why: `zebra.exe` is built from the bootstrap's emission, which lowers a
+   Zebra `print` to `std.debug.print` -- stderr. See
+   `wiki/pages/claude/fieldnotes_compiler-orbit_2026-08-30.md`.)
+
+   **Pointing at `zebra-selfhost-B.exe` instead is tempting and is NOT reproducible.** It
+   works, but it is a gitignored build artifact -- absent on a fresh clone, so step 1 would
+   have no authority. The reproducible seed is the COMMITTED `selfhost/*.zig`, and the binary
+   built from them is `zebra.exe`. So the fix is to change the **mechanism**, not the
+   authority: `--output-dir` works with `zebra.exe` today (verified on 527 corpus files plus
+   all twelve modules via `tools/regen_selfhost.sh`). That is more than two lines -- it swaps
+   stdout emission for directory emission and needs a move step.
+
+   **BLOCKER 2: nine generated `selfhost/*_test.zig` are NOT in the regenerated set, and they
+   depend on a symbol the new shape does not export.** `FILES=` at `:112` lists twelve
+   modules. There are **nine more** tracked generated files (`parser_test.zig`,
+   `codegen_test.zig`, ...) built from `selfhost/*_test.zbr`, and every one of them calls
+   `@import("Token.zig")._initAllocator(a)`. Measured:
+
+   - committed `Token.zig` (inline shape): `pub fn _initAllocator` -- **present**
+   - emitted `Token.zig` (runtime-module shape): **0 occurrences** -- it moves to `zebra_rt.zig`
+
+   All nine break. That is the `_zbr_ty_Span` failure of the backed-out attempt, in a second
+   location nobody had looked at.
+
+   **It would NOT fail loudly, which is worse.** `build.zig` does not reference them, no tool
+   compiles them, and they are not in the smoke suite -- they are nine tracked, generated,
+   ORPHANED artifacts. So the switch would leave them stale and non-compiling, silently, with
+   every gate green. (They are part of why `registration_check` reports unasserted files.)
+
+   **WHAT CRITERION 2 ACTUALLY NEEDS:** (a) an emit mechanism that does not go through
+   stdout, (b) a decision on the nine test modules -- regenerate them in the same shape by
+   adding them to `FILES=`, or delete them as orphans, and (c) confirmation that `build.zig`
+   still resolves with `zebra_rt.zig` alongside `stdlib_preamble.zig` and the `gui_*.zig`
+   sections. (a) and (c) are mechanical; **(b) is Sean's call**, since deleting tracked
+   artifacts is not mine to make.
+
+   The entry below is left UNCHANGED as the record of what was believed, per the archive
+   ethic. Do not run it.
+
    **HOW TO DO IT, when there is time for a `--daily`:**
    1. Change `ZEBRA=` in `tools/bootstrap_check.sh` (used at :160 and :195).
    2. `bash tools/bootstrap_check.sh` -- full mode installs the new fixed point itself.
