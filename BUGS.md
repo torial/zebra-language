@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-323. Next new bug: BUG-324.**
+**Last bug number generated: BUG-324. Next new bug: BUG-325.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,40 @@
 > measured in.
 
 ---
+
+### BUG-324: a FAILED compile still leaves a runnable `.exe`, and it segfaults with no output — OPEN (found 2026-08-30)
+
+Found while reproducing BUG-295. A compile that reports an error and exits **1** still
+writes an executable into `--output-dir`:
+
+```
+$ zebra --output-dir out prog.zbr
+out\zz_c.zig:13:12: error: unable to resolve comptime value
+$ echo $?
+1
+$ ls out/*.exe
+out/zz_bug295.zig.fast.exe          # written by THIS run -- dir was rm -rf'd first
+$ out/zz_bug295.zig.fast.exe
+Segmentation fault                  # exit 139, zero bytes on stdout AND stderr
+```
+
+Verified fresh, not stale: the output directory was removed before the run and the binary's
+mtime is inside the run's window.
+
+**Why it matters.** A build that failed should leave nothing to run. Anything that looks
+at the directory rather than the exit code — a person, a script, a Makefile with a stale
+rule, an IDE — finds a plausible executable and gets a silent segfault instead of the
+compiler's actual diagnostic. UNGIT "nothing fabricated": a failed build must not produce
+an artifact that reads as a successful one.
+
+**Scope not established.** Reproduced on one input (the BUG-295 module-level-state cycle).
+Unknown whether every emit failure leaves a binary or only failures at this stage, and
+unknown whether the binary is a partial link or a complete build of broken code. Do not
+generalise beyond the one case without measuring.
+
+**Control when fixing.** Assert that after a non-zero compile the output directory contains
+no `*.exe`. Watch it RED first against this repro. Keep a positive leg (a SUCCESSFUL
+compile still produces the binary) or a fix that deletes the output unconditionally passes.
 
 ### BUG-323: unknown command-line flags are SILENTLY IGNORED, so a typo'd `--turbo` gives you a build you did not ask for — OPEN (found 2026-08-30)
 
@@ -707,6 +741,21 @@ this defect.
   `test/bug124_boxed_nilable_ctor_test.zbr` (the union control) must keep passing. Add the
   struct half back to that fixture, where it was deliberately removed with a note.
 
+**REPRODUCED VERBATIM 2026-08-30.** The entry's own repro, run unmodified:
+
+```
+zz_bug299.zbr:15: error: expected type '?*T', found 'T'
+```
+
+Both compilers exit 1. **Confirmed real and open** — the only one of the three unverified
+entries reviewed that day which reproduces exactly as written.
+
+**But it is a LOUD failure, not a silent one.** The program is refused at compile time; no
+wrong answer is produced. **Reclassified: not a silent-wrong-answer bug** — it is a
+correct program the compiler will not accept, which is a real 0.9 defect of a different
+and less urgent kind.
+
+
 ---
 
 ### BUG-295: a module import CYCLE builds cleanly and produces a compiler that STACK-OVERFLOWS — ⚠ HALF FIXED (diagnostic landed 2026-08-18; the overflow is still unexplained)
@@ -928,6 +977,30 @@ later wanted deliberately, the refusal is the place to relax.
 **Workaround, and it is what BUG-292 shipped:** put the shared code in a module both
 sides can import without closing a loop — `selfhost/AstWalk.zbr`, which imports `Ast`
 and nothing else.
+
+**REPRODUCTION ATTEMPTED 2026-08-30 — REPRODUCES, BUT NOT AS FILED, AND NOT SILENTLY.**
+Two three-module cycles built and run:
+
+| cycle contents | result |
+|---|---|
+| functions only | warns `import cycle: zz_a -> zz_b -> zz_c -> zz_a`, **builds and runs correctly** (printed `6`, the right answer) |
+| carrying MODULE-LEVEL STATE | warns, then **FAILS to compile**: `zz_c.zig:13:12: error: unable to resolve comptime value` |
+
+That matches the warning's own text — well defined for functions, undefined for
+module-level state — so the diagnostic is accurate about its own scope.
+
+**The title's claim is now wrong in the useful direction.** It does not "build cleanly and
+produce a compiler that stack-overflows": it warns, and then fails loudly. **Reclassified:
+not a silent-wrong-answer bug.** What is left is a LEAKED ZIG DIAGNOSTIC — `unable to
+resolve comptime value` is Zig's message about our emitted code, with no Zebra-level
+explanation and no source position in the user's `.zbr`. That is a real defect and a much
+smaller one.
+
+**Found alongside, and filed separately as BUG-324:** the failed compile still leaves a
+runnable `.exe` that segfaults with no output.
+
+
+---
 
 ### BUG-289: two deterministic programs disagreed with themselves inside a full output_sweep — cause unknown
 
@@ -2069,6 +2142,29 @@ like a user error.
 This entry remains open on its own merits: the next person to reference an unexposed
 union will lose the same hours, and a compiler that silently emits wrong code for a
 missing import clause is a poor trade for the convenience of not writing the name.
+
+**REPRODUCTION ATTEMPTED 2026-08-30 — THE STATED MECHANISM DOES NOT REPRODUCE.**
+Tested against the compiler's own code, not a synthetic case: `selfhost/AstWalk.zbr:27`
+exposes `StringPart` and `:118` uses `if part is StringPart.expr_ as ex`, i.e. the
+workaround this entry exists to remove is currently in place. Removed it on a COPY and
+emitted with `zebra.exe`:
+
+| | result |
+|---|---|
+| control (StringPart exposed) | **emits**; only error is `unable to load 'Ast.zig': FileNotFound`, the expected DEPMISS for a library module emitted standalone |
+| StringPart removed from `exposing` | **`zz_walk_nox.zbr:118:28: error: undefined name: 'StringPart'`** — front end REFUSES, nothing emitted |
+
+The entry's mechanism requires that the reference *"still RESOLVES and compiles the front
+end"* and then emits a raw `*Expr`. It does not: the resolver refuses, with a correct
+line and column. Two synthetic constructions (union unreachable, union reachable through
+an exposed struct field) refuse the same way.
+
+**So the SILENT half — the G1 property — is closed.** What remains is at most a usability
+question (a union must be `exposing`-imported to be named), which is a defensible rule and
+not a 0.9 blocker. **Reclassified: not a silent-wrong-answer bug.** Whoever picks this up
+should decide whether the refusal IS the intended resolution and close it, rather than
+implementing the boxed-variant registration the entry proposes.
+
 
 ---
 
