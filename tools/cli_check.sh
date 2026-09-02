@@ -30,12 +30,26 @@ set -u
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
-W="${TMPDIR:-/tmp}/zbr_cli_check"
+# PER-RUN SCRATCH, and this is not hygiene -- it is a correctness fix. The path used to
+# be fixed, so two concurrent runs wrote the SAME .out/.err and read each other's
+# results. Observed 2026-09-01: a second invocation while one was in flight produced
+# three failures whose evidence came from the OTHER run -- a "missing file" check
+# reading the output of a successful compile. The compiler was fine; the harness was
+# lying, in the direction of a false RED, which is the recoverable direction but still
+# a gate nobody can trust.
+#
+# CLAUDE.md notes this repo regularly has two agents working in it at once, so a gate
+# keyed on a fixed temp path is a matter of time rather than bad luck.
+# NOTE: mktemp, not $$ -- in bash `$$` is the SHELL's pid and a ( ... ) & subshell
+# INHERITS it, so keying on $$ isolated nothing. Verified by running two at once and
+# still getting a failure.
+W="$(mktemp -d "${TMPDIR:-/tmp}/zbr_cli_check.XXXXXX")"
+trap 'rm -rf "$W"' EXIT
 TMO=90
 
 [ -x "$ZEBRA" ] || { echo "cli-check: REFUSING -- not built: $ZEBRA" >&2; exit 2; }
 
-rm -rf "$W"; mkdir -p "$W"
+mkdir -p "$W"
 case "$W" in "$REPO"*) echo "cli-check: REFUSING -- scratch dir is inside the repo" >&2; exit 2;; esac
 
 cat > "$W/hello.zbr" <<'EOF'
@@ -161,12 +175,28 @@ chk "...and fails FAST rather than hanging or crashing" \
     "exit=$RC (124=hang, 3=panic), stderr=${#ERR} bytes"
 
 # ---- KNOWN-BROKEN, PINNED -----------------------------------------------------------
+# PROMOTED from pins 2026-09-01, the day BUG-321 was fixed. The pins failed the gate the
+# moment the bug was fixed, which is exactly what they existed to do; these are the real
+# assertions they were placeholders for.
 run --version
-pin "\`--version\` writes to stderr, not stdout" "BUG-321" "$([ "$OUT_N" = 0 ] && echo 0 || echo 1)"
+chk "\`--version\` writes to STDOUT and exits 0" \
+    "$([ "$RC" = 0 ] && [ "$OUT_N" -gt 0 ] && [ "$ERR_N" = 0 ] && echo 0 || echo 1)" \
+    "exit=$RC stdout=$OUT_N stderr=$ERR_N"
 
 run --help
-pin "\`--help\` writes to stderr and exits non-zero" "BUG-321" \
-    "$([ "$OUT_N" = 0 ] && [ "$RC" != 0 ] && echo 0 || echo 1)"
+chk "\`--help\` writes to STDOUT and exits 0" \
+    "$([ "$RC" = 0 ] && [ "$OUT_N" -gt 500 ] && echo 0 || echo 1)" \
+    "exit=$RC stdout=$OUT_N"
+chk "\`-h\` is the short form of --help" \
+    "$(run -h; [ "$RC" = 0 ] && [ "$OUT_N" -gt 500 ] && echo 0 || echo 1)" "exit=$RC stdout=$OUT_N"
+
+# THE ASYMMETRY IS THE POINT, so it is asserted rather than assumed: the SAME usage text
+# shown because the invocation was WRONG must stay on stderr with a non-zero exit. A fix
+# that simply moved everything to stdout would pass the two checks above and break this.
+run
+chk "usage shown for a BAD invocation stays on STDERR, non-zero" \
+    "$([ "$RC" != 0 ] && [ "$OUT_N" = 0 ] && [ "$ERR_N" -gt 500 ] && echo 0 || echo 1)" \
+    "exit=$RC stdout=$OUT_N stderr=$ERR_N"
 
 run --no-such-flag hello.zbr
 pin "an unknown flag is silently ignored" "BUG-323" "$([ "$RC" = 0 ] && echo 0 || echo 1)"

@@ -854,7 +854,9 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 12 assertions, 4 pins.
+                                #   past `repl` starting. 16 assertions, 2 pins -- BUG-321's two
+                                #   were PROMOTED to real assertions the day it was fixed,
+                                #   which is what a pin is for.
                                 #   THE BUILD-EXECUTION LEG is the one worth
                                 #   knowing about: `b.run()` appears in the corpus
                                 #   ONLY inside comments saying it is deliberately

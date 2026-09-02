@@ -6,6 +6,117 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-321: `--version` and `--help` write to STDERR, so `zebra --help | less` shows nothing — FIXED 2026-09-01
+
+**The last living residue of the print-stream myth.** Found in free time by pointing
+yesterday's `stream-sep` instrument at the COMPILER rather than at programs it produces.
+
+```
+$ zebra --help | less          # nothing
+$ zebra --version > v.txt      # 0 bytes
+$ zebra --version 2>&1 >/dev/null
+zebra 0.1.0 (Phase 22 cutover — selfhost pipeline primary)
+```
+
+Measured on BOTH `zebra.exe` and `zebra-selfhost-B.exe` (5 observables each: `--version`,
+`--help`, a type error, `-c` on a good file, `--emit-zig`). The two compilers agree on
+four of the five and put **0 bytes on stdout** for every one of those four.
+
+**NOT A LOWERING BUG — the source asks for stderr and correctly gets it.**
+`selfhost/main.zbr:2409` is `sys.errln("zebra 0.1.0 …")`, and the usage block is the same.
+`sys.errln` is behaving exactly as specified. The defect is in the ask, which is why
+BUG-318's fix did not touch it: that fixed where `print` GOES, and this code never called
+`print`.
+
+**Why the ask is wrong, and it is a dated artifact.** For months `print` appeared not to
+work — BUG-318 sent it to stderr, and the repo recorded that as a Windows
+"stdout-to-PIPE writes nothing" platform quirk (see `project_print_stream_myth`). Anyone
+writing user-facing output in `main.zbr` would have found `print` silently useless and
+`sys.errln` visibly working. **The workaround outlived the myth that caused it.**
+`main.zbr` carries **80 `sys.errln` against 6 `print`**.
+
+**SCOPE — most of those 80 are CORRECT and must not be touched.** Diagnostics, errors,
+warnings and `note:` advisories belong on stderr; so does progress (`compiling: x.zbr`),
+which is precisely what lets `zebra --emit-zig f.zbr > out.zig` work at all. gcc does the
+same. The defect is the two that violate universal convention:
+
+| call site | today | should be |
+|---|---|---|
+| `--version` banner | stderr | **stdout** |
+| `--help` / usage block | stderr | **stdout** |
+| errors, warnings, `note:` | stderr | stderr — correct, leave alone |
+| progress (`compiling: …`) | stderr | stderr — correct, and load-bearing for `--emit-zig >` |
+
+A usage block printed in response to a BAD invocation is a different case and correctly
+stays on stderr (with a non-zero exit). Only the case where the user ASKED for it moves.
+
+**NO GATE CAN SEE THIS, and the gap is one level up from where we just armored.**
+`tools/stream_check.sh` (built 2026-08-29 for BUG-318) asserts that a compiled Zebra
+program's `print` lands on stdout. It says nothing about the compiler's own output. Same
+blind spot, one storey higher: we checked the programs the tool makes, not the tool.
+
+**Control when fixing.** Extend `stream_check.sh` with a leg that runs the COMPILER:
+`zebra --help` must put bytes on stdout and `zebra --version > file` must be non-empty —
+and the leg must be watched going RED first, since it passes vacuously if the compiler
+prints nothing at all. Keep a NEGATIVE leg asserting a type error still goes to stderr,
+or a fix that redirects everything to stdout passes.
+
+**0.9 relevance.** 0.9 means ready-for-others. `--help | less` is among the first three
+things a stranger does with an unfamiliar compiler.
+
+**BLOCKED ON CRITERION 2 — AND THE OBVIOUS FIX WILL LOOK LIKE IT FAILED.** Verified
+2026-08-30, not inferred. The fix is `sys.errln` -> `print` in `main.zbr`. But the
+committed `selfhost/main.zig` is emitted by the **bootstrap**, and the bootstrap still
+lowers a Zebra `print` to `std.debug.print` — stderr. Measured on a two-line program:
+
+```
+bootstrap emit:   std.debug.print("{s}\n", .{"orbit"});      -> stderr
+selfhost  emit:   _zbr_print("{s}\n", .{"orbit"});           -> stdout
+```
+
+The bootstrap's inlined preamble even *contains* `_zbr_print` (it is in the shared
+`stdlib_preamble.zig`, edited for BUG-318) and never calls it: the runtime helper shipped,
+the lowering did not. BUG-318 was landed selfhost-only, which the standing
+drop-bootstrap-parity rule permits — this is that decision's bill arriving.
+
+So making the two-line source change today, rebuilding, and testing `zebra --version`
+yields **no observable difference**, and the natural reading is "my fix did not work"
+rather than "the compiler that compiled my compiler does not have it yet." Same family as
+the documented preamble/regen ordering trap, new instance.
+
+Order: land criterion 2 (regeneration authority moves to the selfhost), THEN this. Or land
+the source change now and expect it to be inert until then — but say so in the commit, or
+it reads as a fix that did not take.
+
+**FIXED 2026-09-01, both halves, once criterion 2 unblocked it.**
+
+`--help` and `-h` are now RECOGNISED flags -- they were consulted nowhere, and `--help`
+only "worked" by falling through to the no-source-file path -- and they and `--version`
+write to STDOUT and exit 0.
+
+**THE ASYMMETRY IS THE ACTUAL FIX, and it is now asserted rather than assumed.** One usage
+text serves two situations: a REQUEST (`--help`), whose answer belongs on stdout with exit
+0, and a DIAGNOSTIC (the invocation was wrong), which belongs on stderr with a non-zero
+exit. Conflating them is what made `--help | less` print nothing. A single
+`usageLine(s, to_stdout)` helper now carries all 28 lines to whichever destination the
+situation calls for.
+
+| | exit | stdout | stderr |
+|---|---|---|---|
+| `zebra --help` | 0 | 2227 | 0 |
+| `zebra -h` | 0 | 2227 | 0 |
+| `zebra --version` | 0 | 61 | 0 |
+| `zebra` (no args) | **1** | **0** | **2227** |
+
+**The gate caught its own pin coming good.** `tools/cli_check.sh` held two BUG-321 pins
+asserting the WRONG behaviour; the moment the bug was fixed they failed with "is FIXED --
+promote this pin to a real assertion", which is precisely what a pin exists to do. Both
+became real assertions, plus a third that did not exist before: **usage shown for a BAD
+invocation must stay on stderr with a non-zero exit.** Without it, a "fix" that simply
+moved everything to stdout would pass the other checks while re-breaking this bug.
+
+---
+
 ### BUG-326: `sys.exit(N)` SEGFAULTS for N outside 0..255 and loses buffered stdout — FIXED 2026-09-01
 
 **`sys.exit(-1)` is an ordinary thing to write, and it crashed the program.** Found while
