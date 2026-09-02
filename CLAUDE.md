@@ -206,10 +206,10 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 14 <!-- doc-gen: 14 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 25 <!-- doc-gen: 25 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 27 <!-- doc-gen: 27 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 34 <!-- doc-gen: 34 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 37 <!-- doc-gen: 37 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--fast` | 26 <!-- doc-gen: 26 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 28 <!-- doc-gen: 28 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 35 <!-- doc-gen: 35 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 38 <!-- doc-gen: 38 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -769,6 +769,53 @@ bash tools/stream_check.sh      # THE STREAM-SEPARATION GATE, registered as `str
                                 #   The markers on the two streams are DIFFERENT strings, so a
                                 #   harness that captured one stream twice fails rather than
                                 #   passes. 0 failures = clean.
+bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surface`
+                                #   (FAST tier, ~16s) -- the only gate that exercises the
+                                #   compiler AS A COMMAND rather than as a translator.
+                                #   EVERY OTHER GATE asks what the compiler does with a
+                                #   PROGRAM: does it emit, does the emit compile, does the
+                                #   program print the right thing. Nothing asked what it
+                                #   does when a PERSON types something at it.
+                                #   RECEIPT, and the gap is structural rather than an
+                                #   oversight: argument handling is not part of compiling
+                                #   the compiler, so the entire self-hosting self-check
+                                #   region never touches it. Four bugs were found there in
+                                #   two days -- BUG-321 (`--help | less` prints nothing),
+                                #   BUG-322 (`zebra repl` and `zebra build` CRASHED for
+                                #   every user outside this repo), BUG-323 (unknown flags
+                                #   silently ignored, so a typo'd `--turbo` hands you the
+                                #   opposite build) and BUG-327, which had a hard COMPILE
+                                #   ERROR sitting inside `zebra build` through 37 green
+                                #   gates. See concept_self-verification-blind-spot.
+                                #   IT RUNS FROM A SCRATCH DIR OUTSIDE THE REPO, AND THAT
+                                #   IS THE WHOLE POINT. BUG-322 was four delegations
+                                #   resolving `zig-out/bin/zebra-bootstrap.exe` RELATIVE TO
+                                #   THE CWD, so they worked perfectly from the repo root
+                                #   and crashed everywhere else. A CLI suite run from the
+                                #   repo root would have PASSED on the day that bug
+                                #   shipped. It refuses if its scratch dir is inside $REPO.
+                                #   EVERY LEG HAS A TIMEOUT, because BUG-327's second layer
+                                #   turns `zebra build` into an infinite loop and a gate
+                                #   that HANGS is strictly worse than one that fails.
+                                #   POSITIVE CONTROL FIRST: `-c` on a good file must exit 0
+                                #   AND produce output, or every absence assertion below it
+                                #   passes vacuously -- it REFUSES (exit 2) rather than
+                                #   reporting green.
+                                #   KNOWN-BROKEN BEHAVIOUR IS PINNED, NOT SKIPPED: three
+                                #   pins assert today's WRONG answer (BUG-321 x2, BUG-323),
+                                #   print their ticket every run, and FAIL THE GATE THE DAY
+                                #   THE BUG IS FIXED -- the signal to promote the pin to a
+                                #   real assertion. Excluding them is how node-addon rotted
+                                #   for two weeks.
+                                #   VERIFIED RED WITH THE REAL ATTACKER, not a mutation:
+                                #   hiding zebra-bootstrap.exe makes the `zebra repl` leg
+                                #   fail. The `zebra build` leg correctly stays GREEN there,
+                                #   because BUG-322's fix makes it exit 127 WITH A MESSAGE
+                                #   rather than panicking -- the two legs assert different
+                                #   properties and each measures what it claims.
+                                #   CANNOT SEE: whether usage TEXT is accurate, whether a
+                                #   flag does what it says, or any interactive behaviour
+                                #   past `repl` starting. 11 assertions, 3 pins.
 bash tools/boundary_check.sh    # THE INTENT WITNESS (A3, QUICK tier, ~30s): the only
                                 #   gate whose expectations were WRITTEN FROM THE LANGUAGE
                                 #   REFERENCE rather than recorded from the compiler. Every
@@ -1610,7 +1657,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 91 scripts | <!-- doc-gen: 91 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 92 scripts | <!-- doc-gen: 92 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 55 tracked documents <!-- doc-gen: 55 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

@@ -447,6 +447,7 @@ run_static "decl-exhaustive" "0 issue" python tools/lint_decl_exhaustive.py
 # rewrite them, not to re-baseline.
 run_fast "boundary"       "0 fail"   bash tools/boundary_check.sh
 run_fast "stream-sep"     "PASS"     bash tools/stream_check.sh
+run_fast "cli-surface"   "PASS"     bash tools/cli_check.sh
 
 # THE ONLY GATE THAT BUILDS WITH --release. Every other gate here is Debug, which is
 # how BUG-228 survived 19 green gates: `--release` switched backend but never passed

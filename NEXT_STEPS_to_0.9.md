@@ -144,6 +144,56 @@ features, no parity work, no fixes except ones that break REGENERATION. It becom
 the stage-0 witness. That stops the bleeding today at zero cost and turns the eventual
 removal into a formality.
 
+**THE BOOTSTRAP'S REMAINING JOBS, COSTED 2026-09-01.** "Retire the bootstrap" was a fog;
+it is now a list with numbers against it. These are the only things it still does that the
+selfhost does not:
+
+| job | what backs it | cost to remove |
+|---|---|---|
+| `zebra repl` | `src/Repl.zig` | **579 lines** to port or drop |
+| `zebra debug` | `src/Debugger.zig` | **1123 lines** to port or drop |
+| `zebra build` | preamble `_build_*` -- **88 lines, and already in the SELFHOST's own preamble** | possibly zero (see below) |
+| `--zig-backend` | a flag, not code | a policy decision |
+| `--gui-backend=stub` | the `stub` backend only | tui and libui_ng are already native |
+
+**Total real porting surface: 1,702 lines across two files.** Everything else is a
+decision rather than an implementation.
+
+**`build` IS THE ONE TO LOOK AT FIRST, and the evidence is incomplete.** The bootstrap's
+entire `build` handler is:
+
+```zig
+if (build_mode and source_path == null) {
+    source_path = build_file orelse "build.zbr";
+}
+```
+
+No build logic at all -- it sets a default source path and runs the ordinary
+compile-and-run pipeline. The machinery lives in `stdlib_preamble.zig`, which the selfhost
+owns and embeds too. On that reading the delegation is pure historical accident.
+
+**BUT THE OBVIOUS EXPERIMENT IS MISLEADING, so it is recorded rather than relied on.**
+`zebra build.zbr` (selfhost, direct) exits 0 and prints `build declarative: ok`, while
+`zebra build` (delegated) fails with BUG-327. That looks like proof the selfhost can
+already do the job. It is not: both committed build fixtures are DECLARATIVE (`build_smoke_test.zbr`
+says so in a comment -- "we do NOT call b.run()"), so the direct run never reaches the code
+BUG-327 is about. The real difference is emission shape -- the bootstrap splices the
+preamble INLINE into the root file, where Zig analyses it eagerly, while the selfhost
+IMPORTS `zebra_rt.zig`, where analysis is lazy. **The stale API is not fixed on the
+selfhost path; it is merely not reached.**
+
+**What would settle it:** a build fixture that actually calls `b.run()`, run both ways.
+Neither committed fixture does. Writing one is the next concrete step on this criterion,
+and it doubles as the regression test BUG-327 asks for.
+
+**ORDERING NOTE.** The CLI gate (`tools/cli_check.sh`, added 2026-09-01) pins the current
+behaviour of `repl` and `build` from OUTSIDE the repo. That is the precondition for
+touching any of these: each delegation can now be ported or dropped with a witness that
+fails if it regresses, and the witness runs where users actually stand rather than where
+the repo happens to be.
+
+
+
 **EXIT CRITERIA -- all four, in order:**
 
 1. ~~**The equivalence experiment passes.**~~ **RETIRED 2026-08-29 -- IT WAS THE WRONG
@@ -393,6 +443,58 @@ removal into a formality.
 4. **`divergence_check` is re-pointed or retired.** Its reference disappears with the
    bootstrap. Its value is already questionable (48 informational gaps), but losing a gate
    silently is not acceptable -- decide deliberately.
+
+   **ASSESSED 2026-09-01. THE RECORDED PLAN HAS NO ANCHOR TO POINT AT.** The proposal
+   above is to re-point this gate at "the PREVIOUS selfhost (built from the committed `.zig`
+   at the last tag)", turning an implementation-vs-implementation question into a
+   version-vs-version one. That is the right idea. But:
+
+   ```
+   $ git tag
+   archive/stash-2026-06-17-listelem
+   archive/pre-zebra-split
+   ```
+
+   **Two tags, both archival, neither a release.** There is no "last tag" whose committed
+   `.zig` represents a previous version of this compiler. The plan was written assuming a
+   release cadence the repo does not have.
+
+   **Three ways forward, and the choice is Sean's:**
+
+   1. **Create the anchor.** Tag the current tree (the first N-1 fixed point, post-criterion
+      2) as the reference, and re-point the gate at a worktree built from it. Cheap, and it
+      gives the release cadence a reason to exist. The reference binary must be CACHED per
+      tag or the gate pays a full compiler build every run.
+   2. **Anchor on a commit rather than a tag** -- `HEAD~N`, or the commit that last changed
+      `selfhost/`. Needs no process change and is fragile in exactly the way a moving
+      reference is: the thing you are comparing against drifts under you.
+   3. **Retire it.** See the decay argument below.
+
+   **AND THE GATED HALF IS NOW DECAYING, which is new information since the plan was
+   written.** `divergence_check` gates on SELFHOST GAPS -- cases the bootstrap compiles and
+   the selfhost does not. The bootstrap is now FROZEN (criterion 2 moved the regen authority
+   away from it, and it takes no new features by policy). So that leg asks "can a frozen
+   implementation still do something the advancing one cannot?", and the answer trends
+   permanently to zero. A gate whose assertion becomes vacuous by design is worse than no
+   gate, because the green keeps being reported.
+
+   The BOOTSTRAP GAP half (selfhost leads) is informational and not gated, and it grows
+   monotonically for the same reason -- it was 14, then 23, then 48.
+
+   **COST, measured in the 2026-09-01 daily: 1164 s.** It is the single heaviest gate in the
+   ladder. That matters for the retire-vs-re-point decision: this is nineteen minutes per
+   daily buying an assertion that is trending toward vacuous.
+
+   **MY RECOMMENDATION, stated rather than hedged: option 1.** Tag the current tree, re-point
+   at it, and cache the reference build. It preserves a real regression detector (does THIS
+   compiler still handle everything the LAST RELEASE handled?), it is the only option that
+   gets more valuable over time rather than less, and it gives 0.9 a natural first anchor.
+   Option 3 is defensible and I would not argue hard against it; option 2 I would not do.
+
+   **NOT STARTED -- this is a decision, not an implementation.** What is implemented is the
+   measurement above.
+
+
 
    **RE-POINTING LOOKS BETTER THAN RETIRING, and the N-1 scheme hands us the reference for
    free.** Today it asks "bootstrap handles it, selfhost does not" -- an
