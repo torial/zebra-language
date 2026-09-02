@@ -458,7 +458,46 @@ JOBS=3 bash tools/compile_check.sh   # THE INDEPENDENT WITNESS: emits every posi
                                 #   Currently a MANUAL tool (not gated) — so its coverage
                                 #   is only real on days it's run. `--only <substr>` for a
                                 #   tight loop; `--bootstrap` to check the bootstrap's emit.
-JOBS=4 bash tools/divergence_check.sh --gate  # THE DRIFT WITNESS: emits the corpus with
+JOBS=4 bash tools/divergence_check.sh --gate  # THE REGRESSION WITNESS (re-pointed 2026-09-01,
+                                #   bootstrap sunset criterion 4). It used to compare the
+                                #   selfhost against the BOOTSTRAP -- an IMPLEMENTATION-vs-
+                                #   implementation question that only made sense while two
+                                #   implementations existed. The bootstrap is now FROZEN, so
+                                #   "can the frozen thing do something the advancing thing
+                                #   cannot?" trends permanently to zero: an assertion going
+                                #   vacuous BY DESIGN, which is worse than no gate because
+                                #   the green keeps being reported.
+                                #   IT NOW COMPARES AGAINST THE N-1 ANCHOR -- the compiler
+                                #   built from the newest `n1-anchor-*` tag
+                                #   (tools/n1_reference.sh, cached by COMMIT SHA so a moved
+                                #   tag cannot serve a stale binary). The question is
+                                #   VERSION-vs-version and stays useful forever: does this
+                                #   compiler still handle everything the anchor handled?
+                                #   THE TOKENS WERE RENAMED BECAUSE THE EPISTEMICS INVERTED.
+                                #   `SELFHOST GAP` meant "the selfhost LAGS a reference
+                                #   implementation"; it is now `REGRESSION` and means "this
+                                #   compiler LOST something it used to do". `BOOTSTRAP GAP`
+                                #   became `ADVANCE`. Every pre-2026-09-01 sweep note in this
+                                #   file uses the OLD meaning -- do not compare the numbers.
+                                #   BOTH COMPILERS ARE NOW INVOKED IDENTICALLY. The old code
+                                #   had a `boot` branch emitting to STDOUT, because the
+                                #   bootstrap produced a SELF-CONTAINED inline file. The
+                                #   selfhost emits the MODULE shape, so a stdout redirect
+                                #   writes an incomplete program: pointing the reference at an
+                                #   N-1 selfhost through that branch scored EVERY file as an
+                                #   advance (4/4 on the first smoke, boot=CFAIL throughout)
+                                #   for a HARNESS reason. Unifying on --output-dir also
+                                #   removed a year-old confound -- it had been comparing an
+                                #   inline-shape emit against a module-shape one.
+                                #   PRINTS THE ANCHOR ON EVERY RUN, pass or fail, and says
+                                #   loudly when the anchor IS HEAD (a degenerate comparison
+                                #   that can only report zero).
+                                #   VERIFIED RED WITH A REAL ADVERSARY, not a mutation:
+                                #   reference := the current selfhost, subject := the
+                                #   BOOTSTRAP -> 7 REGRESSIONS, exit 1. Normal run: 0, exit 0.
+                                #   Test hooks N1_REF_OVERRIDE / DIV_SELF_OVERRIDE exist for
+                                #   exactly that and are used by no tier.
+                                #   (was:) THE DRIFT WITNESS: emits the corpus with
                                 #   BOTH compilers and compiles each. --gate exits non-zero
                                 #   if any SELFHOST GAP (bootstrap compiles it, selfhost
                                 #   doesn't) — i.e. the selfhost silently regressed vs the
@@ -1666,7 +1705,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 92 scripts | <!-- doc-gen: 92 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 93 scripts | <!-- doc-gen: 93 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 55 tracked documents <!-- doc-gen: 55 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

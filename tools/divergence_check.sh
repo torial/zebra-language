@@ -43,8 +43,30 @@ _keep_emit_err() {   # $1 = wdir, $2 = name
   mkdir -p "$OUT/evidence" 2>/dev/null
   cp "$1/emit.err" "$OUT/evidence/$2.emit.err" 2>/dev/null
 }
-BOOT="$REPO/zig-out/bin/zebra-bootstrap.exe"
-SELF="$REPO/zig-out/bin/zebra.exe"
+# N-1 REFERENCE (criterion 4, 2026-09-01). This used to be zebra-bootstrap.exe -- an
+# IMPLEMENTATION-vs-implementation comparison, which only made sense while two
+# implementations existed. The bootstrap is now frozen, so "can the frozen thing do
+# something the advancing thing cannot?" trends permanently to zero: a gate whose
+# assertion goes vacuous BY DESIGN, which is worse than no gate because the green keeps
+# being reported.
+#
+# It is now the compiler built from the newest n1-anchor-* tag, so the question is
+# VERSION-vs-version: does this compiler still handle everything the anchor handled? A gap
+# is then a REGRESSION rather than a lag, and that question stays useful forever.
+#
+# NOTE THE INVERTED EPISTEMICS, because the tokens below were renamed for it: a gap used
+# to mean "the selfhost lags a reference implementation"; it now means "this compiler LOST
+# something it used to do."
+BOOT="$(bash "$REPO/tools/n1_reference.sh")"
+if [ -z "$BOOT" ] || [ ! -x "$BOOT" ]; then
+    echo "divergence: REFUSING -- no N-1 reference compiler available." >&2
+    echo "  bash tools/n1_reference.sh  (it explains what is missing)" >&2
+    exit 2
+fi
+N1_INFO="$(bash "$REPO/tools/n1_reference.sh" --info)"
+# DIV_SELF_OVERRIDE is the matching test hook for the subject side; see
+# n1_reference.sh. Together they let the gate be watched going RED.
+SELF="${DIV_SELF_OVERRIDE:-$REPO/zig-out/bin/zebra.exe}"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 
 # emit+compile one file with one compiler; echo a status token.
@@ -54,13 +76,22 @@ emit_and_check() { # $1=compiler $2=mode(boot|self) $3=absfile $4=workdir
   local name; name=$(basename "$f" .zbr)
   local main="$wdir/$name.zig"
   rm -rf "$wdir"; mkdir -p "$wdir"
-  if [ "$mode" = boot ]; then
-    # BUG-302 one layer up: keep the compiler's own account of the failure. See the
-    # note in full_sweep.check_one.
-    "$zebra" --emit-zig "$f" > "$main" 2>"$wdir/emit.err" || { _keep_emit_err "$wdir" "$name"; echo EMITFAIL; return; }
-  else
-    "$zebra" --emit-zig "$f" --output-dir "$wdir" >/dev/null 2>"$wdir/emit.err" || { _keep_emit_err "$wdir" "$name"; echo EMITFAIL; return; }
-  fi
+  # BOTH compilers are invoked IDENTICALLY, with --output-dir. The old code had a
+  # `boot` branch that emitted to STDOUT, and it existed for one reason: the bootstrap
+  # emitted a SELF-CONTAINED inline file, so one stream was enough.
+  #
+  # That stopped being true at criterion 2. The selfhost emits the MODULE shape -- a root
+  # file that imports zebra_rt.zig -- so a stdout redirect writes an INCOMPLETE program
+  # and zig fails with "unable to load 'zebra_rt.zig': FileNotFound". Pointing the
+  # reference at an N-1 selfhost through the old branch scored EVERY file as an advance:
+  # 4 of 4 on the first smoke run, boot=CFAIL throughout, for a harness reason rather
+  # than a compiler one.
+  #
+  # Using one invocation for both also removes a confound the gate carried for a year:
+  # it was comparing an INLINE-shape emit against a MODULE-shape emit and attributing the
+  # difference to the compilers.
+  "$zebra" --emit-zig "$f" --output-dir "$wdir" >/dev/null 2>"$wdir/emit.err" \
+      || { _keep_emit_err "$wdir" "$name"; echo EMITFAIL; return; }
   [ -s "$main" ] || { echo EMITFAIL; return; }
   grep -q "pub fn main" "$main" || { echo NOMAIN; return; }
   # BUG-302: this line used to be `... >/dev/null 2>&1 ... else echo CFAIL`, which
@@ -269,13 +300,21 @@ echo "multi-module (selfhost-only, bootstrap N/A): $nmulti"
 echo
 _dretries=0
 [ -f "$OUT/retries.txt" ] && _dretries=$(wc -l < "$OUT/retries.txt" | tr -d ' ')
+# The anchor is printed on EVERY run, pass or fail. A reference that has silently gone
+# stale is only legible against a number that is always there -- same discipline as
+# output_sweep printing its transient count including zero.
+echo "N-1 anchor: $N1_INFO"
+case "$N1_INFO" in *degenerate=yes*)
+    echo "  !! the anchor IS the current commit -- this run compares the compiler with"
+    echo "  !! ITSELF and can only report zero. Move the anchor, or read this as unmeasured."
+;; esac
 echo "zig-infra retries: $_dretries (transient stdlib read failures -- BUG-302)"
 echo "zig-infra (zig could not read its own stdlib; excluded, not a gap): $ninfra"
 [ -n "$infra_names" ] && echo "   $infra_names"
-echo "▶ SELFHOST GAPS ($nsg) — bootstrap OK, selfhost fails (selfhost lags):"
+echo "▶ REGRESSIONS ($nsg) — the N-1 anchor compiles it, THIS compiler does not:"
 [ -n "$self_gap" ] && echo "   $self_gap" || echo "   (none)"
 echo
-echo "▶ BOOTSTRAP GAPS ($nbg) — selfhost OK, bootstrap fails (bootstrap lags):"
+echo "▶ ADVANCES ($nbg) — THIS compiler handles it, the N-1 anchor did not (informational):"
 [ -n "$boot_gap" ] && echo "   $boot_gap" || echo "   (none)"
 echo
 echo "· agree-fail (both fail — genuinely-broken test or both lag): $agree_fail"
@@ -297,9 +336,9 @@ echo "· agree-fail (both fail — genuinely-broken test or both lag): $agree_fa
 if [ "$GATE" = 1 ]; then
   echo
   if [ "$nsg" -eq 0 ]; then
-    echo "✓ divergence gate PASS — 0 selfhost gaps (selfhost matches the bootstrap witness)."
+    echo "✓ divergence gate PASS — 0 regressions vs the N-1 anchor [$N1_INFO]"
   else
-    echo "✗ divergence gate FAIL — $nsg selfhost gap(s): the selfhost regressed vs the bootstrap."
+    echo "✗ divergence gate FAIL — $nsg REGRESSION(s) vs the N-1 anchor [$N1_INFO]:"
     echo "   $self_gap"
     exit 1
   fi

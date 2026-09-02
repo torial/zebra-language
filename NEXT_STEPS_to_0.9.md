@@ -444,6 +444,44 @@ the repo happens to be.
    bootstrap. Its value is already questionable (48 informational gaps), but losing a gate
    silently is not acceptable -- decide deliberately.
 
+   **DONE 2026-09-01 -- OPTION 1, Sean's call.** `n1-anchor-2026-09-01` tags **8cfdc6a**, the
+   commit where criterion 2 landed, i.e. the first fixed point this compiler actually shipped.
+   HEAD was NOT tagged: an anchor equal to HEAD compares the compiler with itself and can only
+   report zero, and the tree was 4 commits past 8cfdc6a, so the gate is non-degenerate from
+   day one.
+
+   Verified buildable BEFORE tagging (a reference that cannot build makes the gate refuse
+   forever): a worktree at 8cfdc6a produces a zebra.exe that compiles and runs a hello-world.
+
+   `tools/n1_reference.sh` resolves the newest `n1-anchor-*` tag and caches the built compiler
+   **by COMMIT SHA, never the tag name** -- a moved tag serving a stale binary is precisely the
+   config-vs-artifact seam this repo keeps finding. Cache and build worktree live OUTSIDE the
+   repo, because `kill_orphans.sh` kills by executable path under $REPO and `doctor --fix`
+   clears scratch. It refuses unless the built reference can compile a hello-world.
+
+   `divergence_check.sh` re-pointed; tokens renamed (`SELFHOST GAP` -> `REGRESSION`,
+   `BOOTSTRAP GAP` -> `ADVANCE`) because the epistemics inverted -- a gap used to mean the
+   selfhost LAGGED a reference implementation, and now means this compiler LOST a capability.
+
+   **A harness bug found doing it, worth the retelling.** The first smoke run scored 4 of 4
+   files as ADVANCES. Implausible for a 4-commit-old anchor, so it was a harness fault, and it
+   was: `emit_and_check` had a `boot` branch emitting to STDOUT, which worked only because the
+   bootstrap produced a SELF-CONTAINED inline file. The selfhost emits the MODULE shape, so a
+   stdout redirect writes an incomplete program and zig fails `unable to load 'zebra_rt.zig'`.
+   Both compilers now use `--output-dir`, which also retires a confound the gate carried for a
+   year: it had been comparing an inline-shape emit against a module-shape one and attributing
+   the difference to the compilers.
+
+   **FALSIFIED WITH A REAL ADVERSARY:** reference := the current selfhost, subject := the
+   bootstrap -> 7 REGRESSIONS and exit 1; the normal run gives 0 and exit 0.
+
+   **AND IT REMOVES THE BOOTSTRAP AS A GATE REQUIREMENT.** With criterion 4 landed, no gate
+   needs `zebra-bootstrap.exe`. What remains are RUNTIME delegations -- `repl`, `debug`,
+   `build` -- plus `--zig-backend` and the `stub` GUI backend, which are policy rather than
+   code. The honest remaining distance is 1,702 lines (src/Repl.zig 579, src/Debugger.zig
+   1123) and three decisions.
+
+
    **ASSESSED 2026-09-01. THE RECORDED PLAN HAS NO ANCHOR TO POINT AT.** The proposal
    above is to re-point this gate at "the PREVIOUS selfhost (built from the committed `.zig`
    at the last tag)", turning an implementation-vs-implementation question into a
