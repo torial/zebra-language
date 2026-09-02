@@ -937,6 +937,240 @@ def emitUsage(to_stdout: bool)
     usageLine("                  take one (-c, -h). Flags are case-sensitive, and an", to_stdout)
     usageLine("                  unrecognized flag is an error rather than ignored.", to_stdout)
 
+# ── REPL ──────────────────────────────────────────────────────────────────────
+#
+# PORTED FROM src/Repl.zig 2026-09-02, part of retiring the bootstrap. `zebra repl`
+# delegated to zebra-bootstrap.exe (BUG-322 made that delegation resolve correctly from any
+# directory; this removes the need for it entirely).
+#
+# IT LIVES IN main.zbr RATHER THAN A NEW selfhost/Repl.zbr ON PURPOSE. A new module must be
+# added to the FILES list in bootstrap_check.sh and rebuild.sh and to the build's import
+# set -- the regeneration machinery that was rewritten hours earlier for criterion 2.
+# Adding to that set unsupervised, to gain an architectural nicety, is a poor trade.
+#
+# HOW A CELL IS EVALUATED, and it is simpler than the Zig original. That version compiled
+# in-process, injected a sentinel `debug.print` into the emitted Zig at the line where the
+# new cell began, ran it, and showed whatever appeared after the sentinel. Here the session
+# is written as an ordinary .zbr and compiled by re-invoking OURSELVES -- so the entire
+# compile-and-run path is reused rather than reimplemented -- and the new output is the
+# SUFFIX beyond what the previous run produced. The session replays deterministically, so
+# prior cells reprint identically and everything past the old length is what this cell did.
+#
+# That trade is deliberate: a process spawn per cell instead of an in-process compile, in
+# exchange for no duplicated pipeline and no sentinel injection to keep in step with codegen.
+#
+# NOTE ON STREAMS: the Zig original captures STDERR, because Zebra's `print` used to write
+# there. Since BUG-318 it writes to STDOUT, so a faithful port would have captured the wrong
+# stream and shown nothing.
+
+def replIsDeclCell(cell: str): bool
+    var t: str = cell.trimLeft()
+    var starters: List(str) = List(str)()
+    starters.add("def ")
+    starters.add("class ")
+    starters.add("struct ")
+    starters.add("interface ")
+    starters.add("extend ")
+    starters.add("union ")
+    starters.add("enum ")
+    starters.add("use ")
+    for k in starters
+        if t.startsWith(k)
+            return true
+    return false
+
+# A decl header with no indented body yet can never be complete, whatever the parser says.
+def replHeaderOnly(src: str): bool
+    var t: str = src.trimLeft()
+    var isDecl: bool = false
+    var hdrs: List(str) = List(str)()
+    hdrs.add("def ")
+    hdrs.add("class ")
+    hdrs.add("struct ")
+    hdrs.add("interface ")
+    hdrs.add("extend ")
+    for k in hdrs
+        if t.startsWith(k)
+            isDecl = true
+    if not isDecl
+        return false
+    return not src.contains("\n    ") and not src.contains("\n\t")
+
+# Assemble the whole session plus the new cell. Decl cells go at top level; statement cells
+# go inside `def main()` after every statement committed so far.
+def replBuildSource(decls: List(str), stmts: List(str), cell: str, isDecl: bool): str
+    var sb: str = ""
+    for d in decls
+        sb = sb + d + "\n"
+    if isDecl
+        if decls.len > 0
+            sb = sb + "\n"
+        sb = sb + cell + "\n"
+        if stmts.len > 0
+            sb = sb + "\ndef main()\n"
+            for s in stmts
+                sb = sb + "    " + s + "\n"
+        return sb
+    if decls.len > 0
+        sb = sb + "\n"
+    sb = sb + "def main()\n"
+    for s in stmts
+        sb = sb + "    " + s + "\n"
+    sb = sb + "    " + cell + "\n"
+    return sb
+
+def replHelp()
+    print("  :help  :h              show this message")
+    print("  :clear                 reset the session (definitions and variables)")
+    print("  :history               show all inputs in this session")
+    print("  :save <file.zbr>       write the session to a .zbr file")
+    print("  :quit  :q  Ctrl-D      exit")
+    print("")
+    print("Multi-line: indent continuation lines, then press Enter twice to submit.")
+
+def replRun(): int
+    print("Zebra REPL  (:help for commands, Ctrl-D to exit)")
+
+    var decls: List(str) = List(str)()
+    var stmts: List(str) = List(str)()
+    var history: List(str) = List(str)()
+    var accum: str = ""
+    var prevOut: str = ""
+
+    # Same temp-dir resolution main.zbr already uses for its emitted .zig scratch.
+    var tmpdir: str = "."
+    if sys.getenv("TEMP") as te
+        tmpdir = te
+    else if sys.getenv("TMPDIR") as tm
+        tmpdir = tm
+    else if sys.getenv("TMP") as tp
+        tmpdir = tp
+    var sessionPath: str = tmpdir + "/zbr_repl_session.zbr"
+    var selfPath: str = sys.selfExe()
+
+    while true
+        if accum == ""
+            sys.err(">>> ")
+        else
+            sys.err("... ")
+
+        var lineOpt = sys.readLine()
+        if lineOpt == nil
+            print("")
+            break
+        var line: str = lineOpt!.trimRight()
+
+        if accum != ""
+            accum = accum + "\n" + line
+        else
+            accum = line
+
+        var cell: str = accum.trim()
+
+        # A blank line submits an accumulated multi-line cell, or clears an empty one.
+        if cell == ""
+            accum = ""
+            continue
+        if line == "" and accum.contains("\n")
+            history.add(cell)
+            prevOut = replEval(decls, stmts, cell, sessionPath, selfPath, prevOut)
+            accum = ""
+            continue
+
+        # Commands are only recognised at the start of a fresh cell.
+        if accum == line
+            if cell == ":quit" or cell == ":q"
+                break
+            if cell == ":help" or cell == ":h"
+                replHelp()
+                accum = ""
+                continue
+            if cell == ":clear"
+                decls = List(str)()
+                stmts = List(str)()
+                prevOut = ""
+                print("session cleared")
+                accum = ""
+                continue
+            if cell == ":history"
+                var hi: int = 0
+                while hi < history.len
+                    print("[${hi + 1}] ${history[hi]}")
+                    hi = hi + 1
+                accum = ""
+                continue
+            if cell.startsWith(":save ")
+                var fname: str = cell[6..cell.len].trim()
+                var body: str = replBuildSource(decls, stmts, "", false)
+                File.write(fname, body)
+                print("saved " + fname)
+                accum = ""
+                continue
+
+        if replHeaderOnly(accum)
+            continue
+
+        history.add(cell)
+        prevOut = replEval(decls, stmts, cell, sessionPath, selfPath, prevOut)
+        accum = ""
+
+    return 0
+
+# Compile-and-run the session with `cell` appended. Returns the output this run produced,
+# so the next cell can show only what is new. On failure the session is left unchanged and
+# the compiler's own diagnostics are shown -- they already name file, line and column.
+def replEval(decls: List(str), stmts: List(str), cell: str, sessionPath: str, selfPath: str, prevOut: str): str
+    var isDecl: bool = replIsDeclCell(cell)
+    var src: str = replBuildSource(decls, stmts, cell, isDecl)
+    File.write(sessionPath, src)
+
+    var argv: List(str) = List(str)()
+    argv.add(selfPath)
+    # A DECL CELL IS CHECKED, NOT RUN, and that is not an optimisation -- it is required.
+    # A session holding only declarations has no `def main()`, so running it fails with
+    # "root source file has no member named 'main'". Worse, the failure then prevented the
+    # decl from being committed, so the NEXT cell reported the name as undefined -- one bug
+    # presenting as two. Found by driving a real session; both the front-end check and the
+    # build were green.
+    if isDecl
+        argv.add("-c")
+    argv.add(sessionPath)
+    var r = sys.run(argv)
+
+    if r.exit_code != 0
+        # The compiler has already said what is wrong, with a position. Show it and leave
+        # the session untouched so the user can retype the cell.
+        if r.stderr != ""
+            sys.err(replStripNoise(r.stderr))
+        if r.stdout != "" and r.stdout.len > prevOut.len
+            print(r.stdout[prevOut.len..r.stdout.len])
+        return prevOut
+
+    if isDecl
+        # Checked only: nothing ran, so the replay baseline is untouched.
+        decls.add(cell)
+        return prevOut
+
+    var out: str = r.stdout
+    if out.len > prevOut.len
+        var fresh: str = out[prevOut.len..out.len]
+        if fresh.trim() != ""
+            Terminal.write(fresh)
+    stmts.add(cell)
+    return out
+
+# The session file is compiled whole every time, so a variable declared in one cell and not
+# yet used looks unused to the backend. That is expected in a REPL, not a user error.
+def replStripNoise(s: str): str
+    var keep: str = ""
+    for ln in s.split("\n")
+        if ln.contains("unused local") or ln.contains("unused variable") or ln.contains("pointless discard")
+            continue
+        if ln.trim() == ""
+            continue
+        keep = keep + ln + "\n"
+    return keep
+
 def usageLine(s: str, to_stdout: bool)
     if to_stdout
         print(s)
@@ -2576,19 +2810,10 @@ def main()
 
     if args.positional(0) as repl_pos
         if repl_pos == "repl"
-            var repl_argv: List(str) = List(str)()
-            repl_argv.add(bootstrapExePath())
-            repl_argv.add("repl")
-            var repl_rc: int = sys.exec_inherit(repl_argv)
-            # -1 is _sys_exec_inherit's "could not spawn" sentinel. Letting it reach
-            # sys.exit is what produced the crash this bug was filed for; say what
-            # went wrong and where we looked instead.
-            if repl_rc == -1
-                sys.errln("zebra: could not launch the bootstrap compiler for `repl`")
-                sys.errln("  looked for: " + bootstrapExePath())
-                sys.errln("  `repl` is still delegated to it; other subcommands are not")
-                sys.exit(127)
-            sys.exit(repl_rc)
+            # PORTED 2026-09-02. This used to delegate to zebra-bootstrap.exe; the REPL is now
+            # native (replRun, further up this file). One of the three runtime jobs that kept
+            # the bootstrap alive after criterion 4 removed its last GATE job.
+            sys.exit(replRun())
 
     # -- debug subcommand --------------------------------------------------
     # `zebra debug <file.zbr>` — DAP proxy via bootstrap binary.

@@ -139,9 +139,40 @@ chk "diagnostics do NOT contaminate stdout" \
     "$(case "$OUT" in *compiling:*) echo 1;; *) echo 0;; esac)" "stdout=[$OUT]"
 
 # ---- the delegated subcommands, from OUTSIDE the repo (BUG-322) ---------------------
-run repl
-chk "\`zebra repl\` starts from a user directory (BUG-322)" \
+# THE REPL IS NATIVE AS OF 2026-09-02 (ported from src/Repl.zig), so this asserts that it
+# EVALUATES, not merely that it starts. Starting proved something when the REPL was a
+# delegation and the risk was BUG-322's relative path; now the risk is the port, and the
+# property that matters is that SESSION STATE CARRIES BETWEEN CELLS -- the whole premise of
+# replaying the session each time. Two bugs were found by driving exactly this and were
+# invisible to both the front-end check and the build.
+printf 'var x = 21\nprint("${x * 2}")\n:quit\n' > "$W/repl_in.txt"
+( cd "$W" && timeout 420 "$ZEBRA" repl < "$W/repl_in.txt" >"$O" 2>"$E" )
+RC=$?; OUT=$(tr -d '\r' < "$O"); ERR=$(tr -d '\r' < "$E")
+chk "\`zebra repl\` runs from a user directory (BUG-322)" \
     "$([ "$RC" = 0 ] && echo 0 || echo 1)" "exit=$RC — a panic here is BUG-322 regressing"
+chk "...and session state carries between cells (21 * 2 = 42)" \
+    "$(case "$OUT$ERR" in *42*) echo 0;; *) echo 1;; esac)" \
+    "stdout=[$(echo "$OUT" | tr '\n' ' ' | cut -c1-60)]"
+
+# A DECL CELL must be accepted and then be CALLABLE. This is the case that failed on the
+# first working build: a declarations-only session has no `def main()`, so running it died,
+# and because it died the decl was never committed -- so the next cell reported the name as
+# undefined. One defect presenting as two. Decl cells are type-checked, not run.
+printf 'def dbl(n: int): int\n    return n * 2\n\nprint("${dbl(21)}")\n:quit\n' > "$W/repl_decl.txt"
+( cd "$W" && timeout 420 "$ZEBRA" repl < "$W/repl_decl.txt" >"$O" 2>"$E" )
+RC=$?; OUT=$(tr -d '\r' < "$O"); ERR=$(tr -d '\r' < "$E")
+chk "a REPL decl cell is accepted and then callable" \
+    "$(case "$OUT$ERR" in *42*) echo 0;; *) echo 1;; esac)" \
+    "exit=$RC out=[$(echo "$OUT" | tr '\n' ' ' | cut -c1-50)]"
+
+# NEGATIVE DIRECTION: :clear must ACTUALLY reset, not just print that it did. Asserted by
+# the FAILURE that follows it -- if :clear were a no-op, `a` would still be defined.
+printf 'var a = 1\n:clear\nprint("${a}")\n:quit\n' > "$W/repl_clear.txt"
+( cd "$W" && timeout 420 "$ZEBRA" repl < "$W/repl_clear.txt" >"$O" 2>"$E" )
+ERR=$(tr -d '\r' < "$E")
+chk ":clear really resets the session (proven by the later failure)" \
+    "$(case "$ERR" in *"undefined name"*) echo 0;; *) echo 1;; esac)" \
+    "stderr=[$(echo "$ERR" | grep -i undefined | head -1 | cut -c1-50)]"
 
 run build
 chk "\`zebra build\` does not CRASH from a user directory (BUG-322)" \

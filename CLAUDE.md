@@ -854,7 +854,18 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 16 assertions, 2 pins -- BUG-321's two
+                                #   past `repl` starting. 27 assertions, 0 pins. Every pin it
+                                #   started with was PROMOTED the day its bug was fixed --
+                                #   BUG-321, BUG-323, BUG-327 -- which is what a pin is for.
+                                #   THE REPL LEGS ASSERT EVALUATION, not startup: `starts`
+                                #   was the right property when repl was a DELEGATION and the
+                                #   risk was BUG-322's relative path. Since the port
+                                #   (2026-09-02) the risk is the port, so the gate drives a
+                                #   session and checks 21*2=42 crosses a cell boundary, that a
+                                #   decl cell is accepted AND then callable, and that `:clear`
+                                #   really resets -- proven by the FAILURE of the next cell,
+                                #   since checking that it printed "session cleared" would
+                                #   pass against a no-op. BUG-321's two
                                 #   were PROMOTED to real assertions the day it was fixed,
                                 #   which is what a pin is for.
                                 #   THE BUILD-EXECUTION LEG is the one worth

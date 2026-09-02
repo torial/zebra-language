@@ -144,6 +144,38 @@ features, no parity work, no fixes except ones that break REGENERATION. It becom
 the stage-0 witness. That stops the bleeding today at zero cost and turns the eventual
 removal into a formality.
 
+**UPDATED 2026-09-02: `repl` IS PORTED. Two runtime jobs remain, not three.**
+
+`zebra repl` is now native (`replRun` in `selfhost/main.zbr`); the bootstrap delegation is
+deleted. It lives in main.zbr rather than a new `selfhost/Repl.zbr` <!-- doc-lint-ok: names the module deliberately NOT created; the sentence explains why the REPL lives in main.zbr instead --> deliberately -- a new
+module must join the FILES list in `bootstrap_check.sh` and `rebuild.sh` and the build's
+import set, i.e. the regeneration machinery rewritten hours earlier for criterion 2.
+
+**The port is SIMPLER than the original and the difference is worth knowing.** src/Repl.zig
+compiled in-process, injected a sentinel `debug.print` into the emitted Zig at the new
+cell's line, ran it, and showed output past the sentinel. The Zebra version writes the
+session as an ordinary `.zbr`, re-invokes the compiler, and shows the SUFFIX beyond what
+the previous run produced -- the session replays deterministically, so prior cells reprint
+identically. Costs a process spawn per cell; buys no duplicated pipeline and no sentinel
+injection to keep in step with codegen.
+
+**Two things a faithful port would have got wrong.** The original captures STDERR, because
+Zebra's `print` used to write there -- since BUG-318 it writes to stdout, so a faithful
+copy would have shown nothing. And decl cells must be type-CHECKED, not run: a
+declarations-only session has no `def main()`, so running it fails, and the failure then
+prevents the decl from being committed -- so the NEXT cell reports the name as undefined.
+One defect presenting as two, found by driving a session and invisible to both the
+front-end check and the build.
+
+Gated: `tools/cli_check.sh` drives a real session and asserts state crosses a cell
+boundary, a decl cell is accepted AND callable, and `:clear` really resets (proven by the
+failure of the cell after it).
+
+**REMAINING:** `zebra debug` (src/Debugger.zig, 1123 lines -- a DAP protocol proxy, a
+materially different and larger job than a read-eval loop), plus `--zig-backend` and the
+`stub` GUI backend, which are policy rather than code.
+
+
 **THE BOOTSTRAP'S REMAINING JOBS, COSTED 2026-09-01.** "Retire the bootstrap" was a fog;
 it is now a list with numbers against it. These are the only things it still does that the
 selfhost does not:
