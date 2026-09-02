@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# pins: BUG-321 --help/-h/--version stream and exit code are asserted here, plus the
+#       asymmetry (usage for a BAD invocation stays on stderr, non-zero). A CLI bug
+#       has no test/*.zbr to be a fixture -- the subject is the compiler AS A COMMAND.
+# pins: BUG-322 `zebra repl` and `zebra build` are exercised from a directory OUTSIDE
+#       the repo, which is the only place that bug was ever visible.
 # THE CLI-SURFACE GATE — the only gate that exercises the compiler AS A COMMAND.
 #
 #   bash tools/cli_check.sh
