@@ -117,6 +117,48 @@ asserts `zebra build` exits 0 and produces the named binary. It must be run from
 directory, or it re-passes for the BUG-322 reason. And it must have a TIMEOUT, or layer 2
 turns the gate into a hang instead of a failure.
 
+**MEASURED 2026-09-01 WITH A BUILD THAT ACTUALLY RUNS: BOTH COMPILERS FAIL, IDENTICALLY.**
+The earlier entry left open whether this was a delegation problem. It is not.
+
+`b.run()` appears in the entire corpus **only inside comments saying it is deliberately not
+called** -- both committed build fixtures are declarative by explicit intent. So no test
+had ever executed a build. Scaffolding one:
+
+```zebra
+def main()
+    var b = Build.new()
+    var app = b.exe("demo", "app.zbr")
+    b.run()
+```
+
+`zebra build.zbr` run by the SELFHOST, directly, no delegation:
+
+```
+zebra_rt.zig:1083:28: error: root source file struct 'fs' has no member named 'selfExePathAlloc'
+```
+
+Same line, same cause as the delegated path. **The stale API is not a bootstrap problem
+and removing the delegation would not fix it.**
+
+**AND IT EXPLAINS WHY THE DECLARATIVE FIXTURES LOOKED FINE.** The bootstrap splices the
+preamble INLINE into the root file, where Zig analyses eagerly; the selfhost IMPORTS
+`zebra_rt.zig`, where analysis is lazy. An uncalled stale function is never analysed. So
+`zebra build.zbr` on a declarative fixture exits 0 and prints `build declarative: ok`
+while being one `b.run()` away from the same failure. A green result there means the code
+was not reached, not that it works.
+
+**NOW PINNED** in `tools/cli_check.sh`, which scaffolds this project and asserts the
+failure, so it cannot hide again -- and the pin fails the gate the day BUG-327 is fixed.
+A second leg asserts, unpinned, that it fails FAST rather than hanging: layer 2's infinite
+self-invocation is the regression that leg exists to catch.
+
+**COVERAGE STATEMENT, since it is the useful part:** the Build API's DECLARATION half is
+covered three times over (smoke x3, both heavy baselines); its EXECUTION half was covered
+zero times until today. That asymmetry is the whole reason a hard compile error lived
+inside a shipped subcommand through 37 green gates.
+
+---
+
 ### BUG-325: `--emit-zig` writes DEPENDENCY `.zig` files into the SOURCE directory, silently — OPEN (found 2026-08-30)
 
 **It corrupted this repo's own `selfhost/` during the criterion-2 landing, and the damage

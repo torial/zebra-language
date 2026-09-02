@@ -125,6 +125,41 @@ chk "\`zebra build\` does not CRASH from a user directory (BUG-322)" \
 chk "...and says something rather than failing silently" \
     "$([ "$ERR_N" -gt 0 ] || [ "$OUT_N" -gt 0 ] && echo 0 || echo 1)" "stdout=$OUT_N stderr=$ERR_N"
 
+# ---- the build EXECUTION path, which nothing else covers ---------------------------
+# `b.run()` appears in the whole corpus ONLY inside comments saying it is deliberately not
+# called -- both committed build fixtures are declarative BY INTENT. So the Build API's
+# DECLARATION half is covered three times over and its EXECUTION half zero times, which is
+# the hole BUG-327 lived in. This scaffolds a project whose build actually runs.
+mkdir -p "$W/proj"
+cat > "$W/proj/app.zbr" <<'ZBR'
+def main()
+    print("app ran")
+ZBR
+cat > "$W/proj/build.zbr" <<'ZBR'
+def main()
+    var b = Build.new()
+    var app = b.exe("demo", "app.zbr")
+    b.run()
+ZBR
+( cd "$W/proj" && timeout "$TMO" "$ZEBRA" build.zbr >"$O" 2>"$E" </dev/null )
+RC=$?; ERR=$(tr -d '\r' < "$E")
+
+# PINNED: the build machinery calls std.fs.selfExePathAlloc, which Zig 0.16 REMOVED, so
+# any build that actually executes cannot compile. Measured on BOTH paths -- this is not a
+# delegation problem, the selfhost fails at the same line for the same reason. The
+# declarative fixtures hid it because the bootstrap splices the preamble inline (eager Zig
+# analysis) while the selfhost imports zebra_rt.zig (lazy), so an uncalled stale function
+# is never analysed.
+pin "a build that calls b.run() cannot compile" "BUG-327" \
+    "$(case "$ERR" in *selfExePathAlloc*) echo 0;; *) echo 1;; esac)"
+
+# NOT pinned, asserted: whatever it does, it must not hang or crash silently. BUG-327's
+# second layer is an infinite self-invocation, and that is the failure mode this leg
+# exists to keep visible.
+chk "...and fails FAST rather than hanging or crashing" \
+    "$([ "$RC" != 124 ] && [ "$RC" != 3 ] && [ -n "$ERR" ] && echo 0 || echo 1)" \
+    "exit=$RC (124=hang, 3=panic), stderr=${#ERR} bytes"
+
 # ---- KNOWN-BROKEN, PINNED -----------------------------------------------------------
 run --version
 pin "\`--version\` writes to stderr, not stdout" "BUG-321" "$([ "$OUT_N" = 0 ] && echo 0 || echo 1)"

@@ -815,7 +815,16 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 11 assertions, 3 pins.
+                                #   past `repl` starting. 12 assertions, 4 pins.
+                                #   THE BUILD-EXECUTION LEG is the one worth
+                                #   knowing about: `b.run()` appears in the corpus
+                                #   ONLY inside comments saying it is deliberately
+                                #   NOT called, so the Build API's DECLARATION half
+                                #   is covered three times over and its EXECUTION
+                                #   half was covered ZERO times. This gate scaffolds
+                                #   a build that actually runs and pins BUG-327 --
+                                #   measured on BOTH compilers, failing at the SAME
+                                #   line, so it is not a delegation problem.
 bash tools/boundary_check.sh    # THE INTENT WITNESS (A3, QUICK tier, ~30s): the only
                                 #   gate whose expectations were WRITTEN FROM THE LANGUAGE
                                 #   REFERENCE rather than recorded from the compiler. Every
