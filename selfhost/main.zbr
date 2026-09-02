@@ -901,6 +901,42 @@ def bootstrapExePath(): str
 # BUG-321: one usage text, two destinations. `--help` is a REQUEST and its answer
 # belongs on stdout with exit 0; the same text shown because the user got the
 # invocation wrong is a DIAGNOSTIC and belongs on stderr with a non-zero exit.
+# BUG-321/323: ONE usage text, reachable from both the `--help` request and the
+# unrecognised-flag refusal, so the two can never drift apart.
+def emitUsage(to_stdout: bool)
+    usageLine("usage:", to_stdout)
+    usageLine("  zebra <source.zbr>                       compile and run (selfhost pipeline)", to_stdout)
+    usageLine("  zebra repl                               start interactive REPL", to_stdout)
+    usageLine("  zebra build                              run build.zbr (Build stdlib)", to_stdout)
+    usageLine("  zebra build --build-file=FILE            run alternate build script", to_stdout)
+    usageLine("  zebra build --list-targets               output JSON target graph", to_stdout)
+    usageLine("  zebra test <source.zbr>                  run def test_*() functions", to_stdout)
+    usageLine("  zebra test --tag <tag> <source.zbr>      run only tests matching tag", to_stdout)
+    usageLine("  zebra debug <source.zbr>                 compile + DAP debug proxy (requires lldb-dap)", to_stdout)
+    usageLine("  zebra debug --listen PORT <source.zbr>  compile + DAP proxy on TCP port (for custom IDE)", to_stdout)
+    usageLine("  zebra -c <source.zbr>                    FAST check: front end only (~60ms), does not run zig", to_stdout)
+    usageLine("                                           -> can pass on code that `zebra run` fails to build", to_stdout)
+    usageLine("  zebra --check-full <source.zbr>           full check: front end + zig semantic analysis (slower, total)", to_stdout)
+    usageLine("  zebra --emit-zig <source.zbr>            print generated Zig to stdout", to_stdout)
+    usageLine("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR", to_stdout)
+    usageLine("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks", to_stdout)
+    usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
+    usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: tui, libui_ng (native);", to_stdout)
+    usageLine("                                           glfw, stub delegate to zebra-bootstrap.exe", to_stdout)
+    usageLine("  zebra --zig-backend <source.zbr>         delegate to zebra-bootstrap.exe", to_stdout)
+    usageLine("  zebra --keep-temp <source.zbr>           keep the scratch build (kept anyway on failure)", to_stdout)
+    usageLine("  zebra --version                          print version and exit", to_stdout)
+    usageLine("  zebra typecheck-merge <file.zbr>         type-check both sides of a conflict", to_stdout)
+    usageLine("  zebra check <file.zbr>                   dead code detection (arms, phantoms, unreachable fns)", to_stdout)
+    usageLine("  zebra types <file.zbr>                   print inferred types at each var declaration", to_stdout)
+    usageLine("  zebra fmt <file.zbr>                     normalize formatting in-place (tabs→spaces, trim whitespace)", to_stdout)
+    usageLine("  zebra fmt --check <file.zbr>             exit 1 if file would be reformatted", to_stdout)
+    usageLine("  zebra fmt --print <file.zbr>             print normalized output to stdout", to_stdout)
+    usageLine("", to_stdout)
+    usageLine("flag conventions: whole words take two dashes (--turbo); single letters", to_stdout)
+    usageLine("                  take one (-c, -h). Flags are case-sensitive, and an", to_stdout)
+    usageLine("                  unrecognized flag is an error rather than ignored.", to_stdout)
+
 def usageLine(s: str, to_stdout: bool)
     if to_stdout
         print(s)
@@ -2431,6 +2467,23 @@ def deleteScratch(path: str)
 def main()
     var args = Arg.parse()
 
+    # BUG-323: an unrecognised flag used to be SILENTLY IGNORED, so a typo'd --turbo
+    # handed you the opposite build with a successful-looking run. The repo already
+    # has the receipt for that harm one step later in the pipeline: BUG-228 shipped
+    # Debug from --release for four days under 19 green gates.
+    #
+    # The list is every flag this file actually consults. Case is NOT folded (Sean,
+    # 2026-09-01): with unknown flags now refused, --TURBO becomes a NAMED ERROR
+    # rather than either being ignored or silently starting to work -- the user sees
+    # the problem instead of getting a build they did not ask for.
+    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --cpu --emit-zig --gui-backend --help --keep-temp --library-mode --list-targets --listen --module-path --no-runtime-module --out --output-dir --print --release --selfhost-compile --single-file --single-threaded --tag --target --turbo --version --warn-inference-guess --warn-non-exhaustive --zig-backend -c -h"
+    var bad_flag: str = args.unknownFlag(known_flags)
+    if bad_flag != ""
+        sys.errln("zebra: unrecognized flag: " + bad_flag)
+        sys.errln("")
+        emitUsage(false)
+        sys.exit(2)
+
     # -- Version -----------------------------------------------------------
 
     if args.contains("--version")
@@ -2591,6 +2644,12 @@ def main()
     if args.positional(0) as bld_pos
         if bld_pos == "build"
             var bld_argv: List(str) = List(str)()
+            # BUG-327 layer 2: the generated build program must be TOLD where the compiler is.
+            # It used to ask for its own executable path, which answers "where am I?" when the
+            # question is "where is the compiler?" -- so it re-invoked ITSELF forever. We know the
+            # answer here and the child inherits our environment, so we hand it over explicitly
+            # rather than let it guess. An installer can set the same variable.
+            sys.setenv("ZEBRA_COMPILER", sys.selfExe())
             bld_argv.add(bootstrapExePath())
             bld_argv.add("build")
             var bld_file_opt: str = args.option("--build-file", "")
@@ -2649,34 +2708,7 @@ def main()
         # was wrong stays on STDERR and exits non-zero. Same text, two situations, and
         # conflating them is what made it unpipeable.
         var help_mode: bool = args.contains("--help") or args.contains("-h")
-        usageLine("usage:", help_mode)
-        usageLine("  zebra <source.zbr>                       compile and run (selfhost pipeline)", help_mode)
-        usageLine("  zebra repl                               start interactive REPL", help_mode)
-        usageLine("  zebra build                              run build.zbr (Build stdlib)", help_mode)
-        usageLine("  zebra build --build-file=FILE            run alternate build script", help_mode)
-        usageLine("  zebra build --list-targets               output JSON target graph", help_mode)
-        usageLine("  zebra test <source.zbr>                  run def test_*() functions", help_mode)
-        usageLine("  zebra test --tag <tag> <source.zbr>      run only tests matching tag", help_mode)
-        usageLine("  zebra debug <source.zbr>                 compile + DAP debug proxy (requires lldb-dap)", help_mode)
-        usageLine("  zebra debug --listen PORT <source.zbr>  compile + DAP proxy on TCP port (for custom IDE)", help_mode)
-        usageLine("  zebra -c <source.zbr>                    FAST check: front end only (~60ms), does not run zig", help_mode)
-        usageLine("                                           -> can pass on code that `zebra run` fails to build", help_mode)
-        usageLine("  zebra --check-full <source.zbr>           full check: front end + zig semantic analysis (slower, total)", help_mode)
-        usageLine("  zebra --emit-zig <source.zbr>            print generated Zig to stdout", help_mode)
-        usageLine("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR", help_mode)
-        usageLine("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks", help_mode)
-        usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", help_mode)
-        usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: tui, libui_ng (native);", help_mode)
-        usageLine("                                           glfw, stub delegate to zebra-bootstrap.exe", help_mode)
-        usageLine("  zebra --zig-backend <source.zbr>         delegate to zebra-bootstrap.exe", help_mode)
-        usageLine("  zebra --keep-temp <source.zbr>           keep the scratch build (kept anyway on failure)", help_mode)
-        usageLine("  zebra --version                          print version and exit", help_mode)
-        usageLine("  zebra typecheck-merge <file.zbr>         type-check both sides of a conflict", help_mode)
-        usageLine("  zebra check <file.zbr>                   dead code detection (arms, phantoms, unreachable fns)", help_mode)
-        usageLine("  zebra types <file.zbr>                   print inferred types at each var declaration", help_mode)
-        usageLine("  zebra fmt <file.zbr>                     normalize formatting in-place (tabs→spaces, trim whitespace)", help_mode)
-        usageLine("  zebra fmt --check <file.zbr>             exit 1 if file would be reformatted", help_mode)
-        usageLine("  zebra fmt --print <file.zbr>             print normalized output to stdout", help_mode)
+        emitUsage(help_mode)
         if help_mode
             sys.exit(0)
         sys.exit(1)

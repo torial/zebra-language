@@ -1080,10 +1080,35 @@ pub fn _build_auto_run() void {
 pub fn _build_run(b: *_Build) void {
     _build_ran = true;
     if (_list_targets_mode) { _build_list_targets(b); return; }
-    const self_exe = std.fs.selfExePathAlloc(_allocator) catch @panic("build: selfExePath failed");
+    // BUG-327, BOTH LAYERS.
+    //
+    // LAYER 1 was a stale API: std.fs.selfExePathAlloc was REMOVED in Zig 0.16, so this
+    // could not compile at all and `zebra build` had never worked on this toolchain.
+    //
+    // LAYER 2 is the one that mattered, and fixing only layer 1 made things WORSE (a fast
+    // error became an infinite loop, and that attempt was reverted): asking for OUR OWN
+    // executable path answers "where am I?" when the question is "where is the COMPILER?".
+    // The running program here is the generated build program, not zebra.exe, so it
+    // re-invoked ITSELF forever.
+    //
+    // The compiler now tells us explicitly, via the environment. `zebra build` sets
+    // ZEBRA_COMPILER to its own path before running this program, so the answer comes from
+    // the process that actually knows it rather than from a guess about our own identity.
+    // An installer can set it too. If it is missing we REFUSE with the reason and the fix,
+    // rather than falling back to a guess -- a silent fallback here is what produced the
+    // infinite loop.
+    const self_exe = _sys_getenv("ZEBRA_COMPILER") orelse {
+        std.debug.print(
+            \\build: ZEBRA_COMPILER is not set, so this build cannot find the Zebra compiler.
+            \\  It is normally set for you by `zebra build`. If you are running a generated
+            \\  build program directly, set it to the zebra executable you want it to use.
+            \\
+        , .{});
+        std.process.exit(1);
+    };
     defer _allocator.free(self_exe);
-    std.Io.Dir.cwd().createDirPath(_io, ".zig-cache/zbr", .{}) catch {};
-    std.Io.Dir.cwd().createDirPath(_io, "zig-out/bin",    .{}) catch {};
+    std.Io.Dir.cwd().createDirPath(_io, ".zig-cache/zbr") catch {};
+    std.Io.Dir.cwd().createDirPath(_io, "zig-out/bin") catch {};
     for (b.targets.items) |t| {
         switch (t.kind) {
             .exe => {
@@ -3518,6 +3543,31 @@ pub const ArgResult = struct {
         const s = self.option(name_, "");
         if (s.len == 0) return default_val;
         return std.fmt.parseInt(i64, s, 10) catch default_val;
+    }
+    // BUG-323: report the first argument that LOOKS like a flag and is not in `known`
+    // (a space-separated list). Returns "" when everything is recognised.
+    //
+    // THIS LIVES HERE RATHER THAN IN ZEBRA because ArgResult deliberately exposes no raw
+    // argv -- `contains` can only answer about flags you already know, which is exactly
+    // the wrong shape for finding one you do not. Doing the scan in one place also keeps
+    // the definition of "looks like a flag" in one place.
+    //
+    // A token is compared with any =VALUE suffix stripped, so `--cpu=x86_64` is matched
+    // against `--cpu`, and the ORIGINAL token is returned so the message can quote what
+    // the user actually typed.
+    pub fn unknownFlag(self: ArgResult, known: []const u8) []const u8 {
+        for (self._raw) |a| {
+            if (a.len < 2 or a[0] != '-') continue;      // positional, or a bare "-"
+            if (std.mem.eql(u8, a, "--")) continue;      // end-of-flags marker
+            const name = if (std.mem.indexOfScalar(u8, a, '=')) |i| a[0..i] else a;
+            var it = std.mem.tokenizeScalar(u8, known, ' ');
+            var found = false;
+            while (it.next()) |k| {
+                if (std.mem.eql(u8, k, name)) { found = true; break; }
+            }
+            if (!found) return a;
+        }
+        return "";
     }
     pub fn positional(self: ArgResult, idx: i64) ?[]const u8 {
         var pos: usize = 0;

@@ -2,6 +2,12 @@
 # pins: BUG-321 --help/-h/--version stream and exit code are asserted here, plus the
 #       asymmetry (usage for a BAD invocation stays on stderr, non-zero). A CLI bug
 #       has no test/*.zbr to be a fixture -- the subject is the compiler AS A COMMAND.
+# pins: BUG-323 an unrecognized flag is refused BY NAME with the usage attached, and a
+#       VALID flag still works -- both directions, since "refuses unknown flags" is
+#       satisfied trivially by a build that refuses everything.
+# pins: BUG-327 a build that calls b.run() succeeds and produces the named binary, and
+#       running the build FILE directly refuses by name rather than HANGING (exit 124
+#       would mean layer 2's infinite self-invocation had returned).
 # pins: BUG-322 `zebra repl` and `zebra build` are exercised from a directory OUTSIDE
 #       the repo, which is the only place that bug was ever visible.
 # THE CLI-SURFACE GATE — the only gate that exercises the compiler AS A COMMAND.
@@ -160,7 +166,14 @@ def main()
     var app = b.exe("demo", "app.zbr")
     b.run()
 ZBR
-( cd "$W/proj" && timeout "$TMO" "$ZEBRA" build.zbr >"$O" 2>"$E" </dev/null )
+# `zebra build` -- the SUBCOMMAND, which is what a user runs and what sets
+# ZEBRA_COMPILER for the generated build program. An earlier version of this leg ran
+# `zebra build.zbr` (the file, as an ordinary program); that path does NOT export the
+# variable, so the leg was measuring the unsupported invocation and failing on our
+# own refusal message. Both are tested now, separately.
+#
+# A REAL BUILD, so the timeout is generous: it emits, then runs `zig build-exe`.
+( cd "$W/proj" && timeout 420 "$ZEBRA" build >"$O" 2>"$E" </dev/null )
 RC=$?; ERR=$(tr -d '\r' < "$E")
 
 # PINNED: the build machinery calls std.fs.selfExePathAlloc, which Zig 0.16 REMOVED, so
@@ -169,8 +182,24 @@ RC=$?; ERR=$(tr -d '\r' < "$E")
 # declarative fixtures hid it because the bootstrap splices the preamble inline (eager Zig
 # analysis) while the selfhost imports zebra_rt.zig (lazy), so an uncalled stale function
 # is never analysed.
-pin "a build that calls b.run() cannot compile" "BUG-327" \
-    "$(case "$ERR" in *selfExePathAlloc*) echo 0;; *) echo 1;; esac)"
+# PROMOTED 2026-09-01, the day BUG-327 was fixed. This was a pin asserting that a
+# build which actually runs could not compile; it failed the gate the moment the bug
+# was fixed, which is what the pin existed to do.
+chk "a build that calls b.run() SUCCEEDS" \
+    "$([ "$RC" = 0 ] && echo 0 || echo 1)" "exit=$RC  $(echo "$ERR" | tail -1)"
+chk "...and produces the named binary" \
+    "$([ -x "$W/proj/zig-out/bin/demo" ] || [ -x "$W/proj/zig-out/bin/demo.exe" ] && echo 0 || echo 1)" \
+    "zig-out/bin: $(ls "$W/proj/zig-out/bin" 2>/dev/null | tr "\n" " ")"
+
+# THE UNSUPPORTED INVOCATION MUST REFUSE CLEARLY, not hang and not guess. Running the build
+# FILE directly gets no ZEBRA_COMPILER, and the fix for BUG-327 layer 2 was explicitly to
+# refuse with the reason rather than fall back -- a silent fallback there is what produced
+# the infinite self-invocation in the first place.
+( cd "$W/proj" && timeout "$TMO" "$ZEBRA" build.zbr >"$O" 2>"$E" </dev/null )
+RC=$?; ERR=$(tr -d '\r' < "$E")
+chk "running the build FILE directly refuses by name (no ZEBRA_COMPILER)" \
+    "$([ "$RC" != 0 ] && [ "$RC" != 124 ] && case "$ERR" in *ZEBRA_COMPILER*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC (124=hang would be BUG-327 layer 2 returning)"
 
 # NOT pinned, asserted: whatever it does, it must not hang or crash silently. BUG-327's
 # second layer is an infinite self-invocation, and that is the failure mode this leg
@@ -203,8 +232,24 @@ chk "usage shown for a BAD invocation stays on STDERR, non-zero" \
     "$([ "$RC" != 0 ] && [ "$OUT_N" = 0 ] && [ "$ERR_N" -gt 500 ] && echo 0 || echo 1)" \
     "exit=$RC stdout=$OUT_N stderr=$ERR_N"
 
+# PROMOTED 2026-09-01, the day BUG-323 was fixed.
 run --no-such-flag hello.zbr
-pin "an unknown flag is silently ignored" "BUG-323" "$([ "$RC" = 0 ] && echo 0 || echo 1)"
+chk "an unknown flag is REFUSED, not ignored" \
+    "$([ "$RC" != 0 ] && echo 0 || echo 1)" "exit=$RC"
+chk "...and the refusal NAMES the offending flag" \
+    "$(case "$ERR" in *--no-such-flag*) echo 0;; *) echo 1;; esac)" \
+    "stderr=[$(echo "$ERR" | head -1)]"
+chk "...and prints the usage so the user can see what IS valid" \
+    "$([ "$ERR_N" -gt 500 ] && echo 0 || echo 1)" "stderr=$ERR_N bytes"
+
+# THE OTHER DIRECTION, so a fix that refuses EVERYTHING cannot pass: a real flag still
+# works, and a typo of it does not. --TURBO is the case that matters -- it used to be
+# silently ignored, handing you the opposite build with a successful-looking run.
+run --turbo hello.zbr
+chk "a VALID flag is still accepted" "$([ "$RC" = 0 ] && echo 0 || echo 1)" "exit=$RC"
+run --TURBO hello.zbr
+chk "a case-wrong flag is refused rather than silently ignored" \
+    "$([ "$RC" != 0 ] && echo 0 || echo 1)" "exit=$RC"
 
 echo
 printf '  %s passed, %s pinned (known-broken), %s FAILED\n' "$pass" "$xfail" "$fail"

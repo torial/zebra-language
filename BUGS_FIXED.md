@@ -117,6 +117,250 @@ moved everything to stdout would pass the other checks while re-breaking this bu
 
 ---
 
+### BUG-323: unknown command-line flags are SILENTLY IGNORED, so a typo'd `--turbo` gives you a build you did not ask for — FIXED 2026-09-01
+
+**The user's stated intent is discarded without a word.** `zebra --no-such-flag f.zbr`
+exits **0** and simply compiles and runs the file. There is no unknown-argument branch in
+`selfhost/main.zbr` at all (grepped: no `unknown`, no `unrecognised`, no
+`startsWith("--")` fallthrough), and `--help` documents no pass-through behaviour. This is
+an omission, not a design.
+
+**Demonstration, on a program whose behaviour DEPENDS on the flag.** `half(7)` violates a
+`require` precondition, so the contract firing is observable in the exit code and the
+stdout:
+
+| invocation | exit | stdout | what the user got |
+|---|---|---|---|
+| (no flag) | 1 | — | contract fires — correct |
+| `--turbo` | **0** | **`3`** | contract stripped — correct |
+| `--trubo` | 1 | — | **typo ignored: contracts still in** |
+| `-turbo` | 1 | — | **single dash ignored: contracts still in** |
+| `--TURBO` | 1 | — | **case ignored: contracts still in** |
+
+Three of the five spellings a person plausibly types produce the *opposite* of the
+requested build, silently, with a successful-looking run.
+
+**THE PRECEDENT IS IN THIS FILE.** BUG-228: `--release` shipped **Debug** for four days
+under 19 green gates, because the branch that emitted the executable passed no optimize
+flag and Zig defaulted. "Everyone shipping with the flag shipped Debug believing
+otherwise — the flag's whole purpose." That was a flag that reached the compiler and was
+dropped internally; this is a flag that never reaches it at all. Same harm, one step
+earlier in the pipeline.
+
+**UNGIT, "nothing ambient": commands take intent explicitly, and refusals name the reason
+and the fix.** A misspelled flag is a refusal the tool declines to make. The cost is
+asymmetric and always in the same direction: the user believes they got the thing they
+asked for, and the evidence that they did not is a behaviour difference they were not
+looking for.
+
+**SCOPE.** Measured on the top-level compile path. `zebra build` forwards arguments to a
+sub-invocation and a deliberate pass-through may be correct *there* — that case is not
+covered by this report and should be decided separately rather than swept in.
+
+**Control when fixing.** An unknown top-level flag must exit non-zero and NAME the
+offending argument. Suggest-the-nearest-match is a nicety, not the requirement; the
+requirement is that it stops. A gate leg belongs with it, and must be watched RED first:
+assert `zebra --no-such-flag f.zbr` exits non-zero AND mentions `--no-such-flag` on
+stderr. Keep a positive leg (a REAL flag still works) or a fix that rejects everything
+passes.
+
+**Found how.** Probing the CLI surface deliberately, because the day's theory predicted
+defects would cluster there: the round-trip gate is a fixed-point test on the compiler's
+EMIT function, so everything the compiler does other than successfully compile its own
+source is invisible to it — which is the entire argument-handling surface and every
+failure path. Three of three bugs found today (BUG-321, BUG-322, this) are in that
+region. See `pages/claude/fieldnotes_compiler-orbit_2026-08-30.md`.
+
+**FIXED 2026-09-01.** An unrecognised flag is now a named refusal with the usage
+attached, and exits 2:
+
+```
+$ zebra --trubo prog.zbr
+zebra: unrecognized flag: --trubo
+
+usage:
+  ...
+```
+
+Measured, both directions -- because "refuses unknown flags" is satisfied trivially by a
+build that refuses everything:
+
+| invocation | exit |
+|---|---|
+| `-c`, `--turbo`, `--release`, `--emit-zig`, `--help`, `--version` | 0 -- unaffected |
+| `--TURBO` | 2 -- `unrecognized flag: --TURBO` |
+| `-turbo` | 2 |
+| `--trubo` | 2 |
+
+**CASE IS NOT FOLDED (Sean, 2026-09-01), and that lands better than the alternative.**
+Making flags case-insensitive would have made `--TURBO` silently START working; leaving it
+case-sensitive with unknown flags refused makes it a NAMED ERROR. The user is told, instead
+of receiving a build they did not ask for -- which is the harm BUG-228 is the receipt for.
+
+**Implementation, smaller than expected.** `ArgResult` deliberately exposes no raw argv, so
+`contains` can only answer about flags you already know -- the wrong shape for finding one
+you do not. One `unknownFlag(known)` method was added to the runtime; `args.contains(...)`
+turns out to emit as a direct passthrough to the Zig method, so **no CodeGen and no
+TypeChecker change were needed**, verified with `-c` before relying on it.
+
+The 28 usage lines now live in one `emitUsage(to_stdout)` reachable from both the `--help`
+request and the refusal, so the two cannot drift. The help documents the conventions: whole
+words take two dashes, single letters take one, flags are case-sensitive, and an
+unrecognised flag is an error rather than ignored.
+
+---
+
+### BUG-327: `zebra build` cannot work — TWO defects, and fixing the outer one exposes an INFINITE LOOP — FIXED 2026-09-01
+
+**A documented subcommand that has never worked, with a second bug hiding underneath the
+first.** Surfaced when BUG-322's delegation crash stopped masking it. Investigated to root
+cause; **deliberately NOT fixed**, and the partial fix was REVERTED — see why below.
+
+**LAYER 1 — stale Zig APIs in the runtime preamble.** The generated `build.zig` could not
+compile at all:
+
+```
+build.zig:1039:28: error: root source file struct 'fs' has no member named 'selfExePathAlloc'
+build.zig:1046:21: error: member function expected 2 argument(s), found 3
+    std.Io.Dir.cwd().createDirPath(_io, ".zig-cache/zbr", .{}) catch {};
+```
+
+`std.fs.selfExePathAlloc` has **zero definitions** in Zig 0.16.0 (grepped the installed
+toolchain), and `createDirPath` lost its options parameter. Both are in the `_build_*`
+region of `selfhost/stdlib_preamble.zig`. The correct API was already in the same file
+forty lines away -- `_sys_self_exe()`, which backs the working `sys.selfExe()`, uses
+`std.process.executablePathAlloc(_io, _allocator)`. One call site drifted across a version
+bump while its sibling did not.
+
+**LAYER 2 — and this is why the fix was reverted. THE BUILD RE-INVOKES ITSELF FOREVER.**
+With both APIs corrected, `zebra build` compiles its `build.zig` and then loops:
+
+```
+build declarative: ok
+build: smoke_app: emit-zig test/toplevel_main_test.zbr
+build declarative: ok
+build: smoke_app: emit-zig test/toplevel_main_test.zbr        (forever, until timeout)
+```
+
+The generated build program does
+
+```zig
+const self_exe = <executable path of the running program>;
+const argv = [_][]const u8{ self_exe, "--emit-zig", t.entry, "--output-dir", ... };
+```
+
+but the running program is **`build.zig.fast.exe`**, not `zebra.exe`. It asks *"where am
+I?"* when it needs *"where is the compiler?"*, so it re-runs the build, which re-runs the
+build. **The removed API had the same semantics**, so this loop was always present -- the
+compile error was the only thing preventing it.
+
+**WHY THE PARTIAL FIX WAS BACKED OUT.** Before: a fast, clear compile error, exit 1. After
+the API fix: an infinite loop until timeout, with no useful output. **A hang is worse than
+an error** -- it is unbounded, it produces nothing to act on, and it burns the machine.
+Shipping that unattended was not a trade worth making, so `selfhost/stdlib_preamble.zig`
+was restored to its committed state. The API corrections are RIGHT and should land -- but
+only together with a fix for layer 2, or `zebra build` gets worse rather than better.
+
+**WHAT LAYER 2 NEEDS IS A DESIGN DECISION, which is why it is not made here.** The
+generated build program must locate the Zebra compiler. Candidates, none obviously right:
+pass the compiler path in as a generated constant at emit time; read it from an
+environment variable the driver sets; take it as an argument; or have the build program
+not shell out to a compiler at all. That is a call about how `zebra build` is architected,
+not a bug fix.
+
+**WHY IT SURVIVED, and it is the same seam as the others found this week.** No gate
+invokes `zebra build` -- verified by grep across every script in `tools/`. The Build API is
+covered three times in the smoke suite and sits in both heavy baselines, but as a
+**library**, by running `build_declarative_test.zbr` as an ordinary program. The
+**subcommand that drives it** is a different code path with no coverage, so a hard compile
+error inside it survived 37 green gates. See
+`wiki/pages/concepts/concept_self-verification-blind-spot.md`.
+
+**Control when fixing.** A gate leg that scaffolds a small project OUTSIDE the repo and
+asserts `zebra build` exits 0 and produces the named binary. It must be run from a user
+directory, or it re-passes for the BUG-322 reason. And it must have a TIMEOUT, or layer 2
+turns the gate into a hang instead of a failure.
+
+**MEASURED 2026-09-01 WITH A BUILD THAT ACTUALLY RUNS: BOTH COMPILERS FAIL, IDENTICALLY.**
+The earlier entry left open whether this was a delegation problem. It is not.
+
+`b.run()` appears in the entire corpus **only inside comments saying it is deliberately not
+called** -- both committed build fixtures are declarative by explicit intent. So no test
+had ever executed a build. Scaffolding one:
+
+```zebra
+def main()
+    var b = Build.new()
+    var app = b.exe("demo", "app.zbr")
+    b.run()
+```
+
+`zebra build.zbr` run by the SELFHOST, directly, no delegation:
+
+```
+zebra_rt.zig:1083:28: error: root source file struct 'fs' has no member named 'selfExePathAlloc'
+```
+
+Same line, same cause as the delegated path. **The stale API is not a bootstrap problem
+and removing the delegation would not fix it.**
+
+**AND IT EXPLAINS WHY THE DECLARATIVE FIXTURES LOOKED FINE.** The bootstrap splices the
+preamble INLINE into the root file, where Zig analyses eagerly; the selfhost IMPORTS
+`zebra_rt.zig`, where analysis is lazy. An uncalled stale function is never analysed. So
+`zebra build.zbr` on a declarative fixture exits 0 and prints `build declarative: ok`
+while being one `b.run()` away from the same failure. A green result there means the code
+was not reached, not that it works.
+
+**NOW PINNED** in `tools/cli_check.sh`, which scaffolds this project and asserts the
+failure, so it cannot hide again -- and the pin fails the gate the day BUG-327 is fixed.
+A second leg asserts, unpinned, that it fails FAST rather than hanging: layer 2's infinite
+self-invocation is the regression that leg exists to catch.
+
+**COVERAGE STATEMENT, since it is the useful part:** the Build API's DECLARATION half is
+covered three times over (smoke x3, both heavy baselines); its EXECUTION half was covered
+zero times until today. That asymmetry is the whole reason a hard compile error lived
+inside a shipped subcommand through 37 green gates.
+
+**FIXED 2026-09-01 -- BOTH LAYERS, TOGETHER, which is the point.** `zebra build`
+now works; it never had on Zig 0.16.
+
+```
+$ zebra build
+build: demo: emit-zig app.zbr
+build: demo: zig build-exe .zig-cache/zbr/app.zig
+build: demo -> zig-out/bin/demo
+$ ./zig-out/bin/demo
+app ran
+```
+
+**Layer 1** was the stale APIs (`std.fs.selfExePathAlloc`, removed in 0.16;
+`createDirPath`'s dropped options argument).
+
+**Layer 2** was the real defect: the generated build program asked for ITS OWN executable
+path, which answers "where am I?" when the question is "where is the compiler?" -- so it
+re-invoked itself forever. `zebra build` now exports **ZEBRA_COMPILER** and the build
+program reads it; an installer can set the same variable.
+
+**FIXING LAYER 1 ALONE MADE THINGS WORSE, and that attempt was reverted 2026-09-01**: a
+fast, clear compile error became an unbounded hang. The two had to land together, and the
+entry above records why shipping the partial fix would have been a bad trade.
+
+**IF THE VARIABLE IS MISSING IT REFUSES, naming the reason and the fix** -- it does not
+fall back to a guess. A silent fallback there is precisely what produced the infinite
+self-invocation, so re-introducing one would recreate the bug.
+
+**Now covered by three assertions in `tools/cli_check.sh`**: the build SUCCEEDS, it
+produces the named binary, and running the build FILE directly (which gets no
+ZEBRA_COMPILER) refuses by name rather than hanging -- exit 124 is called out explicitly,
+because a hang would mean layer 2 had returned.
+
+**The coverage gap that let it live: `b.run()` appeared in the entire corpus only inside
+comments saying it was deliberately not called.** The Build API's DECLARATION half was
+covered three times over; its EXECUTION half zero times. That is how a hard compile error
+sat inside a shipped subcommand through 37 green gates.
+
+---
+
 ### BUG-326: `sys.exit(N)` SEGFAULTS for N outside 0..255 and loses buffered stdout — FIXED 2026-09-01
 
 **`sys.exit(-1)` is an ordinary thing to write, and it crashed the program.** Found while
