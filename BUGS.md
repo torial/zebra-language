@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-327. Next new bug: BUG-328.**
+**Last bug number generated: BUG-328. Next new bug: BUG-329.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,48 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-328: `.toFloat()` on an un-annotated local rejects `i64`, but the identical value passes once explicitly typed `: int` — OPEN (found 2026-09-02)
+
+**Minor, but real and reproducible; workaround is one word.** From `C:/Projects/tinylm`'s
+`zebra_train/verify_ln.zbr` (LayerNorm gradient check, written and compiling earlier this
+project), re-run today against a freshly-rebuilt `zebra.exe`:
+
+```
+var d = v.len
+mu = mu / d.toFloat()
+
+verify_ln.zbr:20: error: no field or member function named 'toFloat' in 'i64'
+```
+
+Same value, only the declaration changed, compiles and runs correctly:
+
+```
+var d: int = v.len
+mu = mu / d.toFloat()          # now fine
+```
+
+`.len` itself is read fine either way (`while i < d` etc. never complained) — only the
+`.toFloat()` call distinguishes the two. `TypeChecker.zig:4059` returns `.float` for any
+`toFloat` call regardless of receiver, so the type checker accepts both forms; CodeGen must
+be inferring a bare `i64` for the un-annotated `.len`-sourced local that its `toFloat`
+codegen switch (`CodeGen.zig:6959`/`10267`) doesn't have a case for, while the explicitly
+annotated `int` local takes a different, handled path.
+
+**Not filed as blocking** — this project's own calling code now carries the one-word
+annotation as the workaround (`# BUG-328: needs explicit ': int', .len alone infers a type
+.toFloat() rejects` — add that comment at the call site per this file's own filing
+practice item 1). Reproduced on `zebra.exe` only; not separately checked against
+`zebra-bootstrap.exe`, which is hanging on unrelated large-file input today (see the
+`zebra_train/model.zbr` note in `C:/Projects/tinylm`'s own session log — not reproduced
+minimally enough to file here on its own).
+
+**Control when fixing:** an un-annotated local assigned from any `.len` (or other
+builtin-`i64`-returning accessor) must resolve `.toFloat()` the same way an explicitly
+`: int`-annotated one does; add a regression pinning both forms so a future CodeGen
+refactor can't silently reintroduce just one of the two paths.
 
 ---
 
