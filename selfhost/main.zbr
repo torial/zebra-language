@@ -914,6 +914,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra test --tag <tag> <source.zbr>      run only tests matching tag", to_stdout)
     usageLine("  zebra debug <source.zbr>                 compile + DAP debug proxy (requires lldb-dap)", to_stdout)
     usageLine("  zebra debug --listen PORT <source.zbr>  compile + DAP proxy on TCP port (for custom IDE)", to_stdout)
+    usageLine("  zebra debug --dump-map <file>          print the .zbr <-> .zig line map", to_stdout)
     usageLine("  zebra -c <source.zbr>                    FAST check: front end only (~60ms), does not run zig", to_stdout)
     usageLine("                                           -> can pass on code that `zebra run` fails to build", to_stdout)
     usageLine("  zebra --check-full <source.zbr>           full check: front end + zig semantic analysis (slower, total)", to_stdout)
@@ -2698,6 +2699,171 @@ def deleteScratch(path: str)
         wait = wait * 2
         tries = tries + 1
 
+# -- DAP source map (`zebra debug`) --------------------------------------------
+# Codegen stamps `// zbr:<file>:<line>` above the code it emits for each Zebra
+# statement. Those comments are the ONLY link between the .zbr line a user set a
+# breakpoint on and the .zig line the debugger actually knows about, so every
+# coordinate crossing the DAP relay is translated through the markers below.
+
+class DbgMarker
+    var zig_line: int    # 1-based line of the COMMENT itself
+    var file: str        # zbr path, forward-slash normalised -- the map key
+    var zbr_line: int
+
+# A Windows IDE sends `C:\p\a.zbr` for what codegen wrote as `C:/p/a.zbr`.
+def dbgNormSep(p: str): str
+    return p.replace("\\", "/")
+
+def dbgAllDigits(s: str): bool
+    if s == ""
+        return false
+    var i: int = 0
+    while i < s.len
+        var c: char = s[i]
+        branch c
+            on c'0'..c'9'
+                i = i + 1
+            else
+                return false
+    return true
+
+# Every marker in the generated Zig, in ascending zig_line order.
+def dbgLoadMarkers(zig_src: str): List(DbgMarker)
+    var out: List(DbgMarker) = List(DbgMarker)()
+    var zig_line: int = 0
+    for line in zig_src.split("\n")
+        zig_line = zig_line + 1
+        var t: str = line.trim()
+        if t.startsWith("// zbr:")
+            var payload: str = t.substring(7, t.len)
+            # Split on the LAST colon -- a Windows path carries colons of its own,
+            # so `C:/p/a.zbr:10` must not split at the drive letter.
+            var lc: int = payload.lastIndexOf(":")
+            if lc > 0
+                var f: str = payload.substring(0, lc)
+                var n: str = payload.substring(lc + 1, payload.len)
+                # A malformed marker is SKIPPED, never defaulted to a line number:
+                # a fabricated coordinate sends a debugger somewhere confidently wrong.
+                if dbgAllDigits(n) and f != ""
+                    var m: DbgMarker = DbgMarker()
+                    m.zig_line = zig_line
+                    m.file = dbgNormSep(f)
+                    m.zbr_line = n.toInt()
+                    out.add(m)
+    return out
+
+# zbr (file, line) -> the zig line a breakpoint should be set on.
+# Returns the CODE line (marker + 1), never the comment, so the breakpoint lands
+# on something executable. Picks the first marker at or after `line`; if `line` is
+# past the last statement in the file it clamps to the highest one, matching what
+# a debugger does with a breakpoint set below the end of a function.
+def dbgZbrToZig(markers: List(DbgMarker), file: str, line: int): int?
+    var key: str = dbgNormSep(file)
+    var best: int = -1
+    var best_zbr: int = 0
+    var clamp: int = -1
+    var clamp_zbr: int = -1
+    for m in markers
+        if m.file == key
+            if m.zbr_line > clamp_zbr
+                clamp_zbr = m.zbr_line
+                clamp = m.zig_line + 1
+            if m.zbr_line >= line
+                if best < 0 or m.zbr_line < best_zbr
+                    best_zbr = m.zbr_line
+                    best = m.zig_line + 1
+    if best >= 0
+        return best
+    if clamp >= 0
+        return clamp
+    # Unknown file: nil, never a guess. The caller leaves the coordinate alone.
+    return nil
+
+# zig line -> the zbr location of the nearest marker at or before it.
+def dbgZigToZbr(markers: List(DbgMarker), zig_line: int): DbgMarker?
+    var found: DbgMarker? = nil
+    var found_line: int = 0
+    for m in markers
+        if m.zig_line <= zig_line
+            if found == nil or m.zig_line > found_line
+                found = m
+                found_line = m.zig_line
+    return found
+
+# The emitted key that best suffix-matches an IDE-supplied absolute path.
+def dbgCanonicalZbr(markers: List(DbgMarker), abs_path: str): str?
+    var norm: str = dbgNormSep(abs_path)
+    var best: str? = nil
+    var best_len: int = 0
+    for m in markers
+        if norm.endsWith(m.file) and m.file.len > best_len
+            best = m.file
+            best_len = m.file.len
+    return best
+
+# `zebra debug --dump-map <file.zig|file.zbr>` -- print the provenance map.
+# This is a diagnostic in its own right (it answers "why did my breakpoint land
+# THERE?"), and it is also what makes the remapping gate-able without an
+# installed lldb-dap: it reports the round-trip computed by the SHIPPING
+# functions, so a checker can assert the property without a second copy of them.
+def dbgDumpMap(path: str): int
+    var zig_path: str = path
+    if path.endsWith(".zbr")
+        var out_dir: str = ".zig-cache/zbr-dumpmap"
+        Dir.createAll(out_dir)
+        var argv: List(str) = List(str)()
+        argv.add(sys.selfExe())
+        argv.add("--emit-zig")
+        argv.add("--output-dir")
+        argv.add(out_dir)
+        argv.add(path)
+        var r = sys.run(argv)
+        if r.exit_code != 0
+            sys.errln("zebra debug --dump-map: could not compile '" + path + "'")
+            if r.stderr != ""
+                sys.err(r.stderr)
+            return 1
+        var stem: str = path
+        var si: int = stem.lastIndexOf("/")
+        if si >= 0
+            stem = stem.substring(si + 1, stem.len)
+        var bi: int = stem.lastIndexOf("\\")
+        if bi >= 0
+            stem = stem.substring(bi + 1, stem.len)
+        zig_path = out_dir + "/" + stem.substring(0, stem.len - 4) + ".zig"
+    if not File.exists(zig_path)
+        sys.errln("zebra debug --dump-map: no such file: " + zig_path)
+        return 1
+
+    var markers: List(DbgMarker) = dbgLoadMarkers(File.read(zig_path))
+    var files: List(str) = List(str)()
+    for m in markers
+        var seen: bool = false
+        for f in files
+            if f == m.file
+                seen = true
+        if not seen
+            files.add(m.file)
+
+    print("zbr-map: " + markers.len.toString() + " markers, " + files.len.toString() + " files")
+    print("zbr-map-source: " + zig_path)
+    # Columns: zig_line, zbr_file, zbr_line, then the ROUND TRIP through the two
+    # shipping lookups. A checker asserts rt_file/rt_line equal the input pair.
+    print("# M\tzig_line\tzbr_file\tzbr_line\trt_zig\trt_file\trt_line")
+    for m in markers
+        var rt_zig: str = "-"
+        var rt_file: str = "-"
+        var rt_line: str = "-"
+        if dbgZbrToZig(markers, m.file, m.zbr_line) as z
+            rt_zig = z.toString()
+            if dbgZigToZbr(markers, z) as back
+                rt_file = back.file
+                rt_line = back.zbr_line.toString()
+        print("M\t" + m.zig_line.toString() + "\t" + m.file + "\t" + m.zbr_line.toString()
+              + "\t" + rt_zig + "\t" + rt_file + "\t" + rt_line)
+    return 0
+
+
 def main()
     var args = Arg.parse()
 
@@ -2710,7 +2876,7 @@ def main()
     # 2026-09-01): with unknown flags now refused, --TURBO becomes a NAMED ERROR
     # rather than either being ignored or silently starting to work -- the user sees
     # the problem instead of getting a build they did not ask for.
-    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --cpu --emit-zig --gui-backend --help --keep-temp --library-mode --list-targets --listen --module-path --no-runtime-module --out --output-dir --print --release --selfhost-compile --single-file --single-threaded --tag --target --turbo --version --warn-inference-guess --warn-non-exhaustive --zig-backend -c -h"
+    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --library-mode --list-targets --listen --module-path --no-runtime-module --out --output-dir --print --release --selfhost-compile --single-file --single-threaded --tag --target --turbo --version --warn-inference-guess --warn-non-exhaustive --zig-backend -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -2823,6 +2989,27 @@ def main()
 
     if args.positional(0) as debug_pos
         if debug_pos == "debug"
+            # --dump-map: print the .zbr <-> .zig provenance map and exit. Handled
+            # before the relay so it needs neither lldb-dap nor a built binary.
+            if args.contains("--dump-map")
+                var dm_target: str = args.option("--dump-map", "")
+                if dm_target == ""
+                    var dmi: int = 1
+                    while dmi < 10
+                        var dp2 = args.positional(dmi)
+                        if dp2 == nil
+                            dmi = 10
+                        else
+                            var dpv2: str = dp2!
+                            if dpv2.endsWith(".zbr") or dpv2.endsWith(".zig")
+                                dm_target = dpv2
+                                dmi = 10
+                            else
+                                dmi = dmi + 1
+                if dm_target == ""
+                    sys.errln("usage: zebra debug --dump-map <source.zbr|generated.zig>")
+                    sys.exit(1)
+                sys.exit(dbgDumpMap(dm_target))
             # Find the .zbr file (skip --listen PORT if present)
             var dbg_file: str? = nil
             var dpi: int = 1

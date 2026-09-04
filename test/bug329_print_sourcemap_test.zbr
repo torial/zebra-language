@@ -1,0 +1,32 @@
+# Fixture for tools/debug_map_check.sh -- the `zebra debug` source map.
+#
+# Each print below states its OWN line number in its text. That is the gate's
+# independent oracle: the checker greps this file for `L<N>` and requires the
+# emitted provenance map to contain a marker for line N. Without it the only
+# available assertion is the map agreeing with itself, which a broken map does
+# just as well as a correct one.
+#
+# KEEP THE LABELS AND THE LINE NUMBERS IN AGREEMENT. If you insert a line above
+# any of these, the labels below it are wrong and the gate will say so -- that
+# failure is the oracle working, not the map breaking. Fix the labels.
+
+def dbgFixtureAdd(a: int, b: int): int
+    print("L14")
+    return a + b
+
+def dbgFixtureLoop(n: int): int
+    var total: int = 0
+    for i in 0..n
+        total = total + i
+    print("L21")
+    return total
+
+def main()
+    print("L25")
+    var s: int = dbgFixtureAdd(2, 3)
+    print("L27")
+    var t: int = dbgFixtureLoop(4)
+    print("L29")
+    if s + t == 11
+        print("L31")
+    print("bug329: OK")

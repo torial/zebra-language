@@ -1681,6 +1681,9 @@ smoke_run test/bug246_unannotated_generic_ctor_test.zbr "bug246: OK"
 # formatter. The first draft of this fixture did exactly that and tested only half 1.
 smoke_run  test/bug212_code_editor_const_test.zbr "bug212: OK"
 smoke_run_bootstrap test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made returned factory"
+# The debug source-map fixture (tools/debug_map_check.sh). Registered here so something
+# RUNS it; the gate asserts its provenance markers, this asserts it still works.
+smoke_run test/bug329_print_sourcemap_test.zbr "bug329: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

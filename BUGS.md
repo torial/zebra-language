@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-328. Next new bug: BUG-329.**
+**Last bug number generated: BUG-330. Next new bug: BUG-331.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,48 @@
 > measured in.
 
 ---
+
+### BUG-330: `for ch in <str>` is accepted by the front end and emits Zig that cannot compile
+
+**Status:** OPEN. Found 2026-09-04 while porting `zebra debug`.
+
+Iterating a bare `str` is not a supported form -- QUICKSTART documents `for c in s.chars()`
+for codepoints and `charAt(i)` for bytes. But the front end ACCEPTS `for ch in s`, and
+codegen then emits `for (s.items) |ch|`, which zig rejects with
+`no member named 'items' in '[]const u8'`.
+
+So the failure surfaces as an error in GENERATED code, naming a field the user never
+wrote, at a location in a file they did not author. UNGIT "nothing ambient": the compiler
+accepted a construct it cannot lower and let the consequence land somewhere the user
+cannot act on.
+
+**Repro**
+
+```zebra
+def main()
+    var s: str = "abc"
+    for ch in s
+        print("x")
+```
+
+`zebra -c` reports `parsed OK / resolved OK` and exits 0. A full compile fails inside the
+emitted Zig.
+
+**Why no gate saw it.** `full_sweep` and `compile_check` catch exactly this class -- emitted
+Zig that will not compile -- but only over `test/*.zbr`, and no corpus file uses the form.
+`doc_example_check` only reads `live` docs, and the docs correctly show `.chars()`, so there
+is nothing there to trip on either. The construct is reachable by any user and exercised by
+no file we own.
+
+**Fix direction.** Either refuse it in the type checker with a diagnostic naming `.chars()`
+as the fix, or lower it as `.chars()` does. Refusing is the smaller change and matches how
+the language already treats byte-vs-codepoint as a decision the author must make -- silently
+picking one would be the "nothing fabricated" violation in the other direction.
+
+**Control when fixing.** A `smoke_tc_fail` fixture asserting the refusal (with a position),
+plus -- if it is lowered instead -- a `smoke_run` fixture asserting what it iterates. Watch
+the fixture fail against today's compiler first: today it does not error, it produces bad
+Zig, so a fixture that merely expects "compilation fails" would pass for the wrong reason.
 
 ### BUG-328: `.toFloat()` on an un-annotated local rejects `i64`, but the identical value passes once explicitly typed `: int` — OPEN (found 2026-09-02)
 

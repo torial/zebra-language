@@ -7148,8 +7148,10 @@ pub fn main(_zinit: std.process.Init) void {
     mt.addClass(ct);
 // zbr:selfhost/TypeChecker.zbr:4295
     if (mt.hasClass("Foo")) {
+// zbr:selfhost/TypeChecker.zbr:4296
         _zbr_print("{s}\n", .{"ok"});
     } else {
+// zbr:selfhost/TypeChecker.zbr:4298
         _zbr_print("{s}\n", .{"fail"});
     }
 }

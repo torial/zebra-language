@@ -171,6 +171,31 @@ this one was launched, and the fix was never carried back to the instance still 
 so the lesson had been written down while the bug was live. Match `gates:` and classify
 after, or wait on the process rather than its output.
 
+**AND THE FIRST HALF OF THAT ADVICE IS WRONG — measured 2026-09-04, by following it.** A run
+also PRINTS A HEADER, `gates: quick (JOBS=2)`, before it does any work. So a loop waiting on
+the substring `gates:` matches within the first second and reports a tier that has not
+started as though it had finished — the same false completion the 11.5-hour receipt above
+describes, reached by the remedy written to prevent it, and arriving INSTANTLY rather than
+never, which is the more convincing of the two failures.
+
+Three lines share the prefix; only two are terminal:
+
+| line | when |
+|---|---|
+| `gates: quick (JOBS=2)` | at START — not a result |
+| `gates: N/M PASS (tier)` | terminal, green |
+| `gates: N FAILED — name name` | terminal, red |
+
+`grep -qE 'gates: .*(PASS\|FAILED)'` distinguishes them. **Waiting on the PROCESS remains the
+better answer** — it is the half of the original advice that survives, and it needs no
+pattern at all.
+
+**A SECOND DEFECT, in the waiter rather than the pattern, found the same hour.** A bounded
+`for i in $(seq 1 N); do grep -q … && break; sleep 5; done` that EXHAUSTS its iterations
+falls out of the loop and continues, so it prints an empty result and exits 0 — identical
+to the output of a run that finished green. A waiter must distinguish TIMED OUT from
+MATCHED and say which; a bare `break` on success is only half the branch.
+
 `gates.sh` runs the set in order with one summary line each and exits non-zero on
 any failure. It deliberately does **not** fold in the GUI paths, `fuzz/gramgen.py`,
 or `node_addon_test.sh`, so that "gates green" keeps a precise meaning — see its
@@ -206,10 +231,10 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 14 <!-- doc-gen: 14 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 26 <!-- doc-gen: 26 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 28 <!-- doc-gen: 28 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 35 <!-- doc-gen: 35 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 38 <!-- doc-gen: 38 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--fast` | 28 <!-- doc-gen: 28 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 30 <!-- doc-gen: 30 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 37 <!-- doc-gen: 37 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 40 <!-- doc-gen: 40 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -808,6 +833,76 @@ bash tools/stream_check.sh      # THE STREAM-SEPARATION GATE, registered as `str
                                 #   The markers on the two streams are DIFFERENT strings, so a
                                 #   harness that captured one stream twice fails rather than
                                 #   passes. 0 failures = clean.
+bash tools/debug_map_check.sh   # THE DEBUG SOURCE-MAP GATE, registered as `debug-map`
+                                #   (FAST tier, ~10s). `zebra debug` is a DAP relay: it
+                                #   sits between an IDE and lldb-dap and rewrites every
+                                #   source coordinate crossing it, because the debugger
+                                #   knows only the GENERATED .zig while the user is looking
+                                #   at their .zbr. The translation is driven by the
+                                #   `// zbr:<file>:<line>` comments codegen stamps into the
+                                #   emitted Zig.
+                                #   WHY CONNECTIVITY IS NOT THE PROPERTY: a relay that
+                                #   forwards bytes UNCHANGED still attaches, still
+                                #   initializes, still reports a live session. The only
+                                #   symptom of a broken map is breakpoints landing on the
+                                #   wrong lines -- so "we connected and got `initialized`"
+                                #   passes just as well against the transform deleted.
+                                #   NEEDS NO lldb-dap AND NO DEBUG SESSION.
+                                #   `zebra debug --dump-map <file.zbr|file.zig>` reports the
+                                #   map computed by the SHIPPING lookups, so the property is
+                                #   checkable directly. That flag is a diagnostic in its own
+                                #   right -- it answers "why did my breakpoint land THERE?"
+                                #   -- which is why it is a surface and not a test hook.
+                                #   THE ROUND-TRIP LEG ALONE WOULD HAVE SHIPPED A BROKEN
+                                #   MAP, and that is the receipt this gate exists for. On
+                                #   its first run the round trip was GREEN across every
+                                #   marker while `print` statements had NO marker at all
+                                #   (BUG-329) -- two lookups broken in compensating ways
+                                #   agree with each other perfectly. Leg 2's oracle comes
+                                #   from OUTSIDE the map: the fixture's prints name the line
+                                #   they sit on, so the expected numbers are derived from
+                                #   the source text rather than from anything the compiler
+                                #   said. It named all six missing lines on the first run.
+                                #   LEGS 3-5 FEED HANDWRITTEN .zig to the parser, with no
+                                #   compiler in the loop: a Windows drive path must split at
+                                #   the LAST colon (`C:/proj/a.zbr:42`), a malformed marker
+                                #   must be SKIPPED rather than defaulted to a line number
+                                #   (a fabricated coordinate sends a debugger somewhere
+                                #   confidently wrong), and a file with no markers must
+                                #   report zero -- which proves the count is a measurement
+                                #   and not a constant.
+                                #   REFUSES (exit 2) rather than reporting a pass if the
+                                #   dump is empty, if the fixture yields under 6 markers, or
+                                #   if the source oracle finds under 5 labelled lines: every
+                                #   absence assertion is vacuous without a denominator.
+                                #   CANNOT SEE: whether a marker points at the RIGHT zig
+                                #   line, or anything about the relay itself -- the JSON
+                                #   transform and the lldb-dap conversation are not covered.
+python tools/lsp_server_smoke.py   # THE LSP PROTOCOL GATE, registered as `lsp-smoke`
+                                #   (FAST tier, ~2s). Drives `zebra lsp` through a real
+                                #   JSON-RPC conversation over stdio -- Content-Length
+                                #   framed, same as a live editor -- and checks 14
+                                #   responses: diagnostics after a debounced didChange,
+                                #   documentSymbol, hover, go-to-definition, completion,
+                                #   member completion, signature help, formatting,
+                                #   MethodNotFound for an unknown request, shutdown.
+                                #   IT EXISTED SINCE THE LSP EPIC AND WAS IN NO TIER
+                                #   (registered 2026-09-02). It passes 14/14 today, which
+                                #   is luck rather than design: an ungated test is real
+                                #   only on days somebody remembers it, and this repo has
+                                #   the receipt for how that ends -- node-addon sat
+                                #   unregistered and regressed silently for two weeks
+                                #   (BUG-297).
+                                #   IT IS ALSO THE TEMPLATE for driving any stdio protocol
+                                #   here: frame() and read_message() are exactly what a DAP
+                                #   smoke test needs, since DAP uses the same
+                                #   Content-Length framing. That matters for porting
+                                #   `zebra debug` off the bootstrap -- the port is testable
+                                #   without an editor, which is the opposite of what this
+                                #   docket previously assumed.
+                                #   CANNOT SEE: whether an editor renders any of it, or
+                                #   anything about the LSP paths the conversation does not
+                                #   exercise. 14 assertions.
 bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surface`
                                 #   (FAST tier, ~16s) -- the only gate that exercises the
                                 #   compiler AS A COMMAND rather than as a translator.
@@ -1718,7 +1813,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 93 scripts | <!-- doc-gen: 93 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 94 scripts | <!-- doc-gen: 94 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 55 tracked documents <!-- doc-gen: 55 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -2245,7 +2340,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **390** <!-- doc-gen: 390 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **528** <!-- doc-gen: 528 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **529** <!-- doc-gen: 529 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

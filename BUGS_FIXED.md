@@ -6,6 +6,77 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-329: `print` statements carry no source position, so `zebra debug` cannot breakpoint them (SELFHOST REGRESSION)
+
+**Status:** FIXED 2026-09-04 (same session it was found). `AstBuilder.zbr` now derives
+the print statement's span from its first argument via `spanOf`, the helper BUG-288 batch 2
+added for compound expressions. Markers on the gate fixture went 8 -> 15, and
+`tools/debug_map_check.sh` was watched going RED on the six missing lines BEFORE the fix
+and green after.
+
+NOT fixed: `pass` and `break` still carry no position, in BOTH compilers. Their parse
+nodes have no sub-expression to derive from, so they need a real position captured in the
+parser rather than a derivation. Lower value -- nobody breakpoints a `pass` -- and left
+open deliberately rather than silently.
+
+Codegen stamps `// zbr:<file>:<line>` above each statement it emits; those comments are
+the entire basis of the debugger's source map. `genStmt` emits one only when
+`stmtLine(s) > 0`, and `AstBuilder.zbr:782` builds a print statement with `zspan()` --
+`Span(0, 0, 0, 0)`. So a print statement emits no marker, and a breakpoint set on a
+print line silently slides to the next line that does have one.
+
+**The bootstrap gets this right, which makes it a regression rather than a gap.**
+Measured on the same 12-line probe:
+
+| line | statement | bootstrap | selfhost |
+|---|---|---|---|
+| 3 | `a = a + 1` | marker | marker |
+| 4 | `print("p")` | **marker** | **NONE** |
+| 9 | `pass` | NONE | NONE |
+| 11 | `break` | NONE | NONE |
+| 12 | `print(a.toString())` | **marker** | **NONE** |
+
+`pass` and `break` are missing in BOTH compilers -- a smaller, shared gap, filed here
+rather than separately because the fix is the same one line each.
+
+**Repro**
+
+```zebra
+def main()
+    print("p")
+    var a: int = 1
+```
+
+`zebra debug --dump-map <file>` lists no marker for the print line.
+
+**Cause.** `selfhost/AstBuilder.zbr:782`:
+
+```
+return Stmt.print_(StmtPrint(zspan(), args, true))
+```
+
+Six statement constructors take `zspan()` there: `assign`, `break_`, `continue_`,
+`contract`, `pass_`, `print_`. `assign` has other construction sites that do carry a
+real span, and measures breakpointable, so the live damage is `print` (both compilers
+for `pass`/`break`).
+
+**Why no gate saw it.** Three stop just short, and the gap between them is structural:
+
+- `diag-columns` asserts a *diagnostic* can say where. Its candidates are the smoke
+  suite's must-FAIL fixtures, and a `print` statement does not produce a diagnostic --
+  so a statement whose position is only ever consumed by the SOURCE MAP is invisible
+  to it. Same data, different consumer, no coverage.
+- `divergence_check` compares whether both compilers *compile* a file. Both do; the
+  emitted Zig differs only in comments. A marker regression cannot make it red.
+- `output_sweep` compares what programs *print*. Markers are comments; behaviour is
+  identical.
+
+**Control when fixing.** `tools/debug_map_check.sh` leg 2 is the witness: the fixture's
+prints name their own line numbers, and the gate requires each to appear in the map.
+It is RED on those lines today. Do not "fix" it by re-baselining -- the whole point of
+that leg is that the round-trip leg beside it is GREEN while this is broken, because
+two lookups agreeing with each other says nothing about whether the map is complete.
+
 ### BUG-321: `--version` and `--help` write to STDERR, so `zebra --help | less` shows nothing — FIXED 2026-09-01
 
 **The last living residue of the print-stream myth.** Found in free time by pointing

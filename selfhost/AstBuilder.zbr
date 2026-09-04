@@ -779,14 +779,28 @@ class ASTBuilder
                 var args = List(Expr)()
                 for an in arg_list
                     args.add(.buildExpr(an)?)
-                return Stmt.print_(StmtPrint(zspan(), args, true))
+                # BUG-329: derive the statement's position from its first argument.
+                # PNode.stmt_print carries no line of its own, and a zero span means
+                # genStmt emits no `// zbr:` marker -- which silently costs `zebra debug`
+                # the ability to breakpoint any print line. Same derivation, and the same
+                # one-token imprecision, as BUG-288 batch 2: the span points at the first
+                # argument rather than the `print` keyword, which is the same LINE, and
+                # the line is what the source map reads.
+                var print_span: Span = zspan()
+                if args.len > 0
+                    print_span = spanOf(args.at(0))
+                return Stmt.print_(StmtPrint(print_span, args, true))
 
             on PNode.stmt_require as cond_nodes
                 var cond_list: List(PNode) = cond_nodes
                 var exprs = List(Expr)()
                 for pn2 in cond_list
                     exprs.add(.buildExpr(pn2)?)
-                return Stmt.contract(StmtContract(zspan(), ContractKind.precond, exprs))
+                # BUG-329: same derivation as the print statement above.
+                var req_span: Span = zspan()
+                if exprs.len > 0
+                    req_span = spanOf(exprs.at(0))
+                return Stmt.contract(StmtContract(req_span, ContractKind.precond, exprs))
 
             on PNode.stmt_ensure as cond_nodes
                 var cond_list: List(PNode) = cond_nodes
