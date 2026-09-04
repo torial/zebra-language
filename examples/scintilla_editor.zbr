@@ -1,0 +1,86 @@
+# Zebra code editor — libui-ng (native OS controls) + Scintilla.
+#
+#   zebra --gui-backend=libui_ng examples/scintilla_editor.zbr
+#
+# Run it from the repo root: the file buttons resolve paths relative to the
+# working directory, and say so in the status line when one is missing rather
+# than opening an empty editor that looks like a working one.
+#
+# The model is a CLASS, not a struct, and the editor is an optional field
+# assigned in `init`. Both are required, not stylistic: a struct model is copied
+# into `update`, so mutations through it are discarded, and a field initialiser
+# calling CodeEditor() fails to compile because the emitted Zig needs a
+# comptime-known default and a live widget handle is not one.
+
+class Model
+    var editor: CodeEditor? = nil
+    var path: str = ""
+    var status: str = ""
+    var wrap: bool = false
+
+union Msg
+    poll_frame
+    open_showcase
+    open_compiler
+    open_self
+    toggle_wrap
+
+def loadInto(m: Model, p: str): Model
+    if not File.exists(p)
+        m.status = "not found: " + p + "  (run from the repo root)"
+        return m
+    m.editor!.setText(File.read(p))
+    m.path = p
+    m.status = "loaded"
+    return m
+
+def init(): Model
+    var m = Model()
+    m.editor = CodeEditor.forZebra()
+    return loadInto(m, "examples/showcase.zbr")
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.poll_frame
+            return m
+        on Msg.open_showcase
+            return loadInto(m, "examples/showcase.zbr")
+        on Msg.open_compiler
+            return loadInto(m, "selfhost/Lexer.zbr")
+        on Msg.open_self
+            return loadInto(m, "examples/scintilla_editor.zbr")
+        on Msg.toggle_wrap
+            m.wrap = not m.wrap
+            return m
+
+def view(g: Gui, m: Model)
+    g.send(Msg.poll_frame)
+
+    g.beginVBox("root", true)
+
+    g.beginHBox("toolbar", false)
+    if g.button("Showcase")
+        g.send(Msg.open_showcase)
+    if g.button("Compiler source")
+        g.send(Msg.open_compiler)
+    if g.button("This file")
+        g.send(Msg.open_self)
+    g.text("   " + m.path)
+    g.endHBox()
+
+    g.separator()
+
+    m.editor!.render(g, "##editor", 0, 0)
+
+    g.separator()
+
+    g.beginHBox("status", false)
+    g.text("Ln " + m.editor!.getCursorLine().toString()
+           + ", Col " + m.editor!.getCursorCol().toString())
+    g.text("   Zebra   UTF-8   " + m.status)
+    g.endHBox()
+
+    g.endVBox()
+
+def main()
+    Gui.run("Zebra — code editor (libui-ng + Scintilla)", 1000, 680, init, update, view)

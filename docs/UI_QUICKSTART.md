@@ -142,7 +142,7 @@ def view(g: Gui, m: Model)
 ```
 
 - `CodeEditor()` — plain editor
-- `CodeEditor.forZebra()` — editor with Zebra syntax preset (not yet wired in libui-ng MVP, falls back to plain)
+- `CodeEditor.forZebra()` — editor with the Zebra syntax preset (see below; in the libui-ng backend it is the same as `CodeEditor()`, because the preset is applied to every editor)
 - `editor.render(g, id, w, h)` — creates the Scintilla widget on first call and appends it to the current box with `.stretch`. Width/height args are ignored.
 - `editor.setText(s)` — replace content
 - `editor.getText()` — retrieve current content
@@ -150,6 +150,46 @@ def view(g: Gui, m: Model)
 - `editor.getCursorLine() / getCursorCol()` — current caret position (1-based)
 - `editor.setCursorPosition(line, col)` — jump to line/col (col ignored in MVP)
 - `editor.setErrorMarkers(diags)` — no-op in MVP
+
+### Syntax highlighting, and why there is no lexer (libui-ng)
+
+Every editor created by the libui-ng backend gets a line-number margin, a
+monospace font, caret-line highlight, a 4-space tab and a dark palette, and its
+text is syntax-highlighted as Zebra on `setText`.
+
+**No Scintilla lexer is involved, and that is forced rather than chosen.** The
+vendored Scintilla is version 5, which moved every lexer out of the core into
+Lexilla, and Lexilla is not vendored — the header carries `SCI_SETILEXER` and no
+`SCI_SETLEXER` or `SCLEX_*`. So the obvious approach, `SCI_SETLEXER` with
+`SCLEX_PYTHON`, would **silently do nothing**: an unrecognised message id is not
+an error in Scintilla, the text simply stays unstyled, which looks exactly like a
+styler that ran and found nothing to style.
+
+Instead the text is styled directly with `SCI_STARTSTYLING` / `SCI_SETSTYLING`
+from a small Zebra tokenizer in `selfhost/gui_libui_ng_section.zig`. It is a real
+Zebra tokenizer rather than another language's lexer wearing Zebra's keyword
+list, so "Zebra syntax highlighting" is an accurate description of it. The
+keyword set was taken from `src/Token.zig`'s table.
+
+Two limits, stated rather than discovered:
+
+- **It styles on `setText`, not as you type.** There is no incremental re-lex and
+  none is pretended; a buffer the user has edited keeps the styling it was given.
+  Wiring `SCN_STYLENEEDED` is the fix if that ever matters.
+- **It applies to every editor, including a read-only output pane.** `forZebra()`
+  and `CodeEditor()` both reach the same constructor, so an editor holding build
+  output is styled as though it were Zebra source. Distinguishing them means
+  giving the two factories different lowerings in both compilers.
+
+`examples/scintilla_editor.zbr` is a working editor built on this:
+
+```bash
+zebra --gui-backend=libui_ng examples/scintilla_editor.zbr
+```
+
+Run it from the repo root — its file buttons resolve paths relative to the
+working directory, and it says so in the status line when one is missing rather
+than opening an empty editor that looks like a working one.
 
 **Important — how to hold an editor handle** (corrected 2026-07-28; the previous
 advice here did not compile):

@@ -1,0 +1,108 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Zebra — Cobra's syntax, a Zig runtime, and Eiffel's contracts.
+#  The compiler is written in Zebra itself; this file is what that looks like.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Contracts are part of the signature, not assertions in the body. `require` is a
+# proof obligation on the CALLER; `ensure` is a promise back to them. `--turbo`
+# strips both for a shipping build, while `assert` deliberately survives it —
+# a contract is a proof obligation, an assert is a check the author wrote to run.
+def divide(a: float, b: float): float
+    require
+        b != 0.0
+    ensure
+        result * b - a < 0.000000001
+    return a / b
+
+# Structs are values, laid out flat.
+struct Circle
+    var radius: float
+
+struct Rect
+    var w: float
+    var h: float
+
+# A tagged union plus `branch` gives exhaustive matching: a missing arm is a
+# compile error, not a surprise at 2am. `^T` is heap indirection — `*T` in the
+# emitted Zig — boxed automatically on assignment and transparent when bound.
+union Shape
+    circle: ^Circle
+    rect: ^Rect
+    unit
+
+def area(s: Shape): float
+    branch s
+        on Shape.circle as c
+            return 3.14159265 * c.radius * c.radius
+        on Shape.rect as r
+            return r.w * r.h
+        on Shape.unit
+            return 1.0
+
+# A linked list. A class is already a reference, so no `^` here.
+class Node
+    var value: int = 0
+    var next: Node? = nil
+
+    def sum(): int
+        var total: int = this.value
+        if this.next as n
+            total = total + n.sum()
+        return total
+
+# A class constructs empty and is filled in; named-field construction is the
+# STRUCT form. This is the small factory that idiom asks for.
+def node(v: int, nxt: Node?): Node
+    var n = Node()
+    n.value = v
+    n.next = nxt
+    return n
+
+# `except` is the immutable-update idiom: it copies, changing only the named
+# field, so the original is left untouched.
+struct Config
+    var host: str
+    var port: int
+
+def withPort(c: Config, p: int): Config
+    return c except port = p
+
+# Errors are exceptions, richer than a Zig error enum. A `throws` function lowers
+# to `anyerror!T`, and calling one needs an explicit `?` to propagate — implicit
+# propagation is a compile error, on purpose.
+def parsePort(text: str): int throws
+    if text == ""
+        raise "empty port"
+    var n: int = text.toInt()
+    if n < 1 or n > 65535
+        raise "port out of range"
+    return n
+
+def readPort(text: str): int
+    var p: int = parsePort(text)?
+    return p
+catch
+    return -1
+
+def main()
+    var shapes: List(Shape) = List(Shape)()
+    shapes.add(Shape.circle(Circle(radius: 2.0)))
+    shapes.add(Shape.rect(Rect(w: 3.0, h: 4.0)))
+    shapes.add(Shape.unit)
+
+    var total: float = 0.0
+    for s in shapes
+        total = total + area(s)
+    print("total area: ${total}")
+
+    var cfg = Config(host: "localhost", port: 8080)
+    var moved = withPort(cfg, 9090)
+    print("${cfg.host}:${cfg.port} -> ${moved.host}:${moved.port}")
+
+    var tail = node(3, nil)
+    var mid = node(2, tail)
+    var head = node(1, mid)
+    print("sum: " + head.sum().toString())
+
+    print("readPort(70000) = " + readPort("70000").toString())
+    print("divide(10, 4)   = " + divide(10.0, 4.0).toString())

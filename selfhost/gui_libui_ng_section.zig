@@ -252,6 +252,143 @@ const sci = @import("sci");
 // SCI_GETTEXTRANGE likewise writes n+1 bytes (it NUL-terminates), so the same
 // +1 reservation is what makes the read path safe; the old code reallocated only
 // when `n > buf.len`, which let an exactly-full buffer overflow by one byte.
+// ─── Zebra syntax styling ──────────────────────────────────────────────────────
+// NO LEXER IS USED, and that is forced rather than chosen: the vendored Scintilla
+// is version 5, which moved every lexer out of the core into Lexilla, and Lexilla
+// is not vendored here (the header has SCI_SETILEXER and no SCI_SETLEXER/SCLEX_*).
+// So `SCI_SETLEXER, SCLEX_PYTHON` — the obvious approach — would silently do
+// nothing: a wrong message id is not an error in Scintilla, the text just stays
+// unstyled, which is indistinguishable from a styler that ran and found nothing.
+//
+// Instead the text is styled DIRECTLY with SCI_STARTSTYLING / SCI_SETSTYLING from
+// a small Zebra tokenizer below. That is a real Zebra tokenizer rather than another
+// language's lexer wearing Zebra's keyword list, so the highlighting is honest about
+// what it is. Every message id here was read out of the vendored Scintilla.h, not
+// recalled.
+const _CE_KEYWORDS = [_][]const u8{
+    "abstract", "adds", "allocate", "and", "arena", "as", "assert", "assert_eq",
+    "assert_false", "assert_ne", "assert_true", "bool", "branch", "break", "capture", "catch",
+    "char", "class", "const", "continue", "cue", "def", "defer", "else", "ensure", "enum",
+    "errdefer", "except", "export", "exposing", "extend", "extern", "false", "float", "for",
+    "guard", "has", "if", "implements", "implies", "in", "int", "interface", "invariant", "is",
+    "mixin", "namespace", "nil", "not", "on", "or", "orelse", "pass", "print", "private",
+    "public", "raise", "readonly", "require", "return", "same", "sig", "static", "struct",
+    "test", "this", "throws", "to", "true", "type", "uint", "union", "use", "using", "var",
+    "vari", "where", "while", "with"
+};
+
+// Style slots. 32 and 33 are Scintilla's own (STYLE_DEFAULT, STYLE_LINENUMBER).
+const _CE_S_DEFAULT: usize = 0;
+const _CE_S_KEYWORD: usize = 1;
+const _CE_S_COMMENT: usize = 2;
+const _CE_S_STRING:  usize = 3;
+const _CE_S_NUMBER:  usize = 4;
+const _CE_S_TYPE:    usize = 5;
+const _CE_S_FUNC:    usize = 6;
+const _CE_S_OP:      usize = 7;
+
+// Scintilla colours are 0xBBGGRR, not RGB — the byte order is the single easiest
+// thing to get wrong here, and getting it wrong produces a plausible-looking but
+// wrong palette rather than an error.
+const _CE_C_BG:      usize = 0x342c28; // #282c34
+const _CE_C_FG:      usize = 0xbfb2ab; // #abb2bf
+const _CE_C_KEYWORD: usize = 0xdd78c6; // #c678dd
+const _CE_C_COMMENT: usize = 0x70635c; // #5c6370
+const _CE_C_STRING:  usize = 0x79c398; // #98c379
+const _CE_C_NUMBER:  usize = 0x669ad1; // #d19a66
+const _CE_C_TYPE:    usize = 0x7bc0e5; // #e5c07b
+const _CE_C_FUNC:    usize = 0xefaf61; // #61afef
+const _CE_C_OP:      usize = 0xc2b656; // #56b6c2
+const _CE_C_LNFG:    usize = 0x63524b; // #4b5263
+const _CE_C_LNBG:    usize = 0x2f2823;
+const _CE_C_CARETLN: usize = 0x3e3630;
+const _CE_C_SEL:     usize = 0x584c3f;
+
+fn _ce_is_kw(w: []const u8) bool {
+    for (_CE_KEYWORDS) |k| if (std.mem.eql(u8, k, w)) return true;
+    return false;
+}
+fn _ce_alpha(c: u8) bool { return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_'; }
+fn _ce_digit(c: u8) bool { return c >= '0' and c <= '9'; }
+fn _ce_opch(c: u8) bool {
+    return switch (c) { '+', '-', '*', '/', '=', '<', '>', '!', '&', '|', '^', '~', '?', ':', '.', ',', '(', ')', '[', ']', '{', '}' => true, else => false };
+}
+
+// One-time visual setup: margin, font, palette, caret line. Everything here is
+// core Scintilla and needs no lexer.
+fn _ce_configure(_s: *sci.Scintilla) void {
+    _ = _s.sendMessage(2037, 65001, 0);                                  // SCI_SETCODEPAGE utf-8
+    _ = _s.sendMessage(2056, 32, @intFromPtr("Consolas".ptr));           // STYLE_DEFAULT font
+    _ = _s.sendMessage(2055, 32, 11);                                    // ...size
+    _ = _s.sendMessage(2051, 32, _CE_C_FG);                              // ...fore
+    _ = _s.sendMessage(2052, 32, _CE_C_BG);                              // ...back
+    _ = _s.sendMessage(2050, 0, 0);                                      // SCI_STYLECLEARALL -> all styles
+    _ = _s.sendMessage(2051, _CE_S_KEYWORD, _CE_C_KEYWORD);
+    _ = _s.sendMessage(2053, _CE_S_KEYWORD, 1);                          // SCI_STYLESETBOLD
+    _ = _s.sendMessage(2051, _CE_S_COMMENT, _CE_C_COMMENT);
+    _ = _s.sendMessage(2054, _CE_S_COMMENT, 1);                          // SCI_STYLESETITALIC
+    _ = _s.sendMessage(2051, _CE_S_STRING,  _CE_C_STRING);
+    _ = _s.sendMessage(2051, _CE_S_NUMBER,  _CE_C_NUMBER);
+    _ = _s.sendMessage(2051, _CE_S_TYPE,    _CE_C_TYPE);
+    _ = _s.sendMessage(2051, _CE_S_FUNC,    _CE_C_FUNC);
+    _ = _s.sendMessage(2051, _CE_S_OP,      _CE_C_OP);
+    _ = _s.sendMessage(2051, 33, _CE_C_LNFG);                            // STYLE_LINENUMBER fore
+    _ = _s.sendMessage(2052, 33, _CE_C_LNBG);                            // ...back
+    _ = _s.sendMessage(2240, 0, 1);                                      // margin 0 = SC_MARGIN_NUMBER
+    _ = _s.sendMessage(2242, 0, 56);                                     // ...width px
+    _ = _s.sendMessage(2096, 1, 0);                                      // SCI_SETCARETLINEVISIBLE
+    _ = _s.sendMessage(2098, _CE_C_CARETLN, 0);                          // SCI_SETCARETLINEBACK
+    _ = _s.sendMessage(2068, 1, _CE_C_SEL);                              // SCI_SETSELBACK
+    _ = _s.sendMessage(2036, 4, 0);                                      // SCI_SETTABWIDTH
+}
+
+// Style the whole buffer in one pass. Called after any setText; a demo sets the
+// text once, so there is no incremental re-lex path and none is pretended.
+fn _ce_style_zebra(_ed: *_CodeEditor) void {
+    const _s = _ed.scint orelse return;
+    const src = _ed.buf[0.._ed.len];
+    _ = _s.sendMessage(2032, 0, 0);                                      // SCI_STARTSTYLING at 0
+    var i: usize = 0;
+    while (i < src.len) {
+        const start = i;
+        const c = src[i];
+        var sty: usize = _CE_S_DEFAULT;
+        if (c == '#') {
+            while (i < src.len and src[i] != '\n') i += 1;
+            sty = _CE_S_COMMENT;
+        } else if (c == '"') {
+            i += 1;
+            while (i < src.len and src[i] != '"') {
+                if (src[i] == '\\' and i + 1 < src.len) i += 1;
+                i += 1;
+            }
+            if (i < src.len) i += 1;
+            sty = _CE_S_STRING;
+        } else if (_ce_digit(c)) {
+            while (i < src.len and (_ce_digit(src[i]) or src[i] == '.' or src[i] == '_')) i += 1;
+            sty = _CE_S_NUMBER;
+        } else if (_ce_alpha(c)) {
+            while (i < src.len and (_ce_alpha(src[i]) or _ce_digit(src[i]))) i += 1;
+            const w = src[start..i];
+            if (_ce_is_kw(w)) {
+                sty = _CE_S_KEYWORD;
+            } else if (w[0] >= 'A' and w[0] <= 'Z') {
+                sty = _CE_S_TYPE;
+            } else {
+                var j = i;
+                while (j < src.len and src[j] == ' ') j += 1;
+                sty = if (j < src.len and src[j] == '(') _CE_S_FUNC else _CE_S_DEFAULT;
+            }
+        } else if (_ce_opch(c)) {
+            i += 1;
+            sty = _CE_S_OP;
+        } else {
+            i += 1;
+        }
+        _ = _s.sendMessage(2033, i - start, sty);                        // SCI_SETSTYLING len, style
+    }
+}
+
 const _CodeEditor = struct {
     scint: ?*sci.Scintilla = null,
     read_only: bool = false,
@@ -279,7 +416,10 @@ fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void {
     @memcpy(_ed.buf[0..text.len], text);
     _ed.buf[text.len] = 0;
     _ed.len = text.len;
-    if (_ed.scint) |_s| _s.setText(_ed.buf[0.._ed.len]);
+    if (_ed.scint) |_s| {
+        _s.setText(_ed.buf[0.._ed.len]);
+        _ce_style_zebra(_ed);
+    }
 }
 fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 {
     if (_ed.scint) |_s| {
@@ -301,7 +441,11 @@ fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, _w: f6
         _ed.scint = sci.Scintilla.new() catch return;
         // Safe unconditionally now: `buf[len] == 0` holds even when len == 0
         // (the old code had to skip the empty case to avoid the strlen crash).
-        if (_ed.buf.len > 0) _ed.scint.?.setText(_ed.buf[0.._ed.len]);
+        _ce_configure(_ed.scint.?);
+        if (_ed.buf.len > 0) {
+            _ed.scint.?.setText(_ed.buf[0.._ed.len]);
+            _ce_style_zebra(_ed);
+        }
         if (_ed.read_only) _ = _ed.scint.?.sendMessage(2171, 1, 0);
         if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _ed.scint.?.as_control(), .stretch);
     }
