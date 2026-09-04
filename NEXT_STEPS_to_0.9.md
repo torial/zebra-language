@@ -144,6 +144,53 @@ features, no parity work, no fixes except ones that break REGENERATION. It becom
 the stage-0 witness. That stops the bleeding today at zero cost and turns the eventual
 removal into a formality.
 
+**UPDATED 2026-09-04: `zebra debug`'s SOURCE MAP is ported and gated. The RELAY is not,
+and its cost is NOT yet known -- read the last paragraph before scoping it.**
+
+`zebra debug` is a DAP relay, not a debugger: it sits between an IDE and lldb-dap and
+rewrites every source coordinate crossing it, driven by codegen's `// zbr:` markers.
+
+**DONE:** the source map (`dbgLoadMarkers` / `dbgZbrToZig` / `dbgZigToZbr` /
+`dbgCanonicalZbr` in selfhost/main.zbr), plus `zebra debug --dump-map
+<file.zbr|file.zig>`. Gated by `tools/debug_map_check.sh` (6 legs, FAST tier), which
+needs NO lldb-dap. It found BUG-329 on its first run.
+
+**THE TRANSPORT QUESTION IS SETTLED, and it is the finding that makes the port
+tractable.** The Zig default path pipes lldb-dap's stdio, which Zebra cannot do -- there
+is no piped-spawn primitive. But `runDebugSessionListen` spawns lldb-dap with
+`--connection listen://127.0.0.1:PORT` and `.stdin=.ignore, .stdout=.ignore`, which is an
+EXACT match for the existing `_sys_spawn`, and talks TCP. The two transports are
+INDEPENDENT: the lldb side can be TCP while the IDE side stays stdio. So the stdio mode
+is portable, and it is the one to do -- `Tcp.serve` loops and never hands back the
+connection the way the Zig `accept` does, and BUG-154 already records that shape as sharp.
+
+Portable with what exists TODAY: `compileDebug` -> `sys.exec_inherit`; lldb-dap discovery
+-> `sys.getenv("PATH")` + `File.exists` (plus the Program Files / usr/bin / homebrew
+fallback -- lldb-dap IS installed on this machine but is NOT on PATH, so the fallback is
+load-bearing, not belt-and-braces); PATH augmentation -> `sys.setenv` before spawn (sound
+because the process does nothing else); our own DAP framing -> `sys.readBytes(n)` +
+`Terminal.write`, which the LSP server already does and `lsp-smoke` already gates; relay
+threads -> `sys.go`. PORT THE 30 x 100ms CONNECT RETRY (src/Debugger.zig:1058) -- without
+it, connecting before lldb-dap has bound is an intermittent failure that works locally.
+
+**WHAT IS NOT SETTLED, and do not quote a number for it.** `transform` touches only two
+message kinds (`setBreakpoints` outbound, `stackTrace` responses inbound) and returns the
+ORIGINAL BODY for everything else and on any error -- so the pass-through case needs
+nothing new. But inside the two it does rewrite, it re-serialises by walking
+`root.iterator()` and writing each untouched key's `entry.value_ptr.*` back VERBATIM.
+Zebra has no key iteration, and -- the part that is easy to miss -- a list of keys would
+not be enough either: re-emitting a sibling field whose TYPE you do not know needs a
+generic value accessor plus per-value stringify, and every value-returning getter Zebra
+has is typed and FABRICATES a default on miss (BUG-331). So the honest scope is "at least
+one new stdlib primitive, shape undetermined", not "one primitive". Settle it on paper
+first: a preamble edit costs the full `zig build` -> regen -> `zig build` order, and a
+wrong primitive costs it twice. The cheap question that decides it: can `seq`/`type`/
+`command` and the untouched breakpoint fields be reconstructed from typed getters alone?
+
+**REMAINING BEYOND THAT:** `--zig-backend` and the `stub` GUI backend, which are policy
+rather than code.
+
+
 **UPDATED 2026-09-02: `repl` IS PORTED. Two runtime jobs remain, not three.**
 
 `zebra repl` is now native (`replRun` in `selfhost/main.zbr`); the bootstrap delegation is

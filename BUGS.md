@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-330. Next new bug: BUG-331.**
+**Last bug number generated: BUG-331. Next new bug: BUG-332.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,50 @@
 > measured in.
 
 ---
+
+### BUG-331: every `JsonValue` getter fabricates a default on miss, so "absent" and "empty" are indistinguishable
+
+**Status:** OPEN. Filed 2026-09-04 while scoping the `zebra debug` DAP relay.
+
+The shipped runtime's JSON getters return a plausible EMPTY VALUE when the key is missing
+or holds the wrong type, rather than signalling absence:
+
+| getter | on a missing key |
+|---|---|
+| `_json_get_obj` | `.{ .object = ObjectMap.empty }` -- an empty object |
+| `_json_get_list` | `&[_]JsonValue{}` -- an empty array |
+| `_json_get_str` / `_int` / `_float` / `_bool` | the type's zero value |
+
+So a caller cannot tell `{"args": {}}` from `{}`. This is conventional for lenient JSON
+APIs and would be a shrug on its own; what makes it a defect here is that it is the exact
+shape this repo has already ruled against twice in the same runtime -- BUG-309 and BUG-310,
+"fabricating catches in the shipped runtime" -- and it is the H3 hazard `hazard_lint`
+enforces for our TOOLS ("a constant sentinel on a path feeding a comparison always biases
+toward 'nothing changed'") applied to the stdlib instead.
+
+**The concrete consumer, which is why this is filed now rather than noted.** The `zebra
+debug` DAP relay must decide whether a message HAS an `arguments.source.path` before
+rewriting a coordinate. The Zig original branches on `orelse return orig` -- absent means
+"pass this message through untouched". A Zebra port using these getters cannot express
+that: an absent `source` and an empty `source` both arrive as an empty object, and the
+relay would rewrite a message it should have forwarded verbatim.
+
+**Fix direction.** Add optional-returning getters (`getStrOpt`/`getObjOpt`/... returning
+`str?`/`JsonValue?`), or a `has(key)` predicate, rather than changing the existing
+getters' behaviour -- corpus code may depend on the lenient forms, and silently changing
+what they return is a worse failure than the one being fixed. UNGIT "nothing fabricated":
+unknown, empty and missing each get their own spelling.
+
+**Related, and NOT yet settled:** the relay also needs to re-emit sibling fields it does
+not rewrite, preserving values whose TYPE it does not know. Neither a key list nor typed
+getters expresses that. Whether Zebra needs a generic value accessor plus per-value
+`stringify`, or something else, is an open design question -- see the `zebra debug` notes
+in NEXT_STEPS. Do not treat "add one primitive" as the scoped answer; it is not yet known
+to be one.
+
+**Control when fixing.** A fixture that parses `{"a": {}}` and `{}` and asserts the two
+are distinguishable. Watch it fail first: against today's runtime both report an empty
+object, so a test that merely reads a present key passes for the wrong reason.
 
 ### BUG-330: `for ch in <str>` is accepted by the front end and emits Zig that cannot compile
 
