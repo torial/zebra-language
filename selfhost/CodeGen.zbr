@@ -1522,6 +1522,21 @@ def sfModStructName(path: str): str
 var _gui_backend: str = ""
 var _gui_section: str = ""
 
+# `zebra build` codegen modes. PORTED 2026-09-04 -- the selfhost had neither, which is
+# what the bootstrap delegation was really carrying. Both failures are SILENT and exit 0:
+# without _build_mode a build file that never calls b.run() compiles, runs and produces
+# nothing; without _list_targets_mode `--list-targets` BUILDS instead of listing.
+# Module-level rather than threaded through generateFull*'s signature chain, matching
+# _gui_backend above.
+var _build_mode: bool = false
+var _list_targets_mode: bool = false
+
+def setBuildMode(v: bool)
+    _build_mode = v
+
+def setListTargetsMode(v: bool)
+    _list_targets_mode = v
+
 def setGuiBackend(v: str)
     _gui_backend = v
 
@@ -4933,6 +4948,11 @@ struct Generator
                 # _allocator/_io and all deps are live, before any user code runs.
                 ei.writeIndent()
                 ei.w.emit("_initModuleVars();\n")
+                # `zebra build --list-targets`: arm before any user statement, so
+                # _build_run() prints the target list instead of invoking the compiler.
+                if _list_targets_mode
+                    ei.writeIndent()
+                    ei.w.emit("_list_targets_mode = true;\n")
             # @profile: record entry time and defer _profile_end() on any exit path.
             if m.mods.is_profile
                 var prof_ig = indented()
@@ -5076,6 +5096,13 @@ struct Generator
             if ec.armed
                 bg.writeIndent()
                 bg.w.emit("_ensure_armed = true;\n")
+            # `zebra build` declarative mode: run the registered build context at the end
+            # of main() when the user never called b.run(). Without it the build file
+            # compiles, runs, exits 0 and produces NOTHING -- measured against the
+            # bootstrap, which builds the target for the identical source.
+            if _build_mode and owner == "" and m.name == "main"
+                bg.writeIndent()
+                bg.w.emit("_build_auto_run();\n")
             writeIndent()
             w.emit("}\n\n")
         else

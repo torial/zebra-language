@@ -279,6 +279,31 @@ All four exit criteria are met. What was NOT known is whether anything still nee
 binary in practice, so it was tested by the only method that can answer it: hide
 `zig-out/bin/zebra-bootstrap.exe` and run the tier.
 
+**SUPERSEDED 2026-09-04, LATER THE SAME DAY: `zebra build` IS NATIVE AND THE FOOTPRINT IS
+NOW ZERO.** The FAST tier is **28/28 with the bootstrap binary deleted**, hidden for the
+whole run (the first attempt at this measurement was confounded by a mid-run restore --
+see below -- so this one was left strictly alone until the tier finished).
+
+What the delegation was carrying was never a pipeline: the bootstrap's entire `build`
+implementation is "set the source path to build.zbr and run it as an ordinary program".
+It was carrying two CODEGEN modes the selfhost lacked, and both fail SILENTLY with exit 0:
+
+| mode | symptom when missing |
+|---|---|
+| `build_mode` -> `_build_auto_run()` | a build file that never calls `b.run()` compiles, runs, exits 0, builds NOTHING |
+| `list_targets_mode` -> `_list_targets_mode = true` | `--list-targets` BUILDS instead of listing |
+
+Both are now in `selfhost/CodeGen.zbr` (module-level flags plus setters, matching
+`_gui_backend`), and `--list-targets` output is byte-identical to the bootstrap's on a
+two-target project. Three `cli_check` legs cover them, watched RED against a mutant with
+both setters neutered -- all three failed, including "does NOT build while listing", which
+is the silent direction.
+
+**A METHOD NOTE THAT COST A WRONG ANSWER, recorded because it is the trap in this kind of
+measurement.** Probing only the `b.run()` path showed the delegation was "vestigial"; the
+absent-`b.run()` path showed silence. Probe a success and you underestimate the gap. The
+original measurement below stands as history:
+
 Result: **27 of the 28 FAST gates pass with no bootstrap present.** The single failure is
 `cli-surface`, on exactly two legs, and both are the same subcommand:
 

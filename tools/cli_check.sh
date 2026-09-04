@@ -222,6 +222,43 @@ chk "...and produces the named binary" \
     "$([ -x "$W/proj/zig-out/bin/demo" ] || [ -x "$W/proj/zig-out/bin/demo.exe" ] && echo 0 || echo 1)" \
     "zig-out/bin: $(ls "$W/proj/zig-out/bin" 2>/dev/null | tr "\n" " ")"
 
+# ── the two modes the bootstrap delegation was carrying (ported 2026-09-04) ──────────
+# BOTH of these failed SILENTLY with exit 0 before the port, which is why they are
+# asserted on OUTPUT and never on the exit code. They were invisible while `zebra build`
+# delegated, because the bootstrap has both modes -- so these legs only became capable of
+# failing on the day the subcommand went native.
+
+# A build file that never calls b.run() must still build. Without CodeGen's build mode
+# the file compiles, runs, exits 0 and produces NOTHING; the bootstrap builds the target
+# from identical source, which is how the gap was measured.
+mkdir -p "$W/proj_autorun"
+cp "$W/proj/app.zbr" "$W/proj_autorun/app.zbr"
+cat > "$W/proj_autorun/build.zbr" <<'ZBR'
+def main()
+    var b = Build.new()
+    var app = b.exe("demo", "app.zbr")
+ZBR
+( cd "$W/proj_autorun" && timeout 420 "$ZEBRA" build >"$O" 2>"$E" </dev/null )
+RC=$?
+chk "a build with NO explicit b.run() still produces the binary (auto-run)" \
+    "$([ -x "$W/proj_autorun/zig-out/bin/demo" ] || [ -x "$W/proj_autorun/zig-out/bin/demo.exe" ] && echo 0 || echo 1)" \
+    "exit=$RC  zig-out/bin: $(ls "$W/proj_autorun/zig-out/bin" 2>/dev/null | tr "\n" " ")"
+
+# `--list-targets` must LIST and must NOT build. Asserted in both directions on purpose:
+# "prints something" passes against a run that also built, and "built nothing" passes
+# against a run that printed nothing, so either alone is satisfied by the broken case.
+mkdir -p "$W/proj_lt"
+cp "$W/proj/app.zbr" "$W/proj_lt/app.zbr"
+cp "$W/proj/build.zbr" "$W/proj_lt/build.zbr"
+( cd "$W/proj_lt" && timeout 420 "$ZEBRA" build --list-targets >"$O" 2>"$E" </dev/null )
+RC=$?; LT=$(grep '^{' "$O" 2>/dev/null | head -1)
+chk "--list-targets emits the target JSON" \
+    "$(case "$LT" in *'"targets"'*'"demo"'*) echo 0;; *) echo 1;; esac)" \
+    "exit=$RC  got: ${LT:-<nothing on stdout>}"
+chk "...and does NOT build while listing" \
+    "$([ -e "$W/proj_lt/zig-out/bin/demo" ] || [ -e "$W/proj_lt/zig-out/bin/demo.exe" ] && echo 1 || echo 0)" \
+    "zig-out/bin: $(ls "$W/proj_lt/zig-out/bin" 2>/dev/null | tr "\n" " ")"
+
 # THE UNSUPPORTED INVOCATION MUST REFUSE CLEARLY, not hang and not guess. Running the build
 # FILE directly gets no ZEBRA_COMPILER, and the fix for BUG-327 layer 2 was explicitly to
 # refuse with the reason rather than fall back -- a silent fallback there is what produced

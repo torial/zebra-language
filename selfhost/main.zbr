@@ -43,7 +43,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse, addNativeLibUse, emittedExtern
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse, addNativeLibUse, emittedExtern
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -2981,6 +2981,12 @@ def main()
             # the bootstrap alive after criterion 4 removed its last GATE job.
             sys.exit(replRun())
 
+    # `zebra build` carriers: set by the build subcommand below, consumed by the
+    # source-path scan further down. The subcommand no longer exits -- it falls
+    # through into the ordinary compile-and-run path with the build file as source.
+    var build_subcmd: bool = false
+    var build_src_file: str = ""
+
     # -- debug subcommand --------------------------------------------------
     # `zebra debug <file.zbr>` — DAP proxy via bootstrap binary.
     # The selfhost pipeline delegates to zebra-bootstrap.exe (the Zig-native
@@ -3042,7 +3048,7 @@ def main()
                 if dbg_rc == -1
                     sys.errln("zebra: could not launch the bootstrap compiler for `debug`")
                     sys.errln("  looked for: " + bootstrapExePath())
-                    sys.errln("  `debug` is still delegated to it; other subcommands are not")
+                    sys.errln("  `debug` is the last subcommand that needs it; every other one is native")
                     sys.exit(127)
                 sys.exit(dbg_rc)
             else
@@ -3050,37 +3056,41 @@ def main()
                 sys.exit(1)
 
     # -- build subcommand --------------------------------------------------
-    # `zebra build` compiles build.zbr (or --build-file=FILE) using the
-    # bootstrap binary, which contains the full Build stdlib runtime.
+    # `zebra build` compiles build.zbr (or --build-file=FILE) and runs it. Native
+    # since 2026-09-04; it used to delegate to the bootstrap binary.
 
     if args.positional(0) as bld_pos
         if bld_pos == "build"
-            var bld_argv: List(str) = List(str)()
-            # BUG-327 layer 2: the generated build program must be TOLD where the compiler is.
-            # It used to ask for its own executable path, which answers "where am I?" when the
-            # question is "where is the compiler?" -- so it re-invoked ITSELF forever. We know the
-            # answer here and the child inherits our environment, so we hand it over explicitly
-            # rather than let it guess. An installer can set the same variable.
-            sys.setenv("ZEBRA_COMPILER", sys.selfExe())
-            bld_argv.add(bootstrapExePath())
-            bld_argv.add("build")
+            # PORTED off the bootstrap 2026-09-04. `zebra build` was never a separate
+            # pipeline: the bootstrap's whole implementation is "set the source path to
+            # build.zbr and run it as an ordinary program", which this compiler already
+            # does for any file.
+            #
+            # WHAT THE DELEGATION WAS REALLY CARRYING were two CODEGEN modes the selfhost
+            # did not have, and BOTH fail silently with exit 0 -- measured, not reasoned:
+            # without build mode a build file that never calls b.run() compiles, runs and
+            # produces NOTHING (the bootstrap builds the target for identical source);
+            # without list-targets mode `--list-targets` BUILDS instead of listing. See
+            # CodeGen.setBuildMode / setListTargetsMode.
+            build_subcmd = true
             var bld_file_opt: str = args.option("--build-file", "")
             if bld_file_opt != ""
-                bld_argv.add("--build-file=" + bld_file_opt)
+                build_src_file = bld_file_opt
+            else
+                build_src_file = "build.zbr"
+            if not File.exists(build_src_file)
+                sys.errln("zebra build: no build file at '" + build_src_file + "'")
+                sys.errln("  create build.zbr here, or pass --build-file=PATH")
+                sys.exit(1)
+            # BUG-327 layer 2: the generated build program must be TOLD where the compiler
+            # is. It used to ask for its OWN executable path, which answers "where am I?"
+            # when the question is "where is the compiler?" -- so it re-invoked itself
+            # forever. We know the answer here and the child inherits our environment.
+            # An installer can set the same variable.
+            sys.setenv("ZEBRA_COMPILER", sys.selfExe())
+            setBuildMode(true)
             if args.contains("--list-targets")
-                bld_argv.add("--list-targets")
-            if cpu_flag != ""
-                bld_argv.add("--cpu=" + cpu_flag)
-            var bld_rc: int = sys.exec_inherit(bld_argv)
-            # -1 is _sys_exec_inherit's "could not spawn" sentinel. Letting it reach
-            # sys.exit is what produced the crash this bug was filed for; say what
-            # went wrong and where we looked instead.
-            if bld_rc == -1
-                sys.errln("zebra: could not launch the bootstrap compiler for `build`")
-                sys.errln("  looked for: " + bootstrapExePath())
-                sys.errln("  `build` is still delegated to it; other subcommands are not")
-                sys.exit(127)
-            sys.exit(bld_rc)
+                setListTargetsMode(true)
 
     # -- test subcommand ---------------------------------------------------
     # `zebra test <file.zbr>` discovers def test_*() and runs them.
@@ -3110,6 +3120,11 @@ def main()
             src_path = cval
             break
         pi = pi + 1
+    # `zebra build` supplies its own source: the positional is "build", not a .zbr,
+    # so the scan above finds nothing and this is what makes the subcommand resolve.
+    if src_path == nil and build_subcmd
+        src_path = build_src_file
+
     if src_path == nil
         # BUG-321: `--help` was never a recognised flag -- it fell through to this
         # "no source file" path, so `zebra --help` printed usage to STDERR and exited 1.
