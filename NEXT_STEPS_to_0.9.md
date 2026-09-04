@@ -273,6 +273,53 @@ the repo happens to be.
 
 
 
+**MEASURED 2026-09-04: THE BOOTSTRAP'S ENTIRE REMAINING GATE FOOTPRINT IS `zebra build`.**
+
+All four exit criteria are met. What was NOT known is whether anything still needs the
+binary in practice, so it was tested by the only method that can answer it: hide
+`zig-out/bin/zebra-bootstrap.exe` and run the tier.
+
+Result: **27 of the 28 FAST gates pass with no bootstrap present.** The single failure is
+`cli-surface`, on exactly two legs, and both are the same subcommand:
+
+```
+FAIL   a build that calls b.run() SUCCEEDS
+FAIL   ...and produces the named binary
+ok     ...and fails FAST rather than hanging or crashing
+```
+
+That third line passing is worth as much as the two failures: without the bootstrap,
+`zebra build` refuses with a message instead of hanging or panicking, which is BUG-322's
+fix still holding.
+
+**Two traps in running this experiment, both of which produced a wrong reading first.**
+
+`boundary` appeared to HANG without the bootstrap and was briefly written up as a gate that
+hangs rather than fails. It does not: it takes **339 s**, and the probe had a 300 s timeout.
+Re-run with room it is `32 pass, 0 fail` and needs no bootstrap. (CLAUDE.md documents
+boundary as "~30 s"; measured today it is **104-339 s** across four runs, so that figure is
+stale by 3-10x and the timeout was chosen from it.)
+
+And a mid-run restore silently confounds the whole tier. The first attempt reported
+`28/28 PASS` with the binary hidden -- but the binary had been put back while `boundary` was
+in flight, so the last five gates (`boundary`, `stream-sep`, `cli-surface`, `lsp-smoke`,
+`debug-map`) ran WITH it. A tier result is only as good as the tree being unchanged
+throughout; those five had to be re-run individually to mean anything, and doing so is what
+found the `cli-surface` failure the confounded run had hidden.
+
+**WHAT THIS CHANGES.** The bootstrap is no longer load-bearing for correctness -- it is not
+the regen authority (criterion 2), no gate needs it except for `zebra build`, and it can no
+longer serve as a divergence reference (criterion 4). Three delegations remain in
+`selfhost/main.zbr`: `zebra debug` (3027, relay only -- the source map landed 2026-09-04),
+`zebra build` (3065), and `--zig-backend` (3600, the deliberate escape hatch, which is a
+decision rather than code).
+
+**CHEAPEST NEXT STEP, and it may already be free:** `BuildTarget` appears 6x in
+`selfhost/CodeGen.zbr`, so the Build runtime is partly ported already. Whether the
+delegation is still NECESSARY or merely vestigial is untested. Test that before scoping a
+port -- and note the two `cli-surface` legs above are the ready-made witness for it.
+
+
 **EXIT CRITERIA -- all four, in order:**
 
 1. ~~**The equivalence experiment passes.**~~ **RETIRED 2026-08-29 -- IT WAS THE WRONG

@@ -972,7 +972,10 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   a build that actually runs and pins BUG-327 --
                                 #   measured on BOTH compilers, failing at the SAME
                                 #   line, so it is not a delegation problem.
-bash tools/boundary_check.sh    # THE INTENT WITNESS (A3, QUICK tier, ~30s): the only
+bash tools/boundary_check.sh    # THE INTENT WITNESS (A3, QUICK tier, 104-339s -- NOT ~30s,
+                                #   measured 2026-09-04 across four runs; the stale figure is
+                                #   what made a probe pick a 300s timeout and misread a slow
+                                #   run as a HANG): the only
                                 #   gate whose expectations were WRITTEN FROM THE LANGUAGE
                                 #   REFERENCE rather than recorded from the compiler. Every
                                 #   other behaviour check here is a GOLDEN baseline, which
