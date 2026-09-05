@@ -1915,6 +1915,34 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**FULL tier 2026-09-05: 37/37 PASS in ONE invocation at JOBS=2**, closing the string-indexing
+batch (BUG-319, BUG-330, BUG-225). smoke **399/399**, round-trip byte-identical,
+`compile_check-inline` **305/0**, `output_sweep` **404 files behaviour identical**,
+`full_sweep` 0 regressions vs **422**, `examples_sweep` 0 vs 19, `divergence` 0 regressions
+vs the N-1 anchor, `release-mode` and `contract-mode` 13/13.
+
+**BOTH HEAVY BASELINES WERE RE-RECORDED IN THIS RUN'S RUN-UP, in the documented order
+(full_sweep first).** `full_sweep` **390 -> 422** and `output_sweep` **356 -> 404**. The
+first number discharges a debt this file has been flagging against itself: those 32
+accumulated passes could not make the gate red however badly they broke, and now they can.
+The re-baseline was taken only AFTER `full_sweep --gate` reported 0 regressions, because
+`--update-baseline` re-records whatever it measures -- gating first is the whole difference
+between locking in a pass set and silently locking in a regression.
+
+**Exclusions moved 16 -> 18 and that is NOT a coverage loss, which took reading the diff to
+establish rather than the count.** The three nondeterministic entries are the SAME files
+re-recorded with fresh sample text; the two genuinely new entries are `query_string_test`
+and `tcp_echo_roundtrip_test`, both excluded by CAPABILITY (they contact a remote host), a
+documented separate category from nondeterminism. A rising exclusion count is exactly the
+shape of the silent loss this file warns about, so it is worth checking WHICH files moved
+every time, not just how many.
+
+**The only red across two FULL-tier attempts was `doc-lint`, both times on a count THIS
+CHANGE invalidated** -- the tracked-corpus figure after adding fixtures, then the
+`full_sweep` baseline figure after re-recording it. Both had `doc-gen` oracles and both went
+red within the hour. That is the D6 mechanism working exactly as designed, and it is worth
+noting that the numbers which rot silently are the ones WITHOUT an oracle, not these.
+
 **DAILY tier 2026-08-30: 37/37 PASS — NO XFAIL, in ONE invocation, 2h10m at JOBS=2.**
 Run as the closing move on the day BUG-315, BUG-316, BUG-318 and BUG-320's plain half were
 fixed, the imgui backend was retired, and NEXT_STEPS was split. smoke **391/391**,
@@ -2405,7 +2433,7 @@ the table below stands unchanged.
 **Previous sweep 2026-08-02** — 18/18, before those two gates existed.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
-**390** <!-- doc-gen: 390 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
+**422** <!-- doc-gen: 422 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
 while the tracked corpus is **535** <!-- doc-gen: 535 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
