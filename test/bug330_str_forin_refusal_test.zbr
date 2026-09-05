@@ -1,0 +1,4 @@
+def main()
+    var s: str = "hello"
+    for ch in s
+        print(ch.toString())

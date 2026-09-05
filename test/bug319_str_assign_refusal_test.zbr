@@ -1,0 +1,4 @@
+def main()
+    var s: str = "hello"
+    s[0] = "H"
+    print(s)

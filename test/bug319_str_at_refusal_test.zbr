@@ -1,0 +1,3 @@
+def main()
+    var s: str = "hello"
+    print(s.at(0).toString())

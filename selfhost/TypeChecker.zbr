@@ -1146,6 +1146,23 @@ class InferCtx
         # BUG-285: the second, redundant inference of a var-init is silenced here.
         if quiet_errors
             return
+        # BUG-319. An EXACT duplicate -- same file, line, column AND message -- is never
+        # information; it is the same defect reached twice by a checker that visits some
+        # expressions more than once. `print(...)` is the case that surfaced this: its
+        # arguments are inferred once to choose a format specifier and again by the general
+        # walk, so `print(s.at(0))` reported one mistake twice while `var b = s.at(0)`
+        # reported it once. That asymmetry is not something a user can act on.
+        #
+        # Deduping HERE rather than at the print site is deliberate: quiet_errors already
+        # covers one such double-visit and this is the second, so the pattern is the rule
+        # and not the exception. A guard at each call site is a list that rots; a guard on
+        # the sink cannot be forgotten by whoever adds the third one.
+        #
+        # It is EXACT-match only. Two diagnostics that differ in any field are both kept,
+        # so a genuine second error at the same position still reaches the user.
+        for _dup in errors
+            if _dup.line == line and _dup.col == col and _dup.file == file and _dup.message == message
+                return
         errors.add(Diagnostic(file, line, col, message))
 
 
@@ -2491,6 +2508,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             var srt: Type_? = stringMethodReturn(mem.member)
                             if srt as srt_v
                                 return srt_v
+                            # BUG-319. `str` has no `.at()`. Nothing refused it, so the call fell through to
+                            # the List path and emitted `s.items` -- the user was told `no member named
+                            # 'items' in 'str'`, a Zig internal naming a field their program never wrote.
+                            # Sean's call, 2026-09-05: the indexer IS the accessor, so this stays a refusal
+                            # rather than becoming an alias. The message names both halves of the byte /
+                            # codepoint split, because which one the user wanted is exactly what `.at()`
+                            # left ambiguous. Both suggestions were RUN before being suggested (BUG-269:
+                            # a refusal whose fix does not work is advice pointing nowhere).
+                            if mem.member == "at"
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'str' has no 'at' -- use s[i] for the byte at i, or s.chars() to iterate codepoints")
+                                return Type_.unknown_
                         on Type_.regex
                             var mname: str = mem.member
                             if mname == "find"
@@ -4062,6 +4091,14 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 # type instead. Binding unknown_ is the safe floor: it carries no
                 # information, so a wrong type can never be asserted against.
                 var sfi_elem: Type_ = forInElemType(sfi, ctx)
+                # BUG-330. Iterating a bare `str` emitted `s.items` and produced the SAME
+                # leaked Zig internal as BUG-319a -- one wrong answer wearing two faces. The
+                # refusal names both loops because the language genuinely has two, and the
+                # choice is the user's: codepoints or bytes. A `.chars()` iter is a CALL, not a
+                # `str`, so it does not reach here and cannot be false-positived.
+                if inferExpr(sfi.iter, ctx) is Type_.string_
+                    ctx.addErr(file, sfi.span.line, sfi.span.col,
+                               "cannot iterate a 'str' directly -- use s.chars() for codepoints, or index s[i] over its bytes")
                 for sv in sfi.vars
                     ctx.bind(sv, sfi_elem)
                 checkStmts(sfi.stmts, file, ctx)
@@ -4078,6 +4115,18 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                     checkCallsInExpr(sr.value!, file, sr.span.line, ctx)
             on Stmt.assign as sasn
                 checkCallsInExpr(sasn.value, file, sasn.span.line, ctx)  # audit #3
+                # BUG-319. `s[i] = x` on a string was checked by NOTHING. It reached codegen,
+                # emitted a store into a `[]const u8`, and surfaced as Zig's `local variable is
+                # never mutated` -- a message that flatly contradicts the line the user just
+                # wrote, which is the worst shape a diagnostic can take.
+                # Zebra mirrors Go here (Sean's call, 2026-09-05): strings are IMMUTABLE and
+                # `s[i]` is a byte. So this is a permanent property, not a missing feature, and
+                # the refusal says so rather than implying it is unimplemented.
+                # The StringBuilder idiom was RUN end to end before being named here.
+                if sasn.target is Expr.index as sa_ix
+                    if inferExpr(sa_ix.object, ctx) is Type_.string_
+                        ctx.addErr(file, sasn.span.line, sasn.span.col,
+                                   "strings are immutable -- 's[i] = ...' is not allowed; build a new string with StringBuilder (sb.append(...) then sb.build())")
             on Stmt.expr as se
                 checkCallsInExpr(se, file, 0, ctx)  # BUG-142 (line derived from callee span)
                 # Audit #2: a bare function name as a statement is a forgotten call.

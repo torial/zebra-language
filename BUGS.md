@@ -90,48 +90,6 @@ to be one.
 are distinguishable. Watch it fail first: against today's runtime both report an empty
 object, so a test that merely reads a present key passes for the wrong reason.
 
-### BUG-330: `for ch in <str>` is accepted by the front end and emits Zig that cannot compile
-
-**Status:** OPEN. Found 2026-09-04 while porting `zebra debug`.
-
-Iterating a bare `str` is not a supported form -- QUICKSTART documents `for c in s.chars()`
-for codepoints and `charAt(i)` for bytes. But the front end ACCEPTS `for ch in s`, and
-codegen then emits `for (s.items) |ch|`, which zig rejects with
-`no member named 'items' in '[]const u8'`.
-
-So the failure surfaces as an error in GENERATED code, naming a field the user never
-wrote, at a location in a file they did not author. UNGIT "nothing ambient": the compiler
-accepted a construct it cannot lower and let the consequence land somewhere the user
-cannot act on.
-
-**Repro**
-
-```zebra
-def main()
-    var s: str = "abc"
-    for ch in s
-        print("x")
-```
-
-`zebra -c` reports `parsed OK / resolved OK` and exits 0. A full compile fails inside the
-emitted Zig.
-
-**Why no gate saw it.** `full_sweep` and `compile_check` catch exactly this class -- emitted
-Zig that will not compile -- but only over `test/*.zbr`, and no corpus file uses the form.
-`doc_example_check` only reads `live` docs, and the docs correctly show `.chars()`, so there
-is nothing there to trip on either. The construct is reachable by any user and exercised by
-no file we own.
-
-**Fix direction.** Either refuse it in the type checker with a diagnostic naming `.chars()`
-as the fix, or lower it as `.chars()` does. Refusing is the smaller change and matches how
-the language already treats byte-vs-codepoint as a decision the author must make -- silently
-picking one would be the "nothing fabricated" violation in the other direction.
-
-**Control when fixing.** A `smoke_tc_fail` fixture asserting the refusal (with a position),
-plus -- if it is lowered instead -- a `smoke_run` fixture asserting what it iterates. Watch
-the fixture fail against today's compiler first: today it does not error, it produces bad
-Zig, so a fixture that merely expects "compilation fails" would pass for the wrong reason.
-
 ### BUG-328: `.toFloat()` on an un-annotated local rejects `i64`, but the identical value passes once explicitly typed `: int` — OPEN (found 2026-09-02)
 
 **Minor, but real and reproducible; workaround is one word.** From `C:/Projects/tinylm`'s
@@ -503,60 +461,6 @@ nothing and doubles the review.
 
 **One thing to preserve in step 3:** a user class may define its own `.at()` method --
 codegen has an `at_is_user_method` branch. A blind textual rewrite would break those.
-
-### BUG-319: indexing has TWO partial spellings — `.at()` dies on `str`, `[i]` cannot be assigned — OPEN (found 2026-08-29)
-
-**Found by Sean asking "should we get rid of `.at()`? What value does it add?" — a question
-about redundancy that turned out to expose incoherence instead.**
-
-Measured:
-
-| | `.at(i)` | `[i]` read | write |
-|---|---|---|---|
-| `List(T)` | works | works | `.set(i, v)` only — `xs[i] = v` is refused, *"invalid left-hand side to assignment"* |
-| `str` | **FAILS** — leaked Zig error: *"no member named 'items' in 'str'"* | works | — |
-
-**They are not two spellings of one thing. They are two INCOMPLETE spellings with different
-coverage**, which is worse than redundancy: a user cannot learn one form and rely on it.
-`.at()` is the list accessor and dies on strings; `[i]` reads both and writes neither.
-
-**Three separate defects here, and they should not be conflated:**
-
-1. **`s.at(i)` leaks a Zig error.** *"no member named 'items' in 'str'"* names an
-   implementation detail of the emitted ArrayList and is meaningless to someone writing
-   Zebra. Whatever the design answer, this must be a Zebra diagnostic -- UNGIT "nothing
-   fabricated" on the surface a user meets first.
-2. **The read/write asymmetry is unexplained.** `xs[i]` reads but `xs[i] = v` is refused,
-   while `.at()`/`.set()` is a symmetric pair. Nothing documents why.
-3. **QUICKSTART documents `s[i]` as THE byte-indexing form** (see BUG-225, where `s[i]` is
-   decided to be a byte, matching Go), so `[i]` is load-bearing for strings and cannot
-   simply be retired.
-
-**WHY `.at()` CANNOT SIMPLY GO, which was the original question:** `.set()` is the only
-write path. Removing `.at()` leaves a pair with no reader, and `[i] = v` does not exist to
-replace it. The redundancy is in the READ direction only.
-
-**The coherent options, for a language decision rather than a fix:**
-
-- **(a) Complete both.** `.at()`/`.set()` gain `str` support; `[i]`/`[i] = v` gain
-  assignment. Most convenient, most surface -- and surface is axis 3, near-irreversible
-  once frozen.
-- **(b) Methods only.** Retire `[i]` for lists, keep it for `str` where it is the documented
-  form. **Note the freeze argument: `[i]` is GRAMMAR and `.at()` is STDLIB.** Under the
-  planned grammar freeze, grammar is the near-permanent surface and the stdlib stays
-  extensible, so a capability that lives in a method costs less forever than one that lives
-  in the syntax.
-- **(c) Brackets only**, with assignment added. Fewest concepts for a reader, but it moves a
-  capability INTO the frozen grammar, which is the expensive direction.
-
-**Recommendation: (b)**, on the freeze argument alone -- but this is a language call.
-Whichever is chosen, defect 1 (the leaked Zig error) should be fixed regardless, because it
-is wrong under every option.
-
-**Also observed, filed here rather than separately because it is one line of evidence:** the
-diagnostic for `print(s.at(1))` reported **line 2** for an error on line 3 -- the same
-diagnostic-position family as BUG-288, which had cleared `diag-columns` to zero. Worth a
-check that the *line* is right and not only the column.
 
 ### BUG-317: `--emit-zig > file` produces an empty file — REOPENED 2026-08-29, NOT fixed by BUG-318
 

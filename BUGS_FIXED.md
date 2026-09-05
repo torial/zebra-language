@@ -6,6 +6,176 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-319: indexing has TWO partial spellings — `.at()` dies on `str`, `[i]` cannot be assigned — FIXED 2026-09-05
+
+**Found by Sean asking "should we get rid of `.at()`? What value does it add?" — a question
+about redundancy that turned out to expose incoherence instead.**
+
+Measured:
+
+| | `.at(i)` | `[i]` read | write |
+|---|---|---|---|
+| `List(T)` | works | works | `.set(i, v)` only — `xs[i] = v` is refused, *"invalid left-hand side to assignment"* |
+| `str` | **FAILS** — leaked Zig error: *"no member named 'items' in 'str'"* | works | — |
+
+**They are not two spellings of one thing. They are two INCOMPLETE spellings with different
+coverage**, which is worse than redundancy: a user cannot learn one form and rely on it.
+`.at()` is the list accessor and dies on strings; `[i]` reads both and writes neither.
+
+**Three separate defects here, and they should not be conflated:**
+
+1. **`s.at(i)` leaks a Zig error.** *"no member named 'items' in 'str'"* names an
+   implementation detail of the emitted ArrayList and is meaningless to someone writing
+   Zebra. Whatever the design answer, this must be a Zebra diagnostic -- UNGIT "nothing
+   fabricated" on the surface a user meets first.
+2. **The read/write asymmetry is unexplained.** `xs[i]` reads but `xs[i] = v` is refused,
+   while `.at()`/`.set()` is a symmetric pair. Nothing documents why.
+3. **QUICKSTART documents `s[i]` as THE byte-indexing form** (see BUG-225, where `s[i]` is
+   decided to be a byte, matching Go), so `[i]` is load-bearing for strings and cannot
+   simply be retired.
+
+**WHY `.at()` CANNOT SIMPLY GO, which was the original question:** `.set()` is the only
+write path. Removing `.at()` leaves a pair with no reader, and `[i] = v` does not exist to
+replace it. The redundancy is in the READ direction only.
+
+**The coherent options, for a language decision rather than a fix:**
+
+- **(a) Complete both.** `.at()`/`.set()` gain `str` support; `[i]`/`[i] = v` gain
+  assignment. Most convenient, most surface -- and surface is axis 3, near-irreversible
+  once frozen.
+- **(b) Methods only.** Retire `[i]` for lists, keep it for `str` where it is the documented
+  form. **Note the freeze argument: `[i]` is GRAMMAR and `.at()` is STDLIB.** Under the
+  planned grammar freeze, grammar is the near-permanent surface and the stdlib stays
+  extensible, so a capability that lives in a method costs less forever than one that lives
+  in the syntax.
+- **(c) Brackets only**, with assignment added. Fewest concepts for a reader, but it moves a
+  capability INTO the frozen grammar, which is the expensive direction.
+
+**Recommendation: (b)**, on the freeze argument alone -- but this is a language call.
+Whichever is chosen, defect 1 (the leaked Zig error) should be fixed regardless, because it
+is wrong under every option.
+
+**Also observed, filed here rather than separately because it is one line of evidence:** the
+diagnostic for `print(s.at(1))` reported **line 2** for an error on line 3 -- the same
+diagnostic-position family as BUG-288, which had cleared `diag-columns` to zero. Worth a
+check that the *line* is right and not only the column.
+
+**FIXED 2026-09-05 (defects 1 and 2). Defect 3 is now a decided language change, tracked
+separately -- see below.**
+
+Defect 1, `s.at(i)` leaking `no member named 'items' in 'str'`, is a Zebra diagnostic now:
+
+```
+t.zbr:3:13: error: 'str' has no 'at' -- use s[i] for the byte at i, or s.chars() to iterate codepoints
+```
+
+It names both halves of the byte/codepoint split deliberately, because WHICH ONE the user
+wanted is exactly what `.at()` left ambiguous.
+
+Defect 2, the unexplained read/write asymmetry, is resolved in both directions. `s[i] = x`
+used to reach codegen unchecked and surface as Zig's `local variable is never mutated` -- a
+message that contradicts the line the user just wrote, which is the worst shape a diagnostic
+can take. It now says what is true and permanent:
+
+```
+t.zbr:3:5: error: strings are immutable -- 's[i] = ...' is not allowed; build a new string
+with StringBuilder (sb.append(...) then sb.build())
+```
+
+The StringBuilder idiom was RUN end to end before being named.
+
+**TWO CLAIMS IN THE ORIGINAL ENTRY WERE MEASURED AND ARE FALSE -- recorded because both
+argued against the fix that was eventually right.**
+
+- *"`.at()` is the safe/checked accessor"* was never stated outright but was the reason to
+  keep it. Both spellings lower to the SAME `_zbr_at`, which bounds-checks and panics. They
+  are genuinely redundant, not checked-vs-unchecked.
+- *"`.at()` CANNOT simply go: `.set()` is the only write path, and `[i] = v` does not exist
+  to replace it"* went STALE when BUG-320's plain form landed. `xs[0] = 77` works today.
+
+**WHAT REMAINS, and it is a decision rather than a defect.** Sean's call 2026-09-05: the
+indexer IS the accessor, so `.at()`/`.set()` should retire. That is 1,676 call sites, 915 of
+them in the compiler's own `.zbr` sources (`CodeGen.zbr` alone: 558) -- mechanical, but it
+must wait on **BUG-320's COMPOUND half**: `xs[i] += v` is still `invalid left-hand side to
+assignment`, and `.set()` is currently the only way to spell a compound update
+(`xs.set(i, xs.at(i) + v)`). Retiring the pair first would delete the only working form.
+
+A DUPLICATE-DIAGNOSTIC BUG WAS FOUND EN ROUTE and fixed with it: `print(s.at(0))` reported
+one mistake TWICE while `var b = s.at(0)` reported it once, because `print` infers its
+arguments a second time to choose a format specifier. Deduped at the sink (`addErr`, exact
+file+line+col+message match) rather than at the print site: `quiet_errors` already guards one
+such double-visit and this was the second, so the pattern is the rule and a per-call-site
+guard is a list that rots.
+
+Fixtures `test/bug319_str_at_refusal_test.zbr` and
+`test/bug319_str_assign_refusal_test.zbr`, both `smoke_tc_fail` with pinned coordinates, both
+watched failing with their old leaked Zig errors first.
+
+---
+
+### BUG-330: `for ch in <str>` is accepted by the front end and emits Zig that cannot compile — FIXED 2026-09-05
+
+**Status:** FIXED 2026-09-05. Found 2026-09-04 while porting `zebra debug`.
+
+Iterating a bare `str` is not a supported form -- QUICKSTART documents `for c in s.chars()`
+for codepoints and `charAt(i)` for bytes. But the front end ACCEPTS `for ch in s`, and
+codegen then emits `for (s.items) |ch|`, which zig rejects with
+`no member named 'items' in '[]const u8'`.
+
+So the failure surfaces as an error in GENERATED code, naming a field the user never
+wrote, at a location in a file they did not author. UNGIT "nothing ambient": the compiler
+accepted a construct it cannot lower and let the consequence land somewhere the user
+cannot act on.
+
+**Repro**
+
+```zebra
+def main()
+    var s: str = "abc"
+    for ch in s
+        print("x")
+```
+
+`zebra -c` reports `parsed OK / resolved OK` and exits 0. A full compile fails inside the
+emitted Zig.
+
+**Why no gate saw it.** `full_sweep` and `compile_check` catch exactly this class -- emitted
+Zig that will not compile -- but only over `test/*.zbr`, and no corpus file uses the form.
+`doc_example_check` only reads `live` docs, and the docs correctly show `.chars()`, so there
+is nothing there to trip on either. The construct is reachable by any user and exercised by
+no file we own.
+
+**Fix direction.** Either refuse it in the type checker with a diagnostic naming `.chars()`
+as the fix, or lower it as `.chars()` does. Refusing is the smaller change and matches how
+the language already treats byte-vs-codepoint as a decision the author must make -- silently
+picking one would be the "nothing fabricated" violation in the other direction.
+
+**Control when fixing.** A `smoke_tc_fail` fixture asserting the refusal (with a position),
+plus -- if it is lowered instead -- a `smoke_run` fixture asserting what it iterates. Watch
+the fixture fail against today's compiler first: today it does not error, it produces bad
+Zig, so a fixture that merely expects "compilation fails" would pass for the wrong reason.
+
+**FIXED 2026-09-05.** The front end now REFUSES it, so the failure surfaces where the user
+is standing instead of inside generated Zig:
+
+```
+t.zbr:3:5: error: cannot iterate a 'str' directly -- use s.chars() for codepoints, or index s[i] over its bytes
+```
+
+The refusal names BOTH loops because the language genuinely has two and the choice is the
+user's -- bytes or codepoints. `s.chars()` was RUN standalone before being named here
+(BUG-269: a refusal whose suggested fix does not work is advice pointing nowhere).
+
+It cannot false-positive a legitimate iteration: `for c in s.chars()` / `.split()` /
+`.lines()` all iterate a CALL, whose type is not `str`, so they never reach the guard.
+Verified against all three plus `List(str)` iteration.
+
+Fixture `test/bug330_str_forin_refusal_test.zbr`, registered `smoke_tc_fail` with the FULL
+COORDINATE pinned (BUG-249's precedent), and watched failing with the old leaked Zig error
+before the fix.
+
+---
+
 ### BUG-332: the selfhost rejects source the bootstrap accepts — three spurious "expected str, got int" in main.zbr, with fabricated positions
 
 **Status:** FIXED 2026-09-04, same day. **ROOT CAUSE: the checking pass never bound

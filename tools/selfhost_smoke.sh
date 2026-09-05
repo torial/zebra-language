@@ -496,6 +496,11 @@ smoke_tc_fail test/tc_mismatch_return_test.zbr "type mismatch"
 # them is what puts them in lint_diag_columns' derived candidate set; before that
 # gate could see this shape at all, it was measurable only in an ad-hoc shell probe.
 smoke_tc_fail test/bug288_binary_span_fail.zbr "type mismatch"
+# BUG-319 / BUG-330: three unsupported string operations that used to leak a ZIG
+# internal instead of refusing. Each pins the full coordinate, not just the message.
+smoke_tc_fail test/bug319_str_at_refusal_test.zbr "bug319_str_at_refusal_test.zbr:3:13: error: 'str' has no 'at'"
+smoke_tc_fail test/bug319_str_assign_refusal_test.zbr "bug319_str_assign_refusal_test.zbr:3:5: error: strings are immutable"
+smoke_tc_fail test/bug330_str_forin_refusal_test.zbr "bug330_str_forin_refusal_test.zbr:3:5: error: cannot iterate a 'str' directly"
 smoke_tc_fail test/bug288_call_span_fail.zbr "type mismatch"
 # with/guard/arena_scope body coverage (checkStmts recursion extension).
 smoke_tc_fail test/tc_mismatch_with_test.zbr "type mismatch"
