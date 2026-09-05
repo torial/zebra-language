@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-331. Next new bug: BUG-332.**
+**Last bug number generated: BUG-332. Next new bug: BUG-333.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,69 @@
 > measured in.
 
 ---
+
+### BUG-332: the selfhost rejects source the bootstrap accepts — three spurious "expected str, got int" in main.zbr, with fabricated positions
+
+**Status:** OPEN. Found 2026-09-04 while porting the `zebra debug` DAP relay. **BLOCKING**
+that port.
+
+Adding ~155 lines of JSON-rewriting helpers to `selfhost/main.zbr` makes the SELFHOST
+report three `type mismatch: expected str, got int` errors. The BOOTSTRAP compiles the
+identical file with `rc=0` and no diagnostics. The code is therefore not the problem, and
+the selfhost is refusing valid source.
+
+**The positions are fabricated, which is most of why this took so long to characterise.**
+Every one of the three points somewhere the error cannot be:
+
+| reported | what is actually on that line |
+|---|---|
+| `main.zbr:2816:32` | `while i < v.len` — the line is 20 characters, so column 32 does not exist |
+| `main.zbr:2863:42` | `return body` — returning a `str` param from a `str` function |
+| `main.zbr:2902:52` | a COMMENT line |
+
+Chasing the carets is a dead end; they should be disbelieved outright. Related to the
+BUG-288 family (statements carrying no real position), but this is worse: these are not
+zeroes, they are plausible-looking coordinates that are wrong.
+
+**Reproduction, which is the useful part.** It is CUMULATIVE and does not reduce:
+
+```
+committed main.zbr                          -> 0 errors
+  + dbgJsonStr        (str escaper)         -> 0 errors
+  + dbgWithKey        (calls dbgJsonStr)    -> 1 error
+  + dbgRemapSetBreakpoints                  -> 2 errors
+  + dbgRemapStackTrace                      -> 3 errors
+```
+
+One error per function, and each of the three calls `dbgJsonStr`. But **every smaller form
+compiles clean**, so none of these is the trigger on its own:
+
+- `dbgJsonStr` alone in main.zbr — clean
+- `dbgWithKey` alone in main.zbr, with the loop variable used directly instead of passed to
+  `dbgJsonStr` — clean
+- `dbgJsonStr` + `dbgWithKey` **extracted to a standalone file** — clean
+- the same pair extracted **with a `use` statement** (multi-module path) — clean
+- three near-identical copies of the pattern appended to committed main.zbr — clean
+
+Ruled out by experiment, so nobody repeats them: name collision (renaming the helper
+changes nothing), module-level shadowing (main.zbr has ZERO module-level vars), a
+for-header inference fault of the BUG-226 kind (hoisting `obj.keys()` into a typed local
+changes nothing), the nested `Json.stringify(obj.at(k))` call (replacing it with a literal
+changes nothing), and a per-module count limit (three copies are fine).
+
+What remains is an interaction between a cross-function call and something about
+`main.zbr` specifically — 3,800 lines and ~200 top-level defs.
+
+**Why it hid.** `zebra -c` DOES report it, so this is not the front-end/codegen split that
+hides other bugs. What hid it is that the selfhost is the only compiler anyone runs on
+this file, and nothing compares the two on `selfhost/*.zbr`. `divergence_check` sweeps
+`test/` and `examples/`, not the compiler's own sources — so a selfhost-rejects /
+bootstrap-accepts divergence on the compiler itself is invisible to every gate.
+
+**Control when fixing.** The recipe above, driven from the committed tree. The saved WIP
+patch (264 diff lines) is what triggers it. A gate worth considering separately: compile
+`selfhost/*.zbr` with BOTH compilers and require agreement — that is the check whose
+absence let this exist, and it is cheap now that the bootstrap is otherwise unused.
 
 ### BUG-331: every `JsonValue` getter fabricates a default on miss, so "absent" and "empty" are indistinguishable
 

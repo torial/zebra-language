@@ -4183,6 +4183,10 @@ const TypeChecker = struct {
         }
         // JsonValue methods
         if (obj_type == .json_value) {
+            // keys()/at(): copy an object whose shape is unknown -- see BUG-331 and the
+            // DAP relay in selfhost/main.zbr. Kept in step with selfhost/TypeChecker.zbr.
+            if (std.mem.eql(u8, method, "keys"))     return .str_slice;
+            if (std.mem.eql(u8, method, "at"))       return .json_value;
             if (std.mem.eql(u8, method, "getStr"))   return .string;
             if (std.mem.eql(u8, method, "getInt"))   return .int;
             if (std.mem.eql(u8, method, "getFloat")) return .float;
