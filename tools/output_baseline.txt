@@ -62,6 +62,10 @@ backed_enum: OK
 === bench_zebra sha1=272aae8b37b6 ===
 102334155
 4999999950000000
+=== bitwise_golden_vectors_test sha1=0436187b899f ===
+bitwise golden: OK
+=== bitwise_semantics_test sha1=371f2debc71d ===
+bitwise semantics: OK
 === branch_edge_test sha1=061c992bf566 ===
 42
 7
@@ -90,10 +94,18 @@ origin
 on y-axis
 hello alice
 3
+=== bug027_chain_expression_position_test sha1=9ca79d18ef80 ===
+bug027: OK
+=== bug079_chain_statement_positions_test sha1=c4f7f3156e4d ===
+bug079: OK 2 101
 === bug082_test sha1=545085aa1cd8 ===
 { 66, 117, 105, 108, 100, 101, 114, 40, 49, 48, 44, 32, 117, 112, 100, 97, 116, 101, 100, 41 }
 { 66, 117, 105, 108, 100, 101, 114, 40, 57, 57, 44, 32, 115, 116, 97, 114, 116, 41 }
 bug082 OK
+=== bug083_generic_implements_test sha1=29dabfa8c240 ===
+bug083: OK
+=== bug085_static_field_bare_test sha1=d62cd166fc1b ===
+bug085: OK count=10 tag=done
 === bug088_try_return_test sha1=89c3ac38837b ===
 bug088_try_return_test: ok
 === bug089_mixin_method_test sha1=7fafe4d3de1e ===
@@ -137,6 +149,8 @@ BUG-121 <<- arena copy-out: OK
 BUG-121 <<- outside arena: OK
 === bug123_user_init_test sha1=2a0c6bd5526b ===
 bug123: OK
+=== bug124_boxed_nilable_ctor_test sha1=a698d33f83bf ===
+bug124: OK
 === bug168_crossmod_prim_return_test sha1=97642600109c ===
 hi zebra!|pre-hi x|hi ahi b|42|5
 bug168: OK
@@ -156,6 +170,8 @@ bug196: 43
 bug198: OK
 === bug202_preamble_name_collision_test sha1=6232c292ad18 ===
 bug202: OK
+=== bug212_code_editor_const_test sha1=ed35d0d635e3 ===
+bug212: OK
 === bug221_transitive_init_test sha1=5a013c495082 ===
 missing
 === bug224_format_multiarg_test sha1=b178570153bd ===
@@ -165,6 +181,8 @@ a b c
 answer is 42
 n doubled is 40
 bug224_format_multiarg_test: OK
+=== bug225_str_index_byte_test sha1=864a73fb79da ===
+bug225: OK
 === bug226_tokenize_forheader_test sha1=92e030db0b3f ===
 -- inline in the for-header (the regressing form) --
 a
@@ -183,6 +201,8 @@ x
 bug226_tokenize_forheader_test: OK
 === bug227_tokenize_any_test sha1=1eb81f75a916 ===
 bug227: OK
+=== bug233_lambda_param_shadow_test sha1=365c635649d2 ===
+bug233: OK
 === bug235_exposing_test sha1=64cadf20c66f ===
 7
 9
@@ -191,14 +211,20 @@ bug227: OK
 9
 === bug239_empty_list_literal_test sha1=159abcf36981 ===
 bug239_empty_list_literal_test: ok
+=== bug240_empty_set_annotated_test sha1=b8093db02bcc ===
+bug240: OK 2 1 2 0
 === bug241_progress_io_test sha1=4d54487c5c98 ===
 bug241: OK
 === bug242_csv_roundtrip_test sha1=2cf6c5597430 ===
 bug242: OK
 === bug245_shell_process_run_test sha1=2ca53053449c ===
 bug245: OK
+=== bug246_unannotated_generic_ctor_test sha1=b8775b1614b5 ===
+bug246: OK
 === bug248_this_check_scope_test sha1=c6244e0a6d5c ===
 bug248: OK
+=== bug250_httpresponse_ctor_test sha1=05c92d6f1dee ===
+bug250: OK 200 made returned factory
 === bug253_frontend_diagnostics_test sha1=86bd4b8317e5 ===
 void-bare
 bug253: OK
@@ -222,6 +248,8 @@ thread <TID> panic: assert failed at test/bug259_runtime_exit_code_test.zbr:29
 3
 4
 bug260: OK
+=== bug262_native_zig_dep_test sha1=54489f12b384 ===
+bug262: OK 42
 === bug265_extern_no_deps_test sha1=92cfceb39d57 ===
 42
 === bug267_ziglit_local_use_test sha1=2533347e72f8 ===
@@ -359,6 +387,51 @@ note: 1 module(s) imported by more than one module AND declaring module-level st
 bug295-shared=2
 === bug296_param_in_contract_test sha1=caacf9b1f7f7 ===
 bug296=1
+=== bug301_runtime_byte_test sha1=2b5114d30ac1 ===
+bug301: OK
+=== bug304_305_compound_hex_test sha1=a7e2ab3bf611 ===
+bug304/305: OK
+=== bug307_delete_missing_test sha1=5406caafb49d ===
+bug307: OK
+=== bug308_try_delete_test sha1=5b9a132fca43 ===
+bug308: OK
+=== bug309_regex_oom_test sha1=e7a8dee7149b ===
+bug309: OK
+=== bug310_file_append_test sha1=2a95fc6b011d ===
+bug310: OK
+=== bug313_checked_index_test sha1=2706bfb2abf3 ===
+bug313: OK
+=== bug315_protected_freed_test sha1=d3325e0e3e2f ===
+6
+3
+3
+14
+14
+v=ok
+enum ok
+9
+bug315: OK
+=== bug316_internal_freed_test sha1=95507a3d163c ===
+6
+11
+v=ok
+enum ok
+9
+7
+3
+bug316: OK
+=== bug326_sys_exit_range_test sha1=86adecbec188 ===
+bug326: OK
+=== bug329_print_sourcemap_test sha1=40afbf607049 ===
+L25
+L14
+L27
+L21
+L29
+L31
+bug329: OK
+=== bug332_loopvar_scope_test sha1=40f8e9fb5aa0 ===
+bug332: OK
 === build_declarative_test sha1=6859218cdc5a ===
 build declarative: ok
 === build_smoke_test sha1=8bfb8015d704 ===
@@ -648,15 +721,15 @@ test/forgot_parens_test.zbr:7:5: warning: 'greet' is a function used as a value 
     ^
 === forin_throws_test sha1=5108449fdb08 ===
 forin_throws_test: run with 'zebra test'
-=== fuzz_f1_primitive_names_test sha1=f19f64457d63 ===
-i8=7 f32=1.5 usize=3 c_int=abc r=10.5
-fuzz_f1: OK
 === fuzz_f11_unused_capture_ternary_test sha1=8a8ca1cb6b8d ===
 x=10
 a=7
 y=2
 y=2
 fuzz_f11: OK
+=== fuzz_f1_primitive_names_test sha1=f19f64457d63 ===
+i8=7 f32=1.5 usize=3 c_int=abc r=10.5
+fuzz_f1: OK
 === fuzz_f2_unused_local_test sha1=693203703cf7 ===
 w=3 bump=11
 fuzz_f2: OK
@@ -886,6 +959,8 @@ is green
 is_not: OK
 === iter_collision_test sha1=020c0d9de531 ===
 abc xyz 2 1
+=== json_keys_at_test sha1=0ad9f7ea2dc0 ===
+json_keys_at: OK
 === json_parse_strict_tc_test sha1=5746140e27ac ===
 json_parse_strict_tc_test OK
 === json_parse_strict_test sha1=ad0e9d183ef6 ===
@@ -902,10 +977,10 @@ len_size_test: run with 'zebra test'
 3
 === list_functional_test sha1=e90db9ae57a6 ===
 list_functional: OK
-=== list_index_test sha1=de33e181220c ===
+=== list_index_test sha1=d51670be958c ===
 local=20
 field=99
-str=e
+str=101
 === list_iter sha1=2e04c575a903 ===
 10
 20
@@ -926,6 +1001,13 @@ list_sort: OK
 [ERR  ] only error visible
 [INFO ] writing to stdout now
 All log tests passed.
+=== loop_continue_break_test sha1=5a976cd7165b ===
+1357
+9
+-1
+1245
+00 10 20 
+loop-continue-break: OK
 === lowlevel_smoke_test sha1=7dfed2f1b037 ===
 [gui] text: inside group
 [gui] sameLine
@@ -1343,6 +1425,10 @@ hello world
 stop-method: OK
 === str_method_chain_test sha1=60069e1bd5fc ===
 str_method_chain: OK
+=== stream_separation_test sha1=5ab3be0532b1 ===
+STDOUT-MARKER-9f3a
+STDERR-MARKER-4c7b
+second stdout line
 === string_branch_test sha1=cf919d4e75f8 ===
 start command
 start command
@@ -1367,8 +1453,8 @@ hi
    hi   
 a
 b
-=== string_index_test sha1=3c5d228b30dd ===
-h
+=== string_index_test sha1=fa29c7f47a29 ===
+104
 el
 5
 === string_methods sha1=3e2debbef283 ===
@@ -1645,5 +1731,17 @@ with_call_test PASS
 === with_test sha1=5a0146c21abd ===
 10
 20
+=== zig_interop_test sha1=03df94960ef3 ===
+Basic math operations:
+49
+10
+42
+Edge cases:
+0
+5
+0
+1
+Float operations:
+5.85
 === ziglit_param_test sha1=87ebdb611c1f ===
 ziglit_param: OK

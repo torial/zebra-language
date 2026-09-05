@@ -11,6 +11,8 @@ array_in_test
 atomic_test
 backed_enum_test
 bench_zebra
+bitwise_golden_vectors_test
+bitwise_semantics_test
 branch_edge_test
 branch_exhaustive_else_test
 branch_exhaustive_test
@@ -18,7 +20,11 @@ branch_guard_test
 branch_inline_return_test
 branch_range_test
 branch_struct_test
+bug027_chain_expression_position_test
+bug079_chain_statement_positions_test
 bug082_test
+bug083_generic_implements_test
+bug085_static_field_bare_test
 bug088_try_return_test
 bug089_mixin_method_test
 bug090_reflect_fieldnames_test
@@ -39,6 +45,7 @@ bug119_once_method_test
 bug120_sys_readline_test
 bug121_arena_copyout_test
 bug123_user_init_test
+bug124_boxed_nilable_ctor_test
 bug168_crossmod_prim_return_test
 bug172_list_char_test
 bug173_string_coerce_test
@@ -49,17 +56,23 @@ bug195_map_param_test
 bug196_nested_list_test
 bug198_union_optional_field_test
 bug202_preamble_name_collision_test
+bug212_code_editor_const_test
 bug221_transitive_init_test
 bug224_format_multiarg_test
+bug225_str_index_byte_test
 bug226_tokenize_forheader_test
 bug227_tokenize_any_test
+bug233_lambda_param_shadow_test
 bug235_exposing_test
 bug238_import_except_test
 bug239_empty_list_literal_test
+bug240_empty_set_annotated_test
 bug241_progress_io_test
 bug242_csv_roundtrip_test
 bug245_shell_process_run_test
+bug246_unannotated_generic_ctor_test
 bug248_this_check_scope_test
+bug250_httpresponse_ctor_test
 bug253_frontend_diagnostics_test
 bug253_tuple_index_high_test
 bug253_uninit_collection_field_test
@@ -67,6 +80,7 @@ bug255_unfuzzed_constructs_test
 bug256_bitwise_not_test
 bug259_runtime_exit_code_test
 bug260_bindlist_param_test
+bug262_native_zig_dep_test
 bug265_extern_no_deps_test
 bug267_ziglit_local_use_test
 bug268_branch_int_test
@@ -96,6 +110,18 @@ bug295_cycle_test
 bug295_diamond_test
 bug295_shared_state_test
 bug296_param_in_contract_test
+bug301_runtime_byte_test
+bug304_305_compound_hex_test
+bug307_delete_missing_test
+bug308_try_delete_test
+bug309_regex_oom_test
+bug310_file_append_test
+bug313_checked_index_test
+bug315_protected_freed_test
+bug316_internal_freed_test
+bug326_sys_exit_range_test
+bug329_print_sourcemap_test
+bug332_loopvar_scope_test
 build_declarative_test
 build_smoke_test
 capture_boundary
@@ -225,6 +251,7 @@ is_not_class_test
 is_not_precedence_test
 is_not_test
 iter_collision_test
+json_keys_at_test
 json_parse_strict_tc_test
 json_parse_strict_test
 json_test
@@ -240,6 +267,7 @@ list_setter_parse_test
 list_sort_comparator_test
 log_json_test
 log_test
+loop_continue_break_test
 lowlevel_smoke_test
 marker_struct_test
 math_test
@@ -277,6 +305,7 @@ postfix_bang_test
 profile_attr_test
 profile_test
 progress_test
+query_string_test
 raise_auto
 random_instance_test
 random_test
@@ -320,6 +349,7 @@ stdlib_str_test
 stdlib_test
 stop_method_test
 str_method_chain_test
+stream_separation_test
 string_branch_test
 string_builder_test
 string_format_test
@@ -343,6 +373,7 @@ tc_smoke_main
 tc_stdlib_test
 tco_test
 tcp_advanced_test
+tcp_echo_roundtrip_test
 tcp_serve_test
 tcp_test
 terminal_test
@@ -387,4 +418,5 @@ with_call_test
 with_test
 ws_echo_test
 ws_smoke_test
+zig_interop_test
 ziglit_param_test

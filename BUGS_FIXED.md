@@ -6,6 +6,86 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-225: `s[i]` is typed `char` but yields a byte — FIXED 2026-09-05 (retype pulled forward from 1.x)
+
+> **DECIDED 2026-08-03 (Sean):** `s[i]` **is a byte**, and the documentation now says so
+> plainly rather than hedging. This puts Zebra with **Go** (indexes to a byte, never
+> pretends otherwise) and **Rust** (forbids `str` indexing outright) — good company, and
+> the honest position: a UTF-8 string has no O(1) i-th character, so any language offering
+> one is lying or copying.
+>
+> **This is NO LONGER A 0.9 BLOCKER.** What remains is the *type* (`char` holding a byte),
+> which is a 1.x retype — see the blast radius below. QUICKSTART now leads with the rule
+> ("index for bytes, iterate for characters") instead of burying it in a known-gap note.
+>
+> **BUG-247** (fixed) removed the one place the incoherence actively misled a user: the
+> lexer reported a non-ASCII byte as a character that was not in the source file.
+Found 2026-07-29 by the §28e derivation. `s[i]` is typed `char` (u21) but holds a raw
+UTF-8 **byte**, so for any multi-byte codepoint it produces a character that is not in
+the string — and it does so silently, with no error at any stage.
+
+```zebra
+def main()
+    var s: str = "eéx"
+    print(s.len.toString())              # 4  — bytes, honest
+    print(s.codePointCount().toString()) # 3  — codepoints, honest
+    print(s[1].toString())               # Ã  — WRONG. byte 0xC3 widened to U+00C3
+    for c in s.chars()
+        print(c.toString())              # e é x — correct
+```
+
+Emitted: `const a_index: u21 = s[@as(usize, @intCast(0))];` — the byte is widened to
+u21, so `.toString()` UTF-8-encodes 0xC3 as the codepoint U+00C3 (`Ã`). Only `chars()`
+is honest, because only `chars()` decodes.
+
+**This is the one string incoherence with a real blast radius, and it is a language
+design call, not a bug fix.** The selfhost compiler's own lexer is built on it —
+`Lexer.zbr:116` is `def peek(): char` returning `src[pos]`, ~60 subscript sites in
+that file alone, ~104 across `selfhost/`, and the 559 `c'x'` literals compare against
+the result. Retyping `s[i]` to `byte` therefore requires deciding how `byte` and `char`
+compare, which is design work.
+
+Options, in ascending cost: (a) **document the limit for 0.9** and retype in 1.x —
+Go and Rust both chose codepoint-with-a-documented-byte-layer and neither pretends an
+index yields a character; (b) retype `s[i]` to `byte` and define `byte`/`char`
+comparison; (c) make `s[i]` on a `str` an error and force `byteAt(i)` or `chars()`,
+which is clearest and most disruptive. **Recommended: (a) for 0.9**, since the fix
+competes directly with the pre-0.9 churn freeze and the honest documentation is most of
+the value. Cross-ref [[§28e]] and BUG-223, which is the same incoherence at zero cost.
+
+**FIXED 2026-09-05.** `s[i]` is typed `byte` (`uint_n(8)`). Sean pulled the retype forward
+from 1.x -- "for 225 let's mirror Go" -- so the type finally matches the value and the two
+byte spellings agree: before this, `s[0]` printed `h` and `s.charAt(0)` printed `104` for
+the same byte of the same string. `"héllo"[1].toString()` printed `Ã` and now prints `195`.
+
+**THE REASON THIS WAS DEFERRED TO 1.x WAS WRONG, AND THAT IS THE FINDING.** The entry above
+argues the retype "requires deciding how `byte` and `char` compare", because the selfhost
+lexer is built on it -- ~104 subscript sites, 559 `c'x'` literals, 61 of them the shape
+`src[pos] == c'\n'`. **No comparison rule had to be defined.** Zig resolves a `u8` against a
+`u21` char literal by peer type resolution, so every one of those sites survives the retype
+untouched; Go's untyped-constant rule arrives for free rather than being built. The fix is
+ONE LINE plus its rationale, and what proved it was the compiler's own round-trip, not an
+argument. Option (b) from the list above, at roughly the cost that was assigned to (a).
+
+Verified: full rebuild OK (the compiler self-compiles), QUICK **30/30**, smoke **398/398**,
+round-trip byte-identical, and a Zebra-level `s[0] == c'h'` compiles and holds.
+
+**THE FIXTURE'S FIRST DRAFT WOULD HAVE PASSED AGAINST THE BUG, and it is worth knowing why,
+because the trap is specific to this class.** It asserted `s[1] == 195`. The VALUE was
+always the correct byte -- a u21 holding 195 still equals 195 -- so only the TYPE was ever
+wrong, and a type is observable exactly where it drives formatting. Every assertion in
+`test/bug225_str_index_byte_test.zbr` therefore goes through `.toString()`. Comparing the
+value is a cooperative attacker; comparing the RENDERING is the real one. It was then
+watched genuinely RED against a compiler with the retype mutated out (fails at
+`assert s[1].toString() == "195"`) and green with it restored.
+
+The fixture's oracle is deliberately NON-ASCII. An ASCII-only fixture passes identically
+before and after, since byte 104 and codepoint U+0068 are the same character -- it would
+pin nothing. It also asserts `.len` and `.codePointCount()` DISAGREE, so that if the string
+ever loses its multi-byte character every assertion below does not quietly go vacuous.
+
+---
+
 ### BUG-319: indexing has TWO partial spellings — `.at()` dies on `str`, `[i]` cannot be assigned — FIXED 2026-09-05
 
 **Found by Sean asking "should we get rid of `.at()`? What value does it add?" — a question

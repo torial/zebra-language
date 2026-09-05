@@ -317,7 +317,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:207
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:208
-            const c: u21 = _zbr_at(self.src, self.pos);
+            const c: u8 = _zbr_at(self.src, self.pos);
 // zbr:selfhost/Lexer.zbr:209
             if ((c == '\t')) {
 // zbr:selfhost/Lexer.zbr:210
@@ -627,7 +627,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:372
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:373
-            const c: u21 = _zbr_at(self.src, self.pos);
+            const c: u8 = _zbr_at(self.src, self.pos);
 // zbr:selfhost/Lexer.zbr:374
             if ((c == '\\')) {
 // zbr:selfhost/Lexer.zbr:375
@@ -693,7 +693,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:409
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:410
-            const c: u21 = _zbr_at(self.src, self.pos);
+            const c: u8 = _zbr_at(self.src, self.pos);
 // zbr:selfhost/Lexer.zbr:411
             if ((c == '\\')) {
 // zbr:selfhost/Lexer.zbr:412
@@ -739,7 +739,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:436
         while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:437
-            const c: u21 = _zbr_at(self.src, self.pos);
+            const c: u8 = _zbr_at(self.src, self.pos);
 // zbr:selfhost/Lexer.zbr:439
             if (((c == '$') and (self.peek1() == '{'))) {
 // zbr:selfhost/Lexer.zbr:440
@@ -840,7 +840,7 @@ pub const _zbr_ty_Lexer = struct {
                 { _zbr_rt._error_ctx = .{ .message = "UnterminatedInterpolation" }; return error.ZebraError; }
             }
 // zbr:selfhost/Lexer.zbr:506
-            const c: u21 = _zbr_at(self.src, self.pos);
+            const c: u8 = _zbr_at(self.src, self.pos);
 // zbr:selfhost/Lexer.zbr:507
             if (((c == ' ') or (c == '\t'))) {
 // zbr:selfhost/Lexer.zbr:508
@@ -1106,7 +1106,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:657
         if (_zebra_lt((self.pos + 2), @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:658
-            const c2: u21 = _zbr_at(self.src, (self.pos + 2));
+            const c2: u8 = _zbr_at(self.src, (self.pos + 2));
 // zbr:selfhost/Lexer.zbr:659
             if ((((c == '/') and (c1 == '/')) and (c2 == '='))) {
 // zbr:selfhost/Lexer.zbr:660
@@ -1587,7 +1587,7 @@ pub const _zbr_ty_Lexer = struct {
 
     pub fn scanToken(self: *_zbr_ty_Lexer) anyerror!void {
 // zbr:selfhost/Lexer.zbr:878
-        const c: u21 = _zbr_at(self.src, self.pos);
+        const c: u8 = _zbr_at(self.src, self.pos);
 // zbr:selfhost/Lexer.zbr:879
         const ln: i64 = self.line;
 // zbr:selfhost/Lexer.zbr:880
@@ -1727,7 +1727,7 @@ pub const _zbr_ty_Lexer = struct {
                 }
             }
 // zbr:selfhost/Lexer.zbr:950
-            const c: u21 = _zbr_at(self.src, self.pos);
+            const c: u8 = _zbr_at(self.src, self.pos);
 // zbr:selfhost/Lexer.zbr:952
             if (((c == ' ') or (c == '\t'))) {
 // zbr:selfhost/Lexer.zbr:953

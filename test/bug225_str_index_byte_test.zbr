@@ -1,0 +1,50 @@
+## BUG-225: `s[i]` is a BYTE, and its TYPE now says so.
+##
+## The VALUE was always a byte; only the type lied. Typed `char` (u21), `.toString()`
+## UTF-8-encoded that byte as though it were a codepoint, so a non-ASCII string produced a
+## character that is NOT IN THE STRING -- silently, with no error at any stage.
+##
+## THE ORACLE IS DELIBERATELY NON-ASCII. An ASCII-only fixture passes identically before
+## and after the fix, because byte 104 and codepoint U+0068 are the same character, so it
+## would pin nothing at all. `e-acute` is two bytes (0xC3 0xA9), and that is the only place
+## the two answers diverge. Watched RED against the pre-fix compiler.
+def main()
+    var s: str = "héllo"
+
+    # `.len` is BYTES and `.codePointCount()` is CODEPOINTS. Both were always honest, and
+    # they MUST disagree here -- if they ever agree, the fixture has lost its non-ASCII
+    # character and every assertion below it goes vacuous.
+    assert s.len == 6
+    assert s.codePointCount() == 5
+
+    # EVERY ASSERTION HERE GOES THROUGH .toString(), AND THAT IS THE WHOLE POINT.
+    # The first draft of this fixture asserted `s[1] == 195` and would have PASSED AGAINST
+    # THE BUG: the value was always the right byte, so a u21 holding 195 still equals 195.
+    # Only the TYPE was wrong, and the type is observable exactly where it drives
+    # formatting. Comparing the value is a cooperative attacker; comparing the rendering is
+    # the real one.
+    # THE BUG. Byte 1 is 0xC3 = 195. Before the retype this printed the codepoint U+00C3.
+    assert s[1].toString() == "195"
+
+    # `s[i]` and `charAt(i)` must AGREE. Before the retype `s[0]` was `char` and
+    # `charAt(0)` was `byte` -- the same byte with two different types, and so two
+    # different printed answers for one value.
+    assert s[0].toString() == "104"
+    assert s.charAt(0).toString() == "104"
+    assert s[0].toString() == s.charAt(0).toString()
+
+    # A byte compares against a char LITERAL. The compiler's own lexer does exactly this at
+    # 61 sites (`src[pos] == c'\n'`), and it is why the retype cost nothing: Zig resolves
+    # u8 against a u21 literal by peer type resolution, so no byte/char comparison rule had
+    # to be defined. This assertion is what keeps that property from silently regressing.
+    assert s[0] == c'h'
+
+    # Iteration still DECODES, so the codepoint path is untouched by the retype. Without
+    # this leg the fix could have been "make everything a byte", which is a different and
+    # wrong language.
+    var n: int = 0
+    for c in s.chars()
+        n = n + 1
+    assert n == 5
+
+    print("bug225: OK")

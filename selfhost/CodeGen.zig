@@ -170,7 +170,7 @@ pub fn _zbr_fn_isUpperCase(s: []const u8) bool {
         return false;
     }
 // zbr:selfhost/CodeGen.zbr:64
-    const c: u21 = _zbr_at(s, 0);
+    const c: u8 = _zbr_at(s, 0);
 // zbr:selfhost/CodeGen.zbr:65
     return (_zebra_ge(c, 'A') and _zebra_le(c, 'Z'));
 }

@@ -462,6 +462,58 @@ nothing and doubles the review.
 **One thing to preserve in step 3:** a user class may define its own `.at()` method --
 codegen has an `at_is_user_method` branch. A blind textual rewrite would break those.
 
+
+
+---
+
+**DESIGN FOR THE COMPOUND HALF, worked out 2026-09-05 but NOT YET IMPLEMENTED.** Recorded
+because the obvious two designs are both WRONG, and each looks right until a specific
+question is asked of it.
+
+The shape is settled: `xs[i] op= v` must become
+`_zbr_set(<recv>, <idx>, <recv[idx] op v>)`, since the read form has been `_zbr_at(recv, i)`
+-- a function CALL -- since BUG-313.
+
+**Design 1, REJECTED: a helper that re-emits each operator's lowering.** Write
+`emitCompoundRhs(op, ...)` owning the four special lowerings (`@divTrunc`, `std.math.pow`,
+`_zbr_shl`, `_zbr_shr`) and DERIVE the rest from `assignOpStr` by dropping the trailing `=`.
+This is wrong for `/=` and `%=`. Zig accepts the compound `a /= b` and `a %= b` on signed
+integers -- `test/bug304_305_compound_hex_test.zbr` exercises both and passes -- but REJECTS
+the same operators in EXPRESSION position, which is what the derivation produces. So
+`xs[i] /= v` would emit `_zbr_at(r,i) / v` and fail to compile, while the identical
+operation on a plain variable compiles today. The lesson is narrow and worth keeping: an
+operator's compound-assignment form and its binary-expression form are NOT the same Zig
+question, and a table that maps between them by string surgery cannot know that.
+
+**Design 2, REJECTED: bind temporaries and inject the read as a `zig_lit`.** Emit
+`{ const _r = <recv>; const _i = <idx>; _zbr_set(_r, _i, <binary(op, zig_lit("_zbr_at(_r,_i)"), v)>); }`
+and let `genExpr` handle every lowering, so nothing is duplicated at all. It evaluates the
+receiver and index exactly once, which is the property design 3 gives up. But `BinaryOp.div`
+discriminates float from int by calling `inferExpr(b.left)`, and a `zig_lit` carries no
+type -- so `xs[i] /= 2.0` on a `List(float)` would take the integer branch and emit
+`@divTrunc` on floats. A silent wrong lowering caused by making the operand opaque to
+inference.
+
+**Design 3, ACCEPTED (not yet built).** Synthesize `binary(binOpOfAssign(a.op), a.target,
+a.value)` -- the ORIGINAL index expression as the left operand, so inference sees a real
+typed node -- and emit `_zbr_set(recv, idx, <that>)`. Every lowering is reused rather than
+restated, and the float/int discrimination works because the operand is exactly what it
+was. The cost is that `recv` and `idx` are MENTIONED TWICE, so it is only correct when
+neither contains a call.
+
+Guard it on that, and take the path only when the receiver and index are call-free
+(`ident` / `member` / `index` / literal are all fine -- they are reads). When a call IS
+present, fall through to today's behaviour, which is a LOUD zig error rather than a silent
+double evaluation: `xs[next()] += 1` advancing an iterator twice would be valid Zig
+computing the wrong answer -- the BUG-226 class, invisible to every compile-only gate. Left
+loud on purpose, and narrower than the bug it replaces.
+
+Needs `binOpOfAssign(AssignOp): BinaryOp` (every variant already exists in `BinaryOp`:
+add/sub/mul/div/int_div/mod/pow/bit_and/bit_or/bit_xor/shl/shr) and a call-free predicate.
+Verify with a fixture covering all twelve operators on BOTH `List(int)` and `List(float)` --
+the float leg is what discriminates designs 2 and 3, so an int-only fixture would pass
+against the wrong one. FULL tier before committing: this is `genAssign`, which every
+assignment in every program goes through.
 ### BUG-317: `--emit-zig > file` produces an empty file — REOPENED 2026-08-29, NOT fixed by BUG-318
 
 > **CLOSED AS A DUPLICATE AND REOPENED THE SAME HOUR. The closure was wrong and the reason
@@ -2188,55 +2240,6 @@ not a 0.9 blocker. **Reclassified: not a silent-wrong-answer bug.** Whoever pick
 should decide whether the refusal IS the intended resolution and close it, rather than
 implementing the boxed-variant registration the entry proposes.
 
-
----
-
-### BUG-225: `s[i]` is typed `char` but yields a byte — ⬜ OPEN (1.x retype; 0.9 SEMANTICS DECIDED 2026-08-03)
-
-> **DECIDED 2026-08-03 (Sean):** `s[i]` **is a byte**, and the documentation now says so
-> plainly rather than hedging. This puts Zebra with **Go** (indexes to a byte, never
-> pretends otherwise) and **Rust** (forbids `str` indexing outright) — good company, and
-> the honest position: a UTF-8 string has no O(1) i-th character, so any language offering
-> one is lying or copying.
->
-> **This is NO LONGER A 0.9 BLOCKER.** What remains is the *type* (`char` holding a byte),
-> which is a 1.x retype — see the blast radius below. QUICKSTART now leads with the rule
-> ("index for bytes, iterate for characters") instead of burying it in a known-gap note.
->
-> **BUG-247** (fixed) removed the one place the incoherence actively misled a user: the
-> lexer reported a non-ASCII byte as a character that was not in the source file.
-Found 2026-07-29 by the §28e derivation. `s[i]` is typed `char` (u21) but holds a raw
-UTF-8 **byte**, so for any multi-byte codepoint it produces a character that is not in
-the string — and it does so silently, with no error at any stage.
-
-```zebra
-def main()
-    var s: str = "eéx"
-    print(s.len.toString())              # 4  — bytes, honest
-    print(s.codePointCount().toString()) # 3  — codepoints, honest
-    print(s[1].toString())               # Ã  — WRONG. byte 0xC3 widened to U+00C3
-    for c in s.chars()
-        print(c.toString())              # e é x — correct
-```
-
-Emitted: `const a_index: u21 = s[@as(usize, @intCast(0))];` — the byte is widened to
-u21, so `.toString()` UTF-8-encodes 0xC3 as the codepoint U+00C3 (`Ã`). Only `chars()`
-is honest, because only `chars()` decodes.
-
-**This is the one string incoherence with a real blast radius, and it is a language
-design call, not a bug fix.** The selfhost compiler's own lexer is built on it —
-`Lexer.zbr:116` is `def peek(): char` returning `src[pos]`, ~60 subscript sites in
-that file alone, ~104 across `selfhost/`, and the 559 `c'x'` literals compare against
-the result. Retyping `s[i]` to `byte` therefore requires deciding how `byte` and `char`
-compare, which is design work.
-
-Options, in ascending cost: (a) **document the limit for 0.9** and retype in 1.x —
-Go and Rust both chose codepoint-with-a-documented-byte-layer and neither pretends an
-index yields a character; (b) retype `s[i]` to `byte` and define `byte`/`char`
-comparison; (c) make `s[i]` on a `str` an error and force `byteAt(i)` or `chars()`,
-which is clearest and most disruptive. **Recommended: (a) for 0.9**, since the fix
-competes directly with the pre-0.9 churn freeze and the honest documentation is most of
-the value. Cross-ref [[§28e]] and BUG-223, which is the same incoherence at zero cost.
 
 ---
 

@@ -1784,7 +1784,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:915
         while (_zebra_lt(i, @as(i64, @intCast(s.len)))) {
 // zbr:selfhost/AstBuilder.zbr:916
-            const c: u21 = _zbr_at(s, i);
+            const c: u8 = _zbr_at(s, i);
 // zbr:selfhost/AstBuilder.zbr:917
             if ((_zebra_lt(c, '0') or _zebra_gt(c, '9'))) {
 // zbr:selfhost/AstBuilder.zbr:918

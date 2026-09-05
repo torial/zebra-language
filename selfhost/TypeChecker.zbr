@@ -2971,7 +2971,27 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             var idx_recv: Type_ = inferExpr(ei.object, ctx)
             branch idx_recv
                 on Type_.string_
-                    return Type_.char_
+                    # BUG-225. `s[i]` is a BYTE and always was; only the TYPE lied.
+                    # Typed `char` (u21), the raw byte was widened, so `"héllo"[1]`
+                    # printed a character that is NOT IN THE STRING -- byte 0xC3 shown as
+                    # the codepoint U+00C3 -- silently, with no error at any stage.
+                    #
+                    # Semantics were decided 2026-08-03 (Sean): Zebra indexes to a byte,
+                    # like Go, because a UTF-8 string has no O(1) i-th character and any
+                    # language offering one is lying. Only the RETYPE was deferred, as 1.x
+                    # work; Sean pulled it forward 2026-09-05 ("mirror Go"). This is option
+                    # (b) from the ledger entry.
+                    #
+                    # WHY IT IS AFFORDABLE, which is the half the deferral turned on: the
+                    # compiler's own lexer compares `src[pos] == c'\n'` at 61 sites, and
+                    # Zig resolves a u8 against a u21 char literal by peer type resolution,
+                    # so the comparisons survive the retype untouched. That is Go's
+                    # untyped-constant rule arriving for free rather than being built.
+                    #
+                    # `charAt(i)` has returned uint_n(8) since BUG-223, so this makes the
+                    # two spellings AGREE instead of contradicting each other -- before
+                    # this, `s[0]` printed `h` and `s.charAt(0)` printed `104`.
+                    return Type_.uint_n(8)
                 on Type_.list_ as list_elem
                     return list_elem
                 else

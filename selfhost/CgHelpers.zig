@@ -1761,7 +1761,7 @@ pub fn _zbr_fn_isZigPrimitiveName(name: []const u8) bool {
 // zbr:selfhost/CgHelpers.zbr:966
     if (_zebra_ge(@as(i64, @intCast(name.len)), 2)) {
 // zbr:selfhost/CgHelpers.zbr:967
-        const c0: u21 = _zbr_at(name, 0);
+        const c0: u8 = _zbr_at(name, 0);
 // zbr:selfhost/CgHelpers.zbr:968
         if (((c0 == 'i') or (c0 == 'u'))) {
 // zbr:selfhost/CgHelpers.zbr:969

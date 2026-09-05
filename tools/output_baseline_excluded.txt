@@ -4,17 +4,19 @@
 # that disagrees once and is then unanimous is kept, and counted as a
 # transient in the run summary rather than dropped in silence.
 # Regenerated on every re-baseline, so it cannot silently rot.
-arena_concurrency_hazard_test	< thread <TID> panic: reached unreachable code
+arena_concurrency_hazard_test	< arena_hazard: 2500
 bug193_listdir_test	(filesystem enumeration: counts files that change as the repo does)
 dir_walk_test	(filesystem enumeration: counts files that change as the repo does)
 http_echo_test	(network: contacts a remote host — outcome not ours to control)
 http_serve_test	(network: contacts a remote host — outcome not ours to control)
 http_test	(network: contacts a remote host — outcome not ours to control)
 https_test	(network: contacts a remote host — outcome not ours to control)
-log_json_test	< {"ts":1787173951,"level":"info","msg":"hello world"}
-profile_test	< outer 50
+log_json_test	< {"ts":1788605312,"level":"info","msg":"hello world"}
+profile_test	< outer 54
+query_string_test	(network: contacts a remote host — outcome not ours to control)
 server_test	(network: contacts a remote host — outcome not ours to control)
 tcp_advanced_test	(network: contacts a remote host — outcome not ours to control)
+tcp_echo_roundtrip_test	(network: contacts a remote host — outcome not ours to control)
 tcp_serve_test	(network: contacts a remote host — outcome not ours to control)
 tcp_test	(network: contacts a remote host — outcome not ours to control)
 udp_test	(network: contacts a remote host — outcome not ours to control)

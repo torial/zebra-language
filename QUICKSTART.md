@@ -221,8 +221,9 @@ the identity was false for negatives — BUG-236.)
 
 **Indexing** looks identical for ASCII and diverges for everything else: `s[i]` yields a
 **byte**, so on non-ASCII text it hands you half a character. Iterate `.chars()` when you
-mean characters, and see "Bytes, codepoints, and graphemes" below. (`s[i]` is currently
-typed `char` while holding a byte — BUG-225, deferred to 1.x.)
+mean characters, and see "Bytes, codepoints, and graphemes" below. (`s[i]` is typed
+`byte` as of BUG-225, and agrees with `charAt(i)`, which has returned `byte` since
+BUG-223.)
 
 ---
 
@@ -1393,13 +1394,20 @@ for c in s.chars()                   # e é x — the honest way to read charact
 the text may be non-ASCII. `.len`, `.codePointCount()`, `.chars()` and `.charAt()` are all
 honest today.
 
-**Known wart (BUG-225):** the *value* is right but the *type* is not — `s[i]` is typed
-`char` (u21) while holding a byte. Nothing in the language converts that byte to a
-character, so it cannot silently become one; but `.toString()` on it will UTF-8-encode the
-byte as though it were a codepoint, so `"eéx"[1].toString()` prints `Ã`. **Retyping it to
-`byte` is a 1.x change** — `s[i]` returning `char` is what the selfhost compiler's own
-lexer is built on (~104 subscript sites, 559 `c'x'` literals), so the retype requires
-defining `byte`/`char` comparison and is not worth the churn before the 0.9 freeze.
+**Retyped 2026-09-05 (BUG-225).** `s[i]` is typed `byte`, so the type now matches the
+value. Until then it was typed `char` (u21) while holding a byte, and `.toString()`
+UTF-8-encoded that byte as though it were a codepoint — `"eéx"[1].toString()` printed
+`Ã`, a character that is not in the string. It prints `195` now, which is the byte.
+`s[i]` and `charAt(i)` finally agree; before this, `s[0]` printed `h` and
+`s.charAt(0)` printed `104` for the same string.
+
+**The retype had been deferred to 1.x, and the reason turned out not to hold.** The
+objection was that it required defining `byte`/`char` comparison, because the selfhost
+lexer is built on it (~104 subscript sites, 559 `c'x'` literals, 61 of the form
+`src[pos] == c'\n'`). That definition was never needed: Zig resolves a `u8` against a
+`u21` char literal by peer type resolution, so every one of those comparisons survives
+the retype untouched — Go's untyped-constant rule arriving for free rather than being
+built. The compiler's own round-trip is what proved it, not an argument.
 See `docs/QUALITY_AUDIT_2026-08-03.md` §5c for the options that were weighed.
 
 ### String ownership: what borrows and what owns
