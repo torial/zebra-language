@@ -6,6 +6,93 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-332: the selfhost rejects source the bootstrap accepts — three spurious "expected str, got int" in main.zbr, with fabricated positions
+
+**Status:** FIXED 2026-09-04, same day. **ROOT CAUSE: the checking pass never bound
+for-in loop variables.** Only the seeding walk did, and the scope is not cleared between
+functions — so inside a loop body a variable resolved to whatever a name of the same
+spelling had been bound to in a PREVIOUSLY CHECKED function. In `selfhost/main.zbr`,
+`for k in obj.keys()` picked up `var k: int` from a function 2,500 lines earlier.
+
+**The fix is one derivation with two consumers.** The seed pass's element-type logic is
+extracted as `forInElemType(fi, ctx)` and called from BOTH passes; the checking pass now
+binds each loop variable to it. Binding `unknown_` is the safe floor — it carries no
+information, so a wrong type can never be asserted against it, which is the property that
+was missing.
+
+A `JsonValue`'s `keys()` also gained its own arm. The §28f `keys()`/`values()` case reads
+`key_t` off a `hashmap_` receiver and a JsonValue is not one, so it fell through to the
+floor and was then exposed to the stale binding.
+
+**This was general, not specific to my code.** Any name reused as a loop variable anywhere
+in a large module was exposed — `k` and `i` above all. It only surfaced now because the
+failure needs the loop variable to be PASSED somewhere typed: `out + k` is accepted for an
+int, so concatenation hides it. That is why the corpus never tripped it.
+
+**Fixture:** `test/bug332_loopvar_scope_test.zbr`, registered `smoke_run`, covering three
+iterator shapes (a `List(str)` parameter, `split()`, and `JsonValue.keys()`). Watched RED
+against a mutant with the check-pass binding removed — three errors, one per shape — and
+green after. Note the fixture's own error positions are ACCURATE; the fabricated ones
+appear only in the large module, so position quality is not part of this bug's repro.
+
+Adding ~155 lines of JSON-rewriting helpers to `selfhost/main.zbr` makes the SELFHOST
+report three `type mismatch: expected str, got int` errors. The BOOTSTRAP compiles the
+identical file with `rc=0` and no diagnostics. The code is therefore not the problem, and
+the selfhost is refusing valid source.
+
+**The positions are fabricated, which is most of why this took so long to characterise.**
+Every one of the three points somewhere the error cannot be:
+
+| reported | what is actually on that line |
+|---|---|
+| `main.zbr:2816:32` | `while i < v.len` — the line is 20 characters, so column 32 does not exist |
+| `main.zbr:2863:42` | `return body` — returning a `str` param from a `str` function |
+| `main.zbr:2902:52` | a COMMENT line |
+
+Chasing the carets is a dead end; they should be disbelieved outright. Related to the
+BUG-288 family (statements carrying no real position), but this is worse: these are not
+zeroes, they are plausible-looking coordinates that are wrong.
+
+**Reproduction, which is the useful part.** It is CUMULATIVE and does not reduce:
+
+```
+committed main.zbr                          -> 0 errors
+  + dbgJsonStr        (str escaper)         -> 0 errors
+  + dbgWithKey        (calls dbgJsonStr)    -> 1 error
+  + dbgRemapSetBreakpoints                  -> 2 errors
+  + dbgRemapStackTrace                      -> 3 errors
+```
+
+One error per function, and each of the three calls `dbgJsonStr`. But **every smaller form
+compiles clean**, so none of these is the trigger on its own:
+
+- `dbgJsonStr` alone in main.zbr — clean
+- `dbgWithKey` alone in main.zbr, with the loop variable used directly instead of passed to
+  `dbgJsonStr` — clean
+- `dbgJsonStr` + `dbgWithKey` **extracted to a standalone file** — clean
+- the same pair extracted **with a `use` statement** (multi-module path) — clean
+- three near-identical copies of the pattern appended to committed main.zbr — clean
+
+Ruled out by experiment, so nobody repeats them: name collision (renaming the helper
+changes nothing), module-level shadowing (main.zbr has ZERO module-level vars), a
+for-header inference fault of the BUG-226 kind (hoisting `obj.keys()` into a typed local
+changes nothing), the nested `Json.stringify(obj.at(k))` call (replacing it with a literal
+changes nothing), and a per-module count limit (three copies are fine).
+
+What remains is an interaction between a cross-function call and something about
+`main.zbr` specifically — 3,800 lines and ~200 top-level defs.
+
+**Why it hid.** `zebra -c` DOES report it, so this is not the front-end/codegen split that
+hides other bugs. What hid it is that the selfhost is the only compiler anyone runs on
+this file, and nothing compares the two on `selfhost/*.zbr`. `divergence_check` sweeps
+`test/` and `examples/`, not the compiler's own sources — so a selfhost-rejects /
+bootstrap-accepts divergence on the compiler itself is invisible to every gate.
+
+**Control when fixing.** The recipe above, driven from the committed tree. The saved WIP
+patch (264 diff lines) is what triggers it. A gate worth considering separately: compile
+`selfhost/*.zbr` with BOTH compilers and require agreement — that is the check whose
+absence let this exist, and it is cheap now that the bootstrap is otherwise unused.
+
 ### BUG-329: `print` statements carry no source position, so `zebra debug` cannot breakpoint them (SELFHOST REGRESSION)
 
 **Status:** FIXED 2026-09-04 (same session it was found). `AstBuilder.zbr` now derives

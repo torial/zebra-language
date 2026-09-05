@@ -3257,45 +3257,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             # inferExpr on the loop var yields unknown_, which is safe.
             # Exception: `for c in s.chars()` (single var) → c is char_,
             # so c.toString() in the body routes to utf8Encode, not allocPrint.
-            var loop_var_t: Type_ = Type_.unknown_
-            if fi.vars.len == 1 and isCharsCallExpr(fi.iter)
-                loop_var_t = Type_.char_
-            else if fi.vars.len == 1 and isStrListCallExpr(fi.iter)
-                loop_var_t = Type_.string_
-            else if fi.vars.len == 1 and isSqliteQueryCallExpr(fi.iter, ctx)
-                loop_var_t = Type_.sqlite_row
-            else if fi.vars.len == 1 and isRangeIterExpr(fi.iter)
-                loop_var_t = Type_.int_
-            else if fi.vars.len == 1
-                # §28f: for k in m.keys() / for v in m.values() — element type is
-                # the map's key_t / val_t (NOT blanket str; see isStrListCallExpr).
-                if fi.iter is Expr.call as kv_call
-                    if kv_call.callee is Expr.member as kv_mem
-                        if kv_mem.member == "keys" or kv_mem.member == "values"
-                            var recv_t: Type_ = inferExpr(kv_mem.object, ctx)
-                            if recv_t is Type_.hashmap_ as hm
-                                if kv_mem.member == "keys"
-                                    loop_var_t = hm.key_t
-                                else
-                                    loop_var_t = hm.val_t
-                # §28a: for-in over a list literal `[a, b, ...]` — element type
-                # is the annotation if present, else the first element's type.
-                # Mirrors inferForInElemType's list_lit arm in the bootstrap.
-                else if fi.iter is Expr.list_lit as lit_iter
-                    if lit_iter.elem_type != nil
-                        loop_var_t = typeFromRef(lit_iter.elem_type!)
-                    else if lit_iter.elems.len > 0
-                        loop_var_t = inferExpr(lit_iter.elems.at(0), ctx)
-                # `for x in obj.field` where field: List(str) on a same-file/dep struct.
-                else if fi.iter is Expr.member as iter_mem
-                    if iter_mem.object is Expr.ident as iter_obj
-                        if ctx.hasLocal(iter_obj.name)
-                            var obj_t: Type_ = ctx.localType(iter_obj.name)
-                            if obj_t is Type_.named as class_name
-                                var ft: Type_? = ctx.fieldTypeAny(class_name, iter_mem.member)
-                                if ft as ft_val
-                                    if ft_val is Type_.list_ as list_elem_t
-                                        loop_var_t = list_elem_t
+            var loop_var_t: Type_ = forInElemType(fi, ctx)
             for v in fi.vars
                 ctx.bind(v, loop_var_t)
             walkStmts(fi.stmts, ctx)
@@ -3637,6 +3599,61 @@ def typesCompatible(declared: Type_, inferred: Type_): bool
 # BUG-218 and cover ident/member/call, and BUG-249/284 added this/nil/result/zig-lit.
 # Prefer that position and fall back to the statement's, so an expression kind with no
 # span of its own is no worse off than before.
+# BUG-332: ONE derivation of a for-in loop variable's element type, used by BOTH the
+# seeding walk and the checking pass.
+#
+# It used to live only in the seeding walk. The checking pass bound nothing, so inside a
+# loop body a variable resolved to whatever a name of the same spelling had been bound to
+# in a PREVIOUSLY CHECKED FUNCTION -- the scope is not cleared between them. In
+# selfhost/main.zbr that meant `for k in obj.keys()` saw `var k: int` from a function
+# 2,500 lines earlier and reported `expected str, got int`, at a fabricated position, on
+# code the bootstrap compiles cleanly. Any name reused as a loop variable anywhere in a
+# large module was exposed to this; `k` and `i` are the obvious ones.
+def forInElemType(fi: StmtForIn, ctx: InferCtx): Type_
+    if fi.vars.len != 1
+        return Type_.unknown_
+    if isCharsCallExpr(fi.iter)
+        return Type_.char_
+    if isStrListCallExpr(fi.iter)
+        return Type_.string_
+    if isSqliteQueryCallExpr(fi.iter, ctx)
+        return Type_.sqlite_row
+    if isRangeIterExpr(fi.iter)
+        return Type_.int_
+    # §28f: for k in m.keys() / for v in m.values() — element type is the map's
+    # key_t / val_t (NOT blanket str; see isStrListCallExpr).
+    if fi.iter is Expr.call as kv_call
+        if kv_call.callee is Expr.member as kv_mem
+            if kv_mem.member == "keys" or kv_mem.member == "values"
+                var recv_t: Type_ = inferExpr(kv_mem.object, ctx)
+                if recv_t is Type_.hashmap_ as hm
+                    if kv_mem.member == "keys"
+                        return hm.key_t
+                    return hm.val_t
+                # A JsonValue's keys() is always List(str) — the object's field names.
+                if recv_t is Type_.json_value
+                    if kv_mem.member == "keys"
+                        return Type_.string_
+        return Type_.unknown_
+    # §28a: for-in over a list literal — the annotation if present, else elem 0.
+    if fi.iter is Expr.list_lit as lit_iter
+        if lit_iter.elem_type != nil
+            return typeFromRef(lit_iter.elem_type!)
+        if lit_iter.elems.len > 0
+            return inferExpr(lit_iter.elems.at(0), ctx)
+        return Type_.unknown_
+    # `for x in obj.field` where field: List(str) on a same-file/dep struct.
+    if fi.iter is Expr.member as iter_mem
+        if iter_mem.object is Expr.ident as iter_obj
+            if ctx.hasLocal(iter_obj.name)
+                var obj_t: Type_ = ctx.localType(iter_obj.name)
+                if obj_t is Type_.named as class_name
+                    var ft: Type_? = ctx.fieldTypeAny(class_name, iter_mem.member)
+                    if ft as ft_val
+                        if ft_val is Type_.list_ as list_elem_t
+                            return list_elem_t
+    return Type_.unknown_
+
 def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: InferCtx): Type_
     # Locals, not reassigned parameters: a Zebra param emits as a Zig `const`.
     var d_line: int = line
@@ -4040,6 +4057,13 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 checkStmts(sw.stmts, file, ctx)
             on Stmt.for_in as sfi
                 checkCallsInExpr(sfi.iter, file, sfi.span.line, ctx)  # BUG-142
+                # BUG-332: bind the loop vars HERE too. Without this the body sees a
+                # same-named binding left behind by an earlier function, and reports its
+                # type instead. Binding unknown_ is the safe floor: it carries no
+                # information, so a wrong type can never be asserted against.
+                var sfi_elem: Type_ = forInElemType(sfi, ctx)
+                for sv in sfi.vars
+                    ctx.bind(sv, sfi_elem)
                 checkStmts(sfi.stmts, file, ctx)
             on Stmt.try_catch as stc
                 checkStmts(stc.stmts, file, ctx)

@@ -1686,6 +1686,8 @@ smoke_run_bootstrap test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made 
 smoke_run test/bug329_print_sourcemap_test.zbr "bug329: OK"
 # Json.keys()/at() -- the accessors that let the DAP relay forward unknown fields.
 smoke_run test/json_keys_at_test.zbr "json_keys_at: OK"
+# BUG-332: a loop var must not inherit a same-named binding from an earlier function.
+smoke_run test/bug332_loopvar_scope_test.zbr "bug332: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

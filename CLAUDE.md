@@ -875,9 +875,27 @@ bash tools/debug_map_check.sh   # THE DEBUG SOURCE-MAP GATE, registered as `debu
                                 #   dump is empty, if the fixture yields under 6 markers, or
                                 #   if the source oracle finds under 5 labelled lines: every
                                 #   absence assertion is vacuous without a denominator.
+                                #   LEGS 6-10 COVER THE TRANSFORM (added 2026-09-04), via
+                                #   `zebra debug --dump-transform`, which feeds ONE DAP
+                                #   message through the shipping transform and prints what
+                                #   would be forwarded -- no lldb-dap, no debug session.
+                                #   THE PASS-THROUGH LEGS ARE THE LOAD-BEARING ONES: a relay
+                                #   is judged on what it does NOT change. It must forward
+                                #   messages it does not model (asserted BYTE-IDENTICAL) and
+                                #   fields it does not understand inside the ones it does
+                                #   (`condition`, `sourceModified`). A transform that remapped
+                                #   coordinates correctly and dropped an unknown field would
+                                #   pass every coordinate check and still break a client that
+                                #   used that field.
+                                #   LEG 10 CAUGHT A REAL BUG INHERITED FROM THE ZIG ORIGINAL:
+                                #   both tested endsWith(".zig") for a stack frame, which also
+                                #   matches the Zig STANDARD LIBRARY -- a frame in std/mem.zig
+                                #   was rewritten to an unrelated .zbr line, sending the editor
+                                #   somewhere confidently wrong. The port matches the emitted
+                                #   file by NAME instead.
                                 #   CANNOT SEE: whether a marker points at the RIGHT zig
-                                #   line, or anything about the relay itself -- the JSON
-                                #   transform and the lldb-dap conversation are not covered.
+                                #   line, or anything about the lldb-dap conversation -- the
+                                #   session half (spawn, TCP, threads) is NOT yet ported.
 python tools/lsp_server_smoke.py   # THE LSP PROTOCOL GATE, registered as `lsp-smoke`
                                 #   (FAST tier, ~2s). Drives `zebra lsp` through a real
                                 #   JSON-RPC conversation over stdio -- Content-Length
@@ -2343,7 +2361,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **390** <!-- doc-gen: 390 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **530** <!-- doc-gen: 530 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **531** <!-- doc-gen: 531 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

@@ -1,0 +1,59 @@
+# BUG-332: a for-in loop variable inherited a same-named binding from a PREVIOUSLY
+# CHECKED FUNCTION, because the checking pass never bound loop variables (only the
+# seeding walk did) and the scope is not cleared between functions.
+#
+# The shape that broke: some earlier function declares `k` as an int; a later function
+# loops with `for k in <something yielding str>` and passes `k` to a str parameter. The
+# checker reported `expected str, got int` -- at a fabricated position, on code the
+# bootstrap compiled cleanly.
+#
+# ORDER MATTERS IN THIS FILE. `earlierK` must come FIRST: it is what leaves the stale
+# `k: int` behind. Reordering these functions makes the test pass against the broken
+# compiler, which is why they are not alphabetised and must not be.
+
+def earlierK(): int
+    var k: int = 0
+    var i: int = 0
+    while i < 3
+        k = k + i
+        i = i + 1
+    return k
+
+def wantsStr(s: str): str
+    return s
+
+# `k` here must be str. Concatenation alone would NOT catch a wrong type -- str + int
+# is accepted -- so it is passed to a str parameter, which is what makes the assertion
+# real rather than incidental.
+def joinKeys(parts: List(str)): str
+    var out: str = ""
+    for k in parts
+        out = out + wantsStr(k)
+    return out
+
+# The same shape through a split(), the iterator form that first exposed this.
+def joinSplit(csv: str): str
+    var out: str = ""
+    for k in csv.split(",")
+        out = out + wantsStr(k)
+    return out
+
+# And through a JsonValue's keys(), the case that found it. A JsonValue is not a
+# HashMap, so the §28f keys()/values() arm cannot type it from key_t -- it needs its
+# own arm, or the loop var falls back and picks up the stale binding.
+def joinJson(src: str): str
+    var out: str = ""
+    if Json.parse(src) as v
+        for k in v.keys()
+            out = out + wantsStr(k)
+    return out
+
+def main()
+    assert earlierK() == 3
+    var ps: List(str) = List(str)()
+    ps.add("a")
+    ps.add("b")
+    assert joinKeys(ps) == "ab"
+    assert joinSplit("x,y") == "xy"
+    assert joinJson("{\"p\":1,\"q\":2}") == "pq"
+    print("bug332: OK")

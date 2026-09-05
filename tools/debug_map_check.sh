@@ -117,6 +117,75 @@ else
   bad "no-marker file reported $none_rows rows — the count is not measuring"
 fi
 
+# ── legs 6-10: the DAP transform ───────────────────────────────────────────────
+# `zebra debug --dump-transform` feeds one DAP message through the SHIPPING relay
+# transform and prints what would be forwarded. No lldb-dap, no debug session.
+#
+# THE PASS-THROUGH LEGS ARE THE LOAD-BEARING ONES. A relay is judged on what it
+# does NOT change: it must forward messages it does not model, and fields it does
+# not understand inside the ones it does. A transform that rewrote coordinates
+# correctly and dropped an unknown field would pass every remapping check and
+# still break a client that used that field.
+BPMSG='{"seq":3,"type":"request","command":"setBreakpoints","arguments":{"source":{"path":"FIXTURE"},"breakpoints":[{"line":14,"condition":"x>1"}],"sourceModified":false}}'
+BPMSG="${BPMSG/FIXTURE/$FIXTURE}"
+# Fed from a FILE, not a pipe: $? after a pipeline is the last command's status, and
+# even when that is the one you meant, the next reader has to prove it (H10).
+printf '%s' "$BPMSG" > "$W/bp.in"
+timeout 300 "$ZEBRA" debug --dump-transform "$FIXTURE" < "$W/bp.in" > "$W/tr.json" 2>"$W/tr.err"
+trrc=$?
+TR=$(tail -1 "$W/tr.json" 2>/dev/null)
+if [ $trrc -ne 0 ] || [ -z "$TR" ]; then
+  sed 's/^/    /' "$W/tr.err" | head -5
+  die "--dump-transform exited $trrc / produced nothing (every leg below would be vacuous)"
+fi
+
+case "$TR" in
+  *'"path":"'*.zig'"'*) ok "setBreakpoints: source.path rewritten to the generated .zig" ;;
+  *) bad "setBreakpoints: source.path not rewritten"; echo "       $TR" | cut -c1-100 ;;
+esac
+
+# Line 14 is a print in the fixture; it must map to SOME other line, and not to 14.
+case "$TR" in
+  *'"line":14'*) bad "breakpoint line was not remapped (still 14)" ;;
+  *'"line":'*)   ok "breakpoint line remapped off the .zbr coordinate" ;;
+  *)             bad "no breakpoint line in the output at all" ;;
+esac
+
+# The two fields the relay does not model. Losing either is the failure this gate
+# exists for, and it is invisible to any check that only looks at coordinates.
+miss=""
+case "$TR" in *'"condition":"x>1"'*) ;; *) miss="$miss condition" ;; esac
+case "$TR" in *'"sourceModified":false'*) ;; *) miss="$miss sourceModified" ;; esac
+if [ -z "$miss" ]; then
+  ok "fields the relay does not model survive verbatim (condition, sourceModified)"
+else
+  bad "relay DROPPED unmodelled field(s):$miss"
+fi
+
+# A message the relay does not touch must come back byte-identical -- not merely
+# valid, not merely re-serialised, identical.
+PASSMSG='{"seq":9,"type":"request","command":"continue","arguments":{"threadId":1}}'
+printf '%s' "$PASSMSG" | timeout 300 "$ZEBRA" debug --dump-transform "$FIXTURE" > "$W/pass.json" 2>&1
+PT=$(tail -1 "$W/pass.json" 2>/dev/null)
+if [ "$PT" = "$PASSMSG" ]; then
+  ok "an unmodelled message is forwarded BYTE-IDENTICAL"
+else
+  bad "unmodelled message was altered"
+  echo "       in : $PASSMSG" | cut -c1-100
+  echo "       out: $PT" | cut -c1-100
+fi
+
+# lldb -> ide. A frame whose source is NOT our .zig must be left alone: a frame in
+# the Zig standard library is not ours to rewrite, and remapping it would send the
+# editor to an unrelated .zbr line.
+STMSG='{"seq":4,"type":"response","command":"stackTrace","body":{"stackFrames":[{"id":1,"line":9999,"source":{"path":"/usr/lib/std/mem.zig"}}],"totalFrames":1}}'
+printf '%s' "$STMSG" | timeout 300 "$ZEBRA" debug --dump-transform "$FIXTURE" --from-lldb > "$W/st.json" 2>&1
+ST=$(tail -1 "$W/st.json" 2>/dev/null)
+case "$ST" in
+  *'"line":9999'*) ok "a stack frame outside our generated .zig is left untouched" ;;
+  *)               bad "a foreign stack frame was rewritten"; echo "       $ST" | cut -c1-100 ;;
+esac
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "debug-map: $pass/$pass passed"
