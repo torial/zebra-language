@@ -508,6 +508,7 @@ run_full "divergence"    "gate PASS" env JOBS="$JOBS" bash tools/divergence_chec
 # The parser's only fuzz coverage: 960 deterministic grammar-derived programs, gated on
 # HANGS and CRASHES (accept/reject divergences are expected and are not failures). It
 # would have caught BUG-199 -- an 18-byte parser infinite loop -- automatically.
+run_daily "selfhost-div" "PASS" bash tools/selfhost_divergence_check.sh
 run_daily "gramgen"      "gate PASS" python fuzz/gramgen.py --gate
 # Startup-only GUI coverage. Four GUI crashes have sat under fully green gates and all
 # four were at STARTUP, which needs neither a human nor a terminal to detect. Rendering,
