@@ -8732,6 +8732,7 @@ const Generator = struct {
     ) anyerror!bool {
         // Read-only accessors: emit _json_get_*(v, key)
         const read_map = std.StaticStringMap([]const u8).initComptime(&.{
+            .{ "at",       "_json_at"        },
             .{ "getStr",   "_json_get_str"   },
             .{ "getInt",   "_json_get_int"   },
             .{ "getFloat", "_json_get_float" },
@@ -8749,6 +8750,10 @@ const Generator = struct {
             return true;
         }
         // Predicate methods: emit _json_is_*(v)
+        if (std.mem.eql(u8, method, "keys")) {
+            try g.w.writeAll("_json_keys("); try g.genExpr(object); try g.w.writeAll(")");
+            return true;
+        }
         if (std.mem.eql(u8, method, "isNull")) {
             try g.w.writeAll("_json_is_null("); try g.genExpr(object); try g.w.writeAll(")"); return true;
         }

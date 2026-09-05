@@ -3174,6 +3174,8 @@ var present  = args.contains("--dry-run")    # bool
 | `Json.stringify(v)`                  | `str`         | Serialise a JsonValue                   |
 | `Json.object()` / `Json.array()`     | `JsonValue`   | Empty object/array constructors         |
 | `v.getStr/getInt/getFloat/getBool(k)` | typed       | Typed field access on a JsonValue       |
+| `v.keys()`                          | `List(str)`   | Object keys, in insertion order          |
+| `v.at(k)`                           | `JsonValue`   | Value at `k` WHATEVER its type; JSON null if absent |
 
 ### `Hash` — hashing
 

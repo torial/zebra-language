@@ -1,0 +1,41 @@
+# Json.keys() / Json.at() — the two accessors that let code COPY a JSON object whose
+# shape it does not know. Every other getter here is typed and lenient (getObj answers
+# with an empty object for a missing key, getStr with ""), which is fine for reading a
+# known shape and useless for re-emitting an unknown one. See BUG-331.
+#
+# Added 2026-09-04 for the `zebra debug` DAP relay, which must forward fields it does
+# not understand without altering them.
+
+def main()
+    var src: str = "{\"seq\":7,\"type\":\"request\",\"args\":{\"line\":42},\"extra\":[1,2],\"flag\":true}"
+    if Json.parse(src) as v
+        # keys() enumerates in insertion order, which is what makes a faithful
+        # re-serialisation possible at all.
+        var ks: List(str) = v.keys()
+        assert ks.len == 5
+        assert ks.at(0) == "seq"
+        assert ks.at(4) == "flag"
+
+        # at() returns the value WHATEVER its type, and stringify round-trips it.
+        # This is the property the relay depends on: a field can be copied without
+        # the copier knowing what kind of thing it is.
+        assert v.at("seq").stringify() == "7"
+        assert v.at("type").stringify() == "\"request\""
+        assert v.at("args").stringify() == "{\"line\":42}"
+        assert v.at("extra").stringify() == "[1,2]"
+        assert v.at("flag").stringify() == "true"
+
+        # Nested access composes.
+        assert v.at("args").getInt("line") == 42
+
+        # A missing key yields JSON null. NOT a presence test -- a stored null looks
+        # the same -- which is why keys() is the thing that answers "is it there".
+        assert v.at("nope").isNull()
+
+        # keys() on a non-object is empty rather than an error.
+        var arr = v.at("extra")
+        assert arr.keys().len == 0
+
+        print("json_keys_at: OK")
+    else
+        print("json_keys_at: PARSE FAILED")

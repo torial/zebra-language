@@ -595,6 +595,12 @@ def typeFromName(n: str): Type_
         return Type_.code_editor
     if n == "SysProcess"
         return Type_.sys_process
+    # PARITY 2026-09-04: the bootstrap maps this (src/TypeChecker.zig) and the selfhost
+    # did not, so `var v: JsonValue` resolved to named("JsonValue") and every Json method
+    # on it failed at CODEGEN -- "no field or member function named getInt". Front-end
+    # `-c` passes, so the gap only shows on a full compile.
+    if n == "JsonValue"
+        return Type_.json_value
     # Sized numeric types — enable format-spec inference for int32, float64, etc.
     if n == "int8"
         return Type_.int_n(8)
@@ -2596,6 +2602,16 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.void_
                         on Type_.json_value
                             var jmname: str = mem.member
+                            # keys()/at(): the pair that lets code COPY an object whose
+                            # shape it does not know -- keys enumerates, at fetches the
+                            # value WHATEVER its type, so a field can be forwarded without
+                            # the forwarder knowing what kind of thing it is. Added for the
+                            # `zebra debug` DAP relay; see BUG-331 for why the typed
+                            # getters cannot do this job.
+                            if jmname == "keys"
+                                return Type_.list_(Type_.string_)
+                            if jmname == "at"
+                                return Type_.json_value
                             if jmname == "getStr"
                                 return Type_.string_
                             # getObj returns a nested json object (a Value), NOT a

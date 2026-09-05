@@ -12863,7 +12863,8 @@ struct Generator
                 on Type_.json_value
                     # read-only get methods
                     var jget_fn = ""
-                    if mname == "getStr": jget_fn = "_json_get_str"
+                    if mname == "at": jget_fn = "_json_at"
+                    else if mname == "getStr": jget_fn = "_json_get_str"
                     else if mname == "getInt": jget_fn = "_json_get_int"
                     else if mname == "getFloat": jget_fn = "_json_get_float"
                     else if mname == "getBool": jget_fn = "_json_get_bool"
@@ -12882,7 +12883,10 @@ struct Generator
                         return
                     # predicate methods
                     var jpred_fn = ""
-                    if mname == "isNull": jpred_fn = "_json_is_null"
+                    # `keys` sits with the no-arg methods, not the getters: the
+                    # getter form always emits fn(obj, key) and keys takes no key.
+                    if mname == "keys": jpred_fn = "_json_keys"
+                    else if mname == "isNull": jpred_fn = "_json_is_null"
                     else if mname == "isObject": jpred_fn = "_json_is_object"
                     else if mname == "isArray": jpred_fn = "_json_is_array"
                     if jpred_fn != ""

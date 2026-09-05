@@ -1487,6 +1487,35 @@ pub fn _json_parse(src: []const u8) ?JsonValue {
     // parseFromSliceLeaky uses allocator directly (no arena), intentionally leaked.
     return std.json.parseFromSliceLeaky(JsonValue, std.heap.page_allocator, src, .{}) catch return null;
 }
+// Object key iteration, and a value accessor that does NOT fabricate.
+//
+// Every other getter here is TYPED and lenient: _json_get_obj answers with an empty
+// object for a missing key, _json_get_str with "". That is fine for reading a known
+// shape and useless for COPYING an unknown one, which is what a protocol relay does --
+// it must re-emit fields it does not understand, byte for byte, without knowing their
+// type. See BUG-331.
+//
+// _json_at returns JSON null for a missing key, which is honest only because the caller
+// is expected to have got the key from _json_keys in the first place. It is not a
+// substitute for a presence test: a stored null and a missing key look identical here.
+pub fn _json_keys(v: JsonValue) std.ArrayList([]const u8) {
+    var _r: std.ArrayList([]const u8) = .empty;
+    switch (v) {
+        .object => |o| {
+            var it = o.iterator();
+            while (it.next()) |e| _r.append(std.heap.page_allocator, e.key_ptr.*) catch {};
+        },
+        else => {},
+    }
+    return _r;
+}
+pub fn _json_at(v: JsonValue, key: []const u8) JsonValue {
+    switch (v) {
+        .object => |o| if (o.get(key)) |it| return it,
+        else => {},
+    }
+    return .null;
+}
 pub fn _json_stringify(v: JsonValue) []const u8 {
     return std.json.Stringify.valueAlloc(std.heap.page_allocator, v, .{}) catch "{}";
 }

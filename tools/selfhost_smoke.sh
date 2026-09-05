@@ -1684,6 +1684,8 @@ smoke_run_bootstrap test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made 
 # The debug source-map fixture (tools/debug_map_check.sh). Registered here so something
 # RUNS it; the gate asserts its provenance markers, this asserts it still works.
 smoke_run test/bug329_print_sourcemap_test.zbr "bug329: OK"
+# Json.keys()/at() -- the accessors that let the DAP relay forward unknown fields.
+smoke_run test/json_keys_at_test.zbr "json_keys_at: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then
