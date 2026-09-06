@@ -5,7 +5,7 @@
 # because `print` lands on stderr on the Windows fast-backend build.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ZEBRA="$ROOT/zig-out/bin/zebra.exe"
+ZEBRA="$ROOT/zig-out/bin/zebra.exe"; [ -x "$ZEBRA" ] || ZEBRA="$ROOT/zig-out/bin/zebra"
 TMP="${TMPDIR:-/tmp}/lsp_diag_$$"
 mkdir -p "$TMP"
 PASS=0

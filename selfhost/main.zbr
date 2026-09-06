@@ -1373,7 +1373,10 @@ def lspReadMessage(): str?
         var hdr = sys.readLine()
         if hdr == nil
             return nil
-        var h: str = hdr!
+        # Defensive trim: LSP headers end in \r\n. (The Linux hang seen 2026-09-06 was
+        # NOT this — it was per-call stdin read-ahead in the runtime, BUG-334 — but a
+        # trimmed header costs nothing and tolerates a client that sends bare \n.)
+        var h: str = hdr!.trim()
         if h == ""
             break
         if h.startsWith("Content-Length:")
@@ -1525,6 +1528,100 @@ def lspFormatEdits(text: str): str
         if c == '\n'
             nlines = nlines + 1
     return "[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":" + nlines.toString() + ",\"character\":0}},\"newText\":\"" + diagJsonEscape(formatted) + "\"}]"
+
+
+# ── References / rename (name-based, whole-word, comments+strings skipped) ────
+# The LSP here is a declaration index, not a resolver, so "references" means: every
+# whole-identifier occurrence of the name in every open document, outside `#`
+# comments and string literals. Good enough for a simple IDE's find-references and
+# rename; a scope-aware version is a Resolver job, docketed for zebra-ide P3.
+
+# All whole-word occurrences of `name` in `text` as LSP ranges (0-based lines and cols).
+def lspOccurrences(text: str, name: str): List(Span)
+    var out: List(Span) = List(Span)()
+    if name == ""
+        return out
+    var line_no: int = 0
+    for l in text.split("\n")
+        var n: int = l.len
+        var i: int = 0
+        var in_str: bool = false
+        while i < n
+            var c: char = lspCharAt(l, i)
+            if in_str
+                if c == '\\' and i + 1 < n
+                    i = i + 2
+                    continue
+                if c == '"'
+                    in_str = false
+                i = i + 1
+                continue
+            if c == '#'
+                break
+            if c == '"'
+                in_str = true
+                i = i + 1
+                continue
+            if lspIsIdentChar(c)
+                var j: int = i
+                while j < n and lspIsIdentChar(lspCharAt(l, j))
+                    j = j + 1
+                if l[i..j] == name
+                    # Span is 1-based line / 0-based col (lspSpanRange subtracts one).
+                    out.add(Span(line_no + 1, i, line_no + 1, j))
+                i = j
+                continue
+            i = i + 1
+        line_no = line_no + 1
+    return out
+
+# JSON array of Location objects for `name` across every open document.
+def lspReferencesJson(docs: HashMap(str, str), name: str): str
+    var sb: StringBuilder = StringBuilder()
+    sb.append("[")
+    var first: bool = true
+    for u in docs.keys()
+        if docs.get(u) as dt
+            for sp in lspOccurrences(dt, name)
+                if not first
+                    sb.append(",")
+                first = false
+                sb.append("{\"uri\":\"" + diagJsonEscape(u) + "\",\"range\":" + lspSpanRange(sp) + "}")
+    sb.append("]")
+    return sb.build()
+
+# WorkspaceEdit JSON renaming every occurrence of `name` to `new_name` in every open
+# document. Refused (returns "null") when new_name is not a plain identifier, so a
+# rename can never introduce a token the lexer would split.
+def lspRenameJson(docs: HashMap(str, str), name: str, new_name: str): str
+    if name == "" or new_name == ""
+        return "null"
+    var k: int = 0
+    while k < new_name.len
+        if not lspIsIdentChar(lspCharAt(new_name, k))
+            return "null"
+        k = k + 1
+    var sb: StringBuilder = StringBuilder()
+    sb.append("{\"changes\":{")
+    var first_doc: bool = true
+    for u in docs.keys()
+        if docs.get(u) as dt
+            var occ: List(Span) = lspOccurrences(dt, name)
+            if occ.len == 0
+                continue
+            if not first_doc
+                sb.append(",")
+            first_doc = false
+            sb.append("\"" + diagJsonEscape(u) + "\":[")
+            var first: bool = true
+            for sp in occ
+                if not first
+                    sb.append(",")
+                first = false
+                sb.append("{\"range\":" + lspSpanRange(sp) + ",\"newText\":\"" + diagJsonEscape(new_name) + "\"}")
+            sb.append("]")
+    sb.append("}}")
+    return sb.build()
 
 # ── Position → symbol (hover / go-to-definition) ──────────────────────────────
 # Name-based: extract the identifier under the cursor, look it up in a per-buffer
@@ -2134,7 +2231,7 @@ def runLsp()
         var j = jv!
         var method: str = j.getStr("method")
         if method == "initialize"
-            lspRespond(j.getInt("id"), "{\"capabilities\":{\"textDocumentSync\":1,\"documentFormattingProvider\":true,\"documentSymbolProvider\":true,\"hoverProvider\":true,\"definitionProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\".\"]},\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"]}}}")
+            lspRespond(j.getInt("id"), "{\"capabilities\":{\"textDocumentSync\":1,\"documentFormattingProvider\":true,\"documentSymbolProvider\":true,\"hoverProvider\":true,\"definitionProvider\":true,\"referencesProvider\":true,\"renameProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\".\"]},\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"]}}}")
         else if method == "shutdown"
             lspRespond(j.getInt("id"), "null")
         else if method == "exit"
@@ -2192,6 +2289,24 @@ def runLsp()
                         dsp = lspDeclPosition(dt, di.detail, di.name)
                     if dsp.end_line > 0 or dsp.line > 0
                         result = "{\"uri\":\"" + diagJsonEscape(uri) + "\",\"range\":" + lspSpanRange(dsp) + "}"
+            lspRespond(j.getInt("id"), result)
+        else if method == "textDocument/references"
+            var params = j.getObj("params")
+            var uri: str = params.getObj("textDocument").getStr("uri")
+            var pos = params.getObj("position")
+            var result: str = "[]"
+            if docs.get(uri) as dt
+                var word: str = lspWordAt(dt, pos.getInt("line"), pos.getInt("character"))
+                result = lspReferencesJson(docs, word)
+            lspRespond(j.getInt("id"), result)
+        else if method == "textDocument/rename"
+            var params = j.getObj("params")
+            var uri: str = params.getObj("textDocument").getStr("uri")
+            var pos = params.getObj("position")
+            var result: str = "null"
+            if docs.get(uri) as dt
+                var word: str = lspWordAt(dt, pos.getInt("line"), pos.getInt("character"))
+                result = lspRenameJson(docs, word, params.getStr("newName"))
             lspRespond(j.getInt("id"), result)
         else if method == "textDocument/completion"
             var params = j.getObj("params")
