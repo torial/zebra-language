@@ -648,10 +648,22 @@ pub fn _sys_process_is_running(p: *_SysProcess) bool {
         return true;
     }
 }
+// ONE process-wide stdin reader. `readerStreaming` reads AHEAD into its buffer
+// (up to the buffer size per syscall), so a reader created per call silently
+// discards whatever it pre-fetched beyond the line it returned. On a Windows
+// console that is invisible (console reads return one line at a time); on a POSIX
+// pipe the first readLine swallowed the whole LSP request and the next call saw
+// EOF — `zebra lsp` answered nothing and exited 0 (found on Linux, 2026-09-06).
+// Keeping the reader and its buffer alive across calls keeps consecutive reads
+// aligned, which is the property the LSP framing depends on.
+var _stdin_buf: [4096]u8 = undefined;
+var _stdin_rdr: ?std.Io.File.Reader = null;
+fn _stdin_reader() *std.Io.File.Reader {
+    if (_stdin_rdr == null) _stdin_rdr = std.Io.File.stdin().readerStreaming(_io, &_stdin_buf);
+    return &_stdin_rdr.?;
+}
 pub fn _sys_readline() ?[]const u8 {
-    const stdin = std.Io.File.stdin();
-    var buf: [256]u8 = undefined;
-    var rdr = stdin.readerStreaming(_io, &buf);
+    const rdr = _stdin_reader();
     var line: std.ArrayList(u8) = .empty;
     var byte_buf: [1]u8 = undefined;
     while (true) {
@@ -663,14 +675,12 @@ pub fn _sys_readline() ?[]const u8 {
     }
     return line.items;
 }
-// Read EXACTLY `count` bytes from stdin (byte-at-a-time, no read-ahead so
-// consecutive reads stay aligned — used for LSP Content-Length framing).
+// Read EXACTLY `count` bytes from stdin via the shared reader (so read-ahead from
+// a preceding readLine is consumed, not lost — LSP Content-Length framing).
 // Returns null at clean EOF; a short read at EOF returns what was read.
 pub fn _sys_read_bytes(count: i64) ?[]const u8 {
     if (count <= 0) return "";
-    const stdin = std.Io.File.stdin();
-    var buf: [256]u8 = undefined;
-    var rdr = stdin.readerStreaming(_io, &buf);
+    const rdr = _stdin_reader();
     var out: std.ArrayList(u8) = .empty;
     var byte_buf: [1]u8 = undefined;
     var i: i64 = 0;

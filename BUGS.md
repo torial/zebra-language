@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-333. Next new bug: BUG-334.**
+**Last bug number generated: BUG-334. Next new bug: BUG-335.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,32 @@
 > measured in.
 
 ---
+
+### BUG-334: `sys.readLine` / `sys.readBytes` created a NEW buffered stdin reader per call, discarding read-ahead — `zebra lsp` answered nothing on a pipe — FIXED 2026-09-06 (branch lsp-references)
+
+**Symptom.** On Linux, `zebra lsp` fed a normal LSP request over a pipe replied with
+nothing and exited 0 when stdin closed. `tools/lsp_diagnostics_smoke.sh` (which uses the
+`zebra diagnostics --out` seam, not the server) stayed green throughout — the server's
+stdio path had no control.
+
+**Mechanism (verified by fix, not reasoned).** `_sys_readline` and `_sys_read_bytes` each
+did `var buf: [256]u8; var rdr = stdin.readerStreaming(_io, &buf)` — a fresh reader with a
+fresh buffer per call. `readSliceShort(1 byte)` fills that buffer from the fd with up to
+256 bytes; the function returns one line and the rest of the buffer dies with the frame.
+On a Windows console this is invisible (console reads hand back one line per read), which
+is why the comment above `_sys_read_bytes` could say "no read-ahead" and be believed. On a
+POSIX pipe the first `readLine` swallowed the whole `Content-Length…{body}` request, the
+second saw EOF, and the loop exited cleanly.
+
+**Fix.** One process-wide reader (`_stdin_rdr`, 4 KB buffer) shared by both functions, so
+read-ahead is retained across calls and consecutive reads stay aligned. Control:
+`tools/lsp_protocol_smoke.py` writes several frames in ONE pipe write and requires both
+`initialize` and `shutdown` to be answered — seen red before the fix, green after.
+
+**Class.** Same shape as concept_vacuous-instruments in the wiki: the property the comment
+asserted ("no read-ahead") was true of the platform it was written on and false of the
+API. Any other per-call `readerStreaming` on a shared fd has the same defect; grep found
+none besides these two.
 
 ### BUG-333: `docs/UI_QUICKSTART.md` contradicts itself on CodeEditor syntax highlighting — OPEN (found 2026-09-06)
 
