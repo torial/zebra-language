@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-332. Next new bug: BUG-333.**
+**Last bug number generated: BUG-333. Next new bug: BUG-334.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,31 @@
 > measured in.
 
 ---
+
+### BUG-333: `docs/UI_QUICKSTART.md` contradicts itself on CodeEditor syntax highlighting — OPEN (found 2026-09-06)
+
+**Where.** The "CodeEditor (Scintilla)" section documents, at length and correctly, that every
+libui-ng editor IS syntax-highlighted as Zebra on `setText` via direct `SCI_STARTSTYLING/SETSTYLING`
+from `_ce_style_zebra` in `selfhost/gui_libui_ng_section.zig` (no Lexilla; styles once, not
+as-you-type; applies to every editor incl. read-only output panes). The "Limitations (MVP)"
+list, a few screens below in the same file, still says: *"No syntax highlighting:
+`CodeEditor.forZebra()` does not yet wire Scintilla lexer in the libui-ng backend. Plain editing
+works."* One of the two is stale; the code says the Limitations line is.
+
+**Why it matters.** A reader who lands on Limitations (the section people read when
+something looks wrong) is told highlighting does not exist, and will either file a
+duplicate of the true limits (one-shot styling; output pane styled as Zebra) or conclude the
+working styler is a bug. Sean reports an Opus session noticed this earlier and it persisted —
+a doc contradiction has no gate: `doc_lint` checks citations exist, not that two sections
+agree.
+
+**Fix.** Replace the Limitations bullet with the two real limits stated in the CodeEditor
+section (styles on `setText` only; every editor styled as Zebra, including output panes), or
+delete it and point at that section. While there: the Platform paragraph says Windows only —
+keep, still true.
+
+**Filed by** Fable 5.1 while planning the Zebra IDE (wiki: `concept_zebra-lightweight-ide`).
+No workaround in code; this is a documentation defect.
 
 ### BUG-331: every `JsonValue` getter fabricates a default on miss, so "absent" and "empty" are indistinguishable
 

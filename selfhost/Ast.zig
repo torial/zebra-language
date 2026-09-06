@@ -4,6 +4,7 @@
 const std     = @import("std");
 const builtin = @import("builtin");
 const _zbr_rt = @import("zebra_rt.zig");
+pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 const _intern = _zbr_rt._intern;
 
 pub const _zbr_ty_Span = struct {

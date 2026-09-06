@@ -92,9 +92,12 @@ cd "$REPO"
 # were emitted by the bootstrap and go to stderr). The ticket for this change said "point
 # ZEBRA at zebra.exe, everything else follows"; doing only that regenerates twelve EMPTY
 # files. Measured 2026-08-30 before running it.
-ZEBRA="$REPO/zig-out/bin/zebra.exe"
-SELFHOST_A="$REPO/zig-out/bin/zebra-selfhost.exe"
-SELFHOST_B="$REPO/zig-out/bin/zebra-selfhost-B.exe"
+# Binary suffix: zig names the artifact zebra.exe on Windows and zebra elsewhere.
+# `-femit-bin` below is given the same path, so one EXE variable covers both.
+EXE=""; [ -x "$REPO/zig-out/bin/zebra.exe" ] && EXE=".exe"
+ZEBRA="$REPO/zig-out/bin/zebra$EXE"
+SELFHOST_A="$REPO/zig-out/bin/zebra-selfhost$EXE"
+SELFHOST_B="$REPO/zig-out/bin/zebra-selfhost-B$EXE"
 
 # Build the round-trip's verification binaries (selfhost-A/B) with Zig's self-hosted
 # x86_64 backend + linker by default: ~6x faster than LLVM+LLD (1.4s vs 8.5s for the

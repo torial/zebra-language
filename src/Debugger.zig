@@ -29,6 +29,15 @@
 const std     = @import("std");
 const builtin = @import("builtin");
 
+/// The process environment as a `std.process.Environ`. Zig 0.16: on Windows the block
+/// is global (PEB); on POSIX there is no global block — main() must hand us
+/// `init.environ`, which `src/main.zig` stores in `process_environ`.
+pub var process_environ: std.process.Environ = .empty;
+fn procEnviron() std.process.Environ {
+    if (comptime builtin.os.tag == .windows) return .{ .block = .global };
+    return process_environ;
+}
+
 var _io: std.Io = undefined;
 
 // ── Source map ────────────────────────────────────────────────────────────────
@@ -752,7 +761,7 @@ fn findLldbDap(alloc: std.mem.Allocator) ?[]u8 {
 }
 
 fn findOnPath(name: []const u8, alloc: std.mem.Allocator) ?[]u8 {
-    const path_env = (std.process.Environ{ .block = .global }).getAlloc(alloc, "PATH") catch return null;
+    const path_env = procEnviron().getAlloc(alloc, "PATH") catch return null;
     defer alloc.free(path_env);
 
     const sep: u8 = if (builtin.os.tag == .windows) ';' else ':';
@@ -775,10 +784,10 @@ fn findPythonDir(alloc: std.mem.Allocator) ?[]u8 {
     if (findOnPath("python311.dll", alloc)) |p| { alloc.free(p); return null; }
 
     // Common per-user and system install locations from winget / python.org installer.
-    const local_app_data = (std.process.Environ{ .block = .global }).getAlloc(alloc, "LOCALAPPDATA") catch null;
+    const local_app_data = procEnviron().getAlloc(alloc, "LOCALAPPDATA") catch null;
     defer if (local_app_data) |d| alloc.free(d);
 
-    const program_files = (std.process.Environ{ .block = .global }).getAlloc(alloc, "ProgramFiles") catch null;
+    const program_files = procEnviron().getAlloc(alloc, "ProgramFiles") catch null;
     defer if (program_files) |d| alloc.free(d);
 
     var candidates: std.ArrayListUnmanaged([]u8) = .empty;
@@ -865,7 +874,7 @@ pub fn runDebugSession(
     //   a) lldb-dap's own directory (so liblldb.dll is found)
     //   b) Python 3.11 directory if installed but not on PATH (so python311.dll is found)
     const lldb_dir = std.fs.path.dirname(lldb_path) orelse ".";
-    var env_map = try (std.process.Environ{ .block = .global }).createMap(alloc);
+    var env_map = try procEnviron().createMap(alloc);
     defer env_map.deinit();
     const old_path = env_map.get("PATH") orelse env_map.get("Path") orelse "";
     const path_sep: u8 = if (builtin.os.tag == .windows) ';' else ':';
@@ -1004,7 +1013,7 @@ pub fn runDebugSessionListen(
 
     // 4. Build child env (PATH + LLDB_DISABLE_PYTHON, same as stdio mode).
     const lldb_dir = std.fs.path.dirname(lldb_path) orelse ".";
-    var env_map = try (std.process.Environ{ .block = .global }).createMap(alloc);
+    var env_map = try procEnviron().createMap(alloc);
     defer env_map.deinit();
     const old_path = env_map.get("PATH") orelse env_map.get("Path") orelse "";
     const path_sep: u8 = if (builtin.os.tag == .windows) ';' else ':';

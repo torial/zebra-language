@@ -4032,6 +4032,24 @@ pub fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) voi
     _f.writeStreamingAll(_io, content.items) catch {};
 }
 // ── sys extended ──────────────────────────────────────────────────────────────
+// Process environment, handed in by main() from std.process.Init (Zig 0.16 has no
+// global getenv on POSIX). `.empty` until main runs; `_sys_getenv` tolerates that.
+pub var _environ: std.process.Environ = .empty;
+// setenv on POSIX without libc cannot touch the real environment block, so writes
+// are kept here and consulted first by `_sys_getenv` — same observable semantics
+// on every platform (set, then get, sees the value).
+var _env_overrides: std.StringHashMapUnmanaged([]const u8) = .empty;
+// Zebra's panic handler for emitted programs (root decl `pub const panic` is emitted
+// by codegen). Prints the same one-line header Zig prints ("thread N panic: msg") and
+// exits 1 — WITHOUT the Zig stack trace, whose frames point at the emitted .zig and
+// std/start.zig rather than at the user's program. Windows never printed the trace;
+// Linux/macOS did (test/bug259_runtime_exit_code_test.zbr caught it), so this makes the
+// platforms agree. ZEBRA_PANIC_TRACE=1 restores the full Zig trace for compiler work.
+pub fn _zebra_panic(msg: []const u8, first_trace_addr: ?usize) noreturn {
+    if (_sys_getenv("ZEBRA_PANIC_TRACE") != null) std.debug.defaultPanic(msg, first_trace_addr);
+    std.debug.print("thread {d} panic: {s}\n", .{ std.Thread.getCurrentId(), msg });
+    std.process.exit(1);
+}
 pub fn _sys_setenv(key: []const u8, val: []const u8) void {
     if (comptime builtin.os.tag == .windows) {
         const key_w = std.unicode.utf8ToUtf16LeAllocZ(_allocator, key) catch return;
@@ -4044,7 +4062,17 @@ pub fn _sys_setenv(key: []const u8, val: []const u8) void {
         };
         _ = _k32.SetEnvironmentVariableW(key_w.ptr, val_w.ptr);
     } else {
-        std.posix.setenv(key, val) catch {};
+        const k = _allocator.dupe(u8, key) catch return;
+        const v = _allocator.dupe(u8, val) catch return;
+        _env_overrides.put(_allocator, k, v) catch {};
+        if (comptime builtin.link_libc) {
+            const c = struct { extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int; };
+            const kz = _allocator.dupeZ(u8, key) catch return;
+            defer _allocator.free(kz);
+            const vz = _allocator.dupeZ(u8, val) catch return;
+            defer _allocator.free(vz);
+            _ = c.setenv(kz.ptr, vz.ptr, 1);
+        }
     }
 }
 pub fn _sys_getenv(key: []const u8) ?[]const u8 {
@@ -4052,7 +4080,8 @@ pub fn _sys_getenv(key: []const u8) ?[]const u8 {
         const environ: std.process.Environ = .{ .block = .global };
         return environ.getAlloc(_allocator, key) catch null;
     } else {
-        return std.posix.getenv(key);
+        if (_env_overrides.get(key)) |v| return v;
+        return _environ.getPosix(key);
     }
 }
 pub fn _sys_self_exe() []const u8 {

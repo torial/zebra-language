@@ -20,12 +20,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO"
 
-ZEBRA="$REPO/zig-out/bin/zebra.exe"
+ZEBRA="$REPO/zig-out/bin/zebra.exe"; [ -x "$ZEBRA" ] || ZEBRA="$REPO/zig-out/bin/zebra"
 if [[ ! -x "$ZEBRA" ]]; then
     echo "selfhost_smoke: $ZEBRA missing. Run 'zig build' first." >&2
     exit 1
 fi
-BOOTSTRAP="$REPO/zig-out/bin/zebra-bootstrap.exe"
+BOOTSTRAP="$REPO/zig-out/bin/zebra-bootstrap.exe"; [ -x "$BOOTSTRAP" ] || BOOTSTRAP="$REPO/zig-out/bin/zebra-bootstrap"
 
 # Per-process scratch dir. Two concurrent runs used to share "/tmp/selfhost-smoke",
 # which each one rm -rf's at startup and clears between tests — so running smoke

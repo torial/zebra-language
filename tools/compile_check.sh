@@ -55,8 +55,9 @@ BOOTSTRAP_SKIP=" crossmod_hatopt_test crossmod_optret_test crossmod_struct_pat_t
 SINGLE_FILE_SKIP=" val_test test_module_test "
 
 zebra_for() { # $1 = mode
-  if [ "$1" = bootstrap ]; then echo "$REPO/zig-out/bin/zebra-bootstrap.exe"
-  else echo "$REPO/zig-out/bin/zebra.exe"; fi
+  local p
+  if [ "$1" = bootstrap ]; then p="$REPO/zig-out/bin/zebra-bootstrap"; else p="$REPO/zig-out/bin/zebra"; fi
+  if [ -x "$p.exe" ]; then echo "$p.exe"; else echo "$p"; fi
 }
 
 # ── Worker: check a single test, print one result token (PASS|FAIL|SKIP <name>) ──
