@@ -680,6 +680,46 @@ class ASTBuilder
                         bop = BinaryOp.mod
                     const folded = Expr.binary(ExprBinary(Span(pa.line, pa.col, pa.line, pa.col), bop, target_expr, value_expr))
                     return Stmt.assign(StmtAssign(Span(pa.line, pa.col, pa.line, pa.col), target_expr, AssignOp.assign, folded))
+                # BUG-320, the compound half. An INDEX target desugars EVERY remaining
+                # compound operator exactly as `/=` and `%=` are desugared above -- which is
+                # what that comment already proposed: "worth fixing for all of them
+                # together, not here."
+                #
+                # `xs[i] += 1` had no working lowering at all. Since BUG-313 an index READ is
+                # `_zbr_at(recv, i)`, a function CALL, so genAssign's compound path emitted
+                # `_zbr_at(xs.items, 0) += 1` and zig refused it: "invalid left-hand side to
+                # assignment". The plain `=` form was fixed by routing through `_zbr_set`;
+                # the compound forms were left behind.
+                #
+                # FIXING IT IN genAssign IS THE TRAP, and the comment above names why: the
+                # correct lowering for several of these is TYPE-DEPENDENT and genAssign has
+                # no type oracle. Re-stating each operator's lowering there is a hand-copied
+                # decision procedure -- and the first draft of this fix did exactly that and
+                # was wrong for `/=` and `%=`, because zig ACCEPTS `a /= b` on signed ints
+                # but REJECTS `a / b`. A compound-assignment operator and its binary form are
+                # not the same zig question.
+                #
+                # Desugaring reuses everything instead: `xs[i] op= v` becomes
+                # `xs[i] = xs[i] op v`, genBinary picks the lowering (it already knows
+                # @divTrunc vs `/`, std.math.pow, and the Log2Int shift dance), and genAssign
+                # sees only a plain `=` to an index, which has worked since the first half of
+                # this bug was fixed.
+                #
+                # MEASURED BEFORE IT WAS WRITTEN, which is what chose this design: on an
+                # index target `/=` and `%=` ALREADY worked -- because of the desugar above --
+                # and the other ten did not. The mechanism was proven for 2 of 12 before a
+                # line was changed.
+                #
+                # RESTRICTED TO INDEX TARGETS on purpose. A plain `x += 1` keeps its native
+                # zig emit, which mentions `x` ONCE; desugaring it would mention it twice for
+                # no gain. That double mention is the cost the `/=` comment names, and it is
+                # pre-existing for `/=`, `%=`, `//=` and `**=` -- on an index target it is
+                # the difference between working and not working at all.
+                if pa.op != "="
+                    if target_expr is Expr.index
+                        const bop_ix = .compoundBinaryOp(pa.op)?
+                        const folded_ix = Expr.binary(ExprBinary(Span(pa.line, pa.col, pa.line, pa.col), bop_ix, target_expr, value_expr))
+                        return Stmt.assign(StmtAssign(Span(pa.line, pa.col, pa.line, pa.col), target_expr, AssignOp.assign, folded_ix))
                 const op = .toAssignOp(pa.op)?
                 return Stmt.assign(StmtAssign(Span(pa.line, pa.col, pa.line, pa.col), target_expr, op, value_expr))
 
@@ -1252,6 +1292,41 @@ class ASTBuilder
         return Expr.lambda(ExprLambda(zspan(), params, ret_type, lbody, captures))
 
     # ── Operator conversion ───────────────────────────────────────────────────
+
+    # BUG-320. The compound assignment operators, as their underlying BINARY operator.
+    #
+    # Two of these have NO INFIX FORM a user can type -- `a // b` and `a ** b` are parse
+    # errors, only `//=` and `**=` exist as source syntax. `BinaryOp.int_div` and
+    # `BinaryOp.pow` are nonetheless real AST nodes that genBinary lowers (`@divTrunc`,
+    # `std.math.pow`), so BUILDING one directly is legal even though the parser would refuse
+    # the equivalent source text. Verified by running all twelve as expressions: ten
+    # evaluate, those two are the only parse failures.
+    def compoundBinaryOp(op: str): BinaryOp throws
+        if op == "+="
+            return BinaryOp.add
+        if op == "-="
+            return BinaryOp.sub
+        if op == "*="
+            return BinaryOp.mul
+        if op == "/="
+            return BinaryOp.div
+        if op == "//="
+            return BinaryOp.int_div
+        if op == "%="
+            return BinaryOp.mod
+        if op == "**="
+            return BinaryOp.pow
+        if op == "&="
+            return BinaryOp.bit_and
+        if op == "|="
+            return BinaryOp.bit_or
+        if op == "^="
+            return BinaryOp.bit_xor
+        if op == "<<="
+            return BinaryOp.shl
+        if op == ">>="
+            return BinaryOp.shr
+        raise "not a compound assignment operator: " + op
 
     def toAssignOp(op: str): AssignOp throws
         if op == "="

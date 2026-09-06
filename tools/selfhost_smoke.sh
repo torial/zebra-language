@@ -1694,6 +1694,7 @@ smoke_run test/json_keys_at_test.zbr "json_keys_at: OK"
 # BUG-332: a loop var must not inherit a same-named binding from an earlier function.
 smoke_run test/bug332_loopvar_scope_test.zbr "bug332: OK"
 smoke_run test/bug225_str_index_byte_test.zbr "bug225: OK"
+smoke_run test/bug320_compound_index_assign_test.zbr "bug320: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

@@ -1352,421 +1352,433 @@ pub const _zbr_ty_ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:682
                     return _zbr_ty_Stmt{ .assign = blk_box_35: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assign")) = _zbr_ty_StmtAssign.init(_zbr_ty_Span.init(pa.line, pa.col, pa.line, pa.col), _bx0: { const _bv = target_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _zbr_ty_AssignOp.assign, _bx1: { const _bv = folded; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_35 _bp; } };
                 }
-// zbr:selfhost/AstBuilder.zbr:683
+// zbr:selfhost/AstBuilder.zbr:718
+                if (!std.mem.eql(u8, pa.op, "=")) {
+// zbr:selfhost/AstBuilder.zbr:719
+                    if ((target_expr == .index)) {
+// zbr:selfhost/AstBuilder.zbr:720
+                        const bop_ix = (try self.compoundBinaryOp(pa.op));
+// zbr:selfhost/AstBuilder.zbr:721
+                        const folded_ix = _zbr_ty_Expr{ .binary = blk_box_36: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "binary")) = _zbr_ty_ExprBinary.init(_zbr_ty_Span.init(pa.line, pa.col, pa.line, pa.col), bop_ix, _bx0: { const _bv = target_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = value_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_36 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:722
+                        return _zbr_ty_Stmt{ .assign = blk_box_37: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assign")) = _zbr_ty_StmtAssign.init(_zbr_ty_Span.init(pa.line, pa.col, pa.line, pa.col), _bx0: { const _bv = target_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _zbr_ty_AssignOp.assign, _bx1: { const _bv = folded_ix; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_37 _bp; } };
+                    }
+                }
+// zbr:selfhost/AstBuilder.zbr:723
                 const op = (try self.toAssignOp(pa.op));
-// zbr:selfhost/AstBuilder.zbr:684
-                return _zbr_ty_Stmt{ .assign = blk_box_36: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assign")) = _zbr_ty_StmtAssign.init(_zbr_ty_Span.init(pa.line, pa.col, pa.line, pa.col), _bx0: { const _bv = target_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, op, _bx1: { const _bv = value_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_36 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:724
+                return _zbr_ty_Stmt{ .assign = blk_box_38: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assign")) = _zbr_ty_StmtAssign.init(_zbr_ty_Span.init(pa.line, pa.col, pa.line, pa.col), _bx0: { const _bv = target_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, op, _bx1: { const _bv = value_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_38 _bp; } };
             },
             .stmt_assert => |_ptr_pas| {
                 const pas = _ptr_pas.*;
-// zbr:selfhost/AstBuilder.zbr:687
+// zbr:selfhost/AstBuilder.zbr:727
                 const cond_expr = (try self.buildExpr(_zbr_at(pas.cond.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:688
+// zbr:selfhost/AstBuilder.zbr:728
                 if (_zebra_gt(@as(i64, @intCast(pas.message.items.len)), 0)) {
-// zbr:selfhost/AstBuilder.zbr:689
+// zbr:selfhost/AstBuilder.zbr:729
                     const msg = (try self.buildExpr(_zbr_at(pas.message.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:690
-                    return _zbr_ty_Stmt{ .assert_ = blk_box_37: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assert_")) = _zbr_ty_StmtAssert.init(_zbr_ty_Span.init(pas.line, pas.col, pas.line, pas.col), _bx0: { const _bv = cond_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = msg; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_37 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:730
+                    return _zbr_ty_Stmt{ .assert_ = blk_box_39: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assert_")) = _zbr_ty_StmtAssert.init(_zbr_ty_Span.init(pas.line, pas.col, pas.line, pas.col), _bx0: { const _bv = cond_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = msg; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_39 _bp; } };
                 }
-// zbr:selfhost/AstBuilder.zbr:691
-                return _zbr_ty_Stmt{ .assert_ = blk_box_38: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assert_")) = _zbr_ty_StmtAssert.init(_zbr_ty_Span.init(pas.line, pas.col, pas.line, pas.col), _bx0: { const _bv = cond_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, null); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_38 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:731
+                return _zbr_ty_Stmt{ .assert_ = blk_box_40: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assert_")) = _zbr_ty_StmtAssert.init(_zbr_ty_Span.init(pas.line, pas.col, pas.line, pas.col), _bx0: { const _bv = cond_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, null); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_40 _bp; } };
             },
             .stmt_assert_eq => |_ptr_pac| {
                 const pac = _ptr_pac.*;
-// zbr:selfhost/AstBuilder.zbr:694
+// zbr:selfhost/AstBuilder.zbr:734
                 const lhs = (try self.buildExpr(pac.lhs));
-// zbr:selfhost/AstBuilder.zbr:695
+// zbr:selfhost/AstBuilder.zbr:735
                 const rhs = (try self.buildExpr(pac.rhs));
-// zbr:selfhost/AstBuilder.zbr:696
+// zbr:selfhost/AstBuilder.zbr:736
                 const sp = _zbr_ty_Span.init(pac.line, pac.col, pac.line, pac.col);
-// zbr:selfhost/AstBuilder.zbr:697
-                return _zbr_ty_Stmt{ .assert_eq_ = blk_box_39: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assert_eq_")) = _zbr_ty_StmtAssertCmp.init(sp, _bx0: { const _bv = lhs; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = rhs; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_39 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:737
+                return _zbr_ty_Stmt{ .assert_eq_ = blk_box_41: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assert_eq_")) = _zbr_ty_StmtAssertCmp.init(sp, _bx0: { const _bv = lhs; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = rhs; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_41 _bp; } };
             },
             .stmt_assert_ne => |_ptr_pac| {
                 const pac = _ptr_pac.*;
-// zbr:selfhost/AstBuilder.zbr:700
+// zbr:selfhost/AstBuilder.zbr:740
                 const lhs = (try self.buildExpr(pac.lhs));
-// zbr:selfhost/AstBuilder.zbr:701
+// zbr:selfhost/AstBuilder.zbr:741
                 const rhs = (try self.buildExpr(pac.rhs));
-// zbr:selfhost/AstBuilder.zbr:702
+// zbr:selfhost/AstBuilder.zbr:742
                 const sp = _zbr_ty_Span.init(pac.line, pac.col, pac.line, pac.col);
-// zbr:selfhost/AstBuilder.zbr:703
-                return _zbr_ty_Stmt{ .assert_ne_ = blk_box_40: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assert_ne_")) = _zbr_ty_StmtAssertCmp.init(sp, _bx0: { const _bv = lhs; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = rhs; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_40 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:743
+                return _zbr_ty_Stmt{ .assert_ne_ = blk_box_42: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assert_ne_")) = _zbr_ty_StmtAssertCmp.init(sp, _bx0: { const _bv = lhs; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = rhs; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_42 _bp; } };
             },
             .stmt_assert_true => |_ptr_pau| {
                 const pau = _ptr_pau.*;
-// zbr:selfhost/AstBuilder.zbr:706
+// zbr:selfhost/AstBuilder.zbr:746
                 const expr = (try self.buildExpr(pau.expr));
-// zbr:selfhost/AstBuilder.zbr:707
+// zbr:selfhost/AstBuilder.zbr:747
                 const sp = _zbr_ty_Span.init(pau.line, pau.col, pau.line, pau.col);
-// zbr:selfhost/AstBuilder.zbr:708
-                return _zbr_ty_Stmt{ .assert_true_ = blk_box_41: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assert_true_")) = _zbr_ty_StmtAssertUnary.init(sp, _bx0: { const _bv = expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_41 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:748
+                return _zbr_ty_Stmt{ .assert_true_ = blk_box_43: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assert_true_")) = _zbr_ty_StmtAssertUnary.init(sp, _bx0: { const _bv = expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_43 _bp; } };
             },
             .stmt_assert_false => |_ptr_pau| {
                 const pau = _ptr_pau.*;
-// zbr:selfhost/AstBuilder.zbr:711
+// zbr:selfhost/AstBuilder.zbr:751
                 const expr = (try self.buildExpr(pau.expr));
-// zbr:selfhost/AstBuilder.zbr:712
+// zbr:selfhost/AstBuilder.zbr:752
                 const sp = _zbr_ty_Span.init(pau.line, pau.col, pau.line, pau.col);
-// zbr:selfhost/AstBuilder.zbr:713
-                return _zbr_ty_Stmt{ .assert_false_ = blk_box_42: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assert_false_")) = _zbr_ty_StmtAssertUnary.init(sp, _bx0: { const _bv = expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_42 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:753
+                return _zbr_ty_Stmt{ .assert_false_ = blk_box_44: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "assert_false_")) = _zbr_ty_StmtAssertUnary.init(sp, _bx0: { const _bv = expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_44 _bp; } };
             },
             .stmt_raise => |_ptr_pr| {
                 const pr = _ptr_pr.*;
-// zbr:selfhost/AstBuilder.zbr:716
+// zbr:selfhost/AstBuilder.zbr:756
                 if (_zebra_ge(@as(i64, @intCast(pr.message.items.len)), 2)) {
-// zbr:selfhost/AstBuilder.zbr:717
+// zbr:selfhost/AstBuilder.zbr:757
                     const msg = (try self.buildExpr(_zbr_at(pr.message.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:718
+// zbr:selfhost/AstBuilder.zbr:758
                     const det = (try self.buildExpr(_zbr_at(pr.message.items, 1)));
-// zbr:selfhost/AstBuilder.zbr:719
-                    return _zbr_ty_Stmt{ .raise_ = blk_box_43: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "raise_")) = _zbr_ty_StmtRaise.init(_zbr_ty_Span.init(pr.line, pr.col, pr.line, pr.col), _bx0: { const _bv = msg; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = det; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_43 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:759
+                    return _zbr_ty_Stmt{ .raise_ = blk_box_45: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "raise_")) = _zbr_ty_StmtRaise.init(_zbr_ty_Span.init(pr.line, pr.col, pr.line, pr.col), _bx0: { const _bv = msg; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = det; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_45 _bp; } };
                 }
-// zbr:selfhost/AstBuilder.zbr:720
+// zbr:selfhost/AstBuilder.zbr:760
                 if ((@as(i64, @intCast(pr.message.items.len)) == 1)) {
-// zbr:selfhost/AstBuilder.zbr:721
+// zbr:selfhost/AstBuilder.zbr:761
                     const msg = (try self.buildExpr(_zbr_at(pr.message.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:722
-                    return _zbr_ty_Stmt{ .raise_ = blk_box_44: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "raise_")) = _zbr_ty_StmtRaise.init(_zbr_ty_Span.init(pr.line, pr.col, pr.line, pr.col), _bx0: { const _bv = msg; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, null); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_44 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:762
+                    return _zbr_ty_Stmt{ .raise_ = blk_box_46: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "raise_")) = _zbr_ty_StmtRaise.init(_zbr_ty_Span.init(pr.line, pr.col, pr.line, pr.col), _bx0: { const _bv = msg; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, null); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_46 _bp; } };
                 }
-// zbr:selfhost/AstBuilder.zbr:723
-                return _zbr_ty_Stmt{ .raise_ = blk_box_45: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "raise_")) = _zbr_ty_StmtRaise.init(_zbr_ty_Span.init(pr.line, pr.col, pr.line, pr.col), null, null); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_45 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:763
+                return _zbr_ty_Stmt{ .raise_ = blk_box_47: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "raise_")) = _zbr_ty_StmtRaise.init(_zbr_ty_Span.init(pr.line, pr.col, pr.line, pr.col), null, null); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_47 _bp; } };
             },
             .stmt_try_catch => |_ptr_ptc| {
                 const ptc = _ptr_ptc.*;
-// zbr:selfhost/AstBuilder.zbr:726
+// zbr:selfhost/AstBuilder.zbr:766
                 const body_stmts = (try self.buildStmts(ptc.body_stmts));
-// zbr:selfhost/AstBuilder.zbr:727
+// zbr:selfhost/AstBuilder.zbr:767
                 const catch_stmts = (try self.buildStmts(ptc.catch_stmts));
-// zbr:selfhost/AstBuilder.zbr:728
+// zbr:selfhost/AstBuilder.zbr:768
                 var binding_opt: ?[]const u8 = null;
-// zbr:selfhost/AstBuilder.zbr:729
+// zbr:selfhost/AstBuilder.zbr:769
                 if (!std.mem.eql(u8, ptc.catch_binding, "")) {
-// zbr:selfhost/AstBuilder.zbr:730
+// zbr:selfhost/AstBuilder.zbr:770
                     binding_opt = ptc.catch_binding;
                 }
-// zbr:selfhost/AstBuilder.zbr:731
+// zbr:selfhost/AstBuilder.zbr:771
                 const clause = _zbr_ty_CatchClause.init(_zbr_fn_zspan(), binding_opt, null, catch_stmts);
-// zbr:selfhost/AstBuilder.zbr:732
+// zbr:selfhost/AstBuilder.zbr:772
                 var clauses = std.ArrayList(_zbr_ty_CatchClause).empty;
-// zbr:selfhost/AstBuilder.zbr:733
+// zbr:selfhost/AstBuilder.zbr:773
                 clauses.append(_zbr_rt._allocator, clause) catch @panic("OOM");
-// zbr:selfhost/AstBuilder.zbr:734
-                return _zbr_ty_Stmt{ .try_catch = blk_box_46: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "try_catch")) = _zbr_ty_StmtTryCatch.init(_zbr_ty_Span.init(ptc.line, ptc.col, ptc.line, ptc.col), body_stmts, clauses); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_46 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:774
+                return _zbr_ty_Stmt{ .try_catch = blk_box_48: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "try_catch")) = _zbr_ty_StmtTryCatch.init(_zbr_ty_Span.init(ptc.line, ptc.col, ptc.line, ptc.col), body_stmts, clauses); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_48 _bp; } };
             },
             .stmt_branch => |_ptr_pb| {
                 const pb = _ptr_pb.*;
-// zbr:selfhost/AstBuilder.zbr:737
+// zbr:selfhost/AstBuilder.zbr:777
                 return (try self.buildBranch(pb));
             },
             .stmt_allocate => |_ptr_pa| {
                 const pa = _ptr_pa.*;
-// zbr:selfhost/AstBuilder.zbr:740
+// zbr:selfhost/AstBuilder.zbr:780
                 const source_expr = (try self.buildExpr(_zbr_at(pa.source.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:741
+// zbr:selfhost/AstBuilder.zbr:781
                 const stmts = (try self.buildStmts(pa.stmts));
-// zbr:selfhost/AstBuilder.zbr:742
+// zbr:selfhost/AstBuilder.zbr:782
                 const is_scoped: bool = _zbr_fn_isScopedAllocatorExpr(source_expr);
-// zbr:selfhost/AstBuilder.zbr:743
-                return _zbr_ty_Stmt{ .allocate_ = blk_box_47: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "allocate_")) = _zbr_ty_StmtAllocate.init(_zbr_ty_Span.init(pa.line, pa.col, pa.line, pa.col), source_expr, is_scoped, stmts); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_47 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:783
+                return _zbr_ty_Stmt{ .allocate_ = blk_box_49: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "allocate_")) = _zbr_ty_StmtAllocate.init(_zbr_ty_Span.init(pa.line, pa.col, pa.line, pa.col), source_expr, is_scoped, stmts); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_49 _bp; } };
             },
             .stmt_copy_out => |_ptr_pco| {
                 const pco = _ptr_pco.*;
-// zbr:selfhost/AstBuilder.zbr:746
+// zbr:selfhost/AstBuilder.zbr:786
                 const target_expr = (try self.buildExpr(_zbr_at(pco.target.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:747
+// zbr:selfhost/AstBuilder.zbr:787
                 const value_expr = (try self.buildExpr(_zbr_at(pco.value.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:748
-                return _zbr_ty_Stmt{ .copy_out = blk_box_48: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "copy_out")) = _zbr_ty_StmtCopyOut.init(_zbr_ty_Span.init(pco.line, pco.col, pco.line, pco.col), target_expr, value_expr, pco.deep); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_48 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:788
+                return _zbr_ty_Stmt{ .copy_out = blk_box_50: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "copy_out")) = _zbr_ty_StmtCopyOut.init(_zbr_ty_Span.init(pco.line, pco.col, pco.line, pco.col), target_expr, value_expr, pco.deep); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_50 _bp; } };
             },
             .stmt_guard => |_ptr_pg| {
                 const pg = _ptr_pg.*;
-// zbr:selfhost/AstBuilder.zbr:751
+// zbr:selfhost/AstBuilder.zbr:791
                 const cond_expr = (try self.buildExpr(_zbr_at(pg.cond.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:752
+// zbr:selfhost/AstBuilder.zbr:792
                 const else_stmts: std.ArrayList(_zbr_ty_Stmt) = (try self.buildStmts(pg.else_stmts));
-// zbr:selfhost/AstBuilder.zbr:753
-                return _zbr_ty_Stmt{ .guard_ = blk_box_49: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "guard_")) = _zbr_ty_StmtGuard.init(_zbr_ty_Span.init(pg.line, pg.col, pg.line, pg.col), _bx0: { const _bv = cond_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, else_stmts); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_49 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:793
+                return _zbr_ty_Stmt{ .guard_ = blk_box_51: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "guard_")) = _zbr_ty_StmtGuard.init(_zbr_ty_Span.init(pg.line, pg.col, pg.line, pg.col), _bx0: { const _bv = cond_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, else_stmts); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_51 _bp; } };
             },
             .stmt_with => |_ptr_pw| {
                 const pw = _ptr_pw.*;
-// zbr:selfhost/AstBuilder.zbr:756
+// zbr:selfhost/AstBuilder.zbr:796
                 const target_expr = (try self.buildExpr(_zbr_at(pw.target.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:757
+// zbr:selfhost/AstBuilder.zbr:797
                 const raw_body: std.ArrayList(_zbr_ty_Stmt) = (try self.buildStmts(pw.stmts));
-// zbr:selfhost/AstBuilder.zbr:759
+// zbr:selfhost/AstBuilder.zbr:799
                 var new_body = std.ArrayList(_zbr_ty_Stmt).empty;
-// zbr:selfhost/AstBuilder.zbr:760
+// zbr:selfhost/AstBuilder.zbr:800
                 for (raw_body.items) |s| {
-// zbr:selfhost/AstBuilder.zbr:761
+// zbr:selfhost/AstBuilder.zbr:801
                     new_body.append(_zbr_rt._allocator, self.rewriteWithStmt(s, target_expr)) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:762
-                return _zbr_ty_Stmt{ .with_ = blk_box_50: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "with_")) = _zbr_ty_StmtWith.init(_zbr_ty_Span.init(pw.line, pw.col, pw.line, pw.col), _bx0: { const _bv = target_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, new_body); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_50 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:802
+                return _zbr_ty_Stmt{ .with_ = blk_box_52: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "with_")) = _zbr_ty_StmtWith.init(_zbr_ty_Span.init(pw.line, pw.col, pw.line, pw.col), _bx0: { const _bv = target_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, new_body); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_52 _bp; } };
             },
             .stmt_in => |_ptr_pi| {
                 const pi = _ptr_pi.*;
-// zbr:selfhost/AstBuilder.zbr:765
+// zbr:selfhost/AstBuilder.zbr:805
                 const in_expr = (try self.buildExpr(_zbr_at(pi.expr.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:766
+// zbr:selfhost/AstBuilder.zbr:806
                 const in_body: std.ArrayList(_zbr_ty_Stmt) = (try self.buildStmts(pi.stmts));
-// zbr:selfhost/AstBuilder.zbr:767
-                return _zbr_ty_Stmt{ .in_scope = blk_box_51: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "in_scope")) = _zbr_ty_StmtIn.init(_zbr_ty_Span.init(pi.line, pi.col, pi.line, pi.col), _bx0: { const _bv = in_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, in_body); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_51 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:807
+                return _zbr_ty_Stmt{ .in_scope = blk_box_53: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "in_scope")) = _zbr_ty_StmtIn.init(_zbr_ty_Span.init(pi.line, pi.col, pi.line, pi.col), _bx0: { const _bv = in_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, in_body); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_53 _bp; } };
             },
             .stmt_destruct => |_ptr_pd| {
                 const pd = _ptr_pd.*;
-// zbr:selfhost/AstBuilder.zbr:770
+// zbr:selfhost/AstBuilder.zbr:810
                 const init_expr = (try self.buildExpr(_zbr_at(pd.init_expr.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:771
-                return _zbr_ty_Stmt{ .destruct = blk_box_52: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "destruct")) = _zbr_ty_StmtDestruct.init(_zbr_ty_Span.init(pd.line, pd.col, pd.line, pd.col), pd.names, _bx0: { const _bv = init_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pd.is_struct); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_52 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:811
+                return _zbr_ty_Stmt{ .destruct = blk_box_54: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "destruct")) = _zbr_ty_StmtDestruct.init(_zbr_ty_Span.init(pd.line, pd.col, pd.line, pd.col), pd.names, _bx0: { const _bv = init_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pd.is_struct); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_54 _bp; } };
             },
             .stmt_expr => |_ptr_inner| {
                 const inner = _ptr_inner.*;
-// zbr:selfhost/AstBuilder.zbr:774
+// zbr:selfhost/AstBuilder.zbr:814
                 const expr = (try self.buildExpr(inner));
-// zbr:selfhost/AstBuilder.zbr:775
-                return _zbr_ty_Stmt{ .expr = blk_box_53: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "expr")) = expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_53 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:815
+                return _zbr_ty_Stmt{ .expr = blk_box_55: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "expr")) = expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_55 _bp; } };
             },
             .stmt_print => |arg_nodes| {
-// zbr:selfhost/AstBuilder.zbr:778
+// zbr:selfhost/AstBuilder.zbr:818
                 const arg_list: std.ArrayList(_zbr_ty_PNode) = arg_nodes;
-// zbr:selfhost/AstBuilder.zbr:779
+// zbr:selfhost/AstBuilder.zbr:819
                 var args = std.ArrayList(_zbr_ty_Expr).empty;
-// zbr:selfhost/AstBuilder.zbr:780
+// zbr:selfhost/AstBuilder.zbr:820
                 for (arg_list.items) |an| {
-// zbr:selfhost/AstBuilder.zbr:781
+// zbr:selfhost/AstBuilder.zbr:821
                     args.append(_zbr_rt._allocator, (try self.buildExpr(an))) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:789
+// zbr:selfhost/AstBuilder.zbr:829
                 var print_span: _zbr_ty_Span = _zbr_fn_zspan();
-// zbr:selfhost/AstBuilder.zbr:790
+// zbr:selfhost/AstBuilder.zbr:830
                 if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
-// zbr:selfhost/AstBuilder.zbr:791
+// zbr:selfhost/AstBuilder.zbr:831
                     print_span = _zbr_fn_spanOf(_zbr_at(args.items, 0));
                 }
-// zbr:selfhost/AstBuilder.zbr:792
-                return _zbr_ty_Stmt{ .print_ = blk_box_54: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "print_")) = _zbr_ty_StmtPrint.init(print_span, args, true); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_54 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:832
+                return _zbr_ty_Stmt{ .print_ = blk_box_56: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "print_")) = _zbr_ty_StmtPrint.init(print_span, args, true); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_56 _bp; } };
             },
             .stmt_require => |cond_nodes| {
-// zbr:selfhost/AstBuilder.zbr:795
+// zbr:selfhost/AstBuilder.zbr:835
                 const cond_list: std.ArrayList(_zbr_ty_PNode) = cond_nodes;
-// zbr:selfhost/AstBuilder.zbr:796
+// zbr:selfhost/AstBuilder.zbr:836
                 var exprs = std.ArrayList(_zbr_ty_Expr).empty;
-// zbr:selfhost/AstBuilder.zbr:797
+// zbr:selfhost/AstBuilder.zbr:837
                 for (cond_list.items) |pn2| {
-// zbr:selfhost/AstBuilder.zbr:798
+// zbr:selfhost/AstBuilder.zbr:838
                     exprs.append(_zbr_rt._allocator, (try self.buildExpr(pn2))) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:800
+// zbr:selfhost/AstBuilder.zbr:840
                 var req_span: _zbr_ty_Span = _zbr_fn_zspan();
-// zbr:selfhost/AstBuilder.zbr:801
+// zbr:selfhost/AstBuilder.zbr:841
                 if (_zebra_gt(@as(i64, @intCast(exprs.items.len)), 0)) {
-// zbr:selfhost/AstBuilder.zbr:802
+// zbr:selfhost/AstBuilder.zbr:842
                     req_span = _zbr_fn_spanOf(_zbr_at(exprs.items, 0));
                 }
-// zbr:selfhost/AstBuilder.zbr:803
-                return _zbr_ty_Stmt{ .contract = blk_box_55: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "contract")) = _zbr_ty_StmtContract.init(req_span, _zbr_ty_ContractKind.precond, exprs); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_55 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:843
+                return _zbr_ty_Stmt{ .contract = blk_box_57: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "contract")) = _zbr_ty_StmtContract.init(req_span, _zbr_ty_ContractKind.precond, exprs); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_57 _bp; } };
             },
             .stmt_ensure => |cond_nodes| {
-// zbr:selfhost/AstBuilder.zbr:806
+// zbr:selfhost/AstBuilder.zbr:846
                 const cond_list: std.ArrayList(_zbr_ty_PNode) = cond_nodes;
-// zbr:selfhost/AstBuilder.zbr:807
+// zbr:selfhost/AstBuilder.zbr:847
                 var exprs = std.ArrayList(_zbr_ty_Expr).empty;
-// zbr:selfhost/AstBuilder.zbr:808
+// zbr:selfhost/AstBuilder.zbr:848
                 for (cond_list.items) |pn2| {
-// zbr:selfhost/AstBuilder.zbr:809
+// zbr:selfhost/AstBuilder.zbr:849
                     exprs.append(_zbr_rt._allocator, (try self.buildExpr(pn2))) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:810
-                return _zbr_ty_Stmt{ .contract = blk_box_56: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "contract")) = _zbr_ty_StmtContract.init(_zbr_fn_zspan(), _zbr_ty_ContractKind.postcond, exprs); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_56 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:850
+                return _zbr_ty_Stmt{ .contract = blk_box_58: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "contract")) = _zbr_ty_StmtContract.init(_zbr_fn_zspan(), _zbr_ty_ContractKind.postcond, exprs); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_58 _bp; } };
             },
             else => {
-// zbr:selfhost/AstBuilder.zbr:813
+// zbr:selfhost/AstBuilder.zbr:853
                 { _zbr_rt._error_ctx = .{ .message = "buildStmt: unexpected PNode variant" }; return error.ZebraError; }
             },
         }
     }
 
     pub fn buildBranch(self: *_zbr_ty_ASTBuilder, pb: _zbr_ty_PBranch) anyerror!_zbr_ty_Stmt {
-// zbr:selfhost/AstBuilder.zbr:818
+// zbr:selfhost/AstBuilder.zbr:858
         const subject_expr = (try self.buildExpr(_zbr_at(pb.subject.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:819
+// zbr:selfhost/AstBuilder.zbr:859
         var cases = std.ArrayList(_zbr_ty_BranchOn).empty;
-// zbr:selfhost/AstBuilder.zbr:820
+// zbr:selfhost/AstBuilder.zbr:860
         for (pb.arms.items) |arm| {
-// zbr:selfhost/AstBuilder.zbr:821
+// zbr:selfhost/AstBuilder.zbr:861
             var values = std.ArrayList(_zbr_ty_Expr).empty;
-// zbr:selfhost/AstBuilder.zbr:824
+// zbr:selfhost/AstBuilder.zbr:864
             for (arm.patterns.items) |pat_tok| {
-// zbr:selfhost/AstBuilder.zbr:825
+// zbr:selfhost/AstBuilder.zbr:865
                 const pat: []const u8 = pat_tok;
-// zbr:selfhost/AstBuilder.zbr:826
+// zbr:selfhost/AstBuilder.zbr:866
                 if ((std.mem.indexOf(u8, pat, "..") != null)) {
-// zbr:selfhost/AstBuilder.zbr:828
+// zbr:selfhost/AstBuilder.zbr:868
                     var range_parts = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:829
+// zbr:selfhost/AstBuilder.zbr:869
                     {
                         var _it_rp = std.mem.splitSequence(u8, pat, "..");
                         while (_it_rp.next()) |rp| {
-// zbr:selfhost/AstBuilder.zbr:830
+// zbr:selfhost/AstBuilder.zbr:870
                             range_parts.append(_zbr_rt._allocator, _intern(rp)) catch @panic("OOM");
                         }
                     }
-// zbr:selfhost/AstBuilder.zbr:831
+// zbr:selfhost/AstBuilder.zbr:871
                     if (_zebra_ge(@as(i64, @intCast(range_parts.items.len)), 2)) {
-// zbr:selfhost/AstBuilder.zbr:832
+// zbr:selfhost/AstBuilder.zbr:872
                         const left_expr = self.patternToExpr(_zbr_at(range_parts.items, 0));
-// zbr:selfhost/AstBuilder.zbr:833
+// zbr:selfhost/AstBuilder.zbr:873
                         const right_expr = self.patternToExpr(_zbr_at(range_parts.items, 1));
-// zbr:selfhost/AstBuilder.zbr:834
-                        values.append(_zbr_rt._allocator, _zbr_ty_Expr{ .binary = blk_box_57: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "binary")) = _zbr_ty_ExprBinary.init(_zbr_fn_zspan(), _zbr_ty_BinaryOp.dotdot, _bx0: { const _bv = left_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_57 _bp; } }) catch @panic("OOM");
+// zbr:selfhost/AstBuilder.zbr:874
+                        values.append(_zbr_rt._allocator, _zbr_ty_Expr{ .binary = blk_box_59: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "binary")) = _zbr_ty_ExprBinary.init(_zbr_fn_zspan(), _zbr_ty_BinaryOp.dotdot, _bx0: { const _bv = left_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_59 _bp; } }) catch @panic("OOM");
                     } else {
-// zbr:selfhost/AstBuilder.zbr:836
+// zbr:selfhost/AstBuilder.zbr:876
                         values.append(_zbr_rt._allocator, _zbr_ty_Expr{ .ident = _zbr_ty_ExprIdent.init(_zbr_fn_zspan(), pat) }) catch @panic("OOM");
                     }
                 } else {
-// zbr:selfhost/AstBuilder.zbr:837
+// zbr:selfhost/AstBuilder.zbr:877
                     if ((std.mem.indexOf(u8, pat, ".") != null)) {
-// zbr:selfhost/AstBuilder.zbr:838
+// zbr:selfhost/AstBuilder.zbr:878
                         var parts = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:839
+// zbr:selfhost/AstBuilder.zbr:879
                         {
                             var _it_p = std.mem.splitSequence(u8, pat, ".");
                             while (_it_p.next()) |p| {
-// zbr:selfhost/AstBuilder.zbr:840
+// zbr:selfhost/AstBuilder.zbr:880
                                 parts.append(_zbr_rt._allocator, _intern(p)) catch @panic("OOM");
                             }
                         }
-// zbr:selfhost/AstBuilder.zbr:841
+// zbr:selfhost/AstBuilder.zbr:881
                         const base_name: []const u8 = _zbr_at(parts.items, 0);
-// zbr:selfhost/AstBuilder.zbr:842
+// zbr:selfhost/AstBuilder.zbr:882
                         const base_expr = _zbr_ty_Expr{ .ident = _zbr_ty_ExprIdent.init(_zbr_fn_zspan(), base_name) };
-// zbr:selfhost/AstBuilder.zbr:845
+// zbr:selfhost/AstBuilder.zbr:885
                         var i_pat: i64 = 1;
-// zbr:selfhost/AstBuilder.zbr:846
+// zbr:selfhost/AstBuilder.zbr:886
                         var built_expr: _zbr_ty_Expr = base_expr;
-// zbr:selfhost/AstBuilder.zbr:847
+// zbr:selfhost/AstBuilder.zbr:887
                         while (_zebra_lt(i_pat, @as(i64, @intCast(parts.items.len)))) {
-// zbr:selfhost/AstBuilder.zbr:848
-                            built_expr = _zbr_ty_Expr{ .member = blk_box_58: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "member")) = _zbr_ty_ExprMember.init(_zbr_fn_zspan(), _bx0: { const _bv = built_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _zbr_at(parts.items, i_pat)); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_58 _bp; } };
-// zbr:selfhost/AstBuilder.zbr:849
+// zbr:selfhost/AstBuilder.zbr:888
+                            built_expr = _zbr_ty_Expr{ .member = blk_box_60: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "member")) = _zbr_ty_ExprMember.init(_zbr_fn_zspan(), _bx0: { const _bv = built_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _zbr_at(parts.items, i_pat)); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_60 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:889
                             i_pat = (i_pat + 1);
                         }
-// zbr:selfhost/AstBuilder.zbr:850
+// zbr:selfhost/AstBuilder.zbr:890
                         values.append(_zbr_rt._allocator, built_expr) catch @panic("OOM");
                     } else {
-// zbr:selfhost/AstBuilder.zbr:852
+// zbr:selfhost/AstBuilder.zbr:892
                         values.append(_zbr_rt._allocator, self.patternToExpr(pat)) catch @panic("OOM");
                     }
                 }
             }
-// zbr:selfhost/AstBuilder.zbr:853
+// zbr:selfhost/AstBuilder.zbr:893
             const arm_stmts = (try self.buildStmts(arm.stmts));
-// zbr:selfhost/AstBuilder.zbr:854
+// zbr:selfhost/AstBuilder.zbr:894
             var binding_opt: ?[]const u8 = null;
-// zbr:selfhost/AstBuilder.zbr:855
+// zbr:selfhost/AstBuilder.zbr:895
             if (!std.mem.eql(u8, arm.binding, "")) {
-// zbr:selfhost/AstBuilder.zbr:856
+// zbr:selfhost/AstBuilder.zbr:896
                 binding_opt = arm.binding;
             }
-// zbr:selfhost/AstBuilder.zbr:857
+// zbr:selfhost/AstBuilder.zbr:897
             var filter_exprs = std.ArrayList(_zbr_ty_Expr).empty;
-// zbr:selfhost/AstBuilder.zbr:858
+// zbr:selfhost/AstBuilder.zbr:898
             if (_zebra_gt(@as(i64, @intCast(arm.filter_cond.items.len)), 0)) {
-// zbr:selfhost/AstBuilder.zbr:859
+// zbr:selfhost/AstBuilder.zbr:899
                 const gexpr = (try self.buildExpr(_zbr_at(arm.filter_cond.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:860
+// zbr:selfhost/AstBuilder.zbr:900
                 filter_exprs.append(_zbr_rt._allocator, gexpr) catch @panic("OOM");
             }
-// zbr:selfhost/AstBuilder.zbr:861
+// zbr:selfhost/AstBuilder.zbr:901
             var bo = _zbr_ty_BranchOn.init(_zbr_fn_zspan(), values, arm_stmts, binding_opt, filter_exprs);
-// zbr:selfhost/AstBuilder.zbr:863
+// zbr:selfhost/AstBuilder.zbr:903
             if (_zebra_gt(@as(i64, @intCast(arm.struct_pat_node.items.len)), 0)) {
-// zbr:selfhost/AstBuilder.zbr:864
+// zbr:selfhost/AstBuilder.zbr:904
                 const call_expr = (try self.buildExpr(_zbr_at(arm.struct_pat_node.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:865
+// zbr:selfhost/AstBuilder.zbr:905
                 const sp_opt = self.tryBuildStructPat(call_expr);
-// zbr:selfhost/AstBuilder.zbr:866
+// zbr:selfhost/AstBuilder.zbr:906
                 if ((sp_opt != null)) {
-// zbr:selfhost/AstBuilder.zbr:867
+// zbr:selfhost/AstBuilder.zbr:907
                     bo.struct_pat = sp_opt.?;
-// zbr:selfhost/AstBuilder.zbr:868
+// zbr:selfhost/AstBuilder.zbr:908
                     bo.values = std.ArrayList(_zbr_ty_Expr).empty;
                 }
             }
-// zbr:selfhost/AstBuilder.zbr:869
+// zbr:selfhost/AstBuilder.zbr:909
             cases.append(_zbr_rt._allocator, bo) catch @panic("OOM");
         }
-// zbr:selfhost/AstBuilder.zbr:870
+// zbr:selfhost/AstBuilder.zbr:910
         var else_opt: ?std.ArrayList(_zbr_ty_Stmt) = null;
-// zbr:selfhost/AstBuilder.zbr:871
+// zbr:selfhost/AstBuilder.zbr:911
         if (_zebra_gt(@as(i64, @intCast(pb.else_stmts.items.len)), 0)) {
-// zbr:selfhost/AstBuilder.zbr:872
+// zbr:selfhost/AstBuilder.zbr:912
             else_opt = (try self.buildStmts(pb.else_stmts));
         }
-// zbr:selfhost/AstBuilder.zbr:873
-        return _zbr_ty_Stmt{ .branch_ = blk_box_59: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "branch_")) = _zbr_ty_StmtBranch.init(_zbr_ty_Span.init(pb.line, pb.col, pb.line, pb.col), _bx0: { const _bv = subject_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, cases, else_opt); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_59 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:913
+        return _zbr_ty_Stmt{ .branch_ = blk_box_61: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Stmt, "branch_")) = _zbr_ty_StmtBranch.init(_zbr_ty_Span.init(pb.line, pb.col, pb.line, pb.col), _bx0: { const _bv = subject_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, cases, else_opt); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_61 _bp; } };
     }
 
     pub fn tryBuildStructPat(self: *_zbr_ty_ASTBuilder, e: _zbr_ty_Expr) ?_zbr_ty_StructPat {
         _ = self;
-// zbr:selfhost/AstBuilder.zbr:878
+// zbr:selfhost/AstBuilder.zbr:918
         switch (e) {
             .call => |_ptr_call| {
                 const call = _ptr_call.*;
-// zbr:selfhost/AstBuilder.zbr:880
+// zbr:selfhost/AstBuilder.zbr:920
                 var tname: []const u8 = "";
-// zbr:selfhost/AstBuilder.zbr:881
+// zbr:selfhost/AstBuilder.zbr:921
                 switch (call.callee) {
                     .ident => |id| {
-// zbr:selfhost/AstBuilder.zbr:883
+// zbr:selfhost/AstBuilder.zbr:923
                         tname = id.name;
                     },
                     .member => |_ptr_m| {
                         const m = _ptr_m.*;
-// zbr:selfhost/AstBuilder.zbr:885
+// zbr:selfhost/AstBuilder.zbr:925
                         tname = m.member;
                     },
                     else => {
-// zbr:selfhost/AstBuilder.zbr:887
+// zbr:selfhost/AstBuilder.zbr:927
                         return null;
                     },
                 }
-// zbr:selfhost/AstBuilder.zbr:888
+// zbr:selfhost/AstBuilder.zbr:928
                 if ((@as(i64, @intCast(tname.len)) == 0)) {
-// zbr:selfhost/AstBuilder.zbr:889
+// zbr:selfhost/AstBuilder.zbr:929
                     return null;
                 }
-// zbr:selfhost/AstBuilder.zbr:890
+// zbr:selfhost/AstBuilder.zbr:930
                 if ((_zebra_lt(_zbr_at(tname, 0), 'A') or _zebra_gt(_zbr_at(tname, 0), 'Z'))) {
-// zbr:selfhost/AstBuilder.zbr:891
+// zbr:selfhost/AstBuilder.zbr:931
                     return null;
                 }
-// zbr:selfhost/AstBuilder.zbr:892
+// zbr:selfhost/AstBuilder.zbr:932
                 if ((@as(i64, @intCast(call.args.items.len)) == 0)) {
-// zbr:selfhost/AstBuilder.zbr:893
+// zbr:selfhost/AstBuilder.zbr:933
                     return null;
                 }
-// zbr:selfhost/AstBuilder.zbr:895
+// zbr:selfhost/AstBuilder.zbr:935
                 for (call.args.items) |a| {
-// zbr:selfhost/AstBuilder.zbr:896
+// zbr:selfhost/AstBuilder.zbr:936
                     if ((a.name == null)) {
-// zbr:selfhost/AstBuilder.zbr:897
+// zbr:selfhost/AstBuilder.zbr:937
                         return null;
                     }
                 }
-// zbr:selfhost/AstBuilder.zbr:898
+// zbr:selfhost/AstBuilder.zbr:938
                 var fields = std.ArrayList(_zbr_ty_StructFieldPat).empty;
-// zbr:selfhost/AstBuilder.zbr:899
+// zbr:selfhost/AstBuilder.zbr:939
                 for (call.args.items) |a| {
-// zbr:selfhost/AstBuilder.zbr:900
+// zbr:selfhost/AstBuilder.zbr:940
                     fields.append(_zbr_rt._allocator, _zbr_ty_StructFieldPat.init(a.name.?, a.value)) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:901
+// zbr:selfhost/AstBuilder.zbr:941
                 return _zbr_ty_StructPat.init(tname, fields);
             },
             else => {
-// zbr:selfhost/AstBuilder.zbr:903
+// zbr:selfhost/AstBuilder.zbr:943
                 return null;
             },
         }
@@ -1774,504 +1786,504 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     pub fn isDecimalDigits(self: *_zbr_ty_ASTBuilder, s: []const u8) bool {
         _ = self;
-// zbr:selfhost/AstBuilder.zbr:912
+// zbr:selfhost/AstBuilder.zbr:952
         if ((@as(i64, @intCast(s.len)) == 0)) {
-// zbr:selfhost/AstBuilder.zbr:913
+// zbr:selfhost/AstBuilder.zbr:953
             return false;
         }
-// zbr:selfhost/AstBuilder.zbr:914
+// zbr:selfhost/AstBuilder.zbr:954
         var i: i64 = 0;
-// zbr:selfhost/AstBuilder.zbr:915
+// zbr:selfhost/AstBuilder.zbr:955
         while (_zebra_lt(i, @as(i64, @intCast(s.len)))) {
-// zbr:selfhost/AstBuilder.zbr:916
+// zbr:selfhost/AstBuilder.zbr:956
             const c: u8 = _zbr_at(s, i);
-// zbr:selfhost/AstBuilder.zbr:917
+// zbr:selfhost/AstBuilder.zbr:957
             if ((_zebra_lt(c, '0') or _zebra_gt(c, '9'))) {
-// zbr:selfhost/AstBuilder.zbr:918
+// zbr:selfhost/AstBuilder.zbr:958
                 return false;
             }
-// zbr:selfhost/AstBuilder.zbr:919
+// zbr:selfhost/AstBuilder.zbr:959
             i = (i + 1);
         }
-// zbr:selfhost/AstBuilder.zbr:920
+// zbr:selfhost/AstBuilder.zbr:960
         return true;
     }
 
     pub fn patternToExpr(self: *_zbr_ty_ASTBuilder, pat: []const u8) _zbr_ty_Expr {
-// zbr:selfhost/AstBuilder.zbr:924
+// zbr:selfhost/AstBuilder.zbr:964
         if (std.mem.startsWith(u8, pat, "c'")) {
-// zbr:selfhost/AstBuilder.zbr:926
+// zbr:selfhost/AstBuilder.zbr:966
             return _zbr_ty_Expr{ .char_lit = _zbr_ty_ExprCharLit.init(_zbr_fn_zspan(), pat) };
         }
-// zbr:selfhost/AstBuilder.zbr:927
+// zbr:selfhost/AstBuilder.zbr:967
         if ((std.mem.startsWith(u8, pat, "\"") or std.mem.startsWith(u8, pat, "'"))) {
-// zbr:selfhost/AstBuilder.zbr:928
+// zbr:selfhost/AstBuilder.zbr:968
             return _zbr_ty_Expr{ .string_lit = _zbr_ty_ExprStringLit.init(_zbr_fn_zspan(), _zbr_ty_StringKind.plain, _zbr_fn_stripStringQuotes(pat)) };
         }
-// zbr:selfhost/AstBuilder.zbr:945
+// zbr:selfhost/AstBuilder.zbr:985
         if (std.mem.eql(u8, pat, "true")) {
-// zbr:selfhost/AstBuilder.zbr:946
+// zbr:selfhost/AstBuilder.zbr:986
             return _zbr_ty_Expr{ .bool_lit = _zbr_ty_ExprBoolLit.init(_zbr_fn_zspan(), true) };
         }
-// zbr:selfhost/AstBuilder.zbr:947
+// zbr:selfhost/AstBuilder.zbr:987
         if (std.mem.eql(u8, pat, "false")) {
-// zbr:selfhost/AstBuilder.zbr:948
+// zbr:selfhost/AstBuilder.zbr:988
             return _zbr_ty_Expr{ .bool_lit = _zbr_ty_ExprBoolLit.init(_zbr_fn_zspan(), false) };
         }
-// zbr:selfhost/AstBuilder.zbr:949
+// zbr:selfhost/AstBuilder.zbr:989
         if (self.isDecimalDigits(pat)) {
-// zbr:selfhost/AstBuilder.zbr:950
+// zbr:selfhost/AstBuilder.zbr:990
             return _zbr_ty_Expr{ .int_lit = _zbr_ty_ExprIntLit.init(_zbr_fn_zspan(), pat, _zbr_ty_IntBase.decimal) };
         }
-// zbr:selfhost/AstBuilder.zbr:951
+// zbr:selfhost/AstBuilder.zbr:991
         return _zbr_ty_Expr{ .ident = _zbr_ty_ExprIdent.init(_zbr_fn_zspan(), pat) };
     }
 
     pub fn buildExpr(self: *_zbr_ty_ASTBuilder, pn: _zbr_ty_PNode) anyerror!_zbr_ty_Expr {
-// zbr:selfhost/AstBuilder.zbr:956
+// zbr:selfhost/AstBuilder.zbr:996
         switch (pn) {
             .expr_int => |_ptr_lit| {
                 const lit = _ptr_lit.*;
-// zbr:selfhost/AstBuilder.zbr:962
+// zbr:selfhost/AstBuilder.zbr:1002
                 var ibase = _zbr_ty_IntBase.decimal;
-// zbr:selfhost/AstBuilder.zbr:963
+// zbr:selfhost/AstBuilder.zbr:1003
                 if ((std.mem.startsWith(u8, lit.text, "0x") or std.mem.startsWith(u8, lit.text, "0X"))) {
-// zbr:selfhost/AstBuilder.zbr:964
+// zbr:selfhost/AstBuilder.zbr:1004
                     ibase = _zbr_ty_IntBase.hex;
                 }
-// zbr:selfhost/AstBuilder.zbr:965
+// zbr:selfhost/AstBuilder.zbr:1005
                 return _zbr_ty_Expr{ .int_lit = _zbr_ty_ExprIntLit.init(_zbr_ty_Span.init(lit.line, lit.col, lit.line, lit.col), lit.text, ibase) };
             },
             .expr_float => |_ptr_lit| {
                 const lit = _ptr_lit.*;
-// zbr:selfhost/AstBuilder.zbr:968
+// zbr:selfhost/AstBuilder.zbr:1008
                 return _zbr_ty_Expr{ .float_lit = _zbr_ty_ExprFloatLit.init(_zbr_ty_Span.init(lit.line, lit.col, lit.line, lit.col), lit.text) };
             },
             .expr_bool => |_ptr_bl| {
                 const bl = _ptr_bl.*;
-// zbr:selfhost/AstBuilder.zbr:971
+// zbr:selfhost/AstBuilder.zbr:1011
                 return _zbr_ty_Expr{ .bool_lit = _zbr_ty_ExprBoolLit.init(_zbr_ty_Span.init(bl.line, bl.col, bl.line, bl.col), bl.value) };
             },
             .expr_nil => |_ptr_np| {
                 const np = _ptr_np.*;
-// zbr:selfhost/AstBuilder.zbr:977
+// zbr:selfhost/AstBuilder.zbr:1017
                 return _zbr_ty_Expr{ .nil_ = _zbr_ty_Span.init(np.line, np.col, np.line, np.col) };
             },
             .expr_this => |_ptr_tp| {
                 const tp = _ptr_tp.*;
-// zbr:selfhost/AstBuilder.zbr:980
+// zbr:selfhost/AstBuilder.zbr:1020
                 return _zbr_ty_Expr{ .this_ = _zbr_ty_Span.init(tp.line, tp.col, tp.line, tp.col) };
             },
             .expr_result => |_ptr_rp| {
                 const rp = _ptr_rp.*;
-// zbr:selfhost/AstBuilder.zbr:983
+// zbr:selfhost/AstBuilder.zbr:1023
                 return _zbr_ty_Expr{ .result_ = _zbr_ty_Span.init(rp.line, rp.col, rp.line, rp.col) };
             },
             .expr_str => |_ptr_lit| {
                 const lit = _ptr_lit.*;
-// zbr:selfhost/AstBuilder.zbr:986
+// zbr:selfhost/AstBuilder.zbr:1026
                 return (try self.buildStringLit(lit.text, lit.line, lit.col));
             },
             .expr_char => |_ptr_lit| {
                 const lit = _ptr_lit.*;
-// zbr:selfhost/AstBuilder.zbr:990
+// zbr:selfhost/AstBuilder.zbr:1030
                 return _zbr_ty_Expr{ .char_lit = _zbr_ty_ExprCharLit.init(_zbr_ty_Span.init(lit.line, lit.col, lit.line, lit.col), lit.text) };
             },
             .expr_zig_lit => |_ptr_zl| {
                 const zl = _ptr_zl.*;
-// zbr:selfhost/AstBuilder.zbr:997
+// zbr:selfhost/AstBuilder.zbr:1037
                 return _zbr_ty_Expr{ .zig_lit = _zbr_ty_ExprZigLit.init(_zbr_ty_Span.init(zl.line, zl.col, zl.line, zl.col), _zbr_fn_stripZigQuotes(zl.text)) };
             },
             .expr_raw_str => |_ptr_lit| {
                 const lit = _ptr_lit.*;
-// zbr:selfhost/AstBuilder.zbr:1001
+// zbr:selfhost/AstBuilder.zbr:1041
                 return _zbr_ty_Expr{ .string_lit = _zbr_ty_ExprStringLit.init(_zbr_ty_Span.init(lit.line, lit.col, lit.line, lit.col), _zbr_ty_StringKind.raw, _zbr_fn_stripRawAndEscape(lit.text)) };
             },
             .expr_id => |_ptr_id| {
                 const id = _ptr_id.*;
-// zbr:selfhost/AstBuilder.zbr:1006
+// zbr:selfhost/AstBuilder.zbr:1046
                 return _zbr_ty_Expr{ .ident = _zbr_ty_ExprIdent.init(_zbr_ty_Span.init(id.line, id.col, id.line, id.col), id.name) };
             },
             .expr_member => |_ptr_pm| {
                 const pm = _ptr_pm.*;
-// zbr:selfhost/AstBuilder.zbr:1012
+// zbr:selfhost/AstBuilder.zbr:1052
                 const pm_span = _zbr_ty_Span.init(pm.line, pm.col, pm.line, pm.col);
-// zbr:selfhost/AstBuilder.zbr:1013
+// zbr:selfhost/AstBuilder.zbr:1053
                 if ((@as(i64, @intCast(pm.base.items.len)) == 0)) {
-// zbr:selfhost/AstBuilder.zbr:1015
+// zbr:selfhost/AstBuilder.zbr:1055
                     const this_expr = _zbr_ty_Expr{ .this_ = _zbr_fn_zspan() };
-// zbr:selfhost/AstBuilder.zbr:1016
-                    return _zbr_ty_Expr{ .member = blk_box_60: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "member")) = _zbr_ty_ExprMember.init(pm_span, _bx0: { const _bv = this_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pm.member); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_60 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1056
+                    return _zbr_ty_Expr{ .member = blk_box_62: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "member")) = _zbr_ty_ExprMember.init(pm_span, _bx0: { const _bv = this_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pm.member); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_62 _bp; } };
                 }
-// zbr:selfhost/AstBuilder.zbr:1017
+// zbr:selfhost/AstBuilder.zbr:1057
                 const base_expr = (try self.buildExpr(_zbr_at(pm.base.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1018
-                return _zbr_ty_Expr{ .member = blk_box_61: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "member")) = _zbr_ty_ExprMember.init(pm_span, _bx0: { const _bv = base_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pm.member); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_61 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1058
+                return _zbr_ty_Expr{ .member = blk_box_63: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "member")) = _zbr_ty_ExprMember.init(pm_span, _bx0: { const _bv = base_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, pm.member); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_63 _bp; } };
             },
             .expr_call => |_ptr_pc| {
                 const pc = _ptr_pc.*;
-// zbr:selfhost/AstBuilder.zbr:1021
+// zbr:selfhost/AstBuilder.zbr:1061
                 const callee_expr = (try self.buildExpr(_zbr_at(pc.callee.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1022
+// zbr:selfhost/AstBuilder.zbr:1062
                 var args = std.ArrayList(_zbr_ty_Arg).empty;
-// zbr:selfhost/AstBuilder.zbr:1023
+// zbr:selfhost/AstBuilder.zbr:1063
                 for (pc.args.items) |arg_pn| {
-// zbr:selfhost/AstBuilder.zbr:1024
+// zbr:selfhost/AstBuilder.zbr:1064
                     if (arg_pn == .expr_named_arg) {
                         const pna_ptr = arg_pn.expr_named_arg;
                         const pna = pna_ptr.*;
-// zbr:selfhost/AstBuilder.zbr:1025
+// zbr:selfhost/AstBuilder.zbr:1065
                         const av = (try self.buildExpr(_zbr_at(pna.value.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1026
+// zbr:selfhost/AstBuilder.zbr:1066
                         args.append(_zbr_rt._allocator, _zbr_ty_Arg.init(_zbr_fn_spanOf(av), pna.name, av)) catch @panic("OOM");
                     } else {
-// zbr:selfhost/AstBuilder.zbr:1028
+// zbr:selfhost/AstBuilder.zbr:1068
                         const av = (try self.buildExpr(arg_pn));
-// zbr:selfhost/AstBuilder.zbr:1029
+// zbr:selfhost/AstBuilder.zbr:1069
                         args.append(_zbr_rt._allocator, _zbr_ty_Arg.init(_zbr_fn_spanOf(av), null, av)) catch @panic("OOM");
                     }
                 }
-// zbr:selfhost/AstBuilder.zbr:1030
-                return _zbr_ty_Expr{ .call = blk_box_62: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "call")) = _zbr_ty_ExprCall.init(_zbr_fn_spanOf(callee_expr), callee_expr, args); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_62 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1070
+                return _zbr_ty_Expr{ .call = blk_box_64: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "call")) = _zbr_ty_ExprCall.init(_zbr_fn_spanOf(callee_expr), callee_expr, args); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_64 _bp; } };
             },
             .expr_index => |_ptr_pix| {
                 const pix = _ptr_pix.*;
-// zbr:selfhost/AstBuilder.zbr:1033
+// zbr:selfhost/AstBuilder.zbr:1073
                 const obj_expr = (try self.buildExpr(_zbr_at(pix.object.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1034
+// zbr:selfhost/AstBuilder.zbr:1074
                 const idx_expr = (try self.buildExpr(_zbr_at(pix.index.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1035
-                return _zbr_ty_Expr{ .index = blk_box_63: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "index")) = _zbr_ty_ExprIndex.init(_zbr_fn_spanOf(obj_expr), _bx0: { const _bv = obj_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = idx_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_63 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1075
+                return _zbr_ty_Expr{ .index = blk_box_65: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "index")) = _zbr_ty_ExprIndex.init(_zbr_fn_spanOf(obj_expr), _bx0: { const _bv = obj_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = idx_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_65 _bp; } };
             },
             .expr_slice => |_ptr_psl| {
                 const psl = _ptr_psl.*;
-// zbr:selfhost/AstBuilder.zbr:1038
+// zbr:selfhost/AstBuilder.zbr:1078
                 const obj_expr = (try self.buildExpr(_zbr_at(psl.object.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1040
+// zbr:selfhost/AstBuilder.zbr:1080
                 const start_expr = (try self.buildExpr(_zbr_at(psl.start.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1041
+// zbr:selfhost/AstBuilder.zbr:1081
                 const stop_expr = (try self.buildExpr(_zbr_at(psl.stop_.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1042
-                return _zbr_ty_Expr{ .slice = blk_box_64: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "slice")) = _zbr_ty_ExprSlice.init(_zbr_fn_spanOf(obj_expr), _bx0: { const _bv = obj_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = start_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, _bx2: { const _bv = stop_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx2 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_64 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1082
+                return _zbr_ty_Expr{ .slice = blk_box_66: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "slice")) = _zbr_ty_ExprSlice.init(_zbr_fn_spanOf(obj_expr), _bx0: { const _bv = obj_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = start_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, _bx2: { const _bv = stop_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx2 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_66 _bp; } };
             },
             .expr_binary => |_ptr_pb| {
                 const pb = _ptr_pb.*;
-// zbr:selfhost/AstBuilder.zbr:1045
+// zbr:selfhost/AstBuilder.zbr:1085
                 const left_expr = (try self.buildExpr(_zbr_at(pb.left.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1046
+// zbr:selfhost/AstBuilder.zbr:1086
                 const right_expr: _zbr_ty_Expr = (try self.buildExpr(_zbr_at(pb.right.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1049
+// zbr:selfhost/AstBuilder.zbr:1089
                 if (std.mem.eql(u8, pb.op, "is")) {
-// zbr:selfhost/AstBuilder.zbr:1050
+// zbr:selfhost/AstBuilder.zbr:1090
                     switch (right_expr) {
                         .ident => |ei| {
-// zbr:selfhost/AstBuilder.zbr:1052
-                            return _zbr_ty_Expr{ .type_check = blk_box_65: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "type_check")) = _zbr_ty_ExprTypeCheck.init(_zbr_fn_spanOf(left_expr), _bx0: { const _bv = left_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, ei.name); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_65 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1092
+                            return _zbr_ty_Expr{ .type_check = blk_box_67: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "type_check")) = _zbr_ty_ExprTypeCheck.init(_zbr_fn_spanOf(left_expr), _bx0: { const _bv = left_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, ei.name); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_67 _bp; } };
                         },
                         .member => |_ptr_em| {
                             const em = _ptr_em.*;
-// zbr:selfhost/AstBuilder.zbr:1055
+// zbr:selfhost/AstBuilder.zbr:1095
                             const obj_name: ?[]const u8 = _zbr_fn_getObjectIdentName(em.object.*);
-// zbr:selfhost/AstBuilder.zbr:1056
+// zbr:selfhost/AstBuilder.zbr:1096
                             if (obj_name) |obj_n| {
-// zbr:selfhost/AstBuilder.zbr:1057
+// zbr:selfhost/AstBuilder.zbr:1097
                                 var tc = _zbr_ty_ExprTypeCheck.init(_zbr_fn_spanOf(left_expr), _bx0: { const _bv = left_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, obj_n);
-// zbr:selfhost/AstBuilder.zbr:1058
+// zbr:selfhost/AstBuilder.zbr:1098
                                 tc.variant_name = em.member;
-// zbr:selfhost/AstBuilder.zbr:1059
-                                return _zbr_ty_Expr{ .type_check = blk_box_66: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "type_check")) = tc; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_66 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1099
+                                return _zbr_ty_Expr{ .type_check = blk_box_68: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "type_check")) = tc; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_68 _bp; } };
                             } else {
-// zbr:selfhost/AstBuilder.zbr:1061
+// zbr:selfhost/AstBuilder.zbr:1101
                                 { _zbr_rt._error_ctx = .{ .message = "buildExpr: `is` member object must be a plain identifier" }; return error.ZebraError; }
                             }
                         },
                         else => {
-// zbr:selfhost/AstBuilder.zbr:1063
+// zbr:selfhost/AstBuilder.zbr:1103
                             { _zbr_rt._error_ctx = .{ .message = "buildExpr: `is` RHS must be a plain identifier or Union.variant" }; return error.ZebraError; }
                         },
                     }
                 }
-// zbr:selfhost/AstBuilder.zbr:1064
+// zbr:selfhost/AstBuilder.zbr:1104
                 const op = (try self.toBinaryOp(pb.op));
-// zbr:selfhost/AstBuilder.zbr:1065
-                return _zbr_ty_Expr{ .binary = blk_box_67: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "binary")) = _zbr_ty_ExprBinary.init(_zbr_fn_spanOf(left_expr), op, _bx0: { const _bv = left_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_67 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1105
+                return _zbr_ty_Expr{ .binary = blk_box_69: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "binary")) = _zbr_ty_ExprBinary.init(_zbr_fn_spanOf(left_expr), op, _bx0: { const _bv = left_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = right_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_69 _bp; } };
             },
             .expr_orelse => |_ptr_po| {
                 const po = _ptr_po.*;
-// zbr:selfhost/AstBuilder.zbr:1068
+// zbr:selfhost/AstBuilder.zbr:1108
                 const expr_val = (try self.buildExpr(_zbr_at(po.expr.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1069
+// zbr:selfhost/AstBuilder.zbr:1109
                 const fb_val = (try self.buildExpr(_zbr_at(po.fallback.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1070
-                return _zbr_ty_Expr{ .orelse_ = blk_box_68: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "orelse_")) = _zbr_ty_ExprOrelse.init(_zbr_fn_spanOf(expr_val), _bx0: { const _bv = expr_val; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = fb_val; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_68 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1110
+                return _zbr_ty_Expr{ .orelse_ = blk_box_70: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "orelse_")) = _zbr_ty_ExprOrelse.init(_zbr_fn_spanOf(expr_val), _bx0: { const _bv = expr_val; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = fb_val; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_70 _bp; } };
             },
             .expr_pipeline => |_ptr_pp| {
                 const pp = _ptr_pp.*;
-// zbr:selfhost/AstBuilder.zbr:1074
+// zbr:selfhost/AstBuilder.zbr:1114
                 const lhs_expr = (try self.buildExpr(_zbr_at(pp.lhs.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1075
+// zbr:selfhost/AstBuilder.zbr:1115
                 const rhs_node = _zbr_at(pp.rhs.items, 0);
-// zbr:selfhost/AstBuilder.zbr:1076
+// zbr:selfhost/AstBuilder.zbr:1116
                 switch (rhs_node) {
                     .expr_call => |_ptr_pc| {
                         const pc = _ptr_pc.*;
-// zbr:selfhost/AstBuilder.zbr:1078
+// zbr:selfhost/AstBuilder.zbr:1118
                         const callee_expr = (try self.buildExpr(_zbr_at(pc.callee.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1079
+// zbr:selfhost/AstBuilder.zbr:1119
                         var args = std.ArrayList(_zbr_ty_Arg).empty;
-// zbr:selfhost/AstBuilder.zbr:1080
+// zbr:selfhost/AstBuilder.zbr:1120
                         args.append(_zbr_rt._allocator, _zbr_ty_Arg.init(_zbr_fn_spanOf(lhs_expr), null, lhs_expr)) catch @panic("OOM");
-// zbr:selfhost/AstBuilder.zbr:1081
+// zbr:selfhost/AstBuilder.zbr:1121
                         for (pc.args.items) |arg_pn| {
-// zbr:selfhost/AstBuilder.zbr:1082
+// zbr:selfhost/AstBuilder.zbr:1122
                             if (arg_pn == .expr_named_arg) {
                                 const pna_ptr = arg_pn.expr_named_arg;
                                 const pna = pna_ptr.*;
-// zbr:selfhost/AstBuilder.zbr:1083
+// zbr:selfhost/AstBuilder.zbr:1123
                                 const av = (try self.buildExpr(_zbr_at(pna.value.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1084
+// zbr:selfhost/AstBuilder.zbr:1124
                                 args.append(_zbr_rt._allocator, _zbr_ty_Arg.init(_zbr_fn_spanOf(av), pna.name, av)) catch @panic("OOM");
                             } else {
-// zbr:selfhost/AstBuilder.zbr:1086
+// zbr:selfhost/AstBuilder.zbr:1126
                                 const av = (try self.buildExpr(arg_pn));
-// zbr:selfhost/AstBuilder.zbr:1087
+// zbr:selfhost/AstBuilder.zbr:1127
                                 args.append(_zbr_rt._allocator, _zbr_ty_Arg.init(_zbr_fn_spanOf(av), null, av)) catch @panic("OOM");
                             }
                         }
-// zbr:selfhost/AstBuilder.zbr:1088
-                        return _zbr_ty_Expr{ .call = blk_box_69: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "call")) = _zbr_ty_ExprCall.init(_zbr_fn_spanOf(lhs_expr), callee_expr, args); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_69 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1128
+                        return _zbr_ty_Expr{ .call = blk_box_71: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "call")) = _zbr_ty_ExprCall.init(_zbr_fn_spanOf(lhs_expr), callee_expr, args); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_71 _bp; } };
                     },
                     else => {
-// zbr:selfhost/AstBuilder.zbr:1090
+// zbr:selfhost/AstBuilder.zbr:1130
                         { _zbr_rt._error_ctx = .{ .message = "buildExpr: pipeline RHS must be a call expression" }; return error.ZebraError; }
                     },
                 }
             },
             .expr_unary => |_ptr_pu| {
                 const pu = _ptr_pu.*;
-// zbr:selfhost/AstBuilder.zbr:1093
+// zbr:selfhost/AstBuilder.zbr:1133
                 const operand_expr = (try self.buildExpr(_zbr_at(pu.operand.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1094
+// zbr:selfhost/AstBuilder.zbr:1134
                 if (std.mem.eql(u8, pu.op, "old")) {
-// zbr:selfhost/AstBuilder.zbr:1095
+// zbr:selfhost/AstBuilder.zbr:1135
                     const uid: i64 = self.next_old_uid;
-// zbr:selfhost/AstBuilder.zbr:1096
+// zbr:selfhost/AstBuilder.zbr:1136
                     self.next_old_uid = (self.next_old_uid + 1);
-// zbr:selfhost/AstBuilder.zbr:1097
-                    return _zbr_ty_Expr{ .old_ = blk_box_70: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "old_")) = _zbr_ty_ExprOld.init(_zbr_fn_spanOf(operand_expr), uid, _bx0: { const _bv = operand_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_70 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1137
+                    return _zbr_ty_Expr{ .old_ = blk_box_72: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "old_")) = _zbr_ty_ExprOld.init(_zbr_fn_spanOf(operand_expr), uid, _bx0: { const _bv = operand_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_72 _bp; } };
                 }
-// zbr:selfhost/AstBuilder.zbr:1098
+// zbr:selfhost/AstBuilder.zbr:1138
                 const op = (try self.toUnaryOp(pu.op));
-// zbr:selfhost/AstBuilder.zbr:1099
-                return _zbr_ty_Expr{ .unary = blk_box_71: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "unary")) = _zbr_ty_ExprUnary.init(_zbr_fn_spanOf(operand_expr), op, _bx0: { const _bv = operand_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_71 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1139
+                return _zbr_ty_Expr{ .unary = blk_box_73: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "unary")) = _zbr_ty_ExprUnary.init(_zbr_fn_spanOf(operand_expr), op, _bx0: { const _bv = operand_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_73 _bp; } };
             },
             .expr_try => |_ptr_inner| {
                 const inner = _ptr_inner.*;
-// zbr:selfhost/AstBuilder.zbr:1102
+// zbr:selfhost/AstBuilder.zbr:1142
                 const inner_expr = (try self.buildExpr(inner));
-// zbr:selfhost/AstBuilder.zbr:1103
-                return _zbr_ty_Expr{ .try_ = blk_box_72: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "try_")) = _zbr_ty_ExprTry.init(_zbr_fn_spanOf(inner_expr), _bx0: { const _bv = inner_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_72 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1143
+                return _zbr_ty_Expr{ .try_ = blk_box_74: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "try_")) = _zbr_ty_ExprTry.init(_zbr_fn_spanOf(inner_expr), _bx0: { const _bv = inner_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_74 _bp; } };
             },
             .expr_catch => |_ptr_pc| {
                 const pc = _ptr_pc.*;
-// zbr:selfhost/AstBuilder.zbr:1106
+// zbr:selfhost/AstBuilder.zbr:1146
                 const expr_val = (try self.buildExpr(_zbr_at(pc.expr.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1107
+// zbr:selfhost/AstBuilder.zbr:1147
                 const fb_val = (try self.buildExpr(_zbr_at(pc.fallback.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1108
+// zbr:selfhost/AstBuilder.zbr:1148
                 var ev: ?[]const u8 = null;
-// zbr:selfhost/AstBuilder.zbr:1109
+// zbr:selfhost/AstBuilder.zbr:1149
                 if (!std.mem.eql(u8, pc.binding, "")) {
-// zbr:selfhost/AstBuilder.zbr:1110
+// zbr:selfhost/AstBuilder.zbr:1150
                     ev = pc.binding;
                 }
-// zbr:selfhost/AstBuilder.zbr:1111
-                return _zbr_ty_Expr{ .catch_ = blk_box_73: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "catch_")) = _zbr_ty_ExprCatch.init(_zbr_fn_spanOf(expr_val), _bx0: { const _bv = expr_val; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, ev, _bx1: { const _bv = fb_val; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_73 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1151
+                return _zbr_ty_Expr{ .catch_ = blk_box_75: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "catch_")) = _zbr_ty_ExprCatch.init(_zbr_fn_spanOf(expr_val), _bx0: { const _bv = expr_val; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, ev, _bx1: { const _bv = fb_val; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_75 _bp; } };
             },
             .expr_to_bang => |_ptr_inner| {
                 const inner = _ptr_inner.*;
-// zbr:selfhost/AstBuilder.zbr:1114
+// zbr:selfhost/AstBuilder.zbr:1154
                 const inner_expr = (try self.buildExpr(inner));
-// zbr:selfhost/AstBuilder.zbr:1115
-                return _zbr_ty_Expr{ .to_non_nil = blk_box_74: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "to_non_nil")) = _zbr_ty_ExprToNonNil.init(_zbr_fn_spanOf(inner_expr), _bx0: { const _bv = inner_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_74 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1155
+                return _zbr_ty_Expr{ .to_non_nil = blk_box_76: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "to_non_nil")) = _zbr_ty_ExprToNonNil.init(_zbr_fn_spanOf(inner_expr), _bx0: { const _bv = inner_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_76 _bp; } };
             },
             .expr_opt_chain => |_ptr_poc| {
                 const poc = _ptr_poc.*;
-// zbr:selfhost/AstBuilder.zbr:1118
+// zbr:selfhost/AstBuilder.zbr:1158
                 const base_expr = (try self.buildExpr(_zbr_at(poc.base.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1119
+// zbr:selfhost/AstBuilder.zbr:1159
                 var oc_args = std.ArrayList(_zbr_ty_Arg).empty;
-// zbr:selfhost/AstBuilder.zbr:1120
+// zbr:selfhost/AstBuilder.zbr:1160
                 for (poc.args.items) |arg_pn| {
-// zbr:selfhost/AstBuilder.zbr:1121
+// zbr:selfhost/AstBuilder.zbr:1161
                     if (arg_pn == .expr_named_arg) {
                         const pna_ptr = arg_pn.expr_named_arg;
                         const pna = pna_ptr.*;
-// zbr:selfhost/AstBuilder.zbr:1122
+// zbr:selfhost/AstBuilder.zbr:1162
                         const av = (try self.buildExpr(_zbr_at(pna.value.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1123
+// zbr:selfhost/AstBuilder.zbr:1163
                         oc_args.append(_zbr_rt._allocator, _zbr_ty_Arg.init(_zbr_fn_spanOf(av), pna.name, av)) catch @panic("OOM");
                     } else {
-// zbr:selfhost/AstBuilder.zbr:1125
+// zbr:selfhost/AstBuilder.zbr:1165
                         const av = (try self.buildExpr(arg_pn));
-// zbr:selfhost/AstBuilder.zbr:1126
+// zbr:selfhost/AstBuilder.zbr:1166
                         oc_args.append(_zbr_rt._allocator, _zbr_ty_Arg.init(_zbr_fn_spanOf(av), null, av)) catch @panic("OOM");
                     }
                 }
-// zbr:selfhost/AstBuilder.zbr:1127
-                return _zbr_ty_Expr{ .opt_chain = blk_box_75: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "opt_chain")) = _zbr_ty_ExprOptChain.init(_zbr_fn_spanOf(base_expr), _bx0: { const _bv = base_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, poc.member, poc.has_args, oc_args); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_75 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1167
+                return _zbr_ty_Expr{ .opt_chain = blk_box_77: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "opt_chain")) = _zbr_ty_ExprOptChain.init(_zbr_fn_spanOf(base_expr), _bx0: { const _bv = base_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, poc.member, poc.has_args, oc_args); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_77 _bp; } };
             },
             .expr_except => |_ptr_pex| {
                 const pex = _ptr_pex.*;
-// zbr:selfhost/AstBuilder.zbr:1130
+// zbr:selfhost/AstBuilder.zbr:1170
                 const base_expr = (try self.buildExpr(_zbr_at(pex.base.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1131
+// zbr:selfhost/AstBuilder.zbr:1171
                 var fields = std.ArrayList(_zbr_ty_ExceptField).empty;
-// zbr:selfhost/AstBuilder.zbr:1132
+// zbr:selfhost/AstBuilder.zbr:1172
                 for (pex.fields.items) |pf| {
-// zbr:selfhost/AstBuilder.zbr:1133
+// zbr:selfhost/AstBuilder.zbr:1173
                     const fval = (try self.buildExpr(_zbr_at(pf.value.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1134
+// zbr:selfhost/AstBuilder.zbr:1174
                     fields.append(_zbr_rt._allocator, _zbr_ty_ExceptField.init(pf.name, fval)) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:1135
-                return _zbr_ty_Expr{ .except_ = blk_box_76: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "except_")) = _zbr_ty_ExprExcept.init(_zbr_fn_spanOf(base_expr), base_expr, fields); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_76 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1175
+                return _zbr_ty_Expr{ .except_ = blk_box_78: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "except_")) = _zbr_ty_ExprExcept.init(_zbr_fn_spanOf(base_expr), base_expr, fields); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_78 _bp; } };
             },
             .expr_string_interp => |_ptr_psi| {
                 const psi = _ptr_psi.*;
-// zbr:selfhost/AstBuilder.zbr:1138
+// zbr:selfhost/AstBuilder.zbr:1178
                 var parts = std.ArrayList(_zbr_ty_StringPart).empty;
-// zbr:selfhost/AstBuilder.zbr:1139
+// zbr:selfhost/AstBuilder.zbr:1179
                 for (psi.parts.items) |part| {
-// zbr:selfhost/AstBuilder.zbr:1140
+// zbr:selfhost/AstBuilder.zbr:1180
                     switch (part) {
                         .expr_str => |_ptr_lit| {
                             const lit = _ptr_lit.*;
-// zbr:selfhost/AstBuilder.zbr:1142
+// zbr:selfhost/AstBuilder.zbr:1182
                             parts.append(_zbr_rt._allocator, _zbr_ty_StringPart{ .literal = _zbr_fn_stripStringQuotes(lit.text) }) catch @panic("OOM");
                         },
                         .expr_format => |_ptr_fspec| {
                             const fspec = _ptr_fspec.*;
-// zbr:selfhost/AstBuilder.zbr:1144
+// zbr:selfhost/AstBuilder.zbr:1184
                             parts.append(_zbr_rt._allocator, _zbr_ty_StringPart{ .format = fspec.text[@as(usize, @intCast(1))..@as(usize, @intCast(@as(i64, @intCast(fspec.text.len))))] }) catch @panic("OOM");
                         },
                         else => {
-// zbr:selfhost/AstBuilder.zbr:1146
+// zbr:selfhost/AstBuilder.zbr:1186
                             const part_expr = (try self.buildExpr(part));
-// zbr:selfhost/AstBuilder.zbr:1147
-                            parts.append(_zbr_rt._allocator, _zbr_ty_StringPart{ .expr_ = blk_box_77: { const _bv: std.meta.Child(@FieldType(_zbr_ty_StringPart, "expr_")) = part_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_77 _bp; } }) catch @panic("OOM");
+// zbr:selfhost/AstBuilder.zbr:1187
+                            parts.append(_zbr_rt._allocator, _zbr_ty_StringPart{ .expr_ = blk_box_79: { const _bv: std.meta.Child(@FieldType(_zbr_ty_StringPart, "expr_")) = part_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_79 _bp; } }) catch @panic("OOM");
                         },
                     }
                 }
-// zbr:selfhost/AstBuilder.zbr:1148
-                return _zbr_ty_Expr{ .string_interp = blk_box_78: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "string_interp")) = _zbr_ty_ExprStringInterp.init(_zbr_fn_zspan(), parts); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_78 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1188
+                return _zbr_ty_Expr{ .string_interp = blk_box_80: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "string_interp")) = _zbr_ty_ExprStringInterp.init(_zbr_fn_zspan(), parts); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_80 _bp; } };
             },
             .expr_lambda => |pl| {
-// zbr:selfhost/AstBuilder.zbr:1151
+// zbr:selfhost/AstBuilder.zbr:1191
                 return (try self.buildLambdaExpr(pl));
             },
             .expr_tuple_lit => |_ptr_pt| {
                 const pt = _ptr_pt.*;
-// zbr:selfhost/AstBuilder.zbr:1154
+// zbr:selfhost/AstBuilder.zbr:1194
                 var elems = std.ArrayList(_zbr_ty_Expr).empty;
-// zbr:selfhost/AstBuilder.zbr:1155
+// zbr:selfhost/AstBuilder.zbr:1195
                 for (pt.elems.items) |e| {
-// zbr:selfhost/AstBuilder.zbr:1156
+// zbr:selfhost/AstBuilder.zbr:1196
                     elems.append(_zbr_rt._allocator, (try self.buildExpr(e))) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:1157
-                return _zbr_ty_Expr{ .tuple_lit = blk_box_79: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "tuple_lit")) = _zbr_ty_ExprTuple.init(_zbr_fn_spanOfFirst(elems), elems); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_79 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1197
+                return _zbr_ty_Expr{ .tuple_lit = blk_box_81: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "tuple_lit")) = _zbr_ty_ExprTuple.init(_zbr_fn_spanOfFirst(elems), elems); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_81 _bp; } };
             },
             .expr_array_lit => |_ptr_pa| {
                 const pa = _ptr_pa.*;
-// zbr:selfhost/AstBuilder.zbr:1160
+// zbr:selfhost/AstBuilder.zbr:1200
                 var elems = std.ArrayList(_zbr_ty_Expr).empty;
-// zbr:selfhost/AstBuilder.zbr:1161
+// zbr:selfhost/AstBuilder.zbr:1201
                 for (pa.elems.items) |e| {
-// zbr:selfhost/AstBuilder.zbr:1162
+// zbr:selfhost/AstBuilder.zbr:1202
                     elems.append(_zbr_rt._allocator, (try self.buildExpr(e))) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:1163
-                return _zbr_ty_Expr{ .array_lit = blk_box_80: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "array_lit")) = _zbr_ty_ExprArrayLit.init(_zbr_fn_spanOfFirst(elems), elems); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_80 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1203
+                return _zbr_ty_Expr{ .array_lit = blk_box_82: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "array_lit")) = _zbr_ty_ExprArrayLit.init(_zbr_fn_spanOfFirst(elems), elems); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_82 _bp; } };
             },
             .expr_list_lit => |_ptr_pl| {
                 const pl = _ptr_pl.*;
-// zbr:selfhost/AstBuilder.zbr:1169
+// zbr:selfhost/AstBuilder.zbr:1209
                 var elems_l = std.ArrayList(_zbr_ty_Expr).empty;
-// zbr:selfhost/AstBuilder.zbr:1170
+// zbr:selfhost/AstBuilder.zbr:1210
                 for (pl.elems.items) |e| {
-// zbr:selfhost/AstBuilder.zbr:1171
+// zbr:selfhost/AstBuilder.zbr:1211
                     elems_l.append(_zbr_rt._allocator, (try self.buildExpr(e))) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:1172
-                return _zbr_ty_Expr{ .list_lit = blk_box_81: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "list_lit")) = _zbr_ty_ExprListLit.init(_zbr_fn_spanOfFirst(elems_l), null, elems_l); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_81 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1212
+                return _zbr_ty_Expr{ .list_lit = blk_box_83: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "list_lit")) = _zbr_ty_ExprListLit.init(_zbr_fn_spanOfFirst(elems_l), null, elems_l); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_83 _bp; } };
             },
             .expr_set_lit => |_ptr_ps| {
                 const ps = _ptr_ps.*;
-// zbr:selfhost/AstBuilder.zbr:1177
+// zbr:selfhost/AstBuilder.zbr:1217
                 var elems_s = std.ArrayList(_zbr_ty_Expr).empty;
-// zbr:selfhost/AstBuilder.zbr:1178
+// zbr:selfhost/AstBuilder.zbr:1218
                 for (ps.elems.items) |e| {
-// zbr:selfhost/AstBuilder.zbr:1179
+// zbr:selfhost/AstBuilder.zbr:1219
                     elems_s.append(_zbr_rt._allocator, (try self.buildExpr(e))) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:1180
-                return _zbr_ty_Expr{ .set_lit = blk_box_82: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "set_lit")) = _zbr_ty_ExprSetLit.init(_zbr_fn_spanOfFirst(elems_s), null, elems_s); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_82 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1220
+                return _zbr_ty_Expr{ .set_lit = blk_box_84: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "set_lit")) = _zbr_ty_ExprSetLit.init(_zbr_fn_spanOfFirst(elems_s), null, elems_s); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_84 _bp; } };
             },
             .expr_dict_lit => |_ptr_pd| {
                 const pd = _ptr_pd.*;
-// zbr:selfhost/AstBuilder.zbr:1186
+// zbr:selfhost/AstBuilder.zbr:1226
                 var dentries = std.ArrayList(_zbr_ty_DictEntry).empty;
-// zbr:selfhost/AstBuilder.zbr:1187
+// zbr:selfhost/AstBuilder.zbr:1227
                 var pdi: i64 = 0;
-// zbr:selfhost/AstBuilder.zbr:1188
+// zbr:selfhost/AstBuilder.zbr:1228
                 while (_zebra_lt(pdi, @as(i64, @intCast(pd.keys.items.len)))) {
-// zbr:selfhost/AstBuilder.zbr:1189
+// zbr:selfhost/AstBuilder.zbr:1229
                     const dk_e: _zbr_ty_Expr = (try self.buildExpr(_zbr_at(pd.keys.items, pdi)));
-// zbr:selfhost/AstBuilder.zbr:1190
+// zbr:selfhost/AstBuilder.zbr:1230
                     const dv_e: _zbr_ty_Expr = (try self.buildExpr(_zbr_at(pd.values.items, pdi)));
-// zbr:selfhost/AstBuilder.zbr:1191
+// zbr:selfhost/AstBuilder.zbr:1231
                     dentries.append(_zbr_rt._allocator, _zbr_ty_DictEntry.init(_bx0: { const _bv = dk_e; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = dv_e; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; })) catch @panic("OOM");
-// zbr:selfhost/AstBuilder.zbr:1192
+// zbr:selfhost/AstBuilder.zbr:1232
                     pdi = (pdi + 1);
                 }
-// zbr:selfhost/AstBuilder.zbr:1193
-                return _zbr_ty_Expr{ .dict_lit = blk_box_83: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "dict_lit")) = _zbr_ty_ExprDictLit.init(_zbr_fn_zspan(), dentries); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_83 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1233
+                return _zbr_ty_Expr{ .dict_lit = blk_box_85: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "dict_lit")) = _zbr_ty_ExprDictLit.init(_zbr_fn_zspan(), dentries); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_85 _bp; } };
             },
             .expr_chained_cmp => |_ptr_pcc| {
                 const pcc = _ptr_pcc.*;
-// zbr:selfhost/AstBuilder.zbr:1196
+// zbr:selfhost/AstBuilder.zbr:1236
                 var ops_list = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:1197
+// zbr:selfhost/AstBuilder.zbr:1237
                 for (pcc.ops.items) |op| {
-// zbr:selfhost/AstBuilder.zbr:1198
+// zbr:selfhost/AstBuilder.zbr:1238
                     ops_list.append(_zbr_rt._allocator, _intern(op)) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:1199
+// zbr:selfhost/AstBuilder.zbr:1239
                 var operands_list = std.ArrayList(_zbr_ty_Expr).empty;
-// zbr:selfhost/AstBuilder.zbr:1200
+// zbr:selfhost/AstBuilder.zbr:1240
                 for (pcc.operands.items) |pnd| {
-// zbr:selfhost/AstBuilder.zbr:1201
+// zbr:selfhost/AstBuilder.zbr:1241
                     const e = (try self.buildExpr(pnd));
-// zbr:selfhost/AstBuilder.zbr:1202
+// zbr:selfhost/AstBuilder.zbr:1242
                     operands_list.append(_zbr_rt._allocator, e) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:1203
-                return _zbr_ty_Expr{ .chained_cmp = blk_box_84: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "chained_cmp")) = _zbr_ty_ExprChainedCmp.init(_zbr_fn_spanOfFirst(operands_list), ops_list, operands_list); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_84 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1243
+                return _zbr_ty_Expr{ .chained_cmp = blk_box_86: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "chained_cmp")) = _zbr_ty_ExprChainedCmp.init(_zbr_fn_spanOfFirst(operands_list), ops_list, operands_list); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_86 _bp; } };
             },
             .expr_if_expr => |_ptr_pie| {
                 const pie = _ptr_pie.*;
-// zbr:selfhost/AstBuilder.zbr:1206
+// zbr:selfhost/AstBuilder.zbr:1246
                 const cond_e = (try self.buildExpr(_zbr_at(pie.cond.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1207
+// zbr:selfhost/AstBuilder.zbr:1247
                 const then_e = (try self.buildExpr(_zbr_at(pie.then_expr.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1208
+// zbr:selfhost/AstBuilder.zbr:1248
                 const else_e = (try self.buildExpr(_zbr_at(pie.else_expr.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1209
-                return _zbr_ty_Expr{ .if_expr = blk_box_85: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "if_expr")) = _zbr_ty_ExprIf.init(_zbr_fn_spanOf(cond_e), _bx0: { const _bv = cond_e; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = then_e; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, _bx2: { const _bv = else_e; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx2 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_85 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1249
+                return _zbr_ty_Expr{ .if_expr = blk_box_87: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "if_expr")) = _zbr_ty_ExprIf.init(_zbr_fn_spanOf(cond_e), _bx0: { const _bv = cond_e; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, _bx1: { const _bv = then_e; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx1 _bp; }, _bx2: { const _bv = else_e; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx2 _bp; }); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_87 _bp; } };
             },
             else => {
-// zbr:selfhost/AstBuilder.zbr:1212
+// zbr:selfhost/AstBuilder.zbr:1252
                 { _zbr_rt._error_ctx = .{ .message = "buildExpr: unexpected PNode variant" }; return error.ZebraError; }
             },
         }
@@ -2279,635 +2291,701 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     pub fn buildStringLit(self: *_zbr_ty_ASTBuilder, text: []const u8, line: i64, col: i64) anyerror!_zbr_ty_Expr {
         _ = self;
-// zbr:selfhost/AstBuilder.zbr:1215
+// zbr:selfhost/AstBuilder.zbr:1255
         const sp = _zbr_ty_Span.init(line, col, line, col);
-// zbr:selfhost/AstBuilder.zbr:1216
+// zbr:selfhost/AstBuilder.zbr:1256
         if (std.mem.startsWith(u8, text, "\"\"\"")) {
-// zbr:selfhost/AstBuilder.zbr:1217
+// zbr:selfhost/AstBuilder.zbr:1257
             return _zbr_ty_Expr{ .string_lit = _zbr_ty_ExprStringLit.init(sp, _zbr_ty_StringKind.plain, text) };
         }
-// zbr:selfhost/AstBuilder.zbr:1218
+// zbr:selfhost/AstBuilder.zbr:1258
         return _zbr_ty_Expr{ .string_lit = _zbr_ty_ExprStringLit.init(sp, _zbr_ty_StringKind.plain, _zbr_fn_stripStringQuotes(text)) };
     }
 
     pub fn buildLambdaExpr(self: *_zbr_ty_ASTBuilder, pl: _zbr_ty_PLambda) anyerror!_zbr_ty_Expr {
-// zbr:selfhost/AstBuilder.zbr:1222
+// zbr:selfhost/AstBuilder.zbr:1262
         var params = std.ArrayList(_zbr_ty_Param).empty;
-// zbr:selfhost/AstBuilder.zbr:1223
+// zbr:selfhost/AstBuilder.zbr:1263
         for (pl.params.items) |pp| {
-// zbr:selfhost/AstBuilder.zbr:1224
+// zbr:selfhost/AstBuilder.zbr:1264
             var tr: ?_zbr_ty_TypeRef = null;
-// zbr:selfhost/AstBuilder.zbr:1225
+// zbr:selfhost/AstBuilder.zbr:1265
             if (!std.mem.eql(u8, pp.type_name, "")) {
-// zbr:selfhost/AstBuilder.zbr:1226
+// zbr:selfhost/AstBuilder.zbr:1266
                 tr = self.parseTypeRef(pp.type_name);
             }
-// zbr:selfhost/AstBuilder.zbr:1227
+// zbr:selfhost/AstBuilder.zbr:1267
             if (_zebra_gt(@as(i64, @intCast(pp.default_expr.items.len)), 0)) {
-// zbr:selfhost/AstBuilder.zbr:1228
+// zbr:selfhost/AstBuilder.zbr:1268
                 const defval = (try self.buildExpr(_zbr_at(pp.default_expr.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1229
+// zbr:selfhost/AstBuilder.zbr:1269
                 params.append(_zbr_rt._allocator, _zbr_ty_Param.init(_zbr_fn_zspan(), _zbr_ty_ParamMode.normal, pp.name, tr, _bx0: { const _bv = defval; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; })) catch @panic("OOM");
             } else {
-// zbr:selfhost/AstBuilder.zbr:1231
+// zbr:selfhost/AstBuilder.zbr:1271
                 params.append(_zbr_rt._allocator, _zbr_ty_Param.init(_zbr_fn_zspan(), _zbr_ty_ParamMode.normal, pp.name, tr, null)) catch @panic("OOM");
             }
         }
-// zbr:selfhost/AstBuilder.zbr:1232
+// zbr:selfhost/AstBuilder.zbr:1272
         var ret_type: ?_zbr_ty_TypeRef = null;
-// zbr:selfhost/AstBuilder.zbr:1233
+// zbr:selfhost/AstBuilder.zbr:1273
         if (!std.mem.eql(u8, pl.return_type, "")) {
-// zbr:selfhost/AstBuilder.zbr:1234
+// zbr:selfhost/AstBuilder.zbr:1274
             ret_type = self.parseTypeRef(pl.return_type);
         }
-// zbr:selfhost/AstBuilder.zbr:1235
+// zbr:selfhost/AstBuilder.zbr:1275
         var lbody: _zbr_ty_LambdaBody = undefined;
-// zbr:selfhost/AstBuilder.zbr:1236
+// zbr:selfhost/AstBuilder.zbr:1276
         if (_zebra_gt(@as(i64, @intCast(pl.body_expr.items.len)), 0)) {
-// zbr:selfhost/AstBuilder.zbr:1237
+// zbr:selfhost/AstBuilder.zbr:1277
             const bexpr = (try self.buildExpr(_zbr_at(pl.body_expr.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1238
+// zbr:selfhost/AstBuilder.zbr:1278
             lbody = _zbr_ty_LambdaBody{ .expr_ = bexpr };
         } else {
-// zbr:selfhost/AstBuilder.zbr:1240
+// zbr:selfhost/AstBuilder.zbr:1280
             var stmts = std.ArrayList(_zbr_ty_Stmt).empty;
-// zbr:selfhost/AstBuilder.zbr:1241
+// zbr:selfhost/AstBuilder.zbr:1281
             for (pl.body_stmts.items) |ps| {
-// zbr:selfhost/AstBuilder.zbr:1242
+// zbr:selfhost/AstBuilder.zbr:1282
                 stmts.append(_zbr_rt._allocator, (try self.buildStmt(ps))) catch @panic("OOM");
             }
-// zbr:selfhost/AstBuilder.zbr:1243
+// zbr:selfhost/AstBuilder.zbr:1283
             lbody = _zbr_ty_LambdaBody{ .stmts = stmts };
         }
-// zbr:selfhost/AstBuilder.zbr:1244
+// zbr:selfhost/AstBuilder.zbr:1284
         var captures = std.ArrayList(_zbr_ty_DeclVar).empty;
-// zbr:selfhost/AstBuilder.zbr:1245
+// zbr:selfhost/AstBuilder.zbr:1285
         for (pl.captures.items) |cv| {
-// zbr:selfhost/AstBuilder.zbr:1246
+// zbr:selfhost/AstBuilder.zbr:1286
             var cv_tr: ?_zbr_ty_TypeRef = null;
-// zbr:selfhost/AstBuilder.zbr:1247
+// zbr:selfhost/AstBuilder.zbr:1287
             if (!std.mem.eql(u8, cv.type_name, "")) {
-// zbr:selfhost/AstBuilder.zbr:1248
+// zbr:selfhost/AstBuilder.zbr:1288
                 cv_tr = self.parseTypeRef(cv.type_name);
             }
-// zbr:selfhost/AstBuilder.zbr:1249
+// zbr:selfhost/AstBuilder.zbr:1289
             const cv_init_expr = (try self.buildExpr(_zbr_at(cv.init_expr.items, 0)));
-// zbr:selfhost/AstBuilder.zbr:1250
+// zbr:selfhost/AstBuilder.zbr:1290
             const dv = _zbr_ty_DeclVar.init(_zbr_fn_zspan(), _zbr_fn_zmods(), cv.name, cv_tr, _bx0: { const _bv = cv_init_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, (!cv.is_const));
-// zbr:selfhost/AstBuilder.zbr:1251
+// zbr:selfhost/AstBuilder.zbr:1291
             captures.append(_zbr_rt._allocator, dv) catch @panic("OOM");
         }
-// zbr:selfhost/AstBuilder.zbr:1252
-        return _zbr_ty_Expr{ .lambda = blk_box_86: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "lambda")) = _zbr_ty_ExprLambda.init(_zbr_fn_zspan(), params, ret_type, lbody, captures); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_86 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1292
+        return _zbr_ty_Expr{ .lambda = blk_box_88: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "lambda")) = _zbr_ty_ExprLambda.init(_zbr_fn_zspan(), params, ret_type, lbody, captures); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_88 _bp; } };
+    }
+
+    pub fn compoundBinaryOp(self: *_zbr_ty_ASTBuilder, op: []const u8) anyerror!_zbr_ty_BinaryOp {
+        _ = self;
+// zbr:selfhost/AstBuilder.zbr:1305
+        if (std.mem.eql(u8, op, "+=")) {
+// zbr:selfhost/AstBuilder.zbr:1306
+            return _zbr_ty_BinaryOp.add;
+        }
+// zbr:selfhost/AstBuilder.zbr:1307
+        if (std.mem.eql(u8, op, "-=")) {
+// zbr:selfhost/AstBuilder.zbr:1308
+            return _zbr_ty_BinaryOp.sub;
+        }
+// zbr:selfhost/AstBuilder.zbr:1309
+        if (std.mem.eql(u8, op, "*=")) {
+// zbr:selfhost/AstBuilder.zbr:1310
+            return _zbr_ty_BinaryOp.mul;
+        }
+// zbr:selfhost/AstBuilder.zbr:1311
+        if (std.mem.eql(u8, op, "/=")) {
+// zbr:selfhost/AstBuilder.zbr:1312
+            return _zbr_ty_BinaryOp.div;
+        }
+// zbr:selfhost/AstBuilder.zbr:1313
+        if (std.mem.eql(u8, op, "//=")) {
+// zbr:selfhost/AstBuilder.zbr:1314
+            return _zbr_ty_BinaryOp.int_div;
+        }
+// zbr:selfhost/AstBuilder.zbr:1315
+        if (std.mem.eql(u8, op, "%=")) {
+// zbr:selfhost/AstBuilder.zbr:1316
+            return _zbr_ty_BinaryOp.mod;
+        }
+// zbr:selfhost/AstBuilder.zbr:1317
+        if (std.mem.eql(u8, op, "**=")) {
+// zbr:selfhost/AstBuilder.zbr:1318
+            return _zbr_ty_BinaryOp.pow;
+        }
+// zbr:selfhost/AstBuilder.zbr:1319
+        if (std.mem.eql(u8, op, "&=")) {
+// zbr:selfhost/AstBuilder.zbr:1320
+            return _zbr_ty_BinaryOp.bit_and;
+        }
+// zbr:selfhost/AstBuilder.zbr:1321
+        if (std.mem.eql(u8, op, "|=")) {
+// zbr:selfhost/AstBuilder.zbr:1322
+            return _zbr_ty_BinaryOp.bit_or;
+        }
+// zbr:selfhost/AstBuilder.zbr:1323
+        if (std.mem.eql(u8, op, "^=")) {
+// zbr:selfhost/AstBuilder.zbr:1324
+            return _zbr_ty_BinaryOp.bit_xor;
+        }
+// zbr:selfhost/AstBuilder.zbr:1325
+        if (std.mem.eql(u8, op, "<<=")) {
+// zbr:selfhost/AstBuilder.zbr:1326
+            return _zbr_ty_BinaryOp.shl;
+        }
+// zbr:selfhost/AstBuilder.zbr:1327
+        if (std.mem.eql(u8, op, ">>=")) {
+// zbr:selfhost/AstBuilder.zbr:1328
+            return _zbr_ty_BinaryOp.shr;
+        }
+// zbr:selfhost/AstBuilder.zbr:1329
+        { _zbr_rt._error_ctx = .{ .message = _str_concat("not a compound assignment operator: ", op, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
     pub fn toAssignOp(self: *_zbr_ty_ASTBuilder, op: []const u8) anyerror!_zbr_ty_AssignOp {
         _ = self;
-// zbr:selfhost/AstBuilder.zbr:1257
+// zbr:selfhost/AstBuilder.zbr:1332
         if (std.mem.eql(u8, op, "=")) {
-// zbr:selfhost/AstBuilder.zbr:1258
+// zbr:selfhost/AstBuilder.zbr:1333
             return _zbr_ty_AssignOp.assign;
         }
-// zbr:selfhost/AstBuilder.zbr:1259
+// zbr:selfhost/AstBuilder.zbr:1334
         if (std.mem.eql(u8, op, "+=")) {
-// zbr:selfhost/AstBuilder.zbr:1260
+// zbr:selfhost/AstBuilder.zbr:1335
             return _zbr_ty_AssignOp.plus_eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1261
+// zbr:selfhost/AstBuilder.zbr:1336
         if (std.mem.eql(u8, op, "-=")) {
-// zbr:selfhost/AstBuilder.zbr:1262
+// zbr:selfhost/AstBuilder.zbr:1337
             return _zbr_ty_AssignOp.minus_eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1263
+// zbr:selfhost/AstBuilder.zbr:1338
         if (std.mem.eql(u8, op, "*=")) {
-// zbr:selfhost/AstBuilder.zbr:1264
+// zbr:selfhost/AstBuilder.zbr:1339
             return _zbr_ty_AssignOp.star_eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1265
+// zbr:selfhost/AstBuilder.zbr:1340
         if (std.mem.eql(u8, op, "/=")) {
-// zbr:selfhost/AstBuilder.zbr:1266
+// zbr:selfhost/AstBuilder.zbr:1341
             return _zbr_ty_AssignOp.slash_eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1267
+// zbr:selfhost/AstBuilder.zbr:1342
         if (std.mem.eql(u8, op, "//=")) {
-// zbr:selfhost/AstBuilder.zbr:1268
+// zbr:selfhost/AstBuilder.zbr:1343
             return _zbr_ty_AssignOp.slashslash_eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1269
+// zbr:selfhost/AstBuilder.zbr:1344
         if (std.mem.eql(u8, op, "%=")) {
-// zbr:selfhost/AstBuilder.zbr:1270
+// zbr:selfhost/AstBuilder.zbr:1345
             return _zbr_ty_AssignOp.percent_eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1271
+// zbr:selfhost/AstBuilder.zbr:1346
         if (std.mem.eql(u8, op, "**=")) {
-// zbr:selfhost/AstBuilder.zbr:1272
+// zbr:selfhost/AstBuilder.zbr:1347
             return _zbr_ty_AssignOp.starstar_eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1273
+// zbr:selfhost/AstBuilder.zbr:1348
         if (std.mem.eql(u8, op, "&=")) {
-// zbr:selfhost/AstBuilder.zbr:1274
+// zbr:selfhost/AstBuilder.zbr:1349
             return _zbr_ty_AssignOp.ampersand_eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1275
+// zbr:selfhost/AstBuilder.zbr:1350
         if (std.mem.eql(u8, op, "|=")) {
-// zbr:selfhost/AstBuilder.zbr:1276
+// zbr:selfhost/AstBuilder.zbr:1351
             return _zbr_ty_AssignOp.vertical_bar_eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1277
+// zbr:selfhost/AstBuilder.zbr:1352
         if (std.mem.eql(u8, op, "^=")) {
-// zbr:selfhost/AstBuilder.zbr:1278
+// zbr:selfhost/AstBuilder.zbr:1353
             return _zbr_ty_AssignOp.caret_eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1279
+// zbr:selfhost/AstBuilder.zbr:1354
         if (std.mem.eql(u8, op, "<<=")) {
-// zbr:selfhost/AstBuilder.zbr:1280
+// zbr:selfhost/AstBuilder.zbr:1355
             return _zbr_ty_AssignOp.double_lt_eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1281
+// zbr:selfhost/AstBuilder.zbr:1356
         if (std.mem.eql(u8, op, ">>=")) {
-// zbr:selfhost/AstBuilder.zbr:1282
+// zbr:selfhost/AstBuilder.zbr:1357
             return _zbr_ty_AssignOp.double_gt_eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1283
+// zbr:selfhost/AstBuilder.zbr:1358
         { _zbr_rt._error_ctx = .{ .message = _str_concat("toAssignOp: unknown op: ", op, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
     pub fn toBinaryOp(self: *_zbr_ty_ASTBuilder, op: []const u8) anyerror!_zbr_ty_BinaryOp {
         _ = self;
-// zbr:selfhost/AstBuilder.zbr:1286
+// zbr:selfhost/AstBuilder.zbr:1361
         if (std.mem.eql(u8, op, "+")) {
-// zbr:selfhost/AstBuilder.zbr:1287
+// zbr:selfhost/AstBuilder.zbr:1362
             return _zbr_ty_BinaryOp.add;
         }
-// zbr:selfhost/AstBuilder.zbr:1288
+// zbr:selfhost/AstBuilder.zbr:1363
         if (std.mem.eql(u8, op, "-")) {
-// zbr:selfhost/AstBuilder.zbr:1289
+// zbr:selfhost/AstBuilder.zbr:1364
             return _zbr_ty_BinaryOp.sub;
         }
-// zbr:selfhost/AstBuilder.zbr:1290
+// zbr:selfhost/AstBuilder.zbr:1365
         if (std.mem.eql(u8, op, "*")) {
-// zbr:selfhost/AstBuilder.zbr:1291
+// zbr:selfhost/AstBuilder.zbr:1366
             return _zbr_ty_BinaryOp.mul;
         }
-// zbr:selfhost/AstBuilder.zbr:1292
+// zbr:selfhost/AstBuilder.zbr:1367
         if (std.mem.eql(u8, op, "/")) {
-// zbr:selfhost/AstBuilder.zbr:1293
+// zbr:selfhost/AstBuilder.zbr:1368
             return _zbr_ty_BinaryOp.div;
         }
-// zbr:selfhost/AstBuilder.zbr:1294
+// zbr:selfhost/AstBuilder.zbr:1369
         if (std.mem.eql(u8, op, "%")) {
-// zbr:selfhost/AstBuilder.zbr:1295
+// zbr:selfhost/AstBuilder.zbr:1370
             return _zbr_ty_BinaryOp.mod;
         }
-// zbr:selfhost/AstBuilder.zbr:1296
+// zbr:selfhost/AstBuilder.zbr:1371
         if (std.mem.eql(u8, op, "==")) {
-// zbr:selfhost/AstBuilder.zbr:1297
+// zbr:selfhost/AstBuilder.zbr:1372
             return _zbr_ty_BinaryOp.eq;
         }
-// zbr:selfhost/AstBuilder.zbr:1298
+// zbr:selfhost/AstBuilder.zbr:1373
         if (std.mem.eql(u8, op, "!=")) {
-// zbr:selfhost/AstBuilder.zbr:1299
+// zbr:selfhost/AstBuilder.zbr:1374
             return _zbr_ty_BinaryOp.ne;
         }
-// zbr:selfhost/AstBuilder.zbr:1300
+// zbr:selfhost/AstBuilder.zbr:1375
         if (std.mem.eql(u8, op, "<")) {
-// zbr:selfhost/AstBuilder.zbr:1301
+// zbr:selfhost/AstBuilder.zbr:1376
             return _zbr_ty_BinaryOp.lt;
         }
-// zbr:selfhost/AstBuilder.zbr:1302
+// zbr:selfhost/AstBuilder.zbr:1377
         if (std.mem.eql(u8, op, "<=")) {
-// zbr:selfhost/AstBuilder.zbr:1303
+// zbr:selfhost/AstBuilder.zbr:1378
             return _zbr_ty_BinaryOp.le;
         }
-// zbr:selfhost/AstBuilder.zbr:1304
+// zbr:selfhost/AstBuilder.zbr:1379
         if (std.mem.eql(u8, op, ">")) {
-// zbr:selfhost/AstBuilder.zbr:1305
+// zbr:selfhost/AstBuilder.zbr:1380
             return _zbr_ty_BinaryOp.gt;
         }
-// zbr:selfhost/AstBuilder.zbr:1306
+// zbr:selfhost/AstBuilder.zbr:1381
         if (std.mem.eql(u8, op, ">=")) {
-// zbr:selfhost/AstBuilder.zbr:1307
+// zbr:selfhost/AstBuilder.zbr:1382
             return _zbr_ty_BinaryOp.ge;
         }
-// zbr:selfhost/AstBuilder.zbr:1308
+// zbr:selfhost/AstBuilder.zbr:1383
         if (std.mem.eql(u8, op, "and")) {
-// zbr:selfhost/AstBuilder.zbr:1309
+// zbr:selfhost/AstBuilder.zbr:1384
             return _zbr_ty_BinaryOp.and_;
         }
-// zbr:selfhost/AstBuilder.zbr:1310
+// zbr:selfhost/AstBuilder.zbr:1385
         if (std.mem.eql(u8, op, "or")) {
-// zbr:selfhost/AstBuilder.zbr:1311
+// zbr:selfhost/AstBuilder.zbr:1386
             return _zbr_ty_BinaryOp.or_;
         }
-// zbr:selfhost/AstBuilder.zbr:1312
+// zbr:selfhost/AstBuilder.zbr:1387
         if (std.mem.eql(u8, op, "in")) {
-// zbr:selfhost/AstBuilder.zbr:1313
+// zbr:selfhost/AstBuilder.zbr:1388
             return _zbr_ty_BinaryOp.in_;
         }
-// zbr:selfhost/AstBuilder.zbr:1318
+// zbr:selfhost/AstBuilder.zbr:1393
         if (std.mem.eql(u8, op, "&")) {
-// zbr:selfhost/AstBuilder.zbr:1319
+// zbr:selfhost/AstBuilder.zbr:1394
             return _zbr_ty_BinaryOp.bit_and;
         }
-// zbr:selfhost/AstBuilder.zbr:1320
+// zbr:selfhost/AstBuilder.zbr:1395
         if (std.mem.eql(u8, op, "|")) {
-// zbr:selfhost/AstBuilder.zbr:1321
+// zbr:selfhost/AstBuilder.zbr:1396
             return _zbr_ty_BinaryOp.bit_or;
         }
-// zbr:selfhost/AstBuilder.zbr:1322
+// zbr:selfhost/AstBuilder.zbr:1397
         if (std.mem.eql(u8, op, "^")) {
-// zbr:selfhost/AstBuilder.zbr:1323
+// zbr:selfhost/AstBuilder.zbr:1398
             return _zbr_ty_BinaryOp.bit_xor;
         }
-// zbr:selfhost/AstBuilder.zbr:1324
+// zbr:selfhost/AstBuilder.zbr:1399
         if (std.mem.eql(u8, op, "<<")) {
-// zbr:selfhost/AstBuilder.zbr:1325
+// zbr:selfhost/AstBuilder.zbr:1400
             return _zbr_ty_BinaryOp.shl;
         }
-// zbr:selfhost/AstBuilder.zbr:1326
+// zbr:selfhost/AstBuilder.zbr:1401
         if (std.mem.eql(u8, op, ">>")) {
-// zbr:selfhost/AstBuilder.zbr:1327
+// zbr:selfhost/AstBuilder.zbr:1402
             return _zbr_ty_BinaryOp.shr;
         }
-// zbr:selfhost/AstBuilder.zbr:1328
+// zbr:selfhost/AstBuilder.zbr:1403
         { _zbr_rt._error_ctx = .{ .message = _str_concat("toBinaryOp: unknown op: ", op, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
     pub fn toUnaryOp(self: *_zbr_ty_ASTBuilder, op: []const u8) anyerror!_zbr_ty_UnaryOp {
         _ = self;
-// zbr:selfhost/AstBuilder.zbr:1331
+// zbr:selfhost/AstBuilder.zbr:1406
         if (std.mem.eql(u8, op, "-")) {
-// zbr:selfhost/AstBuilder.zbr:1332
+// zbr:selfhost/AstBuilder.zbr:1407
             return _zbr_ty_UnaryOp.neg;
         }
-// zbr:selfhost/AstBuilder.zbr:1333
+// zbr:selfhost/AstBuilder.zbr:1408
         if (std.mem.eql(u8, op, "not")) {
-// zbr:selfhost/AstBuilder.zbr:1334
+// zbr:selfhost/AstBuilder.zbr:1409
             return _zbr_ty_UnaryOp.not_;
         }
-// zbr:selfhost/AstBuilder.zbr:1338
+// zbr:selfhost/AstBuilder.zbr:1413
         if (std.mem.eql(u8, op, "~")) {
-// zbr:selfhost/AstBuilder.zbr:1339
+// zbr:selfhost/AstBuilder.zbr:1414
             return _zbr_ty_UnaryOp.bit_not;
         }
-// zbr:selfhost/AstBuilder.zbr:1340
+// zbr:selfhost/AstBuilder.zbr:1415
         { _zbr_rt._error_ctx = .{ .message = _str_concat("toUnaryOp: unknown op: ", op, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
     pub fn splitTopLevelArgs(self: *_zbr_ty_ASTBuilder, s: []const u8) std.ArrayList([]const u8) {
         _ = self;
-// zbr:selfhost/AstBuilder.zbr:1359
+// zbr:selfhost/AstBuilder.zbr:1434
         var out = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:1360
+// zbr:selfhost/AstBuilder.zbr:1435
         var depth: i64 = 0;
-// zbr:selfhost/AstBuilder.zbr:1361
+// zbr:selfhost/AstBuilder.zbr:1436
         var current: []const u8 = "";
-// zbr:selfhost/AstBuilder.zbr:1362
+// zbr:selfhost/AstBuilder.zbr:1437
         {
             var _cp_it_gch = std.unicode.Utf8View.initUnchecked(s).iterator();
             while (_cp_it_gch.nextCodepoint()) |gch| {
-// zbr:selfhost/AstBuilder.zbr:1363
+// zbr:selfhost/AstBuilder.zbr:1438
                 if ((gch == '(')) {
-// zbr:selfhost/AstBuilder.zbr:1364
+// zbr:selfhost/AstBuilder.zbr:1439
                     depth = (depth + 1);
-// zbr:selfhost/AstBuilder.zbr:1365
+// zbr:selfhost/AstBuilder.zbr:1440
                     current = _str_concat(current, (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(gch), &_cpbuf) catch 1; break :blk _zbr_rt._allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _zbr_rt._allocator);
                 } else {
-// zbr:selfhost/AstBuilder.zbr:1366
+// zbr:selfhost/AstBuilder.zbr:1441
                     if ((gch == ')')) {
-// zbr:selfhost/AstBuilder.zbr:1367
+// zbr:selfhost/AstBuilder.zbr:1442
                         depth = (depth - 1);
-// zbr:selfhost/AstBuilder.zbr:1368
+// zbr:selfhost/AstBuilder.zbr:1443
                         current = _str_concat(current, (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(gch), &_cpbuf) catch 1; break :blk _zbr_rt._allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _zbr_rt._allocator);
                     } else {
-// zbr:selfhost/AstBuilder.zbr:1369
+// zbr:selfhost/AstBuilder.zbr:1444
                         if (((gch == ',') and (depth == 0))) {
-// zbr:selfhost/AstBuilder.zbr:1370
+// zbr:selfhost/AstBuilder.zbr:1445
                             out.append(_zbr_rt._allocator, _intern(current)) catch @panic("OOM");
-// zbr:selfhost/AstBuilder.zbr:1371
+// zbr:selfhost/AstBuilder.zbr:1446
                             current = "";
                         } else {
-// zbr:selfhost/AstBuilder.zbr:1373
+// zbr:selfhost/AstBuilder.zbr:1448
                             current = _str_concat(current, (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(gch), &_cpbuf) catch 1; break :blk _zbr_rt._allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _zbr_rt._allocator);
                         }
                     }
                 }
             }
         }
-// zbr:selfhost/AstBuilder.zbr:1374
+// zbr:selfhost/AstBuilder.zbr:1449
         if (!std.mem.eql(u8, current, "")) {
-// zbr:selfhost/AstBuilder.zbr:1375
+// zbr:selfhost/AstBuilder.zbr:1450
             out.append(_zbr_rt._allocator, _intern(current)) catch @panic("OOM");
         }
-// zbr:selfhost/AstBuilder.zbr:1376
+// zbr:selfhost/AstBuilder.zbr:1451
         return out;
     }
 
     pub fn parseTypeRef(self: *_zbr_ty_ASTBuilder, s: []const u8) ?_zbr_ty_TypeRef {
-// zbr:selfhost/AstBuilder.zbr:1379
+// zbr:selfhost/AstBuilder.zbr:1454
         if ((std.mem.eql(u8, s, "") or std.mem.eql(u8, s, "void"))) {
-// zbr:selfhost/AstBuilder.zbr:1380
+// zbr:selfhost/AstBuilder.zbr:1455
             return null;
         }
-// zbr:selfhost/AstBuilder.zbr:1383
+// zbr:selfhost/AstBuilder.zbr:1458
         if (std.mem.startsWith(u8, s, "__alias__")) {
-// zbr:selfhost/AstBuilder.zbr:1384
+// zbr:selfhost/AstBuilder.zbr:1459
             var after_alias = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:1385
+// zbr:selfhost/AstBuilder.zbr:1460
             {
                 var _it_alias_part = std.mem.splitSequence(u8, s, "__alias__");
                 while (_it_alias_part.next()) |alias_part| {
-// zbr:selfhost/AstBuilder.zbr:1386
+// zbr:selfhost/AstBuilder.zbr:1461
                     after_alias.append(_zbr_rt._allocator, _intern(alias_part)) catch @panic("OOM");
                 }
             }
-// zbr:selfhost/AstBuilder.zbr:1387
+// zbr:selfhost/AstBuilder.zbr:1462
             const rest_alias: []const u8 = _zbr_at(after_alias.items, 1);
-// zbr:selfhost/AstBuilder.zbr:1388
+// zbr:selfhost/AstBuilder.zbr:1463
             var name_args_parts = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:1389
+// zbr:selfhost/AstBuilder.zbr:1464
             {
                 var _it_args_part = std.mem.splitSequence(u8, rest_alias, "__args__");
                 while (_it_args_part.next()) |args_part| {
-// zbr:selfhost/AstBuilder.zbr:1390
+// zbr:selfhost/AstBuilder.zbr:1465
                     name_args_parts.append(_zbr_rt._allocator, _intern(args_part)) catch @panic("OOM");
                 }
             }
-// zbr:selfhost/AstBuilder.zbr:1391
+// zbr:selfhost/AstBuilder.zbr:1466
             const alias_name: []const u8 = _zbr_at(name_args_parts.items, 0);
-// zbr:selfhost/AstBuilder.zbr:1392
+// zbr:selfhost/AstBuilder.zbr:1467
             var alias_args = std.ArrayList(_zbr_ty_Expr).empty;
-// zbr:selfhost/AstBuilder.zbr:1393
+// zbr:selfhost/AstBuilder.zbr:1468
             if (_zebra_gt(@as(i64, @intCast(name_args_parts.items.len)), 1)) {
-// zbr:selfhost/AstBuilder.zbr:1394
+// zbr:selfhost/AstBuilder.zbr:1469
                 const args_str: []const u8 = _zbr_at(name_args_parts.items, 1);
-// zbr:selfhost/AstBuilder.zbr:1395
+// zbr:selfhost/AstBuilder.zbr:1470
                 {
                     var _it_a = std.mem.splitSequence(u8, args_str, ",");
                     while (_it_a.next()) |a| {
-// zbr:selfhost/AstBuilder.zbr:1396
+// zbr:selfhost/AstBuilder.zbr:1471
                         if (!std.mem.eql(u8, a, "")) {
-// zbr:selfhost/AstBuilder.zbr:1397
+// zbr:selfhost/AstBuilder.zbr:1472
                             var a2 = a;
-// zbr:selfhost/AstBuilder.zbr:1398
+// zbr:selfhost/AstBuilder.zbr:1473
                             const is_neg = std.mem.startsWith(u8, a2, "-");
-// zbr:selfhost/AstBuilder.zbr:1399
+// zbr:selfhost/AstBuilder.zbr:1474
                             if (is_neg) {
-// zbr:selfhost/AstBuilder.zbr:1400
+// zbr:selfhost/AstBuilder.zbr:1475
                                 var pos_parts = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:1401
+// zbr:selfhost/AstBuilder.zbr:1476
                                 {
                                     var _it_neg_part = std.mem.splitSequence(u8, a2, "-");
                                     while (_it_neg_part.next()) |neg_part| {
-// zbr:selfhost/AstBuilder.zbr:1402
+// zbr:selfhost/AstBuilder.zbr:1477
                                         pos_parts.append(_zbr_rt._allocator, _intern(neg_part)) catch @panic("OOM");
                                     }
                                 }
-// zbr:selfhost/AstBuilder.zbr:1403
+// zbr:selfhost/AstBuilder.zbr:1478
                                 if (_zebra_gt(@as(i64, @intCast(pos_parts.items.len)), 1)) {
-// zbr:selfhost/AstBuilder.zbr:1404
+// zbr:selfhost/AstBuilder.zbr:1479
                                     a2 = _zbr_at(pos_parts.items, 1);
                                 }
                             }
-// zbr:selfhost/AstBuilder.zbr:1405
+// zbr:selfhost/AstBuilder.zbr:1480
                             if ((std.mem.indexOf(u8, a2, ".") != null)) {
-// zbr:selfhost/AstBuilder.zbr:1406
+// zbr:selfhost/AstBuilder.zbr:1481
                                 alias_args.append(_zbr_rt._allocator, _zbr_ty_Expr{ .float_lit = _zbr_ty_ExprFloatLit.init(_zbr_fn_zspan(), a2) }) catch @panic("OOM");
                             } else {
-// zbr:selfhost/AstBuilder.zbr:1408
+// zbr:selfhost/AstBuilder.zbr:1483
                                 var arg_text = a2;
-// zbr:selfhost/AstBuilder.zbr:1409
+// zbr:selfhost/AstBuilder.zbr:1484
                                 if (is_neg) {
-// zbr:selfhost/AstBuilder.zbr:1410
+// zbr:selfhost/AstBuilder.zbr:1485
                                     arg_text = _str_concat("-", a2, _zbr_rt._allocator);
                                 }
-// zbr:selfhost/AstBuilder.zbr:1411
+// zbr:selfhost/AstBuilder.zbr:1486
                                 alias_args.append(_zbr_rt._allocator, _zbr_ty_Expr{ .int_lit = _zbr_ty_ExprIntLit.init(_zbr_fn_zspan(), arg_text, _zbr_ty_IntBase.decimal) }) catch @panic("OOM");
                             }
                         }
                     }
                 }
             }
-// zbr:selfhost/AstBuilder.zbr:1412
+// zbr:selfhost/AstBuilder.zbr:1487
             return _zbr_ty_TypeRef{ .alias_applied = _zbr_ty_AliasAppliedTypeRef.init(_zbr_fn_zspan(), alias_name, alias_args) };
         }
-// zbr:selfhost/AstBuilder.zbr:1415
+// zbr:selfhost/AstBuilder.zbr:1490
         if (std.mem.eql(u8, s, "same")) {
-// zbr:selfhost/AstBuilder.zbr:1416
+// zbr:selfhost/AstBuilder.zbr:1491
             return _zbr_ty_TypeRef{ .same_ = {} };
         }
-// zbr:selfhost/AstBuilder.zbr:1419
+// zbr:selfhost/AstBuilder.zbr:1494
         if (std.mem.startsWith(u8, s, "(")) {
-// zbr:selfhost/AstBuilder.zbr:1421
+// zbr:selfhost/AstBuilder.zbr:1496
             var inner_parts = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:1422
+// zbr:selfhost/AstBuilder.zbr:1497
             {
                 var _it_p = std.mem.splitSequence(u8, s, ",");
                 while (_it_p.next()) |p| {
-// zbr:selfhost/AstBuilder.zbr:1423
+// zbr:selfhost/AstBuilder.zbr:1498
                     inner_parts.append(_zbr_rt._allocator, _intern(p)) catch @panic("OOM");
                 }
             }
-// zbr:selfhost/AstBuilder.zbr:1424
+// zbr:selfhost/AstBuilder.zbr:1499
             var elems = std.ArrayList(_zbr_ty_TypeRef).empty;
-// zbr:selfhost/AstBuilder.zbr:1426
+// zbr:selfhost/AstBuilder.zbr:1501
             var i: i64 = 0;
-// zbr:selfhost/AstBuilder.zbr:1427
+// zbr:selfhost/AstBuilder.zbr:1502
             while (_zebra_lt(i, @as(i64, @intCast(inner_parts.items.len)))) {
-// zbr:selfhost/AstBuilder.zbr:1428
+// zbr:selfhost/AstBuilder.zbr:1503
                 var part: []const u8 = _zbr_at(inner_parts.items, i);
-// zbr:selfhost/AstBuilder.zbr:1430
+// zbr:selfhost/AstBuilder.zbr:1505
                 if (std.mem.startsWith(u8, part, "(")) {
-// zbr:selfhost/AstBuilder.zbr:1431
+// zbr:selfhost/AstBuilder.zbr:1506
                     var stripped = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:1432
+// zbr:selfhost/AstBuilder.zbr:1507
                     {
                         var _it_sp = std.mem.splitSequence(u8, part, "(");
                         while (_it_sp.next()) |sp| {
-// zbr:selfhost/AstBuilder.zbr:1433
+// zbr:selfhost/AstBuilder.zbr:1508
                             stripped.append(_zbr_rt._allocator, _intern(sp)) catch @panic("OOM");
                         }
                     }
-// zbr:selfhost/AstBuilder.zbr:1434
+// zbr:selfhost/AstBuilder.zbr:1509
                     if (_zebra_gt(@as(i64, @intCast(stripped.items.len)), 1)) {
-// zbr:selfhost/AstBuilder.zbr:1435
+// zbr:selfhost/AstBuilder.zbr:1510
                         part = _zbr_at(stripped.items, 1);
                     }
                 }
-// zbr:selfhost/AstBuilder.zbr:1436
+// zbr:selfhost/AstBuilder.zbr:1511
                 if (std.mem.endsWith(u8, part, ")")) {
-// zbr:selfhost/AstBuilder.zbr:1437
+// zbr:selfhost/AstBuilder.zbr:1512
                     var stripped = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:1438
+// zbr:selfhost/AstBuilder.zbr:1513
                     {
                         var _it_sp = std.mem.splitSequence(u8, part, ")");
                         while (_it_sp.next()) |sp| {
-// zbr:selfhost/AstBuilder.zbr:1439
+// zbr:selfhost/AstBuilder.zbr:1514
                             stripped.append(_zbr_rt._allocator, _intern(sp)) catch @panic("OOM");
                         }
                     }
-// zbr:selfhost/AstBuilder.zbr:1440
+// zbr:selfhost/AstBuilder.zbr:1515
                     if (_zebra_gt(@as(i64, @intCast(stripped.items.len)), 0)) {
-// zbr:selfhost/AstBuilder.zbr:1441
+// zbr:selfhost/AstBuilder.zbr:1516
                         part = _zbr_at(stripped.items, 0);
                     }
                 }
-// zbr:selfhost/AstBuilder.zbr:1442
+// zbr:selfhost/AstBuilder.zbr:1517
                 if (!std.mem.eql(u8, part, "")) {
-// zbr:selfhost/AstBuilder.zbr:1443
+// zbr:selfhost/AstBuilder.zbr:1518
                     elems.append(_zbr_rt._allocator, self.parseTypeRefRequired(part)) catch @panic("OOM");
                 }
-// zbr:selfhost/AstBuilder.zbr:1444
+// zbr:selfhost/AstBuilder.zbr:1519
                 i = (i + 1);
             }
-// zbr:selfhost/AstBuilder.zbr:1445
+// zbr:selfhost/AstBuilder.zbr:1520
             return _zbr_ty_TypeRef{ .tuple = _zbr_ty_TupleTypeRef.init(_zbr_fn_zspan(), elems) };
         }
-// zbr:selfhost/AstBuilder.zbr:1448
+// zbr:selfhost/AstBuilder.zbr:1523
         if (std.mem.startsWith(u8, s, "^")) {
-// zbr:selfhost/AstBuilder.zbr:1450
+// zbr:selfhost/AstBuilder.zbr:1525
             var rest_parts = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:1451
+// zbr:selfhost/AstBuilder.zbr:1526
             {
                 var _it_p = std.mem.splitSequence(u8, s, "^");
                 while (_it_p.next()) |p| {
-// zbr:selfhost/AstBuilder.zbr:1452
+// zbr:selfhost/AstBuilder.zbr:1527
                     rest_parts.append(_zbr_rt._allocator, _intern(p)) catch @panic("OOM");
                 }
             }
-// zbr:selfhost/AstBuilder.zbr:1453
+// zbr:selfhost/AstBuilder.zbr:1528
             var rest_s: []const u8 = "";
-// zbr:selfhost/AstBuilder.zbr:1454
+// zbr:selfhost/AstBuilder.zbr:1529
             if (_zebra_gt(@as(i64, @intCast(rest_parts.items.len)), 1)) {
-// zbr:selfhost/AstBuilder.zbr:1455
+// zbr:selfhost/AstBuilder.zbr:1530
                 rest_s = _zbr_at(rest_parts.items, 1);
             }
-// zbr:selfhost/AstBuilder.zbr:1456
+// zbr:selfhost/AstBuilder.zbr:1531
             const inner = self.parseTypeRefRequired(rest_s);
-// zbr:selfhost/AstBuilder.zbr:1457
-            return _zbr_ty_TypeRef{ .ref_to = blk_box_87: { const _bv: std.meta.Child(@FieldType(_zbr_ty_TypeRef, "ref_to")) = inner; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_87 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1532
+            return _zbr_ty_TypeRef{ .ref_to = blk_box_89: { const _bv: std.meta.Child(@FieldType(_zbr_ty_TypeRef, "ref_to")) = inner; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_89 _bp; } };
         }
-// zbr:selfhost/AstBuilder.zbr:1460
+// zbr:selfhost/AstBuilder.zbr:1535
         if (std.mem.endsWith(u8, s, "?")) {
-// zbr:selfhost/AstBuilder.zbr:1462
+// zbr:selfhost/AstBuilder.zbr:1537
             var parts = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:1463
+// zbr:selfhost/AstBuilder.zbr:1538
             {
                 var _it_p = std.mem.splitSequence(u8, s, "?");
                 while (_it_p.next()) |p| {
-// zbr:selfhost/AstBuilder.zbr:1464
+// zbr:selfhost/AstBuilder.zbr:1539
                     parts.append(_zbr_rt._allocator, _intern(p)) catch @panic("OOM");
                 }
             }
-// zbr:selfhost/AstBuilder.zbr:1465
+// zbr:selfhost/AstBuilder.zbr:1540
             const base_s: []const u8 = _zbr_at(parts.items, 0);
-// zbr:selfhost/AstBuilder.zbr:1466
+// zbr:selfhost/AstBuilder.zbr:1541
             const inner = self.parseTypeRefRequired(base_s);
-// zbr:selfhost/AstBuilder.zbr:1467
-            return _zbr_ty_TypeRef{ .nilable = blk_box_88: { const _bv: std.meta.Child(@FieldType(_zbr_ty_TypeRef, "nilable")) = inner; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_88 _bp; } };
+// zbr:selfhost/AstBuilder.zbr:1542
+            return _zbr_ty_TypeRef{ .nilable = blk_box_90: { const _bv: std.meta.Child(@FieldType(_zbr_ty_TypeRef, "nilable")) = inner; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_90 _bp; } };
         }
-// zbr:selfhost/AstBuilder.zbr:1470
+// zbr:selfhost/AstBuilder.zbr:1545
         if ((std.mem.indexOf(u8, s, "(") != null)) {
-// zbr:selfhost/AstBuilder.zbr:1471
+// zbr:selfhost/AstBuilder.zbr:1546
             var name_parts = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:1472
+// zbr:selfhost/AstBuilder.zbr:1547
             {
                 var _it_p = std.mem.splitSequence(u8, s, "(");
                 while (_it_p.next()) |p| {
-// zbr:selfhost/AstBuilder.zbr:1473
+// zbr:selfhost/AstBuilder.zbr:1548
                     name_parts.append(_zbr_rt._allocator, _intern(p)) catch @panic("OOM");
                 }
             }
-// zbr:selfhost/AstBuilder.zbr:1474
+// zbr:selfhost/AstBuilder.zbr:1549
             const gen_name: []const u8 = _zbr_at(name_parts.items, 0);
-// zbr:selfhost/AstBuilder.zbr:1476
+// zbr:selfhost/AstBuilder.zbr:1551
             var rest: []const u8 = "";
-// zbr:selfhost/AstBuilder.zbr:1477
+// zbr:selfhost/AstBuilder.zbr:1552
             var ri: i64 = 1;
-// zbr:selfhost/AstBuilder.zbr:1478
+// zbr:selfhost/AstBuilder.zbr:1553
             while (_zebra_lt(ri, @as(i64, @intCast(name_parts.items.len)))) {
-// zbr:selfhost/AstBuilder.zbr:1479
+// zbr:selfhost/AstBuilder.zbr:1554
                 if (_zebra_gt(ri, 1)) {
-// zbr:selfhost/AstBuilder.zbr:1480
+// zbr:selfhost/AstBuilder.zbr:1555
                     rest = _str_concat(rest, "(", _zbr_rt._allocator);
                 }
-// zbr:selfhost/AstBuilder.zbr:1481
+// zbr:selfhost/AstBuilder.zbr:1556
                 rest = _str_concat(rest, _zbr_at(name_parts.items, ri), _zbr_rt._allocator);
-// zbr:selfhost/AstBuilder.zbr:1482
+// zbr:selfhost/AstBuilder.zbr:1557
                 ri = (ri + 1);
             }
-// zbr:selfhost/AstBuilder.zbr:1484
+// zbr:selfhost/AstBuilder.zbr:1559
             var rparts = std.ArrayList([]const u8).empty;
-// zbr:selfhost/AstBuilder.zbr:1485
+// zbr:selfhost/AstBuilder.zbr:1560
             {
                 var _it_q = std.mem.splitSequence(u8, rest, ")");
                 while (_it_q.next()) |q| {
-// zbr:selfhost/AstBuilder.zbr:1486
+// zbr:selfhost/AstBuilder.zbr:1561
                     rparts.append(_zbr_rt._allocator, _intern(q)) catch @panic("OOM");
                 }
             }
-// zbr:selfhost/AstBuilder.zbr:1487
+// zbr:selfhost/AstBuilder.zbr:1562
             var args_str: []const u8 = "";
-// zbr:selfhost/AstBuilder.zbr:1488
+// zbr:selfhost/AstBuilder.zbr:1563
             var si: i64 = 0;
-// zbr:selfhost/AstBuilder.zbr:1489
+// zbr:selfhost/AstBuilder.zbr:1564
             while (_zebra_lt(si, (@as(i64, @intCast(rparts.items.len)) - 1))) {
-// zbr:selfhost/AstBuilder.zbr:1490
+// zbr:selfhost/AstBuilder.zbr:1565
                 if (_zebra_gt(si, 0)) {
-// zbr:selfhost/AstBuilder.zbr:1491
+// zbr:selfhost/AstBuilder.zbr:1566
                     args_str = _str_concat(args_str, ")", _zbr_rt._allocator);
                 }
-// zbr:selfhost/AstBuilder.zbr:1492
+// zbr:selfhost/AstBuilder.zbr:1567
                 args_str = _str_concat(args_str, _zbr_at(rparts.items, si), _zbr_rt._allocator);
-// zbr:selfhost/AstBuilder.zbr:1493
+// zbr:selfhost/AstBuilder.zbr:1568
                 si = (si + 1);
             }
-// zbr:selfhost/AstBuilder.zbr:1495
+// zbr:selfhost/AstBuilder.zbr:1570
             var args = std.ArrayList(_zbr_ty_TypeRef).empty;
-// zbr:selfhost/AstBuilder.zbr:1496
+// zbr:selfhost/AstBuilder.zbr:1571
             const tl_args: std.ArrayList([]const u8) = self.splitTopLevelArgs(args_str);
-// zbr:selfhost/AstBuilder.zbr:1497
+// zbr:selfhost/AstBuilder.zbr:1572
             for (tl_args.items) |a| {
-// zbr:selfhost/AstBuilder.zbr:1498
+// zbr:selfhost/AstBuilder.zbr:1573
                 if (!std.mem.eql(u8, a, "")) {
-// zbr:selfhost/AstBuilder.zbr:1499
+// zbr:selfhost/AstBuilder.zbr:1574
                     args.append(_zbr_rt._allocator, self.parseTypeRefRequired(a)) catch @panic("OOM");
                 }
             }
-// zbr:selfhost/AstBuilder.zbr:1502
+// zbr:selfhost/AstBuilder.zbr:1577
             if (std.mem.eql(u8, gen_name, "__fnptr")) {
-// zbr:selfhost/AstBuilder.zbr:1503
+// zbr:selfhost/AstBuilder.zbr:1578
                 const fn_ret2: _zbr_ty_TypeRef = _zbr_at(args.items, (@as(i64, @intCast(args.items.len)) - 1));
-// zbr:selfhost/AstBuilder.zbr:1504
+// zbr:selfhost/AstBuilder.zbr:1579
                 var fn_params2 = std.ArrayList(_zbr_ty_TypeRef).empty;
-// zbr:selfhost/AstBuilder.zbr:1505
+// zbr:selfhost/AstBuilder.zbr:1580
                 var fpi: i64 = 0;
-// zbr:selfhost/AstBuilder.zbr:1506
+// zbr:selfhost/AstBuilder.zbr:1581
                 while (_zebra_lt(fpi, (@as(i64, @intCast(args.items.len)) - 1))) {
-// zbr:selfhost/AstBuilder.zbr:1507
+// zbr:selfhost/AstBuilder.zbr:1582
                     fn_params2.append(_zbr_rt._allocator, _zbr_at(args.items, fpi)) catch @panic("OOM");
-// zbr:selfhost/AstBuilder.zbr:1508
+// zbr:selfhost/AstBuilder.zbr:1583
                     fpi = (fpi + 1);
                 }
-// zbr:selfhost/AstBuilder.zbr:1509
+// zbr:selfhost/AstBuilder.zbr:1584
                 return _zbr_ty_TypeRef{ .fn_type = _zbr_ty_FnTypeRef.init(_zbr_fn_zspan(), fn_params2, _bx0: { const _bv = fn_ret2; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }) };
             }
-// zbr:selfhost/AstBuilder.zbr:1510
+// zbr:selfhost/AstBuilder.zbr:1585
             return _zbr_ty_TypeRef{ .generic = _zbr_ty_GenericTypeRef.init(_zbr_fn_zspan(), gen_name, args) };
         }
-// zbr:selfhost/AstBuilder.zbr:1513
+// zbr:selfhost/AstBuilder.zbr:1588
         return _zbr_ty_TypeRef{ .named = _zbr_ty_NamedTypeRef.init(_zbr_fn_zspan(), s) };
     }
 
     pub fn parseTypeRefRequired(self: *_zbr_ty_ASTBuilder, s: []const u8) _zbr_ty_TypeRef {
-// zbr:selfhost/AstBuilder.zbr:1516
+// zbr:selfhost/AstBuilder.zbr:1591
         const tr = self.parseTypeRef(s);
-// zbr:selfhost/AstBuilder.zbr:1517
+// zbr:selfhost/AstBuilder.zbr:1592
         if (tr) |tref| {
-// zbr:selfhost/AstBuilder.zbr:1518
+// zbr:selfhost/AstBuilder.zbr:1593
             return tref;
         }
-// zbr:selfhost/AstBuilder.zbr:1519
+// zbr:selfhost/AstBuilder.zbr:1594
         return _zbr_ty_TypeRef{ .void_ = {} };
     }
 
@@ -2923,7 +3001,7 @@ pub fn main(_zinit: std.process.Init) void {
     _zbr_rt._allocator = _prog_alloc();
     defer _zbr_rt._arena.deinit();
     _initModuleVars();
-// zbr:selfhost/AstBuilder.zbr:1522
+// zbr:selfhost/AstBuilder.zbr:1597
     _zbr_print("{s}\n", .{"AstBuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')"});
 }
 

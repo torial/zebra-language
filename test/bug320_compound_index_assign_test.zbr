@@ -1,0 +1,81 @@
+## BUG-320, the compound half: `xs[i] op= v` for all twelve operators.
+##
+## Since BUG-313 an index READ lowers to `_zbr_at(recv, i)` -- a function CALL -- so the
+## compound path emitted `_zbr_at(xs.items, 0) += 1` and zig refused it with "invalid
+## left-hand side to assignment". The plain `=` form was fixed then; these were left.
+##
+## THE FLOAT LEG IS NOT DECORATION. `/` on a signed int must lower to `@divTrunc` and on a
+## float to `/`, and genBinary decides that by INFERRING THE LEFT OPERAND. A fix that makes
+## the left operand opaque to inference (say, by injecting the read as raw text) passes
+## every integer assertion here and silently emits `@divTrunc` on floats. An int-only
+## fixture cannot tell the two designs apart.
+def main()
+    var xs: List(int) = List(int)()
+    xs.add(12)
+
+    xs[0] += 5
+    assert xs[0] == 17
+    xs[0] -= 2
+    assert xs[0] == 15
+    xs[0] *= 2
+    assert xs[0] == 30
+    xs[0] /= 3
+    assert xs[0] == 10
+    xs[0] //= 3
+    assert xs[0] == 3
+    xs[0] %= 2
+    assert xs[0] == 1
+
+    xs[0] = 3
+    xs[0] **= 2
+    assert xs[0] == 9
+
+    # Bitwise and shifts. `<<=` carries the BUG-304 hazard: zig wants the shift amount as
+    # Log2Int(T), so a bare `<<` on two i64s does not compile, and a LITERAL amount hides it
+    # by const-folding. The amount here is a VARIABLE for that reason.
+    var amt: int = 2
+    xs[0] = 12
+    xs[0] &= 10
+    assert xs[0] == 8
+    xs[0] |= 3
+    assert xs[0] == 11
+    xs[0] ^= 1
+    assert xs[0] == 10
+    xs[0] <<= amt
+    assert xs[0] == 40
+    xs[0] >>= amt
+    assert xs[0] == 10
+
+    # THE DISCRIMINATING LEG. 5.0 / 2.0 is 2.5; under an integer lowering it is 2.
+    var fs: List(float) = List(float)()
+    fs.add(5.0)
+    fs[0] /= 2.0
+    assert fs[0] == 2.5
+    fs[0] += 0.25
+    assert fs[0] == 2.75
+    fs[0] *= 2.0
+    assert fs[0] == 5.5
+    fs[0] -= 0.5
+    assert fs[0] == 5.0
+
+    # A nested receiver: the target's OBJECT is itself an index expression. It is call-free,
+    # so mentioning it twice is safe -- which is the property the whole design rests on.
+    var g: List(List(int)) = List(List(int))()
+    var row: List(int) = List(int)()
+    row.add(7)
+    g.add(row)
+    g[0][0] += 3
+    assert g[0][0] == 10
+
+    # A HASHMAP index target takes a DIFFERENT codegen path -- genHashMapAssign owns it,
+    # and it is reached only for a plain `=`. The desugar is what lets a compound op arrive
+    # there at all: `m[k] += v` becomes `m[k] = m[k] + v`, which that path already handles.
+    # Worth pinning separately because nothing about the List legs above exercises it.
+    var m = HashMap(str, int)()
+    m.set("k", 5)
+    m["k"] += 3
+    assert m["k"] == 8
+    m["k"] *= 2
+    assert m["k"] == 16
+
+    print("bug320: OK")

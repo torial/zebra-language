@@ -1,21 +1,59 @@
-# @boundary rejects invalid left-hand side to assignment
-# @boundary-pending BUG-320  compound index assignment still emits the read form as an LHS
+# @boundary runs
 #
-# The COMPOUND half of BUG-320, still broken after the plain-assignment fix and pinned so it
-# cannot be forgotten. Every compound branch in genAssign emits `genExpr(a.target)` on the
-# left, which for an index target is `_zbr_at(recv, i)` -- a function call.
+# The COMPOUND half of BUG-320, FIXED 2026-09-05 and rewritten from a refusal-pin into a
+# positive test, which is what its previous version asked for: "FAILS when compound
+# assignment is fixed -- the signal to rewrite it as a positive test, not to re-baseline."
 #
-# Deliberately NOT fixed in the same pass: four of the twelve compound operators (`//=`,
-# `**=`, `<<=`, `>>=`) carry their own lowerings a few lines further down genAssign, so
-# routing indexes through them means either duplicating those lowerings -- which is the
-# copy-the-decision shape that CAUSED BUG-320 -- or restructuring genAssign, which deserves
-# to be its own change rather than being smuggled into a regression fix.
+# `xs[i] op= v` had no working lowering. Since BUG-313 an index READ is `_zbr_at(recv, i)`,
+# a function call, so genAssign's compound path emitted `_zbr_at(xs.items, 0) += 1` and zig
+# refused it: "invalid left-hand side to assignment".
 #
-# This passes today by requiring the refusal, and FAILS when compound assignment is fixed --
-# the signal to rewrite it as a positive test, not to re-baseline.
+# The old pin predicted the fix would mean restructuring genAssign or duplicating four
+# operator lowerings into it. Neither happened. The fix DESUGARS at the AST level --
+# `xs[i] op= v` becomes `xs[i] = xs[i] op v` -- so genBinary picks every lowering and
+# genAssign sees only a plain `=` to an index, which has worked since the plain half landed.
+# The same desugaring already existed for `/=` and `%=`, whose comment proposed exactly this:
+# "worth fixing for all of them together, not here."
+#
+# EXPECTED VALUES ARE AUTHORED FROM THE LANGUAGE, not recorded from the compiler -- that is
+# the whole property of this suite, and it is why these are arithmetic anyone can check by
+# hand rather than whatever the binary happened to print.
 
 def main()
     var xs: List(int) = List(int)()
     xs.add(5)
-    xs[0] += 3
-    print(xs[0])
+
+    xs[0] += 3          # 5 + 3
+    print(xs[0])        # 8
+    xs[0] -= 1          # 8 - 1
+    print(xs[0])        # 7
+    xs[0] *= 3          # 7 * 3
+    print(xs[0])        # 21
+    xs[0] //= 2         # 21 // 2, integer division truncates
+    print(xs[0])        # 10
+    xs[0] %= 4          # 10 % 4
+    print(xs[0])        # 2
+
+    # The shift amount is a VARIABLE, not a literal. BUG-304: zig wants it as Log2Int(T), and
+    # a literal amount hides a missing conversion by const-folding.
+    var amt: int = 3
+    xs[0] <<= amt       # 2 << 3
+    print(xs[0])        # 16
+    xs[0] >>= amt       # 16 >> 3
+    print(xs[0])        # 2
+
+    # A FLOAT element, because `/` lowers to `@divTrunc` on ints and to `/` on floats, and
+    # genBinary chooses by inferring the LEFT operand. Under an integer lowering this prints
+    # 2 rather than 2.5 -- the one leg that can tell a correct fix from a plausible one.
+    var fs: List(float) = List(float)()
+    fs.add(10.0)
+    fs[0] /= 4.0        # 10.0 / 4.0
+    print(fs[0])        # 2.5
+
+    # A HASHMAP target reaches a different emitter (genHashMapAssign), and it is reached only
+    # for a plain `=` -- so before the desugar this failed differently, with "cannot assign to
+    # constant" rather than "invalid left-hand side".
+    var m = HashMap(str, int)()
+    m.set("n", 4)
+    m["n"] += 6         # 4 + 6
+    print(m["n"])       # 10

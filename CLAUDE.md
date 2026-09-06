@@ -1870,7 +1870,7 @@ than "what do we know":
 | emitted Zig compiles | `compile_check`, `full_sweep`, `divergence` | 335 |
 | compiler is self-consistent | `bootstrap_check` (round-trip) | selfhost only |
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
-| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 32 probes / 299 assertions | <!-- doc-gen: 32 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 299 = cat test/boundary/*.expected | grep -c . -->
+| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 32 probes / 308 assertions | <!-- doc-gen: 32 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 308 = cat test/boundary/*.expected | grep -c . -->
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
 | **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 10 opted in; the gate prints the ratio | <!-- doc-gen: 10 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
@@ -1914,6 +1914,27 @@ fine: clearing that directory made the build produce an app, which then refused 
 console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**FULL tier 2026-09-05 (second run, BUG-320's compound half): 36/37 in-tier + divergence
+standalone.** smoke **400/400**, round-trip byte-identical, `output_sweep` 404 files behaviour
+identical, `full_sweep` 0 regressions vs 422, `examples_sweep` 0 vs 19, `boundary` 32/0,
+`compile_check-inline` 306/0, `release-mode` and `contract-mode` 13/13, `divergence` 0
+regressions vs the N-1 anchor. **ASSEMBLED, not observed in one invocation** -- recorded that
+way deliberately, per the precedent below: nothing proves the tree was identical throughout.
+
+**`divergence` was KILLED AT ITS 5400s CEILING, and that was the ENVIRONMENT, not the gate.**
+The whole run was roughly 3x slower than the run four hours earlier on the same tree: smoke
+1253s against 380s, `output_sweep` 2705s against 885s, `compile_check-inline` 1528s against
+449s. Re-run standalone immediately afterwards, `divergence` passed. This is the documented
+2-3x spread arriving all at once rather than a new problem, and it is the concrete case the
+ceiling warning above describes -- the gate says "SLOW or hung, this cannot tell which", which
+is the honest report and the reason a standalone re-run is the answer rather than a bigger
+number.
+
+**A number that has to move: the ceiling is now within one bad night of the heaviest gates.**
+`output_sweep` took 2705s in this run against a 5400s ceiling. Nothing is proposed here,
+because raising a ceiling to accommodate a slow night is how a hang stops being detectable --
+but the margin is a factor of two, not the comfortable order of magnitude it reads as.
 
 **FULL tier 2026-09-05: 37/37 PASS in ONE invocation at JOBS=2**, closing the string-indexing
 batch (BUG-319, BUG-330, BUG-225). smoke **399/399**, round-trip byte-identical,
@@ -2434,7 +2455,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **422** <!-- doc-gen: 422 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **535** <!-- doc-gen: 535 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **536** <!-- doc-gen: 536 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

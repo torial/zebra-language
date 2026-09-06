@@ -7138,13 +7138,19 @@ struct Generator
         # and it recurred because the READ path was changed without asking what else emitted
         # a target through it.
         #
-        # SCOPE: plain `=` only. The COMPOUND forms (`xs[i] += v` and the eleven others) are
-        # still broken -- every compound branch below emits `genExpr(a.target)` on the left
-        # and hits the same wall. They are NOT fixed here because four of them (`//=`, `**=`,
-        # `<<=`, `>>=`) carry their own lowerings a few lines down, and routing indexes
-        # through those means either duplicating the lowerings or restructuring genAssign.
-        # Duplicating is what caused this bug; restructuring deserves its own change.
-        # Pinned in test/boundary/bug320_index_assign_probe.zbr.
+        # SCOPE: this branch handles plain `=` only, and that is now SUFFICIENT. The compound
+        # forms were fixed 2026-09-05 WITHOUT touching genAssign: AstBuilder desugars
+        # `xs[i] op= v` into `xs[i] = xs[i] op v`, so every compound assignment to an index
+        # arrives here already wearing a plain `=`.
+        #
+        # The note that used to sit here predicted the opposite -- that fixing the compound
+        # forms meant duplicating four operator lowerings into genAssign or restructuring it,
+        # and it was right to refuse both. What it missed is that genAssign is the wrong
+        # layer entirely: several of these lowerings are TYPE-DEPENDENT (`@divTrunc` vs `/`)
+        # and genAssign has no type oracle, while genBinary already does. The desugar hands
+        # the decision to the code that can make it.
+        # Pinned in test/boundary/bug320_index_assign_probe.zbr (plain) and
+        # bug320b_compound_index_assign_probe.zbr (compound).
         #
         # HashMap targets are NOT handled here -- genHashMapAssign owns them.
         if a.op == AssignOp.assign

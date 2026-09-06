@@ -13,8 +13,9 @@
 # The fix emits `_zbr_set(recv, idx, value)` -- which KEEPS the bounds check BUG-313 added,
 # so this probe also guards against "fixing" the assignment by reverting to a raw lvalue.
 #
-# NOT covered here: the COMPOUND forms (`xs[i] += v` and eleven others), still broken and
-# pinned separately in bug320b_compound_index_assign_probe.zbr.
+# NOT covered here: the COMPOUND forms (`xs[i] += v` and eleven others). They were fixed
+# 2026-09-05 and are covered by bug320b_compound_index_assign_probe.zbr, which was a
+# refusal-pin until then and is now a positive test.
 
 def main()
     var xs: List(int) = List(int)()

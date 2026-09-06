@@ -321,9 +321,15 @@ Recorded because the shape is the reusable part, not the rows:
   and what invalid UTF-8 does when printed is undefined. The length is defined; the
   rendering is not.
 
-**`charAt` was NOT probed**, despite being unblocked. It returns `byte`, and comparing a
-`byte` to a `char` is exactly the question BUG-225 leaves undefined — probing it would
-require inventing that answer as well. Added to §4 rather than quietly skipped.
+**`charAt` was NOT probed**, and the reason has since EXPIRED. It returns `byte`, and at the
+time comparing a `byte` to a `char` was the question BUG-225 left undefined — probing it
+would have required inventing that answer. Added to §4 rather than quietly skipped.
+
+**BUG-225 answered it (2026-09-05).** `s[i]` is typed `byte`, and a byte compares against a
+char LITERAL by Zig peer type resolution — no byte/char comparison rule had to be invented,
+which is why the retype cost nothing. `assert s[0] == c'h'` holds and is pinned in
+`test/bug225_str_index_byte_test.zbr`. So a `charAt` probe is now writable against a defined
+answer, and this entry is a standing invitation rather than a blocked one.
 
 ### 3D.3 What a clean round does NOT license
 

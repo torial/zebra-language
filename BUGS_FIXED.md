@@ -6,6 +6,235 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-320: index assignment `xs[i] = v` regressed by BUG-313 — plain AND compound — FIXED (plain 2026-08-29, compound 2026-09-05)
+
+**A regression I introduced, found the next day by Sean asking why `xs[i]` was not
+writeable.** It was writeable. BUG-313's bounds-checking change broke it.
+
+```
+before BUG-313:  xs.items[@intCast(0)] = 77      a valid Zig lvalue
+after:           _zbr_at(xs.items, 0) = 77       a function call -> Zig refuses
+```
+
+The read path was converted to the checked accessor `_zbr_at`, and the assignment path
+emits its target with the same `genExpr`, so the LHS became a call. Reads kept working,
+which is why it was invisible.
+
+**BOTH FORMS ARE AFFECTED, measured:**
+
+| | result |
+|---|---|
+| `xs[0] = 77` | `error: invalid left-hand side to assignment` |
+| `xs[0] += 3` | same |
+
+The compound forms in `genAssign` (`//=`, `<<=`, `>>=`, `**=`) all emit
+`genExpr(a.target)` on the left, so every one of them has the same defect for an index
+target.
+
+**THE ERROR IS ZIG'S, LEAKED.** *"invalid left-hand side to assignment"* names nothing a
+Zebra programmer wrote. Whatever the fix, the diagnostic should be Zebra's.
+
+**BUG-181 ALREADY ESTABLISHED THIS EXACT CLASS** and its comment is still in `genAssign`
+three lines above the defect: *"a `.len` member used as an assignment TARGET ... Emit
+`obj.len = v`, NOT the read-form ... which is an invalid assignment LHS in Zig."* The
+lesson was recorded, the special case was written, and BUG-313 reintroduced the same shape
+for indexes anyway -- because the work was about the READ path and nobody asked what else
+used the same emitter.
+
+**WHY NO GATE CAUGHT IT, and this is the part worth keeping.**
+`examples/lsystem.zbr` uses `cell[y * w + x] = glyph` and **stopped compiling**.
+`examples_sweep` would have caught it -- but it is a FULL-tier gate, and after landing
+BUG-313 only static, fast and quick were run. The regression sat about 24 hours in a
+shipped example. This repo's own convention -- *"`--daily` is the last thing run when
+overnight work stops"* -- exists precisely for this, and skipping it is what cost the
+example.
+
+**THE FIX, specified rather than rushed** (Sean's standing "careful > fast on selfhost"):
+
+`genAssign` must special-case an `Expr.index` target instead of emitting it via `genExpr`:
+
+- plain `=` -> `_zbr_set(<recv>, <idx>, <value>)`
+- compound -> `_zbr_set(<recv>, <idx>, <op>(_zbr_at(<recv>, <idx>), <rhs>))`
+
+`_zbr_set` already exists (added by BUG-313) and keeps the bounds check, so the fix does
+not reopen what BUG-313 closed.
+
+**Do NOT duplicate the receiver logic.** Deciding whether the receiver needs `.items`
+takes ~15 lines in the read path (`getMemberFieldName` -> `fieldAwareIsHashMap` /
+`fieldAwareIsList`, with an `inferExpr` fallback for non-name bases per BUG-177). Copying
+that into `genAssign` creates exactly the two-copies-of-one-decision shape that keeps
+producing bugs here. Extract it once and call it from both.
+
+HashMap index assignment is already handled separately by `genHashMapAssign` and must stay
+on that path.
+
+**Control when fixing:** `test/boundary/bug320_index_assign_probe.zbr` pins the failure
+today and FAILS when this is fixed -- rewrite it into a positive test of `xs[i] = v` at
+that point. Add the compound form too, and re-run `examples_sweep`, which is the gate that
+should have caught this.
+
+**DECIDED (Sean, 2026-08-29): `[i]` getter/setter is the way forward, and `.at()` comes
+OUT of the stdlib.** "This is one of those things that I think will cause confusion to have
+the non square bracket being a required solution anywhere." He accepts the code churn and
+prefers to go slower.
+
+**THE REMOVAL IS BLOCKED ON THE BOOTSTRAP SUNSET, and the constraint is not obvious --
+measured 2026-08-29 before starting, precisely because it would have walled out mid-rewrite:**
+
+| | |
+|---|---|
+| `.at(` sites in `selfhost/*.zbr` (the compiler itself) | **893** |
+| in `test/*.zbr` | 174 |
+| in `examples/*.zbr` | 206 |
+| files touched | 81 |
+
+Converting the compiler's own 893 sites produces NESTED bracket forms, and
+**`m[0][0]` compiles under the selfhost and FAILS under the bootstrap** -- *"Expected
+pointer, slice, array or vector"*, the BUG-177 selfhost-ahead gap. The bootstrap is still
+the regeneration authority and the standing hard limit is that it must be able to COMPILE
+the selfhost source. So a bracket rewrite of `selfhost/*.zbr` would leave a tree that
+cannot be regenerated, discovered somewhere inside a 893-site change.
+
+**ORDER, therefore:**
+
+1. **BUG-320's fix** -- make `xs[i] = v` and the compound forms work. No dependency; do it
+   first, because everything else assumes brackets can write.
+2. **Bootstrap sunset criterion 2** -- move the regeneration authority to the selfhost
+   (`NEXT_STEPS_to_0.9.md`). That lifts the bootstrap-must-compile-selfhost constraint,
+   because the bootstrap stops being the authority.
+3. **`.at()` / `.set()` removal** -- 1,273 sites, mechanical, and only safe after (2).
+
+`test/` and `examples/` could technically convert earlier, but splitting the pass buys
+nothing and doubles the review.
+
+**One thing to preserve in step 3:** a user class may define its own `.at()` method --
+codegen has an `at_is_user_method` branch. A blind textual rewrite would break those.
+
+
+
+---
+
+**DESIGN FOR THE COMPOUND HALF, worked out 2026-09-05 but NOT YET IMPLEMENTED.** Recorded
+because the obvious two designs are both WRONG, and each looks right until a specific
+question is asked of it.
+
+The shape is settled: `xs[i] op= v` must become
+`_zbr_set(<recv>, <idx>, <recv[idx] op v>)`, since the read form has been `_zbr_at(recv, i)`
+-- a function CALL -- since BUG-313.
+
+**Design 1, REJECTED: a helper that re-emits each operator's lowering.** Write
+`emitCompoundRhs(op, ...)` owning the four special lowerings (`@divTrunc`, `std.math.pow`,
+`_zbr_shl`, `_zbr_shr`) and DERIVE the rest from `assignOpStr` by dropping the trailing `=`.
+This is wrong for `/=` and `%=`. Zig accepts the compound `a /= b` and `a %= b` on signed
+integers -- `test/bug304_305_compound_hex_test.zbr` exercises both and passes -- but REJECTS
+the same operators in EXPRESSION position, which is what the derivation produces. So
+`xs[i] /= v` would emit `_zbr_at(r,i) / v` and fail to compile, while the identical
+operation on a plain variable compiles today. The lesson is narrow and worth keeping: an
+operator's compound-assignment form and its binary-expression form are NOT the same Zig
+question, and a table that maps between them by string surgery cannot know that.
+
+**Design 2, REJECTED: bind temporaries and inject the read as a `zig_lit`.** Emit
+`{ const _r = <recv>; const _i = <idx>; _zbr_set(_r, _i, <binary(op, zig_lit("_zbr_at(_r,_i)"), v)>); }`
+and let `genExpr` handle every lowering, so nothing is duplicated at all. It evaluates the
+receiver and index exactly once, which is the property design 3 gives up. But `BinaryOp.div`
+discriminates float from int by calling `inferExpr(b.left)`, and a `zig_lit` carries no
+type -- so `xs[i] /= 2.0` on a `List(float)` would take the integer branch and emit
+`@divTrunc` on floats. A silent wrong lowering caused by making the operand opaque to
+inference.
+
+**Design 3, ACCEPTED (not yet built).** Synthesize `binary(binOpOfAssign(a.op), a.target,
+a.value)` -- the ORIGINAL index expression as the left operand, so inference sees a real
+typed node -- and emit `_zbr_set(recv, idx, <that>)`. Every lowering is reused rather than
+restated, and the float/int discrimination works because the operand is exactly what it
+was. The cost is that `recv` and `idx` are MENTIONED TWICE, so it is only correct when
+neither contains a call.
+
+Guard it on that, and take the path only when the receiver and index are call-free
+(`ident` / `member` / `index` / literal are all fine -- they are reads). When a call IS
+present, fall through to today's behaviour, which is a LOUD zig error rather than a silent
+double evaluation: `xs[next()] += 1` advancing an iterator twice would be valid Zig
+computing the wrong answer -- the BUG-226 class, invisible to every compile-only gate. Left
+loud on purpose, and narrower than the bug it replaces.
+
+Needs `binOpOfAssign(AssignOp): BinaryOp` (every variant already exists in `BinaryOp`:
+add/sub/mul/div/int_div/mod/pow/bit_and/bit_or/bit_xor/shl/shr) and a call-free predicate.
+Verify with a fixture covering all twelve operators on BOTH `List(int)` and `List(float)` --
+the float leg is what discriminates designs 2 and 3, so an int-only fixture would pass
+against the wrong one. FULL tier before committing: this is `genAssign`, which every
+assignment in every program goes through.
+
+
+---
+
+**COMPOUND HALF FIXED 2026-09-05.** All twelve operators work on an index target:
+
+| | | | |
+|---|---|---|---|
+| `+=` 17 | `-=` 7 | `*=` 60 | `/=` 6 |
+| `//=` 6 | `%=` 2 | `**=` 144 | `&=` 4 |
+| `\|=` 15 | `^=` 9 | `<<=` 48 | `>>=` 3 |
+
+(from 12, measured; every one of these except `/=` and `%=` was `invalid left-hand side to
+assignment` the hour before.)
+
+**THE DESIGN RECORDED ABOVE WAS SUPERSEDED, and the better one was already in the tree.**
+Designs 1-3 all tried to fix this inside `genAssign`. Reading `AstBuilder` first would have
+been quicker: it ALREADY desugars `/=` and `%=` into `x = x / y`, with a comment giving
+exactly the reason design 1 later foundered on -- the correct lowering is TYPE-DEPENDENT and
+`genBinary` already knows how to decide -- and ending "worth fixing for all of them together,
+not here."
+
+So the fix is that sentence, carried out: an INDEX target desugars EVERY compound operator
+into `xs[i] = xs[i] op v`. `genBinary` picks each lowering, and `genAssign` sees only a plain
+`=` to an index, which has worked since the plain half landed. `genAssign` is not touched at
+all.
+
+**IT WAS MEASURED BEFORE IT WAS WRITTEN, and that measurement chose the design.** On an index
+target `/=` and `%=` ALREADY worked -- because of that existing desugar -- and the other ten
+did not. The mechanism was proven for 2 of 12 before a line changed. That is also the cleanest
+statement of why the three genAssign designs were wrong: the working precedent was sitting
+one file away, passing its own tests.
+
+**THE HASHMAP LEG WAS A SECOND, DISTINCT BUG.** `m[k] += v` failed with `cannot assign to
+constant`, not `invalid left-hand side` -- a different emitter (`genHashMapAssign`, reached
+only for a plain `=`). The desugar fixes it for the same reason, but it had to be probed
+separately to know that, and it is pinned separately.
+
+**Verification.** `test/bug320_compound_index_assign_test.zbr` (`smoke_run`) covers all twelve
+on `List(int)`, four on `List(float)`, a nested `g[0][0] += 3`, and the HashMap pair; watched
+RED first, where the List and HashMap legs failed with DIFFERENT errors. The float leg is not
+decoration: `/` lowers to `@divTrunc` on ints and `/` on floats, chosen by inferring the LEFT
+operand, so a design that makes that operand opaque to inference passes every integer
+assertion and silently truncates floats. An int-only fixture cannot separate the designs.
+
+`test/boundary/bug320b_compound_index_assign_probe.zbr` was a `@boundary-pending` refusal-pin
+and is now a positive probe -- which is what the pin asked for: "FAILS when compound
+assignment is fixed -- the signal to rewrite it as a positive test, not to re-baseline." Its
+expected values were authored from the language before running and matched exactly, `2.5`
+included.
+
+**WHY NO GATE EVER CAUGHT THIS, and it is not that the gates are weak.** After the fix,
+`grep` for a compound assignment to an index across `test/` and `examples/` returns exactly
+ONE file: the fixture written for this bug. The construct is absent from a 536-file corpus
+because it did not work -- people who tried it once wrote `xs.set(i, xs.at(i) + v)` instead
+and moved on. A feature nobody can use leaves no trace to regress, so every corpus-driven
+gate is blind to it BY CONSTRUCTION, no matter how large the corpus grows.
+
+That is the same shape `lint_keyword_coverage` was built for: on the day it first ran, the two
+modifiers with zero corpus uses were `protected` and `internal`, and BOTH were defective. Zero
+usage is not evidence a feature is unimportant; it is a reason to go and check the feature.
+The equivalent instrument for OPERATORS does not exist, and this bug is the argument that one
+would earn its keep.
+
+**KNOWN LIMIT, unchanged and pre-existing.** The desugar mentions the target TWICE, so
+`xs[next()] += 1` would call `next()` twice. `/=`, `%=`, `//=` and `**=` have always had this;
+it now applies to all twelve on index targets. Plain targets keep their native single-mention
+emit, which is why the desugar is restricted to index targets. Fixing it needs a temp-binding
+form, and that IS a `genAssign` change -- worth doing on its own, for all of them together,
+exactly as this bug's own history recommends.
+
+---
+
 ### BUG-225: `s[i]` is typed `char` but yields a byte — FIXED 2026-09-05 (retype pulled forward from 1.x)
 
 > **DECIDED 2026-08-03 (Sean):** `s[i]` **is a byte**, and the documentation now says so

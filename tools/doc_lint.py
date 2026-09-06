@@ -308,20 +308,24 @@ def check_gen(path, text):
     rel = path.relative_to(REPO).as_posix()
     hits = []
     for i, ln in enumerate(text.splitlines(), 1):
-        m = DOC_GEN.search(ln)
-        if not m:
-            continue
-        claimed, cmd = m.group(1).strip(), m.group(2).strip()
-        try:
-            got = subprocess.run([_bash(), "-c", cmd], cwd=str(REPO), capture_output=True,
-                                 timeout=60).stdout.decode("utf-8", "replace").strip()
-        except (OSError, subprocess.SubprocessError) as e:
-            hits.append(Finding("D6", rel, i, f"doc-gen command failed to run ({e}): {cmd}"))
-            continue
-        if got != claimed:
-            hits.append(Finding("D6", rel, i,
-                                f"stale count: document says {claimed!r}, "
-                                f"`{cmd}` says {got!r}"))
+        # finditer, NOT search: a line may carry more than one oracle, and `search` checked
+        # only the first. Found 2026-09-05 -- CLAUDE.md line 1873 reads "32 probes / 299
+        # assertions" with an oracle on EACH, and the 299 had drifted to 308 while doc-lint
+        # reported the file clean. That is this gate committing D8's own hazard: a number
+        # that LOOKS instrumented, sits beside one that is, and is never evaluated. Two lines
+        # in CLAUDE.md carry multiple oracles today.
+        for m in DOC_GEN.finditer(ln):
+            claimed, cmd = m.group(1).strip(), m.group(2).strip()
+            try:
+                got = subprocess.run([_bash(), "-c", cmd], cwd=str(REPO), capture_output=True,
+                                     timeout=60).stdout.decode("utf-8", "replace").strip()
+            except (OSError, subprocess.SubprocessError) as e:
+                hits.append(Finding("D6", rel, i, f"doc-gen command failed to run ({e}): {cmd}"))
+                continue
+            if got != claimed:
+                hits.append(Finding("D6", rel, i,
+                                    f"stale count: document says {claimed!r}, "
+                                    f"`{cmd}` says {got!r}"))
     return hits
 
 
@@ -382,6 +386,16 @@ CONTROLS = {
     "D2": _OK + "described in `docs/definitely_not_a_real_doc.md`\n",
     "D4": _OK + "this was fixed in BUG-9997\n",
     "D6": _OK + "There are 99 gates <!-- doc-gen: 99 = echo 3 -->\n",
+    # D6b -- a SECOND oracle on the same line must be evaluated too. The FIRST one here
+    # is correct, so this control can only fire if the later one is reached. Under the
+    # old `DOC_GEN.search(ln)` it passed silently, which is exactly how CLAUDE.md line
+    # 1873 carried a drifted assertion count (299 vs an actual 308) under a clean board
+    # for as long as nobody re-derived it by hand.
+    #
+    # That is D8's own hazard committed by the checker: a number that LOOKS instrumented,
+    # sits beside one that is, and is never evaluated. Worse than carrying no oracle,
+    # because the oracle is the reason nobody re-checks it.
+    "D6b": _OK + "7 of 99 things <!-- doc-gen: 7 = echo 7 --> <!-- doc-gen: 99 = echo 3 -->\n",
     # 12 is oracled and correct; the 77 beside it is not -- the D8 shape.
     "D8": _OK + "77 of the 12 things <!-- doc-gen: 12 = echo 12 -->\n",
     "D7": "# A document with no status marker at all\n",
@@ -403,7 +417,13 @@ def selftest(verbose=False):
                 + check_gen(fake, text) + check_status(fake, text)
                 + check_partial_oracle(fake, text))
         fired = {h.code for h in hits}
-        if code not in fired:
+        # A control key may carry a LETTER SUFFIX (`D6b`) to pin a second, distinct way the
+        # same check can fail, while the Finding it produces still carries the base code
+        # (`D6`). Without this, adding such a control makes the gate REFUSE forever -- it
+        # looks for a code nothing emits -- which is a worse outcome than the blindness the
+        # control was added to prevent.
+        expect = re.match(r"(D\d+)", code).group(1)
+        if expect not in fired:
             dead.add(code)
         if verbose:
             print(f"  [{'ok  ' if code not in dead else 'DEAD'}] {code} control -> "
