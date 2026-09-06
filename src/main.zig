@@ -82,6 +82,7 @@ const Mode = enum {
 pub fn main(init: std.process.Init) void {
     _io = init.io;
     _env = init.environ_map;
+    @import("Debugger.zig").process_environ = init.minimal.environ;
 
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();

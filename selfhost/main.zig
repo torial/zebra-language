@@ -4,6 +4,7 @@
 const std     = @import("std");
 const builtin = @import("builtin");
 const _zbr_rt = @import("zebra_rt.zig");
+pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 const _prog_alloc = _zbr_rt._prog_alloc;
 const _sysSleep = _zbr_rt._sysSleep;
 const _intern = _zbr_rt._intern;
@@ -5376,6 +5377,7 @@ pub fn _zbr_fn_dbgDumpMap(path: []const u8) i64 {
 pub fn main(_zinit: std.process.Init) void {
     _zbr_rt._io = _zinit.io;
     _zbr_rt._args = _zinit.minimal.args;
+    _zbr_rt._environ = _zinit.minimal.environ;
     _zbr_rt._allocator = _prog_alloc();
     defer _zbr_rt._arena.deinit();
     @import("Parser.zig")._initModuleVars();

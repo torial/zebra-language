@@ -4,6 +4,7 @@
 const std     = @import("std");
 const builtin = @import("builtin");
 const _zbr_rt = @import("zebra_rt.zig");
+pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 const _prog_alloc = _zbr_rt._prog_alloc;
 const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
@@ -908,6 +909,7 @@ const _reflect_Resolver_field_types: []const []const u8 = &.{"HashMap(str, int)"
 pub fn main(_zinit: std.process.Init) void {
     _zbr_rt._io = _zinit.io;
     _zbr_rt._args = _zinit.minimal.args;
+    _zbr_rt._environ = _zinit.minimal.environ;
     _zbr_rt._allocator = _prog_alloc();
     defer _zbr_rt._arena.deinit();
     _initModuleVars();
