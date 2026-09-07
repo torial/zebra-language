@@ -2930,7 +2930,7 @@ pub fn _zbr_fn_isReadOnlyMethod(name: []const u8) bool {
         return true;
     }
 // zbr:selfhost/CgHelpers.zbr:1503
-    if ((std.mem.eql(u8, name, "kill") or std.mem.eql(u8, name, "isRunning"))) {
+    if ((((((std.mem.eql(u8, name, "kill") or std.mem.eql(u8, name, "isRunning")) or std.mem.eql(u8, name, "write")) or std.mem.eql(u8, name, "readAvailable")) or std.mem.eql(u8, name, "readErrAvailable")) or std.mem.eql(u8, name, "closeStdin"))) {
 // zbr:selfhost/CgHelpers.zbr:1504
         return true;
     }

@@ -1499,8 +1499,8 @@ def isReadOnlyMethod(name: str): bool
     # SIMD reduction methods — read-only; receivers must not be marked `var`
     if name == "sum" or name == "dot" or name == "max_element" or name == "min_element"
         return true
-    # SysProcess methods — proc is a pointer; kill/isRunning never reassign the pointer itself
-    if name == "kill" or name == "isRunning"
+    # SysProcess methods — proc is a pointer; none of these reassign the pointer itself
+    if name == "kill" or name == "isRunning" or name == "write" or name == "readAvailable" or name == "readErrAvailable" or name == "closeStdin"
         return true
     # @derive(Eq) / @derive(Hash) — take *const Self, do not mutate receiver
     if name == "eql" or name == "hash"

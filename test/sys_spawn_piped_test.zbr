@@ -1,0 +1,59 @@
+# sys.spawnPiped() — a CONVERSATION with a child over pipes: write a request, read
+# what has arrived without blocking, from a poll loop. The child is `zebra lsp`
+# itself (found via ZEBRA_COMPILER, which the compiler sets for programs it runs),
+# so this is also a control for the LSP server's stdio path (BUG-334).
+
+def frame(body: str): str
+    return "Content-Length: " + body.len.toString() + "\r\n\r\n" + body
+
+# Poll up to ~5 s for `needle` to appear in the child's stdout; returns everything read.
+def readUntil(p: SysProcess, needle: str): str
+    var got: str = ""
+    var ticks: int = 0
+    while ticks < 50
+        got = got + p.readAvailable()
+        if got.contains(needle)
+            return got
+        if not p.isRunning()
+            return got
+        sys.sleep(100)
+        ticks = ticks + 1
+    return got
+
+def main()
+    var zopt = sys.getenv("ZEBRA_COMPILER")
+    assert zopt != nil, "ZEBRA_COMPILER must be set (the compiler sets it for programs it runs)"
+    var zebra: str = zopt!
+
+    var argv: List(str) = List()
+    argv.add(zebra)
+    argv.add("lsp")
+    var p = sys.spawnPiped(argv)
+    assert p.isRunning(), "spawnPiped: child did not start"
+
+    # 1. Nothing pending yet: readAvailable must return "" immediately, not block.
+    assert p.readAvailable() == "", "readAvailable blocked or returned junk before any request"
+
+    # 2. Request/response: initialize -> a reply carrying capabilities.
+    assert p.write(frame("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}")), "write failed"
+    var reply: str = readUntil(p, "capabilities")
+    assert reply.contains("\"id\":1"), "no initialize reply; got: " + reply
+    assert reply.contains("referencesProvider"), "reply lacks capabilities: " + reply
+
+    # 3. Two frames in ONE write must both be answered (the BUG-334 shape, from the client side).
+    var two: str = frame("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"shutdown\",\"params\":{}}") + frame("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"shutdown\",\"params\":{}}")
+    assert p.write(two), "second write failed"
+    var reply2: str = readUntil(p, "\"id\":3")
+    assert reply2.contains("\"id\":2") and reply2.contains("\"id\":3"), "expected replies 2 and 3; got: " + reply2
+
+    # 4. EOF on stdin ends the server; the handle notices.
+    p.closeStdin()
+    var ticks: int = 0
+    while p.isRunning() and ticks < 50
+        sys.sleep(100)
+        ticks = ticks + 1
+    assert not p.isRunning(), "server did not exit after stdin EOF"
+    assert p.readAvailable() == "", "readAvailable after exit must be empty, not an error"
+    assert not p.write("x"), "write to an exited child must report false, not succeed silently"
+
+    print("sys_spawn_piped_test: ok")
