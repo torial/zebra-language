@@ -2731,6 +2731,42 @@ def luiManifest(): str
 </assembly>
 """
 
+# BUG-340: a GUI program with `use` deps emitted lsp.zig/sci.zig BESIDE the
+# source (where the non-GUI path expects them) but main.zig was COPIED into
+# <proj>/src, so its `@import("lsp.zig")` failed with FileNotFound. Walk the
+# emitted file's `@import("X.zig")` lines (transitively) and copy each module
+# that exists next to the emitted main into the project's src dir.
+def copyGuiDeps(zig_path: str, srcDir: str)
+    var dir: str = Path.dirname(zig_path)
+    if dir == ""
+        dir = "."
+    var todo: List(str) = List(str)()
+    var seen: List(str) = List(str)()
+    todo.add(zig_path)
+    while todo.len > 0
+        var cur: str = todo.at(todo.len - 1)
+        todo.remove(todo.len - 1)
+        var text: str = File.read(cur)
+        var parts: List(str) = text.split("@import(\"")
+        var first: bool = true
+        for part in parts
+            if first
+                first = false
+                continue
+            var q: int = part.indexOf("\"")
+            if q <= 0
+                continue
+            var name: str = part[0..q]
+            if not name.endsWith(".zig") or name.contains("/") or name.contains("\\")
+                continue
+            if seen.contains(name)
+                continue
+            seen.add(name)
+            var from: str = dir + "/" + name
+            if File.exists(from)
+                File.copy(from, srcDir + "/" + name)
+                todo.add(from)
+
 def compileGuiProject(zig_path: str, mode_run: bool, backend: str): int
     var suffix: str = "_gui_tui"
     if backend == "libui_ng"
@@ -2742,6 +2778,7 @@ def compileGuiProject(zig_path: str, mode_run: bool, backend: str): int
     var srcDir: str = proj + "/src"
     Dir.createAll(srcDir)
     File.copy(zig_path, srcDir + "/main.zig")
+    copyGuiDeps(zig_path, srcDir)
     var bz: str = tuiBuildZig()
     var bzon: str = tuiBuildZon()
     if backend == "libui_ng"
