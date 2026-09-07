@@ -56,6 +56,10 @@ const _GuiBackend = struct {
     endHBoxFn:   *const fn () void,
     beginVBoxFn: *const fn (id: []const u8, stretch: bool) void,
     endVBoxFn:   *const fn () void,
+    beginTabsFn:   *const fn (id: []const u8, stretch: bool) void,
+    beginTabPageFn: *const fn (id: []const u8, label: []const u8) void,
+    endTabPageFn:  *const fn () void,
+    endTabsFn:     *const fn () void,
     progressBarFn: *const fn (label: []const u8, value: f64) void,
     comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64) i64,
     spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64) i64,
@@ -161,6 +165,12 @@ const GuiContext = struct {
     pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
     pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
     pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
+    // Tabs (libui uiTab). Pages are created on first sight, like boxes (frame-0
+    // rule applies); labels are fixed at creation — libui-ng has no rename.
+    pub fn beginTabs(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginTabsFn(id, stretch); }
+    pub fn beginTabPage(self: GuiContext, id: []const u8, label: []const u8) void { self._b.beginTabPageFn(id, label); }
+    pub fn endTabPage(self: GuiContext) void { self._b.endTabPageFn(); }
+    pub fn endTabs(self: GuiContext) void { self._b.endTabsFn(); }
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
@@ -466,6 +476,25 @@ fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void
     const _s = _ed.scint orelse return;
     _ = _s.sendMessage(2024, @intCast(@max(0, line - 1)), 0);
 }
+// ─── The hatch: raw Scintilla messages from Zebra (zebra-ide plan §2) ───────
+// Every editor feature Scintilla already has (markers, folding, indicators,
+// document pointers, find, zoom, ...) is a message + constants; exposing ONE
+// generic send lets the IDE be a Zebra program instead of two more compiler
+// builtins per feature. Unknown message ids are silently ignored by Scintilla
+// (returns 0), so callers that can read a value back should — see Sci.zbr.
+fn _code_editor_sci(_ed: *_CodeEditor, msg: i64, wparam: i64, lparam: i64) i64 {
+    const _s = _ed.scint orelse return 0;
+    return @bitCast(_s.sendMessage(@intCast(msg), @bitCast(wparam), @bitCast(lparam)));
+}
+// String lParam form: the text is copied to a NUL-terminated buffer that outlives
+// the call (Scintilla reads lParam as `const char*` for SETTEXT/INSERTTEXT/
+// SEARCHINTARGET/MARKERDEFINE etc.). wparam is passed through unchanged.
+fn _code_editor_sci_str(_ed: *_CodeEditor, msg: i64, wparam: i64, text: []const u8) i64 {
+    const _s = _ed.scint orelse return 0;
+    const _z = _allocator.dupeZ(u8, text) catch return 0;
+    defer _allocator.free(_z);
+    return @bitCast(_s.sendMessage(@intCast(msg), @bitCast(wparam), @intFromPtr(_z.ptr)));
+}
 // ─── libui-ng retained-mode adapter ──────────────────────────────────────────
 const ui = @import("ui");
 const _LuiMut = struct {
@@ -548,6 +577,8 @@ fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
     _lui_dcache = .empty;
     _lui_box_icache = std.StringHashMap(*ui.Box).init(_allocator);
     _lui_grp_cache = std.StringHashMap(_LuiPanel).init(_allocator);
+    _lui_tab_cache = std.StringHashMap(*ui.Tab).init(_allocator);
+    _lui_tab_depth = 0;
     _lui_box_depth = 0;
     var _tbuf: [256]u8 = undefined;
     const _tz: [:0]u8 = try std.fmt.bufPrintZ(&_tbuf, "{s}", .{_title});
@@ -807,6 +838,40 @@ fn _lui_begin_vbox(_id: []const u8, _stretch: bool) void {
     _lui_push_box(_e.value_ptr.*);
 }
 fn _lui_end_vbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
+var _lui_tab_cache: std.StringHashMap(*ui.Tab) = undefined;
+var _lui_tab_stack: [8]?*ui.Tab = [_]?*ui.Tab{null} ** 8;
+var _lui_tab_depth: usize = 0;
+fn _lui_begin_tabs(_id: []const u8, _stretch: bool) void {
+    const _e = _lui_tab_cache.getOrPut(_id) catch return;
+    if (!_e.found_existing) {
+        const _t = ui.Tab.New() catch return;
+        if (_lui_cur_box()) |_pb| ui.Box.Append(_pb, _t.as_control(), if (_stretch) ui.Stretchy.stretch else ui.Stretchy.dont_stretch);
+        _e.value_ptr.* = _t;
+    }
+    if (_lui_tab_depth < 8) { _lui_tab_stack[_lui_tab_depth] = _e.value_ptr.*; _lui_tab_depth += 1; }
+}
+fn _lui_begin_tab_page(_id: []const u8, _label: []const u8) void {
+    const _e = _lui_box_icache.getOrPut(_id) catch return;
+    if (!_e.found_existing) {
+        const _pg = ui.Box.New(.Vertical) catch return;
+        _pg.SetPadded(true);
+        if (_lui_tab_depth > 0) {
+            if (_lui_tab_stack[_lui_tab_depth - 1]) |_t| {
+                const _n = @min(_label.len, 255);
+                var _lb: [256]u8 = undefined;
+                @memcpy(_lb[0.._n], _label[0.._n]);
+                _lb[_n] = 0;
+                ui.Tab.Append(_t, _lb[0.._n :0], _pg.as_control());
+                const _idx = ui.Tab.NumPages(_t) - 1;
+                ui.Tab.SetMargined(_t, _idx, true);
+            }
+        }
+        _e.value_ptr.* = _pg;
+    }
+    _lui_push_box(_e.value_ptr.*);
+}
+fn _lui_end_tab_page() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
+fn _lui_end_tabs() void { if (_lui_tab_depth > 0) _lui_tab_depth -= 1; }
 fn _lui_begin_panel(_label: []const u8) bool {
     if (_lui_grp_cache.get(_label)) |_p| {
         _lui_push_box(_p.inner);
@@ -957,6 +1022,10 @@ const _gui_lui_backend = _GuiBackend{
     .endHBoxFn   = _lui_end_hbox,
     .beginVBoxFn   = _lui_begin_vbox,
     .endVBoxFn     = _lui_end_vbox,
+    .beginTabsFn    = _lui_begin_tabs,
+    .beginTabPageFn = _lui_begin_tab_page,
+    .endTabPageFn   = _lui_end_tab_page,
+    .endTabsFn      = _lui_end_tabs,
     .progressBarFn = _lui_progressbar,
     .comboboxFn    = _lui_combobox,
     .spinboxFn     = _lui_spinbox,

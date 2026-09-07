@@ -1,0 +1,37 @@
+# Tabs + editor.sci() hatch smoke (zebra-ide groundwork).
+# Two tab pages, each with a CodeEditor; the second page sends raw Scintilla
+# messages through the hatch (SCI_SETTEXT = 2181, SCI_GETLENGTH = 2006).
+# Compile control: builds with --gui-backend=tui (hatch returns 0, tabs are no-ops).
+
+class Model
+    var left: CodeEditor? = nil
+    var right: CodeEditor? = nil
+    var length: int = 0
+
+def tabsInit(): Model
+    var m = Model()
+    m.left = CodeEditor.forZebra()
+    m.left!.setText("def main()\n    print(\"tab one\")\n")
+    m.right = CodeEditor.forZebra()
+    # SCI_SETTEXT(0, text) then SCI_GETLENGTH
+    var r1 = m.right!.sciStr(2181, 0, "// tab two, via sciStr\n")
+    m.length = m.right!.sci(2006, 0, 0)
+    return m
+
+def update(m: Model, msg: int): Model
+    return m
+
+def view(g: Gui, m: Model)
+    using g.vbox("##root", true)
+        g.text("Tabs + sci hatch smoke (length=" + m.length.toString() + ")")
+        g.beginTabs("##tabs", true)
+        g.beginTabPage("##p1", "one.zbr")
+        m.left!.render(g, "##code1", 0, 0)
+        g.endTabPage()
+        g.beginTabPage("##p2", "two.c")
+        m.right!.render(g, "##code2", 0, 0)
+        g.endTabPage()
+        g.endTabs()
+
+def main()
+    Gui.run("Tabs Smoke", 800, 600, tabsInit, update, view)

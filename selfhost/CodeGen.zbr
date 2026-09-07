@@ -14692,6 +14692,10 @@ struct Generator
                     ce_fn = "_code_editor_get_cursor_col"
                 if mname == "setCursorPosition"
                     ce_fn = "_code_editor_set_cursor_position"
+                if mname == "sci"
+                    ce_fn = "_code_editor_sci"
+                if mname == "sciStr"
+                    ce_fn = "_code_editor_sci_str"
                 if ce_fn != ""
                     w.emit(ce_fn)
                     w.emit("(")
