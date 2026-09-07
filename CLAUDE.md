@@ -2567,6 +2567,16 @@ Key idioms worth remembering up front:
 
 ## Notes
 
+- **State handoff 2026-09-07 (read before touching GUI/debug code):** the IDE work
+  (`C:\Projects\zebra-ide`) landed P0–P4 across this repo, zig-libui-ng (e1b68d3, unpushed)
+  and zebra-ide; `zebra debug <file>` is now native (`dbgRunSession`, selfhost/main.zbr);
+  new sys builtins `spawnPipedIn/exitCode/readStdinAvailable/stdinClosed/writeStdout` and
+  `--` program-arg passthrough. The libui pin in `luiBuildZon` still points at 93c7f54b,
+  which LACKS `Scintilla.OnNotify`; the `_ce_on_notify` / `takeModified` code in
+  gui_libui_ng_section.zig is `@hasDecl`-guarded so the build passes — that is waiting on
+  Sean pushing zig-libui-ng and running `tools/bump_libui_pin.sh`, not on code. Nothing has
+  yet run on Windows with a window open. Full status, owed list, open worklist:
+  `C:\Projects\zebra-ide\PLAN.md` (last section); wiki `concept_zebra-lightweight-ide` §7b.
 - Platform: Windows is the primary dev environment; bash paths via Git Bash.
 - Binaries and build caches (`*.exe`, `*.pdb`, `.zig-cache/`, `zig-out/`) are
   gitignored — do not commit them.
