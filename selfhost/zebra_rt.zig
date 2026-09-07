@@ -567,6 +567,20 @@ pub const _alloc_stats_vtable = std.mem.Allocator.VTable{
     .remap = _alloc_stats_remap,
     .free = _alloc_stats_free,
 };
+// Environment for children we spawn. `sys.setenv` on POSIX records into
+// `_env_overrides` (there is no portable process-wide setenv without libc), so a
+// child would otherwise NOT inherit what the program just set -- which is exactly
+// how `zebra build` hands ZEBRA_COMPILER to the build program (BUG-327). When
+// overrides exist, build an explicit map (inherited environ + overrides) and pass
+// it; otherwise null = inherit, the cheap path.
+fn _child_env_map() ?*const std.process.Environ.Map {
+    if (_env_overrides.count() == 0) return null;
+    const m = _allocator.create(std.process.Environ.Map) catch return null;
+    m.* = _environ.createMap(_allocator) catch return null;
+    var it = _env_overrides.iterator();
+    while (it.next()) |e| m.put(e.key_ptr.*, e.value_ptr.*) catch {};
+    return m;
+}
 pub const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
 pub fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     // BUG-219: this used to spawn with two pipes and drain them SEQUENTIALLY —
@@ -582,6 +596,7 @@ pub fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     // deadlock-free by construction, and maintained upstream.
     const r = std.process.run(_allocator, _io, .{
         .argv = argv.items,
+        .environ_map = _child_env_map(),
     }) catch |e| return SysRunResult{
         .exit_code = -1,
         .stdout = "",
@@ -596,6 +611,7 @@ pub fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
 pub fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
     var child = std.process.spawn(_io, .{
         .argv   = argv.items,
+        .environ_map = _child_env_map(),
         .stdin  = .inherit,
         .stdout = .inherit,
         .stderr = .inherit,
@@ -616,6 +632,7 @@ pub fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
     p.* = .{ .child = undefined, .alive = false, .pid = -1 };
     p.child = std.process.spawn(_io, .{
         .argv   = argv.items,
+        .environ_map = _child_env_map(),
         .stdin  = .ignore,
         .stdout = .ignore,
         .stderr = .inherit,
@@ -626,6 +643,82 @@ pub fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
         if (p.child.id) |pid| p.pid = @intCast(pid);
     }
     return p;
+}
+
+// ── Piped child process (`sys.spawnPiped`) ────────────────────────────────────
+// `sys.spawn` ignores the child's stdin/stdout; `sys.run` collects everything at
+// exit. Neither can hold a CONVERSATION with a child — which is what an LSP client
+// (zebra-ide, 2026-09-06) or any stdio-protocol host needs: write a request, read
+// whatever has arrived so far WITHOUT blocking, from inside a GUI poll tick.
+// `_sys_spawn_piped` gives the child pipes on all three streams; `readAvailable`
+// / `readErrAvailable` drain only what the OS already holds (poll() on POSIX,
+// PeekNamedPipe on Windows) and return "" when nothing is pending; `write` is a
+// plain blocking write of a small message; `closeStdin` sends EOF.
+pub fn _sys_spawn_piped(argv: std.ArrayList([]const u8)) *_SysProcess {
+    const p = _allocator.create(_SysProcess) catch @panic("OOM");
+    p.* = .{ .child = undefined, .alive = false, .pid = -1 };
+    p.child = std.process.spawn(_io, .{
+        .argv   = argv.items,
+        .environ_map = _child_env_map(),
+        .stdin  = .pipe,
+        .stdout = .pipe,
+        .stderr = .pipe,
+    }) catch return p;
+    p.alive = true;
+    if (comptime builtin.os.tag != .windows) {
+        if (p.child.id) |pid| p.pid = @intCast(pid);
+    }
+    return p;
+}
+pub fn _sys_process_write(p: *_SysProcess, data: []const u8) bool {
+    if (!p.alive) return false;
+    const f = p.child.stdin orelse return false;
+    f.writeStreamingAll(_io, data) catch return false;
+    return true;
+}
+pub fn _sys_process_close_stdin(p: *_SysProcess) void {
+    if (p.child.stdin) |f| {
+        f.close(_io);
+        p.child.stdin = null;
+    }
+}
+// Read whatever the pipe already holds (up to 64 KB per call) without blocking.
+// Returns "" when nothing is pending or the stream is closed.
+fn _sys_pipe_read_available(fo: ?std.Io.File) []const u8 {
+    const f = fo orelse return "";
+    var out: std.ArrayList(u8) = .empty;
+    var chunk: [16384]u8 = undefined;
+    var rounds: usize = 0;
+    while (rounds < 4) : (rounds += 1) {
+        if (comptime builtin.os.tag == .windows) {
+            const k32 = struct {
+                extern "kernel32" fn PeekNamedPipe(h: std.os.windows.HANDLE, buf: ?*anyopaque, n: u32, read: ?*u32, avail: ?*u32, left: ?*u32) callconv(.winapi) std.os.windows.BOOL;
+                extern "kernel32" fn ReadFile(h: std.os.windows.HANDLE, buf: [*]u8, n: u32, read: ?*u32, ov: ?*anyopaque) callconv(.winapi) std.os.windows.BOOL;
+            };
+            var avail: u32 = 0;
+            if (k32.PeekNamedPipe(f.handle, null, 0, null, &avail, null) == 0) break; // closed/broken pipe
+            if (avail == 0) break;
+            var got: u32 = 0;
+            const want: u32 = @min(avail, @as(u32, chunk.len));
+            if (k32.ReadFile(f.handle, &chunk, want, &got, null) == 0 or got == 0) break;
+            out.appendSlice(_allocator, chunk[0..got]) catch break;
+        } else {
+            var pfd = [_]std.posix.pollfd{.{ .fd = f.handle, .events = std.posix.POLL.IN, .revents = 0 }};
+            const ready = std.posix.poll(&pfd, 0) catch break;
+            if (ready == 0) break;
+            if (pfd[0].revents & std.posix.POLL.IN == 0) break; // HUP/ERR with no data
+            const n = std.posix.read(f.handle, &chunk) catch break;
+            if (n == 0) break;
+            out.appendSlice(_allocator, chunk[0..n]) catch break;
+        }
+    }
+    return out.items;
+}
+pub fn _sys_process_read_available(p: *_SysProcess) []const u8 {
+    return _sys_pipe_read_available(p.child.stdout);
+}
+pub fn _sys_process_read_err_available(p: *_SysProcess) []const u8 {
+    return _sys_pipe_read_available(p.child.stderr);
 }
 pub fn _sys_process_kill(p: *_SysProcess) void {
     if (!p.alive) return;
@@ -642,10 +735,20 @@ pub fn _sys_process_is_running(p: *_SysProcess) bool {
         p.alive = false;
         return false;
     } else {
+        // Zig 0.16 has no std.posix.waitpid; use libc's when linked, else the raw
+        // Linux syscall. rc == 0 means "still running" for WNOHANG; anything else
+        // (exited, or an error such as ECHILD) means the child is gone.
         const pid = p.child.id orelse { p.alive = false; return false; };
-        const r = std.posix.waitpid(pid, std.posix.W.NOHANG);
-        if (r.pid != 0) { p.alive = false; return false; }
-        return true;
+        const rc: isize = if (comptime builtin.link_libc) blk: {
+            var st: c_int = 0;
+            break :blk @intCast(std.c.waitpid(@intCast(pid), &st, std.c.W.NOHANG));
+        } else if (comptime builtin.os.tag == .linux) blk: {
+            var st: u32 = 0;
+            break :blk @bitCast(std.os.linux.waitpid(@intCast(pid), &st, std.os.linux.W.NOHANG));
+        } else @compileError("sys.spawn: isRunning needs libc on this target");
+        if (rc == 0) return true;
+        p.alive = false;
+        return false;
     }
 }
 // ONE process-wide stdin reader. `readerStreaming` reads AHEAD into its buffer

@@ -3801,6 +3801,12 @@ def main()
                 # never blocks — matching the bootstrap's run path (src/main.zig).
                 var rargv = List(str)()
                 rargv.add(fast_exe)
+                # A program run by the compiler can ask for the compiler (`zebra lsp`,
+                # `zebra build`, a nested compile) the same way a `zebra build` program
+                # can (BUG-327 layer 2): the child inherits ZEBRA_COMPILER. Set only if
+                # the environment does not already name one (an installer may).
+                if sys.getenv("ZEBRA_COMPILER") == nil
+                    sys.setenv("ZEBRA_COMPILER", sys.selfExe())
                 var rc: int = sys.exec_inherit(rargv)
                 # BUG-244: remove the scratch build ONLY on a clean exit. If the program
                 # failed, the emitted .zig IS the debugging evidence and deleting it would

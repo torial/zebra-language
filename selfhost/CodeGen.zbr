@@ -12645,6 +12645,31 @@ struct Generator
                         genExpr(m.object)
                         w.emit(")")
                         return
+                    if mname == "write"
+                        w.emit("_sys_process_write(")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.len > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\"\"")
+                        w.emit(")")
+                        return
+                    if mname == "readAvailable"
+                        w.emit("_sys_process_read_available(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                    if mname == "readErrAvailable"
+                        w.emit("_sys_process_read_err_available(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                    if mname == "closeStdin"
+                        w.emit("_sys_process_close_stdin(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
                 on Type_.gui_context
                     # BUG-214: `g.send(Msg.bump)` — the MVU send is type-erased
                     # (`anytype` → `*const anyopaque`), so a bare no-payload variant
@@ -16247,6 +16272,14 @@ struct Generator
             return
         if mname == "exec_inherit"
             w.emit("_sys_exec_inherit(")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("undefined")
+            w.emit(")")
+            return
+        if mname == "spawnPiped"
+            w.emit("_sys_spawn_piped(")
             if args.len > 0
                 genExpr(args.at(0).value)
             else

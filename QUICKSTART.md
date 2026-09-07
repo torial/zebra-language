@@ -3121,6 +3121,8 @@ Available backends: `stub` (no-op, for tests), `libui_ng` (native OS controls),
 | `sys.run(argv)`     | `SysRunResult`    | Spawn subprocess; `{stdout, stderr, exit_code}` |
 | `sys.sleep(ms)`     | void              | Sleep for `ms` milliseconds                  |
 | `sys.readLine()`    | `str?`            | Read one line from stdin (strips `\n`); nil on EOF |
+| `sys.spawn(argv)`   | `SysProcess`      | Start a child (stdin/stdout ignored); `.isRunning()`, `.kill()`, `.pid` |
+| `sys.spawnPiped(argv)` | `SysProcess`   | Start a child with **pipes** on stdin/stdout/stderr, for stdio protocols (an LSP or DAP server, a REPL). `.write(s): bool`, `.readAvailable(): str` and `.readErrAvailable(): str` return what the OS already holds **without blocking** ("" if nothing), `.closeStdin()` sends EOF; plus `.isRunning()` / `.kill()`. Poll from a loop or a GUI tick; see `test/sys_spawn_piped_test.zbr`, which talks to `zebra lsp` |
 | `sys.memStats()`    | `MemStats`        | Program-arena footprint; `.arenaBytes` (int). High-water for the main allocator. Delta across a frame: `b.arenaBytes - a.arenaBytes` |
 
 ### `File` — file I/O (static)
