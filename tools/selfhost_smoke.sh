@@ -1324,6 +1324,7 @@ smoke_run_bounded test/ws_echo_test.zbr  "ws_test: OK"    90
 smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
 # sys.spawnPiped: a stdio conversation with `zebra lsp` itself (also a BUG-334 control).
 smoke_run_bounded test/sys_spawn_piped_test.zbr "sys_spawn_piped_test: ok" 60
+smoke_run test/bug335_json_query_in_method_test.zbr "bug335: n=1"
 # BUG-227. Verified to FAIL against the unfixed compiler before being registered — the
 # separators are multi-character on purpose, since tokenizeSequence and tokenizeAny agree
 # on a single-char `seps` and a fixture using "," would have passed under the bug.

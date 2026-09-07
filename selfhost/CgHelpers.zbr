@@ -1473,6 +1473,14 @@ def isReadOnlyMethod(name: str): bool
         return true
     if name == "chars" or name == "concat"
         return true
+    # JSON queries read a JsonValue; only put*/arr* mutate. Without this, a local
+    # bound in a CLASS METHOD (where the receiver's type is not always inferable)
+    # fell to the conservative branch and was emitted `var` -- and Zig's "local
+    # variable is never mutated" leaked through (BUG-335, 2026-09-07).
+    if name == "getObj" or name == "getStr" or name == "getInt" or name == "getFloat" or name == "getBool" or name == "getList"
+        return true
+    if name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify"
+        return true
     if name == "split" or name == "trim" or name == "upper" or name == "lower"
         return true
     if name == "lines"
