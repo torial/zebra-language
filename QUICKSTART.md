@@ -3006,6 +3006,7 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 | `g.indent()` / `g.unindent()`             | void     | Indentation level                          |
 | `g.panel(label, callback)`                 | void     | Collapsible child window                   |
 | `g.beginPanel(id)` / `g.endPanel(id)`     | void     | libui-ng titled group box (retained-mode open/close pair)  |
+| `g.beginTabs(id, stretch)` / `g.endTabs()` | void    | Tab control (libui-ng `uiTab`); pages go between `g.beginTabPage(id, label)` / `g.endTabPage()`. TUI backend: no-op |
 | `g.window(label, callback)`                | void     | Floating sub-window                        |
 | `g.textColored(s, r, g, b, a)`            | void     | Colored text label                         |
 | `g.selectable(label, selected)`            | bool     | Selectable list item                       |
@@ -3080,6 +3081,38 @@ editor.render(g, "##editor", 700, 500)
 var src = editor.getText()
 editor.setErrorMarkers(diags)             # diags: List(IDEDiagnostic)
 ```
+
+**Raw Scintilla hatch.** Everything the widget does not wrap is one message away:
+
+```zebra
+use sci exposing SCI_GOTOLINE, SCI_GETLENGTH, SCI_SETTEXT   # constants live in zebra-ide/src/sci.zbr
+var n = editor.sci(SCI_GETLENGTH, 0, 0)         # (msg, wParam, lParam) -> int, the raw sptr_t
+editor.sci(SCI_GOTOLINE, 41, 0)
+editor.sciStr(SCI_SETTEXT, 0, "def main()\n")  # lParam is a NUL-terminated copy of the str
+```
+
+`sci` and `sciStr` are the escape hatch the IDE (`C:\Projects\zebra-ide`) builds
+on — markers, indicators, annotations, folding, search-in-target — so the widget
+API stays small. Unknown message ids return 0. On the `tui` backend both return 0
+and do nothing, so a program using them still compiles and runs headless.
+
+**Tabs.** Retained-mode open/close pairs like `beginPanel`:
+
+```zebra
+g.beginTabs("##docs", true)
+g.beginTabPage("##p1", "main.zbr")
+m.editors.at(0).render(g, "##e1", 0, 0)
+g.endTabPage()
+g.beginTabPage("##p2", "util.c")
+m.editors.at(1).render(g, "##e2", 0, 0)
+g.endTabPage()
+g.endTabs()
+```
+
+Pages are created on first sight of their id and appended in order; there is no
+rename/select/close yet (libui-ng's `uiTab` has no select API — see
+`zebra-ide/PLAN.md` §3 for the document-pointer workaround). Smoke:
+`examples/tabs_sci_smoke.zbr` (builds under `--gui-backend=tui` as the compile control).
 
 ### Persistent frame state with `capture` (frame-callback form)
 

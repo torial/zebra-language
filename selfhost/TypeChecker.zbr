@@ -2541,6 +2541,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.string_
                             if cemn == "getCursorLine" or cemn == "getCursorCol"
                                 return Type_.int_
+                            if cemn == "sci" or cemn == "sciStr"
+                                return Type_.int_
                         on Type_.string_builder
                             var sbmname: str = mem.member
                             if sbmname == "build" or sbmname == "toString"
