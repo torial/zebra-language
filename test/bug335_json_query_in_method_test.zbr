@@ -1,0 +1,33 @@
+# BUG-335: JSON query results bound to locals inside a CLASS METHOD were emitted as
+# `var` (the receiver type was not inferable there, so getObj/getInt fell to the
+# conservative "not read-only" branch), and Zig's "local variable is never mutated"
+# leaked through. Free functions were fine, which is why nothing caught it until
+# zebra-ide's LSP client (2026-09-07). Control: this must compile and print n=1.
+
+struct Diag
+    var line: int
+    var col: int
+    cue init(line: int, col: int)
+        .line = line
+        .col = col
+
+class Box
+    var out: List(Diag)
+    cue init()
+        .out = List(Diag)()
+    def scan(j: JsonValue)
+        var params = j.getObj("params")
+        for d in params.getList("xs")
+            var rng = d.getObj("range")
+            var s = rng.getObj("start")
+            var e = rng.getObj("end")
+            var sev: int = 1
+            if not d.at("severity").isNull()
+                sev = d.getInt("severity")
+            .out.add(Diag(s.getInt("line"), e.getInt("line") + sev))
+
+def main()
+    var j = Json.parse("{\"params\":{\"xs\":[{\"range\":{\"start\":{\"line\":1},\"end\":{\"line\":2}}}]}}")!
+    var b = Box()
+    b.scan(j)
+    print("bug335: n=${b.out.len}")

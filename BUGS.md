@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-334. Next new bug: BUG-335.**
+**Last bug number generated: BUG-339. Next new bug: BUG-340.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,51 @@
 > measured in.
 
 ---
+
+### BUG-335: JSON query on a local inside a CLASS METHOD emitted `var`; Zig's "never mutated" leaked — FIXED 2026-09-07
+
+`var rng = d.getObj("range")` then `rng.getObj("start")` in a class method → Zig error
+`local variable is never mutated`; the identical code in a free function compiled.
+Mechanism (from `CgHelpers.receiverNeedsVar`): when the receiver's type is not inferable
+the decision falls to the name-based `isReadOnlyMethod`, which did not list the JSON
+queries, so the receiver was marked mutated. Fix: getObj/getStr/getInt/getFloat/getBool/
+getList/isNull/isObject/isArray/stringify are read-only by name. Control:
+`test/bug335_json_query_in_method_test.zbr`. Found writing zebra-ide's `lsp.zbr`.
+Open question left: WHY the receiver type is not inferable in the method body — the
+name-based fix is correct but the inference gap is still there for any other method.
+
+### BUG-336: `s.split(sep).at(i)` / `.len` leaks a Zig error instead of a Zebra refusal — OPEN (found 2026-09-07)
+
+`split` returns a Zig `SplitIterator`, usable only in `for`. Calling `.at()` on it gives
+`no field named 'items' in struct 'mem.SplitIterator(u8,.sequence)'` from Zig. QUICKSTART
+shows only the `for` form. Either make split return `List(str)` (the type its name
+suggests; every call site I have seen immediately collects it anyway) or have the type
+checker refuse `.at/.len/.count` on the iterator with a Zebra message. Same class as
+BUG-319/330 ("refused in Zebra, not leaked from Zig").
+
+### BUG-337: `json.getList(k).len` leaks a Zig error (`no member named 'items' in '[]json.dynamic.Value'`) — OPEN (found 2026-09-07)
+
+`getList` is typed `List(JsonValue)` in the checker but lowers to a Zig slice, so
+`.len`/`.count()`/`.at()` emit the ArrayList forms and fail in Zig. Iteration works.
+Either lower to a real `List(JsonValue)` or type it as an iterator and refuse the List
+methods with a Zebra message. Workaround in zebra-ide: count by iterating.
+
+### BUG-338: built-in type names are not resolvable as GENERIC ARGUMENTS in constructor expressions — OPEN (found 2026-09-07)
+
+`var m: HashMap(int, JsonValue)` (annotation) is fine; `HashMap(int, JsonValue)()` and
+`List(JsonValue)()` (expressions) fail with `undefined name: 'JsonValue'`. The Resolver
+treats generic args in a call as value names. Workaround: store raw strings and parse on
+use. Probably affects every built-in type name (CodeEditor, SysProcess, ...).
+
+### BUG-339: a class field initialised with a runtime constructor leaks Zig's `unable to resolve comptime value` — OPEN (found 2026-09-07)
+
+`var pending: HashMap(int, str) = HashMap(int, str)()` as a CLASS field: the emitted Zig
+struct default must be comptime-known. UI_QUICKSTART documents this for `CodeEditor`
+as a rule ("assign in init"); it is general to every heap-constructed field, and the
+diagnostic is Zig's. The checker knows the field type and the initialiser shape, so it
+can refuse with: "class field initialisers must be constants; construct `pending` in
+`cue init`". Workaround: declare without initialiser, assign in `cue init` (done in
+zebra-ide/src/lsp.zbr).
 
 ### BUG-334: `sys.readLine` / `sys.readBytes` created a NEW buffered stdin reader per call, discarding read-ahead — `zebra lsp` answered nothing on a pipe — FIXED 2026-09-06 (branch lsp-references)
 
