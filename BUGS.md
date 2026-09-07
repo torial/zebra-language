@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-347. Next new bug: BUG-348.**
+**Last bug number generated: BUG-349. Next new bug: BUG-350.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -154,6 +154,25 @@ after a literal `--` is forwarded (`zebra src/gates.zbr -- manifest.json smoke`)
 both the fast and the LLVM run paths, and `ArgResult.unknownFlag` stops at `--` so
 program flags are not reported as unknown compiler flags. Control:
 test/prog_args_passthrough_test.zbr (registered inline in selfhost_smoke).
+
+### BUG-348: `zebra debug` could never find the bootstrap on Linux — `.exe` suffix unconditional — FIXED 2026-09-07 (branch dap)
+
+`bootstrapExePath()` returned `zig-out/bin/zebra-bootstrap.exe` whether or not it
+existed, so on Linux `zebra debug` printed "could not launch the bootstrap compiler".
+Now tries the suffixed name, then the bare one (repo-relative, then beside the exe).
+
+### BUG-349: the DAP relay lost every session to `MissingContentLength` — a fresh `readerStreaming` per byte discarded its read-ahead — FIXED 2026-09-07 (branch dap; src/Debugger.zig, bootstrap-only code)
+
+`FileReadCtx.readFn` created a `readerStreaming` with a 1-byte storage for EVERY
+byte; in Zig 0.16 that reader still reads ahead from the pipe and the read-ahead died
+with it, so the relay saw "C","n","e","t","L" of "Content-Length" (replicated in a
+10-line Zig program) and failed before the first request — on both directions, on
+every platform. The same class as BUG-334 (selfhost stdin, fixed 09-06). Fix: one
+persistent reader with a 4 KB storage per FileReadCtx. Control:
+zebra-ide/src/dap_client_test.zbr (breakpoint hit, stack remapped to the .zbr line,
+next, continue, disconnect, against the real lldb-dap).
+NOTE: this is the last bootstrap-only subcommand; the fix is in src/ because that is
+where `debug` lives. Porting `debug` to the selfhost is the real close-out.
 
 ### BUG-334: `sys.readLine` / `sys.readBytes` created a NEW buffered stdin reader per call, discarding read-ahead — `zebra lsp` answered nothing on a pipe — FIXED 2026-09-06 (branch lsp-references)
 

@@ -2841,6 +2841,15 @@ Output goes to stdout, one warning per line.  Exit code 0 = no warnings.
 the Debug Adapter Protocol on a local socket.  IDE clients (VS Code, ZebraIDE) connect
 to this socket for breakpoints, stepping, and variable inspection.
 
+What a client sends, as `zebra-ide/src/dap.zbr` does it (2026-09-07): `initialize` →
+`launch{program}` where `program` is the exe `zig build-exe` wrote to the **current
+directory** (`<stem>` / `<stem>.exe`) → `setBreakpoints{source.path: the .zbr,
+breakpoints:[{line}]}` → `configurationDone` → `stopped` event → `stackTrace` (frames
+come back with the `.zbr` path and line) → `next`/`continue`… → `disconnect`. The
+`setBreakpoints` *response* still names the `.zig`; only `stackTrace` is remapped back.
+lldb has no Zig language plugin, so the Locals scope is empty (Globals and Registers
+work). Headless control: `zebra src/dap_client_test.zbr` in zebra-ide.
+
 See `docs/DEBUGGING.md` for:
 - VS Code launch configuration
 - ZebraIDE's built-in Debug button

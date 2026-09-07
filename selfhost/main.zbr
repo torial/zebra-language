@@ -889,13 +889,19 @@ class MultiCompiler
 # unchanged; otherwise look beside OUR OWN executable, which is where an install puts it.
 # Same shape as the stdlib_preamble lookup further down this file.
 def bootstrapExePath(): str
+    # BUG-348: the `.exe` suffix was unconditional, so `zebra debug` could never find
+    # the bootstrap on Linux. Try the suffixed name first (Windows), then the bare one.
     var repo_rel: str = "zig-out/bin/zebra-bootstrap.exe"
     if File.exists(repo_rel)
         return repo_rel
+    if File.exists("zig-out/bin/zebra-bootstrap")
+        return "zig-out/bin/zebra-bootstrap"
     var d: str = Path.dirname(sys.selfExe())
     if d == ""
         d = "."
-    return d + "/zebra-bootstrap.exe"
+    if File.exists(d + "/zebra-bootstrap.exe")
+        return d + "/zebra-bootstrap.exe"
+    return d + "/zebra-bootstrap"
 
 
 # BUG-321: one usage text, two destinations. `--help` is a REQUEST and its answer

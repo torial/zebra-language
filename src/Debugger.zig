@@ -318,8 +318,17 @@ const NetStreamWrapper = struct {
 // Provide DapReader / DapWriter backed by std.Io.File (stdin, stdout, pipes).
 // Must be stored at a stable address.
 
+// ONE persistent reader per file. The old code created a `readerStreaming` per
+// call with a 1-byte storage; in Zig 0.16 that reader still reads AHEAD from the
+// pipe and the read-ahead died with it, so the relay saw "C", "n", "e", "t", "L"
+// of "Content-Length" and failed every session with MissingContentLength — the
+// same defect class as BUG-334 in the selfhost's stdin reader (fixed 09-06).
+// Found 2026-09-07 by the first real DAP client (zebra-ide). Must live at a
+// stable address (the reader holds pointers into `storage`).
 const FileReadCtx = struct {
     file: std.Io.File,
+    storage: [4096]u8 = undefined,
+    reader: ?std.Io.File.Reader = null,
 
     fn dapReader(self: *FileReadCtx) DapReader {
         return .{ .context = self, .readFn = readFn };
@@ -328,9 +337,9 @@ const FileReadCtx = struct {
     fn readFn(context: *anyopaque, buffer: []u8) anyerror!usize {
         const self: *FileReadCtx = @alignCast(@ptrCast(context));
         if (buffer.len == 0) return 0;
-        var storage: [1]u8 = undefined;
-        var r = self.file.readerStreaming(_io, &storage);
-        const n = r.interface.readSliceShort(buffer[0..1]) catch return error.Unexpected;
+        if (self.reader == null) self.reader = self.file.readerStreaming(_io, &self.storage);
+        // readSliceShort returns 0 at end of stream (only ReadFailed is an error).
+        const n = self.reader.?.interface.readSliceShort(buffer) catch return error.Unexpected;
         return n;
     }
 };
