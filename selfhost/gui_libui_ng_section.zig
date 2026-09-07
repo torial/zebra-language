@@ -275,7 +275,8 @@ const sci = @import("sci");
 // language's lexer wearing Zebra's keyword list, so the highlighting is honest about
 // what it is. Every message id here was read out of the vendored Scintilla.h, not
 // recalled.
-const _CE_KEYWORDS = [_][]const u8{
+// ─── STYLER BEGIN (pure: std only; extracted verbatim by tools/styler_test.sh) ───
+const _CE_KW_ZEBRA = [_][]const u8{
     "abstract", "adds", "allocate", "and", "arena", "as", "assert", "assert_eq",
     "assert_false", "assert_ne", "assert_true", "bool", "branch", "break", "capture", "catch",
     "char", "class", "const", "continue", "cue", "def", "defer", "else", "ensure", "enum",
@@ -286,6 +287,59 @@ const _CE_KEYWORDS = [_][]const u8{
     "test", "this", "throws", "to", "true", "type", "uint", "union", "use", "using", "var",
     "vari", "where", "while", "with"
 };
+const _CE_KW_C = [_][]const u8{
+    "auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else",
+    "enum", "extern", "float", "for", "goto", "if", "inline", "int", "long", "register",
+    "restrict", "return", "short", "signed", "sizeof", "static", "struct", "switch", "typedef",
+    "union", "unsigned", "void", "volatile", "while", "_Bool", "_Static_assert", "bool", "true",
+    "false", "NULL", "size_t", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t",
+    "int16_t", "int32_t", "int64_t", "uintptr_t", "intptr_t", "ptrdiff_t", "ssize_t"
+};
+const _CE_KW_ZIG = [_][]const u8{
+    "addrspace", "align", "allowzero", "and", "anyframe", "anytype", "asm", "async", "await",
+    "break", "callconv", "catch", "comptime", "const", "continue", "defer", "else", "enum",
+    "errdefer", "error", "export", "extern", "fn", "for", "if", "inline", "linksection",
+    "noalias", "noinline", "nosuspend", "opaque", "or", "orelse", "packed", "pub", "resume",
+    "return", "struct", "suspend", "switch", "test", "threadlocal", "try", "union", "unreachable",
+    "usingnamespace", "var", "volatile", "while", "true", "false", "null", "undefined",
+    "void", "bool", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "u128", "i128",
+    "usize", "isize", "f16", "f32", "f64", "f128", "c_int", "c_uint", "c_long", "c_ulong",
+    "c_char", "c_void", "anyerror", "anyopaque", "noreturn", "comptime_int", "comptime_float", "type"
+};
+// A language is DATA: which comment/string forms exist and which words are keywords.
+// The one tokenizer below (`_ce_style`) reads a spec; adding a language is adding a
+// row here, not a tokenizer. Controls in examples/styler_smoke.zbr + zebra-ide.
+const _CeLangSpec = struct {
+    name: []const u8,
+    keywords: []const []const u8,
+    line_comment: []const u8,      // "#" or "//"; "" = none
+    block_comment: bool,           // C-style /* ... */
+    preproc: bool,                 // '#' at line start (after blanks) is a preprocessor line
+    char_lit: bool,                // 'x' is a char literal (C, Zig), else ' is an operator
+    zig_multiline: bool,           // `\\` starts a multiline-string line (Zig)
+    builtin_at: bool,              // `@name` is a builtin call (Zig)
+    caps_are_types: bool,          // Capitalised identifier = type (Zebra, Zig); C uses typedef style
+};
+const _CE_LANG_ZEBRA = _CeLangSpec{ .name = "zebra", .keywords = &_CE_KW_ZEBRA, .line_comment = "#", .block_comment = false, .preproc = false, .char_lit = false, .zig_multiline = false, .builtin_at = false, .caps_are_types = true };
+const _CE_LANG_C     = _CeLangSpec{ .name = "c",     .keywords = &_CE_KW_C,     .line_comment = "//", .block_comment = true, .preproc = true, .char_lit = true, .zig_multiline = false, .builtin_at = false, .caps_are_types = false };
+const _CE_LANG_ZIG   = _CeLangSpec{ .name = "zig",   .keywords = &_CE_KW_ZIG,   .line_comment = "//", .block_comment = false, .preproc = false, .char_lit = true, .zig_multiline = true, .builtin_at = true, .caps_are_types = true };
+const _CE_LANG_PLAIN = _CeLangSpec{ .name = "text",  .keywords = &[_][]const u8{}, .line_comment = "", .block_comment = false, .preproc = false, .char_lit = false, .zig_multiline = false, .builtin_at = false, .caps_are_types = false };
+fn _ce_spec_by_name(n: []const u8) *const _CeLangSpec {
+    if (std.mem.eql(u8, n, "zebra") or std.mem.eql(u8, n, "zbr")) return &_CE_LANG_ZEBRA;
+    if (std.mem.eql(u8, n, "c") or std.mem.eql(u8, n, "h") or std.mem.eql(u8, n, "cpp") or std.mem.eql(u8, n, "cxx") or std.mem.eql(u8, n, "cc") or std.mem.eql(u8, n, "hpp")) return &_CE_LANG_C;
+    if (std.mem.eql(u8, n, "zig") or std.mem.eql(u8, n, "zon")) return &_CE_LANG_ZIG;
+    return &_CE_LANG_PLAIN;
+}
+// Extension → spec. Unknown extension = plain (nothing styled), never a guess.
+fn _ce_spec_for_file(path: []const u8) *const _CeLangSpec {
+    var i = path.len;
+    while (i > 0) : (i -= 1) {
+        const c = path[i - 1];
+        if (c == '.') return _ce_spec_by_name(path[i..]);
+        if (c == '/' or c == '\\') break;
+    }
+    return &_CE_LANG_PLAIN;
+}
 
 // Style slots. 32 and 33 are Scintilla's own (STYLE_DEFAULT, STYLE_LINENUMBER).
 const _CE_S_DEFAULT: usize = 0;
@@ -296,6 +350,7 @@ const _CE_S_NUMBER:  usize = 4;
 const _CE_S_TYPE:    usize = 5;
 const _CE_S_FUNC:    usize = 6;
 const _CE_S_OP:      usize = 7;
+const _CE_S_PREPROC: usize = 8;
 
 // Scintilla colours are 0xBBGGRR, not RGB — the byte order is the single easiest
 // thing to get wrong here, and getting it wrong produces a plausible-looking but
@@ -309,20 +364,90 @@ const _CE_C_NUMBER:  usize = 0x669ad1; // #d19a66
 const _CE_C_TYPE:    usize = 0x7bc0e5; // #e5c07b
 const _CE_C_FUNC:    usize = 0xefaf61; // #61afef
 const _CE_C_OP:      usize = 0xc2b656; // #56b6c2
+const _CE_C_PREPROC: usize = 0x9a7de0; // #e07d9a
 const _CE_C_LNFG:    usize = 0x63524b; // #4b5263
 const _CE_C_LNBG:    usize = 0x2f2823;
 const _CE_C_CARETLN: usize = 0x3e3630;
 const _CE_C_SEL:     usize = 0x584c3f;
 
-fn _ce_is_kw(w: []const u8) bool {
-    for (_CE_KEYWORDS) |k| if (std.mem.eql(u8, k, w)) return true;
+fn _ce_is_kw(spec: *const _CeLangSpec, w: []const u8) bool {
+    for (spec.keywords) |k| if (std.mem.eql(u8, k, w)) return true;
     return false;
+}
+fn _ce_starts(src: []const u8, i: usize, pat: []const u8) bool {
+    return pat.len > 0 and i + pat.len <= src.len and std.mem.eql(u8, src[i .. i + pat.len], pat);
 }
 fn _ce_alpha(c: u8) bool { return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_'; }
 fn _ce_digit(c: u8) bool { return c >= '0' and c <= '9'; }
 fn _ce_opch(c: u8) bool {
     return switch (c) { '+', '-', '*', '/', '=', '<', '>', '!', '&', '|', '^', '~', '?', ':', '.', ',', '(', ')', '[', ']', '{', '}' => true, else => false };
 }
+// The tokenizer proper. Pure: writes one style byte per source byte into `out`
+// (out.len == src.len). Tested headless by tools/styler_test.sh with the three
+// controls from the IDE plan (C `#` in a string, Zig `\\\\`, Zebra `${}`).
+fn _ce_tokenize(spec: *const _CeLangSpec, src: []const u8, out: []u8) void {
+    var i: usize = 0;
+    var line_start = true;   // only blanks seen since the last newline
+    while (i < src.len) {
+        const start = i;
+        const c = src[i];
+        var sty: u8 = @intCast(_CE_S_DEFAULT);
+        if (c == '\n') {
+            i += 1; line_start = true;
+        } else if (c == ' ' or c == '\t' or c == '\r') {
+            i += 1;
+        } else if (spec.preproc and line_start and c == '#') {
+            while (i < src.len and src[i] != '\n') i += 1;
+            sty = @intCast(_CE_S_PREPROC); line_start = false;
+        } else if (_ce_starts(src, i, spec.line_comment)) {
+            while (i < src.len and src[i] != '\n') i += 1;
+            sty = @intCast(_CE_S_COMMENT); line_start = false;
+        } else if (spec.block_comment and _ce_starts(src, i, "/*")) {
+            i += 2;
+            while (i < src.len and !_ce_starts(src, i, "*/")) i += 1;
+            if (i < src.len) i += 2;
+            sty = @intCast(_CE_S_COMMENT); line_start = false;
+        } else if (spec.zig_multiline and _ce_starts(src, i, "\\\\")) {
+            while (i < src.len and src[i] != '\n') i += 1;
+            sty = @intCast(_CE_S_STRING); line_start = false;
+        } else if (c == '"' or (spec.char_lit and c == '\'')) {
+            const q = c;
+            i += 1;
+            while (i < src.len and src[i] != q and src[i] != '\n') {
+                if (src[i] == '\\' and i + 1 < src.len) i += 1;
+                i += 1;
+            }
+            if (i < src.len and src[i] == q) i += 1;
+            sty = @intCast(_CE_S_STRING); line_start = false;
+        } else if (_ce_digit(c)) {
+            while (i < src.len and (_ce_digit(src[i]) or _ce_alpha(src[i]) or src[i] == '.')) i += 1;
+            sty = @intCast(_CE_S_NUMBER); line_start = false;
+        } else if (spec.builtin_at and c == '@' and i + 1 < src.len and _ce_alpha(src[i + 1])) {
+            i += 1;
+            while (i < src.len and (_ce_alpha(src[i]) or _ce_digit(src[i]))) i += 1;
+            sty = @intCast(_CE_S_FUNC); line_start = false;
+        } else if (_ce_alpha(c)) {
+            while (i < src.len and (_ce_alpha(src[i]) or _ce_digit(src[i]))) i += 1;
+            const w = src[start..i];
+            if (_ce_is_kw(spec, w)) {
+                sty = @intCast(_CE_S_KEYWORD);
+            } else if (spec.caps_are_types and w[0] >= 'A' and w[0] <= 'Z') {
+                sty = @intCast(_CE_S_TYPE);
+            } else {
+                var j = i;
+                while (j < src.len and src[j] == ' ') j += 1;
+                sty = if (j < src.len and src[j] == '(') @intCast(_CE_S_FUNC) else @intCast(_CE_S_DEFAULT);
+            }
+            line_start = false;
+        } else if (_ce_opch(c)) {
+            i += 1; sty = @intCast(_CE_S_OP); line_start = false;
+        } else {
+            i += 1; line_start = false;
+        }
+        @memset(out[start..i], sty);
+    }
+}
+// ─── STYLER END ───
 
 // One-time visual setup: margin, font, palette, caret line. Everything here is
 // core Scintilla and needs no lexer.
@@ -342,6 +467,7 @@ fn _ce_configure(_s: *sci.Scintilla) void {
     _ = _s.sendMessage(2051, _CE_S_TYPE,    _CE_C_TYPE);
     _ = _s.sendMessage(2051, _CE_S_FUNC,    _CE_C_FUNC);
     _ = _s.sendMessage(2051, _CE_S_OP,      _CE_C_OP);
+    _ = _s.sendMessage(2051, _CE_S_PREPROC, _CE_C_PREPROC);
     _ = _s.sendMessage(2051, 33, _CE_C_LNFG);                            // STYLE_LINENUMBER fore
     _ = _s.sendMessage(2052, 33, _CE_C_LNBG);                            // ...back
     _ = _s.sendMessage(2240, 0, 1);                                      // margin 0 = SC_MARGIN_NUMBER
@@ -352,58 +478,59 @@ fn _ce_configure(_s: *sci.Scintilla) void {
     _ = _s.sendMessage(2036, 4, 0);                                      // SCI_SETTABWIDTH
 }
 
-// Style the whole buffer in one pass. Called after any setText; a demo sets the
-// text once, so there is no incremental re-lex path and none is pretended.
-fn _ce_style_zebra(_ed: *_CodeEditor) void {
+// Style the whole buffer in one pass, driven by the editor's language spec.
+// Styles are accumulated into a scratch byte array and handed to Scintilla in ONE
+// SCI_SETSTYLINGEX call (measured: one message instead of one per token — the
+// per-token form is what made a whole-file restyle visible on the laptop).
+//
+// Re-style trigger: libui never routes Scintilla's WM_NOTIFY, so there is no
+// SCN_MODIFIED to hook. Instead `_code_editor_render` (called every frame) asks
+// SCI_GETENDSTYLED: Scintilla moves that watermark back to the edit position on
+// every insert/delete, so `endStyled < length` is an exact "text changed since
+// last styling" test that needs no event. Whole-buffer restyle keeps block
+// comments and multi-line strings honest without a state-per-line table.
+var _ce_style_scratch: []u8 = &.{};
+fn _ce_style(_ed: *_CodeEditor) void {
     const _s = _ed.scint orelse return;
+    if (_ed.len == 0) return;
     const src = _ed.buf[0.._ed.len];
-    _ = _s.sendMessage(2032, 0, 0);                                      // SCI_STARTSTYLING at 0
-    var i: usize = 0;
-    while (i < src.len) {
-        const start = i;
-        const c = src[i];
-        var sty: usize = _CE_S_DEFAULT;
-        if (c == '#') {
-            while (i < src.len and src[i] != '\n') i += 1;
-            sty = _CE_S_COMMENT;
-        } else if (c == '"') {
-            i += 1;
-            while (i < src.len and src[i] != '"') {
-                if (src[i] == '\\' and i + 1 < src.len) i += 1;
-                i += 1;
-            }
-            if (i < src.len) i += 1;
-            sty = _CE_S_STRING;
-        } else if (_ce_digit(c)) {
-            while (i < src.len and (_ce_digit(src[i]) or src[i] == '.' or src[i] == '_')) i += 1;
-            sty = _CE_S_NUMBER;
-        } else if (_ce_alpha(c)) {
-            while (i < src.len and (_ce_alpha(src[i]) or _ce_digit(src[i]))) i += 1;
-            const w = src[start..i];
-            if (_ce_is_kw(w)) {
-                sty = _CE_S_KEYWORD;
-            } else if (w[0] >= 'A' and w[0] <= 'Z') {
-                sty = _CE_S_TYPE;
-            } else {
-                var j = i;
-                while (j < src.len and src[j] == ' ') j += 1;
-                sty = if (j < src.len and src[j] == '(') _CE_S_FUNC else _CE_S_DEFAULT;
-            }
-        } else if (_ce_opch(c)) {
-            i += 1;
-            sty = _CE_S_OP;
-        } else {
-            i += 1;
-        }
-        _ = _s.sendMessage(2033, i - start, sty);                        // SCI_SETSTYLING len, style
+    if (_ce_style_scratch.len < src.len) {
+        const nb = _allocator.alloc(u8, src.len + 4096) catch return;
+        if (_ce_style_scratch.len != 0) _allocator.free(_ce_style_scratch);
+        _ce_style_scratch = nb;
     }
+    const out = _ce_style_scratch[0..src.len];
+    _ce_tokenize(_ed.spec, src, out);
+    _ = _s.sendMessage(2032, 0, 0);                                      // SCI_STARTSTYLING at 0
+    _ = _s.sendMessage(2073, src.len, @intFromPtr(out.ptr));             // SCI_SETSTYLINGEX len, styles
 }
+// Pull the live text back from Scintilla and restyle it, but only if the
+// end-styled watermark says something changed. Cheap when nothing did: two messages.
+fn _ce_restyle_if_dirty(_ed: *_CodeEditor) void {
+    const _s = _ed.scint orelse return;
+    const n = _s.getLength();
+    if (n == 0) return;
+    if (_s.sendMessage(2028, 0, 0) >= n) return;                         // SCI_GETENDSTYLED
+    _ = _code_editor_get_text(_ed);
+    _ce_style(_ed);
+}
+fn _code_editor_restyle(_ed: *_CodeEditor) void {
+    if (_ed.scint == null) return;
+    _ = _code_editor_get_text(_ed);
+    _ce_style(_ed);
+}
+fn _code_editor_set_language(_ed: *_CodeEditor, name: []const u8) void {
+    _ed.spec = _ce_spec_by_name(name);
+    _code_editor_restyle(_ed);
+}
+fn _code_editor_get_language(_ed: *_CodeEditor) []const u8 { return _ed.spec.name; }
 
 const _CodeEditor = struct {
     scint: ?*sci.Scintilla = null,
     read_only: bool = false,
     buf: []u8 = &.{},
     len: usize = 0,
+    spec: *const _CeLangSpec = &_CE_LANG_ZEBRA,
 };
 // Ensure room for `need` bytes of text PLUS the terminator. Returns false only on OOM.
 fn _ce_reserve(_ed: *_CodeEditor, need: usize) bool {
@@ -421,6 +548,16 @@ fn _code_editor_new() *_CodeEditor {
     if (_ce_reserve(_ed, 0)) _ed.buf[0] = 0;
     return _ed;
 }
+fn _code_editor_new_lang(name: []const u8) *_CodeEditor {
+    const _ed = _code_editor_new();
+    _ed.spec = _ce_spec_by_name(name);
+    return _ed;
+}
+fn _code_editor_new_for_file(path: []const u8) *_CodeEditor {
+    const _ed = _code_editor_new();
+    _ed.spec = _ce_spec_for_file(path);
+    return _ed;
+}
 fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void {
     if (!_ce_reserve(_ed, text.len)) return;
     @memcpy(_ed.buf[0..text.len], text);
@@ -428,7 +565,7 @@ fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void {
     _ed.len = text.len;
     if (_ed.scint) |_s| {
         _s.setText(_ed.buf[0.._ed.len]);
-        _ce_style_zebra(_ed);
+        _ce_style(_ed);
     }
 }
 fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 {
@@ -454,10 +591,12 @@ fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, _w: f6
         _ce_configure(_ed.scint.?);
         if (_ed.buf.len > 0) {
             _ed.scint.?.setText(_ed.buf[0.._ed.len]);
-            _ce_style_zebra(_ed);
+            _ce_style(_ed);
         }
         if (_ed.read_only) _ = _ed.scint.?.sendMessage(2171, 1, 0);
         if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _ed.scint.?.as_control(), .stretch);
+    } else {
+        _ce_restyle_if_dirty(_ed);
     }
 }
 fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }

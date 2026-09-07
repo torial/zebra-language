@@ -1,0 +1,56 @@
+# Styler smoke (zebra-ide P1): one CodeEditor per language, each loaded with the
+# text the plan names as its control. Look, don't measure — the assertions below
+# only pin what a headless build can see (language names, factory dispatch).
+#   C:     `#` inside a string must style as STRING, `#include` as PREPROC, never COMMENT.
+#   Zig:   `\\` multiline-string lines style as STRING; `@import` as FUNC.
+#   Zebra: `${}` interpolation stays inside the STRING style; `#` is a comment.
+# Restyle-on-modify has no event (libui routes no WM_NOTIFY): render() polls
+# SCI_GETENDSTYLED each frame and restyles when the watermark moved back. Type
+# into any page — highlighting should follow within one tick.
+
+class Model
+    var zebra: CodeEditor? = nil
+    var c: CodeEditor? = nil
+    var zig: CodeEditor? = nil
+    var byfile: CodeEditor? = nil
+
+def stylerInit(): Model
+    var m = Model()
+    m.zebra = CodeEditor.forZebra()
+    m.zebra!.setText("# a comment\ndef greet(name: str): str\n    return \"hi " + r"${name}" + " #not-a-comment\"\n")
+    m.c = CodeEditor.forC()
+    m.c!.setText("#include <stdio.h>\n/* block\n   comment */\nint main(void) {\n    const char *s = \"# not a comment\"; // trailing\n    return 'x' == 0x78 ? 0 : 1;\n}\n")
+    m.zig = CodeEditor.forZig()
+    m.zig!.setText("const std = @import(\"std\");\npub fn main() !void {\n    const s =\n        \\\\multi\n        \\\\line\n    ;\n    std.debug.print(\"{s}\\n\", .{s});\n}\n")
+    m.byfile = CodeEditor.forFile("C:\\Projects\\zebra-language\\selfhost\\Lexer.zbr")
+    m.byfile!.setText("var x = 1\n")
+    assert m.zebra!.getLanguage() == "zebra"
+    assert m.c!.getLanguage() == "c"
+    assert m.zig!.getLanguage() == "zig"
+    assert m.byfile!.getLanguage() == "zebra"
+    m.byfile!.setLanguage("zig")
+    assert m.byfile!.getLanguage() == "zig"
+    var plain = CodeEditor.forFile("notes.txt")
+    assert plain.getLanguage() == "text"
+    return m
+
+def update(m: Model, msg: int): Model
+    return m
+
+def view(g: Gui, m: Model)
+    using g.vbox("##root", true)
+        g.text("Styler smoke — zebra / c / zig")
+        g.beginTabs("##tabs", true)
+        g.beginTabPage("##z", "greet.zbr")
+        m.zebra!.render(g, "##e1", 0, 0)
+        g.endTabPage()
+        g.beginTabPage("##c", "main.c")
+        m.c!.render(g, "##e2", 0, 0)
+        g.endTabPage()
+        g.beginTabPage("##g", "main.zig")
+        m.zig!.render(g, "##e3", 0, 0)
+        g.endTabPage()
+        g.endTabs()
+
+def main()
+    Gui.run("Styler Smoke", 900, 600, stylerInit, update, view)

@@ -14649,8 +14649,21 @@ struct Generator
                 genGuiCall(mname, args)
                 return
             if id.name == "CodeEditor"
-                # Static factory `CodeEditor.forZebra()` (the only one) →
-                # same heap ctor as the bare `CodeEditor()`.
+                # Static factories. `forZebra()` is the bare ctor (Zebra is the
+                # default spec); `forC()`/`forZig()` pick a spec by name;
+                # `forFile(path)` picks by extension (unknown → plain text).
+                # The tokenizer is one function reading a spec (styler P1).
+                if mname == "forC"
+                    w.emit("_code_editor_new_lang(\"c\")")
+                    return
+                if mname == "forZig"
+                    w.emit("_code_editor_new_lang(\"zig\")")
+                    return
+                if mname == "forFile" and args.len == 1
+                    w.emit("_code_editor_new_for_file(")
+                    genExpr(args.at(0).value)
+                    w.emit(")")
+                    return
                 w.emit("_code_editor_new()")
                 return
             if id.name == "Shell"
@@ -14696,6 +14709,12 @@ struct Generator
                     ce_fn = "_code_editor_sci"
                 if mname == "sciStr"
                     ce_fn = "_code_editor_sci_str"
+                if mname == "setLanguage"
+                    ce_fn = "_code_editor_set_language"
+                if mname == "getLanguage"
+                    ce_fn = "_code_editor_get_language"
+                if mname == "restyle"
+                    ce_fn = "_code_editor_restyle"
                 if ce_fn != ""
                     w.emit(ce_fn)
                     w.emit("(")
