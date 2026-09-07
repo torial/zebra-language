@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-339. Next new bug: BUG-340.**
+**Last bug number generated: BUG-343. Next new bug: BUG-344.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -90,6 +90,41 @@ diagnostic is Zig's. The checker knows the field type and the initialiser shape,
 can refuse with: "class field initialisers must be constants; construct `pending` in
 `cue init`". Workaround: declare without initialiser, assign in `cue init` (done in
 zebra-ide/src/lsp.zbr).
+
+### BUG-340: `--gui-backend=tui|libui_ng` + `use` deps → `@import("lsp.zig")` FileNotFound — FIXED 2026-09-07 (branch ide-slice)
+
+The GUI path copies the emitted main into `<proj>/src/main.zig` but the emitted
+dependency modules (`lsp.zig`, `sci.zig`) stayed beside the source, so the project's
+build failed inside Zig with `unable to load 'lsp.zig'`. Every GUI example was
+single-file, so no gate saw it; `zebra-ide/src/ide.zbr` (three modules) found it on its
+first build. Fix: `copyGuiDeps` in selfhost/main.zbr walks `@import("X.zig")` lines
+transitively and copies each module into the project. Control: ide.zbr builds on tui.
+
+### BUG-341: unknown method on `StringBuilder` (`sb.add(s)`) is not rejected — leaks Zig `expected type 'u8', found '[]const u8'` — OPEN (found 2026-09-07)
+
+`StringBuilder` lowers to `ArrayList(u8)`, so `.add` fell through to the generic List
+lowering (`append`) and Zig complained about the element type. The checker knows the
+receiver type is StringBuilder and its method set (`append`, `build`, `toString`,
+`len`); "unknown method `add` on StringBuilder (did you mean `append`?)" is the
+diagnostic. Workaround: `.append`.
+
+### BUG-342: a `StringBuilder` PARAMETER cannot be appended to — leaks Zig `expected '*T', found '*const T'` — OPEN (found 2026-09-07)
+
+`def f(sink: StringBuilder)` then `sink.append(..)`: parameters are const, the emitted
+`appendSlice` needs `*T`. `List(T)` parameters DO accept `.add` (they lower to a
+pointer), so the two container types disagree about what a parameter is, and the
+diagnostic is Zig's. Either lower StringBuilder params like List params, or refuse at
+the checker with "cannot mutate parameter `sink`; return a str instead". Workaround
+(zebra-ide/src/ide.zbr `symbolLines`): build locally and return `sb.build()`.
+
+### BUG-343: a user module named `sci` (or `ui`) collides with the libui_ng section's private imports — Zig `duplicate struct member name 'sci'` — FIXED 2026-09-07 (branch ide-slice)
+
+`selfhost/gui_libui_ng_section.zig` declared `const sci = @import("sci")` and
+`const ui = @import("ui")` at file scope of the emitted program; a Zebra `use sci`
+emits `const sci = @import("sci.zig")` into the same scope. Section-private names now
+carry the `_` prefix like every other emitted helper (`_sci`, `_ui`). General rule
+worth a checker pass later: nothing a section declares may be a plausible user
+identifier.
 
 ### BUG-334: `sys.readLine` / `sys.readBytes` created a NEW buffered stdin reader per call, discarding read-ahead — `zebra lsp` answered nothing on a pipe — FIXED 2026-09-06 (branch lsp-references)
 

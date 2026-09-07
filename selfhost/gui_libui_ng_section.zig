@@ -245,7 +245,7 @@ fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, 
     }
 }
 // ─── CodeEditor widget — Scintilla via libui-scintilla ───────────────────────
-const sci = @import("sci");
+const _sci = @import("sci");
 // BUG-217: the text buffer is kept NUL-TERMINATED — `buf[len] == 0` is an
 // invariant, and `buf.len >= len + 1` always holds.
 //
@@ -451,7 +451,7 @@ fn _ce_tokenize(spec: *const _CeLangSpec, src: []const u8, out: []u8) void {
 
 // One-time visual setup: margin, font, palette, caret line. Everything here is
 // core Scintilla and needs no lexer.
-fn _ce_configure(_s: *sci.Scintilla) void {
+fn _ce_configure(_s: *_sci.Scintilla) void {
     _ = _s.sendMessage(2037, 65001, 0);                                  // SCI_SETCODEPAGE utf-8
     _ = _s.sendMessage(2056, 32, @intFromPtr("Consolas".ptr));           // STYLE_DEFAULT font
     _ = _s.sendMessage(2055, 32, 11);                                    // ...size
@@ -526,7 +526,7 @@ fn _code_editor_set_language(_ed: *_CodeEditor, name: []const u8) void {
 fn _code_editor_get_language(_ed: *_CodeEditor) []const u8 { return _ed.spec.name; }
 
 const _CodeEditor = struct {
-    scint: ?*sci.Scintilla = null,
+    scint: ?*_sci.Scintilla = null,
     read_only: bool = false,
     buf: []u8 = &.{},
     len: usize = 0,
@@ -585,7 +585,7 @@ fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void {
 fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, _w: f64, _h: f64) void {
     _ = id; _ = _w; _ = _h; _ = _g;
     if (_ed.scint == null) {
-        _ed.scint = sci.Scintilla.new() catch return;
+        _ed.scint = _sci.Scintilla.new() catch return;
         // Safe unconditionally now: `buf[len] == 0` holds even when len == 0
         // (the old code had to skip the empty case to avoid the strlen crash).
         _ce_configure(_ed.scint.?);
@@ -594,7 +594,7 @@ fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, _w: f6
             _ce_style(_ed);
         }
         if (_ed.read_only) _ = _ed.scint.?.sendMessage(2171, 1, 0);
-        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _ed.scint.?.as_control(), .stretch);
+        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _ed.scint.?.as_control(), .stretch);
     } else {
         _ce_restyle_if_dirty(_ed);
     }
@@ -635,10 +635,10 @@ fn _code_editor_sci_str(_ed: *_CodeEditor, msg: i64, wparam: i64, text: []const 
     return @bitCast(_s.sendMessage(@intCast(msg), @bitCast(wparam), @intFromPtr(_z.ptr)));
 }
 // ─── libui-ng retained-mode adapter ──────────────────────────────────────────
-const ui = @import("ui");
+const _ui = @import("ui");
 const _LuiMut = struct {
-    ctrl: ?*ui.Control = null,
-    lbl: ?*ui.Label = null,
+    ctrl: ?*_ui.Control = null,
+    lbl: ?*_ui.Label = null,
     clicked: bool = false,
     checked: bool = false,
     text_buf: [1024]u8 = undefined,
@@ -646,9 +646,9 @@ const _LuiMut = struct {
     sval: c_int = 0,
     smin: f64 = 0,
     smax: f64 = 1,
-    pb: ?*ui.ProgressBar = null,
+    pb: ?*_ui.ProgressBar = null,
 };
-const _LuiPanel = struct { inner: *ui.Box };
+const _LuiPanel = struct { inner: *_ui.Box };
 var _lui_icache: std.StringHashMap(*_LuiMut) = undefined;
 var _lui_dcache: std.ArrayList(*_LuiMut) = undefined;
 var _lui_didx: usize = 0;
@@ -656,34 +656,34 @@ var _lui_frame: u32 = 0;
 var _lui_quit: bool = false;
 var _lui_win_w: i64 = 800;
 var _lui_win_h: i64 = 600;
-var _lui_window: ?*ui.Window = null;
-var _lui_root_box: ?*ui.Box = null;
-var _lui_box_stack: [32]?*ui.Box = [_]?*ui.Box{null} ** 32;
+var _lui_window: ?*_ui.Window = null;
+var _lui_root_box: ?*_ui.Box = null;
+var _lui_box_stack: [32]?*_ui.Box = [_]?*_ui.Box{null} ** 32;
 var _lui_box_depth: usize = 0;
-var _lui_box_icache: std.StringHashMap(*ui.Box) = undefined;
+var _lui_box_icache: std.StringHashMap(*_ui.Box) = undefined;
 var _lui_grp_cache: std.StringHashMap(_LuiPanel) = undefined;
-fn _lui_cur_box() ?*ui.Box {
+fn _lui_cur_box() ?*_ui.Box {
     if (_lui_box_depth == 0) return null;
     return _lui_box_stack[_lui_box_depth - 1];
 }
-fn _lui_push_box(_b: *ui.Box) void {
+fn _lui_push_box(_b: *_ui.Box) void {
     if (_lui_box_depth < 32) { _lui_box_stack[_lui_box_depth] = _b; _lui_box_depth += 1; }
 }
 fn _lui_pop_box() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
-fn _lui_on_close(_w: *ui.Window, _q: ?*bool) anyerror!ui.Window.ClosingAction {
+fn _lui_on_close(_w: *_ui.Window, _q: ?*bool) anyerror!_ui.Window.ClosingAction {
     _ = _w;
     if (_q) |p| p.* = true;
-    ui.Quit();
+    _ui.Quit();
     return .should_close;
 }
-fn _lui_btn_cb(_btn: *ui.Button, _m: ?*_LuiMut) anyerror!void {
+fn _lui_btn_cb(_btn: *_ui.Button, _m: ?*_LuiMut) anyerror!void {
     _ = _btn;
     if (_m) |p| p.clicked = true;
 }
-fn _lui_chk_cb(_chk: *ui.Checkbox, _m: ?*_LuiMut) anyerror!void {
+fn _lui_chk_cb(_chk: *_ui.Checkbox, _m: ?*_LuiMut) anyerror!void {
     if (_m) |p| p.checked = _chk.Checked();
 }
-fn _lui_entry_cb(_ent: *ui.Entry, _m: ?*_LuiMut) anyerror!void {
+fn _lui_entry_cb(_ent: *_ui.Entry, _m: ?*_LuiMut) anyerror!void {
     if (_m) |p| {
         const _s = std.mem.span(_ent.Text());
         const _n = @min(_s.len, 1023);
@@ -691,7 +691,7 @@ fn _lui_entry_cb(_ent: *ui.Entry, _m: ?*_LuiMut) anyerror!void {
         p.text_len = _n;
     }
 }
-fn _lui_mle_cb(_mle: *ui.MultilineEntry, _m: ?*_LuiMut) anyerror!void {
+fn _lui_mle_cb(_mle: *_ui.MultilineEntry, _m: ?*_LuiMut) anyerror!void {
     if (_m) |p| {
         const _s = std.mem.span(_mle.Text());
         const _n = @min(_s.len, 1023);
@@ -699,49 +699,49 @@ fn _lui_mle_cb(_mle: *ui.MultilineEntry, _m: ?*_LuiMut) anyerror!void {
         p.text_len = _n;
     }
 }
-fn _lui_slider_cb(_sld: *ui.Slider, _m: ?*_LuiMut) anyerror!void {
+fn _lui_slider_cb(_sld: *_ui.Slider, _m: ?*_LuiMut) anyerror!void {
     if (_m) |p| p.sval = _sld.Value();
 }
-fn _lui_cmb_cb(_c: *ui.Combobox, _m: ?*_LuiMut) anyerror!void {
+fn _lui_cmb_cb(_c: *_ui.Combobox, _m: ?*_LuiMut) anyerror!void {
     if (_m) |p| p.sval = _c.Selected();
 }
-fn _lui_spn_cb(_s: *ui.Spinbox, _m: ?*_LuiMut) anyerror!void {
+fn _lui_spn_cb(_s: *_ui.Spinbox, _m: ?*_LuiMut) anyerror!void {
     if (_m) |p| p.sval = _s.Value();
 }
 fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
     _lui_win_w = _width; _lui_win_h = _height;
-    var _d = ui.InitData{ .options = .{ .Size = @sizeOf(ui.InitOptions) } };
-    try ui.Init(&_d);
+    var _d = _ui.InitData{ .options = .{ .Size = @sizeOf(_ui.InitOptions) } };
+    try _ui.Init(&_d);
     _lui_icache = std.StringHashMap(*_LuiMut).init(_allocator);
     _lui_dcache = .empty;
-    _lui_box_icache = std.StringHashMap(*ui.Box).init(_allocator);
+    _lui_box_icache = std.StringHashMap(*_ui.Box).init(_allocator);
     _lui_grp_cache = std.StringHashMap(_LuiPanel).init(_allocator);
-    _lui_tab_cache = std.StringHashMap(*ui.Tab).init(_allocator);
+    _lui_tab_cache = std.StringHashMap(*_ui.Tab).init(_allocator);
     _lui_tab_depth = 0;
     _lui_box_depth = 0;
     var _tbuf: [256]u8 = undefined;
     const _tz: [:0]u8 = try std.fmt.bufPrintZ(&_tbuf, "{s}", .{_title});
-    _lui_window = try ui.Window.New(_tz, @intCast(_width), @intCast(_height), .hide_menubar);
-    ui.Window.OnClosing(_lui_window.?, bool, anyerror, _lui_on_close, &_lui_quit);
-    _lui_root_box = try ui.Box.New(.Vertical);
+    _lui_window = try _ui.Window.New(_tz, @intCast(_width), @intCast(_height), .hide_menubar);
+    _ui.Window.OnClosing(_lui_window.?, bool, anyerror, _lui_on_close, &_lui_quit);
+    _lui_root_box = try _ui.Box.New(.Vertical);
     _lui_root_box.?.SetPadded(true);
     _lui_push_box(_lui_root_box.?);
-    ui.Timer(anyopaque, anyerror, 100, _lui_poll_tick, null);
+    _ui.Timer(anyopaque, anyerror, 100, _lui_poll_tick, null);
     _lui_frame = 0; _lui_quit = false;
 }
-fn _lui_poll_tick(_: ?*anyopaque) anyerror!ui.TimerAction { return .rearm; }
+fn _lui_poll_tick(_: ?*anyopaque) anyerror!_ui.TimerAction { return .rearm; }
 fn _lui_deinit() void {
     _lui_icache.deinit();
     _lui_dcache.deinit(_allocator);
     _lui_box_icache.deinit();
     _lui_grp_cache.deinit();
-    ui.Uninit();
+    _ui.Uninit();
 }
 fn _lui_newframe() bool {
     _lui_didx = 0;
     if (_lui_frame == 0) return true;
     if (_lui_quit) return false;
-    return ui.MainStep(.blocking) == .running and !_lui_quit;
+    return _ui.MainStep(.blocking) == .running and !_lui_quit;
 }
 fn _lui_endframe() void {
     _lui_box_depth = 1; // reset to root box only
@@ -782,10 +782,10 @@ fn _lui_text(_s: []const u8) void {
     _tb[_n] = 0;
     const _tz: [:0]u8 = _tb[0.._n :0];
     if (_r.fresh) {
-        const _lbl = ui.Label.New(_tz) catch return;
+        const _lbl = _ui.Label.New(_tz) catch return;
         _r.m.lbl = _lbl;
         _r.m.ctrl = _lbl.as_control();
-        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _lbl.as_control(), .dont_stretch);
+        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _lbl.as_control(), .dont_stretch);
     } else {
         if (_r.m.lbl) |_lb| _lb.SetText(_tz);
     }
@@ -793,9 +793,9 @@ fn _lui_text(_s: []const u8) void {
 fn _lui_sep() void {
     const _r = _lui_dget();
     if (_r.fresh) {
-        const _sep = ui.Separator.New(.Horizontal) catch return;
+        const _sep = _ui.Separator.New(.Horizontal) catch return;
         _r.m.ctrl = _sep.as_control();
-        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _sep.as_control(), .dont_stretch);
+        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _sep.as_control(), .dont_stretch);
     }
 }
 fn _lui_noop_void() void {}
@@ -849,10 +849,10 @@ fn _lui_button(_label: []const u8) bool {
         @memcpy(_lb[0.._n], _label[0.._n]);
         _lb[_n] = 0;
         const _lz: [:0]u8 = _lb[0.._n :0];
-        const _btn = ui.Button.New(_lz) catch return false;
-        ui.Button.OnClicked(_btn, _LuiMut, anyerror, _lui_btn_cb, _r.m);
+        const _btn = _ui.Button.New(_lz) catch return false;
+        _ui.Button.OnClicked(_btn, _LuiMut, anyerror, _lui_btn_cb, _r.m);
         _r.m.ctrl = _btn.as_control();
-        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _btn.as_control(), .dont_stretch);
+        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _btn.as_control(), .dont_stretch);
     }
     const _clicked = _r.m.clicked;
     _r.m.clicked = false;
@@ -866,12 +866,12 @@ fn _lui_checkbox(_label: []const u8, _value: bool) bool {
         @memcpy(_lb[0.._n], _label[0.._n]);
         _lb[_n] = 0;
         const _lz: [:0]u8 = _lb[0.._n :0];
-        const _chk = ui.Checkbox.New(_lz) catch return _value;
+        const _chk = _ui.Checkbox.New(_lz) catch return _value;
         _chk.SetChecked(_value);
         _r.m.checked = _value;
-        ui.Checkbox.OnToggled(_chk, _LuiMut, anyerror, _lui_chk_cb, _r.m);
+        _ui.Checkbox.OnToggled(_chk, _LuiMut, anyerror, _lui_chk_cb, _r.m);
         _r.m.ctrl = _chk.as_control();
-        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _chk.as_control(), .dont_stretch);
+        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _chk.as_control(), .dont_stretch);
     }
     return _r.m.checked;
 }
@@ -883,18 +883,18 @@ fn _lui_slider(_label: []const u8, _value: f64, _min: f64, _max: f64) f64 {
         @memcpy(_lb[0.._n], _label[0.._n]);
         _lb[_n] = 0;
         const _lz: [:0]u8 = _lb[0.._n :0];
-        const _sllbl = ui.Label.New(_lz) catch return _value;
-        const _sld = ui.Slider.New(0, 1000) catch return _value;
+        const _sllbl = _ui.Label.New(_lz) catch return _value;
+        const _sld = _ui.Slider.New(0, 1000) catch return _value;
         const _raw: c_int = @intFromFloat((_value - _min) / (_max - _min) * 1000.0);
         const _init: c_int = if (_raw < 0) 0 else if (_raw > 1000) 1000 else _raw;
         _sld.SetValue(_init);
         _r.m.sval = _init; _r.m.smin = _min; _r.m.smax = _max;
-        ui.Slider.OnChanged(_sld, _LuiMut, anyerror, _lui_slider_cb, _r.m);
+        _ui.Slider.OnChanged(_sld, _LuiMut, anyerror, _lui_slider_cb, _r.m);
         _r.m.ctrl = _sld.as_control();
         _r.m.lbl = _sllbl;
         if (_lui_cur_box()) |_vb| {
-            ui.Box.Append(_vb, _sllbl.as_control(), .dont_stretch);
-            ui.Box.Append(_vb, _sld.as_control(), .dont_stretch);
+            _ui.Box.Append(_vb, _sllbl.as_control(), .dont_stretch);
+            _ui.Box.Append(_vb, _sld.as_control(), .dont_stretch);
         }
     }
     const _t = @as(f64, @floatFromInt(_r.m.sval)) / 1000.0;
@@ -908,8 +908,8 @@ fn _lui_input(_label: []const u8, _value: []const u8) []const u8 {
         @memcpy(_lb[0.._n], _label[0.._n]);
         _lb[_n] = 0;
         const _lz: [:0]u8 = _lb[0.._n :0];
-        const _enlbl = ui.Label.New(_lz) catch return _value;
-        const _ent = ui.Entry.New(.Entry) catch return _value;
+        const _enlbl = _ui.Label.New(_lz) catch return _value;
+        const _ent = _ui.Entry.New(.Entry) catch return _value;
         const _vn = @min(_value.len, 1022);
         var _vtb: [1024]u8 = undefined;
         @memcpy(_vtb[0.._vn], _value[0.._vn]);
@@ -917,12 +917,12 @@ fn _lui_input(_label: []const u8, _value: []const u8) []const u8 {
         _ent.SetText(_vtb[0.._vn :0]);
         @memcpy(_r.m.text_buf[0.._vn], _value[0.._vn]);
         _r.m.text_len = _vn;
-        ui.Entry.OnChanged(_ent, _LuiMut, anyerror, _lui_entry_cb, _r.m);
+        _ui.Entry.OnChanged(_ent, _LuiMut, anyerror, _lui_entry_cb, _r.m);
         _r.m.ctrl = _ent.as_control();
         _r.m.lbl = _enlbl;
         if (_lui_cur_box()) |_vb| {
-            ui.Box.Append(_vb, _enlbl.as_control(), .dont_stretch);
-            ui.Box.Append(_vb, _ent.as_control(), .dont_stretch);
+            _ui.Box.Append(_vb, _enlbl.as_control(), .dont_stretch);
+            _ui.Box.Append(_vb, _ent.as_control(), .dont_stretch);
         }
     }
     return _r.m.text_buf[0.._r.m.text_len];
@@ -936,8 +936,8 @@ fn _lui_input_ml(_label: []const u8, _value: []const u8, _mw: f64, _mh: f64) []c
         @memcpy(_lb[0.._n], _label[0.._n]);
         _lb[_n] = 0;
         const _lz: [:0]u8 = _lb[0.._n :0];
-        const _mllbl = ui.Label.New(_lz) catch return _value;
-        const _mle = ui.MultilineEntry.New(.Wrapping) catch return _value;
+        const _mllbl = _ui.Label.New(_lz) catch return _value;
+        const _mle = _ui.MultilineEntry.New(.Wrapping) catch return _value;
         const _vn = @min(_value.len, 1022);
         var _vtb: [1024]u8 = undefined;
         @memcpy(_vtb[0.._vn], _value[0.._vn]);
@@ -945,12 +945,12 @@ fn _lui_input_ml(_label: []const u8, _value: []const u8, _mw: f64, _mh: f64) []c
         _mle.SetText(_vtb[0.._vn :0]);
         @memcpy(_r.m.text_buf[0.._vn], _value[0.._vn]);
         _r.m.text_len = _vn;
-        ui.MultilineEntry.OnChanged(_mle, _LuiMut, anyerror, _lui_mle_cb, _r.m);
+        _ui.MultilineEntry.OnChanged(_mle, _LuiMut, anyerror, _lui_mle_cb, _r.m);
         _r.m.ctrl = _mle.as_control();
         _r.m.lbl = _mllbl;
         if (_lui_cur_box()) |_vb| {
-            ui.Box.Append(_vb, _mllbl.as_control(), .dont_stretch);
-            ui.Box.Append(_vb, _mle.as_control(), .stretch);
+            _ui.Box.Append(_vb, _mllbl.as_control(), .dont_stretch);
+            _ui.Box.Append(_vb, _mle.as_control(), .stretch);
         }
     }
     return _r.m.text_buf[0.._r.m.text_len];
@@ -958,9 +958,9 @@ fn _lui_input_ml(_label: []const u8, _value: []const u8, _mw: f64, _mh: f64) []c
 fn _lui_begin_hbox(_id: []const u8, _stretch: bool) void {
     const _e = _lui_box_icache.getOrPut(_id) catch return;
     if (!_e.found_existing) {
-        const _hb = ui.Box.New(.Horizontal) catch return;
+        const _hb = _ui.Box.New(.Horizontal) catch return;
         _hb.SetPadded(true);
-        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _hb.as_control(), if (_stretch) ui.Stretchy.stretch else ui.Stretchy.dont_stretch);
+        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _hb.as_control(), if (_stretch) _ui.Stretchy.stretch else _ui.Stretchy.dont_stretch);
         _e.value_ptr.* = _hb;
     }
     _lui_push_box(_e.value_ptr.*);
@@ -969,22 +969,22 @@ fn _lui_end_hbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
 fn _lui_begin_vbox(_id: []const u8, _stretch: bool) void {
     const _e = _lui_box_icache.getOrPut(_id) catch return;
     if (!_e.found_existing) {
-        const _vb2 = ui.Box.New(.Vertical) catch return;
+        const _vb2 = _ui.Box.New(.Vertical) catch return;
         _vb2.SetPadded(false);
-        if (_lui_cur_box()) |_pvb| ui.Box.Append(_pvb, _vb2.as_control(), if (_stretch) ui.Stretchy.stretch else ui.Stretchy.dont_stretch);
+        if (_lui_cur_box()) |_pvb| _ui.Box.Append(_pvb, _vb2.as_control(), if (_stretch) _ui.Stretchy.stretch else _ui.Stretchy.dont_stretch);
         _e.value_ptr.* = _vb2;
     }
     _lui_push_box(_e.value_ptr.*);
 }
 fn _lui_end_vbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
-var _lui_tab_cache: std.StringHashMap(*ui.Tab) = undefined;
-var _lui_tab_stack: [8]?*ui.Tab = [_]?*ui.Tab{null} ** 8;
+var _lui_tab_cache: std.StringHashMap(*_ui.Tab) = undefined;
+var _lui_tab_stack: [8]?*_ui.Tab = [_]?*_ui.Tab{null} ** 8;
 var _lui_tab_depth: usize = 0;
 fn _lui_begin_tabs(_id: []const u8, _stretch: bool) void {
     const _e = _lui_tab_cache.getOrPut(_id) catch return;
     if (!_e.found_existing) {
-        const _t = ui.Tab.New() catch return;
-        if (_lui_cur_box()) |_pb| ui.Box.Append(_pb, _t.as_control(), if (_stretch) ui.Stretchy.stretch else ui.Stretchy.dont_stretch);
+        const _t = _ui.Tab.New() catch return;
+        if (_lui_cur_box()) |_pb| _ui.Box.Append(_pb, _t.as_control(), if (_stretch) _ui.Stretchy.stretch else _ui.Stretchy.dont_stretch);
         _e.value_ptr.* = _t;
     }
     if (_lui_tab_depth < 8) { _lui_tab_stack[_lui_tab_depth] = _e.value_ptr.*; _lui_tab_depth += 1; }
@@ -992,7 +992,7 @@ fn _lui_begin_tabs(_id: []const u8, _stretch: bool) void {
 fn _lui_begin_tab_page(_id: []const u8, _label: []const u8) void {
     const _e = _lui_box_icache.getOrPut(_id) catch return;
     if (!_e.found_existing) {
-        const _pg = ui.Box.New(.Vertical) catch return;
+        const _pg = _ui.Box.New(.Vertical) catch return;
         _pg.SetPadded(true);
         if (_lui_tab_depth > 0) {
             if (_lui_tab_stack[_lui_tab_depth - 1]) |_t| {
@@ -1000,9 +1000,9 @@ fn _lui_begin_tab_page(_id: []const u8, _label: []const u8) void {
                 var _lb: [256]u8 = undefined;
                 @memcpy(_lb[0.._n], _label[0.._n]);
                 _lb[_n] = 0;
-                ui.Tab.Append(_t, _lb[0.._n :0], _pg.as_control());
-                const _idx = ui.Tab.NumPages(_t) - 1;
-                ui.Tab.SetMargined(_t, _idx, true);
+                _ui.Tab.Append(_t, _lb[0.._n :0], _pg.as_control());
+                const _idx = _ui.Tab.NumPages(_t) - 1;
+                _ui.Tab.SetMargined(_t, _idx, true);
             }
         }
         _e.value_ptr.* = _pg;
@@ -1021,12 +1021,12 @@ fn _lui_begin_panel(_label: []const u8) bool {
     @memcpy(_lb[0.._n], _label[0.._n]);
     _lb[_n] = 0;
     const _lz: [:0]u8 = _lb[0.._n :0];
-    const _grp = ui.Group.New(_lz) catch return true;
-    const _inner = ui.Box.New(.Vertical) catch return true;
+    const _grp = _ui.Group.New(_lz) catch return true;
+    const _inner = _ui.Box.New(.Vertical) catch return true;
     _inner.SetPadded(true);
     _grp.SetChild(_inner.as_control());
     _grp.SetMargined(true);
-    if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _grp.as_control(), .dont_stretch);
+    if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _grp.as_control(), .dont_stretch);
     _lui_grp_cache.put(_label, .{ .inner = _inner }) catch {};
     _lui_push_box(_inner);
     return true;
@@ -1038,10 +1038,10 @@ fn _lui_progressbar(_label: []const u8, _value: f64) void {
     const _pct: c_int = @intFromFloat(_value * 100.0);
     const _clamped: c_int = if (_pct < 0) 0 else if (_pct > 100) 100 else _pct;
     if (_r.fresh) {
-        const _pb = ui.ProgressBar.New() catch return;
+        const _pb = _ui.ProgressBar.New() catch return;
         _pb.SetValue(_clamped);
         _r.m.pb = _pb;
-        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _pb.as_control(), .dont_stretch);
+        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _pb.as_control(), .dont_stretch);
     } else {
         if (_r.m.pb) |_pb| _pb.SetValue(_clamped);
     }
@@ -1049,63 +1049,63 @@ fn _lui_progressbar(_label: []const u8, _value: f64) void {
 fn _lui_combobox(_label: []const u8, _items: []const []const u8, _sel: i64) i64 {
     const _r = _lui_iget(_label);
     if (_r.fresh) {
-        const _cmb = ui.Combobox.New() catch return _sel;
+        const _cmb = _ui.Combobox.New() catch return _sel;
         for (_items) |_it| {
             const _n = @min(_it.len, 255);
             var _lb: [256]u8 = undefined;
             @memcpy(_lb[0.._n], _it[0.._n]);
             _lb[_n] = 0;
             const _lz: [:0]u8 = _lb[0.._n :0];
-            ui.Combobox.Append(_cmb, _lz);
+            _ui.Combobox.Append(_cmb, _lz);
         }
         const _init: c_int = @intCast(_sel);
         _cmb.SetSelected(_init);
         _r.m.sval = _init;
-        ui.Combobox.OnSelected(_cmb, _LuiMut, anyerror, _lui_cmb_cb, _r.m);
+        _ui.Combobox.OnSelected(_cmb, _LuiMut, anyerror, _lui_cmb_cb, _r.m);
         _r.m.ctrl = _cmb.as_control();
-        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _cmb.as_control(), .dont_stretch);
+        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _cmb.as_control(), .dont_stretch);
     }
     return @as(i64, @intCast(_r.m.sval));
 }
 fn _lui_spinbox(_label: []const u8, _value: i64, _min: i64, _max: i64) i64 {
     const _r = _lui_iget(_label);
     if (_r.fresh) {
-        const _spn = ui.Spinbox.New(.{ .Integer = .{ .min = @intCast(_min), .max = @intCast(_max) } }) catch return _value;
+        const _spn = _ui.Spinbox.New(.{ .Integer = .{ .min = @intCast(_min), .max = @intCast(_max) } }) catch return _value;
         _spn.SetValue(@intCast(_value));
         _r.m.sval = @intCast(_value);
-        ui.Spinbox.OnChanged(_spn, _LuiMut, anyerror, _lui_spn_cb, _r.m);
+        _ui.Spinbox.OnChanged(_spn, _LuiMut, anyerror, _lui_spn_cb, _r.m);
         _r.m.ctrl = _spn.as_control();
-        if (_lui_cur_box()) |_vb| ui.Box.Append(_vb, _spn.as_control(), .dont_stretch);
+        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _spn.as_control(), .dont_stretch);
     }
     return @as(i64, @intCast(_r.m.sval));
 }
 fn _lui_open_file() ?[]const u8 {
-    const _cpath = ui.Window.OpenFile(_lui_window.?) orelse return null;
-    defer ui.FreeText(_cpath);
+    const _cpath = _ui.Window.OpenFile(_lui_window.?) orelse return null;
+    defer _ui.FreeText(_cpath);
     const _s = std.mem.span(_cpath);
     return _allocator.dupe(u8, _s) catch null;
 }
 fn _lui_save_file() ?[]const u8 {
-    const _cpath = ui.Window.SaveFile(_lui_window.?) orelse return null;
-    defer ui.FreeText(_cpath);
+    const _cpath = _ui.Window.SaveFile(_lui_window.?) orelse return null;
+    defer _ui.FreeText(_cpath);
     const _s = std.mem.span(_cpath);
     return _allocator.dupe(u8, _s) catch null;
 }
 fn _lui_open_folder() ?[]const u8 {
-    const _cpath = ui.Window.OpenFolder(_lui_window.?) orelse return null;
-    defer ui.FreeText(_cpath);
+    const _cpath = _ui.Window.OpenFolder(_lui_window.?) orelse return null;
+    defer _ui.FreeText(_cpath);
     const _s = std.mem.span(_cpath);
     return _allocator.dupe(u8, _s) catch null;
 }
 fn _lui_msg_box(_title: []const u8, _desc: []const u8) void {
     const _tz = _allocator.dupeZ(u8, _title) catch return;
     const _mz = _allocator.dupeZ(u8, _desc) catch return;
-    ui.Window.MsgBox(_lui_window.?, _tz, _mz);
+    _ui.Window.MsgBox(_lui_window.?, _tz, _mz);
 }
 fn _lui_msg_box_error(_title: []const u8, _desc: []const u8) void {
     const _tz = _allocator.dupeZ(u8, _title) catch return;
     const _mz = _allocator.dupeZ(u8, _desc) catch return;
-    ui.Window.MsgBoxError(_lui_window.?, _tz, _mz);
+    _ui.Window.MsgBoxError(_lui_window.?, _tz, _mz);
 }
 const _gui_lui_backend = _GuiBackend{
     .initFn             = _lui_init,
