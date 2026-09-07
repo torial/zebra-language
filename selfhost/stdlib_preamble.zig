@@ -722,6 +722,34 @@ fn _sys_pipe_read_available(fo: ?std.Io.File) []const u8 {
     }
     return out.items;
 }
+// Whatever stdin already holds, without blocking (a relay that must also watch a
+// child's pipe cannot afford a blocking read). Bypasses the shared line reader, so
+// mixing it with sys.readLine in one program loses data — pick one.
+pub fn _sys_stdin_read_available() []const u8 {
+    return _sys_pipe_read_available(std.Io.File.stdin());
+}
+// True once stdin's writer has gone away (pipe closed / broken) and nothing is left
+// to read. A relay uses it to pass EOF on to its child instead of spinning.
+pub fn _sys_stdin_closed() bool {
+    const f = std.Io.File.stdin();
+    if (comptime builtin.os.tag == .windows) {
+        const k32 = struct {
+            extern "kernel32" fn PeekNamedPipe(h: std.os.windows.HANDLE, buf: ?*anyopaque, n: u32, read: ?*u32, avail: ?*u32, left: ?*u32) callconv(.winapi) std.os.windows.BOOL;
+        };
+        var avail: u32 = 0;
+        return k32.PeekNamedPipe(f.handle, null, 0, null, &avail, null) == .FALSE;
+    } else {
+        var pfd = [_]std.posix.pollfd{.{ .fd = f.handle, .events = std.posix.POLL.IN, .revents = 0 }};
+        const ready = std.posix.poll(&pfd, 0) catch return false;
+        if (ready == 0) return false;
+        if (pfd[0].revents & std.posix.POLL.IN != 0) return false;   // data first
+        return (pfd[0].revents & (std.posix.POLL.HUP | std.posix.POLL.ERR | std.posix.POLL.NVAL)) != 0;
+    }
+}
+// Raw bytes to stdout, no newline, no formatting (DAP frames must be byte-exact).
+pub fn _sys_write_stdout(s: []const u8) void {
+    std.Io.File.stdout().writeStreamingAll(_io, s) catch {};
+}
 pub fn _sys_process_read_available(p: *_SysProcess) []const u8 {
     return _sys_pipe_read_available(p.child.stdout);
 }

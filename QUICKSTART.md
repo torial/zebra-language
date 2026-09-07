@@ -2838,7 +2838,8 @@ Output goes to stdout, one warning per line.  Exit code 0 = no warnings.
 ### `zebra debug` — DAP integration
 
 `zebra debug file.zbr` compiles the program and launches it under `lldb-dap`, exposing
-the Debug Adapter Protocol on a local socket.  IDE clients (VS Code, ZebraIDE) connect
+the Debug Adapter Protocol on its own stdio (native in the selfhost since 2026-09-07;
+`--listen PORT` TCP mode still delegates to the bootstrap binary when present).  IDE clients (VS Code, ZebraIDE) connect
 to this socket for breakpoints, stepping, and variable inspection.
 
 What a client sends, as `zebra-ide/src/dap.zbr` does it (2026-09-07): `initialize` →
@@ -3193,6 +3194,9 @@ Available backends: `stub` (no-op, for tests), `libui_ng` (native OS controls),
 | `sys.readLine()`    | `str?`            | Read one line from stdin (strips `\n`); nil on EOF |
 | `sys.spawn(argv)`   | `SysProcess`      | Start a child (stdin/stdout ignored); `.isRunning()`, `.kill()`, `.pid` |
 | `sys.spawnPiped(argv)` | `SysProcess`   | Start a child with **pipes** on stdin/stdout/stderr, for stdio protocols (an LSP or DAP server, a REPL). `.write(s): bool`, `.readAvailable(): str` and `.readErrAvailable(): str` return what the OS already holds **without blocking** ("" if nothing), `.closeStdin()` sends EOF; plus `.isRunning()` / `.kill()`. Poll from a loop or a GUI tick; see `test/sys_spawn_piped_test.zbr`, which talks to `zebra lsp` |
+| `sys.readStdinAvailable()` | `str` | What stdin already holds, without blocking (`""` if nothing). Bypasses the line reader — do not mix with `sys.readLine` in one program |
+| `sys.stdinClosed()` | `bool`   | True once stdin's writer has hung up and nothing is left to read (relays pass EOF on) |
+| `sys.writeStdout(s)` | void    | Raw bytes to stdout, no newline (byte-exact protocol frames) |
 | `sys.spawnPipedIn(argv, cwd)` | `SysProcess` | As `spawnPiped`, but the child starts in `cwd` (a gate runner's "run tools/x.sh in <repo>"). `""` = inherit |
 | `proc.exitCode()`   | `int`             | Exit status once the child has ended (`-1` while running or unknown); POSIX signal → 128+n. Any `SysProcess` |
 | `sys.memStats()`    | `MemStats`        | Program-arena footprint; `.arenaBytes` (int). High-water for the main allocator. Delta across a frame: `b.arenaBytes - a.arenaBytes` |

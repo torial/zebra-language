@@ -171,8 +171,11 @@ every platform. The same class as BUG-334 (selfhost stdin, fixed 09-06). Fix: on
 persistent reader with a 4 KB storage per FileReadCtx. Control:
 zebra-ide/src/dap_client_test.zbr (breakpoint hit, stack remapped to the .zbr line,
 next, continue, disconnect, against the real lldb-dap).
-NOTE: this is the last bootstrap-only subcommand; the fix is in src/ because that is
-where `debug` lives. Porting `debug` to the selfhost is the real close-out.
+NOTE: this was the last bootstrap-only subcommand; the fix is in src/ because that is
+where `debug` lived. CLOSED OUT the same day: `zebra debug <file>` is native in
+selfhost/main.zbr (`dbgRunSession`: single-threaded, both pipes polled without
+blocking, so this defect class cannot recur there); zebra-ide's dap_client_test passes
+against it. Only `--listen PORT` still delegates to the bootstrap.
 
 ### BUG-334: `sys.readLine` / `sys.readBytes` created a NEW buffered stdin reader per call, discarding read-ahead — `zebra lsp` answered nothing on a pipe — FIXED 2026-09-06 (branch lsp-references)
 
