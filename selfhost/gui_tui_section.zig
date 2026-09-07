@@ -243,12 +243,29 @@ fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, 
     }
 }
 // ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
-const _CodeEditor = struct { text: []const u8, read_only: bool };
+const _CodeEditor = struct { text: []const u8, read_only: bool, lang: []const u8 = "zebra" };
 fn _code_editor_new() *_CodeEditor {
     const _ed = _allocator.create(_CodeEditor) catch unreachable;
     _ed.* = .{ .text = "", .read_only = false };
     return _ed;
 }
+fn _code_editor_new_lang(name: []const u8) *_CodeEditor { const _ed = _code_editor_new(); _ed.lang = _tui_lang_norm(name); return _ed; }
+fn _code_editor_new_for_file(path: []const u8) *_CodeEditor {
+    const _ed = _code_editor_new();
+    var i = path.len;
+    while (i > 0) : (i -= 1) { if (path[i - 1] == '.') { _ed.lang = _tui_lang_norm(path[i..]); break; } if (path[i - 1] == '/' or path[i - 1] == '\\') break; }
+    return _ed;
+}
+// Same name normalisation as the libui backend, so getLanguage() agrees across backends.
+fn _tui_lang_norm(n: []const u8) []const u8 {
+    if (std.mem.eql(u8, n, "zebra") or std.mem.eql(u8, n, "zbr")) return "zebra";
+    if (std.mem.eql(u8, n, "c") or std.mem.eql(u8, n, "h") or std.mem.eql(u8, n, "cpp") or std.mem.eql(u8, n, "cxx") or std.mem.eql(u8, n, "cc") or std.mem.eql(u8, n, "hpp")) return "c";
+    if (std.mem.eql(u8, n, "zig") or std.mem.eql(u8, n, "zon")) return "zig";
+    return "text";
+}
+fn _code_editor_set_language(_ed: *_CodeEditor, name: []const u8) void { _ed.lang = _tui_lang_norm(name); }
+fn _code_editor_get_language(_ed: *_CodeEditor) []const u8 { return _ed.lang; }
+fn _code_editor_restyle(_ed: *_CodeEditor) void { _ = _ed; }
 fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
 fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
 fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }

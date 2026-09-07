@@ -3073,6 +3073,12 @@ been detected, never unconditionally from `view()`.
 
 ```zebra
 var editor = CodeEditor.forZebra()        # factory — Zebra syntax preset
+var ced    = CodeEditor.forC()            # C (// and /* */ comments, #preprocessor, 'c' chars)
+var zed    = CodeEditor.forZig()          # Zig (\\ multiline strings, @builtins)
+var any    = CodeEditor.forFile(path)     # by extension: .zbr .c .h .cpp .zig .zon; unknown → plain
+editor.setLanguage("zig")                 # switch spec and restyle now
+editor.getLanguage()                      # "zebra" | "c" | "zig" | "text"
+editor.restyle()                          # force a whole-buffer restyle
 editor.setText(File.read("main.zbr"))
 editor.setReadOnly(false)
 
@@ -3081,6 +3087,16 @@ editor.render(g, "##editor", 700, 500)
 var src = editor.getText()
 editor.setErrorMarkers(diags)             # diags: List(IDEDiagnostic)
 ```
+
+**Syntax styling** is one tokenizer reading a per-language *spec* (comment
+forms, string forms, keyword list) — no Lexilla, see the comment block above
+`_CE_KW_ZEBRA` in `selfhost/gui_libui_ng_section.zig`. Styles go to Scintilla in
+one `SCI_SETSTYLINGEX` per restyle. There is no modify event (libui-ng routes no
+`WM_NOTIFY`), so `render()` polls `SCI_GETENDSTYLED` each frame and restyles when
+Scintilla has moved that watermark back — highlighting follows typing within one
+tick. Headless test of the tokenizer: `bash tools/styler_test.sh` (extracts the
+pure block from the section and runs `zig test`). Semantic compile of the whole
+libui section without Windows: `bash tools/libui_section_check.sh`.
 
 **Raw Scintilla hatch.** Everything the widget does not wrap is one message away:
 

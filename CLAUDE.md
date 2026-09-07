@@ -483,6 +483,18 @@ JOBS=3 bash tools/compile_check.sh   # THE INDEPENDENT WITNESS: emits every posi
                                 #   Currently a MANUAL tool (not gated) — so its coverage
                                 #   is only real on days it's run. `--only <substr>` for a
                                 #   tight loop; `--bootstrap` to check the bootstrap's emit.
+bash tools/libui_section_check.sh  # THE GUI-BACKEND WITNESS WITHOUT WINDOWS (2026-09-07):
+                                #   emits an example with --gui-backend=libui_ng and runs
+                                #   `zig build-obj -fno-emit-bin` against the REAL
+                                #   zig-libui-ng bindings (extern fns need no library until
+                                #   link). Catches wrong binding signatures in
+                                #   selfhost/gui_libui_ng_section.zig — which NO other gate
+                                #   compiles (tui builds skip it; ast-check sees only
+                                #   syntax). Blind to: runtime (a wrong message id is not a
+                                #   compile error). Needs LIBUI_BINDINGS=<zig-libui-ng/src>.
+bash tools/styler_test.sh       # tokenizer unit test (`zig test` on the pure STYLER block
+                                #   extracted verbatim from the libui section). RED-checked:
+                                #   flipping a spec flag fails the matching tests.
 JOBS=4 bash tools/divergence_check.sh --gate  # THE REGRESSION WITNESS (re-pointed 2026-09-01,
                                 #   bootstrap sunset criterion 4). It used to compare the
                                 #   selfhost against the BOOTSTRAP -- an IMPLEMENTATION-vs-
