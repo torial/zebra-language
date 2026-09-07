@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-343. Next new bug: BUG-344.**
+**Last bug number generated: BUG-344. Next new bug: BUG-345.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -125,6 +125,14 @@ emits `const sci = @import("sci.zig")` into the same scope. Section-private name
 carry the `_` prefix like every other emitted helper (`_sci`, `_ui`). General rule
 worth a checker pass later: nothing a section declares may be a plausible user
 identifier.
+
+### BUG-344: a user field named `items` was emitted as the raw Zig slice accessor in `for` — FIXED 2026-09-07 (branch p2-buffers)
+
+`class BufferSet: var items: List(Buffer)` then `for b in .items` emitted
+`for (self.items) |b|` (no `.items`) and leaked "type 'array_list...' is not indexable".
+`isItemsMemberAccess` matched the NAME only. Now it asks the inferred receiver type:
+a named (class/struct) receiver means a user field. Control:
+test/bug344_items_field_iter_test.zbr (class-element and struct-element lists).
 
 ### BUG-334: `sys.readLine` / `sys.readBytes` created a NEW buffered stdin reader per call, discarding read-ahead — `zebra lsp` answered nothing on a pipe — FIXED 2026-09-06 (branch lsp-references)
 

@@ -2993,6 +2993,7 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 |--------------------------------------------|----------|--------------------------------------------|
 | `g.text(s)`                                | void     | Text label                                 |
 | `g.button(label)`                          | bool     | True on click                              |
+| `g.buttonId(id, label)`                    | bool     | Button keyed by `id`; `label` may change between frames (tab rows, toggles) |
 | `g.checkbox(label, value)`                 | bool     | New checked state                          |
 | `g.slider(label, value, min, max)`         | float    | Drag slider (float range)                  |
 | `g.input(label, value)`                    | str      | Single-line text input                     |

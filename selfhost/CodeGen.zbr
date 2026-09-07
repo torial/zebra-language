@@ -8542,9 +8542,21 @@ struct Generator
 
     # True if the iterable is already a `.items` member access (e.g. `nums.items`).
     # The underlying type is already a slice; adding `.items` again would be wrong.
+    # BUG-344: this used to be name-only, so a user class/struct FIELD called
+    # `items` (`for b in .items` in zebra-ide's BufferSet) was emitted as the raw
+    # Zig slice accessor and leaked "type ... is not indexable". The name means
+    # "raw slice" only when the receiver is a List (or its type is unknown, which
+    # keeps the pre-fix behaviour for inference gaps); a named receiver type is a
+    # user field and iterates like any List.
     def isItemsMemberAccess(e: Expr): bool
         if e is Expr.member as m
-            return m.member == "items"
+            if m.member != "items"
+                return false
+            if .infer_ctx != nil
+                var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
+                if recv_t is Type_.named
+                    return false
+            return true
         return false
 
     # True if the iterable is a Regex findAll/groups call (receiver is a Regex).
