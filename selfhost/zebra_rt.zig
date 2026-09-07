@@ -3141,6 +3141,7 @@ pub const _GuiBackend = struct {
     indentFn:      *const fn () void,
     unindentFn:    *const fn () void,
     buttonFn:      *const fn (label: []const u8) bool,
+    buttonIdFn:    *const fn (id: []const u8, label: []const u8) bool,
     checkboxFn:    *const fn (label: []const u8, value: bool) bool,
     sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
@@ -3235,6 +3236,7 @@ pub const GuiContext = struct {
     pub fn indent(self: GuiContext) void { self._b.indentFn(); }
     pub fn unindent(self: GuiContext) void { self._b.unindentFn(); }
     pub fn button(self: GuiContext, label: []const u8) bool { return self._b.buttonFn(label); }
+    pub fn buttonId(self: GuiContext, id: []const u8, label: []const u8) bool { return self._b.buttonIdFn(id, label); }
     pub fn checkbox(self: GuiContext, label: []const u8, value: bool) bool { return self._b.checkboxFn(label, value); }
     pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
     pub fn input(self: GuiContext, label: []const u8, value: []const u8) []const u8 { return self._b.inputFn(label, value); }
@@ -3397,7 +3399,8 @@ pub fn _stub_same_line() void { std.debug.print("[gui] sameLine\n", .{}); }
 pub fn _stub_spacing() void { std.debug.print("[gui] spacing\n", .{}); }
 pub fn _stub_indent() void { std.debug.print("[gui] indent\n", .{}); }
 pub fn _stub_unindent() void { std.debug.print("[gui] unindent\n", .{}); }
-pub fn _stub_button(label: []const u8) bool {
+pub fn _stub_button_id(id: []const u8, label: []const u8) bool { _ = id; return _stub_button(label); }
+fn _stub_button(label: []const u8) bool {
     std.debug.print("[gui] button: {s}\n", .{label});
     return false;
 }
@@ -3481,6 +3484,7 @@ pub const _gui_stub_backend = _GuiBackend{
     .indentFn           = _stub_indent,
     .unindentFn         = _stub_unindent,
     .buttonFn           = _stub_button,
+    .buttonIdFn         = _stub_button_id,
     .checkboxFn         = _stub_checkbox,
     .sliderFn           = _stub_slider,
     .inputFn            = _stub_input,

@@ -1,0 +1,34 @@
+# BUG-344 repro: `for x in .field` where field is List(ClassType) leaks Zig.
+class Item
+    var name: str = ""
+    cue init(n: str)
+        .name = n
+
+struct Rec
+    var name: str
+
+class Holder
+    var items: List(Item)
+    var recs: List(Rec)
+    cue init()
+        .items = List(Item)()
+        .recs = List(Rec)()
+    def names(): str
+        var out: str = ""
+        for it in .items
+            out = out + it.name
+        return out
+    def recNames(): str
+        var out: str = ""
+        for r in .recs
+            out = out + r.name
+        return out
+
+def main()
+    var h = Holder()
+    h.items.add(Item("a"))
+    h.items.add(Item("b"))
+    h.recs.add(Rec(name: "x"))
+    assert h.recNames() == "x"
+    assert h.names() == "ab"
+    print("bug344: ok")

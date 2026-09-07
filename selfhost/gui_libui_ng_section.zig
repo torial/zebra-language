@@ -14,6 +14,7 @@ const _GuiBackend = struct {
     indentFn:      *const fn () void,
     unindentFn:    *const fn () void,
     buttonFn:      *const fn (label: []const u8) bool,
+    buttonIdFn:    *const fn (id: []const u8, label: []const u8) bool,
     checkboxFn:    *const fn (label: []const u8, value: bool) bool,
     sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
@@ -112,6 +113,7 @@ const GuiContext = struct {
     pub fn indent(self: GuiContext) void { self._b.indentFn(); }
     pub fn unindent(self: GuiContext) void { self._b.unindentFn(); }
     pub fn button(self: GuiContext, label: []const u8) bool { return self._b.buttonFn(label); }
+    pub fn buttonId(self: GuiContext, id: []const u8, label: []const u8) bool { return self._b.buttonIdFn(id, label); }
     pub fn checkbox(self: GuiContext, label: []const u8, value: bool) bool { return self._b.checkboxFn(label, value); }
     pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
     pub fn input(self: GuiContext, label: []const u8, value: []const u8) []const u8 { return self._b.inputFn(label, value); }
@@ -677,6 +679,7 @@ const _LuiMut = struct {
     smin: f64 = 0,
     smax: f64 = 1,
     pb: ?*_ui.ProgressBar = null,
+    btn: ?*_ui.Button = null,
 };
 const _LuiPanel = struct { inner: *_ui.Box };
 var _lui_icache: std.StringHashMap(*_LuiMut) = undefined;
@@ -871,6 +874,33 @@ fn _lui_ll_get_win_size() _GuiVec2 {
 }
 fn _lui_ll_get_cursor_pos() _GuiVec2 { return .{ 0, 0 }; }
 fn _lui_ll_get_mouse_pos() _GuiVec2 { return .{ -1, -1 }; }
+// Button keyed by a stable id, so its LABEL may change frame to frame (a tab row
+// whose captions are file names, a Play/Pause toggle). `g.button(label)` keys on
+// the label itself, which is right for fixed captions and wrong for these.
+fn _lui_button_id(_id: []const u8, _label: []const u8) bool {
+    const _r = _lui_iget(_id);
+    const _n = @min(_label.len, 255);
+    var _lb: [256]u8 = undefined;
+    @memcpy(_lb[0.._n], _label[0.._n]);
+    _lb[_n] = 0;
+    const _lz: [:0]u8 = _lb[0.._n :0];
+    if (_r.fresh) {
+        const _btn = _ui.Button.New(_lz) catch return false;
+        _ui.Button.OnClicked(_btn, _LuiMut, anyerror, _lui_btn_cb, _r.m);
+        _r.m.btn = _btn;
+        _r.m.ctrl = _btn.as_control();
+        @memcpy(_r.m.text_buf[0.._n], _label[0.._n]);
+        _r.m.text_len = _n;
+        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _btn.as_control(), .dont_stretch);
+    } else if (!std.mem.eql(u8, _r.m.text_buf[0.._r.m.text_len], _label[0.._n])) {
+        if (_r.m.btn) |_b| _ui.Button.SetText(_b, _lz);
+        @memcpy(_r.m.text_buf[0.._n], _label[0.._n]);
+        _r.m.text_len = _n;
+    }
+    const _clicked = _r.m.clicked;
+    _r.m.clicked = false;
+    return _clicked;
+}
 fn _lui_button(_label: []const u8) bool {
     const _r = _lui_iget(_label);
     if (_r.fresh) {
@@ -1149,6 +1179,7 @@ const _gui_lui_backend = _GuiBackend{
     .indentFn           = _lui_noop_void,
     .unindentFn         = _lui_noop_void,
     .buttonFn           = _lui_button,
+    .buttonIdFn         = _lui_button_id,
     .checkboxFn         = _lui_checkbox,
     .sliderFn           = _lui_slider,
     .inputFn            = _lui_input,

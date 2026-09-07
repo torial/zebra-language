@@ -14,6 +14,7 @@ const _GuiBackend = struct {
     indentFn:      *const fn () void,
     unindentFn:    *const fn () void,
     buttonFn:      *const fn (label: []const u8) bool,
+    buttonIdFn:    *const fn (id: []const u8, label: []const u8) bool,
     checkboxFn:    *const fn (label: []const u8, value: bool) bool,
     sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
@@ -112,6 +113,7 @@ const GuiContext = struct {
     pub fn indent(self: GuiContext) void { self._b.indentFn(); }
     pub fn unindent(self: GuiContext) void { self._b.unindentFn(); }
     pub fn button(self: GuiContext, label: []const u8) bool { return self._b.buttonFn(label); }
+    pub fn buttonId(self: GuiContext, id: []const u8, label: []const u8) bool { return self._b.buttonIdFn(id, label); }
     pub fn checkbox(self: GuiContext, label: []const u8, value: bool) bool { return self._b.checkboxFn(label, value); }
     pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
     pub fn input(self: GuiContext, label: []const u8, value: []const u8) []const u8 { return self._b.inputFn(label, value); }
@@ -354,6 +356,7 @@ fn _tui_same_line() void {}
 fn _tui_spacing() void { _tui_current_row += 1; }
 fn _tui_indent() void { _tui_indent_level += 1; }
 fn _tui_unindent() void { if (_tui_indent_level > 0) _tui_indent_level -= 1; }
+fn _tui_button_id(id: []const u8, label: []const u8) bool { _ = id; return _tui_button(label); }
 fn _tui_button(label: []const u8) bool {
     const _row = _tui_current_row;
     _tui_current_row += 1;
@@ -491,6 +494,7 @@ const _gui_tui_backend = _GuiBackend{
     .indentFn           = _tui_indent,
     .unindentFn         = _tui_unindent,
     .buttonFn           = _tui_button,
+    .buttonIdFn         = _tui_button_id,
     .checkboxFn         = _tui_checkbox,
     .sliderFn           = _tui_slider,
     .inputFn            = _tui_input,
