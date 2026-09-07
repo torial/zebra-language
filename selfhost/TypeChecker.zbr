@@ -2342,7 +2342,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # typeFromName above. Mirrors bootstrap TypeChecker:3523.
                         if bname == "CodeEditor"
                             return Type_.code_editor
-                        if bname == "sys" and (mem.member == "spawn" or mem.member == "spawnPiped")
+                        if bname == "sys" and (mem.member == "spawn" or mem.member == "spawnPiped" or mem.member == "spawnPipedIn")
                             return Type_.sys_process
                         if bname == "sys" and mem.member == "args"
                             # Raw command-line args are List(str); typing the element as
@@ -2567,6 +2567,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.void_
                             if pmname == "write"
                                 return Type_.bool_
+                            if pmname == "exitCode"
+                                return Type_.int_
                             if pmname == "readAvailable" or pmname == "readErrAvailable"
                                 return Type_.string_
                             if pmname == "closeStdin"

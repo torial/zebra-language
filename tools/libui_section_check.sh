@@ -29,8 +29,8 @@ for ex in "${examples[@]}"; do
   # fail offline); we only need the emitted src/main.zig, so key on that.
   "$ZEBRA" --gui-backend=libui_ng "$ex" >/dev/null 2>&1
   if [ ! -f "$proj/src/main.zig" ]; then echo "FAIL (codegen): $ex"; fail=1; continue; fi
-  if (cd "$proj" && zig build-obj -fno-emit-bin --dep ui --dep sci -Mroot=src/main.zig --dep ui -Msci="$B/sci.zig" -Mui="$B/ui.zig" 2>&1 | head -30 | grep -q "error:"); then
-    echo "FAIL (sema): $ex"; (cd "$proj" && zig build-obj -fno-emit-bin --dep ui --dep sci -Mroot=src/main.zig --dep ui -Msci="$B/sci.zig" -Mui="$B/ui.zig" 2>&1 | head -30); fail=1
+  if (cd "$proj" && zig build-obj -target x86_64-windows-gnu -fno-emit-bin --dep ui --dep sci -Mroot=src/main.zig --dep ui -Msci="$B/sci.zig" -Mui="$B/ui.zig" 2>&1 | head -30 | grep -q "error:"); then
+    echo "FAIL (sema): $ex"; (cd "$proj" && zig build-obj -target x86_64-windows-gnu -fno-emit-bin --dep ui --dep sci -Mroot=src/main.zig --dep ui -Msci="$B/sci.zig" -Mui="$B/ui.zig" 2>&1 | head -30); fail=1
   else
     echo "PASS: $ex (libui_ng section compiles against $B)"
   fi
