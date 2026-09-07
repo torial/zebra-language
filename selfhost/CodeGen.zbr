@@ -16372,6 +16372,20 @@ struct Generator
         if mname == "readLine"
             w.emit("_sys_readline()")
             return
+        if mname == "readStdinAvailable"
+            w.emit("_sys_stdin_read_available()")
+            return
+        if mname == "stdinClosed"
+            w.emit("_sys_stdin_closed()")
+            return
+        if mname == "writeStdout"
+            w.emit("_sys_write_stdout(")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
         if mname == "readBytes"
             w.emit("_sys_read_bytes(")
             if args.len > 0
