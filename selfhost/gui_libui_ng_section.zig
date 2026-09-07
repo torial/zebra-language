@@ -485,8 +485,9 @@ fn _ce_configure(_s: *_sci.Scintilla) void {
 // SCI_SETSTYLINGEX call (measured: one message instead of one per token — the
 // per-token form is what made a whole-file restyle visible on the laptop).
 //
-// Re-style trigger: libui never routes Scintilla's WM_NOTIFY, so there is no
-// SCN_MODIFIED to hook. Instead `_code_editor_render` (called every frame) asks
+// Re-style trigger: the pinned zig-libui-ng routes no Scintilla WM_NOTIFY (the
+// notify shim exists locally, unpushed, and is @hasDecl-guarded below), so a poll
+// is the baseline. `_code_editor_render` (called every frame) asks
 // SCI_GETENDSTYLED: Scintilla moves that watermark back to the edit position on
 // every insert/delete, so `endStyled < length` is an exact "text changed since
 // last styling" test that needs no event. Whole-buffer restyle keeps block
