@@ -492,6 +492,13 @@ bash tools/libui_section_check.sh  # THE GUI-BACKEND WITNESS WITHOUT WINDOWS (20
                                 #   compiles (tui builds skip it; ast-check sees only
                                 #   syntax). Blind to: runtime (a wrong message id is not a
                                 #   compile error). Needs LIBUI_BINDINGS=<zig-libui-ng/src>.
+bash tools/win_sema_check.sh    # THE WINDOWS COMPILE WITNESS WITHOUT WINDOWS (2026-09-07):
+                                #   emits programs and runs `zig build-exe -target
+                                #   x86_64-windows-gnu -fno-emit-bin` — full Sema of every
+                                #   `os.tag == .windows` branch of the runtime, from Linux.
+                                #   First run caught the blind PeekNamedPipe path (BOOL enum
+                                #   compared with 0). libui_section_check now targets
+                                #   windows too. Blind to: runtime behaviour.
 bash tools/styler_test.sh       # tokenizer unit test (`zig test` on the pure STYLER block
                                 #   extracted verbatim from the libui section). RED-checked:
                                 #   flipping a spec flag fails the matching tests.

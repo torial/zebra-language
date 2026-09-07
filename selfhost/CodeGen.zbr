@@ -12667,6 +12667,11 @@ struct Generator
                             w.emit("\"\"")
                         w.emit(")")
                         return
+                    if mname == "exitCode"
+                        w.emit("_sys_process_exit_code(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
                     if mname == "readAvailable"
                         w.emit("_sys_process_read_available(")
                         genExpr(m.object)
@@ -16317,6 +16322,13 @@ struct Generator
                 genExpr(args.at(0).value)
             else
                 w.emit("undefined")
+            w.emit(")")
+            return
+        if mname == "spawnPipedIn" and args.len == 2
+            w.emit("_sys_spawn_piped_in(")
+            genExpr(args.at(0).value)
+            w.emit(", ")
+            genExpr(args.at(1).value)
             w.emit(")")
             return
         if mname == "spawnPiped"

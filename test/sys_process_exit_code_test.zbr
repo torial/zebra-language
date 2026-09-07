@@ -1,0 +1,41 @@
+# sys.spawnPipedIn(argv, cwd) + SysProcess.exitCode(): the child runs in `cwd`
+# and its exit status is readable after it ends (-1 while running / unknown).
+# Uses the compiler itself as the child so no shell is needed.
+def main()
+    var zopt = sys.getenv("ZEBRA_COMPILER")
+    assert zopt != nil, "ZEBRA_COMPILER must be set"
+    var zebra: str = zopt!
+    Dir.createAll("sys_process_exit_code_tmp")
+    File.write("sys_process_exit_code_tmp/ok.zbr", "def main()\n    print(\"ok-child\")\n")
+    File.write("sys_process_exit_code_tmp/bad.zbr", "def main()\n    var x: int = \"no\"\n")
+
+    # a passing check, run in the temp dir by RELATIVE path — proves cwd took
+    var a: List(str) = List(str)()
+    a.add(zebra)
+    a.add("-c")
+    a.add("ok.zbr")
+    var p = sys.spawnPipedIn(a, "sys_process_exit_code_tmp")
+    assert p.isRunning() or p.exitCode() >= 0, "child did not start"
+    var waited: int = 0
+    while p.isRunning() and waited < 60000
+        sys.sleep(50)
+        waited = waited + 50
+    assert not p.isRunning(), "check did not finish"
+    assert p.exitCode() == 0, "expected exit 0, got " + p.exitCode().toString()
+
+    # a failing check → non-zero exit, error text on the pipes
+    var b: List(str) = List(str)()
+    b.add(zebra)
+    b.add("-c")
+    b.add("bad.zbr")
+    var q = sys.spawnPipedIn(b, "sys_process_exit_code_tmp")
+    var out: str = ""
+    waited = 0
+    while q.isRunning() and waited < 60000
+        out = out + q.readAvailable() + q.readErrAvailable()
+        sys.sleep(50)
+        waited = waited + 50
+    out = out + q.readAvailable() + q.readErrAvailable()
+    assert q.exitCode() != 0, "expected non-zero exit for a type error"
+    assert out.contains("error"), "expected an error message, got: " + out
+    print("sys_process_exit_code_test: ok exit=" + p.exitCode().toString() + "/" + q.exitCode().toString())

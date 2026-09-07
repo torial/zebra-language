@@ -626,6 +626,7 @@ pub const _SysProcess = struct {
     child: std.process.Child,
     alive: bool,
     pid: i64,
+    exit_code: i64 = -1,   // -1 until the child has been seen to exit (isRunning/exitCode)
 };
 pub fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
     const p = _allocator.create(_SysProcess) catch @panic("OOM");
@@ -655,10 +656,16 @@ pub fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
 // PeekNamedPipe on Windows) and return "" when nothing is pending; `write` is a
 // plain blocking write of a small message; `closeStdin` sends EOF.
 pub fn _sys_spawn_piped(argv: std.ArrayList([]const u8)) *_SysProcess {
+    return _sys_spawn_piped_in(argv, "");
+}
+// `cwd == ""` inherits the parent's directory (sys.spawnPiped); otherwise the child
+// starts there (sys.spawnPipedIn) — a gate runner needs "run tools/x.sh in <repo>".
+pub fn _sys_spawn_piped_in(argv: std.ArrayList([]const u8), cwd: []const u8) *_SysProcess {
     const p = _allocator.create(_SysProcess) catch @panic("OOM");
     p.* = .{ .child = undefined, .alive = false, .pid = -1 };
     p.child = std.process.spawn(_io, .{
         .argv   = argv.items,
+        .cwd    = if (cwd.len == 0) .inherit else .{ .path = cwd },
         .environ_map = _child_env_map(),
         .stdin  = .pipe,
         .stdout = .pipe,
@@ -696,11 +703,12 @@ fn _sys_pipe_read_available(fo: ?std.Io.File) []const u8 {
                 extern "kernel32" fn ReadFile(h: std.os.windows.HANDLE, buf: [*]u8, n: u32, read: ?*u32, ov: ?*anyopaque) callconv(.winapi) std.os.windows.BOOL;
             };
             var avail: u32 = 0;
-            if (k32.PeekNamedPipe(f.handle, null, 0, null, &avail, null) == 0) break; // closed/broken pipe
+            // windows.BOOL is an enum in Zig 0.16: compare against .FALSE, never 0.
+            if (k32.PeekNamedPipe(f.handle, null, 0, null, &avail, null) == .FALSE) break; // closed/broken pipe
             if (avail == 0) break;
             var got: u32 = 0;
             const want: u32 = @min(avail, @as(u32, chunk.len));
-            if (k32.ReadFile(f.handle, &chunk, want, &got, null) == 0 or got == 0) break;
+            if (k32.ReadFile(f.handle, &chunk, want, &got, null) == .FALSE or got == 0) break;
             out.appendSlice(_allocator, chunk[0..got]) catch break;
         } else {
             var pfd = [_]std.posix.pollfd{.{ .fd = f.handle, .events = std.posix.POLL.IN, .revents = 0 }};
@@ -733,23 +741,41 @@ pub fn _sys_process_is_running(p: *_SysProcess) bool {
         const status = std.os.windows.ntdll.NtWaitForSingleObject(handle, .FALSE, &timeout);
         if (status == .TIMEOUT) return true;
         p.alive = false;
+        var info: std.os.windows.PROCESS.BASIC_INFORMATION = undefined;
+        p.exit_code = switch (std.os.windows.ntdll.NtQueryInformationProcess(handle, .BasicInformation, &info, @sizeOf(std.os.windows.PROCESS.BASIC_INFORMATION), null)) {
+            .SUCCESS => @as(i64, @intCast(@as(u8, @truncate(@intFromEnum(info.ExitStatus))))),
+            else => -1,
+        };
         return false;
     } else {
         // Zig 0.16 has no std.posix.waitpid; use libc's when linked, else the raw
         // Linux syscall. rc == 0 means "still running" for WNOHANG; anything else
         // (exited, or an error such as ECHILD) means the child is gone.
         const pid = p.child.id orelse { p.alive = false; return false; };
+        var status: u32 = 0;
         const rc: isize = if (comptime builtin.link_libc) blk: {
             var st: c_int = 0;
-            break :blk @intCast(std.c.waitpid(@intCast(pid), &st, std.c.W.NOHANG));
+            const r: isize = @intCast(std.c.waitpid(@intCast(pid), &st, std.c.W.NOHANG));
+            status = @bitCast(st);
+            break :blk r;
         } else if (comptime builtin.os.tag == .linux) blk: {
             var st: u32 = 0;
-            break :blk @bitCast(std.os.linux.waitpid(@intCast(pid), &st, std.os.linux.W.NOHANG));
+            const r: isize = @bitCast(std.os.linux.waitpid(@intCast(pid), &st, std.os.linux.W.NOHANG));
+            status = st;
+            break :blk r;
         } else @compileError("sys.spawn: isRunning needs libc on this target");
         if (rc == 0) return true;
         p.alive = false;
+        // POSIX wait status: exited → low byte of status>>8; signalled → 128+signal (shell convention)
+        if (rc > 0) {
+            if ((status & 0x7f) == 0) p.exit_code = @intCast((status >> 8) & 0xff) else p.exit_code = 128 + @as(i64, @intCast(status & 0x7f));
+        }
         return false;
     }
+}
+pub fn _sys_process_exit_code(p: *_SysProcess) i64 {
+    if (p.alive) _ = _sys_process_is_running(p);   // reap if it has exited since the last look
+    return p.exit_code;
 }
 // ONE process-wide stdin reader. `readerStreaming` reads AHEAD into its buffer
 // (up to the buffer size per syscall), so a reader created per call silently
@@ -3704,7 +3730,7 @@ pub const ArgResult = struct {
     pub fn unknownFlag(self: ArgResult, known: []const u8) []const u8 {
         for (self._raw) |a| {
             if (a.len < 2 or a[0] != '-') continue;      // positional, or a bare "-"
-            if (std.mem.eql(u8, a, "--")) continue;      // end-of-flags marker
+            if (std.mem.eql(u8, a, "--")) break;         // end-of-flags marker: nothing after it is ours
             const name = if (std.mem.indexOfScalar(u8, a, '=')) |i| a[0..i] else a;
             var it = std.mem.tokenizeScalar(u8, known, ' ');
             var found = false;

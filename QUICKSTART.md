@@ -3173,7 +3173,7 @@ Available backends: `stub` (no-op, for tests), `libui_ng` (native OS controls),
 
 | Call                | Returns           | Notes                                        |
 |---------------------|-------------------|----------------------------------------------|
-| `sys.args()`        | `List(str)`       | Raw command-line arguments                   |
+| `sys.args()`        | `List(str)`       | Raw command-line arguments. With compile-and-run, the program's own arguments go after `--`: `zebra prog.zbr -- a b` |
 | `sys.exit(code)`    | noreturn          | Exit with given code                         |
 | `sys.err(msg)`      | void              | Write to stderr (no newline)                 |
 | `sys.errln(msg)`    | void              | Write to stderr + newline                    |
@@ -3184,6 +3184,8 @@ Available backends: `stub` (no-op, for tests), `libui_ng` (native OS controls),
 | `sys.readLine()`    | `str?`            | Read one line from stdin (strips `\n`); nil on EOF |
 | `sys.spawn(argv)`   | `SysProcess`      | Start a child (stdin/stdout ignored); `.isRunning()`, `.kill()`, `.pid` |
 | `sys.spawnPiped(argv)` | `SysProcess`   | Start a child with **pipes** on stdin/stdout/stderr, for stdio protocols (an LSP or DAP server, a REPL). `.write(s): bool`, `.readAvailable(): str` and `.readErrAvailable(): str` return what the OS already holds **without blocking** ("" if nothing), `.closeStdin()` sends EOF; plus `.isRunning()` / `.kill()`. Poll from a loop or a GUI tick; see `test/sys_spawn_piped_test.zbr`, which talks to `zebra lsp` |
+| `sys.spawnPipedIn(argv, cwd)` | `SysProcess` | As `spawnPiped`, but the child starts in `cwd` (a gate runner's "run tools/x.sh in <repo>"). `""` = inherit |
+| `proc.exitCode()`   | `int`             | Exit status once the child has ended (`-1` while running or unknown); POSIX signal → 128+n. Any `SysProcess` |
 | `sys.memStats()`    | `MemStats`        | Program-arena footprint; `.arenaBytes` (int). High-water for the main allocator. Delta across a frame: `b.arenaBytes - a.arenaBytes` |
 
 ### `File` — file I/O (static)

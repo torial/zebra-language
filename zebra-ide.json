@@ -1,0 +1,12 @@
+{
+  "name": "zebra-language",
+  "build": { "cmd": ["zig", "build"] },
+  "gates": [
+    { "name": "test-zig",       "cmd": ["zig", "build", "test-zig"] },
+    { "name": "selfhost_smoke", "cmd": ["bash", "tools/selfhost_smoke.sh"],      "expect": "passed",            "timeout_ms": 1800000 },
+    { "name": "bootstrap",      "cmd": ["bash", "tools/bootstrap_check.sh"],     "expect": "round-trip clean",  "timeout_ms": 1800000 },
+    { "name": "libui_section",  "cmd": ["bash", "tools/libui_section_check.sh"], "expect": "PASS" },
+    { "name": "win_sema",       "cmd": ["bash", "tools/win_sema_check.sh"],      "expect": "PASS" },
+    { "name": "styler",         "cmd": ["bash", "tools/styler_test.sh"],         "expect": "styler_test: PASS" }
+  ]
+}

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-344. Next new bug: BUG-345.**
+**Last bug number generated: BUG-347. Next new bug: BUG-348.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -133,6 +133,27 @@ identifier.
 `isItemsMemberAccess` matched the NAME only. Now it asks the inferred receiver type:
 a named (class/struct) receiver means a user field. Control:
 test/bug344_items_field_iter_test.zbr (class-element and struct-element lists).
+
+### BUG-345: `Timer` cannot be a field or annotated type — `var t: Timer? = nil` leaks Zig `use of undeclared identifier 'Timer'` — OPEN (found 2026-09-07)
+
+`Timer.start()` infers to `timer_handle`, but `Timer` is not in `typeFromName`, so it
+cannot be written as a field/param/annotation. Workaround (zebra-ide/src/gates.zbr):
+`DateTime.now().epoch_ms` arithmetic.
+
+### BUG-346: a method call on an IMPORTED function's result is untyped — `joinPath(a, b).replace(..)` leaks Zig `no field or member function named 'replace'` — OPEN (found 2026-09-07)
+
+Same-module calls infer their return type; a `use`d module's function does not, so
+the method dispatches as a generic member. Workaround: bind to a typed local first
+(zebra-ide/src/ide.zbr `markBuildDiags`).
+
+### BUG-347: compile-and-run forwarded NO arguments to the program — FIXED 2026-09-07 (branch gates)
+
+`zebra prog.zbr a b` ran the program with argv = [exe]; there was no passthrough at
+all, so a CLI written in Zebra could only be run from its built exe. Now everything
+after a literal `--` is forwarded (`zebra src/gates.zbr -- manifest.json smoke`), on
+both the fast and the LLVM run paths, and `ArgResult.unknownFlag` stops at `--` so
+program flags are not reported as unknown compiler flags. Control:
+test/prog_args_passthrough_test.zbr (registered inline in selfhost_smoke).
 
 ### BUG-334: `sys.readLine` / `sys.readBytes` created a NEW buffered stdin reader per call, discarding read-ahead — `zebra lsp` answered nothing on a pipe — FIXED 2026-09-06 (branch lsp-references)
 

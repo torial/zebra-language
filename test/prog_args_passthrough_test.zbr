@@ -1,0 +1,9 @@
+# BUG-347: `zebra prog.zbr -- a b` forwards `a b`; without `--` nothing is forwarded.
+def main()
+    var args: List(str) = sys.args()
+    var got: str = ""
+    var i: int = 1
+    while i < args.len
+        got = got + args.at(i) + "|"
+        i = i + 1
+    print("prog_args: " + got)

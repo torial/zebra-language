@@ -3482,6 +3482,18 @@ def main()
             run_tag_filter = tag_val
 
     # -- Source path -------------------------------------------------------
+    # BUG-347: `zebra prog.zbr -- a b` forwards `a b` to the program (compile-and-run
+    # had no passthrough at all; `zebra src/gates.zbr manifest.json` could not see its
+    # manifest). Everything after a literal `--` is the program's; the compiler never
+    # looks at it (ArgResult.unknownFlag stops there too).
+    var prog_args: List(str) = List(str)()
+    var raw_args: List(str) = sys.args()
+    var seen_dashdash: bool = false
+    for ra in raw_args
+        if seen_dashdash
+            prog_args.add(ra)
+        else if ra == "--"
+            seen_dashdash = true
     # Scan positionals for the .zbr file (skip option values like --output-dir DIR)
 
     var src_path: str? = nil
@@ -3838,6 +3850,8 @@ def main()
                 # never blocks — matching the bootstrap's run path (src/main.zig).
                 var rargv = List(str)()
                 rargv.add(fast_exe)
+                for pa in prog_args
+                    rargv.add(pa)
                 # A program run by the compiler can ask for the compiler (`zebra lsp`,
                 # `zebra build`, a nested compile) the same way a `zebra build` program
                 # can (BUG-327 layer 2): the child inherits ZEBRA_COMPILER. Set only if
@@ -3973,6 +3987,8 @@ def main()
             # and never blocks, no matter how much the program prints (BUG-208).
             var rargv2 = List(str)()
             rargv2.add(llvm_exe)
+            for pa2 in prog_args
+                rargv2.add(pa2)
             var rc2: int = sys.exec_inherit(rargv2)
             # BUG-244, same rule as the fast path above: clean on success, keep on
             # failure. This branch is taken by any program with a C dep, sqlite, an
