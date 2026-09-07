@@ -266,6 +266,9 @@ fn _tui_lang_norm(n: []const u8) []const u8 {
 fn _code_editor_set_language(_ed: *_CodeEditor, name: []const u8) void { _ed.lang = _tui_lang_norm(name); }
 fn _code_editor_get_language(_ed: *_CodeEditor) []const u8 { return _ed.lang; }
 fn _code_editor_restyle(_ed: *_CodeEditor) void { _ = _ed; }
+fn _code_editor_take_modified(_ed: *_CodeEditor) bool { _ = _ed; return false; }
+fn _code_editor_take_char_added(_ed: *_CodeEditor) i64 { _ = _ed; return 0; }
+fn _code_editor_take_margin_click(_ed: *_CodeEditor) i64 { _ = _ed; return -1; }
 fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
 fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
 fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }

@@ -14715,6 +14715,12 @@ struct Generator
                     ce_fn = "_code_editor_get_language"
                 if mname == "restyle"
                     ce_fn = "_code_editor_restyle"
+                if mname == "takeModified"
+                    ce_fn = "_code_editor_take_modified"
+                if mname == "takeCharAdded"
+                    ce_fn = "_code_editor_take_char_added"
+                if mname == "takeMarginClick"
+                    ce_fn = "_code_editor_take_margin_click"
                 if ce_fn != ""
                     w.emit(ce_fn)
                     w.emit("(")
