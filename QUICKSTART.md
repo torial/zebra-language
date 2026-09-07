@@ -3079,6 +3079,9 @@ var any    = CodeEditor.forFile(path)     # by extension: .zbr .c .h .cpp .zig .
 editor.setLanguage("zig")                 # switch spec and restyle now
 editor.getLanguage()                      # "zebra" | "c" | "zig" | "text"
 editor.restyle()                          # force a whole-buffer restyle
+editor.takeModified()                     # bool: text changed since last take (SCN_MODIFIED)
+editor.takeCharAdded()                    # int: last typed char (0 = none); 10 = Enter → auto-indent hook
+editor.takeMarginClick()                  # int: clicked line in a sensitive margin, or -1 (bookmarks/breakpoints)
 editor.setText(File.read("main.zbr"))
 editor.setReadOnly(false)
 
@@ -3097,6 +3100,14 @@ Scintilla has moved that watermark back — highlighting follows typing within o
 tick. Headless test of the tokenizer: `bash tools/styler_test.sh` (extracts the
 pure block from the section and runs `zig test`). Semantic compile of the whole
 libui section without Windows: `bash tools/libui_section_check.sh`.
+
+**Events** come through zig-libui-ng's notify shim (`uiScintillaOnNotify`, routed by
+libui-ng's own per-HWND `WM_NOTIFY` table — nothing was subclassed). The backend only
+*records* them; the program *takes* them from its tick with the three `take*` methods
+above, which keeps MVU's rule that the model changes only in `update()`. On the `tui`
+backend, and against a zig-libui-ng older than the shim, they simply never fire
+(`@hasDecl` guard), so programs must keep working without them — zebra-ide polls
+`getText()` every 10th tick as that fallback.
 
 **Raw Scintilla hatch.** Everything the widget does not wrap is one message away:
 

@@ -531,7 +531,33 @@ const _CodeEditor = struct {
     buf: []u8 = &.{},
     len: usize = 0,
     spec: *const _CeLangSpec = &_CE_LANG_ZEBRA,
+    // Event bridge. libui delivers Scintilla's WM_NOTIFY through uiScintillaOnNotify
+    // (zig-libui-ng libui_scintilla/win.cxx); the callback below only records, and
+    // the Zebra program takes the records from its tick: takeModified(),
+    // takeCharAdded(), takeMarginClick(). Recording rather than calling back into
+    // Zebra keeps MVU's rule that the model changes only inside update().
+    ev_modified: bool = false,
+    ev_char: i64 = 0,
+    ev_margin_line: i64 = -1,
+    ev_margin: i64 = -1,
 };
+const _CeNotification = if (@hasDecl(_sci.Scintilla, "Notification")) _sci.Scintilla.Notification else struct { code: c_uint = 0, modificationType: c_int = 0, ch: c_int = 0, margin: c_int = 0, position: isize = 0 };
+fn _ce_on_notify(_s: *_sci.Scintilla, n: *const _CeNotification, _edp: ?*_CodeEditor) anyerror!void {
+    _ = _s;
+    const _ed = _edp orelse return;
+    switch (n.code) {
+        2008 => { if ((n.modificationType & 0x3) != 0) _ed.ev_modified = true; },     // SCN_MODIFIED, insert|delete
+        2001 => { _ed.ev_char = n.ch; },                                              // SCN_CHARADDED
+        2010 => {                                                                     // SCN_MARGINCLICK
+            _ed.ev_margin = n.margin;
+            _ed.ev_margin_line = @intCast(_ed.scint.?.sendMessage(2166, @intCast(@max(0, n.position)), 0)); // SCI_LINEFROMPOSITION
+        },
+        else => {},
+    }
+}
+fn _code_editor_take_modified(_ed: *_CodeEditor) bool { const v = _ed.ev_modified; _ed.ev_modified = false; return v; }
+fn _code_editor_take_char_added(_ed: *_CodeEditor) i64 { const v = _ed.ev_char; _ed.ev_char = 0; return v; }
+fn _code_editor_take_margin_click(_ed: *_CodeEditor) i64 { const v = _ed.ev_margin_line; _ed.ev_margin_line = -1; return v; }
 // Ensure room for `need` bytes of text PLUS the terminator. Returns false only on OOM.
 fn _ce_reserve(_ed: *_CodeEditor, need: usize) bool {
     if (_ed.buf.len >= need + 1) return true;
@@ -589,6 +615,10 @@ fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, _w: f6
         // Safe unconditionally now: `buf[len] == 0` holds even when len == 0
         // (the old code had to skip the empty case to avoid the strlen crash).
         _ce_configure(_ed.scint.?);
+        // Bindings older than zig-libui-ng's notify shim have no OnNotify; the
+        // guard keeps the section compiling against the currently pinned package
+        // (events simply never fire, and the IDE's fallback polling carries on).
+        if (comptime @hasDecl(_sci.Scintilla, "OnNotify")) _ed.scint.?.OnNotify(_CodeEditor, anyerror, _ce_on_notify, _ed);
         if (_ed.buf.len > 0) {
             _ed.scint.?.setText(_ed.buf[0.._ed.len]);
             _ce_style(_ed);
