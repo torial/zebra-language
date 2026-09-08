@@ -2805,18 +2805,27 @@ pub fn build(b: *std.Build) void {
 }
 """
 
+# ZEBRA_LIBUI_PATH (2026-09-08): point the GUI dependency at a LOCAL zig-libui-ng
+# checkout instead of the pinned URL — `.path = ...` needs no push and no hash. This
+# is how unpushed shim work (OnNotify, OnKey) is tried on Windows before the pin
+# moves: `set ZEBRA_LIBUI_PATH=C:\Projects\zig-libui-ng` then run the program.
+# Never the default: a pin is reproducible, a path is whatever is on that disk.
 def luiBuildZon(): str
+    var dep: str = """        .zig_libui_ng = .{
+            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#93c7f54b2051d17b9f69d203ff3cd4500e60d285",
+            .hash = "bindings_libui_ng-0.1.0-p2CY9VwQQgApSplQXciuuEWGImM_PPrHwvCG9f_SXioP",
+        },
+"""
+    if sys.getenv("ZEBRA_LIBUI_PATH") as lp
+        if lp != ""
+            dep = "        .zig_libui_ng = .{ .path = \"" + lp.replace("\\", "/") + "\" },\n"
     return """
 .{
     .name         = .app,
     .version      = "0.0.1",
     .fingerprint  = 0xc96e70cfe3b36b0a,
     .dependencies = .{
-        .zig_libui_ng = .{
-            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#93c7f54b2051d17b9f69d203ff3cd4500e60d285",
-            .hash = "bindings_libui_ng-0.1.0-p2CY9VwQQgApSplQXciuuEWGImM_PPrHwvCG9f_SXioP",
-        },
-    },
+""" + dep + """    },
     .paths = .{ "build.zig", "build.zig.zon", "src", "app.manifest" },
 }
 """

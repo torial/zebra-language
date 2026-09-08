@@ -2577,6 +2577,22 @@ Key idioms worth remembering up front:
 
 ## Notes
 
+- **State handoff 2026-09-08 (read before touching GUI/debug code):** the IDE work
+  (`C:\Projects\zebra-ide`) landed P0–P4 across this repo, zig-libui-ng (unpushed:
+  OnNotify e1b68d3, OnKey 8c205fd) and zebra-ide; `zebra debug <file>` is native
+  (`dbgRunSession`, selfhost/main.zbr); new sys builtins
+  `spawnPipedIn/exitCode/readStdinAvailable/stdinClosed/writeStdout` and `--` program-arg
+  passthrough; `zebra lsp` resolves the `use` graph from disk (gate `lsp-workspace`); the
+  libui section hides widgets the view stops emitting and has `editor.hotkey/takeKey`.
+  The libui pin in `luiBuildZon` still points at 93c7f54b, which LACKS OnNotify/OnKey;
+  that code is `@hasDecl`-guarded so the build passes — it is waiting on the pin bump
+  (`tools/bump_libui_pin.sh` after a push), not on code. To try the unpushed shim on
+  Windows WITHOUT the pin: `set ZEBRA_LIBUI_PATH=C:\Projects\zig-libui-ng` before running
+  a GUI program (luiBuildZon then emits `.path` instead of the pinned url). Nothing has yet
+  run on Windows with a window open. Full status, owed list, open worklist:
+  `C:\Projects\zebra-ide\PLAN.md` (last section); wiki `concept_zebra-lightweight-ide` §7b.
+  (This bullet was lost once already — 2026-09-08, a bundle overwrote a device-side edit —
+  so it now lives in the copy that gets shipped.)
 - Platform: Windows is the primary dev environment; bash paths via Git Bash.
 - Binaries and build caches (`*.exe`, `*.pdb`, `.zig-cache/`, `zig-out/`) are
   gitignored — do not commit them.
