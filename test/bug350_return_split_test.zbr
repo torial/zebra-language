@@ -4,7 +4,25 @@ def parts(p: str): List(str)
 def parts2(p: str): List(str)
     var xs: List(str) = p.split("/")
     return xs
+# A user class with its OWN `split` must not be mistaken for the str builtin, in
+# either position (cleanroom finding 2, 2026-09-08: the var-init site lacked the guard).
+class Sep
+    var parts: List(str)
+    cue init()
+        .parts = List(str)()
+        .parts.add("u")
+        .parts.add("v")
+    def split(sep: str): List(str)
+        return .parts
+
+def viaReturn(s: Sep): List(str)
+    return s.split(",")
+
 def main()
+    var sp = Sep()
+    var xs: List(str) = sp.split(",")
+    assert xs.len == 2
+    assert viaReturn(sp).len == 2
     assert parts2("a/b").len == 2
     assert parts("a/b").len == 2
     print("bug350: ok")

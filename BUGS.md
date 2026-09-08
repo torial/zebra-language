@@ -100,6 +100,11 @@ single-file, so no gate saw it; `zebra-ide/src/ide.zbr` (three modules) found it
 first build. Fix: `copyGuiDeps` in selfhost/main.zbr walks `@import("X.zig")` lines
 transitively and copies each module into the project. Control: ide.zbr builds on tui.
 
+> **BUG-341 … BUG-353 are SELFHOST-ONLY fixes** (the standing rule since 2026-09: compiler
+> changes land in `selfhost/*.zbr`; the bootstrap `src/*.zig` is phasing out and is NOT
+> updated — cleanroom (sonnet) verified 2026-09-08 that 341/342/346/350/353 still leak Zig
+> when compiled with `zebra-bootstrap`). Nothing ships through the bootstrap.
+
 ### BUG-341: unknown method on `StringBuilder` (`sb.add(s)`) is not rejected — leaks Zig `expected type 'u8', found '[]const u8'` — FIXED 2026-09-08
 
 `StringBuilder` lowers to `ArrayList(u8)`, so `.add` fell through to the generic List
@@ -124,7 +129,8 @@ the checker with "cannot mutate parameter `sink`; return a str instead". Workaro
 Fix: `isContainerTypeRef` (CgHelpers) now includes `StringBuilder`, so it takes the BUG-091
 addr-of convention exactly like `List(T)`: param emitted as `*std.ArrayList(u8)`, `&arg` at the
 call site, pointer forwarded unchanged. Control: test/bug342_sb_param_append_test.zbr (free fn +
-method, forwarding through a class). The ide.zbr workaround is removed.
+method, forwarding through a class). ide.zbr's `symbolLines` keeps returning a str — that
+is the cleaner contract, so the workaround became a design choice rather than being reverted.
 
 ### BUG-343: a user module named `sci` (or `ui`) collides with the libui_ng section's private imports — Zig `duplicate struct member name 'sci'` — FIXED 2026-09-07 (branch ide-slice)
 

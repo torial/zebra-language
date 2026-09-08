@@ -6603,7 +6603,8 @@ struct Generator
                     if (n.type_!) is TypeRef.generic as gt092
                         if gt092.name == "List"
                             if ec092.callee is Expr.member as mem092
-                                if mem092.member == "split" or mem092.member == "lines"
+                                # cleanroom 09-08: the same user-`split` guard as the return site
+                                if (mem092.member == "split" or mem092.member == "lines") and not isNamedRecvCall(ie)
                                     w.emit(": ")
                                     genType(n.type_!)
                                     w.emit(" = ")
