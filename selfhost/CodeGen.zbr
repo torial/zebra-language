@@ -4181,12 +4181,21 @@ struct Generator
                 iface_name = aid.name
             else
                 return false
+            # BUG-356: the block used to yield `?*IFace` (null when the symbol is
+            # missing), so `g.greet(..)` on the result was "no field or member function
+            # named 'greet' in '?*IGreeter'" — while QUICKSTART §44 promises a value
+            # satisfying the interface. Missing symbol → panic naming the symbol; the
+            # value is the fat pointer the factory returns. The factory is `export fn`
+            # (C calling convention); the lookup type MUST say `callconv(.c)` or the
+            # call goes through Zig's native convention and reads the return value
+            # from the wrong place — the first symptom was a segfault on a pointer
+            # that was a code address inside the library.
             var uid = w.nextUid()
-            w.emit("blk_${uid.toString()}: { const _fn = ")
-            genExpr(obj)
-            w.emit(".lib.lookup(*const fn () *${iface_name}, ")
+            w.emit("blk_${uid.toString()}: { const _sym: []const u8 = ")
             genExpr(args.at(1).value)
-            w.emit(") orelse break :blk_${uid.toString()} null; break :blk_${uid.toString()} _fn(); }")
+            w.emit("; const _fn = ")
+            genExpr(obj)
+            w.emit(".lib.lookup(*const fn () callconv(.c) *${iface_name}, _allocator.dupeZ(u8, _sym) catch @panic(\"OOM\")) orelse std.debug.panic(\"DynLib.lookup: symbol not found: {s}\", .{_sym}); break :blk_${uid.toString()} _fn().*; }")
             return true
         return false
 
@@ -14666,9 +14675,18 @@ struct Generator
                 return
             if id.name == "DynLib"
                 if mname == "open" and args.len > 0
-                    w.emit("try _dynlib_open(")
-                    genExpr(args.at(0).value)
-                    w.emit(")")
+                    # BUG-356: `try` only inside a `throws` function; elsewhere a missing
+                    # library is the documented PANIC ("panics if not found", QUICKSTART
+                    # §44). The unconditional `try` reached Zig as "expected type 'void',
+                    # found 'anyerror'" from a plain `def main()`.
+                    if current_method_throws
+                        w.emit("try _dynlib_open(")
+                        genExpr(args.at(0).value)
+                        w.emit(")")
+                    else
+                        w.emit("(_dynlib_open(")
+                        genExpr(args.at(0).value)
+                        w.emit(") catch |_dle| std.debug.panic(\"DynLib.open failed: {s}\", .{@errorName(_dle)}))")
                     return
             if id.name == "Http"
                 genHttpCall(mname, args)

@@ -1,0 +1,10 @@
+interface IGreeter
+    def greet(name: str): str
+    def version(): int
+
+@export("greeter")
+class HelloGreeter implements IGreeter
+    def greet(name: str): str
+        return "Hello, " + name
+    def version(): int
+        return 7

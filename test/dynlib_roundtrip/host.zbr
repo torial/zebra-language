@@ -1,0 +1,11 @@
+interface IGreeter
+    def greet(name: str): str
+    def version(): int
+
+def main()
+    var args: List(str) = sys.args()
+    var libpath: str = args.at(1)
+    var lib = DynLib.open(libpath)
+    var g = lib.lookup(IGreeter, "greeter")
+    print(g.greet("World") + " v" + g.version().toString())
+    lib.close()

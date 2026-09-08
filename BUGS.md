@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-355. Next new bug: BUG-356.**
+**Last bug number generated: BUG-356. Next new bug: BUG-357.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -257,6 +257,28 @@ editor. Fix direction: emit the section once (root) and have dependents referenc
 root's types (`@import("root")._CodeEditor`), or lower section types to a shared
 runtime module. Workaround: keep functions that take a CodeEditor in the root module
 (zebra-ide keys.zbr is pure data for this reason).
+
+### BUG-356: the shared-library round trip (QUICKSTART §44) does not work in the selfhost — OPEN (found 2026-09-08), three of four legs fixed
+
+QUICKSTART promises `zebra --shared lib.zbr` + `DynLib.open` + `lib.lookup(IFace, "sym")`.
+Walking it end to end for the IDE plugin design found, in order:
+1. **No `--shared` flag** in the selfhost CLI (the doc is stale; `@export class` does emit
+   the factory, and `zig build-lib -dynamic` on the `--emit-zig` output produces a library).
+   OPEN — the flag should exist and do exactly that.
+2. `DynLib.open` lowered to a bare `try` — "expected type 'void', found 'anyerror'" from a
+   plain `def main()`. FIXED: panics outside `throws`, as documented.
+3. `lib.lookup` yielded `?*IFace` (null on a missing symbol), so `g.greet(..)` on the result
+   was a Zig error about `?*IGreeter`; and the factory pointer type lacked `callconv(.c)`
+   although the factory is `export fn`. FIXED: value is the fat pointer, missing symbol
+   panics naming it, C calling convention.
+4. **The fat pointer read from the host is garbage** (`ptr`/`vtable` words like
+   `0xd00020001e639`, `0x20f9a0` — neither relocated addresses nor the library's symbols),
+   even from a pure Zig host built the same way, so it is not the Zebra host's reading of
+   it. Suspects: relocation/initialisation of the emitted module built as a `-dynamic`
+   library (the runtime's globals, `_io` undefined, the optional-payload pointer). OPEN.
+   Gate: tools/dynlib_roundtrip_check.sh (pinned `dynlib-roundtrip`, FULL tier); fixture
+   test/dynlib_roundtrip/{greeter,host}.zbr. The IDE's plugin design treats in-process
+   plugins as blocked on this and starts with process plugins.
 
 ### BUG-334: `sys.readLine` / `sys.readBytes` created a NEW buffered stdin reader per call, discarding read-ahead — `zebra lsp` answered nothing on a pipe — FIXED 2026-09-06 (branch lsp-references)
 
