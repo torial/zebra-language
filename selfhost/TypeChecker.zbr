@@ -117,6 +117,10 @@ union Type_
     str_set
     allocator_ctx
     sys_process
+    # BUG-345: `Timer.start()` inferred to nothing in the selfhost (the bootstrap had
+    # timer_handle), so `Timer` could not be written as a field / param / annotation
+    # -- `var t: Timer? = nil` reached Zig as `?Timer`, "use of undeclared identifier".
+    timer_handle
     build_ctx
     build_target
     # WebSocket connection returned by Ws.connect() or passed to Ws.serve handler.
@@ -595,6 +599,8 @@ def typeFromName(n: str): Type_
         return Type_.code_editor
     if n == "SysProcess"
         return Type_.sys_process
+    if n == "Timer"
+        return Type_.timer_handle
     # PARITY 2026-09-04: the bootstrap maps this (src/TypeChecker.zig) and the selfhost
     # did not, so `var v: JsonValue` resolved to named("JsonValue") and every Json method
     # on it failed at CODEGEN -- "no field or member function named getInt". Front-end
@@ -1606,6 +1612,8 @@ def typeTag(t: Type_): str
             return "tpl"
         on Type_.string_builder
             return "sbld"
+        on Type_.timer_handle
+            return "timer"
         on Type_.regex
             return "rgx"
         on Type_.str_set
@@ -2337,6 +2345,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             return Type_.named(bname)
                         if bname == "Regex" and mem.member == "compile"
                             return Type_.regex
+                        if bname == "Timer" and mem.member == "start"
+                            return Type_.timer_handle
                         # CodeEditor.forZebra() (and any future static factory) →
                         # code_editor. The bare CodeEditor() ctor already infers via
                         # typeFromName above. Mirrors bootstrap TypeChecker:3523.
@@ -2524,6 +2534,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
                                            "'str' has no 'at' -- use s[i] for the byte at i, or s.chars() to iterate codepoints")
                                 return Type_.unknown_
+                        on Type_.timer_handle
+                            var tmname: str = mem.member
+                            if tmname == "elapsed"
+                                return Type_.float_
+                            if tmname == "elapsedMicros"
+                                return Type_.int_
+                            if tmname == "reset"
+                                return Type_.void_
                         on Type_.regex
                             var mname: str = mem.member
                             if mname == "find"
@@ -2559,6 +2577,20 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.string_
                             if sbmname == "len"
                                 return Type_.int_
+                            if sbmname == "append" or sbmname == "appendChar" or sbmname == "clear"
+                                return Type_.void_
+                            # BUG-341. The receiver is KNOWN to be a StringBuilder and its
+                            # method set is closed (the six names above), yet an unknown name
+                            # fell through to the List lowering and the user read Zig's
+                            # `expected type 'u8'` about an `append` they never wrote. Refuse
+                            # here, where the type is proven. `add` gets its own suggestion:
+                            # it is the List spelling, and the IDE slice wrote it first.
+                            var sb_hint: str = ""
+                            if sbmname == "add"
+                                sb_hint = " (did you mean 'append'?)"
+                            ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                       "'StringBuilder' has no '" + sbmname + "'" + sb_hint + " -- methods are append, appendChar, clear, len, build, toString")
+                            return Type_.unknown_
                         on Type_.sys_process
                             var pmname: str = mem.member
                             if pmname == "pid"

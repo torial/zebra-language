@@ -4134,32 +4134,36 @@ pub fn _zbr_fn_isContainerTypeRef(tr: _zbr_ty_TypeRef) bool {
 // zbr:selfhost/CgHelpers.zbr:2074
             return ((std.mem.eql(u8, g.name, "List") or std.mem.eql(u8, g.name, "HashMap")) or std.mem.eql(u8, g.name, "Set"));
         },
+        .named => |n| {
+// zbr:selfhost/CgHelpers.zbr:2081
+            return std.mem.eql(u8, n.name, "StringBuilder");
+        },
         else => {
-// zbr:selfhost/CgHelpers.zbr:2076
+// zbr:selfhost/CgHelpers.zbr:2083
             return false;
         },
     }
 }
 
 pub fn _zbr_fn_paramNeedsAddrOf(p: _zbr_ty_Param, body: ?std.ArrayList(_zbr_ty_Stmt)) bool {
-// zbr:selfhost/CgHelpers.zbr:2086
+// zbr:selfhost/CgHelpers.zbr:2093
     if ((p.type_ == null)) {
-// zbr:selfhost/CgHelpers.zbr:2086
+// zbr:selfhost/CgHelpers.zbr:2093
         return false;
     }
-// zbr:selfhost/CgHelpers.zbr:2087
+// zbr:selfhost/CgHelpers.zbr:2094
     if ((!_zbr_fn_isContainerTypeRef(p.type_.?))) {
-// zbr:selfhost/CgHelpers.zbr:2087
+// zbr:selfhost/CgHelpers.zbr:2094
         return false;
     }
-// zbr:selfhost/CgHelpers.zbr:2088
+// zbr:selfhost/CgHelpers.zbr:2095
     if (body) |b| {
-// zbr:selfhost/CgHelpers.zbr:2089
+// zbr:selfhost/CgHelpers.zbr:2096
         const ms: *_zbr_ty_StrSet = _zbr_fn_scanMutations(b, null);
-// zbr:selfhost/CgHelpers.zbr:2090
+// zbr:selfhost/CgHelpers.zbr:2097
         return ms.contains_(p.name);
     }
-// zbr:selfhost/CgHelpers.zbr:2091
+// zbr:selfhost/CgHelpers.zbr:2098
     return false;
 }
 

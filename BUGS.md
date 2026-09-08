@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-349. Next new bug: BUG-350.**
+**Last bug number generated: BUG-353. Next new bug: BUG-354.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -100,7 +100,7 @@ single-file, so no gate saw it; `zebra-ide/src/ide.zbr` (three modules) found it
 first build. Fix: `copyGuiDeps` in selfhost/main.zbr walks `@import("X.zig")` lines
 transitively and copies each module into the project. Control: ide.zbr builds on tui.
 
-### BUG-341: unknown method on `StringBuilder` (`sb.add(s)`) is not rejected — leaks Zig `expected type 'u8', found '[]const u8'` — OPEN (found 2026-09-07)
+### BUG-341: unknown method on `StringBuilder` (`sb.add(s)`) is not rejected — leaks Zig `expected type 'u8', found '[]const u8'` — FIXED 2026-09-08
 
 `StringBuilder` lowers to `ArrayList(u8)`, so `.add` fell through to the generic List
 lowering (`append`) and Zig complained about the element type. The checker knows the
@@ -108,7 +108,11 @@ receiver type is StringBuilder and its method set (`append`, `build`, `toString`
 `len`); "unknown method `add` on StringBuilder (did you mean `append`?)" is the
 diagnostic. Workaround: `.append`.
 
-### BUG-342: a `StringBuilder` PARAMETER cannot be appended to — leaks Zig `expected '*T', found '*const T'` — OPEN (found 2026-09-07)
+Fix: TypeChecker's `string_builder` arm now returns void for `append/appendChar/clear` and
+REFUSES any other name with the closed method list (`add` gets "did you mean 'append'?").
+Control: test/bug341_sb_unknown_method_fail.zbr (smoke_tc_fail).
+
+### BUG-342: a `StringBuilder` PARAMETER cannot be appended to — leaks Zig `expected '*T', found '*const T'` — FIXED 2026-09-08
 
 `def f(sink: StringBuilder)` then `sink.append(..)`: parameters are const, the emitted
 `appendSlice` needs `*T`. `List(T)` parameters DO accept `.add` (they lower to a
@@ -116,6 +120,11 @@ pointer), so the two container types disagree about what a parameter is, and the
 diagnostic is Zig's. Either lower StringBuilder params like List params, or refuse at
 the checker with "cannot mutate parameter `sink`; return a str instead". Workaround
 (zebra-ide/src/ide.zbr `symbolLines`): build locally and return `sb.build()`.
+
+Fix: `isContainerTypeRef` (CgHelpers) now includes `StringBuilder`, so it takes the BUG-091
+addr-of convention exactly like `List(T)`: param emitted as `*std.ArrayList(u8)`, `&arg` at the
+call site, pointer forwarded unchanged. Control: test/bug342_sb_param_append_test.zbr (free fn +
+method, forwarding through a class). The ide.zbr workaround is removed.
 
 ### BUG-343: a user module named `sci` (or `ui`) collides with the libui_ng section's private imports — Zig `duplicate struct member name 'sci'` — FIXED 2026-09-07 (branch ide-slice)
 
@@ -134,17 +143,28 @@ identifier.
 a named (class/struct) receiver means a user field. Control:
 test/bug344_items_field_iter_test.zbr (class-element and struct-element lists).
 
-### BUG-345: `Timer` cannot be a field or annotated type — `var t: Timer? = nil` leaks Zig `use of undeclared identifier 'Timer'` — OPEN (found 2026-09-07)
+### BUG-345: `Timer` cannot be a field or annotated type — `var t: Timer? = nil` leaks Zig `use of undeclared identifier 'Timer'` — FIXED 2026-09-08
 
 `Timer.start()` infers to `timer_handle`, but `Timer` is not in `typeFromName`, so it
 cannot be written as a field/param/annotation. Workaround (zebra-ide/src/gates.zbr):
 `DateTime.now().epoch_ms` arithmetic.
 
-### BUG-346: a method call on an IMPORTED function's result is untyped — `joinPath(a, b).replace(..)` leaks Zig `no field or member function named 'replace'` — OPEN (found 2026-09-07)
+Fix: `Type_.timer_handle` added to the selfhost (the bootstrap always had it): `typeFromName`,
+`Timer.start()` inference, method returns (`elapsed` float ms / `elapsedMicros` int / `reset`),
+genType `Timer` → `TimerHandle`. Control: test/bug345_timer_field_test.zbr (field, `Timer?`
+field, annotated local, parameter). The gates.zbr workaround is removed.
+
+### BUG-346: a method call on an IMPORTED function's result is untyped — `joinPath(a, b).replace(..)` leaks Zig `no field or member function named 'replace'` — FIXED 2026-09-08
 
 Same-module calls infer their return type; a `use`d module's function does not, so
 the method dispatches as a generic member. Workaround: bind to a typed local first
 (zebra-ide/src/ide.zbr `markBuildDiags`).
+
+Found while fixing: the SAME-module case was broken too (the entry above was wrong about
+that) — `isStringExpr` decided from a NAME LIST and never asked the checker. Fix: it now
+falls back to `inferExpr` for any call, so a `def f(..): str` result is a string wherever
+the by-value string forms are chosen. Control: test/bug346_imported_call_method_test.zbr
+(str / List(str) / class results from a `use`d module) + bug350 below.
 
 ### BUG-347: compile-and-run forwarded NO arguments to the program — FIXED 2026-09-07 (branch gates)
 
@@ -176,6 +196,44 @@ where `debug` lived. CLOSED OUT the same day: `zebra debug <file>` is native in
 selfhost/main.zbr (`dbgRunSession`: single-threaded, both pipes polled without
 blocking, so this defect class cannot recur there); zebra-ide's dap_client_test passes
 against it. Only `--listen PORT` still delegates to the bootstrap.
+
+### BUG-350: `return s.split(sep)` from a `List(str)` function emitted the raw SplitIterator — FIXED 2026-09-08
+
+Only the ANNOTATED-VAR site (`var xs: List(str) = s.split(..)`, BUG-092) collected the
+iterator into a list; the return position emitted `std.mem.splitSequence(..)` verbatim and
+Zig said "expected 'array_list...', found 'mem.SplitIterator'". Found writing the BUG-346
+fixture. Fix: the collector is one helper (`genSplitCollect`, a labeled block expression)
+used by both sites; genReturn uses it when the declared return type is `List(..)` and the
+value is `.split/.lines` on a non-class receiver. Control: test/bug350_return_split_test.zbr.
+
+### BUG-351: `StringBuilder.build()` EMPTIES the builder — `sb.len()` is 0 afterwards — OPEN (found 2026-09-08)
+
+`build()` lowers to `toOwnedSlice`, which moves the buffer out. test/string_builder_test.zbr
+was written expecting `print(sb.len())` → 12 after `print(sb.build())` and prints 0; the
+test is not in smoke so nobody saw it. Either semantics is defensible (a consuming `build()`
+is cheaper; a non-consuming one matches the comment and Java/C#). Sean's call. Not touched.
+
+### BUG-352: a for-loop variable named like a FIELD of the enclosing class was emitted as `self.field` — FIXED 2026-09-08
+
+`class LspClient: var name` + `for name in File.listDir(d)` inside a method emitted
+`self.name` for every use in the body (and Zig then said "unused capture" about the loop
+variable, which points nowhere near the cause). `isFieldName` excluded PARAMETERS but not
+loop variables; infer_ctx locals cannot carry it because they are never popped, so a
+post-loop bare `name` would have stopped meaning the field. Fix: `active_loop_vars`, a
+StrSet shared through `indented()`, pushed/popped by genForIn/genForNum; `isFieldName` is
+false while the name is on it. Control: test/bug352_loop_var_shadows_field_test.zbr
+(field-typed list AND a parameter list; the post-loop `.name` still reads the field).
+Found by zebra-ide's rename_workspace_test.
+
+### BUG-353: `File.write(p, f(File.read(p)))` read an EMPTY file — the file was created (truncated) BEFORE the content argument was evaluated — FIXED 2026-09-08
+
+The lowering opened `createFile` first and evaluated the content expression inside
+`writeStreamingAll(...)`. Rewrite-in-place is the most natural way to write a rename's
+on-disk half, and it wrote `f("")`. Fix: the content is bound to `_fw_data` before the
+file is created (arguments left to right, as everywhere else). `File.append` and
+`File.writeLines` are plain calls and were already in order. Control:
+test/bug353_file_write_order_test.zbr. Found by zebra-ide's rename_workspace_test — the
+IDE's "unopened files rewritten on disk" path had never executed until then.
 
 ### BUG-334: `sys.readLine` / `sys.readBytes` created a NEW buffered stdin reader per call, discarding read-ahead — `zebra lsp` answered nothing on a pipe — FIXED 2026-09-06 (branch lsp-references)
 

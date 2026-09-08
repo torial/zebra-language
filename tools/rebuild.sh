@@ -63,6 +63,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO"
 
+# Binary names differ by host: `zebra.exe` on Windows (the primary dev box), `zebra`
+# on Linux (the cloud container). Every check below reads these, never a literal.
+# (2026-09-08: the literal `.exe` made a SUCCESSFUL Linux build report "missing".)
+ZEXE=zig-out/bin/zebra.exe
+[[ "$(uname -s)" == Linux ]] && ZEXE=zig-out/bin/zebra
+ZBOOT=zig-out/bin/zebra-bootstrap.exe
+[[ "$(uname -s)" == Linux ]] && ZBOOT=zig-out/bin/zebra-bootstrap
+
 REGEN=1
 MODULES=""
 FORCE=0
@@ -140,7 +148,7 @@ if [[ $REGEN -eq 1 ]]; then
     # which reads as "your new code is wrong" rather than "your compiler is stale".
     # That is the reassuring-but-wrong reading again, so the fix belongs here rather than
     # in a paragraph asking people to remember.
-    BOOT=zig-out/bin/zebra-bootstrap.exe
+    BOOT="$ZBOOT"
     for f in selfhost/stdlib_preamble.zig selfhost/napi_preamble.zig src/*.zig build.zig; do
         if [[ -f "$f" && ( ! -f "$BOOT" || "$f" -nt "$BOOT" ) ]]; then
             step "rebuilding the bootstrap first ($f is newer; it is embedded at build time)"
@@ -161,7 +169,7 @@ if [[ $REGEN -eq 1 ]]; then
         # N-1 (criterion 2, 2026-08-30): the regen authority is the SELFHOST, matching
         # tools/bootstrap_check.sh. Emitting one module here with a DIFFERENT compiler than
         # the full regen uses would leave that module in the other emitter's shape.
-        BOOT=zig-out/bin/zebra.exe
+        BOOT="$ZEXE"
         [[ -x "$BOOT" ]] || fail "$BOOT missing — run a full 'bash tools/rebuild.sh' first"
 
         # SCOPE CHECK. A half-regenerated tree is the failure this guards.
@@ -242,9 +250,9 @@ step "building zebra.exe"
 zbuild_or_fail "zig build failed"
 
 step "result"
-if [[ -x zig-out/bin/zebra.exe ]]; then
+if [[ -x "$ZEXE" ]]; then
     printf 'def main()\n    print("rebuild ok")\n' > /tmp/_rebuild_probe.zbr
-    if out=$(timeout 120 ./zig-out/bin/zebra.exe run /tmp/_rebuild_probe.zbr 2>&1) \
+    if out=$(timeout 120 "./$ZEXE" run /tmp/_rebuild_probe.zbr 2>&1) \
        && echo "$out" | grep -qF "rebuild ok"; then
         echo "  zebra.exe builds and runs"
         # Record WHICH generated Zig this binary was built from, so doctor can tell a
@@ -256,7 +264,7 @@ if [[ -x zig-out/bin/zebra.exe ]]; then
         fail "zebra.exe was built but cannot run a hello-world — something is badly wrong"
     fi
 else
-    fail "zig-out/bin/zebra.exe missing after build"
+    fail "$ZEXE missing after build"
 fi
 
 # Footgun 5 (found 2026-07-30): rebuild.sh could report OK on a tree doctor calls
@@ -272,11 +280,11 @@ fi
 # After a SUCCESSFUL build the binaries correspond to the current sources by construction,
 # so stamping them is not faking the check — it is recording what the build just
 # established, in the medium the check reads. Only ever done on the success path.
-if [[ -x zig-out/bin/zebra-bootstrap.exe ]]; then
-    touch zig-out/bin/zebra-bootstrap.exe
+if [[ -x "$ZBOOT" ]]; then
+    touch "$ZBOOT"
 fi
-if [[ -x zig-out/bin/zebra.exe ]]; then
-    touch zig-out/bin/zebra.exe
+if [[ -x "$ZEXE" ]]; then
+    touch "$ZEXE"
 fi
 
 echo

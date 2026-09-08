@@ -1,0 +1,13 @@
+# BUG-353: File.write(p, f(File.read(p))) must read the OLD content before truncating.
+def upper(s: str): str
+    return s.upper()
+
+def main()
+    var p: str = "/tmp/bug353_rewrite.txt"
+    if sys.getenv("TEMP") as t
+        p = t.replace("\\", "/") + "/bug353_rewrite.txt"
+    File.write(p, "hello")
+    File.write(p, upper(File.read(p)) + "!")
+    assert File.read(p) == "HELLO!", "got '" + File.read(p) + "'"
+    File.delete(p)
+    print("bug353: ok")

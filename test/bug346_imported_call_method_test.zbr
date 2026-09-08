@@ -1,0 +1,10 @@
+# BUG-346: a method call on an IMPORTED function's result must be typed.
+use bug346_lib exposing joinPath, parts, mkBox
+
+def main()
+    var s: str = joinPath("a", "b").replace("/", "\\")
+    assert s == "a\\b"
+    assert parts("x/y/z").len == 3
+    assert mkBox(21).twice() == 42
+    assert joinPath("p", "q").len == 3
+    print("bug346: ok")

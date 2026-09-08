@@ -2072,6 +2072,13 @@ def isContainerTypeRef(tr: TypeRef): bool
             # §28f: Set(T) is a value-typed hash map like HashMap — a mutated
             # Set param must be passed as *T with &arg so add()/remove() land.
             return g.name == "List" or g.name == "HashMap" or g.name == "Set"
+        on TypeRef.named as n
+            # BUG-342: StringBuilder IS `std.ArrayList(u8)` and was the one container
+            # left out of this convention, so `def f(sink: StringBuilder)` +
+            # `sink.append(..)` reached Zig as `appendSlice` on a `*const` -- the
+            # user read "expected '*T', found '*const T'" about a parameter that
+            # `List(T)` params accept without comment. Same rule, same emit.
+            return n.name == "StringBuilder"
         else
             return false
 

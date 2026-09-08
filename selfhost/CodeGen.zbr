@@ -2766,6 +2766,12 @@ struct Generator
     # BUG-097: param names emitted as *ArrayList in the current method (BUG-091).
     # genArgListNamed uses this for three-case logic: ptr→ptr (pass), ptr→value (.*), value→ptr (&).
     var caller_ptr_params    : StrSet
+    # BUG-352: the loop variables of the for-in / for-num loops currently being
+    # emitted. Shared by reference through `indented()`, pushed on entry and popped on
+    # exit, so a loop variable named like a FIELD is the loop variable inside the loop
+    # and the field again after it (infer_ctx locals are never popped, so they cannot
+    # carry this distinction).
+    var active_loop_vars     : StrSet
     # Phase 1 TcResult plumbing — populated from TC artifact; consumed in Phase 3.
     var tc_result            : TcResult?
     # Return type of the current method; nil outside a method or for void methods.
@@ -2871,6 +2877,7 @@ struct Generator
         .ensure_armed_active   = false
         .ensure_uses_result    = false
         .caller_ptr_params     = StrSet()
+        .active_loop_vars      = StrSet()
         .tc_result             = nil
         .method_return_type    = nil
         .dynlib_vars           = StrSet()
@@ -3281,6 +3288,9 @@ struct Generator
                     return
                 if n.name == "SysProcess"
                     w.emit("*_SysProcess")
+                    return
+                if n.name == "Timer"
+                    w.emit("TimerHandle")             # BUG-345: the preamble's handle struct
                     return
                 if n.name == "DynLib"
                     w.emit("*_DynLib")
@@ -6594,38 +6604,11 @@ struct Generator
                         if gt092.name == "List"
                             if ec092.callee is Expr.member as mem092
                                 if mem092.member == "split" or mem092.member == "lines"
-                                    var uid092 = w.nextUid()
-                                    var lbl092: str = "blk092_${uid092.toString()}"
-                                    var lname092: str = "_ll_${uid092.toString()}"
-                                    var sname092: str = "_split_iter_${uid092.toString()}"
-                                    var ename092: str = "_se_${uid092.toString()}"
                                     w.emit(": ")
                                     genType(n.type_!)
                                     w.emit(" = ")
-                                    w.emit(lbl092)
-                                    w.emit(": { var ")
-                                    w.emit(lname092)
-                                    w.emit(": ")
-                                    genType(n.type_!)
-                                    w.emit(" = ")
-                                    genType(n.type_!)
-                                    w.emit(".empty; var ")
-                                    w.emit(sname092)
-                                    w.emit(" = ")
-                                    genExpr(ie)
-                                    w.emit("; while (")
-                                    w.emit(sname092)
-                                    w.emit(".next()) |")
-                                    w.emit(ename092)
-                                    w.emit("| { ")
-                                    w.emit(lname092)
-                                    w.emit(".append(_allocator, ")
-                                    w.emit(ename092)
-                                    w.emit(") catch @panic(\"OOM\"); } break :")
-                                    w.emit(lbl092)
-                                    w.emit(" ")
-                                    w.emit(lname092)
-                                    w.emit("; };\n")
+                                    genSplitCollect(ie, n.type_!)
+                                    w.emit(";\n")
                                     return
         # Type annotation if present
         if n.type_ != nil and n.init_expr == nil
@@ -7590,6 +7573,52 @@ struct Generator
                             else
                                 pass
 
+    # BUG-092 / BUG-350: `s.split(sep)` and `s.lines()` are ITERATORS in the emitted
+    # Zig; a List(str) position (an annotated var, a `return` from a `List(str)`
+    # function) wants them collected. One labeled block expression, usable in any
+    # expression position, so the two sites cannot drift.
+    def genSplitCollect(ie: Expr, list_t: TypeRef)
+        var uid092 = w.nextUid()
+        var lbl092: str = "blk092_${uid092.toString()}"
+        var lname092: str = "_ll_${uid092.toString()}"
+        var sname092: str = "_split_iter_${uid092.toString()}"
+        var ename092: str = "_se_${uid092.toString()}"
+        w.emit(lbl092)
+        w.emit(": { var ")
+        w.emit(lname092)
+        w.emit(": ")
+        genType(list_t)
+        w.emit(" = ")
+        genType(list_t)
+        w.emit(".empty; var ")
+        w.emit(sname092)
+        w.emit(" = ")
+        genExpr(ie)
+        w.emit("; while (")
+        w.emit(sname092)
+        w.emit(".next()) |")
+        w.emit(ename092)
+        w.emit("| { ")
+        w.emit(lname092)
+        w.emit(".append(_allocator, ")
+        w.emit(ename092)
+        w.emit(") catch @panic(\"OOM\"); } break :")
+        w.emit(lbl092)
+        w.emit(" ")
+        w.emit(lname092)
+        w.emit("; }")
+
+    # True when `e` is `recv.m(..)` and recv is a user class/struct instance -- a
+    # user-defined `split` must not be mistaken for the str builtin.
+    def isNamedRecvCall(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        if e is Expr.call as c
+            if c.callee is Expr.member as m
+                var rt: Type_ = inferExpr(m.object, .infer_ctx!)
+                return rt is Type_.named
+        return false
+
     def genReturn(r: StmtReturn)
         # Contract `result` capture: when the current function has an ensure
         # referencing `result`, capture the value and arm the flag before returning.
@@ -7606,6 +7635,17 @@ struct Generator
         if ensure_armed_active
             writeIndent()
             w.emit("_ensure_armed = true;\n")
+        # BUG-350: `return s.split(sep)` from a `List(str)` function emitted the raw
+        # SplitIterator ("expected 'array_list...', found 'mem.SplitIterator'"); only
+        # the annotated-var site collected it. Same collector, return position.
+        if r.value != nil and method_return_type != nil
+            if (method_return_type!) is TypeRef.generic as rgt350
+                if rgt350.name == "List" and isSplitIter(r.value!) and not isNamedRecvCall(r.value!)
+                    writeIndent()
+                    w.emit("return ")
+                    genSplitCollect(r.value!, method_return_type!)
+                    w.emit(";\n")
+                    return
         # BUG-079: auto-hoist method chain on struct temporary in return position.
         # Only applies to named class types — string/list/hashmap stdlib chains must
         # go through genMemberCall (which dispatches to std.mem.replaceOwned etc.).
@@ -7911,6 +7951,16 @@ struct Generator
     # Conservative: 1 var → List (.items), 2 vars → HashMap iterator.
 
     def genForIn(fi: StmtForIn)
+        var pushed352: List(str) = List(str)()
+        for fv352 in fi.vars
+            if not active_loop_vars.contains_(fv352)
+                active_loop_vars.add(fv352)
+                pushed352.add(fv352)
+        .genForInBody(fi)
+        for pv352 in pushed352
+            active_loop_vars.removeOne(pv352)
+
+    def genForInBody(fi: StmtForIn)
         var ig = indented()
         # Nested loops must not inherit the enclosing for-else label — their breaks are plain.
         ig.for_else_label = nil
@@ -8666,6 +8716,15 @@ struct Generator
     # ── genForNum ─────────────────────────────────────────────────────────────
 
     def genForNum(fn_: StmtForNum)
+        var pushed352: bool = false
+        if not active_loop_vars.contains_(fn_.var_)
+            active_loop_vars.add(fn_.var_)
+            pushed352 = true
+        .genForNumBody(fn_)
+        if pushed352
+            active_loop_vars.removeOne(fn_.var_)
+
+    def genForNumBody(fn_: StmtForNum)
         var ig = indented()
         # Nested loops must not inherit the enclosing for-else label.
         ig.for_else_label = nil
@@ -11186,6 +11245,9 @@ struct Generator
         if param_names != nil
             if param_names!.contains_(name)
                 return false
+        # BUG-352: nor while a loop variable of that name is in scope
+        if active_loop_vars.contains_(name)
+            return false
         for d in owner_members
             if d is Decl.var_ as fld
                 if fld.name == name
@@ -11449,6 +11511,17 @@ struct Generator
                         if cm.object is Expr.ident as lid
                             if localIsListStr(lid.name)
                                 return true
+                # BUG-346. A call to a `def f(...): str` -- same module or `use`d -- is
+                # a string, and the name lists above cannot know that. Everything
+                # downstream of this predicate (the chain hoist, by-value string
+                # method forms) was deciding from NAMES; ask the checker, which has
+                # the signature. Without this, `joinPath(a, b).replace(..)` was
+                # materialized as `var _mc_N = f(..); _mc_N.replace(..)` -- Zig's
+                # "no field or member function named 'replace'" on a slice.
+                if .infer_ctx != nil
+                    var call_t: Type_ = inferExpr(e, .infer_ctx!)
+                    if call_t is Type_.string_
+                        return true
             on Expr.to_non_nil as tnn
                 # x! where x is a string? → still a string
                 return isStringExpr(tnn.expr)
@@ -16062,17 +16135,23 @@ struct Generator
             else
                 w.emit("\"\"")
             w.emit(";\n")
+            # BUG-353: the CONTENT is evaluated before the file is created. createFile
+            # truncates, so `File.write(p, f(File.read(p)))` -- rewrite-in-place, the
+            # most natural way to write it -- read an EMPTY file and wrote f("").
+            # Found by zebra-ide's rename_workspace_test, 2026-09-08.
+            writeIndent()
+            w.emit("    const _fw_data: []const u8 = ")
+            if args.len >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            w.emit(";\n")
             writeIndent()
             w.emit("    const _fw_f = std.Io.Dir.cwd().createFile(_io, _zbr_norm_path(_fw_path), .{}) catch @panic(\"File.write error\");\n")
             writeIndent()
             w.emit("    defer _fw_f.close(_io);\n")
             writeIndent()
-            w.emit("    _fw_f.writeStreamingAll(_io, ")
-            if args.len >= 2
-                genExpr(args.at(1).value)
-            else
-                w.emit("\"\"")
-            w.emit(") catch @panic(\"File.write error\");\n")
+            w.emit("    _fw_f.writeStreamingAll(_io, _fw_data) catch @panic(\"File.write error\");\n")
             writeIndent()
             w.emit("    break :blk_fw {};\n")
             writeIndent()

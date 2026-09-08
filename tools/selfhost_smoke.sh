@@ -1326,6 +1326,16 @@ smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
 smoke_run_bounded test/sys_spawn_piped_test.zbr "sys_spawn_piped_test: ok" 60
 smoke_run test/bug335_json_query_in_method_test.zbr "bug335: n=1"
 smoke_run test/bug344_items_field_iter_test.zbr "bug344: ok"
+# 2026-09-08: the four compiler bugs the zebra-ide slice surfaced, each seen RED first.
+smoke_tc_fail test/bug341_sb_unknown_method_fail.zbr "'StringBuilder' has no 'add' (did you mean 'append'?)"
+smoke_run test/bug342_sb_param_append_test.zbr "bug342: ok"
+smoke_run test/bug345_timer_field_test.zbr "bug345: ok"
+smoke_run test/bug346_imported_call_method_test.zbr "bug346: ok"
+# BUG-350 (found while fixing 346): `return s.split(sep)` from a List(str) function.
+smoke_run test/bug350_return_split_test.zbr "bug350: ok"
+# BUG-352 / BUG-353 (found by zebra-ide's rename_workspace_test, 2026-09-08)
+smoke_run test/bug352_loop_var_shadows_field_test.zbr "bug352: ok"
+smoke_run test/bug353_file_write_order_test.zbr "bug353: ok"
 smoke_run_bounded test/sys_process_exit_code_test.zbr "sys_process_exit_code_test: ok" 120
 # BUG-347: program-argument passthrough after `--` (inline: smoke_run has no argv slot)
 if got=$("$ZEBRA" test/prog_args_passthrough_test.zbr -- alpha "b c" --verbose 2>&1) && echo "$got" | grep -qF "prog_args: alpha|b c|--verbose|"; then

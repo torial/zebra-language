@@ -1,0 +1,5 @@
+# BUG-341: an unknown method on StringBuilder must be a Zebra error, not leaked Zig.
+def main()
+    var sb = StringBuilder()
+    sb.add("x")
+    print(sb.build())

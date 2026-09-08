@@ -1,0 +1,25 @@
+# BUG-345: Timer usable as a field, annotated local, parameter and optional.
+class Job
+    var t: Timer? = nil
+    var started: Timer
+    cue init()
+        .started = Timer.start()
+    def go()
+        .t = Timer.start()
+    def spent(): float
+        if .t as tt
+            return tt.elapsed()
+        return -1.0
+
+def elapsed(t: Timer): float
+    return t.elapsed()
+
+def main()
+    var j = Job()
+    assert j.spent() == -1.0
+    j.go()
+    var tl: Timer = Timer.start()
+    assert elapsed(tl) >= 0.0
+    assert j.spent() >= 0.0
+    assert elapsed(j.started) >= 0.0
+    print("bug345: ok")

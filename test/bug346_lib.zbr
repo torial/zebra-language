@@ -1,0 +1,15 @@
+def joinPath(root: str, rel: str): str
+    return root + "/" + rel
+
+def parts(p: str): List(str)
+    return p.split("/")
+
+class Box
+    var v: int = 0
+    cue init(n: int)
+        .v = n
+    def twice(): int
+        return .v * 2
+
+def mkBox(n: int): Box
+    return Box(n)

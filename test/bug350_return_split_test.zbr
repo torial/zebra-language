@@ -1,0 +1,10 @@
+# BUG-350: `return s.split(sep)` from a List(str) function collects the iterator.
+def parts(p: str): List(str)
+    return p.split("/")
+def parts2(p: str): List(str)
+    var xs: List(str) = p.split("/")
+    return xs
+def main()
+    assert parts2("a/b").len == 2
+    assert parts("a/b").len == 2
+    print("bug350: ok")

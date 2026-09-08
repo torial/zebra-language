@@ -1,0 +1,28 @@
+# BUG-352: a for-loop variable named like a FIELD of the enclosing class must be
+# the loop variable inside the loop, not `self.field`.
+class Bag
+    var name: str = "bag"
+    var items: List(str)
+    cue init()
+        .items = List(str)()
+    def joined(): str
+        var out: str = ""
+        for name in .items
+            out = out + name + ","
+        return out
+    def firstLong(names: List(str)): str
+        for name in names
+            if name.len > 3
+                return name
+        return .name
+
+def main()
+    var b = Bag()
+    b.items.add("x")
+    b.items.add("yy")
+    assert b.joined() == "x,yy,", "got " + b.joined()
+    var ns: List(str) = List(str)()
+    ns.add("ab")
+    ns.add("abcd")
+    assert b.firstLong(ns) == "abcd", "got " + b.firstLong(ns)
+    print("bug352: ok")

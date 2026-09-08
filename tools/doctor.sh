@@ -80,6 +80,8 @@ fi
 # identical restore does not move it, and an interrupted regen does.
 STAMP="zig-out/.selfhost-stamp"
 ZEXE="zig-out/bin/zebra.exe"
+# Linux (the cloud container) builds `zebra`, not `zebra.exe` (2026-09-08, same fix as rebuild.sh).
+[[ "$(uname -s)" == Linux ]] && ZEXE="zig-out/bin/zebra"
 if [[ -f "$ZEXE" ]] && compgen -G "selfhost/*.zig" >/dev/null; then
     now_stamp="$(cat selfhost/*.zig 2>/dev/null | sha1sum | cut -d' ' -f1)"
     if [[ -f "$STAMP" ]]; then
@@ -141,12 +143,12 @@ else
 fi
 
 # ── 4. the compiler actually works ───────────────────────────────────────────
-if [[ ! -x zig-out/bin/zebra.exe ]]; then
-    wrong "zig-out/bin/zebra.exe missing — run: bash tools/rebuild.sh"
+if [[ ! -x "$ZEXE" ]]; then
+    wrong "$ZEXE missing — run: bash tools/rebuild.sh"
 else
     probe=$(mktemp -t doctor-XXXXXX).zbr
     printf 'def main()\n    print("doctor ok")\n' > "$probe"
-    if out=$(timeout 180 ./zig-out/bin/zebra.exe run "$probe" 2>&1) && echo "$out" | grep -qF "doctor ok"; then
+    if out=$(timeout 180 "./$ZEXE" run "$probe" 2>&1) && echo "$out" | grep -qF "doctor ok"; then
         ok "zebra.exe compiles and runs a hello-world"
     else
         wrong "zebra.exe present but cannot run a hello-world"
