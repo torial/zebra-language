@@ -231,10 +231,10 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 14 <!-- doc-gen: 14 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 28 <!-- doc-gen: 28 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 30 <!-- doc-gen: 30 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 37 <!-- doc-gen: 37 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 41 <!-- doc-gen: 41 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--fast` | 29 <!-- doc-gen: 29 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 31 <!-- doc-gen: 31 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 38 <!-- doc-gen: 38 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 42 <!-- doc-gen: 42 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -985,6 +985,16 @@ python tools/lsp_server_smoke.py   # THE LSP PROTOCOL GATE, registered as `lsp-s
                                 #   CANNOT SEE: whether an editor renders any of it, or
                                 #   anything about the LSP paths the conversation does not
                                 #   exercise. 14 assertions.
+python tools/lsp_workspace_smoke.py  # THE `use`-GRAPH GATE, registered as `lsp-workspace`
+                                #   (FAST tier, ~3s). Three files in a temp dir, ONE open:
+                                #   references / definition / rename must reach the module
+                                #   the document `use`s and the sibling that uses IT, from
+                                #   disk, and must NOT touch a sibling with the same name
+                                #   that is not in the graph. Before 2026-09-08 the server
+                                #   searched open documents only: a rename at a call site
+                                #   left the definition alone and the program stopped
+                                #   compiling; Definition into an unopened module was null.
+                                #   Found by zebra-ide's rename_workspace_test.
 bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surface`
                                 #   (FAST tier, ~16s) -- the only gate that exercises the
                                 #   compiler AS A COMMAND rather than as a translator.
@@ -2567,16 +2577,6 @@ Key idioms worth remembering up front:
 
 ## Notes
 
-- **State handoff 2026-09-07 (read before touching GUI/debug code):** the IDE work
-  (`C:\Projects\zebra-ide`) landed P0–P4 across this repo, zig-libui-ng (e1b68d3, unpushed)
-  and zebra-ide; `zebra debug <file>` is now native (`dbgRunSession`, selfhost/main.zbr);
-  new sys builtins `spawnPipedIn/exitCode/readStdinAvailable/stdinClosed/writeStdout` and
-  `--` program-arg passthrough. The libui pin in `luiBuildZon` still points at 93c7f54b,
-  which LACKS `Scintilla.OnNotify`; the `_ce_on_notify` / `takeModified` code in
-  gui_libui_ng_section.zig is `@hasDecl`-guarded so the build passes — that is waiting on
-  Sean pushing zig-libui-ng and running `tools/bump_libui_pin.sh`, not on code. Nothing has
-  yet run on Windows with a window open. Full status, owed list, open worklist:
-  `C:\Projects\zebra-ide\PLAN.md` (last section); wiki `concept_zebra-lightweight-ide` §7b.
 - Platform: Windows is the primary dev environment; bash paths via Git Bash.
 - Binaries and build caches (`*.exe`, `*.pdb`, `.zig-cache/`, `zig-out/`) are
   gitignored — do not commit them.

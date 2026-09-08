@@ -449,6 +449,10 @@ run_fast "boundary"       "0 fail"   bash tools/boundary_check.sh
 run_fast "stream-sep"     "PASS"     bash tools/stream_check.sh
 run_fast "cli-surface"   "PASS"     bash tools/cli_check.sh
 run_fast "lsp-smoke"     "passed"   python tools/lsp_server_smoke.py
+# `zebra lsp` sees the `use` graph (modules a document uses + same-dir dependents) from
+# disk, not only open documents -- references / definition / rename across files with
+# ONE file open. Found by zebra-ide's rename_workspace_test, 2026-09-08.
+run_fast "lsp-workspace" "passed"   python tools/lsp_workspace_smoke.py
 run_fast "debug-map"     "passed"   bash tools/debug_map_check.sh
 
 # THE ONLY GATE THAT BUILDS WITH --release. Every other gate here is Debug, which is

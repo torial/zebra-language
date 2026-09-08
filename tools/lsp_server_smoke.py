@@ -13,6 +13,8 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ZEBRA = os.path.join(ROOT, "zig-out", "bin", "zebra.exe")
+if not os.path.exists(ZEBRA) and os.path.exists(os.path.join(ROOT, "zig-out", "bin", "zebra")):
+    ZEBRA = os.path.join(ROOT, "zig-out", "bin", "zebra")   # Linux build (2026-09-08)
 
 
 def frame(obj):

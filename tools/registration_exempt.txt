@@ -14,6 +14,7 @@ bug221_transitive_init_leaf  # support module for a bug fixture; exercised throu
 bug221_transitive_init_mid  # support module for a bug fixture; exercised through its importer
 bug235_use_lib  # helper module imported by other tests; has no main()
 bug238_except_lib  # helper module imported by other tests; has no main()
+bug346_lib  # helper module imported by bug346_imported_call_method_test; has no main()
 crossmod_expose_lib  # helper module imported by other tests; has no main()
 crossmod_hatopt_lib  # helper module imported by other tests; has no main()
 crossmod_modvar_lib  # helper module imported by other tests; has no main()

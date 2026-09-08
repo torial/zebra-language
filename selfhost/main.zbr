@@ -1629,6 +1629,111 @@ def lspRenameJson(docs: HashMap(str, str), name: str, new_name: str): str
     sb.append("}}")
     return sb.build()
 
+# ── Workspace: the `use` graph around one document ────────────────────────────
+# References / rename / definition used to see OPEN documents only, so a rename at a
+# call site left the `use`d module's definition untouched and Definition into an
+# unopened module answered null (zebra-ide's rename_workspace_test, 2026-09-08).
+# lspWorkspaceDocs widens `docs` with, from disk: every module the document `use`s
+# (dotted names → nested paths, resolved beside the document) and every .zbr in
+# the document's directory that `use`s IT (dependents; one directory, not
+# recursive). Open documents keep their in-memory text; disk copies fill the gaps.
+
+def lspUriToPath(u: str): str
+    var p: str = u
+    if p.startsWith("file:///") and p.len > 9 and p[9..10] == ":"
+        p = p[8..p.len]                                   # file:///C:/x → C:/x
+    else if p.startsWith("file://")
+        p = p[7..p.len]
+    return p.replace("%20", " ")
+
+def lspPathToUri(p: str): str
+    var n: str = p.replace("\\", "/")
+    if n.len > 1 and n[1..2] == ":"
+        return "file:///" + n
+    return "file://" + n
+
+def lspDirOfPath(p: str): str
+    var n: str = p.replace("\\", "/")
+    var i: int = n.lastIndexOf("/")
+    if i < 0
+        return "."
+    if i == 0
+        return "/"
+    return n[0..i]
+
+def lspStemOf(p: str): str
+    var n: str = p.replace("\\", "/")
+    var i: int = n.lastIndexOf("/")
+    var b: str = n
+    if i >= 0
+        b = n[i+1..n.len]
+    if b.endsWith(".zbr")
+        b = b[0..b.len-4]
+    return b
+
+# The module names a document `use`s: the first token after `use`, before any
+# `exposing` / `as`. Dotted names are returned as written (a.b → resolved to a/b.zbr).
+def lspUseNames(text: str): List(str)
+    var out: List(str) = List(str)()
+    for l in text.split("\n")
+        var t: str = l.trim()
+        if not t.startsWith("use ")
+            continue
+        var rest: str = t[4..t.len].trim()
+        var name: str = rest
+        var sp: int = rest.indexOf(" ")
+        if sp >= 0
+            name = rest[0..sp]
+        if name != "" and not out.contains(name)
+            out.add(name)
+    return out
+
+# Does `text` `use` the module called `stem`? (word-exact: `use geo` and `use geo exposing`, not `use geometry`)
+def lspUsesModule(text: str, stem: str): bool
+    for n in lspUseNames(text)
+        if n == stem
+            return true
+        if n.endsWith("." + stem)
+            return true
+    return false
+
+def lspWorkspaceDocs(docs: HashMap(str, str), uri: str): HashMap(str, str)
+    var ws: HashMap(str, str) = HashMap(str, str)()
+    for u in docs.keys()
+        if docs.get(u) as t
+            ws.set(u, t)
+    var text: str = ""
+    if docs.get(uri) as dt
+        text = dt
+    else
+        return ws
+    var path: str = lspUriToPath(uri)
+    var dir: str = lspDirOfPath(path)
+    # forward: the modules this document uses
+    for n in lspUseNames(text)
+        var rel: str = n.replace(".", "/") + ".zbr"
+        var mp: str = dir + "/" + rel
+        if File.exists(mp)
+            var mu: str = lspPathToUri(mp)
+            if ws.get(mu) == nil
+                ws.set(mu, File.read(mp))
+    # dependents: siblings that use this document's module
+    var stem: str = lspStemOf(path)
+    if File.exists(dir) and File.isDir(dir)
+        for entry in File.listDir(dir)
+            if not entry.endsWith(".zbr")
+                continue
+            var sp: str = dir + "/" + entry
+            var su: str = lspPathToUri(sp)
+            if ws.get(su) != nil
+                continue
+            if File.isDir(sp)
+                continue
+            var st: str = File.read(sp)
+            if lspUsesModule(st, stem)
+                ws.set(su, st)
+    return ws
+
 # ── Position → symbol (hover / go-to-definition) ──────────────────────────────
 # Name-based: extract the identifier under the cursor, look it up in a per-buffer
 # declaration index.  Not scope-aware (top-level + members), but covers the common
@@ -2295,6 +2400,20 @@ def runLsp()
                         dsp = lspDeclPosition(dt, di.detail, di.name)
                     if dsp.end_line > 0 or dsp.line > 0
                         result = "{\"uri\":\"" + diagJsonEscape(uri) + "\",\"range\":" + lspSpanRange(dsp) + "}"
+                else
+                    # not declared here: look in the modules this document `use`s
+                    var wsd: HashMap(str, str) = lspWorkspaceDocs(docs, uri)
+                    for wu in wsd.keys()
+                        if wu == uri
+                            continue
+                        if wsd.get(wu) as wt
+                            if lspFindDecl(wt, wu, word) as wdi
+                                var wsp: Span = wdi.span
+                                if wsp.line <= 0
+                                    wsp = lspDeclPosition(wt, wdi.detail, wdi.name)
+                                if wsp.end_line > 0 or wsp.line > 0
+                                    result = "{\"uri\":\"" + diagJsonEscape(wu) + "\",\"range\":" + lspSpanRange(wsp) + "}"
+                                    break
             lspRespond(j.getInt("id"), result)
         else if method == "textDocument/references"
             var params = j.getObj("params")
@@ -2303,7 +2422,7 @@ def runLsp()
             var result: str = "[]"
             if docs.get(uri) as dt
                 var word: str = lspWordAt(dt, pos.getInt("line"), pos.getInt("character"))
-                result = lspReferencesJson(docs, word)
+                result = lspReferencesJson(lspWorkspaceDocs(docs, uri), word)
             lspRespond(j.getInt("id"), result)
         else if method == "textDocument/rename"
             var params = j.getObj("params")
@@ -2312,7 +2431,7 @@ def runLsp()
             var result: str = "null"
             if docs.get(uri) as dt
                 var word: str = lspWordAt(dt, pos.getInt("line"), pos.getInt("character"))
-                result = lspRenameJson(docs, word, params.getStr("newName"))
+                result = lspRenameJson(lspWorkspaceDocs(docs, uri), word, params.getStr("newName"))
             lspRespond(j.getInt("id"), result)
         else if method == "textDocument/completion"
             var params = j.getObj("params")
