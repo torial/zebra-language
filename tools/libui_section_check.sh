@@ -20,7 +20,7 @@ if [ -z "$B" ]; then
   done
 fi
 [ -f "${B:-/nonexistent}/ui.zig" ] || { echo "libui_section_check: no bindings (set LIBUI_BINDINGS)"; exit 2; }
-examples=("$@"); [ ${#examples[@]} -eq 0 ] && examples=(examples/tabs_sci_smoke.zbr examples/styler_smoke.zbr examples/editor_min.zbr)
+examples=("$@"); [ ${#examples[@]} -eq 0 ] && examples=(examples/tabs_sci_smoke.zbr examples/styler_smoke.zbr examples/editor_min.zbr examples/editor_events_smoke.zbr)
 fail=0
 for ex in "${examples[@]}"; do
   name=$(basename "$ex" .zbr); proj="${name}_gui_libui_ng"

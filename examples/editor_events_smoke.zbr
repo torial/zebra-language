@@ -1,0 +1,50 @@
+# Editor event bridge smoke (zebra-ide groundwork, 2026-09-08).
+# Every event-taking method of CodeEditor in one program, so the compiler's libui
+# section is SEMANTICALLY checked for them (Zig analyses lazily: a section function
+# nobody calls is never compiled). Compile control on both backends; on libui_ng
+# the events are real (Scintilla → uiScintillaOnNotify / uiScintillaOnKey).
+#
+#   zebra --gui-backend=tui examples/editor_events_smoke.zbr      (stubs: nothing fires)
+#   zebra --gui-backend=libui_ng examples/editor_events_smoke.zbr (a window; type, click a margin, press Ctrl+S / F5)
+
+class Model
+    var ed: CodeEditor? = nil
+    var modified: int = 0
+    var last_char: int = 0
+    var margin_line: int = -1
+    var last_key: int = 0
+    var ticks: int = 0
+
+def evInit(): Model
+    var m = Model()
+    m.ed = CodeEditor.forZebra()
+    m.ed!.setText("def main()\n    print(\"events\")\n")
+    m.ed!.hotkey(0x53, 1)      # Ctrl+S
+    m.ed!.hotkey(0x74, 0)      # F5
+    m.ed!.hotkey(0x7A, 2)      # Shift+F11
+    return m
+
+def update(m: Model, msg: int): Model
+    m.ticks = m.ticks + 1
+    if m.ed!.takeModified()
+        m.modified = m.modified + 1
+    var ch: int = m.ed!.takeCharAdded()
+    if ch != 0
+        m.last_char = ch
+    var ml: int = m.ed!.takeMarginClick()
+    if ml >= 0
+        m.margin_line = ml
+    var k: int = m.ed!.takeKey()
+    if k != 0
+        m.last_key = k
+    return m
+
+def view(g: Gui, m: Model)
+    using g.vbox("##root", true)
+        g.text("modified=" + m.modified.toString() + "  char=" + m.last_char.toString() + "  margin=" + m.margin_line.toString() + "  key=" + m.last_key.toString() + " (mods<<16|vk)")
+        m.ed!.render(g, "##code", 0, 0)
+        if g.button("tick")
+            g.send(1)
+
+def main()
+    Gui.run("Editor events smoke", 800, 500, evInit, update, view)

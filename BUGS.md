@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-353. Next new bug: BUG-354.**
+**Last bug number generated: BUG-355. Next new bug: BUG-356.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -240,6 +240,23 @@ file is created (arguments left to right, as everywhere else). `File.append` and
 `File.writeLines` are plain calls and were already in order. Control:
 test/bug353_file_write_order_test.zbr. Found by zebra-ide's rename_workspace_test — the
 IDE's "unopened files rewritten on disk" path had never executed until then.
+
+### BUG-354: assigning to a PARAMETER leaks Zig `cannot assign to constant` — OPEN (found 2026-09-08)
+
+`def update(m: Model, ..): Model` with `m = update(m, km)` inside (rebinding the parameter
+to the same object) reached Zig. Parameters are const by design; the checker should say
+so in Zebra ("cannot assign to parameter `m`; bind a new local") at the assignment.
+Found writing zebra-ide's shortcut dispatch.
+
+### BUG-355: a GUI-section type (`CodeEditor`, `Gui`) cannot cross a module boundary — `expected type '*keys._CodeEditor', found '*main._CodeEditor'` — OPEN (found 2026-09-08)
+
+Every module's emitted Zig carries its OWN copy of the GUI section, so `_CodeEditor` in
+`main.zig` and `_CodeEditor` in `keys.zig` are different types, and `def
+registerShortcuts(ed: CodeEditor)` in a `use`d module cannot take the root module's
+editor. Fix direction: emit the section once (root) and have dependents reference the
+root's types (`@import("root")._CodeEditor`), or lower section types to a shared
+runtime module. Workaround: keep functions that take a CodeEditor in the root module
+(zebra-ide keys.zbr is pure data for this reason).
 
 ### BUG-334: `sys.readLine` / `sys.readBytes` created a NEW buffered stdin reader per call, discarding read-ahead — `zebra lsp` answered nothing on a pipe — FIXED 2026-09-06 (branch lsp-references)
 

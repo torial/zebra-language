@@ -14812,6 +14812,10 @@ struct Generator
                     ce_fn = "_code_editor_take_char_added"
                 if mname == "takeMarginClick"
                     ce_fn = "_code_editor_take_margin_click"
+                if mname == "hotkey"
+                    ce_fn = "_code_editor_hotkey"
+                if mname == "takeKey"
+                    ce_fn = "_code_editor_take_key"
                 if ce_fn != ""
                     w.emit(ce_fn)
                     w.emit("(")

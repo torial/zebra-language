@@ -543,6 +543,15 @@ const _CodeEditor = struct {
     ev_char: i64 = 0,
     ev_margin_line: i64 = -1,
     ev_margin: i64 = -1,
+    // Keys (09-08). `hotkey(vk, mods)` registers a chord the program wants; the
+    // shim asks _ce_on_key before Scintilla sees any key-down, registered chords
+    // are CONSUMED and queued, everything else passes through untouched (so
+    // Scintilla's own Ctrl+C/V/Z/… keep working unless the program claims them).
+    // `takeKey()` pops one queued chord as (mods << 16) | vk, or 0.
+    hot: [32]u32 = [_]u32{0} ** 32,
+    hot_n: usize = 0,
+    keys: [16]u32 = [_]u32{0} ** 16,
+    key_n: usize = 0,
 };
 const _CeNotification = if (@hasDecl(_sci.Scintilla, "Notification")) _sci.Scintilla.Notification else struct { code: c_uint = 0, modificationType: c_int = 0, ch: c_int = 0, margin: c_int = 0, position: isize = 0 };
 fn _ce_on_notify(_s: *_sci.Scintilla, n: *const _CeNotification, _edp: ?*_CodeEditor) anyerror!void {
@@ -557,6 +566,35 @@ fn _ce_on_notify(_s: *_sci.Scintilla, n: *const _CeNotification, _edp: ?*_CodeEd
         },
         else => {},
     }
+}
+fn _ce_on_key(_s: *_sci.Scintilla, vk: c_int, mods: c_int, _edp: ?*_CodeEditor) bool {
+    _ = _s;
+    const _ed = _edp orelse return false;
+    const _chord: u32 = (@as(u32, @intCast(mods & 0xffff)) << 16) | @as(u32, @intCast(vk & 0xffff));
+    var i: usize = 0;
+    while (i < _ed.hot_n) : (i += 1) {
+        if (_ed.hot[i] == _chord) {
+            if (_ed.key_n < _ed.keys.len) { _ed.keys[_ed.key_n] = _chord; _ed.key_n += 1; }
+            return true;
+        }
+    }
+    return false;
+}
+fn _code_editor_hotkey(_ed: *_CodeEditor, vk: i64, mods: i64) void {
+    if (_ed.hot_n >= _ed.hot.len) return;
+    const _chord: u32 = (@as(u32, @intCast(mods & 0xffff)) << 16) | @as(u32, @intCast(vk & 0xffff));
+    var i: usize = 0;
+    while (i < _ed.hot_n) : (i += 1) if (_ed.hot[i] == _chord) return;
+    _ed.hot[_ed.hot_n] = _chord;
+    _ed.hot_n += 1;
+}
+fn _code_editor_take_key(_ed: *_CodeEditor) i64 {
+    if (_ed.key_n == 0) return 0;
+    const v = _ed.keys[0];
+    var i: usize = 1;
+    while (i < _ed.key_n) : (i += 1) _ed.keys[i - 1] = _ed.keys[i];
+    _ed.key_n -= 1;
+    return @intCast(v);
 }
 fn _code_editor_take_modified(_ed: *_CodeEditor) bool { const v = _ed.ev_modified; _ed.ev_modified = false; return v; }
 fn _code_editor_take_char_added(_ed: *_CodeEditor) i64 { const v = _ed.ev_char; _ed.ev_char = 0; return v; }
@@ -622,6 +660,7 @@ fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, _w: f6
         // guard keeps the section compiling against the currently pinned package
         // (events simply never fire, and the IDE's fallback polling carries on).
         if (comptime @hasDecl(_sci.Scintilla, "OnNotify")) _ed.scint.?.OnNotify(_CodeEditor, anyerror, _ce_on_notify, _ed);
+        if (comptime @hasDecl(_sci.Scintilla, "OnKey")) _ed.scint.?.OnKey(_CodeEditor, _ce_on_key, _ed);
         if (_ed.buf.len > 0) {
             _ed.scint.?.setText(_ed.buf[0.._ed.len]);
             _ce_style(_ed);
@@ -681,12 +720,20 @@ const _LuiMut = struct {
     smax: f64 = 1,
     pb: ?*_ui.ProgressBar = null,
     btn: ?*_ui.Button = null,
+    // MVU visibility (2026-09-08): an id-keyed widget the view did not emit this
+    // frame is HIDDEN at frame end, and shown again when the view emits it. Before
+    // this, a widget created once stayed visible forever, so a view could only ever
+    // grow — the IDE's tab row was a fixed row of MAX_TABS buttons because a closed
+    // tab could not be removed. uiBox skips hidden children in its layout.
+    seen: u32 = 0,
+    hidden: bool = false,
 };
 const _LuiPanel = struct { inner: *_ui.Box };
 var _lui_icache: std.StringHashMap(*_LuiMut) = undefined;
 var _lui_dcache: std.ArrayList(*_LuiMut) = undefined;
 var _lui_didx: usize = 0;
 var _lui_frame: u32 = 0;
+var _lui_frame_n: u32 = 1;   // monotonic frame counter for seen/hidden (0 = never seen)
 var _lui_quit: bool = false;
 var _lui_win_w: i64 = 800;
 var _lui_win_h: i64 = 600;
@@ -779,6 +826,9 @@ fn _lui_newframe() bool {
 }
 fn _lui_endframe() void {
     _lui_box_depth = 1; // reset to root box only
+    _lui_sweep_unseen();
+    _lui_frame_n +%= 1;
+    if (_lui_frame_n == 0) _lui_frame_n = 1;
     if (_lui_frame == 0) {
         _lui_frame = 1;
         if (_lui_window) |_w| {
@@ -790,11 +840,35 @@ fn _lui_endframe() void {
 }
 const _LuiIR = struct { m: *_LuiMut, fresh: bool };
 fn _lui_iget(_label: []const u8) _LuiIR {
-    if (_lui_icache.get(_label)) |_m| return .{ .m = _m, .fresh = false };
+    if (_lui_icache.get(_label)) |_m| {
+        _m.seen = _lui_frame_n;
+        return .{ .m = _m, .fresh = false };
+    }
     const _m = _allocator.create(_LuiMut) catch unreachable;
     _m.* = .{};
-    _lui_icache.put(_label, _m) catch unreachable;
+    _m.seen = _lui_frame_n;
+    // The key must outlive the frame: the caller's slice may be a temporary
+    // (`"##tab:" + path` built in the view), so own a copy.
+    const _key = _allocator.dupe(u8, _label) catch unreachable;
+    _lui_icache.put(_key, _m) catch unreachable;
     return .{ .m = _m, .fresh = true };
+}
+// Frame end: hide id-keyed widgets the view stopped emitting; show ones it resumed.
+fn _lui_sweep_unseen() void {
+    var _it = _lui_icache.valueIterator();
+    while (_it.next()) |_pm| {
+        const _m = _pm.*;
+        const _emitted = _m.seen == _lui_frame_n;
+        if (!_emitted and !_m.hidden) {
+            if (_m.ctrl) |_c| _c.Hide();
+            if (_m.lbl) |_l| _l.as_control().Hide();
+            _m.hidden = true;
+        } else if (_emitted and _m.hidden) {
+            if (_m.ctrl) |_c| _c.Show();
+            if (_m.lbl) |_l| _l.as_control().Show();
+            _m.hidden = false;
+        }
+    }
 }
 fn _lui_dget() _LuiIR {
     if (_lui_didx < _lui_dcache.items.len) {

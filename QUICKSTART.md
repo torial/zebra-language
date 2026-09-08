@@ -3093,6 +3093,8 @@ editor.restyle()                          # force a whole-buffer restyle
 editor.takeModified()                     # bool: text changed since last take (SCN_MODIFIED)
 editor.takeCharAdded()                    # int: last typed char (0 = none); 10 = Enter → auto-indent hook
 editor.takeMarginClick()                  # int: clicked line in a sensitive margin, or -1 (bookmarks/breakpoints)
+editor.hotkey(0x53, 1)                    # claim Ctrl+S (vk, mods: 1 Ctrl, 2 Shift, 4 Alt); claimed chords never reach Scintilla
+editor.takeKey()                          # int: next claimed chord as (mods << 16) | vk, or 0 — poll from tick
 editor.setText(File.read("main.zbr"))
 editor.setReadOnly(false)
 
