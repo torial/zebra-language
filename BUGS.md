@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-356. Next new bug: BUG-357.**
+**Last bug number generated: BUG-357. Next new bug: BUG-358.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -279,6 +279,16 @@ Walking it end to end for the IDE plugin design found, in order:
    Gate: tools/dynlib_roundtrip_check.sh (pinned `dynlib-roundtrip`, FULL tier); fixture
    test/dynlib_roundtrip/{greeter,host}.zbr. The IDE's plugin design treats in-process
    plugins as blocked on this and starts with process plugins.
+
+### BUG-357: a GUI-backend build embeds the runtime preamble PER MODULE, so `sys.args()` (and every preamble global) in a `use`d module is uninitialised — OPEN (found 2026-09-08)
+
+`--gui-backend=tui|libui_ng` emits a project where main.zig and each dependency .zig carry
+their own copy of the preamble (`pub var _args`, `_allocator`, …); only the root's main()
+sets its copy. zebra-ide's `ideInit()` (in ide.zbr, imported by model_test) called
+`sys.args()` and panicked "sys.args OOM" reading garbage. Same family as BUG-355 (the GUI
+section's types are per-module too). Fix direction: one runtime module per GUI project,
+as the non-GUI build already does with zebra_rt.zig. Workaround: read `sys.args()` only
+in the root module (zebra-ide moved it into main()).
 
 ### BUG-334: `sys.readLine` / `sys.readBytes` created a NEW buffered stdin reader per call, discarding read-ahead — `zebra lsp` answered nothing on a pipe — FIXED 2026-09-06 (branch lsp-references)
 

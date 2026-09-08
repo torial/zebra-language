@@ -131,7 +131,7 @@ const GuiContext = struct {
     pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
         const _vis = self._b.beginChildFn(id, w, h);
         if (_vis) {
-            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);  // fn OR fn pointer (matches the preamble; the section had drifted — 09-08)
         }
         self._b.endChildFn();
     }
@@ -153,13 +153,13 @@ const GuiContext = struct {
     pub fn getDpi(self: GuiContext) f64 { return @floatCast(self._b.getDpiFn()); }
     pub fn panel(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginPanelFn(label)) {
-            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);  // fn OR fn pointer (matches the preamble; the section had drifted — 09-08)
             self._b.endPanelFn();
         }
     }
     pub fn window(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginWindowFn(label)) {
-            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);  // fn OR fn pointer (matches the preamble; the section had drifted — 09-08)
             self._b.endWindowFn();
         }
     }
@@ -670,6 +670,11 @@ fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, _w: f6
     } else {
         _ce_restyle_if_dirty(_ed);
     }
+    // visibility: the editor's own address is its key (refuter, 09-08: `id` is not
+    // the identity here — one _CodeEditor is one Scintilla control, whatever the id)
+    var _kb: [32]u8 = undefined;
+    const _kz = std.fmt.bufPrint(&_kb, "ce:{x}", .{@intFromPtr(_ed)}) catch return;
+    _lui_vis_touch(_kz, _ed.scint.?.as_control());
 }
 fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
 fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 {
@@ -728,7 +733,7 @@ const _LuiMut = struct {
     seen: u32 = 0,
     hidden: bool = false,
 };
-const _LuiPanel = struct { inner: *_ui.Box };
+const _LuiPanel = struct { inner: *_ui.Box, grp: *_ui.Group };
 var _lui_icache: std.StringHashMap(*_LuiMut) = undefined;
 var _lui_dcache: std.ArrayList(*_LuiMut) = undefined;
 var _lui_didx: usize = 0;
@@ -798,6 +803,7 @@ fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
     _lui_box_icache = std.StringHashMap(*_ui.Box).init(_allocator);
     _lui_grp_cache = std.StringHashMap(_LuiPanel).init(_allocator);
     _lui_tab_cache = std.StringHashMap(*_ui.Tab).init(_allocator);
+    _lui_vis = std.StringHashMap(*_LuiVis).init(_allocator);
     _lui_tab_depth = 0;
     _lui_box_depth = 0;
     var _tbuf: [256]u8 = undefined;
@@ -816,6 +822,7 @@ fn _lui_deinit() void {
     _lui_dcache.deinit(_allocator);
     _lui_box_icache.deinit();
     _lui_grp_cache.deinit();
+    _lui_vis.deinit();
     _ui.Uninit();
 }
 fn _lui_newframe() bool {
@@ -853,21 +860,52 @@ fn _lui_iget(_label: []const u8) _LuiIR {
     _lui_icache.put(_key, _m) catch unreachable;
     return .{ .m = _m, .fresh = true };
 }
-// Frame end: hide id-keyed widgets the view stopped emitting; show ones it resumed.
+// Visibility registry for widgets that are not _LuiMut: containers (hbox / vbox /
+// panel / tab strip) and code editors. `_lui_vis_touch` is called every frame the
+// view emits the widget; the sweep hides what was not touched. (Refuter, 2026-09-08:
+// the first version swept id-keyed buttons only — a view that dropped a row, a
+// panel or a `g.text` line left it on screen.) Tab PAGES are not registered: hiding
+// a page's box would leave an empty tab, which is worse than a stale one.
+const _LuiVis = struct { ctrl: *_ui.Control, seen: u32 = 0, hidden: bool = false };
+var _lui_vis: std.StringHashMap(*_LuiVis) = undefined;
+fn _lui_vis_touch(_key: []const u8, _ctrl: *_ui.Control) void {
+    if (_lui_vis.get(_key)) |_v| { _v.seen = _lui_frame_n; return; }
+    const _v = _allocator.create(_LuiVis) catch return;
+    _v.* = .{ .ctrl = _ctrl, .seen = _lui_frame_n };
+    const _k = _allocator.dupe(u8, _key) catch return;
+    _lui_vis.put(_k, _v) catch {};
+}
+// Frame end: hide widgets the view stopped emitting; show ones it resumed. Three
+// families: id-keyed _LuiMut (buttons, inputs, …), positional _LuiMut (`g.text`,
+// separators, progress bars — everything past this frame's count is stale), and
+// the registry above.
 fn _lui_sweep_unseen() void {
     var _it = _lui_icache.valueIterator();
     while (_it.next()) |_pm| {
         const _m = _pm.*;
-        const _emitted = _m.seen == _lui_frame_n;
-        if (!_emitted and !_m.hidden) {
-            if (_m.ctrl) |_c| _c.Hide();
-            if (_m.lbl) |_l| _l.as_control().Hide();
-            _m.hidden = true;
-        } else if (_emitted and _m.hidden) {
-            if (_m.ctrl) |_c| _c.Show();
-            if (_m.lbl) |_l| _l.as_control().Show();
-            _m.hidden = false;
-        }
+        _lui_set_hidden(_m, _m.seen != _lui_frame_n);
+    }
+    var _i: usize = 0;
+    while (_i < _lui_dcache.items.len) : (_i += 1) {
+        _lui_set_hidden(_lui_dcache.items[_i], _i >= _lui_didx);
+    }
+    var _vt = _lui_vis.valueIterator();
+    while (_vt.next()) |_pv| {
+        const _v = _pv.*;
+        const _stale = _v.seen != _lui_frame_n;
+        if (_stale and !_v.hidden) { _v.ctrl.Hide(); _v.hidden = true; }
+        else if (!_stale and _v.hidden) { _v.ctrl.Show(); _v.hidden = false; }
+    }
+}
+fn _lui_set_hidden(_m: *_LuiMut, _want_hidden: bool) void {
+    if (_want_hidden and !_m.hidden) {
+        if (_m.ctrl) |_c| _c.Hide();
+        if (_m.lbl) |_l| _l.as_control().Hide();
+        _m.hidden = true;
+    } else if (!_want_hidden and _m.hidden) {
+        if (_m.ctrl) |_c| _c.Show();
+        if (_m.lbl) |_l| _l.as_control().Show();
+        _m.hidden = false;
     }
 }
 fn _lui_dget() _LuiIR {
@@ -1090,25 +1128,32 @@ fn _lui_input_ml(_label: []const u8, _value: []const u8, _mw: f64, _mh: f64) []c
     }
     return _r.m.text_buf[0.._r.m.text_len];
 }
+fn _lui_box_key(_id: []const u8) []const u8 {
+    // getOrPut stores the caller's slice as the key; a temporary id would dangle
+    if (_lui_box_icache.contains(_id)) return _id;
+    return _allocator.dupe(u8, _id) catch _id;
+}
 fn _lui_begin_hbox(_id: []const u8, _stretch: bool) void {
-    const _e = _lui_box_icache.getOrPut(_id) catch return;
+    const _e = _lui_box_icache.getOrPut(_lui_box_key(_id)) catch return;
     if (!_e.found_existing) {
         const _hb = _ui.Box.New(.Horizontal) catch return;
         _hb.SetPadded(true);
         if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _hb.as_control(), if (_stretch) _ui.Stretchy.stretch else _ui.Stretchy.dont_stretch);
         _e.value_ptr.* = _hb;
     }
+    _lui_vis_touch(_id, _e.value_ptr.*.as_control());
     _lui_push_box(_e.value_ptr.*);
 }
 fn _lui_end_hbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
 fn _lui_begin_vbox(_id: []const u8, _stretch: bool) void {
-    const _e = _lui_box_icache.getOrPut(_id) catch return;
+    const _e = _lui_box_icache.getOrPut(_lui_box_key(_id)) catch return;
     if (!_e.found_existing) {
         const _vb2 = _ui.Box.New(.Vertical) catch return;
         _vb2.SetPadded(false);
         if (_lui_cur_box()) |_pvb| _ui.Box.Append(_pvb, _vb2.as_control(), if (_stretch) _ui.Stretchy.stretch else _ui.Stretchy.dont_stretch);
         _e.value_ptr.* = _vb2;
     }
+    _lui_vis_touch(_id, _e.value_ptr.*.as_control());
     _lui_push_box(_e.value_ptr.*);
 }
 fn _lui_end_vbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
@@ -1122,6 +1167,7 @@ fn _lui_begin_tabs(_id: []const u8, _stretch: bool) void {
         if (_lui_cur_box()) |_pb| _ui.Box.Append(_pb, _t.as_control(), if (_stretch) _ui.Stretchy.stretch else _ui.Stretchy.dont_stretch);
         _e.value_ptr.* = _t;
     }
+    _lui_vis_touch(_id, _e.value_ptr.*.as_control());
     if (_lui_tab_depth < 8) { _lui_tab_stack[_lui_tab_depth] = _e.value_ptr.*; _lui_tab_depth += 1; }
 }
 fn _lui_begin_tab_page(_id: []const u8, _label: []const u8) void {
@@ -1148,6 +1194,7 @@ fn _lui_end_tab_page() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
 fn _lui_end_tabs() void { if (_lui_tab_depth > 0) _lui_tab_depth -= 1; }
 fn _lui_begin_panel(_label: []const u8) bool {
     if (_lui_grp_cache.get(_label)) |_p| {
+        _lui_vis_touch(_label, _p.grp.as_control());
         _lui_push_box(_p.inner);
         return true;
     }
@@ -1162,7 +1209,9 @@ fn _lui_begin_panel(_label: []const u8) bool {
     _grp.SetChild(_inner.as_control());
     _grp.SetMargined(true);
     if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _grp.as_control(), .dont_stretch);
-    _lui_grp_cache.put(_label, .{ .inner = _inner }) catch {};
+    const _gk = _allocator.dupe(u8, _label) catch _label;
+    _lui_grp_cache.put(_gk, .{ .inner = _inner, .grp = _grp }) catch {};
+    _lui_vis_touch(_label, _grp.as_control());
     _lui_push_box(_inner);
     return true;
 }
