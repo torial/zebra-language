@@ -1,0 +1,7 @@
+# BUG-359: a LOCAL named like one of the runtime's mutable globals was rewritten by
+# codegen's textual qualify pass into `_zbr_rt._allocator` — a Zig parse error blamed
+# on the user (or, for an assignment, a silent overwrite of the runtime's allocator).
+# The checker now refuses the declaration.
+def main()
+    var _allocator: int = 7
+    print("${_allocator}")

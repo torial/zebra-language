@@ -43,7 +43,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse, addNativeLibUse, emittedExtern
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse, addNativeLibUse, emittedExtern, rtReservedNames
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -307,6 +307,7 @@ class MultiCompiler
                 tc_ctx.withDepTypes(dep_types)
                 if warn_non_exhaustive
                     tc_ctx.enableWarnNonExhaustive()
+                tc_ctx.withReservedRuntimeNames(rtReservedNames(.preamble_path))   # BUG-359
                 var tc_result: TcResult = checkModule(module, zbr_path, tc_ctx)
                 if tc_ctx.hasErrors()
                     sys.errln(tc_ctx.errorMessages())
@@ -685,6 +686,11 @@ class MultiCompiler
             tdir = tm
         else if sys.getenv("TMP") as tp
             tdir = tp
+        else if File.exists("/tmp")
+            # POSIX with none of the three set (a bare container, a cron job): "." here
+            # meant every `zebra file.zbr` littered the CURRENT directory with the scratch
+            # .zig and its binaries — the exact #230 pollution, one level up (2026-09-09).
+            tdir = "/tmp"
         return tdir + "/" + base + ".zig"
 
     # BUG-262: place every collected native `.zig` dep beside the emitted output.
@@ -1053,6 +1059,8 @@ def replRun(): int
         tmpdir = tm
     else if sys.getenv("TMP") as tp
         tmpdir = tp
+    else if File.exists("/tmp")
+        tmpdir = "/tmp"
     var sessionPath: str = tmpdir + "/zbr_repl_session.zbr"
     var selfPath: str = sys.selfExe()
 
@@ -1214,6 +1222,18 @@ def extractConflictSide(src: str, want_ours: bool): str
 # Run the selfhost TC pipeline on src (a string), collecting diagnostics into diags.
 # Catches parse/resolve/build errors and reports them as diagnostic strings so the
 # caller gets a clean list regardless. Does not compile to Zig.
+# The preamble lives in the repo (selfhost/) or, for an installed zebra.exe, next
+# to the binary. One resolver, used by the compile route and by the side-check
+# route (`tcCheckSide`) so BUG-359's reserved-name check sees the same runtime.
+def defaultPreamblePath(): str
+    var pp: str = "selfhost/stdlib_preamble.zig"
+    if not File.exists(pp)
+        var pre_exe_dir: str = Path.dirname(sys.selfExe())
+        if pre_exe_dir == ""
+            pre_exe_dir = "."
+        pp = pre_exe_dir + "/stdlib_preamble.zig"
+    return pp
+
 def tcCheckSide(src: str, path: str, diags: List(str))
     var pm_node = Parser.Parser.parse(src, path)?
     var resolver = Resolver.Resolver(path, src)
@@ -1229,6 +1249,7 @@ def tcCheckSide(src: str, path: str, diags: List(str))
         var tc_ctx: InferCtx = InferCtx(tc_mt, "")
         tc_ctx.withSource(src)
         tc_ctx.enableStrict()
+        tc_ctx.withReservedRuntimeNames(rtReservedNames(defaultPreamblePath()))   # BUG-359
         checkModule(module, path, tc_ctx)
         if tc_ctx.hasErrors()
             for line in tc_ctx.errorMessages().split("\n")
@@ -3925,15 +3946,17 @@ def main()
     var target_opt: str      = args.option("--target", "")
     var mode_node            = target_opt == "node-addon" or target_opt == "node_addon"
     # node-addon emits N-API glue at file scope and is built by a separate driver that
-    # would also have to learn to place zebra_rt.zig; GUI backends scaffold a `zig build`
-    # project whose section files are not `pub`-marked. Neither is covered yet, so both
-    # FALL BACK to the inline runtime silently.
+    # would also have to learn to place zebra_rt.zig, so it FALLS BACK to the inline
+    # runtime silently. (GUI backends used to as well; see below.)
     #
     # This has to be a fallback, not an error, now that runtime-module is the default:
     # refusing here would mean `--gui-backend=tui` and `--target node-addon` simply stop
     # working, which is a far worse outcome than emitting the shape they emitted
     # yesterday. Covering them is tracked in NEXT_STEPS under #1.
-    if runtime_module and (mode_node or has_gui)
+    # GUI backends: covered since 2026-09-08 — the section is pub-marked into
+    # zebra_rt.zig (rtPubMarkSection) and copyGuiDeps carries it into the project,
+    # so a GUI program's modules share ONE runtime and ONE section (BUG-355/357).
+    if runtime_module and mode_node
         runtime_module = false
     setRuntimeModule(runtime_module)
     # Preamble resolution (BUG: cwd-dependent File.read).  Prefer the repo-relative
@@ -3942,12 +3965,7 @@ def main()
     # directory — mirrors the sqlite3.c exe-dir pattern below.  The bootstrap embeds
     # the preamble via build_options; this brings the selfhost to the same "runs
     # anywhere" behaviour without embedding.
-    var preamble_path        = "selfhost/stdlib_preamble.zig"
-    if not File.exists(preamble_path)
-        var pre_exe_dir: str = Path.dirname(sys.selfExe())
-        if pre_exe_dir == ""
-            pre_exe_dir = "."
-        preamble_path = pre_exe_dir + "/stdlib_preamble.zig"
+    var preamble_path        = defaultPreamblePath()
     # GUI-via-selfhost: for tui/libui_ng, load the matching backend section (lives
     # next to the preamble) so codegen can substitute it for the stub (see
     # CodeGen.guiSelectPreamble).

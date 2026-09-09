@@ -131,7 +131,7 @@ const GuiContext = struct {
     pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
         const _vis = self._b.beginChildFn(id, w, h);
         if (_vis) {
-            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);  // fn OR fn pointer (matches the preamble; the section had drifted — 09-08)
         }
         self._b.endChildFn();
     }
@@ -153,13 +153,13 @@ const GuiContext = struct {
     pub fn getDpi(self: GuiContext) f64 { return @floatCast(self._b.getDpiFn()); }
     pub fn panel(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginPanelFn(label)) {
-            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);  // fn OR fn pointer (matches the preamble; the section had drifted — 09-08)
             self._b.endPanelFn();
         }
     }
     pub fn window(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginWindowFn(label)) {
-            if (comptime @typeInfo(@TypeOf(callback)) == .@"fn") callback(self) else callback.call(self);
+            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);  // fn OR fn pointer (matches the preamble; the section had drifted — 09-08)
             self._b.endWindowFn();
         }
     }
@@ -201,7 +201,7 @@ fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
     const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend } };
-    if (comptime @typeInfo(@TypeOf(frame)) == .@"fn") {
+    if (comptime _zbr_is_fnlike(@TypeOf(frame))) {
         while (_gui_active_backend.newFrameFn()) {
             frame(_g);
             _gui_active_backend.endFrameFn();
@@ -218,7 +218,7 @@ fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, 
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
     const MsgType = comptime blk: {
-        if (@typeInfo(@TypeOf(_mvu_update)) == .@"fn")
+        if (_zbr_is_fnlike(@TypeOf(_mvu_update)))
             break :blk @typeInfo(@TypeOf(_mvu_update)).@"fn".params[1].type.?
         else
             break :blk @typeInfo(@TypeOf(@TypeOf(_mvu_update).call)).@"fn".params[2].type.?;
@@ -231,12 +231,12 @@ fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, 
             if (q.len < 32) { q.buf[q.len] = (@as(*const MsgType, @ptrCast(@alignCast(mp)))).* ; q.len += 1; }
         }
     }.send;
-    var _model = if (comptime @typeInfo(@TypeOf(_mvu_init)) == .@"fn") _mvu_init() else blk: { var _m = _mvu_init; break :blk _m.call(); };
+    var _model = if (comptime _zbr_is_fnlike(@TypeOf(_mvu_init))) _mvu_init() else blk: { var _m = _mvu_init; break :blk _m.call(); };
     const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend }, ._send_fn = _sfn, ._send_ptr = &_pq };
     while (_gui_active_backend.newFrameFn()) {
-        if (comptime @typeInfo(@TypeOf(_mvu_view)) == .@"fn") _mvu_view(_g, _model) else { var _mv = _mvu_view; _mv.call(_g, _model); }
+        if (comptime _zbr_is_fnlike(@TypeOf(_mvu_view))) _mvu_view(_g, _model) else { var _mv = _mvu_view; _mv.call(_g, _model); }
         for (_pq.buf[0.._pq.len]) |msg| {
-            if (comptime @typeInfo(@TypeOf(_mvu_update)) == .@"fn")
+            if (comptime _zbr_is_fnlike(@TypeOf(_mvu_update)))
                 _model = _mvu_update(_model, msg)
             else { var _mu = _mvu_update; _model = _mu.call(_model, msg); }
         }

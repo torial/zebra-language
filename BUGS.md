@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-357. Next new bug: BUG-358.**
+**Last bug number generated: BUG-359. Next new bug: BUG-360.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -248,7 +248,7 @@ to the same object) reached Zig. Parameters are const by design; the checker sho
 so in Zebra ("cannot assign to parameter `m`; bind a new local") at the assignment.
 Found writing zebra-ide's shortcut dispatch.
 
-### BUG-355: a GUI-section type (`CodeEditor`, `Gui`) cannot cross a module boundary — `expected type '*keys._CodeEditor', found '*main._CodeEditor'` — OPEN (found 2026-09-08)
+### BUG-355: a GUI-section type (`CodeEditor`, `Gui`) cannot cross a module boundary — `expected type '*keys._CodeEditor', found '*main._CodeEditor'` — FIXED 2026-09-08
 
 Every module's emitted Zig carries its OWN copy of the GUI section, so `_CodeEditor` in
 `main.zig` and `_CodeEditor` in `keys.zig` are different types, and `def
@@ -257,6 +257,12 @@ editor. Fix direction: emit the section once (root) and have dependents referenc
 root's types (`@import("root")._CodeEditor`), or lower section types to a shared
 runtime module. Workaround: keep functions that take a CodeEditor in the root module
 (zebra-ide keys.zbr is pure data for this reason).
+
+Fix: the second direction. GUI projects now use runtime-module emission like every
+other program: the GUI section is pub-marked (`rtPubMarkSection`) into `zebra_rt.zig`,
+`copyGuiDeps` carries it into the scaffold, and every module aliases/qualifies the ONE
+runtime. Witness: zebra-ide `model_test` hands the IDE's editor to `keys.registerShortcuts`
+in a third module. `--no-runtime-module` still gives the inline shape.
 
 ### BUG-356: the shared-library round trip (QUICKSTART §44) does not work in the selfhost — OPEN (found 2026-09-08), three of four legs fixed
 
@@ -280,7 +286,67 @@ Walking it end to end for the IDE plugin design found, in order:
    test/dynlib_roundtrip/{greeter,host}.zbr. The IDE's plugin design treats in-process
    plugins as blocked on this and starts with process plugins.
 
-### BUG-357: a GUI-backend build embeds the runtime preamble PER MODULE, so `sys.args()` (and every preamble global) in a `use`d module is uninitialised — OPEN (found 2026-09-08)
+### BUG-359: a user local/param/field named like a runtime mutable global (`_allocator`, `_args`, `_tui_env`, …) is rewritten by the qualify pass — FIXED 2026-09-09
+
+**Symptom.** `var _allocator: int = 7` in `main` emitted `const _zbr_rt._allocator: i64 = 7;`
+— a Zig parse error reported against the user's program. An ASSIGNMENT to such a name
+would instead have silently overwritten the runtime's global. Same for a class or struct
+field (declared bare in the emitted struct) and for a parameter.
+
+**Mechanism.** Runtime-module emission (2026-07-28) rewrites every bare reference to one of
+zebra_rt.zig's `pub var`s as `_zbr_rt.<name>` TEXTUALLY (`CodeGen.rtQualify`), with no
+notion of scope: it skips strings, comments and `.field` accesses and nothing else. The
+set is 23 names in the plain runtime and ~25 more with a GUI section (BUG-355/357 widened
+it: `_tui_env`, `_lui_*`, …). Pre-existing since runtime modules; named by the refuter on
+the BUG-355/357 review (2026-09-08).
+
+**Fix.** The checker refuses the declaration: `'<name>' is reserved by the Zebra runtime (a
+zebra_rt.zig global); rename it`. The reserved set is DERIVED from the loaded preamble
+(`CodeGen.rtReservedNames` → `InferCtx.withReservedRuntimeNames`), so it tracks the
+runtime and the selected GUI section rather than a second list. Scope is exactly what the
+qualify pass can reach: locals (`Stmt.var_`), params, and class/struct fields. NOT module
+vars — those emit mangled (`_zbr_mv_<name>`), and the first draft that included them
+refused `selfhost/CodeGen.zbr` itself (`var _list_targets_mode`) and bricked the regen
+until the generated `.zig` was hand-patched. Fixtures: `test/bug359_reserved_local_fail`,
+`bug359_reserved_field_fail` (smoke_tc_fail), `bug359_underscore_names_test` (a module var
+named `_args`, a param `_tmp` and a local `_mine` all stay legal — the control).
+
+**Not done, on purpose.** Mangling user names instead of refusing them would be friendlier
+but touches every local-emit site (BUG-280's receipt: reading found 4 sites, the probe found
+10). A refusal with the fix in the message is the honest smaller change.
+
+### BUG-358: `g.panel(label, closure)` inside an MVU `view()` dies on the 65th frame — "closure-via-sig pool exhausted (>64 live connections at one call site)" — FIXED 2026-09-09
+
+**Symptom.** `examples/panel_smoke.zbr` on `--gui-backend=tui` drew 64 frames and panicked.
+Headless on Linux that is a few milliseconds; on a real terminal it is the 65th redraw.
+The IDE (`zebra-ide/src/ide.zbr`) happens to use no closure-taking builder in its view, so
+it never hit this; any view with a `panel`/`window`/`childWindow` would.
+
+**Mechanism.** A closure argument is normally lowered through the closure-via-sig thunk pool
+(BUG-126: 64 slots per call site, `_zbr_next_N`), because the callee may STORE it
+(`Signal.connect`). The pool never frees a slot, which is correct for a connection that
+lives as long as the widget. But the GUI section's `panel`/`window`/`childWindow` take
+`callback: anytype` and call `callback.call(self)` synchronously before returning — the
+same shape as `sys.go` / `ThreadPool.submit`, which `isStdlibClosureStructConsumer` already
+exempts. `view()` re-runs per frame, so each frame burned a slot.
+
+**Fix.** `isStdlibClosureStructConsumer` also answers true for `.panel/.window/.childWindow`
+on a receiver whose inferred type is `Type_.gui_context`; the closure struct is passed
+directly and the pool is not touched (`_zbr_next_` no longer appears in panel_smoke's emit).
+Gate: `gui-scaffold-panel` (DAILY) runs `gui_scaffold_check.sh examples/panel_smoke.zbr`;
+its leg 2 now classifies a post-startup `thread N panic:` as a FAILURE (it was
+"inconclusive" — rc=1 with an unknown marker — so the crash could not have failed the
+gate). Red-checked by mutating the exemption out: FAIL "app PANICKED after starting";
+restored: clean. The same run fixed the gate's scaffold discovery on Linux (it was finding
+a stale `counter_gui_tui` in the repo root — the BUG-298 hazard one level up).
+
+**Still open in the same family.** A USER function that takes a closure and calls it
+synchronously still goes through the pool and still burns a slot per call; the exemption
+is for the known section builders only. A general fix needs the callee's signature to say
+whether it stores the closure (a `sig` param vs a `fn` param), which is the Gap-1 question
+BUG-126 left.
+
+### BUG-357: a GUI-backend build embeds the runtime preamble PER MODULE, so `sys.args()` (and every preamble global) in a `use`d module is uninitialised — FIXED 2026-09-08
 
 `--gui-backend=tui|libui_ng` emits a project where main.zig and each dependency .zig carry
 their own copy of the preamble (`pub var _args`, `_allocator`, …); only the root's main()
@@ -289,6 +355,13 @@ sets its copy. zebra-ide's `ideInit()` (in ide.zbr, imported by model_test) call
 section's types are per-module too). Fix direction: one runtime module per GUI project,
 as the non-GUI build already does with zebra_rt.zig. Workaround: read `sys.args()` only
 in the root module (zebra-ide moved it into main()).
+
+Fix: same change as BUG-355 — one `zebra_rt.zig` per GUI project. Witness: zebra-ide
+`model_test` calls `keys.argCount()` (sys.args() in a `use`d module) from a tui build.
+`tools/gui_scaffold_check.sh` learned the new shape (globals declared in the runtime's
+section, assigned as `_zbr_rt.x` from main) and refuses to go vacuous if it changes again;
+it also no longer RUNS the app in its build step (a Linux tui app just runs, it does not
+refuse a non-tty, and the gate hung for ten minutes).
 
 ### BUG-334: `sys.readLine` / `sys.readBytes` created a NEW buffered stdin reader per call, discarding read-ahead — `zebra lsp` answered nothing on a pipe — FIXED 2026-09-06 (branch lsp-references)
 

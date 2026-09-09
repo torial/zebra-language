@@ -1,0 +1,13 @@
+# BUG-359 control: names the runtime does NOT own stay legal, and a MODULE-level var
+# named like a runtime global is fine (it emits mangled as `_zbr_mv_<name>`).
+var _args: int = 3
+
+def f(_tmp: int): int
+    return _tmp + 1
+
+def main()
+    var _mine: int = f(1)
+    if _mine == 2 and _args == 3
+        print("bug359: OK")
+    else
+        print("bug359: FAIL")

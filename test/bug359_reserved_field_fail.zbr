@@ -1,0 +1,8 @@
+# BUG-359: a class FIELD is declared bare in the emitted struct and is rewritten too.
+class Box
+    var _args: int
+    cue init(v: int)
+        ._args = v
+def main()
+    var b: Box = Box(1)
+    print("${b._args}")

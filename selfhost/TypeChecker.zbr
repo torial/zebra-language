@@ -1100,6 +1100,15 @@ class InferCtx
     # `this`/`self` is that primitive type, not a named class. inferExpr's this_ branch
     # returns this override when set, so stdlib method chains on `this` dispatch.
     var self_type_override: Type_?
+    # BUG-359: names of the runtime's MUTABLE globals (`pub var` in zebra_rt.zig —
+    # `_allocator`, `_args`, `_tui_env`, …), space-delimited with a leading and
+    # trailing space so ` name ` membership is exact. Codegen's qualify pass
+    # (CodeGen.rtQualify) rewrites every bare reference to one of these as
+    # `_zbr_rt.<name>` TEXTUALLY, with no notion of scope: a user local named
+    # `_allocator` came out as `const _zbr_rt._allocator: i64 = 7;` (a Zig parse
+    # error blamed on the user), and an ASSIGNMENT to one would silently overwrite
+    # the runtime's allocator. Set by main from the loaded preamble; " " = unset.
+    var reserved_rt: str
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -1115,6 +1124,13 @@ class InferCtx
         .file = ""
         .source = ""
         .self_type_override = nil
+        .reserved_rt = " "
+
+    def withReservedRuntimeNames(names: str)
+        .reserved_rt = names
+
+    def isReservedRuntimeName(name: str): bool
+        return (" " + name + " ") in .reserved_rt
 
     def withFile(f: str)
         .file = f
@@ -4077,6 +4093,10 @@ def varDiagCol(dv: DeclVar): int
             return exprSpanCol(dv.init_expr!)
     return dv.span.col
 
+def checkReservedField(dv: DeclVar, file: str, ctx: InferCtx)
+    if ctx.isReservedRuntimeName(dv.name)
+        ctx.addErr(file, dv.span.line, dv.span.col, "'" + dv.name + "' is reserved by the Zebra runtime (a zebra_rt.zig global); rename it")
+
 def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     if dv.type_ == nil
         return
@@ -4111,6 +4131,12 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
     for s in stmts
         branch s
             on Stmt.var_ as dv
+                # BUG-359. LOCALS (and params, in checkDecl) only: a module-level var
+                # emits mangled (`_zbr_mv_<name>`) and a field is reached as `self.<name>`,
+                # so neither can collide with the runtime's globals — and CodeGen.zbr
+                # itself declares `var _list_targets_mode` at module scope.
+                if ctx.isReservedRuntimeName(dv.name)
+                    ctx.addErr(file, dv.span.line, dv.span.col, "'" + dv.name + "' is reserved by the Zebra runtime (a zebra_rt.zig global); rename it")
                 # `var l: List(int)` with no `=` at LOCAL scope. Ported from
                 # src/TypeChecker.zig:1516. Without an initializer the field is
                 # left unset, and the declaration reads like a constructor call
@@ -4347,6 +4373,8 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                     var pt: Type_ = Type_.unknown_
                     if p.type_ != nil
                         pt = typeFromRef(p.type_!)
+                    if ctx.isReservedRuntimeName(p.name)
+                        ctx.addErr(file, p.span.line, p.span.col, "'" + p.name + "' is reserved by the Zebra runtime (a zebra_rt.zig global); rename it")
                     ctx.bind(p.name, pt)
                 checkStmts(dm_stmts, file, ctx)
                 var scope_ctx: InferCtx = InferCtx(ctx.module_types, ctx.current_class)
@@ -4370,7 +4398,18 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
             for m in dc.members
                 checkDecl(m, file, ctx, tc_result)
             ctx.current_class = saved_class
+        on Decl.struct_ as ds
+            # BUG-359: struct FIELDS collide the same way class fields do (below);
+            # nothing else in this pass looks inside a struct.
+            for sm in ds.members
+                if sm is Decl.var_ as sdv
+                    checkReservedField(sdv, file, ctx)
         on Decl.var_ as dv
+            # BUG-359: a class FIELD is declared bare (`_allocator: i64 = undefined,`)
+            # so the qualify pass rewrites it; a MODULE var emits as `_zbr_mv_<name>`
+            # and is safe (CodeGen.zbr itself has `var _list_targets_mode`).
+            if ctx.current_class != ""
+                checkReservedField(dv, file, ctx)
             checkVarDecl(dv, file, ctx)
         else
             pass

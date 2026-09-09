@@ -47,7 +47,7 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 
-ZEBRA="$REPO/zig-out/bin/zebra.exe"
+ZEBRA="$REPO/zig-out/bin/zebra.exe"; [ -x "$ZEBRA" ] || ZEBRA="$REPO/zig-out/bin/zebra"   # Linux build name (09-08)
 OUT="${TMPDIR:-/tmp}/zbr-rtmod-$$"
 FAIL=0
 
@@ -215,7 +215,11 @@ fi
 missing="$OUT/made/up/deep"
 rm -rf "$OUT/made"
 got=$("$ZEBRA" --emit-zig --output-dir "$missing" "$hw/hw.zbr" 2>&1)
-if echo "$got" | grep -q "created output directory"    && [ -f "$missing/hw.zig" ]    && ! echo "$got" | grep -qi "panic"; then
+# The panic grep must not read the emitted SOURCE (`--emit-zig` echoes it, and every
+# program carries `pub const panic = std.debug.FullPanic(...)`): look for the runtime's
+# panic banner, not the word (refuter, 2026-09-08 — this conjunct failed on Linux and
+# would have on Windows too).
+if echo "$got" | grep -q "created output directory"    && [ -f "$missing/hw.zig" ]    && ! echo "$got" | grep -qE "^thread [0-9]+ panic|panic: "; then
     pass "--output-dir at a missing path is created, announced, and emitted into"
 else
     fail "--output-dir at a missing path: expected a 'created output directory' line and hw.zig, got: $got"
@@ -240,7 +244,9 @@ fi
 # Windows binary reading TMP/TEMP, while Git Bash sets TMPDIR to the MSYS mount /tmp. A
 # check that looks at $TMPDIR watches the wrong directory and reports a clean ~20 MB while
 # 120 GB sits elsewhere. Ask the compiler where it actually wrote instead of assuming.
-wintmp=$("$ZEBRA" --keep-temp "$hw/hw.zbr" >/dev/null 2>&1; ls -dt "${TEMP:-${TMP:-/tmp}}"/hw.zig 2>/dev/null | head -1)
+# On Linux the compiler makes a per-run mkdtemp subdirectory of $TMPDIR; on Windows it
+# writes into TEMP itself. Look one level down too (2026-09-09), newest first.
+wintmp=$("$ZEBRA" --keep-temp "$hw/hw.zbr" >/dev/null 2>&1; ls -dt "${TEMP:-${TMP:-/tmp}}"/hw.zig "${TEMP:-${TMP:-/tmp}}"/*/hw.zig 2>/dev/null | head -1)
 if [ -n "$wintmp" ]; then
     tdir=$(dirname "$wintmp")
     rm -f "$tdir"/hw.zig "$tdir"/hw.zig.fast.exe "$tdir"/hw.zig.llvm.exe 2>/dev/null

@@ -1716,6 +1716,11 @@ smoke_run test/json_keys_at_test.zbr "json_keys_at: OK"
 smoke_run test/bug332_loopvar_scope_test.zbr "bug332: OK"
 smoke_run test/bug225_str_index_byte_test.zbr "bug225: OK"
 smoke_run test/bug320_compound_index_assign_test.zbr "bug320: OK"
+# BUG-359: a local/param/field named like a runtime mutable global is REFUSED (the
+# qualify pass would rewrite it); other underscore names and module vars stay legal.
+smoke_tc_fail test/bug359_reserved_local_fail.zbr "is reserved by the Zebra runtime"
+smoke_tc_fail test/bug359_reserved_field_fail.zbr "is reserved by the Zebra runtime"
+smoke_run test/bug359_underscore_names_test.zbr "bug359: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

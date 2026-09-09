@@ -1723,6 +1723,17 @@ def rtScanNames(rt_text: str)
     _rt_mut_names = mut
     _rt_alias_names = ali
 
+# BUG-359: the names rtQualify will rewrite, for the CHECKER to refuse as user
+# declarations (a local/param/field named `_allocator` was rewritten to
+# `_zbr_rt._allocator` — a Zig parse error blamed on the user, or a silent
+# overwrite of the runtime's global on assignment). Returns " " when there is no
+# preamble to read (a bare `-c` outside the repo), which reserves nothing.
+def rtReservedNames(preamble_path: str): str
+    if not File.exists(preamble_path)
+        return " "
+    rtScanNames(rtRuntimeText(File.read(preamble_path)))
+    return _rt_mut_names
+
 # Rewrite every bare reference to a runtime mutable var as `_zbr_rt.<name>`.
 # Deliberately skipped: "…" and '…' literals (a user's `print("_allocator")` must
 # survive verbatim), `//` comments, `\\` multiline-string lines, and anything
@@ -1813,12 +1824,36 @@ def rtAliasHeader(src: str): str
 # whose front end is otherwise 57 ms.
 var _rt_text_cache: str = ""
 
+# The GUI section files (`selfhost/gui_*_section.zig`) are written without `pub`:
+# they were only ever spliced INLINE into every module (BUG-355 / BUG-357: a
+# `_CodeEditor` per module, an `_args` per module). As part of the shared runtime
+# they must export like the preamble does, so every top-level decl is marked here.
+# Only column-0 declarations; a `pub` already present is left alone. The list of
+# declaration forms is closed on purpose (refuter, 09-08: a form not listed here is
+# silently private) — `tools/libui_section_check.sh` greps the emitted zebra_rt.zig
+# for any column-0 decl in the section region that is still not `pub`.
+def rtPubMarkSection(text: str): str
+    var sb: StringBuilder = StringBuilder()
+    for line in text.split("\n")
+        if line.startsWith("fn ") or line.startsWith("inline fn ") or line.startsWith("const ") or line.startsWith("var ") or line.startsWith("threadlocal var ") or line.startsWith("extern fn ") or line.startsWith("export fn ")
+            sb.append("pub ")
+        sb.append(line)
+        sb.append("\n")
+    var out: str = sb.build()
+    if out.len > 0 and not text.endsWith("\n")
+        out = out[0 .. out.len - 1]
+    return out
+
 def rtRuntimeText(preamble: str): str
     if _rt_text_cache != ""
         return _rt_text_cache
     var hook: str = "    _initModuleVars();\n"
     var gone: str = "    // _initModuleVars() removed: per-program, driven from the entry point.\n"
+    var saved_section: str = _gui_section
+    if _gui_section != ""
+        _gui_section = rtPubMarkSection(_gui_section)
     var sel: str = guiSelectPreamble(preamble)
+    _gui_section = saved_section
     _rt_text_cache = sel.replace(hook, gone)
     return _rt_text_cache
 
@@ -11845,6 +11880,16 @@ struct Generator
                 if getIdentName(m.object) as on2
                     if thread_pool_locals.contains_(on2)
                         return true
+            # BUG-358: the GUI section's SYNCHRONOUS builders (`g.panel(label, cb)`,
+            # `g.window`, `g.childWindow`) take `callback: anytype` and call
+            # `callback.call(self)` before returning — exactly the sys.go shape. Routing
+            # them through the closure-via-sig pool burned one of the 64 slots per CALL,
+            # and a `view()` re-runs on every render, so an MVU view with a panel died on
+            # its 65th frame ("closure-via-sig pool exhausted") — a few seconds on tui.
+            if m.member == "panel" or m.member == "window" or m.member == "childWindow"
+                var rt3: Type_ = inferExpr(m.object, .infer_ctx!)
+                if rt3 is Type_.gui_context
+                    return true
         return false
 
     # Gap 1 gate: thunk every closure arg except those bound for a stdlib

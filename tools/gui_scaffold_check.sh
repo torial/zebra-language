@@ -40,7 +40,7 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 
-ZEBRA="$REPO/zig-out/bin/zebra.exe"
+ZEBRA="$REPO/zig-out/bin/zebra.exe"; [ -x "$ZEBRA" ] || ZEBRA="$REPO/zig-out/bin/zebra"   # Linux build name (09-08)
 EXAMPLE="${1:-examples/counter.zbr}"
 FAIL=0
 pass() { printf '  \033[32mok\033[0m    %s\n' "$1"; }
@@ -79,7 +79,11 @@ for _d in "$_tmp_root/${_ex_base}_gui_tui" "$_tmp_root/${_ex_base}_gui_libui_ng"
     [ -d "$_d" ] && rm -rf "$_d"
 done
 
-timeout 600 "$ZEBRA" --gui-backend=tui "$EXAMPLE" > "$BUILD_LOG" 2>&1
+# `-c --check-full` scaffolds AND builds the project but does not RUN the app (leg 2
+# runs it, under its own timeout). Running it here hung the gate for ten minutes on
+# Linux, where a tui app with no tty happily draws to the alternate screen and waits
+# for input instead of refusing (2026-09-08).
+timeout 600 "$ZEBRA" -c --check-full --gui-backend=tui "$EXAMPLE" > "$BUILD_LOG" 2>&1
 build_rc=$?
 
 # BUG-298. A FAILED BUILD IS FATAL, full stop. This was captured and then used only inside
@@ -112,12 +116,19 @@ stem="$(basename "$EXAMPLE" .zbr)"
 scaffold_dir=$(grep -oE '[A-Za-z]:[\\/][^ "]*'"${stem}"'_gui_tui' "$BUILD_LOG" 2>/dev/null \
                | head -1 | tr '\\' '/')
 main_zig=""
-for cand in "$scaffold_dir/src/main.zig" "$scaffold_dir/main.zig" \
+# The temp-root candidate comes FIRST: it is the directory this script cleared above, so
+# a main.zig there was written by THIS run. (Found 2026-09-09: on Linux the drive-letter
+# grep matches nothing, and the repo-relative `find` below picked up a scaffold left by an
+# earlier `--output-dir .` run — the stale-artifact hazard BUG-298 is about, one level up.)
+for cand in "$_tmp_root/${stem}_gui_tui/src/main.zig" \
+            "$scaffold_dir/src/main.zig" "$scaffold_dir/main.zig" \
             "${stem}_gui_tui/src/main.zig" "${stem}_gui_tui/main.zig"; do
     [ -n "$cand" ] && [ -f "$cand" ] && main_zig="$cand" && break
 done
 if [ -z "$main_zig" ]; then
-    main_zig=$(find . -maxdepth 3 -path "*_gui_tui*" -name main.zig 2>/dev/null | head -1)
+    # THIS example's scaffold only — a repo-wide search once found another example's
+    # stale scaffold (refuter, 09-08)
+    main_zig=$(find . -maxdepth 4 -path "*/${stem}_gui_tui/*" -name main.zig 2>/dev/null | head -1)
 fi
 
 if [ -z "$main_zig" ] || [ ! -f "$main_zig" ]; then
@@ -130,14 +141,33 @@ fi
 # Generalised past the single BUG-229 symbol on purpose: the defect class is "the
 # scaffold declares a global as undefined and the emit forgets to fill it in", and
 # naming only _tui_env would let the next sibling through silently.
-undef_vars=$(grep -oE '^var (_[A-Za-z_0-9]+): [^=]*= undefined;' "$main_zig" \
-             | sed -E 's/^var (_[A-Za-z_0-9]+):.*/\1/' | sort -u)
+# 2026-09-08: GUI projects share one runtime (zebra_rt.zig beside main.zig, the GUI
+# section spliced in and pub-marked), so the scaffold's globals are DECLARED there and
+# ASSIGNED from main.zig as `_zbr_rt._tui_env = …`. Scan the section region of the
+# runtime file as well as main.zig, and accept either spelling of the assignment —
+# in main.zig, or inside the runtime itself (a section that fills its own globals in
+# an init function). Without this the leg went vacuous ("nothing to check") the day
+# the runtime moved, which is exactly the shape BUG-298 warns about.
+rt_zig="$(dirname "$main_zig")/zebra_rt.zig"
+section_txt=""
+if [ -f "$rt_zig" ]; then
+    # exact marker LINES: a prose comment on line 5 of the runtime mentions the marker
+    # too and made the region 3,733 lines instead of 557 (refuter, 09-08)
+    section_txt=$(awk '/^\/\/ === STDLIB_PREAMBLE_GUI_START ===$/{f=1} f{print} /^\/\/ === STDLIB_PREAMBLE_GUI_END ===$/{f=0}' "$rt_zig")
+fi
+# POINTER-typed only (`*` in the type): that is the BUG-229 shape. A `[N]u8 = undefined`
+# scratch buffer is legitimately never "assigned".
+undef_vars=$( { grep -oE '^(pub )?var (_[A-Za-z_0-9]+): [^=]*\*[^=]*= undefined;' "$main_zig"; printf '%s\n' "$section_txt" | grep -oE '^(pub )?var (_[A-Za-z_0-9]+): [^=]*\*[^=]*= undefined;'; } 2>/dev/null \
+             | sed -E 's/^(pub )?var (_[A-Za-z_0-9]+):.*/\2/' | sort -u)
 if [ -z "$undef_vars" ]; then
-    note "leg 1: no 'undefined' globals declared in $main_zig (nothing to check)"
+    bad "leg 1: no 'undefined' globals declared in $main_zig or the runtime's GUI section — the scaffold shape changed; this leg cannot see it"
 else
     missing=""
     for v in $undef_vars; do
-        grep -qE "^[[:space:]]*$v = " "$main_zig" || missing="$missing $v"
+        if ! grep -qE "^[[:space:]]*(_zbr_rt\.)?$v = " "$main_zig" \
+           && ! printf '%s\n' "$section_txt" | grep -qE "^[[:space:]]*$v = "; then
+            missing="$missing $v"
+        fi
     done
     if [ -n "$missing" ]; then
         bad "declared-but-never-assigned global(s) in $main_zig:$missing"
@@ -150,8 +180,10 @@ fi
 
 # ── Leg 2: the built app must not CRASH at startup ───────────────────────────
 app=""
-[ -n "$scaffold_dir" ] && app=$(find "$scaffold_dir" -name 'app.exe' 2>/dev/null | head -1)
-[ -z "$app" ] && app=$(find . -maxdepth 4 -name 'app.exe' 2>/dev/null | head -1)
+# The app of THIS scaffold only (the one main_zig lives in) — a repo-wide search once
+# picked up a stale app from another example's scaffold (09-08).
+this_scaffold="$(cd "$(dirname "$main_zig")/.." && pwd)"
+app=$(find "$this_scaffold" \( -name 'app.exe' -o -name 'app' \) -type f 2>/dev/null | head -1)
 if [ -z "$app" ] || [ ! -x "$app" ]; then
     note "leg 2: skipped (no built app.exe — leg 1 still gates the regression)"
     LEG2_RAN=0
@@ -173,6 +205,19 @@ else
         note "      it got PAST environ_map.get — the BUG-229 crash site"
     elif [ "$rc" -eq 0 ]; then
         pass "app started and exited cleanly (rc=0)"
+    elif [ "$rc" -eq 124 ] && printf '%s' "$out" | grep -qF '[?1049h'; then
+        pass "app drew to the terminal and was still running at the 15 s timeout (Linux: no refusal, it just runs)"
+        note "      it got PAST environ_map.get — the BUG-229 crash site"
+    elif printf '%s' "$out" | grep -qE 'thread [0-9]+ panic: '; then
+        # UNANCHORED on purpose: the banner lands on the same line as the last frame's
+        # escape sequences (no newline precedes it) — an anchored `^thread` filed the
+        # BUG-358 mutant as INCONCLUSIVE on the first red-control run.
+        # BUG-358: panel_smoke drew 64 frames and then died ("closure-via-sig pool
+        # exhausted") — rc=1 with a panic banner, which the branch below filed as
+        # INCONCLUSIVE. A panic past startup is a crash, not an unknown outcome; only the
+        # documented healthy refusal (matched above) is allowed to say "panic" and pass.
+        bad "app PANICKED after starting (rc=$rc):"
+        printf '%s' "$out" | grep -aoE 'thread [0-9]+ panic: .*' | head -2 | sed 's/^/        /'
     else
         LEG2_RAN=0
         note "leg 2: inconclusive (rc=$rc, no known marker) — leg 1 still gates:"

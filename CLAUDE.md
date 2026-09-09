@@ -73,7 +73,7 @@ bash tools/gates.sh --static   # STATIC (~15s): needs NO BUILD — for a docs/to
 bash tools/gates.sh --fast     # FAST (~2 min): everything except smoke + round-trip
 bash tools/gates.sh            # QUICK (~14 min): + smoke + round-trip. After any .zbr edit
 bash tools/gates.sh --full     # FULL (~40 min): + the heavy corpus witnesses
-bash tools/gates.sh --daily    # DAILY: + gramgen, gui-scaffold, node-addon. Once a day
+bash tools/gates.sh --daily    # DAILY: + gramgen, gui-scaffold(+panel), node-addon. Once a day
 bash tools/gates.sh --list     # what each tier runs and what it cannot see
 ```
 
@@ -234,7 +234,7 @@ per-tier counts, computed from the registrations rather than written down.
 | `--fast` | 29 <!-- doc-gen: 29 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
 | (default) | 31 <!-- doc-gen: 31 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
 | `--full` | 39 <!-- doc-gen: 39 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 43 <!-- doc-gen: 43 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--daily` | 44 <!-- doc-gen: 44 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -803,6 +803,10 @@ bash tools/runtime_module_check.sh # THE ONLY GATE THAT RUNS EMITTED OUTPUT: sma
                                 #   (a DIFFERENT branch of zbrToZig — temp dir, not
                                 #   --output-dir), and that `--no-runtime-module` and
                                 #   `--single-file` still produce the INLINE runtime.
+                                #   2026-09-08: GUI backends use the SAME shape now — the
+                                #   section is pub-marked into zebra_rt.zig and scaffolded
+                                #   beside main.zig (BUG-355/357: one runtime, one section
+                                #   per project). Only `--target node-addon` still inlines.
                                 #   compile_check never runs anything, so it cannot see any of
                                 #   this; and every other gate is happy whichever shape is the
                                 #   default, so this is the only one that would notice a silent
@@ -2526,6 +2530,16 @@ not a rendering problem — it needs neither a human nor a terminal. So
 | scaffold declares a global `= undefined` and never assigns it | `gui_scaffold_check` leg 1 (static) | **gated** |
 | app dies with a memory fault at startup | `gui_scaffold_check` leg 2 (runtime) | best-effort |
 | rendering, input, layout, resize, colours | **a human running it** | still uncovered |
+
+**Its leg 2 now fails on a panic AFTER startup, and runs twice (2026-09-09).** BUG-358 —
+`g.panel(label, closure)` in an MVU `view()` died on the 65th frame, "closure-via-sig pool
+exhausted" — produced rc=1 with a panic banner, which the classifier filed as
+INCONCLUSIVE rather than as a crash, so the only automated GUI coverage could not have
+gone red on it. A post-startup `thread N panic:` is now a FAILURE (the documented healthy
+refusal is matched first and still passes). And the default example, `counter`, has no
+closure-taking builder, so a second registration, `gui-scaffold-panel`, runs the same
+tool on `examples/panel_smoke.zbr` — headless it renders far more than 64 frames inside
+the 15 s window. Red-checked by mutating the BUG-358 exemption back out.
 
 Run it as `bash tools/gui_scaffold_check.sh [examples/foo.zbr]`. It builds a real tui app,
 so it is minutes, not seconds — treat it like `compile_check`: per-session and

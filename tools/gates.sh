@@ -530,6 +530,10 @@ run_daily "gramgen"      "gate PASS" python fuzz/gramgen.py --gate
 # Until that is fixed, a green line from this gate means "leg 1 clean", not "the app
 # starts".
 run_daily "gui-scaffold" "startup path clean" bash tools/gui_scaffold_check.sh
+# BUG-358: a view() with a closure-taking builder (`g.panel`) re-runs per frame; the
+# counter example has none, so it could never see the 65th-frame death. Leg 2 of this
+# run renders far more than 64 frames headless.
+run_daily "gui-scaffold-panel" "startup path clean" bash tools/gui_scaffold_check.sh examples/panel_smoke.zbr
 # PINNED: known red, BUG-297. `zebra --target node-addon` on a class STATIC-block export
 # emits a reference to the owning class that is never declared. It is REGISTERED rather
 # than excluded precisely because exclusion is what let it rot unnoticed -- and it fails

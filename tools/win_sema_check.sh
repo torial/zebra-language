@@ -17,8 +17,10 @@ fail=0
 tmp=$(mktemp -d)
 for f in "${files[@]}"; do
   name=$(basename "$f" .zbr)
-  ( cd "$tmp" && "$OLDPWD/$ZEBRA" --emit-zig "$OLDPWD/$f" >/dev/null 2>&1 )
-  z="$tmp/$name.zig"; [ -f "$z" ] || z="$(dirname "$f")/$name.zig"
+  # --output-dir explicitly: --emit-zig alone writes to the TEMP dir (on Linux that was
+  # cwd only while TMPDIR was unset — a harness accident, gone since the /tmp fallback).
+  "$ZEBRA" --emit-zig --output-dir "$tmp" "$f" >/dev/null 2>&1
+  z="$tmp/$name.zig"
   if [ ! -f "$z" ]; then echo "FAIL (emit): $f"; fail=1; continue; fi
   if out=$(cd "$(dirname "$z")" && zig build-exe -target x86_64-windows-gnu -fno-emit-bin "$(basename "$z")" 2>&1); then
     echo "PASS: $f (x86_64-windows-gnu sema)"

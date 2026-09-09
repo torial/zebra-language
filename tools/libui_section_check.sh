@@ -27,8 +27,19 @@ for ex in "${examples[@]}"; do
   rm -rf "$proj"
   # zebra also tries to `zig build` the project (which fetches the bindings — may
   # fail offline); we only need the emitted src/main.zig, so key on that.
-  "$ZEBRA" --gui-backend=libui_ng "$ex" >/dev/null 2>&1
+  "$ZEBRA" --gui-backend=libui_ng --output-dir . "$ex" >/dev/null 2>&1   # explicit: the default is the TEMP dir
   if [ ! -f "$proj/src/main.zig" ]; then echo "FAIL (codegen): $ex"; fail=1; continue; fi
+  # 2026-09-09: the GUI section is pub-marked into the shared zebra_rt.zig by a CLOSED list
+  # of declaration forms (rtPubMarkSection). A form not on that list is silently private
+  # (refuter). Every column-0 declaration in the section region must be `pub` — exact
+  # marker lines, not substrings (a prose comment on line 5 mentions the marker).
+  if [ -f "$proj/src/zebra_rt.zig" ]; then
+    priv=$(awk '/^\/\/ === STDLIB_PREAMBLE_GUI_START ===$/{f=1;next} /^\/\/ === STDLIB_PREAMBLE_GUI_END ===$/{f=0} f' "$proj/src/zebra_rt.zig" \
+           | grep -nE '^(fn|inline fn|const|var|threadlocal var|extern fn|export fn|extern var|export var|usingnamespace) ' | head -5)
+    if [ -n "$priv" ]; then echo "FAIL (private section decl in zebra_rt.zig): $ex"; echo "$priv" | sed 's/^/    /'; fail=1; continue; fi
+  else
+    echo "FAIL (no zebra_rt.zig in the scaffold — runtime-module emission is off for GUI?): $ex"; fail=1; continue
+  fi
   if (cd "$proj" && zig build-obj -target x86_64-windows-gnu -fno-emit-bin --dep ui --dep sci -Mroot=src/main.zig --dep ui -Msci="$B/sci.zig" -Mui="$B/ui.zig" 2>&1 | head -30 | grep -q "error:"); then
     echo "FAIL (sema): $ex"; (cd "$proj" && zig build-obj -target x86_64-windows-gnu -fno-emit-bin --dep ui --dep sci -Mroot=src/main.zig --dep ui -Msci="$B/sci.zig" -Mui="$B/ui.zig" 2>&1 | head -30); fail=1
   else
