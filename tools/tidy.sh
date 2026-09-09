@@ -142,7 +142,14 @@ if [[ "$n_root" -gt 0 ]]; then
     szr=$(du -ch "$REPO"/*.exe "$REPO"/*.pdb "$REPO"/*.obj 2>/dev/null | tail -1 | cut -f1)
     if [[ $CLEAN -eq 1 ]]; then
         rm -f "$REPO"/*.exe "$REPO"/*.pdb "$REPO"/*.obj 2>/dev/null
-        printf '  removed  %s compiled artifact(s) from the repo root  (%s)\n' "$n_root" "${szr:-?}"
+        # Count AFTER: a shell without delete rights (the Cowork VM mounts) fails rm
+        # silently, and "removed 268" over 268 still-present files is a false green.
+        n_left=$(ls -1 "$REPO"/*.exe "$REPO"/*.pdb "$REPO"/*.obj 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "$n_left" -gt 0 ]]; then
+            printf '  \033[31mcould not remove %s of %s\033[0m compiled artifact(s) from the repo root -- no delete permission here?\n' "$n_left" "$n_root"
+        else
+            printf '  removed  %s compiled artifact(s) from the repo root  (%s)\n' "$n_root" "${szr:-?}"
+        fi
     else
         printf '  littered %s compiled artifact(s) in the repo root  (%s)\n' "$n_root" "${szr:-?}"
         dim "clear with --clean; tools/root_clean_check.sh (static tier) fails while they are there"
