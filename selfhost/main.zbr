@@ -43,7 +43,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse, addNativeLibUse, emittedExtern, rtReservedNames
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse, addNativeLibUse, emittedExtern, emittedDynLib, rtReservedNames
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -933,6 +933,8 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --check-full <source.zbr>           full check: front end + zig semantic analysis (slower, total)", to_stdout)
     usageLine("  zebra --emit-zig <source.zbr>            print generated Zig to stdout", to_stdout)
     usageLine("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR", to_stdout)
+    usageLine("  zebra --shared <lib.zbr>                 build a shared library (.so/.dll/.dylib) next to the source;", to_stdout)
+    usageLine("                                           `@export(\"sym\") class` factories are its symbols (QUICKSTART §44)", to_stdout)
     usageLine("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
     usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: tui, libui_ng (native);", to_stdout)
@@ -3578,7 +3580,7 @@ def main()
     # 2026-09-01): with unknown flags now refused, --TURBO becomes a NAMED ERROR
     # rather than either being ignored or silently starting to work -- the user sees
     # the problem instead of getting a build they did not ask for.
-    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list-targets --listen --module-path --no-runtime-module --out --output-dir --print --release --selfhost-compile --single-file --single-threaded --tag --target --turbo --version --warn-inference-guess --warn-non-exhaustive --zig-backend -c -h"
+    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list-targets --listen --module-path --no-runtime-module --out --output-dir --print --release --selfhost-compile --shared --single-file --single-threaded --tag --target --turbo --version --warn-inference-guess --warn-non-exhaustive --zig-backend -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -3896,6 +3898,7 @@ def main()
     # class of problem as a gate that cannot fail.
     var check_full           = args.contains("--check-full")
     var mode_emit            = args.contains("--emit-zig")
+    var mode_shared          = args.contains("--shared")   # BUG-356 leg 1
     var release              = args.contains("--release")
     # BUG-244: `zebra <file>` built an executable into TMPDIR and never removed it.
     # ~20 MB per run, 6,413 files / 120 GB observed on Sean's machine, and a single
@@ -4054,6 +4057,45 @@ def main()
             print(zig_src)
             sys.exit(0)
 
+        if mode_shared
+            # --shared: emit, then `zig build-lib -dynamic` the root module into a shared
+            # library NEXT TO THE SOURCE (like node-addon's .node). The library links libc
+            # like every other build; a Zebra host that loads it must too (BUG-356 leg 4).
+            var sh_zig: str = mc.zbrToZig(path)
+            var sh_dir: str = Path.dirname(path)
+            if sh_dir == ""
+                sh_dir = "."
+            var sh_stem: str = Path.basename(path)
+            if sh_stem.endsWith(".zbr")
+                sh_stem = sh_stem[0 .. sh_stem.len - 4]
+            var sh_out: str = sh_dir + "/lib" + sh_stem + ".so"
+            if dbgIsWindows()
+                sh_out = sh_dir + "/" + sh_stem + ".dll"
+            else if zig"builtin.os.tag == .macos"
+                sh_out = sh_dir + "/lib" + sh_stem + ".dylib"
+            var sargv = List(str)()
+            sargv.add("zig")
+            sargv.add("build-lib")
+            sargv.add(sh_zig)
+            sargv.add("-dynamic")
+            sargv.add("-lc")
+            sargv.add("--name")
+            sargv.add(sh_stem)
+            sargv.add("-femit-bin=" + sh_out)
+            if release
+                sargv.add("-OReleaseFast")
+            if cpu_flag != ""
+                sargv.add("-mcpu=" + cpu_flag)
+            var sr = sys.run(sargv)
+            if sr.stdout != ""
+                Terminal.write(sr.stdout, "")
+            if sr.stderr != ""
+                sys.err(remapZigErrors(sr.stderr, sh_zig))
+            if sr.exit_code != 0
+                sys.exit(1)
+            sys.errln("wrote " + sh_out)
+            sys.exit(0)
+
         if mode_node
             # node-addon: compileDep wrote <stem>.zig (+ .js + .d.ts); build the
             # loadable .node via `zig build-lib -dynamic` against the Node headers.
@@ -4153,7 +4195,8 @@ def main()
         # `zig build-exe a.zig` works, `zig build-exe a.zig -fno-llvm -fno-lld` segfaults,
         # on identical source. Any program declaring a foreign symbol therefore takes the
         # authoritative LLVM path; everything else keeps the ~6x faster backend.
-        if not release and mc.c_sources.len == 0 and mc.lib_sources.len == 0 and not mc.uses_sqlite and not emittedExtern()
+        # BUG-356: DynLib.open needs libc (dlopen); the fast path links none.
+        if not release and mc.c_sources.len == 0 and mc.lib_sources.len == 0 and not mc.uses_sqlite and not emittedExtern() and not emittedDynLib()
             var fast_exe: str = zig_path + ".fast.exe"
             var fargv = List(str)()
             fargv.add("zig")

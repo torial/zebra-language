@@ -1571,6 +1571,30 @@ bash tools/ffi_lib_check.sh        # THE PREBUILT-LIBRARY GATE (BUG-266, QUICK t
                                 #   cannot pass for an unrelated reason. Classifies on
                                 #   PRINTED OUTPUT, never exit code (BUG-259). Refuses to
                                 #   report a pass if the library cannot be built.
+bash tools/dynlib_roundtrip_check.sh  # THE PLUGIN GATE, registered as `dynlib-roundtrip`
+                                #   (FULL tier, ~20s): `zebra --shared greeter.zbr`, then a
+                                #   Zebra host does DynLib.open + lookup(IGreeter, "greeter")
+                                #   and prints a value that appears in NEITHER source as a
+                                #   literal. QUICKSTART §44 promised this since the DynLib
+                                #   epic; walking it for the IDE's plugin design (2026-09-08)
+                                #   found it broken in FIVE places (BUG-356), and the last
+                                #   one read as memory corruption: the host took the fast
+                                #   `-fno-llvm -fno-lld` path, which links NO libc, so
+                                #   std.DynLib was Zig's own ElfDynLib loader — which does
+                                #   not apply the library's RELATIVE relocations. The vtable
+                                #   read back held file offsets. A program that calls
+                                #   DynLib.open now always links libc (dlopen).
+                                #   PINNED RED for one day, then green — the pin idiom
+                                #   working as designed. The fixture prints, sleeps and
+                                #   mutates a module var INSIDE the library, because a
+                                #   library has no main() and its Io was undefined until
+                                #   the @export factory learned to initialise the runtime
+                                #   (`_libInit`); red-checked by mutating that call out
+                                #   (general protection fault in Io.operate).
+                                #   CANNOT SEE: Windows (.dll) or macOS — Linux only here;
+                                #   a host that is NOT Zebra (C, Zig); unloading (close
+                                #   then reopen); anything about the ABI of `str` across
+                                #   the boundary beyond "the bytes came back".
 bash tools/check_mode_check.sh     # THE CHECK-MODE CONTRACT GATE: `-c` is front-end-only
                                 #   and deliberately incomplete, so what needs gating is the
                                 #   CONTRACT, not the coverage — valid code passes both modes,

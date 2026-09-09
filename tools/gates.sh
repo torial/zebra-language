@@ -460,11 +460,11 @@ run_fast "debug-map"     "passed"   bash tools/debug_map_check.sh
 # an optimize flag, so users shipped Debug believing otherwise.
 run_full "release-mode"   "all checks pass" bash tools/release_mode_check.sh
 run_full "contract-mode"  "checks pass" bash tools/contract_mode_check.sh
-# A Zebra shared library loaded by a Zebra host (QUICKSTART §44). KNOWN RED: the fat
-# pointer read across the boundary is garbage (BUG-356). Pinned so the day it passes is
-# noticed — a pin that comes good is a registration nobody updated.
-pin_full() { local l="$1" t="$2"; shift 2; _PIN_TICKET="$t"; _run full "$l" "$@"; _PIN_TICKET=""; }
-pin_full "dynlib-roundtrip" "BUG-356" "PASS" bash tools/dynlib_roundtrip_check.sh
+# A Zebra shared library loaded by a Zebra host (QUICKSTART §44): `zebra --shared`, then
+# DynLib.open + lookup from a Zebra host. Pinned red as BUG-356 from 2026-09-08 until the
+# fix landed 2026-09-09 (the "garbage fat pointer" was ElfDynLib skipping relocations on a
+# host built without libc) — the pin did its job: it was the first thing to go green.
+run_full "dynlib-roundtrip" "PASS" bash tools/dynlib_roundtrip_check.sh
 # compile_check (DEFAULT runtime shape) was REMOVED from this tier 2026-08-19 —
 # its property now rides on full_sweep, which was already doing the identical work.
 #

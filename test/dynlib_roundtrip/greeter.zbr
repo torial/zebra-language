@@ -2,9 +2,16 @@ interface IGreeter
     def greet(name: str): str
     def version(): int
 
+# BUG-356 leg 5: a module var, a print and a sleep inside the library — each needs the
+# runtime the host never initialised for us (`_libInit` in the @export factory).
+var calls: int = 0
+
 @export("greeter")
 class HelloGreeter implements IGreeter
     def greet(name: str): str
+        calls = calls + 1
+        print("greeter: call " + calls.toString())
+        sys.sleep(1)
         return "Hello, " + name
     def version(): int
         return 7

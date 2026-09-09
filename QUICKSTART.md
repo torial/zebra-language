@@ -4734,13 +4734,22 @@ class HelloGreeter implements IGreeter
 ```
 
 Compile the producer with `zebra --shared greeter.zbr` to produce a shared
-library.  The consumer loads it with `DynLib.open` + `lib.lookup(IGreeter, "greeter")`.
+library **next to the source** (`libgreeter.so` / `greeter.dll` / `libgreeter.dylib`;
+`--release` for an optimised build).  The consumer loads it with `DynLib.open` +
+`lib.lookup(IGreeter, "greeter")`.  A `use`d module of the library is compiled in;
+its own `@export` factories are exported too.
+
+The library has no `main()`, so the factory initialises the runtime on first call
+(its own Io, the module's deferred globals) — `print`, `sys.sleep`, `File` and module
+vars all work inside library code.  What it does NOT have: the host's arguments or
+environment (`sys.args()` is empty), and each side owns its own allocator — a `str`
+returned from the library is memory the library's arena owns, valid until `lib.close()`.
 
 **Requirements:**
 - The class must implement at least one interface.  The factory wraps the **first**
   listed interface.
 - The class init must take no arguments (the factory calls `ClassName.init()` internally).
-- Both compilers emit identical output.
+- The round trip is gated (`tools/dynlib_roundtrip_check.sh`, FULL tier, BUG-356).
 
 ### Simple C-callable exports — `export def`
 

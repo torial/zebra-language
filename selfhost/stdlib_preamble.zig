@@ -71,6 +71,19 @@ pub var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
 }
+// BUG-356: a shared library (`zebra --shared`) has no main() to hand it an Io, so `_io`
+// stayed `undefined` and the first File/print/sleep inside the library faulted. The
+// @export factory calls this before constructing the singleton: one Threaded Io owned by
+// the library, created on first use. Idempotent; a host that is itself a Zebra program
+// has its own runtime copy (statically linked into each side), so nothing is shared.
+var _lib_io_threaded: std.Io.Threaded = undefined;
+var _lib_inited: bool = false;
+pub fn _libInit() void {
+    if (_lib_inited) return;
+    _lib_inited = true;
+    _lib_io_threaded = std.Io.Threaded.init(std.heap.page_allocator, .{});
+    _io = _lib_io_threaded.io();
+}
 pub fn _initIo(io: std.Io) void {
     _io = io;
     // BUG-153: a module's deferred globals (HashMap/Set/Atomic) are assigned here,

@@ -2676,6 +2676,18 @@ var _emitted_extern: bool = false
 def emittedExtern(): bool
     return _emitted_extern
 
+# BUG-356 leg 4. A program that calls DynLib.open must LINK LIBC. Without `-lc`,
+# `std.DynLib` on Linux is Zig's own `ElfDynLib` loader, which maps the .so itself and
+# does not apply its RELATIVE relocations — so a vtable read from the library holds
+# UNRELOCATED addresses (the `0x20f9a0` garbage: a file offset, not a mapped one) and
+# the first call through it faults. With `-lc` it is `dlopen`, which works. The fast
+# `-fno-llvm -fno-lld` path in main passes no `-lc`, so it is refused for these
+# programs the way it is for extern declarations.
+var _emitted_dynlib: bool = false
+
+def emittedDynLib(): bool
+    return _emitted_dynlib
+
 # ── Writer ────────────────────────────────────────────────────────────────────
 # Reference-type output sink.  All Generator copies share the same Writer.
 
@@ -4663,6 +4675,10 @@ struct Generator
                     w.emit("    if (_zbr_export_")
                     w.emit(sym)
                     w.emit("_iface == null) {\n")
+                    # BUG-356: inside a shared library nothing ran main(), so the runtime's
+                    # Io and this module's deferred globals are uninitialised until here.
+                    w.emit("        _libInit();\n")
+                    w.emit("        _initModuleVars();\n")
                     w.emit("        _zbr_export_")
                     w.emit(sym)
                     w.emit("_iface = .{ .ptr = ")
@@ -14720,6 +14736,7 @@ struct Generator
                 return
             if id.name == "DynLib"
                 if mname == "open" and args.len > 0
+                    _emitted_dynlib = true
                     # BUG-356: `try` only inside a `throws` function; elsewhere a missing
                     # library is the documented PANIC ("panics if not found", QUICKSTART
                     # §44). The unconditional `try` reached Zig as "expected type 'void',
