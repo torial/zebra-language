@@ -403,7 +403,7 @@ a session arriving cold can tell what to *skip* rather than guessing:
 | `design` | a design/decision note | read only when touching that subsystem; may describe intent that is not built. Each carries its own `Status:` line |
 | `generated` | produced by a tool | **skip.** Edit the tool, not the file |
 
-**13 of the 55 documents are `historical` or `generated`** <!-- doc-gen: 55 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> <!-- doc-gen: 13 = for f in *.md docs/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
+**13 of the 56 documents are `historical` or `generated`** <!-- doc-gen: 56 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> <!-- doc-gen: 13 = for f in *.md docs/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
 i.e. skippable with confidence. That is the point: the surface area of this repo's
 documentation is what let one wrong claim live in four files at once, and "which of these
 is current?" was previously answerable only by reading them.
@@ -2009,20 +2009,20 @@ than "what do we know":
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
 | **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 32 probes / 308 assertions | <!-- doc-gen: 32 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 308 = cat test/boundary/*.expected | grep -c . -->
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
-| **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 10 opted in; the gate prints the ratio | <!-- doc-gen: 10 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
+| **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 11 opted in; the gate prints the ratio | <!-- doc-gen: 11 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
 | static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 95 scripts | <!-- doc-gen: 95 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
-| docs' checkable claims still resolve | `doc_lint` | 55 tracked documents <!-- doc-gen: 55 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 104 scripts | <!-- doc-gen: 104 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| docs' checkable claims still resolve | `doc_lint` | 56 tracked documents <!-- doc-gen: 56 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords × both compilers |
-| **the docs' EXAMPLES actually parse** | `doc_example_check` | `live` docs only; the gate prints its own block and doc counts | <!-- doc-gen: 55 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' -->
+| **the docs' EXAMPLES actually parse** | `doc_example_check` | `live` docs only; the gate prints its own block and doc counts | <!-- doc-gen: 56 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
 
@@ -2592,7 +2592,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **422** <!-- doc-gen: 422 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **536** <!-- doc-gen: 536 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **574** <!-- doc-gen: 574 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.

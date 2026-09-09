@@ -2846,14 +2846,14 @@ the Debug Adapter Protocol on its own stdio (native in the selfhost since 2026-0
 `--listen PORT` TCP mode still delegates to the bootstrap binary when present).  IDE clients (VS Code, ZebraIDE) connect
 to this socket for breakpoints, stepping, and variable inspection.
 
-What a client sends, as `zebra-ide/src/dap.zbr` does it (2026-09-07): `initialize` →
+What a client sends, as `zebra-ide/src/dap.zbr` does it (2026-09-07): <!-- doc-lint-ok: a path in the zebra-ide repo, not this one --> `initialize` →
 `launch{program}` where `program` is the exe `zig build-exe` wrote to the **current
 directory** (`<stem>` / `<stem>.exe`) → `setBreakpoints{source.path: the .zbr,
 breakpoints:[{line}]}` → `configurationDone` → `stopped` event → `stackTrace` (frames
 come back with the `.zbr` path and line) → `next`/`continue`… → `disconnect`. The
 `setBreakpoints` *response* still names the `.zig`; only `stackTrace` is remapped back.
 lldb has no Zig language plugin, so the Locals scope is empty (Globals and Registers
-work). Headless control: `zebra src/dap_client_test.zbr` in zebra-ide.
+work). Headless control: `zebra src/dap_client_test.zbr` in zebra-ide. <!-- doc-lint-ok: a path in the zebra-ide repo, not this one -->
 
 See `docs/DEBUGGING.md` for:
 - VS Code launch configuration

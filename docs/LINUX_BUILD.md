@@ -1,4 +1,4 @@
-<!-- doc-status: current -->
+<!-- doc-status: live -->
 # Building Zebra on Linux (and in a container)
 
 *Landed 2026-09-06 (branch `linux-build`, Fable 5.1). Before this, the repo built only
