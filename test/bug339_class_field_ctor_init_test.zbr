@@ -1,0 +1,33 @@
+# BUG-339: a class field initialised with a runtime constructor leaked Zig's "unable to
+# resolve comptime value" (a struct default must be comptime). The initialiser is now
+# deferred into the constructor — user `cue init` or synthetic — so the field is live
+# before the init body runs.
+class Other
+    var n: int
+    cue init()
+        .n = 41
+
+class Box
+    var pending: HashMap(int, str) = HashMap(int, str)()
+    var seen: Set(int) = Set(int)()
+    var other: Other = Other()
+    var names: List(str) = List(str)()
+    var k: int
+    cue init(k: int)
+        .k = k
+        .pending.set(k, "k")
+
+class NoInit
+    var m: HashMap(str, int) = HashMap(str, int)()
+    var tag: str = "t"
+
+def main()
+    var b = Box(3)
+    b.seen.add(7)
+    b.names.add("x")
+    var ni = NoInit()
+    ni.m.set("a", 1)
+    if b.pending.len == 1 and b.seen.contains(7) and b.other.n == 41 and b.names.len == 1 and ni.m.len == 1 and ni.tag == "t"
+        print("bug339: OK")
+    else
+        print("bug339: FAIL")

@@ -6,6 +6,48 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-367: `checkStmts` had no arm for a numeric `for i in a..b` — nothing inside such a body was checked — FIXED 2026-09-09
+
+`walkStmts` (binding/inference) had a `for_num` arm; `checkStmts` (diagnostics) did not, so every
+check this pass raises — BUG-354's parameter refusal, BUG-319's immutable-string store, BUG-330,
+call arity (BUG-142), type mismatches on `var` — was silently skipped one numeric loop deep, and
+in every `for … else` arm. Found by leakgen the hour BUG-354 was fixed: gen.py put `p = p` inside
+`for r in 2..5` and the "fixed" leak came straight back with a different seed. Fixture
+bug367_for_num_body_checked_fail (a param assignment inside a numeric for must be refused).
+
+### BUG-354: assigning to a PARAMETER leaks Zig `cannot assign to constant` — FIXED 2026-09-09
+
+`def update(m: Model, ..): Model` with `m = update(m, km)` inside (rebinding the parameter
+to the same object) reached Zig. Parameters are const by design; the checker should say
+so in Zebra ("cannot assign to parameter `m`; bind a new local") at the assignment.
+Found writing zebra-ide's shortcut dispatch.
+
+**Fix.** The checker records the current function's parameter names (`InferCtx.params_here`) and refuses `p = ...` with: `cannot assign to parameter 'p' -- parameters are read-only; bind a new local`. Fixtures bug354_param_assign_fail + bug354_param_shadow_ok_test (a same-named local elsewhere stays legal). Fixing it exposed **BUG-367**: the refusal did not fire inside a numeric `for` because checkStmts had no arm for it.
+
+### BUG-339: a class field initialised with a runtime constructor leaks Zig's `unable to resolve comptime value` — FIXED 2026-09-09
+
+`var pending: HashMap(int, str) = HashMap(int, str)()` as a CLASS field: the emitted Zig
+struct default must be comptime-known. UI_QUICKSTART documents this for `CodeEditor`
+as a rule ("assign in init"); it is general to every heap-constructed field, and the
+diagnostic is Zig's. The checker knows the field type and the initialiser shape, so it
+can refuse with: "class field initialisers must be constants; construct `pending` in
+`cue init`". Workaround: declare without initialiser, assign in `cue init` (done in
+zebra-ide/src/lsp.zbr).
+
+**Fix.** Deferred, not refused: a class field whose initialiser is a runtime call (anything but `List(T)()` / `StringBuilder()`, which lower to comptime `.empty`) emits `= undefined` in the struct and is assigned at the top of the constructor — user `cue init` or synthetic — so it is live before the init body. Classes only: a struct may be built by a literal relying on the declared default. Fixture bug339_class_field_ctor_init_test (HashMap, Set, a user class, List control, no-init class). gen.py generates the shape.
+
+### BUG-336: `s.split(sep).at(i)` / `.len` leaks a Zig error instead of a Zebra refusal — FIXED 2026-09-09
+
+`split` returns a Zig `SplitIterator`, usable only in `for`. Calling `.at()` on it gives
+`no field named 'items' in struct 'mem.SplitIterator(u8,.sequence)'` from Zig. QUICKSTART
+shows only the `for` form. Either make split return `List(str)` (the type its name
+suggests; every call site I have seen immediately collects it anyway) or have the type
+checker refuse `.at/.len/.count` on the iterator with a Zebra message. Same class as
+BUG-319/330 ("refused in Zebra, not leaked from Zig").
+
+**Fix.** The lazy `SplitIterator` is collected inline (the BUG-176 block) wherever a List method is applied to a `split`/`lines` CALL (`.at`, `.len`), and such a call is never hoisted to a `_mc_N` temp. Fixture bug336_split_chain_test. Landed under the leakgen gate: gen.py generates the shape (`leakclass` cap), so it stays covered.
+
+
 ### BUG-366: a str ternary/`orelse` of unchecked loop vars as a method RECEIVER emits a member call on a slice — FIXED 2026-09-09
 
 `if(c, k, v).contains(x)` with `k`, `v` tuple-loop strings: the checker never bound them, so

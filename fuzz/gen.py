@@ -289,6 +289,14 @@ class Gen:
             choices += ['fieldwrite']
         if self._self_fields:
             choices += ['selffieldwrite']   # `.field = expr` — mutating method
+        # LEAK CLASS (2026-09-09, fuzz/leakgen.py): the shapes people found by hand
+        # (BUG-336, BUG-354) so they are found by the gate instead — baselined with their
+        # tickets in fuzz/leak_baseline.txt until fixed, then the baseline line goes.
+        if self.caps.get('leakclass'):
+            # (BUG-354 `p = expr` lived here for one afternoon; it is a Zebra REFUSAL now, so
+            # generating it would only produce rejects -- the smoke fixture pins it.)
+            if self.vars_of(env, 'str'):
+                choices += ['splitat']      # BUG-336: `s.split(sep).at(i)` / `.len`
         if indent < self.caps['depth']:
             choices += ['if', 'while']
             if opt_in_scope:
@@ -303,6 +311,14 @@ class Gen:
                 choices += ['branch']  # `branch v` over enum/union variants
         k = self.pick(choices)
         d = self.caps['expr_depth']
+        if k == 'splitat':
+            s_ = self.pick(self.vars_of(env, 'str'))
+            name = self.fresh('sp')
+            if self.maybe(0.5):
+                env[name] = 'int'
+                return [f'{ind}var {name}: int = {s_}.split(",").len']
+            env[name] = 'str'
+            return [f'{ind}var {name}: str = {s_}.split(",").at(0)']
         if k == 'listdecl':
             et = self.pick(PRIMS)
             # char as a List element — the BUG-172 shape (a keyword primitive as
@@ -550,6 +566,10 @@ class Gen:
         lines = [f'class {name}']
         for fn, ft in fields:
             lines.append(f'    var {fn}: {ft}')
+        # BUG-339 shape (leakclass): a field initialised with a runtime constructor. Not
+        # recorded in `fields` — it takes no init parameter and is never read.
+        if self.caps.get('leakclass') and self.maybe(0.2):
+            lines.append('    var pending: HashMap(int, str) = HashMap(int, str)()')
         lines.append('    cue init(' + ', '.join(f'{fn}: {ft}' for fn, ft in fields) + ')')
         for fn, _ in fields:
             lines.append(f'        .{fn} = {fn}')
@@ -691,6 +711,9 @@ DEFAULT_CAPS = {
     'maps': True,        # HashMap(K,V) — construct, .set, .get orelse, .len, entries for-in
     'strmethods': True,  # str methods — upper/lower/trim*/replace/contains/startsWith/len (NOT indexOf; BUG-174)
     'chains': True,      # methods on EXPRESSION results, toString, interpolation (leakgen, 2026-09-09)
+    'leakclass': True,   # the hand-found "Zebra accepts, Zig rejects" shapes, kept as regression
+                         # coverage now they are fixed: BUG-336 split().at/len, BUG-339 class
+                         # field with a ctor initialiser
 }
 
 

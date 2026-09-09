@@ -1,0 +1,8 @@
+# BUG-354: assigning to a PARAMETER reached Zig as "cannot assign to constant".
+# Parameters are read-only; the checker refuses it in Zebra.
+def bump(n: int): int
+    n = n + 1
+    return n
+
+def main()
+    print(bump(1))

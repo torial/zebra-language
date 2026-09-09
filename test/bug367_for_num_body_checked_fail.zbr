@@ -1,0 +1,9 @@
+# BUG-367: checkStmts had no arm for a numeric `for i in a..b`, so nothing inside such a
+# body was checked. This must be refused (the BUG-354 rule), one loop deep.
+def f(p: int): int
+    for i in 0..3
+        p = p + i
+    return p
+
+def main()
+    print(f(1))

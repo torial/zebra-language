@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-366. Next new bug: BUG-367.**
+**Last bug number generated: BUG-367. Next new bug: BUG-368.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,15 +46,6 @@
 
 ---
 
-### BUG-336: `s.split(sep).at(i)` / `.len` leaks a Zig error instead of a Zebra refusal — OPEN (found 2026-09-07)
-
-`split` returns a Zig `SplitIterator`, usable only in `for`. Calling `.at()` on it gives
-`no field named 'items' in struct 'mem.SplitIterator(u8,.sequence)'` from Zig. QUICKSTART
-shows only the `for` form. Either make split return `List(str)` (the type its name
-suggests; every call site I have seen immediately collects it anyway) or have the type
-checker refuse `.at/.len/.count` on the iterator with a Zebra message. Same class as
-BUG-319/330 ("refused in Zebra, not leaked from Zig").
-
 ### BUG-337: `json.getList(k).len` leaks a Zig error (`no member named 'items' in '[]json.dynamic.Value'`) — OPEN (found 2026-09-07)
 
 `getList` is typed `List(JsonValue)` in the checker but lowers to a Zig slice, so
@@ -69,29 +60,12 @@ methods with a Zebra message. Workaround in zebra-ide: count by iterating.
 treats generic args in a call as value names. Workaround: store raw strings and parse on
 use. Probably affects every built-in type name (CodeEditor, SysProcess, ...).
 
-### BUG-339: a class field initialised with a runtime constructor leaks Zig's `unable to resolve comptime value` — OPEN (found 2026-09-07)
-
-`var pending: HashMap(int, str) = HashMap(int, str)()` as a CLASS field: the emitted Zig
-struct default must be comptime-known. UI_QUICKSTART documents this for `CodeEditor`
-as a rule ("assign in init"); it is general to every heap-constructed field, and the
-diagnostic is Zig's. The checker knows the field type and the initialiser shape, so it
-can refuse with: "class field initialisers must be constants; construct `pending` in
-`cue init`". Workaround: declare without initialiser, assign in `cue init` (done in
-zebra-ide/src/lsp.zbr).
-
 ### BUG-351: `StringBuilder.build()` EMPTIES the builder — `sb.len()` is 0 afterwards — OPEN (found 2026-09-08)
 
 `build()` lowers to `toOwnedSlice`, which moves the buffer out. test/string_builder_test.zbr
 was written expecting `print(sb.len())` → 12 after `print(sb.build())` and prints 0; the
 test is not in smoke so nobody saw it. Either semantics is defensible (a consuming `build()`
 is cheaper; a non-consuming one matches the comment and Java/C#). Sean's call. Not touched.
-
-### BUG-354: assigning to a PARAMETER leaks Zig `cannot assign to constant` — OPEN (found 2026-09-08)
-
-`def update(m: Model, ..): Model` with `m = update(m, km)` inside (rebinding the parameter
-to the same object) reached Zig. Parameters are const by design; the checker should say
-so in Zebra ("cannot assign to parameter `m`; bind a new local") at the assignment.
-Found writing zebra-ide's shortcut dispatch.
 
 ### BUG-333: `docs/UI_QUICKSTART.md` contradicts itself on CodeEditor syntax highlighting — OPEN (found 2026-09-06)
 

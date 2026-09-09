@@ -1,0 +1,12 @@
+# BUG-336: `s.split(sep).at(i)` and `s.split(sep).len` directly on the call — the receiver is
+# the lazy iterator, and `.items` on it leaked a Zig error. The List method now collects it
+# inline (same block BUG-176 uses for a bound `var cols = s.split(..)`).
+def main()
+    var s: str = "a,bb,ccc"
+    var n: int = s.split(",").len
+    var second: str = s.split(",").at(1)
+    var last: str = "x y z".split(" ").at(2)
+    if n == 3 and second == "bb" and last == "z"
+        print("bug336: OK")
+    else
+        print("bug336: FAIL " + n.toString() + " " + second + " " + last)

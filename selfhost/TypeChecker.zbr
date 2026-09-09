@@ -1109,6 +1109,10 @@ class InferCtx
     # error blamed on the user), and an ASSIGNMENT to one would silently overwrite
     # the runtime's allocator. Set by main from the loaded preamble; " " = unset.
     var reserved_rt: str
+    # BUG-354: the names bound as PARAMETERS of the function being checked (a Zebra param
+    # emits as a Zig `const`, so assigning to one is a Zig error the user never wrote).
+    # Space-delimited with leading/trailing spaces, like reserved_rt; reset per function.
+    var params_here: str
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -1125,6 +1129,13 @@ class InferCtx
         .source = ""
         .self_type_override = nil
         .reserved_rt = " "
+        .params_here = " "
+
+    def setParamsHere(names: str)
+        .params_here = names
+
+    def isParamHere(name: str): bool
+        return (" " + name + " ") in .params_here
 
     def withReservedRuntimeNames(names: str)
         .reserved_rt = names
@@ -3376,14 +3387,18 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             # inferExpr on the loop var yields unknown_, which is safe.
             # Exception: `for c in s.chars()` (single var) → c is char_,
             # so c.toString() in the body routes to utf8Encode, not allocPrint.
-            var loop_var_t: Type_ = forInElemType(fi, ctx)
+            var loop_var_ts: List(Type_) = forInVarTypes(fi, ctx)
+            var lvi: int = 0
             for v in fi.vars
-                ctx.bind(v, loop_var_t)
+                ctx.bind(v, loop_var_ts.at(lvi))
+                lvi = lvi + 1
             walkStmts(fi.stmts, ctx)
             # Keep the loop var binding at its typed value (not reset to unknown_)
             # so the single-pass ctx persists the correct type for code generation.
+            lvi = 0
             for v2 in fi.vars
-                ctx.bind(v2, loop_var_t)
+                ctx.bind(v2, loop_var_ts.at(lvi))
+                lvi = lvi + 1
         on Stmt.for_num as fnum
             walkExpr(fnum.start, ctx)
             walkExpr(fnum.stop_, ctx)
@@ -3728,6 +3743,61 @@ def typesCompatible(declared: Type_, inferred: Type_): bool
 # 2,500 lines earlier and reported `expected str, got int`, at a fabricated position, on
 # code the bootstrap compiles cleanly. Any name reused as a loop variable anywhere in a
 # large module was exposed to this; `k` and `i` are the obvious ones.
+# 2026-09-09 (leakgen's root cause): ONE type per loop VARIABLE, for every loop shape.
+# forInElemType below answers the single-var call/literal/field cases it always did; this
+# adds the general fallback (infer the iterable: List(T) -> T, Set(T) -> T, List(str) …)
+# and the multi-var shapes, which were bound `unknown_` outright: `for k, v in m` and
+# `for k, v in m.entries()` -> (K, V); `for a, b in pairs` over List((A, B)) -> (A, B);
+# `for i, x in xs` -> (int, T). Five of leakgen's first seven finds (BUG-362..366) were
+# codegen guessing a tuple-loop key's type from NAME LISTS because the checker had never
+# typed it. A wrong answer here is asserted against downstream, so every arm returns
+# unknown_ rather than a guess when the iterable's shape is not one it recognises.
+def forInVarTypes(fi: StmtForIn, ctx: InferCtx): List(Type_)
+    var out = List(Type_)()
+    var n: int = fi.vars.len
+    if n == 1
+        var t1: Type_ = forInElemType(fi, ctx)
+        if t1 is Type_.unknown_
+            var it1: Type_ = inferExpr(fi.iter, ctx)
+            if it1 is Type_.ref_to as it1r
+                it1 = it1r
+            branch it1
+                on Type_.list_ as le
+                    t1 = le
+                on Type_.set_ as se
+                    t1 = se
+                on Type_.str_slice
+                    t1 = Type_.string_
+                else
+                    pass
+        out.add(t1)
+        return out
+    var it: Type_ = inferExpr(fi.iter, ctx)
+    if it is Type_.ref_to as itr
+        it = itr
+    # `for k, v in m` (the map itself) and `for k, v in m.entries()` (a List((K, V)))
+    if n == 2
+        if it is Type_.hashmap_ as hm2
+            out.add(hm2.key_t)
+            out.add(hm2.val_t)
+            return out
+    if it is Type_.list_ as lelem
+        if lelem is Type_.tuple_ as tt
+            if tt.elems.len == n
+                for te in tt.elems
+                    out.add(te)
+                return out
+        else if n == 2
+            # indexed iteration: first var is the index
+            out.add(Type_.int_)
+            out.add(lelem)
+            return out
+    var i: int = 0
+    while i < n
+        out.add(Type_.unknown_)
+        i = i + 1
+    return out
+
 def forInElemType(fi: StmtForIn, ctx: InferCtx): Type_
     if fi.vars.len != 1
         return Type_.unknown_
@@ -4184,13 +4254,27 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
             on Stmt.while_ as sw
                 checkCallsInExpr(sw.cond, file, sw.span.line, ctx)  # BUG-142
                 checkStmts(sw.stmts, file, ctx)
+            on Stmt.for_num as sfn
+                # BUG-367 (leakgen, the day BUG-354 was fixed): checkStmts had NO arm for a
+                # numeric `for i in a..b`, so nothing inside such a body was checked -- the
+                # BUG-354 refusal, BUG-319's immutable-string store, every diagnostic this
+                # pass raises, all silently skipped one loop deep. walkStmts had the arm;
+                # this pass did not. Found because gen.py put a `p = p` inside `for r in 2..5`.
+                checkCallsInExpr(sfn.start, file, sfn.span.line, ctx)
+                checkCallsInExpr(sfn.stop_, file, sfn.span.line, ctx)
+                if sfn.step != nil
+                    checkCallsInExpr(sfn.step!, file, sfn.span.line, ctx)
+                ctx.bind(sfn.var_, Type_.int_)
+                checkStmts(sfn.stmts, file, ctx)
+                if sfn.else_ as sfn_else
+                    checkStmts(sfn_else, file, ctx)
             on Stmt.for_in as sfi
                 checkCallsInExpr(sfi.iter, file, sfi.span.line, ctx)  # BUG-142
                 # BUG-332: bind the loop vars HERE too. Without this the body sees a
                 # same-named binding left behind by an earlier function, and reports its
                 # type instead. Binding unknown_ is the safe floor: it carries no
                 # information, so a wrong type can never be asserted against.
-                var sfi_elem: Type_ = forInElemType(sfi, ctx)
+                var sfi_elems: List(Type_) = forInVarTypes(sfi, ctx)
                 # BUG-330. Iterating a bare `str` emitted `s.items` and produced the SAME
                 # leaked Zig internal as BUG-319a -- one wrong answer wearing two faces. The
                 # refusal names both loops because the language genuinely has two, and the
@@ -4199,9 +4283,13 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 if inferExpr(sfi.iter, ctx) is Type_.string_
                     ctx.addErr(file, sfi.span.line, sfi.span.col,
                                "cannot iterate a 'str' directly -- use s.chars() for codepoints, or index s[i] over its bytes")
+                var svi: int = 0
                 for sv in sfi.vars
-                    ctx.bind(sv, sfi_elem)
+                    ctx.bind(sv, sfi_elems.at(svi))
+                    svi = svi + 1
                 checkStmts(sfi.stmts, file, ctx)
+                if sfi.else_ as sfi_else   # BUG-367: the for/else arm was unchecked too
+                    checkStmts(sfi_else, file, ctx)
             on Stmt.try_catch as stc
                 checkStmts(stc.stmts, file, ctx)
                 for cc in stc.clauses
@@ -4215,6 +4303,15 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                     checkCallsInExpr(sr.value!, file, sr.span.line, ctx)
             on Stmt.assign as sasn
                 checkCallsInExpr(sasn.value, file, sasn.span.line, ctx)  # audit #3
+                # BUG-354: a parameter is a Zig `const`; `p = ...` leaked "cannot assign to
+                # constant" against code the user never wrote. Refuse it in Zebra, naming
+                # the idiom. A local that SHADOWS the param (`var p = ...` in the body)
+                # rebinds the name in scope but this set is by name; the shadow case is
+                # itself refused elsewhere (a param cannot be redeclared), so no false red.
+                if sasn.target is Expr.ident as sa_id
+                    if ctx.isParamHere(sa_id.name)
+                        ctx.addErr(file, sasn.span.line, sasn.span.col,
+                                   "cannot assign to parameter '" + sa_id.name + "' -- parameters are read-only; bind a new local (var " + sa_id.name + "2 = ...)")
                 # BUG-319. `s[i] = x` on a string was checked by NOTHING. It reached codegen,
                 # emitted a store into a `[]const u8`, and surfaced as Zig's `local variable is
                 # never mutated` -- a message that flatly contradicts the line the user just
@@ -4369,6 +4466,7 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                 var saved_class: str = ctx.current_class
                 if dm.return_type != nil
                     ctx.withReturnType(typeFromRef(dm.return_type!))
+                var pnames: str = " "
                 for p in dm.params
                     var pt: Type_ = Type_.unknown_
                     if p.type_ != nil
@@ -4376,7 +4474,10 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                     if ctx.isReservedRuntimeName(p.name)
                         ctx.addErr(file, p.span.line, p.span.col, "'" + p.name + "' is reserved by the Zebra runtime (a zebra_rt.zig global); rename it")
                     ctx.bind(p.name, pt)
+                    pnames = pnames + p.name + " "
+                ctx.setParamsHere(pnames)
                 checkStmts(dm_stmts, file, ctx)
+                ctx.setParamsHere(" ")
                 var scope_ctx: InferCtx = InferCtx(ctx.module_types, ctx.current_class)
                 scope_ctx.withDepTypes(ctx.dep_types)
                 scope_ctx.withFile(file)

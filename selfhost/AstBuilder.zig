@@ -2727,9 +2727,9 @@ pub const _zbr_ty_ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1471
                         if (!std.mem.eql(u8, a, "")) {
 // zbr:selfhost/AstBuilder.zbr:1472
-                            var a2 = a;
+                            var a2: []const u8 = a;
 // zbr:selfhost/AstBuilder.zbr:1473
-                            const is_neg = std.mem.startsWith(u8, a2, "-");
+                            const is_neg: bool = std.mem.startsWith(u8, a2, "-");
 // zbr:selfhost/AstBuilder.zbr:1474
                             if (is_neg) {
 // zbr:selfhost/AstBuilder.zbr:1475
@@ -2754,7 +2754,7 @@ pub const _zbr_ty_ASTBuilder = struct {
                                 alias_args.append(_zbr_rt._allocator, _zbr_ty_Expr{ .float_lit = _zbr_ty_ExprFloatLit.init(_zbr_fn_zspan(), a2) }) catch @panic("OOM");
                             } else {
 // zbr:selfhost/AstBuilder.zbr:1483
-                                var arg_text = a2;
+                                var arg_text: []const u8 = a2;
 // zbr:selfhost/AstBuilder.zbr:1484
                                 if (is_neg) {
 // zbr:selfhost/AstBuilder.zbr:1485

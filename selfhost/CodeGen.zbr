@@ -3835,7 +3835,9 @@ struct Generator
             genType(tr)
         else
             w.emit("anytype")
-        if n.init_expr != nil
+        if n.init_expr != nil and ownerIsClass() and isDeferredFieldInit(n.init_expr!)
+            w.emit(" = undefined")   # BUG-339: assigned in the constructor
+        else if n.init_expr != nil
             w.emit(" = ")
             genExpr(n.init_expr!)
         else
@@ -5220,6 +5222,18 @@ struct Generator
             ig.w.emit("_self._type_tag = _zbr_hash(\"")
             ig.w.emit(owner)
             ig.w.emit("\");\n")
+            # BUG-339: runtime field initialisers, deferred out of the struct declaration.
+            if not is_generic
+                for ddecl in owner_members
+                    if ddecl is Decl.var_ as dfld
+                        if not dfld.mods.is_static and dfld.init_expr != nil
+                            if isDeferredFieldInit(dfld.init_expr!)
+                                ig.writeIndent()
+                                ig.w.emit("_self.")
+                                ig.emitName(dfld.name)
+                                ig.w.emit(" = ")
+                                ig.genExpr(dfld.init_expr!)
+                                ig.w.emit(";\n")
             # Initialize @once cache fields to null (synthetic; not in owner_members).
             for odecl in owner_members
                 if odecl is Decl.method as omth
@@ -6909,6 +6923,11 @@ struct Generator
     # temporaries needing a stable address).  Materializing erases the type and emits the
     # terminal call RAW (bypassing the type-directed rewrite → `i64.toString()`).
     def isValueTypeExpr(e: Expr): bool
+        # BUG-336: a `split`/`lines` call is a lazy iterator, never a struct temporary
+        # needing a stable address; hoisting it to `_mc_N` and dispatching `.at/.len` on
+        # the iterator is exactly the leak. genExpr's List paths collect it inline.
+        if isSplitIter(e)
+            return true
         if .infer_ctx == nil
             return false
         var t = inferExpr(e, .infer_ctx!)
@@ -8665,6 +8684,44 @@ struct Generator
             if c.callee is Expr.member as m
                 return m.member == "split" or m.member == "lines"
         return false
+
+    # BUG-339: a class field initialised with a RUNTIME constructor (`HashMap(..)()`,
+    # `Set(..)()`, `Other()`, any call) cannot be a Zig struct default ("unable to resolve
+    # comptime value"). `List(T)()` and `StringBuilder()` lower to comptime `.empty` and
+    # stay in the declaration; every other call is deferred to the constructor. Classes
+    # only: a class is always built through an init (user or synthetic), while a struct
+    # may be built by a literal that relies on the declared default.
+    def isDeferredFieldInit(e: Expr): bool
+        if e is Expr.call as c
+            var base: Expr = c.callee
+            var hops: int = 0
+            while hops < 4
+                if base is Expr.call as inner
+                    base = inner.callee
+                else
+                    break
+                hops = hops + 1
+            if base is Expr.ident as bid
+                if bid.name == "List" or bid.name == "StringBuilder"
+                    return false
+            return true
+        return false
+
+    def ownerIsClass(): bool
+        return owner != "" and class_names.contains_(owner) and not struct_names.contains_(owner)
+
+    # BUG-336: `s.split(sep).at(i)` / `.len` — the receiver is the LAZY SplitIterator
+    # (`for` consumes it; a bound `var cols = s.split(..)` is collected by BUG-176), so a
+    # direct List method on the call emitted `.items` on an iterator. Emit the same
+    # collect block inline where a List receiver is expected.
+    def genListRecv(e: Expr)
+        if isSplitIter(e)
+            var sp336: Span = Span(0, 0, 0, 0)
+            var targs336 = List(TypeRef)()
+            targs336.add(TypeRef.named(NamedTypeRef(sp336, "str")))
+            genSplitCollect(e, TypeRef.generic(GenericTypeRef(sp336, "List", targs336)))
+        else
+            genExpr(e)
 
     # True if the iterable is str.lines() — needs splitScalar('\n') not splitSequence.
     def isLinesIter(e: Expr): bool
@@ -10488,6 +10545,12 @@ struct Generator
                 # HashMap.len/count → @as(i64, @intCast(.count()))
                 # String.len → .len (no .items)
                 if m.member == "len" or m.member == "count"
+                    # BUG-336: `s.split(sep).len` — collect the lazy iterator, then count.
+                    if isSplitIter(m.object)
+                        w.emit("@as(i64, @intCast(")
+                        genListRecv(m.object)
+                        w.emit(".items.len))")
+                        return
                     var fname = getMemberFieldName(m.object)
                     var is_list_obj = false
                     var is_hm_obj = false
@@ -14253,7 +14316,7 @@ struct Generator
                     w.emit(".count()")
                 else
                     w.emit("@as(i64, @intCast(")
-                    genExpr(m.object)
+                    genListRecv(m.object)   # BUG-336
                     w.emit(".items.len))")
             return
         if mname == "at"
@@ -14275,7 +14338,7 @@ struct Generator
                 # receiver is evaluated once; `obj.items[chk(i, obj.items.len)]` would
                 # evaluate it twice.
                 w.emit("_zbr_at(")
-                genExpr(m.object)
+                genListRecv(m.object)   # BUG-336
                 w.emit(".items, ")
                 if args.len > 0
                     genExpr(args.at(0).value)

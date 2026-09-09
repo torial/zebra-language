@@ -103,7 +103,9 @@ def signature(msg):
     collapse identifiers that carry generated numbers, collapse quoted names."""
     s = msg
     s = re.sub(r'^.*?p\.zig:\d+:\d+: ', '', s)
-    s = re.sub(r"'[^']*'", "'X'", s)
+    # Quoted names are KEPT (a member name or a Zig type is what distinguishes one bug
+    # shape from another -- "no field named 'at'" vs "'contains'" are different leaks);
+    # only generated identifiers inside them are collapsed.
     s = re.sub(r'\b[A-Za-z_]+\d+\b', 'N', s)       # v12, xs7, S3, h4 …
     s = re.sub(r'\d+', '#', s)
     s = re.sub(r'\s+', ' ', s).strip()
@@ -196,18 +198,19 @@ def main():
     if not shutil.which(ZIG) and not Path(ZIG).exists():
         print(f'leakgen: REFUSING -- no zig at {ZIG} (set ZIG=)'); return 2
 
-    # POSITIVE CONTROL: a known-leaking shape (BUG-354, a parameter assigned in the body;
-    # Zebra accepts, Zig says "cannot assign to constant"). If this stops LEAKing the
-    # instrument is broken, not the compiler fixed -- unless the ticket is closed, in which
-    # case retire the control with the fix. Every absence claim below rests on it.
-    ctl = 'def f(p: int): int\n    p = p + 1\n    return p\n\ndef main()\n    print(f(1))\n'
+    # POSITIVE CONTROL: a program Zebra accepts and zig MUST refuse, by construction --
+    # a `zig"..."` literal (passed through verbatim) carrying a type error. It can never
+    # be "fixed", so it never needs retiring, and every absence claim below rests on it.
+    # (The first control was the BUG-354 shape; that was fixed the same day, which is
+    # exactly why a control must not be a bug.)
+    ctl = 'def main()\n    zig"const _ctl: i32 = \\"leakgen-control\\";"\n    print("x")\n'
     v, m, d = emit(ctl, 'control')
     if v != 'emitted':
-        print(f'leakgen: control did not emit ({v}: {m[:80]}) -- if BUG-354 is fixed, retire the control'); return 2
+        print(f'leakgen: REFUSING -- the positive control did not emit ({v}: {m[:80]})'); return 2
     ok, zm = zig_check(d)
     shutil.rmtree(d, ignore_errors=True)
     if ok:
-        print('leakgen: REFUSING -- the positive control (BUG-354 shape) no longer leaks; the instrument cannot see, or the bug is fixed and the control must be retired'); return 2
+        print('leakgen: REFUSING -- the positive control (a zig literal with a type error) no longer leaks; the instrument cannot see'); return 2
 
     if args.gate:
         seeds, n = GATE_SEEDS, GATE_N

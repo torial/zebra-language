@@ -5367,7 +5367,7 @@ pub fn _zbr_fn_dbgLoadMarkers(zig_src: []const u8) std.ArrayList(*_zbr_ty_DbgMar
 // zbr:selfhost/main.zbr:3024
                         m.zig_line = zig_line;
 // zbr:selfhost/main.zbr:3025
-                        m.file = _zbr_fn_dbgNormSep(f);
+                        m.file = _intern(_zbr_fn_dbgNormSep(f));
 // zbr:selfhost/main.zbr:3026
                         m.zbr_line = (std.fmt.parseInt(i64, n, 10) catch 0);
 // zbr:selfhost/main.zbr:3027
@@ -6872,7 +6872,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:3989
                 mc.warn_non_exhaustive = warn_ne;
 // zbr:selfhost/main.zbr:3990
-                mc.module_path = module_path;
+                mc.module_path = _intern(module_path);
 // zbr:selfhost/main.zbr:3991
                 mc.node_addon = mode_node;
 // zbr:selfhost/main.zbr:3992

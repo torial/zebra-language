@@ -588,9 +588,25 @@ python fuzz/leakgen.py --gate   # THE "ZEBRA ACCEPTS, ZIG REJECTS" FUZZER, regis
                                 #   fuzz/leak_baseline.txt fails the gate; every baseline
                                 #   line must carry a BUG number or the tool REFUSES to
                                 #   load it -- a leak nobody filed is a leak nobody fixes.
-                                #   POSITIVE CONTROL FIRST: the BUG-354 shape (assign to a
-                                #   parameter) must LEAK or the gate refuses (exit 2) --
-                                #   retire the control with that fix. Fixed seeds; the
+                                #   THE ROOT WAS FIXED THE SAME NIGHT, not just the leaves:
+                                #   the checker now types every loop variable
+                                #   (`forInVarTypes`: `for k, v in m`, `.entries()`, tuple
+                                #   lists, `for i, x in xs`, the List(T) fallback), and with
+                                #   BUG-362/365/366's codegen patches mutated back out their
+                                #   fixtures STILL pass -- the name lists are no longer
+                                #   load-bearing for those shapes. test/loopvar_types_test.
+                                #   Then the hand-found members went under the gate: gen.py
+                                #   generates BUG-336's `split().at/len` and BUG-339's
+                                #   ctor-initialised class field (both fixed, kept as
+                                #   coverage); BUG-354 (assign to a parameter) became a
+                                #   Zebra refusal -- and fixing it found BUG-367, a numeric
+                                #   `for` body that checkStmts never visited AT ALL.
+                                #   POSITIVE CONTROL FIRST: a `zig"..."` literal carrying a
+                                #   type error -- Zebra passes it through, zig must refuse
+                                #   it, and it can never be "fixed", so it never needs
+                                #   retiring (the first control was the BUG-354 shape, which
+                                #   was fixed within hours -- a control must not be a bug).
+                                #   The gate refuses (exit 2) if it stops leaking. Fixed seeds; the
                                 #   `-n/--seed` mode explores, `--update-baseline` never
                                 #   accepts a signature silently (it writes BUG-FILE-ME).
                                 #   CANNOT SEE: wrong-but-compiling output (output_sweep's

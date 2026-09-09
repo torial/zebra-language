@@ -1,0 +1,15 @@
+# BUG-354 control: reading a parameter, and a same-named LOCAL in another function, are fine.
+def twice(n: int): int
+    var m: int = n * 2
+    return m
+
+def other(): int
+    var n: int = 5
+    n = n + 1
+    return n
+
+def main()
+    if twice(4) == 8 and other() == 6
+        print("bug354: OK")
+    else
+        print("bug354: FAIL")

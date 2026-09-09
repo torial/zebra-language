@@ -1,0 +1,26 @@
+# Loop variables are TYPED by the checker for every loop shape (2026-09-09): `for k, v in m`,
+# `for k, v in m.entries()`, `for a, b in pairs` (List((A, B))), `for i, x in xs`, and the
+# general `for x in xs` fallback. Witness: each var is used in a way that only works when its
+# type is known WITHOUT any codegen name-list help — a str method on it, arithmetic on it.
+def main()
+    var m: HashMap(str, int) = HashMap(str, int)()
+    m.set("ab", 2)
+    var xs: List(str) = List(str)()
+    xs.add("q")
+    var pairs: List((int, str)) = List((int, str))()
+    pairs.add((3, "three"))
+    var acc: str = ""
+    for k, v in m
+        acc = acc + k.upper() + (v * 2).toString()
+    for k2, v2 in m.entries()
+        acc = acc + k2.reverse() + (v2 + 1).toString()
+    for n, s in pairs
+        acc = acc + (n + 1).toString() + s.trimLeft()
+    for i, x in xs
+        acc = acc + (i + 10).toString() + x.upper()
+    for y in xs
+        acc = acc + y.padLeft(2, "-")
+    if acc == "AB4ba34three10Q-q"
+        print("loopvar_types: OK")
+    else
+        print("loopvar_types: FAIL " + acc)
