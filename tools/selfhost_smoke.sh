@@ -1750,6 +1750,14 @@ smoke_tc_fail test/bug354_param_assign_fail.zbr "cannot assign to parameter"
 smoke_run test/bug354_param_shadow_ok_test.zbr "bug354: OK"
 # BUG-369's control: one call per real str/List method family at the bogus fixtures' arities, RUN.
 smoke_run test/bug369_builtin_methods_ok_test.zbr "bug369: OK"
+# BUG-370: a capture closure through a RETURNING sig -- the thunk dropped the result and
+# the call block yielded void. Void statement / non-void statement / non-void value.
+smoke_run test/bug370_returning_sig_closure_test.zbr "r=102,104,106"
+# BUG-371: a closure BORROWED by a same-module callee (sig param used only as `f(v)`)
+# releases its pool slot on return -- 200 calls > 64 slots; the control STORES the
+# closure and must keep its slots (10 independent states, called later).
+smoke_run test/bug371_borrowed_closure_slot_test.zbr "total=1400"
+smoke_run test/bug371_stored_closure_keeps_slot_test.zbr "sum=1020"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"
 
 echo ""

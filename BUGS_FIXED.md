@@ -25,6 +25,44 @@ methods with a Zebra message. Workaround in zebra-ide: count by iterating.
 **Fix.** `getList` now returns a real `List(JsonValue)` (`_json_get_list_l`, copied into the program allocator), so `.len`, `.at()` and `for` take the ordinary List paths and the per-call special cases go. General rule landed with it: the chain hoist (BUG-027/079) is for STRUCT temporaries only — a receiver the checker types as a builtin container is never hoisted to `_mc_N` (`isBuiltinTypedRecv`), which is the same rule BUG-336 needed for split iterators. The old slice form stays in the runtime until the next n1-anchor so the N-1 regen authority still links. Fixture bug337_json_getlist_list_test; gen.py generates the shape.
 
 
+### BUG-371: a capture closure passed to a USER function through a `sig` param burned a thunk-pool slot per CALL — the 65th call panicked — FIXED 2026-09-09
+
+`applyAll(ns, def(x: int): int …capture…)` in a loop: `applyAll` only CALLS its `Transform`
+parameter, but BUG-126's pool (64 `(state, thunk)` pairs per call site) never frees a slot
+because the callee MAY store the closure (`Signal.connect`), and BUG-358 had exempted only
+the stdlib's synchronous builders by name. So a loop handing a fresh closure to a helper
+died on its 65th iteration. Found the moment BUG-370 let the returning-sig case compile.
+
+**Fix.** Escape analysis on the callee, not a language change: for a same-module top-level
+`def`, if the sig parameter occurs in its body ONLY as a call's callee (`f(v)`) — never
+assigned, passed on, stored, returned, member-accessed or used inside a nested lambda — the
+closure cannot outlive the call, and the caller releases the slot when the call returns
+(`_zbr_state[slot] = null; _zbr_next -= 1; destroy(state)`; LIFO is sound because calls
+nest). `nameEscapesInExpr`/`nameEscapesStmt` mirror the exhaustive `mightUseName*` walkers
+arm for arm (opted into `lint_expr_walkers`), differing only in the call arm; a nested
+lambda is a capture and so an escape. Methods, cross-module and unknown callees keep the
+pool — the conservative direction. Fixtures: bug371_borrowed_closure_slot_test (200 calls;
+panicked at 65 before), bug371_stored_closure_keeps_slot_test (the callee does
+`kept.add(f)`; ten closures called later must keep ten independent states). Closes
+BUG-358's "still open" paragraph.
+
+### BUG-370: a capture closure through a RETURNING `sig` did not compile — the thunk dropped the result and the call block yielded void — FIXED 2026-09-09
+
+`applyAll(xs, def(x: int): int …capture…)` with `sig Transform(x: int): int`: the
+closure-via-sig thunk (BUG-126) emitted `cc.call(_zbr_ta0);` — the closure's `i64` result
+discarded, which zig refuses ("value of type 'i64' ignored") — and the whole call was
+wrapped in `({ setup; callee(thunk); })`, a block yielding void, so binding the result
+failed next ("value of type 'ArrayList' ignored"). Every existing fixture used a VOID sig
+(`Signal.connect`, visitors), which is why it never showed. Found chasing BUG-358's
+"still open" paragraph.
+
+**Fix.** The dispatch returns `cc.call(..)` and each per-slot thunk returns its dispatch's
+value (a slot with no state panics rather than fabricating one); the call wrapper is a
+labeled block that `break`s with the callee's value, which also serves the statement
+context (codegen already prefixes `_ =` there). Fixture bug370_returning_sig_closure_test:
+void statement, non-void statement, non-void value, values checked. Running it to 100
+iterations is BUG-371.
+
 ### BUG-369: an unknown method on a BUILTIN type (`str`, `List`) passed the front end and failed in Zig — FIXED 2026-09-09
 
 `s.frobnicate(1)` on a `str`, or `xs.first()` on a `List(int)`, was accepted by `zebra -c` (exit

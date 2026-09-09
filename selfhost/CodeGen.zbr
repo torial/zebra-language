@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
-use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
+use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
 use AstWalk exposing collectOldNodes
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
@@ -4307,7 +4307,11 @@ struct Generator
             genExpr(args.at(1).value)
             w.emit("; const _fn = ")
             genExpr(obj)
-            w.emit(".lib.lookup(*const fn () callconv(.c) *${iface_name}, _allocator.dupeZ(u8, _sym) catch @panic(\"OOM\")) orelse std.debug.panic(\"DynLib.lookup: symbol not found: {s}\", .{_sym}); break :blk_${uid.toString()} _fn().*; }")
+            # interp-escape lint (BUG-216): no `\"` inside an interpolated string -- the
+            # interpolated parts and the quoted parts are separate emits.
+            w.emit(".lib.lookup(*const fn () callconv(.c) *${iface_name}, _allocator.dupeZ(u8, _sym) catch @panic(")
+            w.emit("\"OOM\")) orelse std.debug.panic(\"DynLib.lookup: symbol not found: {s}\", .{_sym}); break :blk_")
+            w.emit("${uid.toString()} _fn().*; }")
             return true
         return false
 
@@ -12151,12 +12155,34 @@ struct Generator
                     return true
         return false
 
+    # BUG-371: is the closure handed to argument `idx` of this call BORROWED -- the callee
+    # a same-module top-level `def` whose sig parameter at that position never escapes
+    # its body (used only as `f(v)`)? Then the closure cannot outlive the call and the
+    # pool slot is released when it returns. Anything else -- a method, a cross-module
+    # or unknown callee, a parameter that is stored, passed on, returned or captured --
+    # keeps the slot for the life of the program, which is what `Signal.connect` needs.
+    def closureArgBorrowed(c: ExprCall, idx: int): bool
+        if c.callee is Expr.ident as cid
+            if not toplevel_fns.contains_(cid.name)
+                return false
+            for decl in module_decls
+                if decl is Decl.method as fm
+                    if fm.name == cid.name and not fm.mods.is_static
+                        if idx >= fm.params.len
+                            return false
+                        if fm.stmts as body
+                            return not nameEscapes(fm.params.at(idx).name, body)
+                        return false
+        return false
+
     def emitCallWithClosureThunks(c: ExprCall)
         # Pre-assign thunk IDs per closure arg.  Parallel list keeps the same
         # order as c.args; entry is -1 for non-closure args.  The lambda nodes
         # are re-resolved in the emit loop via resolveClosureLambda rather than
         # stored in a parallel optional list.
         var thunk_ids = List(int)()
+        var borrowed = List(bool)()
+        var arg_idx: int = 0
         for a in c.args
             var av = a.value
             var tid = -1
@@ -12164,9 +12190,15 @@ struct Generator
                 tid = w.nextUid()
                 pending_thunks.add(ClosureThunk(tid, r))
             thunk_ids.add(tid)
-        # Wrap call in `({ setup; target(thunk) })` so it stays an expression
-        # in the surrounding Stmt.expr context (Zig 0.16 rejects bare `};`).
-        w.emit("({\n")
+            borrowed.add(tid >= 0 and .closureArgBorrowed(c, arg_idx))
+            arg_idx = arg_idx + 1
+        # Wrap call in `(blk: { setup; break :blk target(thunk); })` so it stays an
+        # expression in the surrounding context (Zig 0.16 rejects bare `};`) AND
+        # yields the callee's value (BUG-370: `var r = applyAll(xs, closure)` got a
+        # void block -- "value of type 'ArrayList' ignored" from zig).
+        var blk_uid: int = w.nextUid()
+        var blk_lbl: str = "blk_cls_${blk_uid}"
+        w.emit("(" + blk_lbl + ": {\n")
         var bg = indented()
         var i = 0
         for a in c.args
@@ -12230,6 +12262,11 @@ struct Generator
                 ig.genExpr(a.value)
                 ig.w.emit(") = @ptrCast(@alignCast(ctx));\n")
                 ig.writeIndent()
+                # BUG-370: a sig with a RETURN TYPE (`sig Transform(x: int): int`) needs
+                # the thunk to hand the closure's result back; `cc.call(..);` dropped it
+                # and zig refused the emit ("value of type 'i64' ignored").
+                if lam.return_type != nil
+                    ig.w.emit("return ")
                 ig.w.emit("cc.call(")
                 var pi = 0
                 for p2 in lam.params
@@ -12242,8 +12279,18 @@ struct Generator
                 dg.w.emit("}\n")
                 bg.writeIndent()
                 bg.w.emit("}).dispatch;\n")
-        # Emit actual call with thunk fn pointers in place of closure args.
+        # Emit actual call with thunk fn pointers in place of closure args. A borrowed
+        # closure's slot (BUG-371) is released after the call: LIFO is sound because
+        # calls nest, and nothing in the callee kept the pointer.
+        var any_borrowed: bool = false
+        for bw in borrowed
+            if bw
+                any_borrowed = true
         bg.writeIndent()
+        if any_borrowed
+            bg.w.emit("const _zbr_ret_" + blk_uid.toString() + " = ")
+        else
+            bg.w.emit("break :" + blk_lbl + " ")
         bg.genExpr(c.callee)
         bg.w.emit("(")
         var j = 0
@@ -12258,6 +12305,16 @@ struct Generator
                 bg.genExpr(a2.value)
             j = j + 1
         bg.w.emit(");\n")
+        if any_borrowed
+            var j2 = 0
+            for a3 in c.args
+                if borrowed.at(j2)
+                    var tid3_s = "${thunk_ids.at(j2)}"
+                    bg.writeIndent()
+                    bg.w.emit("_zbr_state_" + tid3_s + "[_zbr_slot_" + tid3_s + "] = null; _zbr_next_" + tid3_s + " -= 1; _allocator.destroy(_zbr_cls_" + tid3_s + ");\n")
+                j2 = j2 + 1
+            bg.writeIndent()
+            bg.w.emit("break :" + blk_lbl + " _zbr_ret_" + blk_uid.toString() + ";\n")
         writeIndent()
         w.emit("})")
 
@@ -12319,12 +12376,20 @@ struct Generator
                     w.emit("void")
                 w.emit(" {")
                 w.emit("\n")
-                w.emit("    if (_zbr_state_" + id_s + "[" + slot_s + "]) |s| _zbr_dispatch_" + id_s + ".?(s")
+                # BUG-370: a returning sig's thunk returns the dispatch's value; a slot
+                # with no state is a bug in this pool, never a value to fabricate.
+                if t.lambda.return_type != nil
+                    w.emit("    if (_zbr_state_" + id_s + "[" + slot_s + "]) |s| return _zbr_dispatch_" + id_s + ".?(s")
+                else
+                    w.emit("    if (_zbr_state_" + id_s + "[" + slot_s + "]) |s| _zbr_dispatch_" + id_s + ".?(s")
                 for p2 in t.lambda.params
                     w.emit(", ")
                     w.emit(zigSafeName(p2.name))
                 w.emit(");")
                 w.emit("\n")
+                if t.lambda.return_type != nil
+                    w.emit("    @panic(\"closure-via-sig: slot " + slot_s + " has no state\");")
+                    w.emit("\n")
                 w.emit("}")
                 w.emit("\n")
                 slot = slot + 1

@@ -1,0 +1,39 @@
+# BUG-370: a capture-block closure passed through a RETURNING sig (`sig T(x: int): int`)
+# was thunked with `cc.call(..);` -- the closure's result dropped on the floor -- and the
+# call itself was wrapped in a block that yielded void, so `var r = applyAll(xs, closure)`
+# was refused by zig ("value of type 'i64' ignored", then "... 'ArrayList' ignored").
+# Void sigs never showed it. All three contexts here: void statement, non-void statement
+# (discarded), non-void value.
+sig Visit(x: int)
+sig Transform(x: int): int
+
+def each(items: List(int), f: Visit)
+    for v in items
+        f(v)
+
+def applyAll(items: List(int), f: Transform): List(int)
+    var out = List(int)()
+    for v in items
+        out.add(f(v))
+    return out
+
+def main()
+    var ns = [1, 2, 3]
+    each(ns, def(x: int)
+        capture
+            var seen: int = 0
+        seen = seen + x
+        print("seen ${seen}")
+    )
+    applyAll(ns, def(x: int): int
+        capture
+            var k: int = 10
+        return x + k
+    )
+    var r: List(int) = applyAll(ns, def(x: int): int
+        capture
+            var k: int = 100
+        k = k + 1
+        return x + k
+    )
+    print("r=${r.at(0)},${r.at(1)},${r.at(2)}")

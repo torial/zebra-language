@@ -1173,6 +1173,328 @@ def mightUseNameStmt(name: str, stmt: Stmt): bool
         on Stmt.pass_
             return false
 
+# BUG-371: does `name` (a sig-typed parameter) ESCAPE the body -- appear anywhere except
+# as the callee of a call? `f(v)` is a call; `xs.add(f)`, `.cb = f`, `return f`, `g(f)`
+# and a use inside a nested lambda (a capture) are escapes. A parameter that does not
+# escape cannot outlive the call, so the caller may release its closure-via-sig pool
+# slot when the call returns. Conservative in the same direction as mightUseNameInExpr
+# (which it mirrors arm for arm, minus the call arm): an unmodelled form is an escape.
+# expr-walker: exhaustive
+def nameEscapesInExpr(name: str, expr: Expr): bool
+    branch expr
+        on Expr.ident as id
+            return id.name == name
+        on Expr.member as m
+            return nameEscapesInExpr(name, m.object)
+        on Expr.index as i
+            if nameEscapesInExpr(name, i.object)
+                return true
+            return nameEscapesInExpr(name, i.index)
+        on Expr.unary as u
+            return nameEscapesInExpr(name, u.operand)
+        on Expr.binary as b
+            if nameEscapesInExpr(name, b.left)
+                return true
+            return nameEscapesInExpr(name, b.right)
+        on Expr.call as c
+            # THE ONE ARM THAT DIFFERS from mightUseNameInExpr: `f(v)` with `f` the name is a
+            # CALL, not an escape. `obj.f(v)` or `g(f)` still are.
+            var callee_is_name: bool = false
+            if c.callee is Expr.ident as cal_id
+                callee_is_name = cal_id.name == name
+            if not callee_is_name
+                if nameEscapesInExpr(name, c.callee)
+                    return true
+            for arg in c.args
+                if nameEscapesInExpr(name, arg.value)
+                    return true
+            return false
+        on Expr.tuple_lit as tl
+            for telem in tl.elems
+                if nameEscapesInExpr(name, telem)
+                    return true
+            return false
+        on Expr.chained_cmp as cc
+            for op in cc.operands
+                if nameEscapesInExpr(name, op)
+                    return true
+            return false
+        on Expr.string_interp as si
+            for part in si.parts
+                if part is StringPart.expr_ as e
+                    if nameEscapesInExpr(name, e)
+                        return true
+            return false
+        on Expr.orelse_ as o
+            if nameEscapesInExpr(name, o.expr)
+                return true
+            return nameEscapesInExpr(name, o.fallback)
+        # BUG-169: these expr forms were unmodelled (→ conservative `else => true`),
+        # which SKIPS a needed unused-capture/local discard when one appears in the
+        # body (fuzz F11: a ternary in an unused `if x as y` body).  Model them
+        # exactly (mirroring nameUsedInExpr) so the discard fires.  `lambda` is
+        # deliberately left to `else` (conservative — its shadowing logic is
+        # error-prone to mirror, and over-approx here is the safe direction).
+        on Expr.if_expr as ie
+            if nameEscapesInExpr(name, ie.cond)
+                return true
+            if nameEscapesInExpr(name, ie.then_expr)
+                return true
+            return nameEscapesInExpr(name, ie.else_expr)
+        on Expr.try_ as t
+            return nameEscapesInExpr(name, t.expr)
+        on Expr.catch_ as ca
+            if nameEscapesInExpr(name, ca.expr)
+                return true
+            return nameEscapesInExpr(name, ca.fallback)
+        on Expr.to_non_nil as tn
+            return nameEscapesInExpr(name, tn.expr)
+        on Expr.is_nil as isn
+            return nameEscapesInExpr(name, isn.expr)
+        on Expr.cast as cst
+            return nameEscapesInExpr(name, cst.expr)
+        on Expr.type_check as tc
+            return nameEscapesInExpr(name, tc.expr)
+        on Expr.slice as sl
+            if nameEscapesInExpr(name, sl.object)
+                return true
+            if sl.start != nil
+                if nameEscapesInExpr(name, sl.start!)
+                    return true
+            if sl.stop_ != nil
+                return nameEscapesInExpr(name, sl.stop_!)
+            return false
+        on Expr.opt_chain as oc
+            if nameEscapesInExpr(name, oc.base)
+                return true
+            for oca in oc.args
+                if nameEscapesInExpr(name, oca.value)
+                    return true
+            return false
+        on Expr.except_ as ex
+            if nameEscapesInExpr(name, ex.base)
+                return true
+            for exf in ex.fields
+                if nameEscapesInExpr(name, exf.value)
+                    return true
+            return false
+        on Expr.set_lit as sl
+            for se in sl.elems
+                if nameEscapesInExpr(name, se)
+                    return true
+            return false
+        on Expr.dict_lit as dl
+            for de in dl.entries
+                if nameEscapesInExpr(name, de.key)
+                    return true
+                if nameEscapesInExpr(name, de.value)
+                    return true
+            return false
+        on Expr.int_lit
+            return false
+        on Expr.float_lit
+            return false
+        on Expr.bool_lit
+            return false
+        on Expr.char_lit
+            return false
+        on Expr.string_lit
+            return false
+        on Expr.nil_
+            return false
+        on Expr.this_
+            return false
+        # BUG-169 retirement: model every remaining ident-bearing expr, so the
+        # final `else` only catches genuinely ident-free forms (result_; zig_lit
+        # was in this list until BUG-267 showed it is NOT ident-free)
+        # → false.  Mirrors the bootstrap's exhaustive switch (round-trip enforces
+        # parity).  Retires the walker-drift class (F2/F6/F11).
+        on Expr.lambda
+            # A use inside a nested lambda is a CAPTURE -- the closure outlives the call by
+            # construction -- so the ordinary walker's answer is the escape answer here.
+            return mightUseNameInExpr(name, expr)
+        on Expr.list_lit as ll
+            for lle in ll.elems
+                if nameEscapesInExpr(name, lle)
+                    return true
+            return false
+        on Expr.array_lit as al
+            for ale in al.elems
+                if nameEscapesInExpr(name, ale)
+                    return true
+            return false
+        on Expr.old_ as ol
+            return nameEscapesInExpr(name, ol.operand)
+        on Expr.zig_lit as zl
+            # BUG-267: an inline-Zig escape DOES contain user idents — it is the only
+            # way to touch a C pointer, so it is where a local most often ends up being
+            # read. `nameUsedInExpr` (the sibling walker, ~line 474) has scanned zig
+            # literals for exactly this reason since B3: *"A param referenced from a
+            # `zig\"…\"` literal is used, so it must not be discarded."* This walker,
+            # which the LOCAL auto-discard consults, never learned it — so the identical
+            # question got opposite answers depending on whether the name was a param or
+            # a local, and a local read only from an escape got `_ = q;` emitted beside
+            # a real use (`pointless discard of local constant`).
+            #
+            # LIMIT, stated rather than hidden: zigLitMentionsWord does not skip Zig
+            # strings or comments, so a name appearing ONLY inside one counts as a use,
+            # the discard is suppressed, and Zig reports `unused local variable`. That
+            # is the same exposure parameters have carried all along without incident,
+            # and it fails as a COMPILE ERROR rather than a silent miscompile. If it
+            # ever does bite, the fix is to teach zigLitMentionsWord about string and
+            # comment spans — not to add a `reads` clause to the language, which would
+            # leave two mechanisms answering one question (see BUG-267 for that design
+            # and why it was dropped).
+            return zigLitMentionsWord(zl.text, name)
+        else
+            # result_ — no user idents.
+            return false
+
+def nameEscapes(name: str, stmts: List(Stmt)): bool
+    for s in stmts
+        if nameEscapesStmt(name, s)
+            return true
+    return false
+
+def nameEscapesStmt(name: str, stmt: Stmt): bool
+    branch stmt
+        on Stmt.var_ as n
+            if n.init_expr != nil
+                return nameEscapesInExpr(name, n.init_expr!)
+            return false
+        on Stmt.assign as a
+            if nameEscapesInExpr(name, a.target)
+                return true
+            return nameEscapesInExpr(name, a.value)
+        on Stmt.return_ as r
+            if r.value != nil
+                return nameEscapesInExpr(name, r.value!)
+            return false
+        on Stmt.expr as e
+            return nameEscapesInExpr(name, e)
+        on Stmt.print_ as p
+            var pi = 0
+            while pi < p.args.len
+                if nameEscapesInExpr(name, p.args.at(pi))
+                    return true
+                pi += 1
+            return false
+        on Stmt.destruct as d
+            return nameEscapesInExpr(name, d.init_expr)
+        on Stmt.if_ as si
+            if nameEscapesInExpr(name, si.cond)
+                return true
+            if nameEscapes(name, si.then_stmts)
+                return true
+            for ei in si.else_ifs
+                if nameEscapesInExpr(name, ei.cond)
+                    return true
+                if nameEscapes(name, ei.stmts)
+                    return true
+            if si.else_stmts as se
+                return nameEscapes(name, se)
+            return false
+        on Stmt.while_ as w
+            if nameEscapesInExpr(name, w.cond)
+                return true
+            return nameEscapes(name, w.stmts)
+        on Stmt.for_in as f
+            if nameEscapesInExpr(name, f.iter)
+                return true
+            return nameEscapes(name, f.stmts)
+        on Stmt.for_num as fnum
+            if nameEscapesInExpr(name, fnum.start)
+                return true
+            if nameEscapesInExpr(name, fnum.stop_)
+                return true
+            return nameEscapes(name, fnum.stmts)
+        on Stmt.guard_ as g
+            if nameEscapesInExpr(name, g.cond)
+                return true
+            return nameEscapes(name, g.else_stmts)
+        # BUG-169: statement forms that were unmodelled (→ conservative
+        # `else => true`), which skips a needed unused-capture/local discard
+        # when one appears in the body.  `branch_` is the one the fuzzer's
+        # enum/union surface hits (a `branch` in an unused-capture body);
+        # model these exactly (mirroring nameUsedInStmt) so the discard fires.
+        on Stmt.branch_ as b
+            if nameEscapesInExpr(name, b.expr)
+                return true
+            for bc in b.cases
+                for bcv in bc.values
+                    if nameEscapesInExpr(name, bcv)
+                        return true
+                if nameEscapes(name, bc.stmts)
+                    return true
+            if b.else_ as be
+                return nameEscapes(name, be)
+            return false
+        on Stmt.try_catch as tcs
+            if nameEscapes(name, tcs.stmts)
+                return true
+            for cl in tcs.clauses
+                if nameEscapes(name, cl.stmts)
+                    return true
+            return false
+        on Stmt.raise_ as r
+            if r.message != nil
+                if nameEscapesInExpr(name, r.message!)
+                    return true
+            if r.details != nil
+                return nameEscapesInExpr(name, r.details!)
+            return false
+        on Stmt.assert_ as a
+            if nameEscapesInExpr(name, a.cond)
+                return true
+            if a.message != nil
+                return nameEscapesInExpr(name, a.message!)
+            return false
+        on Stmt.defer_ as d
+            return nameEscapesStmt(name, d.stmt)
+        # BUG-169 retirement: model every remaining ident-bearing statement, so
+        # the final `else` is unreachable (all selfhost Stmt forms handled) →
+        # false.  Mirrors the bootstrap's exhaustive switch; round-trip enforces
+        # parity.  Retires the walker-drift class (F2/F6/F11).
+        on Stmt.assert_eq_ as aeq
+            if nameEscapesInExpr(name, aeq.lhs)
+                return true
+            return nameEscapesInExpr(name, aeq.rhs)
+        on Stmt.assert_ne_ as ane
+            if nameEscapesInExpr(name, ane.lhs)
+                return true
+            return nameEscapesInExpr(name, ane.rhs)
+        on Stmt.assert_true_ as atr
+            return nameEscapesInExpr(name, atr.expr)
+        on Stmt.assert_false_ as afa
+            return nameEscapesInExpr(name, afa.expr)
+        on Stmt.with_ as wth
+            if nameEscapesInExpr(name, wth.target)
+                return true
+            return nameEscapes(name, wth.stmts)
+        on Stmt.in_scope as ins
+            if nameEscapesInExpr(name, ins.expr)
+                return true
+            return nameEscapes(name, ins.stmts)
+        on Stmt.allocate_ as alc
+            if nameEscapesInExpr(name, alc.source)
+                return true
+            return nameEscapes(name, alc.stmts)
+        on Stmt.copy_out as cpo
+            if nameEscapesInExpr(name, cpo.target)
+                return true
+            return nameEscapesInExpr(name, cpo.value)
+        on Stmt.contract as ctr
+            for ce in ctr.exprs
+                if nameEscapesInExpr(name, ce)
+                    return true
+            return false
+        on Stmt.break_
+            return false
+        on Stmt.continue_
+            return false
+        on Stmt.pass_
+            return false
+
 def nameUsedInStmt(name: str, stmt: Stmt): bool
     branch stmt
         on Stmt.var_ as n

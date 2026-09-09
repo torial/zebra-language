@@ -230,11 +230,11 @@ per-tier counts, computed from the registrations rather than written down.
 
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
-| `--static` | 14 <!-- doc-gen: 14 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 29 <!-- doc-gen: 29 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 31 <!-- doc-gen: 31 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 39 <!-- doc-gen: 39 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 45 <!-- doc-gen: 45 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--static` | 15 <!-- doc-gen: 15 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
+| `--fast` | 30 <!-- doc-gen: 30 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 32 <!-- doc-gen: 32 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 40 <!-- doc-gen: 40 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 46 <!-- doc-gen: 46 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -1721,6 +1721,21 @@ python tools/lint_decl_exhaustive.py  # THE Ast.Decl EXHAUSTIVENESS GATE (static
                                 #   variants extract or a site cannot be found -- a regex
                                 #   that stopped matching must blame itself. 0 = clean.
                                 #   CANNOT SEE whether an arm does the right thing.
+python tools/lint_fn_twins.py      # THE SECTION-DRIFT LINT, registered as `fn-twins`
+                                #   (STATIC tier, instant). Every `.@"fn"` dispatch line
+                                #   in a GUI section (gui_tui_section.zig,
+                                #   gui_libui_ng_section.zig) must have a byte-identical
+                                #   twin in stdlib_preamble.zig. The sections carry a copy
+                                #   of the preamble's MVU message-type derivation -- three
+                                #   copies of one dispatch, the cleanroom charter's named
+                                #   hazard -- and it was found drifted TWICE by accident
+                                #   (ten sites diverged from `_zbr_is_fnlike`; the refuter
+                                #   spent an hour on the five he could not reach and asked
+                                #   for this one line, 2026-09-09). One direction only: a
+                                #   preamble line with no section twin is nothing. Carries
+                                #   both-direction controls and refuses (exit 2) if the
+                                #   preamble has no such line at all. Red-checked by
+                                #   editing one section line's params index. 0 = clean.
 python tools/lint_oom_unreachable.py  # THE RELEASE-ONLY-UB GATE (A4): `unreachable` is
                                 #   undefined behaviour in ReleaseFast, which is what
                                 #   `zebra --release` ships. Every gate here runs Debug,

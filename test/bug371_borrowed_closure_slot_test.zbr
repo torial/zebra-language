@@ -1,0 +1,26 @@
+# BUG-371: a capture closure handed to a user fn through a `sig` param burned one of the
+# 64 closure-via-sig pool slots per CALL, so the 65th call of a loop like this panicked
+# ("closure-via-sig pool exhausted"). `applyAll` only CALLS its parameter, so the closure
+# cannot outlive the call and the slot is released on return. 200 > 64 by a margin.
+sig Transform(x: int): int
+
+def applyAll(items: List(int), f: Transform): List(int)
+    var out = List(int)()
+    for v in items
+        out.add(f(v))
+    return out
+
+def main()
+    var ns = [1, 2, 3]
+    var total: int = 0
+    var i: int = 0
+    while i < 200
+        var r: List(int) = applyAll(ns, def(x: int): int
+            capture
+                var k: int = 5
+            k = k + 1
+            return x + k
+        )
+        total = total + r.at(0)
+        i = i + 1
+    print("total=${total}")

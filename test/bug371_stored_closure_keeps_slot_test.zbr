@@ -1,0 +1,25 @@
+# BUG-371's CONTROL: a callee that STORES its sig parameter (`keep` adds it to a list and
+# the closures are called later) must keep its pool slots -- releasing them would hand a
+# later caller a dangling state pointer. The walker sees `xs.add(f)` as an escape.
+sig Step(x: int): int
+
+var kept: List(Step) = List(Step)()
+
+def keep(f: Step)
+    kept.add(f)
+
+def main()
+    var i: int = 0
+    while i < 10
+        keep(def(x: int): int
+            capture
+                var base: int = 100
+            base = base + 1
+            return x + base
+        )
+        i = i + 1
+    var sum: int = 0
+    for f in kept
+        sum = sum + f(1)
+    # 10 closures, each with its own state: 1 + 101 each = 1020
+    print("sum=${sum}")

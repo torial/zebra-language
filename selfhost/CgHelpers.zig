@@ -2197,384 +2197,1054 @@ pub fn _zbr_fn_mightUseNameStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
     }
 }
 
-pub fn _zbr_fn_nameUsedInStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
-// zbr:selfhost/CgHelpers.zbr:1177
-    switch (stmt) {
-        .var_ => |_ptr_n| {
-            const n = _ptr_n.*;
-// zbr:selfhost/CgHelpers.zbr:1179
-            if ((n.init_expr != null)) {
-// zbr:selfhost/CgHelpers.zbr:1180
-                return _zbr_fn_nameUsedInExpr(name, n.init_expr.?.*);
-            }
-// zbr:selfhost/CgHelpers.zbr:1181
-            return false;
-        },
-        .assign => |_ptr_a| {
-            const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1183
-            if (_zbr_fn_nameUsedInExpr(name, a.target.*)) {
+pub fn _zbr_fn_nameEscapesInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:1184
-                return true;
-            }
-// zbr:selfhost/CgHelpers.zbr:1185
-            return _zbr_fn_nameUsedInExpr(name, a.value.*);
+    switch (expr) {
+        .ident => |id| {
+// zbr:selfhost/CgHelpers.zbr:1186
+            return std.mem.eql(u8, id.name, name);
         },
-        .return_ => |_ptr_r| {
-            const r = _ptr_r.*;
-// zbr:selfhost/CgHelpers.zbr:1187
-            if ((r.value != null)) {
+        .member => |_ptr_m| {
+            const m = _ptr_m.*;
 // zbr:selfhost/CgHelpers.zbr:1188
-                return _zbr_fn_nameUsedInExpr(name, r.value.?.*);
-            }
-// zbr:selfhost/CgHelpers.zbr:1189
-            return false;
+            return _zbr_fn_nameEscapesInExpr(name, m.object.*);
         },
-        .expr => |_ptr_e| {
-            const e = _ptr_e.*;
+        .index => |_ptr_i| {
+            const i = _ptr_i.*;
+// zbr:selfhost/CgHelpers.zbr:1190
+            if (_zbr_fn_nameEscapesInExpr(name, i.object.*)) {
 // zbr:selfhost/CgHelpers.zbr:1191
-            return _zbr_fn_nameUsedInExpr(name, e);
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1192
+            return _zbr_fn_nameEscapesInExpr(name, i.index.*);
         },
-        .assert_ => |_ptr_a| {
-            const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1193
-            if (_zbr_fn_nameUsedInExpr(name, a.cond.*)) {
+        .unary => |_ptr_u| {
+            const u = _ptr_u.*;
 // zbr:selfhost/CgHelpers.zbr:1194
-                return true;
-            }
-// zbr:selfhost/CgHelpers.zbr:1195
-            if ((a.message != null)) {
-// zbr:selfhost/CgHelpers.zbr:1196
-                return _zbr_fn_nameUsedInExpr(name, a.message.?.*);
-            }
-// zbr:selfhost/CgHelpers.zbr:1197
-            return false;
+            return _zbr_fn_nameEscapesInExpr(name, u.operand.*);
         },
-        .if_ => |_ptr_si| {
-            const si = _ptr_si.*;
-// zbr:selfhost/CgHelpers.zbr:1199
-            if (_zbr_fn_nameUsedInExpr(name, si.cond.*)) {
-// zbr:selfhost/CgHelpers.zbr:1200
+        .binary => |_ptr_b| {
+            const b = _ptr_b.*;
+// zbr:selfhost/CgHelpers.zbr:1196
+            if (_zbr_fn_nameEscapesInExpr(name, b.left.*)) {
+// zbr:selfhost/CgHelpers.zbr:1197
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1201
-            if (_zbr_fn_nameUsedInStmts(name, si.then_stmts)) {
+// zbr:selfhost/CgHelpers.zbr:1198
+            return _zbr_fn_nameEscapesInExpr(name, b.right.*);
+        },
+        .call => |_ptr_c| {
+            const c = _ptr_c.*;
 // zbr:selfhost/CgHelpers.zbr:1202
-                return true;
-            }
+            var callee_is_name: bool = false;
 // zbr:selfhost/CgHelpers.zbr:1203
-            for (si.else_ifs.items) |ei| {
+            if (c.callee == .ident) {
+                const cal_id = c.callee.ident;
 // zbr:selfhost/CgHelpers.zbr:1204
-                if (_zbr_fn_nameUsedInExpr(name, ei.cond)) {
+                callee_is_name = std.mem.eql(u8, cal_id.name, name);
+            }
 // zbr:selfhost/CgHelpers.zbr:1205
-                    return true;
-                }
+            if ((!callee_is_name)) {
 // zbr:selfhost/CgHelpers.zbr:1206
-                if (_zbr_fn_nameUsedInStmts(name, ei.stmts)) {
+                if (_zbr_fn_nameEscapesInExpr(name, c.callee)) {
 // zbr:selfhost/CgHelpers.zbr:1207
                     return true;
                 }
             }
 // zbr:selfhost/CgHelpers.zbr:1208
-            if (si.else_stmts) |se| {
+            for (c.args.items) |arg| {
 // zbr:selfhost/CgHelpers.zbr:1209
-                return _zbr_fn_nameUsedInStmts(name, se);
-            }
+                if (_zbr_fn_nameEscapesInExpr(name, arg.value)) {
 // zbr:selfhost/CgHelpers.zbr:1210
-            return false;
-        },
-        .while_ => |_ptr_w| {
-            const w = _ptr_w.*;
-// zbr:selfhost/CgHelpers.zbr:1212
-            if (_zbr_fn_nameUsedInExpr(name, w.cond.*)) {
-// zbr:selfhost/CgHelpers.zbr:1213
-                return true;
-            }
-// zbr:selfhost/CgHelpers.zbr:1214
-            return _zbr_fn_nameUsedInStmts(name, w.stmts);
-        },
-        .for_in => |_ptr_f| {
-            const f = _ptr_f.*;
-// zbr:selfhost/CgHelpers.zbr:1216
-            if (_zbr_fn_nameUsedInExpr(name, f.iter.*)) {
-// zbr:selfhost/CgHelpers.zbr:1217
-                return true;
-            }
-// zbr:selfhost/CgHelpers.zbr:1218
-            return _zbr_fn_nameUsedInStmts(name, f.stmts);
-        },
-        .for_num => |_ptr_fnum| {
-            const fnum = _ptr_fnum.*;
-// zbr:selfhost/CgHelpers.zbr:1220
-            if (_zbr_fn_nameUsedInExpr(name, fnum.start.*)) {
-// zbr:selfhost/CgHelpers.zbr:1221
-                return true;
-            }
-// zbr:selfhost/CgHelpers.zbr:1222
-            if (_zbr_fn_nameUsedInExpr(name, fnum.stop_.*)) {
-// zbr:selfhost/CgHelpers.zbr:1223
-                return true;
-            }
-// zbr:selfhost/CgHelpers.zbr:1224
-            return _zbr_fn_nameUsedInStmts(name, fnum.stmts);
-        },
-        .guard_ => |_ptr_g| {
-            const g = _ptr_g.*;
-// zbr:selfhost/CgHelpers.zbr:1226
-            if (_zbr_fn_nameUsedInExpr(name, g.cond.*)) {
-// zbr:selfhost/CgHelpers.zbr:1227
-                return true;
-            }
-// zbr:selfhost/CgHelpers.zbr:1228
-            return _zbr_fn_nameUsedInStmts(name, g.else_stmts);
-        },
-        .destruct => |_ptr_d| {
-            const d = _ptr_d.*;
-// zbr:selfhost/CgHelpers.zbr:1230
-            return _zbr_fn_nameUsedInExpr(name, d.init_expr.*);
-        },
-        .print_ => |_ptr_p| {
-            const p = _ptr_p.*;
-// zbr:selfhost/CgHelpers.zbr:1232
-            var pi: i64 = 0;
-// zbr:selfhost/CgHelpers.zbr:1233
-            while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
-// zbr:selfhost/CgHelpers.zbr:1234
-                if (_zbr_fn_nameUsedInExpr(name, _zbr_at(p.args.items, pi))) {
-// zbr:selfhost/CgHelpers.zbr:1235
                     return true;
                 }
-// zbr:selfhost/CgHelpers.zbr:1236
-                pi += 1;
             }
-// zbr:selfhost/CgHelpers.zbr:1237
+// zbr:selfhost/CgHelpers.zbr:1211
             return false;
         },
-        .branch_ => |_ptr_b| {
-            const b = _ptr_b.*;
+        .tuple_lit => |_ptr_tl| {
+            const tl = _ptr_tl.*;
+// zbr:selfhost/CgHelpers.zbr:1213
+            for (tl.elems.items) |telem| {
+// zbr:selfhost/CgHelpers.zbr:1214
+                if (_zbr_fn_nameEscapesInExpr(name, telem)) {
+// zbr:selfhost/CgHelpers.zbr:1215
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1216
+            return false;
+        },
+        .chained_cmp => |_ptr_cc| {
+            const cc = _ptr_cc.*;
+// zbr:selfhost/CgHelpers.zbr:1218
+            for (cc.operands.items) |op| {
+// zbr:selfhost/CgHelpers.zbr:1219
+                if (_zbr_fn_nameEscapesInExpr(name, op)) {
+// zbr:selfhost/CgHelpers.zbr:1220
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1221
+            return false;
+        },
+        .string_interp => |_ptr_si| {
+            const si = _ptr_si.*;
+// zbr:selfhost/CgHelpers.zbr:1223
+            for (si.parts.items) |part| {
+// zbr:selfhost/CgHelpers.zbr:1224
+                if (part == .expr_) {
+                    const e_ptr = part.expr_;
+                    const e = e_ptr.*;
+// zbr:selfhost/CgHelpers.zbr:1225
+                    if (_zbr_fn_nameEscapesInExpr(name, e)) {
+// zbr:selfhost/CgHelpers.zbr:1226
+                        return true;
+                    }
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1227
+            return false;
+        },
+        .orelse_ => |_ptr_o| {
+            const o = _ptr_o.*;
+// zbr:selfhost/CgHelpers.zbr:1229
+            if (_zbr_fn_nameEscapesInExpr(name, o.expr.*)) {
+// zbr:selfhost/CgHelpers.zbr:1230
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1231
+            return _zbr_fn_nameEscapesInExpr(name, o.fallback.*);
+        },
+        .if_expr => |_ptr_ie| {
+            const ie = _ptr_ie.*;
 // zbr:selfhost/CgHelpers.zbr:1239
-            if (_zbr_fn_nameUsedInExpr(name, b.expr.*)) {
+            if (_zbr_fn_nameEscapesInExpr(name, ie.cond.*)) {
 // zbr:selfhost/CgHelpers.zbr:1240
                 return true;
             }
 // zbr:selfhost/CgHelpers.zbr:1241
-            for (b.cases.items) |c| {
+            if (_zbr_fn_nameEscapesInExpr(name, ie.then_expr.*)) {
 // zbr:selfhost/CgHelpers.zbr:1242
-                for (c.values.items) |cv| {
+                return true;
+            }
 // zbr:selfhost/CgHelpers.zbr:1243
-                    if (_zbr_fn_nameUsedInExpr(name, cv)) {
-// zbr:selfhost/CgHelpers.zbr:1244
+            return _zbr_fn_nameEscapesInExpr(name, ie.else_expr.*);
+        },
+        .try_ => |_ptr_t| {
+            const t = _ptr_t.*;
+// zbr:selfhost/CgHelpers.zbr:1245
+            return _zbr_fn_nameEscapesInExpr(name, t.expr.*);
+        },
+        .catch_ => |_ptr_ca| {
+            const ca = _ptr_ca.*;
+// zbr:selfhost/CgHelpers.zbr:1247
+            if (_zbr_fn_nameEscapesInExpr(name, ca.expr.*)) {
+// zbr:selfhost/CgHelpers.zbr:1248
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1249
+            return _zbr_fn_nameEscapesInExpr(name, ca.fallback.*);
+        },
+        .to_non_nil => |_ptr_tn| {
+            const tn = _ptr_tn.*;
+// zbr:selfhost/CgHelpers.zbr:1251
+            return _zbr_fn_nameEscapesInExpr(name, tn.expr.*);
+        },
+        .is_nil => |_ptr_isn| {
+            const isn = _ptr_isn.*;
+// zbr:selfhost/CgHelpers.zbr:1253
+            return _zbr_fn_nameEscapesInExpr(name, isn.expr.*);
+        },
+        .cast => |_ptr_cst| {
+            const cst = _ptr_cst.*;
+// zbr:selfhost/CgHelpers.zbr:1255
+            return _zbr_fn_nameEscapesInExpr(name, cst.expr.*);
+        },
+        .type_check => |_ptr_tc| {
+            const tc = _ptr_tc.*;
+// zbr:selfhost/CgHelpers.zbr:1257
+            return _zbr_fn_nameEscapesInExpr(name, tc.expr.*);
+        },
+        .slice => |_ptr_sl| {
+            const sl = _ptr_sl.*;
+// zbr:selfhost/CgHelpers.zbr:1259
+            if (_zbr_fn_nameEscapesInExpr(name, sl.object.*)) {
+// zbr:selfhost/CgHelpers.zbr:1260
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1261
+            if ((sl.start != null)) {
+// zbr:selfhost/CgHelpers.zbr:1262
+                if (_zbr_fn_nameEscapesInExpr(name, sl.start.?.*)) {
+// zbr:selfhost/CgHelpers.zbr:1263
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1264
+            if ((sl.stop_ != null)) {
+// zbr:selfhost/CgHelpers.zbr:1265
+                return _zbr_fn_nameEscapesInExpr(name, sl.stop_.?.*);
+            }
+// zbr:selfhost/CgHelpers.zbr:1266
+            return false;
+        },
+        .opt_chain => |_ptr_oc| {
+            const oc = _ptr_oc.*;
+// zbr:selfhost/CgHelpers.zbr:1268
+            if (_zbr_fn_nameEscapesInExpr(name, oc.base.*)) {
+// zbr:selfhost/CgHelpers.zbr:1269
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1270
+            for (oc.args.items) |oca| {
+// zbr:selfhost/CgHelpers.zbr:1271
+                if (_zbr_fn_nameEscapesInExpr(name, oca.value)) {
+// zbr:selfhost/CgHelpers.zbr:1272
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1273
+            return false;
+        },
+        .except_ => |_ptr_ex| {
+            const ex = _ptr_ex.*;
+// zbr:selfhost/CgHelpers.zbr:1275
+            if (_zbr_fn_nameEscapesInExpr(name, ex.base)) {
+// zbr:selfhost/CgHelpers.zbr:1276
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1277
+            for (ex.fields.items) |exf| {
+// zbr:selfhost/CgHelpers.zbr:1278
+                if (_zbr_fn_nameEscapesInExpr(name, exf.value)) {
+// zbr:selfhost/CgHelpers.zbr:1279
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1280
+            return false;
+        },
+        .set_lit => |_ptr_sl| {
+            const sl = _ptr_sl.*;
+// zbr:selfhost/CgHelpers.zbr:1282
+            for (sl.elems.items) |se| {
+// zbr:selfhost/CgHelpers.zbr:1283
+                if (_zbr_fn_nameEscapesInExpr(name, se)) {
+// zbr:selfhost/CgHelpers.zbr:1284
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1285
+            return false;
+        },
+        .dict_lit => |_ptr_dl| {
+            const dl = _ptr_dl.*;
+// zbr:selfhost/CgHelpers.zbr:1287
+            for (dl.entries.items) |de| {
+// zbr:selfhost/CgHelpers.zbr:1288
+                if (_zbr_fn_nameEscapesInExpr(name, de.key.*)) {
+// zbr:selfhost/CgHelpers.zbr:1289
+                    return true;
+                }
+// zbr:selfhost/CgHelpers.zbr:1290
+                if (_zbr_fn_nameEscapesInExpr(name, de.value.*)) {
+// zbr:selfhost/CgHelpers.zbr:1291
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1292
+            return false;
+        },
+        .int_lit => {
+// zbr:selfhost/CgHelpers.zbr:1294
+            return false;
+        },
+        .float_lit => {
+// zbr:selfhost/CgHelpers.zbr:1296
+            return false;
+        },
+        .bool_lit => {
+// zbr:selfhost/CgHelpers.zbr:1298
+            return false;
+        },
+        .char_lit => {
+// zbr:selfhost/CgHelpers.zbr:1300
+            return false;
+        },
+        .string_lit => {
+// zbr:selfhost/CgHelpers.zbr:1302
+            return false;
+        },
+        .nil_ => {
+// zbr:selfhost/CgHelpers.zbr:1304
+            return false;
+        },
+        .this_ => {
+// zbr:selfhost/CgHelpers.zbr:1306
+            return false;
+        },
+        .lambda => {
+// zbr:selfhost/CgHelpers.zbr:1315
+            return _zbr_fn_mightUseNameInExpr(name, expr);
+        },
+        .list_lit => |_ptr_ll| {
+            const ll = _ptr_ll.*;
+// zbr:selfhost/CgHelpers.zbr:1317
+            for (ll.elems.items) |lle| {
+// zbr:selfhost/CgHelpers.zbr:1318
+                if (_zbr_fn_nameEscapesInExpr(name, lle)) {
+// zbr:selfhost/CgHelpers.zbr:1319
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1320
+            return false;
+        },
+        .array_lit => |_ptr_al| {
+            const al = _ptr_al.*;
+// zbr:selfhost/CgHelpers.zbr:1322
+            for (al.elems.items) |ale| {
+// zbr:selfhost/CgHelpers.zbr:1323
+                if (_zbr_fn_nameEscapesInExpr(name, ale)) {
+// zbr:selfhost/CgHelpers.zbr:1324
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1325
+            return false;
+        },
+        .old_ => |_ptr_ol| {
+            const ol = _ptr_ol.*;
+// zbr:selfhost/CgHelpers.zbr:1327
+            return _zbr_fn_nameEscapesInExpr(name, ol.operand.*);
+        },
+        .zig_lit => |zl| {
+// zbr:selfhost/CgHelpers.zbr:1348
+            return _zbr_fn_zigLitMentionsWord(zl.text, name);
+        },
+        else => {
+// zbr:selfhost/CgHelpers.zbr:1351
+            return false;
+        },
+    }
+}
+
+pub fn _zbr_fn_nameEscapes(name: []const u8, stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+// zbr:selfhost/CgHelpers.zbr:1354
+    for (stmts.items) |s| {
+// zbr:selfhost/CgHelpers.zbr:1355
+        if (_zbr_fn_nameEscapesStmt(name, s)) {
+// zbr:selfhost/CgHelpers.zbr:1356
+            return true;
+        }
+    }
+// zbr:selfhost/CgHelpers.zbr:1357
+    return false;
+}
+
+pub fn _zbr_fn_nameEscapesStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
+// zbr:selfhost/CgHelpers.zbr:1360
+    switch (stmt) {
+        .var_ => |_ptr_n| {
+            const n = _ptr_n.*;
+// zbr:selfhost/CgHelpers.zbr:1362
+            if ((n.init_expr != null)) {
+// zbr:selfhost/CgHelpers.zbr:1363
+                return _zbr_fn_nameEscapesInExpr(name, n.init_expr.?.*);
+            }
+// zbr:selfhost/CgHelpers.zbr:1364
+            return false;
+        },
+        .assign => |_ptr_a| {
+            const a = _ptr_a.*;
+// zbr:selfhost/CgHelpers.zbr:1366
+            if (_zbr_fn_nameEscapesInExpr(name, a.target.*)) {
+// zbr:selfhost/CgHelpers.zbr:1367
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1368
+            return _zbr_fn_nameEscapesInExpr(name, a.value.*);
+        },
+        .return_ => |_ptr_r| {
+            const r = _ptr_r.*;
+// zbr:selfhost/CgHelpers.zbr:1370
+            if ((r.value != null)) {
+// zbr:selfhost/CgHelpers.zbr:1371
+                return _zbr_fn_nameEscapesInExpr(name, r.value.?.*);
+            }
+// zbr:selfhost/CgHelpers.zbr:1372
+            return false;
+        },
+        .expr => |_ptr_e| {
+            const e = _ptr_e.*;
+// zbr:selfhost/CgHelpers.zbr:1374
+            return _zbr_fn_nameEscapesInExpr(name, e);
+        },
+        .print_ => |_ptr_p| {
+            const p = _ptr_p.*;
+// zbr:selfhost/CgHelpers.zbr:1376
+            var pi: i64 = 0;
+// zbr:selfhost/CgHelpers.zbr:1377
+            while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
+// zbr:selfhost/CgHelpers.zbr:1378
+                if (_zbr_fn_nameEscapesInExpr(name, _zbr_at(p.args.items, pi))) {
+// zbr:selfhost/CgHelpers.zbr:1379
+                    return true;
+                }
+// zbr:selfhost/CgHelpers.zbr:1380
+                pi += 1;
+            }
+// zbr:selfhost/CgHelpers.zbr:1381
+            return false;
+        },
+        .destruct => |_ptr_d| {
+            const d = _ptr_d.*;
+// zbr:selfhost/CgHelpers.zbr:1383
+            return _zbr_fn_nameEscapesInExpr(name, d.init_expr.*);
+        },
+        .if_ => |_ptr_si| {
+            const si = _ptr_si.*;
+// zbr:selfhost/CgHelpers.zbr:1385
+            if (_zbr_fn_nameEscapesInExpr(name, si.cond.*)) {
+// zbr:selfhost/CgHelpers.zbr:1386
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1387
+            if (_zbr_fn_nameEscapes(name, si.then_stmts)) {
+// zbr:selfhost/CgHelpers.zbr:1388
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1389
+            for (si.else_ifs.items) |ei| {
+// zbr:selfhost/CgHelpers.zbr:1390
+                if (_zbr_fn_nameEscapesInExpr(name, ei.cond)) {
+// zbr:selfhost/CgHelpers.zbr:1391
+                    return true;
+                }
+// zbr:selfhost/CgHelpers.zbr:1392
+                if (_zbr_fn_nameEscapes(name, ei.stmts)) {
+// zbr:selfhost/CgHelpers.zbr:1393
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1394
+            if (si.else_stmts) |se| {
+// zbr:selfhost/CgHelpers.zbr:1395
+                return _zbr_fn_nameEscapes(name, se);
+            }
+// zbr:selfhost/CgHelpers.zbr:1396
+            return false;
+        },
+        .while_ => |_ptr_w| {
+            const w = _ptr_w.*;
+// zbr:selfhost/CgHelpers.zbr:1398
+            if (_zbr_fn_nameEscapesInExpr(name, w.cond.*)) {
+// zbr:selfhost/CgHelpers.zbr:1399
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1400
+            return _zbr_fn_nameEscapes(name, w.stmts);
+        },
+        .for_in => |_ptr_f| {
+            const f = _ptr_f.*;
+// zbr:selfhost/CgHelpers.zbr:1402
+            if (_zbr_fn_nameEscapesInExpr(name, f.iter.*)) {
+// zbr:selfhost/CgHelpers.zbr:1403
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1404
+            return _zbr_fn_nameEscapes(name, f.stmts);
+        },
+        .for_num => |_ptr_fnum| {
+            const fnum = _ptr_fnum.*;
+// zbr:selfhost/CgHelpers.zbr:1406
+            if (_zbr_fn_nameEscapesInExpr(name, fnum.start.*)) {
+// zbr:selfhost/CgHelpers.zbr:1407
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1408
+            if (_zbr_fn_nameEscapesInExpr(name, fnum.stop_.*)) {
+// zbr:selfhost/CgHelpers.zbr:1409
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1410
+            return _zbr_fn_nameEscapes(name, fnum.stmts);
+        },
+        .guard_ => |_ptr_g| {
+            const g = _ptr_g.*;
+// zbr:selfhost/CgHelpers.zbr:1412
+            if (_zbr_fn_nameEscapesInExpr(name, g.cond.*)) {
+// zbr:selfhost/CgHelpers.zbr:1413
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1414
+            return _zbr_fn_nameEscapes(name, g.else_stmts);
+        },
+        .branch_ => |_ptr_b| {
+            const b = _ptr_b.*;
+// zbr:selfhost/CgHelpers.zbr:1421
+            if (_zbr_fn_nameEscapesInExpr(name, b.expr.*)) {
+// zbr:selfhost/CgHelpers.zbr:1422
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1423
+            for (b.cases.items) |bc| {
+// zbr:selfhost/CgHelpers.zbr:1424
+                for (bc.values.items) |bcv| {
+// zbr:selfhost/CgHelpers.zbr:1425
+                    if (_zbr_fn_nameEscapesInExpr(name, bcv)) {
+// zbr:selfhost/CgHelpers.zbr:1426
                         return true;
                     }
                 }
-// zbr:selfhost/CgHelpers.zbr:1245
-                if (_zbr_fn_nameUsedInStmts(name, c.stmts)) {
-// zbr:selfhost/CgHelpers.zbr:1246
+// zbr:selfhost/CgHelpers.zbr:1427
+                if (_zbr_fn_nameEscapes(name, bc.stmts)) {
+// zbr:selfhost/CgHelpers.zbr:1428
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1247
+// zbr:selfhost/CgHelpers.zbr:1429
             if (b.else_) |be| {
-// zbr:selfhost/CgHelpers.zbr:1248
-                return _zbr_fn_nameUsedInStmts(name, be);
+// zbr:selfhost/CgHelpers.zbr:1430
+                return _zbr_fn_nameEscapes(name, be);
             }
-// zbr:selfhost/CgHelpers.zbr:1249
+// zbr:selfhost/CgHelpers.zbr:1431
             return false;
         },
-        .try_catch => |_ptr_tc| {
-            const tc = _ptr_tc.*;
-// zbr:selfhost/CgHelpers.zbr:1251
-            if (_zbr_fn_nameUsedInStmts(name, tc.stmts)) {
-// zbr:selfhost/CgHelpers.zbr:1252
+        .try_catch => |_ptr_tcs| {
+            const tcs = _ptr_tcs.*;
+// zbr:selfhost/CgHelpers.zbr:1433
+            if (_zbr_fn_nameEscapes(name, tcs.stmts)) {
+// zbr:selfhost/CgHelpers.zbr:1434
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1253
-            for (tc.clauses.items) |cl| {
-// zbr:selfhost/CgHelpers.zbr:1254
-                if (_zbr_fn_nameUsedInStmts(name, cl.stmts)) {
-// zbr:selfhost/CgHelpers.zbr:1255
+// zbr:selfhost/CgHelpers.zbr:1435
+            for (tcs.clauses.items) |cl| {
+// zbr:selfhost/CgHelpers.zbr:1436
+                if (_zbr_fn_nameEscapes(name, cl.stmts)) {
+// zbr:selfhost/CgHelpers.zbr:1437
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1256
+// zbr:selfhost/CgHelpers.zbr:1438
             return false;
         },
         .raise_ => |_ptr_r| {
             const r = _ptr_r.*;
-// zbr:selfhost/CgHelpers.zbr:1258
+// zbr:selfhost/CgHelpers.zbr:1440
             if ((r.message != null)) {
-// zbr:selfhost/CgHelpers.zbr:1259
-                if (_zbr_fn_nameUsedInExpr(name, r.message.?.*)) {
-// zbr:selfhost/CgHelpers.zbr:1260
+// zbr:selfhost/CgHelpers.zbr:1441
+                if (_zbr_fn_nameEscapesInExpr(name, r.message.?.*)) {
+// zbr:selfhost/CgHelpers.zbr:1442
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1261
+// zbr:selfhost/CgHelpers.zbr:1443
             if ((r.details != null)) {
-// zbr:selfhost/CgHelpers.zbr:1262
-                return _zbr_fn_nameUsedInExpr(name, r.details.?.*);
+// zbr:selfhost/CgHelpers.zbr:1444
+                return _zbr_fn_nameEscapesInExpr(name, r.details.?.*);
             }
-// zbr:selfhost/CgHelpers.zbr:1263
+// zbr:selfhost/CgHelpers.zbr:1445
+            return false;
+        },
+        .assert_ => |_ptr_a| {
+            const a = _ptr_a.*;
+// zbr:selfhost/CgHelpers.zbr:1447
+            if (_zbr_fn_nameEscapesInExpr(name, a.cond.*)) {
+// zbr:selfhost/CgHelpers.zbr:1448
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1449
+            if ((a.message != null)) {
+// zbr:selfhost/CgHelpers.zbr:1450
+                return _zbr_fn_nameEscapesInExpr(name, a.message.?.*);
+            }
+// zbr:selfhost/CgHelpers.zbr:1451
             return false;
         },
         .defer_ => |_ptr_d| {
             const d = _ptr_d.*;
-// zbr:selfhost/CgHelpers.zbr:1265
+// zbr:selfhost/CgHelpers.zbr:1453
+            return _zbr_fn_nameEscapesStmt(name, d.stmt.*);
+        },
+        .assert_eq_ => |_ptr_aeq| {
+            const aeq = _ptr_aeq.*;
+// zbr:selfhost/CgHelpers.zbr:1459
+            if (_zbr_fn_nameEscapesInExpr(name, aeq.lhs.*)) {
+// zbr:selfhost/CgHelpers.zbr:1460
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1461
+            return _zbr_fn_nameEscapesInExpr(name, aeq.rhs.*);
+        },
+        .assert_ne_ => |_ptr_ane| {
+            const ane = _ptr_ane.*;
+// zbr:selfhost/CgHelpers.zbr:1463
+            if (_zbr_fn_nameEscapesInExpr(name, ane.lhs.*)) {
+// zbr:selfhost/CgHelpers.zbr:1464
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1465
+            return _zbr_fn_nameEscapesInExpr(name, ane.rhs.*);
+        },
+        .assert_true_ => |_ptr_atr| {
+            const atr = _ptr_atr.*;
+// zbr:selfhost/CgHelpers.zbr:1467
+            return _zbr_fn_nameEscapesInExpr(name, atr.expr.*);
+        },
+        .assert_false_ => |_ptr_afa| {
+            const afa = _ptr_afa.*;
+// zbr:selfhost/CgHelpers.zbr:1469
+            return _zbr_fn_nameEscapesInExpr(name, afa.expr.*);
+        },
+        .with_ => |_ptr_wth| {
+            const wth = _ptr_wth.*;
+// zbr:selfhost/CgHelpers.zbr:1471
+            if (_zbr_fn_nameEscapesInExpr(name, wth.target.*)) {
+// zbr:selfhost/CgHelpers.zbr:1472
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1473
+            return _zbr_fn_nameEscapes(name, wth.stmts);
+        },
+        .in_scope => |_ptr_ins| {
+            const ins = _ptr_ins.*;
+// zbr:selfhost/CgHelpers.zbr:1475
+            if (_zbr_fn_nameEscapesInExpr(name, ins.expr.*)) {
+// zbr:selfhost/CgHelpers.zbr:1476
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1477
+            return _zbr_fn_nameEscapes(name, ins.stmts);
+        },
+        .allocate_ => |_ptr_alc| {
+            const alc = _ptr_alc.*;
+// zbr:selfhost/CgHelpers.zbr:1479
+            if (_zbr_fn_nameEscapesInExpr(name, alc.source)) {
+// zbr:selfhost/CgHelpers.zbr:1480
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1481
+            return _zbr_fn_nameEscapes(name, alc.stmts);
+        },
+        .copy_out => |_ptr_cpo| {
+            const cpo = _ptr_cpo.*;
+// zbr:selfhost/CgHelpers.zbr:1483
+            if (_zbr_fn_nameEscapesInExpr(name, cpo.target)) {
+// zbr:selfhost/CgHelpers.zbr:1484
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1485
+            return _zbr_fn_nameEscapesInExpr(name, cpo.value);
+        },
+        .contract => |_ptr_ctr| {
+            const ctr = _ptr_ctr.*;
+// zbr:selfhost/CgHelpers.zbr:1487
+            for (ctr.exprs.items) |ce| {
+// zbr:selfhost/CgHelpers.zbr:1488
+                if (_zbr_fn_nameEscapesInExpr(name, ce)) {
+// zbr:selfhost/CgHelpers.zbr:1489
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1490
+            return false;
+        },
+        .break_ => {
+// zbr:selfhost/CgHelpers.zbr:1492
+            return false;
+        },
+        .continue_ => {
+// zbr:selfhost/CgHelpers.zbr:1494
+            return false;
+        },
+        .pass_ => {
+// zbr:selfhost/CgHelpers.zbr:1496
+            return false;
+        },
+    }
+}
+
+pub fn _zbr_fn_nameUsedInStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
+// zbr:selfhost/CgHelpers.zbr:1499
+    switch (stmt) {
+        .var_ => |_ptr_n| {
+            const n = _ptr_n.*;
+// zbr:selfhost/CgHelpers.zbr:1501
+            if ((n.init_expr != null)) {
+// zbr:selfhost/CgHelpers.zbr:1502
+                return _zbr_fn_nameUsedInExpr(name, n.init_expr.?.*);
+            }
+// zbr:selfhost/CgHelpers.zbr:1503
+            return false;
+        },
+        .assign => |_ptr_a| {
+            const a = _ptr_a.*;
+// zbr:selfhost/CgHelpers.zbr:1505
+            if (_zbr_fn_nameUsedInExpr(name, a.target.*)) {
+// zbr:selfhost/CgHelpers.zbr:1506
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1507
+            return _zbr_fn_nameUsedInExpr(name, a.value.*);
+        },
+        .return_ => |_ptr_r| {
+            const r = _ptr_r.*;
+// zbr:selfhost/CgHelpers.zbr:1509
+            if ((r.value != null)) {
+// zbr:selfhost/CgHelpers.zbr:1510
+                return _zbr_fn_nameUsedInExpr(name, r.value.?.*);
+            }
+// zbr:selfhost/CgHelpers.zbr:1511
+            return false;
+        },
+        .expr => |_ptr_e| {
+            const e = _ptr_e.*;
+// zbr:selfhost/CgHelpers.zbr:1513
+            return _zbr_fn_nameUsedInExpr(name, e);
+        },
+        .assert_ => |_ptr_a| {
+            const a = _ptr_a.*;
+// zbr:selfhost/CgHelpers.zbr:1515
+            if (_zbr_fn_nameUsedInExpr(name, a.cond.*)) {
+// zbr:selfhost/CgHelpers.zbr:1516
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1517
+            if ((a.message != null)) {
+// zbr:selfhost/CgHelpers.zbr:1518
+                return _zbr_fn_nameUsedInExpr(name, a.message.?.*);
+            }
+// zbr:selfhost/CgHelpers.zbr:1519
+            return false;
+        },
+        .if_ => |_ptr_si| {
+            const si = _ptr_si.*;
+// zbr:selfhost/CgHelpers.zbr:1521
+            if (_zbr_fn_nameUsedInExpr(name, si.cond.*)) {
+// zbr:selfhost/CgHelpers.zbr:1522
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1523
+            if (_zbr_fn_nameUsedInStmts(name, si.then_stmts)) {
+// zbr:selfhost/CgHelpers.zbr:1524
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1525
+            for (si.else_ifs.items) |ei| {
+// zbr:selfhost/CgHelpers.zbr:1526
+                if (_zbr_fn_nameUsedInExpr(name, ei.cond)) {
+// zbr:selfhost/CgHelpers.zbr:1527
+                    return true;
+                }
+// zbr:selfhost/CgHelpers.zbr:1528
+                if (_zbr_fn_nameUsedInStmts(name, ei.stmts)) {
+// zbr:selfhost/CgHelpers.zbr:1529
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1530
+            if (si.else_stmts) |se| {
+// zbr:selfhost/CgHelpers.zbr:1531
+                return _zbr_fn_nameUsedInStmts(name, se);
+            }
+// zbr:selfhost/CgHelpers.zbr:1532
+            return false;
+        },
+        .while_ => |_ptr_w| {
+            const w = _ptr_w.*;
+// zbr:selfhost/CgHelpers.zbr:1534
+            if (_zbr_fn_nameUsedInExpr(name, w.cond.*)) {
+// zbr:selfhost/CgHelpers.zbr:1535
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1536
+            return _zbr_fn_nameUsedInStmts(name, w.stmts);
+        },
+        .for_in => |_ptr_f| {
+            const f = _ptr_f.*;
+// zbr:selfhost/CgHelpers.zbr:1538
+            if (_zbr_fn_nameUsedInExpr(name, f.iter.*)) {
+// zbr:selfhost/CgHelpers.zbr:1539
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1540
+            return _zbr_fn_nameUsedInStmts(name, f.stmts);
+        },
+        .for_num => |_ptr_fnum| {
+            const fnum = _ptr_fnum.*;
+// zbr:selfhost/CgHelpers.zbr:1542
+            if (_zbr_fn_nameUsedInExpr(name, fnum.start.*)) {
+// zbr:selfhost/CgHelpers.zbr:1543
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1544
+            if (_zbr_fn_nameUsedInExpr(name, fnum.stop_.*)) {
+// zbr:selfhost/CgHelpers.zbr:1545
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1546
+            return _zbr_fn_nameUsedInStmts(name, fnum.stmts);
+        },
+        .guard_ => |_ptr_g| {
+            const g = _ptr_g.*;
+// zbr:selfhost/CgHelpers.zbr:1548
+            if (_zbr_fn_nameUsedInExpr(name, g.cond.*)) {
+// zbr:selfhost/CgHelpers.zbr:1549
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1550
+            return _zbr_fn_nameUsedInStmts(name, g.else_stmts);
+        },
+        .destruct => |_ptr_d| {
+            const d = _ptr_d.*;
+// zbr:selfhost/CgHelpers.zbr:1552
+            return _zbr_fn_nameUsedInExpr(name, d.init_expr.*);
+        },
+        .print_ => |_ptr_p| {
+            const p = _ptr_p.*;
+// zbr:selfhost/CgHelpers.zbr:1554
+            var pi: i64 = 0;
+// zbr:selfhost/CgHelpers.zbr:1555
+            while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
+// zbr:selfhost/CgHelpers.zbr:1556
+                if (_zbr_fn_nameUsedInExpr(name, _zbr_at(p.args.items, pi))) {
+// zbr:selfhost/CgHelpers.zbr:1557
+                    return true;
+                }
+// zbr:selfhost/CgHelpers.zbr:1558
+                pi += 1;
+            }
+// zbr:selfhost/CgHelpers.zbr:1559
+            return false;
+        },
+        .branch_ => |_ptr_b| {
+            const b = _ptr_b.*;
+// zbr:selfhost/CgHelpers.zbr:1561
+            if (_zbr_fn_nameUsedInExpr(name, b.expr.*)) {
+// zbr:selfhost/CgHelpers.zbr:1562
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1563
+            for (b.cases.items) |c| {
+// zbr:selfhost/CgHelpers.zbr:1564
+                for (c.values.items) |cv| {
+// zbr:selfhost/CgHelpers.zbr:1565
+                    if (_zbr_fn_nameUsedInExpr(name, cv)) {
+// zbr:selfhost/CgHelpers.zbr:1566
+                        return true;
+                    }
+                }
+// zbr:selfhost/CgHelpers.zbr:1567
+                if (_zbr_fn_nameUsedInStmts(name, c.stmts)) {
+// zbr:selfhost/CgHelpers.zbr:1568
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1569
+            if (b.else_) |be| {
+// zbr:selfhost/CgHelpers.zbr:1570
+                return _zbr_fn_nameUsedInStmts(name, be);
+            }
+// zbr:selfhost/CgHelpers.zbr:1571
+            return false;
+        },
+        .try_catch => |_ptr_tc| {
+            const tc = _ptr_tc.*;
+// zbr:selfhost/CgHelpers.zbr:1573
+            if (_zbr_fn_nameUsedInStmts(name, tc.stmts)) {
+// zbr:selfhost/CgHelpers.zbr:1574
+                return true;
+            }
+// zbr:selfhost/CgHelpers.zbr:1575
+            for (tc.clauses.items) |cl| {
+// zbr:selfhost/CgHelpers.zbr:1576
+                if (_zbr_fn_nameUsedInStmts(name, cl.stmts)) {
+// zbr:selfhost/CgHelpers.zbr:1577
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1578
+            return false;
+        },
+        .raise_ => |_ptr_r| {
+            const r = _ptr_r.*;
+// zbr:selfhost/CgHelpers.zbr:1580
+            if ((r.message != null)) {
+// zbr:selfhost/CgHelpers.zbr:1581
+                if (_zbr_fn_nameUsedInExpr(name, r.message.?.*)) {
+// zbr:selfhost/CgHelpers.zbr:1582
+                    return true;
+                }
+            }
+// zbr:selfhost/CgHelpers.zbr:1583
+            if ((r.details != null)) {
+// zbr:selfhost/CgHelpers.zbr:1584
+                return _zbr_fn_nameUsedInExpr(name, r.details.?.*);
+            }
+// zbr:selfhost/CgHelpers.zbr:1585
+            return false;
+        },
+        .defer_ => |_ptr_d| {
+            const d = _ptr_d.*;
+// zbr:selfhost/CgHelpers.zbr:1587
             return _zbr_fn_nameUsedInStmt(name, d.stmt.*);
         },
         .with_ => |_ptr_wth| {
             const wth = _ptr_wth.*;
-// zbr:selfhost/CgHelpers.zbr:1269
+// zbr:selfhost/CgHelpers.zbr:1591
             if (_zbr_fn_nameUsedInExpr(name, wth.target.*)) {
-// zbr:selfhost/CgHelpers.zbr:1270
+// zbr:selfhost/CgHelpers.zbr:1592
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1271
+// zbr:selfhost/CgHelpers.zbr:1593
             return _zbr_fn_nameUsedInStmts(name, wth.stmts);
         },
         .in_scope => |_ptr_ins| {
             const ins = _ptr_ins.*;
-// zbr:selfhost/CgHelpers.zbr:1279
+// zbr:selfhost/CgHelpers.zbr:1601
             if (_zbr_fn_nameUsedInExpr(name, ins.expr.*)) {
-// zbr:selfhost/CgHelpers.zbr:1280
+// zbr:selfhost/CgHelpers.zbr:1602
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1281
+// zbr:selfhost/CgHelpers.zbr:1603
             return _zbr_fn_nameUsedInStmts(name, ins.stmts);
         },
         else => {
-// zbr:selfhost/CgHelpers.zbr:1283
+// zbr:selfhost/CgHelpers.zbr:1605
             return false;
         },
     }
 }
 
 pub fn _zbr_fn_collectAllIdents(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet) void {
-// zbr:selfhost/CgHelpers.zbr:1290
+// zbr:selfhost/CgHelpers.zbr:1612
     switch (expr) {
         .ident => |id| {
-// zbr:selfhost/CgHelpers.zbr:1292
+// zbr:selfhost/CgHelpers.zbr:1614
             out.add(id.name);
         },
         .call => |_ptr_c| {
             const c = _ptr_c.*;
-// zbr:selfhost/CgHelpers.zbr:1294
+// zbr:selfhost/CgHelpers.zbr:1616
             _zbr_fn_collectAllIdents(c.callee, out);
-// zbr:selfhost/CgHelpers.zbr:1295
+// zbr:selfhost/CgHelpers.zbr:1617
             for (c.args.items) |arg| {
-// zbr:selfhost/CgHelpers.zbr:1296
+// zbr:selfhost/CgHelpers.zbr:1618
                 _zbr_fn_collectAllIdents(arg.value, out);
             }
         },
         .member => |_ptr_m| {
             const m = _ptr_m.*;
-// zbr:selfhost/CgHelpers.zbr:1298
+// zbr:selfhost/CgHelpers.zbr:1620
             _zbr_fn_collectAllIdents(m.object.*, out);
         },
         .binary => |_ptr_b| {
             const b = _ptr_b.*;
-// zbr:selfhost/CgHelpers.zbr:1300
+// zbr:selfhost/CgHelpers.zbr:1622
             _zbr_fn_collectAllIdents(b.left.*, out);
-// zbr:selfhost/CgHelpers.zbr:1301
+// zbr:selfhost/CgHelpers.zbr:1623
             _zbr_fn_collectAllIdents(b.right.*, out);
         },
         .unary => |_ptr_u| {
             const u = _ptr_u.*;
-// zbr:selfhost/CgHelpers.zbr:1303
+// zbr:selfhost/CgHelpers.zbr:1625
             _zbr_fn_collectAllIdents(u.operand.*, out);
         },
         .to_non_nil => |_ptr_t| {
             const t = _ptr_t.*;
-// zbr:selfhost/CgHelpers.zbr:1305
+// zbr:selfhost/CgHelpers.zbr:1627
             _zbr_fn_collectAllIdents(t.expr.*, out);
         },
         .is_nil => |_ptr_t| {
             const t = _ptr_t.*;
-// zbr:selfhost/CgHelpers.zbr:1307
+// zbr:selfhost/CgHelpers.zbr:1629
             _zbr_fn_collectAllIdents(t.expr.*, out);
         },
         .orelse_ => |_ptr_o| {
             const o = _ptr_o.*;
-// zbr:selfhost/CgHelpers.zbr:1309
+// zbr:selfhost/CgHelpers.zbr:1631
             _zbr_fn_collectAllIdents(o.expr.*, out);
-// zbr:selfhost/CgHelpers.zbr:1310
+// zbr:selfhost/CgHelpers.zbr:1632
             _zbr_fn_collectAllIdents(o.fallback.*, out);
         },
         .catch_ => |_ptr_ca| {
             const ca = _ptr_ca.*;
-// zbr:selfhost/CgHelpers.zbr:1312
+// zbr:selfhost/CgHelpers.zbr:1634
             _zbr_fn_collectAllIdents(ca.expr.*, out);
-// zbr:selfhost/CgHelpers.zbr:1313
+// zbr:selfhost/CgHelpers.zbr:1635
             _zbr_fn_collectAllIdents(ca.fallback.*, out);
         },
         .if_expr => |_ptr_i| {
             const i = _ptr_i.*;
-// zbr:selfhost/CgHelpers.zbr:1315
+// zbr:selfhost/CgHelpers.zbr:1637
             _zbr_fn_collectAllIdents(i.cond.*, out);
-// zbr:selfhost/CgHelpers.zbr:1316
+// zbr:selfhost/CgHelpers.zbr:1638
             _zbr_fn_collectAllIdents(i.then_expr.*, out);
-// zbr:selfhost/CgHelpers.zbr:1317
+// zbr:selfhost/CgHelpers.zbr:1639
             _zbr_fn_collectAllIdents(i.else_expr.*, out);
         },
         .cast => |_ptr_c| {
             const c = _ptr_c.*;
-// zbr:selfhost/CgHelpers.zbr:1319
+// zbr:selfhost/CgHelpers.zbr:1641
             _zbr_fn_collectAllIdents(c.expr.*, out);
         },
         .try_ => |_ptr_t| {
             const t = _ptr_t.*;
-// zbr:selfhost/CgHelpers.zbr:1321
+// zbr:selfhost/CgHelpers.zbr:1643
             _zbr_fn_collectAllIdents(t.expr.*, out);
         },
         .type_check => |_ptr_t| {
             const t = _ptr_t.*;
-// zbr:selfhost/CgHelpers.zbr:1323
+// zbr:selfhost/CgHelpers.zbr:1645
             _zbr_fn_collectAllIdents(t.expr.*, out);
         },
         .set_lit => |_ptr_sl| {
             const sl = _ptr_sl.*;
-// zbr:selfhost/CgHelpers.zbr:1325
+// zbr:selfhost/CgHelpers.zbr:1647
             for (sl.elems.items) |se| {
-// zbr:selfhost/CgHelpers.zbr:1326
+// zbr:selfhost/CgHelpers.zbr:1648
                 _zbr_fn_collectAllIdents(se, out);
             }
         },
         .dict_lit => |_ptr_d| {
             const d = _ptr_d.*;
-// zbr:selfhost/CgHelpers.zbr:1328
+// zbr:selfhost/CgHelpers.zbr:1650
             for (d.entries.items) |entry| {
-// zbr:selfhost/CgHelpers.zbr:1329
+// zbr:selfhost/CgHelpers.zbr:1651
                 _zbr_fn_collectAllIdents(entry.key.*, out);
-// zbr:selfhost/CgHelpers.zbr:1330
+// zbr:selfhost/CgHelpers.zbr:1652
                 _zbr_fn_collectAllIdents(entry.value.*, out);
             }
         },
         .string_interp => |_ptr_si| {
             const si = _ptr_si.*;
-// zbr:selfhost/CgHelpers.zbr:1332
+// zbr:selfhost/CgHelpers.zbr:1654
             for (si.parts.items) |part| {
-// zbr:selfhost/CgHelpers.zbr:1333
+// zbr:selfhost/CgHelpers.zbr:1655
                 if (part == .expr_) {
                     const e_ptr = part.expr_;
                     const e = e_ptr.*;
-// zbr:selfhost/CgHelpers.zbr:1334
+// zbr:selfhost/CgHelpers.zbr:1656
                     _zbr_fn_collectAllIdents(e, out);
                 }
             }
         },
         .chained_cmp => |_ptr_cc| {
             const cc = _ptr_cc.*;
-// zbr:selfhost/CgHelpers.zbr:1336
+// zbr:selfhost/CgHelpers.zbr:1658
             for (cc.operands.items) |op| {
-// zbr:selfhost/CgHelpers.zbr:1337
+// zbr:selfhost/CgHelpers.zbr:1659
                 _zbr_fn_collectAllIdents(op, out);
             }
         },
         .tuple_lit => |_ptr_tl| {
             const tl = _ptr_tl.*;
-// zbr:selfhost/CgHelpers.zbr:1339
+// zbr:selfhost/CgHelpers.zbr:1661
             for (tl.elems.items) |telem| {
-// zbr:selfhost/CgHelpers.zbr:1340
+// zbr:selfhost/CgHelpers.zbr:1662
                 _zbr_fn_collectAllIdents(telem, out);
             }
         },
@@ -2585,84 +3255,84 @@ pub fn _zbr_fn_collectAllIdents(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet) void {
 }
 
 pub fn _zbr_fn_seedEscapedFromReturns(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet) void {
-// zbr:selfhost/CgHelpers.zbr:1349
+// zbr:selfhost/CgHelpers.zbr:1671
     for (stmts.items) |s| {
-// zbr:selfhost/CgHelpers.zbr:1350
+// zbr:selfhost/CgHelpers.zbr:1672
         switch (s) {
             .return_ => |_ptr_r| {
                 const r = _ptr_r.*;
-// zbr:selfhost/CgHelpers.zbr:1352
+// zbr:selfhost/CgHelpers.zbr:1674
                 if ((r.value != null)) {
-// zbr:selfhost/CgHelpers.zbr:1353
+// zbr:selfhost/CgHelpers.zbr:1675
                     _zbr_fn_collectAllIdents(r.value.?.*, out);
                 }
             },
             .if_ => |_ptr_si| {
                 const si = _ptr_si.*;
-// zbr:selfhost/CgHelpers.zbr:1355
+// zbr:selfhost/CgHelpers.zbr:1677
                 _zbr_fn_seedEscapedFromReturns(si.then_stmts, out);
-// zbr:selfhost/CgHelpers.zbr:1356
+// zbr:selfhost/CgHelpers.zbr:1678
                 for (si.else_ifs.items) |ei| {
-// zbr:selfhost/CgHelpers.zbr:1357
+// zbr:selfhost/CgHelpers.zbr:1679
                     _zbr_fn_seedEscapedFromReturns(ei.stmts, out);
                 }
-// zbr:selfhost/CgHelpers.zbr:1358
+// zbr:selfhost/CgHelpers.zbr:1680
                 if (si.else_stmts) |se| {
-// zbr:selfhost/CgHelpers.zbr:1359
+// zbr:selfhost/CgHelpers.zbr:1681
                     _zbr_fn_seedEscapedFromReturns(se, out);
                 }
             },
             .while_ => |_ptr_w| {
                 const w = _ptr_w.*;
-// zbr:selfhost/CgHelpers.zbr:1361
+// zbr:selfhost/CgHelpers.zbr:1683
                 _zbr_fn_seedEscapedFromReturns(w.stmts, out);
             },
             .for_in => |_ptr_f| {
                 const f = _ptr_f.*;
-// zbr:selfhost/CgHelpers.zbr:1363
+// zbr:selfhost/CgHelpers.zbr:1685
                 _zbr_fn_seedEscapedFromReturns(f.stmts, out);
             },
             .for_num => |_ptr_fnum| {
                 const fnum = _ptr_fnum.*;
-// zbr:selfhost/CgHelpers.zbr:1365
+// zbr:selfhost/CgHelpers.zbr:1687
                 _zbr_fn_seedEscapedFromReturns(fnum.stmts, out);
             },
             .branch_ => |_ptr_b| {
                 const b = _ptr_b.*;
-// zbr:selfhost/CgHelpers.zbr:1367
+// zbr:selfhost/CgHelpers.zbr:1689
                 for (b.cases.items) |c| {
-// zbr:selfhost/CgHelpers.zbr:1368
+// zbr:selfhost/CgHelpers.zbr:1690
                     _zbr_fn_seedEscapedFromReturns(c.stmts, out);
                 }
-// zbr:selfhost/CgHelpers.zbr:1369
+// zbr:selfhost/CgHelpers.zbr:1691
                 if (b.else_) |be| {
-// zbr:selfhost/CgHelpers.zbr:1370
+// zbr:selfhost/CgHelpers.zbr:1692
                     _zbr_fn_seedEscapedFromReturns(be, out);
                 }
             },
             .with_ => |_ptr_w| {
                 const w = _ptr_w.*;
-// zbr:selfhost/CgHelpers.zbr:1372
+// zbr:selfhost/CgHelpers.zbr:1694
                 _zbr_fn_seedEscapedFromReturns(w.stmts, out);
             },
             .in_scope => |_ptr_si_s| {
                 const si_s = _ptr_si_s.*;
-// zbr:selfhost/CgHelpers.zbr:1374
+// zbr:selfhost/CgHelpers.zbr:1696
                 _zbr_fn_seedEscapedFromReturns(si_s.stmts, out);
             },
             .try_catch => |_ptr_tc| {
                 const tc = _ptr_tc.*;
-// zbr:selfhost/CgHelpers.zbr:1376
+// zbr:selfhost/CgHelpers.zbr:1698
                 _zbr_fn_seedEscapedFromReturns(tc.stmts, out);
-// zbr:selfhost/CgHelpers.zbr:1377
+// zbr:selfhost/CgHelpers.zbr:1699
                 for (tc.clauses.items) |cl| {
-// zbr:selfhost/CgHelpers.zbr:1378
+// zbr:selfhost/CgHelpers.zbr:1700
                     _zbr_fn_seedEscapedFromReturns(cl.stmts, out);
                 }
             },
             .guard_ => |_ptr_g| {
                 const g = _ptr_g.*;
-// zbr:selfhost/CgHelpers.zbr:1380
+// zbr:selfhost/CgHelpers.zbr:1702
                 _zbr_fn_seedEscapedFromReturns(g.else_stmts, out);
             },
             else => {
@@ -2673,25 +3343,25 @@ pub fn _zbr_fn_seedEscapedFromReturns(stmts: std.ArrayList(_zbr_ty_Stmt), out: *
 }
 
 pub fn _zbr_fn_propagateEscapesOnce(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet) bool {
-// zbr:selfhost/CgHelpers.zbr:1391
+// zbr:selfhost/CgHelpers.zbr:1713
     var grew: bool = false;
-// zbr:selfhost/CgHelpers.zbr:1392
+// zbr:selfhost/CgHelpers.zbr:1714
     for (stmts.items) |s| {
-// zbr:selfhost/CgHelpers.zbr:1393
+// zbr:selfhost/CgHelpers.zbr:1715
         switch (s) {
             .var_ => |_ptr_n| {
                 const n = _ptr_n.*;
-// zbr:selfhost/CgHelpers.zbr:1395
+// zbr:selfhost/CgHelpers.zbr:1717
                 if (out.contains_(n.name)) {
-// zbr:selfhost/CgHelpers.zbr:1396
+// zbr:selfhost/CgHelpers.zbr:1718
                     if ((n.init_expr != null)) {
-// zbr:selfhost/CgHelpers.zbr:1397
+// zbr:selfhost/CgHelpers.zbr:1719
                         const before: i64 = @as(i64, @intCast(out.len));
-// zbr:selfhost/CgHelpers.zbr:1398
+// zbr:selfhost/CgHelpers.zbr:1720
                         _zbr_fn_collectAllIdents(n.init_expr.?.*, out);
-// zbr:selfhost/CgHelpers.zbr:1399
+// zbr:selfhost/CgHelpers.zbr:1721
                         if (_zebra_gt(@as(i64, @intCast(out.len)), before)) {
-// zbr:selfhost/CgHelpers.zbr:1400
+// zbr:selfhost/CgHelpers.zbr:1722
                             grew = true;
                         }
                     }
@@ -2699,22 +3369,22 @@ pub fn _zbr_fn_propagateEscapesOnce(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_z
             },
             .assign => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1402
+// zbr:selfhost/CgHelpers.zbr:1724
                 if (a.target.* == .member) {
                     const m_ptr = a.target.*.member;
                     const m = m_ptr.*;
-// zbr:selfhost/CgHelpers.zbr:1403
+// zbr:selfhost/CgHelpers.zbr:1725
                     if (m.object.* == .ident) {
                         const id = m.object.*.ident;
-// zbr:selfhost/CgHelpers.zbr:1404
+// zbr:selfhost/CgHelpers.zbr:1726
                         if (out.contains_(id.name)) {
-// zbr:selfhost/CgHelpers.zbr:1405
+// zbr:selfhost/CgHelpers.zbr:1727
                             const before2: i64 = @as(i64, @intCast(out.len));
-// zbr:selfhost/CgHelpers.zbr:1406
+// zbr:selfhost/CgHelpers.zbr:1728
                             _zbr_fn_collectAllIdents(a.value.*, out);
-// zbr:selfhost/CgHelpers.zbr:1407
+// zbr:selfhost/CgHelpers.zbr:1729
                             if (_zebra_gt(@as(i64, @intCast(out.len)), before2)) {
-// zbr:selfhost/CgHelpers.zbr:1408
+// zbr:selfhost/CgHelpers.zbr:1730
                                 grew = true;
                             }
                         }
@@ -2723,108 +3393,108 @@ pub fn _zbr_fn_propagateEscapesOnce(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_z
             },
             .if_ => |_ptr_si| {
                 const si = _ptr_si.*;
-// zbr:selfhost/CgHelpers.zbr:1410
+// zbr:selfhost/CgHelpers.zbr:1732
                 if (_zbr_fn_propagateEscapesOnce(si.then_stmts, out)) {
-// zbr:selfhost/CgHelpers.zbr:1411
+// zbr:selfhost/CgHelpers.zbr:1733
                     grew = true;
                 }
-// zbr:selfhost/CgHelpers.zbr:1412
+// zbr:selfhost/CgHelpers.zbr:1734
                 for (si.else_ifs.items) |ei| {
-// zbr:selfhost/CgHelpers.zbr:1413
+// zbr:selfhost/CgHelpers.zbr:1735
                     if (_zbr_fn_propagateEscapesOnce(ei.stmts, out)) {
-// zbr:selfhost/CgHelpers.zbr:1414
+// zbr:selfhost/CgHelpers.zbr:1736
                         grew = true;
                     }
                 }
-// zbr:selfhost/CgHelpers.zbr:1415
+// zbr:selfhost/CgHelpers.zbr:1737
                 if (si.else_stmts) |se| {
-// zbr:selfhost/CgHelpers.zbr:1416
+// zbr:selfhost/CgHelpers.zbr:1738
                     if (_zbr_fn_propagateEscapesOnce(se, out)) {
-// zbr:selfhost/CgHelpers.zbr:1417
+// zbr:selfhost/CgHelpers.zbr:1739
                         grew = true;
                     }
                 }
             },
             .while_ => |_ptr_w| {
                 const w = _ptr_w.*;
-// zbr:selfhost/CgHelpers.zbr:1419
+// zbr:selfhost/CgHelpers.zbr:1741
                 if (_zbr_fn_propagateEscapesOnce(w.stmts, out)) {
-// zbr:selfhost/CgHelpers.zbr:1420
+// zbr:selfhost/CgHelpers.zbr:1742
                     grew = true;
                 }
             },
             .for_in => |_ptr_f| {
                 const f = _ptr_f.*;
-// zbr:selfhost/CgHelpers.zbr:1422
+// zbr:selfhost/CgHelpers.zbr:1744
                 if (_zbr_fn_propagateEscapesOnce(f.stmts, out)) {
-// zbr:selfhost/CgHelpers.zbr:1423
+// zbr:selfhost/CgHelpers.zbr:1745
                     grew = true;
                 }
             },
             .for_num => |_ptr_fnum| {
                 const fnum = _ptr_fnum.*;
-// zbr:selfhost/CgHelpers.zbr:1425
+// zbr:selfhost/CgHelpers.zbr:1747
                 if (_zbr_fn_propagateEscapesOnce(fnum.stmts, out)) {
-// zbr:selfhost/CgHelpers.zbr:1426
+// zbr:selfhost/CgHelpers.zbr:1748
                     grew = true;
                 }
             },
             .branch_ => |_ptr_b| {
                 const b = _ptr_b.*;
-// zbr:selfhost/CgHelpers.zbr:1428
+// zbr:selfhost/CgHelpers.zbr:1750
                 for (b.cases.items) |c| {
-// zbr:selfhost/CgHelpers.zbr:1429
+// zbr:selfhost/CgHelpers.zbr:1751
                     if (_zbr_fn_propagateEscapesOnce(c.stmts, out)) {
-// zbr:selfhost/CgHelpers.zbr:1430
+// zbr:selfhost/CgHelpers.zbr:1752
                         grew = true;
                     }
                 }
-// zbr:selfhost/CgHelpers.zbr:1431
+// zbr:selfhost/CgHelpers.zbr:1753
                 if (b.else_) |be| {
-// zbr:selfhost/CgHelpers.zbr:1432
+// zbr:selfhost/CgHelpers.zbr:1754
                     if (_zbr_fn_propagateEscapesOnce(be, out)) {
-// zbr:selfhost/CgHelpers.zbr:1433
+// zbr:selfhost/CgHelpers.zbr:1755
                         grew = true;
                     }
                 }
             },
             .with_ => |_ptr_ww| {
                 const ww = _ptr_ww.*;
-// zbr:selfhost/CgHelpers.zbr:1435
+// zbr:selfhost/CgHelpers.zbr:1757
                 if (_zbr_fn_propagateEscapesOnce(ww.stmts, out)) {
-// zbr:selfhost/CgHelpers.zbr:1436
+// zbr:selfhost/CgHelpers.zbr:1758
                     grew = true;
                 }
             },
             .in_scope => |_ptr_si_p| {
                 const si_p = _ptr_si_p.*;
-// zbr:selfhost/CgHelpers.zbr:1438
+// zbr:selfhost/CgHelpers.zbr:1760
                 if (_zbr_fn_propagateEscapesOnce(si_p.stmts, out)) {
-// zbr:selfhost/CgHelpers.zbr:1439
+// zbr:selfhost/CgHelpers.zbr:1761
                     grew = true;
                 }
             },
             .try_catch => |_ptr_tc| {
                 const tc = _ptr_tc.*;
-// zbr:selfhost/CgHelpers.zbr:1441
+// zbr:selfhost/CgHelpers.zbr:1763
                 if (_zbr_fn_propagateEscapesOnce(tc.stmts, out)) {
-// zbr:selfhost/CgHelpers.zbr:1442
+// zbr:selfhost/CgHelpers.zbr:1764
                     grew = true;
                 }
-// zbr:selfhost/CgHelpers.zbr:1443
+// zbr:selfhost/CgHelpers.zbr:1765
                 for (tc.clauses.items) |cl| {
-// zbr:selfhost/CgHelpers.zbr:1444
+// zbr:selfhost/CgHelpers.zbr:1766
                     if (_zbr_fn_propagateEscapesOnce(cl.stmts, out)) {
-// zbr:selfhost/CgHelpers.zbr:1445
+// zbr:selfhost/CgHelpers.zbr:1767
                         grew = true;
                     }
                 }
             },
             .guard_ => |_ptr_g| {
                 const g = _ptr_g.*;
-// zbr:selfhost/CgHelpers.zbr:1447
+// zbr:selfhost/CgHelpers.zbr:1769
                 if (_zbr_fn_propagateEscapesOnce(g.else_stmts, out)) {
-// zbr:selfhost/CgHelpers.zbr:1448
+// zbr:selfhost/CgHelpers.zbr:1770
                     grew = true;
                 }
             },
@@ -2833,497 +3503,497 @@ pub fn _zbr_fn_propagateEscapesOnce(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_z
             },
         }
     }
-// zbr:selfhost/CgHelpers.zbr:1451
+// zbr:selfhost/CgHelpers.zbr:1773
     return grew;
 }
 
 pub fn _zbr_fn_analyzeEscapes(stmts: std.ArrayList(_zbr_ty_Stmt)) *_zbr_ty_StrSet {
-// zbr:selfhost/CgHelpers.zbr:1458
+// zbr:selfhost/CgHelpers.zbr:1780
     const out = _zbr_ty_StrSet.init();
-// zbr:selfhost/CgHelpers.zbr:1459
+// zbr:selfhost/CgHelpers.zbr:1781
     _zbr_fn_seedEscapedFromReturns(stmts, out);
-// zbr:selfhost/CgHelpers.zbr:1460
+// zbr:selfhost/CgHelpers.zbr:1782
     var keep_going: bool = true;
-// zbr:selfhost/CgHelpers.zbr:1461
+// zbr:selfhost/CgHelpers.zbr:1783
     while (keep_going) {
-// zbr:selfhost/CgHelpers.zbr:1462
+// zbr:selfhost/CgHelpers.zbr:1784
         keep_going = _zbr_fn_propagateEscapesOnce(stmts, out);
     }
-// zbr:selfhost/CgHelpers.zbr:1463
+// zbr:selfhost/CgHelpers.zbr:1785
     return out;
 }
 
 pub fn _zbr_fn_isReadOnlyMethod(name: []const u8) bool {
-// zbr:selfhost/CgHelpers.zbr:1474
+// zbr:selfhost/CgHelpers.zbr:1796
     if ((((std.mem.eql(u8, name, "count") or std.mem.eql(u8, name, "len")) or std.mem.eql(u8, name, "at")) or std.mem.eql(u8, name, "get"))) {
-// zbr:selfhost/CgHelpers.zbr:1475
+// zbr:selfhost/CgHelpers.zbr:1797
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1476
+// zbr:selfhost/CgHelpers.zbr:1798
     if ((((std.mem.eql(u8, name, "contains") or std.mem.eql(u8, name, "fetch")) or std.mem.eql(u8, name, "keys")) or std.mem.eql(u8, name, "values"))) {
-// zbr:selfhost/CgHelpers.zbr:1477
+// zbr:selfhost/CgHelpers.zbr:1799
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1478
+// zbr:selfhost/CgHelpers.zbr:1800
     if ((((std.mem.eql(u8, name, "startsWith") or std.mem.eql(u8, name, "endsWith")) or std.mem.eql(u8, name, "indexOf")) or std.mem.eql(u8, name, "contains_"))) {
-// zbr:selfhost/CgHelpers.zbr:1479
+// zbr:selfhost/CgHelpers.zbr:1801
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1480
+// zbr:selfhost/CgHelpers.zbr:1802
     if ((((std.mem.eql(u8, name, "toStr") or std.mem.eql(u8, name, "toString")) or std.mem.eql(u8, name, "toInt")) or std.mem.eql(u8, name, "toFloat"))) {
-// zbr:selfhost/CgHelpers.zbr:1481
+// zbr:selfhost/CgHelpers.zbr:1803
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1482
+// zbr:selfhost/CgHelpers.zbr:1804
     if ((std.mem.eql(u8, name, "chars") or std.mem.eql(u8, name, "concat"))) {
-// zbr:selfhost/CgHelpers.zbr:1483
+// zbr:selfhost/CgHelpers.zbr:1805
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1488
+// zbr:selfhost/CgHelpers.zbr:1810
     if ((((((std.mem.eql(u8, name, "getObj") or std.mem.eql(u8, name, "getStr")) or std.mem.eql(u8, name, "getInt")) or std.mem.eql(u8, name, "getFloat")) or std.mem.eql(u8, name, "getBool")) or std.mem.eql(u8, name, "getList"))) {
-// zbr:selfhost/CgHelpers.zbr:1489
+// zbr:selfhost/CgHelpers.zbr:1811
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1490
+// zbr:selfhost/CgHelpers.zbr:1812
     if ((((std.mem.eql(u8, name, "isNull") or std.mem.eql(u8, name, "isObject")) or std.mem.eql(u8, name, "isArray")) or std.mem.eql(u8, name, "stringify"))) {
-// zbr:selfhost/CgHelpers.zbr:1491
+// zbr:selfhost/CgHelpers.zbr:1813
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1492
+// zbr:selfhost/CgHelpers.zbr:1814
     if ((((std.mem.eql(u8, name, "split") or std.mem.eql(u8, name, "trim")) or std.mem.eql(u8, name, "upper")) or std.mem.eql(u8, name, "lower"))) {
-// zbr:selfhost/CgHelpers.zbr:1493
+// zbr:selfhost/CgHelpers.zbr:1815
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1494
+// zbr:selfhost/CgHelpers.zbr:1816
     if (std.mem.eql(u8, name, "lines")) {
-// zbr:selfhost/CgHelpers.zbr:1495
+// zbr:selfhost/CgHelpers.zbr:1817
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1496
+// zbr:selfhost/CgHelpers.zbr:1818
     if ((((std.mem.eql(u8, name, "format") or std.mem.eql(u8, name, "join")) or std.mem.eql(u8, name, "iter")) or std.mem.eql(u8, name, "items"))) {
-// zbr:selfhost/CgHelpers.zbr:1497
+// zbr:selfhost/CgHelpers.zbr:1819
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1498
+// zbr:selfhost/CgHelpers.zbr:1820
     if (((std.mem.eql(u8, name, "codePointCount") or std.mem.eql(u8, name, "byteLen")) or std.mem.eql(u8, name, "isEmpty"))) {
-// zbr:selfhost/CgHelpers.zbr:1499
+// zbr:selfhost/CgHelpers.zbr:1821
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1500
+// zbr:selfhost/CgHelpers.zbr:1822
     if ((((std.mem.eql(u8, name, "reverse") or std.mem.eql(u8, name, "padLeft")) or std.mem.eql(u8, name, "padRight")) or std.mem.eql(u8, name, "center"))) {
-// zbr:selfhost/CgHelpers.zbr:1501
+// zbr:selfhost/CgHelpers.zbr:1823
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1502
+// zbr:selfhost/CgHelpers.zbr:1824
     if ((((std.mem.eql(u8, name, "toHex") or std.mem.eql(u8, name, "fromHex")) or std.mem.eql(u8, name, "repeat")) or std.mem.eql(u8, name, "replace"))) {
-// zbr:selfhost/CgHelpers.zbr:1503
+// zbr:selfhost/CgHelpers.zbr:1825
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1504
+// zbr:selfhost/CgHelpers.zbr:1826
     if (((std.mem.eql(u8, name, "isAlpha") or std.mem.eql(u8, name, "isNumeric")) or std.mem.eql(u8, name, "isValidUtf8"))) {
-// zbr:selfhost/CgHelpers.zbr:1505
+// zbr:selfhost/CgHelpers.zbr:1827
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1507
+// zbr:selfhost/CgHelpers.zbr:1829
     if ((((std.mem.eql(u8, name, "match") or std.mem.eql(u8, name, "find")) or std.mem.eql(u8, name, "findAll")) or std.mem.eql(u8, name, "groups"))) {
-// zbr:selfhost/CgHelpers.zbr:1508
+// zbr:selfhost/CgHelpers.zbr:1830
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1510
+// zbr:selfhost/CgHelpers.zbr:1832
     if ((std.mem.eql(u8, name, "trimLeft") or std.mem.eql(u8, name, "trimRight"))) {
-// zbr:selfhost/CgHelpers.zbr:1511
+// zbr:selfhost/CgHelpers.zbr:1833
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1513
+// zbr:selfhost/CgHelpers.zbr:1835
     if ((std.mem.eql(u8, name, "sort") or std.mem.eql(u8, name, "sortBy"))) {
-// zbr:selfhost/CgHelpers.zbr:1514
+// zbr:selfhost/CgHelpers.zbr:1836
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1516
+// zbr:selfhost/CgHelpers.zbr:1838
     if ((((std.mem.eql(u8, name, "sum") or std.mem.eql(u8, name, "dot")) or std.mem.eql(u8, name, "max_element")) or std.mem.eql(u8, name, "min_element"))) {
-// zbr:selfhost/CgHelpers.zbr:1517
+// zbr:selfhost/CgHelpers.zbr:1839
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1519
+// zbr:selfhost/CgHelpers.zbr:1841
     if (((((((std.mem.eql(u8, name, "kill") or std.mem.eql(u8, name, "isRunning")) or std.mem.eql(u8, name, "write")) or std.mem.eql(u8, name, "readAvailable")) or std.mem.eql(u8, name, "readErrAvailable")) or std.mem.eql(u8, name, "closeStdin")) or std.mem.eql(u8, name, "exitCode"))) {
-// zbr:selfhost/CgHelpers.zbr:1520
+// zbr:selfhost/CgHelpers.zbr:1842
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1522
+// zbr:selfhost/CgHelpers.zbr:1844
     if ((std.mem.eql(u8, name, "eql") or std.mem.eql(u8, name, "hash"))) {
-// zbr:selfhost/CgHelpers.zbr:1523
+// zbr:selfhost/CgHelpers.zbr:1845
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1525
+// zbr:selfhost/CgHelpers.zbr:1847
     if ((((std.mem.eql(u8, name, "inZone") or std.mem.eql(u8, name, "inCalendar")) or std.mem.eql(u8, name, "toEpoch")) or std.mem.eql(u8, name, "toIso8601"))) {
-// zbr:selfhost/CgHelpers.zbr:1526
+// zbr:selfhost/CgHelpers.zbr:1848
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1527
+// zbr:selfhost/CgHelpers.zbr:1849
     if ((std.mem.eql(u8, name, "timestamp") or std.mem.eql(u8, name, "weekday"))) {
-// zbr:selfhost/CgHelpers.zbr:1528
+// zbr:selfhost/CgHelpers.zbr:1850
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1529
+// zbr:selfhost/CgHelpers.zbr:1851
     if ((((std.mem.eql(u8, name, "addDays") or std.mem.eql(u8, name, "addHours")) or std.mem.eql(u8, name, "addMinutes")) or std.mem.eql(u8, name, "addSeconds"))) {
-// zbr:selfhost/CgHelpers.zbr:1530
+// zbr:selfhost/CgHelpers.zbr:1852
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1531
+// zbr:selfhost/CgHelpers.zbr:1853
     if ((((std.mem.eql(u8, name, "addMonths") or std.mem.eql(u8, name, "addYears")) or std.mem.eql(u8, name, "daysBetween")) or std.mem.eql(u8, name, "secondsBetween"))) {
-// zbr:selfhost/CgHelpers.zbr:1532
+// zbr:selfhost/CgHelpers.zbr:1854
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1535
+// zbr:selfhost/CgHelpers.zbr:1857
     if (((std.mem.eql(u8, name, "before") or std.mem.eql(u8, name, "after")) or std.mem.eql(u8, name, "equals"))) {
-// zbr:selfhost/CgHelpers.zbr:1536
+// zbr:selfhost/CgHelpers.zbr:1858
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1537
+// zbr:selfhost/CgHelpers.zbr:1859
     if (std.mem.eql(u8, name, "format")) {
-// zbr:selfhost/CgHelpers.zbr:1538
+// zbr:selfhost/CgHelpers.zbr:1860
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1541
+// zbr:selfhost/CgHelpers.zbr:1863
     if ((std.mem.eql(u8, name, "any") or std.mem.eql(u8, name, "all"))) {
-// zbr:selfhost/CgHelpers.zbr:1542
+// zbr:selfhost/CgHelpers.zbr:1864
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1543
+// zbr:selfhost/CgHelpers.zbr:1865
     if (((std.mem.eql(u8, name, "map") or std.mem.eql(u8, name, "filter")) or std.mem.eql(u8, name, "reduce"))) {
-// zbr:selfhost/CgHelpers.zbr:1544
+// zbr:selfhost/CgHelpers.zbr:1866
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1546
+// zbr:selfhost/CgHelpers.zbr:1868
     if ((std.mem.eql(u8, name, "keys") or std.mem.eql(u8, name, "values"))) {
-// zbr:selfhost/CgHelpers.zbr:1547
+// zbr:selfhost/CgHelpers.zbr:1869
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1550
+// zbr:selfhost/CgHelpers.zbr:1872
     if (((std.mem.eql(u8, name, "take") or std.mem.eql(u8, name, "give")) or std.mem.eql(u8, name, "inUse"))) {
-// zbr:selfhost/CgHelpers.zbr:1551
+// zbr:selfhost/CgHelpers.zbr:1873
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1552
+// zbr:selfhost/CgHelpers.zbr:1874
     if ((std.mem.eql(u8, name, "lastIndexOf") or std.mem.eql(u8, name, "indexOfFrom"))) {
-// zbr:selfhost/CgHelpers.zbr:1553
+// zbr:selfhost/CgHelpers.zbr:1875
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1554
+// zbr:selfhost/CgHelpers.zbr:1876
     if ((std.mem.eql(u8, name, "encodeBase64") or std.mem.eql(u8, name, "decodeBase64"))) {
-// zbr:selfhost/CgHelpers.zbr:1555
+// zbr:selfhost/CgHelpers.zbr:1877
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1556
+// zbr:selfhost/CgHelpers.zbr:1878
     if ((((std.mem.eql(u8, name, "eqlIgnoreCase") or std.mem.eql(u8, name, "startsWithIgnoreCase")) or std.mem.eql(u8, name, "endsWithIgnoreCase")) or std.mem.eql(u8, name, "containsIgnoreCase"))) {
-// zbr:selfhost/CgHelpers.zbr:1557
+// zbr:selfhost/CgHelpers.zbr:1879
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1558
+// zbr:selfhost/CgHelpers.zbr:1880
     if ((std.mem.eql(u8, name, "indexOfIgnoreCase") or std.mem.eql(u8, name, "tokenize"))) {
-// zbr:selfhost/CgHelpers.zbr:1559
+// zbr:selfhost/CgHelpers.zbr:1881
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1560
+// zbr:selfhost/CgHelpers.zbr:1882
     return false;
 }
 
 pub fn _zbr_fn_isMutatingMethod(name: []const u8) bool {
-// zbr:selfhost/CgHelpers.zbr:1570
+// zbr:selfhost/CgHelpers.zbr:1892
     if ((((std.mem.eql(u8, name, "add") or std.mem.eql(u8, name, "remove")) or std.mem.eql(u8, name, "clear")) or std.mem.eql(u8, name, "reverse"))) {
-// zbr:selfhost/CgHelpers.zbr:1571
+// zbr:selfhost/CgHelpers.zbr:1893
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1573
+// zbr:selfhost/CgHelpers.zbr:1895
     if (std.mem.eql(u8, name, "set")) {
-// zbr:selfhost/CgHelpers.zbr:1574
+// zbr:selfhost/CgHelpers.zbr:1896
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1576
+// zbr:selfhost/CgHelpers.zbr:1898
     if (((std.mem.eql(u8, name, "append") or std.mem.eql(u8, name, "appendLine")) or std.mem.eql(u8, name, "appendChar"))) {
-// zbr:selfhost/CgHelpers.zbr:1577
+// zbr:selfhost/CgHelpers.zbr:1899
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1578
+// zbr:selfhost/CgHelpers.zbr:1900
     if (((std.mem.eql(u8, name, "appendInt") or std.mem.eql(u8, name, "appendFloat")) or std.mem.eql(u8, name, "appendBool"))) {
-// zbr:selfhost/CgHelpers.zbr:1579
+// zbr:selfhost/CgHelpers.zbr:1901
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1581
+// zbr:selfhost/CgHelpers.zbr:1903
     if ((((std.mem.eql(u8, name, "put") or std.mem.eql(u8, name, "putInt")) or std.mem.eql(u8, name, "putFloat")) or std.mem.eql(u8, name, "putBool"))) {
-// zbr:selfhost/CgHelpers.zbr:1582
+// zbr:selfhost/CgHelpers.zbr:1904
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1584
+// zbr:selfhost/CgHelpers.zbr:1906
     if (std.mem.eql(u8, name, "writeRow")) {
-// zbr:selfhost/CgHelpers.zbr:1585
+// zbr:selfhost/CgHelpers.zbr:1907
         return true;
     }
-// zbr:selfhost/CgHelpers.zbr:1586
+// zbr:selfhost/CgHelpers.zbr:1908
     return false;
 }
 
 pub fn _zbr_fn_isImmutableValueType(t: _zbr_ty_Type_) bool {
-// zbr:selfhost/CgHelpers.zbr:1596
+// zbr:selfhost/CgHelpers.zbr:1918
     switch (t) {
         .int_ => {
-// zbr:selfhost/CgHelpers.zbr:1597
+// zbr:selfhost/CgHelpers.zbr:1919
             return true;
         },
         .uint_ => {
-// zbr:selfhost/CgHelpers.zbr:1598
+// zbr:selfhost/CgHelpers.zbr:1920
             return true;
         },
         .float_ => {
-// zbr:selfhost/CgHelpers.zbr:1599
+// zbr:selfhost/CgHelpers.zbr:1921
             return true;
         },
         .bool_ => {
-// zbr:selfhost/CgHelpers.zbr:1600
+// zbr:selfhost/CgHelpers.zbr:1922
             return true;
         },
         .char_ => {
-// zbr:selfhost/CgHelpers.zbr:1601
+// zbr:selfhost/CgHelpers.zbr:1923
             return true;
         },
         .int_n => {
-// zbr:selfhost/CgHelpers.zbr:1602
+// zbr:selfhost/CgHelpers.zbr:1924
             return true;
         },
         .uint_n => {
-// zbr:selfhost/CgHelpers.zbr:1603
+// zbr:selfhost/CgHelpers.zbr:1925
             return true;
         },
         .float_n => {
-// zbr:selfhost/CgHelpers.zbr:1604
+// zbr:selfhost/CgHelpers.zbr:1926
             return true;
         },
         .string_ => {
-// zbr:selfhost/CgHelpers.zbr:1605
+// zbr:selfhost/CgHelpers.zbr:1927
             return true;
         },
         .str_slice => {
-// zbr:selfhost/CgHelpers.zbr:1606
+// zbr:selfhost/CgHelpers.zbr:1928
             return true;
         },
         else => {
-// zbr:selfhost/CgHelpers.zbr:1608
+// zbr:selfhost/CgHelpers.zbr:1930
             return false;
         },
     }
 }
 
 pub fn _zbr_fn_isByValueHandleType(t: _zbr_ty_Type_) bool {
-// zbr:selfhost/CgHelpers.zbr:1618
+// zbr:selfhost/CgHelpers.zbr:1940
     switch (t) {
         .json_value => {
-// zbr:selfhost/CgHelpers.zbr:1619
+// zbr:selfhost/CgHelpers.zbr:1941
             return true;
         },
         .tcp_conn => {
-// zbr:selfhost/CgHelpers.zbr:1620
+// zbr:selfhost/CgHelpers.zbr:1942
             return true;
         },
         .ws_conn => {
-// zbr:selfhost/CgHelpers.zbr:1621
+// zbr:selfhost/CgHelpers.zbr:1943
             return true;
         },
         .udp_socket => {
-// zbr:selfhost/CgHelpers.zbr:1622
+// zbr:selfhost/CgHelpers.zbr:1944
             return true;
         },
         .sqlite_db => {
-// zbr:selfhost/CgHelpers.zbr:1623
+// zbr:selfhost/CgHelpers.zbr:1945
             return true;
         },
         .sqlite_row => {
-// zbr:selfhost/CgHelpers.zbr:1624
+// zbr:selfhost/CgHelpers.zbr:1946
             return true;
         },
         .sqlite_row_list => {
-// zbr:selfhost/CgHelpers.zbr:1625
+// zbr:selfhost/CgHelpers.zbr:1947
             return true;
         },
         .regex => {
-// zbr:selfhost/CgHelpers.zbr:1626
+// zbr:selfhost/CgHelpers.zbr:1948
             return true;
         },
         .build_ctx => {
-// zbr:selfhost/CgHelpers.zbr:1631
+// zbr:selfhost/CgHelpers.zbr:1953
             return true;
         },
         .build_target => {
-// zbr:selfhost/CgHelpers.zbr:1632
+// zbr:selfhost/CgHelpers.zbr:1954
             return true;
         },
         .code_editor => {
-// zbr:selfhost/CgHelpers.zbr:1633
+// zbr:selfhost/CgHelpers.zbr:1955
             return true;
         },
         .named => |hn| {
-// zbr:selfhost/CgHelpers.zbr:1645
+// zbr:selfhost/CgHelpers.zbr:1967
             return (std.mem.eql(u8, hn, "CsvTable") or std.mem.eql(u8, hn, "HttpResponse"));
         },
         else => {
-// zbr:selfhost/CgHelpers.zbr:1647
+// zbr:selfhost/CgHelpers.zbr:1969
             return false;
         },
     }
 }
 
 pub fn _zbr_fn_unwrapForMutation(t: _zbr_ty_Type_) _zbr_ty_Type_ {
-// zbr:selfhost/CgHelpers.zbr:1655
+// zbr:selfhost/CgHelpers.zbr:1977
     switch (t) {
         .optional => |_ptr_inner| {
             const inner = _ptr_inner.*;
-// zbr:selfhost/CgHelpers.zbr:1657
+// zbr:selfhost/CgHelpers.zbr:1979
             return _zbr_fn_unwrapForMutation(inner);
         },
         .ref_to => |_ptr_inner| {
             const inner = _ptr_inner.*;
-// zbr:selfhost/CgHelpers.zbr:1659
+// zbr:selfhost/CgHelpers.zbr:1981
             return _zbr_fn_unwrapForMutation(inner);
         },
         else => {
-// zbr:selfhost/CgHelpers.zbr:1661
+// zbr:selfhost/CgHelpers.zbr:1983
             return t;
         },
     }
 }
 
 pub fn _zbr_fn_receiverNeedsVar(obj: _zbr_ty_Expr, method: []const u8, ic: ?*_zbr_ty_InferCtx) bool {
-// zbr:selfhost/CgHelpers.zbr:1668
+// zbr:selfhost/CgHelpers.zbr:1990
     if (ic) |ic_v| {
-// zbr:selfhost/CgHelpers.zbr:1669
+// zbr:selfhost/CgHelpers.zbr:1991
         const rt: _zbr_ty_Type_ = _zbr_fn_unwrapForMutation(_zbr_fn_inferExpr(obj, ic_v));
-// zbr:selfhost/CgHelpers.zbr:1671
+// zbr:selfhost/CgHelpers.zbr:1993
         if (_zbr_fn_isImmutableValueType(rt)) {
-// zbr:selfhost/CgHelpers.zbr:1672
+// zbr:selfhost/CgHelpers.zbr:1994
             return false;
         }
-// zbr:selfhost/CgHelpers.zbr:1674
+// zbr:selfhost/CgHelpers.zbr:1996
         if (_zbr_fn_isByValueHandleType(rt)) {
-// zbr:selfhost/CgHelpers.zbr:1675
+// zbr:selfhost/CgHelpers.zbr:1997
             return _zbr_fn_isMutatingMethod(method);
         }
-// zbr:selfhost/CgHelpers.zbr:1678
+// zbr:selfhost/CgHelpers.zbr:2000
         return (!_zbr_fn_isReadOnlyMethod(method));
     }
-// zbr:selfhost/CgHelpers.zbr:1680
+// zbr:selfhost/CgHelpers.zbr:2002
     return (!_zbr_fn_isReadOnlyMethod(method));
 }
 
 pub fn _zbr_fn_scanMutationsInExpr(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet, ic: ?*_zbr_ty_InferCtx) void {
-// zbr:selfhost/CgHelpers.zbr:1683
+// zbr:selfhost/CgHelpers.zbr:2005
     switch (expr) {
         .call => |_ptr_c| {
             const c = _ptr_c.*;
-// zbr:selfhost/CgHelpers.zbr:1685
+// zbr:selfhost/CgHelpers.zbr:2007
             if (c.callee == .member) {
                 const m_ptr = c.callee.member;
                 const m = m_ptr.*;
-// zbr:selfhost/CgHelpers.zbr:1686
+// zbr:selfhost/CgHelpers.zbr:2008
                 if (m.object.* == .ident) {
                     const id = m.object.*.ident;
-// zbr:selfhost/CgHelpers.zbr:1687
+// zbr:selfhost/CgHelpers.zbr:2009
                     if (_zbr_fn_receiverNeedsVar(m.object.*, m.member, ic)) {
-// zbr:selfhost/CgHelpers.zbr:1688
+// zbr:selfhost/CgHelpers.zbr:2010
                         out.add(id.name);
                     }
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1689
+// zbr:selfhost/CgHelpers.zbr:2011
             for (c.args.items) |arg| {
-// zbr:selfhost/CgHelpers.zbr:1690
+// zbr:selfhost/CgHelpers.zbr:2012
                 _zbr_fn_scanMutationsInExpr(arg.value, out, ic);
             }
         },
         .binary => |_ptr_b| {
             const b = _ptr_b.*;
-// zbr:selfhost/CgHelpers.zbr:1692
+// zbr:selfhost/CgHelpers.zbr:2014
             _zbr_fn_scanMutationsInExpr(b.left.*, out, ic);
-// zbr:selfhost/CgHelpers.zbr:1693
+// zbr:selfhost/CgHelpers.zbr:2015
             _zbr_fn_scanMutationsInExpr(b.right.*, out, ic);
         },
         .unary => |_ptr_u| {
             const u = _ptr_u.*;
-// zbr:selfhost/CgHelpers.zbr:1695
+// zbr:selfhost/CgHelpers.zbr:2017
             _zbr_fn_scanMutationsInExpr(u.operand.*, out, ic);
         },
         .member => |_ptr_m| {
             const m = _ptr_m.*;
-// zbr:selfhost/CgHelpers.zbr:1697
+// zbr:selfhost/CgHelpers.zbr:2019
             _zbr_fn_scanMutationsInExpr(m.object.*, out, ic);
         },
         .try_ => |_ptr_t| {
             const t = _ptr_t.*;
-// zbr:selfhost/CgHelpers.zbr:1699
+// zbr:selfhost/CgHelpers.zbr:2021
             _zbr_fn_scanMutationsInExpr(t.expr.*, out, ic);
         },
         .type_check => |_ptr_t| {
             const t = _ptr_t.*;
-// zbr:selfhost/CgHelpers.zbr:1701
+// zbr:selfhost/CgHelpers.zbr:2023
             _zbr_fn_scanMutationsInExpr(t.expr.*, out, ic);
         },
         .if_expr => |_ptr_i| {
             const i = _ptr_i.*;
-// zbr:selfhost/CgHelpers.zbr:1703
+// zbr:selfhost/CgHelpers.zbr:2025
             _zbr_fn_scanMutationsInExpr(i.cond.*, out, ic);
-// zbr:selfhost/CgHelpers.zbr:1704
+// zbr:selfhost/CgHelpers.zbr:2026
             _zbr_fn_scanMutationsInExpr(i.then_expr.*, out, ic);
-// zbr:selfhost/CgHelpers.zbr:1705
+// zbr:selfhost/CgHelpers.zbr:2027
             _zbr_fn_scanMutationsInExpr(i.else_expr.*, out, ic);
         },
         .orelse_ => |_ptr_o| {
             const o = _ptr_o.*;
-// zbr:selfhost/CgHelpers.zbr:1707
+// zbr:selfhost/CgHelpers.zbr:2029
             _zbr_fn_scanMutationsInExpr(o.expr.*, out, ic);
-// zbr:selfhost/CgHelpers.zbr:1708
+// zbr:selfhost/CgHelpers.zbr:2030
             _zbr_fn_scanMutationsInExpr(o.fallback.*, out, ic);
         },
         .catch_ => |_ptr_ca| {
             const ca = _ptr_ca.*;
-// zbr:selfhost/CgHelpers.zbr:1710
+// zbr:selfhost/CgHelpers.zbr:2032
             _zbr_fn_scanMutationsInExpr(ca.expr.*, out, ic);
-// zbr:selfhost/CgHelpers.zbr:1711
+// zbr:selfhost/CgHelpers.zbr:2033
             _zbr_fn_scanMutationsInExpr(ca.fallback.*, out, ic);
         },
         .set_lit => |_ptr_sl| {
             const sl = _ptr_sl.*;
-// zbr:selfhost/CgHelpers.zbr:1713
+// zbr:selfhost/CgHelpers.zbr:2035
             for (sl.elems.items) |se| {
-// zbr:selfhost/CgHelpers.zbr:1714
+// zbr:selfhost/CgHelpers.zbr:2036
                 _zbr_fn_scanMutationsInExpr(se, out, ic);
             }
         },
         .dict_lit => |_ptr_d| {
             const d = _ptr_d.*;
-// zbr:selfhost/CgHelpers.zbr:1716
+// zbr:selfhost/CgHelpers.zbr:2038
             for (d.entries.items) |entry| {
-// zbr:selfhost/CgHelpers.zbr:1717
+// zbr:selfhost/CgHelpers.zbr:2039
                 _zbr_fn_scanMutationsInExpr(entry.key.*, out, ic);
-// zbr:selfhost/CgHelpers.zbr:1718
+// zbr:selfhost/CgHelpers.zbr:2040
                 _zbr_fn_scanMutationsInExpr(entry.value.*, out, ic);
             }
         },
         .string_interp => |_ptr_si| {
             const si = _ptr_si.*;
-// zbr:selfhost/CgHelpers.zbr:1720
+// zbr:selfhost/CgHelpers.zbr:2042
             for (si.parts.items) |part| {
-// zbr:selfhost/CgHelpers.zbr:1721
+// zbr:selfhost/CgHelpers.zbr:2043
                 if (part == .expr_) {
                     const e_ptr = part.expr_;
                     const e = e_ptr.*;
-// zbr:selfhost/CgHelpers.zbr:1722
+// zbr:selfhost/CgHelpers.zbr:2044
                     _zbr_fn_scanMutationsInExpr(e, out, ic);
                 }
             }
         },
         .chained_cmp => |_ptr_cc| {
             const cc = _ptr_cc.*;
-// zbr:selfhost/CgHelpers.zbr:1724
+// zbr:selfhost/CgHelpers.zbr:2046
             for (cc.operands.items) |op| {
-// zbr:selfhost/CgHelpers.zbr:1725
+// zbr:selfhost/CgHelpers.zbr:2047
                 _zbr_fn_scanMutationsInExpr(op, out, ic);
             }
         },
@@ -3334,33 +4004,33 @@ pub fn _zbr_fn_scanMutationsInExpr(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet, ic:
 }
 
 pub fn _zbr_fn_scanMutationsInto(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet, ic: ?*_zbr_ty_InferCtx) void {
-// zbr:selfhost/CgHelpers.zbr:1732
+// zbr:selfhost/CgHelpers.zbr:2054
     for (stmts.items) |s| {
-// zbr:selfhost/CgHelpers.zbr:1733
+// zbr:selfhost/CgHelpers.zbr:2055
         switch (s) {
             .assign => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1735
+// zbr:selfhost/CgHelpers.zbr:2057
                 switch (a.target.*) {
                     .ident => |id| {
-// zbr:selfhost/CgHelpers.zbr:1737
+// zbr:selfhost/CgHelpers.zbr:2059
                         out.add(id.name);
                     },
                     .member => |_ptr_m| {
                         const m = _ptr_m.*;
-// zbr:selfhost/CgHelpers.zbr:1739
+// zbr:selfhost/CgHelpers.zbr:2061
                         if (m.object.* == .ident) {
                             const id = m.object.*.ident;
-// zbr:selfhost/CgHelpers.zbr:1740
+// zbr:selfhost/CgHelpers.zbr:2062
                             out.add(id.name);
                         }
                     },
                     .index => |_ptr_ix| {
                         const ix = _ptr_ix.*;
-// zbr:selfhost/CgHelpers.zbr:1743
+// zbr:selfhost/CgHelpers.zbr:2065
                         if (ix.object.* == .ident) {
                             const id = ix.object.*.ident;
-// zbr:selfhost/CgHelpers.zbr:1744
+// zbr:selfhost/CgHelpers.zbr:2066
                             out.add(id.name);
                         }
                     },
@@ -3371,105 +4041,105 @@ pub fn _zbr_fn_scanMutationsInto(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_
             },
             .if_ => |_ptr_si| {
                 const si = _ptr_si.*;
-// zbr:selfhost/CgHelpers.zbr:1748
+// zbr:selfhost/CgHelpers.zbr:2070
                 _zbr_fn_scanMutationsInto(si.then_stmts, out, ic);
-// zbr:selfhost/CgHelpers.zbr:1749
+// zbr:selfhost/CgHelpers.zbr:2071
                 for (si.else_ifs.items) |ei| {
-// zbr:selfhost/CgHelpers.zbr:1750
+// zbr:selfhost/CgHelpers.zbr:2072
                     _zbr_fn_scanMutationsInto(ei.stmts, out, ic);
                 }
-// zbr:selfhost/CgHelpers.zbr:1751
+// zbr:selfhost/CgHelpers.zbr:2073
                 if (si.else_stmts) |se| {
-// zbr:selfhost/CgHelpers.zbr:1752
+// zbr:selfhost/CgHelpers.zbr:2074
                     _zbr_fn_scanMutationsInto(se, out, ic);
                 }
             },
             .while_ => |_ptr_w| {
                 const w = _ptr_w.*;
-// zbr:selfhost/CgHelpers.zbr:1754
+// zbr:selfhost/CgHelpers.zbr:2076
                 _zbr_fn_scanMutationsInto(w.stmts, out, ic);
             },
             .for_in => |_ptr_f| {
                 const f = _ptr_f.*;
-// zbr:selfhost/CgHelpers.zbr:1756
+// zbr:selfhost/CgHelpers.zbr:2078
                 _zbr_fn_scanMutationsInto(f.stmts, out, ic);
-// zbr:selfhost/CgHelpers.zbr:1757
+// zbr:selfhost/CgHelpers.zbr:2079
                 if (f.else_) |fe| {
-// zbr:selfhost/CgHelpers.zbr:1758
+// zbr:selfhost/CgHelpers.zbr:2080
                     _zbr_fn_scanMutationsInto(fe, out, ic);
                 }
             },
             .for_num => |_ptr_fnum| {
                 const fnum = _ptr_fnum.*;
-// zbr:selfhost/CgHelpers.zbr:1760
+// zbr:selfhost/CgHelpers.zbr:2082
                 _zbr_fn_scanMutationsInto(fnum.stmts, out, ic);
             },
             .branch_ => |_ptr_b| {
                 const b = _ptr_b.*;
-// zbr:selfhost/CgHelpers.zbr:1762
+// zbr:selfhost/CgHelpers.zbr:2084
                 for (b.cases.items) |c| {
-// zbr:selfhost/CgHelpers.zbr:1763
+// zbr:selfhost/CgHelpers.zbr:2085
                     _zbr_fn_scanMutationsInto(c.stmts, out, ic);
                 }
-// zbr:selfhost/CgHelpers.zbr:1764
+// zbr:selfhost/CgHelpers.zbr:2086
                 if (b.else_) |be| {
-// zbr:selfhost/CgHelpers.zbr:1765
+// zbr:selfhost/CgHelpers.zbr:2087
                     _zbr_fn_scanMutationsInto(be, out, ic);
                 }
             },
             .var_ => |_ptr_n| {
                 const n = _ptr_n.*;
-// zbr:selfhost/CgHelpers.zbr:1767
+// zbr:selfhost/CgHelpers.zbr:2089
                 if ((n.init_expr != null)) {
-// zbr:selfhost/CgHelpers.zbr:1768
+// zbr:selfhost/CgHelpers.zbr:2090
                     _zbr_fn_scanMutationsInExpr(n.init_expr.?.*, out, ic);
                 }
             },
             .return_ => |_ptr_r| {
                 const r = _ptr_r.*;
-// zbr:selfhost/CgHelpers.zbr:1770
+// zbr:selfhost/CgHelpers.zbr:2092
                 if ((r.value != null)) {
-// zbr:selfhost/CgHelpers.zbr:1771
+// zbr:selfhost/CgHelpers.zbr:2093
                     _zbr_fn_scanMutationsInExpr(r.value.?.*, out, ic);
                 }
             },
             .expr => |_ptr_e| {
                 const e = _ptr_e.*;
-// zbr:selfhost/CgHelpers.zbr:1773
+// zbr:selfhost/CgHelpers.zbr:2095
                 _zbr_fn_scanMutationsInExpr(e, out, ic);
             },
             .with_ => |_ptr_w| {
                 const w = _ptr_w.*;
-// zbr:selfhost/CgHelpers.zbr:1775
+// zbr:selfhost/CgHelpers.zbr:2097
                 if (w.target.* == .ident) {
                     const id = w.target.*.ident;
-// zbr:selfhost/CgHelpers.zbr:1776
+// zbr:selfhost/CgHelpers.zbr:2098
                     out.add(id.name);
                 }
-// zbr:selfhost/CgHelpers.zbr:1777
+// zbr:selfhost/CgHelpers.zbr:2099
                 _zbr_fn_scanMutationsInto(w.stmts, out, ic);
             },
             .in_scope => |_ptr_si_m| {
                 const si_m = _ptr_si_m.*;
-// zbr:selfhost/CgHelpers.zbr:1779
+// zbr:selfhost/CgHelpers.zbr:2101
                 _zbr_fn_scanMutationsInto(si_m.stmts, out, ic);
             },
             .copy_out => |_ptr_co| {
                 const co = _ptr_co.*;
-// zbr:selfhost/CgHelpers.zbr:1781
+// zbr:selfhost/CgHelpers.zbr:2103
                 if (co.target == .ident) {
                     const id = co.target.ident;
-// zbr:selfhost/CgHelpers.zbr:1782
+// zbr:selfhost/CgHelpers.zbr:2104
                     out.add(id.name);
                 } else {
-// zbr:selfhost/CgHelpers.zbr:1783
+// zbr:selfhost/CgHelpers.zbr:2105
                     if (co.target == .member) {
                         const m_ptr = co.target.member;
                         const m = m_ptr.*;
-// zbr:selfhost/CgHelpers.zbr:1784
+// zbr:selfhost/CgHelpers.zbr:2106
                         if (m.object.* == .ident) {
                             const id = m.object.*.ident;
-// zbr:selfhost/CgHelpers.zbr:1785
+// zbr:selfhost/CgHelpers.zbr:2107
                             out.add(id.name);
                         }
                     }
@@ -3477,62 +4147,62 @@ pub fn _zbr_fn_scanMutationsInto(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_
             },
             .try_catch => |_ptr_tc| {
                 const tc = _ptr_tc.*;
-// zbr:selfhost/CgHelpers.zbr:1787
+// zbr:selfhost/CgHelpers.zbr:2109
                 _zbr_fn_scanMutationsInto(tc.stmts, out, ic);
-// zbr:selfhost/CgHelpers.zbr:1788
+// zbr:selfhost/CgHelpers.zbr:2110
                 for (tc.clauses.items) |cl| {
-// zbr:selfhost/CgHelpers.zbr:1789
+// zbr:selfhost/CgHelpers.zbr:2111
                     _zbr_fn_scanMutationsInto(cl.stmts, out, ic);
                 }
             },
             .guard_ => |_ptr_g| {
                 const g = _ptr_g.*;
-// zbr:selfhost/CgHelpers.zbr:1791
+// zbr:selfhost/CgHelpers.zbr:2113
                 _zbr_fn_scanMutationsInto(g.else_stmts, out, ic);
             },
             .allocate_ => |_ptr_al| {
                 const al = _ptr_al.*;
-// zbr:selfhost/CgHelpers.zbr:1793
+// zbr:selfhost/CgHelpers.zbr:2115
                 _zbr_fn_scanMutationsInto(al.stmts, out, ic);
             },
             .assert_ => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1795
+// zbr:selfhost/CgHelpers.zbr:2117
                 _zbr_fn_scanMutationsInExpr(a.cond.*, out, ic);
             },
             .assert_eq_ => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1797
+// zbr:selfhost/CgHelpers.zbr:2119
                 _zbr_fn_scanMutationsInExpr(a.lhs.*, out, ic);
-// zbr:selfhost/CgHelpers.zbr:1798
+// zbr:selfhost/CgHelpers.zbr:2120
                 _zbr_fn_scanMutationsInExpr(a.rhs.*, out, ic);
             },
             .assert_ne_ => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1800
+// zbr:selfhost/CgHelpers.zbr:2122
                 _zbr_fn_scanMutationsInExpr(a.lhs.*, out, ic);
-// zbr:selfhost/CgHelpers.zbr:1801
+// zbr:selfhost/CgHelpers.zbr:2123
                 _zbr_fn_scanMutationsInExpr(a.rhs.*, out, ic);
             },
             .assert_true_ => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1803
+// zbr:selfhost/CgHelpers.zbr:2125
                 _zbr_fn_scanMutationsInExpr(a.expr.*, out, ic);
             },
             .assert_false_ => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1805
+// zbr:selfhost/CgHelpers.zbr:2127
                 _zbr_fn_scanMutationsInExpr(a.expr.*, out, ic);
             },
             .print_ => |_ptr_p| {
                 const p = _ptr_p.*;
-// zbr:selfhost/CgHelpers.zbr:1807
+// zbr:selfhost/CgHelpers.zbr:2129
                 var pi: i64 = 0;
-// zbr:selfhost/CgHelpers.zbr:1808
+// zbr:selfhost/CgHelpers.zbr:2130
                 while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
-// zbr:selfhost/CgHelpers.zbr:1809
+// zbr:selfhost/CgHelpers.zbr:2131
                     _zbr_fn_scanMutationsInExpr(_zbr_at(p.args.items, pi), out, ic);
-// zbr:selfhost/CgHelpers.zbr:1810
+// zbr:selfhost/CgHelpers.zbr:2132
                     pi += 1;
                 }
             },
@@ -3544,631 +4214,631 @@ pub fn _zbr_fn_scanMutationsInto(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_
 }
 
 pub fn _zbr_fn_scanMutations(stmts: std.ArrayList(_zbr_ty_Stmt), ic: ?*_zbr_ty_InferCtx) *_zbr_ty_StrSet {
-// zbr:selfhost/CgHelpers.zbr:1817
+// zbr:selfhost/CgHelpers.zbr:2139
     const out = _zbr_ty_StrSet.init();
-// zbr:selfhost/CgHelpers.zbr:1818
+// zbr:selfhost/CgHelpers.zbr:2140
     _zbr_fn_scanMutationsInto(stmts, out, ic);
-// zbr:selfhost/CgHelpers.zbr:1819
+// zbr:selfhost/CgHelpers.zbr:2141
     return out;
 }
 
 pub fn _zbr_fn_isThisReturn(e: _zbr_ty_Expr) bool {
-// zbr:selfhost/CgHelpers.zbr:1827
+// zbr:selfhost/CgHelpers.zbr:2149
     switch (e) {
         .this_ => {
-// zbr:selfhost/CgHelpers.zbr:1829
+// zbr:selfhost/CgHelpers.zbr:2151
             return true;
         },
         else => {
-// zbr:selfhost/CgHelpers.zbr:1831
+// zbr:selfhost/CgHelpers.zbr:2153
             return false;
         },
     }
 }
 
 pub fn _zbr_fn_methodMutatesSelf(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
-// zbr:selfhost/CgHelpers.zbr:1834
+// zbr:selfhost/CgHelpers.zbr:2156
     for (stmts.items) |s| {
-// zbr:selfhost/CgHelpers.zbr:1835
+// zbr:selfhost/CgHelpers.zbr:2157
         if (_zbr_fn_stmtMutatesSelf(s)) {
-// zbr:selfhost/CgHelpers.zbr:1836
+// zbr:selfhost/CgHelpers.zbr:2158
             return true;
         }
     }
-// zbr:selfhost/CgHelpers.zbr:1837
+// zbr:selfhost/CgHelpers.zbr:2159
     return false;
 }
 
 pub fn _zbr_fn_stmtMutatesSelf(s: _zbr_ty_Stmt) bool {
-// zbr:selfhost/CgHelpers.zbr:1840
+// zbr:selfhost/CgHelpers.zbr:2162
     switch (s) {
         .assign => {
-// zbr:selfhost/CgHelpers.zbr:1842
+// zbr:selfhost/CgHelpers.zbr:2164
             return true;
         },
         .copy_out => {
-// zbr:selfhost/CgHelpers.zbr:1844
+// zbr:selfhost/CgHelpers.zbr:2166
             return true;
         },
         .destruct => {
-// zbr:selfhost/CgHelpers.zbr:1846
+// zbr:selfhost/CgHelpers.zbr:2168
             return true;
         },
         .var_ => |_ptr_n| {
             const n = _ptr_n.*;
-// zbr:selfhost/CgHelpers.zbr:1848
+// zbr:selfhost/CgHelpers.zbr:2170
             if ((n.init_expr != null)) {
-// zbr:selfhost/CgHelpers.zbr:1849
+// zbr:selfhost/CgHelpers.zbr:2171
                 return _zbr_fn_exprHasSelfCall(n.init_expr.?.*);
             }
-// zbr:selfhost/CgHelpers.zbr:1850
+// zbr:selfhost/CgHelpers.zbr:2172
             return false;
         },
         .return_ => |_ptr_r| {
             const r = _ptr_r.*;
-// zbr:selfhost/CgHelpers.zbr:1852
+// zbr:selfhost/CgHelpers.zbr:2174
             if ((r.value != null)) {
-// zbr:selfhost/CgHelpers.zbr:1853
+// zbr:selfhost/CgHelpers.zbr:2175
                 if (_zbr_fn_isThisReturn(r.value.?.*)) {
-// zbr:selfhost/CgHelpers.zbr:1854
+// zbr:selfhost/CgHelpers.zbr:2176
                     return true;
                 }
-// zbr:selfhost/CgHelpers.zbr:1855
+// zbr:selfhost/CgHelpers.zbr:2177
                 return _zbr_fn_exprHasSelfCall(r.value.?.*);
             }
-// zbr:selfhost/CgHelpers.zbr:1856
+// zbr:selfhost/CgHelpers.zbr:2178
             return false;
         },
         .expr => |_ptr_e| {
             const e = _ptr_e.*;
-// zbr:selfhost/CgHelpers.zbr:1858
+// zbr:selfhost/CgHelpers.zbr:2180
             return _zbr_fn_exprHasSelfCall(e);
         },
         .print_ => |_ptr_p| {
             const p = _ptr_p.*;
-// zbr:selfhost/CgHelpers.zbr:1860
+// zbr:selfhost/CgHelpers.zbr:2182
             var pi: i64 = 0;
-// zbr:selfhost/CgHelpers.zbr:1861
+// zbr:selfhost/CgHelpers.zbr:2183
             while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
-// zbr:selfhost/CgHelpers.zbr:1862
+// zbr:selfhost/CgHelpers.zbr:2184
                 if (_zbr_fn_exprHasSelfCall(_zbr_at(p.args.items, pi))) {
-// zbr:selfhost/CgHelpers.zbr:1863
+// zbr:selfhost/CgHelpers.zbr:2185
                     return true;
                 }
-// zbr:selfhost/CgHelpers.zbr:1864
+// zbr:selfhost/CgHelpers.zbr:2186
                 pi += 1;
             }
-// zbr:selfhost/CgHelpers.zbr:1865
+// zbr:selfhost/CgHelpers.zbr:2187
             return false;
         },
         .if_ => |_ptr_si| {
             const si = _ptr_si.*;
-// zbr:selfhost/CgHelpers.zbr:1867
+// zbr:selfhost/CgHelpers.zbr:2189
             if (_zbr_fn_exprHasSelfCall(si.cond.*)) {
-// zbr:selfhost/CgHelpers.zbr:1868
+// zbr:selfhost/CgHelpers.zbr:2190
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1869
+// zbr:selfhost/CgHelpers.zbr:2191
             if (_zbr_fn_methodMutatesSelf(si.then_stmts)) {
-// zbr:selfhost/CgHelpers.zbr:1870
+// zbr:selfhost/CgHelpers.zbr:2192
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1871
+// zbr:selfhost/CgHelpers.zbr:2193
             for (si.else_ifs.items) |ei| {
-// zbr:selfhost/CgHelpers.zbr:1872
+// zbr:selfhost/CgHelpers.zbr:2194
                 if (_zbr_fn_exprHasSelfCall(ei.cond)) {
-// zbr:selfhost/CgHelpers.zbr:1873
+// zbr:selfhost/CgHelpers.zbr:2195
                     return true;
                 }
-// zbr:selfhost/CgHelpers.zbr:1874
+// zbr:selfhost/CgHelpers.zbr:2196
                 if (_zbr_fn_methodMutatesSelf(ei.stmts)) {
-// zbr:selfhost/CgHelpers.zbr:1875
+// zbr:selfhost/CgHelpers.zbr:2197
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1876
+// zbr:selfhost/CgHelpers.zbr:2198
             if (si.else_stmts) |se| {
-// zbr:selfhost/CgHelpers.zbr:1877
+// zbr:selfhost/CgHelpers.zbr:2199
                 if (_zbr_fn_methodMutatesSelf(se)) {
-// zbr:selfhost/CgHelpers.zbr:1878
+// zbr:selfhost/CgHelpers.zbr:2200
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1879
+// zbr:selfhost/CgHelpers.zbr:2201
             return false;
         },
         .while_ => |_ptr_w| {
             const w = _ptr_w.*;
-// zbr:selfhost/CgHelpers.zbr:1881
+// zbr:selfhost/CgHelpers.zbr:2203
             if (_zbr_fn_exprHasSelfCall(w.cond.*)) {
-// zbr:selfhost/CgHelpers.zbr:1882
+// zbr:selfhost/CgHelpers.zbr:2204
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1883
+// zbr:selfhost/CgHelpers.zbr:2205
             return _zbr_fn_methodMutatesSelf(w.stmts);
         },
         .for_in => |_ptr_f| {
             const f = _ptr_f.*;
-// zbr:selfhost/CgHelpers.zbr:1885
+// zbr:selfhost/CgHelpers.zbr:2207
             if (_zbr_fn_exprHasSelfCall(f.iter.*)) {
-// zbr:selfhost/CgHelpers.zbr:1886
+// zbr:selfhost/CgHelpers.zbr:2208
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1887
+// zbr:selfhost/CgHelpers.zbr:2209
             if ((f.filter != null)) {
-// zbr:selfhost/CgHelpers.zbr:1888
+// zbr:selfhost/CgHelpers.zbr:2210
                 if (_zbr_fn_exprHasSelfCall(f.filter.?.*)) {
-// zbr:selfhost/CgHelpers.zbr:1889
+// zbr:selfhost/CgHelpers.zbr:2211
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1890
+// zbr:selfhost/CgHelpers.zbr:2212
             if (_zbr_fn_methodMutatesSelf(f.stmts)) {
-// zbr:selfhost/CgHelpers.zbr:1891
+// zbr:selfhost/CgHelpers.zbr:2213
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1892
+// zbr:selfhost/CgHelpers.zbr:2214
             if (f.else_) |fe| {
-// zbr:selfhost/CgHelpers.zbr:1893
+// zbr:selfhost/CgHelpers.zbr:2215
                 if (_zbr_fn_methodMutatesSelf(fe)) {
-// zbr:selfhost/CgHelpers.zbr:1894
+// zbr:selfhost/CgHelpers.zbr:2216
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1895
+// zbr:selfhost/CgHelpers.zbr:2217
             return false;
         },
         .for_num => |_ptr_fnum| {
             const fnum = _ptr_fnum.*;
-// zbr:selfhost/CgHelpers.zbr:1897
+// zbr:selfhost/CgHelpers.zbr:2219
             if (_zbr_fn_exprHasSelfCall(fnum.start.*)) {
-// zbr:selfhost/CgHelpers.zbr:1898
+// zbr:selfhost/CgHelpers.zbr:2220
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1899
+// zbr:selfhost/CgHelpers.zbr:2221
             if (_zbr_fn_exprHasSelfCall(fnum.stop_.*)) {
-// zbr:selfhost/CgHelpers.zbr:1900
+// zbr:selfhost/CgHelpers.zbr:2222
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1901
+// zbr:selfhost/CgHelpers.zbr:2223
             if ((fnum.step != null)) {
-// zbr:selfhost/CgHelpers.zbr:1902
+// zbr:selfhost/CgHelpers.zbr:2224
                 if (_zbr_fn_exprHasSelfCall(fnum.step.?.*)) {
-// zbr:selfhost/CgHelpers.zbr:1903
+// zbr:selfhost/CgHelpers.zbr:2225
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1904
+// zbr:selfhost/CgHelpers.zbr:2226
             if (_zbr_fn_methodMutatesSelf(fnum.stmts)) {
-// zbr:selfhost/CgHelpers.zbr:1905
+// zbr:selfhost/CgHelpers.zbr:2227
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1906
+// zbr:selfhost/CgHelpers.zbr:2228
             if (fnum.else_) |fne| {
-// zbr:selfhost/CgHelpers.zbr:1907
+// zbr:selfhost/CgHelpers.zbr:2229
                 if (_zbr_fn_methodMutatesSelf(fne)) {
-// zbr:selfhost/CgHelpers.zbr:1908
+// zbr:selfhost/CgHelpers.zbr:2230
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1909
+// zbr:selfhost/CgHelpers.zbr:2231
             return false;
         },
         .branch_ => |_ptr_b| {
             const b = _ptr_b.*;
-// zbr:selfhost/CgHelpers.zbr:1911
+// zbr:selfhost/CgHelpers.zbr:2233
             if (_zbr_fn_exprHasSelfCall(b.expr.*)) {
-// zbr:selfhost/CgHelpers.zbr:1912
+// zbr:selfhost/CgHelpers.zbr:2234
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1913
+// zbr:selfhost/CgHelpers.zbr:2235
             for (b.cases.items) |c| {
-// zbr:selfhost/CgHelpers.zbr:1914
+// zbr:selfhost/CgHelpers.zbr:2236
                 for (c.values.items) |v| {
-// zbr:selfhost/CgHelpers.zbr:1915
+// zbr:selfhost/CgHelpers.zbr:2237
                     if (_zbr_fn_exprHasSelfCall(v)) {
-// zbr:selfhost/CgHelpers.zbr:1916
+// zbr:selfhost/CgHelpers.zbr:2238
                         return true;
                     }
                 }
-// zbr:selfhost/CgHelpers.zbr:1917
+// zbr:selfhost/CgHelpers.zbr:2239
                 for (c.guard_expr.items) |g| {
-// zbr:selfhost/CgHelpers.zbr:1918
+// zbr:selfhost/CgHelpers.zbr:2240
                     if (_zbr_fn_exprHasSelfCall(g)) {
-// zbr:selfhost/CgHelpers.zbr:1919
+// zbr:selfhost/CgHelpers.zbr:2241
                         return true;
                     }
                 }
-// zbr:selfhost/CgHelpers.zbr:1920
+// zbr:selfhost/CgHelpers.zbr:2242
                 if (_zbr_fn_methodMutatesSelf(c.stmts)) {
-// zbr:selfhost/CgHelpers.zbr:1921
+// zbr:selfhost/CgHelpers.zbr:2243
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1922
+// zbr:selfhost/CgHelpers.zbr:2244
             if (b.else_) |be| {
-// zbr:selfhost/CgHelpers.zbr:1923
+// zbr:selfhost/CgHelpers.zbr:2245
                 if (_zbr_fn_methodMutatesSelf(be)) {
-// zbr:selfhost/CgHelpers.zbr:1924
+// zbr:selfhost/CgHelpers.zbr:2246
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1925
+// zbr:selfhost/CgHelpers.zbr:2247
             return false;
         },
         .with_ => |_ptr_w| {
             const w = _ptr_w.*;
-// zbr:selfhost/CgHelpers.zbr:1927
+// zbr:selfhost/CgHelpers.zbr:2249
             if (_zbr_fn_exprHasSelfCall(w.target.*)) {
-// zbr:selfhost/CgHelpers.zbr:1928
+// zbr:selfhost/CgHelpers.zbr:2250
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1929
+// zbr:selfhost/CgHelpers.zbr:2251
             return _zbr_fn_methodMutatesSelf(w.stmts);
         },
         .in_scope => |_ptr_si_m| {
             const si_m = _ptr_si_m.*;
-// zbr:selfhost/CgHelpers.zbr:1931
+// zbr:selfhost/CgHelpers.zbr:2253
             return _zbr_fn_methodMutatesSelf(si_m.stmts);
         },
         .allocate_ => |_ptr_al| {
             const al = _ptr_al.*;
-// zbr:selfhost/CgHelpers.zbr:1933
+// zbr:selfhost/CgHelpers.zbr:2255
             if (_zbr_fn_exprHasSelfCall(al.source)) {
-// zbr:selfhost/CgHelpers.zbr:1934
+// zbr:selfhost/CgHelpers.zbr:2256
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1935
+// zbr:selfhost/CgHelpers.zbr:2257
             return _zbr_fn_methodMutatesSelf(al.stmts);
         },
         .guard_ => |_ptr_g| {
             const g = _ptr_g.*;
-// zbr:selfhost/CgHelpers.zbr:1937
+// zbr:selfhost/CgHelpers.zbr:2259
             if (_zbr_fn_exprHasSelfCall(g.cond.*)) {
-// zbr:selfhost/CgHelpers.zbr:1938
+// zbr:selfhost/CgHelpers.zbr:2260
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1939
+// zbr:selfhost/CgHelpers.zbr:2261
             return _zbr_fn_methodMutatesSelf(g.else_stmts);
         },
         .defer_ => |_ptr_d| {
             const d = _ptr_d.*;
-// zbr:selfhost/CgHelpers.zbr:1941
+// zbr:selfhost/CgHelpers.zbr:2263
             return _zbr_fn_stmtMutatesSelf(d.stmt.*);
         },
         .assert_ => |_ptr_a| {
             const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1943
+// zbr:selfhost/CgHelpers.zbr:2265
             return _zbr_fn_exprHasSelfCall(a.cond.*);
         },
         .assert_eq_ => |_ptr_a| {
             const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1945
+// zbr:selfhost/CgHelpers.zbr:2267
             return (_zbr_fn_exprHasSelfCall(a.lhs.*) or _zbr_fn_exprHasSelfCall(a.rhs.*));
         },
         .assert_ne_ => |_ptr_a| {
             const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1947
+// zbr:selfhost/CgHelpers.zbr:2269
             return (_zbr_fn_exprHasSelfCall(a.lhs.*) or _zbr_fn_exprHasSelfCall(a.rhs.*));
         },
         .assert_true_ => |_ptr_a| {
             const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1949
+// zbr:selfhost/CgHelpers.zbr:2271
             return _zbr_fn_exprHasSelfCall(a.expr.*);
         },
         .assert_false_ => |_ptr_a| {
             const a = _ptr_a.*;
-// zbr:selfhost/CgHelpers.zbr:1951
+// zbr:selfhost/CgHelpers.zbr:2273
             return _zbr_fn_exprHasSelfCall(a.expr.*);
         },
         .pass_ => {
-// zbr:selfhost/CgHelpers.zbr:1953
+// zbr:selfhost/CgHelpers.zbr:2275
             return false;
         },
         .break_ => {
-// zbr:selfhost/CgHelpers.zbr:1955
+// zbr:selfhost/CgHelpers.zbr:2277
             return false;
         },
         .continue_ => {
-// zbr:selfhost/CgHelpers.zbr:1957
+// zbr:selfhost/CgHelpers.zbr:2279
             return false;
         },
         .contract => {
-// zbr:selfhost/CgHelpers.zbr:1959
+// zbr:selfhost/CgHelpers.zbr:2281
             return false;
         },
         else => {
-// zbr:selfhost/CgHelpers.zbr:1961
+// zbr:selfhost/CgHelpers.zbr:2283
             return true;
         },
     }
 }
 
 pub fn _zbr_fn_exprHasSelfCall(e: _zbr_ty_Expr) bool {
-// zbr:selfhost/CgHelpers.zbr:1969
+// zbr:selfhost/CgHelpers.zbr:2291
     switch (e) {
         .call => {
-// zbr:selfhost/CgHelpers.zbr:1971
+// zbr:selfhost/CgHelpers.zbr:2293
             return true;
         },
         .opt_chain => |_ptr_x| {
             const x = _ptr_x.*;
-// zbr:selfhost/CgHelpers.zbr:1973
+// zbr:selfhost/CgHelpers.zbr:2295
             if (x.has_args) {
-// zbr:selfhost/CgHelpers.zbr:1974
+// zbr:selfhost/CgHelpers.zbr:2296
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1975
+// zbr:selfhost/CgHelpers.zbr:2297
             return _zbr_fn_exprHasSelfCall(x.base.*);
         },
         .member => |_ptr_m| {
             const m = _ptr_m.*;
-// zbr:selfhost/CgHelpers.zbr:1977
+// zbr:selfhost/CgHelpers.zbr:2299
             return _zbr_fn_exprHasSelfCall(m.object.*);
         },
         .binary => |_ptr_b| {
             const b = _ptr_b.*;
-// zbr:selfhost/CgHelpers.zbr:1979
+// zbr:selfhost/CgHelpers.zbr:2301
             return (_zbr_fn_exprHasSelfCall(b.left.*) or _zbr_fn_exprHasSelfCall(b.right.*));
         },
         .unary => |_ptr_u| {
             const u = _ptr_u.*;
-// zbr:selfhost/CgHelpers.zbr:1981
+// zbr:selfhost/CgHelpers.zbr:2303
             return _zbr_fn_exprHasSelfCall(u.operand.*);
         },
         .index => |_ptr_ix| {
             const ix = _ptr_ix.*;
-// zbr:selfhost/CgHelpers.zbr:1983
+// zbr:selfhost/CgHelpers.zbr:2305
             return (_zbr_fn_exprHasSelfCall(ix.object.*) or _zbr_fn_exprHasSelfCall(ix.index.*));
         },
         .slice => |_ptr_sl| {
             const sl = _ptr_sl.*;
-// zbr:selfhost/CgHelpers.zbr:1985
+// zbr:selfhost/CgHelpers.zbr:2307
             if (_zbr_fn_exprHasSelfCall(sl.object.*)) {
-// zbr:selfhost/CgHelpers.zbr:1986
+// zbr:selfhost/CgHelpers.zbr:2308
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:1987
+// zbr:selfhost/CgHelpers.zbr:2309
             if ((sl.start != null)) {
-// zbr:selfhost/CgHelpers.zbr:1988
+// zbr:selfhost/CgHelpers.zbr:2310
                 if (_zbr_fn_exprHasSelfCall(sl.start.?.*)) {
-// zbr:selfhost/CgHelpers.zbr:1989
+// zbr:selfhost/CgHelpers.zbr:2311
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1990
+// zbr:selfhost/CgHelpers.zbr:2312
             if ((sl.stop_ != null)) {
-// zbr:selfhost/CgHelpers.zbr:1991
+// zbr:selfhost/CgHelpers.zbr:2313
                 if (_zbr_fn_exprHasSelfCall(sl.stop_.?.*)) {
-// zbr:selfhost/CgHelpers.zbr:1992
+// zbr:selfhost/CgHelpers.zbr:2314
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:1993
+// zbr:selfhost/CgHelpers.zbr:2315
             return false;
         },
         .cast => |_ptr_c| {
             const c = _ptr_c.*;
-// zbr:selfhost/CgHelpers.zbr:1995
+// zbr:selfhost/CgHelpers.zbr:2317
             return _zbr_fn_exprHasSelfCall(c.expr.*);
         },
         .to_non_nil => |_ptr_t| {
             const t = _ptr_t.*;
-// zbr:selfhost/CgHelpers.zbr:1997
+// zbr:selfhost/CgHelpers.zbr:2319
             return _zbr_fn_exprHasSelfCall(t.expr.*);
         },
         .is_nil => |_ptr_t| {
             const t = _ptr_t.*;
-// zbr:selfhost/CgHelpers.zbr:1999
+// zbr:selfhost/CgHelpers.zbr:2321
             return _zbr_fn_exprHasSelfCall(t.expr.*);
         },
         .try_ => |_ptr_t| {
             const t = _ptr_t.*;
-// zbr:selfhost/CgHelpers.zbr:2001
+// zbr:selfhost/CgHelpers.zbr:2323
             return _zbr_fn_exprHasSelfCall(t.expr.*);
         },
         .type_check => |_ptr_t| {
             const t = _ptr_t.*;
-// zbr:selfhost/CgHelpers.zbr:2003
+// zbr:selfhost/CgHelpers.zbr:2325
             return _zbr_fn_exprHasSelfCall(t.expr.*);
         },
         .old_ => |_ptr_o| {
             const o = _ptr_o.*;
-// zbr:selfhost/CgHelpers.zbr:2005
+// zbr:selfhost/CgHelpers.zbr:2327
             return _zbr_fn_exprHasSelfCall(o.operand.*);
         },
         .if_expr => |_ptr_i| {
             const i = _ptr_i.*;
-// zbr:selfhost/CgHelpers.zbr:2007
+// zbr:selfhost/CgHelpers.zbr:2329
             return ((_zbr_fn_exprHasSelfCall(i.cond.*) or _zbr_fn_exprHasSelfCall(i.then_expr.*)) or _zbr_fn_exprHasSelfCall(i.else_expr.*));
         },
         .orelse_ => |_ptr_o| {
             const o = _ptr_o.*;
-// zbr:selfhost/CgHelpers.zbr:2009
+// zbr:selfhost/CgHelpers.zbr:2331
             return (_zbr_fn_exprHasSelfCall(o.expr.*) or _zbr_fn_exprHasSelfCall(o.fallback.*));
         },
         .catch_ => |_ptr_ca| {
             const ca = _ptr_ca.*;
-// zbr:selfhost/CgHelpers.zbr:2011
+// zbr:selfhost/CgHelpers.zbr:2333
             return (_zbr_fn_exprHasSelfCall(ca.expr.*) or _zbr_fn_exprHasSelfCall(ca.fallback.*));
         },
         .except_ => |_ptr_ex| {
             const ex = _ptr_ex.*;
-// zbr:selfhost/CgHelpers.zbr:2013
+// zbr:selfhost/CgHelpers.zbr:2335
             if (_zbr_fn_exprHasSelfCall(ex.base)) {
-// zbr:selfhost/CgHelpers.zbr:2014
+// zbr:selfhost/CgHelpers.zbr:2336
                 return true;
             }
-// zbr:selfhost/CgHelpers.zbr:2015
+// zbr:selfhost/CgHelpers.zbr:2337
             for (ex.fields.items) |fld| {
-// zbr:selfhost/CgHelpers.zbr:2016
+// zbr:selfhost/CgHelpers.zbr:2338
                 if (_zbr_fn_exprHasSelfCall(fld.value)) {
-// zbr:selfhost/CgHelpers.zbr:2017
+// zbr:selfhost/CgHelpers.zbr:2339
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:2018
+// zbr:selfhost/CgHelpers.zbr:2340
             return false;
         },
         .chained_cmp => |_ptr_cc| {
             const cc = _ptr_cc.*;
-// zbr:selfhost/CgHelpers.zbr:2020
+// zbr:selfhost/CgHelpers.zbr:2342
             for (cc.operands.items) |op| {
-// zbr:selfhost/CgHelpers.zbr:2021
+// zbr:selfhost/CgHelpers.zbr:2343
                 if (_zbr_fn_exprHasSelfCall(op)) {
-// zbr:selfhost/CgHelpers.zbr:2022
+// zbr:selfhost/CgHelpers.zbr:2344
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:2023
+// zbr:selfhost/CgHelpers.zbr:2345
             return false;
         },
         .list_lit => |_ptr_l| {
             const l = _ptr_l.*;
-// zbr:selfhost/CgHelpers.zbr:2025
+// zbr:selfhost/CgHelpers.zbr:2347
             for (l.elems.items) |el| {
-// zbr:selfhost/CgHelpers.zbr:2026
+// zbr:selfhost/CgHelpers.zbr:2348
                 if (_zbr_fn_exprHasSelfCall(el)) {
-// zbr:selfhost/CgHelpers.zbr:2027
+// zbr:selfhost/CgHelpers.zbr:2349
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:2028
+// zbr:selfhost/CgHelpers.zbr:2350
             return false;
         },
         .array_lit => |_ptr_l| {
             const l = _ptr_l.*;
-// zbr:selfhost/CgHelpers.zbr:2030
+// zbr:selfhost/CgHelpers.zbr:2352
             for (l.elems.items) |el| {
-// zbr:selfhost/CgHelpers.zbr:2031
+// zbr:selfhost/CgHelpers.zbr:2353
                 if (_zbr_fn_exprHasSelfCall(el)) {
-// zbr:selfhost/CgHelpers.zbr:2032
+// zbr:selfhost/CgHelpers.zbr:2354
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:2033
+// zbr:selfhost/CgHelpers.zbr:2355
             return false;
         },
         .tuple_lit => |_ptr_l| {
             const l = _ptr_l.*;
-// zbr:selfhost/CgHelpers.zbr:2035
+// zbr:selfhost/CgHelpers.zbr:2357
             for (l.elems.items) |el| {
-// zbr:selfhost/CgHelpers.zbr:2036
+// zbr:selfhost/CgHelpers.zbr:2358
                 if (_zbr_fn_exprHasSelfCall(el)) {
-// zbr:selfhost/CgHelpers.zbr:2037
+// zbr:selfhost/CgHelpers.zbr:2359
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:2038
+// zbr:selfhost/CgHelpers.zbr:2360
             return false;
         },
         .set_lit => |_ptr_sl| {
             const sl = _ptr_sl.*;
-// zbr:selfhost/CgHelpers.zbr:2040
+// zbr:selfhost/CgHelpers.zbr:2362
             for (sl.elems.items) |se| {
-// zbr:selfhost/CgHelpers.zbr:2041
+// zbr:selfhost/CgHelpers.zbr:2363
                 if (_zbr_fn_exprHasSelfCall(se)) {
-// zbr:selfhost/CgHelpers.zbr:2042
+// zbr:selfhost/CgHelpers.zbr:2364
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:2043
+// zbr:selfhost/CgHelpers.zbr:2365
             return false;
         },
         .dict_lit => |_ptr_d| {
             const d = _ptr_d.*;
-// zbr:selfhost/CgHelpers.zbr:2045
+// zbr:selfhost/CgHelpers.zbr:2367
             for (d.entries.items) |entry| {
-// zbr:selfhost/CgHelpers.zbr:2046
+// zbr:selfhost/CgHelpers.zbr:2368
                 if (_zbr_fn_exprHasSelfCall(entry.key.*)) {
-// zbr:selfhost/CgHelpers.zbr:2047
+// zbr:selfhost/CgHelpers.zbr:2369
                     return true;
                 }
-// zbr:selfhost/CgHelpers.zbr:2048
+// zbr:selfhost/CgHelpers.zbr:2370
                 if (_zbr_fn_exprHasSelfCall(entry.value.*)) {
-// zbr:selfhost/CgHelpers.zbr:2049
+// zbr:selfhost/CgHelpers.zbr:2371
                     return true;
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:2050
+// zbr:selfhost/CgHelpers.zbr:2372
             return false;
         },
         .string_interp => |_ptr_si| {
             const si = _ptr_si.*;
-// zbr:selfhost/CgHelpers.zbr:2052
+// zbr:selfhost/CgHelpers.zbr:2374
             for (si.parts.items) |part| {
-// zbr:selfhost/CgHelpers.zbr:2053
+// zbr:selfhost/CgHelpers.zbr:2375
                 if (part == .expr_) {
                     const pe_ptr = part.expr_;
                     const pe = pe_ptr.*;
-// zbr:selfhost/CgHelpers.zbr:2054
+// zbr:selfhost/CgHelpers.zbr:2376
                     if (_zbr_fn_exprHasSelfCall(pe)) {
-// zbr:selfhost/CgHelpers.zbr:2055
+// zbr:selfhost/CgHelpers.zbr:2377
                         return true;
                     }
                 }
             }
-// zbr:selfhost/CgHelpers.zbr:2056
+// zbr:selfhost/CgHelpers.zbr:2378
             return false;
         },
         .lambda => |_ptr_lam| {
             const lam = _ptr_lam.*;
-// zbr:selfhost/CgHelpers.zbr:2058
+// zbr:selfhost/CgHelpers.zbr:2380
             switch (lam.body_) {
                 .expr_ => |le| {
-// zbr:selfhost/CgHelpers.zbr:2060
+// zbr:selfhost/CgHelpers.zbr:2382
                     return _zbr_fn_exprHasSelfCall(le);
                 },
                 .stmts => |ls| {
-// zbr:selfhost/CgHelpers.zbr:2062
+// zbr:selfhost/CgHelpers.zbr:2384
                     return _zbr_fn_methodMutatesSelf(ls);
                 },
             }
         },
         else => {
-// zbr:selfhost/CgHelpers.zbr:2064
+// zbr:selfhost/CgHelpers.zbr:2386
             return false;
         },
     }
 }
 
 pub fn _zbr_fn_isContainerTypeRef(tr: _zbr_ty_TypeRef) bool {
-// zbr:selfhost/CgHelpers.zbr:2078
+// zbr:selfhost/CgHelpers.zbr:2400
     switch (tr) {
         .generic => |g| {
-// zbr:selfhost/CgHelpers.zbr:2082
+// zbr:selfhost/CgHelpers.zbr:2404
             return ((std.mem.eql(u8, g.name, "List") or std.mem.eql(u8, g.name, "HashMap")) or std.mem.eql(u8, g.name, "Set"));
         },
         .named => |n| {
-// zbr:selfhost/CgHelpers.zbr:2089
+// zbr:selfhost/CgHelpers.zbr:2411
             return std.mem.eql(u8, n.name, "StringBuilder");
         },
         else => {
-// zbr:selfhost/CgHelpers.zbr:2091
+// zbr:selfhost/CgHelpers.zbr:2413
             return false;
         },
     }
 }
 
 pub fn _zbr_fn_paramNeedsAddrOf(p: _zbr_ty_Param, body: ?std.ArrayList(_zbr_ty_Stmt)) bool {
-// zbr:selfhost/CgHelpers.zbr:2101
+// zbr:selfhost/CgHelpers.zbr:2423
     if ((p.type_ == null)) {
-// zbr:selfhost/CgHelpers.zbr:2101
+// zbr:selfhost/CgHelpers.zbr:2423
         return false;
     }
-// zbr:selfhost/CgHelpers.zbr:2102
+// zbr:selfhost/CgHelpers.zbr:2424
     if ((!_zbr_fn_isContainerTypeRef(p.type_.?))) {
-// zbr:selfhost/CgHelpers.zbr:2102
+// zbr:selfhost/CgHelpers.zbr:2424
         return false;
     }
-// zbr:selfhost/CgHelpers.zbr:2103
+// zbr:selfhost/CgHelpers.zbr:2425
     if (body) |b| {
-// zbr:selfhost/CgHelpers.zbr:2104
+// zbr:selfhost/CgHelpers.zbr:2426
         const ms: *_zbr_ty_StrSet = _zbr_fn_scanMutations(b, null);
-// zbr:selfhost/CgHelpers.zbr:2105
+// zbr:selfhost/CgHelpers.zbr:2427
         return ms.contains_(p.name);
     }
-// zbr:selfhost/CgHelpers.zbr:2106
+// zbr:selfhost/CgHelpers.zbr:2428
     return false;
 }
 
