@@ -1,0 +1,7 @@
+# BUG-380: a Python-shaped trailing colon on any block header (`if x:`, `for x in xs:`,
+# `while c:`, `def f():`, `else:`, `class Foo:`) hit five different parser-internal
+# messages depending on which parse path swallowed the colon. One check, one message that
+# points at the indented-body form and the `header: stmt` one-liner.
+def main()
+    if true:
+        print(1)

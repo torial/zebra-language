@@ -198,6 +198,12 @@ verified against the compiler, not recalled.
 | `f"{x}"` | `"${x}"` | no `f` prefix exists |
 | `s[::-1]` | `s.reverse()` | no step syntax |
 | `s[1:3]` | `s[1..3]` | `..` not `:` |
+| `if x:` / `for x in xs:` | header, then indent — no colon | `error: a block header ends ... with no colon` |
+| `def f() -> T` | `def f(): T` | `error: the return type is written with a colon` |
+| `f"n={x}"` | `"n=${x}"` (every string interpolates) | `error: no \`f"..."\` prefix` |
+| `n == "3"` (int vs str) | convert one side | `error: cannot compare 'int' with 'str'` |
+| `xs.length` | `xs.len` / `xs.count()` | `error: 'List' has no property 'length'` |
+| `var x: int = None` | `var x: int? = nil` | `error: 'x' is declared int and cannot hold nil` |
 
 The ternary is the one worth memorising, because `1 if c else 2` *reads* like it should
 work. Zebra's form is **`if(cond, then_value, else_value)`** — an expression, usable

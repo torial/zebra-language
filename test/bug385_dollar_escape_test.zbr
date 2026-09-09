@@ -1,0 +1,10 @@
+# BUG-385: QUICKSTART §14 documents `"\${"` for a literal `${`, but the escaped pair was
+# copied into the Zig literal verbatim and Zig has no `\$` escape. The backslash is now
+# dropped at emit, in both plain and interpolated strings, and an escaped backslash before
+# a dollar (`\\$`) is left alone.
+def main()
+    var x = 5
+    print("lit \${x} interp ${x}")
+    print("a \${y} b")
+    var s = "plain \${z}"
+    print(s)

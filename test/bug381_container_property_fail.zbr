@@ -1,0 +1,6 @@
+# BUG-381: `xs.length` / `s.size` -- a plain (non-call) member on a builtin container or
+# string that is not `.len` -- leaked into Zig ("no field named 'length' in struct
+# 'array_list...'"). The one property is `.len`; everything else is a method call.
+def main()
+    var xs = [1, 2, 3]
+    print(xs.length)

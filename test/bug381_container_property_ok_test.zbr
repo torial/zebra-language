@@ -1,0 +1,24 @@
+# BUG-381 control: the legitimate property and count() forms still pass on every builtin
+# container, a catch binding's error API (`e.message`) is not flagged as a str property,
+# and a user class field named `length` is untouched. A false positive here would reject
+# the compiler's own idioms (this is the class that made BUG-381 a bootstrap escape).
+class Box
+    var length: int
+    cue init(n: int)
+        .length = n
+
+def boom(): int throws
+    raise "x"
+
+def describe(): str
+    var v = boom()
+    return "got ${v}"
+catch |e|
+    return e.message
+
+def main()
+    var xs = [1, 2, 3]
+    var s = "abc"
+    var m = {"a": 1}
+    var b = Box(9)
+    print("${xs.len} ${xs.count()} ${s.len} ${m.len} ${b.length} ${describe().len}")

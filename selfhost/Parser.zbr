@@ -905,6 +905,13 @@ class Parser
     # expected.  Statement keywords (`def`, `if`, `for`, …) leaking into
     # expression position are the most confusing case — name the actual problem
     # instead of the generic "unexpected expression token".
+    # BUG-380: a Python-shaped trailing colon on a block header (`if x:`, `for x in xs:`,
+    # `while c:`, `def main():`, `else:`, `class Foo:`) produced five different internal
+    # messages depending on which parse path swallowed the colon. One check, one message.
+    def refuseTrailingColon(): void throws
+        if .textIs(":") and .peekAt(1).kind is TokenKind.eol
+            raise .errorAt("a block header ends at the end of the line with no colon -- indent the body on the next line; `header: stmt` is the one-line form (QUICKSTART §1.5)")
+
     def unexpectedExprMsg(): str
         var t = .peek().text
         if t == "def"
@@ -1633,6 +1640,7 @@ class Parser
             while .textIs(",")
                 .advance()
                 mixins.add(.eatId()?)
+        .refuseTrailingColon()?
         .skipEol()
         var members = List(PNode)()
         var invs = List(PNode)()
@@ -2096,8 +2104,14 @@ class Parser
                     params.add(PParam(pname, ptype, pdefault))
             .expectText(")")?
         var return_type = ""
+        # BUG-380 sibling: `def f(x: int) -> int` is the Python/Rust arrow; the
+        # top-level loop reported it as an unexpected declaration token.
+        if has_params and .textIs("->")
+            raise .errorAt("the return type is written with a colon, `def f(x: int): int`, not `->` (QUICKSTART §1.5)")
         # BUG-112: only allow return-type annotation when method has parens.
         # `def name: T` no-paren shorthand is non-canonical; use `def name(): T`.
+        if has_params
+            .refuseTrailingColon()?
         if has_params and .textIs(":")
             .advance()
             return_type = .eatTypeName()?
@@ -2319,6 +2333,7 @@ class Parser
                 if .textIs("if")
                     else_stmts.add(.parseIfStmt()?)
                 else
+                    .refuseTrailingColon()?
                     .skipEol()
                     else_stmts = .parseBlock()?
             var cond_list = List(PNode)()
@@ -2330,6 +2345,7 @@ class Parser
             # Inline form: `if cond: stmt` — colon required, capture not supported
             if capture_name != nil
                 raise .errorAt("inline if does not support capture binding; use block form")
+            .refuseTrailingColon()?
             .expectText(":")?
             var then_stmts = List(PNode)()
             then_stmts.add(.parseStmt()?)
@@ -2382,6 +2398,7 @@ class Parser
             true_cond.add(PNode.expr_bool(PBoolLit(true, 0, 0)))
             return PNode.stmt_while(PWhile(true_cond, wrapped, line, col))
         const cond_expr = .parseExpr()?
+        .refuseTrailingColon()?
         .skipEol()
         const stmts = .parseBlock()?
         var cond_list = List(PNode)()
@@ -2470,6 +2487,7 @@ class Parser
         # Numeric range: for i in lo : hi [:step].  `..` is an alias for `:`
         # (BUG-165/F9): the bootstrap parses `for i in a..b`, so both spellings
         # must lower to the same i64 for_num counter loop in both compilers.
+        .refuseTrailingColon()?
         if .textIs(":") or .textIs("..")
             var range_is_dotdot = .textIs("..")
             .advance()
@@ -3464,6 +3482,13 @@ class Parser
             const id_line = .peek().line
             const id_col = .peek().col
             const name = .peek().text
+            # BUG-384: `f"n={x}"` -- a Python f-string -- lexed as the identifier `f`
+            # followed by a string and surfaced as "undefined name: 'f'". A one-letter
+            # identifier glued to a string literal on the same line is that habit.
+            if name.len == 1 and .peekAt(1).line == id_line and .peekAt(1).col == id_col + 1
+                var nk = .peekAt(1).kind
+                if nk is TokenKind.string_double or nk is TokenKind.string_single or nk is TokenKind.string_start_double or nk is TokenKind.string_start_single
+                    raise .errorAt("no `" + name + "\"...\"` prefix: every Zebra string interpolates -- write \"n=\${x}\" (QUICKSTART §1.5)")
             .advance()
             return PNode.expr_id(PExprId(name, id_line, id_col))
         else if .isTypeKeyword() or .isSizedTypeName()

@@ -1,0 +1,6 @@
+# BUG-380 sibling: `def f(x) -> T` (the Python/Rust arrow) was reported by the top-level
+# loop as an unexpected declaration token. The return type is written with a colon.
+def f(x: int) -> int
+    return x
+def main()
+    print(f(1))

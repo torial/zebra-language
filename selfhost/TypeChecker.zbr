@@ -460,10 +460,10 @@ class ModuleTypes
         if not .class_interfaces.contains(class_name)
             return false
         var ifaces_str: str = .class_interfaces.fetch(class_name)
-        for iface in ifaces_str.split("|")
-            if iface == iface_name
+        for ifc in ifaces_str.split("|")
+            if ifc == iface_name
                 return true
-            if .classConformsToDepth(iface, iface_name, depth - 1)
+            if .classConformsToDepth(ifc, iface_name, depth - 1)
                 return true
         return false
 
@@ -2072,6 +2072,26 @@ def isArithmeticMistake(t: Type_): bool
         else
             return false
 
+# BUG-382: `n == "3"` with n an int passed -c and failed in Zig ("expected type
+# 'str', found 'i64'"). Same narrowness as BUG-218: fire only when one side is
+# a KNOWN string and the other a KNOWN number or bool -- an unknown side is an
+# inference gap, never an error.
+def compareOperandCheck(lt: Type_, rt: Type_, b: ExprBinary, op: str, ctx: InferCtx)
+    var bad: bool = false
+    if isString(lt) and isConcatMistake(rt)
+        bad = true
+    if isString(rt) and isConcatMistake(lt)
+        bad = true
+    if not bad
+        return
+    var eln: int = b.span.line
+    var ecl: int = b.span.col
+    if eln == 0
+        eln = exprSpanLine(b.left)
+        ecl = exprSpanCol(b.left)
+    ctx.addErr(ctx.file, eln, ecl,
+               "cannot compare '" + typeTag(lt) + "' with '" + typeTag(rt) + "' using " + op + " -- convert one side (`.toString()` / `.toInt()`)")
+
 def isConcatMistake(t: Type_): bool
     if isNumeric(t)
         return true
@@ -2371,6 +2391,23 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             # the numeric-context gap without overriding a genuine user field.
             if mm == "len" or mm == "count"
                 return Type_.int_
+            # BUG-381: a plain (non-call) member on a builtin container/string --
+            # `xs.length`, `s.size` -- leaked into Zig ("no field named 'length' in
+            # struct 'array_list...'"). `.len` is the one property; everything else
+            # is a method call.
+            var bi_kind: str = ""
+            if isString(obj_t)
+                bi_kind = "str"
+            else if obj_t is Type_.list_
+                bi_kind = "List"
+            else if obj_t is Type_.hashmap_
+                bi_kind = "HashMap"
+            else if obj_t is Type_.set_
+                bi_kind = "Set"
+            if bi_kind != ""
+                ctx.addErr(ctx.file, m.span.line, m.span.col,
+                           "'" + bi_kind + "' has no property '" + mm + "' -- the length is `.len` (a field) or `.count()`; everything else is a method call with parentheses (QUICKSTART §1.5)")
+                return Type_.unknown_
             return Type_.unresolved
         on Expr.call as c
             # Constructor or class name used: callee: `Foo(args)` → named("Foo").
@@ -3113,8 +3150,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         return lt
                     return rt
                 on BinaryOp.eq
+                    compareOperandCheck(lt, rt, b, "==", ctx)
                     return Type_.bool_
                 on BinaryOp.ne
+                    compareOperandCheck(lt, rt, b, "!=", ctx)
                     return Type_.bool_
                 on BinaryOp.lt
                     return Type_.bool_
@@ -4426,6 +4465,11 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     if optionalIntoPlain(declared, inferred)
         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + typeTag(declared) + ", found " + typeTag(declared) + "? " + UNWRAP_HINT)
         return
+    # BUG-383: `var x: int = nil` leaked into Zig ("expected type 'i64', found
+    # '@TypeOf(null)'"). A literal nil can only initialise an optional.
+    if dv.init_expr! is Expr.nil_
+        ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "'" + dv.name + "' is declared " + typeTag(declared) + " and cannot hold nil -- declare it `" + typeTag(declared) + "?` if it can be absent (QUICKSTART §11)")
+        return
     if not isPrimitive(inferred)
         return
     if not typesCompatible(declared, inferred)
@@ -4565,6 +4609,12 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
             on Stmt.try_catch as stc
                 checkStmts(stc.stmts, file, ctx)
                 for cc in stc.clauses
+                    # BUG-381 control: a `catch |e|` binding whose name collides with a
+                    # stale str binding from another scope made `e.message` read as a
+                    # str property. Shadow it (unknown_ is the safe floor; the catch
+                    # error API -- .message/.details -- is not modelled as a type here).
+                    if cc.binding as cc_name
+                        ctx.bind(cc_name, Type_.unknown_)
                     checkStmts(cc.stmts, file, ctx)
             on Stmt.return_ as sr
                 if ctx.current_return_type as ret_type
@@ -4619,6 +4669,19 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 checkStmts(sal.stmts, file, ctx)
             on Stmt.branch_ as sb
                 for c in sb.cases
+                    # BUG-381 control: this pass shares one flat scope across every
+                    # method in the module, so a payload name reused from an earlier
+                    # `for` loop (`for iface in ...` then `on Decl.interface_ as
+                    # iface`) still read as that loop's type here. Bind the payload
+                    # the way walkStmts does; when the payload is unknown, shadow the
+                    # stale binding rather than inherit it.
+                    if c.values.len == 1
+                        if c.binding as bname
+                            var b_payload: Type_? = narrowPayloadFromOnValueDeps(ctx.module_types, ctx.dep_types, c.values.at(0))
+                            if b_payload as bp
+                                ctx.bind(bname, bp)
+                            else
+                                ctx.bind(bname, Type_.unknown_)
                     checkStmts(c.stmts, file, ctx)
                 if sb.else_ as sb_else
                     checkStmts(sb_else, file, ctx)

@@ -25,6 +25,60 @@ methods with a Zebra message. Workaround in zebra-ide: count by iterating.
 **Fix.** `getList` now returns a real `List(JsonValue)` (`_json_get_list_l`, copied into the program allocator), so `.len`, `.at()` and `for` take the ordinary List paths and the per-call special cases go. General rule landed with it: the chain hoist (BUG-027/079) is for STRUCT temporaries only — a receiver the checker types as a builtin container is never hoisted to `_mc_N` (`isBuiltinTypedRecv`), which is the same rule BUG-336 needed for split iterators. The old slice form stays in the runtime until the next n1-anchor so the N-1 regen authority still links. Fixture bug337_json_getlist_list_test; gen.py generates the shape.
 
 
+### BUG-385: `"\${"` (the documented literal-`${` escape) failed in Zig — FIXED 2026-09-09
+
+QUICKSTART §14 says `"\${"` writes a literal `${`, but the two-char escape was copied into
+the emitted Zig literal verbatim, and Zig has no `\$` escape ("invalid escape character:
+'$'"). The lexer already skips the pair so it does not open an interpolation; codegen now
+drops the backslash at emit (`unescapeDollar`) in both plain and interpolated strings, and
+leaves an escaped backslash before a dollar (`\\$`) alone. Fixture bug385_dollar_escape_test.
+
+### BUG-384: `f"..."` (a Python f-string) said "undefined name: 'f'" — FIXED 2026-09-09
+
+`f"n={x}"` lexed as the identifier `f` glued to a string literal, so the error pointed at a
+name the writer never meant to use. **Fix.** A one-letter identifier immediately followed
+(no gap) by a string literal is that habit; the parser refuses it and shows the
+interpolation spelling (`"n=${x}"`). Fixture bug384_fstring_prefix_fail.
+
+### BUG-383: `var x: int = nil` failed in Zig — FIXED 2026-09-09
+
+`var x: int = nil` reached Zig as "expected type 'i64', found '@TypeOf(null)'". A literal
+nil can only initialise an optional. **Fix.** `checkVarDecl` refuses a nil initialiser on a
+non-optional declared type and says to declare it `int?` if it can be absent. Fixture
+bug383_nil_into_plain_fail.
+
+### BUG-382: `n == "3"` (int vs string) failed in Zig — FIXED 2026-09-09
+
+Comparing an int with a string literal passed `-c` and died in Zig ("expected type 'str',
+found 'i64'"). **Fix.** `compareOperandCheck` on `==`/`!=`, the same narrowness as the
+concat check (BUG-218): fire only when one side is a KNOWN string and the other a KNOWN
+number or bool, pointing at the conversion. Fixture bug382_str_num_compare_fail.
+
+### BUG-381: a non-`.len` property on a builtin container failed in Zig — FIXED 2026-09-09
+
+`xs.length`, `s.size` -- a plain (non-call) member other than `.len` on a List/HashMap/Set/
+str -- leaked into Zig ("no field named 'length' in struct 'array_list...'"). **Fix.** A
+plain member on a builtin container/string is refused with "the length is `.len` (a field)
+or `.count()`; everything else is a method call". Landing it exposed the check pass's own
+flat-scope leak: a branch payload or catch binding whose name matched a stale str binding
+from another method (`on Decl.struct_ as s` then `s.name`, `catch |e|` then `e.message`)
+read as a str -- so the check pass now shadows branch payloads and catch bindings the way
+it already shadowed loop vars (BUG-332). This was a genuine bootstrap escape: the compiler
+that carries BUG-381 rejects the compiler's own source until the shadowing fix is in the
+running binary, so the fix was staged through the committed (pre-381) `TypeChecker.zig` as
+the N-1 regen authority. Fixtures bug381_container_property_fail, and the
+bug381_container_property_ok_test control (containers + a `catch |e|` error API + a user
+`length` field).
+
+### BUG-380: a trailing colon on a block header, or a `->` return arrow, got a parser-internals message — FIXED 2026-09-09
+
+The Python/Rust habits `if x:`, `for x in xs:`, `while c:`, `def f():`, `else:`, `class
+Foo:` and `def f(x) -> T` each hit a different internal parser message depending on which
+path swallowed the token. **Fix.** One `refuseTrailingColon` check on every block header
+naming the indented-body form and the `header: stmt` one-liner, and a dedicated `->`
+diagnostic pointing at the colon return-type spelling. Fixtures
+bug380_trailing_colon_header_fail, bug380_return_arrow_fail.
+
 ### BUG-379: an optional flowing into a plain slot passed `-c` and failed in Zig — FIXED 2026-09-09
 
 `var n: int = m.get(k)` (get returns `int?`), or `return xs.find(p)` from an `int` method,

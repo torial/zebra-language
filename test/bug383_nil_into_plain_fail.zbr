@@ -1,0 +1,6 @@
+# BUG-383: `var x: int = nil` leaked into Zig ("expected type 'i64', found
+# '@TypeOf(null)'"). A literal nil can only initialise an optional; the diagnostic says to
+# declare the binding `int?` if it can be absent.
+def main()
+    var x: int = nil
+    print(x)
