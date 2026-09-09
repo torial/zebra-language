@@ -1287,7 +1287,7 @@ An `extend String` block adds methods the checker then accepts.
 | `fromHex()` | `(): str` | Decode hex string to bytes |
 | `encodeBase64()` | `(): str` | Base64-encode |
 | `decodeBase64()` | `(): str` | Base64-decode |
-| `lines()` | `(): List(str)` | Split on newlines |
+| `lines()` | `(): List(str)` | Split into lines: no empty line after a final `\n`, `\r` stripped, interior blank lines kept, `""` → none (BUG-387) |
 | `replaceAll(from, to)` | `(str, str): str` | Alias of `replace` |
 | `toString()` | `(): str` | Identity; lets `str` satisfy a `toString`-shaped call |
 
@@ -3220,7 +3220,7 @@ Available backends: `stub` (no-op, for tests), `libui_ng` (native OS controls),
 | `File.read(path)`             | `str`         | Read entire file as string                     |
 | `File.write(path, data)`      | void          | Write string to file (creates or truncates)    |
 | `File.append(path, data)`     | void          | Append string to file                          |
-| `File.readLines(path)`        | `List(str)`   | Read file as list of lines                     |
+| `File.readLines(path)`        | `List(str)`   | Read file as list of lines (same rules as `.lines()`) |
 | `File.exists(path)`           | `bool`        | True if file exists                            |
 | `File.delete(path)`           | void          | Delete file (no-op if missing)                 |
 | `File.rename(src, dst)`       | void          | Rename/move file                               |

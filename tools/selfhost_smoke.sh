@@ -1810,6 +1810,7 @@ smoke_tc_fail test/bug383_nil_into_plain_fail.zbr "cannot hold nil"
 smoke_tc_fail test/bug384_fstring_prefix_fail.zbr "no \`f\"...\"\` prefix"
 smoke_run test/bug385_dollar_escape_test.zbr "lit \${x} interp 5"
 smoke_test test/bug386_assert_in_test_pass_test.zbr
+smoke_run test/bug387_lines_semantics_test.zbr "2 3 [a||c] 0 1 2"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_location: assert failed at"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_message: custom message here"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"

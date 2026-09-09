@@ -25,6 +25,19 @@ methods with a Zebra message. Workaround in zebra-ide: count by iterating.
 **Fix.** `getList` now returns a real `List(JsonValue)` (`_json_get_list_l`, copied into the program allocator), so `.len`, `.at()` and `for` take the ordinary List paths and the per-call special cases go. General rule landed with it: the chain hoist (BUG-027/079) is for STRUCT temporaries only — a receiver the checker types as a builtin container is never hoisted to `_mc_N` (`isBuiltinTypedRecv`), which is the same rule BUG-336 needed for split iterators. The old slice form stays in the runtime until the next n1-anchor so the N-1 regen authority still links. Fixture bug337_json_getlist_list_test; gen.py generates the shape.
 
 
+### BUG-387: `s.lines()` yielded a trailing empty line and kept `\r` — FIXED 2026-09-09
+
+`lines()` lowered to `std.mem.splitScalar(u8, s, '\n')`, a raw split: a text ending in a
+newline -- every file -- produced an extra empty "line", `"".lines()` was one empty line,
+and Windows text (`\r\n`) kept its `\r` on every line, so `line == "done"` was never true
+on the platform Zebra is mostly written on. **Fix.** A preamble iterator `_zbr_lines` with
+line semantics (Python's `splitlines`): no segment after a final newline, trailing `\r`
+stripped, interior blank lines kept, `""` is no lines. Same `next()` shape as
+SplitIterator, so the for-in, the BUG-092/176 collect paths and the BUG-336 lazy
+receivers all take it unchanged; `File.readLines` shares it. `split("\n")` is untouched --
+it is still the raw split for anyone who wants it. Corpus control: no existing test
+depended on the trailing empty line. Fixture bug387_lines_semantics_test.
+
 ### BUG-386: a plain `assert` in a `test_*` fn panicked the whole `zebra test` run — FIXED 2026-09-09
 
 `assert x == 3` inside a test lowered to `std.debug.panic` (BUG-273's process-level

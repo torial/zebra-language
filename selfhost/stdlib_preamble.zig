@@ -4223,6 +4223,32 @@ pub fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList
     return items.items[items.items.len - 1];
 }
 // ── File extended ─────────────────────────────────────────────────────────────
+/// BUG-387: `s.lines()` and `File.readLines`. Splits on '\n', drops a trailing '\r'
+/// from each line (Windows text), keeps interior blank lines, and does NOT yield the
+/// empty segment after a final newline -- so `"a\nb\n".lines()` is two lines and
+/// `"".lines()` is none (Python's splitlines). Same `next()` shape as SplitIterator.
+pub const _ZbrLines = struct {
+    rest: []const u8,
+    done: bool,
+    pub fn next(self: *_ZbrLines) ?[]const u8 {
+        if (self.done) return null;
+        if (self.rest.len == 0) { self.done = true; return null; }
+        var line: []const u8 = undefined;
+        if (std.mem.indexOfScalar(u8, self.rest, '\n')) |i| {
+            line = self.rest[0..i];
+            self.rest = self.rest[i + 1 ..];
+        } else {
+            line = self.rest;
+            self.rest = self.rest[self.rest.len..];
+            self.done = true;
+        }
+        if (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
+        return line;
+    }
+};
+pub fn _zbr_lines(s: []const u8) _ZbrLines {
+    return .{ .rest = s, .done = false };
+}
 pub fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
     var content = std.ArrayList(u8).empty;
     defer content.deinit(_allocator);

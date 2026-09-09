@@ -1,0 +1,16 @@
+# BUG-387: `s.lines()` was a raw split on '\n', so a text ending in a newline -- which is
+# every file -- yielded a trailing empty "line", and Windows text kept its '\r'. Now it has
+# line semantics (Python's splitlines): no segment after a final newline, '\r' stripped,
+# interior blank lines kept, "" is no lines. `File.readLines` shares the iterator.
+def main()
+    var n = 0
+    for l in "a\nb\n".lines()
+        n += 1
+    var xs: List(str) = "a\r\n\r\nc\r\n".lines()
+    var ys = "".lines()
+    var zs = "one".lines()
+    print("${n} ${xs.len} [${xs.at(0)}|${xs.at(1)}|${xs.at(2)}] ${ys.len} ${zs.len} ${"p\nq".lines().len}")
+    File.write("bug387_tmp.txt", "x\ny\n")
+    var fl: List(str) = File.readLines("bug387_tmp.txt")
+    File.delete("bug387_tmp.txt")
+    print(fl.len)

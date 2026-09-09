@@ -8360,17 +8360,20 @@ struct Generator
             if isSplitIter(fi.iter)
                 # for p in str.split(sep) → while loop with splitSequence iterator
                 # for line in str.lines() → splitScalar with '\n'
-                var use_scalar = isLinesIter(fi.iter)
+                # BUG-387: lines() is its own iterator (line semantics), split() stays
+                # a SplitIterator with a separator.
+                var use_lines = isLinesIter(fi.iter)
                 var split_fn = "std.mem.splitSequence(u8, "
-                if use_scalar
-                    split_fn = "std.mem.splitScalar(u8, "
+                if use_lines
+                    split_fn = "_zbr_lines("
                 writeIndent()
                 w.emit("{\n")
                 ig.writeIndent()
                 ig.w.emit("var _it_" + vname + " = " + split_fn)
                 genSplitObject(fi.iter)
-                ig.w.emit(", ")
-                genSplitSep(fi.iter)
+                if not use_lines
+                    ig.w.emit(", ")
+                    genSplitSep(fi.iter)
                 ig.w.emit(");\n")
                 var label: str? = nil
                 var wg = ig
@@ -14124,9 +14127,10 @@ struct Generator
                         w.emit(".len == 0)")
                         return
                     if mname == "lines"
-                        w.emit("std.mem.splitScalar(u8, ")
+                        # BUG-387: line semantics (no trailing empty line, `\r` stripped).
+                        w.emit("_zbr_lines(")
                         genExpr(m.object)
-                        w.emit(", '\\n')")
+                        w.emit(")")
                         return
                     if mname == "reverse"
                         # BUG-234: was an inline byte reverse (std.mem.reverse over the bytes),
@@ -15478,9 +15482,9 @@ struct Generator
             w.emit(".len == 0)")
             return
         if mname == "lines"
-            w.emit("std.mem.splitScalar(u8, ")
+            w.emit("_zbr_lines(")
             genExpr(m.object)
-            w.emit(", '\\n')")
+            w.emit(")")
             return
         if mname == "reverse"
             # BUG-234: codepoint-aware reverse (see the sibling site above).
@@ -16671,7 +16675,7 @@ struct Generator
             writeIndent()
             w.emit("    var _fl_list = std.ArrayList([]const u8).empty;\n")
             writeIndent()
-            w.emit("    var _fl_it = std.mem.splitScalar(u8, _fl_content, '\\n');\n")
+            w.emit("    var _fl_it = _zbr_lines(_fl_content);\n")
             writeIndent()
             w.emit("    while (_fl_it.next()) |_fl_line| { _fl_list.append(_allocator, _fl_line) catch @panic(\"OOM\"); }\n")
             writeIndent()
