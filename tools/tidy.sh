@@ -133,6 +133,24 @@ else
     dim "none"
 fi
 
+# The repo ROOT: compiled fixtures and `zebra debug` binaries used to land here (all
+# gitignored, so invisible to `git status`). 134 pairs on 2026-09-09. Both patterns are
+# covered by .gitignore, so sweeping them cannot touch anything tracked.
+hdr "repo root: compiled artifacts"
+n_root=$(ls -1 "$REPO"/*.exe "$REPO"/*.pdb "$REPO"/*.obj 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$n_root" -gt 0 ]]; then
+    szr=$(du -ch "$REPO"/*.exe "$REPO"/*.pdb "$REPO"/*.obj 2>/dev/null | tail -1 | cut -f1)
+    if [[ $CLEAN -eq 1 ]]; then
+        rm -f "$REPO"/*.exe "$REPO"/*.pdb "$REPO"/*.obj 2>/dev/null
+        printf '  removed  %s compiled artifact(s) from the repo root  (%s)\n' "$n_root" "${szr:-?}"
+    else
+        printf '  littered %s compiled artifact(s) in the repo root  (%s)\n' "$n_root" "${szr:-?}"
+        dim "clear with --clean; tools/root_clean_check.sh (static tier) fails while they are there"
+    fi
+else
+    dim "none"
+fi
+
 hdr "summary"
 if [[ $CLEAN -eq 1 ]]; then
     printf '  removed %s known-scratch file(s)\n' "$removed"

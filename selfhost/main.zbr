@@ -3336,7 +3336,7 @@ def dbgResolveZig(path: str, who: str): str?
 # -- The DAP relay itself (`zebra debug <file.zbr>`), native since 2026-09-07 --------
 # Ported off the bootstrap (src/Debugger.zig), which was the last subcommand that
 # needed it. Same contract: emit + compile with debug info, exe named after the stem
-# in the CURRENT directory, lldb-dap on stdio, coordinates translated by dbgTransform
+# under .zig-cache/zbr-debug/ (was the cwd until 2026-09-09), lldb-dap on stdio, coordinates translated by dbgTransform
 # in both directions, everything else forwarded byte for byte. Single-threaded: both
 # pipes are polled without blocking (sys.readStdinAvailable / proc.readAvailable),
 # which is also what makes it free of the read-ahead defect the Zig relay had (BUG-349).
@@ -3408,10 +3408,17 @@ def dbgRunSession(path: str, cpu_flag: str): int
         stem = stem[si + 1..stem.len]
     if stem.endsWith(".zbr")
         stem = stem[0..stem.len - 4]
-    var exe: str = stem
+    # The debug binary lives under .zig-cache/zbr-debug/ (beside the emitted .zig in
+    # .zig-cache/zbr-dumpmap/), NOT in the cwd. It used to land in the cwd named after
+    # the stem, which is how 134 fixture executables and their .pdb files accumulated
+    # in the repo root (2026-09-09). Clients: zebra-ide computes the same path; the
+    # relay also prints it, so a launch.json can be pointed at it.
+    var dbg_dir: str = ".zig-cache/zbr-debug"
+    Dir.createAll(dbg_dir)
+    var exe: str = dbg_dir + "/" + stem
     if dbgIsWindows()
         exe = exe + ".exe"
-    sys.errln("zebra debug: compiling '" + path + "'...")
+    sys.errln("zebra debug: compiling '" + path + "' -> " + exe + " ...")
     var zargv: List(str) = List(str)()
     zargv.add("zig")
     zargv.add("build-exe")

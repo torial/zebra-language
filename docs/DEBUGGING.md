@@ -36,7 +36,10 @@ zebra debug file.zbr
 
 This:
 1. Compiles `file.zbr` → `file.zig` with source-map comments.
-2. Runs `zig build-exe file.zig -O Debug -lc` to produce a debug binary.
+2. Runs `zig build-exe file.zig -O Debug -lc` to produce a debug binary at
+   `.zig-cache/zbr-debug/file` (`.exe` on Windows), relative to the current directory —
+   the relay prints the path. (Until 2026-09-09 it landed in the current directory
+   itself, which is how compiled fixtures piled up in the repo root.)
 3. Spawns `lldb-dap` as a child process.
 4. Relays DAP messages over **stdin/stdout**, remapping source locations.
 

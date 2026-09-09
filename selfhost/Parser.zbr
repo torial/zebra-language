@@ -3488,7 +3488,7 @@ class Parser
             if name.len == 1 and .peekAt(1).line == id_line and .peekAt(1).col == id_col + 1
                 var nk = .peekAt(1).kind
                 if nk is TokenKind.string_double or nk is TokenKind.string_single or nk is TokenKind.string_start_double or nk is TokenKind.string_start_single
-                    raise .errorAt("no `" + name + "\"...\"` prefix: every Zebra string interpolates -- write \"n=\${x}\" (QUICKSTART §1.5)")
+                    raise .errorAt('no `' + name + '"..."` prefix: every Zebra string interpolates -- write "n=$' + '{x}" (QUICKSTART §1.5)')
             .advance()
             return PNode.expr_id(PExprId(name, id_line, id_col))
         else if .isTypeKeyword() or .isSizedTypeName()

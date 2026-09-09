@@ -6563,7 +6563,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3490
                                                                                             if (((((nk == .string_double) or (nk == .string_single)) or (nk == .string_start_double)) or (nk == .string_start_single))) {
 // zbr:selfhost/Parser.zbr:3491
-                                                                                                { _zbr_rt._error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("no `", name, _zbr_rt._allocator), "\"...\"` prefix: every Zebra string interpolates -- write \"n=${x}\" (QUICKSTART §1.5)", _zbr_rt._allocator)) }; return error.ZebraError; }
+                                                                                                { _zbr_rt._error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat(_str_concat("no `", name, _zbr_rt._allocator), "\"...\"` prefix: every Zebra string interpolates -- write \"n=$", _zbr_rt._allocator), "{x}\" (QUICKSTART §1.5)", _zbr_rt._allocator)) }; return error.ZebraError; }
                                                                                             }
                                                                                         }
 // zbr:selfhost/Parser.zbr:3492

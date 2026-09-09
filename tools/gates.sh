@@ -442,6 +442,7 @@ run_static "oom-unreachable" "0 hazard" python tools/lint_oom_unreachable.py
 # section must have a byte-identical twin in the preamble. Three copies of one dispatch
 # had drifted twice before anyone wrote the one-line check.
 run_static "fn-twins"       "0 drift"  python tools/lint_fn_twins.py
+run_static "root-clean"     "0 compiled" bash tools/root_clean_check.sh
 run_static "decl-exhaustive" "0 issue" python tools/lint_decl_exhaustive.py
 # A3: the boundary-value suite. The ONLY gate here whose expectations were written from
 # INTENT rather than recorded from behaviour — output_sweep is a golden baseline and so
