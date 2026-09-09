@@ -1,0 +1,16 @@
+# A `use`d module in a GUI project, deliberately named `sci` (BUG-343: a user module with
+# that name collided with the libui_ng section's private `sci` import). It holds a GUI-
+# section type in a signature (BUG-355: a CodeEditor could not cross a module boundary
+# under the per-module preamble) and reads sys.args() (BUG-357: `_args` was uninitialised
+# in a used module). gui_modules_smoke.zbr uses all three; gui_scaffold_check builds and
+# runs it, libui_section_check compiles the libui_ng shape.
+
+def argCount(): int
+    var a: List(str) = sys.args()
+    return a.len
+
+def editorLines(ed: CodeEditor): int
+    return ed.getText().split("\n").len
+
+def label(n: int): str
+    return "modules: " + n.toString()

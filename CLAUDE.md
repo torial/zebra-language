@@ -234,7 +234,7 @@ per-tier counts, computed from the registrations rather than written down.
 | `--fast` | 30 <!-- doc-gen: 30 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
 | (default) | 32 <!-- doc-gen: 32 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
 | `--full` | 40 <!-- doc-gen: 40 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 46 <!-- doc-gen: 46 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--daily` | 48 <!-- doc-gen: 48 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -483,7 +483,9 @@ JOBS=3 bash tools/compile_check.sh   # THE INDEPENDENT WITNESS: emits every posi
                                 #   Currently a MANUAL tool (not gated) — so its coverage
                                 #   is only real on days it's run. `--only <substr>` for a
                                 #   tight loop; `--bootstrap` to check the bootstrap's emit.
-bash tools/libui_section_check.sh  # THE GUI-BACKEND WITNESS WITHOUT WINDOWS (2026-09-07):
+bash tools/libui_section_check.sh  # THE GUI-BACKEND WITNESS WITHOUT WINDOWS (2026-09-07),
+                                #   registered as `libui-section` (DAILY, 2026-09-09; it had
+                                #   run only by hand and from zebra-ide's check.sh):
                                 #   emits an example with --gui-backend=libui_ng and runs
                                 #   `zig build-obj -fno-emit-bin` against the REAL
                                 #   zig-libui-ng bindings (extern fns need no library until
@@ -2644,6 +2646,15 @@ refusal is matched first and still passes). And the default example, `counter`, 
 closure-taking builder, so a second registration, `gui-scaffold-panel`, runs the same
 tool on `examples/panel_smoke.zbr` — headless it renders far more than 64 frames inside
 the 15 s window. Red-checked by mutating the BUG-358 exemption back out.
+
+**A third registration, `gui-scaffold-modules` (2026-09-09), runs it on
+`examples/gui_modules_smoke.zbr`** — a GUI program built from more than one module, its
+used module named `sci` on purpose. Neither `counter` nor `panel_smoke` has a `use`, so
+BUG-340 (deps emitted beside the scaffold), BUG-343 (the `sci` name collision), BUG-355 (a
+CodeEditor across a module boundary) and BUG-357 (`sys.args()` in a used module) were pinned
+only by zebra-ide's model_test, one repo over; `bug_fixture_check` said so on the first
+static run after they were marked fixed. `libui_section_check` compiles the same example's
+libui_ng shape, which is where BUG-343 lives.
 
 Run it as `bash tools/gui_scaffold_check.sh [examples/foo.zbr]`. It builds a real tui app,
 so it is minutes, not seconds — treat it like `compile_check`: per-session and

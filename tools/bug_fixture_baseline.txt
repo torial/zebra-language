@@ -128,3 +128,5 @@
 218	`str + int` is diagnosed in an annotated context but LEAKS to Zig in a
 219	`sys.run` DEADLOCKS when a child writes more than a pipe buffer to std
 222	stdlib calls accept TOO FEW arguments — `s.count()` compiles and panic
+348	`zebra debug` could never find the bootstrap on Linux — `.exe` suffix 
+349	the DAP relay lost every session to `MissingContentLength` — a fresh `

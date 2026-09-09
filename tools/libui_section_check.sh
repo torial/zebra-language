@@ -9,6 +9,7 @@
 #   LIBUI_BINDINGS=/path/to/zig-libui-ng/src   (default: C:\Projects\zig-libui-ng\src
 #   on the laptop; /home/claude/libui-bindings in the cloud container)
 # Not a runtime witness: only `zig build` + running the example on Windows is.
+# pins: BUG-343 gui_modules_smoke.zbr `use`s a module named `sci`, compiled against the real libui_ng section
 set -u
 cd "$(dirname "$0")/.."
 ZEBRA=${ZEBRA:-./zig-out/bin/zebra}
@@ -20,7 +21,7 @@ if [ -z "$B" ]; then
   done
 fi
 [ -f "${B:-/nonexistent}/ui.zig" ] || { echo "libui_section_check: no bindings (set LIBUI_BINDINGS)"; exit 2; }
-examples=("$@"); [ ${#examples[@]} -eq 0 ] && examples=(examples/tabs_sci_smoke.zbr examples/styler_smoke.zbr examples/editor_min.zbr examples/editor_events_smoke.zbr examples/panel_smoke.zbr)
+examples=("$@"); [ ${#examples[@]} -eq 0 ] && examples=(examples/tabs_sci_smoke.zbr examples/styler_smoke.zbr examples/editor_min.zbr examples/editor_events_smoke.zbr examples/panel_smoke.zbr examples/gui_modules_smoke.zbr)
 fail=0
 for ex in "${examples[@]}"; do
   name=$(basename "$ex" .zbr); proj="${name}_gui_libui_ng"
@@ -47,4 +48,5 @@ for ex in "${examples[@]}"; do
   fi
   rm -rf "$proj"
 done
+if [ "$fail" = 0 ]; then echo "libui-section: ${#examples[@]}/${#examples[@]} examples compile against the bindings"; else echo "libui-section: FAILED"; fi
 exit $fail

@@ -19,6 +19,7 @@
 # the first print/sleep/File inside it faulted — the @export factory now initialises a
 # Threaded Io on first use (`_libInit`). The fixture exercises that (print + sleep + a
 # module var) so this gate would notice it regressing.
+# pins: BUG-356 this gate IS the shared-library round trip QUICKSTART §44 promised
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"; [ -x "$ZEBRA" ] || ZEBRA="$REPO/zig-out/bin/zebra"

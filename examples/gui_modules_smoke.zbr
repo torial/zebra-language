@@ -1,0 +1,30 @@
+# A GUI program built from more than one module (BUG-340: `--gui-backend=*` with `use`
+# deps failed with `@import("x.zig") FileNotFound` -- the deps were never emitted beside
+# the scaffold). The used module is named `sci` on purpose (BUG-343), hands a CodeEditor
+# across the boundary (BUG-355) and reads sys.args() there (BUG-357). Headless on tui the
+# app renders a few frames and exits; gui_scaffold_check is what runs it.
+use sci exposing argCount, editorLines, label
+
+struct Model
+    var count: int
+
+union Msg
+    inc
+
+def init(): Model
+    return Model(count: argCount())
+
+def update(model: Model, msg: Msg): Model
+    branch msg
+        on Msg.inc return Model(count: model.count + 1)
+
+def view(g: Gui, model: Model)
+    g.text(label(model.count))
+    if g.button("+1")
+        g.send(Msg.inc)
+
+def main()
+    var ed: CodeEditor = CodeEditor.forFile("scratch.txt")
+    ed.setText("one\ntwo")
+    print("lines=" + editorLines(ed).toString())
+    Gui.run("Modules Smoke", 400, 300, init, update, view)

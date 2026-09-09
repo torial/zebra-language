@@ -543,6 +543,18 @@ run_daily "gui-scaffold" "startup path clean" bash tools/gui_scaffold_check.sh
 # counter example has none, so it could never see the 65th-frame death. Leg 2 of this
 # run renders far more than 64 frames headless.
 run_daily "gui-scaffold-panel" "startup path clean" bash tools/gui_scaffold_check.sh examples/panel_smoke.zbr
+# BUG-340/343/355/357: a GUI program built from MORE THAN ONE MODULE (deps emitted beside
+# the scaffold, a used module named `sci`, a CodeEditor across the boundary, sys.args()
+# in the used module). Neither counter nor panel_smoke has a `use`, so nothing in this
+# repo ran that shape until 2026-09-09 -- zebra-ide's model_test did, one repo over.
+run_daily "gui-scaffold-modules" "startup path clean" bash tools/gui_scaffold_check.sh examples/gui_modules_smoke.zbr
+# THE GUI-BACKEND WITNESS WITHOUT WINDOWS (2026-09-07; registered 2026-09-09 -- it had
+# been run by hand and by zebra-ide's check.sh only): the libui_ng project for six
+# examples, `zig build-obj -fno-emit-bin` against the REAL zig-libui-ng bindings, plus
+# the private-decl lint over the pub-marked section. Needs the bindings on disk
+# (C:\Projects\zig-libui-ng\src on the laptop; LIBUI_BINDINGS= elsewhere) -- it
+# refuses, not passes, without them.
+run_daily "libui-section" "examples compile" bash tools/libui_section_check.sh
 # PINNED: known red, BUG-297. `zebra --target node-addon` on a class STATIC-block export
 # emits a reference to the owning class that is never declared. It is REGISTERED rather
 # than excluded precisely because exclusion is what let it rot unnoticed -- and it fails

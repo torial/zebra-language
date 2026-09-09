@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # pins: BUG-298 the build-failure guard and the "did the RUNTIME leg run" summary
+# pins: BUG-358 the panel_smoke registration (gui-scaffold-panel): a closure-taking builder in view() past 64 frames
+# pins: BUG-340 the gui_modules_smoke registration: `use` deps emitted beside a GUI scaffold
+# pins: BUG-355 gui_modules_smoke hands a CodeEditor across a module boundary
+# pins: BUG-357 gui_modules_smoke's used module reads sys.args()
 # below ARE the regression test -- what is asserted is this gate not claiming to
 # have checked something it did not, which no test/*.zbr can express.
 # gui_scaffold_check.sh — the first gate that looks at a GUI path at all.
