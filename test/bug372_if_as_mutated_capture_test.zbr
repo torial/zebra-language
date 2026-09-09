@@ -1,0 +1,29 @@
+# BUG-372: `if opt as x` binds x to a Zig payload capture, which is CONST, so mutating it
+# in place (`xs.add`, `j.putInt`, `sb.append`) was refused by zig: "expected '*T', found
+# '*const T'" -- about a `const` the user never wrote. The three receivers the mutation
+# scanner knows, each through both `if x as` shapes; values checked, not just compiled.
+def maybeList(): List(int)?
+    return [1]
+
+def maybeSb(): StringBuilder?
+    var sb = StringBuilder()
+    sb.append("a")
+    return sb
+
+def main()
+    if maybeList() as xs
+        xs.add(2)
+        xs.add(3)
+        print("list=${xs.len}")
+    if Json.parse("{\"a\": 1}") as j
+        j.putInt("b", 2)
+        j.put("c", "three")
+        print(j.stringify())
+    if maybeSb() as sb
+        sb.append("b")
+        sb.appendChar(c'c')
+        print("sb=" + sb.build())
+    var m: HashMap(str, int)? = HashMap(str, int)()
+    if m as mm
+        mm.set("k", 1)
+        print("map=${mm.count()}")

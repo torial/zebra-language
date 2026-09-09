@@ -1,0 +1,11 @@
+# BUG-369, second half: HashMap, Set and JsonValue refuse an unknown method at the call
+# (all three errors are reported from one check; the registrations grep each).
+def main()
+    var m: HashMap(str, int) = HashMap(str, int)()
+    m.set("a", 1)
+    print(m.frob())
+    var s: Set(int) = Set(int)()
+    s.add(1)
+    print(s.frob())
+    if Json.parse("{}") as j
+        print(j.frob())

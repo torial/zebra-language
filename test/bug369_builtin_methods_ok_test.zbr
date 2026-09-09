@@ -37,4 +37,47 @@ def main()
     assert words.join("-") == "a-b"
     xs.clear()
     assert xs.len == 0
+    # second half: HashMap / Set / JsonValue, one call per documented member
+    var m: HashMap(str, int) = HashMap(str, int)()
+    m.set("a", 1)
+    m.set("b", 2)
+    assert m.count() == 2 and m.contains("a") and m.fetch("b") == 2
+    assert m.get("zz") == nil
+    var ks: List(str) = m.keys()
+    var vs: List(int) = m.values()
+    assert ks.len == 2 and vs.len == 2
+    var esum: int = 0
+    for k, v in m.entries()
+        esum = esum + v
+    assert esum == 3
+    m.remove("a")
+    assert m.len == 1
+    var st: Set(int) = Set(int)()
+    st.add(3)
+    st.add(3)
+    st.add(4)
+    assert st.count() == 2 and st.contains(3) and not st.contains(9)
+    st.remove(3)
+    var its: List(int) = st.items()
+    assert its.len == 1
+    st.clear()
+    assert st.len == 0
+    if Json.parse("{\"k\": \"v\", \"n\": 2, \"xs\": [1, 2], \"o\": {\"f\": 1.5, \"b\": true}}") as j
+        assert j.getStr("k") == "v" and j.getInt("n") == 2
+        assert j.getList("xs").len == 2 and j.getObj("o").getFloat("f") > 1.0 and j.getObj("o").getBool("b")
+        assert j.isObject() and not j.isNull() and j.at("xs").isArray()
+        var jk: List(str) = j.keys()
+        assert jk.len == 4
+    var jb = Json.object()
+    jb.put("city", "x")
+    jb.putInt("added", 7)
+    jb.putFloat("f", 1.5)
+    jb.putBool("b", true)
+    assert jb.stringify().contains("added")
+    var ja = Json.array()
+    ja.append("one")
+    ja.appendInt(2)
+    ja.appendFloat(2.5)
+    ja.appendBool(false)
+    assert ja.isArray()
     print("bug369: OK")

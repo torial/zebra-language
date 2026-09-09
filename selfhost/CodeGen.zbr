@@ -6641,10 +6641,24 @@ struct Generator
         # Special-case: StringBuilder() constructor
         if n.init_expr != nil
             var ie = n.init_expr!
+            # BUG-373: an OPTIONAL annotation on a ctor-initialised container local
+            # (`var m: HashMap(str, int)? = HashMap(str, int)()`) was dropped -- the local
+            # was emitted untyped, so `if m as mm` met a non-optional. List literals kept
+            # theirs (a different path); only the ctor forms lost it.
+            var opt_ann: bool = false
+            if n.type_ as ann_t
+                if ann_t is TypeRef.nilable
+                    opt_ann = true
             if isStringBuilderCtor(ie)
+                if opt_ann
+                    w.emit(": ")
+                    genType(n.type_!)
                 w.emit(" = std.ArrayList(u8).empty;\n")
                 return
             if isGenericStdlibCtor(ie)
+                if opt_ann
+                    w.emit(": ")
+                    genType(n.type_!)
                 w.emit(" = ")
                 genGenericCtorExpr(ie, n.type_)
                 w.emit(";\n")
@@ -8052,9 +8066,20 @@ struct Generator
                     w.emit("if (")
                     genExpr(tc.expr)
                     w.emit(") |")
-                    w.emit(cap)
+                    # BUG-372: a Zig payload capture is CONST. A binding the body then
+                    # mutates in place (`xs.add`, `j.putInt`, `sb.append`) needs a `var`
+                    # copy, or zig refuses with `expected '*T', found '*const T'`.
+                    var ms_a: StrSet = scanMutations(stmts, .infer_ctx)
+                    var mut_a: bool = cap != "_" and ms_a.contains_(cap)
+                    if mut_a
+                        w.emit("_zbr_cap_" + cap)
+                    else
+                        w.emit(cap)
                     w.emit("| {\n")
                     var ig = indented()
+                    if mut_a
+                        ig.writeIndent()
+                        ig.w.emit("var " + cap + " = _zbr_cap_" + cap + ";\n")
                     # BUG-164 (fuzz F6): Zig rejects an unused payload capture.
                     if cap != "_" and not mightUseName(cap, stmts)
                         ig.writeIndent()
@@ -8065,12 +8090,12 @@ struct Generator
                 w.emit("if (")
                 genExpr(cond_expr)
                 w.emit(") |")
-                w.emit(cap)
-                w.emit("| {\n")
                 var ig2 = indented()
                 # BUG-181: bind the unwrapped capture's type so method dispatch inside the
                 # block sees the proven inner type (e.g. StrSet.contains_ keeping its `_`)
                 # instead of `unknown`.  The narrowed type is the optional's inner type.
+                # (Bound BEFORE the mutation scan below, which asks the type whether a
+                # method mutates its receiver.)
                 if ig2.infer_ctx != nil
                     var _nt_b = inferExpr(cond_expr, ig2.infer_ctx!)
                     branch _nt_b
@@ -8078,6 +8103,18 @@ struct Generator
                             ig2.infer_ctx!.bind(cap, _nt_inner)
                         else
                             ig2.infer_ctx!.bind(cap, _nt_b)
+                # BUG-372: a Zig payload capture is CONST; a binding the body mutates in
+                # place (`xs.add`, `j.putInt`, `sb.append`) gets a `var` copy.
+                var ms_b: StrSet = scanMutations(stmts, ig2.infer_ctx)
+                var mut_b: bool = cap != "_" and ms_b.contains_(cap)
+                if mut_b
+                    w.emit("_zbr_cap_" + cap)
+                else
+                    w.emit(cap)
+                w.emit("| {\n")
+                if mut_b
+                    ig2.writeIndent()
+                    ig2.w.emit("var " + cap + " = _zbr_cap_" + cap + ";\n")
                 # BUG-164 (fuzz F6): Zig rejects an unused payload capture.
                 if cap != "_" and not mightUseName(cap, stmts)
                     ig2.writeIndent()

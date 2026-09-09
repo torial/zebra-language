@@ -1,0 +1,22 @@
+# BUG-373: an OPTIONAL annotation on a constructor-initialised container local was
+# dropped -- `var m: HashMap(str, int)? = HashMap(str, int)()` emitted `const m = ...init`
+# with no type, so the later `if m as mm` met a non-optional and zig refused it. A List
+# LITERAL kept its annotation (a different emit path); the ctor forms lost it. All four
+# ctor-initialised shapes here, each unwrapped.
+def main()
+    var m: HashMap(str, int)? = HashMap(str, int)()
+    if m as mm
+        mm.set("k", 7)
+        print("map=${mm.count()}")
+    var xs: List(int)? = List(int)()
+    if xs as ys
+        ys.add(1)
+        print("list=${ys.len}")
+    var st: Set(str)? = Set(str)()
+    if st as ss
+        ss.add("a")
+        print("set=${ss.count()}")
+    var sb: StringBuilder? = StringBuilder()
+    if sb as b
+        b.append("ok")
+        print("sb=" + b.build())

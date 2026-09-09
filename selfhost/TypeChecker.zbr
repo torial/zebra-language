@@ -1487,6 +1487,21 @@ def strMethodKnown(name: str): bool
 def listMethodKnown(name: str): bool
     return name == "add" or name == "at" or name == "fetch" or name == "count" or name == "len" or name == "set" or name == "remove" or name == "any" or name == "all" or name == "find" or name == "map" or name == "filter" or name == "reduce" or name == "sort" or name == "sortBy" or name == "contains" or name == "clear" or name == "join" or name == "pop" or name == "toString" or name == "items" or name == "append"
 
+# BUG-369, second half (2026-09-09): HashMap, Set and JsonValue, same derivation --
+# every candidate name probed at three arities through zig, kept if some arity compiled
+# or was arity-refused, checked against the documented set; the corpus sweep is the
+# control. NOT here on purpose: the container HOFs (`all any filter find map reduce`)
+# and List-only names (`at`, `sort`, `join`) that codegen dispatches by name and that
+# compiled to nonsense on these receivers -- refusing them is the point.
+def hashmapMethodKnown(name: str): bool
+    return name == "set" or name == "put" or name == "get" or name == "fetch" or name == "contains" or name == "remove" or name == "keys" or name == "values" or name == "entries" or name == "count" or name == "len" or name == "toString"
+
+def setMethodKnown(name: str): bool
+    return name == "add" or name == "remove" or name == "contains" or name == "count" or name == "len" or name == "items" or name == "clear" or name == "toString"
+
+def jsonMethodKnown(name: str): bool
+    return name == "at" or name == "keys" or name == "values" or name == "entries" or name == "getStr" or name == "getInt" or name == "getFloat" or name == "getBool" or name == "getList" or name == "getObj" or name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify" or name == "toString" or name == "put" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "append" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
+
 def stringMethodReturn(name: str): Type_?
     if name == "trim" or name == "trimLeft" or name == "trimRight"
         return Type_.string_
@@ -2810,6 +2825,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.bool_
                             if jmname == "stringify"
                                 return Type_.string_
+                            if not jsonMethodKnown(jmname)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'JsonValue' has no method '" + jmname + "' (at/keys/values/entries, getStr/getInt/getFloat/getBool/getList/getObj, isNull/isObject/isArray, put*/append*, stringify)")
+                                return Type_.unknown_
                         on Type_.hashmap_ as hmt
                             var hmname: str = mem.member
                             if hmname == "fetch"
@@ -2830,6 +2849,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 ent_elems.add(hmt.key_t)
                                 ent_elems.add(hmt.val_t)
                                 return Type_.list_(Type_.tuple_(TupleType_(ent_elems)))
+                            if not hashmapMethodKnown(hmname)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'HashMap' has no method '" + hmname + "' (set/get/fetch/contains/remove/keys/values/entries/count)")
+                                return Type_.unknown_
                         on Type_.set_ as set_elem
                             # §28f: generic Set(T). items() → List(T) snapshot
                             # (reuses the map-keys helper); add/remove → void;
@@ -2843,6 +2866,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.int_
                             if setmname == "add" or setmname == "remove" or setmname == "clear"
                                 return Type_.void_
+                            if not setMethodKnown(setmname)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'Set' has no method '" + setmname + "' (add/remove/contains/count/items/clear)")
+                                return Type_.unknown_
                         on Type_.str_set
                             # §28a step 2: StrSet is a user class with a dedicated
                             # Type_.str_set variant (typeFromName), so a param/field

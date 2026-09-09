@@ -582,6 +582,9 @@ smoke_test test/bug368_plain_assert_test_fn_test.zbr
 # about generated code; the _ok control runs one call per real method family.
 smoke_tc_fail test/bug369_str_unknown_method_fail.zbr "'str' has no method 'frobnicate'"
 smoke_tc_fail test/bug369_list_unknown_method_fail.zbr "'List' has no method 'first'"
+smoke_tc_fail test/bug369_container_unknown_method_fail.zbr "'HashMap' has no method 'frob'"
+smoke_tc_fail test/bug369_container_unknown_method_fail.zbr "'Set' has no method 'frob'"
+smoke_tc_fail test/bug369_container_unknown_method_fail.zbr "'JsonValue' has no method 'frob'"
 
 # Multi-error parse recovery: two parse errors must both appear in the output.
 smoke_multi_parse_fail test/multi_parse_error_test.zbr ":3:9:" ":7:9:"
@@ -1750,6 +1753,9 @@ smoke_tc_fail test/bug354_param_assign_fail.zbr "cannot assign to parameter"
 smoke_run test/bug354_param_shadow_ok_test.zbr "bug354: OK"
 # BUG-369's control: one call per real str/List method family at the bogus fixtures' arities, RUN.
 smoke_run test/bug369_builtin_methods_ok_test.zbr "bug369: OK"
+# Stale since the print-function change; repaired 2026-09-09 (getString -> getStr, the
+# documented name -- the BUG-369 JsonValue table is what found it) and registered.
+smoke_run test/json_parse_typed_test.zbr "val"
 # BUG-370: a capture closure through a RETURNING sig -- the thunk dropped the result and
 # the call block yielded void. Void statement / non-void statement / non-void value.
 smoke_run test/bug370_returning_sig_closure_test.zbr "r=102,104,106"
@@ -1758,6 +1764,11 @@ smoke_run test/bug370_returning_sig_closure_test.zbr "r=102,104,106"
 # closure and must keep its slots (10 independent states, called later).
 smoke_run test/bug371_borrowed_closure_slot_test.zbr "total=1400"
 smoke_run test/bug371_stored_closure_keeps_slot_test.zbr "sum=1020"
+# BUG-372: an `if x as y` capture that the body MUTATES gets a `var` copy (a Zig payload
+# capture is const). BUG-373: an optional annotation on a ctor-initialised container local
+# is kept. Both found writing the BUG-369 second-half control.
+smoke_run test/bug372_if_as_mutated_capture_test.zbr "map=1"
+smoke_run test/bug373_optional_ctor_local_test.zbr "sb=ok"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"
 
 echo ""

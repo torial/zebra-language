@@ -25,6 +25,29 @@ methods with a Zebra message. Workaround in zebra-ide: count by iterating.
 **Fix.** `getList` now returns a real `List(JsonValue)` (`_json_get_list_l`, copied into the program allocator), so `.len`, `.at()` and `for` take the ordinary List paths and the per-call special cases go. General rule landed with it: the chain hoist (BUG-027/079) is for STRUCT temporaries only — a receiver the checker types as a builtin container is never hoisted to `_mc_N` (`isBuiltinTypedRecv`), which is the same rule BUG-336 needed for split iterators. The old slice form stays in the runtime until the next n1-anchor so the N-1 regen authority still links. Fixture bug337_json_getlist_list_test; gen.py generates the shape.
 
 
+### BUG-373: an optional annotation on a constructor-initialised container local was dropped — FIXED 2026-09-09
+
+`var m: HashMap(str, int)? = HashMap(str, int)()` emitted `const m = std.StringHashMap(i64).init(..)`
+with no type, so `if m as mm` two lines later met a non-optional ("expected optional type, found
+HashMap"). A List LITERAL kept its annotation (a different emit path); the generic-ctor and
+StringBuilder-ctor paths returned early before the annotation was written. Found writing the
+BUG-372 fixture. **Fix.** Those two early-return paths emit `: ?T` when the declared type is
+nilable. Fixture bug373_optional_ctor_local_test (HashMap, List, Set, StringBuilder, each
+unwrapped and mutated).
+
+### BUG-372: an `if x as y` binding the body MUTATES was a Zig const capture — `xs.add` / `j.putInt` / `sb.append` refused — FIXED 2026-09-09
+
+`if maybe() as xs` then `xs.add(2)`: the capture lowers to Zig's `|xs|`, which is const, and the
+in-place method needs `*T` — "expected type '*T', found '*const T'", about a `const` the user
+never wrote. The same for a parsed JsonValue (`j.putInt`) and a StringBuilder. Found by the
+BUG-369 second-half control, which tried to put into a parsed JSON value. **Fix.** Both
+`if … as` shapes (plain optional and `is T as`) run the existing mutation scanner over the
+body — the one that already decides `var` vs `const` for locals, and knows which methods
+mutate their receiver — and when the binding is in the set, emit `|_zbr_cap_y| { var y = _zbr_cap_y;`.
+Values in Zebra are copies anyway, so the copy is what the user expected. Fixture
+bug372_if_as_mutated_capture_test (List, JsonValue, StringBuilder, HashMap; values checked).
+`branch` payload bindings are not covered — same shape, no reproducer yet.
+
 ### BUG-371: a capture closure passed to a USER function through a `sig` param burned a thunk-pool slot per CALL — the 65th call panicked — FIXED 2026-09-09
 
 `applyAll(ns, def(x: int): int …capture…)` in a loop: `applyAll` only CALLS its `Transform`
@@ -84,8 +107,11 @@ fixtures, the whole corpus + zebra-ide's sources swept with `-c` (two stale prob
 real method family at the arities the bogus fixtures use. method_not_found_test (audit #4) moved
 from a build failure to a front-end refusal. Fixtures bug369_str_unknown_method_fail,
 bug369_list_unknown_method_fail. Not in gen.py, per the BUG-354 precedent: a refusal generated
-by the fuzzer is only ever a reject; the smoke fixtures pin it. HashMap/Set/StringBuilder/
-JsonValue receivers are NOT covered yet — same shape, same derivation, when a leak names them.
+by the fuzzer is only ever a reject; the smoke fixtures pin it. **Second half, same day:** HashMap, Set and JsonValue got their tables by the same probe
+(StringBuilder already had a closed set, BUG-341); the corpus sweep found one real use it
+refused — `getString` in json_parse_typed_test, an undocumented name that had never compiled,
+in a test nothing ran (repaired to `getStr` and registered). The control fixture now covers all
+three, and writing it found BUG-372 and BUG-373.
 
 ### BUG-368: a `test_*` fn that raises nothing could not be run by `zebra test` — "expected error union type, found 'void'" — FIXED 2026-09-09
 
