@@ -1103,7 +1103,14 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 27 assertions, 0 pins. Every pin it
+                                #   past `repl` starting. 33 assertions, 0 pins (2026-09-09:
+                                #   `zebra test --list` / `--only` for zebra-ide's tests
+                                #   pane, and the direct-run-build-file leg re-pointed at
+                                #   the CURRENT contract -- every program the compiler runs
+                                #   inherits ZEBRA_COMPILER since 2026-09-08, so that leg
+                                #   was asserting a refusal the compiler no longer makes; the
+                                #   refusal is still pinned, on a build program run with the
+                                #   variable scrubbed). Every pin it
                                 #   started with was PROMOTED the day its bug was fixed --
                                 #   BUG-321, BUG-323, BUG-327 -- which is what a pin is for.
                                 #   THE REPL LEGS ASSERT EVALUATION, not startup: `starts`

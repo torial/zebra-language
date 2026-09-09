@@ -1,0 +1,28 @@
+# BUG-368: a `def test_*()` whose body raises nothing -- only `assert` (which panics
+# rather than raising) or `pass` -- is a VOID function, and the `zebra test` harness
+# wrapped every call in `if (f()) |_| ... else |err|`, which is a Zig compile error on a
+# void. So a file of plain-assert tests could not be run by `zebra test` AT ALL; only
+# the assert_eq/assert_ne/assert_true/assert_false family (which raise) worked. The
+# harness now branches on the return type at comptime. Both shapes in one file so the
+# mixed case is what is pinned; a class-static void test too, since it takes the other
+# call path.
+
+def test_plain_assert_only()
+    assert 1 + 1 == 2
+
+def test_pass_only()
+    pass
+
+def test_raising_family()
+    assert_eq 2 * 21, 42
+
+class Box
+    var n: int = 0
+    static
+        def test_static_plain()
+            assert 3 > 2
+        def test_static_raising()
+            assert_true 5 > 3
+
+def main()
+    print("bug368: run with 'zebra test'")

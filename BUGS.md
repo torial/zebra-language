@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-367. Next new bug: BUG-368.**
+**Last bug number generated: BUG-369. Next new bug: BUG-370.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,29 @@
 > measured in.
 
 ---
+
+### BUG-369: an unknown method on a BUILTIN type (`str`, `List`, …) passes the front end and fails in Zig — OPEN (found 2026-09-09)
+
+`s.frobnicate(1)` on a `str`, or `xs.frobnicate()` on a `List(int)`, is accepted by `zebra -c`
+(exit 0, "wrote …") and refused by zig with a "no field or member function named" error
+against the generated code. Found writing `stem.slice(0, n)` in main.zbr (the str method
+is `substring`/`[a..b]`): the regen accepted it and `zig build` refused it, naming a line
+in `main.zig`. User classes are checked (BUG-108 family); builtins are not, because the
+checker has no per-type member table — codegen carries NAME LISTS instead (`isStringExpr`'s
+method names, BUG-362), which is the same shape the leakgen series was shrinking.
+
+For the IDE this is the worst kind of miss: the Check button (`-c`, ~60 ms) says OK, and
+the failure arrives from the build as a Zig diagnostic about code the user never wrote.
+
+**Fix shape.** One member table per builtin type in the checker (str, List, HashMap, Set,
+StringBuilder, JsonValue, …), derived where possible from the runtime rather than written
+twice; refuse `unknown method 'frobnicate' on str` at the call site with the position. The
+`docs/str_ownership` extraction already enumerates the 28 str operations from the source —
+the same derivation is the oracle here. leakgen cannot see this class (gen.py only emits
+valid names); give it a `badmember` cap once the refusal exists so the control stays live.
+
+**Control when fixing:** a fixture calling a real method with the same arity right beside
+the bogus one, so an over-broad table does not turn a working file red.
 
 ### BUG-351: `StringBuilder.build()` EMPTIES the builder — `sb.len()` is 0 afterwards — OPEN (found 2026-09-08)
 

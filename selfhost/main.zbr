@@ -43,7 +43,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse, addNativeLibUse, emittedExtern, emittedDynLib, rtReservedNames
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse, addNativeLibUse, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -924,6 +924,8 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra build --list-targets               output JSON target graph", to_stdout)
     usageLine("  zebra test <source.zbr>                  run def test_*() functions", to_stdout)
     usageLine("  zebra test --tag <tag> <source.zbr>      run only tests matching tag", to_stdout)
+    usageLine("  zebra test --only a,B.test_b <source.zbr> run only the named tests (label or bare name)", to_stdout)
+    usageLine("  zebra test --list <source.zbr>           print `label<TAB>line` per test that would run; no build", to_stdout)
     usageLine("  zebra debug <source.zbr>                 compile + DAP debug proxy (requires lldb-dap)", to_stdout)
     usageLine("  zebra debug --listen PORT <source.zbr>  compile + DAP proxy on TCP port (for custom IDE)", to_stdout)
     usageLine("  zebra debug --dump-map <file>          print the .zbr <-> .zig line map", to_stdout)
@@ -1548,6 +1550,23 @@ def lspCollectDocSymbols(text: str, path: str): str
     return "[]"
 catch |e|
     return "[]"
+
+# `zebra test --list FILE`: front end only (lex, parse, AST), then CodeGen's own
+# inclusion rule decides what is printed -- the same function the harness uses, so
+# the list and the run cannot disagree. A parse failure is reported the way `-c`
+# would report it and exits 1; the IDE treats that as "the file does not compile",
+# not as "no tests".
+def runTestList(path: str, tag_filter: str?)
+    var text: str = File.read(path)
+    var pm_node = Parser.Parser.parse(text, path)?
+    if pm_node is PNode.module_ as pm
+        var module = ASTBuilder.build(pm, path)?
+        for entry in listTestEntries(module, lspStemOf(path), tag_filter)
+            print(entry)
+    return
+catch |e|
+    sys.errln("zebra test --list: " + path + ": " + e.message)
+    sys.exit(1)
 
 # A TextEdit[] that replaces the whole document with its formatted form.
 def lspFormatEdits(text: str): str
@@ -3580,7 +3599,7 @@ def main()
     # 2026-09-01): with unknown flags now refused, --TURBO becomes a NAMED ERROR
     # rather than either being ignored or silently starting to work -- the user sees
     # the problem instead of getting a build they did not ask for.
-    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list-targets --listen --module-path --no-runtime-module --out --output-dir --print --release --selfhost-compile --shared --single-file --single-threaded --tag --target --turbo --version --warn-inference-guess --warn-non-exhaustive --zig-backend -c -h"
+    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --listen --module-path --no-runtime-module --only --out --output-dir --print --release --selfhost-compile --shared --single-file --single-threaded --tag --target --turbo --version --warn-inference-guess --warn-non-exhaustive --zig-backend -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -3818,6 +3837,15 @@ def main()
         var tag_val: str = args.option("--tag", "")
         if tag_val != ""
             run_tag_filter = tag_val
+    # `--only a,b` (run a subset by label) and `--list` (print what would run, no
+    # build). Both exist for zebra-ide's tests pane (2026-09-09): discovery must come
+    # from the harness's own rule rather than a grep, and "re-run the failed ones"
+    # must not rebuild-and-run the whole file.
+    var run_test_list: bool = run_test_mode and args.contains("--list")
+    if run_test_mode and args.contains("--only")
+        var only_val: str = args.option("--only", "")
+        if only_val != ""
+            setTestOnly(only_val)
 
     # -- Source path -------------------------------------------------------
     # BUG-347: `zebra prog.zbr -- a b` forwards `a b` to the program (compile-and-run
@@ -3872,6 +3900,11 @@ def main()
     if not File.exists(path)
         sys.errln("zebra: source file not found: '" + path + "'")
         sys.exit(1)
+
+    # -- `zebra test --list FILE`: front end only, one `label<TAB>line` per test ------
+    if run_test_list
+        runTestList(path, run_tag_filter)
+        sys.exit(0)
 
     # -- Pipeline selection ------------------------------------------------
 

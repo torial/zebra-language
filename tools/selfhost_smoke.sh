@@ -575,6 +575,9 @@ smoke_test test/try_parse_test.zbr
 
 # BUG-148: member chained on a HashMap fetch (m.fetch(k).at(i)) compiles via `.?`.
 smoke_test test/hashmap_fetch_chain_test.zbr
+# BUG-368: a test fn that raises nothing (plain `assert`, `pass`) is void, and the
+# harness could not call it. Mixed void/raising, top-level and class-static.
+smoke_test test/bug368_plain_assert_test_fn_test.zbr
 
 # Multi-error parse recovery: two parse errors must both appear in the output.
 smoke_multi_parse_fail test/multi_parse_error_test.zbr ":3:9:" ":7:9:"

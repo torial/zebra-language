@@ -146,7 +146,7 @@ def run_batch(seeds, n, caps=None, verbose=True):
                 sig = signature(msg)
                 cur = crashes.get(sig)
                 if cur is None or len(src) < len(cur['src']):
-                    crashes[sig] = {'src': src, 'msg': msg, 'count': (cur['count'] + 1) if cur else 1}
+                    crashes[sig] = {'src': src, 'msg': msg, 'count': (cur['count'] + 1) if cur else 1}  # hazard-ok:H3 the 1 is a first-occurrence COUNT, not a sentinel; nothing compares against it
                 else:
                     cur['count'] += 1
                 continue

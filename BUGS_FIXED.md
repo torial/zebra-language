@@ -25,6 +25,23 @@ methods with a Zebra message. Workaround in zebra-ide: count by iterating.
 **Fix.** `getList` now returns a real `List(JsonValue)` (`_json_get_list_l`, copied into the program allocator), so `.len`, `.at()` and `for` take the ordinary List paths and the per-call special cases go. General rule landed with it: the chain hoist (BUG-027/079) is for STRUCT temporaries only — a receiver the checker types as a builtin container is never hoisted to `_mc_N` (`isBuiltinTypedRecv`), which is the same rule BUG-336 needed for split iterators. The old slice form stays in the runtime until the next n1-anchor so the N-1 regen authority still links. Fixture bug337_json_getlist_list_test; gen.py generates the shape.
 
 
+### BUG-368: a `test_*` fn that raises nothing could not be run by `zebra test` — "expected error union type, found 'void'" — FIXED 2026-09-09
+
+The generated harness wrapped every test call in `if (f()) |_| … else |err|`. A test whose
+body is `assert` (which PANICS, it does not raise) or `pass` is a plain `void` fn, and that
+form is a Zig compile error on a void — so a file of plain-assert tests failed to build under
+`zebra test` with a diagnostic naming the generated code. Only the assert_eq/ne/true/false
+family (which raise) ever worked, and every registered `smoke_test` fixture happens to use
+it, so the gate could not see the gap. Found the hour `--list`/`--only` were added for
+zebra-ide's tests pane, by writing the obvious first test.
+
+**Fix.** The harness binds the result and branches at comptime on
+`@typeInfo(@TypeOf(_tr)) != .error_union`; the untaken arm is never analysed. It also
+prints `RUN: label` BEFORE each call, so a plain `assert` that panics mid-run (the process
+dies with no PASS/FAIL line for that test) is attributable to the test that died rather
+than to the file — zebra-ide's tests pane reads that. Fixture
+bug368_plain_assert_test_fn_test (void + raising, top-level + class-static, one file).
+
 ### BUG-367: `checkStmts` had no arm for a numeric `for i in a..b` — nothing inside such a body was checked — FIXED 2026-09-09
 
 `walkStmts` (binding/inference) had a `for_num` arm; `checkStmts` (diagnostics) did not, so every

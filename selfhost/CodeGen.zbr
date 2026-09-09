@@ -1344,6 +1344,68 @@ def zbrFnSymbol(name: str, is_export: bool): str
 def zbrTypeSymbol(name: str): str
     return "_zbr_ty_" + name
 
+# `zebra test --only a,b,Cls.test_c`: run ONLY the named tests. Exact match on the
+# printed label (`test_x` / `Cls.test_x`) or on the bare method name, comma-separated.
+# Module-level like _list_targets_mode: the tag filter is threaded through three
+# generate* signatures and adding a fourth parameter to each for one flag is the wrong
+# trade. The IDE's "re-run failed" is the first caller (zebra-ide tests pane, 2026-09-09).
+var _test_only: str = ""
+
+def setTestOnly(v: str)
+    _test_only = v
+
+def testOnlyMatches(label: str, name: str): bool
+    if _test_only == ""
+        return true
+    for want in _test_only.split(",")
+        var w: str = want.trim()
+        if w != "" and (w == label or w == name)
+            return true
+    return false
+
+# ONE inclusion rule for the harness, `--list` and `--only`, so what `--list` prints is
+# exactly what a run would execute. Auto-tags: file_stem (every test) + the class name
+# (class/struct-contained static tests); an explicit `@tag` on the def matches too.
+def testIncluded(mth: DeclMethod, label: str, class_name: str, file_stem: str, tag_filter: str?): bool
+    if not mth.name.startsWith("test_") or mth.params.len != 0
+        return false
+    if tag_filter as filter
+        var matched: bool = file_stem == filter or (class_name != "" and class_name == filter)
+        if not matched
+            for tag in mth.tags
+                if tag == filter
+                    matched = true
+        if not matched
+            return false
+    return testOnlyMatches(label, mth.name)
+
+# `zebra test --list`: one `label<TAB>line` per test that WOULD run, in run order, with
+# no build. The IDE discovers tests from this rather than grepping for `def test_`,
+# so a test the harness would skip (a parameter, a non-static class method) is never
+# shown as runnable.
+def listTestEntries(m: Module, file_stem: str, tag_filter: str?): List(str)
+    var out: List(str) = List(str)()
+    for decl in m.decls
+        if decl is Decl.method as mth
+            if not mth.mods.is_static and testIncluded(mth, mth.name, "", file_stem, tag_filter)
+                out.add("${mth.name}\t${mth.span.line}")
+    for decl in m.decls
+        var class_name: str = ""
+        var members: List(Decl) = List(Decl)()
+        if decl is Decl.class_ as cls
+            class_name = cls.name
+            members = cls.members
+        else if decl is Decl.struct_ as st
+            class_name = st.name
+            members = st.members
+        if class_name != ""
+            for mdecl in members
+                if mdecl is Decl.method as mth
+                    var entry: str = "${class_name}.${mth.name}"
+                    if mth.mods.is_static and testIncluded(mth, entry, class_name, file_stem, tag_filter)
+                        out.add("${entry}\t${mth.span.line}")
+    return out
+
 def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     # Collect test entries: (call expression, display label).
     # Auto-tags: file_stem (all tests) + class name (class-contained static tests).
@@ -1353,24 +1415,15 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     # Top-level def test_*() functions.
     for decl in m.decls
         if decl is Decl.method as mth
-            if not mth.mods.is_static and mth.name.startsWith("test_") and mth.params.len == 0
-                var included: bool = true
-                if tag_filter as filter
-                    var matched: bool = file_stem == filter
-                    if not matched
-                        for tag in mth.tags
-                            if tag == filter
-                                matched = true
-                    included = matched
-                if included
-                    # Single-file: test fns live inside `_Mod`; label stays the plain name.
-                    # BUG-220: the harness calls the function by its EMITTED name.
-                    var tsym: str = zbrFnSymbol(mth.name, mth.mods.is_export or mth.mods.is_node_export)
-                    var tcall: str = tsym
-                    if _single_file
-                        tcall = "_Mod.${tsym}"
-                    test_calls.add(tcall)
-                    test_labels.add(mth.name)
+            if not mth.mods.is_static and testIncluded(mth, mth.name, "", file_stem, tag_filter)
+                # Single-file: test fns live inside `_Mod`; label stays the plain name.
+                # BUG-220: the harness calls the function by its EMITTED name.
+                var tsym: str = zbrFnSymbol(mth.name, mth.mods.is_export or mth.mods.is_node_export)
+                var tcall: str = tsym
+                if _single_file
+                    tcall = "_Mod.${tsym}"
+                test_calls.add(tcall)
+                test_labels.add(mth.name)
 
     # Class/struct-contained static def test_*() methods.
     for decl in m.decls
@@ -1385,24 +1438,15 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
         if class_name != ""
             for mdecl in members
                 if mdecl is Decl.method as mth
-                    if mth.mods.is_static and mth.name.startsWith("test_") and mth.params.len == 0
-                        var included: bool = true
-                        if tag_filter as filter
-                            var matched: bool = file_stem == filter or class_name == filter
-                            if not matched
-                                for tag in mth.tags
-                                    if tag == filter
-                                        matched = true
-                            included = matched
-                        if included
-                            # BUG-281 B: the CALL names the emitted type (prefixed); the
-                            # LABEL is printed text and stays the Zebra spelling.
-                            var entry: str = "${class_name}.${mth.name}"
-                            var ecall: str = "${zbrTypeSymbol(class_name)}.${mth.name}"
-                            if _single_file
-                                ecall = "_Mod.${ecall}"
-                            test_calls.add(ecall)
-                            test_labels.add(entry)
+                    # BUG-281 B: the CALL names the emitted type (prefixed); the
+                    # LABEL is printed text and stays the Zebra spelling.
+                    var entry: str = "${class_name}.${mth.name}"
+                    if mth.mods.is_static and testIncluded(mth, entry, class_name, file_stem, tag_filter)
+                        var ecall: str = "${zbrTypeSymbol(class_name)}.${mth.name}"
+                        if _single_file
+                            ecall = "_Mod.${ecall}"
+                        test_calls.add(ecall)
+                        test_labels.add(entry)
 
     var sb: StringBuilder = StringBuilder()
     sb.append("pub fn main(_zinit: std.process.Init) void {\n")
@@ -1418,23 +1462,42 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     while ti < test_calls.len
         var call: str = test_calls.at(ti)
         var label: str = test_labels.at(ti)
-        sb.append("    if (")
-        sb.append(call)
-        sb.append("()) |_| {\n")
-        sb.append("        _test_pass += 1;\n")
-        sb.append("        std.debug.print(\"PASS: ")
+        # `RUN:` BEFORE the call: a plain `assert` PANICS rather than raising, which
+        # ends the process mid-run with no PASS/FAIL line for the test that died. The
+        # RUN line is what lets a reader (zebra-ide's tests pane) attribute the panic
+        # banner to the right test instead of to "the file".
+        sb.append("    std.debug.print(\"RUN: ")
         sb.append(label)
         sb.append("\\n\", .{});\n")
-        sb.append("    } else |_terr| {\n")
-        sb.append("        _test_fail += 1;\n")
-        sb.append("        if (_terr == error.ZebraError) {\n")
-        sb.append("            std.debug.print(\"FAIL: ")
+        # A test whose body raises nothing (only `assert`, or `pass`) is a VOID fn, and
+        # `if (f()) |_|` on a void is a Zig compile error -- so until 2026-09-09 a file
+        # of plain-assert tests could not be run by `zebra test` at all. Branch on the
+        # return type at comptime; the untaken arm is never analysed.
+        sb.append("    {\n")
+        sb.append("        const _tr = ")
+        sb.append(call)
+        sb.append("();\n")
+        sb.append("        if (@typeInfo(@TypeOf(_tr)) != .error_union) {\n")
+        sb.append("            _test_pass += 1;\n")
+        sb.append("            std.debug.print(\"PASS: ")
+        sb.append(label)
+        sb.append("\\n\", .{});\n")
+        sb.append("        } else if (_tr) |_| {\n")
+        sb.append("            _test_pass += 1;\n")
+        sb.append("            std.debug.print(\"PASS: ")
+        sb.append(label)
+        sb.append("\\n\", .{});\n")
+        sb.append("        } else |_terr| {\n")
+        sb.append("            _test_fail += 1;\n")
+        sb.append("            if (_terr == error.ZebraError) {\n")
+        sb.append("                std.debug.print(\"FAIL: ")
         sb.append(label)
         sb.append(": {s}\\n\", .{_zbr_error_msg()});\n")
-        sb.append("        } else {\n")
-        sb.append("            std.debug.print(\"FAIL: ")
+        sb.append("            } else {\n")
+        sb.append("                std.debug.print(\"FAIL: ")
         sb.append(label)
         sb.append(": {}\\n\", .{_terr});\n")
+        sb.append("            }\n")
         sb.append("        }\n")
         sb.append("    }\n")
         ti = ti + 1

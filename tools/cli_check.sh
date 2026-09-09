@@ -117,6 +117,43 @@ run --emit-zig hello.zbr
 chk "\`--emit-zig\` writes the source to STDOUT" \
     "$([ "$OUT_N" -gt 200 ] && echo 0 || echo 1)" "stdout=$OUT_N bytes"
 
+# ---- `zebra test --list` / `--only` (zebra-ide's tests pane, 2026-09-09) -----------
+# `--list` is front-end only: label<TAB>line per test that WOULD run, from the harness's
+# own inclusion rule, so the list and the run cannot disagree. A test with a parameter
+# and a non-static class method are NOT tests and must not be listed. `--only` runs the
+# named subset. These are pure CLI surface and, like everything in this file, invisible
+# to every gate that feeds the compiler a program.
+cat > "$W/tl.zbr" <<'ZEOF'
+def test_alpha()
+    assert 1 == 1
+
+def test_beta()
+    assert_eq 2, 2
+
+def test_with_param(x: int)
+    pass
+
+class Calc
+    def test_instance()
+        pass
+    static
+        def test_static()
+            assert 3 == 3
+
+def main()
+    print("tl")
+ZEOF
+run test --list tl.zbr
+chk "\`test --list\` prints label<TAB>line per runnable test, in run order" \
+    "$([ "$RC" = 0 ] && [ "$OUT" = "$(printf 'test_alpha\t1\ntest_beta\t4\nCalc.test_static\t14')" ] && echo 0 || echo 1)" \
+    "exit=$RC stdout=[$OUT]"
+chk "...and does NOT build (no 'compiling:' chatter, no .zig written)" \
+    "$(case "$ERR$OUT" in *compiling:*) echo 1;; *) [ ! -f "$W/tl.zig" ] && echo 0 || echo 1;; esac)" "stderr=[$ERR]"
+run test --only test_beta,Calc.test_static tl.zbr
+chk "\`test --only a,B.c\` runs exactly the named tests" \
+    "$([ "$RC" = 0 ] && case "$ERR" in *"PASS: test_beta"*"PASS: Calc.test_static"*"2 passed, 0 failed"*) case "$ERR" in *test_alpha*) echo 1;; *) echo 0;; esac;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | grep -E 'PASS|FAIL|passed' | tr '\n' ' ')]"
+
 # ---- things that must FAIL, and say why --------------------------------------------
 run -c bad.zbr
 chk "a type error exits non-zero" "$([ "$RC" != 0 ] && echo 0 || echo 1)" "exit=$RC"
@@ -259,22 +296,39 @@ chk "...and does NOT build while listing" \
     "$([ -e "$W/proj_lt/zig-out/bin/demo" ] || [ -e "$W/proj_lt/zig-out/bin/demo.exe" ] && echo 1 || echo 0)" \
     "zig-out/bin: $(ls "$W/proj_lt/zig-out/bin" 2>/dev/null | tr "\n" " ")"
 
-# THE UNSUPPORTED INVOCATION MUST REFUSE CLEARLY, not hang and not guess. Running the build
-# FILE directly gets no ZEBRA_COMPILER, and the fix for BUG-327 layer 2 was explicitly to
-# refuse with the reason rather than fall back -- a silent fallback there is what produced
-# the infinite self-invocation in the first place.
-( cd "$W/proj" && timeout "$TMO" "$ZEBRA" build.zbr >"$O" 2>"$E" </dev/null )
+# RUNNING THE BUILD FILE DIRECTLY. Until 2026-09-08 this got no ZEBRA_COMPILER and the
+# contract was "refuse by name" (the fix for BUG-327 layer 2 was explicitly to refuse
+# rather than guess). The contract CHANGED with the IDE work: every program the compiler
+# runs now inherits ZEBRA_COMPILER (a program may itself invoke `zebra lsp`, `zebra
+# build`, a nested compile), so `zebra build.zbr` is an ordinary supported run and must
+# BUILD. This leg sat asserting the old refusal for a day and went red on the first
+# machine to re-run the FAST tier (2026-09-09); the refusal path still exists and is
+# still what a build program run with NO compiler in its environment sees, so that is
+# what the second leg pins -- with the variable scrubbed and the program run by hand.
+rm -rf "$W/proj/zig-out"
+( cd "$W/proj" && timeout 420 "$ZEBRA" build.zbr >"$O" 2>"$E" </dev/null )
 RC=$?; ERR=$(tr -d '\r' < "$E")
-chk "running the build FILE directly refuses by name (no ZEBRA_COMPILER)" \
-    "$([ "$RC" != 0 ] && [ "$RC" != 124 ] && case "$ERR" in *ZEBRA_COMPILER*) echo 0;; *) echo 1;; esac || echo 1)" \
-    "exit=$RC (124=hang would be BUG-327 layer 2 returning)"
+chk "running the build FILE directly builds (the child inherits ZEBRA_COMPILER)" \
+    "$([ "$RC" = 0 ] && { [ -x "$W/proj/zig-out/bin/demo" ] || [ -x "$W/proj/zig-out/bin/demo.exe" ]; } && echo 0 || echo 1)" \
+    "exit=$RC (124=hang would be BUG-327 layer 2 returning) zig-out/bin: $(ls "$W/proj/zig-out/bin" 2>/dev/null | tr "\n" " ")"
 
-# NOT pinned, asserted: whatever it does, it must not hang or crash silently. BUG-327's
-# second layer is an infinite self-invocation, and that is the failure mode this leg
-# exists to keep visible.
-chk "...and fails FAST rather than hanging or crashing" \
-    "$([ "$RC" != 124 ] && [ "$RC" != 3 ] && [ -n "$ERR" ] && echo 0 || echo 1)" \
-    "exit=$RC (124=hang, 3=panic), stderr=${#ERR} bytes"
+# The generated build PROGRAM with no compiler named in its environment must refuse by
+# name, not guess (a guess is what produced BUG-327's infinite self-invocation). Emit it
+# with --output-dir, build it with zig, run it with ZEBRA_COMPILER unset.
+mkdir -p "$W/proj_bare"
+cp "$W/proj/build.zbr" "$W/proj_bare/build.zbr"; cp "$W/proj/app.zbr" "$W/proj_bare/app.zbr"
+( cd "$W/proj_bare" && timeout 420 "$ZEBRA" --emit-zig --output-dir out build.zbr >/dev/null 2>&1 \
+  && cd out && timeout 420 zig build-exe build.zig -lc >/dev/null 2>&1 ) </dev/null
+BARE="$W/proj_bare/out/build"; [ -x "$BARE" ] || BARE="$W/proj_bare/out/build.exe"
+if [ -x "$BARE" ]; then
+    ( cd "$W/proj_bare" && env -u ZEBRA_COMPILER timeout "$TMO" "$BARE" >"$O" 2>"$E" </dev/null )
+    RC=$?; ERR=$(tr -d '\r' < "$E")
+    chk "a build program with NO ZEBRA_COMPILER refuses by name rather than guessing" \
+        "$([ "$RC" != 0 ] && [ "$RC" != 124 ] && case "$ERR" in *ZEBRA_COMPILER*) echo 0;; *) echo 1;; esac || echo 1)" \
+        "exit=$RC (124=hang would be BUG-327 layer 2 returning) stderr=[$(echo "$ERR" | head -1)]"
+else
+    bad "a build program with NO ZEBRA_COMPILER refuses by name" "could not build the bare build program to test it"
+fi
 
 # ---- KNOWN-BROKEN, PINNED -----------------------------------------------------------
 # PROMOTED from pins 2026-09-01, the day BUG-321 was fixed. The pins failed the gate the

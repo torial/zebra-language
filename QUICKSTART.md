@@ -3847,17 +3847,35 @@ Test functions are automatically typed `anyerror!void` — no `throws` needed.
 zebra test path/to/test_file.zbr
 ```
 
-Output:
+Output (on stderr):
 ```
+RUN: test_addition
 PASS: test_addition
+RUN: test_strings
 PASS: test_strings
-PASS: test_booleans
+RUN: test_booleans
+FAIL: test_booleans: assert_true failed
 
-3 passed, 0 failed
+2 passed, 1 failed
 ```
 
-Exit code is `0` on all-pass, `1` if any test failed. Each test runs
-independently; a failure in one test does not abort the others.
+Exit code is `0` on all-pass, `1` if any test failed. A test that fails through
+the `assert_*` family raises, so the run continues to the next test. A plain
+`assert` **panics** instead — the process ends at that test with the panic
+banner (`assert failed at file.zbr:NN`) and no summary; the `RUN:` line that
+precedes every call is what says which test died. Prefer `assert_eq`/`assert_true`
+in tests for that reason.
+
+```bash
+zebra test --list  file.zbr             # label<TAB>line per test that would run; no build
+zebra test --only test_a,Calc.test_b file.zbr   # run only the named tests
+```
+
+`--list` uses the harness's own inclusion rule, so it prints exactly what a run
+would execute (a `def test_x(n: int)` has a parameter and is not a test; a
+non-static `test_*` method inside a class is not one either). `--only` takes a
+comma-separated list of printed labels (`Calc.test_b`) or bare names (`test_b`)
+and composes with `--tag`. Both exist for the IDE's tests pane.
 
 ### Filtering tests with `@tag`
 
