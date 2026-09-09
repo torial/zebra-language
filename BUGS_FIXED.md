@@ -25,6 +25,39 @@ methods with a Zebra message. Workaround in zebra-ide: count by iterating.
 **Fix.** `getList` now returns a real `List(JsonValue)` (`_json_get_list_l`, copied into the program allocator), so `.len`, `.at()` and `for` take the ordinary List paths and the per-call special cases go. General rule landed with it: the chain hoist (BUG-027/079) is for STRUCT temporaries only — a receiver the checker types as a builtin container is never hoisted to `_mc_N` (`isBuiltinTypedRecv`), which is the same rule BUG-336 needed for split iterators. The old slice form stays in the runtime until the next n1-anchor so the N-1 regen authority still links. Fixture bug337_json_getlist_list_test; gen.py generates the shape.
 
 
+### BUG-379: an optional flowing into a plain slot passed `-c` and failed in Zig — FIXED 2026-09-09
+
+`var n: int = m.get(k)` (get returns `int?`), or `return xs.find(p)` from an `int` method,
+got "expected type 'i64', found '?i64'" from Zig with no Zebra location. The checker knew
+both sides; `checkVarDecl`/`checkExpr` skipped every non-primitive inferred type, and an
+optional is not primitive. **Fix.** `optionalIntoPlain`: a primitive declared type meeting an
+optional whose payload would otherwise be compatible is a diagnostic that names the three
+unwrap spellings (`x!`, `x orelse default`, `if x as v`; QUICKSTART §11). The check pass now
+applies the same `!= nil` narrowing and `if x as v` capture binding that `walkStmts` does,
+so guarded code is not flagged (test/nil_narrow_tc_test.zbr is the control, plus the new
+bug379_optional_unwrap_forms_test). Fixture bug379_optional_into_plain_fail.
+
+### BUG-378: container element/key/value arguments were never checked — FIXED 2026-09-09
+
+`List(int).add("s")`, `HashMap(str,int).set(1, "x")`, `Set(str).add(1)` all passed `-c` and
+died in Zig ("expected type 'i64', found '*const [1:0]u8'"). `checkCallExpr` only compared
+arguments for user-class methods; a builtin container receiver went to the stdlib arity
+check and returned. **Fix.** `containerArgExpected` maps (container, method, position) to the
+type parameter — List add/contains/indexOf (0), set/insert (1); HashMap set (0: K, 1: V),
+get/fetch/contains/remove (0: K); Set add/contains/remove (0) — and `checkContainerArgs`
+runs `checkExpr` on primitive positions only, on KNOWN receivers only, so the numeric
+widening rule and the "unknown receiver gets no check" rule are unchanged. `List.remove`
+takes an index and is deliberately not listed. Fixture bug378_container_arg_type_fail.
+
+### BUG-377: `List(int).new()` passed `-c` and failed in Zig with "undeclared identifier 'List'" — FIXED 2026-09-09
+
+The first thing a newcomer from Java/Kotlin/Rust types. `List(int)` on its own is a call of
+an undefined `List`, so the receiver was untyped and the whole statement went through to
+Zig. **Fix.** Any member on a bare `List(...)`/`HashMap(...)`/`Set(...)` (unless the user has
+a class of that name) is refused with the real constructor spelled out: "construct it with
+`List(...)()` (the type applied to no arguments), e.g. `var xs = List(int)()`". Fixture
+bug377_generic_ctor_new_fail.
+
 ### BUG-376: a `try` block or a `catch e` without pipes got a parser-internals message — FIXED 2026-09-09
 
 `try` on its own line (the Python/Java shape) parsed as an expression statement — `try` has

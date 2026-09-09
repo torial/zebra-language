@@ -1,0 +1,28 @@
+# BUG-379 control: every documented way to take an optional into a plain slot still
+# passes the checker -- force-unwrap, `orelse`, `if x as v`, and the `!= nil` narrowing --
+# and a container whose element is a class still accepts its own class. A false positive
+# here would be worse than the bug.
+class Pt
+    var x: int
+    cue init(x: int)
+        .x = x
+
+def describe(n: int): str
+    return "n=" + n.toString()
+
+def main()
+    var m = HashMap(str, int)()
+    m.set("k", 2)
+    var a: int = m.get("k")!
+    var b: int = m.get("zz") orelse 7
+    var c: int = 0
+    if m.get("k") as v
+        c = v
+    var d: int? = m.get("k")
+    if d != nil
+        print(describe(d))
+    var pts = List(Pt)()
+    pts.add(Pt(1))
+    var xs = List(float)()
+    xs.add(1)
+    print("${a} ${b} ${c} ${pts.at(0).x} ${xs.at(0)}")

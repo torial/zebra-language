@@ -1,0 +1,12 @@
+# BUG-378: the element/key/value arguments of the builtin containers were never compared
+# with the container's type parameters. `List(int).add("s")` passed -c and died in Zig with
+# "expected type 'i64', found '*const [1:0]u8'". Only KNOWN receivers are checked, only
+# primitive positions, and numeric widening is still allowed (typesCompatible).
+def main()
+    var xs = List(int)()
+    xs.add("s")
+    var m = HashMap(str, int)()
+    m.set(1, "x")
+    var seen = Set(str)()
+    seen.add(1)
+    print(xs.count(), m.count(), seen.count())

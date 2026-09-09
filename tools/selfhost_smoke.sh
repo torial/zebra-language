@@ -1777,6 +1777,10 @@ smoke_run test/bug375_numeric_conversion_division_test.zbr "f=1.5"
 # names the Zebra forms instead of a parser internals message.
 smoke_tc_fail test/bug376_try_block_diagnostic_fail.zbr "there is no \`try\` block in Zebra"
 smoke_tc_fail test/bug376_catch_binding_pipes_fail.zbr "the catch binding goes between pipes"
+smoke_tc_fail test/bug377_generic_ctor_new_fail.zbr "has no method 'new': construct it with"
+smoke_tc_fail test/bug378_container_arg_type_fail.zbr "type mismatch: expected int, got str"
+smoke_tc_fail test/bug379_optional_into_plain_fail.zbr "found int? -- unwrap it"
+smoke_run test/bug379_optional_unwrap_forms_test.zbr "2 7 2 1 1"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"
 
 echo ""

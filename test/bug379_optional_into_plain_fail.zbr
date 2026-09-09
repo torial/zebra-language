@@ -1,0 +1,10 @@
+# BUG-379: an optional flowing into a plain slot -- `var n: int = m.get(k)` -- passed -c and
+# failed in Zig with "expected type 'i64', found '?i64'". Both sides were known to the
+# checker; it skipped every non-primitive inferred type. Now a diagnostic that names the
+# three unwrap spellings. The nil-check narrowing (test/nil_narrow_tc_test.zbr) and
+# `if x as v` captures are honoured by the same pass, so guarded code is not flagged.
+def main()
+    var m = HashMap(str, int)()
+    m.set("k", 2)
+    var q: int = m.get("k")
+    print(q)

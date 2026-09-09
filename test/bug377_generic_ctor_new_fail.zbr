@@ -1,0 +1,8 @@
+# BUG-377: `List(int).new()` is what a newcomer from most languages types first. The
+# receiver `List(int)` is a call of an undefined `List`, so -c passed the program through
+# to Zig's "use of undeclared identifier 'List'" with no Zebra location. The checker now
+# refuses any member on a bare generic type and shows the real constructor, `List(int)()`.
+def main()
+    var xs = List(int).new()
+    xs.add(1)
+    print(xs.count())

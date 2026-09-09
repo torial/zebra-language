@@ -272,10 +272,11 @@ if [ -n "$wintmp" ]; then
     # pass a "no binary" check while destroying the evidence.
     for shape in compile runtime; do
         if [ "$shape" = compile ]; then
-            # Must pass the type checker and fail in zig (BUG-375 made
-            # `x.nosuch()` on an int a typecheck refusal, so no .zig was emitted).
-            # List(int).add("s") is currently unchecked at the Zebra level.
-            printf 'def main()\n    var xs = List(int).new()\n    xs.add("s")\n' > "$hw/zzfail.zbr"
+            # Must pass the type checker and fail in zig. BUG-375 made
+            # `x.nosuch()` a typecheck refusal, BUG-377/378 did the same for
+            # `List(int).new()` and `.add("s")`; a float literal into a List(int)
+            # is the numeric-widening rule the checker deliberately leaves to Zig.
+            printf 'def main()\n    var xs = List(int)()\n    xs.add(1.5)\n' > "$hw/zzfail.zbr"
         else
             printf 'def main()\n    print("x")\n    sys.exit(3)\n' > "$hw/zzfail.zbr"
         fi

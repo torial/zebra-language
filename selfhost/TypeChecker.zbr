@@ -2559,6 +2559,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         var uname2: str = uid.name
                         if ctx.hasUnion(uname2)
                             return Type_.named(uname2)
+                    # BUG-377: `List(int).new()` (and `.init()`/`.create()`, any
+                    # member on a bare generic type) is not Zebra -- the receiver
+                    # `List(int)` is a call of an undefined `List`, so -c passed it
+                    # through to a Zig "undeclared identifier" error. The
+                    # constructor is the type applied to no arguments.
+                    if mem.object is Expr.call as gctor
+                        if gctor.callee is Expr.ident as gcid
+                            if gcid.name == "List" or gcid.name == "HashMap" or gcid.name == "Set"
+                                if not ctx.hasClassAny(gcid.name)
+                                    ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                               "'" + gcid.name + "(...)' has no method '" + mem.member + "': construct it with `" + gcid.name + "(...)()` (the type applied to no arguments), e.g. `var xs = List(int)()`")
+                                    return Type_.unknown_
                     # BUG-071: recursive receiver inference (not just this_/ident)
                     # so chained calls like `s.trim().upper()` resolve: inferExpr
                     # of mem.object returns string_ from the inner trim call via
@@ -4008,12 +4020,30 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
         return inferred
     if not isPrimitive(exp)
         return inferred
+    if optionalIntoPlain(exp, inferred)
+        ctx.addErr(file, d_line, d_col, "type mismatch: expected " + typeTag(exp) + ", got " + typeTag(exp) + "? " + UNWRAP_HINT)
+        return exp
     if not isPrimitive(inferred)
         return inferred
     if not typesCompatible(exp, inferred)
         ctx.addErr(file, d_line, d_col, "type mismatch: expected " + typeTag(exp) + ", got " + typeTag(inferred))
         return exp
     return inferred
+
+# BUG-379: an optional flowing into a plain primitive slot (`var n: int =
+# m.get(k)`, `return xs.find(p)` from an `int` method) passed -c and failed in
+# Zig with "expected i64, found ?i64". The checker knew both sides; it just
+# skipped every non-primitive inferred type. Only a primitive payload that would
+# otherwise be compatible counts -- an unrelated optional stays out of scope.
+const UNWRAP_HINT: str = "-- unwrap it: `x!`, `x orelse default`, or `if x as v` (QUICKSTART §11)"
+
+def optionalIntoPlain(declared: Type_, inferred: Type_): bool
+    if not isPrimitive(declared)
+        return false
+    if inferred is Type_.optional as inner
+        if isPrimitive(inner)
+            return typesCompatible(declared, inner)
+    return false
 
 # Reconstruct a primitive Type_ from a typeTag string. Returns nil for
 # non-primitive tags so checkCallExpr skips those param positions.
@@ -4180,6 +4210,60 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
         else
             pass
 
+# BUG-378 helper: the expected type of positional argument `idx` for a
+# builtin-container method, or nil when the position is untyped (`at`, `set`'s
+# index, `sort`'s comparator, ...). List: add/contains/remove-by-value? -- no:
+# `remove` takes an INDEX (QUICKSTART §"List"), so it is not listed; `set(i, v)`
+# checks v. HashMap: set(k, v), get/fetch/contains/remove(k). Set: add/contains/
+# remove(v).
+def containerArgExpected(recv: Type_, name: str, idx: int): Type_?
+    branch recv
+        on Type_.list_ as le
+            if name == "add" or name == "contains" or name == "indexOf" or name == "count_of"
+                if idx == 0
+                    return le
+            if name == "set" or name == "insert"
+                if idx == 1
+                    return le
+        on Type_.hashmap_ as hm
+            if name == "set"
+                if idx == 0
+                    return hm.key_t
+                if idx == 1
+                    return hm.val_t
+            if name == "get" or name == "fetch" or name == "contains" or name == "remove"
+                if idx == 0
+                    return hm.key_t
+        on Type_.set_ as se
+            if name == "add" or name == "contains" or name == "remove"
+                if idx == 0
+                    return se
+        else
+            pass
+    return nil
+
+def checkContainerArgs(recv: Type_, mem: ExprMember, call: ExprCall, file: str, line: int, ctx: InferCtx)
+    var idx: int = 0
+    for arg in call.args
+        var expected: Type_? = containerArgExpected(recv, mem.member, idx)
+        if expected as exp_t
+            if isPrimitive(exp_t)
+                var aline: int = line
+                var acol: int = 0
+                if mem.span.line > 0
+                    aline = mem.span.line
+                    acol = mem.span.col
+                if arg.value is Expr.ident as aid
+                    if aid.span.line > 0
+                        aline = aid.span.line
+                        acol = aid.span.col
+                else if arg.value is Expr.member as amem
+                    if amem.span.line > 0
+                        aline = amem.span.line
+                        acol = amem.span.col
+                checkExpr(arg.value, exp_t, file, aline, acol, ctx)
+        idx += 1
+
 def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
     # Bail if any arg is named — reordering complicates positional indexing.
     for arg in call.args
@@ -4222,6 +4306,13 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 else if recv is Type_.list_ as rle
                     if isString(rle)
                         sk = "List(str)"
+                # BUG-378: element/key/value arguments of the builtin containers
+                # were never compared against the container's type parameters,
+                # so `List(int).add("s")` and `HashMap(str,int).set(1, "x")`
+                # passed -c and died in Zig. Only positions whose expected type is
+                # a primitive are checked (checkExpr's own rule), and only on a
+                # KNOWN receiver -- an untyped container gets no check, as before.
+                checkContainerArgs(recv, mem, call, file, line, ctx)
                 if sk != ""
                     var aerr: str = stdlibArityError(sk, mem.member, call.args.len)
                     if aerr != ""
@@ -4332,6 +4423,9 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     if ctx.strict and inferred is Type_.unresolved
         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "unresolved type for init expr of '" + dv.name + "' (TC gap)")
         return
+    if optionalIntoPlain(declared, inferred)
+        ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + typeTag(declared) + ", found " + typeTag(declared) + "? " + UNWRAP_HINT)
+        return
     if not isPrimitive(inferred)
         return
     if not typesCompatible(declared, inferred)
@@ -4386,7 +4480,45 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 ctx.bind(dv.name, bt)
             on Stmt.if_ as si
                 checkCallsInExpr(si.cond, file, si.span.line, ctx)  # BUG-142
+                # BUG-379: this pass must see the same narrowing walkStmts applies
+                # (`if x != nil` makes x a plain T in the then-branch), or the new
+                # optional-into-plain check fires on `describe(x)` inside the guard
+                # (test/nil_narrow_tc_test.zbr). Same save/restore shape; a capture
+                # (`if x as v`) binds v to the payload for the then-branch and
+                # restores whatever v named before.
+                var c_narrow_nm: str? = nilCheckedName(si.cond)
+                var c_had_narrow: bool = false
+                var c_saved_t: Type_ = Type_.unknown_
+                if c_narrow_nm as cnn
+                    if ctx.hasLocal(cnn)
+                        var c_cur_t: Type_ = ctx.localType(cnn)
+                        if c_cur_t is Type_.optional as c_inner
+                            c_saved_t = c_cur_t
+                            c_had_narrow = true
+                            ctx.bind(cnn, c_inner)
+                var c_cap_had: bool = false
+                var c_cap_saved: Type_ = Type_.unknown_
+                if si.is_capture as c_cap_name
+                    var c_cap_t: Type_ = Type_.context_dependent
+                    if not (si.cond is Expr.type_check)
+                        var c_cond_t: Type_ = inferExpr(si.cond, ctx)
+                        if c_cond_t is Type_.ref_to as c_crt
+                            c_cond_t = c_crt
+                        if c_cond_t is Type_.optional as c_cap_inner
+                            c_cap_t = c_cap_inner
+                    if ctx.hasLocal(c_cap_name)
+                        c_cap_had = true
+                        c_cap_saved = ctx.localType(c_cap_name)
+                    ctx.bind(c_cap_name, c_cap_t)
                 checkStmts(si.then_stmts, file, ctx)
+                if c_had_narrow
+                    if c_narrow_nm as cnn2
+                        ctx.bind(cnn2, c_saved_t)
+                if si.is_capture as c_cap_name2
+                    if c_cap_had
+                        ctx.bind(c_cap_name2, c_cap_saved)
+                    else
+                        ctx.bind(c_cap_name2, Type_.unknown_)
                 for ei in si.else_ifs
                     checkStmts(ei.stmts, file, ctx)
                 if si.else_stmts as cse
