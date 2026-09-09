@@ -1,0 +1,19 @@
+# BUG-366: `if(c, k, v).contains(x)` where k and v are tuple-loop strings the checker never
+# typed — codegen emitted a member call on a Zig slice ("no field or member function named
+# 'contains'"). A ternary is a string if either arm is; same for `orelse`.
+# Found by fuzz/leakgen.py (seed 4800010).
+def main()
+    var m: HashMap(str, str) = HashMap(str, str)()
+    m.set("key", "value")
+    var out: str = ""
+    for k, v in m.entries()
+        var flag: bool = k.len > 10
+        var found: bool = if(flag, k, v).contains("alu")
+        var pick: str = if(not flag, k, v).upper()
+        var o: str? = nil
+        var alt: bool = (o orelse v).startsWith("val")
+        if found and pick == "KEY" and alt
+            out = "bug366: OK"
+        else
+            out = "bug366: FAIL " + pick
+    print(out)

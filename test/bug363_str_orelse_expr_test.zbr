@@ -1,0 +1,13 @@
+# BUG-363: `(opt orelse "literal").len` in expression position — Zig references the
+# rvalue for the field access and cannot peer-resolve `*[]const u8` with
+# `*const *const [N:0]u8`. Works when bound to a typed var; leaked otherwise.
+# Found by fuzz/leakgen.py.
+def main()
+    var o: str? = nil
+    var n: int = (o orelse " fcda").len
+    var p: str? = "xy"
+    var k: int = (p orelse "longer").len + (o orelse "z").len
+    if n == 5 and k == 3
+        print("bug363: OK")
+    else
+        print("bug363: FAIL " + n.toString() + " " + k.toString())

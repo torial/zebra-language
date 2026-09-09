@@ -1,0 +1,25 @@
+# BUG-364: inside a method of a class with `var f0: str`, assigning to ANOTHER class's
+# `f0: int` (`c.f0 = 18`) emitted `_intern(18)` — the "is this a string field" lookup was
+# by name against the current class. Found by fuzz/leakgen.py.
+class Num
+    var f0: int
+    cue init(f0: int)
+        .f0 = f0
+
+class Txt
+    var f0: str
+    cue init(f0: str)
+        .f0 = f0
+    def poke(): int
+        var c = Num(12)
+        c.f0 = 18
+        .f0 = "changed"
+        return c.f0
+
+def main()
+    var t = Txt("orig")
+    var n: int = t.poke()
+    if n == 18 and t.f0 == "changed"
+        print("bug364: OK")
+    else
+        print("bug364: FAIL")

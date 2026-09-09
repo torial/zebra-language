@@ -144,6 +144,42 @@ class Gen:
                     return f'{s}.{m}({self.gen_expr("str", env, depth - 1)})'
                 if ty == 'int':
                     return f'{s}.len'
+        # CHAINS (added 2026-09-09 for fuzz/leakgen.py): methods on EXPRESSION results,
+        # not just on variables — the shape of BUG-346 (`f().replace(..)` needed a typed
+        # local), BUG-336 (`.at()` on a call result) and the "Zebra accepts, Zig rejects"
+        # class generally: codegen knows a VARIABLE's type from its declaration, and a
+        # call/expression result only from inference, which is where the leaks live.
+        if self.caps.get('chains') and depth > 0 and self.maybe(0.2):
+            if ty == 'str':
+                r2 = self.rng.random()
+                if r2 < 0.3:
+                    # method on a call/compound result: (a + b).upper(), f(x).trim()
+                    inner = self.gen_expr('str', env, depth - 1)
+                    m = self.pick(('upper', 'lower', 'trim'))
+                    return f'({inner}).{m}()'
+                if r2 < 0.55:
+                    # two-deep chain on a var
+                    svars = self.vars_of(env, 'str')
+                    if svars:
+                        return f'{self.pick(svars)}.{self.pick(("upper","lower"))}().{self.pick(("trim","lower"))}()'
+                if r2 < 0.8:
+                    # int/float -> str via toString on an expression
+                    nty = self.pick(('int', 'float'))
+                    return f'({self.gen_expr(nty, env, depth - 1)}).toString()'
+                # interpolation of an arbitrary expression
+                ity = self.pick(('int', 'str', 'bool'))
+                return f'"x${{{self.gen_expr(ity, env, depth - 1)}}}y"'
+            if ty == 'int':
+                # .len on a str EXPRESSION; .at(0) on a List(int) var (compile-only: leakgen
+                # never runs the program, so an out-of-range index is not a concern here)
+                if self.maybe(0.5):
+                    return f'({self.gen_expr("str", env, depth - 1)}).len'
+                ilists = [k for k, v in env.items() if v == 'List(int)']
+                if ilists:
+                    return f'{self.pick(ilists)}.at({self.gen_expr("int", env, depth - 1)})'
+            if ty == 'bool':
+                inner = self.gen_expr('str', env, depth - 1)
+                return f'({inner}).{self.pick(("contains","startsWith","endsWith"))}({self.gen_expr("str", env, depth - 1)})'
         # `.field` — a same-typed field of the enclosing class (inside a method body)
         if self._self_fields:
             sf = [fn for fn, ft in self._self_fields.items() if ft == ty]
@@ -654,6 +690,7 @@ DEFAULT_CAPS = {
     'chars': True,       # `char` as a List(char) element (BUG-172 shape; leaf-only)
     'maps': True,        # HashMap(K,V) — construct, .set, .get orelse, .len, entries for-in
     'strmethods': True,  # str methods — upper/lower/trim*/replace/contains/startsWith/len (NOT indexOf; BUG-174)
+    'chains': True,      # methods on EXPRESSION results, toString, interpolation (leakgen, 2026-09-09)
 }
 
 

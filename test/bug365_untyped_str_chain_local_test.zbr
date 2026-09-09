@@ -1,0 +1,18 @@
+# BUG-365: `var s = k.lower().lower()` with `k` a tuple-loop key (untyped to the checker)
+# bound `s` as Zig `[]u8`; a later `s = "lit"` failed with "cast discards const
+# qualifier". Codegen's own string-shape predicate now supplies `[]const u8`.
+# Found by fuzz/leakgen.py.
+def main()
+    var m: HashMap(str, int) = HashMap(str, int)()
+    m.set("AbC", 1)
+    var out: str = ""
+    for k, v in m.entries()
+        var s = k.lower().lower()
+        var t = k.upper().trim()
+        s = "aac"
+        t = t + "!"
+        out = s + t
+    if out == "aacABC!"
+        print("bug365: OK")
+    else
+        print("bug365: FAIL " + out)

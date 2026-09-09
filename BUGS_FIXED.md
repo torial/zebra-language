@@ -6,6 +6,62 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-366: a str ternary/`orelse` of unchecked loop vars as a method RECEIVER emits a member call on a slice — FIXED 2026-09-09
+
+`if(c, k, v).contains(x)` with `k`, `v` tuple-loop strings: the checker never bound them, so
+inference gave unknown, `isStringExpr` had no `if_expr` arm, and codegen emitted
+`(…).contains(…)` on a `[]const u8`. A ternary/orelse is a string if either arm is; the
+BUG-361 `@as` also falls back to that predicate. leakgen seed 4800010 (the 7th find in
+3,000 programs). Fixture bug366_str_ternary_receiver_test. Side note for the next reader:
+`has` is a reserved word — the fixture's first draft used it as a local.
+
+
+### BUG-365: an untyped local initialised from a str method chain on an unchecked receiver binds as `[]u8` — FIXED 2026-09-09
+
+`var s = k.lower().lower()` with `k` a tuple-loop key (never bound in the checker) got no
+annotation from `tcTypeAnnotation` (inference: unknown) and Zig typed it from
+`allocLowerString`'s `[]u8`; `s = "lit"` then failed "cast discards const qualifier".
+Codegen's own `isStringExpr` knew the shape; it now supplies `[]const u8` when the checker
+cannot. Found by fuzz/leakgen.py (seed 3700024). Fixture bug365_untyped_str_chain_local_test.
+
+### BUG-364: assigning to another class's same-named field used the CURRENT class's field type — FIXED 2026-09-09
+
+Inside a method of `Txt` (`var f0: str`), `c.f0 = 18` for `c: Num` (`var f0: int`) emitted
+`_intern(18)`: `isStringField` looked the name up in `owner_members` only. When the receiver's
+class is inferable, `fieldTypeAny(class, field)` is the authority; owner lookup remains for bare
+`.f0`. Same hazard as BUG-140's HashMap case (name-based across classes). leakgen seed 2400090.
+Fixture bug364_same_named_field_other_class_test.
+
+### BUG-363: `(opt orelse "lit").len` fails to peer-resolve in Zig — FIXED 2026-09-09
+
+Zig references an rvalue for field access and then peer-resolves `*[]const u8` against
+`*const *const [5:0]u8`. Codegen wraps a str-typed `orelse` in `@as([]const u8, …)`; numeric
+`orelse` is unaffected. leakgen seed 2100036. Fixture bug363_str_orelse_expr_test.
+
+### BUG-362: codegen's string-shape predicate lacked half of the str methods — FIXED 2026-09-09
+
+`isStringExpr` listed trim/upper/lower/replace/substring/… but not trimLeft, trimRight,
+reverse, repeat, toHex, padLeft, padRight, center (all typed `str` by
+`TypeChecker.stringMethodReturn`). On a receiver the checker cannot type, `k.trimLeft() +
+k.trimLeft()` emitted a NUMERIC `+` and `(k.trimLeft()).startsWith(..)` was materialised as
+`_mc_N.startsWith` on a slice. Two lists of one fact; synced (the drift class the wiki's
+cleanroom charter names). leakgen seeds 2200027/2300046. Fixture bug362_str_method_names_test.
+
+### BUG-361: a str ternary in expression position has no Zig result type — FIXED 2026-09-09
+
+`if(c, "abcde", "xyz").len` (or as a call argument): two string literals of different lengths
+are distinct Zig array types and unify only against a result type, so a typed `var` worked
+and expression position leaked `incompatible types: '*const *const [5:0]u8' and '*const
+*const [3:0]u8'`. BUG-167 had done this for int/float; str and bool now get `@as` too.
+leakgen seed 500034. Fixture bug361_str_ternary_expr_test.
+
+### BUG-360: nested `for k, v in m.entries()` loops reuse the Zig capture `_zbr_tup` — FIXED 2026-09-09
+
+Zig refuses "capture shadows capture from outer scope". The tuple-loop emitter now names the
+capture `_zbr_tup<uid>`. fuzz/leakgen.py's very first find (seed 300061, 400 programs in).
+Fixture bug360_nested_entries_loop_test (nested map entries AND nested tuple lists).
+
+
 ### BUG-359: a user local/param/field named like a runtime mutable global (`_allocator`, `_args`, `_tui_env`, …) is rewritten by the qualify pass — FIXED 2026-09-09
 
 **Symptom.** `var _allocator: int = 7` in `main` emitted `const _zbr_rt._allocator: i64 = 7;`

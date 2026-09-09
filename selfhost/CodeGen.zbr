@@ -6726,6 +6726,14 @@ struct Generator
                     # Annotate from the TC-inferred type, mirroring the bootstrap
                     # (src/CodeGen.zig genLocalVar + tcTypeAnnotation).
                     var lv_ann = tcTypeAnnotation(lv_infer_t)
+                    # BUG-365 (leakgen): when the checker cannot type the init (a str method
+                    # chain on a tuple-loop key it never bound) but codegen's own
+                    # string-shape predicate can, annotate `[]const u8` anyway — otherwise
+                    # `var s = k.lower().lower()` binds as `[]u8` (allocLowerString's
+                    # return) and a later `s = "lit"` fails ("cast discards const").
+                    if lv_ann == "" and n.init_expr != nil
+                        if isStringExpr(n.init_expr!)
+                            lv_ann = "[]const u8"
                     if lv_ann != ""
                         w.emit(": " + lv_ann)
         w.emit(" = ")
@@ -7382,6 +7390,16 @@ struct Generator
         return nil
 
     def isStringField(e: Expr): bool
+        # BUG-364 (leakgen): `other.f0 = 18` inside a method of a class whose OWN `f0` is a
+        # str emitted `_intern(18)` — the lookup below is by NAME against the current
+        # class's fields. When the receiver's class is inferable, its declaration is the
+        # authority; the owner-scoped lookup is only for bare `.f0` / `f0`.
+        if e is Expr.member as mm
+            if .infer_ctx != nil
+                var obj_t: Type_ = inferExpr(mm.object, .infer_ctx!)
+                if obj_t is Type_.named as ocn
+                    if .infer_ctx!.fieldTypeAny(ocn, mm.member) as oft
+                        return oft is Type_.string_
         var fname = getMemberFieldName(e)
         if fname != nil
             var ftype = lookupFieldType(fname!)
@@ -8485,14 +8503,18 @@ struct Generator
                     if ent_cm.object is Expr.ident as ent_map
                         direct_key_str = localIsHashMapStrKey(ent_map.name)
                         direct_val_str = localIsHashMapStrVal(ent_map.name)
+        # BUG-360 (leakgen's first find): a NESTED tuple loop reused the capture name
+        # `_zbr_tup`, and Zig refuses "capture shadows capture from outer scope". Unique
+        # per loop.
+        var tup_name: str = "_zbr_tup" + w.nextUid().toString()
         writeIndent()
         w.emit("for (")
         genExpr(fi.iter)
-        w.emit(".items) |_zbr_tup| {\n")
+        w.emit(".items) |" + tup_name + "| {\n")
         var i = 0
         for vname in fi.vars
             ig.writeIndent()
-            ig.w.emit("const " + vname + " = _zbr_tup.@\"" + i.toString() + "\";\n")
+            ig.w.emit("const " + vname + " = " + tup_name + ".@\"" + i.toString() + "\";\n")
             if not nameUsedInStmts(vname, fi.stmts)
                 ig.writeIndent()
                 ig.w.emit("_ = " + vname + ";\n")
@@ -10720,11 +10742,26 @@ struct Generator
             # these must self-parenthesize or `1 - (v orelse 8)` re-emits as
             # `1 - v orelse 8` ≡ `(1 - v) orelse 8` (invalid or wrong).
             on Expr.orelse_ as or_
-                w.emit("(")
+                # BUG-363 (leakgen): `(opt orelse "lit").len` — Zig takes a REFERENCE to
+                # an rvalue for field access and peer-resolves `*[]const u8` against
+                # `*const *const [5:0]u8`, which fails. A result type fixes it; only str
+                # is affected (numeric literals coerce by value).
+                var or_str: bool = false
+                if .infer_ctx != nil
+                    var or_t: Type_ = inferExpr(e, .infer_ctx!)
+                    if or_t is Type_.string_
+                        or_str = true
+                if or_str
+                    w.emit("@as([]const u8, (")
+                else
+                    w.emit("(")
                 genExpr(or_.expr)
                 w.emit(" orelse ")
                 genExpr(or_.fallback)
-                w.emit(")")
+                if or_str
+                    w.emit("))")
+                else
+                    w.emit(")")
             on Expr.catch_ as ca2
                 w.emit("(")
                 genExpr(ca2.expr)
@@ -10748,8 +10785,21 @@ struct Generator
                             ie_cast = "i64"
                         on Type_.float_
                             ie_cast = "f64"
+                        on Type_.string_
+                            # BUG-361 (leakgen's second find): two string LITERALS of
+                            # different lengths are distinct Zig types (`*const [5:0]u8`
+                            # vs `*const [3:0]u8`) and unify only against a result type
+                            # — fine when bound to a typed var, a Zig error in expression
+                            # position (`if(c, "abcde", "xyz").len`, or as a call arg).
+                            ie_cast = "[]const u8"
+                        on Type_.bool_
+                            ie_cast = "bool"
                         else
                             pass
+                # BUG-366: the checker cannot type an arm that is a tuple-loop key, but
+                # codegen's string-shape predicate can (same fallback as BUG-365).
+                if ie_cast == "" and (isStringExpr(ie.then_expr) or isStringExpr(ie.else_expr))
+                    ie_cast = "[]const u8"
                 if ie_cast != ""
                     w.emit("@as(" + ie_cast + ", if (")
                 else
@@ -11567,6 +11617,13 @@ struct Generator
                 if c.callee is Expr.member as cm
                     if cm.member == "toString" or cm.member == "concat" or cm.member == "format" or cm.member == "join" or cm.member == "trim" or cm.member == "upper" or cm.member == "lower" or cm.member == "substring" or cm.member == "replace" or cm.member == "replaceAll" or cm.member == "toIso8601"
                         return true
+                    # BUG-362 (leakgen): the list above was missing half of
+                    # TypeChecker.stringMethodReturn, so `k.trimLeft() + k.trimLeft()`
+                    # emitted a NUMERIC `+` and `(k.trimLeft()).startsWith(..)` was
+                    # materialized as `_mc_N.startsWith` on a slice — both when the
+                    # receiver is a loop var the checker cannot type. Same closed list.
+                    if cm.member == "trimLeft" or cm.member == "trimRight" or cm.member == "reverse" or cm.member == "repeat" or cm.member == "toHex" or cm.member == "padLeft" or cm.member == "padRight" or cm.member == "center"
+                        return true
                     # .at(i) on a List(str) local returns a string
                     if cm.member == "at"
                         if cm.object is Expr.ident as lid
@@ -11591,6 +11648,14 @@ struct Generator
                 if bin.op == BinaryOp.add
                     if isStringExpr(bin.left) or isStringExpr(bin.right)
                         return true
+            on Expr.if_expr as ie2
+                # BUG-366 (leakgen): `if(c, k, v).contains(x)` with str loop vars the
+                # checker never typed — a ternary is a string if either arm is.
+                if isStringExpr(ie2.then_expr) or isStringExpr(ie2.else_expr)
+                    return true
+            on Expr.orelse_ as oe2
+                if isStringExpr(oe2.expr) or isStringExpr(oe2.fallback)
+                    return true
             else
                 pass
         return false

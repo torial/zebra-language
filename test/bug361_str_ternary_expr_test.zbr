@@ -1,0 +1,17 @@
+# BUG-361: `if(c, "abcde", "xyz")` in EXPRESSION position — two string literals of
+# different lengths are different Zig array types and only unify against a result type.
+# Bound to a typed var it worked; `.len` on it, or passing it as an argument, leaked
+# `incompatible types: '*const *const [5:0]u8' and '*const *const [3:0]u8'`.
+# Found by fuzz/leakgen.py (seed 500034).
+def tag(s: str): str
+    return "<" + s + ">"
+
+def main()
+    var flag: bool = "abc".contains("b")
+    var n: int = if(flag, "abcde", "xyz").len
+    var t: str = tag(if(not flag, "abcde", "xyz"))
+    var u: str = (if(flag, "ab", "wxyz")).upper()
+    if n == 5 and t == "<xyz>" and u == "AB"
+        print("bug361: OK")
+    else
+        print("bug361: FAIL " + n.toString() + " " + t + " " + u)

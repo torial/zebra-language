@@ -73,7 +73,7 @@ bash tools/gates.sh --static   # STATIC (~15s): needs NO BUILD — for a docs/to
 bash tools/gates.sh --fast     # FAST (~2 min): everything except smoke + round-trip
 bash tools/gates.sh            # QUICK (~14 min): + smoke + round-trip. After any .zbr edit
 bash tools/gates.sh --full     # FULL (~40 min): + the heavy corpus witnesses
-bash tools/gates.sh --daily    # DAILY: + gramgen, gui-scaffold(+panel), node-addon. Once a day
+bash tools/gates.sh --daily    # DAILY: + gramgen, leakgen, gui-scaffold(+panel), node-addon. Once a day
 bash tools/gates.sh --list     # what each tier runs and what it cannot see
 ```
 
@@ -234,7 +234,7 @@ per-tier counts, computed from the registrations rather than written down.
 | `--fast` | 29 <!-- doc-gen: 29 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
 | (default) | 31 <!-- doc-gen: 31 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
 | `--full` | 39 <!-- doc-gen: 39 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 44 <!-- doc-gen: 44 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--daily` | 45 <!-- doc-gen: 45 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -557,6 +557,46 @@ python fuzz/gramgen.py --gate   # THE PARSER-ROBUSTNESS GATE: derives 960 determ
                                 #   parser infinite loop) automatically. Complements the
                                 #   above (which only ever see human-written programs).
                                 #   Optional per-session; ~a few min. Needs both .exe built.
+python fuzz/leakgen.py --gate   # THE "ZEBRA ACCEPTS, ZIG REJECTS" FUZZER, registered as
+                                #   `leakgen` (DAILY tier, ~3 min for 100 programs; ~0.7 s
+                                #   each). gen.py's WELL-FORMED programs (type-aware: only
+                                #   in-scope names, typed expressions), emitted by the
+                                #   selfhost, then `zig build-exe -fno-emit-bin -lc`. A
+                                #   program the front end accepts and zig refuses is a LEAK:
+                                #   the user gets a Zig diagnostic about code they never
+                                #   wrote. BUG-336..339 and 354 are this shape and every one
+                                #   was found by a PERSON writing the IDE, because the
+                                #   sweeps only see the hand-written corpus and gramgen's
+                                #   programs are grammar-valid garbage that never reach
+                                #   codegen.
+                                #   ITS FIRST 3,000 PROGRAMS FOUND SEVEN CODEGEN BUGS
+                                #   (2026-09-09, BUG-360..366): nested tuple loops sharing
+                                #   one Zig capture name; a str ternary in expression
+                                #   position with no result type; half of the str-method
+                                #   names missing from codegen's is-a-string predicate; a
+                                #   str `orelse` whose rvalue Zig references; a string field
+                                #   of ANOTHER class judged by the current class's
+                                #   same-named field; an untyped local bound to a `[]u8`;
+                                #   a str ternary as a method receiver. Each got a
+                                #   smoke_run fixture. The common thread is a
+                                #   receiver the checker never typed (a tuple-loop key),
+                                #   where codegen falls back to name lists -- shrink those.
+                                #   SIGNATURES, not programs: a zig message with names,
+                                #   numbers and positions normalised, so one bug shape
+                                #   counts once and the smallest reproducer is kept
+                                #   (fuzz/findings/leakgen/LEAK_NN.zbr). A leak not in
+                                #   fuzz/leak_baseline.txt fails the gate; every baseline
+                                #   line must carry a BUG number or the tool REFUSES to
+                                #   load it -- a leak nobody filed is a leak nobody fixes.
+                                #   POSITIVE CONTROL FIRST: the BUG-354 shape (assign to a
+                                #   parameter) must LEAK or the gate refuses (exit 2) --
+                                #   retire the control with that fix. Fixed seeds; the
+                                #   `-n/--seed` mode explores, `--update-baseline` never
+                                #   accepts a signature silently (it writes BUG-FILE-ME).
+                                #   CANNOT SEE: wrong-but-compiling output (output_sweep's
+                                #   job), anything gen.py does not generate (its caps list
+                                #   is the coverage -- grow it with every bug class), and a
+                                #   crash of the built program (never run).
 python tools/lint_interp_escape.py # THE INTERP-ESCAPE GATE (static, instant, no build):
                                 #   flags a Zebra string that is BOTH interpolated (`${`) and
                                 #   contains `\"`. The bootstrap — still the REGEN AUTHORITY for

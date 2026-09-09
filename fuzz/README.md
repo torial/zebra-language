@@ -34,6 +34,15 @@ first:
 
 ## Pieces
 
+- **`leakgen.py` (2026-09-09) — the "Zebra accepts, Zig rejects" fuzzer, selfhost only.**
+  gen.py's well-formed programs → selfhost emit → `zig build-exe -fno-emit-bin`. A leak is
+  a program the front end accepted and zig refused (the user sees a Zig diagnostic about
+  code they never wrote — BUG-336..339, 354). DAILY gate (`--gate`, fixed seeds, fails on
+  any signature not in `leak_baseline.txt`; every baseline line must name a BUG). Its first
+  3,000 programs found BUG-360..366. `harness.py`'s bootstrap-vs-selfhost differential is
+  the older question and its selfhost leg predates runtime-module emission (it compiles
+  `m.zig` alone, without the `zebra_rt.zig` beside it) — prefer leakgen.
+
 - `gen.py` — type-aware generator. `gen(seed)` yields a well-formed (resolves +
   type-checks) Zebra program, only ever emitting an expression of the required
   type from in-scope vars + size-bounded literals, so programs exercise real

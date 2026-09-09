@@ -1,0 +1,2 @@
+# leakgen baseline: one zig-diagnostic signature per line, `<sig>  # BUG-NNN`.
+# Every line is an ACCEPTED leak with an owner. Shrink it; do not grow it.

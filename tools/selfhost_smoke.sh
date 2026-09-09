@@ -1721,6 +1721,15 @@ smoke_run test/bug320_compound_index_assign_test.zbr "bug320: OK"
 smoke_tc_fail test/bug359_reserved_local_fail.zbr "is reserved by the Zebra runtime"
 smoke_tc_fail test/bug359_reserved_field_fail.zbr "is reserved by the Zebra runtime"
 smoke_run test/bug359_underscore_names_test.zbr "bug359: OK"
+# fuzz/leakgen.py's first two finds (2026-09-09): nested tuple loops reused one Zig
+# capture name; a str ternary in expression position had no result type.
+smoke_run test/bug360_nested_entries_loop_test.zbr "bug360: OK"
+smoke_run test/bug361_str_ternary_expr_test.zbr "bug361: OK"
+smoke_run test/bug362_str_method_names_test.zbr "bug362: OK"
+smoke_run test/bug363_str_orelse_expr_test.zbr "bug363: OK"
+smoke_run test/bug364_same_named_field_other_class_test.zbr "bug364: OK"
+smoke_run test/bug365_untyped_str_chain_local_test.zbr "bug365: OK"
+smoke_run test/bug366_str_ternary_receiver_test.zbr "bug366: OK"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

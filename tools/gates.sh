@@ -519,6 +519,11 @@ run_full "divergence"    "gate PASS" env JOBS="$JOBS" bash tools/divergence_chec
 # would have caught BUG-199 -- an 18-byte parser infinite loop -- automatically.
 run_daily "selfhost-div" "PASS" bash tools/selfhost_divergence_check.sh
 run_daily "gramgen"      "gate PASS" python fuzz/gramgen.py --gate
+# THE "ZEBRA ACCEPTS, ZIG REJECTS" FUZZER (2026-09-09): gen.py's well-formed programs,
+# emitted by the selfhost, sema'd by zig. Any leak signature not in fuzz/leak_baseline.txt
+# fails. Its first 3,000 programs found seven codegen bugs (BUG-360..366) that no
+# hand-written fixture had reached. Carries a positive control (the BUG-354 shape).
+run_daily "leakgen"      "gate PASS" python fuzz/leakgen.py --gate
 # Startup-only GUI coverage. Four GUI crashes have sat under fully green gates and all
 # four were at STARTUP, which needs neither a human nor a terminal to detect. Rendering,
 # input, layout, resize and colours remain provable only by a human running the app.

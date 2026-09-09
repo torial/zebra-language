@@ -1,0 +1,20 @@
+# BUG-360: nested `for k, v in m.entries()` loops both bound the Zig capture `_zbr_tup`,
+# and Zig refuses a capture that shadows an outer capture. Found by fuzz/leakgen.py on
+# its first 400 programs — a shape no hand-written fixture had.
+def main()
+    var m: HashMap(str, int) = HashMap(str, int)()
+    m.set("a", 1)
+    m.set("b", 2)
+    var total: int = 0
+    for k1, v1 in m.entries()
+        for k2, v2 in m.entries()
+            total = total + v1 * v2
+    var pairs: List((str, int)) = List((str, int))()
+    pairs.add(("x", 10))
+    for name, n in pairs
+        for name2, n2 in pairs
+            total = total + n + n2
+    if total == 29
+        print("bug360: OK")
+    else
+        print("bug360: FAIL " + total.toString())

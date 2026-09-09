@@ -1,0 +1,18 @@
+# BUG-362: codegen's "is this a string expression" list lacked trimLeft/trimRight/
+# reverse/repeat/padLeft/padRight/center/toHex, so on a receiver the checker cannot type
+# (a tuple-loop key) `k.trimLeft() + k.trimLeft()` emitted a numeric `+` and
+# `(k.trimLeft()).startsWith("x")` became `_mc_N.startsWith` on a Zig slice.
+# Found by fuzz/leakgen.py.
+def main()
+    var m: HashMap(str, int) = HashMap(str, int)()
+    m.set("  ab", 1)
+    var out: str = ""
+    for k, v in m.entries()
+        var both: str = k.trimLeft() + k.trimRight()
+        var starts: bool = (k.trimLeft()).startsWith("a")
+        var rep: str = k.trimLeft().repeat(2) + k.reverse().padLeft(6, "-")
+        if starts and both == "ab  ab" and rep == "abab--ba  "
+            out = "bug362: OK"
+        else
+            out = "bug362: FAIL " + both + "|" + rep
+    print(out)
