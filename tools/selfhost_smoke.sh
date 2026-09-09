@@ -578,6 +578,10 @@ smoke_test test/hashmap_fetch_chain_test.zbr
 # BUG-368: a test fn that raises nothing (plain `assert`, `pass`) is void, and the
 # harness could not call it. Mixed void/raising, top-level and class-static.
 smoke_test test/bug368_plain_assert_test_fn_test.zbr
+# BUG-369: an unknown method on a builtin receiver is a Zebra refusal, not a Zig error
+# about generated code; the _ok control runs one call per real method family.
+smoke_tc_fail test/bug369_str_unknown_method_fail.zbr "'str' has no method 'frobnicate'"
+smoke_tc_fail test/bug369_list_unknown_method_fail.zbr "'List' has no method 'first'"
 
 # Multi-error parse recovery: two parse errors must both appear in the output.
 smoke_multi_parse_fail test/multi_parse_error_test.zbr ":3:9:" ":7:9:"
@@ -882,7 +886,9 @@ smoke_tc_fail test/member_call_diag_test.zbr "type mismatch: expected int"
 # Precise spans: an arg-type mismatch anchors at the argument (an identifier here).
 smoke_tc_fail test/arg_anchor_test.zbr "type mismatch: expected int"
 # Audit #4: method/field-not-found errors read in Zebra terms, no .zig leak.
-smoke_run_fail test/method_not_found_test.zbr "in 'str'"
+# BUG-369 (2026-09-09): this is a FRONT-END refusal now, not a build failure -- the
+# audit's ask ("reads in Zebra terms, no generated-.zig leak") is met one phase earlier.
+smoke_tc_fail test/method_not_found_test.zbr "'str' has no method 'shout'"
 smoke_run_fail test/field_not_found_test.zbr "in struct 'P'"
 # Caret-specific: asserts the rendered source line appears in the TypeChecker's
 # type-mismatch diagnostic (only emitted when caretSuffix() works).
@@ -1742,6 +1748,8 @@ smoke_run test/bug337_json_getlist_list_test.zbr "bug337: OK"
 smoke_run test/bug338_builtin_type_generic_arg_test.zbr "bug338: OK"
 smoke_tc_fail test/bug354_param_assign_fail.zbr "cannot assign to parameter"
 smoke_run test/bug354_param_shadow_ok_test.zbr "bug354: OK"
+# BUG-369's control: one call per real str/List method family at the bogus fixtures' arities, RUN.
+smoke_run test/bug369_builtin_methods_ok_test.zbr "bug369: OK"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"
 
 echo ""

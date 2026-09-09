@@ -1254,6 +1254,10 @@ var result = sb.build()              # str (drains the builder)
 
 ### String method reference
 
+A method not in this reference is a **front-end refusal** (`'str' has no method 'x'`, BUG-369),
+not a Zig error from the build — the same holds for `List` (`'List' has no method 'first'`).
+An `extend String` block adds methods the checker then accepts.
+
 **Returns `str`:**
 
 | Method | Signature | Description |

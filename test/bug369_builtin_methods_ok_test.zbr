@@ -1,0 +1,40 @@
+# BUG-369's CONTROL: the tables that refuse `frobnicate` must not refuse a real method.
+# One call per documented str method family and per List method, at the arities the
+# bogus fixtures use, RUN so the values are checked and not merely accepted. An
+# over-broad table turns this file red before it turns a user's file red.
+def main()
+    var s: str = "  Hello, World  "
+    var t: str = s.trim()
+    assert t.upper() == "HELLO, WORLD"
+    assert t.lower().startsWith("hello")
+    assert t.substring(0, 5) == "Hello"
+    assert t.indexOf("World") == 7
+    assert t.replace("World", "Zebra").endsWith("Zebra")
+    assert t.contains(",") and not t.isEmpty()
+    assert t.split(",").len == 2
+    assert "ab".repeat(2) == "abab"
+    assert "7".toInt() == 7 and "ff".toIntBase(16) == 255
+    assert "x".padLeft(3) == "  x"
+    assert t.count("l") == 3
+    assert "abc".reverse() == "cba"
+    var n: int = 0
+    for c in "hé".chars()
+        n = n + 1
+    assert n == 2
+    var xs: List(int) = [3, 1, 2]
+    xs.add(4)
+    assert xs.count() == 4 and xs.at(0) == 3 and xs.contains(2)
+    xs.set(0, 9)
+    xs.remove(3)
+    xs.sort()
+    assert xs.at(0) == 1
+    assert xs.any(def(x) = x > 8) and not xs.all(def(x) = x > 8)
+    var big: List(int) = xs.filter(def(x) = x > 1)
+    assert big.len == 2
+    var total: int = xs.reduce(0, def(acc, x) = acc + x)
+    assert total == 12
+    var words: List(str) = ["a", "b"]
+    assert words.join("-") == "a-b"
+    xs.clear()
+    assert xs.len == 0
+    print("bug369: OK")

@@ -25,6 +25,30 @@ methods with a Zebra message. Workaround in zebra-ide: count by iterating.
 **Fix.** `getList` now returns a real `List(JsonValue)` (`_json_get_list_l`, copied into the program allocator), so `.len`, `.at()` and `for` take the ordinary List paths and the per-call special cases go. General rule landed with it: the chain hoist (BUG-027/079) is for STRUCT temporaries only — a receiver the checker types as a builtin container is never hoisted to `_mc_N` (`isBuiltinTypedRecv`), which is the same rule BUG-336 needed for split iterators. The old slice form stays in the runtime until the next n1-anchor so the N-1 regen authority still links. Fixture bug337_json_getlist_list_test; gen.py generates the shape.
 
 
+### BUG-369: an unknown method on a BUILTIN type (`str`, `List`) passed the front end and failed in Zig — FIXED 2026-09-09
+
+`s.frobnicate(1)` on a `str`, or `xs.first()` on a `List(int)`, was accepted by `zebra -c` (exit
+0) and refused by zig with a diagnostic naming `.items` or `[]const u8` in generated code. Found
+writing `stem.slice(0, n)` in main.zbr: the regen accepted it and `zig build` refused it. User
+classes were checked (BUG-108); builtins had no member table — codegen dispatches by NAME. For
+the IDE this was the Check button's worst miss: "OK" at 60 ms, then a Zig error from the build.
+
+**Fix.** Two member tables in the checker (`strMethodKnown`, `listMethodKnown`), consulted where
+the receiver type is already known (the BUG-319 site). DERIVED, not written from memory: every
+`== "name"` literal in the compiler (641 candidates) was probed at three arities against `str`
+and `List(str)` through a real `zig build-obj`, a name kept if some arity compiled or the front
+end already refused its arity, plus the documented int-taking members. An `extend String` /
+`extend List` block registers its methods under a pseudo-class (`$extend:str`) so extension
+methods stay callable (test/extend_test found that on the first corpus sweep). Controls: the
+compiler regenerates from its own 25k lines under the check (round trip clean), smoke 434
+fixtures, the whole corpus + zebra-ide's sources swept with `-c` (two stale probes needed
+`append` added — it compiles, so it stays), and bug369_builtin_methods_ok_test RUNS one call per
+real method family at the arities the bogus fixtures use. method_not_found_test (audit #4) moved
+from a build failure to a front-end refusal. Fixtures bug369_str_unknown_method_fail,
+bug369_list_unknown_method_fail. Not in gen.py, per the BUG-354 precedent: a refusal generated
+by the fuzzer is only ever a reject; the smoke fixtures pin it. HashMap/Set/StringBuilder/
+JsonValue receivers are NOT covered yet — same shape, same derivation, when a leak names them.
+
 ### BUG-368: a `test_*` fn that raises nothing could not be run by `zebra test` — "expected error union type, found 'void'" — FIXED 2026-09-09
 
 The generated harness wrapped every test call in `if (f()) |_| … else |err|`. A test whose

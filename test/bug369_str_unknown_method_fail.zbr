@@ -1,0 +1,6 @@
+# BUG-369: an unknown method on a BUILTIN receiver passed the front end and failed inside
+# zig with a diagnostic about generated code. `-c` said OK; the Zig error named `.items`
+# or `[]const u8`. The checker now refuses at the call with the receiver named.
+def main()
+    var s: str = "hello"
+    print(s.frobnicate(1))

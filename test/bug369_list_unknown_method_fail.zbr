@@ -1,0 +1,5 @@
+# BUG-369, the List half. `first()` is the name people reach for and it never existed:
+# it emitted `xs.first()` on an ArrayList and zig refused it. Refused in Zebra now.
+def main()
+    var xs: List(int) = [1, 2, 3]
+    print(xs.first())

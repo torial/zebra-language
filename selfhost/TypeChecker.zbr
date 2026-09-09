@@ -895,6 +895,19 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                         si_i += 1
                     if si_pipe != ""
                         mt.addClassInterfaces(s.name, si_pipe)
+            on Decl.extend_ as ext
+                # BUG-369: an `extend String` / `extend List` block adds methods to a
+                # BUILTIN receiver, and the unknown-method refusal must see them. They are
+                # registered under a pseudo-class named for the builtin (`$extend:str`), so
+                # the table lookup and the return type both come from one place.
+                if ext.target is TypeRef.named as ext_nr
+                    var ext_key: str = extendKeyFor(ext_nr.name)
+                    if ext_key != ""
+                        var ect: ClassTypes = ClassTypes(ext_key)
+                        if mt.classOf(ext_key) as prev_ect
+                            ect = prev_ect
+                        addClassMembers(mt, ect, ext.members)
+                        mt.addClass(ect)
             on Decl.interface_ as iface
                 # Record which interfaces this interface extends for transitive conformance.
                 if iface.ifaces.len > 0
@@ -1439,6 +1452,41 @@ def isString(t: Type_): bool
 # string stdlib method; caller falls through to Type_.unknown_.
 # chars/split/lines return generics (List(char)/List(str)); Phase 18 generics
 # will infer them properly — returning unknown_ here is intentional.
+# BUG-369: the member tables for the two builtin receivers a program touches most.
+# Until 2026-09-09 an unknown method on a `str` or a `List` passed the front end
+# (`-c` said OK) and failed inside zig with a diagnostic about generated code. These
+# lists were DERIVED, not written from memory: every `== "name"` literal in the
+# compiler (641 candidates) was probed as `s.name()` / `s.name("x")` / `s.name("x","x")`
+# against `str` and `List(str)` through a real `zig build-obj`; a name is in the table
+# if some arity compiled or the front end already refused its arity (which proves it is
+# modelled), plus the documented int-taking members the str-arg probe could not reach
+# (`charAt`, `padLeft`, `substring`, `toIntBase`, `repeat`, `center`, `indexOfFrom`,
+# `chars`, `bytes`, `format`). The remaining control is the corpus itself: the compiler
+# regenerates from selfhost/*.zbr under this check and smoke runs 431 fixtures through it,
+# so a real method missing here breaks the build rather than a user.
+#
+# NOT in the str table on purpose: `all any filter find map reduce keys values entries
+# set sort sortBy remove at` -- codegen dispatches those by NAME for containers, and on
+# a str they compiled to nonsense or to a Zig error about `.items`. Refusing them is the
+# point.
+# The pseudo-class an `extend <Builtin>` block registers under: "" for a target that is
+# not one of the builtins the tables cover.
+def extendKeyFor(target: str): str
+    if target == "String" or target == "str"
+        return "$extend:str"
+    if target == "List"
+        return "$extend:List"
+    return ""
+
+def strMethodKnown(name: str): bool
+    return name == "trim" or name == "trimLeft" or name == "trimRight" or name == "upper" or name == "lower" or name == "reverse" or name == "repeat" or name == "replace" or name == "replaceAll" or name == "concat" or name == "format" or name == "toHex" or name == "fromHex" or name == "padLeft" or name == "padRight" or name == "center" or name == "substring" or name == "charAt" or name == "join" or name == "toString" or name == "tokenize" or name == "split" or name == "lines" or name == "chars" or name == "bytes" or name == "encodeBase64" or name == "decodeBase64" or name == "count" or name == "indexOf" or name == "lastIndexOf" or name == "indexOfFrom" or name == "indexOfIgnoreCase" or name == "codePointCount" or name == "toInt" or name == "toIntBase" or name == "toFloat" or name == "toFloat32" or name == "tryInt" or name == "tryFloat" or name == "contains" or name == "startsWith" or name == "endsWith" or name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8" or name == "eqlIgnoreCase" or name == "isAlphanumeric" or name == "isPrintable" or name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase" or name == "hash" or name == "len"
+
+# List(T): the documented set (QUICKSTART §10) plus what the probe showed compiling
+# (`pop`, `toString`, `fetch`). `first`/`last`/`isEmpty`/`insert`/`push` do NOT exist --
+# they were the names people reach for, and each was a Zig error until now.
+def listMethodKnown(name: str): bool
+    return name == "add" or name == "at" or name == "fetch" or name == "count" or name == "len" or name == "set" or name == "remove" or name == "any" or name == "all" or name == "find" or name == "map" or name == "filter" or name == "reduce" or name == "sort" or name == "sortBy" or name == "contains" or name == "clear" or name == "join" or name == "pop" or name == "toString" or name == "items" or name == "append"
+
 def stringMethodReturn(name: str): Type_?
     if name == "trim" or name == "trimLeft" or name == "trimRight"
         return Type_.string_
@@ -2561,6 +2609,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
                                            "'str' has no 'at' -- use s[i] for the byte at i, or s.chars() to iterate codepoints")
                                 return Type_.unknown_
+                            # BUG-369: the same refusal for every OTHER name str does not have --
+                            # unless an `extend String` block in scope declares it.
+                            if ctx.methodReturnAny("$extend:str", mem.member) as ext_ret
+                                return ext_ret
+                            if not strMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'str' has no method '" + mem.member + "' (see QUICKSTART §14 for the string methods)")
+                                return Type_.unknown_
                         on Type_.timer_handle
                             var tmname: str = mem.member
                             if tmname == "elapsed"
@@ -2704,6 +2760,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.optional(list_elem)
                             if lmname == "contains"
                                 return Type_.bool_
+                            # BUG-369: an unknown List method was a Zig error about `.items`.
+                            if ctx.methodReturnAny("$extend:List", lmname) as lext_ret
+                                return lext_ret
+                            if not listMethodKnown(lmname)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'List' has no method '" + lmname + "' (add/at/set/remove/count/contains/find/any/all/map/filter/reduce/sort/sortBy/clear/join)")
+                                return Type_.unknown_
                         on Type_.chan_ as chan_elem
                             var cmname: str = mem.member
                             if cmname == "recv" or cmname == "tryRecv" or cmname == "recvTimeout"
