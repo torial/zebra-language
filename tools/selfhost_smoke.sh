@@ -1735,6 +1735,8 @@ smoke_run test/loopvar_types_test.zbr "loopvar_types: OK"
 # The hand-found leakgen class, now under the gate: BUG-336, BUG-339, BUG-354.
 smoke_run test/bug336_split_chain_test.zbr "bug336: OK"
 smoke_run test/bug339_class_field_ctor_init_test.zbr "bug339: OK"
+smoke_run test/bug337_json_getlist_list_test.zbr "bug337: OK"
+smoke_run test/bug338_builtin_type_generic_arg_test.zbr "bug338: OK"
 smoke_tc_fail test/bug354_param_assign_fail.zbr "cannot assign to parameter"
 smoke_run test/bug354_param_shadow_ok_test.zbr "bug354: OK"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"

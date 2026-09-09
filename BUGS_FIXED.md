@@ -6,6 +6,25 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-338: built-in type names are not resolvable as GENERIC ARGUMENTS in constructor expressions — FIXED 2026-09-09
+
+`var m: HashMap(int, JsonValue)` (annotation) is fine; `HashMap(int, JsonValue)()` and
+`List(JsonValue)()` (expressions) fail with `undefined name: 'JsonValue'`. The Resolver
+treats generic args in a call as value names. Workaround: store raw strings and parse on
+use. Probably affects every built-in type name (CodeEditor, SysProcess, ...).
+
+**Fix.** The Resolver treats the arguments of a builtin generic constructor (`List`, `HashMap`, `Set`, `Atomic`, `Chan`, `ObjectPool`) as TYPE positions and accepts `CgHelpers.isBuiltinTypeName` (the stdlib types `TypeChecker.typeFromName` maps: JsonValue, SysProcess, CodeEditor, Timer, SqliteRow, …); codegen's `genTypeFromExpr` maps such a name through the same `genType` the annotation form uses. Fixture bug338_builtin_type_generic_arg_test (five types); gen.py generates `List(JsonValue)()`.
+
+### BUG-337: `json.getList(k).len` leaks a Zig error (`no member named 'items' in '[]json.dynamic.Value'`) — FIXED 2026-09-09
+
+`getList` is typed `List(JsonValue)` in the checker but lowers to a Zig slice, so
+`.len`/`.count()`/`.at()` emit the ArrayList forms and fail in Zig. Iteration works.
+Either lower to a real `List(JsonValue)` or type it as an iterator and refuse the List
+methods with a Zebra message. Workaround in zebra-ide: count by iterating.
+
+**Fix.** `getList` now returns a real `List(JsonValue)` (`_json_get_list_l`, copied into the program allocator), so `.len`, `.at()` and `for` take the ordinary List paths and the per-call special cases go. General rule landed with it: the chain hoist (BUG-027/079) is for STRUCT temporaries only — a receiver the checker types as a builtin container is never hoisted to `_mc_N` (`isBuiltinTypedRecv`), which is the same rule BUG-336 needed for split iterators. The old slice form stays in the runtime until the next n1-anchor so the N-1 regen authority still links. Fixture bug337_json_getlist_list_test; gen.py generates the shape.
+
+
 ### BUG-367: `checkStmts` had no arm for a numeric `for i in a..b` — nothing inside such a body was checked — FIXED 2026-09-09
 
 `walkStmts` (binding/inference) had a `for_num` arm; `checkStmts` (diagnostics) did not, so every

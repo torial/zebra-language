@@ -597,10 +597,12 @@ python fuzz/leakgen.py --gate   # THE "ZEBRA ACCEPTS, ZIG REJECTS" FUZZER, regis
                                 #   load-bearing for those shapes. test/loopvar_types_test.
                                 #   Then the hand-found members went under the gate: gen.py
                                 #   generates BUG-336's `split().at/len` and BUG-339's
-                                #   ctor-initialised class field (both fixed, kept as
-                                #   coverage); BUG-354 (assign to a parameter) became a
-                                #   Zebra refusal -- and fixing it found BUG-367, a numeric
-                                #   `for` body that checkStmts never visited AT ALL.
+                                #   ctor-initialised class field, BUG-337's getList as a
+                                #   real List and BUG-338's `List(JsonValue)()` (all fixed,
+                                #   kept as coverage); BUG-354 (assign to a parameter)
+                                #   became a Zebra refusal -- and fixing it found BUG-367,
+                                #   a numeric `for` body that checkStmts never visited AT
+                                #   ALL. The hand-found class (336..339, 354) is CLOSED.
                                 #   POSITIVE CONTROL FIRST: a `zig"..."` literal carrying a
                                 #   type error -- Zebra passes it through, zig must refuse
                                 #   it, and it can never be "fixed", so it never needs

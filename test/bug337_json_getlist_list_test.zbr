@@ -1,0 +1,18 @@
+# BUG-337: `j.getList(k)` was typed List(JsonValue) by the checker but lowered to a Zig
+# SLICE, so `.len` / `.at()` emitted the ArrayList forms and leaked "no member named
+# 'items'". It is a real List(JsonValue) now: len, at, for, all the ordinary paths.
+def main()
+    if Json.parse("{\"xs\": [1, 2, 3], \"names\": [\"a\", \"b\"]}") as j
+        var n: int = j.getList("xs").len
+        var first: JsonValue = j.getList("xs").at(0)
+        var xs = j.getList("xs")
+        var joined: str = ""
+        for v in xs
+            joined = joined + v.stringify()
+        var names = j.getList("names")
+        if n == 3 and first.stringify() == "1" and joined == "123" and names.len == 2 and names.at(1).stringify() == "\"b\""
+            print("bug337: OK")
+        else
+            print("bug337: FAIL " + n.toString() + " " + joined)
+    else
+        print("bug337: FAIL parse")

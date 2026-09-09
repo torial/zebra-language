@@ -1722,9 +1722,21 @@ pub fn _json_get_obj(v: JsonValue, key: []const u8) JsonValue {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .object => return it, else => {} }, else => {} }
     return .{ .object = std.json.ObjectMap.empty };
 }
+// BUG-337: a REAL List(JsonValue), not a slice, so `.len` / `.at()` / `for` all take the
+// ordinary List paths (a slice made codegen special-case every one of them, and the ones
+// it forgot leaked "no member named 'items'"). Copied into the program allocator: an
+// ArrayList over the parser's memory would realloc through the wrong allocator on append.
 pub fn _json_get_list(v: JsonValue, key: []const u8) []JsonValue {
     switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .array => |a| return a.items, else => {} }, else => {} }
     return &[_]JsonValue{};
+}
+// (`_json_get_list` above is the pre-BUG-337 slice form, kept so the N-1 regen authority's
+// emit still links against this runtime during the transition; codegen emits the `_l`
+// form. Remove the slice form after the next n1-anchor.)
+pub fn _json_get_list_l(v: JsonValue, key: []const u8) std.ArrayList(JsonValue) {
+    var out: std.ArrayList(JsonValue) = .empty;
+    switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .array => |a| out.appendSlice(_allocator, a.items) catch @panic("OOM"), else => {} }, else => {} }
+    return out;
 }
 pub fn _json_is_null(v: JsonValue) bool   { return v == .null; }
 pub fn _json_is_object(v: JsonValue) bool  { return switch (v) { .object => true, else => false }; }

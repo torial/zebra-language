@@ -297,6 +297,7 @@ class Gen:
             # generating it would only produce rejects -- the smoke fixture pins it.)
             if self.vars_of(env, 'str'):
                 choices += ['splitat']      # BUG-336: `s.split(sep).at(i)` / `.len`
+            choices += ['jsonlist']         # BUG-337 getList().len/.at + BUG-338 List(JsonValue)()
         if indent < self.caps['depth']:
             choices += ['if', 'while']
             if opt_in_scope:
@@ -311,6 +312,14 @@ class Gen:
                 choices += ['branch']  # `branch v` over enum/union variants
         k = self.pick(choices)
         d = self.caps['expr_depth']
+        if k == 'jsonlist':
+            j = self.fresh('j'); n = self.fresh('jn'); xs = self.fresh('jxs')
+            env[n] = 'int'
+            return [f'{ind}var {xs}: List(JsonValue) = List(JsonValue)()',
+                    f'{ind}var {n}: int = 0',
+                    f'{ind}if Json.parse("{{\\"xs\\": [1, 2, 3]}}") as {j}',
+                    f'{ind}    {n} = {j}.getList("xs").len + {xs}.len',
+                    f'{ind}    {xs}.add({j}.getList("xs").at(0))']
         if k == 'splitat':
             s_ = self.pick(self.vars_of(env, 'str'))
             name = self.fresh('sp')
@@ -712,8 +721,8 @@ DEFAULT_CAPS = {
     'strmethods': True,  # str methods — upper/lower/trim*/replace/contains/startsWith/len (NOT indexOf; BUG-174)
     'chains': True,      # methods on EXPRESSION results, toString, interpolation (leakgen, 2026-09-09)
     'leakclass': True,   # the hand-found "Zebra accepts, Zig rejects" shapes, kept as regression
-                         # coverage now they are fixed: BUG-336 split().at/len, BUG-339 class
-                         # field with a ctor initialiser
+                         # coverage now they are fixed: BUG-336 split().at/len, BUG-337 getList
+                         # as a List, BUG-338 List(JsonValue)(), BUG-339 ctor field initialiser
 }
 
 

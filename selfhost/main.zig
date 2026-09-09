@@ -48,7 +48,7 @@ const _json_stringify = _zbr_rt._json_stringify;
 const _json_get_str = _zbr_rt._json_get_str;
 const _json_get_int = _zbr_rt._json_get_int;
 const _json_get_obj = _zbr_rt._json_get_obj;
-const _json_get_list = _zbr_rt._json_get_list;
+const _json_get_list_l = _zbr_rt._json_get_list_l;
 const _json_is_null = _zbr_rt._json_is_null;
 const _json_is_object = _zbr_rt._json_is_object;
 const _arg_parse = _zbr_rt._arg_parse;
@@ -4383,7 +4383,7 @@ pub fn _zbr_fn_runLsp() void {
 // zbr:selfhost/main.zbr:2382
                             var new_text: []const u8 = "";
 // zbr:selfhost/main.zbr:2383
-                            for (_json_get_list(params, "contentChanges")) |ch| {
+                            for (_json_get_list_l(params, "contentChanges").items) |ch| {
 // zbr:selfhost/main.zbr:2384
                                 new_text = _json_get_str(ch, "text");
                             }
@@ -5582,7 +5582,7 @@ pub fn _zbr_fn_dbgRemapSetBreakpoints(markers: std.ArrayList(*_zbr_ty_DbgMarker)
 // zbr:selfhost/main.zbr:3148
     var bfirst: bool = true;
 // zbr:selfhost/main.zbr:3149
-    for (_json_get_list(args_v, "breakpoints")) |bp| {
+    for (_json_get_list_l(args_v, "breakpoints").items) |bp| {
 // zbr:selfhost/main.zbr:3150
         if ((!bfirst)) {
 // zbr:selfhost/main.zbr:3151
@@ -5664,7 +5664,7 @@ pub fn _zbr_fn_dbgRemapStackTrace(markers: std.ArrayList(*_zbr_ty_DbgMarker), ro
 // zbr:selfhost/main.zbr:3195
     var ffirst: bool = true;
 // zbr:selfhost/main.zbr:3196
-    for (_json_get_list(body_v, "stackFrames")) |fr| {
+    for (_json_get_list_l(body_v, "stackFrames").items) |fr| {
 // zbr:selfhost/main.zbr:3197
         if ((!ffirst)) {
 // zbr:selfhost/main.zbr:3198

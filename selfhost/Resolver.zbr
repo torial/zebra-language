@@ -23,7 +23,7 @@
 #   - ^T field auto-deref: c.name, m.stmts etc. work through *PClass/*PMethod
 
 use Parser exposing PNode, PParam, POptChain, PIfExpr
-use CgHelpers exposing isStdlibNs
+use CgHelpers exposing isStdlibNs, isBuiltinTypeName
 
 # -- Symbol kind encoding (stored: int in scope HashMaps) -------------------
 # 0 = class / union
@@ -341,8 +341,22 @@ class Resolver
             on PNode.expr_call as c
                 for e in c.callee
                     .resolveExpr(e)?
+                # BUG-338: the arguments of a builtin GENERIC constructor are TYPES, not
+                # values -- `List(JsonValue)()` / `HashMap(int, SysProcess)()`. Primitives
+                # were already builtins; the stdlib type names were "undefined name".
+                var generic_ctor: bool = false
+                for ce in c.callee
+                    if ce is PNode.expr_id as cid
+                        if cid.name == "List" or cid.name == "HashMap" or cid.name == "Set" or cid.name == "Atomic" or cid.name == "Chan" or cid.name == "ObjectPool"
+                            generic_ctor = true
                 for e in c.args
-                    .resolveExpr(e)?
+                    var skip_e: bool = false
+                    if generic_ctor
+                        if e is PNode.expr_id as aid
+                            if isBuiltinTypeName(aid.name)
+                                skip_e = true
+                    if not skip_e
+                        .resolveExpr(e)?
             on PNode.expr_index as ix
                 for e in ix.object
                     .resolveExpr(e)?

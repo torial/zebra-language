@@ -1,0 +1,16 @@
+# BUG-338: a builtin type name as a GENERIC ARGUMENT in a constructor expression was
+# "undefined name" (the Resolver treated it as a value). `List(JsonValue)()`,
+# `HashMap(int, SysProcess)()` and friends resolve now; the annotation form always did.
+def main()
+    var xs: List(JsonValue) = List(JsonValue)()
+    var m: HashMap(int, JsonValue) = HashMap(int, JsonValue)()
+    var ps: List(SysProcess) = List(SysProcess)()
+    var ts: List(Timer) = List(Timer)()
+    var rows: List(SqliteRow) = List(SqliteRow)()
+    if Json.parse("{\"a\": 1}") as j
+        xs.add(j)
+        m.set(1, j)
+    if xs.len == 1 and m.len == 1 and ps.len == 0 and ts.len == 0 and rows.len == 0
+        print("bug338: OK")
+    else
+        print("bug338: FAIL")

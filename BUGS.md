@@ -46,20 +46,6 @@
 
 ---
 
-### BUG-337: `json.getList(k).len` leaks a Zig error (`no member named 'items' in '[]json.dynamic.Value'`) — OPEN (found 2026-09-07)
-
-`getList` is typed `List(JsonValue)` in the checker but lowers to a Zig slice, so
-`.len`/`.count()`/`.at()` emit the ArrayList forms and fail in Zig. Iteration works.
-Either lower to a real `List(JsonValue)` or type it as an iterator and refuse the List
-methods with a Zebra message. Workaround in zebra-ide: count by iterating.
-
-### BUG-338: built-in type names are not resolvable as GENERIC ARGUMENTS in constructor expressions — OPEN (found 2026-09-07)
-
-`var m: HashMap(int, JsonValue)` (annotation) is fine; `HashMap(int, JsonValue)()` and
-`List(JsonValue)()` (expressions) fail with `undefined name: 'JsonValue'`. The Resolver
-treats generic args in a call as value names. Workaround: store raw strings and parse on
-use. Probably affects every built-in type name (CodeEditor, SysProcess, ...).
-
 ### BUG-351: `StringBuilder.build()` EMPTIES the builder — `sb.len()` is 0 afterwards — OPEN (found 2026-09-08)
 
 `build()` lowers to `toOwnedSlice`, which moves the buffer out. test/string_builder_test.zbr

@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
-use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList
+use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
 use AstWalk exposing collectOldNodes
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
@@ -6922,11 +6922,38 @@ struct Generator
     # it must NOT be materialized into `var _mc = n; _mc.method()` (BUG-079 is for STRUCT
     # temporaries needing a stable address).  Materializing erases the type and emits the
     # terminal call RAW (bypassing the type-directed rewrite → `i64.toString()`).
+    # BUG-337 (and the general rule behind BUG-336): the chain hoist exists for STRUCT
+    # temporaries that need a stable address (BUG-027/079). A receiver the checker types as
+    # a builtin container (List/HashMap/Set/JsonValue/...) is dispatched by codegen's own
+    # special forms, and `_mc_N.at(..)` on an ArrayList is invalid Zig. Hoist only when the
+    # type is a user class/struct or unknown (the historical default).
+    def isBuiltinTypedRecv(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var t = inferExpr(e, .infer_ctx!)
+        if t is Type_.ref_to as tr
+            t = tr
+        branch t
+            on Type_.list_ as _
+                return true
+            on Type_.hashmap_ as _
+                return true
+            on Type_.set_ as _
+                return true
+            on Type_.json_value
+                return true
+            on Type_.str_slice
+                return true
+            else
+                return false
+
     def isValueTypeExpr(e: Expr): bool
         # BUG-336: a `split`/`lines` call is a lazy iterator, never a struct temporary
         # needing a stable address; hoisting it to `_mc_N` and dispatching `.at/.len` on
         # the iterator is exactly the leak. genExpr's List paths collect it inline.
         if isSplitIter(e)
+            return true
+        if isBuiltinTypedRecv(e)
             return true
         if .infer_ctx == nil
             return false
@@ -7116,6 +7143,12 @@ struct Generator
                     return
                 if isUserTypeName(id.name)                  # BUG-281 B
                     emitTypeName(id.name)
+                    return
+                # BUG-338: a builtin stdlib type as a generic argument in a constructor
+                # EXPRESSION goes through the same mapping the ANNOTATION form uses.
+                if isBuiltinTypeName(id.name)
+                    var sp338: Span = Span(0, 0, 0, 0)
+                    genType(TypeRef.named(NamedTypeRef(sp338, id.name)))
                     return
                 w.emit(zigPrimitive(id.name))
             on Expr.tuple_lit as tl
@@ -8349,7 +8382,9 @@ struct Generator
             else if isSqliteQueryIter(fi.iter)
                 genForInSqliteQuery(fi)
             else if isJsonArrayIter(fi.iter)
-                # getList() → []Value slice: iterate directly, no `.items`.
+                # BUG-337: getList() is a real List(JsonValue) now (was a `[]Value` slice),
+                # so it iterates `.items` like every other list; this arm survives only to
+                # bind the loop var as json_value for method dispatch.
                 writeIndent()
                 w.emit("for (")
                 if fi.iter is Expr.try_
@@ -8358,7 +8393,7 @@ struct Generator
                     w.emit(")")
                 else
                     genExpr(fi.iter)
-                w.emit(") |" + vname + "| {\n")
+                w.emit(".items) |" + vname + "| {\n")
                 for_loop_vars.add(vname)
                 # The element is a JSON Value → bind the loop var so `tag.isNull()` etc.
                 # dispatch to the json_value method handlers.
@@ -13194,7 +13229,7 @@ struct Generator
                     else if mname == "getFloat": jget_fn = "_json_get_float"
                     else if mname == "getBool": jget_fn = "_json_get_bool"
                     else if mname == "getObj": jget_fn = "_json_get_obj"
-                    else if mname == "getList": jget_fn = "_json_get_list"
+                    else if mname == "getList": jget_fn = "_json_get_list_l"   # BUG-337: a real List
                     if jget_fn != ""
                         w.emit(jget_fn)
                         w.emit("(")
