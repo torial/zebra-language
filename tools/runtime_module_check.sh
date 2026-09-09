@@ -272,7 +272,10 @@ if [ -n "$wintmp" ]; then
     # pass a "no binary" check while destroying the evidence.
     for shape in compile runtime; do
         if [ "$shape" = compile ]; then
-            printf 'def main()\n    var x = 1\n    x.nosuch()\n' > "$hw/zzfail.zbr"
+            # Must pass the type checker and fail in zig (BUG-375 made
+            # `x.nosuch()` on an int a typecheck refusal, so no .zig was emitted).
+            # List(int).add("s") is currently unchecked at the Zebra level.
+            printf 'def main()\n    var xs = List(int).new()\n    xs.add("s")\n' > "$hw/zzfail.zbr"
         else
             printf 'def main()\n    print("x")\n    sys.exit(3)\n' > "$hw/zzfail.zbr"
         fi

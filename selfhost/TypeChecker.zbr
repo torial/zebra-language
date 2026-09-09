@@ -2573,6 +2573,36 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         else
                             pass
                     branch recv
+                        on Type_.int_
+                            # BUG-375: the documented numeric conversions (QUICKSTART §21)
+                            # were untyped on an int receiver, so `i.toFloat() / 2.0`
+                            # was an UNKNOWN divided by a float and codegen chose
+                            # `@divTrunc` -- 3.0 / 2.0 printed 1. Wrong output, valid Zig.
+                            # The set is what the probe found compiling (BUG-369 method);
+                            # `abs`/`floor`/`round` are Math.* functions, not methods, and
+                            # a call on the number is refused with that pointer.
+                            if mem.member == "toFloat" or mem.member == "toFloat32"
+                                return Type_.float_
+                            if mem.member == "toString"
+                                return Type_.string_
+                            # `n.to(m)` is the method-form range (§28a); its element
+                            # type is handled by isRangeIterExpr, the range itself
+                            # stays untyped here as it always was.
+                            if mem.member == "to"
+                                return Type_.unknown_
+                            ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                       "'int' has no method '" + mem.member + "' (to/toFloat/toFloat32/toString; abs, min, max, pow are Math.* functions)")
+                            return Type_.unknown_
+                        on Type_.float_
+                            if mem.member == "toInt"
+                                return Type_.int_
+                            if mem.member == "toString"
+                                return Type_.string_
+                            if mem.member == "toFloat" or mem.member == "toFloat32"
+                                return Type_.float_
+                            ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                       "'float' has no method '" + mem.member + "' (toInt/toFloat32/toString; abs, floor, ceil, round, sqrt are Math.* functions)")
+                            return Type_.unknown_
                         on Type_.named as tn
                             var rt: Type_? = ctx.methodReturnAny(tn, mem.member)
                             if rt as rt_v
@@ -2963,6 +2993,26 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             return inferExpr(ee.base, ctx)
         on Expr.if_expr as eif
             # ternary `if cond then a else b` — result is then-branch type.
+            # BUG-374: `if(c, 1, nil)` is an OPTIONAL of the non-nil arm's type, and the
+            # nil arm may be either one. Typing it as the then-branch gave codegen a bare
+            # `@as(i64, ...)` around an arm that is `null` -- a Zig error for a shape a
+            # user reaches for on their first afternoon.
+            var then_is_nil: bool = false
+            var else_is_nil: bool = false
+            if eif.then_expr is Expr.nil_
+                then_is_nil = true
+            if eif.else_expr is Expr.nil_
+                else_is_nil = true
+            if then_is_nil and not else_is_nil
+                var et_opt: Type_ = inferExpr(eif.else_expr, ctx)
+                if et_opt is Type_.optional
+                    return et_opt
+                return Type_.optional(et_opt)
+            if else_is_nil and not then_is_nil
+                var tt_opt: Type_ = inferExpr(eif.then_expr, ctx)
+                if tt_opt is Type_.optional
+                    return tt_opt
+                return Type_.optional(tt_opt)
             return inferExpr(eif.then_expr, ctx)
         on Expr.cast as ect
             # `expr: TypeRef` / `cast(Expr, T)` — result is the target type.

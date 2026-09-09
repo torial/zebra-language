@@ -2120,6 +2120,10 @@ class Parser
                     .advance()
                     catch_binding = .eatId()?
                     .expectText("|")?
+                else if .peek().kind is TokenKind.id
+                    # `catch e` (no pipes) is the shape every other language teaches;
+                    # "expected indent, got 'e'" said nothing about pipes.
+                    raise .errorAt("the catch binding goes between pipes: `catch |" + .peek().text + "|`")
                 .skipEol()
                 var catch_stmts = .parseBlock()?
                 var wrapped = List(PNode)()
@@ -2211,6 +2215,15 @@ class Parser
         return stmts
 
     def parseStmt(): PNode throws
+        # A `try` BLOCK (Python / Java shape) does not exist in Zebra, and `try` is an
+        # ordinary identifier since 2026-08-13 -- so `try` alone on a line parsed as an
+        # expression statement and died on the indented block after it with "unexpected
+        # end of input while parsing an expression", pointing at the NEXT statement.
+        # Name the real problem and the three forms that exist (QUICKSTART §12).
+        if .textIs("try") and (.peekAt(1).kind is TokenKind.eol or .peekAt(1).text == ":")
+            raise .errorAt("there is no `try` block in Zebra: propagate with `expr?`, take a fallback inline with `expr catch value`, or add a method-level `catch |e|` clause after the body (QUICKSTART §12)")
+        if .textIs("catch") and (.peekAt(1).kind is TokenKind.eol or .peekAt(1).kind is TokenKind.id)
+            raise .errorAt("a `catch` clause belongs after the method body, at the same indent as `def`, as `catch |e|`; there is no statement-level catch (QUICKSTART §12)")
         if .textIs("pass")
             .advance()
             .skipEol()

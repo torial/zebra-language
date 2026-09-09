@@ -1,0 +1,7 @@
+# A Python/Java-shaped `try` block does not exist in Zebra. Since `try` became an ordinary
+# identifier the bare word parsed as an expression statement and died on the indented
+# block AFTER it -- "unexpected end of input while parsing an expression", pointing at the
+# next statement. The parser now names the three forms that do exist.
+def main()
+    try
+        print("x")

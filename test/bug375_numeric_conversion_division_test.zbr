@@ -1,0 +1,15 @@
+# BUG-375: `i.toFloat() / 2.0` printed 1 for i = 3. The documented numeric conversions
+# (QUICKSTART §21: toFloat / toInt / toString) were untyped on an int receiver, so the
+# division's left side was UNKNOWN and codegen chose `@divTrunc`, which truncates a float
+# silently. Wrong output, valid Zig -- the BUG-226 class. The right operand now decides
+# float division too, and the conversions are typed.
+def main()
+    var i: int = 3
+    var f: float = i.toFloat() / 2.0
+    print("f=${f}")
+    print("q=${i.toFloat() / 2.0}")
+    var g: float = 7.0
+    print("t=${g.toInt()} s=${i.toString()}|${g.toString()}")
+    var half: float = 1.0 / i.toFloat()
+    print("h=${half > 0.3 and half < 0.34}")
+    print("idiv=${i / 2}")

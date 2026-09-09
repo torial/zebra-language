@@ -1,0 +1,13 @@
+# BUG-374: `if(cond, 1, nil)` is an OPTIONAL, and either arm may be the nil one. The
+# checker typed it as the then-arm and codegen wrapped it `@as(i64, ... else null)` --
+# a Zig error for a shape a newcomer reaches for on day one. Both orders, three types.
+def main()
+    var i: int = 3
+    var a: int? = if(i > 2, 1, nil)
+    var b: int? = if(i > 5, nil, 2)
+    var s: str? = if(i > 2, "yes", nil)
+    var f: float? = if(i < 0, nil, 1.5)
+    print("${a orelse -1} ${b orelse -1} ${s orelse "none"} ${f orelse 0.0}")
+    var c: int? = if(i > 5, 1, nil)
+    if c == nil
+        print("c is nil")

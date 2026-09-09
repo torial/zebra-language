@@ -1,0 +1,9 @@
+# `catch e` without pipes -- the binding shape every other language teaches -- said
+# "expected indent, got 'e'". It now says where the pipes go.
+def f()
+    var x = 1
+catch e
+    print("x")
+
+def main()
+    f()

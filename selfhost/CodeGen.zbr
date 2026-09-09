@@ -10982,20 +10982,26 @@ struct Generator
                 var ie_cast = ""
                 if .infer_ctx != nil
                     var ie_t: Type_ = inferExpr(e, .infer_ctx!)
+                    # BUG-374: a nil arm makes the ternary an optional (the checker
+                    # says so now); the cast must be `?T`, and `null` in either arm.
+                    var ie_opt: str = ""
+                    if ie_t is Type_.optional as ie_inner
+                        ie_opt = "?"
+                        ie_t = ie_inner
                     branch ie_t
                         on Type_.int_
-                            ie_cast = "i64"
+                            ie_cast = ie_opt + "i64"
                         on Type_.float_
-                            ie_cast = "f64"
+                            ie_cast = ie_opt + "f64"
                         on Type_.string_
                             # BUG-361 (leakgen's second find): two string LITERALS of
                             # different lengths are distinct Zig types (`*const [5:0]u8`
                             # vs `*const [3:0]u8`) and unify only against a result type
                             # — fine when bound to a typed var, a Zig error in expression
                             # position (`if(c, "abcde", "xyz").len`, or as a call arg).
-                            ie_cast = "[]const u8"
+                            ie_cast = ie_opt + "[]const u8"
                         on Type_.bool_
-                            ie_cast = "bool"
+                            ie_cast = ie_opt + "bool"
                         else
                             pass
                 # BUG-366: the checker cannot type an arm that is a tuple-loop key, but
@@ -11635,6 +11641,23 @@ struct Generator
                         is_float_div = true
                     else
                         pass
+                # BUG-375: the RIGHT operand decides too. `x / 2.0` with a float literal
+                # on the right is float division whatever the checker knows about `x`;
+                # `@divTrunc(x, 2.0)` either truncates a float silently or is a Zig error.
+                if not is_float_div
+                    var rt_d: Type_ = inferExpr(b.right, .infer_ctx!)
+                    branch rt_d
+                        on Type_.float_
+                            is_float_div = true
+                        on Type_.float_n as _
+                            is_float_div = true
+                        else
+                            pass
+                if not is_float_div
+                    if b.right is Expr.float_lit
+                        is_float_div = true
+                    if b.left is Expr.float_lit
+                        is_float_div = true
             if is_float_div
                 w.emit("(")
                 genExpr(b.left)

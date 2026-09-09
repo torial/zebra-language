@@ -25,6 +25,38 @@ methods with a Zebra message. Workaround in zebra-ide: count by iterating.
 **Fix.** `getList` now returns a real `List(JsonValue)` (`_json_get_list_l`, copied into the program allocator), so `.len`, `.at()` and `for` take the ordinary List paths and the per-call special cases go. General rule landed with it: the chain hoist (BUG-027/079) is for STRUCT temporaries only — a receiver the checker types as a builtin container is never hoisted to `_mc_N` (`isBuiltinTypedRecv`), which is the same rule BUG-336 needed for split iterators. The old slice form stays in the runtime until the next n1-anchor so the N-1 regen authority still links. Fixture bug337_json_getlist_list_test; gen.py generates the shape.
 
 
+### BUG-376: a `try` block or a `catch e` without pipes got a parser-internals message — FIXED 2026-09-09
+
+`try` on its own line (the Python/Java shape) parsed as an expression statement — `try` has
+been an ordinary identifier since 2026-08-13 — and failed on the indented block after it with
+"unexpected end of input while parsing an expression", anchored on the NEXT statement.
+`catch e` after a method body said "expected indent, got 'e'". Neither told the writer what
+Zebra has instead. **Fix.** Two parser diagnostics: the `try` one names the three forms that
+exist (`expr?`, `expr catch value`, a method-level `catch |e|`), the `catch` one shows the
+pipes with the user's own name. Fixtures bug376_try_block_diagnostic_fail,
+bug376_catch_binding_pipes_fail. Also this batch: `int`/`float` receivers refuse unknown
+methods with a pointer to `Math.*` (the BUG-369 method; `abs` is the one people reach for).
+
+### BUG-375: `i.toFloat() / 2.0` printed 1 — the numeric conversions were untyped and `/` chose `@divTrunc` from the LEFT side only — FIXED 2026-09-09
+
+For `i = 3`, `var f: float = i.toFloat() / 2.0` printed `1`. QUICKSTART §21's conversions
+(`toFloat`/`toInt`/`toString` on a number) had no arm in the checker's member-call
+inference, so the division's left operand was UNKNOWN, and the division emit — which looked
+only at the left type — chose `@divTrunc`. On floats that truncates silently: wrong output,
+valid Zig, the BUG-226 class, in the most ordinary arithmetic a program does. Found by
+writing a newcomer-shaped program and reading its output. **Fix.** Arms for int/float
+receivers (`toFloat`, `toFloat32`, `toInt`, `toString`, `abs`, and the float rounders), and
+the division emit consults the right operand and either literal too. Fixture
+bug375_numeric_conversion_division_test (values checked, including that `i / 2` stays 1).
+
+### BUG-374: `if(cond, 1, nil)` did not compile — a nil-arm ternary was typed as its then-arm and cast `@as(i64, …)` — FIXED 2026-09-09
+
+`var maybe: int? = if(i > 2, 1, nil)`: "expected type 'i64', found '@TypeOf(null)'". The
+checker returned the then-branch type for every ternary, so codegen's BUG-167 cast wrapped a
+`null` arm in a non-optional `@as`. **Fix.** A ternary with exactly one nil arm is
+`Optional(other arm)` in the checker, and the cast becomes `@as(?T, …)`. Fixture
+bug374_nil_arm_ternary_test (both arm orders; int, str, float).
+
 ### BUG-373: an optional annotation on a constructor-initialised container local was dropped — FIXED 2026-09-09
 
 `var m: HashMap(str, int)? = HashMap(str, int)()` emitted `const m = std.StringHashMap(i64).init(..)`

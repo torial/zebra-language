@@ -1769,6 +1769,14 @@ smoke_run test/bug371_stored_closure_keeps_slot_test.zbr "sum=1020"
 # is kept. Both found writing the BUG-369 second-half control.
 smoke_run test/bug372_if_as_mutated_capture_test.zbr "map=1"
 smoke_run test/bug373_optional_ctor_local_test.zbr "sb=ok"
+# BUG-374: a nil-arm ternary is an optional (either arm). BUG-375: int.toFloat() typed,
+# `x / 2.0` is float division whatever the left side -- 3.0/2.0 printed 1 before.
+smoke_run test/bug374_nil_arm_ternary_test.zbr "1 2 yes 1.5"
+smoke_run test/bug375_numeric_conversion_division_test.zbr "f=1.5"
+# BUG-376: the two error-handling shapes newcomers write first get a diagnostic that
+# names the Zebra forms instead of a parser internals message.
+smoke_tc_fail test/bug376_try_block_diagnostic_fail.zbr "there is no \`try\` block in Zebra"
+smoke_tc_fail test/bug376_catch_binding_pipes_fail.zbr "the catch binding goes between pipes"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"
 
 echo ""
