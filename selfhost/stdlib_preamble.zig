@@ -267,6 +267,13 @@ pub fn _zebra_assert_cmp(a: anytype, b: anytype, expect_eq: bool) anyerror!void 
         return error.ZebraError;
     }
 }
+/// BUG-386: a plain `assert` inside a `test_*` fn -- fails the test, not the process.
+pub fn _zebra_assert_at(val: bool, msg: []const u8) anyerror!void {
+    if (!val) {
+        _error_ctx = .{ .message = msg };
+        return error.ZebraError;
+    }
+}
 pub fn _zebra_assert_bool(val: bool, expect_true: bool) anyerror!void {
     if (val != expect_true) {
         _error_ctx = .{ .message = if (expect_true) "assert_true failed: got false" else "assert_false failed: got true" };

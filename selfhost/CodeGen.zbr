@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
-use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
+use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
 use AstWalk exposing collectOldNodes
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
@@ -2799,6 +2799,7 @@ struct Generator
     var is_struct_owner      : bool     # true when owner is a struct (not class)
     var is_generic           : bool     # true inside a generic class body
     var current_method_throws: bool     # true when current method is `throws`
+    var in_test_fn           : bool     # BUG-386: inside a `test_*` fn -- `assert` fails the test, not the process
     var try_block_label      : str?     # non-nil inside a `try` block
     var catch_var            : str      # catch clause binding name ("" if none)
     var source_file          : str      # source path for comment markers
@@ -2927,6 +2928,7 @@ struct Generator
         .is_struct_owner       = is_struct_owner
         .is_generic            = is_generic
         .current_method_throws = current_method_throws
+        .in_test_fn            = false
         .try_block_label       = try_block_label
         .catch_var             = catch_var
         .source_file           = source_file
@@ -3064,6 +3066,11 @@ struct Generator
     def withThrows(): Generator
         var g = this except
             current_method_throws = true
+        return g
+
+    def withTestFn(): Generator
+        var g = this except
+            in_test_fn = true
         return g
 
     def withTryLabel(label: str, err_var: str): Generator
@@ -5000,6 +5007,12 @@ struct Generator
         w.emit(") ")
         var mstmts_pre: List(Stmt)? = m.stmts
         var auto_throws = m.throws_ or (mstmts_pre != nil and bodyHasRaise(mstmts_pre!))
+        # BUG-386: a `test_*` fn (the harness's own inclusion rule: the prefix and no
+        # params) whose body has a plain `assert` returns an error union too, so the
+        # assert can FAIL THE TEST instead of panicking the whole run.
+        var is_test_fn: bool = m.name.startsWith("test_") and m.params.len == 0
+        if is_test_fn and mstmts_pre != nil and bodyHasAssert(mstmts_pre!)
+            auto_throws = true
         if auto_throws
             w.emit("anyerror!")
         # Closure factory: return the hoisted `_ZbrClosure_<fn>` named type (the
@@ -5120,6 +5133,8 @@ struct Generator
                 inv_ig.writeIndent()
                 inv_ig.w.emit("defer self._check_invariant();\n")
             var bg = withMethodCtx(nil, rs, auto_throws, owner_members, ps, sp, "self")
+            if is_test_fn
+                bg = bg.withTestFn()
             # Phase 17c — seed a per-method InferCtx and pre-walk statements so
             # expression-level type inference has a populated scope map. Used
             # during emit (e.g., at ctor-arg boxing) to replace name-pattern
@@ -10230,6 +10245,25 @@ struct Generator
 
     def genAssert(a: StmtAssert)
         writeIndent()
+        # BUG-386: inside a `test_*` fn an assert is a test assertion. `zebra test`
+        # runs every test in one process and reports each verdict; a panic here
+        # killed the run at the first failure with no verdict for the rest, while
+        # `assert_eq` (an error) reported cleanly. Same lowering as assert_eq,
+        # carrying the location (or the author's message) as the error text.
+        if in_test_fn
+            w.emit("try _zebra_assert_at(")
+            genExpr(a.cond)
+            w.emit(", ")
+            if a.message != nil
+                genExpr(a.message!)
+            else
+                w.emit("\"assert failed at ")
+                w.emit(fwdSlashes(source_file))
+                w.emit(":")
+                w.emit(a.span.line.toString())
+                w.emit("\"")
+            w.emit(");\n")
+            return
         if a.message != nil
             w.emit("if (!(")
             genExpr(a.cond)

@@ -121,6 +121,26 @@ smoke_test() {
     rm -f "$TMPDIR_OUT"/*.zig
 }
 
+# BUG-386: run `zebra test` on a fixture that is EXPECTED to have failing tests, and
+# assert (a) the given verdict substring appears and (b) the run reached its summary
+# line -- i.e. a failing assert produced a verdict instead of killing the process.
+smoke_test_verdicts() {
+    local zbr="$1"
+    local expected="$2"
+    local label
+    label="$(basename "$zbr" .zbr)"
+    "$ZEBRA" test "$zbr" >"$TMPDIR_OUT/smoke-test-out" 2>&1 || true
+    if grep -qF -- "$expected" "$TMPDIR_OUT/smoke-test-out" && grep -qE "^[0-9]+ passed, [0-9]+ failed" "$TMPDIR_OUT/smoke-test-out"; then
+        echo "  PASS: $label"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $label (expected verdict '$expected' AND a summary line)" >&2
+        grep -v "^compiling:\|^ *parsing\|^ *parsed\|^ *resolved\|^wrote " "$TMPDIR_OUT/smoke-test-out" >&2 || true
+        FAIL=$((FAIL + 1))
+    fi
+    rm -f "$TMPDIR_OUT"/*.zig
+}
+
 # Emit-only fixture that must emit successfully but whose emitted Zig must CONTAIN
 # a given substring. Used for codegen guards that are lowered to `@compileError`
 # rather than rejected by the Zebra front end (e.g. BUG-215 indexOf arity, and the
@@ -1789,6 +1809,9 @@ smoke_tc_fail test/bug382_str_num_compare_fail.zbr "cannot compare 'int' with 's
 smoke_tc_fail test/bug383_nil_into_plain_fail.zbr "cannot hold nil"
 smoke_tc_fail test/bug384_fstring_prefix_fail.zbr "no \`f\"...\"\` prefix"
 smoke_run test/bug385_dollar_escape_test.zbr "lit \${x} interp 5"
+smoke_test test/bug386_assert_in_test_pass_test.zbr
+smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_location: assert failed at"
+smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_message: custom message here"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"
 
 echo ""

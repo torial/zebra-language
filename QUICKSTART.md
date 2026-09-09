@@ -3869,12 +3869,13 @@ FAIL: test_booleans: assert_true failed
 2 passed, 1 failed
 ```
 
-Exit code is `0` on all-pass, `1` if any test failed. A test that fails through
-the `assert_*` family raises, so the run continues to the next test. A plain
-`assert` **panics** instead — the process ends at that test with the panic
-banner (`assert failed at file.zbr:NN`) and no summary; the `RUN:` line that
-precedes every call is what says which test died. Prefer `assert_eq`/`assert_true`
-in tests for that reason.
+Exit code is `0` on all-pass, `1` if any test failed. Every assertion form fails
+the TEST, not the process: the `assert_*` family and — inside a `test_*` fn — a
+plain `assert` too (`FAIL: name: assert failed at file.zbr:NN`, or the message
+you gave it: `assert cond, "why"`), so the run continues to the next test and
+prints the summary. (Until BUG-386, 2026-09-09, a plain `assert` in a test
+panicked the whole run at the first failure.) Outside a test fn `assert` is still
+the process-ending check it always was.
 
 ```bash
 zebra test --list  file.zbr             # label<TAB>line per test that would run; no build

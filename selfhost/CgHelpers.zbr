@@ -497,6 +497,55 @@ def bodyHasRaise(stmts: List(Stmt)): bool
                 pass
     return false
 
+# ── bodyHasAssert ──────────────────────────────────────────────────────────────
+# BUG-386: does a body contain a plain `assert` statement (any nesting)? Feeds the
+# `test_*` auto-throws rule in genMethod, where an assert lowers to an error. Same
+# block shape as bodyHasRaise; expressions are not walked (an assert is a statement).
+def bodyHasAssert(stmts: List(Stmt)): bool
+    for s in stmts
+        branch s
+            on Stmt.assert_
+                return true
+            on Stmt.if_ as si
+                if bodyHasAssert(si.then_stmts)
+                    return true
+                for ei in si.else_ifs
+                    if bodyHasAssert(ei.stmts)
+                        return true
+                if si.else_stmts as se
+                    if bodyHasAssert(se)
+                        return true
+            on Stmt.while_ as w
+                if bodyHasAssert(w.stmts)
+                    return true
+            on Stmt.for_in as f
+                if bodyHasAssert(f.stmts)
+                    return true
+            on Stmt.for_num as fnum
+                if bodyHasAssert(fnum.stmts)
+                    return true
+            on Stmt.branch_ as b
+                for c in b.cases
+                    if bodyHasAssert(c.stmts)
+                        return true
+                if b.else_ as be
+                    if bodyHasAssert(be)
+                        return true
+            on Stmt.with_ as w
+                if bodyHasAssert(w.stmts)
+                    return true
+            on Stmt.in_scope as si_r
+                if bodyHasAssert(si_r.stmts)
+                    return true
+            on Stmt.guard_ as g
+                if bodyHasAssert(g.else_stmts)
+                    return true
+            on Stmt.try_catch
+                pass
+            else
+                pass
+    return false
+
 # ── bodyNeedsErrVar ───────────────────────────────────────────────────────────
 # Returns true if the body requires a mutable _try_err variable.
 # Identical to bodyHasRaise: both raise_ and bare try_ expressions trigger .

@@ -1,0 +1,20 @@
+# BUG-386: a plain `assert` inside a `test_*` fn is a test assertion. It lowers to an
+# error (like assert_eq) so a failure is reported as a verdict and the run continues,
+# instead of a panic that ended the whole run at the first failure with no summary.
+# This is the passing half; bug386_assert_in_test_fails_fixture has the verdicts.
+def test_plain_assert()
+    var xs = [1, 2, 3]
+    assert xs.len == 3
+    assert xs.at(0) == 1, "first element"
+
+def test_assert_in_nested_block()
+    for i in 0..3
+        if i > 0
+            assert i > 0
+
+class Calc
+    static def test_static_assert()
+        assert 2 + 2 == 4
+
+def main()
+    print("ok")

@@ -25,6 +25,21 @@ methods with a Zebra message. Workaround in zebra-ide: count by iterating.
 **Fix.** `getList` now returns a real `List(JsonValue)` (`_json_get_list_l`, copied into the program allocator), so `.len`, `.at()` and `for` take the ordinary List paths and the per-call special cases go. General rule landed with it: the chain hoist (BUG-027/079) is for STRUCT temporaries only — a receiver the checker types as a builtin container is never hoisted to `_mc_N` (`isBuiltinTypedRecv`), which is the same rule BUG-336 needed for split iterators. The old slice form stays in the runtime until the next n1-anchor so the N-1 regen authority still links. Fixture bug337_json_getlist_list_test; gen.py generates the shape.
 
 
+### BUG-386: a plain `assert` in a `test_*` fn panicked the whole `zebra test` run — FIXED 2026-09-09
+
+`assert x == 3` inside a test lowered to `std.debug.panic` (BUG-273's process-level
+check), so the first failing assert ended the run: no verdict for that test, no summary,
+and every later test unrun -- while `assert_eq` next to it reported cleanly. QUICKSTART
+told people to prefer `assert_eq` for that reason, which is documenting a trap instead of
+removing it. **Fix.** Inside a `test_*` fn (the harness's own rule: the prefix, no
+params) `assert` lowers to `try _zebra_assert_at(cond, "assert failed at file:line")` --
+or the author's message for `assert cond, "why"` -- and the fn auto-throws when its body
+has an assert (`bodyHasAssert`, the `bodyHasRaise` shape), so the harness reports a FAIL
+line and continues. Outside a test fn nothing changes. Fixtures
+bug386_assert_in_test_pass_test (incl. nested blocks and a static class test) and
+bug386_assert_in_test_fails_fixture (the verdicts + summary, via the new
+`smoke_test_verdicts` helper).
+
 ### BUG-385: `"\${"` (the documented literal-`${` escape) failed in Zig — FIXED 2026-09-09
 
 QUICKSTART §14 says `"\${"` writes a literal `${`, but the two-char escape was copied into

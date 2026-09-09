@@ -1,0 +1,16 @@
+# BUG-386 verdict half: two deliberately failing asserts. Before the fix the first one
+# panicked the process (no verdict, no summary, later tests never ran). Now each is a
+# FAIL line with the location or the author's message, and the summary is printed.
+# Run by tools/selfhost_smoke.sh smoke_test_verdicts; NOT a passing test file.
+def test_assert_fails_with_location()
+    var n = 2
+    assert n == 3
+
+def test_assert_fails_with_message()
+    assert false, "custom message here"
+
+def test_runs_after_the_failures()
+    assert true
+
+def main()
+    print("ok")
