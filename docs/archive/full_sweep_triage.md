@@ -35,7 +35,7 @@ existing gate is sound), and every CFAIL/EMITFAIL is accounted for:
   `tc_check_test`/`tc_infer_test`/`tc_types_test`/`typechecker_test` (import the
   compiler's own modules).
 - **Known codegen triage-backlog** — the open items already mapped in
-  `docs/emit_compile_triage.md` (generics `T`/`*T`, enum/union→int coercion, some
+  `docs/archive/emit_compile_triage.md` (generics `T`/`*T`, enum/union→int coercion, some
   stdlib API gaps: `csv_test`, `json_parse_typed_test`, `progress_test`,
   `raise_details_test`, `generic_pair_test`, …). Not regressions; pre-existing.
 
@@ -54,5 +54,5 @@ smoke-gated:
 baseline-passing test that now fails); new passes are informational. The baseline
 is the allow-list, so no hand-maintained skip-list is needed — re-baseline with
 `--update-baseline` when the pass set intentionally grows (e.g. after clearing a
-`docs/emit_compile_triage.md` item). Heavy (~25 min, JOBS=2); per-session /
+`docs/archive/emit_compile_triage.md` item). Heavy (~25 min, JOBS=2); per-session /
 pre-release, like `compile_check.sh`.

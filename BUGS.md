@@ -1511,7 +1511,7 @@ analysis cannot see into.
 Both walks stop at the literal: a variable **read** only inside it is treated as unused,
 and one **assigned** only inside it is treated as never mutated. Working around it needs
 two unrelated dummy statements (a fake comparison to use `p`, a dead branch to make `out`
-a var) — see `docs/extern_ffi_design.md` §9 for the full repro.
+a var) — see `docs/design/extern_ffi_design.md` §9 for the full repro.
 
 **Control when fixing:** a var read only inside a `zig"…"` must NOT get a discard, and one
 assigned only inside it must be emitted `var`; a genuinely unused var must still get its
@@ -1958,7 +1958,7 @@ coupling is what made this invisible. Sean's call.
 
 ### BUG-243: fifteen corpus files have never compiled, and no gate could say so
 
-**Found 2026-08-02**, working §2 of `docs/INSTRUMENT_PASS_PLAN.md`. An umbrella ticket:
+**Found 2026-08-02**, working §2 of `docs/archive/INSTRUMENT_PASS_PLAN.md`. An umbrella ticket:
 these are not one defect, they are fifteen — but they were found by one method, they share
 one cause of invisibility, and the inventory is more useful in one place than scattered.
 

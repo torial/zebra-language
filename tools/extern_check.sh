@@ -2,7 +2,7 @@
 # extern_check.sh — the FFI red-team suite (BUG-258).
 #
 # INTENT-AUTHORED, like boundary_check and for the same reason: every expectation
-# in test/extern/ was written from docs/extern_ffi_design.md BEFORE the feature
+# in test/extern/ was written from docs/design/extern_ffi_design.md BEFORE the feature
 # existed, and committed RED. A suite written after the implementation can only
 # ever confirm what the compiler already does. If you ever find yourself editing
 # an expectation to match observed output, stop -- that converts this into a

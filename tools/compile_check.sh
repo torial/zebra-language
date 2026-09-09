@@ -18,7 +18,7 @@
 #   JOBS=8 bash tools/compile_check.sh           # override parallelism (default 4)
 #
 # --single-file mode: appends --single-file to the emit, so it checks the namespaced
-# `const _Mod = struct {…}` shape (docs/single_file_emit_design.md §7a/§7b). The selfhost
+# `const _Mod = struct {…}` shape (docs/design/single_file_emit_design.md §7a/§7b). The selfhost
 # does the full multi-module merge (Phase 2: deps become `const _mod_X = struct {…}` in one
 # file), so cross-module tests ARE checked there. The bootstrap is single-module only for
 # now (Phase 2 is selfhost-first), so `--bootstrap --single-file` still skips multi-module.

@@ -25,7 +25,7 @@ a bare `recv.name()` call, which would otherwise look exactly like a borrow.
 
 Usage:
     python tools/str_ownership_extract.py                 # print the table
-    python tools/str_ownership_extract.py --write         # also write docs/str_ownership.md
+    python tools/str_ownership_extract.py --write         # also write docs/design/str_ownership.md
 """
 import pathlib
 import re

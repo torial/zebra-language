@@ -90,7 +90,7 @@ non-ASCII everywhere, nil at every position. Written as *expected* output, not r
 accident. We have never looked systematically.*
 
 **FIRST PASS DONE 2026-07-30 — the yield estimate held.** `tools/boundary_check.sh`,
-probes in `test/boundary/`, triage in `docs/boundary_triage.md`. Four dimensions (empty
+probes in `test/boundary/`, triage in `docs/archive/boundary_triage.md`. Four dimensions (empty
 string, empty collections, nil at every position, argument arity), ~140 assertions, and
 **three real bugs on the first run**: BUG-230 (an annotated non-empty list literal does
 not compile), BUG-232 (arity checking skipped inside `${...}`), BUG-231 (named arguments

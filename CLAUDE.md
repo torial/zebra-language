@@ -31,17 +31,17 @@ history lives.
 - `zbuild` / `zbuild.bat` — convenience wrappers around `zig build`.
 - `QUICKSTART.md` — **agent-facing Zebra language reference**. Read this before
   writing or reading `.zbr` code.
-- `SELFHOST_JOURNAL.md` — phase-by-phase notes on porting the compiler to Zebra.
+- `docs/SELFHOST_JOURNAL.md` — phase-by-phase notes on porting the compiler to Zebra.
 - `BUGS.md` — active compiler bug tracker.
 - `NEXT_STEPS.md` — **a ROUTER over five files**, not a queue (split 2026-08-29; it
   was 3,845 lines, which is why nobody read it before planning). Read the one that
   matches the KIND of thing you are doing:
   - `docs/PRINCIPLES.md` — **how we decide**: the system concept, four gates, seven
     ranked axes, accepted tensions. **Read this before proposing or judging work.**
-  - `docs/FINDINGS.md` — **what we already know**: measurements, recorded so nobody
+  - `docs/archive/FINDINGS.md` — **what we already know**: measurements, recorded so nobody
     re-derives them. Check here before measuring anything.
-  - `NEXT_STEPS_to_0.9.md` / `_to_1.0.md` / `_post_1.0.md` — the queues.
-- `STDLIB_ROADMAP.md` — standard library plan.
+  - `docs/NEXT_STEPS_to_0.9.md` / `_to_1.0.md` / `_post_1.0.md` — the queues.
+- `docs/STDLIB_ROADMAP.md` — standard library plan.
 - `grammar.txt` — language grammar reference.
 
 ## Build and test
@@ -403,7 +403,7 @@ a session arriving cold can tell what to *skip* rather than guessing:
 | `design` | a design/decision note | read only when touching that subsystem; may describe intent that is not built. Each carries its own `Status:` line |
 | `generated` | produced by a tool | **skip.** Edit the tool, not the file |
 
-**13 of the 56 documents are `historical` or `generated`** <!-- doc-gen: 56 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> <!-- doc-gen: 13 = for f in *.md docs/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
+**5 of the 36 documents are `historical` or `generated`** <!-- doc-gen: 36 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> <!-- doc-gen: 5 = for f in *.md docs/*.md docs/design/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
 i.e. skippable with confidence. That is the point: the surface area of this repo's
 documentation is what let one wrong claim live in four files at once, and "which of these
 is current?" was previously answerable only by reading them.
@@ -1144,7 +1144,7 @@ bash tools/boundary_check.sh    # THE INTENT WITNESS (A3, QUICK tier, 104-339s -
                                 #   other behaviour check here is a GOLDEN baseline, which
                                 #   catches regressions and can NEVER find something that
                                 #   was wrong on day one. Probes in test/boundary/, triage
-                                #   in docs/boundary_triage.md.
+                                #   in docs/archive/boundary_triage.md.
                                 #   FIRST RUN (2026-07-30) found BUG-230 (an annotated
                                 #   non-empty list literal does not compile — invisible to
                                 #   divergence BY CONSTRUCTION, since both compilers do the
@@ -2019,12 +2019,12 @@ than "what do we know":
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
 | **our own tools are not lying** | `hazard_lint` (+ its controls) | 104 scripts | <!-- doc-gen: 104 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
-| docs' checkable claims still resolve | `doc_lint` | 56 tracked documents <!-- doc-gen: 56 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' --> |
+| docs' checkable claims still resolve | `doc_lint` | 36 tracked documents <!-- doc-gen: 36 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords × both compilers |
-| **the docs' EXAMPLES actually parse** | `doc_example_check` | `live` docs only; the gate prints its own block and doc counts | <!-- doc-gen: 56 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$' -->
+| **the docs' EXAMPLES actually parse** | `doc_example_check` | `live` docs only; the gate prints its own block and doc counts | <!-- doc-gen: 36 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
 
@@ -2562,7 +2562,7 @@ proves the tree was in the same state throughout.
 Two numbers worth recording, neither of which this file previously carried.
 `divergence` reports **44 bootstrap gaps** — cases where the selfhost LEADS. Still
 informational, still "don't chase", but the last written-down figures are **14** in
-`docs/divergence_audit.md` and 23 in a session memory, so it has roughly tripled
+`docs/archive/divergence_audit.md` and 23 in a session memory, so it has roughly tripled
 unremarked and no document here tracked it. And `full_sweep` reports
 **369 PASS against a baseline of 337**, i.e. **32 accumulated new passes** nobody has
 locked in. A baseline defines the pass set, so those 32 files cannot make the gate red
@@ -2597,7 +2597,7 @@ the table below stands unchanged.
 while the tracked corpus is **596** <!-- doc-gen: 596 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
-and unexamined are not in tension; see `docs/INSTRUMENT_PASS_PLAN.md` §2.
+and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.
 
 The baseline figure now carries its own `doc-gen` oracle, added 2026-08-16 after it sat
 stale at 337 through a re-baseline to 374. The corpus number beside it had an oracle and
@@ -2670,7 +2670,7 @@ The self-hosting effort lives in `selfhost/`. Rule of thumb for this port:
 **the Zebra compiler in `selfhost/` must be functionally equivalent to the
 Zig compiler in `src/`.** When closing a gap, do not drop features in the
 selfhost port — that creates a regression in the selfhosted side. See
-`SELFHOST_JOURNAL.md` for how each phase was done.
+`docs/SELFHOST_JOURNAL.md` for how each phase was done.
 
 ## Language quick reference
 
@@ -2694,7 +2694,7 @@ Key idioms worth remembering up front:
 **Adding a feature to the compiler:**
 1. Add the Zig implementation in the appropriate `src/` file.
 2. Extend the test suite in `test/`.
-3. Update `selfhost/` to keep parity, or file a gap note in `SELFHOST_JOURNAL.md`.
+3. Update `selfhost/` to keep parity, or file a gap note in `docs/SELFHOST_JOURNAL.md`.
 4. Update `QUICKSTART.md` if user-visible syntax or semantics change.
 
 **Self-hosting (Phase 22 complete):**

@@ -186,16 +186,16 @@ fi
 # The doc is DERIVED from emit, so drift means the shipped ownership claims are wrong
 # while still carrying a GENERATED banner. Appending a bogus row stands in for a codegen
 # change that flips an ownership.
-if [ -f docs/str_ownership.md ]; then
+if [ -f docs/design/str_ownership.md ]; then
     base=$(run_rc $PY tools/str_ownership_extract.py --check)
     if [ "$base" -ne 0 ]; then
         note "str-ownership: skipped (--check already fails rc=$base on the UNPERTURBED"
         note "        doc, so rejecting a planted row would prove nothing)"
     else
-        cp -p docs/str_ownership.md "$OUT/own.bak"
-        printf '\n| `s.bogus()` | **BORROW** | | | |\n' >> docs/str_ownership.md
+        cp -p docs/design/str_ownership.md "$OUT/own.bak"
+        printf '\n| `s.bogus()` | **BORROW** | | | |\n' >> docs/design/str_ownership.md
         got=$(run_rc $PY tools/str_ownership_extract.py --check)
-        cp -p "$OUT/own.bak" docs/str_ownership.md
+        cp -p "$OUT/own.bak" docs/design/str_ownership.md
         case "$got" in
             1) pass "str-ownership rejects a perturbed table (clean 0 -> planted 1)" ;;
             0) bad "str-ownership accepted a PERTURBED generated table" ;;

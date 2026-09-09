@@ -1418,7 +1418,7 @@ lexer is built on it (~104 subscript sites, 559 `c'x'` literals, 61 of the form
 `u21` char literal by peer type resolution, so every one of those comparisons survives
 the retype untouched — Go's untyped-constant rule arriving for free rather than being
 built. The compiler's own round-trip is what proved it, not an argument.
-See `docs/QUALITY_AUDIT_2026-08-03.md` §5c for the options that were weighed.
+See `docs/archive/QUALITY_AUDIT_2026-08-03.md` §5c for the options that were weighed.
 
 ### String ownership: what borrows and what owns
 
@@ -1454,7 +1454,7 @@ allocate
 Holding the container is not enough; the lifetime that matters is that of the
 **receiver**, not of the list.
 
-**The authoritative per-operation table is [`docs/str_ownership.md`](docs/str_ownership.md).**
+**The authoritative per-operation table is [`docs/design/str_ownership.md`](docs/design/str_ownership.md).**
 It is *generated from real compiler output* by `tools/str_ownership_extract.py` — each row
 carries the emitted Zig it was classified from — and gated, so it cannot drift from the
 compiler without failing a build gate. Consult it rather than a copy; a second hand-maintained
@@ -3699,7 +3699,7 @@ compile-time type: `"nil" | "bool" | "int" | "float" | "string" | "function" |
 `@TypeOf` does not evaluate its operand, so a call expression is side-effect-safe).
 It's the substrate primitive for dynamic-language interop — per-language type-name
 mappings (Luau's `"number"`/`"table"`/…, JS's …) live in the *consumer*, keeping
-the compiler free of any source-language knowledge. See `docs/dynamic_interop.md`.
+the compiler free of any source-language knowledge. See `docs/design/dynamic_interop.md`.
 
 See §25 for `@reflectable` + `Json.parseStrict` (Tier 3).
 

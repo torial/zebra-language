@@ -229,7 +229,7 @@ def live_docs():
               "set cannot be determined; globbing would make this gate depend on local "
               "scratch.", file=sys.stderr)
         sys.exit(2)
-    docs = sorted(p for p in (list(REPO.glob("*.md")) + list(REPO.glob("docs/*.md")))
+    docs = sorted(p for p in (list(REPO.glob("*.md")) + list(REPO.glob("docs/*.md")) + list(REPO.glob("docs/design/*.md")))
                   if p.relative_to(REPO).as_posix() in keep)
     if not docs:
         print("[doc-example] REFUSING: 0 tracked documents matched — the enumerator is "

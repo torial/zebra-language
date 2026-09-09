@@ -2343,7 +2343,7 @@ passing on both compilers; debt 20 → 19.
   found while confirming this fix did not disturb that path (it did not).
 - **BUG-263** — `use foo exposing bar` binds nothing on a native dep, in **both**
   compilers.
-- DLL/shared-library symbols remain unsupported (`docs/extern_ffi_design.md` §7).
+- DLL/shared-library symbols remain unsupported (`docs/design/extern_ffi_design.md` §7).
 
 ---
 

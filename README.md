@@ -11,7 +11,7 @@ Pre-1.0, and usable end-to-end for non-trivial programs — the self-hosted
 compiler is written in Zebra and is its own main stress test. Also built in
 Zebra: a game engine, a language server, and a GUI IDE with an embedded
 Scintilla editor. Standard library is growing; a roadmap lives in
-[STDLIB_ROADMAP.md](STDLIB_ROADMAP.md), and the priority queue is in
+[docs/STDLIB_ROADMAP.md](docs/STDLIB_ROADMAP.md), and the priority queue is in
 [NEXT_STEPS.md](NEXT_STEPS.md).
 
 ## Hello, world
@@ -38,10 +38,10 @@ zig-out/bin/zebra.exe --gui-backend=tui      run examples/counter.zbr
 - **[QUICKSTART.md](QUICKSTART.md)** — language syntax and idioms (start here).
 - **[docs/UI_QUICKSTART.md](docs/UI_QUICKSTART.md)** — GUI programming and the
   libui-ng backend.
-- **[SELFHOST_JOURNAL.md](SELFHOST_JOURNAL.md)** — phase-by-phase port notes.
+- **[docs/SELFHOST_JOURNAL.md](docs/SELFHOST_JOURNAL.md)** — phase-by-phase port notes.
 - **[BUGS.md](BUGS.md)** — active bug tracker.
 - **[NEXT_STEPS.md](NEXT_STEPS.md)** — authoritative priority queue.
-- **[STDLIB_ROADMAP.md](STDLIB_ROADMAP.md)** — standard library plan.
+- **[docs/STDLIB_ROADMAP.md](docs/STDLIB_ROADMAP.md)** — standard library plan.
 - **[docs/DEBUGGING.md](docs/DEBUGGING.md)** — debugger setup (VS Code, ZebraIDE, lldb-dap).
 - **[docs/archive/HERITAGE.md](docs/archive/HERITAGE.md)** — how this repo relates
   to the archived `cobra-language` repo it was split from.

@@ -31,6 +31,6 @@ All four, checked rather than assumed:
    points at the old path, which is how the references above were found and fixed.
 
 Things that look retired and are **not**: `pub_mark_preamble.py` and `rtsplit_spike.py`
-(both cited by `docs/runtime_module_design.md`, and one by `NEXT_STEPS.md`), and
+(both cited by `docs/design/runtime_module_design.md`, and one by `NEXT_STEPS.md`), and
 `scaling_probe.py` (a probe that still gets used). Recency and a live citation both
 outrank a retired-sounding name.

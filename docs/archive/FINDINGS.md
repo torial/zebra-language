@@ -798,7 +798,7 @@ tests separately, and the compile-failure fallback to the authoritative LLVM pat
 rest. A check also needs no binary, so it now passes `-fno-emit-bin` and skips linking
 entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, identical diagnostics.
 
-- [~] **#1 — Stop inlining the preamble; ship it as a runtime module. NOW THE DEFAULT (2026-07-28; `--no-runtime-module` opts out) — read `docs/runtime_module_design.md` before touching it.** Emitted programs
+- [~] **#1 — Stop inlining the preamble; ship it as a runtime module. NOW THE DEFAULT (2026-07-28; `--no-runtime-module` opts out) — read `docs/design/runtime_module_design.md` before touching it.** Emitted programs
   would `@import` a runtime package instead of carrying 3,790 lines of copy-pasted preamble for a
   2-line source. **Re-justified after measurement — this is NOT about speed** (worth ~0.2 s on
   the fast path). It is about three things that are real:
@@ -819,7 +819,7 @@ entirely — measured as most of the remaining cost. **3.97 s → 0.81 s**, iden
   add an unrelated line is a far worse failure mode than one that is either always present or
   never. Tree-shaking is a reasonable *optimisation* later; it is not the fix for what #1 is for.
 
-  Overlaps `docs/single_file_emit_design.md` but is distinct: that combines *modules*; this stops
+  Overlaps `docs/design/single_file_emit_design.md` but is distinct: that combines *modules*; this stops
   copy-pasting the *runtime*.
 
   **Spike outcome (do not re-derive):** `@import` shares file-scope state across modules at
@@ -995,7 +995,7 @@ for the map.
 | file | answers |
 |---|---|
 | [docs/PRINCIPLES.md](PRINCIPLES.md) | how do we decide? |
-| [docs/FINDINGS.md](FINDINGS.md) | what do we already know? |
+| [docs/archive/FINDINGS.md](FINDINGS.md) | what do we already know? |
 | [NEXT_STEPS_to_0.9.md](../NEXT_STEPS_to_0.9.md) | what is next, before public release? |
 | [NEXT_STEPS_to_1.0.md](../NEXT_STEPS_to_1.0.md) | what is next, before the freeze? |
 | [NEXT_STEPS_post_1.0.md](../NEXT_STEPS_post_1.0.md) | deliberately deferred past 1.0 |

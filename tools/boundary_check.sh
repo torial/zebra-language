@@ -17,7 +17,7 @@
 #
 # So: when a probe FAILS, the first question is not "what changed?" but "which is
 # wrong, the compiler or the expectation?" — and the answer belongs in
-# docs/boundary_triage.md either way.
+# docs/archive/boundary_triage.md either way.
 #
 # OUTCOME KINDS
 # -------------
@@ -226,7 +226,7 @@ if [ -n "$PENDING_LIST" ]; then
 fi
 
 echo
-echo "  uncovered by this suite (see docs/boundary_triage.md for the full list and why):"
+echo "  uncovered by this suite (see docs/archive/boundary_triage.md for the full list and why):"
 echo "    integer overflow, division by zero    — THE REFERENCE DOES NOT DEFINE IT."
 echo "                                             Was blocked on BUG-228 (fixed 2026-08-03);"
 echo "                                             the real blocker turned out to be that"

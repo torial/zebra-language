@@ -421,7 +421,7 @@ run_static "zig-keywords"   "cover all"        python tools/lint_zig_keywords.py
 # and a compile gate cannot see them. Candidate set DERIVED from the smoke suite's own
 # must-fail registrations; baselined, so only NEW position-less diagnostics fail.
 run_fast "diag-columns"   "0 NEW"           python tools/lint_diag_columns.py
-# §28e: docs/str_ownership.md is DERIVED from real emit, so a codegen change that flips
+# §28e: docs/design/str_ownership.md is DERIVED from real emit, so a codegen change that flips
 # a borrow into an own (or the reverse) makes the shipped table wrong while it still
 # carries a "GENERATED" banner vouching for it. One emit; cheap.
 run_fast "str-ownership"  "is current" python tools/str_ownership_extract.py --check

@@ -4,7 +4,7 @@
 **0.9 is ready-for-others, not 1.0.** Judge every item here against
 [docs/PRINCIPLES.md](docs/PRINCIPLES.md): four gates first (a failure is a
 rejection, not a low score), then the seven ranked axes. Measurements live in
-[docs/FINDINGS.md](docs/FINDINGS.md) -- do not re-derive them.
+[docs/archive/FINDINGS.md](docs/archive/FINDINGS.md) -- do not re-derive them.
 
 ## 0.9 — RETIRE THE IMGUI GUI BACKEND — **DONE 2026-08-29** <!-- doc-lint-ok: the file references below are a record of what was DELETED, not pointers to live work; the paths are dangling BY DESIGN -->
 
@@ -82,11 +82,11 @@ enum member reserved for something never built, costing real surface area — ev
    nothing is verifying it today either.
 3. **No corpus file builds with it.** Only docs and the IDE reference `--gui-backend=glfw`.
 
-**DO NOT "FIX" THE HISTORICAL DOCS.** `SELFHOST_JOURNAL.md` and `CHANGELOG.md` are
+**DO NOT "FIX" THE HISTORICAL DOCS.** `docs/SELFHOST_JOURNAL.md` and `CHANGELOG.md` are
 `doc-status: historical`; an entry describing a backend that existed in May is accurate
 history, and rewriting it falsifies the record. `doc_lint` already exempts them. What DOES
 need updating: `QUICKSTART.md` (the backend table), `IDE/README.md`, <!-- doc-lint-ok: the IDE was deleted rather than updated; kept as the original plan text -->
-`docs/BETA_REVIEW_CHECKLIST.md`, `docs/UI_QUICKSTART.md`.
+`docs/archive/BETA_REVIEW_CHECKLIST.md`, `docs/UI_QUICKSTART.md`.
 
 **ORDER:** delete the arms and enum members first and let `doc_lint` name every stale
 reference — that is the tool doing the inventory rather than a hand-written list, which is
@@ -1121,7 +1121,7 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
 - [~] **A3 — boundary-value suite, written from INTENT not recorded. FIRST PASS DONE
   2026-07-30 — four dimensions, and it found three real bugs on its first run.**
   `tools/boundary_check.sh` (QUICK tier, ~30 s, falsified in `gate_selfcheck.sh`), probes
-  in `test/boundary/`, full triage in `docs/boundary_triage.md`.
+  in `test/boundary/`, full triage in `docs/archive/boundary_triage.md`.
 
   **The one property that makes it not another golden baseline** is that every expectation
   was authored from QUICKSTART *before* the compiler was ever run, and that ordering is
@@ -1208,7 +1208,7 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   `docs/testing_strategy.md` §B1; follow-ups are the two items directly below.
   **"Gates caught 40%" is not a coverage figure — do not quote it.** `--site FILE:LINE`
   re-runs one mutation, which is how a new test is PROVEN to kill a survivor.
-- [ ] **→ SEE [`docs/INSTRUMENT_PASS_PLAN.md`](docs/INSTRUMENT_PASS_PLAN.md) — the ordered
+- [ ] **→ SEE [`docs/archive/INSTRUMENT_PASS_PLAN.md`](docs/archive/INSTRUMENT_PASS_PLAN.md) — the ordered
   plan for "passing all the instruments" (next week's focus, agreed 2026-08-01).** It
   frames the bar correctly: green is achievable by re-baselining, so the target is that a
   NEWLY BUILT instrument finds nothing new. Highest-value item is not the survivor list —
@@ -1340,7 +1340,7 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
   that makes Zebra's string layer tell the truth, so strings are touched once before 0.9
   rather than three times. Three parts:
 
-  1. **The ownership table** — **DONE 2026-07-29** (`a0a8664`). `docs/str_ownership.md`,
+  1. **The ownership table** — **DONE 2026-07-29** (`a0a8664`). `docs/design/str_ownership.md`,
      28 operations, **derived from real compiler emit** by
      `tools/str_ownership_extract.py` rather than read off `genStdlibMethod`; every row
      carries the emitted Zig it was classified from. Gated via `--check` in the QUICK
@@ -1472,7 +1472,7 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
   take the reserved `_zbr_fn_` prefix, finishing the half of BUG-137 (`_zbr_mv_` for module vars)
   that was never done. Selfhost-only; gate `test/toplevel_name_collision_test.zbr`. Residual:
   `@export`/`@node_export` keep their names (the ABI symbol IS the name) — closed only by the
-  namespaced-emission design (§ docs/single_file_emit_design.md 1a).
+  namespaced-emission design (§ docs/design/single_file_emit_design.md 1a).
 - [x] **BUG-219 — `sys.run` deadlock. FIXED 2026-07-28.** Sequential pipe drain (stdout to EOF,
   then stderr) deadlocked whenever a child filled its stderr buffer — which made `zebra -c` hang
   precisely when a program had errors to report, and that is what the IDE's Check button runs.
@@ -1480,7 +1480,7 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
   verified against 29.5 KB of child stderr. Same family as BUG-208's noted follow-ups.
 
 - [ ] **Selfhost↔bootstrap divergence burn-down** (`tools/divergence_check.sh`,
-  `docs/divergence_audit.md`). New harness (2026-07-18) catches drift the other gates
+  `docs/archive/divergence_audit.md`). New harness (2026-07-18) catches drift the other gates
   can't (they all emit with one compiler). First run: 272 agree-pass, **19 → 17 selfhost
   gaps** after the Build fix (`e5f34d8`). Every remaining gap has a known-good bootstrap
   emit to diff against — a `diff bootstrap-emit vs selfhost-emit → converge` workflow.
@@ -1526,7 +1526,7 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
   **RUNTIME-VERIFIED 2026-07-27:** counter (`+`/`−`/reset work), the game
   (difficulty screen renders), and — after porting the `CodeEditor` builtin to the
   selfhost — a single Scintilla editor (`examples/editor_min.zbr`: renders + displays
-  its `setText` content, Sean-confirmed). See `docs/libui_ng_audit.md` for the full
+  its `setText` content, Sean-confirmed). See `docs/archive/libui_ng_audit.md` for the full
   claims-vs-verified ledger.
   **IDE: BUG-214 FIXED 2026-07-27 — next step is ONE INTERACTIVE RUN (Sean).**
   The IDE compiles + links + **renders** via `--gui-backend=libui_ng` (all compile gaps
@@ -1645,7 +1645,7 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
     game WITHOUT the BUG-204/206 workarounds (revert those in the example to prove it);
     bootstrap_check + smoke green.**
 - [ ] **Grow the fuzzer's `DEFAULT_CAPS`** (`fuzz/gen.py`) — highest-leverage
-  correctness lever (risk surface is combinatorial; see `docs/COVERAGE_MAP.md`).
+  correctness lever (risk surface is combinatorial; see `docs/archive/COVERAGE_MAP.md`).
   Remaining caps need class-relationship generation: (4) `^T` boxing,
   (5) interfaces + `is`, (6) generics / backed-enums / chained-cmp. → *Open detail,
   Fuzzer.*
@@ -1697,8 +1697,8 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
   `zig build-exe` on emitted corpus programs). **Recommend gating it** (per-commit or at
   least per-session) — it is currently a manual tool, so the coverage-blindness it closes
   is only closed on the days someone remembers to run it. Cost: a few min at JOBS=3.
-- [ ] **⚠️ 1.0 BLOCKER — emit-compile triage campaign** → **`docs/emit_compile_triage.md`**.
-  > **RE-SWEPT + GATED 2026-07-24** (`docs/full_sweep_triage.md`, `tools/full_sweep.sh`).
+- [ ] **⚠️ 1.0 BLOCKER — emit-compile triage campaign** → **`docs/archive/emit_compile_triage.md`**.
+  > **RE-SWEPT + GATED 2026-07-24** (`docs/archive/full_sweep_triage.md`, `tools/full_sweep.sh`).
   > Full 403-file re-sweep: **328 PASS, 0 regressions, 0 NEW bugs** — every remaining
   > CFAIL/EMITFAIL is a negative test, library module, interop-needs-libs, multi-module,
   > or a KNOWN item in this campaign's backlog. Fixed 3 stale tests (removed syntax) en
@@ -1735,7 +1735,7 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
   hardening) LANDED 2026-07-21, behind default-off `--single-file`. **F5 closed**;
   `compile_check.sh --single-file` = 200/0/1 == multi-file baseline; round-trip byte-identical;
   smoke 236/236. **BUG-181 RESOLVED 2026-07-22 → Phase 5 UNBLOCKED** (the combined selfhost/main.zig
-  now COMPILES). **Phase 5/6 DE-SCOPED (2026-07-22, `docs/regen_authority_decision.md`):** keep
+  now COMPILES). **Phase 5/6 DE-SCOPED (2026-07-22, `docs/design/regen_authority_decision.md`):** keep
   the bootstrap as the independent multi-file regen authority (the trusting-trust witness that
   caught BUG-181); do NOT make the selfhost sole authority, do NOT add single-file to the
   bootstrap now. Single-file stays a shipped feature (default-off), gated by
@@ -1816,7 +1816,7 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
   noise). Prototype compiled + ran; cross-module `use`, bare outward preamble resolution, and F5
   dissolution all verified. Real project: both emitters kept equivalent, round-trip goes
   single-artifact, phased behind a temporary `--single-file` flag. **Supervised, careful, gated.**
-  → *Design + phased plan: `docs/single_file_emit_design.md`.* Supersedes the bespoke F5 fix.
+  → *Design + phased plan: `docs/design/single_file_emit_design.md`.* Supersedes the bespoke F5 fix.
 
 ## Environment / repo cleanup (safe, unattended)
 
@@ -1836,7 +1836,7 @@ for the map.
 | file | answers |
 |---|---|
 | [docs/PRINCIPLES.md](docs/PRINCIPLES.md) | how do we decide? |
-| [docs/FINDINGS.md](docs/FINDINGS.md) | what do we already know? |
-| [NEXT_STEPS_to_0.9.md](NEXT_STEPS_to_0.9.md) | what is next, before public release? |
-| [NEXT_STEPS_to_1.0.md](NEXT_STEPS_to_1.0.md) | what is next, before the freeze? |
-| [NEXT_STEPS_post_1.0.md](NEXT_STEPS_post_1.0.md) | deliberately deferred past 1.0 |
+| [docs/archive/FINDINGS.md](docs/archive/FINDINGS.md) | what do we already know? |
+| [docs/NEXT_STEPS_to_0.9.md](docs/NEXT_STEPS_to_0.9.md) | what is next, before public release? |
+| [docs/NEXT_STEPS_to_1.0.md](docs/NEXT_STEPS_to_1.0.md) | what is next, before the freeze? |
+| [docs/NEXT_STEPS_post_1.0.md](docs/NEXT_STEPS_post_1.0.md) | deliberately deferred past 1.0 |

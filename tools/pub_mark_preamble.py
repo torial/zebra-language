@@ -1,6 +1,6 @@
 """Mark the runtime preamble's declarations `pub` (#1 step 1).
 
-The runtime-module change (docs/runtime_module_design.md) needs every preamble
+The runtime-module change (docs/design/runtime_module_design.md) needs every preamble
 declaration reachable from an emitted program to be `pub`, because emitted code
 will `@import` the runtime instead of inlining it. `pub` at container scope is
 legal — and inert — in a root file too, so this edit can land BEFORE any codegen

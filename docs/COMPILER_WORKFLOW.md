@@ -49,7 +49,7 @@ bash tools/bootstrap_check.sh   # 5-step round-trip identity check
 
 1. Edit the relevant file(s) in `src/`.
 2. `zig build test` — full suite.
-3. Update `selfhost/*.zbr` for parity (or file a gap note in `SELFHOST_JOURNAL.md`).
+3. Update `selfhost/*.zbr` for parity (or file a gap note in `docs/SELFHOST_JOURNAL.md`).
 4. `zig build update-selfhost` — regenerate `selfhost/*.zig`.
 5. `zig build test` again to confirm the selfhost side is green.
 6. `bash tools/bootstrap_check.sh` — 5-step round-trip must pass.
@@ -254,7 +254,7 @@ before starting another.
 ## Filing a selfhost gap vs fixing in place
 
 If a bootstrap feature is hard to port to the selfhost compiler right now,
-file a gap note in `SELFHOST_JOURNAL.md` instead of dropping the feature.
+file a gap note in `docs/SELFHOST_JOURNAL.md` instead of dropping the feature.
 The equivalence rule: **the selfhost and bootstrap compilers must be
 functionally equivalent**.  Never drop a feature in the selfhost port.
 

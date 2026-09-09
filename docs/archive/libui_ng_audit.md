@@ -216,7 +216,7 @@ Complete (2026-05-22)" describes emit-completeness, not a running program.
 | Doc | Pin named as "the" pin |
 |---|---|
 | `docs/UI_QUICKSTART.md:233` | `zig-libui-ng` `d99a49c` |
-| `docs/gui_mvu_design.md:74` | `zig-libui-ng` `39665dc`, libui-ng `5c24fd66` |
+| `docs/design/gui_mvu_design.md:74` | `zig-libui-ng` `39665dc`, libui-ng `5c24fd66` |
 | **Actual (2026-07-27)** | **`zig-libui-ng@main 8677b01` → `libui-ng@main 85976bc`** |
 
 Both older pins are stale; `luiBuildZon` in `selfhost/main.zbr` is the single

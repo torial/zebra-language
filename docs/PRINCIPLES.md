@@ -775,7 +775,7 @@ for the map.
 | file | answers |
 |---|---|
 | [docs/PRINCIPLES.md](PRINCIPLES.md) | how do we decide? |
-| [docs/FINDINGS.md](FINDINGS.md) | what do we already know? |
-| [NEXT_STEPS_to_0.9.md](../NEXT_STEPS_to_0.9.md) | what is next, before public release? |
-| [NEXT_STEPS_to_1.0.md](../NEXT_STEPS_to_1.0.md) | what is next, before the freeze? |
-| [NEXT_STEPS_post_1.0.md](../NEXT_STEPS_post_1.0.md) | deliberately deferred past 1.0 |
+| [docs/archive/FINDINGS.md](FINDINGS.md) | what do we already know? |
+| [docs/NEXT_STEPS_to_0.9.md](../NEXT_STEPS_to_0.9.md) | what is next, before public release? |
+| [docs/NEXT_STEPS_to_1.0.md](../NEXT_STEPS_to_1.0.md) | what is next, before the freeze? |
+| [docs/NEXT_STEPS_post_1.0.md](../NEXT_STEPS_post_1.0.md) | deliberately deferred past 1.0 |

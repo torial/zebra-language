@@ -87,7 +87,7 @@ confirmed via `tools/bootstrap_check.sh`.
   upstream dependency did not compile under Zig 0.16. End-to-end runtime —
   `counter.zbr` opens a native Win32 window and its buttons work — was first
   reached 2026-07-27 after the Common-Controls manifest fix; see
-  `docs/libui_ng_audit.md`.)
+  `docs/archive/libui_ng_audit.md`.)
 
 ### GUI: MVU architecture
 

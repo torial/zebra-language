@@ -46,7 +46,7 @@ import subprocess
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
-DOC_GLOBS = ["*.md", "docs/*.md"]
+DOC_GLOBS = ["*.md", "docs/*.md", "docs/design/*.md"]  # docs/archive/ is history: not linted (2026-09-09)
 
 # `tools/foo.sh`, tools/foo.py, bash tools/foo.sh -- in prose, backticks or code fences.
 TOOL_REF = re.compile(r"\btools/([A-Za-z0-9_.\-]+\.(?:sh|py))")

@@ -14,7 +14,7 @@ month of dogfooding surfaced a class of silent-wrong-answer defects that a freez
 should not ship over.
 
 Judge items against [docs/PRINCIPLES.md](docs/PRINCIPLES.md); measurements are in
-[docs/FINDINGS.md](docs/FINDINGS.md).
+[docs/archive/FINDINGS.md](docs/archive/FINDINGS.md).
 
 ## POST-0.9, PRE-1.0 — ADOPT ZIGZAG'S FALLIBLE `init`/`update`/`view` (Sean, 2026-08-25)
 
@@ -270,7 +270,7 @@ foundation and needs a supervised session.
   becomes a compile error). Validated by `thread_alloc_stress_test`. **Residual (post-1.0):**
   `allocate Arena()` scopes swap the global `_allocator` and race with workers (77% crash,
   captured by `arena_concurrency_hazard_test`) → rule: allocate-scopes are single-threaded-
-  only. See `docs/concurrency_allocation_design.md`. Below = the ORIGINAL (superseded) plan.
+  only. See `docs/design/concurrency_allocation_design.md`. Below = the ORIGINAL (superseded) plan.
 - [ ] **§28j step b — two-tier allocator wiring** (per-thread arenas + a shared
   `Smp()` handle). Race is confirmed-in-code but latent-at-runtime; the fix is
   subtle with concurrency-lifetime failure modes the gates can't catch → supervised
@@ -478,7 +478,7 @@ return-path detection if the bootstrap is kept longer.
 scopes and threads. Pre-1.0 task = a per-call borrows-vs-owns table in the
 spec/QUICKSTART, so the 1.5 `str_view` design has defined ground.
 
-**Landed 2026-07-29.** `docs/str_ownership.md` (generated, gated) + QUICKSTART rules.
+**Landed 2026-07-29.** `docs/design/str_ownership.md` (generated, gated) + QUICKSTART rules.
 The table is DERIVED from emit, not read off codegen, because ~28 near-identical
 classification judgements is precisely the work that drifts — and the derivation found
 two things a reading would have flattened: the owned-container-of-borrowed-elements
@@ -516,7 +516,7 @@ capability).
 
 ## §28j — `_allocator` under threads → two-tier model (step b open) [DIRECTION SET — Sean 2026-07-03]
 
-> **Design research (2026-07-23): `docs/concurrency_allocation_design.md`.** Comparing
+> **Design research (2026-07-23): `docs/design/concurrency_allocation_design.md`.** Comparing
 > Zig (`ThreadSafeAllocator`, `SmpAllocator` — a GC-free per-thread-cache with
 > thread-exit reclamation, both in std) and Go (per-P `mcache` tiers + GC-owned
 > lifetime) reframes §28j and **shrinks it**: lead with SHARE-NOTHING (per-thread arenas
@@ -771,7 +771,7 @@ test`). QUICKSTART §45. Follow-ups (cross-platform `.node`, richer matrix) in T
 
 # Completed — archive (one-liners)
 
-Detail in git / `BUGS.md` / `SELFHOST_JOURNAL.md` / `CHANGELOG.md` / wiki.
+Detail in git / `BUGS.md` / `docs/SELFHOST_JOURNAL.md` / `CHANGELOG.md` / wiki.
 
 | Item | Done |
 |------|------|
@@ -801,7 +801,7 @@ Detail in git / `BUGS.md` / `SELFHOST_JOURNAL.md` / `CHANGELOG.md` / wiki.
 
 *Full milestone plan: `wiki/pages/projects/project_zebra.md`*
 *Open bug details: `BUGS.md`*
-*Self-hosting history: `SELFHOST_JOURNAL.md`*
+*Self-hosting history: `docs/SELFHOST_JOURNAL.md`*
 
 **Last reorganized:** 2026-07-15 (open work curated at top; completed clumped at
 bottom — LSP epic + §28 campaign + node-addon kept in full, older work archived to
@@ -814,7 +814,7 @@ for the map.
 | file | answers |
 |---|---|
 | [docs/PRINCIPLES.md](docs/PRINCIPLES.md) | how do we decide? |
-| [docs/FINDINGS.md](docs/FINDINGS.md) | what do we already know? |
-| [NEXT_STEPS_to_0.9.md](NEXT_STEPS_to_0.9.md) | what is next, before public release? |
-| [NEXT_STEPS_to_1.0.md](NEXT_STEPS_to_1.0.md) | what is next, before the freeze? |
-| [NEXT_STEPS_post_1.0.md](NEXT_STEPS_post_1.0.md) | deliberately deferred past 1.0 |
+| [docs/archive/FINDINGS.md](docs/archive/FINDINGS.md) | what do we already know? |
+| [docs/NEXT_STEPS_to_0.9.md](docs/NEXT_STEPS_to_0.9.md) | what is next, before public release? |
+| [docs/NEXT_STEPS_to_1.0.md](docs/NEXT_STEPS_to_1.0.md) | what is next, before the freeze? |
+| [docs/NEXT_STEPS_post_1.0.md](docs/NEXT_STEPS_post_1.0.md) | deliberately deferred past 1.0 |

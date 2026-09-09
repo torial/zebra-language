@@ -16,7 +16,7 @@ def oracle(cmd):
 # Re-derive EVERY doc-gen count in one pass rather than hand-patching the three that are
 # currently stale. Hand-patching is how the fourth gets missed.
 n = 0
-for f in list(REPO.glob("*.md")) + list(REPO.glob("docs/*.md")) + \
+for f in list(REPO.glob("*.md")) + list(REPO.glob("docs/*.md")) + list(REPO.glob("docs/design/*.md")) + \
          list(REPO.glob("tools/*.sh")) + list(REPO.glob("tools/*.py")):
     if f.name == "doc_lint.py":
         continue
