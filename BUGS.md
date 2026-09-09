@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-387. Next new bug: BUG-388.**
+**Last bug number generated: BUG-400. Next new bug: BUG-401.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,84 @@
 > measured in.
 
 ---
+
+### BUG-388: a concrete instance passed DIRECTLY to an interface-typed parameter fails in Zig — OPEN (found 2026-09-09, book audit)
+
+`def print_area(s: Shape)` + `print_area(Circle(2.0))` (or `var c = Circle(2.0); print_area(c)`)
+passes `-c` and dies in Zig with `expected type 'Shape', found '*Circle'`. The same value
+assigned to an interface-typed VARIABLE first (`var c: Shape = Circle(2.0)`) works, so the
+boxing exists — it is applied on annotated assignment and not on argument passing. This is
+the polymorphism idiom every interfaces chapter teaches; six book examples in Ch8/9/13 hit
+it. Highest priority of the 2026-09-09 batch. Repro: /tmp/rm/z.zbr shape above.
+
+### BUG-389: bare `List()` / `HashMap()` (no type argument) passes `-c`, fails in Zig — OPEN (found 2026-09-09)
+
+`var xs = List()` → `expected expression, found 'anytype'` from Zig. The checker should
+refuse: "List needs its element type: `List(int)()`" (same family as BUG-377).
+
+### BUG-390: `def init(...)` as a constructor passes `-c`, fails in Zig ("duplicate struct member name 'init'") — OPEN (found 2026-09-09)
+
+The constructor is `cue init(...)`; a `def init` collides with the generated one. The checker
+knows the class has an init; refuse `def init` with the `cue` spelling.
+
+### BUG-391: `str.toInt()` is typed `int`, so `if n == nil` passes `-c` and fails in Zig — OPEN (found 2026-09-09)
+
+Either `toInt()` should be `int?` (a non-numeric string has to go somewhere — QUICKSTART
+says `tryInt` is the optional form; check which the docs promise) or comparing a plain
+primitive with `nil` should be a checker refusal ("'int' is never nil; use tryInt()").
+The second is right regardless of the first.
+
+### BUG-392: an un-annotated `str` result from several stdlib calls prints as a byte array — OPEN (found 2026-09-09)
+
+`var cwd = sys.cwd(); print("at ${cwd}")` prints `{ 47, 104, ... }`. Also reported for
+`Arg.positional()`, `Compress.gunzip()` (unwrapped optional). An explicit `: str` fixes each,
+so this is the checker not typing those returns (BUG-226 class: wrong output, valid Zig).
+Table the affected calls the same way BUG-369 did for methods.
+
+### BUG-393: `Regex.matches()` / `Regex.replaceAll()` pass `-c`, fail in Zig ("no field or member function") — OPEN (found 2026-09-09)
+
+Either implement, or refuse at `-c` with the Regex method set (BUG-369 method).
+
+### BUG-394: `List.remove("x")` (a value) passes `-c`; `remove` takes an INDEX — OPEN (found 2026-09-09)
+
+BUG-378 deliberately did not type `remove`'s argument because it is an index; type it as
+`int` (numeric widening still applies) so a string argument is refused with "remove takes
+an index; use find()/contains() to locate the value first".
+
+### BUG-395: a user class named `Crypto` (or any builtin module name) silently miscompiles — OPEN (found 2026-09-09)
+
+Refuse at `-c`: "'Crypto' is a builtin module name" (same shape as BUG-359's reserved
+runtime names).
+
+### BUG-396: two chained mutator calls (`obj.a().b()`) fail in Zig on `BuildTarget`/`HashMap` — OPEN (found 2026-09-09)
+
+Reported from the Ch22b build examples; needs a minimal repro (the agent saw it in every
+position: statement, var-init, stored variable).
+
+### BUG-397: `Log.error()` is broken twice — OPEN (found 2026-09-09)
+
+(a) the checker treats it as noreturn, so following code is "unreachable"; (b) codegen's
+level map has `err` but not `error`, so it fails with `selfhost: unknown Log.error`. Decide
+the spelling (QUICKSTART says which) and make both agree.
+
+### BUG-398: `Crypto.deriveKey` is accepted by the checker (typed `str?`) and has no codegen — OPEN (found 2026-09-09)
+
+`selfhost: unknown Crypto.deriveKey`. Either implement or remove from the checker's Crypto
+table so `-c` refuses it. Same for `DateTime.listZones()` (fails as `unreachable code`) and
+the static-call form `DateTime.inZone(...)` (instance-only; static form passes `-c`, fails in
+Zig).
+
+### BUG-399: `class X implements SomeMixin` (should be `adds`) passes `-c`, fails in Zig — OPEN (found 2026-09-09)
+
+The checker knows which names are mixins and which are interfaces; `implements <mixin>` and
+`adds <interface>` should each be a Zebra diagnostic naming the right keyword.
+
+### BUG-400: `"${e}"` on a catch binding fails in Zig ("use of undeclared identifier") — OPEN (found 2026-09-09)
+
+Interpolating the catch binding itself rather than `e.message`. Either make `${e}` mean
+`e.message`, or refuse with "interpolate e.message". Also from the book audit, already
+fixed today: `@tag(...)` before `static def` (goes inside the `static` group — needs a
+diagnostic or acceptance, not filed separately: fold into BUG-390's family if convenient).
 
 ### BUG-351: `StringBuilder.build()` EMPTIES the builder — `sb.len()` is 0 afterwards — OPEN (found 2026-09-08)
 
@@ -1511,7 +1589,7 @@ analysis cannot see into.
 Both walks stop at the literal: a variable **read** only inside it is treated as unused,
 and one **assigned** only inside it is treated as never mutated. Working around it needs
 two unrelated dummy statements (a fake comparison to use `p`, a dead branch to make `out`
-a var) — see `docs/design/extern_ffi_design.md` §9 for the full repro.
+a var) — see `docs/extern_ffi_design.md` §9 for the full repro.
 
 **Control when fixing:** a var read only inside a `zig"…"` must NOT get a discard, and one
 assigned only inside it must be emitted `var`; a genuinely unused var must still get its
@@ -1958,7 +2036,7 @@ coupling is what made this invisible. Sean's call.
 
 ### BUG-243: fifteen corpus files have never compiled, and no gate could say so
 
-**Found 2026-08-02**, working §2 of `docs/archive/INSTRUMENT_PASS_PLAN.md`. An umbrella ticket:
+**Found 2026-08-02**, working §2 of `docs/INSTRUMENT_PASS_PLAN.md`. An umbrella ticket:
 these are not one defect, they are fifteen — but they were found by one method, they share
 one cause of invisibility, and the inventory is more useful in one place than scattered.
 

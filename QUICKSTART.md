@@ -520,8 +520,8 @@ class Counter
     def value(): int                  # instance method
         return count
 
-    def name: str                     # getter (no parens, no params) — read like a field
-        return "Counter"
+    def name(): str                   # a "getter" is an ordinary method; there is no
+        return "Counter"              # property syntax (`def name: str` is refused, §18)
 
     static
         def create(): Counter         # static method — group form
@@ -548,7 +548,7 @@ class Registry
     static var count: int         # class-level variable; shared across all instances
     static var instances: List(Registry)
 
-    cue init
+    cue init()
         Registry.count += 1       # access static vars with ClassName.
         Registry.instances.append(this)
 
