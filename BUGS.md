@@ -46,13 +46,6 @@
 
 ---
 
-### BUG-392: an un-annotated `str` result from several stdlib calls prints as a byte array — OPEN (found 2026-09-09)
-
-`var cwd = sys.cwd(); print("at ${cwd}")` prints `{ 47, 104, ... }`. Also reported for
-`Arg.positional()`, `Compress.gunzip()` (unwrapped optional). An explicit `: str` fixes each,
-so this is the checker not typing those returns (BUG-226 class: wrong output, valid Zig).
-Table the affected calls the same way BUG-369 did for methods.
-
 ### BUG-393: `Regex.matches()` / `Regex.replaceAll()` pass `-c`, fail in Zig ("no field or member function") — OPEN (found 2026-09-09)
 
 Either implement, or refuse at `-c` with the Regex method set (BUG-369 method).

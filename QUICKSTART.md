@@ -3561,8 +3561,8 @@ r.close()
 
 | Call                    | Returns      | Notes                              |
 |-------------------------|--------------|------------------------------------|
-| `Compress.gzip(data)`   | `List(byte)` | gzip compress a string             |
-| `Compress.gunzip(data)` | `List(byte)` | gzip decompress                    |
+| `Compress.gzip(data)`   | `str`        | gzip compress a string (bytes in a `str`) |
+| `Compress.gunzip(data)` | `str?`       | gzip decompress; nil if the input is not gzip |
 
 ### `Log` — structured logging
 

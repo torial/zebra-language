@@ -13662,6 +13662,15 @@ struct Generator
                 # `_csv_write_row(w: *_CsvWriter, …)` — CgHelpers already lists writeRow in
                 # isMutatingMethod, so the local is emitted `var`.
                 on Type_.named as cw_nm
+                    # BUG-392: `Arg.parse()` result. The runtime's `flag(long, short)`
+                    # takes two names; QUICKSTART's `args.flag("--verbose")` is the
+                    # documented one-arg form, so fill the short name with "".
+                    if cw_nm == "$Arg" and mname == "flag" and args.len == 1
+                        genExpr(m.object)
+                        w.emit(".flag(")
+                        genExpr(args.at(0).value)
+                        w.emit(", \"\")")
+                        return
                     # CsvTable readers. Taken BY VALUE, matching the preamble
                     # (`_csv_row_count(t: _CsvTable)`) — only the writer takes a pointer.
                     if cw_nm == "CsvTable"

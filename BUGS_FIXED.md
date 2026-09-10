@@ -25,6 +25,17 @@ methods with a Zebra message. Workaround in zebra-ide: count by iterating.
 **Fix.** `getList` now returns a real `List(JsonValue)` (`_json_get_list_l`, copied into the program allocator), so `.len`, `.at()` and `for` take the ordinary List paths and the per-call special cases go. General rule landed with it: the chain hoist (BUG-027/079) is for STRUCT temporaries only — a receiver the checker types as a builtin container is never hoisted to `_mc_N` (`isBuiltinTypedRecv`), which is the same rule BUG-336 needed for split iterators. The old slice form stays in the runtime until the next n1-anchor so the N-1 regen authority still links. Fixture bug337_json_getlist_list_test; gen.py generates the shape.
 
 
+### BUG-392: un-annotated `str` results from `sys.cwd()`, `sys.getenv`, `Arg.parse()`'s methods and `Compress` printed as byte arrays — FIXED 2026-09-10
+
+`var cwd = sys.cwd(); print("at ${cwd}")` printed `{ 47, 104, ... }`: those calls had no
+arm in the checker, so the format fell to `{any}` (BUG-226 class: wrong output, valid
+Zig). **Fix.** The rest of QUICKSTART's `sys` table is typed (cwd, getenv -> str?, the
+void ones); `Arg.parse()` returns the `$Arg` pseudo-class (positional -> str?, flag/
+contains -> bool, option -> str, optionInt -> int -- the BUG-369 `$extend:` shape), and
+codegen fills the runtime's second `flag(long, short)` argument for the documented
+one-arg form; `Compress.gzip -> str`, `gunzip -> str?` (QUICKSTART said List(byte); the
+runtime returns str -- the doc is corrected). Fixture bug392_stdlib_str_returns_test.
+
 ### BUG-399: `implements <mixin>` passed `-c` and failed in Zig — FIXED 2026-09-10
 
 `class A implements Loud` where `Loud` is a mixin reached Zig as "use of undeclared

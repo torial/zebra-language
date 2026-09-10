@@ -1,0 +1,20 @@
+# BUG-392: an un-annotated `var cwd = sys.cwd()` interpolated as a byte array -- the sys
+# table's cwd/getenv, `Arg.parse()`'s result, and Compress were untyped, so the format
+# fell to `{any}`. Wrong output, valid Zig (the BUG-226 class). All typed now; `Arg`'s
+# result is the `$Arg` pseudo-class, and the documented one-arg `args.flag("--x")` works.
+def main()
+    var cwd = sys.cwd()
+    print("cwd-ok=${cwd.len > 0 and not cwd.contains("{")}")
+    var home = sys.getenv("ZBR_BUG392_UNSET")
+    if home as h
+        print("set ${h}")
+    else
+        print("unset")
+    var args = Arg.parse()
+    var p = args.positional(0)
+    var o = args.option("--out", "dflt")
+    print("pos-nil=${p == nil} opt=${o} flag=${args.flag("--v")}")
+    var z = Compress.gzip("hello hello hello")
+    var back = Compress.gunzip(z)
+    if back as b
+        print("rt=${b}")

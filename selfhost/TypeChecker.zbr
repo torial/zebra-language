@@ -859,6 +859,17 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
     if mt.classOf("") == nil
         mt.addClass(ClassTypes(""))
     var module_fns: ClassTypes = mt.classOf("")!  # safe: ensured above
+    # BUG-392: the object `Arg.parse()` returns had no type, so `args.positional(0)`
+    # printed as a byte array. Registered as a pseudo-class (the BUG-369 `$extend:`
+    # shape) so the member-call path types its four documented methods.
+    if mt.classOf("$Arg") == nil
+        var arg_ct: ClassTypes = ClassTypes("$Arg")
+        arg_ct.setMethodReturn("positional", Type_.optional(Type_.string_))
+        arg_ct.setMethodReturn("flag", Type_.bool_)
+        arg_ct.setMethodReturn("option", Type_.string_)
+        arg_ct.setMethodReturn("contains", Type_.bool_)
+        arg_ct.setMethodReturn("optionInt", Type_.int_)
+        mt.addClass(arg_ct)
     # Pass 1: register classes, structs, mixins, unions, top-level defs.
     for decl in m.decls
         branch decl
@@ -2518,6 +2529,23 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             return Type_.bool_
                         if bname == "sys" and (mem.member == "readLine" or mem.member == "readBytes")
                             return Type_.optional(Type_.string_)
+                        # BUG-392: the rest of QUICKSTART's sys table. `sys.cwd()` and
+                        # `sys.getenv(..)` were untyped, so an un-annotated `var cwd =
+                        # sys.cwd()` interpolated as a byte array (BUG-226 class: wrong
+                        # output, valid Zig). `hostname` is not a sys function.
+                        if bname == "sys" and mem.member == "cwd"
+                            return Type_.string_
+                        if bname == "Arg" and mem.member == "parse"
+                            return Type_.named("$Arg")
+                        if bname == "Compress"
+                            # QUICKSTART said List(byte); the runtime returns str (gunzip: str?).
+                            if mem.member == "gunzip"
+                                return Type_.optional(Type_.string_)
+                            return Type_.string_
+                        if bname == "sys" and mem.member == "getenv"
+                            return Type_.optional(Type_.string_)
+                        if bname == "sys" and (mem.member == "err" or mem.member == "errln" or mem.member == "sleep" or mem.member == "writeStdout" or mem.member == "setenv")
+                            return Type_.void_
                         if bname == "Build" and mem.member == "new"
                             return Type_.build_ctx
                         if bname == "Ws"
