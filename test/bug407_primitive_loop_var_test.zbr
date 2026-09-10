@@ -1,0 +1,17 @@
+# BUG-407: BUG-162 made a Zebra binding named for a Zig primitive (`i8`, `u32`) legal by
+# escaping it as @"name" -- at var/param/reference sites. The FOR-LOOP declaration sites
+# (for-in index/value, for-num counter, HashMap key/value) emitted the bare name, so
+# `for i2, x in xs` died in Zig with "name shadows primitive 'i2'". Escaped now.
+def main()
+    var xs = [1, 2]
+    for i2, x2 in xs
+        print(i2, x2)
+    for u8 in 0..2
+        print(u8)
+    var m = {"a": 1}
+    for f32, i16 in m
+        print(f32, i16)
+    var total = 0
+    for i64 in [3, 4]
+        total += i64
+    print(total)

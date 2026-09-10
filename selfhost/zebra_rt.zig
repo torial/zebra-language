@@ -4275,6 +4275,13 @@ pub fn _zbr_show(x: anytype) []const u8 {
     _zbr_show_into(&sb, x, false) catch return "?";
     return sb.toOwnedSlice(_allocator) catch "?";
 }
+fn _zbr_show_type_name(full: []const u8) []const u8 {
+    // "z._zbr_ty_Raw" -> "Raw"; "main._zbr_ty_Pt" -> "Pt".
+    var t = full;
+    if (std.mem.lastIndexOfScalar(u8, t, '.')) |i| t = t[i + 1 ..];
+    if (std.mem.startsWith(u8, t, "_zbr_ty_")) t = t["_zbr_ty_".len..];
+    return t;
+}
 fn _zbr_show_fmt(sb: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
     const t = try std.fmt.allocPrint(_allocator, fmt, args);
     try sb.appendSlice(_allocator, t);
@@ -4301,7 +4308,7 @@ fn _zbr_show_into(sb: *std.ArrayList(u8), x: anytype, quote_str: bool) !void {
                 const C = p.child;
                 if (@typeInfo(C) == .@"struct" and @hasDecl(C, "toString")) {
                     try sb.appendSlice(_allocator, x.toString());
-                } else if (@typeInfo(C) == .@"struct" and @hasField(C, "items") and @hasField(C, "capacity")) {
+                } else if (@typeInfo(C) == .@"struct") {
                     try _zbr_show_into(sb, x.*, quote_str);
                 } else {
                     try _zbr_show_fmt(sb, "{any}", .{x});
@@ -4317,8 +4324,33 @@ fn _zbr_show_into(sb: *std.ArrayList(u8), x: anytype, quote_str: bool) !void {
                 try _zbr_show_fmt(sb, "{any}", .{x});
             }
         },
-        .@"struct" => {
-            if (@hasField(T, "items") and @hasField(T, "capacity")) {
+        .@"union" => |u| {
+            // A Zebra union: `square(2)`, or `dot` for a payload-less variant.
+            if (u.tag_type) |_| {
+                try sb.appendSlice(_allocator, @tagName(x));
+                switch (x) {
+                    inline else => |payload| {
+                        if (@TypeOf(payload) != void) {
+                            try sb.append(_allocator, '(');
+                            try _zbr_show_into(sb, payload, true);
+                            try sb.append(_allocator, ')');
+                        }
+                    },
+                }
+            } else {
+                try _zbr_show_fmt(sb, "{any}", .{x});
+            }
+        },
+        .@"struct" => |st| {
+            if (st.is_tuple) {
+                // A Zebra tuple: `(1, "a")`.
+                try sb.append(_allocator, '(');
+                inline for (x, 0..) |e, i| {
+                    if (i > 0) try sb.appendSlice(_allocator, ", ");
+                    try _zbr_show_into(sb, e, true);
+                }
+                try sb.append(_allocator, ')');
+            } else if (@hasField(T, "items") and @hasField(T, "capacity")) {
                 // std.ArrayList
                 try sb.append(_allocator, '[');
                 for (x.items, 0..) |e, i| {
@@ -4343,7 +4375,22 @@ fn _zbr_show_into(sb: *std.ArrayList(u8), x: anytype, quote_str: bool) !void {
             } else if (@hasDecl(T, "toString")) {
                 try sb.appendSlice(_allocator, x.toString());
             } else {
-                try _zbr_show_fmt(sb, "{any}", .{x});
+                // A Zebra class or struct without toString(): `Raw{y: 1}` -- the type
+                // name without the reserved prefix, the user's fields, not the
+                // runtime's (`_type_tag`, vtables) which start with `_`.
+                try sb.appendSlice(_allocator, _zbr_show_type_name(@typeName(T)));
+                try sb.append(_allocator, '{');
+                comptime var shown: usize = 0;
+                inline for (st.fields) |f| {
+                    if (comptime f.name.len > 0 and f.name[0] != '_') {
+                        if (shown > 0) try sb.appendSlice(_allocator, ", ");
+                        try sb.appendSlice(_allocator, f.name);
+                        try sb.appendSlice(_allocator, ": ");
+                        try _zbr_show_into(sb, @field(x, f.name), true);
+                        shown += 1;
+                    }
+                }
+                try sb.append(_allocator, '}');
             }
         },
         else => try _zbr_show_fmt(sb, "{any}", .{x}),

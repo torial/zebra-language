@@ -8368,19 +8368,19 @@ struct Generator
             wg.writeIndent()
             wg.w.emit("while (_it_" + kname + ".next()) |_ent_" + kname + "| {\n")
             bg.writeIndent()
-            bg.w.emit("const " + kname + " = _ent_" + kname + ".key_ptr.*;\n")
+            bg.w.emit("const " + zigSafeName(kname) + " = _ent_" + kname + ".key_ptr.*;\n")
             if not nameUsedInStmts(kname, fi.stmts)
                 bg.writeIndent()
-                bg.w.emit("_ = " + kname + ";\n")
+                bg.w.emit("_ = " + zigSafeName(kname) + ";\n")
             # Mark key as string when iterating HashMap(str, V) — needed for print format.
             if fi.iter is Expr.ident as hm_iter_id
                 if bg.localIsHashMapStrKey(hm_iter_id.name)
                     bg.str_params.add(kname)
             bg.writeIndent()
-            bg.w.emit("const " + vname + " = _ent_" + kname + ".value_ptr.*;\n")
+            bg.w.emit("const " + zigSafeName(vname) + " = _ent_" + kname + ".value_ptr.*;\n")
             if not nameUsedInStmts(vname, fi.stmts)
                 bg.writeIndent()
-                bg.w.emit("_ = " + vname + ";\n")
+                bg.w.emit("_ = " + zigSafeName(vname) + ";\n")
             # Mark value as string when iterating HashMap(K, str).
             if fi.iter is Expr.ident as hm_iter_id2
                 if bg.localIsHashMapStrVal(hm_iter_id2.name)
@@ -8422,7 +8422,7 @@ struct Generator
                 writeIndent()
                 w.emit("{\n")
                 ig.writeIndent()
-                ig.w.emit("var " + vname + ": i64 = ")
+                ig.w.emit("var " + zigSafeName(vname) + ": i64 = ")
                 emitToRangeReceiver(fi.iter)
                 ig.w.emit(";\n")
                 ig.writeIndent()
@@ -8441,7 +8441,7 @@ struct Generator
                     bg_to = wg_to.indented()
                     bg_to.for_else_label = label_to!
                 wg_to.writeIndent()
-                wg_to.w.emit("while (" + vname + " < _stop_" + vname + ") : (" + vname + " += 1) {\n")
+                wg_to.w.emit("while (" + zigSafeName(vname) + " < _stop_" + vname + ") : (" + zigSafeName(vname) + " += 1) {\n")
                 bg_to.emitForGuard(fi)
                 bg_to.genStmts(fi.stmts)
                 wg_to.writeIndent()
@@ -8489,7 +8489,7 @@ struct Generator
                     bg = wg.indented()
                     bg.for_else_label = label!
                 wg.writeIndent()
-                wg.w.emit("while (_it_" + vname + ".next()) |" + vname + "| {\n")
+                wg.w.emit("while (_it_" + vname + ".next()) |" + zigSafeName(vname) + "| {\n")
                 # split() elements are []const u8 — mark loop var as string for printFmtSpec
                 str_params.add(vname)
                 bg.discardUnusedLoopVars(fi)
@@ -8529,7 +8529,7 @@ struct Generator
                     bg = wg.indented()
                     bg.for_else_label = label!
                 wg.writeIndent()
-                wg.w.emit("while (_cp_it_" + vname + ".nextCodepoint()) |" + vname + "| {\n")
+                wg.w.emit("while (_cp_it_" + vname + ".nextCodepoint()) |" + zigSafeName(vname) + "| {\n")
                 bg.discardUnusedLoopVars(fi)
                 bg.emitForGuard(fi)
                 bg.genStmts(fi.stmts)
@@ -8552,7 +8552,7 @@ struct Generator
                 writeIndent()
                 w.emit("for (")
                 emitBytesIterObject(fi.iter)
-                w.emit(") |" + vname + "| {\n")
+                w.emit(") |" + zigSafeName(vname) + "| {\n")
                 for_loop_vars.add(vname)
                 ig.discardUnusedLoopVars(fi)
                 ig.emitForGuard(fi)
@@ -8568,7 +8568,7 @@ struct Generator
                 writeIndent()
                 w.emit("for (")
                 genExpr(fi.iter)
-                w.emit(") |" + vname + "| {\n")
+                w.emit(") |" + zigSafeName(vname) + "| {\n")
                 for_loop_vars.add(vname)
                 ig.discardUnusedLoopVars(fi)
                 ig.emitForGuard(fi)
@@ -8591,7 +8591,7 @@ struct Generator
                     w.emit(")")
                 else
                     genExpr(fi.iter)
-                w.emit(".items) |" + vname + "| {\n")
+                w.emit(".items) |" + zigSafeName(vname) + "| {\n")
                 for_loop_vars.add(vname)
                 str_params.add(vname)
                 ig.discardUnusedLoopVars(fi)
@@ -8617,7 +8617,7 @@ struct Generator
                     w.emit(")")
                 else
                     genExpr(fi.iter)
-                w.emit(".items) |" + vname + "| {\n")
+                w.emit(".items) |" + zigSafeName(vname) + "| {\n")
                 for_loop_vars.add(vname)
                 # The element is a JSON Value → bind the loop var so `tag.isNull()` etc.
                 # dispatch to the json_value method handlers.
@@ -8645,7 +8645,7 @@ struct Generator
                     w.emit(")")
                 else
                     genExpr(fi.iter)
-                w.emit(").items) |" + vname + "| {\n")
+                w.emit(").items) |" + zigSafeName(vname) + "| {\n")
                 for_loop_vars.add(vname)
                 # str elements → mark the loop var a string so `.len`/concat dispatch.
                 if set_elem_t is Type_.string_
@@ -8672,7 +8672,7 @@ struct Generator
                     w.emit(")")
                 else
                     genExpr(fi.iter)
-                w.emit(".items) |" + vname + "| {\n")
+                w.emit(".items) |" + zigSafeName(vname) + "| {\n")
                 # BUG-294: the loop variable's `^T` fields are DERIVED from the
                 # element struct type, below, beside the `^T?` derivation that was
                 # already there. This used to be a hardcoded special case:
@@ -8792,10 +8792,10 @@ struct Generator
         var i = 0
         for vname in fi.vars
             ig.writeIndent()
-            ig.w.emit("const " + vname + " = " + tup_name + ".@\"" + i.toString() + "\";\n")
+            ig.w.emit("const " + zigSafeName(vname) + " = " + tup_name + ".@\"" + i.toString() + "\";\n")
             if not nameUsedInStmts(vname, fi.stmts)
                 ig.writeIndent()
-                ig.w.emit("_ = " + vname + ";\n")
+                ig.w.emit("_ = " + zigSafeName(vname) + ";\n")
             # Mark string loop vars so print/interp uses {s} format specifier.
             if iter_name != "" and list_tuple_str_pos.contains_(iter_name + ":" + i.toString())
                 ig.str_params.add(vname)
@@ -8825,7 +8825,7 @@ struct Generator
         genExpr(fi.iter)
         w.emit(".items, 0..) |" + vname + ", _zbr_i| {\n")
         ig.writeIndent()
-        ig.w.emit("const " + iname + " = @as(i64, @intCast(_zbr_i));\n")
+        ig.w.emit("const " + zigSafeName(iname) + " = @as(i64, @intCast(_zbr_i));\n")
         # Discard i / v if neither the body nor the where-clause reads them
         # (Zig rejects an unused capture / local constant).
         ig.discardUnusedLoopVars(fi)
@@ -8856,7 +8856,7 @@ struct Generator
         sqi.genExpr(fi.iter)
         sqi.w.emit(";\n")
         sqi.writeIndent()
-        sqi.w.emit("for (" + it_var + ".items) |" + vname + "| {\n")
+        sqi.w.emit("for (" + it_var + ".items) |" + zigSafeName(vname) + "| {\n")
         var sqb = sqi.indented()
         sqb.for_else_label = nil
         # Seed infer_ctx so row.asInt/asStr/asFloat resolve via sqlite_row dispatch
@@ -9132,7 +9132,7 @@ struct Generator
         writeIndent()
         w.emit("{\n")
         ig.writeIndent()
-        ig.w.emit("var " + fn_.var_ + ": i64 = ")
+        ig.w.emit("var " + zigSafeName(fn_.var_) + ": i64 = ")
         genExpr(fn_.start)
         ig.w.emit(";\n")
         ig.writeIndent()
@@ -9159,7 +9159,7 @@ struct Generator
             bg = wg.indented()
             bg.for_else_label = label!
         wg.writeIndent()
-        wg.w.emit("while (" + fn_.var_ + " < _stop_" + fn_.var_ + ") : (" + fn_.var_ + step_clause + ") {\n")
+        wg.w.emit("while (" + zigSafeName(fn_.var_) + " < _stop_" + fn_.var_ + ") : (" + zigSafeName(fn_.var_) + step_clause + ") {\n")
         bg.genStmts(fn_.stmts)
         wg.writeIndent()
         wg.w.emit("}\n")
@@ -13999,6 +13999,14 @@ struct Generator
                     if mname == "clear"
                         genExpr(m.object)
                         w.emit(".clearRetainingCapacity()")
+                        return
+                    if mname == "reverse"
+                        # 2026-09-10: in-place reverse (str already had one).
+                        var rv_uid = w.nextUid()
+                        var rv_tmp = "_rv_" + rv_uid.toString()
+                        w.emit("(blk_" + rv_tmp + ": { const " + rv_tmp + " = ")
+                        genExpr(m.object)
+                        w.emit(".items; std.mem.reverse(std.meta.Child(@TypeOf(" + rv_tmp + ")), " + rv_tmp + "); break :blk_" + rv_tmp + " {}; })")
                         return
                     if mname == "sort"
                         # §28f: sort(def(a,b)=…) uses a custom comparator (like

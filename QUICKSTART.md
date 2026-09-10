@@ -861,6 +861,7 @@ var total = items.reduce(0, def(acc, x) = acc + x)      # fold to a scalar; resu
 # Sorting — in place. sort() takes an OPTIONAL comparator:
 items.sort()                         # natural ascending (numeric / lexicographic)
 items.sort(def(a, b) = a > b)        # custom comparator (descending here); same as sortBy
+items.reverse()                      # in place (2026-09-10)
 
 # HashMap — construct with HashMap(K,V)() or a dict literal `{k: v, ...}`:
 var m = HashMap(str, int)()
@@ -1253,8 +1254,9 @@ var result = sb.build()              # str (drains the builder)
 - **What a value prints as** (`print(x)` and `${x}` agree, BUG-406): a List `[1, 2]`, a
   HashMap `{a: 1, b: 2}` (in the map's own order, not insertion order), a Set `{3}`, an
   enum member by name (`green`), an optional as its value or `nil`, a class with a
-  `toString()` through it; strings *inside* a container are quoted (`["a", "b"]`),
-  a bare string is not.
+  `toString()` through it and one without as `Name{field: value, ...}`, a tuple
+  `(1, "a")`, a union member `circle(2)` / `dot`; strings *inside* a container are
+  quoted (`["a", "b"]`), a bare string is not.
 - **Format specifiers** — `${expr:spec}` where `spec` follows
   `[fill][align][width][.precision][type]`.  Fill is any character; align is
   `<` (left), `>` (right), or `^` (center); type chars: `x`/`X` hex, `o`

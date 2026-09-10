@@ -36,6 +36,23 @@ codegen fills the runtime's second `flag(long, short)` argument for the document
 one-arg form; `Compress.gzip -> str`, `gunzip -> str?` (QUICKSTART said List(byte); the
 runtime returns str -- the doc is corrected). Fixture bug392_stdlib_str_returns_test.
 
+### BUG-408: a class or struct without `toString()`, a tuple, a union printed Zig internals — FIXED 2026-09-10
+
+The rest of BUG-406: `.{ ._type_tag = 2794039953, .y = 1 }`, `.{ 1, { 97 } }`,
+`.{ .square = 2 }`. Now `Raw{y: 1, name: "n"}` (user fields only; the type name without
+the reserved prefix), `(1, "a")`, `square(2)` / `dot`. `List.reverse()` (in place) added
+alongside, since `str` had one and the probe reached for it. Fixture
+bug408_show_structs_tuples_unions_test.
+
+### BUG-407: a loop variable named for a Zig primitive type (`i2`, `u8`, `f32`) failed in Zig — FIXED 2026-09-10
+
+BUG-162 made such names legal by escaping them as `@"name"` at var/param/reference
+sites; the for-loop DECLARATION sites (for-in value and index, for-num counter, HashMap
+key/value) still emitted the bare name, so `for i2, x in xs` died with "name shadows
+primitive 'i2'". (A first attempt refused the names at `-c`; the corpus fixture
+fuzz_f1_primitive_names_test says they are legal, and it is right.) Escaped now.
+Fixture bug407_primitive_loop_var_test.
+
 ### BUG-406: `print(xs)` printed a List's INTERNALS; `print(maybe)` on nil panicked — FIXED 2026-09-10
 
 A List, HashMap, Set, enum or optional fell to Zig's `{any}`: `.{ .items = { 1, 2 },

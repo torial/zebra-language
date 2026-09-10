@@ -1496,7 +1496,7 @@ def strMethodKnown(name: str): bool
 # (`pop`, `toString`, `fetch`). `first`/`last`/`isEmpty`/`insert`/`push` do NOT exist --
 # they were the names people reach for, and each was a Zig error until now.
 def listMethodKnown(name: str): bool
-    return name == "add" or name == "at" or name == "fetch" or name == "count" or name == "len" or name == "set" or name == "remove" or name == "any" or name == "all" or name == "find" or name == "map" or name == "filter" or name == "reduce" or name == "sort" or name == "sortBy" or name == "contains" or name == "clear" or name == "join" or name == "pop" or name == "toString" or name == "items" or name == "append"
+    return name == "add" or name == "at" or name == "fetch" or name == "count" or name == "len" or name == "set" or name == "remove" or name == "any" or name == "all" or name == "find" or name == "map" or name == "filter" or name == "reduce" or name == "sort" or name == "sortBy" or name == "contains" or name == "clear" or name == "join" or name == "pop" or name == "toString" or name == "items" or name == "append" or name == "reverse"
 
 # BUG-369, second half (2026-09-09): HashMap, Set and JsonValue, same derivation --
 # every candidate name probed at three arities through zig, kept if some arity compiled
@@ -2919,6 +2919,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return list_elem
                             if lmname == "join"
                                 return Type_.string_
+                            if lmname == "reverse" or lmname == "clear" or lmname == "sort" or lmname == "sortBy" or lmname == "add" or lmname == "set" or lmname == "remove"
+                                return Type_.void_
                             if lmname == "count" or lmname == "len"
                                 return Type_.int_
                             if lmname == "any" or lmname == "all"
@@ -2932,7 +2934,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return lext_ret
                             if not listMethodKnown(lmname)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'List' has no method '" + lmname + "' (add/at/set/remove/count/contains/find/any/all/map/filter/reduce/sort/sortBy/clear/join)")
+                                           "'List' has no method '" + lmname + "' (add/at/set/remove/count/contains/find/any/all/map/filter/reduce/sort/sortBy/reverse/clear/join)")
                                 return Type_.unknown_
                         on Type_.chan_ as chan_elem
                             var cmname: str = mem.member

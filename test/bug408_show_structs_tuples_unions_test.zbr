@@ -1,0 +1,34 @@
+# BUG-408 (the rest of BUG-406): a class or struct without toString() printed
+# `.{ ._type_tag = 2794039953, .y = 1 }`, a tuple `.{ 1, { 97 } }`, a union
+# `.{ .square = 2 }`. Now `Raw{y: 1}`, `(1, "a")`, `square(2)` / `dot`. A class WITH
+# toString() prints through it, inside containers too. Also: List.reverse() (in place).
+class Pt
+    var x: int
+    cue init(x: int)
+        .x = x
+    def toString(): str
+        return "Pt(${.x})"
+class Raw
+    var y: int
+    var name: str
+    cue init(y: int)
+        .y = y
+        .name = "n"
+struct P
+    var x: int = 1
+    var q: float = 2.5
+union Shape
+    circle: float
+    dot
+def main()
+    print(Pt(3), [Pt(1), Pt(2)])
+    print(Raw(1))
+    print(P(), [P(), P(x: 3)])
+    var t = (1, "a")
+    print(t, "${t}")
+    print(Shape.circle(2.0), Shape.dot)
+    var xs = [1, 2, 3]
+    xs.reverse()
+    var ns = ["a", "b"]
+    ns.reverse()
+    print(xs, ns)
