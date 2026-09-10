@@ -196,6 +196,7 @@ verified against the compiler, not recalled.
 | `range(3)` | `0..3` (stop is **exclusive**) | `error: undefined name: 'range'` |
 | `None` / `True` / `False` | `nil` / `true` / `false` | `error: undefined name: 'None'` |
 | `f"{x}"` | `"${x}"` | no `f` prefix exists |
+| `class Dog(Animal)` | `class Dog adds Barking` / `implements Animal` | `error: Zebra has no class inheritance` |
 | `s[::-1]` | `s.reverse()` | no step syntax |
 | `s[1:3]` | `s[1..3]` | `..` not `:` |
 | `if x:` / `for x in xs:` | header, then indent — no colon | `error: a block header ends ... with no colon` |
@@ -1249,6 +1250,11 @@ var result = sb.build()              # str (drains the builder)
 
 - `in` operator: `if "needle" in haystack` — substring test.
 - Inside `${…}`, non-string values get an implicit `.toString()` call.
+- **What a value prints as** (`print(x)` and `${x}` agree, BUG-406): a List `[1, 2]`, a
+  HashMap `{a: 1, b: 2}` (in the map's own order, not insertion order), a Set `{3}`, an
+  enum member by name (`green`), an optional as its value or `nil`, a class with a
+  `toString()` through it; strings *inside* a container are quoted (`["a", "b"]`),
+  a bare string is not.
 - **Format specifiers** — `${expr:spec}` where `spec` follows
   `[fill][align][width][.precision][type]`.  Fill is any character; align is
   `<` (left), `>` (right), or `^` (center); type chars: `x`/`X` hex, `o`

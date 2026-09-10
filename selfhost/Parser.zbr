@@ -1627,6 +1627,12 @@ class Parser
         else
             name = .eatId()?
         var ifaces = List(str)()
+        # BUG-404: `class Dog extends Animal` / `class Dog(Animal)` / `class Dog: Animal`
+        # -- the inheritance a newcomer reaches for. Zebra has none (QUICKSTART §17):
+        # say so and name the two things that exist, instead of "unexpected top-level
+        # token: 'extends'" one line later.
+        if .textIs("extends") or .textIs("inherits") or (.textIs(":") and .peekAt(1).kind is TokenKind.id)
+            raise .errorAt("Zebra has no class inheritance: share behaviour with a mixin (`class Dog adds Barking`) and get polymorphism from an interface (`class Dog implements Animal`) -- QUICKSTART §5, §16, §17")
         if .textIs("implements")
             .advance()
             ifaces.add(.eatId()?)
@@ -2602,6 +2608,11 @@ class Parser
                 init_expr.add(PNode.expr_lambda(lambda_node))
                 return PNode.stmt_var(PVar(name, is_const, type_name, init_expr, line, col))
             init_expr.add(.parseExpr()?)
+            # BUG-405: `var t = 5 if total > 3 else 0` -- the Python conditional
+            # expression. The `if` opened a new (inline) if-statement on the same
+            # line and died on the `else` with "expected ':', got 'else'".
+            if .textIs("if") and .peek().line == line
+                raise .errorAt("there is no `a if c else b` in Zebra: the conditional expression is the call form `if(c, a, b)` (QUICKSTART §1.5)")
         .skipEol()
         return PNode.stmt_var(PVar(name, is_const, type_name, init_expr, line, col))
 

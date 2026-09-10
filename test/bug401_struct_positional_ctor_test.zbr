@@ -1,0 +1,16 @@
+# BUG-401: `P(1, 2)` -- the positional struct constructor QUICKSTART §6 documents -- was
+# emitted as `_zbr_ty_P{ 1, 2 }`, which Zig refuses ("does not support array
+# initialization syntax"); only the named form worked. Positional args now map to the
+# fields in declaration order; named and defaulted forms are unchanged.
+struct P
+    var x: int = 0
+    var y: int = 0
+struct Q
+    var a: str
+    var b: int
+def main()
+    var p = P(1, 2)
+    var q = P(y: 5)
+    var r = P()
+    var t = Q("hi", 3)
+    print("${p.x} ${p.y} ${q.x} ${q.y} ${r.x} ${t.a} ${t.b}")

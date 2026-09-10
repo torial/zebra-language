@@ -4262,6 +4262,93 @@ pub const _ZbrLines = struct {
 pub fn _zbr_lines(s: []const u8) _ZbrLines {
     return .{ .rest = s, .done = false };
 }
+// ── _zbr_show: the text a value prints as (2026-09-10) ──────────────────────────
+// `print(xs)` / `"${xs}"` on a List, HashMap, Set, enum or optional used to fall to
+// Zig's `{any}`, which prints the CONTAINER'S INTERNALS (`.{ .items = { 1, 2 },
+// .capacity = 17 }`, a HashMap's allocator vtable, `.green` for an enum). This is
+// what a newcomer's first `print(list)` produced. Python-shaped instead:
+// `[1, 2]`, `{a: 1, b: 2}`, `{1, 2}`, `green`, `nil`; strings inside a container
+// are quoted so `["a", "b"]` and `[a, b]` are not the same thing. Anything this does
+// not know keeps the `{any}` rendering, so it can never be worse than before.
+pub fn _zbr_show(x: anytype) []const u8 {
+    var sb: std.ArrayList(u8) = .empty;
+    _zbr_show_into(&sb, x, false) catch return "?";
+    return sb.toOwnedSlice(_allocator) catch "?";
+}
+fn _zbr_show_fmt(sb: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
+    const t = try std.fmt.allocPrint(_allocator, fmt, args);
+    try sb.appendSlice(_allocator, t);
+}
+fn _zbr_show_into(sb: *std.ArrayList(u8), x: anytype, quote_str: bool) !void {
+    const T = @TypeOf(x);
+    const info = @typeInfo(T);
+    if (comptime _zbr_is_u8_like(T)) {
+        if (quote_str) try sb.append(_allocator, '"');
+        try sb.appendSlice(_allocator, @as([]const u8, x));
+        if (quote_str) try sb.append(_allocator, '"');
+        return;
+    }
+    switch (info) {
+        .optional => {
+            if (x) |v| try _zbr_show_into(sb, v, quote_str) else try sb.appendSlice(_allocator, "nil");
+        },
+        .@"enum" => try sb.appendSlice(_allocator, @tagName(x)),
+        .bool => try sb.appendSlice(_allocator, if (x) "true" else "false"),
+        .int, .comptime_int => try _zbr_show_fmt(sb, "{d}", .{x}),
+        .float, .comptime_float => try _zbr_show_fmt(sb, "{d}", .{x}),
+        .pointer => |p| {
+            if (p.size == .one) {
+                const C = p.child;
+                if (@typeInfo(C) == .@"struct" and @hasDecl(C, "toString")) {
+                    try sb.appendSlice(_allocator, x.toString());
+                } else if (@typeInfo(C) == .@"struct" and @hasField(C, "items") and @hasField(C, "capacity")) {
+                    try _zbr_show_into(sb, x.*, quote_str);
+                } else {
+                    try _zbr_show_fmt(sb, "{any}", .{x});
+                }
+            } else if (p.size == .slice) {
+                try sb.append(_allocator, '[');
+                for (x, 0..) |e, i| {
+                    if (i > 0) try sb.appendSlice(_allocator, ", ");
+                    try _zbr_show_into(sb, e, true);
+                }
+                try sb.append(_allocator, ']');
+            } else {
+                try _zbr_show_fmt(sb, "{any}", .{x});
+            }
+        },
+        .@"struct" => {
+            if (@hasField(T, "items") and @hasField(T, "capacity")) {
+                // std.ArrayList
+                try sb.append(_allocator, '[');
+                for (x.items, 0..) |e, i| {
+                    if (i > 0) try sb.appendSlice(_allocator, ", ");
+                    try _zbr_show_into(sb, e, true);
+                }
+                try sb.append(_allocator, ']');
+            } else if (@hasDecl(T, "KV") and @hasDecl(T, "iterator")) {
+                // std.HashMap / StringHashMap (a Set is a map to void)
+                try sb.append(_allocator, '{');
+                var it = x.iterator();
+                var i: usize = 0;
+                while (it.next()) |kv| : (i += 1) {
+                    if (i > 0) try sb.appendSlice(_allocator, ", ");
+                    try _zbr_show_into(sb, kv.key_ptr.*, false);
+                    if (@TypeOf(kv.value_ptr.*) != void) {
+                        try sb.appendSlice(_allocator, ": ");
+                        try _zbr_show_into(sb, kv.value_ptr.*, true);
+                    }
+                }
+                try sb.append(_allocator, '}');
+            } else if (@hasDecl(T, "toString")) {
+                try sb.appendSlice(_allocator, x.toString());
+            } else {
+                try _zbr_show_fmt(sb, "{any}", .{x});
+            }
+        },
+        else => try _zbr_show_fmt(sb, "{any}", .{x}),
+    }
+}
 pub fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
     var content = std.ArrayList(u8).empty;
     defer content.deinit(_allocator);

@@ -1,0 +1,22 @@
+# BUG-406: `print(xs)` / `"${xs}"` on a List, HashMap, Set, enum or optional fell to Zig's
+# `{any}` and printed the CONTAINER'S INTERNALS (`.{ .items = { 1, 2 }, .capacity = 17 }`,
+# a HashMap's allocator vtable, `.green`); and `print(maybe)` on a nil optional PANICKED
+# (the print path force-unwrapped). Now _zbr_show: `[1, 2]`, `{a: 1}`, `{3}`, `green`,
+# `nil`; strings inside a container are quoted. A HashMap prints in its own order, so
+# the map below has one entry.
+enum Color
+    red
+    green
+def main()
+    var c = Color.green
+    var xs = [1, 2]
+    var names = ["a", "b"]
+    var m = {"a": 1}
+    var s = Set(int)()
+    s.add(3)
+    var o: int? = nil
+    var p: str? = "x"
+    var nested: List(List(int)) = [[1], [2, 3]]
+    print(c, xs, names, m, s, o, p)
+    print("${c} ${xs} ${names} ${m} ${s} ${o} ${p} ${nested}")
+    print(xs.map(def(x) = x * 2))

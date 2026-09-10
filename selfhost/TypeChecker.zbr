@@ -3313,6 +3313,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             # in `while(true)` and an arm that fell through would HANG instead of erroring.
         on Expr.index as ei
             # s[i] — element type depends on receiver type.
+            # BUG-403: `s.split(" ")[i]` -- the receiver is a lazy split iterator the
+            # call arm leaves untyped; its elements are strings (isStrListCallExpr).
+            if isStrListCallExpr(ei.object)
+                return Type_.string_
             var idx_recv: Type_ = inferExpr(ei.object, ctx)
             branch idx_recv
                 on Type_.string_

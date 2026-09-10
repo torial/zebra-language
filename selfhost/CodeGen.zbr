@@ -7776,6 +7776,22 @@ struct Generator
 
     # Look up a struct field's TypeRef by struct name and field name using module_decls.
     # Used in struct literals (Pattern 1a) where owner_members is the enclosing struct, not the target.
+    # BUG-401: the Nth field name of a plain struct (declaration order), for the
+    # positional constructor `P(1, 2)` QUICKSTART §6 documents. Emitted as
+    # `_zbr_ty_P{ 1, 2 }` until 2026-09-10, which Zig refuses ("does not support
+    # array initialization syntax"); only the named form worked.
+    def structFieldNameAt(struct_name: str, idx: int): str?
+        for decl in module_decls
+            if decl is Decl.struct_ as s
+                if s.name == struct_name
+                    var k: int = 0
+                    for mem in s.members
+                        if mem is Decl.var_ as fld
+                            if k == idx
+                                return fld.name
+                            k = k + 1
+        return nil
+
     def lookupStructFieldType(struct_name: str, field_name: str): TypeRef?
         for decl in module_decls
             if decl is Decl.struct_ as s
@@ -9653,7 +9669,10 @@ struct Generator
             if ai > 0
                 w.emit(" ")
             var arg = p.args.at(ai)
-            w.emit(.printFmtSpec(arg))
+            var spec0: str = .printFmtSpec(arg)
+            if spec0 == "{show}"
+                spec0 = "{s}"
+            w.emit(spec0)
             ai += 1
         if p.newline
             w.emit("\\n")
@@ -9678,11 +9697,22 @@ struct Generator
             if parg is Expr.ident as pid
                 if isNilNarrowed(pid.name)
                     needs_unwrap = false
+            var show_wrap: bool = .printFmtSpec(parg) == "{show}"
+            if show_wrap
+                w.emit("_zbr_show(")
             genExpr(parg)
-            if needs_unwrap
+            if needs_unwrap and not show_wrap
                 w.emit(".?")
+            if show_wrap
+                w.emit(")")
             ai2 += 1
         w.emit("});\n")
+
+    # A nil-narrowed ident emits `x.?` itself (BUG-187), so its Zig value is plain.
+    def isNilNarrowedExpr(e: Expr): bool
+        if e is Expr.ident as nid
+            return isNilNarrowed(nid.name)
+        return false
 
     def isStringLitArg(e: Expr): bool
         branch e
@@ -9765,10 +9795,13 @@ struct Generator
                     return "{any}"
         if .infer_ctx != nil
             var t: Type_ = inferExpr(e, .infer_ctx!)
-            # Unwrap one optional layer: inside nil-check bodies the value is
-            # guaranteed non-nil; genPrint will emit `.?` on the Zig value.
-            if t is Type_.optional as opt_inner
-                t = opt_inner
+            # An optional prints through _zbr_show: the value, or `nil`. (Until
+            # 2026-09-10 this unwrapped one layer and genPrint emitted `.?`, which
+            # PANICKED on a nil -- `print(maybe)` was a crash, not "nil". A
+            # nil-narrowed ident already emits `x.?` itself, so it reaches
+            # _zbr_show as a plain value.)
+            if t is Type_.optional
+                return "{show}"
             branch t
                 on Type_.string_
                     return "{s}"
@@ -9797,11 +9830,16 @@ struct Generator
                 on Type_.unresolved
                     pass  # fall through to heuristic
                 else
-                    return "{any}"
-        # Type undetermined: check structural heuristic; default to {any} (safe for any type).
+                    # A container, enum, class or optional-of-those: `{show}` is a
+                    # marker the two callers turn into `{s}` + `_zbr_show(arg)`
+                    # (2026-09-10; `{any}` printed the container's internals).
+                    return "{show}"
+        # Type undetermined: check structural heuristic; default to _zbr_show, which
+        # renders what it knows (containers, enums, optionals) and falls back to
+        # `{any}` itself for anything else -- never worse than the old `{any}`.
         if isStringExpr(e)
             return "{s}"
-        return "{any}"
+        return "{show}"
 
     # ── genRaise ──────────────────────────────────────────────────────────────
 
@@ -11012,9 +11050,16 @@ struct Generator
                     # BUG-313: checked. Covers BOTH the List (.items) and the
                     # string/slice receiver -- _zbr_at takes any slice.
                     w.emit("_zbr_at(")
-                    genExpr(ix.object)
-                    if is_list_idx
+                    # BUG-403: `s.split(" ")[1]` -- the receiver is the LAZY SplitIterator
+                    # (BUG-336 handled `.at(i)`/`.len` on it, not `[i]`). Collect it
+                    # first, as genListRecv does for the method forms.
+                    if isSplitIter(ix.object)
+                        genListRecv(ix.object)
                         w.emit(".items")
+                    else
+                        genExpr(ix.object)
+                        if is_list_idx
+                            w.emit(".items")
                     w.emit(", ")
                     genExpr(ix.index)
                     w.emit(")")
@@ -11186,10 +11231,14 @@ struct Generator
                         elem_zig = "*" + et_cm.module + "." + et_cm.type_name
                     else
                         if structNameFromType(et) as et_snm
+                            # BUG-402: a user type (enum, struct, class) is emitted
+                            # under the reserved prefix everywhere else; here the raw
+                            # name went out and `[Color.red, Color.blue]` failed in
+                            # Zig with "use of undeclared identifier 'Color'".
                             if class_names.contains_(et_snm)
-                                elem_zig = "*" + et_snm
+                                elem_zig = "*" + typeZigName(et_snm)
                             else
-                                elem_zig = et_snm
+                                elem_zig = typeZigName(et_snm)
                         else
                             elem_zig = zigTypeForListElem(et)
                     w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + ").empty; ")
@@ -12221,6 +12270,7 @@ struct Generator
         # not interchangeable and a stringly-typed flag would hide that.
         var cast_trunc: List(bool) = List(bool)()
         var needs_tostring: List(bool) = List(bool)()
+        var show_wraps: List(bool) = List(bool)()     # {show}: wrap the arg in _zbr_show()
         var i: int = 0
         while i < si.parts.len
             var part = si.parts.at(i)
@@ -12245,25 +12295,40 @@ struct Generator
                         cast_types.add(bitCastType(fmt_spec, ex_type))
                         cast_trunc.add(fmt_spec.endsWith("c"))
                         needs_tostring.add(false)
+                        show_wraps.add(false)
                     else
                         # Implicit toString: named type with toString() method → {s}.
                         var ts: bool = false
+                        var is_opt_part: bool = false
                         if .infer_ctx != nil
                             var et: Type_ = inferExpr(e, .infer_ctx!)
                             if et is Type_.named as tn
                                 if toString_types.contains_(tn)
                                     ts = true
+                            if et is Type_.optional
+                                is_opt_part = true   # BUG-406: `${maybe}` shows the value or nil
                         if ts
                             fmt_str = fmt_str + "{s}"
+                            show_wraps.add(false)
+                        else if is_opt_part and not isNilNarrowedExpr(e)
+                            fmt_str = fmt_str + "{s}"
+                            show_wraps.add(true)
                         else if .isStringBoth(e, "interp_fmt")
                             fmt_str = fmt_str + "{s}"
+                            show_wraps.add(false)
                         else
                             # BUG-160 (fuzzer): use the type-appropriate spec (mirrors
                             # the bootstrap's printFmt), NOT a hardcoded `{}`.  `{}`
                             # diverges — `{d}` for float, and `{any}` for List/struct
                             # (a `{}` on an ArrayList blows up zig's comptime formatting
                             # → build timeout).  printFmtSpec falls back to `{any}`.
-                            fmt_str = fmt_str + printFmtSpec(e)
+                            var ispec: str = printFmtSpec(e)
+                            if ispec == "{show}"
+                                fmt_str = fmt_str + "{s}"
+                                show_wraps.add(true)
+                            else
+                                fmt_str = fmt_str + ispec
+                                show_wraps.add(false)
                         cast_types.add("")
                         cast_trunc.add(false)
                         needs_tostring.add(ts)
@@ -12300,6 +12365,10 @@ struct Generator
                 else if ts
                     genExpr(e)
                     w.emit(".toString()")
+                else if show_wraps.at(arg_idx)
+                    w.emit("_zbr_show(")
+                    genExpr(e)
+                    w.emit(")")
                 else
                     genExpr(e)
                 arg_idx = arg_idx + 1
@@ -13031,15 +13100,18 @@ struct Generator
                 emitTypeName(id.name)                       # BUG-281 B
                 w.emit("{")
                 var first_sf = true
+                var sf_idx: int = 0
                 for a in c.args
                     if first_sf
                         w.emit(" ")
                     else
                         w.emit(", ")
                     first_sf = false
-                    if a.name != nil
+                    var sf_name_opt: str? = a.name
+                    if sf_name_opt == nil
+                        sf_name_opt = structFieldNameAt(id.name, sf_idx)   # BUG-401
+                    if sf_name_opt as sf_name
                         w.emit(".")
-                        var sf_name = a.name!
                         emitName(sf_name)                   # BUG-280
                         w.emit(" = ")
                         var sf_type = lookupStructFieldType(id.name, sf_name)
@@ -13049,6 +13121,7 @@ struct Generator
                             genExpr(a.value)
                     else
                         genExpr(a.value)
+                    sf_idx = sf_idx + 1
                 if not first_sf
                     w.emit(" ")
                 w.emit("}")

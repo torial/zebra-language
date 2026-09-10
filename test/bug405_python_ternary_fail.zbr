@@ -1,0 +1,7 @@
+# BUG-405: `var t = 5 if total > 3 else 0` -- Python's conditional expression -- opened
+# an inline if-statement on the same line and died on the `else` with
+# "expected ':', got 'else'". The message now names the call form `if(c, a, b)`.
+def main()
+    var total = 5
+    var t = 5 if total > 3 else 0
+    print(t)

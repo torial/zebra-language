@@ -36,6 +36,50 @@ codegen fills the runtime's second `flag(long, short)` argument for the document
 one-arg form; `Compress.gzip -> str`, `gunzip -> str?` (QUICKSTART said List(byte); the
 runtime returns str -- the doc is corrected). Fixture bug392_stdlib_str_returns_test.
 
+### BUG-406: `print(xs)` printed a List's INTERNALS; `print(maybe)` on nil panicked — FIXED 2026-09-10
+
+A List, HashMap, Set, enum or optional fell to Zig's `{any}`: `.{ .items = { 1, 2 },
+.capacity = 17 }`, a HashMap's allocator vtable, `.green`. The print path force-unwrapped
+an optional (`.?`), so `print(maybe)` on nil was a crash, not "nil"; `"${maybe}"` on a
+`str?` was a Zig format error. The first thing a newcomer prints. **Fix.** `_zbr_show`
+in the runtime renders `[1, 2]`, `{a: 1}`, `{3}`, `green`, `nil`, strings inside a
+container quoted, recursively; `printFmtSpec` returns a `{show}` marker for containers,
+enums, optionals and the untyped fallback, and both `print` and interpolation turn it
+into `{s}` + `_zbr_show(arg)`. A type it does not know keeps the `{any}` rendering, so
+nothing prints worse than before. A HashMap prints in its own (hash) order. Fixture
+bug406_print_containers_test.
+
+### BUG-405: Python's `a if c else b` got "expected ':', got 'else'" — FIXED 2026-09-10
+
+The `if` opened an inline if-statement on the same line. **Fix.** A var initialiser
+followed by `if` on the same line is refused naming the call form `if(c, a, b)`.
+Fixture bug405_python_ternary_fail.
+
+### BUG-404: `class Dog extends Animal` got "unexpected top-level token: 'extends'" — FIXED 2026-09-10
+
+Zebra has no class inheritance (QUICKSTART §17); the parser now says so at the class
+header (`extends`, `inherits`, `class Dog: Animal`) and names mixins (`adds`) and
+interfaces (`implements`). Fixture bug404_extends_fail.
+
+### BUG-403: `s.split(" ")[1]` failed in Zig, then printed bytes — FIXED 2026-09-10
+
+Indexing the lazy split iterator (BUG-336 covered `.at`/`.len`, not `[i]`): the index
+arm now collects it first, and the checker types the element as `str`. Fixture
+bug403_split_index_test.
+
+### BUG-402: `[Color.red, Color.blue]` (un-annotated) failed in Zig — FIXED 2026-09-10
+
+The list-literal element type was emitted as the raw name (`std.ArrayList(Color)`) where
+everything else uses the reserved `_zbr_ty_` prefix. `typeZigName` now. Fixture
+bug402_enum_list_literal_test (enum and struct elements).
+
+### BUG-401: the positional struct constructor `P(1, 2)` failed in Zig — FIXED 2026-09-10
+
+QUICKSTART §6 documents it; it emitted `_zbr_ty_P{ 1, 2 }` ("does not support array
+initialization syntax"). Positional args now map to fields in declaration order
+(`structFieldNameAt`); named and defaulted forms unchanged. Fixture
+bug401_struct_positional_ctor_test.
+
 ### BUG-400: the catch binding used as a value (`"${e}"`, `print(e)`) failed in Zig — FIXED 2026-09-10
 
 Only `e.message` / `e.details` were handled; a bare `e` reached Zig as an undeclared

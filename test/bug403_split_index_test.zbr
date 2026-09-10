@@ -1,0 +1,8 @@
+# BUG-403: `s.split(" ")[1]` -- indexing the lazy split iterator -- failed in Zig
+# (BUG-336 covered `.at(i)`/`.len`, not `[i]`), and once it compiled the element was
+# untyped and printed as bytes. Collected first; the element is a str.
+def main()
+    var parts = "a b c".split(" ")
+    print(parts[1])
+    print("x,y".split(",")[1].upper())
+    print("one\ntwo".lines()[0])

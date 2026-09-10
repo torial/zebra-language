@@ -1,0 +1,9 @@
+# BUG-404: `class Dog extends Animal` -- the inheritance a newcomer reaches for -- got
+# "unexpected top-level token: 'extends'". Zebra has none; the message names mixins
+# and interfaces.
+class Animal
+    var name: str
+class Dog extends Animal
+    var x: int
+def main()
+    print(1)

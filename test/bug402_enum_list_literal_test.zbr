@@ -1,0 +1,15 @@
+# BUG-402: `[Color.red, Color.blue]` with no annotation emitted `std.ArrayList(Color)` --
+# the raw name -- where every other site uses the reserved `_zbr_ty_` prefix, so Zig
+# said "use of undeclared identifier 'Color'". Same for a struct or class element.
+enum Color
+    red
+    blue
+struct P
+    var x: int = 0
+def main()
+    var cs = [Color.red, Color.blue]
+    var ps = [P(1), P(2)]
+    var n = 0
+    for k in [Color.red, Color.blue]
+        n += 1
+    print("${cs.len} ${ps.at(1).x} ${n} ${cs}")
