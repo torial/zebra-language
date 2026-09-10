@@ -1,0 +1,5 @@
+# The first program. `zebra examples/hello.zbr` compiles it to a native executable
+# and runs it; `zebra -c examples/hello.zbr` only type-checks.
+def main()
+    var name = "Zebra"
+    print("Hello, ${name}!")

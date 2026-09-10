@@ -91,6 +91,10 @@ pub fn _initIo(io: std.Io) void {
     // _initModuleVars() removed: per-program, driven from the entry point.
 }
 // === STDLIB_PREAMBLE_HELPERS_START ===
+/// The compiler's version -- the ONE place it is written. `zebra --version` prints it
+/// (selfhost/main.zbr versionBanner) and .github/workflows/release.yml refuses a tag
+/// that does not spell it (tag = v<_zbr_version>_zig<zig major.minor>). Bump here.
+pub const _zbr_version: []const u8 = "0.9.0-dev";
 // sys.sleep(ms): Zig 0.16 removed std.Thread.sleep; sleeping now goes through the
 // Io interface.  Cancellation is benign here (we only sleep to pace/poll), so swallow it.
 pub fn _sysSleep(ms: i64) void {
@@ -264,6 +268,13 @@ pub fn _zebra_assert_cmp(a: anytype, b: anytype, expect_eq: bool) anyerror!void 
                 _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_ne failed: {} == {}", .{a, b}) catch "assert_ne failed" };
             }
         }
+        return error.ZebraError;
+    }
+}
+/// BUG-386: a plain `assert` inside a `test_*` fn -- fails the test, not the process.
+pub fn _zebra_assert_at(val: bool, msg: []const u8) anyerror!void {
+    if (!val) {
+        _error_ctx = .{ .message = msg };
         return error.ZebraError;
     }
 }
@@ -3722,6 +3733,15 @@ pub fn _crypto_encrypt(password: []const u8, plaintext: []const u8) []const u8 {
     @memcpy(raw[nonce.len + tag.len ..], ct_buf);
     return _hex_encode(raw);
 }
+/// BUG-398: `Crypto.deriveKey(password, salt)` was in the docs and the checker and
+/// had no codegen (a @compileError). HKDF-SHA256, 32-byte output, hex-encoded.
+pub fn _crypto_derive_key(password: []const u8, salt: []const u8) []const u8 {
+    const Hkdf = std.crypto.kdf.hkdf.HkdfSha256;
+    const prk = Hkdf.extract(salt, password);
+    var out: [32]u8 = undefined;
+    Hkdf.expand(&out, "zebra", prk);
+    return _hex_encode(&out);
+}
 pub fn _crypto_decrypt(password: []const u8, hex_ciphertext: []const u8) ?[]const u8 {
     const min_hex = (_AESGCM.nonce_length + _AESGCM.tag_length) * 2;
     if (hex_ciphertext.len < min_hex or hex_ciphertext.len % 2 != 0) return null;
@@ -4216,6 +4236,32 @@ pub fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList
     return items.items[items.items.len - 1];
 }
 // ── File extended ─────────────────────────────────────────────────────────────
+/// BUG-387: `s.lines()` and `File.readLines`. Splits on '\n', drops a trailing '\r'
+/// from each line (Windows text), keeps interior blank lines, and does NOT yield the
+/// empty segment after a final newline -- so `"a\nb\n".lines()` is two lines and
+/// `"".lines()` is none (Python's splitlines). Same `next()` shape as SplitIterator.
+pub const _ZbrLines = struct {
+    rest: []const u8,
+    done: bool,
+    pub fn next(self: *_ZbrLines) ?[]const u8 {
+        if (self.done) return null;
+        if (self.rest.len == 0) { self.done = true; return null; }
+        var line: []const u8 = undefined;
+        if (std.mem.indexOfScalar(u8, self.rest, '\n')) |i| {
+            line = self.rest[0..i];
+            self.rest = self.rest[i + 1 ..];
+        } else {
+            line = self.rest;
+            self.rest = self.rest[self.rest.len..];
+            self.done = true;
+        }
+        if (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
+        return line;
+    }
+};
+pub fn _zbr_lines(s: []const u8) _ZbrLines {
+    return .{ .rest = s, .done = false };
+}
 pub fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
     var content = std.ArrayList(u8).empty;
     defer content.deinit(_allocator);

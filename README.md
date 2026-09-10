@@ -46,15 +46,26 @@ zig-out/bin/zebra.exe --gui-backend=tui      run examples/counter.zbr
 - **[docs/archive/HERITAGE.md](docs/archive/HERITAGE.md)** — how this repo relates
   to the archived `cobra-language` repo it was split from.
 
+## Installing
+
+Releases ship one folder per platform with the compiler, the Zig it was built with, the
+guide and the examples -- see [install/README-INSTALL.md](install/README-INSTALL.md)
+(`install.ps1` on Windows, `install.sh` on Linux/macOS). `zebra --version` names both
+versions. Building from source is below; how a release is cut is in
+[docs/RELEASING.md](docs/RELEASING.md).
+
 ## Requirements
 
 - **Zig 0.16.0.** (`build.zig.zon` declares a `minimum_zig_version` of 0.15.0, but
-  the tree currently builds against 0.16 and is only tested there.)
+  the tree currently builds against 0.16 and is only tested there.) Zig is also a
+  RUNTIME dependency: every program is emitted as Zig and built with `zig build-exe`,
+  which is why a release bundles it.
 - A network connection on first build, to fetch the one external dependency
   ([`torial/earley`](https://github.com/torial/earley), pinned by URL and hash).
   Subsequent builds use Zig's package cache.
-- **Windows is the only tested platform.** Other platforms are not claimed to work
-  and are not exercised by CI.
+- **Windows and Linux** are the tested platforms: Windows is where the gates run day
+  to day; Linux has built and passed the full smoke since 2026-09-06
+  ([docs/LINUX_BUILD.md](docs/LINUX_BUILD.md)). macOS is untested.
 
 ## Building
 
@@ -80,9 +91,10 @@ in `build.zig.zon` for the one-line override.)*
 ## Continuous integration
 
 Gates run on GitHub Actions: the QUICK tier on every push and pull request, the FULL
-tier nightly and on demand. Both use Windows runners and a checksum-pinned Zig. See
-`.github/workflows/`, and `CLAUDE.md` for what each gate does and — importantly — what
-it cannot see.
+tier nightly and on demand. Both use Windows runners and a checksum-pinned Zig. A `v*`
+tag runs the release workflow (Windows, Linux, macOS-experimental archives with the Zig
+bundled). See `.github/workflows/`, and `CLAUDE.md` for what each gate does and —
+importantly — what it cannot see.
 
 ## License
 

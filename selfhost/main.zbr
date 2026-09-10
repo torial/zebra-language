@@ -2968,7 +2968,7 @@ def compileGuiProject(zig_path: str, mode_run: bool, backend: str): int
     if backend == "libui_ng"
         File.write(proj + "/app.manifest", luiManifest())
     var argv = List(str)()
-    argv.add("zig")
+    argv.add(zigExe())
     argv.add("build")
     argv.add("--build-file")
     argv.add(proj + "/build.zig")
@@ -3420,7 +3420,7 @@ def dbgRunSession(path: str, cpu_flag: str): int
         exe = exe + ".exe"
     sys.errln("zebra debug: compiling '" + path + "' -> " + exe + " ...")
     var zargv: List(str) = List(str)()
-    zargv.add("zig")
+    zargv.add(zigExe())
     zargv.add("build-exe")
     zargv.add(zig_path)
     zargv.add("-femit-bin=" + exe)
@@ -3594,6 +3594,42 @@ def dbgDumpMap(path: str): int
     return 0
 
 
+# ── Toolchain resolution (release packaging, 2026-09-10) ─────────────────────────
+# Zig is a RUNTIME dependency of the compiler (every program is emitted as Zig and
+# built with `zig build-exe`), so a release zip bundles a pinned Zig next to the
+# binary as `zig/`. Resolution order: $ZEBRA_ZIG (an explicit path), then the
+# bundled sibling `<exe dir>/zig/zig[.exe]`, then a bare `zig` on PATH -- so a
+# source build behaves exactly as before and a release build never depends on
+# whatever `zig` the user happens to have. One function; every spawn site uses it
+# (the six `argv.add("zig")` lines were the whole surface).
+var _zig_exe_cache: str = ""
+def zigExe(): str
+    if _zig_exe_cache != ""
+        return _zig_exe_cache
+    var env_zig: str? = sys.getenv("ZEBRA_ZIG")
+    if env_zig as ez
+        if ez != ""
+            _zig_exe_cache = ez
+            return ez
+    var d: str = Path.dirname(sys.selfExe())
+    if d == ""
+        d = "."
+    if File.exists(d + "/zig/zig.exe")
+        _zig_exe_cache = d + "/zig/zig.exe"
+    else if File.exists(d + "/zig/zig")
+        _zig_exe_cache = d + "/zig/zig"
+    else
+        _zig_exe_cache = "zig"
+    return _zig_exe_cache
+
+# The version banner's ONE source is `_zbr_version` in selfhost/stdlib_preamble.zig
+# (the runtime every program carries); the release workflow refuses a tag that
+# does not match it. The Zig version is the one this binary was built with.
+def versionBanner(): str
+    var v: str = zig"_zbr_version"
+    var zv: str = zig"builtin.zig_version_string"
+    return "zebra " + v + " (zig " + zv + ")"
+
 def main()
     var args = Arg.parse()
 
@@ -3619,7 +3655,7 @@ def main()
     if args.contains("--version")
         # BUG-321: a version banner is an ANSWER to a question the user asked, so it
         # belongs on stdout. On stderr `zebra --version > v.txt` wrote an empty file.
-        print("zebra 0.1.0 (Phase 22 cutover — selfhost pipeline primary)")
+        print(versionBanner())
         sys.exit(0)
 
     var cpu_flag: str = args.option("--cpu", "")
@@ -4114,7 +4150,7 @@ def main()
             else if zig"builtin.os.tag == .macos"
                 sh_out = sh_dir + "/lib" + sh_stem + ".dylib"
             var sargv = List(str)()
-            sargv.add("zig")
+            sargv.add(zigExe())
             sargv.add("build-lib")
             sargv.add(sh_zig)
             sargv.add("-dynamic")
@@ -4148,7 +4184,7 @@ def main()
                     break
             if resolveNodeApi() as api
                 var nargv = List(str)()
-                nargv.add("zig")
+                nargv.add(zigExe())
                 nargv.add("build-lib")
                 nargv.add(na_zig)
                 nargv.add("-dynamic")
@@ -4239,7 +4275,7 @@ def main()
         if not release and mc.c_sources.len == 0 and mc.lib_sources.len == 0 and not mc.uses_sqlite and not emittedExtern() and not emittedDynLib()
             var fast_exe: str = zig_path + ".fast.exe"
             var fargv = List(str)()
-            fargv.add("zig")
+            fargv.add(zigExe())
             fargv.add("build-exe")
             fargv.add(zig_path)
             fargv.add("-fno-llvm")
@@ -4307,7 +4343,7 @@ def main()
                 sys.exit(0)
 
         var argv2 = List(str)()
-        argv2.add("zig")
+        argv2.add(zigExe())
         # Non-`-c` run: build an exe (capturing only the small compile output for
         # error remapping), then run it with INHERITED stdio below. Using `zig run`
         # + sys.run() captured the *program's* output through a pipe that blocks at

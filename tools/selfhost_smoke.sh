@@ -1824,6 +1824,7 @@ smoke_tc_fail test/bug393_regex_unknown_method_fail.zbr "'Regex' has no method '
 smoke_run test/bug396_fluent_chain_statement_test.zbr "8 4"
 smoke_run test/bug397_398_400_stdlib_test.zbr "caught: bad thing"
 smoke_tc_fail test/bug398_datetime_static_fail.zbr "has no static function 'listZones'"
+smoke_run examples/hello.zbr "Hello, Zebra!"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_location: assert failed at"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_message: custom message here"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"

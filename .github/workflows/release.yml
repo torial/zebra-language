@@ -1,0 +1,156 @@
+# Release: build the zebra compiler for each platform, bundle the pinned Zig it was
+# built with (Zig is a RUNTIME dependency -- every program is emitted as Zig), and
+# attach one zip per platform to the GitHub release for the tag.
+#
+# Tag convention (Sean, 2026-09-09): v<version>_zig<zig major.minor>, e.g. v0.9.0_zig0.16.
+# The version is the ONE constant `_zbr_version` in selfhost/stdlib_preamble.zig; the
+# first job refuses a tag that does not spell it, so a release can never claim a
+# version the binary does not print.
+#
+# Windows is the tested platform; Linux has been green since 2026-09-06
+# (docs/LINUX_BUILD.md). macOS has never built Zebra -- its job runs but may not fail
+# the release (continue-on-error) until a smoke has been seen green there.
+#
+# Zig checksums: Windows is pinned (the same value gates-*.yml uses). The other
+# platforms are verified against ziglang.org/download/index.json at run time --
+# weaker than a pin (it trusts the index), so pin them once verified: replace the
+# `index` source below with the literal sha256 for each.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  tag-matches-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver=$(grep -oE '_zbr_version: \[\]const u8 = "[^"]+"' selfhost/stdlib_preamble.zig | sed -E 's/.*"([^"]+)"/\1/')
+          [ -n "$ver" ] || { echo "::error::_zbr_version not found in selfhost/stdlib_preamble.zig"; exit 1; }
+          tag="${GITHUB_REF_NAME}"
+          want="v${ver}_zig0.16"
+          if [ "$tag" != "$want" ]; then
+            echo "::error::tag '$tag' does not match the compiler's version: expected '$want' (bump _zbr_version in selfhost/stdlib_preamble.zig, or fix the tag)"
+            exit 1
+          fi
+          case "$ver" in *-dev) echo "::error::refusing to release a -dev version ($ver)"; exit 1;; esac
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: tag-matches-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            zig: zig-x86_64-windows-0.16.0
+            ext: zip
+            sha: 68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e
+            plat: windows-x86_64
+            exe: zebra.exe
+            experimental: false
+          - os: ubuntu-latest
+            zig: zig-x86_64-linux-0.16.0
+            ext: tar.xz
+            sha: index
+            plat: linux-x86_64
+            exe: zebra
+            experimental: false
+          - os: macos-latest
+            zig: zig-aarch64-macos-0.16.0
+            ext: tar.xz
+            sha: index
+            plat: macos-aarch64
+            exe: zebra
+            experimental: true
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Zig 0.16.0 (${{ matrix.zig }})
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://ziglang.org/download/0.16.0/${{ matrix.zig }}.${{ matrix.ext }}"
+          curl -fsSL "$url" -o "zig.${{ matrix.ext }}"
+          want="${{ matrix.sha }}"
+          if [ "$want" = "index" ]; then
+            key=$(echo "${{ matrix.zig }}" | sed -e 's/^zig-//' -e 's/-0\.16\.0$//')
+            want=$(curl -fsSL https://ziglang.org/download/index.json | python3 -c "import json,sys; print(json.load(sys.stdin)['0.16.0']['$key']['shasum'])")
+          fi
+          got=$(sha256sum "zig.${{ matrix.ext }}" | cut -d" " -f1)
+          [ "$got" = "$want" ] || { echo "::error::Zig checksum mismatch: got $got want $want"; exit 1; }
+          if [ "${{ matrix.ext }}" = zip ]; then unzip -q "zig.${{ matrix.ext }}"; else tar xf "zig.${{ matrix.ext }}"; fi
+          mv "${{ matrix.zig }}" zig-toolchain
+          echo "$GITHUB_WORKSPACE/zig-toolchain" >> "$GITHUB_PATH"
+
+      - name: Build (ReleaseSafe)
+        shell: bash
+        run: |
+          set -euo pipefail
+          zig version
+          zig build -Doptimize=ReleaseSafe
+          ./zig-out/bin/${{ matrix.exe }} --version
+
+      - name: Smoke (the packaged binary compiles and runs a program)
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'def main()\n    print("release smoke ok")\n' > /tmp/rs.zbr
+          out=$(./zig-out/bin/${{ matrix.exe }} /tmp/rs.zbr 2>&1 | tail -1)
+          [ "$out" = "release smoke ok" ] || { echo "::error::smoke printed '$out'"; exit 1; }
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          v="${{ needs.tag-matches-version.outputs.version }}"
+          name="zebra-${v}_zig0.16-${{ matrix.plat }}"
+          mkdir -p "dist/$name"
+          cp -r zig-out/bin/. "dist/$name/"          # zebra[.exe], zebra-bootstrap, vendor/sqlite/sqlite3.c
+          cp -r zig-toolchain "dist/$name/zig"        # the Zig this binary was built and tested with
+          cp README.md QUICKSTART.md CHANGELOG.md "dist/$name/"
+          mkdir -p "dist/$name/docs" && cp docs/UI_QUICKSTART.md docs/DEBUGGING.md "dist/$name/docs/"
+          cp -r examples "dist/$name/examples"
+          cp install/README-INSTALL.md "dist/$name/INSTALL.md"
+          cd dist
+          if [ "${{ matrix.ext }}" = zip ]; then
+            7z a -r "$name.zip" "$name" > /dev/null
+          else
+            tar czf "$name.tar.gz" "$name"
+          fi
+          ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.plat }}
+          path: dist/zebra-*.*
+
+  publish:
+    needs: [tag-matches-version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        shell: bash
+        run: cd dist && sha256sum zebra-* > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/zebra-*
+            dist/SHA256SUMS.txt
+          generate_release_notes: true
