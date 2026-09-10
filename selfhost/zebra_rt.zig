@@ -443,9 +443,27 @@ pub fn _zebra_sort_natural(comptime T: type, items: []T) void {
     };
     std.mem.sort(T, items, {}, _I.less);
 }
+// BUG-422: `xs.sortBy(def(p) = p.dist())` -- a ONE-argument KEY function (Python's
+// `key=`) sorts ascending by the key; a two-argument comparator is unchanged.
+fn _zbr_fn_arity(comptime F: type) ?usize {
+    return switch (@typeInfo(F)) {
+        .@"fn" => |f| f.params.len,
+        .pointer => |p| switch (@typeInfo(p.child)) {
+            .@"fn" => |f| f.params.len,
+            else => null,
+        },
+        else => null,
+    };
+}
 pub fn _zebra_sort_by(comptime T: type, comptime cmp: anytype, items: []T) void {
     const _I = struct {
         fn less(_: void, a: T, b: T) bool {
+            if (comptime (_zbr_fn_arity(@TypeOf(cmp)) orelse 2) == 1) {
+                const ka = cmp(a);
+                const kb = cmp(b);
+                if (comptime @TypeOf(ka) == []const u8) return std.mem.lessThan(u8, ka, kb);
+                return ka < kb;
+            }
             return cmp(a, b);
         }
     };
@@ -2889,6 +2907,24 @@ pub fn _regex_find_all(re: Regex, input: []const u8) std.ArrayList([]const u8) {
     }
     return out;
 }
+// BUG-416: `re.split(text)` -- the pieces BETWEEN matches (a leading/trailing piece may
+// be empty, as in Python's re.split); no match -> the whole input as one piece.
+pub fn _regex_split(re: Regex, input: []const u8) std.ArrayList([]const u8) {
+    var out: std.ArrayList([]const u8) = .empty;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i < input.len) {
+        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| {
+            if (e > i) {
+                out.append(std.heap.page_allocator, input[start..i]) catch @panic("OOM");
+                start = e;
+                i = e;
+            } else i += 1;
+        } else i += 1;
+    }
+    out.append(std.heap.page_allocator, input[start..]) catch @panic("OOM");
+    return out;
+}
 pub fn _regex_replace(re: Regex, input: []const u8, sub: []const u8) []const u8 {
     var out: std.ArrayList(u8) = .empty;
     var i: usize = 0;
@@ -4270,6 +4306,18 @@ pub fn _zbr_lines(s: []const u8) _ZbrLines {
 // `[1, 2]`, `{a: 1, b: 2}`, `{1, 2}`, `green`, `nil`; strings inside a container
 // are quoted so `["a", "b"]` and `[a, b]` are not the same thing. Anything this does
 // not know keeps the `{any}` rendering, so it can never be worse than before.
+// BUG-423: `xs.join(",")` on a List of anything -- strings are joined as they are; every
+// other element renders the way `print` shows it (`[1, 2].join("-")` is "1-2").
+pub fn _zbr_list_join(sep: []const u8, items: anytype) []const u8 {
+    const E = std.meta.Child(@TypeOf(items));
+    if (comptime E == []const u8) return std.mem.join(_allocator, sep, items) catch @panic("OOM");
+    var out: std.ArrayList(u8) = .empty;
+    for (items, 0..) |it, i| {
+        if (i > 0) out.appendSlice(_allocator, sep) catch @panic("OOM");
+        out.appendSlice(_allocator, _zbr_show(it)) catch @panic("OOM");
+    }
+    return out.items;
+}
 pub fn _zbr_show(x: anytype) []const u8 {
     var sb: std.ArrayList(u8) = .empty;
     _zbr_show_into(&sb, x, false) catch return "?";

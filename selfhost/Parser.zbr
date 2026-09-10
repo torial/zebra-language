@@ -920,6 +920,10 @@ class Parser
             return .errorAt("'" + t + "' is a statement keyword and can't be used as an expression here")
         if t.len == 0
             return .errorAt("unexpected end of input while parsing an expression")
+        # BUG-419: the JS/C# arrow lambda `x => x * 2` (also `(a, b) => a + b`) is a
+        # `=` then a `>` in expression position; name the Zebra form.
+        if t == "=" and .peekAt(1).text == ">"
+            return .errorAt("there is no `x => expr` arrow lambda in Zebra: write `def(x) = expr` (QUICKSTART §1.5)")
         return .errorAt("unexpected expression token: '" + t + "'")
 
     # Friendlier diagnostic for a token that isn't a valid top-level declaration.

@@ -615,6 +615,19 @@ class Lexer
             pos = pos + 1
             scanWhile(isDigitOrUnder)
 
+        # BUG-420: a scientific exponent (`1e10`, `2.5E-3`, `6.02e+23`) -- a float literal.
+        # `e` alone (`3e`) is not consumed, so `3 else` style text is untouched.
+        if peek() == c'e' or peek() == c'E'
+            var exp_ok: bool = isDigit(peekAt(1))
+            if not exp_ok and (peekAt(1) == c'+' or peekAt(1) == c'-')
+                exp_ok = isDigit(peekAt(2))
+            if exp_ok
+                pos = pos + 1
+                if peek() == c'+' or peek() == c'-'
+                    pos = pos + 1
+                scanWhile(isDigit)
+                hasDot = true
+
         var sc  = peek()
         var sc1 = peek1()
 

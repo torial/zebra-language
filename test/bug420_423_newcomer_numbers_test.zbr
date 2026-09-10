@@ -1,0 +1,28 @@
+# BUG-420: scientific float literals (`1e3`, `2.5e-3`, `6.02e+23`) were "undefined name: 'e3'".
+# BUG-421: a struct method whose body calls `Math.*` stayed `*Owner`, so calling it on a
+#          for-in element failed in Zig ("expected '*Point', found '*const Point'").
+# BUG-422: `xs.sortBy(def(p) = p.dist())` -- a one-argument KEY function -- sorts by the key.
+# BUG-423: `xs.join(",")` on a List(int) (any element type), not only List(str).
+struct Point
+    var x: float
+    var y: float
+    def dist(): float
+        return Math.sqrt(this.x * this.x + this.y * this.y)
+def main()
+    print(1e3)
+    print(2.5e-3 * 2)
+    var big = 6.02e+23
+    print(big > 1e20)
+    var pts = List(Point)()
+    pts.add(Point(3.0, 4.0))
+    pts.add(Point(1.0, 1.0))
+    pts.sortBy(def(p) = p.dist())
+    for p in pts
+        print(p.dist())
+    var names = ["bo", "al", "cy"]
+    names.sortBy(def(n) = n)
+    print(names.join("+"))
+    var xs = [3, 1, 2]
+    xs.sortBy(def(a, b) = a > b)
+    print(xs.join(","))
+    print([1.5, 2.5].join(" | "))

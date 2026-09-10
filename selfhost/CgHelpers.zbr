@@ -2338,7 +2338,20 @@ def stmtMutatesSelf(s: Stmt): bool
 # expr-walker-ok: zig_lit — opaque text; a call inside it is Zig's, not Zebra's.
 def exprHasSelfCall(e: Expr): bool
     branch e
-        on Expr.call
+        on Expr.call as c
+            # BUG-421: `Math.sqrt(this.x * this.x)` kept a struct method at `*Owner`, so
+            # calling it on a for-in element (`for p in pts: p.dist()`) failed in Zig
+            # with "expected '*Point', found '*const Point'". A `Math.*` function
+            # takes values and cannot reach self; only its arguments are scanned.
+            if c.callee is Expr.member as cm
+                if cm.object is Expr.ident as ci
+                    if ci.name == "Math"
+                        var ai = 0
+                        while ai < c.args.len
+                            if exprHasSelfCall(c.args.at(ai).value)
+                                return true
+                            ai += 1
+                        return false
             return true
         on Expr.opt_chain as x
             if x.has_args

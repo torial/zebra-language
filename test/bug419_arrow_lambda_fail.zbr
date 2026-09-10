@@ -1,0 +1,6 @@
+# BUG-419: the JS/C# arrow lambda `x => x * 2` got "unexpected expression token: '='".
+# The message names Zebra's form, `def(x) = x * 2`.
+def main()
+    var xs = [1, 2, 3]
+    var ys = xs.map(x => x * 2)
+    print(ys)

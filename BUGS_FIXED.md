@@ -36,6 +36,36 @@ codegen fills the runtime's second `flag(long, short)` argument for the document
 one-arg form; `Compress.gzip -> str`, `gunzip -> str?` (QUICKSTART said List(byte); the
 runtime returns str -- the doc is corrected). Fixture bug392_stdlib_str_returns_test.
 
+### BUG-423: `xs.join(",")` only worked on a `List(str)` — FIXED 2026-09-10
+
+`[1, 2].join(",")` was Zig's "expected '[]const str', found '[]i64'". `_zbr_list_join` in
+the runtime joins strings as they are and renders every other element the way `print`
+shows it. Fixture bug420_423_newcomer_numbers_test.
+
+### BUG-422: `xs.sortBy(def(p) = p.dist())` — a one-argument key function — failed in Zig — FIXED 2026-09-10
+
+"expected 1 argument(s), found 2" from inside the runtime's comparator. `_zebra_sort_by`
+now reads the callback's arity at comptime: one parameter is a KEY (ascending by the
+key, `str` keys compared lexically), two is the comparator it always took. Same fixture.
+
+### BUG-421: a struct method calling `Math.*` could not be called on a for-in element — FIXED 2026-09-10
+
+`methodMutatesSelf` treated ANY call as possibly mutating self, so `def dist(): float`
+with `Math.sqrt(...)` in its body kept `self: *Point`, and `for p in pts: p.dist()` (a
+const element) was Zig's "expected '*Point', found '*const Point'". A `Math.*` call takes
+values and cannot reach self; only its arguments are scanned now. Same fixture.
+
+### BUG-420: scientific float literals (`1e3`, `2.5e-3`) were "undefined name: 'e3'" — FIXED 2026-09-10
+
+The lexer scans an optional exponent after the digits/fraction (`e`/`E`, optional sign,
+digits) and the literal is a float. `3e` alone is untouched. Same fixture.
+
+### BUG-419: the arrow lambda `x => x * 2` got "unexpected expression token: '='" — FIXED 2026-09-10
+
+The JS/C#/Python-adjacent habit; `=` then `>` in expression position now reads "there is
+no `x => expr` arrow lambda in Zebra: write `def(x) = expr`". Fixture
+bug419_arrow_lambda_fail.
+
 ### BUG-416: `re.split(text)` was documented in the book and missing from the compiler — FIXED 2026-09-10
 
 `_regex_split` in the runtime (the pieces between matches; no match → the whole input),

@@ -443,9 +443,27 @@ pub fn _zebra_sort_natural(comptime T: type, items: []T) void {
     };
     std.mem.sort(T, items, {}, _I.less);
 }
+// BUG-422: `xs.sortBy(def(p) = p.dist())` -- a ONE-argument KEY function (Python's
+// `key=`) sorts ascending by the key; a two-argument comparator is unchanged.
+fn _zbr_fn_arity(comptime F: type) ?usize {
+    return switch (@typeInfo(F)) {
+        .@"fn" => |f| f.params.len,
+        .pointer => |p| switch (@typeInfo(p.child)) {
+            .@"fn" => |f| f.params.len,
+            else => null,
+        },
+        else => null,
+    };
+}
 pub fn _zebra_sort_by(comptime T: type, comptime cmp: anytype, items: []T) void {
     const _I = struct {
         fn less(_: void, a: T, b: T) bool {
+            if (comptime (_zbr_fn_arity(@TypeOf(cmp)) orelse 2) == 1) {
+                const ka = cmp(a);
+                const kb = cmp(b);
+                if (comptime @TypeOf(ka) == []const u8) return std.mem.lessThan(u8, ka, kb);
+                return ka < kb;
+            }
             return cmp(a, b);
         }
     };
@@ -4288,6 +4306,18 @@ pub fn _zbr_lines(s: []const u8) _ZbrLines {
 // `[1, 2]`, `{a: 1, b: 2}`, `{1, 2}`, `green`, `nil`; strings inside a container
 // are quoted so `["a", "b"]` and `[a, b]` are not the same thing. Anything this does
 // not know keeps the `{any}` rendering, so it can never be worse than before.
+// BUG-423: `xs.join(",")` on a List of anything -- strings are joined as they are; every
+// other element renders the way `print` shows it (`[1, 2].join("-")` is "1-2").
+pub fn _zbr_list_join(sep: []const u8, items: anytype) []const u8 {
+    const E = std.meta.Child(@TypeOf(items));
+    if (comptime E == []const u8) return std.mem.join(_allocator, sep, items) catch @panic("OOM");
+    var out: std.ArrayList(u8) = .empty;
+    for (items, 0..) |it, i| {
+        if (i > 0) out.appendSlice(_allocator, sep) catch @panic("OOM");
+        out.appendSlice(_allocator, _zbr_show(it)) catch @panic("OOM");
+    }
+    return out.items;
+}
 pub fn _zbr_show(x: anytype) []const u8 {
     var sb: std.ArrayList(u8) = .empty;
     _zbr_show_into(&sb, x, false) catch return "?";

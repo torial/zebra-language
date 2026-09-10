@@ -18,6 +18,7 @@ const _zbr_hash = _zbr_rt._zbr_hash;
 const _zebra_sort_natural = _zbr_rt._zebra_sort_natural;
 const _zebra_map_keys = _zbr_rt._zebra_map_keys;
 const _zbr_print = _zbr_rt._zbr_print;
+const _zbr_list_join = _zbr_rt._zbr_list_join;
 
 const Ast = @import("Ast.zig");
 const _zbr_ty_StringPart = Ast._zbr_ty_StringPart;
@@ -8454,7 +8455,7 @@ pub fn _zbr_fn_methodListHint(ct: *_zbr_ty_ClassTypes) []const u8 {
 // zbr:selfhost/TypeChecker.zbr:5066
     _zebra_sort_natural(std.meta.Child(@TypeOf(names.items)), names.items);
 // zbr:selfhost/TypeChecker.zbr:5067
-    return _str_concat(_str_concat(" (methods: ", (std.mem.join(_zbr_rt._allocator, "/", names.items) catch @panic("OOM")), _zbr_rt._allocator), ")", _zbr_rt._allocator);
+    return _str_concat(_str_concat(" (methods: ", _zbr_list_join("/", names.items), _zbr_rt._allocator), ")", _zbr_rt._allocator);
 }
 
 // zbr:selfhost/TypeChecker.zbr:5069

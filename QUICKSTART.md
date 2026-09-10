@@ -208,6 +208,7 @@ verified against the compiler, not recalled.
 | `obj.methd()` (a typo) | the method the class has | `error: 'Counter' has no method 'methd' (methods: bump/value)` |
 | a `def f(): int` whose `if`/`else if` chain has no final `return` | end every path with `return` | `error: this def is declared to return int but can reach the end of its body without a \`return\`` |
 | 6-space or tab indentation | 4 spaces per level | `error: indentation is 6 space(s); Zebra indents by multiples of 4` |
+| `xs.map(x => x * 2)` / `lambda x: x * 2` | `xs.map(def(x) = x * 2)` | `error: there is no \`x => expr\` arrow lambda in Zebra` |
 
 The ternary is the one worth memorising, because `1 if c else 2` *reads* like it should
 work. Zebra's form is **`if(cond, then_value, else_value)`** — an expression, usable
@@ -357,6 +358,11 @@ Suffixes set the literal's type: `_u` is `uint`, `_u32` is `uint32`, and a bare 
 > **The suffix types the LITERAL, not the variable.** `var b = 0xFF_u` still infers `b` as
 > `int`, which is fine until the value exceeds i64 — so for large constants, annotate the
 > variable (`var golden: uint = …`) rather than relying on `_u`.
+
+### §3.1b′ Float literals
+
+`3.14`, `1.0`, and scientific notation — `1e3`, `2.5e-3`, `6.02e+23` — are floats
+(BUG-420). `7 / 2` is `3`; make either operand a float (`7.0 / 2`) for `3.5`.
 
 ### §3.1c Compound assignment
 
@@ -868,6 +874,7 @@ var total = items.reduce(0, def(acc, x) = acc + x)      # fold to a scalar; resu
 # Sorting — in place. sort() takes an OPTIONAL comparator:
 items.sort()                         # natural ascending (numeric / lexicographic)
 items.sort(def(a, b) = a > b)        # custom comparator (descending here); same as sortBy
+items.sortBy(def(x) = x.score)     # ONE-argument KEY function: ascending by the key (BUG-422)
 items.reverse()                      # in place (2026-09-10)
 
 # HashMap — construct with HashMap(K,V)() or a dict literal `{k: v, ...}`:
@@ -1296,7 +1303,7 @@ An `extend String` block adds methods the checker then accepts.
 | `center(width, fill)` | `(int, str): str` | Center within `width` characters |
 | `concat(other)` | `(str): str` | Append `other` (same as `+`) |
 | `format(args...)` | variadic | `std.fmt.allocPrint`-style format. **Specifiers are Zig's**, so a `str` argument needs `{s}` — `{}` on a string is a compile error. Ints take `{}`. |
-| `join(sep)` | `(str): str` | Join list elements — called on `List(str)`, not a single `str` |
+| `join(sep)` | `(str): str` | Join list elements — called on a List (any element type; non-strings render as `print` shows them, BUG-423), not a single `str` |
 | `substring(start, end)` | `(int, int): str` | Slice from `start` to `end` (same as `s[start..end]`) |
 | `toHex()` | `(): str` | Hex-encode bytes |
 | `fromHex()` | `(): str` | Decode hex string to bytes |

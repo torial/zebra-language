@@ -14215,14 +14215,15 @@ struct Generator
                             w.emit(")")
                         return
                     if mname == "join"
-                        w.emit("(std.mem.join(_allocator, ")
+                        # BUG-423: any element type (runtime helper), not only str.
+                        w.emit("_zbr_list_join(")
                         if args.len > 0
                             genExpr(args.at(0).value)
                         else
                             w.emit("\"\"")
                         w.emit(", ")
                         genExpr(m.object)
-                        w.emit(".items) catch @panic(\"OOM\"))")
+                        w.emit(".items)")
                         return
                     if mname == "contains"
                         w.emit("_zebra_in(")
@@ -15343,15 +15344,15 @@ struct Generator
             w.emit(")")
             return
         if mname == "join"
-            # BUG-117: std.mem.join(alloc, separator, slices) — separator first, list.items second
-            w.emit("(std.mem.join(_allocator, ")
+            # BUG-117: separator first, list.items second. BUG-423: any element type.
+            w.emit("_zbr_list_join(")
             if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
             genExpr(m.object)
-            w.emit(".items) catch @panic(\"OOM\"))")
+            w.emit(".items)")
             return
         if mname == "codePointCount"
             w.emit("@as(i64, @intCast(std.unicode.utf8CountCodepoints(")
