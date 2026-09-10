@@ -1,0 +1,13 @@
+# BUG-314: `.at()` on a List(List(T)) hands back a COPY of the inner list, so
+# `.add()` on it was silently lost by the parent (and on a for-in element it was a
+# leaked Zig "expected '*T', found '*const T'"). All three shapes are refused with
+# the idioms that work; the passing shapes are in bug314_nested_list_idioms_test.
+def main()
+    var parent: List(List(float)) = List(List(float))()
+    parent.add(List(float)())
+    var r = parent.at(0)
+    r.add(1.0)
+    parent.at(0).add(2.0)
+    for row in parent
+        row.add(3.0)
+    print(parent.count())

@@ -114,8 +114,37 @@ chk "running a program exits 0 and prints to STDOUT" \
     "exit=$RC stdout=[$OUT]"
 
 run --emit-zig hello.zbr
-chk "\`--emit-zig\` writes the source to STDOUT" \
+chk "\`--emit-zig\` writes the source to STDOUT (BUG-317: \`run\` captures to a FILE, so this IS the \`> file\` case)" \
     "$([ "$OUT_N" -gt 200 ] && echo 0 || echo 1)" "stdout=$OUT_N bytes"
+
+# ---- BUG-325 (selfhost half): --emit-zig on a MULTI-MODULE program says so ----------
+# stdout carries only the root, which imports dep.zig; without the note the captured
+# text reads as a complete program and is not. Single-module must NOT get the note.
+mkdir -p "$W/mm"
+printf 'def two(): int\n    return 2\n' > "$W/mm/dep.zbr"
+printf 'use dep exposing two\ndef main()\n    print(two())\n' > "$W/mm/main.zbr"
+run --emit-zig mm/main.zbr
+chk "\`--emit-zig\` on a multi-module program NOTES that only the root was printed (BUG-325)" \
+    "$([ "$OUT_N" -gt 200 ] && case "$ERR" in *"prints only the root"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "stdout=$OUT_N stderr=[$(echo "$ERR" | tail -1)]"
+run --emit-zig hello.zbr
+chk "...and a single-module program gets NO such note" \
+    "$(case "$ERR" in *"prints only the root"*) echo 1;; *) echo 0;; esac)" "stderr=[$(echo "$ERR" | tail -1)]"
+
+# ---- BUG-324: a FAILED compile leaves NO executable in --output-dir -----------------
+# Zig can leave a stub at -femit-bin that segfaults with no output; anything reading the
+# directory instead of the exit code would find it. Positive control: a GOOD compile
+# still leaves its binary there (a fix that deletes unconditionally must not pass).
+printf 'def main()\n    var x: int = zig"@as(i64, \\"s\\")"\n    print(x)\n' > "$W/zigbad.zbr"
+rm -rf "$W/od_bad" "$W/od_good"
+run --output-dir od_bad zigbad.zbr
+chk "a FAILED compile leaves no executable in --output-dir (BUG-324)" \
+    "$([ "$RC" != 0 ] && [ "$(ls "$W/od_bad" 2>/dev/null | grep -c '\.exe$')" = 0 ] && echo 0 || echo 1)" \
+    "exit=$RC files=[$(ls "$W/od_bad" 2>/dev/null | tr '\n' ' ')]"
+run --output-dir od_good hello.zbr
+chk "...and a GOOD compile still leaves its executable there (control)" \
+    "$([ "$RC" = 0 ] && [ "$(ls "$W/od_good" 2>/dev/null | grep -c '\.exe$')" -ge 1 ] && echo 0 || echo 1)" \
+    "exit=$RC files=[$(ls "$W/od_good" 2>/dev/null | tr '\n' ' ')]"
 
 # ---- `zebra test --list` / `--only` (zebra-ide's tests pane, 2026-09-09) -----------
 # `--list` is front-end only: label<TAB>line per test that WOULD run, from the harness's

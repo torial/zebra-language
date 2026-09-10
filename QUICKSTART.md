@@ -880,6 +880,13 @@ items.sort(def(a, b) = a > b)        # custom comparator (descending here); same
 items.sortBy(def(x) = x.score)     # ONE-argument KEY function: ascending by the key (BUG-422)
 items.reverse()                      # in place (2026-09-10)
 
+# NESTED containers are VALUES: `.at()` on a List(List(T)) hands back a COPY, so
+# mutating it would not reach the parent -- and the compiler refuses that (BUG-314):
+#   var row = grid.at(0)
+#   row.add(1)                       # error: 'row' is a copy of the inner list ...
+# Build the inner list first and `.add()` it, or `.set(i, updated)` it back. Reads
+# through the copy (`grid.at(0).count()`, `for row in grid: for x in row`) are fine.
+
 # HashMap — construct with HashMap(K,V)() or a dict literal `{k: v, ...}`:
 var m = HashMap(str, int)()
 var scores = {"a": 1, "b": 2}        # dict literal → HashMap(str, int) (K/V inferred)

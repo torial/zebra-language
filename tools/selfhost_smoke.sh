@@ -1844,6 +1844,8 @@ smoke_tc_fail test/bug419_arrow_lambda_fail.zbr "there is no \`x => expr\` arrow
 smoke_run test/bug420_423_newcomer_numbers_test.zbr "al+bo+cy"
 smoke_run test/bug417_pipeline_dot_method_test.zbr "hello  world"
 smoke_run test/bug418_generic_hashmap_field_test.zbr "seven nil [7]"
+smoke_tc_fail test/bug314_nested_copy_mutation_fail.zbr "is a copy of the inner list fetched with .at()"
+smoke_run test/bug314_nested_list_idioms_test.zbr "24"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_location: assert failed at"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_message: custom message here"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"

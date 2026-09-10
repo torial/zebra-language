@@ -54,6 +54,54 @@ that would otherwise mean `this`) onto the lhs, chains included
 (lhs prepended as the first argument) is unchanged. QUICKSTART §3.1 documents both
 forms. Fixture bug417_pipeline_dot_method_test.
 
+### BUG-325: `--emit-zig` wrote DEPENDENCY `.zig` files into the source directory, silently — CLOSED 2026-09-10 (bootstrap-only; selfhost half fenced)
+
+Scoped 2026-08-30 to the FROZEN bootstrap; the selfhost never wrote the files. What the
+selfhost DID do was print only the root of a multi-module program to stdout with no word
+that the captured text imports `dep.zig` and cannot build alone. It now says so on stderr
+(`note: N dependency module(s) were compiled with the root, and --emit-zig prints only
+the root -- use --output-dir DIR`), single-module programs get no note, and both are
+cli-surface legs. The bootstrap's side effect is left with the bootstrap: it is frozen,
+`--zig-backend` is the only route to it, and the sunset docket names it.
+
+### BUG-324: a FAILED compile still left a runnable `.exe` in `--output-dir`, and it segfaulted with no output — FIXED 2026-09-10
+
+The failure-path cleanup was gated on `output_dir == ""` (the scratch rule, written for
+BUG-244's "keep the .zig as evidence"). A binary from a build that failed is never
+evidence -- Zig leaves a 5 KB stub at `-femit-bin` -- so on a non-zero `zig build-exe` the
+candidate binaries are deleted regardless of `--output-dir` / `--keep-temp`; the `.zig`
+stays. Reproduced first (two stubs, `bad.zig.fast.exe` and `.run.exe`, after exit 1), then
+two cli-surface legs: the failed compile leaves no `.exe`, and a GOOD compile still
+leaves its `.exe` (the control a delete-everything fix would fail).
+
+### BUG-317: `--emit-zig > file` produced an empty file — FIXED by the bootstrap sunset (closed 2026-09-10)
+
+The entry's own re-opening note had it right: criterion 2 (the selfhost as regeneration
+authority, landed 2026-08-30) is what put `_zbr_print` into the compiler's own code.
+Verified today: `zebra --emit-zig hmain.zbr > out.zig` writes 1032 bytes. The
+cli-surface `--emit-zig` leg captures stdout to a FILE, so it has been asserting exactly
+this case since it was written; its label now says so.
+
+### BUG-314: `.add()` on a `List` fetched from a parent via `.at()` did not write back — RESOLVED 2026-09-10 (the strictly-safe way; the semantics option is still Sean's)
+
+`.at()` on a `List(List(T))` hands back a COPY of the inner list, so a mutation through
+it was silently lost by the parent, and on a for-in element it was a leaked Zig
+"expected '*T', found '*const T'". The ledger's own analysis named two fixes and only
+one of them is a bug fix: the checker now REFUSES a mutator (`add/set/remove/clear/sort/
+sortBy/reverse/pop/append/put`) on a local bound from `.at()`/`.fetch()` of a nested
+container, on the `.at()` chain itself, and on a for-in element over a `List(List(T))`,
+naming the two idioms that do work (build the inner list first and `.add()` it, or
+`.set(i, updated)` it back). Reads through the copy are untouched. The
+`@boundary-pending` probe fired as designed and is now a `rejects` probe.
+
+**Not done, and Sean's call:** reference semantics -- boxing inner containers so `.at()`
+aliases the parent's slot. A raw `&items[i]` is the wrong way to get there (the pointer
+dangles the moment the parent grows); the right way is heap-boxed inner containers, like
+classes, which is a codegen change across every nested-container site. Post-0.9.
+**Known limit:** a `HashMap(K, List(T))` value read with `.get(k) as row` then mutated
+is the same copy and is NOT yet refused. Fixtures bug314_nested_copy_mutation_fail (three
+shapes) + bug314_nested_list_idioms_test (the positive half).
+
 ### BUG-423: `xs.join(",")` only worked on a `List(str)` — FIXED 2026-09-10
 
 `[1, 2].join(",")` was Zig's "expected '[]const str', found '[]i64'". `_zbr_list_join` in

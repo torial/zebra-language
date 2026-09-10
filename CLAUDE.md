@@ -1105,7 +1105,10 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 33 assertions, 0 pins (2026-09-09:
+                                #   past `repl` starting. 37 assertions, 0 pins (2026-09-10: BUG-317/324/325
+                                #   legs -- a multi-module `--emit-zig` must SAY only the root
+                                #   was printed, a FAILED compile must leave no `.exe` in
+                                #   `--output-dir` while a good one still does; 2026-09-09:
                                 #   `zebra test --list` / `--only` for zebra-ide's tests
                                 #   pane, and the direct-run-build-file leg re-pointed at
                                 #   the CURRENT contract -- every program the compiler runs
@@ -2017,7 +2020,7 @@ than "what do we know":
 | emitted Zig compiles | `compile_check`, `full_sweep`, `divergence` | 335 |
 | compiler is self-consistent | `bootstrap_check` (round-trip) | selfhost only |
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
-| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 32 probes / 308 assertions | <!-- doc-gen: 32 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 308 = cat test/boundary/*.expected | grep -c . -->
+| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 32 probes / 305 assertions | <!-- doc-gen: 32 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 305 = cat test/boundary/*.expected | grep -c . -->
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
 | **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 11 opted in; the gate prints the ratio | <!-- doc-gen: 11 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
@@ -2602,7 +2605,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **422** <!-- doc-gen: 422 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **629** <!-- doc-gen: 629 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **631** <!-- doc-gen: 631 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

@@ -1150,6 +1150,12 @@ class InferCtx
     # emits as a Zig `const`, so assigning to one is a Zig error the user never wrote).
     # Space-delimited with leading/trailing spaces, like reserved_rt; reset per function.
     var params_here: str
+    # BUG-314: locals bound to a COPY of a nested container -- `var r = parent.at(i)` or a
+    # for-in element over a List(List(T)). Mutating such a copy is silently lost by the
+    # parent (or, in the loop, a leaked Zig "expected '*T', found '*const T'"), so a
+    # mutator call on one is refused with the two idioms that do work. Same
+    # space-delimited shape as params_here; reset per function.
+    var copy_locals: str
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -1167,9 +1173,24 @@ class InferCtx
         .self_type_override = nil
         .reserved_rt = " "
         .params_here = " "
+        .copy_locals = " "
 
     def setParamsHere(names: str)
         .params_here = names
+
+    def markCopyLocal(name: str)
+        if not ((" " + name + " ") in .copy_locals)
+            .copy_locals = .copy_locals + name + " "
+
+    def unmarkCopyLocal(name: str)
+        .copy_locals = .copy_locals.replace(" " + name + " ", " ")
+        .copy_locals = .copy_locals.replace(" " + name + "@loop ", " ")
+
+    def isCopyLocal(name: str): bool
+        return (" " + name + " ") in .copy_locals
+
+    def resetCopyLocals()
+        .copy_locals = " "
 
     def isParamHere(name: str): bool
         return (" " + name + " ") in .params_here
@@ -2942,6 +2963,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.int_
                         on Type_.list_ as list_elem
                             var lmname: str = mem.member
+                            # BUG-314: mutating a COPY of a nested container is silently lost.
+                            if isContainerMutator(lmname)
+                                var cpn: str = copyReceiverName(mem.object, ctx)
+                                if cpn != ""
+                                    var cp_what: str = "'" + cpn + "' is a copy of the inner list fetched with .at()"
+                                    if cpn == "<at>"
+                                        cp_what = ".at() hands back a copy of the inner list"
+                                    else if cpn.startsWith("<loop>")
+                                        cp_what = "the loop variable '" + cpn.substring(6, cpn.len) + "' is a copy of each inner list"
+                                    ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                               cp_what + ", so ." + lmname + "() on it would not change the parent -- build the inner list first and .add() it, or .set(i, updated) it back (BUG-314)")
+                                    return Type_.void_
                             if lmname == "at" or lmname == "fetch"
                                 return list_elem
                             if lmname == "join"
@@ -3580,6 +3613,43 @@ def isSqliteQueryCallExpr(e: Expr, ctx: InferCtx): bool
             return true
     return false
 
+# BUG-314 helpers.
+def isContainerVal(t: Type_): bool
+    branch t
+        on Type_.list_
+            return true
+        on Type_.hashmap_
+            return true
+        on Type_.set_
+            return true
+        else
+            return false
+
+# `xs.at(i)` / `xs.fetch(i)` on a List whose element is itself a container.
+def isNestedContainerFetch(e: Expr, ctx: InferCtx): bool
+    if e is Expr.call as c
+        if c.callee is Expr.member as m
+            if m.member == "at" or m.member == "fetch"
+                var rt: Type_ = inferExpr(m.object, ctx)
+                if rt is Type_.list_ as elem
+                    return isContainerVal(elem)
+    return false
+
+def isContainerMutator(name: str): bool
+    return name == "add" or name == "set" or name == "remove" or name == "clear" or name == "sort" or name == "sortBy" or name == "reverse" or name == "pop" or name == "append" or name == "put"
+
+# The receiver of a mutator call is a copy nobody can reach: a marked local, or the
+# `.at()` chain itself. "" when it is not.
+def copyReceiverName(recv: Expr, ctx: InferCtx): str
+    if recv is Expr.ident as id
+        if ctx.isCopyLocal(id.name)
+            return id.name
+        if ctx.isCopyLocal(id.name + "@loop")
+            return "<loop>" + id.name
+    if isNestedContainerFetch(recv, ctx)
+        return "<at>"
+    return ""
+
 def walkStmts(stmts: List(Stmt), ctx: InferCtx)
     for s in stmts
         walkStmt(s, ctx)
@@ -3688,6 +3758,11 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             var lvi: int = 0
             for v in fi.vars
                 ctx.bind(v, loop_var_ts.at(lvi))
+                # BUG-314: a for-in element over a List(List(T)) is a const COPY too.
+                ctx.unmarkCopyLocal(v)
+                if fi.vars.len == 1 and isContainerVal(loop_var_ts.at(lvi))
+                    if inferExpr(fi.iter, ctx) is Type_.list_
+                        ctx.markCopyLocal(v + "@loop")
                 lvi = lvi + 1
             walkStmts(fi.stmts, ctx)
             # Keep the loop var binding at its typed value (not reset to unknown_)
@@ -3832,6 +3907,11 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 if dv.init_expr != nil
                     t = inferExpr(dv.init_expr!, ctx)
             ctx.bind(dv.name, t)
+            # BUG-314: `var r = parent.at(i)` binds a COPY of the inner container.
+            ctx.unmarkCopyLocal(dv.name)
+            if dv.init_expr != nil
+                if isNestedContainerFetch(dv.init_expr!, ctx)
+                    ctx.markCopyLocal(dv.name)
         on Stmt.expr as e
             walkExpr(e, ctx)
         on Stmt.defer_ as sd
@@ -4623,6 +4703,12 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 # itself declares `var _list_targets_mode` at module scope.
                 if ctx.isReservedRuntimeName(dv.name)
                     ctx.addErr(file, dv.span.line, dv.span.col, "'" + dv.name + "' is reserved by the Zebra runtime (a zebra_rt.zig global); rename it")
+                # BUG-314: `var r = parent.at(i)` binds a COPY of the inner container
+                # (this is the pass that reports, so the mark is made here as well).
+                ctx.unmarkCopyLocal(dv.name)
+                if dv.init_expr != nil
+                    if isNestedContainerFetch(dv.init_expr!, ctx)
+                        ctx.markCopyLocal(dv.name)
                 # `var l: List(int)` with no `=` at LOCAL scope. Ported from
                 # src/TypeChecker.zig:1516. Without an initializer the field is
                 # left unset, and the declaration reads like a constructor call
@@ -4740,6 +4826,10 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 var svi: int = 0
                 for sv in sfi.vars
                     ctx.bind(sv, sfi_elems.at(svi))
+                    ctx.unmarkCopyLocal(sv)     # BUG-314
+                    if sfi.vars.len == 1 and isContainerVal(sfi_elems.at(svi))
+                        if inferExpr(sfi.iter, ctx) is Type_.list_
+                            ctx.markCopyLocal(sv + "@loop")
                     svi = svi + 1
                 checkStmts(sfi.stmts, file, ctx)
                 if sfi.else_ as sfi_else   # BUG-367: the for/else arm was unchecked too
@@ -4949,8 +5039,10 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                     ctx.bind(p.name, pt)
                     pnames = pnames + p.name + " "
                 ctx.setParamsHere(pnames)
+                ctx.resetCopyLocals()
                 checkStmts(dm_stmts, file, ctx)
                 ctx.setParamsHere(" ")
+                ctx.resetCopyLocals()
                 var scope_ctx: InferCtx = InferCtx(ctx.module_types, ctx.current_class)
                 scope_ctx.withDepTypes(ctx.dep_types)
                 scope_ctx.withFile(file)

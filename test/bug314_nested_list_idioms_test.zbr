@@ -1,0 +1,26 @@
+# BUG-314, the positive half: the idioms the refusal names DO work, and reading through
+# a fetched copy (or a loop element) is untouched.
+def main()
+    var parent: List(List(int)) = List(List(int))()
+    var row: List(int) = List(int)()
+    row.add(1)
+    row.add(2)
+    parent.add(row)
+    var updated = parent.at(0)
+    print(updated.count(), updated.at(1))
+    var fresh: List(int) = List(int)()
+    fresh.add(7)
+    fresh.add(8)
+    fresh.add(9)
+    parent.set(0, fresh)
+    print(parent.at(0).count())
+    var total = 0
+    for r in parent
+        for x in r
+            total += x
+    print(total)
+    var m: HashMap(str, int) = HashMap()
+    m.set("a", 1)
+    var ms = List(HashMap(str, int))()
+    ms.add(m)
+    print(ms.at(0).get("a"))

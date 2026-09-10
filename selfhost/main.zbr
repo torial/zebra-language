@@ -4131,6 +4131,17 @@ def main()
             var zig_path: str = mc.zbrToZig(path)
             var zig_src: str = File.read(zig_path)
             print(zig_src)
+            # BUG-325 (selfhost half): the root of a MULTI-MODULE program imports its
+            # dependencies' .zig files, and stdout carries only the root -- so the text
+            # a reader captured cannot build on its own, and nothing said so. Say so.
+            # (`visited` is every module compiled, root included; the runtime module is
+            # written beside the root, not through stdout, so it counts too.)
+            var em_deps: int = 0
+            for vm in mc.visited
+                if vm != path
+                    em_deps += 1
+            if em_deps > 0
+                sys.errln("note: " + em_deps.toString() + " dependency module(s) were compiled with the root, and `--emit-zig` prints only the root -- use `--output-dir DIR` to get every .zig this program needs")
             sys.exit(0)
 
         if mode_shared
@@ -4428,11 +4439,14 @@ def main()
             # binaries go. The fast path may already have produced a .fast.exe before
             # falling back here, and nothing used to remove it: a plain compile error
             # leaked ~20 MB, on the most ordinary failure a user can hit.
-            if not keep_temp and output_dir == ""
-                deleteScratch(zig_path + ".fast.exe")
-                deleteScratch(zig_path + ".fast.pdb")
-                deleteScratch(llvm_exe)
-                deleteScratch(zig_path + ".run.pdb")
+            # BUG-324: UNCONDITIONALLY -- `--output-dir` and `--keep-temp` keep the
+            # .zig (the evidence), never a binary from a build that FAILED. Zig can leave
+            # a stub at `-femit-bin` that segfaults with no output; anything reading the
+            # directory instead of the exit code would find it and run it.
+            deleteScratch(zig_path + ".fast.exe")
+            deleteScratch(zig_path + ".fast.pdb")
+            deleteScratch(llvm_exe)
+            deleteScratch(zig_path + ".run.pdb")
             sys.exit(1)
         if not mode_c
             # Run the freshly built exe with inherited stdio — output streams live
