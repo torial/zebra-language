@@ -457,6 +457,9 @@ error: bitwise '&' requires integer operands, got 'float'
 
 `orelse` and `catch` have the same precedence (level 9); they associate left-to-right.
 `->`  (pipeline) is the lowest non-assignment operator, so `a + b -> f` means `f(a + b)`.
+Its right side is either a call — `x -> f(y)` is `f(x, y)` — or a leading-dot method
+call — `x -> .lower()` is `x.lower()`, chains included: `text -> .lower() -> .split(" ") -> .at(0)`
+(BUG-417). A multi-line pipeline needs parentheses.
 
 ---
 

@@ -36,6 +36,24 @@ codegen fills the runtime's second `flag(long, short)` argument for the document
 one-arg form; `Compress.gzip -> str`, `gunzip -> str?` (QUICKSTART said List(byte); the
 runtime returns str -- the doc is corrected). Fixture bug392_stdlib_str_returns_test.
 
+### BUG-418: a generic class field `HashMap(K, V)` emitted `std.StringHashMap(anytype)` — FIXED 2026-09-10
+
+Two halves. The bare `HashMap()` default on a class field was emitted with no type
+context (the assignment path already had `genCallWithTypeHint`; the two field-default
+sites in `init` now use it too). And with `K` a type parameter, String- vs AutoHashMap
+cannot be chosen at emit time — `_zbr_HashMap(K, V)` in the runtime picks at
+instantiation (`K == []const u8` → StringHashMap). `Cache(str, int)` and `Cache(int, str)`
+both run. Sean: "make it more generic". Fixture bug418_generic_hashmap_field_test.
+
+### BUG-417: `x -> .lower()` — the pipeline into a leading-dot method call — did not exist — FIXED 2026-09-10 (Sean's call)
+
+The book's chapter 15 is built on it; the parser read `.lower()` as `this.lower()`. In
+AstBuilder the pipeline arm now re-bases the rhs's self-member (the empty-base member
+that would otherwise mean `this`) onto the lhs, chains included
+(`x -> .split(" ").at(0)`), and builds the ordinary member call. `x -> f(args)`
+(lhs prepended as the first argument) is unchanged. QUICKSTART §3.1 documents both
+forms. Fixture bug417_pipeline_dot_method_test.
+
 ### BUG-423: `xs.join(",")` only worked on a `List(str)` — FIXED 2026-09-10
 
 `[1, 2].join(",")` was Zig's "expected '[]const str', found '[]i64'". `_zbr_list_join` in

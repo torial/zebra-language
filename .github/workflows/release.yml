@@ -11,10 +11,10 @@
 # (docs/LINUX_BUILD.md). macOS has never built Zebra -- its job runs but may not fail
 # the release (continue-on-error) until a smoke has been seen green there.
 #
-# Zig checksums: Windows is pinned (the same value gates-*.yml uses). The other
-# platforms are verified against ziglang.org/download/index.json at run time --
-# weaker than a pin (it trusts the index), so pin them once verified: replace the
-# `index` source below with the literal sha256 for each.
+# Zig checksums: all three platforms are PINNED to the sha256 values published in
+# ziglang.org/download/index.json for 0.16.0 (read 2026-09-10; the Windows value is
+# the one gates-*.yml already used, which is the control that the read was right).
+# `sha: index` is still accepted for a NEW platform until its value is seen once.
 name: release
 
 on:
@@ -59,14 +59,14 @@ jobs:
           - os: ubuntu-latest
             zig: zig-x86_64-linux-0.16.0
             ext: tar.xz
-            sha: index
+            sha: 70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
             plat: linux-x86_64
             exe: zebra
             experimental: false
           - os: macos-latest
             zig: zig-aarch64-macos-0.16.0
             ext: tar.xz
-            sha: index
+            sha: b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489
             plat: macos-aarch64
             exe: zebra
             experimental: true
@@ -118,7 +118,7 @@ jobs:
           mkdir -p "dist/$name"
           cp -r zig-out/bin/. "dist/$name/"          # zebra[.exe], zebra-bootstrap, vendor/sqlite/sqlite3.c
           cp -r zig-toolchain "dist/$name/zig"        # the Zig this binary was built and tested with
-          cp README.md QUICKSTART.md CHANGELOG.md "dist/$name/"
+          cp README.md QUICKSTART.md CHANGELOG.md LICENSE "dist/$name/"
           mkdir -p "dist/$name/docs" && cp docs/UI_QUICKSTART.md docs/DEBUGGING.md "dist/$name/docs/"
           cp -r examples "dist/$name/examples"
           cp install/README-INSTALL.md "dist/$name/INSTALL.md"

@@ -1,0 +1,28 @@
+# BUG-418: a generic class field `HashMap(K, V)` with a bare `HashMap()` default emitted
+# `std.StringHashMap(anytype)`; and with K a type parameter, String- vs AutoHashMap can
+# only be chosen at instantiation (`_zbr_HashMap(K, V)` in the runtime).
+class Cache(K, V)
+    var data: HashMap(K, V) = HashMap()
+    var seen: List(K) = List(K)()
+    var max_size: int
+    cue init(max_size: int)
+        this.max_size = max_size
+    def put(key: K, value: V)
+        data.put(key, value)
+        seen.add(key)
+    def lookup(key: K): V?
+        if data.contains(key)
+            return data.fetch(key)
+        return nil
+    def clear
+        data = HashMap()
+def main()
+    var c = Cache(str, int)(3)
+    c.put("a", 1)
+    c.put("b", 2)
+    print(c.lookup("a"), c.lookup("zz"), c.seen)
+    c.clear()
+    print(c.lookup("a"))
+    var n = Cache(int, str)(2)
+    n.put(7, "seven")
+    print(n.lookup(7), n.lookup(8), n.seen)

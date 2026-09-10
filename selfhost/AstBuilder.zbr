@@ -992,6 +992,29 @@ class ASTBuilder
 
     # ── Expressions ───────────────────────────────────────────────────────────
 
+    # BUG-417 helper: walk the rhs spine (call -> callee, member -> base) to the
+    # self-member with an EMPTY base and rebuild the spine with `lhs` as that base.
+    # nil when the spine has no self-member (an ordinary `x -> f(args)` pipeline).
+    def rebaseSelfMember(node: PNode, lhs: PNode): PNode?
+        branch node
+            on PNode.expr_call as pc
+                if .rebaseSelfMember(pc.callee.at(0), lhs) as new_callee
+                    var callee2 = List(PNode)()
+                    callee2.add(new_callee)
+                    return PNode.expr_call(PCall(callee2, pc.args))
+                return nil
+            on PNode.expr_member as pm
+                var base2 = List(PNode)()
+                if pm.base.len == 0
+                    base2.add(lhs)
+                    return PNode.expr_member(PMember(base2, pm.member, pm.line, pm.col))
+                if .rebaseSelfMember(pm.base.at(0), lhs) as new_base
+                    base2.add(new_base)
+                    return PNode.expr_member(PMember(base2, pm.member, pm.line, pm.col))
+                return nil
+            else
+                return nil
+
     def buildExpr(pn: PNode): Expr throws
         branch pn
             # BUG-288: literals carry their REAL position now. `zspan()` here was the
@@ -1110,6 +1133,12 @@ class ASTBuilder
                 return Expr.orelse_(ExprOrelse(spanOf(expr_val), expr_val, fb_val))
 
             on PNode.expr_pipeline as pp
+                # BUG-417: `x -> .lower()` (a leading-dot call) is `x.lower()` -- the
+                # receiver form the book teaches. The rhs's self-member (empty base,
+                # which would otherwise mean `this`) is re-based onto the lhs, chains
+                # included (`x -> .split(" ").at(0)`), before the ordinary build.
+                if .rebaseSelfMember(pp.rhs.at(0), pp.lhs.at(0)) as rebased
+                    return .buildExpr(rebased)?
                 # Desugar: `lhs -> f(args)` → `f(lhs, args)` (prepend lhs: first arg).
                 const lhs_expr = .buildExpr(pp.lhs.at(0))?
                 const rhs_node = pp.rhs.at(0)

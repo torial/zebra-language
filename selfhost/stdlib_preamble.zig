@@ -443,6 +443,11 @@ pub fn _zebra_sort_natural(comptime T: type, items: []T) void {
     };
     std.mem.sort(T, items, {}, _I.less);
 }
+// BUG-418: the HashMap behind `HashMap(K, V)` when K is a generic class's type parameter --
+// only at instantiation is it known whether the key is a str (content-hashed) or not.
+pub fn _zbr_HashMap(comptime K: type, comptime V: type) type {
+    return if (K == []const u8) std.StringHashMap(V) else std.AutoHashMap(K, V);
+}
 // BUG-422: `xs.sortBy(def(p) = p.dist())` -- a ONE-argument KEY function (Python's
 // `key=`) sorts ascending by the key; a two-argument comparator is unchanged.
 fn _zbr_fn_arity(comptime F: type) ?usize {

@@ -1,0 +1,22 @@
+# BUG-417: `x -> .lower()` -- the pipeline into a leading-dot method call -- is `x.lower()`
+# (the form the book's chapter 15 teaches). Chains rebase too: `-> .split(" ").at(0)`.
+# `x -> f()` (prepend-as-first-argument) is unchanged.
+def double(x: int): int
+    return x * 2
+class StringProcessor
+    static
+        def process(text: str): str
+            return (text
+                -> .lower()
+                -> .trim()
+                -> .replace("  ", " "))
+def main()
+    var text = "HELLO WORLD"
+    var first = (text
+        -> .lower()
+        -> .split(" ")
+        -> .at(0))
+    print(first, first.len)
+    print(5 -> double() -> double())
+    print("a b c".split(" ") -> .count())
+    print(StringProcessor.process("  HELLO   WORLD  "))

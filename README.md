@@ -98,6 +98,5 @@ importantly — what it cannot see.
 
 ## License
 
-TBD. See the original Cobra license for heritage context noted in
-`HERITAGE.md`; a Zebra-specific license will be added before the first
-tagged release.
+MIT — see [LICENSE](LICENSE). The bundled Zig toolchain is MIT as well. The
+original Cobra heritage is noted in `docs/archive/HERITAGE.md`.

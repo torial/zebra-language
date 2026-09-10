@@ -16,6 +16,14 @@ should not ship over.
 Judge items against [docs/PRINCIPLES.md](docs/PRINCIPLES.md); measurements are in
 [docs/archive/FINDINGS.md](docs/archive/FINDINGS.md).
 
+## MOVED FROM THE 0.9 QUEUE, 2026-09-10 — B1 mutation testing / B2 coverage spike
+
+`tools/mutation_check.py` exists and has one valid run (5 mutants: 2 detected, 3
+survivors, ~370 s/mutant). A full 60-mutant run is ~6 h of laptop time and answers a 1.0
+question — "is the stability promise backed by gates that can fail?" — not a 0.9 one.
+The entry text, postmortems and survivor list stay in `docs/NEXT_STEPS_to_0.9.md` (B1)
+and `docs/testing_strategy.md` §B1; this is the pointer.
+
 ## POST-0.9, PRE-1.0 — ADOPT ZIGZAG'S FALLIBLE `init`/`update`/`view` (Sean, 2026-08-25)
 
 We are pinned to `git+https://github.com/meszmate/zigzag#v0.1.5`, which **is the latest

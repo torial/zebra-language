@@ -1184,6 +1184,13 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
   compile", with the GUI ones listed as excluded rather than silently skipped. **For a 0.9
   whose whole claim is ready-for-others, this ranks near A2/A3 rather than below them.**
 
+> **0.9 TIDY, 2026-09-10 (Fable, for Sean's "anything left in NEXT_STEPS?").** B1/B2 below
+> are **moved to the 1.0 queue** (`docs/NEXT_STEPS_to_1.0.md`): the harness exists, a
+> valid 5-mutant run exists, and a 6-hour full run is a 1.0 stability-evidence activity,
+> not a 0.9 gate. The emit-compile triage campaign further down reads as a 1.0 BLOCKER
+> and is **DONE by its own text** (swept, gated, 0 regressions since 2026-07-24; the
+> baseline is 422 now). What actually remains for 0.9 is the milestone act itself, §15.
+
 - [ ] **B2 spike (1 day) — is branch coverage feasible on Windows/Zig at all?** Decide
   B1-vs-B2 on evidence. One option worth the look: teaching Zebra itself to emit coverage
   counters, which would serve users too.
@@ -1697,7 +1704,7 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
   `zig build-exe` on emitted corpus programs). **Recommend gating it** (per-commit or at
   least per-session) — it is currently a manual tool, so the coverage-blindness it closes
   is only closed on the days someone remembers to run it. Cost: a few min at JOBS=3.
-- [ ] **⚠️ 1.0 BLOCKER — emit-compile triage campaign** → **`docs/archive/emit_compile_triage.md`**.
+- [x] **~~⚠️ 1.0 BLOCKER~~ emit-compile triage campaign — DONE (see the 2026-07-24 note; marked 2026-09-10)** → **`docs/archive/emit_compile_triage.md`**.
   > **RE-SWEPT + GATED 2026-07-24** (`docs/archive/full_sweep_triage.md`, `tools/full_sweep.sh`).
   > Full 403-file re-sweep: **328 PASS, 0 regressions, 0 NEW bugs** — every remaining
   > CFAIL/EMITFAIL is a negative test, library module, interop-needs-libs, multi-module,

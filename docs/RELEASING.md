@@ -30,10 +30,13 @@ Written 2026-09-10 for the first public release, `0.9.0_zig0.16` (public 0.9 = i
 
 ## Known gaps on 2026-09-10
 
-- **No LICENSE file in the repo.** A release without one grants nobody anything. Sean's
-  call (the Zig it bundles is MIT).
-- The Linux and macOS Zig checksums are verified against `ziglang.org/download/index.json`
-  at run time, not pinned; pin them in `release.yml` once seen.
+- ~~No LICENSE file in the repo.~~ **MIT, added 2026-09-10 (Sean's call)**; `LICENSE` is
+  copied into every release zip.
+- The Zig checksums for all three platforms are pinned in `release.yml` (the 0.16.0
+  values from `ziglang.org/download/index.json`, read 2026-09-10; Windows
+  `68659eb5…`, Linux `70e49664…`, macOS-aarch64 `b23d70de…`). A new platform may
+  start as `sha: index` (verified against the index at run time) until its value has
+  been seen once; then pin it. Bumping the Zig version means re-pinning all three.
 - macOS has never built Zebra; its job is `continue-on-error` until a smoke is green there.
 - `winget` / `scoop` / Homebrew manifests are an hour each once the first release exists;
   not started.
