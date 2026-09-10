@@ -44,3 +44,4 @@ bug295_shared_state_left  # helper module imported by other tests; has no main()
 bug295_shared_state_right  # helper module imported by other tests; has no main()
 tc_merge_fixture  # NOT a test and cannot compile standalone BY CONSTRUCTION: it holds git conflict markers (<<<<<<< / =======) and is INPUT to `zebra typecheck-merge`. The EMITFAIL is `unexpected top-level token: '<<'`, which is the file doing its job. Do not "fix" it.
 prog_args_passthrough_test  # asserted INLINE in selfhost_smoke.sh (BUG-347: it needs argv after `--`, which no smoke_* helper passes); the registration scanner cannot see the inline form
+bug415_dep_catch_lib  # helper module used by bug415_dep_module_catch_message_test; has no main()

@@ -2440,6 +2440,12 @@ def generateDepWith(m: Module, file: str, preamble_path: str, extra_class_names:
     if _runtime_module
         rtScanNames(rtRuntimeText(preamble))
     var decls = generateModuleWith(m, file, extra_class_names, deps_mt, strip_contracts, nil, false)
+    # BUG-415: a DEPENDENCY module never got the `_zbr_error_msg` helper (only the root
+    # program did), so `e.message` inside a catch in any non-root module was "use of
+    # undeclared identifier" in Zig. With one shared runtime the helper is a local
+    # read; emit it when the module's text calls it.
+    if _runtime_module and ("_zbr_error_msg()" in decls) and not ("fn _zbr_error_msg()" in decls)
+        return rtAssemble(file, preamble, decls + "\n" + rtErrorMsgHelper())
     return rtAssemble(file, preamble, decls)
 
 # ── Source-map helpers ────────────────────────────────────────────────────────
@@ -4967,6 +4973,13 @@ struct Generator
             writeIndent()
             w.emit("}\n\n")
             fn_name = "_zbr_once_${m.name}_impl"
+        # BUG-410: a `// zbr:` marker on its own line above the SIGNATURE, so a Zig
+        # error anchored on the fn line -- "function with non-void return type
+        # 'i64' implicitly returns", i.e. a missing `return` -- maps to the user's
+        # `def` line instead of leaking the generated path.
+        if source_file != "" and m.span.line > 0
+            writeIndent()
+            w.emit("// zbr:" + fwdSlashes(source_file) + ":" + m.span.line.toString() + "\n")
         writeIndent()
         if m.mods.is_once
             w.emit("fn ")
@@ -6801,7 +6814,7 @@ struct Generator
                         if gt092.name == "List"
                             if ec092.callee is Expr.member as mem092
                                 # cleanroom 09-08: the same user-`split` guard as the return site
-                                if (mem092.member == "split" or mem092.member == "lines") and not isNamedRecvCall(ie)
+                                if (mem092.member == "split" or mem092.member == "lines") and not isNamedRecvCall(ie) and not isRegexRecvCall(ie)
                                     w.emit(": ")
                                     genType(n.type_!)
                                     w.emit(" = ")
@@ -7518,6 +7531,15 @@ struct Generator
                             genExpr(a.target)
                             w.emit(" = _rp; }\n")
                             return
+        # BUG-412: `s += "x"` on a str is concatenation.
+        if a.op is AssignOp.plus_eq and .isStringBoth(a.target, "plus_eq")
+            genExpr(a.target)
+            w.emit(" = _str_concat(")
+            genExpr(a.target)
+            w.emit(", ")
+            genExpr(a.value)
+            w.emit(", _allocator);\n")
+            return
         genExpr(a.target)
         w.emit(" ")
         w.emit(assignOpStr(a.op))
@@ -8941,7 +8963,20 @@ struct Generator
     def isSplitIter(e: Expr): bool
         if e is Expr.call as c
             if c.callee is Expr.member as m
-                return m.member == "split" or m.member == "lines"
+                if m.member == "split" or m.member == "lines"
+                    # BUG-416: `re.split(text)` is the Regex method, which already
+                    # returns a List(str) -- not the str split iterator.
+                    return not isRegexRecvCall(e)
+        return false
+
+    # BUG-416: true iff the call's receiver types as a Regex.
+    def isRegexRecvCall(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        if e is Expr.call as c
+            if c.callee is Expr.member as m
+                var rt: Type_ = inferExpr(m.object, .infer_ctx!)
+                return rt is Type_.regex
         return false
 
     # BUG-339: a class field initialised with a RUNTIME constructor (`HashMap(..)()`,
@@ -9012,7 +9047,7 @@ struct Generator
     def isRegexSliceIter(e: Expr): bool
         if e is Expr.call as c
             if c.callee is Expr.member as m
-                if m.member == "findAll" or m.member == "groups"
+                if m.member == "findAll" or m.member == "groups" or m.member == "split"
                     if .infer_ctx != nil
                         var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                         branch recv_t
@@ -9698,11 +9733,19 @@ struct Generator
                 if isNilNarrowed(pid.name)
                     needs_unwrap = false
             var show_wrap: bool = .printFmtSpec(parg) == "{show}"
+            # BUG-414: a comptime float expression (`1.0 / 3.0`, `0.1 + 0.2`) printed
+            # its EXACT decimal expansion -- 34 digits -- because Zig folded it to a
+            # comptime_float. Force f64 so `{d}` prints the shortest round-trip form.
+            var f64_wrap: bool = (not show_wrap) and .printFmtSpec(parg) == "{d}" and isFloatTyped(parg)
             if show_wrap
                 w.emit("_zbr_show(")
+            if f64_wrap
+                w.emit("@as(f64, ")
             genExpr(parg)
             if needs_unwrap and not show_wrap
                 w.emit(".?")
+            if f64_wrap
+                w.emit(")")
             if show_wrap
                 w.emit(")")
             ai2 += 1
@@ -9712,6 +9755,59 @@ struct Generator
     def isNilNarrowedExpr(e: Expr): bool
         if e is Expr.ident as nid
             return isNilNarrowed(nid.name)
+        return false
+
+    # BUG-413: one operand of a float division as an f64. A runtime int needs
+    # @floatFromInt; a literal (int or float) and a float value coerce through @as;
+    # an operand of unknown type is emitted bare (what happened before, so no new
+    # failure can come from an inference gap).
+    def emitAsF64(e: Expr)
+        var is_int_val: bool = false
+        var known: bool = false
+        if e is Expr.int_lit or e is Expr.float_lit
+            known = true
+        else if .infer_ctx != nil
+            var t: Type_ = inferExpr(e, .infer_ctx!)
+            branch t
+                on Type_.int_
+                    is_int_val = true
+                    known = true
+                on Type_.uint_
+                    is_int_val = true
+                    known = true
+                on Type_.int_n as _
+                    is_int_val = true
+                    known = true
+                on Type_.uint_n as _
+                    is_int_val = true
+                    known = true
+                on Type_.float_
+                    known = true
+                on Type_.float_n as _
+                    known = true
+                else
+                    pass
+        if not known
+            genExpr(e)
+            return
+        if is_int_val
+            w.emit("@as(f64, @floatFromInt(")
+            genExpr(e)
+            w.emit("))")
+        else
+            w.emit("@as(f64, ")
+            genExpr(e)
+            w.emit(")")
+
+    # BUG-414: the expression is a float by inference or by literal shape (not an
+    # int, not unknown) -- the only case `@as(f64, ...)` is both safe and useful.
+    def isFloatTyped(e: Expr): bool
+        if e is Expr.float_lit
+            return true
+        if .infer_ctx != nil
+            var t: Type_ = inferExpr(e, .infer_ctx!)
+            if t is Type_.float_
+                return true
         return false
 
     def isStringLitArg(e: Expr): bool
@@ -11838,10 +11934,16 @@ struct Generator
                     if b.left is Expr.float_lit
                         is_float_div = true
             if is_float_div
+                # BUG-413: `7.0 / 2` -- an int literal beside a float -- is Zig's
+                # "ambiguous coercion of division operands 'comptime_float' and
+                # 'comptime_int'". Every float division emits as f64: both sides
+                # are cast, which a runtime f64 does not mind and a comptime
+                # literal (int or float) needs. Also keeps `1.0 / 3.0` from being
+                # folded to an exact comptime_float and printed to 34 digits.
                 w.emit("(")
-                genExpr(b.left)
+                emitAsF64(b.left)
                 w.emit(" / ")
-                genExpr(b.right)
+                emitAsF64(b.right)
                 w.emit(")")
             else
                 w.emit("@divTrunc(")
@@ -12367,6 +12469,10 @@ struct Generator
                     w.emit(".toString()")
                 else if show_wraps.at(arg_idx)
                     w.emit("_zbr_show(")
+                    genExpr(e)
+                    w.emit(")")
+                else if isFloatTyped(e)
+                    w.emit("@as(f64, ")     # BUG-414
                     genExpr(e)
                     w.emit(")")
                 else
@@ -13333,6 +13439,16 @@ struct Generator
                         return
                     if mname == "find"
                         w.emit("_regex_find(")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.len > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\"\"")
+                        w.emit(")")
+                        return
+                    if mname == "split"
+                        w.emit("_regex_split(")
                         genExpr(m.object)
                         w.emit(", ")
                         if args.len > 0

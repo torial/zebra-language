@@ -214,12 +214,15 @@ class Lexer
                 pos    = pos + 1
             else
                 break
+        # BUG-411: these used to raise a bare error NAME with no location
+        # ("SpaceIndentNotMultipleOfFour"). A newcomer's first indentation slip is the
+        # first error they see; it now says where and what.
         if tabs > 0 and spaces > 0
-            raise "MixedIndentation"
+            raise ln.toString() + ":1: error: mixed tabs and spaces in the indentation of this line -- Zebra indents with 4 spaces per level"
         var level = 0
         if spaces > 0
             if spaces % 4 <> 0
-                raise "SpaceIndentNotMultipleOfFour"
+                raise ln.toString() + ":" + (spaces + 1).toString() + ": error: indentation is " + spaces.toString() + " space(s); Zebra indents by multiples of 4"
             level = spaces / 4
         else
             level = tabs
@@ -256,7 +259,7 @@ class Lexer
             else
                 pos = pos + 1
         if blockDepth > 0
-            raise "UnterminatedBlockComment"
+            raise line.toString() + ":1: error: block comment is never closed"
 
     # -- @ prefix -----------------------------------------------------------
 
@@ -378,7 +381,7 @@ class Lexer
                 pos = pos + 1
                 break
             if c == c'\n'
-                raise "UnterminatedCharLiteral"
+                raise line.toString() + ":1: error: char literal is never closed on this line"
             pos = pos + 1
         var kind = TokenKind.char_lit_single()
         if q == c'"'
@@ -415,7 +418,7 @@ class Lexer
                 pos = pos + 1
                 break
             if c == c'\n'
-                raise "UnterminatedString"
+                raise line.toString() + ":1: error: string literal is never closed on this line"
             pos = pos + 1
         emit(kind, src[start..pos], ln, cl)
 
@@ -471,13 +474,13 @@ class Lexer
                 return
 
             if c == c'\n'
-                raise "UnterminatedString"
+                raise line.toString() + ":1: error: string literal is never closed on this line"
             if c == c'\\'
                 pos = pos + 2
                 continue
             pos = pos + 1
 
-        raise "UnterminatedString"
+        raise line.toString() + ":1: error: string literal is never closed on this line"
 
     # -- Interpolation expression scanner ------------------------------------
 
@@ -502,7 +505,7 @@ class Lexer
         var baseParen = parenDepth
         while depth > 0
             if pos >= src.len
-                raise "UnterminatedInterpolation"
+                raise line.toString() + ":1: error: an interpolation opened with $" + "{ is never closed in this string"
             var c = src[pos]
             if c == c' ' or c == c'\t'
                 pos = pos + 1
@@ -562,7 +565,7 @@ class Lexer
                     emit(TokenKind.doc_string_line(), src[start..pos], ln, cl)
                     return
                 pos = pos + 1
-            raise "UnterminatedString"
+            raise line.toString() + ":1: error: string literal is never closed on this line"
 
         if pos < src.len and src[pos] == c'\n'
             advanceNewline()
@@ -579,7 +582,7 @@ class Lexer
             if pos < src.len
                 advanceNewline()
 
-        raise "UnterminatedString"
+        raise line.toString() + ":1: error: string literal is never closed on this line"
 
     # -- Numeric literals ----------------------------------------------------
 

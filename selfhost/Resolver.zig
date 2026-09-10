@@ -62,6 +62,7 @@ pub const _zbr_ty_Resolver = struct {
         return _self;
     }
 
+    // zbr:selfhost/Resolver.zbr:71
     pub fn fmtErrAt(self: *_zbr_ty_Resolver, line: i64, col: i64, msg: []const u8) []const u8 {
 // zbr:selfhost/Resolver.zbr:72
         const head: []const u8 = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.file_name, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{line}) catch @panic("OOM")), _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{col}) catch @panic("OOM")), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), msg, _zbr_rt._allocator);
@@ -89,6 +90,7 @@ pub const _zbr_ty_Resolver = struct {
         return head;
     }
 
+    // zbr:selfhost/Resolver.zbr:85
     pub fn sourceLine(self: *_zbr_ty_Resolver, li: i64) []const u8 {
 // zbr:selfhost/Resolver.zbr:86
         if (((@as(i64, @intCast(self.source.len)) == 0) or _zebra_lt(li, 0))) {
@@ -114,16 +116,19 @@ pub const _zbr_ty_Resolver = struct {
         return "";
     }
 
+    // zbr:selfhost/Resolver.zbr:97
     pub fn errorCount(self: *const _zbr_ty_Resolver) i64 {
 // zbr:selfhost/Resolver.zbr:98
         return @as(i64, @intCast(self.errors.items.len));
     }
 
+    // zbr:selfhost/Resolver.zbr:100
     pub fn symbolCount(self: *const _zbr_ty_Resolver) i64 {
 // zbr:selfhost/Resolver.zbr:101
         return self.symbol_count;
     }
 
+    // zbr:selfhost/Resolver.zbr:103
     pub fn firstError(self: *_zbr_ty_Resolver) []const u8 {
 // zbr:selfhost/Resolver.zbr:104
         if (_zebra_gt(@as(i64, @intCast(self.errors.items.len)), 0)) {
@@ -134,6 +139,7 @@ pub const _zbr_ty_Resolver = struct {
         return "";
     }
 
+    // zbr:selfhost/Resolver.zbr:108
     pub fn allErrorMessages(self: *_zbr_ty_Resolver) []const u8 {
 // zbr:selfhost/Resolver.zbr:109
         var b = std.ArrayList(u8).empty;
@@ -148,6 +154,7 @@ pub const _zbr_ty_Resolver = struct {
         return (b.toOwnedSlice(_zbr_rt._allocator) catch "");
     }
 
+    // zbr:selfhost/Resolver.zbr:117
     pub fn resolve(self: *_zbr_ty_Resolver, root: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:118
         (try self.bindPass1(root));
@@ -155,6 +162,7 @@ pub const _zbr_ty_Resolver = struct {
         (try self.resolvePass2(root));
     }
 
+    // zbr:selfhost/Resolver.zbr:123
     pub fn bindPass1(self: *_zbr_ty_Resolver, root: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:124
         if (root == .module_) {
@@ -168,6 +176,7 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
+    // zbr:selfhost/Resolver.zbr:127
     pub fn bindTopDecl(self: *_zbr_ty_Resolver, decl: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:128
         switch (decl) {
@@ -252,6 +261,7 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
+    // zbr:selfhost/Resolver.zbr:172
     pub fn resolvePass2(self: *_zbr_ty_Resolver, root: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:173
         if (root == .module_) {
@@ -265,6 +275,7 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
+    // zbr:selfhost/Resolver.zbr:176
     pub fn resolveTopDecl(self: *_zbr_ty_Resolver, decl: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:177
         switch (decl) {
@@ -319,6 +330,7 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
+    // zbr:selfhost/Resolver.zbr:202
     pub fn enterClass(self: *_zbr_ty_Resolver, name: []const u8, members: std.ArrayList(_zbr_ty_PNode), type_params: std.ArrayList([]const u8)) anyerror!void {
         _ = name;
 // zbr:selfhost/Resolver.zbr:203
@@ -342,6 +354,7 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
+    // zbr:selfhost/Resolver.zbr:215
     pub fn collectMember(self: *_zbr_ty_Resolver, member: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:216
         switch (member) {
@@ -365,6 +378,7 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
+    // zbr:selfhost/Resolver.zbr:226
     pub fn resolveMember(self: *_zbr_ty_Resolver, member: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:227
         switch (member) {
@@ -384,6 +398,7 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
+    // zbr:selfhost/Resolver.zbr:236
     pub fn enterMethod(self: *_zbr_ty_Resolver, params: std.ArrayList(_zbr_ty_PParam), stmts: std.ArrayList(_zbr_ty_PNode)) anyerror!void {
 // zbr:selfhost/Resolver.zbr:237
         self.method_scope = std.StringHashMap(i64).init(_zbr_rt._allocator);
@@ -398,6 +413,7 @@ pub const _zbr_ty_Resolver = struct {
         (try self.resolveStmts(stmts));
     }
 
+    // zbr:selfhost/Resolver.zbr:245
     pub fn resolveStmts(self: *_zbr_ty_Resolver, stmts: std.ArrayList(_zbr_ty_PNode)) anyerror!void {
 // zbr:selfhost/Resolver.zbr:246
         for (stmts.items) |stmt| {
@@ -406,6 +422,7 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
+    // zbr:selfhost/Resolver.zbr:249
     pub fn resolveStmt(self: *_zbr_ty_Resolver, stmt: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:250
         switch (stmt) {
@@ -585,6 +602,7 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
+    // zbr:selfhost/Resolver.zbr:328
     pub fn resolveExpr(self: *_zbr_ty_Resolver, expr: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:329
         switch (expr) {
@@ -769,6 +787,7 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
+    // zbr:selfhost/Resolver.zbr:409
     pub fn isInScope(self: *_zbr_ty_Resolver, name: []const u8) bool {
 // zbr:selfhost/Resolver.zbr:410
         if (self.method_scope.contains(name)) {
@@ -794,6 +813,7 @@ pub const _zbr_ty_Resolver = struct {
         return false;
     }
 
+    // zbr:selfhost/Resolver.zbr:420
     pub fn isBuiltin(self: *_zbr_ty_Resolver, name: []const u8) bool {
 // zbr:selfhost/Resolver.zbr:422
         if ((((std.mem.eql(u8, name, "int") or std.mem.eql(u8, name, "str")) or std.mem.eql(u8, name, "bool")) or std.mem.eql(u8, name, "float"))) {
@@ -894,6 +914,7 @@ pub const _zbr_ty_Resolver = struct {
         return false;
     }
 
+    // zbr:selfhost/Resolver.zbr:483
     pub fn isSimdName(self: *_zbr_ty_Resolver, name: []const u8) bool {
         _ = self;
 // zbr:selfhost/Resolver.zbr:485
@@ -940,6 +961,7 @@ const _reflect_Resolver_name: []const u8 = "Resolver";
 const _reflect_Resolver_fields: []const []const u8 = &.{"module_scope", "class_scope", "method_scope", "errors", "symbol_count", "file_name", "source"};
 const _reflect_Resolver_field_types: []const []const u8 = &.{"HashMap(str, int)", "HashMap(str, int)", "HashMap(str, int)", "List(ResolveError)", "int", "str", "str"};
 
+// zbr:selfhost/Resolver.zbr:503
 pub fn main(_zinit: std.process.Init) void {
     _zbr_rt._io = _zinit.io;
     _zbr_rt._args = _zinit.minimal.args;

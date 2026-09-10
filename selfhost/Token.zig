@@ -213,6 +213,7 @@ const _reflect_Token_field_types: []const []const u8 = &.{"TokenKind", "str", "i
 
 pub const _zbr_ty_Keywords = struct {
     _type_tag: u64 = _ttag_Keywords,
+    // zbr:selfhost/Token.zbr:199
     pub fn lookup(word: []const u8) ?_zbr_ty_TokenKind {
 // zbr:selfhost/Token.zbr:200
         if (std.mem.eql(u8, word, "use")) {

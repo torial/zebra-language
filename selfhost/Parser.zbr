@@ -3688,6 +3688,13 @@ class Parser
     # -- Public API ------------------------------------------------------------
 
     static def parse(src: str, file_name: str): PNode throws
-        var toks = Lexer.tokenize(src)?
+        var toks = Parser.lexWithFile(src, file_name)?
         var p = Parser(toks, file_name, src)
         return p.parseModule()?
+
+    # BUG-411: a lexer error carries `line:col: error: msg`; the file name is added
+    # here, where it is known, so it reads like every parser diagnostic.
+    static def lexWithFile(src: str, file_name: str): List(Token.Token) throws
+        return Lexer.tokenize(src)?
+    catch |e|
+        raise file_name + ":" + e.message

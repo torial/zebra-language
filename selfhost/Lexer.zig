@@ -17,6 +17,7 @@ const _zbr_hash = _zbr_rt._zbr_hash;
 const Token = @import("Token.zig");
 const _zbr_ty_TokenKind = Token._zbr_ty_TokenKind;
 pub const CharPred = *const fn(u21) bool;
+// zbr:selfhost/Lexer.zbr:21
 pub fn _zbr_fn_isDigit(c: u21) bool {
 // zbr:selfhost/Lexer.zbr:22
     switch (c) {
@@ -31,11 +32,13 @@ pub fn _zbr_fn_isDigit(c: u21) bool {
     }
 }
 
+// zbr:selfhost/Lexer.zbr:28
 pub fn _zbr_fn_isDigitOrUnder(c: u21) bool {
 // zbr:selfhost/Lexer.zbr:29
     return (_zbr_fn_isDigit(c) or (c == '_'));
 }
 
+// zbr:selfhost/Lexer.zbr:31
 pub fn _zbr_fn_isHexDigit(c: u21) bool {
 // zbr:selfhost/Lexer.zbr:32
     switch (c) {
@@ -58,6 +61,7 @@ pub fn _zbr_fn_isHexDigit(c: u21) bool {
     }
 }
 
+// zbr:selfhost/Lexer.zbr:42
 pub fn _zbr_fn_isAlpha(c: u21) bool {
 // zbr:selfhost/Lexer.zbr:43
     switch (c) {
@@ -76,6 +80,7 @@ pub fn _zbr_fn_isAlpha(c: u21) bool {
     }
 }
 
+// zbr:selfhost/Lexer.zbr:51
 pub fn _zbr_fn_isIdentContinue(c: u21) bool {
 // zbr:selfhost/Lexer.zbr:52
     return ((_zbr_fn_isAlpha(c) or _zbr_fn_isDigit(c)) or (c == '_'));
@@ -139,6 +144,7 @@ pub const _zbr_ty_Lexer = struct {
         return _self;
     }
 
+    // zbr:selfhost/Lexer.zbr:97
     pub fn tokenize(source: []const u8) anyerror!std.ArrayList(*Token._zbr_ty_Token) {
 // zbr:selfhost/Lexer.zbr:98
         var lex = _zbr_ty_Lexer.init();
@@ -150,6 +156,7 @@ pub const _zbr_ty_Lexer = struct {
         return lex.out;
     }
 
+    // zbr:selfhost/Lexer.zbr:106
     pub fn lexErr(self: *_zbr_ty_Lexer, b: u21, ln: i64, cl: i64) []const u8 {
         _ = self;
 // zbr:selfhost/Lexer.zbr:107
@@ -166,11 +173,13 @@ pub const _zbr_ty_Lexer = struct {
         return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cl}) catch @panic("OOM")), _zbr_rt._allocator), ": unexpected character '", _zbr_rt._allocator), (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(b), &_cpbuf) catch 1; break :blk _zbr_rt._allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _zbr_rt._allocator), "'", _zbr_rt._allocator);
     }
 
+    // zbr:selfhost/Lexer.zbr:126
     pub fn col(self: *const _zbr_ty_Lexer) i64 {
 // zbr:selfhost/Lexer.zbr:127
         return ((self.pos - self.lineStart) + 1);
     }
 
+    // zbr:selfhost/Lexer.zbr:129
     pub fn peek(self: *const _zbr_ty_Lexer) u21 {
 // zbr:selfhost/Lexer.zbr:130
         if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
@@ -181,6 +190,7 @@ pub const _zbr_ty_Lexer = struct {
         return '\x00';
     }
 
+    // zbr:selfhost/Lexer.zbr:134
     pub fn peek1(self: *const _zbr_ty_Lexer) u21 {
 // zbr:selfhost/Lexer.zbr:135
         if (_zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) {
@@ -191,6 +201,7 @@ pub const _zbr_ty_Lexer = struct {
         return '\x00';
     }
 
+    // zbr:selfhost/Lexer.zbr:139
     pub fn peekAt(self: *const _zbr_ty_Lexer, offset: i64) u21 {
         if (!(_zebra_ge(offset, 0))) std.debug.panic("require failed in 'peekAt'\n", .{});
 // zbr:selfhost/Lexer.zbr:142
@@ -202,6 +213,7 @@ pub const _zbr_ty_Lexer = struct {
         return '\x00';
     }
 
+    // zbr:selfhost/Lexer.zbr:146
     pub fn advanceNewline(self: *_zbr_ty_Lexer) void {
 // zbr:selfhost/Lexer.zbr:147
         self.pos = (self.pos + 1);
@@ -211,11 +223,13 @@ pub const _zbr_ty_Lexer = struct {
         self.lineStart = self.pos;
     }
 
+    // zbr:selfhost/Lexer.zbr:151
     pub fn emit(self: *_zbr_ty_Lexer, kind: _zbr_ty_TokenKind, text: []const u8, ln: i64, cl: i64) void {
 // zbr:selfhost/Lexer.zbr:152
         self.out.append(_zbr_rt._allocator, Token._zbr_ty_Token.init(kind, text, ln, cl)) catch @panic("OOM");
     }
 
+    // zbr:selfhost/Lexer.zbr:156
     pub fn scanWhile(self: *_zbr_ty_Lexer, pred: CharPred) void {
 // zbr:selfhost/Lexer.zbr:157
         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and pred(_zbr_at(self.src, self.pos)))) {
@@ -224,6 +238,7 @@ pub const _zbr_ty_Lexer = struct {
         }
     }
 
+    // zbr:selfhost/Lexer.zbr:162
     pub fn classifyLine(self: *_zbr_ty_Lexer) _zbr_ty_LineKind {
 // zbr:selfhost/Lexer.zbr:163
         var i: i64 = self.pos;
@@ -308,6 +323,7 @@ pub const _zbr_ty_Lexer = struct {
         return _zbr_ty_LineKind{ .has_content = {} };
     }
 
+    // zbr:selfhost/Lexer.zbr:203
     pub fn processIndentation(self: *_zbr_ty_Lexer) anyerror!void {
 // zbr:selfhost/Lexer.zbr:204
         const ln: i64 = self.line;
@@ -337,239 +353,242 @@ pub const _zbr_ty_Lexer = struct {
                 }
             }
         }
-// zbr:selfhost/Lexer.zbr:217
-        if ((_zebra_gt(tabs, 0) and _zebra_gt(spaces, 0))) {
-// zbr:selfhost/Lexer.zbr:218
-            { _zbr_rt._error_ctx = .{ .message = "MixedIndentation" }; return error.ZebraError; }
-        }
-// zbr:selfhost/Lexer.zbr:219
-        var level: i64 = 0;
 // zbr:selfhost/Lexer.zbr:220
-        if (_zebra_gt(spaces, 0)) {
+        if ((_zebra_gt(tabs, 0) and _zebra_gt(spaces, 0))) {
 // zbr:selfhost/Lexer.zbr:221
-            if ((@rem(spaces, 4) != 0)) {
+            { _zbr_rt._error_ctx = .{ .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), ":1: error: mixed tabs and spaces in the indentation of this line -- Zebra indents with 4 spaces per level", _zbr_rt._allocator) }; return error.ZebraError; }
+        }
 // zbr:selfhost/Lexer.zbr:222
-                { _zbr_rt._error_ctx = .{ .message = "SpaceIndentNotMultipleOfFour" }; return error.ZebraError; }
-            }
+        var level: i64 = 0;
 // zbr:selfhost/Lexer.zbr:223
+        if (_zebra_gt(spaces, 0)) {
+// zbr:selfhost/Lexer.zbr:224
+            if ((@rem(spaces, 4) != 0)) {
+// zbr:selfhost/Lexer.zbr:225
+                { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{(spaces + 1)}) catch @panic("OOM")), _zbr_rt._allocator), ": error: indentation is ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{spaces}) catch @panic("OOM")), _zbr_rt._allocator), " space(s); Zebra indents by multiples of 4", _zbr_rt._allocator) }; return error.ZebraError; }
+            }
+// zbr:selfhost/Lexer.zbr:226
             level = @divTrunc(spaces, 4);
         } else {
-// zbr:selfhost/Lexer.zbr:225
+// zbr:selfhost/Lexer.zbr:228
             level = tabs;
         }
-// zbr:selfhost/Lexer.zbr:226
-        const oldDepth: i64 = self.indentDepth;
-// zbr:selfhost/Lexer.zbr:227
-        while (_zebra_gt(level, self.indentDepth)) {
-// zbr:selfhost/Lexer.zbr:228
-            self.emit(_zbr_ty_TokenKind{ .indent = {} }, "", ln, 1);
 // zbr:selfhost/Lexer.zbr:229
+        const oldDepth: i64 = self.indentDepth;
+// zbr:selfhost/Lexer.zbr:230
+        while (_zebra_gt(level, self.indentDepth)) {
+// zbr:selfhost/Lexer.zbr:231
+            self.emit(_zbr_ty_TokenKind{ .indent = {} }, "", ln, 1);
+// zbr:selfhost/Lexer.zbr:232
             self.indentDepth = (self.indentDepth + 1);
         }
-// zbr:selfhost/Lexer.zbr:230
+// zbr:selfhost/Lexer.zbr:233
         while (_zebra_lt(level, self.indentDepth)) {
-// zbr:selfhost/Lexer.zbr:231
+// zbr:selfhost/Lexer.zbr:234
             self.emit(_zbr_ty_TokenKind{ .dedent = {} }, "", ln, 1);
-// zbr:selfhost/Lexer.zbr:232
+// zbr:selfhost/Lexer.zbr:235
             self.indentDepth = (self.indentDepth - 1);
         }
-// zbr:selfhost/Lexer.zbr:233
+// zbr:selfhost/Lexer.zbr:236
         if (self.afterEnsureEol) {
-// zbr:selfhost/Lexer.zbr:234
+// zbr:selfhost/Lexer.zbr:237
             if (_zebra_gt(level, oldDepth)) {
-// zbr:selfhost/Lexer.zbr:235
+// zbr:selfhost/Lexer.zbr:238
                 self.ensureBaseDepth = level;
             }
-// zbr:selfhost/Lexer.zbr:236
+// zbr:selfhost/Lexer.zbr:239
             self.afterEnsureEol = false;
         }
-// zbr:selfhost/Lexer.zbr:237
+// zbr:selfhost/Lexer.zbr:240
         if ((_zebra_gt(self.ensureBaseDepth, 0) and _zebra_lt(level, self.ensureBaseDepth))) {
-// zbr:selfhost/Lexer.zbr:238
+// zbr:selfhost/Lexer.zbr:241
             self.ensureBaseDepth = 0;
         }
-// zbr:selfhost/Lexer.zbr:239
+// zbr:selfhost/Lexer.zbr:242
         while ((_zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0) and _zebra_le(self.indentDepth, _zbr_at(self.lambdaStack.items, (@as(i64, @intCast(self.lambdaStack.items.len)) - 1))))) {
-// zbr:selfhost/Lexer.zbr:240
+// zbr:selfhost/Lexer.zbr:243
             _ = self.lambdaStack.orderedRemove(@intCast((@as(i64, @intCast(self.lambdaStack.items.len)) - 1)));
         }
     }
 
+    // zbr:selfhost/Lexer.zbr:247
     pub fn scanBlockComment(self: *_zbr_ty_Lexer) anyerror!void {
-// zbr:selfhost/Lexer.zbr:245
-        self.pos = (self.pos + 2);
-// zbr:selfhost/Lexer.zbr:246
-        self.blockDepth = (self.blockDepth + 1);
-// zbr:selfhost/Lexer.zbr:247
-        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and _zebra_gt(self.blockDepth, 0))) {
 // zbr:selfhost/Lexer.zbr:248
-            if ((((_zbr_at(self.src, self.pos) == '/') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (_zbr_at(self.src, (self.pos + 1)) == '#'))) {
+        self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:249
-                self.pos = (self.pos + 2);
+        self.blockDepth = (self.blockDepth + 1);
 // zbr:selfhost/Lexer.zbr:250
+        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and _zebra_gt(self.blockDepth, 0))) {
+// zbr:selfhost/Lexer.zbr:251
+            if ((((_zbr_at(self.src, self.pos) == '/') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (_zbr_at(self.src, (self.pos + 1)) == '#'))) {
+// zbr:selfhost/Lexer.zbr:252
+                self.pos = (self.pos + 2);
+// zbr:selfhost/Lexer.zbr:253
                 self.blockDepth = (self.blockDepth + 1);
             } else {
-// zbr:selfhost/Lexer.zbr:251
+// zbr:selfhost/Lexer.zbr:254
                 if ((((_zbr_at(self.src, self.pos) == '#') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (_zbr_at(self.src, (self.pos + 1)) == '/'))) {
-// zbr:selfhost/Lexer.zbr:252
+// zbr:selfhost/Lexer.zbr:255
                     self.pos = (self.pos + 2);
-// zbr:selfhost/Lexer.zbr:253
+// zbr:selfhost/Lexer.zbr:256
                     self.blockDepth = (self.blockDepth - 1);
                 } else {
-// zbr:selfhost/Lexer.zbr:254
+// zbr:selfhost/Lexer.zbr:257
                     if ((_zbr_at(self.src, self.pos) == '\n')) {
-// zbr:selfhost/Lexer.zbr:255
+// zbr:selfhost/Lexer.zbr:258
                         self.advanceNewline();
                     } else {
-// zbr:selfhost/Lexer.zbr:257
+// zbr:selfhost/Lexer.zbr:260
                         self.pos = (self.pos + 1);
                     }
                 }
             }
         }
-// zbr:selfhost/Lexer.zbr:258
+// zbr:selfhost/Lexer.zbr:261
         if (_zebra_gt(self.blockDepth, 0)) {
-// zbr:selfhost/Lexer.zbr:259
-            { _zbr_rt._error_ctx = .{ .message = "UnterminatedBlockComment" }; return error.ZebraError; }
+// zbr:selfhost/Lexer.zbr:262
+            { _zbr_rt._error_ctx = .{ .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: block comment is never closed", _zbr_rt._allocator) }; return error.ZebraError; }
         }
     }
 
+    // zbr:selfhost/Lexer.zbr:266
     pub fn scanAt(self: *_zbr_ty_Lexer, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:264
-        const c1: u21 = self.peek1();
-// zbr:selfhost/Lexer.zbr:265
-        if ((c1 == '[')) {
-// zbr:selfhost/Lexer.zbr:266
-            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:267
-            self.emit(_zbr_ty_TokenKind{ .at_lbracket = {} }, "@[", ln, cl);
+        const c1: u21 = self.peek1();
 // zbr:selfhost/Lexer.zbr:268
-            return;
-        }
+        if ((c1 == '[')) {
 // zbr:selfhost/Lexer.zbr:269
-        if ((_zbr_fn_isAlpha(c1) or (c1 == '_'))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:270
-            self.pos = (self.pos + 1);
+            self.emit(_zbr_ty_TokenKind{ .at_lbracket = {} }, "@[", ln, cl);
 // zbr:selfhost/Lexer.zbr:271
-            const start: i64 = self.pos;
-// zbr:selfhost/Lexer.zbr:272
-            self.scanWhile(_zbr_fn_isIdentContinue);
-// zbr:selfhost/Lexer.zbr:273
-            self.emit(_zbr_ty_TokenKind{ .at_id = {} }, self.src[@as(usize, @intCast((start - 1)))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:274
             return;
         }
+// zbr:selfhost/Lexer.zbr:272
+        if ((_zbr_fn_isAlpha(c1) or (c1 == '_'))) {
+// zbr:selfhost/Lexer.zbr:273
+            self.pos = (self.pos + 1);
+// zbr:selfhost/Lexer.zbr:274
+            const start: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:275
+            self.scanWhile(_zbr_fn_isIdentContinue);
+// zbr:selfhost/Lexer.zbr:276
+            self.emit(_zbr_ty_TokenKind{ .at_id = {} }, self.src[@as(usize, @intCast((start - 1)))..@as(usize, @intCast(self.pos))], ln, cl);
+// zbr:selfhost/Lexer.zbr:277
+            return;
+        }
+// zbr:selfhost/Lexer.zbr:278
         { _zbr_rt._error_ctx = .{ .message = self.lexErr(c1, self.line, self.col()) }; return error.ZebraError; }
     }
 
+    // zbr:selfhost/Lexer.zbr:282
     pub fn scanIdentOrKeyword(self: *_zbr_ty_Lexer, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:280
+// zbr:selfhost/Lexer.zbr:283
         const start: i64 = self.pos;
-// zbr:selfhost/Lexer.zbr:281
+// zbr:selfhost/Lexer.zbr:284
         self.scanWhile(_zbr_fn_isIdentContinue);
-// zbr:selfhost/Lexer.zbr:282
-        const word: []const u8 = self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))];
 // zbr:selfhost/Lexer.zbr:285
-        if (((@as(i64, @intCast(word.len)) == 1) and (_zbr_at(word, 0) == 'c'))) {
-// zbr:selfhost/Lexer.zbr:286
-            const q: u21 = self.peek();
-// zbr:selfhost/Lexer.zbr:287
-            if (((q == '\'') or (q == '"'))) {
+        const word: []const u8 = self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))];
 // zbr:selfhost/Lexer.zbr:288
-                (try self.scanCharLiteral(q, start, ln, cl));
+        if (((@as(i64, @intCast(word.len)) == 1) and (_zbr_at(word, 0) == 'c'))) {
 // zbr:selfhost/Lexer.zbr:289
+            const q: u21 = self.peek();
+// zbr:selfhost/Lexer.zbr:290
+            if (((q == '\'') or (q == '"'))) {
+// zbr:selfhost/Lexer.zbr:291
+                (try self.scanCharLiteral(q, start, ln, cl));
+// zbr:selfhost/Lexer.zbr:292
                 return;
             }
         }
-// zbr:selfhost/Lexer.zbr:292
-        if (((@as(i64, @intCast(word.len)) == 1) and (_zbr_at(word, 0) == 'r'))) {
-// zbr:selfhost/Lexer.zbr:293
-            const q: u21 = self.peek();
-// zbr:selfhost/Lexer.zbr:294
-            if (((q == '\'') or (q == '"'))) {
 // zbr:selfhost/Lexer.zbr:295
-                var kind = _zbr_ty_TokenKind{ .string_raw_single = {} };
+        if (((@as(i64, @intCast(word.len)) == 1) and (_zbr_at(word, 0) == 'r'))) {
 // zbr:selfhost/Lexer.zbr:296
-                if ((q == '"')) {
+            const q: u21 = self.peek();
 // zbr:selfhost/Lexer.zbr:297
+            if (((q == '\'') or (q == '"'))) {
+// zbr:selfhost/Lexer.zbr:298
+                var kind = _zbr_ty_TokenKind{ .string_raw_single = {} };
+// zbr:selfhost/Lexer.zbr:299
+                if ((q == '"')) {
+// zbr:selfhost/Lexer.zbr:300
                     kind = _zbr_ty_TokenKind{ .string_raw_double = {} };
                 }
-// zbr:selfhost/Lexer.zbr:298
+// zbr:selfhost/Lexer.zbr:301
                 (try self.scanSimpleString(q, start, kind, ln, cl));
-// zbr:selfhost/Lexer.zbr:299
+// zbr:selfhost/Lexer.zbr:302
                 return;
             }
         }
-// zbr:selfhost/Lexer.zbr:302
-        if ((((@as(i64, @intCast(word.len)) == 2) and (_zbr_at(word, 0) == 'n')) and (_zbr_at(word, 1) == 's'))) {
-// zbr:selfhost/Lexer.zbr:303
-            const q: u21 = self.peek();
-// zbr:selfhost/Lexer.zbr:304
-            if (((q == '\'') or (q == '"'))) {
 // zbr:selfhost/Lexer.zbr:305
-                var kind = _zbr_ty_TokenKind{ .string_nosub_single = {} };
+        if ((((@as(i64, @intCast(word.len)) == 2) and (_zbr_at(word, 0) == 'n')) and (_zbr_at(word, 1) == 's'))) {
 // zbr:selfhost/Lexer.zbr:306
-                if ((q == '"')) {
+            const q: u21 = self.peek();
 // zbr:selfhost/Lexer.zbr:307
+            if (((q == '\'') or (q == '"'))) {
+// zbr:selfhost/Lexer.zbr:308
+                var kind = _zbr_ty_TokenKind{ .string_nosub_single = {} };
+// zbr:selfhost/Lexer.zbr:309
+                if ((q == '"')) {
+// zbr:selfhost/Lexer.zbr:310
                     kind = _zbr_ty_TokenKind{ .string_nosub_double = {} };
                 }
-// zbr:selfhost/Lexer.zbr:308
+// zbr:selfhost/Lexer.zbr:311
                 (try self.scanSimpleString(q, start, kind, ln, cl));
-// zbr:selfhost/Lexer.zbr:309
+// zbr:selfhost/Lexer.zbr:312
                 return;
             }
         }
-// zbr:selfhost/Lexer.zbr:312
-        if (std.mem.eql(u8, word, "zig")) {
-// zbr:selfhost/Lexer.zbr:313
-            const q: u21 = self.peek();
-// zbr:selfhost/Lexer.zbr:314
-            if (((q == '\'') or (q == '"'))) {
 // zbr:selfhost/Lexer.zbr:315
-                var kind = _zbr_ty_TokenKind{ .zig_single = {} };
+        if (std.mem.eql(u8, word, "zig")) {
 // zbr:selfhost/Lexer.zbr:316
-                if ((q == '"')) {
+            const q: u21 = self.peek();
 // zbr:selfhost/Lexer.zbr:317
+            if (((q == '\'') or (q == '"'))) {
+// zbr:selfhost/Lexer.zbr:318
+                var kind = _zbr_ty_TokenKind{ .zig_single = {} };
+// zbr:selfhost/Lexer.zbr:319
+                if ((q == '"')) {
+// zbr:selfhost/Lexer.zbr:320
                     kind = _zbr_ty_TokenKind{ .zig_double = {} };
                 }
-// zbr:selfhost/Lexer.zbr:318
+// zbr:selfhost/Lexer.zbr:321
                 (try self.scanSimpleString(q, start, kind, ln, cl));
-// zbr:selfhost/Lexer.zbr:319
+// zbr:selfhost/Lexer.zbr:322
                 return;
             }
         }
-// zbr:selfhost/Lexer.zbr:322
-        if (((((_zebra_gt(@as(i64, @intCast(word.len)), 3) and (_zbr_at(word, 0) == 'i')) and (_zbr_at(word, 1) == 'n')) and (_zbr_at(word, 2) == 't')) and _zbr_fn_isDigit(_zbr_at(word, 3)))) {
-// zbr:selfhost/Lexer.zbr:323
-            self.emit(_zbr_ty_TokenKind{ .int_size = {} }, word, ln, cl);
-// zbr:selfhost/Lexer.zbr:324
-            return;
-        }
 // zbr:selfhost/Lexer.zbr:325
-        if ((((((_zebra_gt(@as(i64, @intCast(word.len)), 4) and (_zbr_at(word, 0) == 'u')) and (_zbr_at(word, 1) == 'i')) and (_zbr_at(word, 2) == 'n')) and (_zbr_at(word, 3) == 't')) and _zbr_fn_isDigit(_zbr_at(word, 4)))) {
+        if (((((_zebra_gt(@as(i64, @intCast(word.len)), 3) and (_zbr_at(word, 0) == 'i')) and (_zbr_at(word, 1) == 'n')) and (_zbr_at(word, 2) == 't')) and _zbr_fn_isDigit(_zbr_at(word, 3)))) {
 // zbr:selfhost/Lexer.zbr:326
-            self.emit(_zbr_ty_TokenKind{ .uint_size = {} }, word, ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .int_size = {} }, word, ln, cl);
 // zbr:selfhost/Lexer.zbr:327
             return;
         }
 // zbr:selfhost/Lexer.zbr:328
-        if (((((((_zebra_gt(@as(i64, @intCast(word.len)), 5) and (_zbr_at(word, 0) == 'f')) and (_zbr_at(word, 1) == 'l')) and (_zbr_at(word, 2) == 'o')) and (_zbr_at(word, 3) == 'a')) and (_zbr_at(word, 4) == 't')) and _zbr_fn_isDigit(_zbr_at(word, 5)))) {
+        if ((((((_zebra_gt(@as(i64, @intCast(word.len)), 4) and (_zbr_at(word, 0) == 'u')) and (_zbr_at(word, 1) == 'i')) and (_zbr_at(word, 2) == 'n')) and (_zbr_at(word, 3) == 't')) and _zbr_fn_isDigit(_zbr_at(word, 4)))) {
 // zbr:selfhost/Lexer.zbr:329
-            self.emit(_zbr_ty_TokenKind{ .float_size = {} }, word, ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .uint_size = {} }, word, ln, cl);
 // zbr:selfhost/Lexer.zbr:330
             return;
         }
+// zbr:selfhost/Lexer.zbr:331
+        if (((((((_zebra_gt(@as(i64, @intCast(word.len)), 5) and (_zbr_at(word, 0) == 'f')) and (_zbr_at(word, 1) == 'l')) and (_zbr_at(word, 2) == 'o')) and (_zbr_at(word, 3) == 'a')) and (_zbr_at(word, 4) == 't')) and _zbr_fn_isDigit(_zbr_at(word, 5)))) {
+// zbr:selfhost/Lexer.zbr:332
+            self.emit(_zbr_ty_TokenKind{ .float_size = {} }, word, ln, cl);
 // zbr:selfhost/Lexer.zbr:333
+            return;
+        }
+// zbr:selfhost/Lexer.zbr:336
         var kw = Token._zbr_ty_Keywords.lookup(word);
-// zbr:selfhost/Lexer.zbr:337
+// zbr:selfhost/Lexer.zbr:340
         var prevDot: bool = false;
-// zbr:selfhost/Lexer.zbr:338
+// zbr:selfhost/Lexer.zbr:341
         if (_zebra_gt(@as(i64, @intCast(self.out.items.len)), 0)) {
-// zbr:selfhost/Lexer.zbr:339
+// zbr:selfhost/Lexer.zbr:342
             switch (_zbr_at(self.out.items, (@as(i64, @intCast(self.out.items.len)) - 1)).kind) {
                 .dot => {
-// zbr:selfhost/Lexer.zbr:341
+// zbr:selfhost/Lexer.zbr:344
                     prevDot = true;
                 },
                 else => {
@@ -577,953 +596,961 @@ pub const _zbr_ty_Lexer = struct {
                 },
             }
         }
-// zbr:selfhost/Lexer.zbr:344
+// zbr:selfhost/Lexer.zbr:347
         if ((_zebra_gt(self.ensureBaseDepth, 0) and (!prevDot))) {
-// zbr:selfhost/Lexer.zbr:345
+// zbr:selfhost/Lexer.zbr:348
             if (std.mem.eql(u8, word, "old")) {
-// zbr:selfhost/Lexer.zbr:346
+// zbr:selfhost/Lexer.zbr:349
                 kw = _zbr_ty_TokenKind{ .kw_old = {} };
             }
-// zbr:selfhost/Lexer.zbr:347
+// zbr:selfhost/Lexer.zbr:350
             if (std.mem.eql(u8, word, "result")) {
-// zbr:selfhost/Lexer.zbr:348
+// zbr:selfhost/Lexer.zbr:351
                 kw = _zbr_ty_TokenKind{ .kw_result = {} };
             }
         }
-// zbr:selfhost/Lexer.zbr:350
+// zbr:selfhost/Lexer.zbr:353
         if (kw) |resolvedKw| {
-// zbr:selfhost/Lexer.zbr:351
+// zbr:selfhost/Lexer.zbr:354
             self.emit(resolvedKw, word, ln, cl);
-// zbr:selfhost/Lexer.zbr:352
+// zbr:selfhost/Lexer.zbr:355
             switch (resolvedKw) {
                 .kw_ensure => {
-// zbr:selfhost/Lexer.zbr:354
+// zbr:selfhost/Lexer.zbr:357
                     self.afterEnsureEol = true;
                 },
                 else => {
                     // pass
                 },
             }
-// zbr:selfhost/Lexer.zbr:357
-            return;
-        }
 // zbr:selfhost/Lexer.zbr:360
-        if ((self.peek() == '(')) {
-// zbr:selfhost/Lexer.zbr:361
-            self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:362
-            self.parenDepth = (self.parenDepth + 1);
-// zbr:selfhost/Lexer.zbr:363
-            self.emit(_zbr_ty_TokenKind{ .open_call = {} }, word, ln, cl);
-// zbr:selfhost/Lexer.zbr:364
             return;
         }
+// zbr:selfhost/Lexer.zbr:363
+        if ((self.peek() == '(')) {
+// zbr:selfhost/Lexer.zbr:364
+            self.pos = (self.pos + 1);
+// zbr:selfhost/Lexer.zbr:365
+            self.parenDepth = (self.parenDepth + 1);
 // zbr:selfhost/Lexer.zbr:366
+            self.emit(_zbr_ty_TokenKind{ .open_call = {} }, word, ln, cl);
+// zbr:selfhost/Lexer.zbr:367
+            return;
+        }
+// zbr:selfhost/Lexer.zbr:369
         self.emit(_zbr_ty_TokenKind{ .id = {} }, word, ln, cl);
     }
 
+    // zbr:selfhost/Lexer.zbr:373
     pub fn scanCharLiteral(self: *_zbr_ty_Lexer, q: u21, start: i64, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:371
-        self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:372
-        while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:373
-            const c: u8 = _zbr_at(self.src, self.pos);
 // zbr:selfhost/Lexer.zbr:374
-            if ((c == '\\')) {
+        self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:375
+        while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
+// zbr:selfhost/Lexer.zbr:376
+            const c: u8 = _zbr_at(self.src, self.pos);
+// zbr:selfhost/Lexer.zbr:377
+            if ((c == '\\')) {
+// zbr:selfhost/Lexer.zbr:378
                 self.pos = (self.pos + 2);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:377
+// zbr:selfhost/Lexer.zbr:380
             if ((c == q)) {
-// zbr:selfhost/Lexer.zbr:378
+// zbr:selfhost/Lexer.zbr:381
                 self.pos = (self.pos + 1);
                 break;
             }
-// zbr:selfhost/Lexer.zbr:380
+// zbr:selfhost/Lexer.zbr:383
             if ((c == '\n')) {
-// zbr:selfhost/Lexer.zbr:381
-                { _zbr_rt._error_ctx = .{ .message = "UnterminatedCharLiteral" }; return error.ZebraError; }
+// zbr:selfhost/Lexer.zbr:384
+                { _zbr_rt._error_ctx = .{ .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: char literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
             }
-// zbr:selfhost/Lexer.zbr:382
+// zbr:selfhost/Lexer.zbr:385
             self.pos = (self.pos + 1);
         }
-// zbr:selfhost/Lexer.zbr:383
+// zbr:selfhost/Lexer.zbr:386
         var kind = _zbr_ty_TokenKind{ .char_lit_single = {} };
-// zbr:selfhost/Lexer.zbr:384
+// zbr:selfhost/Lexer.zbr:387
         if ((q == '"')) {
-// zbr:selfhost/Lexer.zbr:385
+// zbr:selfhost/Lexer.zbr:388
             kind = _zbr_ty_TokenKind{ .char_lit_double = {} };
         }
-// zbr:selfhost/Lexer.zbr:386
+// zbr:selfhost/Lexer.zbr:389
         self.emit(kind, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
     }
 
+    // zbr:selfhost/Lexer.zbr:396
     pub fn scanSingleQuote(self: *_zbr_ty_Lexer, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:394
-        const p1: u21 = self.peekAt(1);
-// zbr:selfhost/Lexer.zbr:395
-        if ((p1 == '\\')) {
-// zbr:selfhost/Lexer.zbr:396
-            if ((self.peekAt(3) == '\'')) {
 // zbr:selfhost/Lexer.zbr:397
-                (try self.scanCharLiteral('\'', self.pos, ln, cl));
+        const p1: u21 = self.peekAt(1);
 // zbr:selfhost/Lexer.zbr:398
+        if ((p1 == '\\')) {
+// zbr:selfhost/Lexer.zbr:399
+            if ((self.peekAt(3) == '\'')) {
+// zbr:selfhost/Lexer.zbr:400
+                (try self.scanCharLiteral('\'', self.pos, ln, cl));
+// zbr:selfhost/Lexer.zbr:401
                 return;
             }
         } else {
-// zbr:selfhost/Lexer.zbr:399
-            if ((((p1 != '\'') and (p1 != '\x00')) and (p1 != '\n'))) {
-// zbr:selfhost/Lexer.zbr:400
-                if ((self.peekAt(2) == '\'')) {
-// zbr:selfhost/Lexer.zbr:401
-                    (try self.scanCharLiteral('\'', self.pos, ln, cl));
 // zbr:selfhost/Lexer.zbr:402
+            if ((((p1 != '\'') and (p1 != '\x00')) and (p1 != '\n'))) {
+// zbr:selfhost/Lexer.zbr:403
+                if ((self.peekAt(2) == '\'')) {
+// zbr:selfhost/Lexer.zbr:404
+                    (try self.scanCharLiteral('\'', self.pos, ln, cl));
+// zbr:selfhost/Lexer.zbr:405
                     return;
                 }
             }
         }
-// zbr:selfhost/Lexer.zbr:403
+// zbr:selfhost/Lexer.zbr:406
         (try self.scanString('\'', ln, cl));
     }
 
+    // zbr:selfhost/Lexer.zbr:410
     pub fn scanSimpleString(self: *_zbr_ty_Lexer, q: u21, start: i64, kind: _zbr_ty_TokenKind, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:408
-        self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:409
-        while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:410
-            const c: u8 = _zbr_at(self.src, self.pos);
 // zbr:selfhost/Lexer.zbr:411
-            if ((c == '\\')) {
+        self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:412
+        while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
+// zbr:selfhost/Lexer.zbr:413
+            const c: u8 = _zbr_at(self.src, self.pos);
+// zbr:selfhost/Lexer.zbr:414
+            if ((c == '\\')) {
+// zbr:selfhost/Lexer.zbr:415
                 self.pos = (self.pos + 2);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:414
+// zbr:selfhost/Lexer.zbr:417
             if ((c == q)) {
-// zbr:selfhost/Lexer.zbr:415
+// zbr:selfhost/Lexer.zbr:418
                 self.pos = (self.pos + 1);
                 break;
             }
-// zbr:selfhost/Lexer.zbr:417
+// zbr:selfhost/Lexer.zbr:420
             if ((c == '\n')) {
-// zbr:selfhost/Lexer.zbr:418
-                { _zbr_rt._error_ctx = .{ .message = "UnterminatedString" }; return error.ZebraError; }
+// zbr:selfhost/Lexer.zbr:421
+                { _zbr_rt._error_ctx = .{ .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
             }
-// zbr:selfhost/Lexer.zbr:419
+// zbr:selfhost/Lexer.zbr:422
             self.pos = (self.pos + 1);
         }
-// zbr:selfhost/Lexer.zbr:420
+// zbr:selfhost/Lexer.zbr:423
         self.emit(kind, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
     }
 
+    // zbr:selfhost/Lexer.zbr:427
     pub fn scanString(self: *_zbr_ty_Lexer, q: u21, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:425
+// zbr:selfhost/Lexer.zbr:428
         if ((((q == '"') and (self.peek1() == '"')) and (self.peekAt(2) == '"'))) {
-// zbr:selfhost/Lexer.zbr:426
+// zbr:selfhost/Lexer.zbr:429
             (try self.scanDocString(ln, cl));
-// zbr:selfhost/Lexer.zbr:427
+// zbr:selfhost/Lexer.zbr:430
             return;
         }
-// zbr:selfhost/Lexer.zbr:429
-        const openPos: i64 = self.pos;
-// zbr:selfhost/Lexer.zbr:430
-        self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:432
-        var hasInterp: bool = false;
+        const openPos: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:433
-        var segStart: i64 = self.pos;
-// zbr:selfhost/Lexer.zbr:434
-        var segLn: i64 = self.line;
+        self.pos = (self.pos + 1);
+// zbr:selfhost/Lexer.zbr:435
+        var hasInterp: bool = false;
 // zbr:selfhost/Lexer.zbr:436
-        while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
+        var segStart: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:437
-            const c: u8 = _zbr_at(self.src, self.pos);
+        var segLn: i64 = self.line;
 // zbr:selfhost/Lexer.zbr:439
-            if (((c == '$') and (self.peek1() == '{'))) {
+        while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:440
-                const segText: []const u8 = self.src[@as(usize, @intCast(segStart))..@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:441
-                if ((!hasInterp)) {
+            const c: u8 = _zbr_at(self.src, self.pos);
 // zbr:selfhost/Lexer.zbr:442
-                    var kind = _zbr_ty_TokenKind{ .string_start_single = {} };
+            if (((c == '$') and (self.peek1() == '{'))) {
 // zbr:selfhost/Lexer.zbr:443
-                    if ((q == '"')) {
+                const segText: []const u8 = self.src[@as(usize, @intCast(segStart))..@as(usize, @intCast(self.pos))];
 // zbr:selfhost/Lexer.zbr:444
+                if ((!hasInterp)) {
+// zbr:selfhost/Lexer.zbr:445
+                    var kind = _zbr_ty_TokenKind{ .string_start_single = {} };
+// zbr:selfhost/Lexer.zbr:446
+                    if ((q == '"')) {
+// zbr:selfhost/Lexer.zbr:447
                         kind = _zbr_ty_TokenKind{ .string_start_double = {} };
                     }
-// zbr:selfhost/Lexer.zbr:445
+// zbr:selfhost/Lexer.zbr:448
                     self.emit(kind, self.src[@as(usize, @intCast(openPos))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:446
+// zbr:selfhost/Lexer.zbr:449
                     hasInterp = true;
                 } else {
-// zbr:selfhost/Lexer.zbr:448
+// zbr:selfhost/Lexer.zbr:451
                     var kind = _zbr_ty_TokenKind{ .string_part_single = {} };
-// zbr:selfhost/Lexer.zbr:449
+// zbr:selfhost/Lexer.zbr:452
                     if ((q == '"')) {
-// zbr:selfhost/Lexer.zbr:450
+// zbr:selfhost/Lexer.zbr:453
                         kind = _zbr_ty_TokenKind{ .string_part_double = {} };
                     }
-// zbr:selfhost/Lexer.zbr:451
+// zbr:selfhost/Lexer.zbr:454
                     self.emit(kind, segText, segLn, ((segStart - self.lineStart) + 1));
                 }
-// zbr:selfhost/Lexer.zbr:452
-                self.pos = (self.pos + 2);
-// zbr:selfhost/Lexer.zbr:453
-                (try self.scanInterpExpr());
-// zbr:selfhost/Lexer.zbr:454
-                segStart = self.pos;
 // zbr:selfhost/Lexer.zbr:455
+                self.pos = (self.pos + 2);
+// zbr:selfhost/Lexer.zbr:456
+                (try self.scanInterpExpr());
+// zbr:selfhost/Lexer.zbr:457
+                segStart = self.pos;
+// zbr:selfhost/Lexer.zbr:458
                 segLn = self.line;
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:458
-            if ((c == q)) {
-// zbr:selfhost/Lexer.zbr:459
-                const segText: []const u8 = self.src[@as(usize, @intCast(segStart))..@as(usize, @intCast(self.pos))];
-// zbr:selfhost/Lexer.zbr:460
-                self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:461
-                if ((!hasInterp)) {
+            if ((c == q)) {
 // zbr:selfhost/Lexer.zbr:462
-                    var kind = _zbr_ty_TokenKind{ .string_single = {} };
+                const segText: []const u8 = self.src[@as(usize, @intCast(segStart))..@as(usize, @intCast(self.pos))];
 // zbr:selfhost/Lexer.zbr:463
-                    if ((q == '"')) {
+                self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:464
+                if ((!hasInterp)) {
+// zbr:selfhost/Lexer.zbr:465
+                    var kind = _zbr_ty_TokenKind{ .string_single = {} };
+// zbr:selfhost/Lexer.zbr:466
+                    if ((q == '"')) {
+// zbr:selfhost/Lexer.zbr:467
                         kind = _zbr_ty_TokenKind{ .string_double = {} };
                     }
-// zbr:selfhost/Lexer.zbr:465
+// zbr:selfhost/Lexer.zbr:468
                     self.emit(kind, self.src[@as(usize, @intCast(openPos))..@as(usize, @intCast(self.pos))], ln, cl);
                 } else {
-// zbr:selfhost/Lexer.zbr:467
+// zbr:selfhost/Lexer.zbr:470
                     var kind = _zbr_ty_TokenKind{ .string_stop_single = {} };
-// zbr:selfhost/Lexer.zbr:468
+// zbr:selfhost/Lexer.zbr:471
                     if ((q == '"')) {
-// zbr:selfhost/Lexer.zbr:469
+// zbr:selfhost/Lexer.zbr:472
                         kind = _zbr_ty_TokenKind{ .string_stop_double = {} };
                     }
-// zbr:selfhost/Lexer.zbr:470
+// zbr:selfhost/Lexer.zbr:473
                     self.emit(kind, segText, segLn, ((segStart - self.lineStart) + 1));
                 }
-// zbr:selfhost/Lexer.zbr:471
+// zbr:selfhost/Lexer.zbr:474
                 return;
             }
-// zbr:selfhost/Lexer.zbr:473
-            if ((c == '\n')) {
-// zbr:selfhost/Lexer.zbr:474
-                { _zbr_rt._error_ctx = .{ .message = "UnterminatedString" }; return error.ZebraError; }
-            }
-// zbr:selfhost/Lexer.zbr:475
-            if ((c == '\\')) {
 // zbr:selfhost/Lexer.zbr:476
+            if ((c == '\n')) {
+// zbr:selfhost/Lexer.zbr:477
+                { _zbr_rt._error_ctx = .{ .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
+            }
+// zbr:selfhost/Lexer.zbr:478
+            if ((c == '\\')) {
+// zbr:selfhost/Lexer.zbr:479
                 self.pos = (self.pos + 2);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:478
+// zbr:selfhost/Lexer.zbr:481
             self.pos = (self.pos + 1);
         }
-// zbr:selfhost/Lexer.zbr:480
-        { _zbr_rt._error_ctx = .{ .message = "UnterminatedString" }; return error.ZebraError; }
+// zbr:selfhost/Lexer.zbr:483
+        { _zbr_rt._error_ctx = .{ .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
+    // zbr:selfhost/Lexer.zbr:487
     pub fn scanInterpExpr(self: *_zbr_ty_Lexer) anyerror!void {
-// zbr:selfhost/Lexer.zbr:485
+// zbr:selfhost/Lexer.zbr:488
         var depth: i64 = 1;
-// zbr:selfhost/Lexer.zbr:502
-        const baseParen: i64 = self.parenDepth;
-// zbr:selfhost/Lexer.zbr:503
-        while (_zebra_gt(depth, 0)) {
-// zbr:selfhost/Lexer.zbr:504
-            if (_zebra_ge(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:505
-                { _zbr_rt._error_ctx = .{ .message = "UnterminatedInterpolation" }; return error.ZebraError; }
-            }
+        const baseParen: i64 = self.parenDepth;
 // zbr:selfhost/Lexer.zbr:506
-            const c: u8 = _zbr_at(self.src, self.pos);
+        while (_zebra_gt(depth, 0)) {
 // zbr:selfhost/Lexer.zbr:507
-            if (((c == ' ') or (c == '\t'))) {
+            if (_zebra_ge(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:508
+                { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: an interpolation opened with $", _zbr_rt._allocator), "{ is never closed in this string", _zbr_rt._allocator) }; return error.ZebraError; }
+            }
+// zbr:selfhost/Lexer.zbr:509
+            const c: u8 = _zbr_at(self.src, self.pos);
+// zbr:selfhost/Lexer.zbr:510
+            if (((c == ' ') or (c == '\t'))) {
+// zbr:selfhost/Lexer.zbr:511
                 self.pos = (self.pos + 1);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:510
-            if ((c == '{')) {
-// zbr:selfhost/Lexer.zbr:511
-                const ln: i64 = self.line;
-// zbr:selfhost/Lexer.zbr:512
-                const cl: i64 = self.col();
 // zbr:selfhost/Lexer.zbr:513
-                self.pos = (self.pos + 1);
+            if ((c == '{')) {
 // zbr:selfhost/Lexer.zbr:514
-                self.emit(_zbr_ty_TokenKind{ .lcurly = {} }, "{", ln, cl);
+                const ln: i64 = self.line;
 // zbr:selfhost/Lexer.zbr:515
+                const cl: i64 = self.col();
+// zbr:selfhost/Lexer.zbr:516
+                self.pos = (self.pos + 1);
+// zbr:selfhost/Lexer.zbr:517
+                self.emit(_zbr_ty_TokenKind{ .lcurly = {} }, "{", ln, cl);
+// zbr:selfhost/Lexer.zbr:518
                 depth = (depth + 1);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:517
-            if ((c == '}')) {
-// zbr:selfhost/Lexer.zbr:518
-                const ln: i64 = self.line;
-// zbr:selfhost/Lexer.zbr:519
-                const cl: i64 = self.col();
 // zbr:selfhost/Lexer.zbr:520
-                self.pos = (self.pos + 1);
+            if ((c == '}')) {
 // zbr:selfhost/Lexer.zbr:521
-                depth = (depth - 1);
+                const ln: i64 = self.line;
 // zbr:selfhost/Lexer.zbr:522
-                if ((depth == 0)) {
+                const cl: i64 = self.col();
 // zbr:selfhost/Lexer.zbr:523
+                self.pos = (self.pos + 1);
+// zbr:selfhost/Lexer.zbr:524
+                depth = (depth - 1);
+// zbr:selfhost/Lexer.zbr:525
+                if ((depth == 0)) {
+// zbr:selfhost/Lexer.zbr:526
                     self.emit(_zbr_ty_TokenKind{ .rcurly_special = {} }, "}", ln, cl);
                 } else {
-// zbr:selfhost/Lexer.zbr:525
+// zbr:selfhost/Lexer.zbr:528
                     self.emit(_zbr_ty_TokenKind{ .rcurly = {} }, "}", ln, cl);
                 }
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:529
-            if ((((c == ':') and (depth == 1)) and (self.parenDepth == baseParen))) {
-// zbr:selfhost/Lexer.zbr:530
-                const specStart: i64 = self.pos;
-// zbr:selfhost/Lexer.zbr:531
-                const specLn: i64 = self.line;
 // zbr:selfhost/Lexer.zbr:532
-                const specCl: i64 = self.col();
+            if ((((c == ':') and (depth == 1)) and (self.parenDepth == baseParen))) {
 // zbr:selfhost/Lexer.zbr:533
-                self.pos = (self.pos + 1);
+                const specStart: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:534
-                while (((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) != '}')) and (_zbr_at(self.src, self.pos) != '\n'))) {
+                const specLn: i64 = self.line;
 // zbr:selfhost/Lexer.zbr:535
+                const specCl: i64 = self.col();
+// zbr:selfhost/Lexer.zbr:536
+                self.pos = (self.pos + 1);
+// zbr:selfhost/Lexer.zbr:537
+                while (((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) != '}')) and (_zbr_at(self.src, self.pos) != '\n'))) {
+// zbr:selfhost/Lexer.zbr:538
                     self.pos = (self.pos + 1);
                 }
-// zbr:selfhost/Lexer.zbr:536
+// zbr:selfhost/Lexer.zbr:539
                 if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) == '}'))) {
-// zbr:selfhost/Lexer.zbr:537
+// zbr:selfhost/Lexer.zbr:540
                     self.emit(_zbr_ty_TokenKind{ .string_part_format = {} }, self.src[@as(usize, @intCast(specStart))..@as(usize, @intCast(self.pos))], specLn, specCl);
                     continue;
                 }
-// zbr:selfhost/Lexer.zbr:539
+// zbr:selfhost/Lexer.zbr:542
                 self.pos = specStart;
             }
-// zbr:selfhost/Lexer.zbr:547
+// zbr:selfhost/Lexer.zbr:550
             (try self.scanToken());
         }
     }
 
+    // zbr:selfhost/Lexer.zbr:554
     pub fn scanDocString(self: *_zbr_ty_Lexer, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:552
-        const start: i64 = self.pos;
-// zbr:selfhost/Lexer.zbr:553
-        self.pos = (self.pos + 3);
 // zbr:selfhost/Lexer.zbr:555
-        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and ((_zbr_at(self.src, self.pos) == ' ') or (_zbr_at(self.src, self.pos) == '\t')))) {
+        const start: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:556
+        self.pos = (self.pos + 3);
+// zbr:selfhost/Lexer.zbr:558
+        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and ((_zbr_at(self.src, self.pos) == ' ') or (_zbr_at(self.src, self.pos) == '\t')))) {
+// zbr:selfhost/Lexer.zbr:559
             self.pos = (self.pos + 1);
         }
-// zbr:selfhost/Lexer.zbr:558
-        if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) != '\n'))) {
-// zbr:selfhost/Lexer.zbr:559
-            while (_zebra_lt((self.pos + 2), @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:560
-                if ((((_zbr_at(self.src, self.pos) == '"') and (_zbr_at(self.src, (self.pos + 1)) == '"')) and (_zbr_at(self.src, (self.pos + 2)) == '"'))) {
 // zbr:selfhost/Lexer.zbr:561
-                    self.pos = (self.pos + 3);
+        if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) != '\n'))) {
 // zbr:selfhost/Lexer.zbr:562
-                    self.emit(_zbr_ty_TokenKind{ .doc_string_line = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
+            while (_zebra_lt((self.pos + 2), @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:563
+                if ((((_zbr_at(self.src, self.pos) == '"') and (_zbr_at(self.src, (self.pos + 1)) == '"')) and (_zbr_at(self.src, (self.pos + 2)) == '"'))) {
+// zbr:selfhost/Lexer.zbr:564
+                    self.pos = (self.pos + 3);
+// zbr:selfhost/Lexer.zbr:565
+                    self.emit(_zbr_ty_TokenKind{ .doc_string_line = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
+// zbr:selfhost/Lexer.zbr:566
                     return;
                 }
-// zbr:selfhost/Lexer.zbr:564
+// zbr:selfhost/Lexer.zbr:567
                 self.pos = (self.pos + 1);
             }
-// zbr:selfhost/Lexer.zbr:565
-            { _zbr_rt._error_ctx = .{ .message = "UnterminatedString" }; return error.ZebraError; }
-        }
-// zbr:selfhost/Lexer.zbr:567
-        if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) == '\n'))) {
 // zbr:selfhost/Lexer.zbr:568
+            { _zbr_rt._error_ctx = .{ .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
+        }
+// zbr:selfhost/Lexer.zbr:570
+        if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) == '\n'))) {
+// zbr:selfhost/Lexer.zbr:571
             self.advanceNewline();
         }
-// zbr:selfhost/Lexer.zbr:569
-        while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:570
-            var p: i64 = self.pos;
-// zbr:selfhost/Lexer.zbr:571
-            while ((_zebra_lt(p, @as(i64, @intCast(self.src.len))) and ((_zbr_at(self.src, p) == ' ') or (_zbr_at(self.src, p) == '\t')))) {
 // zbr:selfhost/Lexer.zbr:572
+        while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
+// zbr:selfhost/Lexer.zbr:573
+            var p: i64 = self.pos;
+// zbr:selfhost/Lexer.zbr:574
+            while ((_zebra_lt(p, @as(i64, @intCast(self.src.len))) and ((_zbr_at(self.src, p) == ' ') or (_zbr_at(self.src, p) == '\t')))) {
+// zbr:selfhost/Lexer.zbr:575
                 p = (p + 1);
             }
-// zbr:selfhost/Lexer.zbr:573
-            if ((((_zebra_lt((p + 2), @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, p) == '"')) and (_zbr_at(self.src, (p + 1)) == '"')) and (_zbr_at(self.src, (p + 2)) == '"'))) {
-// zbr:selfhost/Lexer.zbr:574
-                self.pos = (p + 3);
-// zbr:selfhost/Lexer.zbr:575
-                self.emit(_zbr_ty_TokenKind{ .doc_string_line = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
 // zbr:selfhost/Lexer.zbr:576
+            if ((((_zebra_lt((p + 2), @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, p) == '"')) and (_zbr_at(self.src, (p + 1)) == '"')) and (_zbr_at(self.src, (p + 2)) == '"'))) {
+// zbr:selfhost/Lexer.zbr:577
+                self.pos = (p + 3);
+// zbr:selfhost/Lexer.zbr:578
+                self.emit(_zbr_ty_TokenKind{ .doc_string_line = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
+// zbr:selfhost/Lexer.zbr:579
                 return;
             }
-// zbr:selfhost/Lexer.zbr:577
+// zbr:selfhost/Lexer.zbr:580
             while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) != '\n'))) {
-// zbr:selfhost/Lexer.zbr:578
+// zbr:selfhost/Lexer.zbr:581
                 self.pos = (self.pos + 1);
             }
-// zbr:selfhost/Lexer.zbr:579
+// zbr:selfhost/Lexer.zbr:582
             if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:580
+// zbr:selfhost/Lexer.zbr:583
                 self.advanceNewline();
             }
         }
-// zbr:selfhost/Lexer.zbr:582
-        { _zbr_rt._error_ctx = .{ .message = "UnterminatedString" }; return error.ZebraError; }
+// zbr:selfhost/Lexer.zbr:585
+        { _zbr_rt._error_ctx = .{ .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
+    // zbr:selfhost/Lexer.zbr:589
     pub fn scanNumericLiteral(self: *_zbr_ty_Lexer, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:587
-        const start: i64 = self.pos;
-// zbr:selfhost/Lexer.zbr:589
-        if ((((_zbr_at(self.src, self.pos) == '0') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (_zbr_at(self.src, (self.pos + 1)) == 'x'))) {
 // zbr:selfhost/Lexer.zbr:590
-            self.pos = (self.pos + 2);
-// zbr:selfhost/Lexer.zbr:591
-            self.scanWhile(_zbr_fn_isHexDigit);
+        const start: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:592
-            if ((self.peek() == '_')) {
+        if ((((_zbr_at(self.src, self.pos) == '0') and _zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) and (_zbr_at(self.src, (self.pos + 1)) == 'x'))) {
 // zbr:selfhost/Lexer.zbr:593
-                const suffixStart: i64 = self.pos;
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:594
-                self.pos = (self.pos + 1);
+            self.scanWhile(_zbr_fn_isHexDigit);
 // zbr:selfhost/Lexer.zbr:595
-                if ((self.peek() == 'u')) {
+            if ((self.peek() == '_')) {
 // zbr:selfhost/Lexer.zbr:596
-                    self.pos = (self.pos + 1);
+                const suffixStart: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:597
-                    self.scanWhile(_zbr_fn_isDigit);
+                self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:598
-                    self.emit(_zbr_ty_TokenKind{ .hex_lit_unsign = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
+                if ((self.peek() == 'u')) {
 // zbr:selfhost/Lexer.zbr:599
-                    return;
-                }
+                    self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:600
-                self.scanWhile(_zbr_fn_isDigit);
+                    self.scanWhile(_zbr_fn_isDigit);
 // zbr:selfhost/Lexer.zbr:601
-                if (_zebra_gt(self.pos, (suffixStart + 1))) {
+                    self.emit(_zbr_ty_TokenKind{ .hex_lit_unsign = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
 // zbr:selfhost/Lexer.zbr:602
-                    self.emit(_zbr_ty_TokenKind{ .hex_lit_explicit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:603
                     return;
                 }
+// zbr:selfhost/Lexer.zbr:603
+                self.scanWhile(_zbr_fn_isDigit);
 // zbr:selfhost/Lexer.zbr:604
+                if (_zebra_gt(self.pos, (suffixStart + 1))) {
+// zbr:selfhost/Lexer.zbr:605
+                    self.emit(_zbr_ty_TokenKind{ .hex_lit_explicit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
+// zbr:selfhost/Lexer.zbr:606
+                    return;
+                }
+// zbr:selfhost/Lexer.zbr:607
                 self.pos = suffixStart;
             }
-// zbr:selfhost/Lexer.zbr:605
+// zbr:selfhost/Lexer.zbr:608
             self.emit(_zbr_ty_TokenKind{ .hex_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:606
+// zbr:selfhost/Lexer.zbr:609
             return;
         }
-// zbr:selfhost/Lexer.zbr:608
-        self.scanWhile(_zbr_fn_isDigitOrUnder);
-// zbr:selfhost/Lexer.zbr:610
-        const hasDot: bool = ((self.peek() == '.') and _zbr_fn_isDigit(self.peekAt(1)));
 // zbr:selfhost/Lexer.zbr:611
-        if (hasDot) {
-// zbr:selfhost/Lexer.zbr:612
-            self.pos = (self.pos + 1);
+        self.scanWhile(_zbr_fn_isDigitOrUnder);
 // zbr:selfhost/Lexer.zbr:613
+        const hasDot: bool = ((self.peek() == '.') and _zbr_fn_isDigit(self.peekAt(1)));
+// zbr:selfhost/Lexer.zbr:614
+        if (hasDot) {
+// zbr:selfhost/Lexer.zbr:615
+            self.pos = (self.pos + 1);
+// zbr:selfhost/Lexer.zbr:616
             self.scanWhile(_zbr_fn_isDigitOrUnder);
         }
-// zbr:selfhost/Lexer.zbr:615
-        const sc: u21 = self.peek();
-// zbr:selfhost/Lexer.zbr:616
-        const sc1: u21 = self.peek1();
 // zbr:selfhost/Lexer.zbr:618
-        if ((((sc == '_') and (sc1 == 'd')) and (!_zbr_fn_isIdentContinue(self.peekAt(2))))) {
+        const sc: u21 = self.peek();
 // zbr:selfhost/Lexer.zbr:619
-            self.pos = (self.pos + 2);
-// zbr:selfhost/Lexer.zbr:620
-            self.emit(_zbr_ty_TokenKind{ .decimal_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
+        const sc1: u21 = self.peek1();
 // zbr:selfhost/Lexer.zbr:621
-            return;
-        }
-// zbr:selfhost/Lexer.zbr:623
-        if ((((sc == '_') and (sc1 == 'n')) and (!_zbr_fn_isIdentContinue(self.peekAt(2))))) {
-// zbr:selfhost/Lexer.zbr:624
+        if ((((sc == '_') and (sc1 == 'd')) and (!_zbr_fn_isIdentContinue(self.peekAt(2))))) {
+// zbr:selfhost/Lexer.zbr:622
             self.pos = (self.pos + 2);
-// zbr:selfhost/Lexer.zbr:625
-            self.emit(_zbr_ty_TokenKind{ .number_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
-// zbr:selfhost/Lexer.zbr:626
+// zbr:selfhost/Lexer.zbr:623
+            self.emit(_zbr_ty_TokenKind{ .decimal_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
+// zbr:selfhost/Lexer.zbr:624
             return;
         }
+// zbr:selfhost/Lexer.zbr:626
+        if ((((sc == '_') and (sc1 == 'n')) and (!_zbr_fn_isIdentContinue(self.peekAt(2))))) {
+// zbr:selfhost/Lexer.zbr:627
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:628
-        if ((((sc == '_') and (sc1 == 'f')) or (sc == 'f'))) {
+            self.emit(_zbr_ty_TokenKind{ .number_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
 // zbr:selfhost/Lexer.zbr:629
-            if ((sc == '_')) {
-// zbr:selfhost/Lexer.zbr:630
-                self.pos = (self.pos + 1);
-            }
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:631
-            self.pos = (self.pos + 1);
+        if ((((sc == '_') and (sc1 == 'f')) or (sc == 'f'))) {
 // zbr:selfhost/Lexer.zbr:632
-            if ((((self.peek() == '3') and (self.peekAt(1) == '2')) or ((self.peek() == '6') and (self.peekAt(1) == '4')))) {
+            if ((sc == '_')) {
 // zbr:selfhost/Lexer.zbr:633
-                self.pos = (self.pos + 2);
+                self.pos = (self.pos + 1);
             }
 // zbr:selfhost/Lexer.zbr:634
-            self.emit(_zbr_ty_TokenKind{ .float_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
+            self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:635
+            if ((((self.peek() == '3') and (self.peekAt(1) == '2')) or ((self.peek() == '6') and (self.peekAt(1) == '4')))) {
+// zbr:selfhost/Lexer.zbr:636
+                self.pos = (self.pos + 2);
+            }
+// zbr:selfhost/Lexer.zbr:637
+            self.emit(_zbr_ty_TokenKind{ .float_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
+// zbr:selfhost/Lexer.zbr:638
             return;
         }
-// zbr:selfhost/Lexer.zbr:637
+// zbr:selfhost/Lexer.zbr:640
         if (((((sc == '_') and ((sc1 == 'i') or (sc1 == 'u'))) or (sc == 'i')) or (sc == 'u'))) {
-// zbr:selfhost/Lexer.zbr:638
+// zbr:selfhost/Lexer.zbr:641
             if ((sc == '_')) {
-// zbr:selfhost/Lexer.zbr:639
+// zbr:selfhost/Lexer.zbr:642
                 self.pos = (self.pos + 1);
             }
-// zbr:selfhost/Lexer.zbr:640
-            self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:641
-            self.scanWhile(_zbr_fn_isDigit);
-// zbr:selfhost/Lexer.zbr:642
-            self.emit(_zbr_ty_TokenKind{ .integer_lit_explicit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
 // zbr:selfhost/Lexer.zbr:643
+            self.pos = (self.pos + 1);
+// zbr:selfhost/Lexer.zbr:644
+            self.scanWhile(_zbr_fn_isDigit);
+// zbr:selfhost/Lexer.zbr:645
+            self.emit(_zbr_ty_TokenKind{ .integer_lit_explicit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
+// zbr:selfhost/Lexer.zbr:646
             return;
         }
-// zbr:selfhost/Lexer.zbr:645
+// zbr:selfhost/Lexer.zbr:648
         if (hasDot) {
-// zbr:selfhost/Lexer.zbr:646
+// zbr:selfhost/Lexer.zbr:649
             self.emit(_zbr_ty_TokenKind{ .float_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
         } else {
-// zbr:selfhost/Lexer.zbr:648
+// zbr:selfhost/Lexer.zbr:651
             self.emit(_zbr_ty_TokenKind{ .integer_lit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
         }
     }
 
+    // zbr:selfhost/Lexer.zbr:655
     pub fn scanOperator(self: *_zbr_ty_Lexer, ln: i64, cl: i64) anyerror!void {
-// zbr:selfhost/Lexer.zbr:653
+// zbr:selfhost/Lexer.zbr:656
         const c: u21 = self.peek();
-// zbr:selfhost/Lexer.zbr:654
-        const c1: u21 = self.peek1();
 // zbr:selfhost/Lexer.zbr:657
-        if (_zebra_lt((self.pos + 2), @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:658
-            const c2: u8 = _zbr_at(self.src, (self.pos + 2));
-// zbr:selfhost/Lexer.zbr:659
-            if ((((c == '/') and (c1 == '/')) and (c2 == '='))) {
+        const c1: u21 = self.peek1();
 // zbr:selfhost/Lexer.zbr:660
-                self.pos = (self.pos + 3);
+        if (_zebra_lt((self.pos + 2), @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:661
-                self.emit(_zbr_ty_TokenKind{ .slashslash_equals = {} }, "//=", ln, cl);
+            const c2: u8 = _zbr_at(self.src, (self.pos + 2));
 // zbr:selfhost/Lexer.zbr:662
-                return;
-            }
+            if ((((c == '/') and (c1 == '/')) and (c2 == '='))) {
 // zbr:selfhost/Lexer.zbr:663
-            if ((((c == '*') and (c1 == '*')) and (c2 == '='))) {
+                self.pos = (self.pos + 3);
 // zbr:selfhost/Lexer.zbr:664
-                self.pos = (self.pos + 3);
+                self.emit(_zbr_ty_TokenKind{ .slashslash_equals = {} }, "//=", ln, cl);
 // zbr:selfhost/Lexer.zbr:665
-                self.emit(_zbr_ty_TokenKind{ .starstar_equals = {} }, "**=", ln, cl);
+                return;
+            }
 // zbr:selfhost/Lexer.zbr:666
-                return;
-            }
+            if ((((c == '*') and (c1 == '*')) and (c2 == '='))) {
 // zbr:selfhost/Lexer.zbr:667
-            if ((((c == '<') and (c1 == '<')) and (c2 == '='))) {
+                self.pos = (self.pos + 3);
 // zbr:selfhost/Lexer.zbr:668
-                self.pos = (self.pos + 3);
+                self.emit(_zbr_ty_TokenKind{ .starstar_equals = {} }, "**=", ln, cl);
 // zbr:selfhost/Lexer.zbr:669
-                self.emit(_zbr_ty_TokenKind{ .double_lt_equals = {} }, "<<=", ln, cl);
+                return;
+            }
 // zbr:selfhost/Lexer.zbr:670
-                return;
-            }
+            if ((((c == '<') and (c1 == '<')) and (c2 == '='))) {
+// zbr:selfhost/Lexer.zbr:671
+                self.pos = (self.pos + 3);
+// zbr:selfhost/Lexer.zbr:672
+                self.emit(_zbr_ty_TokenKind{ .double_lt_equals = {} }, "<<=", ln, cl);
 // zbr:selfhost/Lexer.zbr:673
-            if ((((c == '<') and (c1 == '<')) and (c2 == '-'))) {
-// zbr:selfhost/Lexer.zbr:674
-                self.pos = (self.pos + 3);
-// zbr:selfhost/Lexer.zbr:675
-                self.emit(_zbr_ty_TokenKind{ .left_arrow_deep = {} }, "<<-", ln, cl);
+                return;
+            }
 // zbr:selfhost/Lexer.zbr:676
-                return;
-            }
+            if ((((c == '<') and (c1 == '<')) and (c2 == '-'))) {
 // zbr:selfhost/Lexer.zbr:677
-            if ((((c == '>') and (c1 == '>')) and (c2 == '='))) {
-// zbr:selfhost/Lexer.zbr:678
                 self.pos = (self.pos + 3);
+// zbr:selfhost/Lexer.zbr:678
+                self.emit(_zbr_ty_TokenKind{ .left_arrow_deep = {} }, "<<-", ln, cl);
 // zbr:selfhost/Lexer.zbr:679
-                self.emit(_zbr_ty_TokenKind{ .double_gt_equals = {} }, ">>=", ln, cl);
+                return;
+            }
 // zbr:selfhost/Lexer.zbr:680
+            if ((((c == '>') and (c1 == '>')) and (c2 == '='))) {
+// zbr:selfhost/Lexer.zbr:681
+                self.pos = (self.pos + 3);
+// zbr:selfhost/Lexer.zbr:682
+                self.emit(_zbr_ty_TokenKind{ .double_gt_equals = {} }, ">>=", ln, cl);
+// zbr:selfhost/Lexer.zbr:683
                 return;
             }
         }
-// zbr:selfhost/Lexer.zbr:683
-        if (((c == '+') and (c1 == '+'))) {
-// zbr:selfhost/Lexer.zbr:684
-            self.pos = (self.pos + 2);
-// zbr:selfhost/Lexer.zbr:685
-            self.emit(_zbr_ty_TokenKind{ .plusplus = {} }, "++", ln, cl);
 // zbr:selfhost/Lexer.zbr:686
-            return;
-        }
+        if (((c == '+') and (c1 == '+'))) {
 // zbr:selfhost/Lexer.zbr:687
-        if (((c == '+') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:688
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .plusplus = {} }, "++", ln, cl);
 // zbr:selfhost/Lexer.zbr:689
-            self.emit(_zbr_ty_TokenKind{ .plus_equals = {} }, "+=", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:690
-            return;
-        }
+        if (((c == '+') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:691
-        if (((c == '-') and (c1 == '>'))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:692
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .plus_equals = {} }, "+=", ln, cl);
 // zbr:selfhost/Lexer.zbr:693
-            self.emit(_zbr_ty_TokenKind{ .arrow = {} }, "->", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:694
-            return;
-        }
+        if (((c == '-') and (c1 == '>'))) {
 // zbr:selfhost/Lexer.zbr:695
-        if (((c == '-') and (c1 == '-'))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:696
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .arrow = {} }, "->", ln, cl);
 // zbr:selfhost/Lexer.zbr:697
-            self.emit(_zbr_ty_TokenKind{ .minusminus = {} }, "--", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:698
-            return;
-        }
+        if (((c == '-') and (c1 == '-'))) {
 // zbr:selfhost/Lexer.zbr:699
-        if (((c == '-') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:700
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .minusminus = {} }, "--", ln, cl);
 // zbr:selfhost/Lexer.zbr:701
-            self.emit(_zbr_ty_TokenKind{ .minus_equals = {} }, "-=", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:702
-            return;
-        }
+        if (((c == '-') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:703
-        if (((c == '*') and (c1 == '*'))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:704
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .minus_equals = {} }, "-=", ln, cl);
 // zbr:selfhost/Lexer.zbr:705
-            self.emit(_zbr_ty_TokenKind{ .starstar = {} }, "**", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:706
-            return;
-        }
+        if (((c == '*') and (c1 == '*'))) {
 // zbr:selfhost/Lexer.zbr:707
-        if (((c == '*') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:708
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .starstar = {} }, "**", ln, cl);
 // zbr:selfhost/Lexer.zbr:709
-            self.emit(_zbr_ty_TokenKind{ .star_equals = {} }, "*=", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:710
-            return;
-        }
+        if (((c == '*') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:711
-        if (((c == '/') and (c1 == '/'))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:712
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .star_equals = {} }, "*=", ln, cl);
 // zbr:selfhost/Lexer.zbr:713
-            self.emit(_zbr_ty_TokenKind{ .slashslash = {} }, "//", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:714
-            return;
-        }
+        if (((c == '/') and (c1 == '/'))) {
 // zbr:selfhost/Lexer.zbr:715
-        if (((c == '/') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:716
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .slashslash = {} }, "//", ln, cl);
 // zbr:selfhost/Lexer.zbr:717
-            self.emit(_zbr_ty_TokenKind{ .slash_equals = {} }, "/=", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:718
-            return;
-        }
+        if (((c == '/') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:719
-        if (((c == '%') and (c1 == '%'))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:720
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .slash_equals = {} }, "/=", ln, cl);
 // zbr:selfhost/Lexer.zbr:721
-            self.emit(_zbr_ty_TokenKind{ .percentpercent = {} }, "%%", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:722
-            return;
-        }
+        if (((c == '%') and (c1 == '%'))) {
 // zbr:selfhost/Lexer.zbr:723
-        if (((c == '%') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:724
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .percentpercent = {} }, "%%", ln, cl);
 // zbr:selfhost/Lexer.zbr:725
-            self.emit(_zbr_ty_TokenKind{ .percent_equals = {} }, "%=", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:726
-            return;
-        }
+        if (((c == '%') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:727
-        if (((c == '=') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:728
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .percent_equals = {} }, "%=", ln, cl);
 // zbr:selfhost/Lexer.zbr:729
-            self.emit(_zbr_ty_TokenKind{ .eq = {} }, "==", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:730
-            return;
-        }
+        if (((c == '=') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:731
-        if (((c == '<') and (c1 == '>'))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:732
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .eq = {} }, "==", ln, cl);
 // zbr:selfhost/Lexer.zbr:733
-            self.emit(_zbr_ty_TokenKind{ .ne = {} }, "<>", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:734
-            return;
-        }
+        if (((c == '<') and (c1 == '>'))) {
 // zbr:selfhost/Lexer.zbr:735
-        if (((c == '<') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:736
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .ne = {} }, "<>", ln, cl);
 // zbr:selfhost/Lexer.zbr:737
-            self.emit(_zbr_ty_TokenKind{ .le = {} }, "<=", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:738
-            return;
-        }
+        if (((c == '<') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:739
-        if (((c == '<') and (c1 == '<'))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:740
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .le = {} }, "<=", ln, cl);
 // zbr:selfhost/Lexer.zbr:741
-            self.emit(_zbr_ty_TokenKind{ .double_lt = {} }, "<<", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:742
-            return;
-        }
+        if (((c == '<') and (c1 == '<'))) {
 // zbr:selfhost/Lexer.zbr:743
-        if (((c == '<') and (c1 == '-'))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:744
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .double_lt = {} }, "<<", ln, cl);
 // zbr:selfhost/Lexer.zbr:745
-            self.emit(_zbr_ty_TokenKind{ .left_arrow = {} }, "<-", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:746
-            return;
-        }
+        if (((c == '<') and (c1 == '-'))) {
 // zbr:selfhost/Lexer.zbr:747
-        if (((c == '>') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:748
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .left_arrow = {} }, "<-", ln, cl);
 // zbr:selfhost/Lexer.zbr:749
-            self.emit(_zbr_ty_TokenKind{ .ge = {} }, ">=", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:750
-            return;
-        }
+        if (((c == '>') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:751
-        if (((c == '>') and (c1 == '>'))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:752
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .ge = {} }, ">=", ln, cl);
 // zbr:selfhost/Lexer.zbr:753
-            self.emit(_zbr_ty_TokenKind{ .double_gt = {} }, ">>", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:754
-            return;
-        }
+        if (((c == '>') and (c1 == '>'))) {
 // zbr:selfhost/Lexer.zbr:755
-        if (((c == '&') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:756
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .double_gt = {} }, ">>", ln, cl);
 // zbr:selfhost/Lexer.zbr:757
-            self.emit(_zbr_ty_TokenKind{ .ampersand_equals = {} }, "&=", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:758
-            return;
-        }
+        if (((c == '&') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:759
-        if (((c == '|') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:760
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .ampersand_equals = {} }, "&=", ln, cl);
 // zbr:selfhost/Lexer.zbr:761
-            self.emit(_zbr_ty_TokenKind{ .vertical_bar_equals = {} }, "|=", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:762
-            return;
-        }
+        if (((c == '|') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:763
-        if (((c == '^') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:764
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .vertical_bar_equals = {} }, "|=", ln, cl);
 // zbr:selfhost/Lexer.zbr:765
-            self.emit(_zbr_ty_TokenKind{ .caret_equals = {} }, "^=", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:766
-            return;
-        }
+        if (((c == '^') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:767
-        if (((c == '?') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:768
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .caret_equals = {} }, "^=", ln, cl);
 // zbr:selfhost/Lexer.zbr:769
-            self.emit(_zbr_ty_TokenKind{ .question_equals = {} }, "?=", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:770
-            return;
-        }
+        if (((c == '?') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:771
-        if (((c == '?') and (c1 == '.'))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:772
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .question_equals = {} }, "?=", ln, cl);
 // zbr:selfhost/Lexer.zbr:773
-            self.emit(_zbr_ty_TokenKind{ .question_dot = {} }, "?.", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:774
-            return;
-        }
+        if (((c == '?') and (c1 == '.'))) {
 // zbr:selfhost/Lexer.zbr:775
-        if (((c == '!') and (c1 == '='))) {
+            self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:776
-            self.pos = (self.pos + 2);
+            self.emit(_zbr_ty_TokenKind{ .question_dot = {} }, "?.", ln, cl);
 // zbr:selfhost/Lexer.zbr:777
-            self.emit(_zbr_ty_TokenKind{ .bang_equals = {} }, "!=", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:778
-            return;
-        }
+        if (((c == '!') and (c1 == '='))) {
 // zbr:selfhost/Lexer.zbr:779
-        if (((c == '.') and (c1 == '.'))) {
-// zbr:selfhost/Lexer.zbr:780
             self.pos = (self.pos + 2);
+// zbr:selfhost/Lexer.zbr:780
+            self.emit(_zbr_ty_TokenKind{ .bang_equals = {} }, "!=", ln, cl);
 // zbr:selfhost/Lexer.zbr:781
-            self.emit(_zbr_ty_TokenKind{ .dotdot = {} }, "..", ln, cl);
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:782
-            return;
-        }
+        if (((c == '.') and (c1 == '.'))) {
+// zbr:selfhost/Lexer.zbr:783
+            self.pos = (self.pos + 2);
+// zbr:selfhost/Lexer.zbr:784
+            self.emit(_zbr_ty_TokenKind{ .dotdot = {} }, "..", ln, cl);
 // zbr:selfhost/Lexer.zbr:785
-        self.pos = (self.pos + 1);
-// zbr:selfhost/Lexer.zbr:786
-        if ((c == '+')) {
-// zbr:selfhost/Lexer.zbr:787
-            self.emit(_zbr_ty_TokenKind{ .plus = {} }, "+", ln, cl);
-// zbr:selfhost/Lexer.zbr:788
             return;
         }
+// zbr:selfhost/Lexer.zbr:788
+        self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:789
-        if ((c == '-')) {
+        if ((c == '+')) {
 // zbr:selfhost/Lexer.zbr:790
-            self.emit(_zbr_ty_TokenKind{ .minus = {} }, "-", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .plus = {} }, "+", ln, cl);
 // zbr:selfhost/Lexer.zbr:791
             return;
         }
 // zbr:selfhost/Lexer.zbr:792
-        if ((c == '*')) {
+        if ((c == '-')) {
 // zbr:selfhost/Lexer.zbr:793
-            self.emit(_zbr_ty_TokenKind{ .star = {} }, "*", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .minus = {} }, "-", ln, cl);
 // zbr:selfhost/Lexer.zbr:794
             return;
         }
 // zbr:selfhost/Lexer.zbr:795
-        if ((c == '/')) {
+        if ((c == '*')) {
 // zbr:selfhost/Lexer.zbr:796
-            self.emit(_zbr_ty_TokenKind{ .slash = {} }, "/", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .star = {} }, "*", ln, cl);
 // zbr:selfhost/Lexer.zbr:797
             return;
         }
 // zbr:selfhost/Lexer.zbr:798
-        if ((c == '%')) {
+        if ((c == '/')) {
 // zbr:selfhost/Lexer.zbr:799
-            self.emit(_zbr_ty_TokenKind{ .percent = {} }, "%", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .slash = {} }, "/", ln, cl);
 // zbr:selfhost/Lexer.zbr:800
             return;
         }
 // zbr:selfhost/Lexer.zbr:801
-        if ((c == '=')) {
+        if ((c == '%')) {
 // zbr:selfhost/Lexer.zbr:802
-            if (self.afterLambdaParams) {
+            self.emit(_zbr_ty_TokenKind{ .percent = {} }, "%", ln, cl);
 // zbr:selfhost/Lexer.zbr:803
-                self.afterLambdaParams = false;
-            }
-// zbr:selfhost/Lexer.zbr:804
-            self.emit(_zbr_ty_TokenKind{ .assign = {} }, "=", ln, cl);
-// zbr:selfhost/Lexer.zbr:805
             return;
         }
+// zbr:selfhost/Lexer.zbr:804
+        if ((c == '=')) {
+// zbr:selfhost/Lexer.zbr:805
+            if (self.afterLambdaParams) {
 // zbr:selfhost/Lexer.zbr:806
-        if ((c == '<')) {
+                self.afterLambdaParams = false;
+            }
 // zbr:selfhost/Lexer.zbr:807
-            self.emit(_zbr_ty_TokenKind{ .lt = {} }, "<", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .assign = {} }, "=", ln, cl);
 // zbr:selfhost/Lexer.zbr:808
             return;
         }
 // zbr:selfhost/Lexer.zbr:809
-        if ((c == '>')) {
+        if ((c == '<')) {
 // zbr:selfhost/Lexer.zbr:810
-            self.emit(_zbr_ty_TokenKind{ .gt = {} }, ">", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .lt = {} }, "<", ln, cl);
 // zbr:selfhost/Lexer.zbr:811
             return;
         }
 // zbr:selfhost/Lexer.zbr:812
-        if ((c == '&')) {
+        if ((c == '>')) {
 // zbr:selfhost/Lexer.zbr:813
-            self.emit(_zbr_ty_TokenKind{ .ampersand = {} }, "&", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .gt = {} }, ">", ln, cl);
 // zbr:selfhost/Lexer.zbr:814
             return;
         }
 // zbr:selfhost/Lexer.zbr:815
-        if ((c == '|')) {
+        if ((c == '&')) {
 // zbr:selfhost/Lexer.zbr:816
-            self.emit(_zbr_ty_TokenKind{ .vertical_bar = {} }, "|", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .ampersand = {} }, "&", ln, cl);
 // zbr:selfhost/Lexer.zbr:817
             return;
         }
 // zbr:selfhost/Lexer.zbr:818
-        if ((c == '^')) {
+        if ((c == '|')) {
 // zbr:selfhost/Lexer.zbr:819
-            self.emit(_zbr_ty_TokenKind{ .caret = {} }, "^", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .vertical_bar = {} }, "|", ln, cl);
 // zbr:selfhost/Lexer.zbr:820
             return;
         }
 // zbr:selfhost/Lexer.zbr:821
-        if ((c == '~')) {
+        if ((c == '^')) {
 // zbr:selfhost/Lexer.zbr:822
-            self.emit(_zbr_ty_TokenKind{ .tilde = {} }, "~", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .caret = {} }, "^", ln, cl);
 // zbr:selfhost/Lexer.zbr:823
             return;
         }
 // zbr:selfhost/Lexer.zbr:824
-        if ((c == '?')) {
+        if ((c == '~')) {
 // zbr:selfhost/Lexer.zbr:825
-            self.emit(_zbr_ty_TokenKind{ .question = {} }, "?", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .tilde = {} }, "~", ln, cl);
 // zbr:selfhost/Lexer.zbr:826
             return;
         }
 // zbr:selfhost/Lexer.zbr:827
-        if ((c == '!')) {
+        if ((c == '?')) {
 // zbr:selfhost/Lexer.zbr:828
-            self.emit(_zbr_ty_TokenKind{ .bang = {} }, "!", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .question = {} }, "?", ln, cl);
 // zbr:selfhost/Lexer.zbr:829
             return;
         }
 // zbr:selfhost/Lexer.zbr:830
-        if ((c == '.')) {
+        if ((c == '!')) {
 // zbr:selfhost/Lexer.zbr:831
-            self.emit(_zbr_ty_TokenKind{ .dot = {} }, ".", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .bang = {} }, "!", ln, cl);
 // zbr:selfhost/Lexer.zbr:832
             return;
         }
 // zbr:selfhost/Lexer.zbr:833
-        if ((c == ':')) {
+        if ((c == '.')) {
 // zbr:selfhost/Lexer.zbr:834
-            self.emit(_zbr_ty_TokenKind{ .colon = {} }, ":", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .dot = {} }, ".", ln, cl);
 // zbr:selfhost/Lexer.zbr:835
             return;
         }
 // zbr:selfhost/Lexer.zbr:836
-        if ((c == ';')) {
+        if ((c == ':')) {
 // zbr:selfhost/Lexer.zbr:837
-            self.emit(_zbr_ty_TokenKind{ .semi = {} }, ";", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .colon = {} }, ":", ln, cl);
 // zbr:selfhost/Lexer.zbr:838
             return;
         }
 // zbr:selfhost/Lexer.zbr:839
-        if ((c == ',')) {
+        if ((c == ';')) {
 // zbr:selfhost/Lexer.zbr:840
-            self.emit(_zbr_ty_TokenKind{ .comma = {} }, ",", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .semi = {} }, ";", ln, cl);
 // zbr:selfhost/Lexer.zbr:841
             return;
         }
 // zbr:selfhost/Lexer.zbr:842
-        if ((c == '(')) {
+        if ((c == ',')) {
 // zbr:selfhost/Lexer.zbr:843
-            if ((_zebra_gt(self.parenDepth, 0) and _zebra_gt(@as(i64, @intCast(self.out.items.len)), 0))) {
+            self.emit(_zbr_ty_TokenKind{ .comma = {} }, ",", ln, cl);
 // zbr:selfhost/Lexer.zbr:844
-                const lastKind = _zbr_at(self.out.items, (@as(i64, @intCast(self.out.items.len)) - 1)).kind;
+            return;
+        }
 // zbr:selfhost/Lexer.zbr:845
+        if ((c == '(')) {
+// zbr:selfhost/Lexer.zbr:846
+            if ((_zebra_gt(self.parenDepth, 0) and _zebra_gt(@as(i64, @intCast(self.out.items.len)), 0))) {
+// zbr:selfhost/Lexer.zbr:847
+                const lastKind = _zbr_at(self.out.items, (@as(i64, @intCast(self.out.items.len)) - 1)).kind;
+// zbr:selfhost/Lexer.zbr:848
                 switch (lastKind) {
                     .kw_def => {
-// zbr:selfhost/Lexer.zbr:847
+// zbr:selfhost/Lexer.zbr:850
                         self.inLambdaParams = true;
-// zbr:selfhost/Lexer.zbr:848
+// zbr:selfhost/Lexer.zbr:851
                         self.lambdaParamDepth = (self.parenDepth + 1);
                     },
                     else => {
@@ -1531,269 +1558,271 @@ pub const _zbr_ty_Lexer = struct {
                     },
                 }
             }
-// zbr:selfhost/Lexer.zbr:851
+// zbr:selfhost/Lexer.zbr:854
             self.parenDepth = (self.parenDepth + 1);
-// zbr:selfhost/Lexer.zbr:852
+// zbr:selfhost/Lexer.zbr:855
             self.emit(_zbr_ty_TokenKind{ .lparen = {} }, "(", ln, cl);
-// zbr:selfhost/Lexer.zbr:853
+// zbr:selfhost/Lexer.zbr:856
             return;
         }
-// zbr:selfhost/Lexer.zbr:854
-        if ((c == ')')) {
-// zbr:selfhost/Lexer.zbr:855
-            if ((self.inLambdaParams and (self.parenDepth == self.lambdaParamDepth))) {
-// zbr:selfhost/Lexer.zbr:856
-                self.inLambdaParams = false;
 // zbr:selfhost/Lexer.zbr:857
+        if ((c == ')')) {
+// zbr:selfhost/Lexer.zbr:858
+            if ((self.inLambdaParams and (self.parenDepth == self.lambdaParamDepth))) {
+// zbr:selfhost/Lexer.zbr:859
+                self.inLambdaParams = false;
+// zbr:selfhost/Lexer.zbr:860
                 self.afterLambdaParams = true;
             }
-// zbr:selfhost/Lexer.zbr:858
-            self.parenDepth = (self.parenDepth - 1);
-// zbr:selfhost/Lexer.zbr:859
-            self.emit(_zbr_ty_TokenKind{ .rparen = {} }, ")", ln, cl);
-// zbr:selfhost/Lexer.zbr:860
-            return;
-        }
 // zbr:selfhost/Lexer.zbr:861
-        if ((c == '[')) {
+            self.parenDepth = (self.parenDepth - 1);
 // zbr:selfhost/Lexer.zbr:862
-            self.emit(_zbr_ty_TokenKind{ .lbracket = {} }, "[", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .rparen = {} }, ")", ln, cl);
 // zbr:selfhost/Lexer.zbr:863
             return;
         }
 // zbr:selfhost/Lexer.zbr:864
-        if ((c == ']')) {
+        if ((c == '[')) {
 // zbr:selfhost/Lexer.zbr:865
-            self.emit(_zbr_ty_TokenKind{ .rbracket = {} }, "]", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .lbracket = {} }, "[", ln, cl);
 // zbr:selfhost/Lexer.zbr:866
             return;
         }
 // zbr:selfhost/Lexer.zbr:867
-        if ((c == '{')) {
+        if ((c == ']')) {
 // zbr:selfhost/Lexer.zbr:868
-            self.emit(_zbr_ty_TokenKind{ .lcurly = {} }, "{", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .rbracket = {} }, "]", ln, cl);
 // zbr:selfhost/Lexer.zbr:869
             return;
         }
 // zbr:selfhost/Lexer.zbr:870
-        if ((c == '}')) {
+        if ((c == '{')) {
 // zbr:selfhost/Lexer.zbr:871
-            self.emit(_zbr_ty_TokenKind{ .rcurly = {} }, "}", ln, cl);
+            self.emit(_zbr_ty_TokenKind{ .lcurly = {} }, "{", ln, cl);
 // zbr:selfhost/Lexer.zbr:872
             return;
         }
 // zbr:selfhost/Lexer.zbr:873
+        if ((c == '}')) {
+// zbr:selfhost/Lexer.zbr:874
+            self.emit(_zbr_ty_TokenKind{ .rcurly = {} }, "}", ln, cl);
+// zbr:selfhost/Lexer.zbr:875
+            return;
+        }
+// zbr:selfhost/Lexer.zbr:876
         { _zbr_rt._error_ctx = .{ .message = self.lexErr(c, ln, cl) }; return error.ZebraError; }
     }
 
+    // zbr:selfhost/Lexer.zbr:880
     pub fn scanToken(self: *_zbr_ty_Lexer) anyerror!void {
-// zbr:selfhost/Lexer.zbr:878
-        const c: u8 = _zbr_at(self.src, self.pos);
-// zbr:selfhost/Lexer.zbr:879
-        const ln: i64 = self.line;
-// zbr:selfhost/Lexer.zbr:880
-        const cl: i64 = self.col();
 // zbr:selfhost/Lexer.zbr:881
+        const c: u8 = _zbr_at(self.src, self.pos);
+// zbr:selfhost/Lexer.zbr:882
+        const ln: i64 = self.line;
+// zbr:selfhost/Lexer.zbr:883
+        const cl: i64 = self.col();
+// zbr:selfhost/Lexer.zbr:884
         switch (c) {
             '0'...'9' => {
-// zbr:selfhost/Lexer.zbr:883
+// zbr:selfhost/Lexer.zbr:886
                 (try self.scanNumericLiteral(ln, cl));
             },
             '@' => {
-// zbr:selfhost/Lexer.zbr:885
+// zbr:selfhost/Lexer.zbr:888
                 (try self.scanAt(ln, cl));
             },
             'a'...'z' => {
-// zbr:selfhost/Lexer.zbr:887
+// zbr:selfhost/Lexer.zbr:890
                 (try self.scanIdentOrKeyword(ln, cl));
             },
             'A'...'Z' => {
-// zbr:selfhost/Lexer.zbr:889
+// zbr:selfhost/Lexer.zbr:892
                 (try self.scanIdentOrKeyword(ln, cl));
             },
             '_' => {
-// zbr:selfhost/Lexer.zbr:891
+// zbr:selfhost/Lexer.zbr:894
                 (try self.scanIdentOrKeyword(ln, cl));
             },
             '\'' => {
-// zbr:selfhost/Lexer.zbr:893
+// zbr:selfhost/Lexer.zbr:896
                 (try self.scanSingleQuote(ln, cl));
             },
             '"' => {
-// zbr:selfhost/Lexer.zbr:895
+// zbr:selfhost/Lexer.zbr:898
                 (try self.scanString(c, ln, cl));
             },
             else => {
-// zbr:selfhost/Lexer.zbr:897
+// zbr:selfhost/Lexer.zbr:900
                 (try self.scanOperator(ln, cl));
             },
         }
     }
 
+    // zbr:selfhost/Lexer.zbr:904
     pub fn run(self: *_zbr_ty_Lexer) anyerror!void {
-// zbr:selfhost/Lexer.zbr:902
-        var atLineStart: bool = true;
-// zbr:selfhost/Lexer.zbr:903
-        while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:904
-            if (atLineStart) {
 // zbr:selfhost/Lexer.zbr:905
-                atLineStart = false;
+        var atLineStart: bool = true;
 // zbr:selfhost/Lexer.zbr:906
-                const lk = self.classifyLine();
+        while (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:907
+            if (atLineStart) {
+// zbr:selfhost/Lexer.zbr:908
+                atLineStart = false;
+// zbr:selfhost/Lexer.zbr:909
+                const lk = self.classifyLine();
+// zbr:selfhost/Lexer.zbr:910
                 switch (lk) {
                     .empty => {
-// zbr:selfhost/Lexer.zbr:909
-                        const ln: i64 = self.line;
-// zbr:selfhost/Lexer.zbr:910
-                        const cl: i64 = self.col();
-// zbr:selfhost/Lexer.zbr:911
-                        self.advanceNewline();
 // zbr:selfhost/Lexer.zbr:912
-                        if ((((self.parenDepth == 0) or self.afterLambdaParams) or _zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0))) {
+                        const ln: i64 = self.line;
 // zbr:selfhost/Lexer.zbr:913
-                            self.emit(_zbr_ty_TokenKind{ .eol = {} }, "\n", ln, cl);
+                        const cl: i64 = self.col();
 // zbr:selfhost/Lexer.zbr:914
-                            if (self.afterLambdaParams) {
+                        self.advanceNewline();
 // zbr:selfhost/Lexer.zbr:915
-                                self.afterLambdaParams = false;
+                        if ((((self.parenDepth == 0) or self.afterLambdaParams) or _zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0))) {
 // zbr:selfhost/Lexer.zbr:916
+                            self.emit(_zbr_ty_TokenKind{ .eol = {} }, "\n", ln, cl);
+// zbr:selfhost/Lexer.zbr:917
+                            if (self.afterLambdaParams) {
+// zbr:selfhost/Lexer.zbr:918
+                                self.afterLambdaParams = false;
+// zbr:selfhost/Lexer.zbr:919
                                 self.lambdaStack.append(_zbr_rt._allocator, self.indentDepth) catch @panic("OOM");
                             }
                         }
-// zbr:selfhost/Lexer.zbr:917
+// zbr:selfhost/Lexer.zbr:920
                         atLineStart = true;
                         continue;
                     },
                     .whitespace_only => {
-// zbr:selfhost/Lexer.zbr:920
+// zbr:selfhost/Lexer.zbr:923
                         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) != '\n'))) {
-// zbr:selfhost/Lexer.zbr:921
+// zbr:selfhost/Lexer.zbr:924
                             self.pos = (self.pos + 1);
                         }
-// zbr:selfhost/Lexer.zbr:922
+// zbr:selfhost/Lexer.zbr:925
                         if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:923
+// zbr:selfhost/Lexer.zbr:926
                             self.advanceNewline();
                         }
-// zbr:selfhost/Lexer.zbr:924
+// zbr:selfhost/Lexer.zbr:927
                         atLineStart = true;
                         continue;
                     },
                     .comment_only => {
-// zbr:selfhost/Lexer.zbr:927
+// zbr:selfhost/Lexer.zbr:930
                         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) != '\n'))) {
-// zbr:selfhost/Lexer.zbr:928
+// zbr:selfhost/Lexer.zbr:931
                             self.pos = (self.pos + 1);
                         }
-// zbr:selfhost/Lexer.zbr:929
+// zbr:selfhost/Lexer.zbr:932
                         if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
-// zbr:selfhost/Lexer.zbr:930
+// zbr:selfhost/Lexer.zbr:933
                             self.advanceNewline();
                         }
-// zbr:selfhost/Lexer.zbr:931
+// zbr:selfhost/Lexer.zbr:934
                         atLineStart = true;
                         continue;
                     },
                     .block_comment_only => {
-// zbr:selfhost/Lexer.zbr:937
-                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and ((_zbr_at(self.src, self.pos) == ' ') or (_zbr_at(self.src, self.pos) == '\t')))) {
-// zbr:selfhost/Lexer.zbr:938
-                            self.pos = (self.pos + 1);
-                        }
-// zbr:selfhost/Lexer.zbr:939
-                        (try self.scanBlockComment());
 // zbr:selfhost/Lexer.zbr:940
-                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) != '\n'))) {
+                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and ((_zbr_at(self.src, self.pos) == ' ') or (_zbr_at(self.src, self.pos) == '\t')))) {
 // zbr:selfhost/Lexer.zbr:941
                             self.pos = (self.pos + 1);
                         }
 // zbr:selfhost/Lexer.zbr:942
-                        if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
+                        (try self.scanBlockComment());
 // zbr:selfhost/Lexer.zbr:943
+                        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) != '\n'))) {
+// zbr:selfhost/Lexer.zbr:944
+                            self.pos = (self.pos + 1);
+                        }
+// zbr:selfhost/Lexer.zbr:945
+                        if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
+// zbr:selfhost/Lexer.zbr:946
                             self.advanceNewline();
                         }
-// zbr:selfhost/Lexer.zbr:944
+// zbr:selfhost/Lexer.zbr:947
                         atLineStart = true;
                         continue;
                     },
                     .has_content => {
-// zbr:selfhost/Lexer.zbr:947
+// zbr:selfhost/Lexer.zbr:950
                         if (((self.parenDepth == 0) or _zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0))) {
-// zbr:selfhost/Lexer.zbr:948
+// zbr:selfhost/Lexer.zbr:951
                             (try self.processIndentation());
                         }
                     },
                 }
             }
-// zbr:selfhost/Lexer.zbr:950
-            const c: u8 = _zbr_at(self.src, self.pos);
-// zbr:selfhost/Lexer.zbr:952
-            if (((c == ' ') or (c == '\t'))) {
 // zbr:selfhost/Lexer.zbr:953
+            const c: u8 = _zbr_at(self.src, self.pos);
+// zbr:selfhost/Lexer.zbr:955
+            if (((c == ' ') or (c == '\t'))) {
+// zbr:selfhost/Lexer.zbr:956
                 self.pos = (self.pos + 1);
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:956
-            if ((c == '\n')) {
-// zbr:selfhost/Lexer.zbr:957
-                const ln: i64 = self.line;
-// zbr:selfhost/Lexer.zbr:958
-                const cl: i64 = self.col();
 // zbr:selfhost/Lexer.zbr:959
-                self.advanceNewline();
+            if ((c == '\n')) {
 // zbr:selfhost/Lexer.zbr:960
-                if ((((self.parenDepth == 0) or self.afterLambdaParams) or _zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0))) {
+                const ln: i64 = self.line;
 // zbr:selfhost/Lexer.zbr:961
-                    self.emit(_zbr_ty_TokenKind{ .eol = {} }, "\n", ln, cl);
+                const cl: i64 = self.col();
 // zbr:selfhost/Lexer.zbr:962
-                    if (self.afterLambdaParams) {
+                self.advanceNewline();
 // zbr:selfhost/Lexer.zbr:963
-                        self.afterLambdaParams = false;
+                if ((((self.parenDepth == 0) or self.afterLambdaParams) or _zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0))) {
 // zbr:selfhost/Lexer.zbr:964
+                    self.emit(_zbr_ty_TokenKind{ .eol = {} }, "\n", ln, cl);
+// zbr:selfhost/Lexer.zbr:965
+                    if (self.afterLambdaParams) {
+// zbr:selfhost/Lexer.zbr:966
+                        self.afterLambdaParams = false;
+// zbr:selfhost/Lexer.zbr:967
                         self.lambdaStack.append(_zbr_rt._allocator, self.indentDepth) catch @panic("OOM");
                     }
                 }
-// zbr:selfhost/Lexer.zbr:965
+// zbr:selfhost/Lexer.zbr:968
                 atLineStart = true;
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:968
+// zbr:selfhost/Lexer.zbr:971
             if ((c == '#')) {
-// zbr:selfhost/Lexer.zbr:969
+// zbr:selfhost/Lexer.zbr:972
                 while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) != '\n'))) {
-// zbr:selfhost/Lexer.zbr:970
+// zbr:selfhost/Lexer.zbr:973
                     self.pos = (self.pos + 1);
                 }
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:973
+// zbr:selfhost/Lexer.zbr:976
             if (((c == '/') and (self.peek1() == '#'))) {
-// zbr:selfhost/Lexer.zbr:974
+// zbr:selfhost/Lexer.zbr:977
                 (try self.scanBlockComment());
                 continue;
             }
-// zbr:selfhost/Lexer.zbr:977
+// zbr:selfhost/Lexer.zbr:980
             (try self.scanToken());
         }
-// zbr:selfhost/Lexer.zbr:979
+// zbr:selfhost/Lexer.zbr:982
         if ((!atLineStart)) {
-// zbr:selfhost/Lexer.zbr:980
+// zbr:selfhost/Lexer.zbr:983
             self.emit(_zbr_ty_TokenKind{ .eol = {} }, "", self.line, self.col());
         }
-// zbr:selfhost/Lexer.zbr:982
-        const eofCol: i64 = self.col();
-// zbr:selfhost/Lexer.zbr:983
-        const eofLn: i64 = self.line;
-// zbr:selfhost/Lexer.zbr:984
-        while (_zebra_gt(self.indentDepth, 0)) {
 // zbr:selfhost/Lexer.zbr:985
-            self.emit(_zbr_ty_TokenKind{ .dedent = {} }, "", eofLn, eofCol);
+        const eofCol: i64 = self.col();
 // zbr:selfhost/Lexer.zbr:986
+        const eofLn: i64 = self.line;
+// zbr:selfhost/Lexer.zbr:987
+        while (_zebra_gt(self.indentDepth, 0)) {
+// zbr:selfhost/Lexer.zbr:988
+            self.emit(_zbr_ty_TokenKind{ .dedent = {} }, "", eofLn, eofCol);
+// zbr:selfhost/Lexer.zbr:989
             self.indentDepth = (self.indentDepth - 1);
         }
-// zbr:selfhost/Lexer.zbr:987
+// zbr:selfhost/Lexer.zbr:990
         self.emit(_zbr_ty_TokenKind{ .eof = {} }, "", eofLn, eofCol);
     }
 

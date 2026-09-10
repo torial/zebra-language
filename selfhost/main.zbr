@@ -4576,6 +4576,31 @@ def findZbrComment(zig_lines: List(str), err_line: int): str
 # a method/field-not-found error reads in Zebra terms (`str`, not `[]const u8`;
 # `Foo`, not `module.Foo`) instead of leaking generated-code internals.
 def humanizeZigTypes(msg: str, mod_name: str): str
+    # BUG-410: the missing-`return` error, in the user's words.
+    if "implicitly returns" in msg and "non-void return type" in msg
+        var rt_name: str = msg
+        var q1: int = rt_name.indexOf("'")
+        if q1 >= 0
+            rt_name = rt_name.substring(q1 + 1, rt_name.len)
+            var q2: int = rt_name.indexOf("'")
+            if q2 >= 0
+                rt_name = rt_name.substring(0, q2)
+        rt_name = humanizeZigTypes2(rt_name, mod_name)
+        # Whole-name primitives: the user wrote `int`/`float`, never `i64`/`f64`.
+        if rt_name == "i64"
+            rt_name = "int"
+        else if rt_name == "f64"
+            rt_name = "float"
+        else if rt_name == "?i64"
+            rt_name = "int?"
+        else if rt_name == "?f64"
+            rt_name = "float?"
+        else if rt_name == "?str"
+            rt_name = "str?"
+        return "error: this def is declared to return " + rt_name + " but can reach the end of its body without a `return` -- every path needs one"
+    return humanizeZigTypes2(msg, mod_name)
+
+def humanizeZigTypes2(msg: str, mod_name: str): str
     var m: str = msg
     m = m.replace("[]const u8", "str")
     m = m.replace("[]u8", "str")

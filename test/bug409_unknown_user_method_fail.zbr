@@ -1,0 +1,13 @@
+# BUG-409: calling a method the class does not have (`c.bumpp()`, a typo of `bump`)
+# used to reach Zig, which complained about `_zbr_fn_bumpp` on `_zbr_ty_Counter`.
+# The checker refuses it in Zebra terms and lists the methods the class does have.
+class Counter
+    var n: int = 0
+    def bump()
+        this.n += 1
+    def value(): int
+        return this.n
+def main()
+    var c = Counter()
+    c.bumpp()
+    print(c.value())

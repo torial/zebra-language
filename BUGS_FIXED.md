@@ -36,6 +36,70 @@ codegen fills the runtime's second `flag(long, short)` argument for the document
 one-arg form; `Compress.gzip -> str`, `gunzip -> str?` (QUICKSTART said List(byte); the
 runtime returns str -- the doc is corrected). Fixture bug392_stdlib_str_returns_test.
 
+### BUG-416: `re.split(text)` was documented in the book and missing from the compiler — FIXED 2026-09-10
+
+`_regex_split` in the runtime (the pieces between matches; no match → the whole input),
+typed `List(str)`, dispatched like `findAll`; the str-`split` iterator paths
+(`isSplitIter`, the `List(str)` var-init collect) now step aside for a Regex receiver.
+Known limit: `Regex.compile(p).split(s)` on a call temp still takes the generic path —
+bind the regex first. QUICKSTART's Regex table gains the row. Fixture
+bug416_regex_split_test.
+
+### BUG-415: a `catch |e|` binding in a USED module failed in Zig with "undeclared identifier '_zbr_error_msg'" — FIXED 2026-09-10
+
+BUG-400 lowered the binding to `_zbr_error_msg()`, and the helper was appended to the
+ROOT module only; a dependency that used the same form compiled to Zig that could not
+find it. Found by the compiler's own Lexer (BUG-411's messages). `generateDepWith` now
+appends the helper to any dependency that uses it. Fixture
+bug415_dep_module_catch_message_test + bug415_dep_catch_lib.
+
+### BUG-414: a comptime float expression printed as a Zig format error — FIXED 2026-09-10
+
+`print(1.0 / 3.0)`, `"${0.5 + 0.25}"`: the value is a `comptime_float`, and `{d}` on it
+is refused by Zig. Print and interpolation wrap a float-typed expression in
+`@as(f64, ...)` (`isFloatTyped`, `emitAsF64`). Fixture bug413_414_float_div_print_test.
+
+### BUG-413: `7.0 / 2` and `x / 2.0` (a float beside an int) failed in Zig — FIXED 2026-09-10
+
+Zig refuses to divide a float by an int literal without a cast, and `/` on a runtime
+int demands `@divTrunc`. When either operand of `/` is a float, the other is emitted as
+an f64 (`emitAsF64`: an int literal gets a `.0`, a runtime int a `@floatFromInt`).
+Same fixture as BUG-414.
+
+### BUG-412: `s += "x"` on a str was refused ("`+=` needs a numeric target") — FIXED 2026-09-10
+
+The compound-assignment check only knew numbers. A str target (a local or a class field,
+`this.log += x`) is now concatenation: codegen lowers it to `s = _str_concat(s, x)`.
+`s += 1` is still refused, and the message now says what `+=` means on a str
+(bug253_compound_assign_fail pins it). Fixture bug412_str_plus_eq_test.
+
+### BUG-411: a lexer error was a bare Zig error NAME with no location — FIXED 2026-09-10
+
+`error: IndentationNotMultipleOf4`, `error: UnterminatedString`, `error: MixedTabsAndSpaces`
+— no file, line or column, and not a sentence. Every lexer refusal now reads
+`file:line:col: error: <message>` like the rest of the front end (`Parser.lexWithFile`
+adds the file name). Fixture bug411_indent_error_fail.
+
+### BUG-410: a def that can fall off its end surfaced as Zig's "implicitly returns" on a GENERATED line — FIXED 2026-09-10
+
+`def sign(x: int): int` with an `if`/`else if` and no final `return` is a Zig error —
+"function with non-void return type 'i64' implicitly returns" — anchored on a line of
+the emitted `.zig`. Codegen now stamps a `// zbr:` marker above every fn signature so
+the remap lands on the def's own line, and `humanizeZigTypes` rewrites the message:
+"this def is declared to return int but can reach the end of its body without a
+`return` -- every path needs one". Fixture bug410_missing_return_fail (a `smoke_run_fail`:
+the refusal happens at the Zig stage and must not name a `.zig` file).
+
+### BUG-409: calling a method a user class does not have reached Zig — FIXED 2026-09-10
+
+`c.bumpp()` (a typo of `bump`) got "no field or member function named '_zbr_fn_bumpp'
+in '_zbr_ty_Counter'". The checker refuses it: `'Counter' has no method 'bumpp'
+(methods: bump/value)`. Structs, mixin-provided methods, `toString`, and field access
+are untouched (`ClassTypes.is_struct` separates the two), and a struct's
+`@derive(Debug/Eq/Hash)` methods are registered so `k.hash()` / `a.eql(b)` pass (the
+book's corpus sweep caught that on the first run). Fixture
+bug409_unknown_user_method_fail.
+
 ### BUG-408: a class or struct without `toString()`, a tuple, a union printed Zig internals — FIXED 2026-09-10
 
 The rest of BUG-406: `.{ ._type_tag = 2794039953, .y = 1 }`, `.{ 1, { 97 } }`,

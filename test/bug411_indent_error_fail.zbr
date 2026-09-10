@@ -1,0 +1,6 @@
+# BUG-411: a lexer error (here: an indentation that is not a multiple of 4) used to
+# surface as the bare Zig error NAME -- `error: IndentationNotMultipleOf4` -- with no
+# file, line or column. It now reads like every other diagnostic.
+def main()
+    var x = 1
+      print(x)

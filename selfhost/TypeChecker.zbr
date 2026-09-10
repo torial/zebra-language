@@ -215,11 +215,15 @@ class ClassTypes
     # B5(a): true iff this entry is an `interface`.  `obj is IFace` resolves at
     # compile time (interfaces have no `_type_tag`); a class is a tag check.
     var is_interface: bool
+    # BUG-409: true iff a `struct` (a value type); with is_class this separates the
+    # user's own types from mixins/unions/pseudo-classes for the unknown-method refusal.
+    var is_struct: bool
 
     cue init(name: str)
         .name = internString(name)
         is_class = false
         is_interface = false
+        is_struct = false
         field_types = HashMap()
         method_returns = HashMap()
         method_params = HashMap()
@@ -892,7 +896,16 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                         mt.addClassInterfaces(c.name, ci_pipe)
             on Decl.struct_ as s
                 var ct2 = ClassTypes(s.name)
+                ct2.is_struct = true
                 addClassMembers(mt, ct2, s.members)
+                # BUG-409: `@derive(Debug/Eq/Hash)` generates toString/eql/hash in
+                # codegen; register them here so the unknown-method refusal knows them.
+                if s.mods.is_derive_debug
+                    ct2.setMethodReturn("toString", Type_.string_)
+                if s.mods.is_derive_eq
+                    ct2.setMethodReturn("eql", Type_.bool_)
+                if s.mods.is_derive_hash
+                    ct2.setMethodReturn("hash", Type_.uint_)
                 mt.addClass(ct2)
                 if s.ifaces.len > 0
                     var si_pipe: str = ""
@@ -2722,6 +2735,20 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             var rt: Type_? = ctx.methodReturnAny(tn, mem.member)
                             if rt as rt_v
                                 return rt_v
+                            # BUG-409: a method the class does not have (`c.bumpp()`) reached
+                            # Zig ("no field or member function named 'bumpp' in 'C'"). A
+                            # USER class or struct of THIS module (registered by
+                            # populateModuleTypes, so its whole method set is known; mixins
+                            # are merged in pass 2) refuses an unknown member here, naming
+                            # its methods. Interfaces, dep classes and the stdlib-backed
+                            # names below are left to the arms that know them.
+                            if ctx.module_types.classOf(tn) as user_ct
+                                if user_ct.is_class or user_ct.is_struct
+                                    if not user_ct.is_interface and mem.member != "toString"
+                                        if ctx.fieldTypeAny(tn, mem.member) == nil
+                                            ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                                       "'" + tn + "' has no method '" + mem.member + "'" + methodListHint(user_ct))
+                                            return Type_.unknown_
                             # BUG-242. Csv instance methods. A row is NOT a distinct type
                             # here: `_csv_header`/`_csv_row` return `std.ArrayList([]const
                             # u8)`, which is exactly how List(str) is represented, so typing
@@ -2791,12 +2818,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.string_
                             if mname == "test" or mname == "match"
                                 return Type_.bool_
-                            if mname == "findAll" or mname == "groups"
+                            if mname == "findAll" or mname == "groups" or mname == "split"
                                 return Type_.list_(Type_.string_)
                             # BUG-393: `matches` / `replaceAll` passed -c and failed in
                             # Zig ("no field or member function"). The Regex method set
                             # is QUICKSTART's table; name it.
-                            ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'Regex' has no method '" + mname + "' (match/test/find/findAll/replace/groups)")
+                            ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'Regex' has no method '" + mname + "' (match/test/find/findAll/replace/split/groups)")
                             return Type_.unknown_
                         on Type_.code_editor
                             # BUG-212, second half. `_code_editor_get_text` returns
@@ -3774,7 +3801,24 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                     pass
             if is_compound
                 var lhs_t: Type_ = inferExpr(sasn.target, ctx)
-                if isArithmeticMistake(lhs_t)
+                # BUG-412: `s += "x"` on a str is concatenation (codegen lowers it to
+                # `s = _str_concat(s, x)`); only the other compound ops are refused.
+                var str_plus_eq: bool = false
+                if isString(lhs_t)
+                    if sasn.op is AssignOp.plus_eq
+                        str_plus_eq = true
+                if str_plus_eq
+                    # ...but only with a str on the right: `s += 1` is still refused, and
+                    # says what `+=` means on a str (BUG-253's fixture pins the message).
+                    var rhs_t: Type_ = inferExpr(sasn.value, ctx)
+                    var rhs_bad: bool = isNumeric(rhs_t)
+                    if isArithmeticMistake(rhs_t) and not isString(rhs_t)
+                        rhs_bad = true
+                    if rhs_bad
+                        ctx.addErr(ctx.file, anchorLine(sasn.target, sasn.span.line), anchorCol(sasn.target, sasn.span.col),
+                                   "compound assignment requires numeric type, got 'str' += '"
+                                   + typeTag(rhs_t) + "' (on a str, `+=` appends another str)")
+                else if isArithmeticMistake(lhs_t)
                     ctx.addErr(ctx.file, anchorLine(sasn.target, sasn.span.line), anchorCol(sasn.target, sasn.span.col),
                                "compound assignment requires numeric type, got '"
                                + typeTag(lhs_t) + "'")
@@ -5012,6 +5056,16 @@ def checkHatClassDecl(decl: Decl, file: str, ctx: InferCtx)
 # struct member name 'init'"); `implements <mixin>` / `adds <interface>` swapped the
 # keywords and failed as "use of undeclared identifier". The checker knows every one
 # of these at declaration time.
+# BUG-409 helper: " (methods: a/b/c)" for the refusal, or "" when the class has none.
+def methodListHint(ct: ClassTypes): str
+    var names: List(str) = List(str)()
+    for k in ct.method_returns.keys()
+        names.add(k)
+    if names.len == 0
+        return ""
+    names.sort()
+    return " (methods: " + names.join("/") + ")"
+
 def checkDeclShapes(m: Module, file: str, ctx: InferCtx)
     var iface_names: List(str) = List(str)()
     var mixin_names: List(str) = List(str)()

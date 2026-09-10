@@ -1,0 +1,9 @@
+# BUG-416: `re.split(text)` -- documented in the book, missing from the compiler.
+def main()
+    var re = Regex.compile("[,;] *")
+    var parts = re.split("a, b;c,,d")
+    print(parts)
+    print(parts.count())
+    var rx = Regex.compile("x")
+    var none = rx.split("abc")
+    print(none)

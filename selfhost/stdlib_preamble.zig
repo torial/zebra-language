@@ -2889,6 +2889,24 @@ pub fn _regex_find_all(re: Regex, input: []const u8) std.ArrayList([]const u8) {
     }
     return out;
 }
+// BUG-416: `re.split(text)` -- the pieces BETWEEN matches (a leading/trailing piece may
+// be empty, as in Python's re.split); no match -> the whole input as one piece.
+pub fn _regex_split(re: Regex, input: []const u8) std.ArrayList([]const u8) {
+    var out: std.ArrayList([]const u8) = .empty;
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i < input.len) {
+        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| {
+            if (e > i) {
+                out.append(std.heap.page_allocator, input[start..i]) catch @panic("OOM");
+                start = e;
+                i = e;
+            } else i += 1;
+        } else i += 1;
+    }
+    out.append(std.heap.page_allocator, input[start..]) catch @panic("OOM");
+    return out;
+}
 pub fn _regex_replace(re: Regex, input: []const u8, sub: []const u8) []const u8 {
     var out: std.ArrayList(u8) = .empty;
     var i: usize = 0;

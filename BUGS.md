@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-408. Next new bug: BUG-409.**
+**Last bug number generated: BUG-418. Next new bug: BUG-419.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,35 @@
 > measured in.
 
 ---
+
+### BUG-418: a generic class field `HashMap(K, V)` emits `std.StringHashMap(anytype)` — OPEN (found 2026-09-10)
+
+```zebra
+class Cache(K, V)
+    var data: HashMap(K, V) = HashMap()
+    def clear
+        data = HashMap()
+```
+
+Passes `-c`; the emitted `_self.data = std.StringHashMap(anytype).init(...)` is not Zig.
+The book's ch13 `13_generic_cache.zbr` is the reproducer (its `-c` pass is in the book
+baseline, so the validator cannot see it). A generic class whose field is a container of
+its own type parameters needs the field's type resolved at instantiation, the way
+`List(T)` params already are. Not touched.
+
+### BUG-417: the book's `text -> .lower() -> .trim()` pipeline form does not exist — DECISION NEEDED (found 2026-09-10)
+
+Chapter 15 of the book is built on `->` piping into a leading-dot method call
+(`x -> .lower()` meaning `x.lower()`). The compiler parses `.lower()` as `this.lower()`:
+outside a class that is "'this' used outside a class/struct method"; inside a static
+class it passed `-c` by accident until BUG-409 (and now reads "'StringProcessor' has no
+method 'lower'"). Every chapter-15 example that uses the form fails; the four that passed
+were the accidental ones. `->` today means `a -> f` ≡ `f(a)` (QUICKSTART §3.1).
+
+**Recommendation (Fable, for Sean):** add the form to the language rather than rewrite the
+chapter — in the parser, when the right operand of `->` is a leading-dot call, desugar to a
+method call on the left operand; it is one arm, reads well, and the book already teaches
+it. Left for the morning because it is syntax, not a fix.
 
 ### BUG-351: `StringBuilder.build()` EMPTIES the builder — `sb.len()` is 0 afterwards — OPEN (found 2026-09-08)
 

@@ -1,0 +1,15 @@
+# BUG-412: `s += "x"` on a str is concatenation. It used to be refused ("`+=` needs a
+# numeric target") -- and a class field (`this.log += ...`) with it.
+class Log
+    var text: str = ""
+    def add(s: str)
+        this.text += s
+        this.text += "|"
+def main()
+    var s = "a"
+    s += "b"
+    s += "c"
+    var l = Log()
+    l.add("x")
+    l.add("y")
+    print("${s} ${l.text}")

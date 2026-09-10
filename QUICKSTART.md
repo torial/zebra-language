@@ -205,6 +205,9 @@ verified against the compiler, not recalled.
 | `n == "3"` (int vs str) | convert one side | `error: cannot compare 'int' with 'str'` |
 | `xs.length` | `xs.len` / `xs.count()` | `error: 'List' has no property 'length'` |
 | `var x: int = None` | `var x: int? = nil` | `error: 'x' is declared int and cannot hold nil` |
+| `obj.methd()` (a typo) | the method the class has | `error: 'Counter' has no method 'methd' (methods: bump/value)` |
+| a `def f(): int` whose `if`/`else if` chain has no final `return` | end every path with `return` | `error: this def is declared to return int but can reach the end of its body without a \`return\`` |
+| 6-space or tab indentation | 4 spaces per level | `error: indentation is 6 space(s); Zebra indents by multiples of 4` |
 
 The ternary is the one worth memorising, because `1 if c else 2` *reads* like it should
 work. Zebra's form is **`if(cond, then_value, else_value)`** — an expression, usable
@@ -217,6 +220,7 @@ These are the dangerous ones. No error, no warning, just a different number.
 | expression | Zebra | Python | why |
 |---|---|---|---|
 | `-7 / 2` | **-3** | `-7 // 2` is **-4** | Zebra **truncates toward zero**; Python **floors** |
+| `7 / 2` | **3** (int) — `7.0 / 2` or `7 / 2.0` is **3.5** | `3.5` | `/` on two ints is integer division; one float operand makes it float division |
 | `-7 % 2` | **-1** | **1** | remainder takes the sign of the **dividend**; Python's takes the **divisor** |
 | `s[0]` | a **byte** (`97`-ish) | `'a'`, a 1-char `str` | Zebra indexes **bytes**; see below |
 
@@ -362,6 +366,9 @@ All twelve, on any type the underlying operator accepts:
 |---|---|
 | arithmetic | `+=`  `-=`  `*=`  `/=`  `//=`  `%=`  `**=` |
 | bitwise | `&=`  `\|=`  `^=`  `<<=`  `>>=` |
+
+`+=` on a `str` (a local or a field, `this.log += line`) is concatenation — `s += "x"` is
+`s = s + "x"` (BUG-412).
 
 ```zebra
 def main()
@@ -3332,6 +3339,7 @@ var roll = rng.nextInt(1, 6)        # same seed → same sequence, every run
 | `re.find(s)`                      | str            | First matching substring            |
 | `re.findAll(s)`                   | `[]str`        | All non-overlapping matches         |
 | `re.replace(s, repl)`             | str            | Replace all matches with `repl`     |
+| `re.split(s)`                     | `[]str`        | The pieces between matches (BUG-416) |
 | `re.groups(s)`                    | `[]str`        | Capture groups: index 0 = full match, 1+ = groups |
 
 ### `DateTime` — date/time

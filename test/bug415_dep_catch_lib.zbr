@@ -1,0 +1,13 @@
+# BUG-415: a DEPENDENCY module using a bare `catch |e|` binding (which lowers to
+# `_zbr_error_msg()`) never received that helper -- only the root module did -- so
+# the generated Zig failed with "use of undeclared identifier '_zbr_error_msg'".
+def risky(n: int): int throws
+    if n < 0
+        raise "negative: ${n}"
+    return n * 2
+
+def safe(n: int): str
+    var v = risky(n)
+    return "ok ${v}"
+catch |e|
+    return "caught " + e

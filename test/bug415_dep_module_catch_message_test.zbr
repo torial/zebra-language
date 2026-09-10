@@ -1,0 +1,5 @@
+# BUG-415: see bug415_dep_catch_lib.zbr -- the catch binding lives in the USED module.
+use bug415_dep_catch_lib exposing safe
+def main()
+    print(safe(4))
+    print(safe(-1))

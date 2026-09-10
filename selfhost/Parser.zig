@@ -1323,6 +1323,7 @@ pub const _zbr_ty_Parser = struct {
         return _self;
     }
 
+    // zbr:selfhost/Parser.zbr:843
     pub fn peek(self: *_zbr_ty_Parser) *Token._zbr_ty_Token {
         defer self._check_invariant();
         if (!(_zebra_gt(@as(i64, @intCast(self.tokens.items.len)), 0))) std.debug.panic("require failed in 'peek'\n", .{});
@@ -1335,6 +1336,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_at(self.tokens.items, (@as(i64, @intCast(self.tokens.items.len)) - 1));
     }
 
+    // zbr:selfhost/Parser.zbr:854
     pub fn peekAt(self: *_zbr_ty_Parser, offset: i64) *Token._zbr_ty_Token {
         defer self._check_invariant();
         if (!(_zebra_gt(@as(i64, @intCast(self.tokens.items.len)), 0))) std.debug.panic("require failed in 'peekAt'\n", .{});
@@ -1350,6 +1352,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_at(self.tokens.items, (@as(i64, @intCast(self.tokens.items.len)) - 1));
     }
 
+    // zbr:selfhost/Parser.zbr:867
     pub fn advance(self: *_zbr_ty_Parser) void {
         defer self._check_invariant();
         const _old_0 = self.pos;
@@ -1366,12 +1369,14 @@ pub const _zbr_ty_Parser = struct {
         _ensure_armed = true;
     }
 
+    // zbr:selfhost/Parser.zbr:877
     pub fn textIs(self: *_zbr_ty_Parser, s: []const u8) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:878
         return std.mem.eql(u8, self.peek().text, s);
     }
 
+    // zbr:selfhost/Parser.zbr:880
     pub fn sourceLine(self: *_zbr_ty_Parser, li: i64) []const u8 {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:881
@@ -1398,6 +1403,7 @@ pub const _zbr_ty_Parser = struct {
         return "";
     }
 
+    // zbr:selfhost/Parser.zbr:890
     pub fn errorAt(self: *_zbr_ty_Parser, msg: []const u8) []const u8 {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:891
@@ -1428,6 +1434,7 @@ pub const _zbr_ty_Parser = struct {
         return head;
     }
 
+    // zbr:selfhost/Parser.zbr:911
     pub fn refuseTrailingColon(self: *_zbr_ty_Parser) anyerror!void {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:912
@@ -1437,6 +1444,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:915
     pub fn unexpectedExprMsg(self: *_zbr_ty_Parser) []const u8 {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:916
@@ -1460,6 +1468,7 @@ pub const _zbr_ty_Parser = struct {
         return self.errorAt(_str_concat(_str_concat("unexpected expression token: '", t, _zbr_rt._allocator), "'", _zbr_rt._allocator));
     }
 
+    // zbr:selfhost/Parser.zbr:928
     pub fn unexpectedTopLevelMsg(self: *_zbr_ty_Parser) []const u8 {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:929
@@ -1478,6 +1487,7 @@ pub const _zbr_ty_Parser = struct {
         return self.errorAt(_str_concat(_str_concat("unexpected top-level token: '", t, _zbr_rt._allocator), "' — expected a declaration (def, class, struct, enum, union, use, var, const)", _zbr_rt._allocator));
     }
 
+    // zbr:selfhost/Parser.zbr:936
     pub fn expectText(self: *_zbr_ty_Parser, s: []const u8) anyerror!void {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:937
@@ -1489,6 +1499,7 @@ pub const _zbr_ty_Parser = struct {
         self.advance();
     }
 
+    // zbr:selfhost/Parser.zbr:941
     pub fn isEol(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:942
@@ -1504,6 +1515,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:948
     pub fn isIndent(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:949
@@ -1519,6 +1531,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:955
     pub fn isDedent(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:956
@@ -1534,6 +1547,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:962
     pub fn isEof(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:963
@@ -1549,6 +1563,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:971
     pub fn isRecoveryStarter(self: *_zbr_ty_Parser, kind: Token._zbr_ty_TokenKind) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:972
@@ -1628,6 +1643,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1010
     pub fn skipToTopLevelBoundary(self: *_zbr_ty_Parser) void {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1017
@@ -1649,6 +1665,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1025
     pub fn tryParseTopDeclInto(self: *_zbr_ty_Parser) void {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1025
@@ -1671,6 +1688,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1032
     pub fn isStmtKeyword(self: *_zbr_ty_Parser, text: []const u8) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1035
@@ -1681,6 +1699,7 @@ pub const _zbr_ty_Parser = struct {
         return (std.mem.indexOf(u8, kws, needle) != null);
     }
 
+    // zbr:selfhost/Parser.zbr:1039
     pub fn isId(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1040
@@ -1696,6 +1715,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1046
     pub fn isSizedTypeName(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1047
@@ -1719,6 +1739,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1058
     pub fn isTypeKeyword(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1059
@@ -1750,6 +1771,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1073
     pub fn isOpenCall(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1074
@@ -1765,6 +1787,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1080
     pub fn isOpenCallAt(self: *_zbr_ty_Parser, offset: i64) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1081
@@ -1780,6 +1803,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1087
     pub fn isIntLit(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1088
@@ -1807,6 +1831,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1106
     pub fn isFloatLit(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1107
@@ -1822,6 +1847,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1113
     pub fn isAtLbracket(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1114
@@ -1837,6 +1863,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1120
     pub fn isStringSingle(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1121
@@ -1852,6 +1879,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1127
     pub fn isStringDouble(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1128
@@ -1867,6 +1895,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1134
     pub fn isCharLit(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1135
@@ -1886,6 +1915,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1143
     pub fn isZigLit(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1144
@@ -1905,6 +1935,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1152
     pub fn isRawString(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1153
@@ -1924,6 +1955,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1161
     pub fn isDocString(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1162
@@ -1939,6 +1971,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1168
     pub fn isStringStart(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1169
@@ -1958,6 +1991,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1177
     pub fn isStringPart(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1178
@@ -1977,6 +2011,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1186
     pub fn isStringStop(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1187
@@ -1996,6 +2031,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1195
     pub fn isRcurlySpecial(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1196
@@ -2011,6 +2047,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1202
     pub fn isKwOld(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1203
@@ -2026,6 +2063,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1209
     pub fn isKwResult(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1210
@@ -2041,6 +2079,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1216
     pub fn isStringPartFormat(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1217
@@ -2056,6 +2095,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1223
     pub fn skipEol(self: *_zbr_ty_Parser) void {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1224
@@ -2065,6 +2105,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:1227
     pub fn eatId(self: *_zbr_ty_Parser) anyerror![]const u8 {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1228
@@ -2080,6 +2121,7 @@ pub const _zbr_ty_Parser = struct {
         return text;
     }
 
+    // zbr:selfhost/Parser.zbr:1234
     pub fn eatName(self: *_zbr_ty_Parser) anyerror![]const u8 {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1235
@@ -2105,6 +2147,7 @@ pub const _zbr_ty_Parser = struct {
         { _zbr_rt._error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("expected name, got '", self.peek().text, _zbr_rt._allocator), "'", _zbr_rt._allocator)) }; return error.ZebraError; }
     }
 
+    // zbr:selfhost/Parser.zbr:1249
     pub fn eatTypeName(self: *_zbr_ty_Parser) anyerror![]const u8 {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1251
@@ -2407,6 +2450,7 @@ pub const _zbr_ty_Parser = struct {
         { _zbr_rt._error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("expected type name, got '", text, _zbr_rt._allocator), "'", _zbr_rt._allocator)) }; return error.ZebraError; }
     }
 
+    // zbr:selfhost/Parser.zbr:1406
     pub fn parseModule(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1407
@@ -2438,6 +2482,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .module_ = blk_box_1: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "module_")) = _zbr_ty_PModule.init(self.collected_decls); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_1 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:1422
     pub fn parseTopDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1425
@@ -2767,6 +2812,7 @@ pub const _zbr_ty_Parser = struct {
         { _zbr_rt._error_ctx = .{ .message = self.unexpectedTopLevelMsg() }; return error.ZebraError; }
     }
 
+    // zbr:selfhost/Parser.zbr:1563
     pub fn parseNamespaceDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1564
@@ -2817,6 +2863,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .namespace_decl = blk_box_2: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "namespace_decl")) = _zbr_ty_PNamespace.init(name, decls, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_2 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:1586
     pub fn parseUseDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1587
@@ -2854,6 +2901,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .use_ = blk_box_3: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "use_")) = _zbr_ty_PUse.init(path, exposed); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_3 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:1603
     pub fn parseClassDecl(self: *_zbr_ty_Parser, is_reflectable: bool, export_sym: ?[]const u8) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1604
@@ -3022,6 +3070,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .class_ = blk_box_4: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "class_")) = _zbr_ty_PClass.init(name, type_params, ifaces, mixins, members, invs, is_reflectable, false, false, false, export_sym, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_4 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:1686
     pub fn parseEnumDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1687
@@ -3099,6 +3148,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .enum_ = blk_box_5: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "enum_")) = _zbr_ty_PEnum.init(name, variants, base, values, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_5 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:1726
     pub fn parseStructDecl(self: *_zbr_ty_Parser, is_reflectable: bool, is_derive_debug: bool, is_derive_eq: bool, is_derive_hash: bool) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1727
@@ -3158,6 +3208,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .struct_ = blk_box_6: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "struct_")) = _zbr_ty_PClass.init(name, type_params, ifaces, std.ArrayList([]const u8).empty, members, invs, is_reflectable, is_derive_debug, is_derive_eq, is_derive_hash, null, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_6 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:1753
     pub fn parseInterfaceDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1754
@@ -3220,6 +3271,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .interface_ = blk_box_7: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "interface_")) = _zbr_ty_PClass.init(name, type_params, ifaces, std.ArrayList([]const u8).empty, members, std.ArrayList(_zbr_ty_PNode).empty, false, false, false, false, null, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_7 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:1783
     pub fn parseMixinDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1784
@@ -3266,6 +3318,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .mixin_ = blk_box_8: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "mixin_")) = _zbr_ty_PClass.init(name, empty_str_list, empty_str_list, empty_str_list, members, std.ArrayList(_zbr_ty_PNode).empty, false, false, false, false, null, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_8 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:1804
     pub fn parseExtendDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1805
@@ -3306,6 +3359,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .extend_ = blk_box_9: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "extend_")) = _zbr_ty_PExtend.init(target_name, members); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_9 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:1822
     pub fn parseUnionDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1823
@@ -3377,6 +3431,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .union_decl = blk_box_10: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "union_decl")) = _zbr_ty_PUnionDecl.init(name, variants, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_10 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:1856
     pub fn parseSigDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1857
@@ -3454,6 +3509,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .sig_ = blk_box_11: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "sig_")) = _zbr_ty_PSig.init(name, params, return_type, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_11 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:1892
     pub fn parseTypeAliasDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1893
@@ -3510,6 +3566,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .type_alias_ = blk_box_12: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "type_alias_")) = _zbr_ty_PTypeAlias.init(name, params, base_type, constraint); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_12 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:1923
     pub fn parseMemberDecl(self: *_zbr_ty_Parser, is_static: bool) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1924
@@ -3650,6 +3707,7 @@ pub const _zbr_ty_Parser = struct {
         { _zbr_rt._error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("unexpected member: '", self.peek().text, _zbr_rt._allocator), "'", _zbr_rt._allocator)) }; return error.ZebraError; }
     }
 
+    // zbr:selfhost/Parser.zbr:1982
     pub fn parseInvariantDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1983
@@ -3685,6 +3743,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .invariant_decl = expr_nodes };
     }
 
+    // zbr:selfhost/Parser.zbr:1998
     pub fn parseDeclField(self: *_zbr_ty_Parser, is_const: bool, is_static: bool, is_private: bool, is_public: bool) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1999
@@ -3732,6 +3791,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .field_ = blk_box_13: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "field_")) = _zbr_ty_PField.init(name, type_name, is_const, is_static, is_private, is_public, init_expr, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_13 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2020
     pub fn parseDeclInit(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2021
@@ -3805,6 +3865,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .init_ = blk_box_14: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "init_")) = _zbr_ty_PInit.init(params, stmts); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_14 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2053
     pub fn parseMethodDecl(self: *_zbr_ty_Parser, is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: std.ArrayList([]const u8), is_export: bool, is_pure: bool, is_node_export: bool, is_extern: bool) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2054
@@ -4071,6 +4132,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .method_ = blk_box_16: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "method_")) = _zbr_ty_PMethod.init(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export, _dl, _dc, is_extern); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_16 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2223
     pub fn parseBlock(self: *_zbr_ty_Parser) anyerror!std.ArrayList(_zbr_ty_PNode) {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2224
@@ -4102,6 +4164,7 @@ pub const _zbr_ty_Parser = struct {
         return stmts;
     }
 
+    // zbr:selfhost/Parser.zbr:2237
     pub fn parseStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2243
@@ -4287,6 +4350,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:2312
     pub fn parseReturnStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2313
@@ -4308,6 +4372,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_return = blk_box_17: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_return")) = _zbr_ty_PReturn.init(value, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_17 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2322
     pub fn parseIfStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2323
@@ -4402,6 +4467,7 @@ pub const _zbr_ty_Parser = struct {
         }
     }
 
+    // zbr:selfhost/Parser.zbr:2370
     pub fn parseWhileStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2371
@@ -4480,6 +4546,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_while = blk_box_25: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_while")) = _zbr_ty_PWhile.init(cond_list, stmts, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_25 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2414
     pub fn parseContractStmt(self: *_zbr_ty_Parser, kw: []const u8) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2415
@@ -4514,6 +4581,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_require = expr_nodes };
     }
 
+    // zbr:selfhost/Parser.zbr:2430
     pub fn parseAllocateStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2431
@@ -4536,6 +4604,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_allocate = blk_box_26: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_allocate")) = _zbr_ty_PAllocate.init(source_list, stmts, false, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_26 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2441
     pub fn parseWithStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2442
@@ -4558,6 +4627,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_with = blk_box_27: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_with")) = _zbr_ty_PWith.init(target_list, stmts, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_27 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2452
     pub fn parseInStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2453
@@ -4580,6 +4650,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_in = blk_box_28: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_in")) = _zbr_ty_PInScope.init(expr_list, stmts, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_28 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2463
     pub fn parseGuardStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2464
@@ -4614,6 +4685,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_guard = blk_box_29: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_guard")) = _zbr_ty_PGuard.init(cond_list, else_stmts, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_29 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2482
     pub fn parseForInStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2483
@@ -4714,6 +4786,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_for_in = blk_box_31: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_for_in")) = _zbr_ty_PForIn.init(var_names, iter_list, filter_list, stmts, else_stmts, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_31 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2535
     pub fn parseDestructStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2536
@@ -4763,6 +4836,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_destruct = blk_box_32: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_destruct")) = _zbr_ty_PDestruct.init(names, init_expr, is_struct, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_32 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2559
     pub fn parseVarStmt(self: *_zbr_ty_Parser, is_const: bool) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2560
@@ -4877,6 +4951,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_var = blk_box_35: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_var")) = _zbr_ty_PVar.init(name, is_const, type_name, init_expr, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_35 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2619
     pub fn parseAssertStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2620
@@ -4906,6 +4981,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_assert = blk_box_36: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_assert")) = _zbr_ty_PAssert.init(cond_list, msg_list, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_36 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2633
     pub fn parseAssertCmpStmt(self: *_zbr_ty_Parser, is_eq: bool) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2634
@@ -4931,6 +5007,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_assert_ne = blk_box_38: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_assert_ne")) = _zbr_ty_PAssertCmp.init(lhs, rhs, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_38 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2645
     pub fn parseAssertUnaryStmt(self: *_zbr_ty_Parser, is_true: bool) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2646
@@ -4952,6 +5029,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_assert_false = blk_box_40: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_assert_false")) = _zbr_ty_PAssertUnary.init(expr, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_40 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2655
     pub fn parseRaiseStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2656
@@ -4980,6 +5058,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_raise = blk_box_41: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_raise")) = _zbr_ty_PRaise.init(msg_list, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_41 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2670
     pub fn parseBranchStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2671
@@ -5136,6 +5215,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_branch = blk_box_42: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_branch")) = _zbr_ty_PBranch.init(subj_list, arms, else_stmts, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_42 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2755
     pub fn eatBranchPattern(self: *_zbr_ty_Parser) anyerror![]const u8 {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2757
@@ -5179,6 +5259,7 @@ pub const _zbr_ty_Parser = struct {
         return (try sb.toOwnedSlice(_zbr_rt._allocator));
     }
 
+    // zbr:selfhost/Parser.zbr:2778
     pub fn parseExprOrAssignStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2779
@@ -5312,6 +5393,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .stmt_expr = blk_box_45: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_expr")) = target_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_45 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:2844
     pub fn parseExpr(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2856
@@ -5329,6 +5411,7 @@ pub const _zbr_ty_Parser = struct {
         return result;
     }
 
+    // zbr:selfhost/Parser.zbr:2863
     pub fn parsePipeline(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2864
@@ -5382,6 +5465,7 @@ pub const _zbr_ty_Parser = struct {
         return left;
     }
 
+    // zbr:selfhost/Parser.zbr:2888
     pub fn parseOr(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2889
@@ -5415,6 +5499,7 @@ pub const _zbr_ty_Parser = struct {
         return left;
     }
 
+    // zbr:selfhost/Parser.zbr:2904
     pub fn parseAnd(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2905
@@ -5440,6 +5525,7 @@ pub const _zbr_ty_Parser = struct {
         return left;
     }
 
+    // zbr:selfhost/Parser.zbr:2916
     pub fn parseNot(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2917
@@ -5459,6 +5545,7 @@ pub const _zbr_ty_Parser = struct {
         return (try self.parseComparison());
     }
 
+    // zbr:selfhost/Parser.zbr:2925
     pub fn parseComparison(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2926
@@ -5705,6 +5792,7 @@ pub const _zbr_ty_Parser = struct {
         return left;
     }
 
+    // zbr:selfhost/Parser.zbr:3043
     pub fn parseBitOr(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3044
@@ -5732,6 +5820,7 @@ pub const _zbr_ty_Parser = struct {
         return left;
     }
 
+    // zbr:selfhost/Parser.zbr:3059
     pub fn parseBitXor(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3060
@@ -5759,6 +5848,7 @@ pub const _zbr_ty_Parser = struct {
         return left;
     }
 
+    // zbr:selfhost/Parser.zbr:3072
     pub fn parseBitAnd(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3073
@@ -5786,6 +5876,7 @@ pub const _zbr_ty_Parser = struct {
         return left;
     }
 
+    // zbr:selfhost/Parser.zbr:3090
     pub fn parseShift(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3091
@@ -5813,6 +5904,7 @@ pub const _zbr_ty_Parser = struct {
         return left;
     }
 
+    // zbr:selfhost/Parser.zbr:3103
     pub fn parseAddSub(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3104
@@ -5840,6 +5932,7 @@ pub const _zbr_ty_Parser = struct {
         return left;
     }
 
+    // zbr:selfhost/Parser.zbr:3116
     pub fn parseMulDiv(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3117
@@ -5867,6 +5960,7 @@ pub const _zbr_ty_Parser = struct {
         return left;
     }
 
+    // zbr:selfhost/Parser.zbr:3129
     pub fn parseUnary(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3130
@@ -5912,6 +6006,7 @@ pub const _zbr_ty_Parser = struct {
         return (try self.parsePostfix());
     }
 
+    // zbr:selfhost/Parser.zbr:3161
     pub fn parsePostfix(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3162
@@ -6195,6 +6290,7 @@ pub const _zbr_ty_Parser = struct {
         return expr;
     }
 
+    // zbr:selfhost/Parser.zbr:3311
     pub fn parseAtom(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3312
@@ -6652,6 +6748,7 @@ pub const _zbr_ty_Parser = struct {
         { _zbr_rt._error_ctx = .{ .message = self.unexpectedExprMsg() }; return error.ZebraError; }
     }
 
+    // zbr:selfhost/Parser.zbr:3535
     pub fn parseLambdaExpr(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3538
@@ -6732,6 +6829,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .expr_lambda = _zbr_ty_PLambda.init(params, ret_type, captures, std.ArrayList(_zbr_ty_PNode).empty, body_stmts) };
     }
 
+    // zbr:selfhost/Parser.zbr:3575
     pub fn parseLambdaParam(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PParam {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3576
@@ -6758,6 +6856,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PParam.init(name, type_name, pdefault);
     }
 
+    // zbr:selfhost/Parser.zbr:3587
     pub fn parseLambdaPrefix(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PLambda {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3589
@@ -6793,6 +6892,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PLambda.init(params, ret_type, std.ArrayList(_zbr_ty_PCaptureVar).empty, std.ArrayList(_zbr_ty_PNode).empty, std.ArrayList(_zbr_ty_PNode).empty);
     }
 
+    // zbr:selfhost/Parser.zbr:3604
     pub fn parseCaptureBlock(self: *_zbr_ty_Parser) anyerror!std.ArrayList(_zbr_ty_PCaptureVar) {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3606
@@ -6869,6 +6969,7 @@ pub const _zbr_ty_Parser = struct {
         return caps;
     }
 
+    // zbr:selfhost/Parser.zbr:3641
     pub fn parseStringInterp(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3643
@@ -6912,6 +7013,7 @@ pub const _zbr_ty_Parser = struct {
         return _zbr_ty_PNode{ .expr_string_interp = blk_box_112: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_string_interp")) = _zbr_ty_PStringInterp.init(parts); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_112 _bp; } };
     }
 
+    // zbr:selfhost/Parser.zbr:3668
     pub fn parseCallArgs(self: *_zbr_ty_Parser) anyerror!std.ArrayList(_zbr_ty_PNode) {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3669
@@ -6950,13 +7052,32 @@ pub const _zbr_ty_Parser = struct {
         return args;
     }
 
+    // zbr:selfhost/Parser.zbr:3690
     pub fn parse(src: []const u8, file_name: []const u8) anyerror!_zbr_ty_PNode {
 // zbr:selfhost/Parser.zbr:3691
-        const toks = (try _zbr_ty_Lexer.tokenize(src));
+        const toks = (try _zbr_ty_Parser.lexWithFile(src, file_name));
 // zbr:selfhost/Parser.zbr:3692
         var p = _zbr_ty_Parser.init(toks, file_name, src);
 // zbr:selfhost/Parser.zbr:3693
         return (try p.parseModule());
+    }
+
+    // zbr:selfhost/Parser.zbr:3697
+    pub fn lexWithFile(src: []const u8, file_name: []const u8) anyerror!std.ArrayList(*Token._zbr_ty_Token) {
+// zbr:selfhost/Parser.zbr:3697
+        {
+            var _try_err: ?anyerror = null;
+            _ = &_try_err;
+            _try_blk: {
+// zbr:selfhost/Parser.zbr:3698
+                return (_zbr_ty_Lexer.tokenize(src) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
+            }
+            if (_try_err != null) {
+// zbr:selfhost/Parser.zbr:3700
+                { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat(file_name, ":", _zbr_rt._allocator), _zbr_error_msg(), _zbr_rt._allocator) }; return error.ZebraError; }
+            }
+            unreachable;
+        }
     }
 
     fn _check_invariant(self: *_zbr_ty_Parser) void {
@@ -6988,4 +7109,9 @@ var _module_vars_inited: bool = false;
 pub fn _initModuleVars() void {
     if (_module_vars_inited) return;
     _module_vars_inited = true;
+}
+
+fn _zbr_error_msg() []const u8 {
+    if (_zbr_rt._error_ctx.message.len > 0) return _zbr_rt._error_ctx.message;
+    return "";
 }

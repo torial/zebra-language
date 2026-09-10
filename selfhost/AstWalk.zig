@@ -13,6 +13,7 @@ const _zbr_ty_Arg = Ast._zbr_ty_Arg;
 const _zbr_ty_DictEntry = Ast._zbr_ty_DictEntry;
 const _zbr_ty_StringPart = Ast._zbr_ty_StringPart;
 const _zbr_ty_LambdaBody = Ast._zbr_ty_LambdaBody;
+// zbr:selfhost/AstWalk.zbr:64
 pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: *std.ArrayList(_zbr_ty_ExprOld)) void {
 // zbr:selfhost/AstWalk.zbr:65
     switch (expr) {
@@ -216,6 +217,7 @@ pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: *std.ArrayList(_zbr_
     }
 }
 
+// zbr:selfhost/AstWalk.zbr:147
 pub fn _zbr_fn_collectOldNodes(expr: _zbr_ty_Expr) std.ArrayList(_zbr_ty_ExprOld) {
 // zbr:selfhost/AstWalk.zbr:148
     var out = std.ArrayList(_zbr_ty_ExprOld).empty;
