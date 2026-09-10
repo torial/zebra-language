@@ -1,0 +1,6 @@
+# BUG-391: `str.toInt()` is a plain `int`, so `n == nil` reached Zig ("comparison of 'i64'
+# with null"). A primitive is never nil; the optional form is `tryInt()`.
+def main()
+    var n = "12".toInt()
+    if n == nil
+        print("nil")

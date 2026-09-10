@@ -1,0 +1,48 @@
+# BUG-388: a concrete instance passed DIRECTLY to an interface-typed slot passed -c and
+# died in Zig with "expected type 'Shape', found '*Circle'". The fat-pointer boxing
+# existed for an annotated `var s: Shape = c` only. Now every interface-typed slot takes
+# it: a def parameter (ident, constructor, call result), a constructor parameter, a
+# method parameter, List(Iface).add, a field assignment on any receiver, and `return`.
+interface Shape
+    def area(): float
+class Circle implements Shape
+    var r: float
+    cue init(r: float)
+        .r = r
+    def area(): float
+        return 3.0 * .r * .r
+class Sq implements Shape
+    var s: float
+    cue init(s: float)
+        .s = s
+    def area(): float
+        return .s * .s
+def print_area(s: Shape)
+    print(s.area())
+class Holder
+    var sh: Shape
+    cue init(sh: Shape)
+        .sh = sh
+    def show(s: Shape)
+        print("held ${.sh.area()} got ${s.area()}")
+def mk(): Circle
+    return Circle(1.0)
+def pick(): Shape
+    return Sq(4.0)
+def main()
+    var c = Circle(2.0)
+    print_area(c)
+    print_area(Sq(3.0))
+    print_area(mk())
+    var h = Holder(c)
+    h.show(Sq(2.0))
+    h.sh = Sq(1.0)
+    print_area(h.sh)
+    print_area(pick())
+    var shapes: List(Shape) = List(Shape)()
+    shapes.add(c)
+    shapes.add(Sq(1.0))
+    var total: float = 0.0
+    for sh in shapes
+        total = total + sh.area()
+    print("total=${total}")

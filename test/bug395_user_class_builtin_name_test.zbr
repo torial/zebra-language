@@ -1,0 +1,19 @@
+# BUG-395: a user class named like a builtin module (`Crypto`, `Path`) had its static
+# methods typed by the builtin's catch-all arm (`Path.* -> str`), so `Crypto.safeDiv(10, 2)`
+# reached Zig as "expected type '?str', found 'i64'". A user class wins over the tables.
+# (`class Math` already had corpus precedent -- Math has no catch-all arm.)
+class Crypto
+    static
+        def safeDiv(a: int, b: int): int throws
+            if b == 0
+                raise "division by zero"
+            return a / b
+class Path
+    static
+        def depth(p: str): int
+            return p.split("/").len
+def main()
+    var q = Crypto.safeDiv(10, 2)?
+    print("${q} ${Path.depth("a/b/c")}")
+catch |e|
+    print(e.message)

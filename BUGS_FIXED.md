@@ -25,6 +25,64 @@ methods with a Zebra message. Workaround in zebra-ide: count by iterating.
 **Fix.** `getList` now returns a real `List(JsonValue)` (`_json_get_list_l`, copied into the program allocator), so `.len`, `.at()` and `for` take the ordinary List paths and the per-call special cases go. General rule landed with it: the chain hoist (BUG-027/079) is for STRUCT temporaries only — a receiver the checker types as a builtin container is never hoisted to `_mc_N` (`isBuiltinTypedRecv`), which is the same rule BUG-336 needed for split iterators. The old slice form stays in the runtime until the next n1-anchor so the N-1 regen authority still links. Fixture bug337_json_getlist_list_test; gen.py generates the shape.
 
 
+### BUG-399: `implements <mixin>` passed `-c` and failed in Zig — FIXED 2026-09-10
+
+`class A implements Loud` where `Loud` is a mixin reached Zig as "use of undeclared
+identifier". **Fix.** `checkDeclShapes` knows the module's mixins and interfaces and
+refuses the swapped keyword naming the right one (`adds Loud`). Fixture
+bug399_implements_mixin_fail.
+
+### BUG-395: a user class named like a builtin module had its static methods mis-typed — FIXED 2026-09-10
+
+`class Crypto` / `class Path` with a static method: the builtin static-call tables have
+catch-all arms (`Path.* -> str`, `Crypto.* -> str?`) that typed the USER method's result,
+so `Crypto.safeDiv(10, 2)` failed in Zig with "expected type '?str', found 'i64'". `class
+Math` had corpus precedent and worked only because Math has no catch-all. **Fix.** A user
+class wins: when the receiver ident names a known class and that class has the method,
+its declared return type is used before any builtin arm. Not a name refusal -- that was the
+first attempt and it broke two corpus tests. Fixture bug395_user_class_builtin_name_test.
+
+### BUG-394: `xs.remove("a")` passed `-c` — remove takes an index — FIXED 2026-09-10
+
+BUG-378 left `remove` untyped on purpose. Now `remove`/`at`/`set`/`insert` position 0 is
+`int` in `containerArgExpected`. Fixture bug394_list_remove_value_fail.
+
+### BUG-391: a plain primitive compared with `nil` passed `-c` — FIXED 2026-09-10
+
+`"12".toInt()` is `int`, so `n == nil` reached Zig ("comparison of 'i64' with null").
+**Fix.** `compareOperandCheck` refuses `==`/`!=` against a nil literal when the other side
+is a primitive, naming the optional form (`tryInt()` for the int case). Fixture
+bug391_primitive_nil_compare_fail.
+
+### BUG-390: `def init(...)` as a constructor passed `-c` — FIXED 2026-09-10
+
+Collided in Zig with the generated constructor ("duplicate struct member name 'init'").
+**Fix.** `checkDeclShapes` refuses a `def init` member, naming `cue init(...)`. Fixture
+bug390_def_init_fail.
+
+### BUG-389: bare `List()` / `HashMap()` / `Set()` with nothing to infer from passed `-c` — FIXED 2026-09-10
+
+`var xs = List()` reached Zig as "expected expression, found 'anytype'". With an
+annotation the type hint fills it (`var xs: List(int) = List()` is documented and kept).
+**Fix.** `checkVarDecl` refuses the un-annotated bare form, showing both spellings.
+Fixture bug389_bare_list_ctor_fail; control bug389_395_shapes_ok_test.
+
+### BUG-388: a concrete instance passed directly to an interface-typed slot failed in Zig — FIXED 2026-09-10
+
+`print_area(c)` / `print_area(Circle(2.0))` / `h.show(Sq(2.0))` / `Holder(c)` /
+`shapes.add(c)` / `h.sh = c` / `return Circle(2.0)` from a `def f(): Shape` -- every one
+passed `-c` and died in Zig with "expected type 'Shape', found '*Circle'". The fat-pointer
+boxing existed for an annotated `var s: Shape = c` and for a constructor call in a def
+argument only. **Fix.** One predicate, `ifaceCoercionClass(arg, iface)` -- the concrete
+class whose vtable boxes `arg` (constructor call, ident, field, or call result typed as
+a conforming class; nil for an already-interface value) -- and `genInterfaceArgCoercion`
+emits from it. Applied at def parameters (positional and named), constructor parameters,
+the early user-method dispatch, both `List(Iface).add` emit arms, interface-typed field
+assignment on any receiver (the receiver's class is inferred; the old lookup was
+current-owner-by-name only), and `return` from an interface-typed def. Six book examples
+in Ch8/9/13 hit this; it is the polymorphism idiom every interfaces chapter teaches.
+Fixture bug388_iface_param_direct_test covers all seven slots.
+
 ### BUG-387: `s.lines()` yielded a trailing empty line and kept `\r` — FIXED 2026-09-09
 
 `lines()` lowered to `std.mem.splitScalar(u8, s, '\n')`, a raw split: a text ending in a
@@ -784,7 +842,7 @@ cannot be regenerated, discovered somewhere inside a 893-site change.
 1. **BUG-320's fix** -- make `xs[i] = v` and the compound forms work. No dependency; do it
    first, because everything else assumes brackets can write.
 2. **Bootstrap sunset criterion 2** -- move the regeneration authority to the selfhost
-   (`docs/NEXT_STEPS_to_0.9.md`). That lifts the bootstrap-must-compile-selfhost constraint,
+   (`NEXT_STEPS_to_0.9.md`). That lifts the bootstrap-must-compile-selfhost constraint,
    because the bootstrap stops being the authority.
 3. **`.at()` / `.set()` removal** -- 1,273 sites, mechanical, and only safe after (2).
 
@@ -4980,7 +5038,7 @@ def main()
 passed to a `*const Self` parameter the same way the `==` rewrite already does
 (mirror the arg-addressing in genMemberCall). **Workaround:** use `==`.
 Low severity (idiomatic `==` works; `.eql()` is the lower-level form). Found
-2026-07-25 during the QUICKSTART dogfood. Related: `docs/archive/emit_compile_triage.md`
+2026-07-25 during the QUICKSTART dogfood. Related: `docs/emit_compile_triage.md`
 `derive_test` entry.
 
 ### BUG-202: user top-level function name collides with preamble-internal parameter names — ✅ FIXED (closed 2026-08-17)
@@ -4994,7 +5052,7 @@ and a same-scope fn parameter `key` as a shadow → hard error. Same class as `f
 **Impact:** common identifiers (`key`, `val`, `fill`, …) are unusable as user function
 names. **Workaround:** rename the user function (the example uses `cellKey`).
 **Fix direction / disposition (2026-07-25):** SUBSUMED by the single-file-emit epic
-(`docs/design/single_file_emit_design.md`) — deferred, do NOT hand-rename the preamble.
+(`docs/single_file_emit_design.md`) — deferred, do NOT hand-rename the preamble.
 Verified: the repro (`def key(...)`) FAILS under default multi-file emit but COMPILES
 CLEAN under `--single-file`, because single-file mode wraps user decls in
 `const _Mod = struct {…}`, so user `key` becomes `_Mod.key` and a file-scope preamble
@@ -5284,7 +5342,7 @@ text even *changed* while excluded — `reached unreachable code` (2026-07-31) �
 same case and should not be read as one: its own header declares it a §28j HAZARD DEMO,
 deliberately unregistered because it "intentionally crashes ~77% of runs", documenting the
 rule that `allocate Arena()` scopes are single-threaded-only
-(`docs/design/concurrency_allocation_design.md`). It stays excluded on its own merits — the
+(`docs/concurrency_allocation_design.md`). It stays excluded on its own merits — the
 NUMBER of panicking threads varies run to run (measured 1, 1, 4), which is real
 nondeterminism rather than a volatile field. Related to **BUG-289**, the other open
 question about that same excluded set.
@@ -6782,7 +6840,7 @@ legitimately unused parameter.
 > resolution is to implement it, not to remove it from the grammar. Reclassified from a
 > parser gap to an unimplemented feature; see the implementation notes below.
 >
-> **Design written 2026-08-05: `docs/design/extern_ffi_design.md`.** Two of the three pieces
+> **Design written 2026-08-05: `docs/extern_ffi_design.md`.** Two of the three pieces
 > already exist — C-ABI-sized types (`int32` → `i32`, so the ABI is expressible without new
 > syntax) and `BuildTarget.linkLib` for linking. What is missing is the declaration itself.
 > The plan is the minimal form: `extern def name(params): ret` with no body emits
@@ -6805,7 +6863,7 @@ legitimately unused parameter.
 `extern fn` declaration. The follow-on work is in BUGS_FIXED as BUG-261 (C source
 deps), BUG-265 (the fast backend miscompiling a foreign call) and BUG-266 (nothing
 could name a library). Gated by `smoke_run test/extern_c_call_test.zbr` and
-`tools/ffi_lib_check.sh`. See `docs/design/extern_ffi_design.md` §7-9.
+`tools/ffi_lib_check.sh`. See `docs/extern_ffi_design.md` §7-9.
 
 
 ### BUG-257: contracts are not stripped in `--release` — RESOLVED 2026-08-05, it was the docs
@@ -6997,7 +7055,7 @@ not exist is any way to tell Zebra which library to link:
   and `b.lib()` targets are themselves stubs printing "not yet implemented".
 - The CLI has no passthrough — no `-l`, no library path, no linker-argument escape.
 
-`docs/design/extern_ffi_design.md` §1 and §2 both assumed `linkLib` covered this ("linking the
+`docs/extern_ffi_design.md` §1 and §2 both assumed `linkLib` covered this ("linking the
 library from `build.zbr` via `BuildTarget.linkLib`"), and §5 recorded it as "assumed
 sufficient and **unverified**". It is now verified as insufficient.
 
@@ -7089,7 +7147,7 @@ program the ~6x build-time win).
 **Note for the DLL feature generally:** no new syntax is needed. `extern "kernel32"` and
 `callconv(.winapi)` are both unnecessary on x86-64 (measured — bare, library-named, and
 callconv variants all work), and an arbitrary third-party DLL links with a bare
-`extern fn` plus its import lib on the command line. See `docs/design/extern_ffi_design.md` §8.
+`extern fn` plus its import lib on the command line. See `docs/extern_ffi_design.md` §8.
 
 **FIXED 2026-08-06 (BUG-265).** `emittedExtern()` and a non-empty `lib_sources` now join
 `c_sources` and `uses_sqlite` in the fast-path exclusions at `selfhost/main.zbr`, so any
@@ -8090,7 +8148,7 @@ the "track for later" list.
 **Fix direction:** make init transitive. Either (a) emit a propagating `_initIo`/
 `_initAllocator` in `generateModuleWith` so each module initialises its own `use` deps
 (watch for cycles — needs a visited set), or (b) let the single-file emission
-(`docs/design/single_file_emit_design.md`) dissolve it: one preamble, one `_allocator`/`_io`, no
+(`docs/single_file_emit_design.md`) dissolve it: one preamble, one `_allocator`/`_io`, no
 fan-out at all. That design note already lists **deleting this fan-out** as one of its
 wins, so BUG-221 is a third independent argument for it (alongside BUG-220's `@export`
 residual and error-location legibility).
@@ -8170,7 +8228,7 @@ internals.** Two candidate fixes:
 1. **Prefix every preamble parameter/local** with `_` so collision is impossible by
    construction. Mechanical but touches 423 identifiers.
 2. **Emit user declarations inside a namespace/struct instead of at file scope.** This is
-   *already designed* — `docs/design/single_file_emit_design.md` specifies exactly that ("all modules
+   *already designed* — `docs/single_file_emit_design.md` specifies exactly that ("all modules
    → one .zig, namespaced structs"). BUG-220 is an independent argument for that work: it was
    justified on architecture grounds, and it would dissolve this whole bug class as a
    side-effect. Worth adding to that design note's motivation.
@@ -8281,7 +8339,7 @@ The compiler only delivers that when there is a type to check against:
 In argument position there is no annotation to drive the check, so the bad concat reaches
 codegen and the user gets an error pointing at *generated Zig* (`_str_concat`, a line
 number in a 3,800-line emitted file) for a plain type mistake in their own source. This is
-the `docs/archive/error_experience_audit.md` class, and it is the single most likely first error a
+the `docs/error_experience_audit.md` class, and it is the single most likely first error a
 newcomer hits — string-plus-number in a `print` is the canonical beginner slip.
 
 **Fix direction:** type the operands of `+` when either side is known to be `str` and reject
@@ -8827,7 +8885,7 @@ over-approximation with no type information, and it rotted continuously: every r
 stdlib method that was missing (`isDigit`/`isUpper`/`toLower` on `char`, `isObject`/`isArray`/
 `isNull` on a JSON value, `before`/`after`/`equals` on `DateTime` — BUG-190) produced a
 `var` on a value that is never mutated, which Zig 0.16 rejects with
-`local variable is never mutated`. This was the D7 cluster in `docs/archive/emit_compile_triage.md`
+`local variable is never mutated`. This was the D7 cluster in `docs/emit_compile_triage.md`
 (`unicode_test`, `json_test`, `typechecker_test`, `file_io_test`, `gui_test`).
 
 **The fix (type-driven, the real one — not another name added to the list):** thread the
@@ -8967,7 +9025,7 @@ falls through to the namespace dispatch. Verified: `Http.get`/`Http.post` now em
 container method-name heuristic. `.get` was the only current collision; the helper makes future
 ones easy to guard (or move the namespace block ahead of the heuristics — a cleaner refactor).
 
-**Found by** the full-corpus emit-compile sweep (`docs/archive/emit_compile_triage.md`, D1). `http_test`/
+**Found by** the full-corpus emit-compile sweep (`docs/emit_compile_triage.md`, D1). `http_test`/
 `https_test` now surface a separate **nil-narrowing** bug (see BUG-187). Gates: round-trip
 byte-identical, smoke 236/236.
 
@@ -9028,7 +9086,7 @@ Zebra's "safe by default" + Eiffel lineage, and several tests assume it.
    test-code corrections. Optionally remove the dead `nil_narrowed` stub.
 
 Affects `http_test`, `https_test`, `tcp_advanced_test` (the "nil-narrowing" cluster in
-`docs/archive/emit_compile_triage.md`). These are TEST bugs under design (2), or feature-blocked under (1).
+`docs/emit_compile_triage.md`). These are TEST bugs under design (2), or feature-blocked under (1).
 
 ---
 
@@ -9052,7 +9110,7 @@ String methods emit a **by-value special form** (`std.mem.concat(recv, …)`), n
 return path already guarded on `recv_t is Type_.named` (structs only), so it was safe. Materialization
 (BUG-079) is only needed for struct temporaries; string slices pass by value.
 
-**Found by** the full-corpus emit-compile sweep (`docs/archive/emit_compile_triage.md`, cluster D5). Cleared
+**Found by** the full-corpus emit-compile sweep (`docs/emit_compile_triage.md`, cluster D5). Cleared
 `fuzzy_match` outright; `fuzzy_selfhost`'s concat error is gone (it now surfaces a separate D3
 HashMap `.len` bug). Gates: round-trip byte-identical, smoke 236/236.
 
@@ -9077,7 +9135,7 @@ model constructor), so this bit the GUI examples.
 return-type `@TypeOf`, and body). Cleared 3 GUI examples outright (`counter`, `hbox_smoke`,
 `file_dialog_smoke`); the class is fixed for any `reduce` + top-level-`init` program.
 
-**Found by** the full-corpus emit-compile sweep (`docs/archive/emit_compile_triage.md`, cluster C).
+**Found by** the full-corpus emit-compile sweep (`docs/emit_compile_triage.md`, cluster C).
 Gates: round-trip byte-identical, smoke 236/236. The other 3 GUI files in cluster C were failing
 on this shadow FIRST and now surface distinct next-layer bugs (nested `g` param shadow;
 `^T`-box `*T`-vs-`*const T`; a `frame` const-shadow) — reclassified in the triage.
@@ -9108,7 +9166,7 @@ Double-quoted text (all `\"`) passes through unchanged; single-quoted literal `"
 Verified: `'{"name": "Alice"}'` now emits `"{\"name\": \"Alice\"}"`, compiles, and runs correctly;
 `"normal with \"escaped\""` is unchanged.
 
-**Found by** the full-corpus emit-compile sweep (`docs/archive/emit_compile_triage.md`, cluster D2).
+**Found by** the full-corpus emit-compile sweep (`docs/emit_compile_triage.md`, cluster D2).
 `json_test` still fails on a *separate* bug (D7 `local variable is never mutated` — const/var
 mutation analysis), tracked in the triage.
 
@@ -10588,7 +10646,7 @@ gone**: codegen now pads an omitted no-default argument with `std.mem.zeroes(T)`
 longer read uninitialized memory. What remains for a full close: promoting the
 warning to a hard **error** (gated on the translator follow-up below, so valid
 Luau-nil-default calls aren't broken). Found 2026-06-22 via the error-experience
-audit (`docs/archive/error_experience_audit.md`).
+audit (`docs/error_experience_audit.md`).
 
 ### What shipped (warning)
 A `checkArgCount` + `checkArgCountsInExpr` walker in `selfhost/TypeChecker.zbr`

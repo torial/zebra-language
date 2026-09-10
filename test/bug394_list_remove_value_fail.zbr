@@ -1,0 +1,4 @@
+# BUG-394: `xs.remove("a")` -- remove takes an INDEX -- passed -c and failed in Zig.
+def main()
+    var xs = ["a", "b"]
+    xs.remove("a")

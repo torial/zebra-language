@@ -2077,6 +2077,25 @@ def isArithmeticMistake(t: Type_): bool
 # a KNOWN string and the other a KNOWN number or bool -- an unknown side is an
 # inference gap, never an error.
 def compareOperandCheck(lt: Type_, rt: Type_, b: ExprBinary, op: str, ctx: InferCtx)
+    # BUG-391: `n == nil` where n is a plain primitive (`str.toInt()` is `int`, not
+    # `int?`) passed -c and failed in Zig ("comparison of 'i64' with null").
+    var nil_side: bool = (b.right is Expr.nil_) or (b.left is Expr.nil_)
+    if nil_side
+        var other_t: Type_ = lt
+        if b.left is Expr.nil_
+            other_t = rt
+        if isPrimitive(other_t)
+            var eln0: int = b.span.line
+            var ecl0: int = b.span.col
+            if eln0 == 0
+                eln0 = exprSpanLine(b.left)
+                ecl0 = exprSpanCol(b.left)
+            var nil_hint: str = ""
+            if other_t is Type_.int_
+                nil_hint = "; `s.tryInt()` is the optional form of `s.toInt()`"
+            ctx.addErr(ctx.file, eln0, ecl0,
+                       "'" + typeTag(other_t) + "' is never nil -- only an optional (`" + typeTag(other_t) + "?`) can be compared with nil" + nil_hint)
+        return
     var bad: bool = false
     if isString(lt) and isConcatMistake(rt)
         bad = true
@@ -2470,6 +2489,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # (divergence audit: derive_test).
                         if mem.member == "init" and ctx.hasClassAny(bname)
                             return Type_.named(bname)
+                        # BUG-395: a USER class named like a builtin module (`class Crypto`,
+                        # `class Path` -- `class Math` has corpus precedent) must win over
+                        # the builtin tables below, whose catch-all arms (`Path.* -> str`,
+                        # `Crypto.* -> str?`) typed the user's static method wrongly and
+                        # the program failed in Zig with an unrelated-looking mismatch.
+                        if ctx.hasClassAny(bname)
+                            if ctx.methodReturnAny(bname, mem.member) as user_static_ret
+                                return user_static_ret
                         if bname == "Regex" and mem.member == "compile"
                             return Type_.regex
                         if bname == "Timer" and mem.member == "start"
@@ -4264,6 +4291,10 @@ def containerArgExpected(recv: Type_, name: str, idx: int): Type_?
             if name == "set" or name == "insert"
                 if idx == 1
                     return le
+            # BUG-394: `remove`/`at`/`set` take an INDEX; `xs.remove("x")` passed -c.
+            if name == "remove" or name == "at" or name == "set" or name == "insert"
+                if idx == 0
+                    return Type_.int_
         on Type_.hashmap_ as hm
             if name == "set"
                 if idx == 0
@@ -4439,6 +4470,17 @@ def checkReservedField(dv: DeclVar, file: str, ctx: InferCtx)
 
 def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     if dv.type_ == nil
+        # BUG-389: `var xs = List()` -- no type argument and nothing to infer it from
+        # -- reached Zig as "expected expression, found 'anytype'". With an
+        # annotation (`var xs: List(int) = List()`) the hint fills it in; without one
+        # the element type has to be written.
+        if dv.init_expr != nil
+            var bare_init: Expr = dv.init_expr!
+            if bare_init is Expr.call as bc
+                if bc.args.len == 0
+                    if bc.callee is Expr.ident as bcid
+                        if bcid.name == "List" or bcid.name == "HashMap" or bcid.name == "Set"
+                            ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "'" + bcid.name + "()' needs its type argument here: `" + bcid.name + "(int)()`, or annotate the binding (`var " + dv.name + ": " + bcid.name + "(int) = " + bcid.name + "()`)")
         return
     var declared: Type_ = typeFromRef(dv.type_!)  # safe: nil returned above
     if declared is Type_.named as dec_class
@@ -4913,8 +4955,37 @@ def checkHatClassDecl(decl: Decl, file: str, ctx: InferCtx)
         else
             pass
 
+# BUG-390/399 (2026-09-10, from the book sweep): declaration SHAPES that passed `-c`
+# and died in Zig. `def init(...)` collided with the generated constructor ("duplicate
+# struct member name 'init'"); `implements <mixin>` / `adds <interface>` swapped the
+# keywords and failed as "use of undeclared identifier". The checker knows every one
+# of these at declaration time.
+def checkDeclShapes(m: Module, file: str, ctx: InferCtx)
+    var iface_names: List(str) = List(str)()
+    var mixin_names: List(str) = List(str)()
+    for d0 in m.decls
+        if d0 is Decl.interface_ as ifd0
+            iface_names.add(ifd0.name)
+        if d0 is Decl.mixin_ as mxd0
+            mixin_names.add(mxd0.name)
+    for d in m.decls
+        if d is Decl.class_ as c
+            for mem in c.members
+                if mem is Decl.method as dm
+                    if dm.name == "init"
+                        ctx.addErr(file, dm.span.line, dm.span.col, "the constructor is written `cue init(...)`, not `def init` (a `def init` collides with the generated one)")
+            for ir in c.ifaces
+                if ir is TypeRef.named as irn
+                    if mixin_names.contains(irn.name)
+                        ctx.addErr(file, c.span.line, c.span.col, "'" + irn.name + "' is a mixin: bring it in with `adds " + irn.name + "`, not `implements`")
+            for mr in c.mixins
+                if mr is TypeRef.named as mrn
+                    if iface_names.contains(mrn.name)
+                        ctx.addErr(file, c.span.line, c.span.col, "'" + mrn.name + "' is an interface: declare it with `implements " + mrn.name + "`, not `adds`")
+
 def checkModule(m: Module, file: str, ctx: InferCtx): TcResult
     ctx.withFile(file)
+    checkDeclShapes(m, file, ctx)
     for hdecl in m.decls
         checkHatClassDecl(hdecl, file, ctx)
     var tc_result: TcResult = TcResult()

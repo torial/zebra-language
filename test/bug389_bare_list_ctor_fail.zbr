@@ -1,0 +1,5 @@
+# BUG-389: `var xs = List()` -- no type argument, nothing to infer it from -- reached Zig
+# as "expected expression, found 'anytype'". With an annotation the hint fills it in.
+def main()
+    var xs = List()
+    xs.add(1)

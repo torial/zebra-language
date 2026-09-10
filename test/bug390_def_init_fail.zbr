@@ -1,0 +1,8 @@
+# BUG-390: `def init(...)` collided with the generated constructor in Zig ("duplicate
+# struct member name 'init'"). The constructor is `cue init(...)`.
+class Foo
+    var x: int
+    def init(x: int)
+        .x = x
+def main()
+    print(Foo(1).x)

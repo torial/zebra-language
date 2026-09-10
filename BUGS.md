@@ -46,32 +46,6 @@
 
 ---
 
-### BUG-388: a concrete instance passed DIRECTLY to an interface-typed parameter fails in Zig — OPEN (found 2026-09-09, book audit)
-
-`def print_area(s: Shape)` + `print_area(Circle(2.0))` (or `var c = Circle(2.0); print_area(c)`)
-passes `-c` and dies in Zig with `expected type 'Shape', found '*Circle'`. The same value
-assigned to an interface-typed VARIABLE first (`var c: Shape = Circle(2.0)`) works, so the
-boxing exists — it is applied on annotated assignment and not on argument passing. This is
-the polymorphism idiom every interfaces chapter teaches; six book examples in Ch8/9/13 hit
-it. Highest priority of the 2026-09-09 batch. Repro: /tmp/rm/z.zbr shape above.
-
-### BUG-389: bare `List()` / `HashMap()` (no type argument) passes `-c`, fails in Zig — OPEN (found 2026-09-09)
-
-`var xs = List()` → `expected expression, found 'anytype'` from Zig. The checker should
-refuse: "List needs its element type: `List(int)()`" (same family as BUG-377).
-
-### BUG-390: `def init(...)` as a constructor passes `-c`, fails in Zig ("duplicate struct member name 'init'") — OPEN (found 2026-09-09)
-
-The constructor is `cue init(...)`; a `def init` collides with the generated one. The checker
-knows the class has an init; refuse `def init` with the `cue` spelling.
-
-### BUG-391: `str.toInt()` is typed `int`, so `if n == nil` passes `-c` and fails in Zig — OPEN (found 2026-09-09)
-
-Either `toInt()` should be `int?` (a non-numeric string has to go somewhere — QUICKSTART
-says `tryInt` is the optional form; check which the docs promise) or comparing a plain
-primitive with `nil` should be a checker refusal ("'int' is never nil; use tryInt()").
-The second is right regardless of the first.
-
 ### BUG-392: an un-annotated `str` result from several stdlib calls prints as a byte array — OPEN (found 2026-09-09)
 
 `var cwd = sys.cwd(); print("at ${cwd}")` prints `{ 47, 104, ... }`. Also reported for
@@ -82,17 +56,6 @@ Table the affected calls the same way BUG-369 did for methods.
 ### BUG-393: `Regex.matches()` / `Regex.replaceAll()` pass `-c`, fail in Zig ("no field or member function") — OPEN (found 2026-09-09)
 
 Either implement, or refuse at `-c` with the Regex method set (BUG-369 method).
-
-### BUG-394: `List.remove("x")` (a value) passes `-c`; `remove` takes an INDEX — OPEN (found 2026-09-09)
-
-BUG-378 deliberately did not type `remove`'s argument because it is an index; type it as
-`int` (numeric widening still applies) so a string argument is refused with "remove takes
-an index; use find()/contains() to locate the value first".
-
-### BUG-395: a user class named `Crypto` (or any builtin module name) silently miscompiles — OPEN (found 2026-09-09)
-
-Refuse at `-c`: "'Crypto' is a builtin module name" (same shape as BUG-359's reserved
-runtime names).
 
 ### BUG-396: two chained mutator calls (`obj.a().b()`) fail in Zig on `BuildTarget`/`HashMap` — OPEN (found 2026-09-09)
 
@@ -111,11 +74,6 @@ the spelling (QUICKSTART says which) and make both agree.
 table so `-c` refuses it. Same for `DateTime.listZones()` (fails as `unreachable code`) and
 the static-call form `DateTime.inZone(...)` (instance-only; static form passes `-c`, fails in
 Zig).
-
-### BUG-399: `class X implements SomeMixin` (should be `adds`) passes `-c`, fails in Zig — OPEN (found 2026-09-09)
-
-The checker knows which names are mixins and which are interfaces; `implements <mixin>` and
-`adds <interface>` should each be a Zebra diagnostic naming the right keyword.
 
 ### BUG-400: `"${e}"` on a catch binding fails in Zig ("use of undeclared identifier") — OPEN (found 2026-09-09)
 

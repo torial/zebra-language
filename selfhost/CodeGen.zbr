@@ -4359,6 +4359,44 @@ struct Generator
     # (`.{ .ptr = <arg>, .vtable = &_vtable_<Class>_<Iface> }`) and return true.
     # The TC already accepts class→interface, so the class implements the iface
     # (its vtable exists).  Mirrors src/CodeGen.zig genInterfaceArgCoercion.
+    # BUG-388: the concrete class whose vtable `arg` can be boxed with for
+    # `iface_name`, or nil when no coercion applies (not an interface, an
+    # interface-typed value already, an unknown expression). The decision is
+    # separate from the emit so a caller can choose a whole statement shape
+    # (genReturn) before writing anything.
+    def ifaceCoercionClass(arg: Expr, iface_name: str): str?
+        if findInterfaceDecl(iface_name) == nil
+            return nil
+        var cn: str = ""
+        branch arg
+            on Expr.call as ac
+                if ac.callee is Expr.ident as aid
+                    cn = aid.name
+                # `f(mk())` -- a call that is not a constructor (a def returning a
+                # concrete class, a method result) is typed, not named.
+                if not class_names.contains_(cn)
+                    if concreteClassOf(arg) as ccn2
+                        cn = ccn2
+                    else
+                        return nil
+            else
+                # Not only a constructor call: `var c = Circle(2.0); f(c)` -- an
+                # ident, a field, a method result -- typed as a concrete class takes
+                # the same fat pointer. The annotated-assignment path already did
+                # this (genLocalVar); the argument path only knew constructors, so
+                # the direct-instantiation idiom every interfaces chapter teaches died
+                # in Zig with "expected type 'Shape', found '*Circle'".
+                if concreteClassOf(arg) as ccn
+                    cn = ccn
+                else
+                    return nil
+        if not class_names.contains_(cn)
+            return nil
+        if not module_types.classConformsTo(cn, iface_name)
+            if not dep_types.classConformsTo(cn, iface_name)
+                return nil
+        return cn
+
     def genInterfaceArgCoercion(arg: Expr, param_type: TypeRef): bool
         var iface_name: str = ""
         branch param_type
@@ -4366,23 +4404,12 @@ struct Generator
                 iface_name = itn.name
             else
                 return false
-        if findInterfaceDecl(iface_name) == nil
-            return false
-        var cn: str = ""
-        branch arg
-            on Expr.call as ac
-                if ac.callee is Expr.ident as aid
-                    cn = aid.name
-                else
-                    return false
-            else
-                return false
-        if not class_names.contains_(cn)
-            return false
-        w.emit(".{ .ptr = ")
-        genExpr(arg)
-        w.emit(", .vtable = &_vtable_" + cn + "_" + iface_name + " }")
-        return true
+        if ifaceCoercionClass(arg, iface_name) as cn
+            w.emit(".{ .ptr = ")
+            genExpr(arg)
+            w.emit(", .vtable = &_vtable_" + cn + "_" + iface_name + " }")
+            return true
+        return false
 
     def concreteClassOf(e: Expr): str?
         if .infer_ctx == nil
@@ -7423,6 +7450,40 @@ struct Generator
                                 genCallWithTypeHint(a.value, field_type!)
                                 w.emit(";\n")
                                 return
+        # BUG-388: `h.sh = c` where the field is interface-typed and the value a
+        # concrete class -- the same fat pointer the annotated-var path emits.
+        if a.op == AssignOp.assign and not (a.value is Expr.nil_)
+            var ift_name: str = ""
+            var ift = getAssignFieldType(a)
+            if ift as iftr
+                var ift_tr: TypeRef = iftr
+                if ift_tr is TypeRef.nilable as ift_inner
+                    ift_tr = ift_inner
+                if ift_tr is TypeRef.named as ift_n
+                    ift_name = ift_n.name
+            # `other.field = v`: the field belongs to the RECEIVER's class, which
+            # getAssignFieldType (current-owner lookup by name) does not see.
+            if ift_name == "" and .infer_ctx != nil
+                if a.target is Expr.member as ift_mem
+                    var ift_rt: Type_ = inferExpr(ift_mem.object, .infer_ctx!)
+                    if ift_rt is Type_.ref_to as ift_rr
+                        ift_rt = ift_rr
+                    if ift_rt is Type_.named as ift_cls
+                        if (.infer_ctx!).fieldTypeAny(ift_cls, ift_mem.member) as ift_ft
+                            var ift_ft2: Type_ = ift_ft
+                            if ift_ft2 is Type_.optional as ift_fo
+                                ift_ft2 = ift_fo
+                            if ift_ft2 is Type_.named as ift_fn
+                                ift_name = ift_fn
+            if ift_name != ""
+                if findInterfaceDecl(ift_name) != nil
+                    var ift_sp: Span = Span(0, 0, 0, 0)
+                    genExpr(a.target)
+                    w.emit(" = ")
+                    if not genInterfaceArgCoercion(a.value, TypeRef.named(NamedTypeRef(ift_sp, ift_name)))
+                        genExpr(a.value)
+                    w.emit(";\n")
+                    return
         # BUG-170: assigning a value struct into a `^T`/`^T?` field — heap-box it so
         # Zig gets a `*T`.  Only structs (value types) need this; class/union
         # payloads are already pointers (`^Class` is a hard error, so `^T` fields
@@ -7862,6 +7923,20 @@ struct Generator
         if ensure_armed_active
             writeIndent()
             w.emit("_ensure_armed = true;\n")
+        # BUG-388: `return Circle(2.0)` from a `def f(): Shape` -- a plain interface
+        # return type takes the fat pointer for a concrete value (the `^Shape` case
+        # below heap-allocates; a plain one is a value).
+        if r.value != nil and method_return_type != nil
+            var iret: TypeRef = method_return_type!
+            if iret is TypeRef.nilable as iret_inner
+                iret = iret_inner
+            if iret is TypeRef.named as iret_n
+                if ifaceCoercionClass(r.value!, iret_n.name) as iret_cn
+                    writeIndent()
+                    w.emit("return .{ .ptr = ")
+                    genExpr(r.value!)
+                    w.emit(", .vtable = &_vtable_" + iret_cn + "_" + iret_n.name + " };\n")
+                    return
         # BUG-350: `return s.split(sep)` from a `List(str)` function emitted the raw
         # SplitIterator ("expected 'array_list...', found 'mem.SplitIterator'"); only
         # the annotated-var site collected it. Same collector, return position.
@@ -12919,7 +12994,11 @@ struct Generator
                             # Use param type hint for zero-arg generic ctors (HashMap(), List(), etc.)
                             var ctor_pt = lookupCtorParamType(id.name, a.name, arg_idx)
                             if ctor_pt != nil
-                                genCallWithTypeHint(a.value, ctor_pt!)
+                                # BUG-388: an interface-typed ctor param takes the
+                                # fat pointer for a concrete-class argument, exactly
+                                # as a def param does (genArgListNamed).
+                                if not genInterfaceArgCoercion(a.value, ctor_pt!)
+                                    genCallWithTypeHint(a.value, ctor_pt!)
                             else
                                 genExpr(a.value)
                         arg_idx = arg_idx + 1
@@ -13778,7 +13857,15 @@ struct Generator
                                 genExpr(args.at(0).value)
                                 w.emit(")")
                             else
-                                genExpr(args.at(0).value)
+                                # BUG-388: List(Iface).add(concrete) takes the fat
+                                # pointer, as every other interface-typed slot does.
+                                var t_iface_done = false
+                                if list_elem_t is Type_.named as t_en
+                                    if findInterfaceDecl(t_en) != nil
+                                        var t_sp: Span = Span(0, 0, 0, 0)
+                                        t_iface_done = genInterfaceArgCoercion(args.at(0).value, TypeRef.named(NamedTypeRef(t_sp, t_en)))
+                                if not t_iface_done
+                                    genExpr(args.at(0).value)
                         w.emit(") catch @panic(\"OOM\")")
                         return
                     if mname == "count"
@@ -14426,7 +14513,13 @@ struct Generator
                             var ump = um_params!
                             if um_ai < ump.len
                                 var ump_p = ump.at(um_ai)
-                                if paramNeedsAddrOfTx(ump_p, um_body)
+                                # BUG-388: interface-typed method param, concrete arg.
+                                if ump_p.type_ != nil and not um_emitted
+                                    if genInterfaceArgCoercion(args.at(um_ai).value, ump_p.type_!)
+                                        um_emitted = true
+                                if um_emitted
+                                    pass
+                                else if paramNeedsAddrOfTx(ump_p, um_body)
                                     if argIdentInCpp(args.at(um_ai).value)
                                         genExpr(args.at(um_ai).value)   # Case 1: ptr→ptr
                                         um_emitted = true
@@ -14563,7 +14656,22 @@ struct Generator
                         genExpr(args.at(0).value)
                         w.emit(")")
                     else
-                        genExpr(args.at(0).value)
+                        # BUG-388: `shapes.add(Circle(1.0))` on a List(Shape) -- an
+                        # interface-typed element takes the fat pointer for a concrete
+                        # argument, as a def/method/ctor param does. The element type
+                        # comes from inference (a local, a field, or a `List(I)()` ctor).
+                        var add_iface_done = false
+                        if .infer_ctx != nil
+                            var add_lt: Type_ = inferExpr(m.object, .infer_ctx!)
+                            if add_lt is Type_.ref_to as add_lrt
+                                add_lt = add_lrt
+                            if add_lt is Type_.list_ as add_elem
+                                if add_elem is Type_.named as add_en
+                                    if findInterfaceDecl(add_en) != nil
+                                        var add_sp: Span = Span(0, 0, 0, 0)
+                                        add_iface_done = genInterfaceArgCoercion(args.at(0).value, TypeRef.named(NamedTypeRef(add_sp, add_en)))
+                        if not add_iface_done
+                            genExpr(args.at(0).value)
                 w.emit(") catch @panic(\"OOM\")")
                 return
         if mname == "count"

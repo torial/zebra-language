@@ -1243,7 +1243,7 @@ smoke_run test/bug198_union_optional_field_test.zbr "bug198: OK"
 # §28j: concurrent allocation on the shared arena is safe (ThreadSafeAllocator wrapper).
 # 8 workers each build a 500-element List; the sum must be exact and stable. (The unsafe
 # allocate-scope-under-concurrency residual is demonstrated by the unregistered
-# arena_concurrency_hazard_test — see docs/design/concurrency_allocation_design.md.)
+# arena_concurrency_hazard_test — see docs/concurrency_allocation_design.md.)
 smoke_run test/thread_alloc_stress_test.zbr "thread_alloc_stress: OK"
 
 # Empty / marker structs+classes are legal (2026-07-23): body-less struct/class is a
@@ -1811,6 +1811,14 @@ smoke_tc_fail test/bug384_fstring_prefix_fail.zbr "no \`f\"...\"\` prefix"
 smoke_run test/bug385_dollar_escape_test.zbr "lit \${x} interp 5"
 smoke_test test/bug386_assert_in_test_pass_test.zbr
 smoke_run test/bug387_lines_semantics_test.zbr "2 3 [a||c] 0 1 2"
+smoke_run test/bug388_iface_param_direct_test.zbr "total=13"
+smoke_tc_fail test/bug389_bare_list_ctor_fail.zbr "needs its type argument"
+smoke_tc_fail test/bug390_def_init_fail.zbr "the constructor is written"
+smoke_tc_fail test/bug391_primitive_nil_compare_fail.zbr "is never nil"
+smoke_tc_fail test/bug394_list_remove_value_fail.zbr "expected int, got str"
+smoke_run test/bug395_user_class_builtin_name_test.zbr "5 3"
+smoke_tc_fail test/bug399_implements_mixin_fail.zbr "is a mixin: bring it in with"
+smoke_run test/bug389_395_shapes_ok_test.zbr "6 yes !"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_location: assert failed at"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_message: custom message here"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"

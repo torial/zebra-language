@@ -1,0 +1,10 @@
+# BUG-399: `implements <mixin>` (the keyword for an interface) passed -c and failed in Zig
+# with "use of undeclared identifier". A mixin is brought in with `adds`.
+mixin Loud
+    def shout(): str
+        return "!"
+class A implements Loud
+    def walk(): str
+        return "w"
+def main()
+    print(A().shout())

@@ -1,0 +1,19 @@
+# Controls for BUG-389/391/394/399: the annotated bare ctor, an optional compared with
+# nil, remove by index, and `adds` for a mixin all still pass.
+mixin Loud
+    def shout(): str
+        return "!"
+class A adds Loud
+    var n: int
+    cue init(n: int)
+        .n = n
+def main()
+    var xs: List(int) = List()
+    xs.add(5)
+    xs.add(6)
+    xs.remove(0)
+    var m: int? = "12".tryInt()
+    var s: str = "no"
+    if m != nil
+        s = "yes"
+    print("${xs.at(0)} ${s} ${A(1).shout()}")
