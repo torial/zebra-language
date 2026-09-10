@@ -3578,9 +3578,9 @@ r.close()
 
 | Call                                      | Returns | Notes                             |
 |-------------------------------------------|---------|-----------------------------------|
-| `Crypto.encrypt(plaintext, key)`          | str     | AES-256-GCM; base64-encoded output |
-| `Crypto.decrypt(ciphertext, key)`         | `str?`  | Returns nil on auth failure        |
-| `Crypto.deriveKey(password, salt)`        | str     | HKDF-SHA256; 32-byte hex output   |
+| `Crypto.encrypt(key, plaintext)`          | str     | AES-256-GCM; hex-encoded nonce+tag+ciphertext (key FIRST — test/crypto_test.zbr) |
+| `Crypto.decrypt(key, ciphertext)`         | `str?`  | Returns nil on auth failure        |
+| `Crypto.deriveKey(password, salt)`        | str     | HKDF-SHA256; 32-byte key as 64 hex chars (implemented 2026-09-10, BUG-398) |
 
 ### `Atomic(T)` — lock-free atomic cells
 

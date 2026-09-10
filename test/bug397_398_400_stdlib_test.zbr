@@ -1,0 +1,19 @@
+# BUG-397: `Log.error(msg)` is the documented spelling; codegen only knew `err` and emitted
+# a @compileError, which Zig reported as "unreachable code" on the NEXT line.
+# BUG-398: `Crypto.deriveKey(password, salt)` was documented and type-checked but had no
+# codegen; now HKDF-SHA256 (64 hex chars, deterministic). `DateTime.listZones()` is
+# refused at -c instead of a @compileError (see bug398_datetime_static_fail).
+# BUG-400: the catch binding used as a value (`"${e}"`, `print(e)`) is the error message.
+def boom(): int throws
+    raise "bad thing"
+def main()
+    Log.error("logged")
+    var k = Crypto.deriveKey("pw", "salt")
+    var k2 = Crypto.deriveKey("pw", "salt")
+    var k3 = Crypto.deriveKey("pw", "other")
+    print("${k.len} ${k == k2} ${k == k3}")
+    var x = boom()
+    print(x)
+catch |e|
+    print("caught: ${e}")
+    print(e)

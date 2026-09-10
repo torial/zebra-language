@@ -1,0 +1,5 @@
+# BUG-393: `re.matches(s)` / `re.replaceAll(...)` passed -c and failed in Zig ("no field or
+# member function"). The Regex method set is QUICKSTART's table; the checker names it.
+def main()
+    var r = Regex.compile("a+")
+    print(r.matches("aaa"))

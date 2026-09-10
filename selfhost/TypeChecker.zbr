@@ -2592,9 +2592,20 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.list_(Type_.string_)
                             return Type_.void_  # write/append/delete/copy/rename
                         if bname == "Crypto"
-                            if mem.member == "encrypt"
+                            if mem.member == "encrypt" or mem.member == "deriveKey"
                                 return Type_.string_
-                            return Type_.optional(Type_.string_)  # decrypt → ?str
+                            if mem.member == "decrypt"
+                                return Type_.optional(Type_.string_)
+                            # BUG-398: anything else was typed str? and then a
+                            # @compileError in codegen ("unreachable code" one line on).
+                            ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'Crypto' has no function '" + mem.member + "' (encrypt/decrypt/deriveKey)")
+                            return Type_.unknown_
+                        if bname == "DateTime" and not ctx.hasClassAny("DateTime")
+                            if mem.member != "now" and mem.member != "fromEpoch" and mem.member != "of"
+                                # BUG-398: `DateTime.listZones()` does not exist and `inZone`
+                                # is an instance method; both were a @compileError.
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'DateTime' has no static function '" + mem.member + "' (now/fromEpoch/of; inZone and the rest are methods on a DateTime value)")
+                                return Type_.unknown_
                         if bname == "Json"
                             if mem.member == "object" or mem.member == "array"
                                 return Type_.json_value
@@ -2776,10 +2787,17 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.void_
                         on Type_.regex
                             var mname: str = mem.member
-                            if mname == "find"
+                            if mname == "find" or mname == "replace"
                                 return Type_.string_
                             if mname == "test" or mname == "match"
                                 return Type_.bool_
+                            if mname == "findAll" or mname == "groups"
+                                return Type_.list_(Type_.string_)
+                            # BUG-393: `matches` / `replaceAll` passed -c and failed in
+                            # Zig ("no field or member function"). The Regex method set
+                            # is QUICKSTART's table; name it.
+                            ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'Regex' has no method '" + mname + "' (match/test/find/findAll/replace/groups)")
+                            return Type_.unknown_
                         on Type_.code_editor
                             # BUG-212, second half. `_code_editor_get_text` returns
                             # []const u8, but with no TC type for the call the interpolator

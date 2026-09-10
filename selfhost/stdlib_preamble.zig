@@ -3729,6 +3729,15 @@ pub fn _crypto_encrypt(password: []const u8, plaintext: []const u8) []const u8 {
     @memcpy(raw[nonce.len + tag.len ..], ct_buf);
     return _hex_encode(raw);
 }
+/// BUG-398: `Crypto.deriveKey(password, salt)` was in the docs and the checker and
+/// had no codegen (a @compileError). HKDF-SHA256, 32-byte output, hex-encoded.
+pub fn _crypto_derive_key(password: []const u8, salt: []const u8) []const u8 {
+    const Hkdf = std.crypto.kdf.hkdf.HkdfSha256;
+    const prk = Hkdf.extract(salt, password);
+    var out: [32]u8 = undefined;
+    Hkdf.expand(&out, "zebra", prk);
+    return _hex_encode(&out);
+}
 pub fn _crypto_decrypt(password: []const u8, hex_ciphertext: []const u8) ?[]const u8 {
     const min_hex = (_AESGCM.nonce_length + _AESGCM.tag_length) * 2;
     if (hex_ciphertext.len < min_hex or hex_ciphertext.len % 2 != 0) return null;

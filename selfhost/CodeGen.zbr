@@ -8027,11 +8027,22 @@ struct Generator
                 w.emit(";\n")
                 writeIndent()
                 var stmt_is_throws: bool = false
+                var hoist_discard: bool = false
                 if .infer_ctx != nil
                     var recv_t: Type_ = inferExpr(obj, .infer_ctx!)
                     if recv_t is Type_.named as recv_cn
                         if isClassMethodThrows(recv_cn, method_name)
                             stmt_is_throws = true
+                        # BUG-396: a fluent chain as a statement (`b.inc().dbl()`) --
+                        # the last call returns the object and Zig refuses to
+                        # discard it implicitly ("value of type '*B' ignored").
+                        # The un-hoisted statement path already emits `_ = `; this
+                        # hoisted path did not.
+                        if (.infer_ctx!).methodReturnAny(recv_cn, method_name) as hoist_ret
+                            if not (hoist_ret is Type_.void_) and not (hoist_ret is Type_.unknown_) and not (hoist_ret is Type_.unresolved)
+                                hoist_discard = true
+                if hoist_discard
+                    w.emit("_ = ")
                 if stmt_is_throws and current_method_throws and try_block_label == nil and not in_try_expr
                     recordImplicitTry(source_file + ":" + w.cur_line.toString())
                     w.emit("try ")
@@ -11557,6 +11568,13 @@ struct Generator
         return nil
 
     def genIdent(id: ExprIdent)
+        # BUG-400: the catch binding used as a VALUE (`"${e}"`, `print(e)`, `log(e)`)
+        # is the error's message. Only `e.message`/`e.details` were handled (member
+        # emit); a bare `e` reached Zig as an undeclared identifier.
+        if catch_var != "" and id.name == catch_var
+            if not (.infer_ctx != nil and (.infer_ctx!).hasLocal(id.name))
+                w.emit("_zbr_error_msg()")
+                return
         # BUG-187: a nil-narrowed local emits `x.?` at every value use.
         if isNilNarrowed(id.name)
             genIdentRaw(id)
@@ -11933,6 +11951,10 @@ struct Generator
             on Expr.string_interp
                 return true
             on Expr.ident as id
+                # BUG-400: the catch binding as a value is the error message (str).
+                if catch_var != "" and id.name == catch_var
+                    if not (.infer_ctx != nil and (.infer_ctx!).hasLocal(id.name))
+                        return true
                 # Parameter or local typed: str
                 if str_params.contains_(id.name)
                     return true
@@ -17599,6 +17621,19 @@ struct Generator
 
     # ── genCryptoCall ────────────────────────────────────────────────────────
     def genCryptoCall(mname: str, args: List(Arg))
+        if mname == "deriveKey"
+            w.emit("_crypto_derive_key(")
+            if args.len >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(", ")
+            if args.len >= 2
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
         if mname == "encrypt"
             w.emit("_crypto_encrypt(")
             if args.len >= 1
@@ -17751,7 +17786,13 @@ struct Generator
         w.emit("\")")
 
     # ── genLogCall ───────────────────────────────────────────────────────────
-    def genLogCall(mname: str, args: List(Arg))
+    def genLogCall(mname0: str, args: List(Arg))
+        # BUG-397: QUICKSTART documents `Log.error(msg)`; the level map only had
+        # `err`, so the documented spelling was a @compileError ("unknown
+        # Log.error") and Zig reported the NEXT line as unreachable.
+        var mname: str = mname0
+        if mname == "error"
+            mname = "err"
         if mname == "debug"
             w.emit("_log_debug(")
             if args.len > 0

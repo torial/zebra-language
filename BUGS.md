@@ -46,35 +46,6 @@
 
 ---
 
-### BUG-393: `Regex.matches()` / `Regex.replaceAll()` pass `-c`, fail in Zig ("no field or member function") — OPEN (found 2026-09-09)
-
-Either implement, or refuse at `-c` with the Regex method set (BUG-369 method).
-
-### BUG-396: two chained mutator calls (`obj.a().b()`) fail in Zig on `BuildTarget`/`HashMap` — OPEN (found 2026-09-09)
-
-Reported from the Ch22b build examples; needs a minimal repro (the agent saw it in every
-position: statement, var-init, stored variable).
-
-### BUG-397: `Log.error()` is broken twice — OPEN (found 2026-09-09)
-
-(a) the checker treats it as noreturn, so following code is "unreachable"; (b) codegen's
-level map has `err` but not `error`, so it fails with `selfhost: unknown Log.error`. Decide
-the spelling (QUICKSTART says which) and make both agree.
-
-### BUG-398: `Crypto.deriveKey` is accepted by the checker (typed `str?`) and has no codegen — OPEN (found 2026-09-09)
-
-`selfhost: unknown Crypto.deriveKey`. Either implement or remove from the checker's Crypto
-table so `-c` refuses it. Same for `DateTime.listZones()` (fails as `unreachable code`) and
-the static-call form `DateTime.inZone(...)` (instance-only; static form passes `-c`, fails in
-Zig).
-
-### BUG-400: `"${e}"` on a catch binding fails in Zig ("use of undeclared identifier") — OPEN (found 2026-09-09)
-
-Interpolating the catch binding itself rather than `e.message`. Either make `${e}` mean
-`e.message`, or refuse with "interpolate e.message". Also from the book audit, already
-fixed today: `@tag(...)` before `static def` (goes inside the `static` group — needs a
-diagnostic or acceptance, not filed separately: fold into BUG-390's family if convenient).
-
 ### BUG-351: `StringBuilder.build()` EMPTIES the builder — `sb.len()` is 0 afterwards — OPEN (found 2026-09-08)
 
 `build()` lowers to `toOwnedSlice`, which moves the buffer out. test/string_builder_test.zbr

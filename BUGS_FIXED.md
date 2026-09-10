@@ -36,6 +36,43 @@ codegen fills the runtime's second `flag(long, short)` argument for the document
 one-arg form; `Compress.gzip -> str`, `gunzip -> str?` (QUICKSTART said List(byte); the
 runtime returns str -- the doc is corrected). Fixture bug392_stdlib_str_returns_test.
 
+### BUG-400: the catch binding used as a value (`"${e}"`, `print(e)`) failed in Zig — FIXED 2026-09-10
+
+Only `e.message` / `e.details` were handled; a bare `e` reached Zig as an undeclared
+identifier. **Fix.** A bare catch binding emits the message (`_zbr_error_msg()`) and
+formats as a string. Fixture bug397_398_400_stdlib_test.
+
+### BUG-398: `Crypto.deriveKey` had no codegen; `DateTime.listZones()` / static `inZone` were @compileErrors — FIXED 2026-09-10
+
+`deriveKey(password, salt)` was in QUICKSTART and the checker, so `-c` passed and the
+program died on a `@compileError("unknown Crypto.deriveKey")`, which Zig reports as
+"unreachable code" on the NEXT line. **Fix.** Implemented: HKDF-SHA256, 32 bytes as 64
+hex chars (`_crypto_derive_key`). Any other `Crypto.*` and any `DateTime.*` static outside
+now/fromEpoch/of are refused at `-c` with the real set. QUICKSTART's Crypto rows also
+said `encrypt(plaintext, key)` and "base64": the runtime and test/crypto_test.zbr are
+key-first and hex; the doc is corrected. Fixtures bug397_398_400_stdlib_test,
+bug398_datetime_static_fail.
+
+### BUG-397: `Log.error(msg)` (the documented spelling) was a @compileError — FIXED 2026-09-10
+
+The level map had `err` only. **Fix.** `error` is an alias of `err` in genLogCall.
+Fixture bug397_398_400_stdlib_test.
+
+### BUG-396: a fluent chain as a statement (`b.inc().dbl()`) failed in Zig — FIXED 2026-09-10
+
+The statement path hoists `b.inc()` to a temp and emitted the last call bare; when that
+call returns the object (the fluent idiom), Zig refuses the implicit discard ("value of
+type '*B' ignored"). The un-hoisted statement path already emitted `_ = `; the hoisted
+one now does when the method's declared return is non-void. Fixture
+bug396_fluent_chain_statement_test.
+
+### BUG-393: `re.matches()` / `re.replaceAll()` passed `-c` — FIXED 2026-09-10
+
+The regex member arm typed find/test/match and let everything else through to Zig.
+**Fix.** The arm knows QUICKSTART's set (match/test/find/findAll/replace/groups), types
+findAll/groups/replace, and refuses the rest by name. Fixture
+bug393_regex_unknown_method_fail.
+
 ### BUG-399: `implements <mixin>` passed `-c` and failed in Zig — FIXED 2026-09-10
 
 `class A implements Loud` where `Loud` is a mixin reached Zig as "use of undeclared

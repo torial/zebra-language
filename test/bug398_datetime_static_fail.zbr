@@ -1,0 +1,5 @@
+# BUG-398: `DateTime.listZones()` does not exist and `DateTime.inZone(..)` is an instance
+# method; both passed -c and became a @compileError. Refused with the static set.
+def main()
+    var zs = DateTime.listZones()
+    print(zs.len)

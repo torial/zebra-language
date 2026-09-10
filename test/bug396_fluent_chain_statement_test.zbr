@@ -1,0 +1,19 @@
+# BUG-396: a fluent chain as a STATEMENT -- `b.inc().dbl()` where each call returns the
+# object -- was hoisted to a temp and the last call emitted bare, which Zig refuses
+# ("value of type '*B' ignored"). The hoisted path now discards like the plain one.
+class B
+    var n: int
+    cue init()
+        .n = 0
+    def inc(): B
+        .n += 1
+        return this
+    def dbl(): B
+        .n *= 2
+        return this
+def main()
+    var b = B()
+    b.inc().dbl()
+    b.inc().inc().dbl()
+    var c = B().inc().inc().dbl()
+    print("${b.n} ${c.n}")
