@@ -26,9 +26,11 @@ fail=0
 for ex in "${examples[@]}"; do
   name=$(basename "$ex" .zbr); proj="${name}_gui_libui_ng"
   rm -rf "$proj"
-  # zebra also tries to `zig build` the project (which fetches the bindings — may
-  # fail offline); we only need the emitted src/main.zig, so key on that.
-  "$ZEBRA" --gui-backend=libui_ng --output-dir . "$ex" >/dev/null 2>&1   # explicit: the default is the TEMP dir
+  # `--scaffold-only`: write the project, do not `zig build` it. Without it the compiler
+  # builds AND RUNS the app -- on Linux that fails fast (no bindings fetch), which is
+  # why nobody noticed; on Windows with the bindings fetchable it LAUNCHED the GUI and
+  # the first --daily there sat behind a window for 25 minutes (2026-09-10).
+  "$ZEBRA" --gui-backend=libui_ng --scaffold-only --output-dir . "$ex" >/dev/null 2>&1   # explicit: the default is the TEMP dir
   if [ ! -f "$proj/src/main.zig" ]; then echo "FAIL (codegen): $ex"; fail=1; continue; fi
   # 2026-09-09: the GUI section is pub-marked into the shared zebra_rt.zig by a CLOSED list
   # of declaration forms (rtPubMarkSection). A form not on that list is silently private

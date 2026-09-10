@@ -494,6 +494,10 @@ bash tools/libui_section_check.sh  # THE GUI-BACKEND WITNESS WITHOUT WINDOWS (20
                                 #   compiles (tui builds skip it; ast-check sees only
                                 #   syntax). Blind to: runtime (a wrong message id is not a
                                 #   compile error). Needs LIBUI_BINDINGS=<zig-libui-ng/src>.
+                                #   Scaffolds with `--scaffold-only` (2026-09-10): without
+                                #   it the compiler builds AND RUNS the app, and on Windows
+                                #   with the bindings fetchable the first --daily sat behind
+                                #   an open GUI window for 25 minutes.
 bash tools/win_sema_check.sh    # THE WINDOWS COMPILE WITNESS WITHOUT WINDOWS (2026-09-07):
                                 #   emits programs and runs `zig build-exe -target
                                 #   x86_64-windows-gnu -fno-emit-bin` — full Sema of every
@@ -1661,7 +1665,10 @@ bash tools/dynlib_roundtrip_check.sh  # THE PLUGIN GATE, registered as `dynlib-r
                                 #   the @export factory learned to initialise the runtime
                                 #   (`_libInit`); red-checked by mutating that call out
                                 #   (general protection fault in Io.operate).
-                                #   CANNOT SEE: Windows (.dll) or macOS — Linux only here;
+                                #   WINDOWS: covered since 2026-09-10 -- the first --daily
+                                #   there found `--shared` writing `libgreeter.so` because
+                                #   dbgIsWindows() read env vars Git Bash lacks; it is
+                                #   comptime now. CANNOT SEE: macOS;
                                 #   a host that is NOT Zebra (C, Zig); unloading (close
                                 #   then reopen); anything about the ABI of `str` across
                                 #   the boundary beyond "the bytes came back".

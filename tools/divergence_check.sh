@@ -183,6 +183,15 @@ if [ "${skip_scan:-0}" != 1 ]; then
 files=$(bash "$REPO/tools/corpus_ls.sh" --abs test examples)
 fi
 worklist=""; nqueued=0
+# Derive the must-reject set BEFORE the sweep. It was derived in the classify phase
+# until 2026-09-10, so a refusal came after the whole hour of emitting (3877 s on
+# torial, then "REFUSING"). A precondition that can refuse belongs before the work.
+MUST_REJECT="$(bash "$REPO/tools/must_reject_set.sh")" || {
+    echo "divergence: REFUSING — must_reject_set.sh would not report. Every rejection" >&2
+    echo "  would otherwise score as UNEXPECTED, which is the loudest claim this gate makes." >&2
+    exit 2
+}
+
 for f in $files; do
   name=$(basename "$f" .zbr)
   [ -n "$ONLY" ] && { case "$name" in *"$ONLY"*) ;; *) continue;; esac; }
@@ -247,11 +256,7 @@ np=0; naf=0; nsg=0; nbg=0; nnomain=0; nmulti=0; nexpected=0; ninfra=0
 # the list came back 48 where the suite registers 54. Harmless only because
 # `corpus_ls.sh test` does not recurse -- an unstruck gap. Now one derivation with two
 # consumers, the same argument corpus_ls.sh and positive_set.sh already make.
-MUST_REJECT="$(bash "$REPO/tools/must_reject_set.sh")" || {
-    echo "divergence: REFUSING — must_reject_set.sh would not report. Every rejection" >&2
-    echo "  would otherwise score as UNEXPECTED, which is the loudest claim this gate makes." >&2
-    exit 2
-}
+# (derived BEFORE the sweep, above -- see the note there)
 while IFS='|' read -r name b s; do
   [ -z "$name" ] && continue
   if [ "$b" = MULTI ]; then

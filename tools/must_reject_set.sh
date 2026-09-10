@@ -53,8 +53,13 @@ fi
 
 # A basename collision would make the NAME keying ambiguous for every consumer, all of
 # which key on basename (the sweeps report basenames, not paths).
+# A collision is one BASENAME reached from two different PATHS. The same file registered
+# more than once (bug369_container_unknown_method_fail carries three expected messages,
+# one smoke_tc_fail line each) is one entry, not a collision -- that distinction was
+# missed until 2026-09-10, when divergence spent 3877 s and then REFUSED on it.
 dupes="$(grep -hoE '^(smoke_tc_fail|smoke_multi_parse_fail)[[:space:]]+[^[:space:]]+\.zbr' "$SMOKE" \
-         | sed -E 's/^[a-z_]+[[:space:]]+//; s#.*/##; s#\.zbr$##' | sort | uniq -d)"
+         | sed -E 's/^[a-z_]+[[:space:]]+//' | sort -u \
+         | sed -E 's#.*/##; s#\.zbr$##' | sort | uniq -d)"
 if [ -n "$dupes" ]; then
     echo "must_reject_set: REFUSING — basename collision, consumers key on basename:" >&2
     printf '  %s\n' $dupes >&2

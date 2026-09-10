@@ -943,6 +943,7 @@ def emitUsage(to_stdout: bool)
     usageLine("                                           glfw, stub delegate to zebra-bootstrap.exe", to_stdout)
     usageLine("  zebra --zig-backend <source.zbr>         delegate to zebra-bootstrap.exe", to_stdout)
     usageLine("  zebra --keep-temp <source.zbr>           keep the scratch build (kept anyway on failure)", to_stdout)
+    usageLine("  zebra --gui-backend=X --scaffold-only <f>  write the GUI project beside the emit; do not build or run it", to_stdout)
     usageLine("  zebra --version                          print version and exit", to_stdout)
     usageLine("  zebra typecheck-merge <file.zbr>         type-check both sides of a conflict", to_stdout)
     usageLine("  zebra check <file.zbr>                   dead code detection (arms, phantoms, unreachable fns)", to_stdout)
@@ -2943,7 +2944,7 @@ def copyGuiDeps(zig_path: str, srcDir: str)
                 File.copy(from, srcDir + "/" + name)
                 todo.add(from)
 
-def compileGuiProject(zig_path: str, mode_run: bool, backend: str): int
+def compileGuiProject(zig_path: str, mode_run: bool, backend: str, scaffold_only: bool): int
     var suffix: str = "_gui_tui"
     if backend == "libui_ng"
         suffix = "_gui_libui_ng"
@@ -2967,6 +2968,9 @@ def compileGuiProject(zig_path: str, mode_run: bool, backend: str): int
     File.write(proj + "/build.zig.zon", bzon)
     if backend == "libui_ng"
         File.write(proj + "/app.manifest", luiManifest())
+    if scaffold_only
+        sys.errln("wrote " + proj + "/ (scaffold only; not built)")
+        return 0
     var argv = List(str)()
     argv.add(zigExe())
     argv.add("build")
@@ -3373,7 +3377,12 @@ def dbgFrame(body: str): str
     return "Content-Length: " + body.len.toString() + "\r\n\r\n" + body
 
 def dbgIsWindows(): bool
-    return sys.getenv("OS") != nil and sys.getenv("SystemRoot") != nil
+    # Comptime, like the macOS test beside it. It used to read the OS / SystemRoot
+    # environment variables, and under Git Bash on torial one of them was absent, so
+    # `--shared` wrote `libgreeter.so` ON WINDOWS and the dynlib gate failed the first
+    # --daily that ran it there (2026-09-10). The target is a property of the binary,
+    # not of the environment it happens to run in.
+    return zig"builtin.os.tag == .windows"
 
 # lldb-dap (or the older lldb-vscode) must be on PATH; try each name by spawning.
 def dbgFindLldb(): str
@@ -3642,7 +3651,7 @@ def main()
     # 2026-09-01): with unknown flags now refused, --TURBO becomes a NAMED ERROR
     # rather than either being ignored or silently starting to work -- the user sees
     # the problem instead of getting a build they did not ask for.
-    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --listen --module-path --no-runtime-module --only --out --output-dir --print --release --selfhost-compile --shared --single-file --single-threaded --tag --target --turbo --version --warn-inference-guess --warn-non-exhaustive --zig-backend -c -h"
+    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --listen --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --turbo --version --warn-inference-guess --warn-non-exhaustive --zig-backend -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -3982,6 +3991,9 @@ def main()
     # Verified it is NOT a cache before deleting anything: the binary's mtime changes
     # on every run, so it is re-linked each time and nothing is ever reused.
     var keep_temp            = args.contains("--keep-temp")
+    # A GUI gate needs the scaffold, not a build: on Windows with the bindings fetchable,
+    # `zig build run` LAUNCHED the app and the first --daily sat behind a window (2026-09-10).
+    var scaffold_only        = args.contains("--scaffold-only")
     var turbo                = args.contains("--turbo")
     var lib_mode             = args.contains("--library-mode")
     # §28j: --single-threaded — the program commits to spawning NO threads (no
@@ -4248,7 +4260,7 @@ def main()
         # with the backend's dependency, then build/run it. Replaces the old
         # delegate-to-bootstrap path.
         if gui_selfhost
-            var grc: int = compileGuiProject(zig_path, not mode_c, gui_backend)
+            var grc: int = compileGuiProject(zig_path, not mode_c, gui_backend, scaffold_only)
             if grc != 0
                 sys.exit(1)
             sys.exit(0)

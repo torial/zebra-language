@@ -380,6 +380,12 @@ bug386_assert_in_test_pass_test (incl. nested blocks and a static class test) an
 bug386_assert_in_test_fails_fixture (the verdicts + summary, via the new
 `smoke_test_verdicts` helper).
 
+**Scoped 2026-09-10, after the first `--daily` that ran it:** the error-union return
+applies only while `zebra test` is generating (`_test_generating`). Under `zebra run` a
+`test_*` def with an `assert` is an ordinary helper that `main()` calls without `try`
+-- `test/selfhost_probe6` does exactly that and went red ("error union is ignored").
+The harness still gets FAIL verdicts (bug386 fixtures unchanged, zebra-ide tests_test).
+
 ### BUG-385: `"\${"` (the documented literal-`${` escape) failed in Zig — FIXED 2026-09-09
 
 QUICKSTART §14 says `"\${"` writes a literal `${`, but the two-char escape was copied into

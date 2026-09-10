@@ -173,11 +173,16 @@ def preamble_bodies() -> dict:
 BODIES = preamble_bodies()
 # What counts as allocation inside a helper body. Narrower than OWN_MARKERS: a body
 # mentioning `ArrayList` may only be iterating one.
-BODY_ALLOC = ("_allocator.alloc", "_allocator.dupe", "allocPrint", ".toOwnedSlice(")
+BODY_ALLOC = ("_allocator.alloc", "_allocator.dupe", "allocPrint", ".toOwnedSlice(",
+              # BUG-423: `_zbr_list_join` builds into an ArrayList / std.mem.join -- OWN.
+              "std.mem.join(", ".appendSlice(_allocator")
 
 
 SPLIT_HELPERS = ("splitSequence(u8, ", "splitScalar(u8, ", "splitAny(u8, ",
-                 "tokenizeSequence(u8, ", "tokenizeScalar(u8, ", "tokenizeAny(u8, ")
+                 "tokenizeSequence(u8, ", "tokenizeScalar(u8, ", "tokenizeAny(u8, ",
+                 # BUG-387: `lines()` is the runtime's own iterator now (a line is a
+                 # subslice of the receiver, every terminator shape; same BORROW class).
+                 "_zbr_lines(")
 
 
 def element_class(rhs: str, declared: str) -> str:
@@ -314,7 +319,7 @@ def main() -> int:
               f"\n{len(HAND_STATED)} hand-stated iterator forms")
 
     if "--write" in sys.argv or "--check" in sys.argv:
-        dest = REPO / "docs" / "str_ownership.md"
+        dest = REPO / "docs" / "design" / "str_ownership.md"   # moved with the 2026-09-09 docs split
         body = (
             # doc-status is emitted HERE, not added to the file, because the file is
             # generated: anything hand-added to it makes --check report the doc as stale

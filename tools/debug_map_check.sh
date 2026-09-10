@@ -144,10 +144,16 @@ case "$TR" in
   *) bad "setBreakpoints: source.path not rewritten"; echo "       $TR" | cut -c1-100 ;;
 esac
 
-# Line 14 is a print in the fixture; it must map to SOME other line, and not to 14.
+# Line 14 is a print in the fixture; the transform must send it to the line the MAP
+# says (the rt_zig column of the row for .zbr line 14). "Anything but 14" was the
+# first oracle, and it went red on 2026-09-10 for a HARNESS reason: BUG-410 put a
+# marker above every fn signature, the layout shifted, and .zbr 14 now lands on
+# .zig 14 by coincidence -- a correct answer the old check called wrong.
+bp_want=$(awk -F'\t' -v k="$fx_key" '$1=="M" && $3 ~ k && $4=="14" {print $5; exit}' "$W/map.txt")
+[ -n "$bp_want" ] || die "the map has no row for .zbr line 14 (the breakpoint leg would be vacuous)"
 case "$TR" in
-  *'"line":14'*) bad "breakpoint line was not remapped (still 14)" ;;
-  *'"line":'*)   ok "breakpoint line remapped off the .zbr coordinate" ;;
+  *"\"line\":$bp_want"[,}]*) ok "breakpoint line remapped to the map's answer (.zbr 14 -> .zig $bp_want)" ;;
+  *'"line":'*)   bad "breakpoint line not remapped to the map's answer (wanted $bp_want)"; echo "       $TR" | cut -c1-140 ;;
   *)             bad "no breakpoint line in the output at all" ;;
 esac
 

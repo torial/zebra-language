@@ -66,6 +66,10 @@ def main()
     var parts: List(str) = e.split(comma)
     print("splitCount=${parts.count()}")
     print("splitFirstEmpty=${parts.at(0) == e}")
+    # `"".lines()` is NONE (linesCount=0): the reference says so since BUG-387
+    # (2026-09-10, "no empty line after a final newline; empty string -> none"), which
+    # matches Python's "".splitlines(). The .expected carried 1 from the older reference
+    # and was corrected FROM the QUICKSTART row, not from observed output.
     var ls: List(str) = e.lines()
     print("linesCount=${ls.count()}")
 

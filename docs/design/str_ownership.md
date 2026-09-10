@@ -23,7 +23,7 @@
 | `s.encodeBase64()` | **OWN** | — | `_base64_encode(s)` |  |
 | `f.format(1)` | **OWN** | — | `(std.fmt.allocPrint(_zbr_rt._allocator, f, .{ 1 }) catch @panic("OO...` | variadic; see BUG-224 for 2+ args |
 | `h.fromHex()` | **OWN** | — | `(blk_fhx: { if (h.len % 2 != 0) break :blk_fhx @as(?[]const u8, nul...` | receiver must be hex digits |
-| `parts.join(", ")` | **OWN** | — | `(std.mem.join(_zbr_rt._allocator, ", ", parts.items) catch @panic("...` | called on List(str) |
+| `parts.join(", ")` | **OWN** | — | `_zbr_list_join(", ", parts.items)` | called on List(str) |
 | `s.lines()` | **OWN** | **BORROW** | `blk_sl_2: { var _ll_2: std.ArrayList([]const u8) = std.ArrayList([]...` |  |
 | `s.lower()` | **OWN** | — | `(std.ascii.allocLowerString(_zbr_rt._allocator, s) catch @panic("OO...` |  |
 | `s.padLeft(20, " ")` | **OWN** | — | `_pad_left(s, @as(usize, @intCast(20)), " ", _zbr_rt._allocator)` |  |

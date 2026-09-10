@@ -1350,6 +1350,11 @@ def zbrTypeSymbol(name: str): str
 # generate* signatures and adding a fourth parameter to each for one flag is the wrong
 # trade. The IDE's "re-run failed" is the first caller (zebra-ide tests pane, 2026-09-09).
 var _test_only: str = ""
+# BUG-386, scoped (2026-09-10): true only while `zebra test` is generating, so a
+# `test_*` def with a plain `assert` returns an error union for the HARNESS -- and not
+# for `zebra run`, where such a def is an ordinary helper `main()` calls without `try`
+# (test/selfhost_probe6 does exactly that, and went red on the first --daily after 386).
+var _test_generating: bool = false
 
 def setTestOnly(v: str)
     _test_only = v
@@ -2313,6 +2318,7 @@ def generateFullWithDepsTest(m: Module, file: str, preamble_path: str, extra_cla
     require
         preamble_path.len > 0
     var preamble = File.read(preamble_path)
+    _test_generating = true
     # Derive file stem for auto-tagging: "path/to/foo_test.zbr" -> "foo_test".
     var file_stem: str = file
     for seg in file.split("/")
@@ -2444,8 +2450,14 @@ def generateDepWith(m: Module, file: str, preamble_path: str, extra_class_names:
     # program did), so `e.message` inside a catch in any non-root module was "use of
     # undeclared identifier" in Zig. With one shared runtime the helper is a local
     # read; emit it when the module's text calls it.
-    if _runtime_module and ("_zbr_error_msg()" in decls) and not ("fn _zbr_error_msg()" in decls)
-        return rtAssemble(file, preamble, decls + "\n" + rtErrorMsgHelper())
+    if ("_zbr_error_msg()" in decls) and not ("fn _zbr_error_msg()" in decls)
+        if _runtime_module
+            return rtAssemble(file, preamble, decls + "\n" + rtErrorMsgHelper())
+        # INLINE runtime (--no-runtime-module / --single-file / node-addon): every module
+        # carries its own spliced `_error_ctx`, so the dep needs the cross-module walk
+        # over ITS direct uses -- the same helper the root gets. Found by
+        # compile_check-inline on the first --daily after BUG-415 (2026-09-10).
+        return rtAssemble(file, preamble, decls + "\n" + generateErrorMsgHelper(m))
     return rtAssemble(file, preamble, decls)
 
 # ── Source-map helpers ────────────────────────────────────────────────────────
@@ -5072,7 +5084,7 @@ struct Generator
         # BUG-386: a `test_*` fn (the harness's own inclusion rule: the prefix and no
         # params) whose body has a plain `assert` returns an error union too, so the
         # assert can FAIL THE TEST instead of panicking the whole run.
-        var is_test_fn: bool = m.name.startsWith("test_") and m.params.len == 0
+        var is_test_fn: bool = _test_generating and m.name.startsWith("test_") and m.params.len == 0
         if is_test_fn and mstmts_pre != nil and bodyHasAssert(mstmts_pre!)
             auto_throws = true
         if auto_throws

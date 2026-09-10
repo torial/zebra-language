@@ -5,5 +5,7 @@ class Program
             nums.add(10)
             nums.add(20)
             nums.add(30)
-            for x in nums.items
+            # `nums.items` was Zig leaking through (the ArrayList field); refused since
+            # BUG-389. The Zebra form iterates the list itself.
+            for x in nums
                 print(x)
