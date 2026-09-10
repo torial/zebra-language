@@ -94,7 +94,7 @@ pub fn _initIo(io: std.Io) void {
 /// The compiler's version -- the ONE place it is written. `zebra --version` prints it
 /// (selfhost/main.zbr versionBanner) and .github/workflows/release.yml refuses a tag
 /// that does not spell it (tag = v<_zbr_version>_zig<zig major.minor>). Bump here.
-pub const _zbr_version: []const u8 = "0.9.0-dev";
+pub const _zbr_version: []const u8 = "0.9.0-rc1";
 // sys.sleep(ms): Zig 0.16 removed std.Thread.sleep; sleeping now goes through the
 // Io interface.  Cancellation is benign here (we only sleep to pace/poll), so swallow it.
 pub fn _sysSleep(ms: i64) void {

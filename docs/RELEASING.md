@@ -9,7 +9,7 @@ Written 2026-09-10 for the first public release, `0.9.0_zig0.16` (public 0.9 = i
 | what | where |
 |---|---|
 | the version, ONE place | `_zbr_version` in `selfhost/stdlib_preamble.zig`; `zebra --version` prints it |
-| the tag convention | `v<version>_zig0.16`, e.g. `v0.9.0_zig0.16`; the workflow refuses a mismatch or a `-dev` version |
+| the tag convention | `v<version>_zig0.16`, e.g. `v0.9.0_zig0.16`; the workflow refuses a mismatch or a `-dev` version. A test build is a semver PRE-RELEASE, `v0.9.0-rc1_zig0.16` (`_zbr_version = "0.9.0-rc1"`), which sorts BEFORE `0.9.0` -- not `0.89`, which sorts AFTER it (89 > 9) |
 | the workflow | `.github/workflows/release.yml` -- on a `v*` tag: Windows, Linux, macOS (experimental) builds, each with the pinned Zig bundled, smoke-tested, zipped, attached to the GitHub release with `SHA256SUMS.txt` |
 | how the binary finds Zig | `zigExe()` in `selfhost/main.zbr`: `$ZEBRA_ZIG`, then `<exe dir>/zig/zig`, then PATH |
 | installers | `install/install.sh`, `install/install.ps1`, `install/README-INSTALL.md` (shipped in the archive as `INSTALL.md`) |
