@@ -24,13 +24,16 @@ fi
 examples=("$@"); [ ${#examples[@]} -eq 0 ] && examples=(examples/tabs_sci_smoke.zbr examples/styler_smoke.zbr examples/editor_min.zbr examples/editor_events_smoke.zbr examples/panel_smoke.zbr examples/gui_modules_smoke.zbr)
 fail=0
 for ex in "${examples[@]}"; do
-  name=$(basename "$ex" .zbr); proj="${name}_gui_libui_ng"
-  rm -rf "$proj"
+  name=$(basename "$ex" .zbr)
+  # Emit into a scratch dir, not the repo root: `--output-dir .` left <name>.zig, sci.zig
+  # and zebra_rt.zig beside the sources on every run (found 2026-09-10; root-clean only
+  # watches compiled artifacts, so nothing said so).
+  scratch=$(mktemp -d); proj="$scratch/${name}_gui_libui_ng"
   # `--scaffold-only`: write the project, do not `zig build` it. Without it the compiler
   # builds AND RUNS the app -- on Linux that fails fast (no bindings fetch), which is
   # why nobody noticed; on Windows with the bindings fetchable it LAUNCHED the GUI and
   # the first --daily there sat behind a window for 25 minutes (2026-09-10).
-  "$ZEBRA" --gui-backend=libui_ng --scaffold-only --output-dir . "$ex" >/dev/null 2>&1   # explicit: the default is the TEMP dir
+  "$ZEBRA" --gui-backend=libui_ng --scaffold-only --output-dir "$scratch" "$ex" >/dev/null 2>&1
   if [ ! -f "$proj/src/main.zig" ]; then echo "FAIL (codegen): $ex"; fail=1; continue; fi
   # 2026-09-09: the GUI section is pub-marked into the shared zebra_rt.zig by a CLOSED list
   # of declaration forms (rtPubMarkSection). A form not on that list is silently private
@@ -48,7 +51,7 @@ for ex in "${examples[@]}"; do
   else
     echo "PASS: $ex (libui_ng section compiles against $B)"
   fi
-  rm -rf "$proj"
+  rm -rf "$scratch"
 done
 if [ "$fail" = 0 ]; then echo "libui-section: ${#examples[@]}/${#examples[@]} examples compile against the bindings"; else echo "libui-section: FAILED"; fi
 exit $fail
