@@ -98,9 +98,9 @@ hello alice
 bug027: OK
 === bug079_chain_statement_positions_test sha1=c4f7f3156e4d ===
 bug079: OK 2 101
-=== bug082_test sha1=545085aa1cd8 ===
-{ 66, 117, 105, 108, 100, 101, 114, 40, 49, 48, 44, 32, 117, 112, 100, 97, 116, 101, 100, 41 }
-{ 66, 117, 105, 108, 100, 101, 114, 40, 57, 57, 44, 32, 115, 116, 97, 114, 116, 41 }
+=== bug082_test sha1=bb96f08b4a00 ===
+Builder(10, updated)
+Builder(99, start)
 bug082 OK
 === bug083_generic_implements_test sha1=29dabfa8c240 ===
 bug083: OK
@@ -239,10 +239,8 @@ bug253-uninit: OK
 bug255: OK
 === bug256_bitwise_not_test sha1=2395b95e11bf ===
 bug256: OK
-=== bug259_runtime_exit_code_test sha1=0171bdf613e5 ===
+=== bug259_runtime_exit_code_test sha1=cc7de8b230cd ===
 thread <TID> panic: assert failed at test/bug259_runtime_exit_code_test.zbr:29
-
-(empty stack trace)
 === bug260_bindlist_param_test sha1=aa80f1a2a92a ===
 1
 3
@@ -401,6 +399,11 @@ bug309: OK
 bug310: OK
 === bug313_checked_index_test sha1=2706bfb2abf3 ===
 bug313: OK
+=== bug314_nested_list_idioms_test sha1=65b20b0d8454 ===
+2 2
+3
+24
+1
 === bug315_protected_freed_test sha1=d3325e0e3e2f ===
 6
 3
@@ -420,6 +423,8 @@ enum ok
 7
 3
 bug316: OK
+=== bug320_compound_index_assign_test sha1=d19761cd48de ===
+bug320: OK
 === bug326_sys_exit_range_test sha1=86adecbec188 ===
 bug326: OK
 === bug329_print_sourcemap_test sha1=40afbf607049 ===
@@ -432,6 +437,173 @@ L31
 bug329: OK
 === bug332_loopvar_scope_test sha1=40f8e9fb5aa0 ===
 bug332: OK
+=== bug335_json_query_in_method_test sha1=0c006c10cbc8 ===
+bug335: n=1
+=== bug336_split_chain_test sha1=a051eff1b7e9 ===
+bug336: OK
+=== bug337_json_getlist_list_test sha1=877f8c9885c4 ===
+bug337: OK
+=== bug338_builtin_type_generic_arg_test sha1=65fb031725cd ===
+bug338: OK
+=== bug339_class_field_ctor_init_test sha1=18715384ab1c ===
+bug339: OK
+=== bug342_sb_param_append_test sha1=6ba4ecde959c ===
+bug342: ok
+=== bug344_items_field_iter_test sha1=7b4d214bf2ea ===
+bug344: ok
+=== bug345_timer_field_test sha1=7ce44d01ab34 ===
+bug345: ok
+=== bug346_imported_call_method_test sha1=1f7d2a76fb63 ===
+bug346: ok
+=== bug350_return_split_test sha1=901dd265a747 ===
+bug350: ok
+=== bug352_loop_var_shadows_field_test sha1=8ee162c0fcd2 ===
+bug352: ok
+=== bug353_file_write_order_test sha1=b2ab4a9cdcac ===
+bug353: ok
+=== bug354_param_shadow_ok_test sha1=5dbfbcf226d0 ===
+bug354: OK
+=== bug359_underscore_names_test sha1=6a3d8cd941d5 ===
+bug359: OK
+=== bug360_nested_entries_loop_test sha1=24d6e1ec5d7e ===
+bug360: OK
+=== bug361_str_ternary_expr_test sha1=4babf800598c ===
+bug361: OK
+=== bug362_str_method_names_test sha1=fe21faeadc57 ===
+bug362: OK
+=== bug363_str_orelse_expr_test sha1=b9d56003b75f ===
+bug363: OK
+=== bug364_same_named_field_other_class_test sha1=b750c815f977 ===
+bug364: OK
+=== bug365_untyped_str_chain_local_test sha1=f9843518da39 ===
+bug365: OK
+=== bug366_str_ternary_receiver_test sha1=ead30acda122 ===
+bug366: OK
+=== bug368_plain_assert_test_fn_test sha1=4e359091d6ae ===
+bug368: run with 'zebra test'
+=== bug369_builtin_methods_ok_test sha1=e6ac4bc51fe4 ===
+bug369: OK
+=== bug370_returning_sig_closure_test sha1=dbf5b1327c75 ===
+seen 1
+seen 3
+seen 6
+r=102,104,106
+=== bug371_borrowed_closure_slot_test sha1=2e435c086716 ===
+total=1400
+=== bug371_stored_closure_keeps_slot_test sha1=bc832b2111c7 ===
+sum=1020
+=== bug372_if_as_mutated_capture_test sha1=eb60a9d6bfe9 ===
+list=3
+{"a":1,"b":2,"c":"three"}
+sb=abc
+map=1
+=== bug373_optional_ctor_local_test sha1=4261b0eee9f7 ===
+map=1
+list=1
+set=1
+sb=ok
+=== bug374_nil_arm_ternary_test sha1=7b5a56ba5a1f ===
+1 2 yes 1.5
+c is nil
+=== bug375_numeric_conversion_division_test sha1=2a72fe838805 ===
+f=1.5
+q=1.5
+t=7 s=3|7
+h=true
+idiv=1
+=== bug379_optional_unwrap_forms_test sha1=ed401e9d19a9 ===
+n=2
+2 7 2 1 1
+=== bug381_container_property_ok_test sha1=155f4f0388f6 ===
+3 3 3 1 9 1
+=== bug385_dollar_escape_test sha1=877154ecf609 ===
+lit ${x} interp 5
+a ${y} b
+plain ${z}
+=== bug386_assert_in_test_fails_fixture sha1=7a85f4764bbd ===
+ok
+=== bug386_assert_in_test_pass_test sha1=7a85f4764bbd ===
+ok
+=== bug387_lines_semantics_test sha1=7301256839f8 ===
+2 3 [a||c] 0 1 2
+2
+=== bug388_iface_param_direct_test sha1=300a4b738635 ===
+12
+9
+3
+held 12 got 4
+1
+16
+total=13
+=== bug389_395_shapes_ok_test sha1=a9d8b32c0913 ===
+6 yes !
+=== bug392_stdlib_str_returns_test sha1=851b169462cd ===
+cwd-ok=true
+unset
+pos-nil=true opt=dflt flag=false
+rt=hello hello hello
+=== bug395_user_class_builtin_name_test sha1=4b1f3b7c22e5 ===
+5 3
+=== bug396_fluent_chain_statement_test sha1=adf0bdc23730 ===
+8 4
+=== bug401_struct_positional_ctor_test sha1=3dba18b1cb71 ===
+1 2 0 5 0 hi 3
+=== bug402_enum_list_literal_test sha1=bfc21c9ca4f1 ===
+2 2 2 [red, blue]
+=== bug403_split_index_test sha1=64051649f740 ===
+b
+Y
+one
+=== bug406_print_containers_test sha1=7bf6d5d1def7 ===
+green [1, 2] ["a", "b"] {a: 1} {3} nil x
+green [1, 2] ["a", "b"] {a: 1} {3} nil x [[1], [2, 3]]
+[2, 4]
+=== bug407_primitive_loop_var_test sha1=1233a33405d8 ===
+0 1
+1 2
+0
+1
+a 1
+7
+=== bug408_show_structs_tuples_unions_test sha1=a94281430fbc ===
+Pt(3) [Pt(1), Pt(2)]
+Raw{y: 1, name: "n"}
+P{x: 1, q: 2.5} [P{x: 1, q: 2.5}, P{x: 3, q: 2.5}]
+(1, "a") (1, "a")
+circle(2) dot
+[3, 2, 1] ["b", "a"]
+=== bug412_str_plus_eq_test sha1=cf1c53883eed ===
+abc x|y|
+=== bug413_414_float_div_print_test sha1=908a13bb4c6a ===
+3.5 0.75
+0.3333333333333333
+2.5
+2.5
+=== bug415_dep_module_catch_message_test sha1=31226f47fd68 ===
+ok 8
+caught negative: -1
+=== bug416_regex_split_test sha1=2fa19f0df84d ===
+["a", "b", "c", "", "d"]
+5
+["abc"]
+=== bug417_pipeline_dot_method_test sha1=76ca1d55fc34 ===
+hello 5
+20
+3
+hello  world
+=== bug418_generic_hashmap_field_test sha1=440fab689aae ===
+1 nil ["a", "b"]
+nil
+seven nil [7]
+=== bug420_423_newcomer_numbers_test sha1=9694947c1253 ===
+1000
+0.005
+true
+1.4142135623730951
+5
+al+bo+cy
+3,2,1
+1.5 | 2.5
 === build_declarative_test sha1=6859218cdc5a ===
 build declarative: ok
 === build_smoke_test sha1=8bfb8015d704 ===
@@ -496,6 +668,10 @@ contract_result_throws_test OK
 19
 20
 36
+=== crossmod_expose_test sha1=0aa8e59fc03f ===
+test1 OK
+test2 OK
+crossmod_expose: all OK
 === crossmod_hatopt_test sha1=f6e25d9bc2c0 ===
 crossmod_hatopt: OK
 === crossmod_infer_test sha1=380c94487657 ===
@@ -537,7 +713,7 @@ ctor_arg_ref_test OK
 8
 1970
 0
-=== datetime_test sha1=df5c212157ba ===
+=== datetime_test sha1=3a04d4d29f46 ===
 1970
 1
 1
@@ -574,8 +750,8 @@ false
 3
 15
 5
-{ 77, 97, 114, 99, 104 }
-{  }
+March
+
 true
 === derive_eql_explicit_test sha1=7358ac413551 ===
 derive_eql_explicit: OK
@@ -721,23 +897,23 @@ test/forgot_parens_test.zbr:7:5: warning: 'greet' is a function used as a value 
     ^
 === forin_throws_test sha1=5108449fdb08 ===
 forin_throws_test: run with 'zebra test'
+=== fuzz_f1_primitive_names_test sha1=f19f64457d63 ===
+i8=7 f32=1.5 usize=3 c_int=abc r=10.5
+fuzz_f1: OK
 === fuzz_f11_unused_capture_ternary_test sha1=8a8ca1cb6b8d ===
 x=10
 a=7
 y=2
 y=2
 fuzz_f11: OK
-=== fuzz_f1_primitive_names_test sha1=f19f64457d63 ===
-i8=7 f32=1.5 usize=3 c_int=abc r=10.5
-fuzz_f1: OK
 === fuzz_f2_unused_local_test sha1=693203703cf7 ===
 w=3 bump=11
 fuzz_f2: OK
 === fuzz_f3_comptime_local_test sha1=29133ec38f7d ===
 fuzz_f3: OK
-=== fuzz_f4_interp_fmt_test sha1=68189be05263 ===
+=== fuzz_f4_interp_fmt_test sha1=da99928dcd2d ===
 f=2.5
-xs=.{ .items = { 7 }, .capacity = 17 }
+xs=[7]
 fuzz_f4: OK
 === fuzz_f6_unused_capture_test sha1=5a2f147a8a52 ===
 main hit
@@ -794,21 +970,21 @@ ok
 true
 false
 true
-=== generic_stack_test sha1=74471e1a13bd ===
+=== generic_stack_test sha1=a5b636daf234 ===
 30
 20
 1
 false
-{ 119, 111, 114, 108, 100 }
-{ 104, 101, 108, 108, 111 }
-=== generic_tostring_test sha1=13d29b530d11 ===
+world
+hello
+=== generic_tostring_test sha1=665dcb27f829 ===
 Box
 Box
 Pair
 42
 1.5
 7
-{ 104, 105 }
+hi
 === greet sha1=7c211433f020 ===
 world
 === guard_test sha1=c485d8e489e3 ===
@@ -856,13 +1032,13 @@ ok
 === hashmap_this_field_test sha1=637e66e9817c ===
 world
 ok
-=== hostkind_test sha1=b5ad7ca93060 ===
-{ 105, 110, 116 }
-{ 102, 108, 111, 97, 116 }
-{ 115, 116, 114, 105, 110, 103 }
-{ 98, 111, 111, 108 }
-{ 114, 101, 102 }
-{ 114, 101, 102 }
+=== hostkind_test sha1=16f4932205f0 ===
+int
+float
+string
+bool
+ref
+ref
 hostKind: OK
 === if_is_capture_test sha1=a33813481b11 ===
 3.14
@@ -965,6 +1141,13 @@ json_keys_at: OK
 json_parse_strict_tc_test OK
 === json_parse_strict_test sha1=ad0e9d183ef6 ===
 json_parse_strict_test OK
+=== json_parse_typed_test sha1=76a78ac86f58 ===
+3
+7
+Alice
+30
+val
+done
 === json_test sha1=fcfaa524beda ===
 json_test: all assertions passed
 === keyword_ident_test sha1=9c236722832d ===
@@ -1008,6 +1191,8 @@ All log tests passed.
 1245
 00 10 20 
 loop-continue-break: OK
+=== loopvar_types_test sha1=c7846db0867d ===
+loopvar_types: OK
 === lowlevel_smoke_test sha1=7dfed2f1b037 ===
 [gui] text: inside group
 [gui] sameLine
@@ -1019,11 +1204,11 @@ loop-continue-break: OK
 [gui] text: pos.0=0 pos.1=0
 === marker_struct_test sha1=4c0e64204354 ===
 marker: OK
-=== math_test sha1=59340d7dfb35 ===
+=== math_test sha1=dc1eff91daca ===
 true
 true
 true
-false
+true
 true
 true
 true
@@ -1182,19 +1367,21 @@ postfix_bang_test PASS
   Calc.mul                                         1  <TIME> ms
   helper                                           1  <TIME> ms
 profile_attr OK
+=== prog_args_passthrough_test sha1=08d26d29d3a5 ===
+prog_args: 
 === progress_test sha1=e5fd9cfe0e80 ===
 done
 === raise_auto sha1=b1d5781111d8 ===
 10
 === random_instance_test sha1=7bf5be3167b7 ===
 random_instance_test: run with 'zebra test'
-=== random_test sha1=debdeb71ce71 ===
+=== random_test sha1=31e61a7bd8de ===
 randInt in range: OK
 randFloat in range: OK
 false
 randBool: OK
 bytes length: OK
-{ 98, 97, 110, 97, 110, 97 }
+banana
 choice: OK
 shuffle: OK
 All random tests passed.
@@ -1496,6 +1683,8 @@ Alice
 99
 === struct_simd_name_method_test sha1=fec7ff5fae16 ===
 struct_simd_name_method: OK
+=== sys_process_exit_code_test sha1=72cfd000e857 ===
+sys_process_exit_code_test: ok exit=0/1
 === sys_run_test sha1=6ed7ddab659c ===
 true
 true
@@ -1503,6 +1692,8 @@ true
 true
 === sys_sleep_test sha1=941fc2a5224b ===
 sys_sleep_test OK
+=== sys_spawn_piped_test sha1=210433008eb5 ===
+sys_spawn_piped_test: ok
 === sys_spawn_test sha1=351e6a19fbd8 ===
 sys_spawn_test: ok
 === sys_test sha1=c8354fbb23b6 ===
@@ -1661,8 +1852,8 @@ done
 tuple_test: OK
 === turbo_test sha1=069aead48f88 ===
 turbo: OK
-=== type_alias_test sha1=816b7322f077 ===
-{ 104, 101, 108, 108, 111 }
+=== type_alias_test sha1=4d0ec67d5f10 ===
+hello
 hello world
 84
 -7
