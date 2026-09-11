@@ -896,13 +896,46 @@ pub fn _sys_read_bytes(count: i64) ?[]const u8 {
     return out.items;
 }
 // ── DynLib — platform plugin loader ───────────────────────────────────────────
+// Zig 0.16's std.DynLib has NO Windows arm (`@compileError("unsupported platform")`),
+// found by the first --daily on Windows after the dynlib gate was registered
+// (2026-09-10). The loader is therefore selected here: kernel32 on Windows, std.DynLib
+// (dlopen) everywhere else, behind one `lookup`/`close` surface codegen emits against.
+pub const _DynLibInner = if (builtin.os.tag == .windows) struct {
+    handle: std.os.windows.HMODULE,
+    extern "kernel32" fn LoadLibraryExW(lpLibFileName: [*:0]const u16, hFile: ?*anyopaque, dwFlags: u32) callconv(.winapi) ?std.os.windows.HMODULE;
+    extern "kernel32" fn GetProcAddress(hModule: std.os.windows.HMODULE, lpProcName: [*:0]const u8) callconv(.winapi) ?*anyopaque;
+    extern "kernel32" fn FreeLibrary(hModule: std.os.windows.HMODULE) callconv(.winapi) c_int;
+    pub fn open(path: []const u8) anyerror!@This() {
+        const wide = try std.unicode.wtf8ToWtf16LeAllocZ(_allocator, path);
+        const h = LoadLibraryExW(wide.ptr, null, 0) orelse return error.FileNotFound;
+        return .{ .handle = h };
+    }
+    pub fn lookup(self: @This(), comptime T: type, name: [:0]const u8) ?T {
+        const p = GetProcAddress(self.handle, name.ptr) orelse return null;
+        return @as(T, @ptrCast(@alignCast(p)));
+    }
+    pub fn close(self: *@This()) void {
+        _ = FreeLibrary(self.handle);
+    }
+} else struct {
+    dl: std.DynLib,
+    pub fn open(path: []const u8) anyerror!@This() {
+        return .{ .dl = try std.DynLib.open(path) };
+    }
+    pub fn lookup(self: *@This(), comptime T: type, name: [:0]const u8) ?T {
+        return self.dl.lookup(T, name);
+    }
+    pub fn close(self: *@This()) void {
+        self.dl.close();
+    }
+};
 pub const _DynLib = struct {
-    lib: std.DynLib,
+    lib: _DynLibInner,
 };
 pub fn _dynlib_open(path: []const u8) anyerror!*_DynLib {
     const dl = _allocator.create(_DynLib) catch @panic("OOM");
     errdefer _allocator.destroy(dl);
-    dl.lib = try std.DynLib.open(path);
+    dl.lib = try _DynLibInner.open(path);
     return dl;
 }
 pub fn _dynlib_close(dl: *_DynLib) void {

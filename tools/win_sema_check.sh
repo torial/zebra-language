@@ -12,7 +12,11 @@ set -u
 cd "$(dirname "$0")/.."
 ZEBRA=${ZEBRA:-./zig-out/bin/zebra}; [ -x "$ZEBRA" ] || ZEBRA=./zig-out/bin/zebra.exe
 files=("$@")
-[ ${#files[@]} -eq 0 ] && files=(test/sys_spawn_piped_test.zbr test/sys_process_exit_code_test.zbr test/bug335_json_query_in_method_test.zbr examples/showcase.zbr)
+# test/dynlib_roundtrip/host.zbr is here since 2026-09-10: Zig 0.16's std.DynLib has no
+# Windows arm, so the runtime carries a kernel32 loader that ONLY this target analyses
+# (a program that never calls DynLib.open never instantiates it). The first --daily on
+# Windows found it; this is what keeps it found.
+[ ${#files[@]} -eq 0 ] && files=(test/sys_spawn_piped_test.zbr test/sys_process_exit_code_test.zbr test/bug335_json_query_in_method_test.zbr examples/showcase.zbr test/dynlib_roundtrip/host.zbr)
 fail=0
 tmp=$(mktemp -d)
 for f in "${files[@]}"; do
