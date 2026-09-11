@@ -3,8 +3,8 @@ interface IGreeter
 
 def main() throws
     var lib = DynLib.open("hello_plugin")
-    var greeter: ^IGreeter? = lib.lookup(IGreeter, "plugin_create")
-    if greeter as g
-        var msg: str = g.greet("World")
-        print(msg)
+    # `lookup` returns the interface value itself (QUICKSTART §44); the older
+    # `^IGreeter?` + `as` form predates BUG-356 and stopped compiling with it.
+    var g = lib.lookup(IGreeter, "plugin_create")
+    print(g.greet("World"))
     lib.close()
