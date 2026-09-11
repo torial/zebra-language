@@ -2075,6 +2075,42 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-09-11: 49/49 PASS in ONE invocation, 1h51m at JOBS=1 on torial -- the run
+`v0.9.0-rc1_zig0.16` is tagged on (`e9b7ef2`).** smoke **498/498**, round-trip byte-identical,
+`boundary` 32/0, `cli-surface` 37/37, `dynlib-roundtrip` PASS **on Windows**, `output_sweep`
+**466 files behaviour identical**, `full_sweep` 0 regressions vs **485**, `examples_sweep` 0 vs
+19, `divergence` 0 regressions vs the N-1 anchor, `gramgen` 960/0/0, `leakgen` 100/0/0,
+all three `gui-scaffold`s, `libui-section` 6/6, `node-addon` PASS, `selfhost-div` 12/12.
+
+**IT TOOK FOUR RUNS, AND EVERY RED WAS FALLOUT OF THE PRECEDING TWO DAYS -- none a language
+defect.** Recorded because the tier had not been run since 2026-09-05 while ~50 commits
+landed, and that is the cost of the gap. Run 1 (nine reds): `str-ownership` (extractor
+blind to BUG-387's `_zbr_lines`, and writing to the pre-docs-split path), `boundary`
+(`"".lines()` is 0 lines per the BUG-387 reference; the probe carried 1),
+`debug-map` (the leg asserted "not line 14" and BUG-410's fn-signature markers made .zbr 14
+land on .zig 14 by coincidence -- it now checks the map's own answer), `dynlib-roundtrip`
+(`dbgIsWindows()` read env vars Git Bash lacks; comptime now), `compile_check-inline`
+(BUG-415's helper missed the inline shape), `output_sweep` (10 intended print changes,
+math_test's sin(PI/2) CORRECTED by BUG-413, `list_iter` on leaked Zig `.items`),
+`full_sweep` (BUG-386 error-typed a `test_*` helper `main()` calls; scoped to `zebra test`),
+`divergence` (refused AFTER 3877 s on a must_reject_set "collision" that was one fixture
+registered three times -- fixed, and the derivation now runs BEFORE the sweep), and
+`libui-section`, whose scaffold step built AND RAN the GUI on Windows -- the tier sat behind
+an open window for 25 minutes (`--scaffold-only` now). Run 2: the dynlib HOST -- Zig 0.16's
+`std.DynLib` has NO Windows arm; the runtime carries a kernel32 loader now, and `win_sema`
+analyses the host. Run 3: `divergence` scored `examples/plugin_host` a regression -- it had
+been invisible on Windows until the loader landed, and was stale against QUICKSTART §44.
+Run 4: clean.
+
+**Both heavy baselines re-recorded in the run-up, in the documented order:** `full_sweep`
+**422 -> 485** (purely additive), `output_sweep` **404 -> 466**; exclusions read by name (one
+genuinely new: `bug397_398_400_stdlib_test` prints a Log timestamp).
+
+**Two hazards for the record, both already written down here and both hit anyway:** a
+transfer bundle overwrote two CLAUDE.md counts edited on the device (caught by `doc-lint`
+inside run 3's first minute), and a `--output-dir .` gate left eight `.zig` files in the
+repo root, which `root-clean` does not watch (it emits into scratch now).
+
 **FULL tier 2026-09-05 (second run, BUG-320's compound half): 36/37 in-tier + divergence
 standalone.** smoke **400/400**, round-trip byte-identical, `output_sweep` 404 files behaviour
 identical, `full_sweep` 0 regressions vs 422, `examples_sweep` 0 vs 19, `boundary` 32/0,
