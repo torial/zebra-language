@@ -60,6 +60,26 @@ else
     ok "generated selfhost/*.zig is current with its .zbr sources"
 fi
 
+# ── 1a. CRLF working copies of .zbr — git says CLEAN, the tokenizer says NO ─────────
+# The tokenizer refuses '\r' (CLAUDE.md, "Line endings"). .gitattributes pins *.zbr to LF
+# in the INDEX, which is exactly why this hides: a working copy rewritten with CRLF by an
+# editor or a tool shows as unmodified in `git status` (git normalises on compare), every
+# gate that never compiles that file stays green, and the first thing that reads it as
+# source -- the round-trip regenerating selfhost/main.zbr -- fails with "unexpected '\r'".
+# Found 2026-09-12: main.zbr CRLF on disk, index LF, status clean, daily green the night
+# before, round-trip red the next morning. `git ls-files --eol` is the only instrument
+# that sees it, and it is the shape the false-greens page calls the stale subject.
+if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    crlf_zbr="$(git ls-files --eol -- '*.zbr' 2>/dev/null | awk '$2=="w/crlf"{print $4}')"
+    if [[ -n "$crlf_zbr" ]]; then
+        wrong "CRLF working copy of a tracked .zbr — the tokenizer refuses it, and git status shows it CLEAN:"
+        for f in $crlf_zbr; do printf '           %s\n' "$f"; done
+        printf '           fix: sed -i '"'"'s/\r$//'"'"' <file>   (index is already LF; nothing to commit)\n'
+    else
+        ok "no tracked .zbr has a CRLF working copy"
+    fi
+fi
+
 # ── 1b. was the BINARY built from the generated .zig? ────────────────────────
 # Check 1 asks "is the .zig current with the .zbr". It does NOT ask whether the BINARY
 # came from that .zig, and both must hold before a gate result means anything — a gate
