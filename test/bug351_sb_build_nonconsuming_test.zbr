@@ -1,0 +1,14 @@
+# BUG-351: build() is NON-consuming -- the builder keeps its contents (Sean, 2026-09-12).
+# Watched red against the consuming emit: second build() printed "" and len printed 0.
+def main()
+    var sb: StringBuilder = StringBuilder()
+    sb.append("ab")
+    sb.append("cd")
+    var first: str = sb.build()
+    var second: str = sb.build()
+    print(first)
+    print(second)
+    print(sb.len())
+    sb.append("e")
+    print(sb.build())
+    print("bug351: ok")

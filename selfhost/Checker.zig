@@ -1478,21 +1478,21 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:671
             sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(RED, BLD, _zbr_rt._allocator), "dead union arms", _zbr_rt._allocator), RST, _zbr_rt._allocator), " — matched but never constructed (", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{dead_count}) catch @panic("OOM")), _zbr_rt._allocator), "):\n\n", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:672
-            sb.appendSlice(_zbr_rt._allocator, (dead_sb.toOwnedSlice(_zbr_rt._allocator) catch "")) catch @panic("OOM");
+            sb.appendSlice(_zbr_rt._allocator, (_zbr_rt._allocator.dupe(u8, dead_sb.items) catch "")) catch @panic("OOM");
         }
 // zbr:selfhost/Checker.zbr:674
         if (_zebra_gt(phantom_count, 0)) {
 // zbr:selfhost/Checker.zbr:675
             sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(YLW, BLD, _zbr_rt._allocator), "phantom variants", _zbr_rt._allocator), RST, _zbr_rt._allocator), " — constructed but never matched (", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{phantom_count}) catch @panic("OOM")), _zbr_rt._allocator), "):\n\n", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:676
-            sb.appendSlice(_zbr_rt._allocator, (phantom_sb.toOwnedSlice(_zbr_rt._allocator) catch "")) catch @panic("OOM");
+            sb.appendSlice(_zbr_rt._allocator, (_zbr_rt._allocator.dupe(u8, phantom_sb.items) catch "")) catch @panic("OOM");
         }
 // zbr:selfhost/Checker.zbr:678
         if (_zebra_gt(unreachable_count, 0)) {
 // zbr:selfhost/Checker.zbr:679
             sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(YLW, BLD, _zbr_rt._allocator), "unreachable module-level functions", _zbr_rt._allocator), RST, _zbr_rt._allocator), " (", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{unreachable_count}) catch @panic("OOM")), _zbr_rt._allocator), "):\n\n", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:680
-            sb.appendSlice(_zbr_rt._allocator, (unreach_sb.toOwnedSlice(_zbr_rt._allocator) catch "")) catch @panic("OOM");
+            sb.appendSlice(_zbr_rt._allocator, (_zbr_rt._allocator.dupe(u8, unreach_sb.items) catch "")) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:681
             sb.appendSlice(_zbr_rt._allocator, "\n") catch @panic("OOM");
         }
@@ -1530,7 +1530,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
             sb.appendSlice(_zbr_rt._allocator, "\n") catch @panic("OOM");
         }
 // zbr:selfhost/Checker.zbr:699
-        return (sb.toOwnedSlice(_zbr_rt._allocator) catch "");
+        return (_zbr_rt._allocator.dupe(u8, sb.items) catch "");
     }
 
 };

@@ -46,13 +46,6 @@
 
 ---
 
-### BUG-351: `StringBuilder.build()` EMPTIES the builder — `sb.len()` is 0 afterwards — OPEN (found 2026-09-08)
-
-`build()` lowers to `toOwnedSlice`, which moves the buffer out. test/string_builder_test.zbr
-was written expecting `print(sb.len())` → 12 after `print(sb.build())` and prints 0; the
-test is not in smoke so nobody saw it. Either semantics is defensible (a consuming `build()`
-is cheaper; a non-consuming one matches the comment and Java/C#). Sean's call. Not touched.
-
 ### BUG-333: `docs/UI_QUICKSTART.md` contradicts itself on CodeEditor syntax highlighting — OPEN (found 2026-09-06)
 
 **Where.** The "CodeEditor (Scintilla)" section documents, at length and correctly, that every

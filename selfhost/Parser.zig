@@ -1428,7 +1428,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:900
             caret.appendSlice(_zbr_rt._allocator, "^") catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:901
-            return _str_concat(_str_concat(_str_concat(_str_concat(head, "\n", _zbr_rt._allocator), src_line, _zbr_rt._allocator), "\n", _zbr_rt._allocator), (caret.toOwnedSlice(_zbr_rt._allocator) catch ""), _zbr_rt._allocator);
+            return _str_concat(_str_concat(_str_concat(_str_concat(head, "\n", _zbr_rt._allocator), src_line, _zbr_rt._allocator), "\n", _zbr_rt._allocator), (_zbr_rt._allocator.dupe(u8, caret.items) catch ""), _zbr_rt._allocator);
         }
 // zbr:selfhost/Parser.zbr:902
         return head;
@@ -2168,7 +2168,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1260
             sb.appendSlice(_zbr_rt._allocator, inner) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1261
-            return (try sb.toOwnedSlice(_zbr_rt._allocator));
+            return (try _zbr_rt._allocator.dupe(u8, sb.items));
         }
 // zbr:selfhost/Parser.zbr:1266
         if (self.textIs("def")) {
@@ -2211,7 +2211,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1284
             sbf.appendSlice(_zbr_rt._allocator, ")") catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1285
-            return (try sbf.toOwnedSlice(_zbr_rt._allocator));
+            return (try _zbr_rt._allocator.dupe(u8, sbf.items));
         }
 // zbr:selfhost/Parser.zbr:1286
         const text: []const u8 = self.peek().text;
@@ -2274,7 +2274,7 @@ pub const _zbr_ty_Parser = struct {
                     first_a = false;
                 }
 // zbr:selfhost/Parser.zbr:1316
-                return (try sb_a.toOwnedSlice(_zbr_rt._allocator));
+                return (try _zbr_rt._allocator.dupe(u8, sb_a.items));
             }
 // zbr:selfhost/Parser.zbr:1318
             var args = std.ArrayList([]const u8).empty;
@@ -2323,7 +2323,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1339
             sb.appendSlice(_zbr_rt._allocator, ")") catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1340
-            return (try sb.toOwnedSlice(_zbr_rt._allocator));
+            return (try _zbr_rt._allocator.dupe(u8, sb.items));
         }
 // zbr:selfhost/Parser.zbr:1341
         if (self.isId()) {
@@ -2344,7 +2344,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1350
                 sb.appendSlice(_zbr_rt._allocator, rest) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1351
-                return (try sb.toOwnedSlice(_zbr_rt._allocator));
+                return (try _zbr_rt._allocator.dupe(u8, sb.items));
             }
 // zbr:selfhost/Parser.zbr:1352
             return text;
@@ -2374,7 +2374,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1366
                 sb2.appendSlice(_zbr_rt._allocator, ")") catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1367
-                return (try sb2.toOwnedSlice(_zbr_rt._allocator));
+                return (try _zbr_rt._allocator.dupe(u8, sb2.items));
             }
 // zbr:selfhost/Parser.zbr:1368
             return text;
@@ -2449,7 +2449,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1404
             sb.appendSlice(_zbr_rt._allocator, ")") catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1405
-            return (try sb.toOwnedSlice(_zbr_rt._allocator));
+            return (try _zbr_rt._allocator.dupe(u8, sb.items));
         }
 // zbr:selfhost/Parser.zbr:1406
         { _zbr_rt._error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("expected type name, got '", text, _zbr_rt._allocator), "'", _zbr_rt._allocator)) }; return error.ZebraError; }
@@ -5261,7 +5261,7 @@ pub const _zbr_ty_Parser = struct {
             }
         }
 // zbr:selfhost/Parser.zbr:2780
-        return (try sb.toOwnedSlice(_zbr_rt._allocator));
+        return (try _zbr_rt._allocator.dupe(u8, sb.items));
     }
 
     // zbr:selfhost/Parser.zbr:2782

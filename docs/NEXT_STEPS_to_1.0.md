@@ -826,3 +826,19 @@ for the map.
 | [docs/NEXT_STEPS_to_0.9.md](docs/NEXT_STEPS_to_0.9.md) | what is next, before public release? |
 | [docs/NEXT_STEPS_to_1.0.md](docs/NEXT_STEPS_to_1.0.md) | what is next, before the freeze? |
 | [docs/NEXT_STEPS_post_1.0.md](docs/NEXT_STEPS_post_1.0.md) | deliberately deferred past 1.0 |
+
+## DECIDED 2026-09-12 — nested containers get REFERENCE semantics (BUG-314's other half)
+
+Sean's call: inner containers (`List(List(T))`, `HashMap(K, List(V))`, and the rest) are
+**heap-boxed**, so `parent.at(i)` hands back a reference and a mutation through it is seen
+by the parent -- the Python/C#/Go answer. Today's behaviour is the strictly-safe refusal
+landed with BUG-314 (`dad59ab`): a mutator on a local bound from `.at()`/`.fetch()` of a
+nested container is REFUSED with the idioms that work. That refusal stays until this lands,
+so no program can observe the wrong answer in between.
+
+Scope when picked up: the runtime shape of nested containers (a boxed element type in the
+emitted Zig), `.at()`/`.fetch()` returning the box, the copy-out rules in
+`docs/design/str_ownership.md` for the new case, the BUG-314 refusal REMOVED and its
+boundary probe (`bug314_at_copy_probe`, currently `@boundary rejects`) rewritten to assert
+the reference semantics, and a `smoke_run` fixture that mutates through `.at()` and reads
+the parent. Not for 0.9: it changes what existing programs mean.

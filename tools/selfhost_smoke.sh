@@ -731,6 +731,8 @@ smoke_tc_fail test/arg_count_test.zbr "too few arguments"
 # "local variable is never mutated" on the emitted labeled block — emit-only would
 # still catch it, but running also pins that the callee actually receives an empty list.
 smoke_run test/bug239_empty_list_literal_test.zbr "bug239_empty_list_literal_test: ok"
+smoke_run test/string_builder_test.zbr "12"   # BUG-351: sb.len() after build() -- non-consuming
+smoke_run test/bug351_sb_build_nonconsuming_test.zbr "bug351: ok"
 
 # BUG-238: `except` in an enum-dotted branch arm, reached through `use`. Reported as a
 # regression that did not reproduce; registered as a RUNNING guard (smoke_run, not

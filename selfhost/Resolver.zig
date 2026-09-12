@@ -84,7 +84,7 @@ pub const _zbr_ty_Resolver = struct {
 // zbr:selfhost/Resolver.zbr:80
             caret.appendSlice(_zbr_rt._allocator, "^") catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:81
-            return _str_concat(_str_concat(_str_concat(_str_concat(head, "\n", _zbr_rt._allocator), src_line, _zbr_rt._allocator), "\n", _zbr_rt._allocator), (caret.toOwnedSlice(_zbr_rt._allocator) catch ""), _zbr_rt._allocator);
+            return _str_concat(_str_concat(_str_concat(_str_concat(head, "\n", _zbr_rt._allocator), src_line, _zbr_rt._allocator), "\n", _zbr_rt._allocator), (_zbr_rt._allocator.dupe(u8, caret.items) catch ""), _zbr_rt._allocator);
         }
 // zbr:selfhost/Resolver.zbr:82
         return head;
@@ -151,7 +151,7 @@ pub const _zbr_ty_Resolver = struct {
             b.appendSlice(_zbr_rt._allocator, "\n") catch @panic("OOM");
         }
 // zbr:selfhost/Resolver.zbr:113
-        return (b.toOwnedSlice(_zbr_rt._allocator) catch "");
+        return (_zbr_rt._allocator.dupe(u8, b.items) catch "");
     }
 
     // zbr:selfhost/Resolver.zbr:117

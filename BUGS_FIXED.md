@@ -6,6 +6,22 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-351: `StringBuilder.build()` EMPTIES the builder — `sb.len()` is 0 afterwards — FIXED 2026-09-12 (Sean: non-consuming)
+
+`build()` lowers to `toOwnedSlice`, which moves the buffer out. test/string_builder_test.zbr
+was written expecting `print(sb.len())` → 12 after `print(sb.build())` and prints 0; the
+test is not in smoke so nobody saw it. Either semantics is defensible (a consuming `build()`
+is cheaper; a non-consuming one matches the comment and Java/C#). Sean's call. Not touched.
+
+**Decision (Sean, 2026-09-12): `build()` is NON-consuming.** The builder keeps its contents;
+`build()` returns a copy. This matches C#/Java `toString()` and Go `String()`; the only
+language where a Zig programmer would expect the other answer is Zig itself
+(`toOwnedSlice` moves). Fix: both `build` emit sites in CodeGen.zbr now emit
+`_allocator.dupe(u8, sb.items)` instead of `.toOwnedSlice(_allocator)`. Control:
+`test/string_builder_test.zbr` is now REGISTERED (`smoke_run`, expects the `12` that the
+test always asserted and nobody ran) -- it was in the corpus and in no tier, which is how
+the ticket sat for four days.
+
 ### BUG-338: built-in type names are not resolvable as GENERIC ARGUMENTS in constructor expressions — FIXED 2026-09-09
 
 `var m: HashMap(int, JsonValue)` (annotation) is fine; `HashMap(int, JsonValue)()` and
@@ -82,7 +98,7 @@ Verified today: `zebra --emit-zig hmain.zbr > out.zig` writes 1032 bytes. The
 cli-surface `--emit-zig` leg captures stdout to a FILE, so it has been asserting exactly
 this case since it was written; its label now says so.
 
-### BUG-314: `.add()` on a `List` fetched from a parent via `.at()` did not write back — RESOLVED 2026-09-10 (the strictly-safe way; the semantics option is still Sean's)
+### BUG-314: `.add()` on a `List` fetched from a parent via `.at()` did not write back — RESOLVED 2026-09-10 (the strictly-safe way); SEMANTICS DECIDED 2026-09-12: heap-boxed inner containers, queued for 1.0
 
 `.at()` on a `List(List(T))` hands back a COPY of the inner list, so a mutation through
 it was silently lost by the parent, and on a for-in element it was a leaked Zig

@@ -13906,14 +13906,17 @@ struct Generator
                         w.emit("))) catch @panic(\"OOM\")")
                         return
                     if mname == "build"
+                        # BUG-351 (Sean, 2026-09-12): build() is NON-consuming -- the builder keeps
+                        # its contents, like C#/Java toString() and Go String(); only Zig's
+                        # toOwnedSlice consumes. Copy the bytes out instead of moving them.
                         if current_method_throws
-                            w.emit("(try ")
+                            w.emit("(try _allocator.dupe(u8, ")
                             genExpr(m.object)
-                            w.emit(".toOwnedSlice(_allocator))")
+                            w.emit(".items))")
                         else
-                            w.emit("(")
+                            w.emit("(_allocator.dupe(u8, ")
                             genExpr(m.object)
-                            w.emit(".toOwnedSlice(_allocator) catch \"\")")
+                            w.emit(".items) catch \"\")")
                         return
                     if mname == "len"
                         w.emit("@as(i64, @intCast(")
@@ -14875,14 +14878,15 @@ struct Generator
             var build_obj = getMemberFieldName(m.object)
             var is_sb = build_obj != nil and not isUpperCase(build_obj!)
             if is_sb
+                # BUG-351: non-consuming, see the typed arm above.
                 if current_method_throws
-                    w.emit("(try ")
+                    w.emit("(try _allocator.dupe(u8, ")
                     genExpr(m.object)
-                    w.emit(".toOwnedSlice(_allocator))")
+                    w.emit(".items))")
                 else
-                    w.emit("(")
+                    w.emit("(_allocator.dupe(u8, ")
                     genExpr(m.object)
-                    w.emit(".toOwnedSlice(_allocator) catch \"\")")
+                    w.emit(".items) catch \"\")")
                 return
         # List (not StrSet — StrSet.add is a real method).
         # BUG-061: skip uppercase receivers like `Math.add(3,10)` — class-scoped calls.

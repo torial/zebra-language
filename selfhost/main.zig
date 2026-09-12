@@ -2071,7 +2071,7 @@ pub fn _zbr_fn_extractConflictSide(src: []const u8, want_ours: bool) []const u8 
         }
     }
 // zbr:selfhost/main.zbr:1225
-    return (sb.toOwnedSlice(_zbr_rt._allocator) catch "");
+    return (_zbr_rt._allocator.dupe(u8, sb.items) catch "");
 }
 
 // zbr:selfhost/main.zbr:1233
@@ -2399,7 +2399,7 @@ pub fn _zbr_fn_buildDiagnosticsJson(path: []const u8) anyerror![]const u8 {
 // zbr:selfhost/main.zbr:1382
     out.appendSlice(_zbr_rt._allocator, "]") catch @panic("OOM");
 // zbr:selfhost/main.zbr:1383
-    return (try out.toOwnedSlice(_zbr_rt._allocator));
+    return (try _zbr_rt._allocator.dupe(u8, out.items));
 }
 
 // zbr:selfhost/main.zbr:1388
@@ -2576,7 +2576,7 @@ pub fn _zbr_fn_lspPublishDiagnostics(uri: []const u8, src: []const u8) void {
 // zbr:selfhost/main.zbr:1474
     sb.appendSlice(_zbr_rt._allocator, "]}}") catch @panic("OOM");
 // zbr:selfhost/main.zbr:1475
-    _zbr_fn_lspWriteMessage((sb.toOwnedSlice(_zbr_rt._allocator) catch ""));
+    _zbr_fn_lspWriteMessage((_zbr_rt._allocator.dupe(u8, sb.items) catch ""));
 }
 
 // zbr:selfhost/main.zbr:1479
@@ -2652,7 +2652,7 @@ pub fn _zbr_fn_lspMemberSymbols(members: std.ArrayList(_zbr_ty_Decl)) []const u8
         }
     }
 // zbr:selfhost/main.zbr:1513
-    return (sb.toOwnedSlice(_zbr_rt._allocator) catch "");
+    return (_zbr_rt._allocator.dupe(u8, sb.items) catch "");
 }
 
 // zbr:selfhost/main.zbr:1518
@@ -2738,7 +2738,7 @@ pub fn _zbr_fn_lspCollectDocSymbols(text: []const u8, path: []const u8) []const 
                     }
                 }
 // zbr:selfhost/main.zbr:1550
-                return _str_concat(_str_concat("[", (sb.toOwnedSlice(_zbr_rt._allocator) catch ""), _zbr_rt._allocator), "]", _zbr_rt._allocator);
+                return _str_concat(_str_concat("[", (_zbr_rt._allocator.dupe(u8, sb.items) catch ""), _zbr_rt._allocator), "]", _zbr_rt._allocator);
             }
 // zbr:selfhost/main.zbr:1551
             return "[]";
@@ -2920,7 +2920,7 @@ pub fn _zbr_fn_lspReferencesJson(docs: std.StringHashMap([]const u8), name: []co
 // zbr:selfhost/main.zbr:1639
     sb.appendSlice(_zbr_rt._allocator, "]") catch @panic("OOM");
 // zbr:selfhost/main.zbr:1640
-    return (sb.toOwnedSlice(_zbr_rt._allocator) catch "");
+    return (_zbr_rt._allocator.dupe(u8, sb.items) catch "");
 }
 
 // zbr:selfhost/main.zbr:1645
@@ -2988,7 +2988,7 @@ pub fn _zbr_fn_lspRenameJson(docs: std.StringHashMap([]const u8), name: []const 
 // zbr:selfhost/main.zbr:1672
     sb.appendSlice(_zbr_rt._allocator, "}}") catch @panic("OOM");
 // zbr:selfhost/main.zbr:1673
-    return (sb.toOwnedSlice(_zbr_rt._allocator) catch "");
+    return (_zbr_rt._allocator.dupe(u8, sb.items) catch "");
 }
 
 // zbr:selfhost/main.zbr:1684
@@ -3356,7 +3356,7 @@ pub fn _zbr_fn_lspMethodSig(m: _zbr_ty_DeclMethod) []const u8 {
         sb.appendSlice(_zbr_rt._allocator, _zbr_fn_typeRefStr(m.return_type.?)) catch @panic("OOM");
     }
 // zbr:selfhost/main.zbr:1854
-    return (sb.toOwnedSlice(_zbr_rt._allocator) catch "");
+    return (_zbr_rt._allocator.dupe(u8, sb.items) catch "");
 }
 
 // zbr:selfhost/main.zbr:1856
@@ -4025,7 +4025,7 @@ pub fn _zbr_fn_lspMemberCompletionItems(text: []const u8, path: []const u8, recv
 // zbr:selfhost/main.zbr:2156
     sb.appendSlice(_zbr_rt._allocator, "]") catch @panic("OOM");
 // zbr:selfhost/main.zbr:2157
-    return (sb.toOwnedSlice(_zbr_rt._allocator) catch "");
+    return (_zbr_rt._allocator.dupe(u8, sb.items) catch "");
 }
 
 // zbr:selfhost/main.zbr:2164
@@ -4087,7 +4087,7 @@ pub fn _zbr_fn_lspCompletionItems(text: []const u8, path: []const u8, line: i64,
 // zbr:selfhost/main.zbr:2187
     sb.appendSlice(_zbr_rt._allocator, "]") catch @panic("OOM");
 // zbr:selfhost/main.zbr:2188
-    return (sb.toOwnedSlice(_zbr_rt._allocator) catch "");
+    return (_zbr_rt._allocator.dupe(u8, sb.items) catch "");
 }
 
 pub const _zbr_ty_LspSigCtx = struct {
@@ -4403,7 +4403,7 @@ pub fn _zbr_fn_lspSignatureHelp(text: []const u8, path: []const u8, line: i64, c
 // zbr:selfhost/main.zbr:2341
             sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat("]}],\"activeSignature\":0,\"activeParameter\":", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{active}) catch @panic("OOM")), _zbr_rt._allocator), "}", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/main.zbr:2342
-            return (sb.toOwnedSlice(_zbr_rt._allocator) catch "");
+            return (_zbr_rt._allocator.dupe(u8, sb.items) catch "");
         }
     }
 // zbr:selfhost/main.zbr:2343
@@ -5121,7 +5121,7 @@ pub fn _zbr_fn_fmtLine(line: []const u8, start_in_triple: bool) _zbr_ty_FmtLine 
         i = (i + 1);
     }
 // zbr:selfhost/main.zbr:2733
-    return _zbr_ty_FmtLine.init((sb.toOwnedSlice(_zbr_rt._allocator) catch ""), triple);
+    return _zbr_ty_FmtLine.init((_zbr_rt._allocator.dupe(u8, sb.items) catch ""), triple);
 }
 
 // zbr:selfhost/main.zbr:2735
@@ -5150,7 +5150,7 @@ pub fn _zbr_fn_fmtNormalize(src: []const u8) []const u8 {
         }
     }
 // zbr:selfhost/main.zbr:2747
-    var result: []const u8 = (sb.toOwnedSlice(_zbr_rt._allocator) catch "");
+    var result: []const u8 = (_zbr_rt._allocator.dupe(u8, sb.items) catch "");
 // zbr:selfhost/main.zbr:2749
     result = _str_concat(std.mem.trimEnd(u8, result, &std.ascii.whitespace), "\n", _zbr_rt._allocator);
 // zbr:selfhost/main.zbr:2750
