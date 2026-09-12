@@ -2,6 +2,12 @@
 # The Zebra tokenizer only handles LF; CRLF causes error.UnexpectedCharacter.
 *.zbr text eol=lf
 
+# Zig sources and the build manifest too. build.zig locates the preamble sections by
+# marker strings; a CRLF checkout (Windows runners default to core.autocrlf=true) broke
+# the release workflow on 2026-09-12. LF everywhere, no exceptions.
+*.zig text eol=lf
+*.zon text eol=lf
+
 # Generated Zig artifacts. These MUST stay tracked — they are the bootstrap seed
 # (a self-hosted compiler needs a compiler to build itself). But they are machine
 # output, not hand-written source: 16% of their lines are `// zbr:file:N` markers

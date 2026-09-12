@@ -37,13 +37,19 @@ pub fn build(b: *std.Build) void {
     const raw_preamble = b.build_root.handle.readFileAlloc(b.graph.io, "selfhost/stdlib_preamble.zig", b.allocator, std.Io.Limit.limited(256 * 1024)) catch @panic("selfhost/stdlib_preamble.zig missing");
     // Strip the file header (HOW-TO comment + allocator setup) — CodeGen emits those dynamically.
     // The static helpers start at the STDLIB_PREAMBLE_HELPERS_START marker.
-    const helpers_start_marker = "// === STDLIB_PREAMBLE_HELPERS_START ===\n";
-    const gui_start_marker     = "// === STDLIB_PREAMBLE_GUI_START ===\n";
-    const gui_end_marker       = "// === STDLIB_PREAMBLE_GUI_END ===\n";
+    // Markers are matched WITHOUT their line ending, and the end index skips to the next
+    // '\n' explicitly: a Windows checkout (actions/checkout, core.autocrlf=true) turns this
+    // file's "\n" into "\r\n", and a marker string carrying "\n" then never matches. The
+    // release workflow's first run (v0.9.0-rc1_zig0.16, 2026-09-12) failed on exactly that
+    // panic on windows-latest while ubuntu and macos passed. .gitattributes now pins *.zig
+    // to LF as well; this is the second layer, so the build never depends on the first.
+    const helpers_start_marker = "// === STDLIB_PREAMBLE_HELPERS_START ===";
+    const gui_start_marker     = "// === STDLIB_PREAMBLE_GUI_START ===";
+    const gui_end_marker       = "// === STDLIB_PREAMBLE_GUI_END ===";
     const helpers_start = std.mem.indexOf(u8, raw_preamble, helpers_start_marker) orelse @panic("STDLIB_PREAMBLE_HELPERS_START marker missing from selfhost/stdlib_preamble.zig");
     const gui_start_idx = std.mem.indexOf(u8, raw_preamble, gui_start_marker)     orelse @panic("STDLIB_PREAMBLE_GUI_START marker missing from selfhost/stdlib_preamble.zig");
     const gui_end_raw   = std.mem.indexOf(u8, raw_preamble, gui_end_marker)       orelse @panic("STDLIB_PREAMBLE_GUI_END marker missing from selfhost/stdlib_preamble.zig");
-    const gui_end_idx   = gui_end_raw + gui_end_marker.len;
+    const gui_end_idx   = lineEnd(raw_preamble, gui_end_raw + gui_end_marker.len);
     const preamble_opts = b.addOptions();
     preamble_opts.addOption([]const u8, "stdlib_preamble_pre_gui",  raw_preamble[helpers_start..gui_start_idx]);
     preamble_opts.addOption([]const u8, "stdlib_preamble_post_gui", raw_preamble[gui_end_idx..]);
@@ -52,11 +58,12 @@ pub fn build(b: *std.Build) void {
     // node_api.h @cImport never compiles into the compiler itself — embedded as a
     // string and only emitted into generated addons.  Phase 1.
     const raw_napi = b.build_root.handle.readFileAlloc(b.graph.io, "selfhost/napi_preamble.zig", b.allocator, std.Io.Limit.limited(64 * 1024)) catch @panic("selfhost/napi_preamble.zig missing");
-    const napi_start_marker = "// === NAPI_PREAMBLE_HELPERS_START ===\n";
-    const napi_end_marker   = "// === NAPI_PREAMBLE_HELPERS_END ===\n";
-    const napi_start = std.mem.indexOf(u8, raw_napi, napi_start_marker) orelse @panic("NAPI_PREAMBLE_HELPERS_START marker missing from selfhost/napi_preamble.zig");
+    const napi_start_marker = "// === NAPI_PREAMBLE_HELPERS_START ===";
+    const napi_end_marker   = "// === NAPI_PREAMBLE_HELPERS_END ===";
+    const napi_start_raw = std.mem.indexOf(u8, raw_napi, napi_start_marker) orelse @panic("NAPI_PREAMBLE_HELPERS_START marker missing from selfhost/napi_preamble.zig");
+    const napi_start = lineEnd(raw_napi, napi_start_raw + napi_start_marker.len);
     const napi_end   = std.mem.indexOf(u8, raw_napi, napi_end_marker)   orelse @panic("NAPI_PREAMBLE_HELPERS_END marker missing from selfhost/napi_preamble.zig");
-    preamble_opts.addOption([]const u8, "napi_preamble", raw_napi[napi_start + napi_start_marker.len .. napi_end]);
+    preamble_opts.addOption([]const u8, "napi_preamble", raw_napi[napi_start..napi_end]);
 
     compiler_mod.addOptions("build_options", preamble_opts);
 
@@ -328,4 +335,12 @@ pub fn build(b: *std.Build) void {
     update_run.has_side_effects = true;
     const update_selfhost_step = b.step("update-selfhost", "Regenerate selfhost/*.zig from .zbr sources (then run 'zig build')");
     update_selfhost_step.dependOn(&update_run.step);
+}
+
+/// Index just past the end of the line containing `from` -- past "\n" or "\r\n", or the
+/// end of the buffer. Lets the preamble markers be matched independent of line endings.
+fn lineEnd(buf: []const u8, from: usize) usize {
+    var i = from;
+    while (i < buf.len and buf[i] != '\n') : (i += 1) {}
+    return if (i < buf.len) i + 1 else i;
 }

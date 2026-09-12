@@ -2855,8 +2855,8 @@ pub fn build(b: *std.Build) void {
 # Never the default: a pin is reproducible, a path is whatever is on that disk.
 def luiBuildZon(): str
     var dep: str = """        .zig_libui_ng = .{
-            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#93c7f54b2051d17b9f69d203ff3cd4500e60d285",
-            .hash = "bindings_libui_ng-0.1.0-p2CY9VwQQgApSplQXciuuEWGImM_PPrHwvCG9f_SXioP",
+            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#d6dcf282f4a921e06f69bc4a1795f9020bc79d8d",
+            .hash = "bindings_libui_ng-0.1.0-p2CY9aMvQgDn13B-AHHPBXNu_X1Dq0m-HxlPEzK7UuuE",
         },
 """
     if sys.getenv("ZEBRA_LIBUI_PATH") as lp
