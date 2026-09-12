@@ -1624,9 +1624,9 @@ stop command
 help command
 unknown command
 Zebra is the best
-=== string_builder_test sha1=8d08abf35c14 ===
+=== string_builder_test sha1=5117ee59fa53 ===
 hello, world
-0
+12
 0
 one, two, three
 abc!
