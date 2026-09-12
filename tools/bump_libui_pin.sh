@@ -16,7 +16,7 @@ echo "── fetching $url"
 hash=$(zig fetch "$url" 2>&1 | tail -1)
 case "$hash" in bindings_libui_ng-*) ;; *) echo "zig fetch did not return a package hash: $hash"; exit 1;; esac
 echo "── hash $hash"
-python3 - "$url" "$hash" <<'PY'
+py - "$url" "$hash" <<'PY'
 import re, sys
 url, h = sys.argv[1], sys.argv[2]
 p = "selfhost/main.zbr"; s = open(p, encoding="utf-8").read()
