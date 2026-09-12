@@ -56,7 +56,12 @@ ZEBRA="$REPO/zig-out/bin/zebra.exe"
 # still getting a failure.
 W="$(mktemp -d "${TMPDIR:-/tmp}/zbr_cli_check.XXXXXX")"
 trap 'rm -rf "$W"' EXIT
-TMO=90
+# PER-LEG TIMEOUT, overridable. 90 s is generous on torial (the whole gate runs in ~16 s)
+# and NOT on a cold CI runner: 2026-09-12 the BUG-324 leg -- the only one that takes the
+# LLVM fallback, on a cache with nothing in it -- was killed at 90 s (exit 124) and reported
+# as "left an executable", because a killed compiler never reaches its deleteScratch calls.
+# The gate took 164 s there against 16 s locally. gates-quick/full.yml set CLI_CHECK_TMO=300.
+TMO="${CLI_CHECK_TMO:-90}"
 
 [ -x "$ZEBRA" ] || { echo "cli-check: REFUSING -- not built: $ZEBRA" >&2; exit 2; }
 
@@ -83,7 +88,10 @@ run() {  # run <args...>  -> sets RC / OUT_N / ERR_N / OUT / ERR
 }
 
 ok()   { pass=$((pass+1)); printf '  ok     %s\n' "$1"; }
-bad()  { fail=$((fail+1)); printf '  FAIL   %s\n' "$1"; [ -n "${2:-}" ] && printf '           %s\n' "$2"; }
+bad()  { fail=$((fail+1)); printf '  FAIL   %s\n' "$1"; [ -n "${2:-}" ] && printf '           %s\n' "$2"
+         # exit 124 is `timeout` killing the leg, not the compiler answering. Say so on the
+         # line, because "exit=124 files=[...]" reads as a verdict about the files.
+         case "${2:-}" in *"exit=124"*) printf '           (exit 124 = TIMED OUT at %ss -- the harness limit, not a compiler verdict; raise CLI_CHECK_TMO)\n' "$TMO";; esac; }
 chk()  { if [ "$2" = 0 ]; then ok "$1"; else bad "$1" "${3:-}"; fi; }
 
 # A pin asserts the CURRENT WRONG behaviour. If the condition stops holding, the bug is

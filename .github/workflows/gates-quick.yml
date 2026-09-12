@@ -98,6 +98,7 @@ jobs:
         shell: bash
         env:
           GATES_LOG_DIR: ${{ github.workspace }}/gate-logs
+  CLI_CHECK_TMO: "300"   # cold runner: the BUG-324 leg LLVM fallback exceeded 90 s (2026-09-12)
         run: bash tools/gates.sh
 
       # The evidence a red gate leaves behind. Without this the runner discards it and the
