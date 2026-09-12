@@ -2809,3 +2809,19 @@ with open('file.zbr', 'w', encoding='utf-8') as f:
 Git `core.autocrlf` can mask this on checkout, but the repo `.gitattributes`
 normalises `.zbr` to LF. If you suspect CRLF: `file selfhost/foo.zbr` will
 report `CRLF line terminators` vs `ASCII text`.
+
+**Two more CRLF receipts, 2026-09-12, both invisible to `git status`.** (1) The rc1 release
+workflow failed on `windows-latest`: `actions/checkout` there runs with `core.autocrlf=true`,
+`.gitattributes` covered only `.zbr` and `.md`, so `selfhost/stdlib_preamble.zig` arrived as
+CRLF and `build.zig`'s marker strings -- which carried a trailing `\n` -- never matched
+(`STDLIB_PREAMBLE_HELPERS_START marker missing`). Fixed at both layers: markers are matched
+without their line ending (`lineEnd()`), and `*.zig` / `*.zon` are pinned `text eol=lf`.
+Renormalising found three tracked files that had been CRLF in the index all along
+(`src/Binder.zig`, `src/Resolver.zig`, `test/main.zig`). (2) The same morning
+`selfhost/main.zbr` was CRLF **on disk** with an LF index -- `git status` clean, the daily green
+the night before, and the round-trip red because the compiler refused its own source. Only
+`git ls-files --eol` sees that state; `doctor.sh` now refuses on any tracked `.zbr` with a
+CRLF working copy. The fix is `sed -i 's/\r$//' <file>`; do NOT write the file back with a
+Python one-liner of the shape `open(p,'wb').write(open(p,'rb').read()...)` -- the write-mode
+open truncates the file BEFORE the read runs, and it emptied three source files here before
+`git checkout --` restored them.
