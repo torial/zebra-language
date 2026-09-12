@@ -27,7 +27,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: v
         shell: bash
         run: |
@@ -74,7 +74,7 @@ jobs:
     continue-on-error: ${{ matrix.experimental }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download Zig 0.16.0 (${{ matrix.zig }})
         shell: bash
@@ -130,10 +130,17 @@ jobs:
           fi
           ls -la
 
-      - uses: actions/upload-artifact@v4
+      # ONLY the archive. The first rc2 run used `dist/zebra-*.*`, and `*.*` matches the
+      # unpacked package DIRECTORY too (its name contains "0.9.0"), so every platform
+      # uploaded the whole tree -- Zig toolchain included -- and publish's sha256sum then
+      # met three directories. Explicit extensions; nothing else can match.
+      - uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.plat }}
-          path: dist/zebra-*.*
+          path: |
+            dist/zebra-*.zip
+            dist/zebra-*.tar.gz
+          if-no-files-found: error
 
   publish:
     needs: [tag-matches-version, build]
@@ -141,16 +148,25 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v6
         with:
           path: dist
           merge-multiple: true
-      - name: Checksums
+      - name: Checksums (files only -- a directory here is a packaging bug, not something to skip)
         shell: bash
-        run: cd dist && sha256sum zebra-* > SHA256SUMS.txt && cat SHA256SUMS.txt
-      - uses: softprops/action-gh-release@v2
+        run: |
+          set -euo pipefail
+          cd dist
+          ls -la
+          if find . -mindepth 1 -maxdepth 1 -type d | grep -q .; then
+            echo "::error::dist contains directories; the build job uploaded more than the archives"; exit 1
+          fi
+          sha256sum zebra-*.zip zebra-*.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
-            dist/zebra-*
+            dist/zebra-*.zip
+            dist/zebra-*.tar.gz
             dist/SHA256SUMS.txt
           generate_release_notes: true
