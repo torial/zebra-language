@@ -26,8 +26,16 @@ jobs:
     timeout-minutes: 150
 
     steps:
+      # fetch-depth 0 + fetch-tags: the divergence gate compares against the N-1 anchor,
+      # which tools/n1_reference.sh locates by the newest `n1-anchor-*` TAG and builds
+      # from that COMMIT. A shallow, tagless checkout (the v4 default) has neither, so
+      # the gate refused on every run since divergence was re-pointed (2026-09-01):
+      # "REFUSING -- no n1-anchor-* tag exists". Found on the 2026-09-12 full run.
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Cache Zig
         id: cache-zig
