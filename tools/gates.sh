@@ -69,6 +69,11 @@
 # Record a green --daily run in CLAUDE.md's sweep table; the tier prints the line.
 
 set -uo pipefail
+# Where a FAILING gate's complete output is kept (the board shows only a tail). CI uploads
+# this directory as an artifact; locally it is the first place to look after a red board.
+GATES_LOG_DIR="${GATES_LOG_DIR:-/tmp/gates-logs}"
+mkdir -p "$GATES_LOG_DIR" 2>/dev/null && rm -f "$GATES_LOG_DIR"/*.log 2>/dev/null || true
+
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -172,7 +177,17 @@ _run() {
     # the heavy gates ran ~1400 s.
     timeout "${GATE_TIMEOUT:-5400}" "$@" >"$log" 2>&1; rc=$?
     t1=$((SECONDS - t0))
-    out="$(cat "$log")"; rm -f "$log"
+    out="$(cat "$log")"
+    # KEEP THE FULL OUTPUT OF A FAILING GATE. The board shows 8 failing lines and a
+    # 12-line tail; a regression list longer than 12 is CUT, and what survives is the
+    # alphabetical END of it -- which reads as a pattern ("the u..z tests broke") when it
+    # is an artefact of the cut. On the 2026-09-12 CI full run that was the only evidence
+    # left of full_sweep and examples_sweep, and it was the wrong evidence. Same rule as
+    # zig_build_lib: a gate that classifies a failure must keep the failure's own account.
+    if [[ $rc -ne 0 ]]; then
+        mkdir -p "$GATES_LOG_DIR" 2>/dev/null && cp "$log" "$GATES_LOG_DIR/$label.log" 2>/dev/null || true
+    fi
+    rm -f "$log"
     printf '\r  %-16s ' "$label" >&2
     if [[ $rc -eq 124 ]]; then
         # "HANG" was the wrong word and it cost real diagnosis time: divergence was
@@ -232,6 +247,7 @@ _run() {
         # reports a failure without saying which is one investigation longer than needed.
         echo "$out" | grep -aiE '^[[:space:]]*(FAIL|✗|error:)' | head -8 | sed 's/^/      ! /'
         echo "$out" | tail -12 | sed 's/^/        /'
+        [[ -f "$GATES_LOG_DIR/$label.log" ]] && printf '        (full output kept: %s, %s lines)\n' "$GATES_LOG_DIR/$label.log" "$(wc -l < "$GATES_LOG_DIR/$label.log" | tr -d ' ')"
     fi
     # NEAR-CEILING WARNING. The runner knew divergence had taken 91% of its ceiling and
     # said nothing until the run that failed -- the first signal was the loudest one, with

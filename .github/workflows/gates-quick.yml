@@ -96,7 +96,20 @@ jobs:
 
       - name: Gates (QUICK tier)
         shell: bash
+        env:
+          GATES_LOG_DIR: ${{ github.workspace }}/gate-logs
         run: bash tools/gates.sh
+
+      # The evidence a red gate leaves behind. Without this the runner discards it and the
+      # board's 12-line tail is all anyone gets (2026-09-12: a truncated regression list
+      # read as an alphabetical pattern). `if: failure()` -- nothing to keep on green.
+      - name: Keep failing gates' full output
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gate-logs-${{ github.job }}-${{ github.run_id }}
+          path: gate-logs/
+          if-no-files-found: ignore
 
       # gates.sh already asserts that every registered gate RAN (it counts its own
       # `run` lines), so a silently-skipped gate fails the step above rather than

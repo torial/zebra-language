@@ -81,7 +81,19 @@ jobs:
         shell: bash
         env:
           JOBS: '2'
+          GATES_LOG_DIR: ${{ github.workspace }}/gate-logs
         run: bash tools/gates.sh --full
+
+      # The evidence a red gate leaves behind. Without this the runner discards it and the
+      # board's 12-line tail is all anyone gets (2026-09-12: a truncated regression list
+      # read as an alphabetical pattern). `if: failure()` -- nothing to keep on green.
+      - name: Keep failing gates' full output
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gate-logs-${{ github.job }}-${{ github.run_id }}
+          path: gate-logs/
+          if-no-files-found: ignore
 
       # Explicitly OUTSIDE the tier, exactly as documented: folding these in
       # would change what "gates green" means. Run here because nightly is when
