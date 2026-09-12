@@ -845,9 +845,9 @@ var nums = [1, 2, 3]                 # type inferred from the first element
 var labels = ["alpha", "beta"]       # → List(str)
 var empty: List(int) = []            # empty literal needs an annotation
 var n = items.count()                # length
-var x = items.at(0)                  # index (bounds-checked in every build)
-var y = items[0]                     # also works (postfix index); .at() is idiomatic
-items.set(1, 42)                     # in-place element update (the inverse of .at)
+var x = items[0]                     # index (bounds-checked in every build) -- the idiomatic form
+var y = items.at(0)                  # method form; kept because a pipeline needs it: xs -> .at(0)
+items[1] = 42                        # in-place element update (idiomatic); items.set(1, 42) is the method form
 items.remove(0)                      # remove by index
 var found = items.any(def(x) = x > 2)  # true if any element matches predicate (NB: `has` is a keyword)
 ```
