@@ -263,7 +263,23 @@ rows mutually exclusive, and every row exercised by a fixture. `contract_mode_ch
 does this informally -- its four-way `--release` x `--turbo` matrix IS a Parnas table, and
 the entry says the asymmetric cells are the point. Worth naming the pattern and reusing it.
 
-## KNUTH'S TRIP TEST — the highest-yield tool on this list
+## KNUTH'S TRIP TEST — the highest-yield tool on this list — LANDED 2026-09-14
+
+`test/boundary/trip.zbr` + `trip.expected` (intent-authored, exact-compared by
+`boundary_check`, QUICK tier). First run: three compiler defects (BUG-424 `Math.abs(int)`
+unsigned, BUG-425 `extend str` never resolved, BUG-426 typed-param expression lambda not
+passable as a `sig`) plus two things for this queue to decide rather than fix:
+
+- **`defer` is a reserved word the parser refuses** (`unexpected expression token:
+  'defer'`); so is `errdefer`. Either implement (Zig has the mechanism one line below
+  the emit) or free the words before 1.0 -- a reserved word that does nothing is the
+  `aspect` situation (U4) again. `continue` works and was merely uncovered.
+- An unused `as n` binding in a branch arm is refused (Zig's unused-capture error
+  surfacing as a Zebra error) **with no column** -- `diag-columns` cannot see it because
+  it is not a front-end diagnostic. Fine as a rule; the position is the defect.
+
+Grow it: every future bug class should get a line in the trip as well as a fixture.
+
 
 TeX has `trip` and METAFONT has `trap`: single, deliberately fiendish programs exercising
 every feature IN COMBINATION, with byte-pinned output. Knuth credits them for TeX's

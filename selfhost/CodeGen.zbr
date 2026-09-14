@@ -1107,6 +1107,12 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                         ext_tn0 = etn0.name
                     else
                         pass
+                # `extend str` and `extend String` are ONE target. The receiver side
+                # (extTypeName) canonicalises a str value to "String", so a block written
+                # `extend str` -- the spelling QUICKSTART §42 documents -- registered under
+                # "str" and no call ever found it. Found by test/trip_test.zbr 2026-09-14.
+                if ext_tn0 == "str"
+                    ext_tn0 = "String"
                 if ext_tn0.len > 0
                     for emem0 in ext.members
                         if emem0 is Decl.method as emth0
@@ -3264,6 +3270,20 @@ struct Generator
         branch t
             on Type_.float_ return true
             on Type_.float_n as _
+                return true
+            else
+                return false
+
+    # True iff `e` infers to a SIGNED integer type (int or a sized intN). The inverse of
+    # isFloatExpr is NOT this: an unknown type must answer false to both, so a caller
+    # that cannot tell leaves the emit alone rather than casting on a guess (§28a).
+    def isIntExpr(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var t: Type_ = inferExpr(e, .infer_ctx!)
+        branch t
+            on Type_.int_ return true
+            on Type_.int_n as _
                 return true
             else
                 return false
@@ -5779,6 +5799,8 @@ struct Generator
                 tname = n.name
             else
                 tname = "Unknown"
+        if tname == "str"
+            tname = "String"           # same canonicalisation as the registration pass
         writeIndent()
         w.emit("// extend ")
         w.emit(tname)
@@ -16365,6 +16387,16 @@ struct Generator
             w.emit(")")
             return
         if mname == "abs"
+            # Zig's @abs of a SIGNED integer is UNSIGNED (u64 for i64). Left bare, `return
+            # Math.abs(a - b)` from an `int` function is a type error, and `var d =
+            # Math.abs(x)` silently binds a u64 that wraps on the next subtraction --
+            # BUG-226 shape (valid Zig, wrong type). Found by test/trip_test.zbr 2026-09-14.
+            # Cast back for integer operands; floats keep @abs (it stays f64).
+            if args.len > 0 and isIntExpr(args.at(0).value)
+                w.emit("@as(i64, @intCast(@abs(")
+                genArgList(args)
+                w.emit(")))")
+                return
             w.emit("@abs(")
             genArgList(args)
             w.emit(")")
@@ -16971,9 +17003,31 @@ struct Generator
             else
                 branch lam.body_
                     on LambdaBody.expr_ as ex
-                        w.emit("@TypeOf(")
-                        lg.genExpr(ex)
-                        w.emit(")")
+                        # `@TypeOf(x + 3)` where x is a PARAM makes the fn GENERIC in Zig
+                        # (`fn (i64) anytype`), so `def(x: int) = x + 3` could never be
+                        # passed where a `sig IntFn(x: int): int` is expected. When the
+                        # seeded ctx proves the body a primitive, name the type instead;
+                        # anything else keeps @TypeOf. Found by test/trip_test.zbr 2026-09-14.
+                        var bt: Type_ = inferExpr(ex, lam_ctx)
+                        var concrete = ""
+                        branch bt
+                            on Type_.int_ concrete = "i64"
+                            on Type_.uint_ concrete = "u64"
+                            on Type_.int_n as _
+                                concrete = zigTypeForListElem(bt)
+                            on Type_.float_ concrete = "f64"
+                            on Type_.float_n as _
+                                concrete = zigTypeForListElem(bt)
+                            on Type_.bool_ concrete = "bool"
+                            on Type_.string_ concrete = "[]const u8"
+                            else
+                                pass
+                        if concrete != ""
+                            w.emit(concrete)
+                        else
+                            w.emit("@TypeOf(")
+                            lg.genExpr(ex)
+                            w.emit(")")
                     on LambdaBody.stmts as ss
                         if not lg.emitLambdaStmtsRetType(ss)
                             w.emit("void")

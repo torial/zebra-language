@@ -6,6 +6,35 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-424: `Math.abs(int)` emitted Zig's UNSIGNED `@abs` — a type error in return position, a silent u64 elsewhere — FIXED 2026-09-14
+
+`@abs` of an `i64` is a `u64`. `return Math.abs(a - b)` from an `int` function failed with
+"expected type 'i64', found 'u64'", and `var d = Math.abs(x)` bound a u64 that wrapped on
+the next subtraction (BUG-226 shape: valid Zig, wrong type). Codegen now emits
+`@as(i64, @intCast(@abs(x)))` when the operand infers to a signed integer; floats and
+unknowns keep the bare `@abs` (§28a: an unknown type is not a licence to cast). Found by
+`test/boundary/trip.zbr` on its first run, in a corpus of 630 green files.
+Fixture: `test/bug424_math_abs_int_test.zbr`.
+
+### BUG-425: `extend str` — the spelling QUICKSTART §42 documents — never resolved; only `extend String` worked — FIXED 2026-09-14
+
+The extend pass registered methods under the target name as written (`str`), while every
+`str` receiver looks its extensions up under `String` (`extTypeName`), so the documented
+form was "no member function named 'shout' in 'str'" and every corpus use was
+`extend String`. Both spellings canonicalise to one target at registration and emission;
+a string LITERAL receiver resolves too. Found by `test/boundary/trip.zbr`.
+Fixture: `test/bug425_extend_str_spelling_test.zbr`.
+
+### BUG-426: `def(x: int) = x + 3` could not be passed as a `sig` — its emitted return type made it a GENERIC fn — FIXED 2026-09-14
+
+An expression lambda with typed params and no return type emitted
+`fn (x: i64) @TypeOf((x + 3))`; a return type that depends on a parameter is generic in
+Zig, so the value was `*const fn (i64) anytype` and did not coerce to
+`*const fn (i64) i64`. When the §28a-seeded inference proves the body a primitive
+(int/uint/float/bool/str, sized too), the concrete Zig type is emitted; anything else
+keeps `@TypeOf`. Untyped-param lambdas (the functional trio) are unchanged. Found by
+`test/boundary/trip.zbr`. Fixture: `test/bug426_expr_lambda_sig_test.zbr`.
+
 ### BUG-351: `StringBuilder.build()` EMPTIES the builder — `sb.len()` is 0 afterwards — FIXED 2026-09-12 (Sean: non-consuming)
 
 `build()` lowers to `toOwnedSlice`, which moves the buffer out. test/string_builder_test.zbr

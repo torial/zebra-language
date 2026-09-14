@@ -1,0 +1,18 @@
+# BUG-426: an expression lambda with TYPED params and NO return type emitted
+# `fn (x: i64) @TypeOf((x + 3))` -- a return type depending on a parameter, which makes
+# the fn GENERIC in Zig -- so it could not be passed where a `sig` was expected:
+# "expected '*const fn (i64) i64', found '*const fn (i64) anytype'". When the seeded
+# inference proves the body a primitive, the concrete type is named instead.
+# Found by test/boundary/trip.zbr (2026-09-14).
+sig IntFn(x: int): int
+
+def twice(f: IntFn, x: int): int
+    return f(f(x))
+
+def main()
+    var addThree = def(x: int) = x + 3
+    var isBig = def(x: int) = x > 100
+    print(addThree(4))                # 7
+    print(twice(addThree, 4))         # 10 (was: a Zig type error)
+    print(isBig(7))                   # false
+    print("bug426: ok")

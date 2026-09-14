@@ -733,6 +733,11 @@ smoke_tc_fail test/arg_count_test.zbr "too few arguments"
 smoke_run test/bug239_empty_list_literal_test.zbr "bug239_empty_list_literal_test: ok"
 smoke_run test/string_builder_test.zbr "12"   # BUG-351: sb.len() after build() -- non-consuming
 smoke_run test/bug351_sb_build_nonconsuming_test.zbr "bug351: ok"
+# 2026-09-14: three defects found by test/boundary/trip.zbr on its first run, each pinned
+# alone here and kept IN COMBINATION there.
+smoke_run test/bug424_math_abs_int_test.zbr "bug424: ok"
+smoke_run test/bug425_extend_str_spelling_test.zbr "bug425: ok"
+smoke_run test/bug426_expr_lambda_sig_test.zbr "bug426: ok"
 
 # BUG-238: `except` in an enum-dotted branch arm, reached through `use`. Reported as a
 # regression that did not reproduce; registered as a RUNNING guard (smoke_run, not

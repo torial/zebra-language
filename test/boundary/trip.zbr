@@ -1,0 +1,311 @@
+# @boundary runs
+# trip.zbr -- Knuth's TRIP for Zebra (NEXT_STEPS_to_1.0 "Knuth's trip test").
+#
+# ONE deliberately fiendish program that uses the language's features IN COMBINATION --
+# generics inside contracts inside branch arms inside recursion, closures over pipelines
+# over HashMaps, unions carrying ^T payloads walked by a function with an `ensure`, mixins
+# on classes that `extend` strings, errors raised through three frames and caught by a
+# postfix `catch` -- with its output pinned byte-for-byte by boundary_check (trip.expected).
+#
+# WHY. The corpus has 630+ files and each exercises ONE thing; construct_histogram measured
+# that zero of them combine float + `.at()` + `while`. Isolated tests are structurally
+# incapable of finding interaction defects. This file is the corpus's opposite by design.
+#
+# THE EXPECTED VALUES WERE WRITTEN BEFORE THE FIRST RUN (the boundary_check discipline):
+# every number below is derivable by hand and the derivation is in the comment beside it.
+# If this file's output changes, either the language changed or a bug did -- it is never a
+# "doc chore" to re-record. If a section stops compiling, that is a finding, not a reason
+# to delete the section.
+#
+# ITS FIRST RUN (2026-09-14) FOUND THREE COMPILER DEFECTS AND TWO SMALLER THINGS, in a
+# corpus of 630 files that were all green: `Math.abs(int)` emitted Zig's UNSIGNED @abs
+# (a type error in return position, a silently-u64 local elsewhere); `extend str` -- the
+# spelling QUICKSTART documents -- registered under a name no call site looked up, so only
+# `extend String` ever worked; and `def(x: int) = x + 3` emitted a GENERIC fn (`@TypeOf`
+# over a param) that could not be passed as a `sig`. Plus: an unused `as n` binding in a
+# branch arm is refused (fine, but with no column), and `defer` is a reserved word the
+# parser refuses. Each defect has its own fixture now; this file keeps all of them live
+# IN COMBINATION, which is the property none of the fixtures has.
+
+# ── 1. a union with ^T payloads, walked recursively under a contract ─────────────────
+union Expr
+    num: int
+    add: ^Pair
+    mul: ^Pair
+    neg: ^Expr
+
+struct Pair
+    var l: Expr
+    var r: Expr
+
+def eval(e: Expr): int
+    ensure
+        result == result            # a post-condition that must at least RUN on every arm
+    branch e
+        on Expr.num as n
+            return n
+        on Expr.add as p
+            return eval(p.l) + eval(p.r)
+        on Expr.mul as p
+            return eval(p.l) * eval(p.r)
+        on Expr.neg as inner
+            return 0 - eval(inner)
+        else
+            return 0
+
+def depth(e: Expr): int
+    branch e
+        on Expr.num
+            return 1
+        on Expr.add as p
+            return 1 + Math.max(depth(p.l), depth(p.r))
+        on Expr.mul as p
+            return 1 + Math.max(depth(p.l), depth(p.r))
+        on Expr.neg as inner
+            return 1 + depth(inner)
+        else
+            return 0
+
+# ── 2. generics + contracts + a mixin + an interface + extend ────────────────────────
+interface Shape
+    def area(): int
+    def name(): str
+
+mixin Labelled
+    def label(): str
+        return "<" + this.name() + ":" + this.area().toString() + ">"
+
+class Rect implements Shape adds Labelled
+    var w: int
+    var h: int
+    cue init(w: int, h: int)
+        .w = w
+        .h = h
+    def area(): int
+        return .w * .h
+    def name(): str
+        return "rect"
+
+class Sq implements Shape adds Labelled
+    var s: int
+    cue init(s: int)
+        .s = s
+    def area(): int
+        return .s * .s
+    def name(): str
+        return "sq"
+
+class Stack(T)
+    var items: List(T)
+    cue init()
+        items = List(T)()
+    def push(x: T)
+        require
+            true
+        .items.add(x)
+    def pop(): T?
+        if .items.count() == 0
+            return nil
+        var last = .items.at(.items.count() - 1)
+        .items.remove(.items.count() - 1)
+        return last
+    def size(): int
+        ensure
+            result >= 0
+        return .items.count()
+
+extend str
+    def shout(): str
+        return this.upper() + "!"
+
+# ── 3. closures, sigs, tail recursion ────────────────────────────────────────────────
+sig IntFn(x: int): int
+
+def makeCounter(start: int): def(): int
+    return def(): int
+        capture
+            var count: int = start
+        count += 1
+        return count
+
+def twice(f: IntFn, x: int): int
+    return f(f(x))
+
+def sumTo(n: int, acc: int): int
+    if n == 0
+        return acc
+    return sumTo(n - 1, acc + n)     # tail call: the compiler TCO-wraps this
+
+# ── 4. errors through three frames ───────────────────────────────────────────────────
+def parseDigit(c: str): int throws
+    if c == "7"
+        raise "seven is unlucky"
+    return c.toInt()
+
+def parsePair(a: str, b: str): int throws
+    return parseDigit(a)? * 10 + parseDigit(b)?
+
+def total(xs: List(str)): int throws
+    var t = 0
+    var i = 0
+    while i + 1 < xs.count()
+        t = t + parsePair(xs.at(i), xs.at(i + 1))?
+        i = i + 2
+    return t
+
+# ── 5. structs, except, derive, tuples, type aliases, namespaces ─────────────────────
+@derive(Debug, Eq)
+struct Pt
+    var x: int
+    var y: int
+    def shifted(dx: int): Pt
+        var p = this except x = x + dx
+        return p
+
+type Percent = int where value >= 0 and value <= 100
+
+namespace Geo
+    def manhattan(a: Pt, b: Pt): int
+        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y)   # int abs in RETURN position (was u64)
+
+def minmax(a: int, b: int): (int, int)
+    if a < b
+        return (a, b)
+    return (b, a)
+
+class Ticket
+    var opened: int
+    var closed: int
+    cue init()
+        .opened = 0
+        .closed = 0
+    def begin()
+        .opened = .opened + 1
+    def end()
+        .closed = .closed + 1
+
+def main()
+    # 1. ((1 + 2) * (3 + 4)) + -(5) = 21 - 5 = 16 ; depth: neg(5)=2, add(1,2)=2, mul=3, top add=4
+    var three = Expr.add(Pair(Expr.num(1), Expr.num(2)))
+    var seven = Expr.add(Pair(Expr.num(3), Expr.num(4)))
+    var prod = Expr.mul(Pair(three, seven))
+    var e = Expr.add(Pair(prod, Expr.neg(Expr.num(5))))
+    print("1 eval=${eval(e)} depth=${depth(e)}")
+
+    # 2. shapes: rect 3x4=12, sq 5=25; labels through the mixin; stack of shapes' areas
+    var r34 = Rect(3, 4)
+    var sq5 = Sq(5)
+    var shapes = List(Shape)()
+    shapes.add(r34)
+    shapes.add(sq5)
+    var labels = List(str)()
+    labels.add(r34.label())            # the mixin method lives on the CLASS, not the interface
+    labels.add(sq5.label())
+    var areas = Stack(int)()
+    for s in shapes
+        areas.push(s.area())           # the interface method, through the interface
+    print("2 " + labels.join(" ") + " size=${areas.size()}")
+    var top = areas.pop()            # 25 (last pushed)
+    var next = areas.pop()           # 12
+    var none = areas.pop()           # nil
+    print("2 pop=${top orelse -1},${next orelse -1},${none orelse -1} " + "done".shout())   # extension on a LITERAL receiver
+
+    # 3. counter closure 1,2,3; twice(+3) on 4 = 10; sumTo(100000) = 5000050000 (TCO)
+    var c = makeCounter(0)
+    var c1 = c()
+    var c2 = c()
+    var c3 = c()
+    var addThree = def(x: int) = x + 3           # no return type: inferred, and still a `sig`
+    print("3 counter=${c1}${c2}${c3} twice=${twice(addThree, 4)} sum=${sumTo(100000, 0)}")
+
+    # 3b. pipelines and the functional trio: [1..10] -> evens -> squares -> sum = 4+16+36+64+100 = 220
+    var nums = List(int)()
+    for i in 1 : 11
+        nums.add(i)
+    var evens: List(int) = nums.filter(def(x) = x % 2 == 0)
+    var squares: List(int) = evens.map(def(x) = x * x)
+    var sumsq = squares.reduce(0, def(acc, x) = acc + x)
+    var firstWord = "  Alpha beta  " -> .trim() -> .lower() -> .split(" ") -> .at(0)
+    print("3 evens=${evens.count()} sumsq=${sumsq} first=${firstWord} tern=${if(sumsq > 200, "big", "small")}")
+
+    # 4. "1","2","3","4" -> 12 + 34 = 46 ; with a 7 -> the error walks up three frames
+    var good = ["1", "2", "3", "4"]
+    var bad = ["1", "2", "7", "4"]
+    var t1 = total(good) catch -1
+    var t2 = total(bad) catch -1
+    print("4 good=${t1} bad=${t2}")
+
+    # 5. Pt(1,2).shifted(3) = Pt(4,2); eq via derive; manhattan to (0,0) = 6; minmax(9,3) = (3,9)
+    var p = Pt(1, 2)
+    var q = p.shifted(3)
+    var isEq = q == Pt(4, 2)
+    var (lo, hi) = minmax(9, 3)
+    var pct: Percent = 42
+    print("5 " + q.toString() + " eq=${isEq} man=${Geo.manhattan(q, Pt(0, 0))} lo=${lo} hi=${hi} pct=${pct}")
+
+    # 6. word counts through a HashMap, sorted by count then word: the=3 a=2 fox=1 lazy=1
+    var text = "the a fox the lazy a the"
+    var counts = HashMap(str, int)()
+    for w in text.split(" ") if w != ""
+        counts.set(w, (counts.get(w) orelse 0) + 1)
+    var entries = counts.entries()
+    entries.sort(def(a: (str, int), b: (str, int)) = if(a.1 != b.1, a.1 > b.1, a.0 < b.0))
+    var ranked = List(str)()
+    for w, n in entries
+        ranked.add("${w}=${n}")
+    print("6 " + ranked.join(","))
+
+    # 7. sets, dict literals, ranges with step, for-else, while-var, using
+    var seen = {3, 1, 3, 2}                          # dedupes to {1,2,3}
+    var odds = 0
+    for i in 1 : 10 : 2                              # 1,3,5,7,9 -> 5 of them
+        odds = odds + 1
+    var found = "none"
+    for x in [4, 5, 6]
+        if x == 9
+            found = "nine"
+            break
+    else
+        found = "no-nine"
+    var lookup = {"k": 7, "j": 8}
+    var tk = Ticket()
+    using tk
+        odds = odds + 0
+    print("7 set=${seen.len} in=${2 in seen} odds=${odds} ${found} k=${lookup.get("k") orelse 0} using=${tk.opened}${tk.closed}")
+
+    # 8. strings: padLeft/repeat/chars/reverse/indexOf, bitwise, ints
+    var s = "ab" -> .repeat(3)                       # ababab
+    var rev = s.reverse()                            # bababa
+    var n = 0
+    for ch in "hello".chars()
+        n = n + 1
+    var bits = (0xC & 0xA) | (1 << 4)                  # 8 | 16 = 24 (no 0b literals in Zebra: hex it is)
+    print("8 ${s} ${rev} idx=${s.indexOf("ba")} n=${n} pad=[${"7".padLeft(3, "0")}] bits=${bits} xor=${6 ^ 3}")
+
+    # 9. optional narrowing, guard, nested containers read through copies
+    var maybe: int? = nil
+    var got = maybe orelse 9
+    maybe = 5
+    if maybe != nil
+        got = got + maybe
+    var grid = List(List(int))()
+    var row = List(int)()
+    row.add(1)
+    row.add(2)
+    grid.add(row)
+    grid.add(row)
+    var cells = 0
+    for r in grid
+        for v in r
+            cells = cells + v
+    print("9 got=${got} cells=${cells} rows=${grid.count()} inner=${grid.at(1).count()}")
+
+    # 10. allocate scope: work inside, result copied out
+    var summary = 0
+    allocate Arena()
+        var tmp = List(int)()
+        for i in 0 : 5
+            tmp.add(i * i)
+        summary = tmp.reduce(0, def(acc, x) = acc + x)   # 0+1+4+9+16 = 30
+    print("10 arena=${summary}")
+    print("trip: ok")

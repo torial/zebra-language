@@ -467,7 +467,7 @@ run_static "root-clean"     "0 compiled" bash tools/root_clean_check.sh
 run_static "decl-exhaustive" "0 issue" python tools/lint_decl_exhaustive.py
 # A3: the boundary-value suite. The ONLY gate here whose expectations were written from
 # INTENT rather than recorded from behaviour — output_sweep is a golden baseline and so
-# can never find something that was wrong on day one. 32 probes, ~30s, and it found  <!-- doc-gen: 32 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' -->
+# can never find something that was wrong on day one. 33 probes, ~30s, and it found  <!-- doc-gen: 33 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' -->
 # BUG-230/231/232 on its first run. Probes marked @boundary-pending pin known-broken
 # behaviour deliberately and will FAIL when their ticket is fixed; that is the signal to
 # rewrite them, not to re-baseline.

@@ -1,0 +1,13 @@
+1 eval=16 depth=4
+2 <rect:12> <sq:25> size=2
+2 pop=25,12,-1 DONE!
+3 counter=123 twice=10 sum=5000050000
+3 evens=5 sumsq=220 first=alpha tern=big
+4 good=46 bad=-1
+5 Pt(x=4, y=2) eq=true man=6 lo=3 hi=9 pct=42
+6 the=3,a=2,fox=1,lazy=1
+7 set=3 in=true odds=5 no-nine k=7 using=11
+8 ababab bababa idx=1 n=5 pad=[007] bits=24 xor=5
+9 got=14 cells=6 rows=2 inner=2
+10 arena=30
+trip: ok

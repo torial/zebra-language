@@ -1,0 +1,14 @@
+# BUG-424: Math.abs(int) emitted Zig's @abs, whose result on a signed integer is
+# UNSIGNED. `return Math.abs(a - b)` from an `int` function was a type error, and
+# `var d = Math.abs(x)` silently bound a u64 that wrapped on the next subtraction.
+# Found by test/boundary/trip.zbr (2026-09-14). Floats keep @abs.
+def dist(a: int, b: int): int
+    return Math.abs(a - b) + Math.abs(a)
+
+def main()
+    var a = 0 - 3
+    var d = Math.abs(a)
+    print(d - 10)                     # -7 (was: u64 arithmetic)
+    print(dist(1, 4))                 # 3 + 1 = 4 (was: expected i64, found u64)
+    print(Math.abs(0.0 - 2.5))        # 2.5 (float path unchanged)
+    print("bug424: ok")

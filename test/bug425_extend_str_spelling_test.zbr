@@ -1,0 +1,14 @@
+# BUG-425: `extend str` -- the spelling QUICKSTART §42 documents -- registered its methods
+# under "str" while every str RECEIVER looked them up under "String" (extTypeName), so
+# only `extend String` ever worked and the documented form was "no member function
+# named 'shout' in 'str'". Found by test/boundary/trip.zbr (2026-09-14). Both spellings
+# are one target now, and a string LITERAL receiver resolves too.
+extend str
+    def shout(): str
+        return this.upper() + "!"
+
+def main()
+    var s = "quiet"
+    print(s.shout())                  # QUIET!
+    print("lit".shout())              # LIT! (literal receiver)
+    print("bug425: ok")
