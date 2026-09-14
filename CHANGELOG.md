@@ -1,8 +1,18 @@
 <!-- doc-status: historical -->
 # Zebra — Changelog
 
-All notable changes to Zebra from 0.1 through the current 0.15 development
-release. Most-recent entries first.
+All notable changes to Zebra. Most-recent entries first.
+
+**TWO NUMBERINGS, deliberately kept apart (2026-09-14).** The `[0.1]` … `[0.15]` sections
+below are the feature MILESTONES the language was built in (April–May 2026): each named a
+batch of work, and none was a downloadable release. The first tagged, downloadable release
+is **0.9.0** (`v0.9.0-rc1_zig0.16`, 2026-09-11) — numbered for where the language stands
+against its 1.0 stability promise, not for where the milestone count had reached. So a
+stranger reading "0.9.0-rc2" next to a "[0.15]" heading is looking at two different
+scales, and this note is here so that the first issue filed against the release is not
+that one. Release sections are headed `## Release X.Y.Z`; milestone sections keep their
+original `## [0.N]` headings because this file is append-only history and rewriting them
+would falsify it. Everything under a milestone heading is IN every release.
 
 Zebra is a compiled language: changes land in the bootstrap compiler
 (`src/`) and the self-hosted compiler (`selfhost/`) together. "Both
@@ -10,6 +20,29 @@ compilers" means both are updated and round-trip identical output is
 confirmed via `tools/bootstrap_check.sh`.
 
 ---
+
+## Release 0.9.0 — rc1 2026-09-11 (`e9b7ef2`), rc2 2026-09-12 (`62b4387`)
+
+The first release meant for someone other than its authors: one folder per platform
+(Windows, Linux; macOS experimental) with the compiler, the Zig 0.16 it was built with,
+`QUICKSTART.md` and `examples/`, plus `install.ps1` / `install.sh` and `SHA256SUMS.txt`.
+`zebra --version` names both versions. Cut by the `release` workflow on a tag matching
+`_zbr_version`; the FULL gate tier ran green in CI on the rc2 tree once the Windows CRLF
+checkout hazards were pinned (`.gitattributes` `* text=auto eol=lf`).
+
+Contains every milestone below plus the 2026-06 → 2026-09 work that had no milestone
+heading: the self-hosted compiler as the shipping compiler (the bootstrap frozen as regen
+authority), the N-1 anchor regression witness, the LSP and `zebra debug` DAP relay, the
+`tui` and `libui_ng` GUI backends, `zebra test`, `zebra fmt`, `--shared` libraries and
+`DynLib`, bitwise operators, `Set(T)`, dict/set literals, the pipeline `->` into
+leading-dot methods (BUG-417), always-explicit `?` on throws calls (§28b), refined
+diagnostics with positions (BUG-288), and ~180 fixed bugs (BUG-230 … BUG-426; the
+ledger is `BUGS_FIXED.md`). rc2 differs from rc1 only in the release/CI fixes.
+
+Post-rc2, on main and headed for 0.9.1 or 1.0: `StringBuilder.build()` non-consuming
+(BUG-351); `Math.abs(int)` signed (BUG-424); `extend str` resolves (BUG-425); a
+typed-param expression lambda is passable as a `sig` (BUG-426); the derived stable
+surface `docs/SURFACE.md` and its `surface-freeze` gate; `test/boundary/trip.zbr`.
 
 ## [0.15] — 2026-05 (in progress)
 
@@ -87,7 +120,7 @@ confirmed via `tools/bootstrap_check.sh`.
   upstream dependency did not compile under Zig 0.16. End-to-end runtime —
   `counter.zbr` opens a native Win32 window and its buttons work — was first
   reached 2026-07-27 after the Common-Controls manifest fix; see
-  `docs/archive/libui_ng_audit.md`.)
+  `docs/libui_ng_audit.md`.)
 
 ### GUI: MVU architecture
 

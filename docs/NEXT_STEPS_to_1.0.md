@@ -48,13 +48,17 @@ PROMISE, which §15 says is the open act.
    say `zebra = "^1.0"` and have the compiler refuse with a clear line when it does not
    satisfy it. Costs a day; without it a project cannot state what it was tested against.
 4. **A deprecation POLICY, which makes the warning tier a PREREQUISITE of the freeze rather
-   than a nice-to-have beside it.** PRINCIPLES.md already says "deprecation by migration,
+   than a nice-to-have beside it.** DRAFTED 2026-09-14: `docs/design/stability_policy.md` (status
+   DRAFT, Sean's red pen) -- the promise, the frozen set, the not-frozen set, the
+   warn/rewrite/remove schedule, versions, non-goals. PRINCIPLES.md already says "deprecation by migration,
    not by dialect", but the only mechanism the compiler has is error-or-silence. A 1.0
    surface that can never warn can only ever break. Two sentences in the policy: what
    "stable" excludes (`zig"..."` literal contents; the exact text of diagnostics; emitted
    Zig shape; anything marked experimental), and the N-release warning period before a
    removal.
-5. **The version numbers do not agree, and a stranger will notice before we do.** The
+5. **The version numbers do not agree, and a stranger will notice before we do.**
+   DONE 2026-09-14: CHANGELOG.md now explains the two scales up front and carries a
+   `## Release 0.9.0` section; milestone headings kept (append-only history). The
    release just cut is `0.9.0-rc2`; `CHANGELOG.md` runs `[0.9] -- 2026-04` through
    `[0.15] -- 2026-05 (in progress)`, because those were feature MILESTONES, not releases.
    Reconcile before 1.0: either renumber the CHANGELOG headings as milestones (`[M15]`) with
