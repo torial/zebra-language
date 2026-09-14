@@ -16,6 +16,74 @@ should not ship over.
 Judge items against [docs/PRINCIPLES.md](docs/PRINCIPLES.md); measurements are in
 [docs/archive/FINDINGS.md](docs/archive/FINDINGS.md).
 
+## WHAT THE ROAD IS MISSING — a 2026-09-14 read of this queue (Fable 5.1; Sean to red-pen)
+
+Sean's prompt was V's `v up`. Reading the queue against "what does a stranger need from a
+1.0" rather than "what is left to build" turns up seven things that are not on it, and one
+ordering change among things that are. None is a language feature; every one is about the
+PROMISE, which §15 says is the open act.
+
+1. **The freeze needs a SURFACE it can be checked against, and none is written down.**
+   §15 says "lock the API surface with a stability promise" and lists milestones, not a
+   surface. The repo already knows how to do this right: `str_ownership.md` is DERIVED from
+   the emit and gated so a flip cannot ship silently. Do the same for the whole stable
+   surface -- keywords (from `Token.zig`'s table), stdlib types and their methods (from the
+   checker's dispatch tables), CLI flags (from the usage text), `--target`/`--gui-backend`
+   values -- one generated `docs/SURFACE_1.0.md` plus a `surface-freeze` gate that fails on
+   any diff not accompanied by a CHANGELOG line. After 1.0 that gate is the stability
+   promise, mechanically; before 1.0 it is the inventory that says what the promise covers.
+   **This is the one I would build first**, because everything below refers to it.
+2. **`zebra up`** (Sean, 2026-09-14, after V). The installer already lays out
+   `~/.zebra/current` + PATH; `up` is: resolve the latest release for this platform from the
+   GitHub releases API, download the archive beside `current`, verify against
+   `SHA256SUMS.txt`, unpack, swap `current` atomically, print old -> new. Worth doing IN
+   ZEBRA (Http + File + gzip/zip + tar are all stdlib) -- it is the first dogfood program a
+   stranger runs, and the release layout was designed for it without saying so. Companion
+   flags that come free: `zebra up --check` (is there a newer one), `--to 1.0.2` (pin),
+   `--list`. Not needed for 0.9; needed the day two releases exist.
+3. **A version pin FOR PROJECTS, or the promise is unenforceable from the user's side.**
+   `zebra build` / `zebra.toml` (whichever the build system settles on) should be able to
+   say `zebra = "^1.0"` and have the compiler refuse with a clear line when it does not
+   satisfy it. Costs a day; without it a project cannot state what it was tested against.
+4. **A deprecation POLICY, which makes the warning tier a PREREQUISITE of the freeze rather
+   than a nice-to-have beside it.** PRINCIPLES.md already says "deprecation by migration,
+   not by dialect", but the only mechanism the compiler has is error-or-silence. A 1.0
+   surface that can never warn can only ever break. Two sentences in the policy: what
+   "stable" excludes (`zig"..."` literal contents; the exact text of diagnostics; emitted
+   Zig shape; anything marked experimental), and the N-release warning period before a
+   removal.
+5. **The version numbers do not agree, and a stranger will notice before we do.** The
+   release just cut is `0.9.0-rc2`; `CHANGELOG.md` runs `[0.9] -- 2026-04` through
+   `[0.15] -- 2026-05 (in progress)`, because those were feature MILESTONES, not releases.
+   Reconcile before 1.0: either renumber the CHANGELOG headings as milestones (`[M15]`) with
+   a note, or fold them into release sections. The §15 "final CHANGELOG pass" should
+   include this or it will be the first issue filed against the release.
+6. **macOS is still `experimental: true` in release.yml and the install doc says "until a
+   smoke has run green there" -- the release workflow RUNS that smoke on macos-latest.**
+   If rc2's macOS leg was green, the note is stale and the flag can flip; if it was not,
+   1.0 should say two platforms, not three-with-an-asterisk. Either way it is a decision
+   the queue does not currently hold.
+7. **The bootstrap sunset needs a 1.0 decision, not a trend line.** The selfhost is the
+   shipping compiler; the FROZEN bootstrap is still the regen authority and
+   `selfhost-div`'s only independent witness. A 1.0 that ships two compilers with the
+   primary one unable to regenerate itself is a fact the release notes have to explain.
+   Decide which of: (a) selfhost becomes regen authority before 1.0 (criterion 2 in the
+   0.9 queue), (b) the bootstrap ships as a documented "reference compiler, frozen at
+   0.9", or (c) it is deleted. The number that drives it is printed every daily run.
+8. **Say what 1.0 does NOT include**, so absence reads as a decision: no package manager
+   (`use` resolves paths; third-party code is `BuildTarget.linkLib` or a checkout), no
+   editor extensions beyond the LSP and zebra-ide (a TextMate/tree-sitter grammar is a
+   two-hour adoption item worth doing anyway), no Zig-version portability (a release is
+   pinned to the Zig it bundles, which is the right answer and should be stated).
+
+ORDERING CHANGE among existing items: the **warning tier** (below) moves from "several
+items need it" to "the freeze needs it" (item 4). The **trip test** stays where its own
+entry puts it -- the highest-yield thing to run BEFORE declaring a surface stable, since a
+frozen interaction bug is frozen for the whole 1.x line.
+
+Not proposed: anything that adds to the language. The queue's own opening paragraph is
+right, and V's `up` is a tooling promise, not a language one.
+
 ## MOVED FROM THE 0.9 QUEUE, 2026-09-10 — B1 mutation testing / B2 coverage spike
 
 `tools/mutation_check.py` exists and has one valid run (5 mutants: 2 detected, 3
