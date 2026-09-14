@@ -2825,3 +2825,14 @@ CRLF working copy. The fix is `sed -i 's/\r$//' <file>`; do NOT write the file b
 Python one-liner of the shape `open(p,'wb').write(open(p,'rb').read()...)` -- the write-mode
 open truncates the file BEFORE the read runs, and it emptied three source files here before
 `git checkout --` restored them.
+
+**A third, 2026-09-14, and it closed the question of per-extension pins.** The first CI full
+tier with tagged checkouts reported `full_sweep` **486 PASS and 485 regressions** in the same
+output, `examples_sweep` 23 PASS and 19 -- the `tools/*_baseline.txt` files had checked out
+CRLF, so `comm` found no baseline line in the run's LF pass list. Three pins in three days,
+each for the next extension to bite; `.gitattributes` is now `* text=auto eol=lf` (`.bat`
+crlf), `full_sweep` strips CR from the baseline anyway, and `n1_reference.sh` adds the anchor
+worktree with `core.autocrlf=false`, because the anchor carries its OWN older attributes and
+"the anchor does not build" was a CRLF `build.zig` on the runner. The gate-logs artifact
+(uploaded on failure since `61be499`) is what made all three diagnosable: the Actions log
+holds a 12-line tail per gate, and a regression list cut at 12 reads as a pattern.
