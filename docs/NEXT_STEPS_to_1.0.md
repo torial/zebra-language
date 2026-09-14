@@ -29,10 +29,12 @@ PROMISE, which §15 says is the open act.
    the emit and gated so a flip cannot ship silently. Do the same for the whole stable
    surface -- keywords (from `Token.zig`'s table), stdlib types and their methods (from the
    checker's dispatch tables), CLI flags (from the usage text), `--target`/`--gui-backend`
-   values -- one generated `docs/SURFACE_1.0.md` plus a `surface-freeze` gate that fails on
+   values -- one generated `docs/SURFACE.md` plus a `surface-freeze` gate that fails on
    any diff not accompanied by a CHANGELOG line. After 1.0 that gate is the stability
    promise, mechanically; before 1.0 it is the inventory that says what the promise covers.
-   **This is the one I would build first**, because everything below refers to it.
+   **Built 2026-09-14** (`tools/surface_inventory.py`, `docs/SURFACE.md`, gate `surface-freeze`).
+   The derivation also found that `Math` is OPEN (unlisted members pass through to
+   `std.math`), which the promise has to say explicitly.
 2. **`zebra up`** (Sean, 2026-09-14, after V). The installer already lays out
    `~/.zebra/current` + PATH; `up` is: resolve the latest release for this platform from the
    GitHub releases API, download the archive beside `current`, verify against

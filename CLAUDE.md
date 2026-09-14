@@ -230,11 +230,11 @@ per-tier counts, computed from the registrations rather than written down.
 
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
-| `--static` | 16 <!-- doc-gen: 16 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 31 <!-- doc-gen: 31 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 33 <!-- doc-gen: 33 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 41 <!-- doc-gen: 41 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 49 <!-- doc-gen: 49 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--static` | 17 <!-- doc-gen: 17 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
+| `--fast` | 32 <!-- doc-gen: 32 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 34 <!-- doc-gen: 34 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 42 <!-- doc-gen: 42 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 50 <!-- doc-gen: 50 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -403,7 +403,7 @@ a session arriving cold can tell what to *skip* rather than guessing:
 | `design` | a design/decision note | read only when touching that subsystem; may describe intent that is not built. Each carries its own `Status:` line |
 | `generated` | produced by a tool | **skip.** Edit the tool, not the file |
 
-**5 of the 37 documents are `historical` or `generated`** <!-- doc-gen: 37 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> <!-- doc-gen: 5 = for f in *.md docs/*.md docs/design/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
+**6 of the 38 documents are `historical` or `generated`** <!-- doc-gen: 38 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> <!-- doc-gen: 6 = for f in *.md docs/*.md docs/design/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
 i.e. skippable with confidence. That is the point: the surface area of this repo's
 documentation is what let one wrong claim live in four files at once, and "which of these
 is current?" was previously answerable only by reading them.
@@ -818,6 +818,41 @@ python tools/grammar_export.py --check  # THE GRAMMAR-DRIFT GATE (static, instan
                                 #   find the start rule — a regex that has stopped matching
                                 #   would otherwise blame the DOCUMENT for the extractor's
                                 #   failure. 0 = clean. QUICK tier.
+python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered as
+                                #   `surface-freeze` (STATIC tier, instant, 2026-09-14) --
+                                #   the 1.0 stability promise as an instrument. §15 of the
+                                #   1.0 queue says "lock the API surface", and no document
+                                #   said what the surface WAS. docs/SURFACE.md is now
+                                #   DERIVED from the compiler's own tables -- keywords
+                                #   (zbr_vocab's reconciled union), the CLI (main.zbr's one
+                                #   usage text), every namespace and static member (the
+                                #   `id.name == "NS"` dispatch names its genXxxCall, whose
+                                #   `mname == "m"` arms are the members), and the builtin
+                                #   receiver methods (TypeChecker's *MethodKnown predicates,
+                                #   which since BUG-369 REFUSE unknown names, so they are
+                                #   the surface by construction). `--check` fails on any
+                                #   diff, naming the member (`str: -trimLeft`); `--write`
+                                #   re-derives. After 1.0 a change here is a promise
+                                #   change and gets a CHANGELOG line in the same commit.
+                                #   IT SAYS WHICH NAMESPACES ARE OPEN. A generator that
+                                #   emits `mname` verbatim outside a @compileError arm
+                                #   passes unlisted members through to Zig -- Math is the
+                                #   one (`std.math.<name>`), so `Math.sin` works with no
+                                #   Zebra table entry and `Math.sine` fails inside zig. The
+                                #   document marks it OPEN rather than listing 33 members
+                                #   as if they were the whole set.
+                                #   REFUSES (exit 2) when a section falls under its floor,
+                                #   because an extractor whose pattern stopped matching
+                                #   produces a SMALLER surface that still "matches" a
+                                #   smaller file -- verified by renaming genMimeCall.
+                                #   Red-checked three ways: a doc edit, a compiler table
+                                #   edit (`str: -trimLeft`), an extractor break.
+                                #   CANNOT SEE: instance methods on the runtime OBJECT
+                                #   types (DateTime, Regex, connections, GUI widgets --
+                                #   per-type generators with no shared shape), arities,
+                                #   argument types, or semantics. The counts print every
+                                #   run. 81 keywords, 31 namespaces / 171 members,
+                                #   5 receivers / 120 methods on the day it was written.
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
                                 #   224 fenced `zebra` blocks existed and NOTHING verified
@@ -2039,13 +2074,13 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 105 scripts | <!-- doc-gen: 105 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
-| docs' checkable claims still resolve | `doc_lint` | 37 tracked documents <!-- doc-gen: 37 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 106 scripts | <!-- doc-gen: 106 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| docs' checkable claims still resolve | `doc_lint` | 38 tracked documents <!-- doc-gen: 38 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords × both compilers |
-| **the docs' EXAMPLES actually parse** | `doc_example_check` | `live` docs only; the gate prints its own block and doc counts | <!-- doc-gen: 37 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' -->
+| **the docs' EXAMPLES actually parse** | `doc_example_check` | `live` docs only; the gate prints its own block and doc counts | <!-- doc-gen: 38 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
 

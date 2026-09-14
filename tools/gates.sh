@@ -356,6 +356,11 @@ run_fast "doc-example"    "0 NEW"     python tools/doc_example_check.py --quiet
 # grammar.txt -- was generating 9 constructs the parser does not have and never reaching
 # 40 that it does.
 run_static "grammar-export" "matches"    python tools/grammar_export.py --check
+# The STABLE SURFACE (keywords, CLI, namespaces + static members, builtin receiver methods),
+# derived from the compiler's own tables into docs/SURFACE.md. Same shape as grammar-export:
+# the compiler is the authority, the document is generated, and a diff is a surface change
+# that needs a deliberate --write. This is the 1.0 stability promise as a gate (2026-09-14).
+run_static "surface-freeze" "matches"    python tools/surface_inventory.py --check
 
 # BUG-279: the ZIG-side test binaries (unit + integration), which were in NO tier and
 # NOT in CLAUDE.md's uncovered table either -- the one state that table exists to make
