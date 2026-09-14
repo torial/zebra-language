@@ -3,9 +3,15 @@
 class Main
     static def main()
         # ── File basics ──────────────────────────────────────────────────────────
-        var path = "/tmp/zebra_file_test.txt"
-        var copy_path = "/tmp/zebra_file_copy.txt"
-        var renamed_path = "/tmp/zebra_file_renamed.txt"
+        # A native Windows exe resolves "/tmp" against the CURRENT DRIVE, so this passed
+        # on a machine that happened to have C:\tmp and panicked (File.write error) on a
+        # runner whose checkout lives on D:. Same idiom as bug353_file_write_order_test.
+        var tmp = "/tmp"
+        if sys.getenv("TEMP") as t
+            tmp = t.replace("\\", "/")
+        var path = tmp + "/zebra_file_test.txt"
+        var copy_path = tmp + "/zebra_file_copy.txt"
+        var renamed_path = tmp + "/zebra_file_renamed.txt"
 
         File.write(path, "line1")
         File.append(path, "\nline2")
@@ -29,7 +35,7 @@ class Main
         print(File.exists(path))
 
         # ── Dir basics ───────────────────────────────────────────────────────────
-        var dir_path = "/tmp/zebra_dir_test"
+        var dir_path = tmp + "/zebra_dir_test"
         Dir.create(dir_path)
         print(Dir.exists(dir_path))
         Dir.delete(dir_path)

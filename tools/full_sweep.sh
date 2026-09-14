@@ -177,11 +177,13 @@ if [ "$GATE" = 1 ]; then
       echo "  \`LC_ALL=C sort -o $BASELINE $BASELINE\` (the SET is what matters, not the order)."
       exit 2
   fi
-  reg=$(LC_ALL=C comm -23 "$BASELINE" "$OUT/pass.txt")
+  # `tr -d '\r'`: a CRLF baseline (a Windows checkout before .gitattributes pinned every
+  # text file LF, 2026-09-14) scored EVERY entry a regression -- 486 PASS, 485 "regressions".
+  reg=$(LC_ALL=C comm -23 <(tr -d '\r' < "$BASELINE") "$OUT/pass.txt")
   if [ -n "$reg" ]; then
     echo "✗ REGRESSION — baseline-passing tests that now FAIL:"; echo "$reg"; exit 1
   fi
-  newp=$(LC_ALL=C comm -13 "$BASELINE" "$OUT/pass.txt")
+  newp=$(LC_ALL=C comm -13 <(tr -d '\r' < "$BASELINE") "$OUT/pass.txt")
   [ -n "$newp" ] && { echo "· new passes (run --update-baseline to lock them in):"; echo "$newp"; }
 
   # ── ABSOLUTE leg: every POSITIVE test must pass, baseline or no baseline ──────

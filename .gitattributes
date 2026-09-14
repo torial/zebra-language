@@ -1,3 +1,11 @@
+# EVERY text file is LF, on every platform. Found 2026-09-14 on windows-latest
+# (core.autocrlf=true): tools/*_baseline.txt checked out CRLF, so `comm` against the
+# run's LF pass list scored every baseline entry a REGRESSION -- full_sweep reported
+# 486 PASS and 485 "regressions" in the same breath, examples_sweep 23 PASS and 19.
+# The per-extension rules below stay as documentation of the incidents behind them.
+* text=auto eol=lf
+*.bat text eol=crlf
+
 # Force LF line endings for Zebra source files on all platforms.
 # The Zebra tokenizer only handles LF; CRLF causes error.UnexpectedCharacter.
 *.zbr text eol=lf

@@ -85,14 +85,21 @@ fi
 echo "n1-reference: building the reference compiler from $TAG ($SHORT) -- this is a one-off" >&2
 WT="$WORK_ROOT/$SHORT"
 rm -rf "$WT"; mkdir -p "$(dirname "$WT")"
-if ! git worktree add --detach "$WT" "$SHA" >/dev/null 2>&1; then
+# -c core.autocrlf=false: the anchor is materialised with ITS OWN .gitattributes, which
+# predate the LF pins (2026-09-12/14), so on a Windows runner (autocrlf=true) its .zig
+# files came out CRLF and its build.zig panicked on the preamble markers -- the anchor
+# "did not build" for a reason that was never in the anchor. Bytes as committed, always.
+if ! git -c core.autocrlf=false worktree add --detach "$WT" "$SHA" >/dev/null 2>&1; then
     echo "n1-reference: REFUSING -- could not create a worktree at $SHORT" >&2
     exit 2
 fi
 
 if ! ( cd "$WT" && zig build ) >"$WORK_ROOT/$SHORT.build.log" 2>&1; then
     echo "n1-reference: REFUSING -- the anchor commit does not build:" >&2
-    tail -12 "$WORK_ROOT/$SHORT.build.log" >&2
+    # The CAUSE is above the stack trace; a 12-line tail showed only the trace (2026-09-14).
+    grep -m 6 -E 'panic|error:' "$WORK_ROOT/$SHORT.build.log" >&2
+    echo "  ..." >&2
+    tail -6 "$WORK_ROOT/$SHORT.build.log" >&2
     git worktree remove --force "$WT" >/dev/null 2>&1
     exit 2
 fi
