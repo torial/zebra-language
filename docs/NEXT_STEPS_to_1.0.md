@@ -43,6 +43,13 @@ PROMISE, which §15 says is the open act.
    stranger runs, and the release layout was designed for it without saying so. Companion
    flags that come free: `zebra up --check` (is there a newer one), `--to 1.0.2` (pin),
    `--list`. Not needed for 0.9; needed the day two releases exist.
+   **BUILT 2026-09-14** (`runUp` in selfhost/main.zbr, ~150 lines of Zebra): `zebra up`,
+   `--check`, `--to VER`. Finds the release through `latest/download/SHA256SUMS.txt`
+   (no API, no rate limit), verifies with `Hash.sha256`, unpacks with the platform `tar`
+   (bsdtar reads zip on Windows), keeps `previous/` once. POSIX swap tested end to end
+   against the real rc2 archive (91 MB, 18 s); the Windows swap (a detached helper that
+   waits for zebra.exe to exit) is written and UNTESTED -- needs a run on torial against
+   an install.ps1 layout. `--list` not done.
 3. **A version pin FOR PROJECTS, or the promise is unenforceable from the user's side.**
    `zebra build` / `zebra.toml` (whichever the build system settles on) should be able to
    say `zebra = "^1.0"` and have the compiler refuse with a clear line when it does not

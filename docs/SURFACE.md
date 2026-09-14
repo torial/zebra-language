@@ -10,7 +10,7 @@ named in the tool's header; what it cannot see is listed there too.
 
 `abstract` `adds` `allocate` `and` `arena` `as` `assert` `assert_eq` `assert_false` `assert_ne` `assert_true` `bool` `branch` `break` `capture` `catch` `char` `class` `const` `continue` `cue` `def` `defer` `else` `ensure` `enum` `errdefer` `except` `export` `exposing` `extend` `extern` `false` `filter` `float` `for` `guard` `has` `if` `implements` `implies` `in` `int` `interface` `invariant` `is` `mixin` `namespace` `nil` `not` `on` `or` `orelse` `pass` `print` `private` `public` `raise` `readonly` `require` `return` `same` `sig` `static` `struct` `test` `this` `throws` `to` `true` `try` `type` `uint` `union` `use` `using` `var` `vari` `where` `while` `with`
 
-## Command forms (31)
+## Command forms (32)
 
 - `zebra <source.zbr>`
 - `zebra repl`
@@ -43,10 +43,11 @@ named in the tool's header; what it cannot see is listed there too.
 - `zebra fmt <file.zbr>`
 - `zebra fmt --check <file.zbr>`
 - `zebra fmt --print <file.zbr>`
+- `zebra up`
 
-## Flags (23)
+## Flags (24)
 
-`--build-file` `--check` `--check-full` `--dump-map` `--dump-transform` `--emit-zig` `--gui-backend` `--keep-temp` `--list` `--list-targets` `--listen` `--only` `--output-dir` `--print` `--scaffold-only` `--shared` `--tag` `--turbo` `--version` `--warn-non-exhaustive` `--zig-backend` `-c` `-h`
+`--build-file` `--check` `--check-full` `--dump-map` `--dump-transform` `--emit-zig` `--gui-backend` `--keep-temp` `--list` `--list-targets` `--listen` `--only` `--output-dir` `--print` `--scaffold-only` `--shared` `--tag` `--to` `--turbo` `--version` `--warn-non-exhaustive` `--zig-backend` `-c` `-h`
 
 ## Generic constructors (7)
 

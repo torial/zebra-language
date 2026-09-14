@@ -27,6 +27,21 @@ curl -fsSL https://raw.githubusercontent.com/torial/zebra-language/main/install/
 Installs to `~/.zebra/current` and prints the `export PATH=...` line to add to your shell
 profile. macOS builds are experimental until a smoke has run green there.
 
+## Updating
+
+```
+zebra up            # download the latest release, verify its SHA-256, swap it in
+zebra up --check    # just say whether a newer release exists
+zebra up --to 0.9.0-rc2_zig0.16   # a specific version
+```
+
+`up` manages the layout the installers create (`~/.zebra/current`); the replaced
+version is kept once as `~/.zebra/previous`, so a bad update is one rename away from
+undone. On Windows the swap happens the moment `zebra` exits (a running executable pins
+its folder), so open a new terminal afterwards. A source build (`zig-out/bin`) is refused
+by name: `git pull && zig build` is its update. Needs `tar` on PATH (Windows 10 1803+
+ships one).
+
 ## Manual
 
 Download the archive for your platform from the Releases page, unpack it anywhere, and

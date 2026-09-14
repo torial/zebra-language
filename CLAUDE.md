@@ -1144,7 +1144,8 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 37 assertions, 0 pins (2026-09-10: BUG-317/324/325
+                                #   past `repl` starting. 38 assertions, 0 pins (2026-09-14: `zebra up`
+                                #   refuses by name, OFFLINE, outside an install layout; 2026-09-10: BUG-317/324/325
                                 #   legs -- a multi-module `--emit-zig` must SAY only the root
                                 #   was printed, a FAILED compile must leave no `.exe` in
                                 #   `--output-dir` while a good one still does; 2026-09-09:

@@ -154,6 +154,14 @@ chk "...and a GOOD compile still leaves its executable there (control)" \
     "$([ "$RC" = 0 ] && [ "$(ls "$W/od_good" 2>/dev/null | grep -c '\.exe$')" -ge 1 ] && echo 0 || echo 1)" \
     "exit=$RC files=[$(ls "$W/od_good" 2>/dev/null | tr '\n' ' ')]"
 
+# ---- `zebra up` (2026-09-14): refuses, by name and OFFLINE, outside an install layout --
+# The compiler under test lives in zig-out/bin, not .../current, so `up` must refuse
+# before touching the network -- which is also what makes this leg deterministic.
+run up
+chk "\`zebra up\` outside an installed layout REFUSES by name, before any download" \
+    "$([ "$RC" = 2 ] && case "$ERR" in *"REFUSING"*"not an installed release"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+
 # ---- `zebra test --list` / `--only` (zebra-ide's tests pane, 2026-09-09) -----------
 # `--list` is front-end only: label<TAB>line per test that WOULD run, from the harness's
 # own inclusion rule, so the list and the run cannot disagree. A test with a parameter

@@ -42,7 +42,9 @@ ledger is `BUGS_FIXED.md`). rc2 differs from rc1 only in the release/CI fixes.
 Post-rc2, on main and headed for 0.9.1 or 1.0: `StringBuilder.build()` non-consuming
 (BUG-351); `Math.abs(int)` signed (BUG-424); `extend str` resolves (BUG-425); a
 typed-param expression lambda is passable as a `sig` (BUG-426); the derived stable
-surface `docs/SURFACE.md` and its `surface-freeze` gate; `test/boundary/trip.zbr`.
+surface `docs/SURFACE.md` and its `surface-freeze` gate; `test/boundary/trip.zbr`;
+**`zebra up`** (`--check`, `--to VER`) — the installed release updates itself: checksum
+verified, previous version kept once (surface: +`zebra up`, +`--to`).
 
 ## [0.15] — 2026-05 (in progress)
 
