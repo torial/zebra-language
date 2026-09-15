@@ -21,14 +21,12 @@
 #   default:            selfhost pipeline; writes .zig file and invokes zig run
 #   --emit-zig:         selfhost pipeline; outputs complete Zig source to stdout
 #   --selfhost-compile: backward-compat alias for default mode (accepted, no-op)
-#   --zig-backend:      delegates to zig-out/bin/zebra-bootstrap.exe (escape hatch)
 #
 # Usage (run from repo root where build.zig lives):
 #   zebra <source.zbr>                       compile and run (selfhost pipeline)
 #   zebra -c <source.zbr>                    compile only (selfhost pipeline)
 #   zebra --emit-zig <source.zbr>            print generated Zig to stdout
 #   zebra --emit-zig --output-dir DIR        emit .zig files to DIR
-#   zebra --zig-backend <source.zbr>         delegate to zebra-bootstrap.exe
 #   zebra --keep-temp <source.zbr>           keep the scratch build (BUG-244); the
 #                                            emitted .zig and binary are removed after a
 #                                            CLEAN run and always kept after a failing one
@@ -885,29 +883,10 @@ class MultiCompiler
 # Lines not included in the wanted side are replaced with a blank line so
 # diagnostic line numbers stay aligned with the original conflict-marked file.
 # Handles both standard (3-way) and diff3 (|||||||) conflict styles.
-# BUG-322: the bootstrap delegations (repl / debug / build / --zig-backend) hardcoded the
-# RELATIVE path "zig-out/bin/zebra-bootstrap.exe", which resolves ONLY when zebra is run
-# from the repo root. Anywhere else std.process.spawn failed, _sys_exec_inherit returned
-# its -1 sentinel, and that -1 reached sys.exit -- so `zebra repl` and `zebra build`
-# CRASHED for every user outside this repo. Measured 2026-09-01.
-#
-# Prefer the repo-relative path when it is actually present, so development behaviour is
-# unchanged; otherwise look beside OUR OWN executable, which is where an install puts it.
-# Same shape as the stdlib_preamble lookup further down this file.
-def bootstrapExePath(): str
-    # BUG-348: the `.exe` suffix was unconditional, so `zebra debug` could never find
-    # the bootstrap on Linux. Try the suffixed name first (Windows), then the bare one.
-    var repo_rel: str = "zig-out/bin/zebra-bootstrap.exe"
-    if File.exists(repo_rel)
-        return repo_rel
-    if File.exists("zig-out/bin/zebra-bootstrap")
-        return "zig-out/bin/zebra-bootstrap"
-    var d: str = Path.dirname(sys.selfExe())
-    if d == ""
-        d = "."
-    if File.exists(d + "/zebra-bootstrap.exe")
-        return d + "/zebra-bootstrap.exe"
-    return d + "/zebra-bootstrap"
+# BUG-322 (2026-09-01) was here: bootstrapExePath(), the resolver for the bootstrap
+# delegations (repl / debug / build / --zig-backend) that crashed for every user outside
+# this repo when they used a relative path. Every delegation has since been ported or
+# retired (bootstrap_sunset.md Step 1, 2026-09-15), so the resolver went with them.
 
 
 # BUG-321: one usage text, two destinations. `--help` is a REQUEST and its answer
@@ -927,7 +906,6 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra test --only a,B.test_b <source.zbr> run only the named tests (label or bare name)", to_stdout)
     usageLine("  zebra test --list <source.zbr>           print `label<TAB>line` per test that would run; no build", to_stdout)
     usageLine("  zebra debug <source.zbr>                 compile + DAP debug proxy (requires lldb-dap)", to_stdout)
-    usageLine("  zebra debug --listen PORT <source.zbr>  compile + DAP proxy on TCP port (for custom IDE)", to_stdout)
     usageLine("  zebra debug --dump-map <file>          print the .zbr <-> .zig line map", to_stdout)
     usageLine("  zebra debug --dump-transform <file>    show what the DAP relay would forward (stdin)", to_stdout)
     usageLine("  zebra -c <source.zbr>                    FAST check: front end only (~60ms), does not run zig", to_stdout)
@@ -939,9 +917,7 @@ def emitUsage(to_stdout: bool)
     usageLine("                                           `@export(\"sym\") class` factories are its symbols (QUICKSTART §44)", to_stdout)
     usageLine("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
-    usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: tui, libui_ng (native);", to_stdout)
-    usageLine("                                           glfw, stub delegate to zebra-bootstrap.exe", to_stdout)
-    usageLine("  zebra --zig-backend <source.zbr>         delegate to zebra-bootstrap.exe", to_stdout)
+    usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: tui or libui_ng", to_stdout)
     usageLine("  zebra --keep-temp <source.zbr>           keep the scratch build (kept anyway on failure)", to_stdout)
     usageLine("  zebra --gui-backend=X --scaffold-only <f>  write the GUI project beside the emit; do not build or run it", to_stdout)
     usageLine("  zebra --version                          print version and exit", to_stdout)
@@ -3503,7 +3479,7 @@ def dbgResolveZig(path: str, who: str): str?
 # pipes are polled without blocking (sys.readStdinAvailable / proc.readAvailable),
 # which is also what makes it free of the read-ahead defect the Zig relay had (BUG-349).
 #
-# Not ported: `--listen PORT` (TCP mode) still delegates to the bootstrap when that
+# Not ported: `--listen PORT` (TCP mode) -- retired with the bootstrap 2026-09-15; the flag is refused. That
 # binary exists, and says so otherwise.
 
 # Split complete `Content-Length` frames off the front of `buf`; the unconsumed tail
@@ -3809,7 +3785,7 @@ def main()
     # 2026-09-01): with unknown flags now refused, --TURBO becomes a NAMED ERROR
     # rather than either being ignored or silently starting to work -- the user sees
     # the problem instead of getting a build they did not ask for.
-    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --listen --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --warn-inference-guess --warn-non-exhaustive --zig-backend -c -h"
+    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --warn-inference-guess --warn-non-exhaustive -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -3931,10 +3907,8 @@ def main()
     var build_src_file: str = ""
 
     # -- debug subcommand --------------------------------------------------
-    # `zebra debug <file.zbr>` — DAP proxy via bootstrap binary.
-    # The selfhost pipeline delegates to zebra-bootstrap.exe (the Zig-native
-    # compiler) which contains src/Debugger.zig, with inherited stdio so the
-    # DAP message stream flows through unchanged.
+    # `zebra debug <file.zbr>` — the native DAP relay (dbgRunSession, ported off
+    # src/Debugger.zig 2026-09-08), stdio only.
 
     if args.positional(0) as debug_pos
         if debug_pos == "debug"
@@ -3963,7 +3937,7 @@ def main()
                 if args.contains("--dump-transform")
                     sys.exit(dbgDumpTransform(dm_target, args.contains("--from-lldb")))
                 sys.exit(dbgDumpMap(dm_target))
-            # Find the .zbr file (skip --listen PORT if present)
+            # Find the .zbr file
             var dbg_file: str? = nil
             var dpi: int = 1
             while dpi < 10
@@ -3976,35 +3950,13 @@ def main()
                     break
                 dpi = dpi + 1
             if dbg_file as debug_file
-                if not args.contains("--listen")
-                    sys.exit(dbgRunSession(debug_file, cpu_flag))
-                if not File.exists(bootstrapExePath())
-                    sys.errln("zebra debug --listen: TCP mode is not ported to the native relay yet and no bootstrap binary is present (" + bootstrapExePath() + "); use stdio mode")
-                    sys.exit(1)
-                var dbg_argv: List(str) = List(str)()
-                dbg_argv.add(bootstrapExePath())
-                dbg_argv.add("debug")
-                # Forward --listen PORT if present
-                if args.contains("--listen")
-                    var listen_val: str = args.option("--listen", "")
-                    if listen_val != ""
-                        dbg_argv.add("--listen")
-                        dbg_argv.add(listen_val)
-                if cpu_flag != ""
-                    dbg_argv.add("--cpu=" + cpu_flag)
-                dbg_argv.add(debug_file)
-                var dbg_rc: int = sys.exec_inherit(dbg_argv)
-                # -1 is _sys_exec_inherit's "could not spawn" sentinel. Letting it reach
-                # sys.exit is what produced the crash this bug was filed for; say what
-                # went wrong and where we looked instead.
-                if dbg_rc == -1
-                    sys.errln("zebra: could not launch the bootstrap compiler for `debug`")
-                    sys.errln("  looked for: " + bootstrapExePath())
-                    sys.errln("  `debug` is the last subcommand that needs it; every other one is native")
-                    sys.exit(127)
-                sys.exit(dbg_rc)
+                # stdio only. `--listen PORT` (TCP) delegated to the bootstrap and was
+                # retired with it (bootstrap_sunset.md Step 1, 2026-09-15): it left
+                # known_flags, so the BUG-323 unknown-flag refusal names it. zebra-ide
+                # drives the relay over stdio.
+                sys.exit(dbgRunSession(debug_file, cpu_flag))
             else
-                sys.errln("usage: zebra debug [--listen PORT] <file.zbr>")
+                sys.errln("usage: zebra debug <file.zbr>")
                 sys.exit(1)
 
     # -- build subcommand --------------------------------------------------
@@ -4192,15 +4144,19 @@ def main()
     # The hard exhaustiveness ERROR (no else + missing variant) is unaffected.
     var warn_ne              = args.contains("--warn-non-exhaustive")
     var gui_backend: str     = args.option("--gui-backend", "")
-    # Thread the backend into codegen (GUI-via-selfhost Phase 1). Emission is stub
-    # for "" / "stub"; Phase 2 will emit tui here and stop delegating.
-    setGuiBackend(gui_backend)
-    # --gui-backend=tui|libui_ng are now emitted+scaffolded by the selfhost itself
-    # (below), dissolving the bootstrap-lags-selfhost gaps. glfw + explicit stub
-    # still delegate to the bootstrap for now.
+    # --gui-backend=tui|libui_ng are emitted+scaffolded by this compiler; no flag is the
+    # stub backend (prints to stderr, for tests), and `--gui-backend=stub` is the same
+    # thing said explicitly. `glfw` (and the explicit `stub` spelling) used to delegate
+    # to the bootstrap; the delegation went with it (bootstrap_sunset.md Step 1,
+    # 2026-09-15), so glfw is refused by name and stub is handled here.
+    if gui_backend == "stub"
+        gui_backend = ""
     var has_gui              = gui_backend != ""
     var gui_selfhost         = gui_backend == "tui" or gui_backend == "libui_ng"
-    var mode_zig             = args.contains("--zig-backend") or (has_gui and not gui_selfhost)
+    if has_gui and not gui_selfhost
+        sys.errln("zebra: --gui-backend=" + gui_backend + " is not a backend; tui and libui_ng are, and stub (or no flag) is the test backend. glfw was retired with the bootstrap, 2026-09-15")
+        sys.exit(2)
+    setGuiBackend(gui_backend)
     # --target node-addon: compile to a Node.js native addon (.node + .js + .d.ts)
     var target_opt: str      = args.option("--target", "")
     var mode_node            = target_opt == "node-addon" or target_opt == "node_addon"
@@ -4268,409 +4224,388 @@ def main()
     # parsed for types only, not emitted — BUG-125.
     var module_path: str   = args.option("--module-path", "")
 
-    if not mode_zig
-        # ── Selfhost pipeline: Lex → Resolve → Parse → ASTBuilder → CodeGen ──
-        # Multi-file: discovers dependencies via `use` decls, compiles each to .zig.
-        # Compile the root file and all its dependencies
-        var mc = MultiCompiler(preamble_path, output_dir)
-        mc.strip_contracts = turbo
-        mc.library_mode = lib_mode
-        mc.test_mode = run_test_mode
-        mc.tag_filter = run_tag_filter
-        mc.warn_non_exhaustive = warn_ne
-        mc.module_path = module_path
-        mc.node_addon = mode_node
-        mc.compileDep(path, true)?
-        # BUG-295 (b): after the whole graph is known, name the shared STATEFUL modules.
-        mc.reportSharedStatefulModules()
+    # ── Selfhost pipeline (the only pipeline since 2026-09-15; --zig-backend is gone) ──
+    # ── Selfhost pipeline: Lex → Resolve → Parse → ASTBuilder → CodeGen ──
+    # Multi-file: discovers dependencies via `use` decls, compiles each to .zig.
+    # Compile the root file and all its dependencies
+    var mc = MultiCompiler(preamble_path, output_dir)
+    mc.strip_contracts = turbo
+    mc.library_mode = lib_mode
+    mc.test_mode = run_test_mode
+    mc.tag_filter = run_tag_filter
+    mc.warn_non_exhaustive = warn_ne
+    mc.module_path = module_path
+    mc.node_addon = mode_node
+    mc.compileDep(path, true)?
+    # BUG-295 (b): after the whole graph is known, name the shared STATEFUL modules.
+    mc.reportSharedStatefulModules()
 
-        # §28b step 5 (the flip): reject implicit error propagation (a throws call
-        # the user did not mark with `?`) unless --allow-implicit-try.  compileDep
-        # accumulated every auto-`try` site across deps + root; a valid `try` was
-        # still emitted, so this is a clean driver rejection.
-        if not args.contains("--allow-implicit-try")
-            var itry_sites: List(str) = implicitTrySites()
-            if itry_sites.len > 0
-                for itry_site in itry_sites
-                    sys.errln(itry_site + ": error: throws call needs '?' (auto error-propagation was removed; add '?', or pass --allow-implicit-try)")
-                sys.exit(1)
-
-        # §28a step 1 (selfhost measure): --warn-inference-guess reports every
-        # type-dispatch site that guessed the emit without a proven type (numeric
-        # add / len fallback / name-based List routing).  Measure mode — reports to
-        # stderr, no exit.  compileDep accumulated the sites across deps + root.
-        # The flip (guess → compile error, gated by --allow-inference-guess) follows
-        # the §28b template above.
-        if args.contains("--warn-inference-guess")
-            var ig_sites: List(str) = inferenceGuessSites()
-            for ig_site in ig_sites
-                sys.errln("INFER_GUESS: " + ig_site)
-
-        if mode_emit
-            # --emit-zig: print(root file's Zig source to stdout)
-            var zig_path: str = mc.zbrToZig(path)
-            var zig_src: str = File.read(zig_path)
-            print(zig_src)
-            # BUG-325 (selfhost half): the root of a MULTI-MODULE program imports its
-            # dependencies' .zig files, and stdout carries only the root -- so the text
-            # a reader captured cannot build on its own, and nothing said so. Say so.
-            # (`visited` is every module compiled, root included; the runtime module is
-            # written beside the root, not through stdout, so it counts too.)
-            var em_deps: int = 0
-            for vm in mc.visited
-                if vm != path
-                    em_deps += 1
-            if em_deps > 0
-                sys.errln("note: " + em_deps.toString() + " dependency module(s) were compiled with the root, and `--emit-zig` prints only the root -- use `--output-dir DIR` to get every .zig this program needs")
-            sys.exit(0)
-
-        if mode_shared
-            # --shared: emit, then `zig build-lib -dynamic` the root module into a shared
-            # library NEXT TO THE SOURCE (like node-addon's .node). The library links libc
-            # like every other build; a Zebra host that loads it must too (BUG-356 leg 4).
-            var sh_zig: str = mc.zbrToZig(path)
-            var sh_dir: str = Path.dirname(path)
-            if sh_dir == ""
-                sh_dir = "."
-            var sh_stem: str = Path.basename(path)
-            if sh_stem.endsWith(".zbr")
-                sh_stem = sh_stem[0 .. sh_stem.len - 4]
-            var sh_out: str = sh_dir + "/lib" + sh_stem + ".so"
-            if dbgIsWindows()
-                sh_out = sh_dir + "/" + sh_stem + ".dll"
-            else if zig"builtin.os.tag == .macos"
-                sh_out = sh_dir + "/lib" + sh_stem + ".dylib"
-            var sargv = List(str)()
-            sargv.add(zigExe())
-            sargv.add("build-lib")
-            sargv.add(sh_zig)
-            sargv.add("-dynamic")
-            sargv.add("-lc")
-            sargv.add("--name")
-            sargv.add(sh_stem)
-            sargv.add("-femit-bin=" + sh_out)
-            if release
-                sargv.add("-OReleaseFast")
-            if cpu_flag != ""
-                sargv.add("-mcpu=" + cpu_flag)
-            var sr = sys.run(sargv)
-            if sr.stdout != ""
-                Terminal.write(sr.stdout, "")
-            if sr.stderr != ""
-                sys.err(remapZigErrors(sr.stderr, sh_zig))
-            if sr.exit_code != 0
-                sys.exit(1)
-            sys.errln("wrote " + sh_out)
-            sys.exit(0)
-
-        if mode_node
-            # node-addon: compileDep wrote <stem>.zig (+ .js + .d.ts); build the
-            # loadable .node via `zig build-lib -dynamic` against the Node headers.
-            var na_zig: str = mc.zbrToZig(path)   # intermediate .zig (temp dir)
-            # Output .node next to the SOURCE (matching the .js/.d.ts written above).
-            var na_stem: str = path
-            if na_stem.endsWith(".zbr")
-                for s in path.split(".zbr")
-                    na_stem = s
-                    break
-            if resolveNodeApi() as api
-                var nargv = List(str)()
-                nargv.add(zigExe())
-                nargv.add("build-lib")
-                nargv.add(na_zig)
-                nargv.add("-dynamic")
-                nargv.add("-lc")
-                nargv.add("-I" + api.include)
-                if api.lib != ""
-                    nargv.add(api.lib)
-                # Phase 10 cross-platform N-API symbol resolution: Windows links
-                # node.lib (above); Linux allows undefined `.so` symbols by default
-                # (resolveNodeApi returns no lib); macOS needs `-undefined
-                # dynamic_lookup` so ld64 defers the N-API symbols to load time.
-                # `builtin` is in scope in the emitted main.zig.
-                var na_is_macos: bool = zig"builtin.os.tag == .macos"
-                if na_is_macos
-                    nargv.add("-Wl,-undefined,dynamic_lookup")
-                nargv.add("-femit-bin=" + na_stem + ".node")
-                if release
-                    nargv.add("-OReleaseFast")
-                if cpu_flag != ""
-                    nargv.add("-mcpu=" + cpu_flag)
-                var nr = sys.run(nargv)
-                if nr.stdout != ""
-                    Terminal.write(nr.stdout, "")
-                if nr.stderr != ""
-                    sys.err(remapZigErrors(nr.stderr, na_zig))
-                if nr.exit_code != 0
-                    sys.exit(1)
-                sys.errln("wrote " + na_stem + ".node")
-                sys.exit(0)
-            else
-                sys.errln("zebra: could not find the Node.js N-API headers.")
-                sys.errln("  Fetch them once with:   npx --yes node-gyp install")
-                sys.errln("  Or set ZEBRA_NODE_INCLUDE=<path-to>/include/node (and, on Windows, ZEBRA_NODE_LIB=<path-to>/node.lib)")
-                sys.exit(1)
-
-        # --selfhost-compile: invoke zig to compile/run the generated file
-        var zig_path: str = mc.zbrToZig(path)
-
-        # #4: fast check mode. Everything the front end can answer has been answered by
-        # now — parse, resolve, type-check and codegen all ran, and any diagnostic they
-        # produce has already been reported and exited. Emission also stays IN the fast
-        # path deliberately: it is cheap next to zig and it is what catches a codegen
-        # crash, so skipping it would trade real coverage for a few milliseconds.
-        # What is skipped is only the `zig build-exe` invocation below.
-        if mode_c and not check_full
-            sys.exit(0)
-
-        # GUI-via-selfhost: tui/libui_ng wrap the emitted zig (already using the
-        # chosen backend via guiSelectPreamble) in a minimal `zig build` project
-        # with the backend's dependency, then build/run it. Replaces the old
-        # delegate-to-bootstrap path.
-        if gui_selfhost
-            var grc: int = compileGuiProject(zig_path, not mode_c, gui_backend, scaffold_only)
-            if grc != 0
-                sys.exit(1)
-            sys.exit(0)
-
-        # Debug fast path (run mode, no C deps): build a temp exe with Zig's
-        # self-hosted x86_64 backend + self-hosted linker (-fno-llvm -fno-lld),
-        # then execute it.  ~3x faster than LLVM+LLD for the compile-run dev loop.
-        # Skipped when C deps are present: the self-hosted linker does not error on
-        # unresolved C/libc symbols (it emits a crashing exe), so compile-failure
-        # fallback can't protect those.  A pure-Zig backend gap is a real compile
-        # error, so falling through to the LLVM path below stays safe.
-        # CHECK MODE joins the fast path too (2026-07-28).  `-c` used to be excluded
-        # here and fell through to LLVM+LLD, so *checking* a program cost ~4 s while
-        # *running* it cost ~0.7 s — the compiler's most latency-sensitive command,
-        # and the one the IDE Check button calls, took the slowest available route.
-        # The same compile-failure fallback protects it: if the self-hosted backend
-        # cannot build the program we fall through to the authoritative LLVM path
-        # below, so a backend gap can never be reported as a user error.
-        #
-        # A check also needs no BINARY, only the semantic analysis that produces the
-        # diagnostics, so it passes `-fno-emit-bin` and skips linking entirely —
-        # measured as most of the cost (LLVM: 6.2 s with a binary vs 0.96 s without).
-        # Verified that `-fno-emit-bin` reports the identical diagnostics.
-        # BUG-265: `emittedExtern()` and `lib_sources` join the exclusions here.
-        #
-        # The self-hosted backend does not resolve a DLL import correctly: it COMPILES
-        # CLEANLY and emits a binary that faults at the foreign call. The comment above
-        # justifies this fast path on the premise that "a pure-Zig backend gap is a real
-        # compile error, so falling through to the LLVM path stays safe" -- which is
-        # exactly the premise this case breaks, so the fallback never fires. Measured:
-        # `zig build-exe a.zig` works, `zig build-exe a.zig -fno-llvm -fno-lld` segfaults,
-        # on identical source. Any program declaring a foreign symbol therefore takes the
-        # authoritative LLVM path; everything else keeps the ~6x faster backend.
-        # BUG-356: DynLib.open needs libc (dlopen); the fast path links none.
-        if not release and mc.c_sources.len == 0 and mc.lib_sources.len == 0 and not mc.uses_sqlite and not emittedExtern() and not emittedDynLib()
-            var fast_exe: str = zig_path + ".fast.exe"
-            var fargv = List(str)()
-            fargv.add(zigExe())
-            fargv.add("build-exe")
-            fargv.add(zig_path)
-            fargv.add("-fno-llvm")
-            fargv.add("-fno-lld")
-            if mode_c
-                fargv.add("-fno-emit-bin")
-            else
-                fargv.add("-femit-bin=" + fast_exe)
-            if single_threaded
-                fargv.add("-fsingle-threaded")
-            if cpu_flag != ""
-                fargv.add("-mcpu=" + cpu_flag)
-            var fr = sys.run(fargv)
-            if fr.exit_code == 0
-                # Check mode: a clean compile IS the answer; nothing to execute.
-                if mode_c
-                    if fr.stderr != ""
-                        sys.err(remapZigErrors(fr.stderr, zig_path))
-                    sys.exit(0)
-                # Run the compiled program with INHERITED stdio, not captured.
-                # sys.run() pipes the child's stdout/stderr; the reader blocks once
-                # the OS pipe buffer (~4 KB) fills, hanging any program that prints
-                # more than a few KB (BUG-208). Inheriting streams output live and
-                # never blocks — matching the bootstrap's run path (src/main.zig).
-                var rargv = List(str)()
-                rargv.add(fast_exe)
-                for pa in prog_args
-                    rargv.add(pa)
-                # A program run by the compiler can ask for the compiler (`zebra lsp`,
-                # `zebra build`, a nested compile) the same way a `zebra build` program
-                # can (BUG-327 layer 2): the child inherits ZEBRA_COMPILER. Set only if
-                # the environment does not already name one (an installer may).
-                if sys.getenv("ZEBRA_COMPILER") == nil
-                    sys.setenv("ZEBRA_COMPILER", sys.selfExe())
-                var rc: int = sys.exec_inherit(rargv)
-                # BUG-244: remove the scratch build ONLY on a clean exit. If the program
-                # failed, the emitted .zig IS the debugging evidence and deleting it would
-                # take away the one thing worth looking at. The BINARY is not evidence --
-                # `zig build-exe <the .zig>` reproduces it in one command -- so it goes
-                # either way. (Changed 2026-08-23; the old policy kept the binary too and
-                # cost ~20 MB per failing run.)
-                # `--keep-temp` opts out entirely.
-                # ...and ONLY when the output is scratch. `--output-dir` means "put the
-                # output HERE", so deleting it there destroys what the user asked for.
-                # Caught by contract_mode_check, which runs `--turbo --output-dir DIR`
-                # and then reads the .zig: its two --turbo legs went blind because
-                # stripped contracts make the program EXIT 0, which is exactly the
-                # branch that deletes. The passing legs were passing only because their
-                # contracts fired and the non-zero exit kept the files.
-                # NOT gated on rc: see the note above. The executable goes either way.
-                if not keep_temp and output_dir == ""
-                    deleteScratch(fast_exe)                 # BUG-300
-                    # The DEBUG-INFO sibling. Measured 2026-08-23: 435 `.pdb` files
-                    # totalling 1.4 GB in %TEMP% -- a bigger leak than the executables
-                    # BUG-300 is named after, at a 100% rate rather than a transient one,
-                    # because no call site existed. The fast path does not normally emit
-                    # one (-fno-llvm), so this is a no-op there and costs one File.exists.
-                    deleteScratch(zig_path + ".fast.pdb")
-                    # The EMITTED SOURCE is the diagnostic artifact, so it -- and only it --
-                    # survives a failure.
-                    if rc == 0
-                        deleteScratch(zig_path)
-                if rc != 0
-                    sys.exit(1)
-                sys.exit(0)
-
-        var argv2 = List(str)()
-        argv2.add(zigExe())
-        # Non-`-c` run: build an exe (capturing only the small compile output for
-        # error remapping), then run it with INHERITED stdio below. Using `zig run`
-        # + sys.run() captured the *program's* output through a pipe that blocks at
-        # ~4 KB (BUG-208). Mirrors src/main.zig (pipe the compile, inherit the run).
-        var llvm_exe: str = zig_path + ".run.exe"
-        if mode_c
-            argv2.add("build-exe")
-            argv2.add(zig_path)
-            # A check needs diagnostics, not an executable.  Skipping the link step
-            # is most of the cost (6.2 s -> 0.96 s on a hello-world) and reports the
-            # identical errors, since they come from semantic analysis.
-            argv2.add("-fno-emit-bin")
-            if release
-                argv2.add("-OReleaseFast")
-        else
-            argv2.add("build-exe")
-            argv2.add(zig_path)
-            argv2.add("-femit-bin=" + llvm_exe)
-            # BUG-228. THIS is the branch that actually emits an executable, and it was the
-            # only one of the three `release` consumers that never passed an optimize flag —
-            # so `zebra --release` switched to LLVM (20 MB -> 2 MB, a real change) while Zig
-            # silently defaulted to **Debug**. Anyone shipping with the flag shipped an
-            # unoptimised build believing otherwise, which is the flag's entire purpose.
-            # The sibling `mode_c` branch above already had it; that one emits no binary.
-            #
-            # ReleaseFast rather than ReleaseSafe, per Sean's 2026-07-30 direction: make
-            # ReleaseFast good enough that ReleaseSafe does not buy much, and settle the
-            # question by A/B testing with users rather than by argument. That is the
-            # Design-by-Contract position — contracts are checked in development and
-            # stripped for release BECAUSE they established the property, so a release build
-            # should not re-check at runtime what the contracts already proved.
-            #
-            # ORDERING WAS LOAD-BEARING: this flag also turns on `unreachable`-is-UB, which
-            # A4 removed on 2026-07-30. Adding it earlier would have converted an
-            # unoptimised-but-safe build straight into an optimised one with UB on OOM.
-            # `tools/lint_oom_unreachable.py` was confirmed clean (0 hazards) before this
-            # line was written, and it stays in the QUICK tier to keep it that way.
-            if release
-                argv2.add("-OReleaseFast")
-        if single_threaded
-            argv2.add("-fsingle-threaded")
-
-        # Append any C source files discovered during dep walk
-        var csi: int = 0
-        while csi < mc.c_sources.len
-            argv2.add(mc.c_sources.at(csi))
-            csi = csi + 1
-        # BUG-266: prebuilt libraries are positional link inputs, same as the .c files
-        # above -- zig distinguishes them by extension, so no flag is needed.
-        var lsi: int = 0
-        while lsi < mc.lib_sources.len
-            argv2.add(mc.lib_sources.at(lsi))
-            lsi = lsi + 1
-        # -I flags for C deps that have a matching .h header
-        var idi: int = 0
-        while idi < mc.c_i_dirs.len
-            argv2.add("-I" + mc.c_i_dirs.at(idi))
-            idi = idi + 1
-        # Append sqlite3.c when the program calls Sqlite.open/query
-        if mc.uses_sqlite
-            var self_exe_path: str = sys.selfExe()
-            var exe_dir: str = Path.dirname(self_exe_path)
-            if exe_dir == ""
-                exe_dir = "."
-            var sqlite_c: str = exe_dir + "/vendor/sqlite/sqlite3.c"
-            if File.exists(sqlite_c)
-                argv2.add(sqlite_c)
-        # CPU target: pass -mcpu=VALUE when --cpu was specified
-        if cpu_flag != ""
-            argv2.add("-mcpu=" + cpu_flag)
-        # Always link libc — the stdlib preamble requires it
-        argv2.add("-lc")
-
-        var r2 = sys.run(argv2)
-        if r2.stdout != ""
-            Terminal.write(r2.stdout, "")
-        if r2.stderr != ""
-            var remapped: str = remapZigErrors(r2.stderr, zig_path)
-            sys.err(remapped)
-        if r2.exit_code != 0
-            # The compile FAILED, so the .zig stays for inspection -- but both candidate
-            # binaries go. The fast path may already have produced a .fast.exe before
-            # falling back here, and nothing used to remove it: a plain compile error
-            # leaked ~20 MB, on the most ordinary failure a user can hit.
-            # BUG-324: UNCONDITIONALLY -- `--output-dir` and `--keep-temp` keep the
-            # .zig (the evidence), never a binary from a build that FAILED. Zig can leave
-            # a stub at `-femit-bin` that segfaults with no output; anything reading the
-            # directory instead of the exit code would find it and run it.
-            deleteScratch(zig_path + ".fast.exe")
-            deleteScratch(zig_path + ".fast.pdb")
-            deleteScratch(llvm_exe)
-            deleteScratch(zig_path + ".run.pdb")
+    # §28b step 5 (the flip): reject implicit error propagation (a throws call
+    # the user did not mark with `?`) unless --allow-implicit-try.  compileDep
+    # accumulated every auto-`try` site across deps + root; a valid `try` was
+    # still emitted, so this is a clean driver rejection.
+    if not args.contains("--allow-implicit-try")
+        var itry_sites: List(str) = implicitTrySites()
+        if itry_sites.len > 0
+            for itry_site in itry_sites
+                sys.errln(itry_site + ": error: throws call needs '?' (auto error-propagation was removed; add '?', or pass --allow-implicit-try)")
             sys.exit(1)
-        if not mode_c
-            # Run the freshly built exe with inherited stdio — output streams live
-            # and never blocks, no matter how much the program prints (BUG-208).
-            var rargv2 = List(str)()
-            rargv2.add(llvm_exe)
-            for pa2 in prog_args
-                rargv2.add(pa2)
-            var rc2: int = sys.exec_inherit(rargv2)
-            # BUG-244, same rule as the fast path above: clean on success, keep on
-            # failure. This branch is taken by any program with a C dep, sqlite, an
-            # extern, or --release, so leaving it out would fix only half the leak.
-            if not keep_temp and output_dir == ""
-                deleteScratch(llvm_exe)                     # BUG-300
-                # THIS is the one that was leaking 1.4 GB: the LLVM path emits a .pdb
-                # beside every executable and nothing ever removed it.
-                deleteScratch(zig_path + ".run.pdb")
-                if rc2 == 0
-                    deleteScratch(zig_path)
-            if rc2 != 0
-                sys.exit(1)
+
+    # §28a step 1 (selfhost measure): --warn-inference-guess reports every
+    # type-dispatch site that guessed the emit without a proven type (numeric
+    # add / len fallback / name-based List routing).  Measure mode — reports to
+    # stderr, no exit.  compileDep accumulated the sites across deps + root.
+    # The flip (guess → compile error, gated by --allow-inference-guess) follows
+    # the §28b template above.
+    if args.contains("--warn-inference-guess")
+        var ig_sites: List(str) = inferenceGuessSites()
+        for ig_site in ig_sites
+            sys.errln("INFER_GUESS: " + ig_site)
+
+    if mode_emit
+        # --emit-zig: print(root file's Zig source to stdout)
+        var zig_path: str = mc.zbrToZig(path)
+        var zig_src: str = File.read(zig_path)
+        print(zig_src)
+        # BUG-325 (selfhost half): the root of a MULTI-MODULE program imports its
+        # dependencies' .zig files, and stdout carries only the root -- so the text
+        # a reader captured cannot build on its own, and nothing said so. Say so.
+        # (`visited` is every module compiled, root included; the runtime module is
+        # written beside the root, not through stdout, so it counts too.)
+        var em_deps: int = 0
+        for vm in mc.visited
+            if vm != path
+                em_deps += 1
+        if em_deps > 0
+            sys.errln("note: " + em_deps.toString() + " dependency module(s) were compiled with the root, and `--emit-zig` prints only the root -- use `--output-dir DIR` to get every .zig this program needs")
         sys.exit(0)
 
-    # -- Zig backend delegation (--zig-backend) ----------------------------
-    # Delegates to the Zig-compiled bootstrap compiler.
-    # Requires running from repo root where zig-out/bin/ exists.
+    if mode_shared
+        # --shared: emit, then `zig build-lib -dynamic` the root module into a shared
+        # library NEXT TO THE SOURCE (like node-addon's .node). The library links libc
+        # like every other build; a Zebra host that loads it must too (BUG-356 leg 4).
+        var sh_zig: str = mc.zbrToZig(path)
+        var sh_dir: str = Path.dirname(path)
+        if sh_dir == ""
+            sh_dir = "."
+        var sh_stem: str = Path.basename(path)
+        if sh_stem.endsWith(".zbr")
+            sh_stem = sh_stem[0 .. sh_stem.len - 4]
+        var sh_out: str = sh_dir + "/lib" + sh_stem + ".so"
+        if dbgIsWindows()
+            sh_out = sh_dir + "/" + sh_stem + ".dll"
+        else if zig"builtin.os.tag == .macos"
+            sh_out = sh_dir + "/lib" + sh_stem + ".dylib"
+        var sargv = List(str)()
+        sargv.add(zigExe())
+        sargv.add("build-lib")
+        sargv.add(sh_zig)
+        sargv.add("-dynamic")
+        sargv.add("-lc")
+        sargv.add("--name")
+        sargv.add(sh_stem)
+        sargv.add("-femit-bin=" + sh_out)
+        if release
+            sargv.add("-OReleaseFast")
+        if cpu_flag != ""
+            sargv.add("-mcpu=" + cpu_flag)
+        var sr = sys.run(sargv)
+        if sr.stdout != ""
+            Terminal.write(sr.stdout, "")
+        if sr.stderr != ""
+            sys.err(remapZigErrors(sr.stderr, sh_zig))
+        if sr.exit_code != 0
+            sys.exit(1)
+        sys.errln("wrote " + sh_out)
+        sys.exit(0)
 
-    var argv = List(str)()
-    argv.add(bootstrapExePath())
+    if mode_node
+        # node-addon: compileDep wrote <stem>.zig (+ .js + .d.ts); build the
+        # loadable .node via `zig build-lib -dynamic` against the Node headers.
+        var na_zig: str = mc.zbrToZig(path)   # intermediate .zig (temp dir)
+        # Output .node next to the SOURCE (matching the .js/.d.ts written above).
+        var na_stem: str = path
+        if na_stem.endsWith(".zbr")
+            for s in path.split(".zbr")
+                na_stem = s
+                break
+        if resolveNodeApi() as api
+            var nargv = List(str)()
+            nargv.add(zigExe())
+            nargv.add("build-lib")
+            nargv.add(na_zig)
+            nargv.add("-dynamic")
+            nargv.add("-lc")
+            nargv.add("-I" + api.include)
+            if api.lib != ""
+                nargv.add(api.lib)
+            # Phase 10 cross-platform N-API symbol resolution: Windows links
+            # node.lib (above); Linux allows undefined `.so` symbols by default
+            # (resolveNodeApi returns no lib); macOS needs `-undefined
+            # dynamic_lookup` so ld64 defers the N-API symbols to load time.
+            # `builtin` is in scope in the emitted main.zig.
+            var na_is_macos: bool = zig"builtin.os.tag == .macos"
+            if na_is_macos
+                nargv.add("-Wl,-undefined,dynamic_lookup")
+            nargv.add("-femit-bin=" + na_stem + ".node")
+            if release
+                nargv.add("-OReleaseFast")
+            if cpu_flag != ""
+                nargv.add("-mcpu=" + cpu_flag)
+            var nr = sys.run(nargv)
+            if nr.stdout != ""
+                Terminal.write(nr.stdout, "")
+            if nr.stderr != ""
+                sys.err(remapZigErrors(nr.stderr, na_zig))
+            if nr.exit_code != 0
+                sys.exit(1)
+            sys.errln("wrote " + na_stem + ".node")
+            sys.exit(0)
+        else
+            sys.errln("zebra: could not find the Node.js N-API headers.")
+            sys.errln("  Fetch them once with:   npx --yes node-gyp install")
+            sys.errln("  Or set ZEBRA_NODE_INCLUDE=<path-to>/include/node (and, on Windows, ZEBRA_NODE_LIB=<path-to>/node.lib)")
+            sys.exit(1)
+
+    # --selfhost-compile: invoke zig to compile/run the generated file
+    var zig_path: str = mc.zbrToZig(path)
+
+    # #4: fast check mode. Everything the front end can answer has been answered by
+    # now — parse, resolve, type-check and codegen all ran, and any diagnostic they
+    # produce has already been reported and exited. Emission also stays IN the fast
+    # path deliberately: it is cheap next to zig and it is what catches a codegen
+    # crash, so skipping it would trade real coverage for a few milliseconds.
+    # What is skipped is only the `zig build-exe` invocation below.
+    if mode_c and not check_full
+        sys.exit(0)
+
+    # GUI-via-selfhost: tui/libui_ng wrap the emitted zig (already using the
+    # chosen backend via guiSelectPreamble) in a minimal `zig build` project
+    # with the backend's dependency, then build/run it. Replaces the old
+    # delegate-to-bootstrap path.
+    if gui_selfhost
+        var grc: int = compileGuiProject(zig_path, not mode_c, gui_backend, scaffold_only)
+        if grc != 0
+            sys.exit(1)
+        sys.exit(0)
+
+    # Debug fast path (run mode, no C deps): build a temp exe with Zig's
+    # self-hosted x86_64 backend + self-hosted linker (-fno-llvm -fno-lld),
+    # then execute it.  ~3x faster than LLVM+LLD for the compile-run dev loop.
+    # Skipped when C deps are present: the self-hosted linker does not error on
+    # unresolved C/libc symbols (it emits a crashing exe), so compile-failure
+    # fallback can't protect those.  A pure-Zig backend gap is a real compile
+    # error, so falling through to the LLVM path below stays safe.
+    # CHECK MODE joins the fast path too (2026-07-28).  `-c` used to be excluded
+    # here and fell through to LLVM+LLD, so *checking* a program cost ~4 s while
+    # *running* it cost ~0.7 s — the compiler's most latency-sensitive command,
+    # and the one the IDE Check button calls, took the slowest available route.
+    # The same compile-failure fallback protects it: if the self-hosted backend
+    # cannot build the program we fall through to the authoritative LLVM path
+    # below, so a backend gap can never be reported as a user error.
+    #
+    # A check also needs no BINARY, only the semantic analysis that produces the
+    # diagnostics, so it passes `-fno-emit-bin` and skips linking entirely —
+    # measured as most of the cost (LLVM: 6.2 s with a binary vs 0.96 s without).
+    # Verified that `-fno-emit-bin` reports the identical diagnostics.
+    # BUG-265: `emittedExtern()` and `lib_sources` join the exclusions here.
+    #
+    # The self-hosted backend does not resolve a DLL import correctly: it COMPILES
+    # CLEANLY and emits a binary that faults at the foreign call. The comment above
+    # justifies this fast path on the premise that "a pure-Zig backend gap is a real
+    # compile error, so falling through to the LLVM path stays safe" -- which is
+    # exactly the premise this case breaks, so the fallback never fires. Measured:
+    # `zig build-exe a.zig` works, `zig build-exe a.zig -fno-llvm -fno-lld` segfaults,
+    # on identical source. Any program declaring a foreign symbol therefore takes the
+    # authoritative LLVM path; everything else keeps the ~6x faster backend.
+    # BUG-356: DynLib.open needs libc (dlopen); the fast path links none.
+    if not release and mc.c_sources.len == 0 and mc.lib_sources.len == 0 and not mc.uses_sqlite and not emittedExtern() and not emittedDynLib()
+        var fast_exe: str = zig_path + ".fast.exe"
+        var fargv = List(str)()
+        fargv.add(zigExe())
+        fargv.add("build-exe")
+        fargv.add(zig_path)
+        fargv.add("-fno-llvm")
+        fargv.add("-fno-lld")
+        if mode_c
+            fargv.add("-fno-emit-bin")
+        else
+            fargv.add("-femit-bin=" + fast_exe)
+        if single_threaded
+            fargv.add("-fsingle-threaded")
+        if cpu_flag != ""
+            fargv.add("-mcpu=" + cpu_flag)
+        var fr = sys.run(fargv)
+        if fr.exit_code == 0
+            # Check mode: a clean compile IS the answer; nothing to execute.
+            if mode_c
+                if fr.stderr != ""
+                    sys.err(remapZigErrors(fr.stderr, zig_path))
+                sys.exit(0)
+            # Run the compiled program with INHERITED stdio, not captured.
+            # sys.run() pipes the child's stdout/stderr; the reader blocks once
+            # the OS pipe buffer (~4 KB) fills, hanging any program that prints
+            # more than a few KB (BUG-208). Inheriting streams output live and
+            # never blocks — matching the bootstrap's run path (src/main.zig).
+            var rargv = List(str)()
+            rargv.add(fast_exe)
+            for pa in prog_args
+                rargv.add(pa)
+            # A program run by the compiler can ask for the compiler (`zebra lsp`,
+            # `zebra build`, a nested compile) the same way a `zebra build` program
+            # can (BUG-327 layer 2): the child inherits ZEBRA_COMPILER. Set only if
+            # the environment does not already name one (an installer may).
+            if sys.getenv("ZEBRA_COMPILER") == nil
+                sys.setenv("ZEBRA_COMPILER", sys.selfExe())
+            var rc: int = sys.exec_inherit(rargv)
+            # BUG-244: remove the scratch build ONLY on a clean exit. If the program
+            # failed, the emitted .zig IS the debugging evidence and deleting it would
+            # take away the one thing worth looking at. The BINARY is not evidence --
+            # `zig build-exe <the .zig>` reproduces it in one command -- so it goes
+            # either way. (Changed 2026-08-23; the old policy kept the binary too and
+            # cost ~20 MB per failing run.)
+            # `--keep-temp` opts out entirely.
+            # ...and ONLY when the output is scratch. `--output-dir` means "put the
+            # output HERE", so deleting it there destroys what the user asked for.
+            # Caught by contract_mode_check, which runs `--turbo --output-dir DIR`
+            # and then reads the .zig: its two --turbo legs went blind because
+            # stripped contracts make the program EXIT 0, which is exactly the
+            # branch that deletes. The passing legs were passing only because their
+            # contracts fired and the non-zero exit kept the files.
+            # NOT gated on rc: see the note above. The executable goes either way.
+            if not keep_temp and output_dir == ""
+                deleteScratch(fast_exe)                 # BUG-300
+                # The DEBUG-INFO sibling. Measured 2026-08-23: 435 `.pdb` files
+                # totalling 1.4 GB in %TEMP% -- a bigger leak than the executables
+                # BUG-300 is named after, at a 100% rate rather than a transient one,
+                # because no call site existed. The fast path does not normally emit
+                # one (-fno-llvm), so this is a no-op there and costs one File.exists.
+                deleteScratch(zig_path + ".fast.pdb")
+                # The EMITTED SOURCE is the diagnostic artifact, so it -- and only it --
+                # survives a failure.
+                if rc == 0
+                    deleteScratch(zig_path)
+            if rc != 0
+                sys.exit(1)
+            sys.exit(0)
+
+    var argv2 = List(str)()
+    argv2.add(zigExe())
+    # Non-`-c` run: build an exe (capturing only the small compile output for
+    # error remapping), then run it with INHERITED stdio below. Using `zig run`
+    # + sys.run() captured the *program's* output through a pipe that blocks at
+    # ~4 KB (BUG-208). Mirrors src/main.zig (pipe the compile, inherit the run).
+    var llvm_exe: str = zig_path + ".run.exe"
     if mode_c
-        argv.add("-c")
-    if release
-        argv.add("--release")
-    if gui_backend != ""
-        argv.add("--gui-backend=" + gui_backend)
-    argv.add(path)
+        argv2.add("build-exe")
+        argv2.add(zig_path)
+        # A check needs diagnostics, not an executable.  Skipping the link step
+        # is most of the cost (6.2 s -> 0.96 s on a hello-world) and reports the
+        # identical errors, since they come from semantic analysis.
+        argv2.add("-fno-emit-bin")
+        if release
+            argv2.add("-OReleaseFast")
+    else
+        argv2.add("build-exe")
+        argv2.add(zig_path)
+        argv2.add("-femit-bin=" + llvm_exe)
+        # BUG-228. THIS is the branch that actually emits an executable, and it was the
+        # only one of the three `release` consumers that never passed an optimize flag —
+        # so `zebra --release` switched to LLVM (20 MB -> 2 MB, a real change) while Zig
+        # silently defaulted to **Debug**. Anyone shipping with the flag shipped an
+        # unoptimised build believing otherwise, which is the flag's entire purpose.
+        # The sibling `mode_c` branch above already had it; that one emits no binary.
+        #
+        # ReleaseFast rather than ReleaseSafe, per Sean's 2026-07-30 direction: make
+        # ReleaseFast good enough that ReleaseSafe does not buy much, and settle the
+        # question by A/B testing with users rather than by argument. That is the
+        # Design-by-Contract position — contracts are checked in development and
+        # stripped for release BECAUSE they established the property, so a release build
+        # should not re-check at runtime what the contracts already proved.
+        #
+        # ORDERING WAS LOAD-BEARING: this flag also turns on `unreachable`-is-UB, which
+        # A4 removed on 2026-07-30. Adding it earlier would have converted an
+        # unoptimised-but-safe build straight into an optimised one with UB on OOM.
+        # `tools/lint_oom_unreachable.py` was confirmed clean (0 hazards) before this
+        # line was written, and it stays in the QUICK tier to keep it that way.
+        if release
+            argv2.add("-OReleaseFast")
+    if single_threaded
+        argv2.add("-fsingle-threaded")
 
-    var r = sys.run(argv)
-    if r.stdout != ""
-        print(r.stdout)
-    if r.stderr != ""
-        sys.errln(r.stderr)
-    if r.exit_code != 0
+    # Append any C source files discovered during dep walk
+    var csi: int = 0
+    while csi < mc.c_sources.len
+        argv2.add(mc.c_sources.at(csi))
+        csi = csi + 1
+    # BUG-266: prebuilt libraries are positional link inputs, same as the .c files
+    # above -- zig distinguishes them by extension, so no flag is needed.
+    var lsi: int = 0
+    while lsi < mc.lib_sources.len
+        argv2.add(mc.lib_sources.at(lsi))
+        lsi = lsi + 1
+    # -I flags for C deps that have a matching .h header
+    var idi: int = 0
+    while idi < mc.c_i_dirs.len
+        argv2.add("-I" + mc.c_i_dirs.at(idi))
+        idi = idi + 1
+    # Append sqlite3.c when the program calls Sqlite.open/query
+    if mc.uses_sqlite
+        var self_exe_path: str = sys.selfExe()
+        var exe_dir: str = Path.dirname(self_exe_path)
+        if exe_dir == ""
+            exe_dir = "."
+        var sqlite_c: str = exe_dir + "/vendor/sqlite/sqlite3.c"
+        if File.exists(sqlite_c)
+            argv2.add(sqlite_c)
+    # CPU target: pass -mcpu=VALUE when --cpu was specified
+    if cpu_flag != ""
+        argv2.add("-mcpu=" + cpu_flag)
+    # Always link libc — the stdlib preamble requires it
+    argv2.add("-lc")
+
+    var r2 = sys.run(argv2)
+    if r2.stdout != ""
+        Terminal.write(r2.stdout, "")
+    if r2.stderr != ""
+        var remapped: str = remapZigErrors(r2.stderr, zig_path)
+        sys.err(remapped)
+    if r2.exit_code != 0
+        # The compile FAILED, so the .zig stays for inspection -- but both candidate
+        # binaries go. The fast path may already have produced a .fast.exe before
+        # falling back here, and nothing used to remove it: a plain compile error
+        # leaked ~20 MB, on the most ordinary failure a user can hit.
+        # BUG-324: UNCONDITIONALLY -- `--output-dir` and `--keep-temp` keep the
+        # .zig (the evidence), never a binary from a build that FAILED. Zig can leave
+        # a stub at `-femit-bin` that segfaults with no output; anything reading the
+        # directory instead of the exit code would find it and run it.
+        deleteScratch(zig_path + ".fast.exe")
+        deleteScratch(zig_path + ".fast.pdb")
+        deleteScratch(llvm_exe)
+        deleteScratch(zig_path + ".run.pdb")
         sys.exit(1)
+    if not mode_c
+        # Run the freshly built exe with inherited stdio — output streams live
+        # and never blocks, no matter how much the program prints (BUG-208).
+        var rargv2 = List(str)()
+        rargv2.add(llvm_exe)
+        for pa2 in prog_args
+            rargv2.add(pa2)
+        var rc2: int = sys.exec_inherit(rargv2)
+        # BUG-244, same rule as the fast path above: clean on success, keep on
+        # failure. This branch is taken by any program with a C dep, sqlite, an
+        # extern, or --release, so leaving it out would fix only half the leak.
+        if not keep_temp and output_dir == ""
+            deleteScratch(llvm_exe)                     # BUG-300
+            # THIS is the one that was leaking 1.4 GB: the LLVM path emits a .pdb
+            # beside every executable and nothing ever removed it.
+            deleteScratch(zig_path + ".run.pdb")
+            if rc2 == 0
+                deleteScratch(zig_path)
+        if rc2 != 0
+            sys.exit(1)
+    sys.exit(0)
+
 catch |e|
     sys.errln(e.message)
     sys.exit(1)

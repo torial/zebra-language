@@ -777,20 +777,18 @@ bash tools/contract_mode_check.sh  # THE CONTRACT-STRIPPING CONTRACT (FULL tier,
                                 #   just plain-vs-turbo — the claim carrying the most weight
                                 #   (a plain --release build KEEPS its contracts) must not
                                 #   rest on a panic.
-                                #   COVERS BOTH COMPILERS. `--gui-backend=*` delegates to
-                                #   zebra-bootstrap, so a GUI app built --release --turbo
-                                #   takes a path the selfhost legs never touch. The
-                                #   bootstrap DOES honour --turbo (verified); it takes
-                                #   --emit-zig, not --output-dir, so those legs cost no
-                                #   build. Asserting this for one of two compilers under the
-                                #   title "the contract-stripping contract" would be the
-                                #   same over-read that let BUG-228 sit under green gates.
+                                #   COVERED BOTH COMPILERS until 2026-09-15: `--gui-backend=
+                                #   glfw|stub` delegated to zebra-bootstrap, so two legs
+                                #   asserted the bootstrap honoured --turbo too. The
+                                #   delegation retired with it (bootstrap_sunset.md Step 1;
+                                #   glfw gone, stub the native default); every backend now
+                                #   goes through the one emit the other legs cover. 13 -> 11.
                                 #   Verified red against four realistic regressions
                                 #   (--release stripping contracts, at runtime AND at emit;
                                 #   --turbo stripping assert; the bootstrap ignoring
                                 #   --turbo): each mutant failed exactly one leg.
                                 #   A vacuous run is a FAILURE — it refuses to report unless
-                                #   all 13 checks ran.
+                                #   all 11 checks ran.
 python tools/grammar_export.py --check  # THE GRAMMAR-DRIFT GATE (static, instant).
                                 #   `grammar.txt` is now GENERATED from the Earley parser's
                                 #   own rule table (src/ZebraGrammar.zig, 461 comptime rule <!-- doc-gen: 461 = grep -c 'lhs = ' src/ZebraGrammar.zig -->
@@ -858,7 +856,7 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   a *MethodKnown predicate per type, derived from the
                                 #   dispatch arms, refusing unknown names in the front end
                                 #   -- and are derived here since. The counts print every
-                                #   run. 79 keywords (81 until defer/errdefer were freed), 31 namespaces / 171 members,
+                                #   run. 74 keywords (81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari), 31 namespaces / 171 members,
                                 #   21 receivers / 253 methods (5 / 120 on the day it was written).
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
@@ -1166,7 +1164,9 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 38 assertions, 0 pins (2026-09-14: `zebra up`
+                                #   past `repl` starting. 42 assertions, 0 pins (2026-09-15: `--zig-backend` and
+                                #   `--gui-backend=glfw` refused by name, retired with the bootstrap;
+                                #   `b.requires("^99.0")` refused through the real `zebra build`; 2026-09-14: `zebra up`
                                 #   refuses by name, OFFLINE, outside an install layout; 2026-09-10: BUG-317/324/325
                                 #   legs -- a multi-module `--emit-zig` must SAY only the root
                                 #   was printed, a FAILED compile must leave no `.exe` in
@@ -2099,7 +2099,7 @@ than "what do we know":
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
 | **our own tools are not lying** | `hazard_lint` (+ its controls) | 107 scripts | <!-- doc-gen: 107 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 40 tracked documents <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
-| **a reserved word is used, or justified** | `reserved-words` (both compilers) | 79 keywords, 1 baselined |
+| **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 71 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords × both compilers |
@@ -2709,7 +2709,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **638** <!-- doc-gen: 638 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **639** <!-- doc-gen: 639 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.
@@ -2837,7 +2837,9 @@ Key idioms worth remembering up front:
 - `zig-out/bin/zebra-bootstrap.exe` is the Zig-implemented compiler, used by
   `tools/bootstrap_check.sh` to regenerate `selfhost/*.zig` from `*.zbr` sources.
 - Keep intermediate Zig files using `zebra --emit-zig` or `--output-dir DIR`.
-- Escape hatch: `zebra --zig-backend file.zbr` delegates to `zebra-bootstrap.exe`.
+- `--zig-backend`, `--gui-backend=glfw` and `debug --listen` -- the last three
+  delegations to `zebra-bootstrap.exe` -- were retired 2026-09-15 (bootstrap_sunset.md
+  Step 1); the compiler has one pipeline.
 
 ## Notes
 

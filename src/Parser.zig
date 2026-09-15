@@ -158,7 +158,7 @@ const RECOVERY_STARTERS = [_]TokenKind{
     .kw_def, .kw_extend, .at_id, .kw_sig, .kw_type,
     // visibility / storage modifiers that can precede a decl
     .kw_public, .kw_private,
-    .kw_abstract, .kw_export, .kw_static, .kw_readonly, .kw_extern,
+    .kw_export, .kw_static, .kw_extern,
 };
 
 fn isRecoveryStarter(kind: TokenKind) bool {
@@ -455,8 +455,12 @@ test "parse: method with is shared" {
     try expectAccepts("class Foo\n\tdef main is shared\n");
 }
 
-test "parse: class with is abstract" {
-    try expectAccepts("class Foo is abstract\n\tdef run\n");
+test "parse: abstract, guard, readonly are ordinary identifiers (freed 2026-09-15)" {
+    // Was "class with is abstract" (kw_abstract). The five words guard/arena/readonly/
+    // abstract/vari left both token tables; `is abstract` still parses because an
+    // is-attribute takes any identifier, so the assertion is the identifier positions.
+    try expectAccepts("class Foo\n\tdef run\n\t\tabstract = 1\n\t\tguard = abstract\n\t\treadonly = guard\n");
+    try expectRejects("class Foo\n\tdef run\n\t\tguard readonly else\n\t\t\treturn\n");
 }
 
 test "parse: method with is shared and body" {

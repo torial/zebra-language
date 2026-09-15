@@ -23,7 +23,7 @@ consulted by:
 |---|---|---|
 | `selfhost-div` gate (`tools/selfhost_divergence_check.sh`) | the two-implementation comparison: does the bootstrap still read every selfhost module the selfhost reads? Informational when the selfhost has *outgrown* it (that number rises every time a keyword is freed), gated only for "the compiler refuses its own sources and the bootstrap accepts them" | **retire**; the property it gates ("the compiler accepts its own sources") is already `round-trip`'s Step 1 |
 | `--zig-backend` (`zebra --zig-backend x.zbr`) | delegates the whole compile to the bootstrap | **remove** the flag (surface −1 flag, CHANGELOG line) |
-| `--gui-backend=glfw` / `stub` | delegated to the bootstrap; `tui` and `libui_ng` are native | **remove** the two delegated values (`contract_mode_check.sh`'s bootstrap legs go with them) |
+| `--gui-backend=glfw` / `stub` | delegated to the bootstrap; `tui` and `libui_ng` are native | **remove** `glfw`; `stub` is the native default said explicitly (`contract_mode_check.sh`'s bootstrap legs go with them) |
 | `zebra debug --listen PORT` (TCP DAP) | delegates; stdio mode is native | **port or drop**: zebra-ide uses stdio; drop the TCP mode with a usage line saying so |
 | `smoke_run_bootstrap` in `selfhost_smoke.sh` (4 fixtures) | `build_smoke`/`build_declarative` run under the bootstrap because of a *stale* comment ("selfhost parity for Build is pending" — `zebra build` was ported 2026-09-04 and `test/build_requires_test.zbr` runs the Build API through the selfhost today); `bug124`/`bug250` pin bugs *in the bootstrap's own codegen* | move the two Build fixtures to `smoke_run`; delete the two bootstrap-only pins (their bugs die with the code they pin) |
 | `compile_check.sh --bootstrap`, `divergence_check.sh`, `diagnostic_parity.py`, `mutation_check.py`, `scaling_probe.py`, `triage_diagnostic_candidates.py` | compare the two compilers | **retire** the comparison modes; `mutation_check` keeps its selfhost-only mode |
@@ -76,7 +76,7 @@ regenerated set when the working `zebra` is broken. A `daily`-tier gate runs it 
 tree and asserts the empty diff; `CLAUDE.md` gets the one-line recovery recipe. Must be
 green before Step 3.
 
-**Step 1 — stop *using* the bootstrap.** Remove `--zig-backend`, the `glfw`/`stub`
+**Step 1 — stop *using* the bootstrap.** DONE 2026-09-15. Remove `--zig-backend`, the `glfw`/`stub`
 `--gui-backend` values, `debug --listen`; move the two Build fixtures to `smoke_run`;
 drop the two bootstrap-only pins; repoint `zbr_vocab`/`lint_reserved_words` to
 `selfhost/Token.zbr`. `docs/SURFACE.md` regenerates (−1 flag). CHANGELOG line. Quick

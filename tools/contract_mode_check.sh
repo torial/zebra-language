@@ -175,38 +175,18 @@ emit_check "--release"         present "$(emit_count "$WORK/e2" --release)"
 emit_check "--turbo"           absent  "$(emit_count "$WORK/e3" --turbo)"
 emit_check "--release --turbo" absent  "$(emit_count "$WORK/e4" --release --turbo)"
 
-# ── The OTHER compiler ───────────────────────────────────────────────────────
-#
-# Everything above drives zig-out/bin/zebra.exe. But `--gui-backend=*` DELEGATES
-# to zebra-bootstrap.exe, so a GUI app built `--release --turbo` takes a path
-# none of the legs above touch. Titling this file "the contract-stripping
-# contract" while asserting it for one of two compilers is the same over-read
-# that let BUG-228 sit under green gates.
-#
-# The bootstrap does NOT accept --output-dir (and does not list --turbo in
-# --help), so these go through --emit-zig to stdout, which is also why they cost
-# no build at all.
-BOOT="zig-out/bin/zebra-bootstrap.exe"
-boot_count() {
-    local f="$WORK/boot.$CHECKS.zig"
-    "$BOOT" --emit-zig "$@" "$WORK/contract.zbr" > "$f" 2>/dev/null || return 1
-    [ -s "$f" ] || return 1
-    grep -c 'require failed' "$f" 2>/dev/null || true
-}
-if [ -x "$BOOT" ]; then
-    echo "── mechanism: the BOOTSTRAP honours --turbo too (the --gui-backend path)"
-    emit_check "bootstrap default" present "$(boot_count)"
-    emit_check "bootstrap --turbo" absent  "$(boot_count --turbo)"
-else
-    echo "  FAIL  bootstrap not built -- cannot assert the --gui-backend path"
-    FAILED=$((FAILED + 1)); CHECKS=$((CHECKS + 2))
-fi
+# ── The OTHER compiler (retired) ─────────────────────────────────────────────
+# Two legs used to drive zebra-bootstrap.exe here, because `--gui-backend=glfw|stub`
+# DELEGATED to it and a GUI app built `--release --turbo` took a path the legs above
+# never touched. The delegation was retired with the bootstrap (bootstrap_sunset.md
+# Step 1, 2026-09-15); glfw is gone, stub is the native default, and tui/libui_ng go
+# through zebra.exe's own emit, which the legs above already cover. EXPECTED 13 -> 11.
 
 echo
 # A skipped or vacuous run is a FAILURE, not a pass -- release_mode_check.sh
 # shipped once printing "all checks pass" with its only real assertion never
 # having run.
-EXPECTED=13
+EXPECTED=11
 if [ "$CHECKS" -ne "$EXPECTED" ]; then
     printf 'contract-mode: RAN %d OF %d checks -- refusing to report\n' "$CHECKS" "$EXPECTED"
     exit 1

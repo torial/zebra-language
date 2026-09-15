@@ -162,6 +162,20 @@ chk "\`zebra up\` outside an installed layout REFUSES by name, before any downlo
     "$([ "$RC" = 2 ] && case "$ERR" in *"REFUSING"*"not an installed release"*) echo 0;; *) echo 1;; esac || echo 1)" \
     "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
 
+# ---- `--zig-backend` is GONE (bootstrap_sunset.md Step 1, 2026-09-15) -----------------
+# A removed flag is a surface change and gets the same receipt an added one does: the
+# BUG-323 unknown-flag refusal must name it, and nothing may be compiled. The two
+# delegated `glfw` backend went with it and is refused by name, not as an unknown flag,
+# because `--gui-backend` itself is still a flag (`stub` is the default, said explicitly).
+run --zig-backend hello.zbr
+chk "\`--zig-backend\` is refused by name (retired with the bootstrap), nothing compiled" \
+    "$([ "$RC" != 0 ] && case "$ERR" in *"unrecognized flag: --zig-backend"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+run --gui-backend=glfw hello.zbr
+chk "\`--gui-backend=glfw\` is refused naming tui and libui_ng (the delegated backend retired)" \
+    "$([ "$RC" != 0 ] && case "$ERR" in *"glfw is not a backend"*"tui and libui_ng"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+
 # ---- `b.requires("^99.0")` (2026-09-15): the project-side version pin ----------------
 # NEXT_STEPS_to_1.0 item 3. A build.zbr states the compiler range it was tested against
 # and the compiler REFUSES, by name, when it is outside it -- in the FRONT END (a string
@@ -182,7 +196,8 @@ def main()
     b.run()
 ZBR
 ( cd "$W/proj_req" && timeout "$TMO" "$ZEBRA" build >"$O" 2>"$E" </dev/null )
-RC=$?; ERR=$(tr -d '' < "$E")
+RC=$?; ERR=$(tr -d '
+' < "$E")
 chk "\`zebra build\` REFUSES a build.zbr whose b.requires range excludes this compiler, naming both and \`zebra up\`" \
     "$([ "$RC" != 0 ] && case "$ERR" in *"requires Zebra ^99.0"*"zebra up"*) echo 0;; *) echo 1;; esac || echo 1)" \
     "exit=$RC stderr=[$(echo "$ERR" | grep -m1 requires)]"

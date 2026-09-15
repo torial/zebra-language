@@ -25,7 +25,6 @@ if [[ ! -x "$ZEBRA" ]]; then
     echo "selfhost_smoke: $ZEBRA missing. Run 'zig build' first." >&2
     exit 1
 fi
-BOOTSTRAP="$REPO/zig-out/bin/zebra-bootstrap.exe"; [ -x "$BOOTSTRAP" ] || BOOTSTRAP="$REPO/zig-out/bin/zebra-bootstrap"
 
 # Per-process scratch dir. Two concurrent runs used to share "/tmp/selfhost-smoke",
 # which each one rm -rf's at startup and clears between tests — so running smoke
@@ -676,33 +675,14 @@ smoke_run_bounded() {
     fi
 }
 
-smoke_run_bootstrap() {
-    local zbr="$1"
-    local expected="$2"
-    local label
-    label="$(basename "$zbr" .zbr)_run"
-    local got
-    if got=$("$BOOTSTRAP" "$zbr" 2>&1); then
-        if echo "$got" | grep -qF -- "$expected"; then
-            echo "  PASS: $label"
-            PASS=$((PASS + 1))
-        else
-            echo "  FAIL: $label (expected '$expected' in output)" >&2
-            echo "    got: $got" >&2
-            FAIL=$((FAIL + 1))
-        fi
-    else
-        echo "  FAIL: $label (non-zero exit)" >&2
-        cat "$TMPDIR_OUT/smoke-err" >&2 || true
-        FAIL=$((FAIL + 1))
-    fi
-}
+# smoke_run_bootstrap() was here until 2026-09-15 (bootstrap_sunset.md Step 1).
 
 # Build stdlib module: Build.new / b.exe / b.lib / target.linkLib / platform / option / dependency.
-# Uses bootstrap compiler — selfhost TC/codegen parity for Build is pending.
-smoke_run_bootstrap test/build_smoke_test.zbr "build api: ok"
+# Ran under the bootstrap until 2026-09-15 on a stale note ("selfhost parity for Build is
+# pending" -- `zebra build` was ported 2026-09-04); plain runs now.
+smoke_run test/build_smoke_test.zbr "build api: ok"
 # Declarative style: same API surface but no b.run() call (auto-run injected by `zebra build`).
-smoke_run_bootstrap test/build_declarative_test.zbr "build declarative: ok"
+smoke_run test/build_declarative_test.zbr "build declarative: ok"
 # b.requires("RANGE"), the project-side version pin (2026-09-15): the satisfied forms
 # run; the unsatisfiable `^99.0` is refused by name (fail fixture) -- and through the
 # real `zebra build` path in tools/cli_check.sh.
@@ -745,6 +725,9 @@ smoke_run test/bug424_math_abs_int_test.zbr "bug424: ok"
 smoke_run test/bug425_extend_str_spelling_test.zbr "bug425: ok"
 smoke_run test/bug426_expr_lambda_sig_test.zbr "bug426: ok"
 smoke_run test/defer_freed_words_test.zbr "defer: freed"
+# guard/arena/readonly/abstract/vari freed 2026-09-15 (Sean, on reading the book: guard
+# "feels like it doesn't belong"); same recipe, one fixture for the five words.
+smoke_run test/guard_freed_words_test.zbr "guard: freed"
 smoke_run test/bug427_param_shadows_fn_test.zbr "bug427: ok"
 
 # BUG-238: `except` in an enum-dotted branch arm, reached through `use`. Reported as a
@@ -1723,13 +1706,15 @@ smoke_tc_fail test/bug084_bracket_paren_depth_fail.zbr "unexpected expression to
 # selfhost has always been correct here, so a normal smoke_run would pin nothing. Watched
 # going RED against a bootstrap built with genType(inner) restored:
 #   error: expected type '?*T', found '*?T'   <- the ticket'"'"'s symptom verbatim
-smoke_run_bootstrap test/bug124_boxed_nilable_ctor_test.zbr "bug124: OK"
+# 2026-09-15: the bootstrap-only registration retired with the bootstrap; the fixture
+# stays as a plain run so the shape keeps compiling and printing on the one compiler left.
+smoke_run test/bug124_boxed_nilable_ctor_test.zbr "bug124: OK"
 # BUG-250: `HttpResponse(status, text)` -- the natural constructor form, which emitted a
-# CALL ON A TYPE. Registered for BOTH compilers because TWO fixes are pinned: the codegen
-# route (both) and the BOOTSTRAP TypeChecker typing the call. The expected string includes
-# the interpolated text on purpose -- with the TC half reverted the bootstrap still
-# COMPILES and prints the byte array `{ 109, 97, 100, 101 }`, which the asserts inside the
-# fixture cannot see because only the FORMATTING is wrong.
+# CALL ON A TYPE. Was registered for BOTH compilers (the bootstrap leg retired 2026-09-15).
+# The expected string includes the interpolated text on purpose -- with the TC half
+# reverted a compiler can still COMPILE this and print the byte array
+# `{ 109, 97, 100, 101 }`, which the asserts inside the fixture cannot see because only
+# the FORMATTING is wrong.
 smoke_run           test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made returned factory"
 smoke_run test/bug307_delete_missing_test.zbr "bug307: OK"
 smoke_run test/bug309_regex_oom_test.zbr "bug309: OK"
@@ -1764,7 +1749,6 @@ smoke_run test/bug246_unannotated_generic_ctor_test.zbr "bug246: OK"
 # string comparison passes against the broken compiler, because the {any} defect is in the
 # formatter. The first draft of this fixture did exactly that and tested only half 1.
 smoke_run  test/bug212_code_editor_const_test.zbr "bug212: OK"
-smoke_run_bootstrap test/bug250_httpresponse_ctor_test.zbr "bug250: OK 200 made returned factory"
 # The debug source-map fixture (tools/debug_map_check.sh). Registered here so something
 # RUNS it; the gate asserts its provenance markers, this asserts it still works.
 smoke_run test/bug329_print_sourcemap_test.zbr "bug329: OK"

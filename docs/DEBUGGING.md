@@ -46,22 +46,13 @@ This:
 The proxy speaks standard DAP over stdin/stdout. Any IDE that can launch a debug
 adapter as a subprocess and communicate via stdio can use this directly.
 
-### Listen mode (custom IDE / ZebraIDE)
+### Custom IDEs: stdio only
 
-```bash
-zebra debug --listen 54321 file.zbr
-```
-
-Same compilation steps, but instead of using stdin/stdout the proxy:
-1. Binds TCP port 54321 and prints:
-   ```
-   zebra debug: listening for IDE on 127.0.0.1:54321...
-   ```
-2. Waits for the IDE to connect on that port.
-3. Relays DAP over the TCP stream.
-
-This is the mode ZebraIDE (and any custom IDE) should use. See the
-[ZebraIDE](#zebra-ide) section below.
+The relay speaks DAP on its own stdin/stdout, the way `lldb-dap` itself does. A
+`--listen PORT` TCP mode existed until 2026-09-15; it was a delegation to the retired
+bootstrap compiler and was never what ZebraIDE used (see below). Spawn `zebra debug
+<file.zbr>` with pipes and frame messages with `Content-Length`, exactly as an editor
+drives `lldb-dap`.
 
 ---
 
@@ -161,30 +152,12 @@ pipe stdin/stdout through — the zebra proxy does all the real work.
 
 ## ZebraIDE
 
-ZebraIDE uses listen mode. The IDE starts the proxy with a randomly chosen port,
-waits for the `"listening for IDE"` banner on stderr, then opens a TCP connection
-to that port. All subsequent DAP traffic flows over TCP.
-
-The `problemMatcher` pattern for a VS Code background task that waits for the
-proxy to be ready:
-
-```json
-{
-  "label": "zebra debug proxy",
-  "type": "shell",
-  "command": "zebra debug --listen 54321 ${file}",
-  "isBackground": true,
-  "problemMatcher": {
-    "owner": "zebra",
-    "pattern": { "regexp": "." },
-    "background": {
-      "activeOnStart": true,
-      "beginsPattern": "zebra debug:",
-      "endsPattern": "listening for IDE"
-    }
-  }
-}
-```
+ZebraIDE spawns `zebra debug <file>` with piped stdio (`sys.spawnPiped`) and speaks DAP
+on it directly — `zebra-ide/src/dap.zbr` is the reference client: <!-- doc-lint-ok: a path in the zebra-ide repo, not this one -->
+`initialize` → `launch{program}` → `setBreakpoints{source.path: the .zbr}` →
+`configurationDone` → `stopped` → `stackTrace` (frames come back with the `.zbr` path
+and line) → `next`/`continue` → `disconnect`. No port, no banner to wait for: the relay
+is ready as soon as the process is.
 
 ---
 

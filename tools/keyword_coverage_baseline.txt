@@ -6,16 +6,10 @@
 #
 # STATUS, 2026-08-29 -- READ BEFORE ACTING ON ANY OF THESE.
 #
-#   abstract  PARKED behind the bootstrap sunset. Sean marked it for removal; it is
-#             BOOTSTRAP-ONLY -- `class X is abstract` compiles under zebra-bootstrap and is
-#             REJECTED by the shipping selfhost. Removing it means ~62 lines across grammar
-#             rules, AST node types and codegen. If the bootstrap retires it vanishes for
-#             free. See NEXT_STEPS "FREEZE THE BOOTSTRAP, THEN MOVE TO N-1".
+#   abstract  FREED 2026-09-15, with guard/arena/readonly/vari (test/guard_freed_words_test).
 #   defer     FREED 2026-09-15 (both token tables; the StmtDefer machinery is dead code
 #   errdefer  until the bootstrap retires). Sean: "bleedthrough from zig and we can kill".
-#   vari      Marked for removal (variadic parameters, a feature not being supported).
-#             Rejected by BOTH compilers today, so this one is not bootstrap-parked -- it is
-#             simply unimplemented in both and can go whenever someone is in Token.zig.
+#   vari      FREED 2026-09-15 (variadic parameters, a feature never built).
 #   implies   KEPT, deliberately. A reserved word for a contract operator (`a implies b`,
 #             Eiffel-style logical implication) that is NOT implemented -- lint_reserved_words
 #             classifies it R1 UNREACHABLE and baselines it, and src/Parser.zig:600 has a test
@@ -25,6 +19,4 @@
 #
 # `continue` left this list on 2026-08-29 (test/loop_continue_break_test.zbr).
 #
-abstract
 implies
-vari

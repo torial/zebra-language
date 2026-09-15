@@ -1,14 +1,15 @@
 class Validator
     static
         def checkPositive(n: int): int throws
-            # block form: guard cond else\n    body
-            guard n > 0 else
+            # was `guard n > 0 else` -- guard was freed as a keyword 2026-09-15; this
+            # is the same early exit in the language's one spelling
+            if not n > 0
                 raise "expected positive number"
             return n
 
         def firstChar(s: str): str
-            # inline form: guard cond else, return
-            guard s.len > 0 else, return "?"
+            # was the inline form `guard s.len > 0 else, return "?"`
+            if not s.len > 0: return "?"
             return s[0..1]
 
 def testGuardSuccess()
@@ -24,17 +25,18 @@ catch |e|
     print("guard raised: ".concat(e.message))
 
 def main()
-    # block form guard — success path
+    # early-exit success path (this file was the `guard` keyword fixture until 2026-09-15;
+    # it keeps its name and its golden output, with `if not` in place of `guard`)
     testGuardSuccess()
 
-    # inline form guard
+    # inline early exit
     var c = Validator.firstChar("hello")
     print(c)
 
     var empty = Validator.firstChar("")
     print(empty)
 
-    # guard that fires — verify error propagates with correct message
+    # early exit that fires — verify error propagates with correct message
     testGuardFail()
 
     print("ok")

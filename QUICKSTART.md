@@ -1179,10 +1179,6 @@ for item in items
 else
     found = default
 
-# guard (early return on nil/false)
-guard x != nil else
-    return
-
 # branch — pattern matching on unions
 branch expr
     on Expr.int_ as n
@@ -2891,9 +2887,9 @@ Output goes to stdout, one warning per line.  Exit code 0 = no warnings.
 ### `zebra debug` — DAP integration
 
 `zebra debug file.zbr` compiles the program and launches it under `lldb-dap`, exposing
-the Debug Adapter Protocol on its own stdio (native in the selfhost since 2026-09-07;
-`--listen PORT` TCP mode still delegates to the bootstrap binary when present).  IDE clients (VS Code, ZebraIDE) connect
-to this socket for breakpoints, stepping, and variable inspection.
+the Debug Adapter Protocol on its own stdio (native since 2026-09-07; the `--listen PORT`
+TCP mode was retired with the bootstrap on 2026-09-15).  IDE clients (VS Code, ZebraIDE)
+drive that stdio for breakpoints, stepping, and variable inspection.
 
 What a client sends, as `zebra-ide/src/dap.zbr` does it (2026-09-07): <!-- doc-lint-ok: a path in the zebra-ide repo, not this one --> `initialize` →
 `launch{program}` where `program` is the exe `zig build-exe` wrote to the **current
@@ -2907,7 +2903,7 @@ work). Headless control: `zebra src/dap_client_test.zbr` in zebra-ide. <!-- doc-
 See `docs/DEBUGGING.md` for:
 - VS Code launch configuration
 - ZebraIDE's built-in Debug button
-- `--listen PORT` mode for custom integrations
+- driving the relay from a custom IDE (stdio)
 - LLDB-DAP discovery / `LLDB_DISABLE_PYTHON` workarounds
 
 ### Error reporting
@@ -2930,10 +2926,8 @@ from both compilers in a structured format.
 | `--output-dir DIR` | Write generated Zig files to `DIR/` |
 | `--turbo` | Strip all contract checks (`require`/`ensure`/`invariant`) |
 | `--cpu=VALUE` | Pass `-mcpu=VALUE` to Zig (e.g. `native`, `x86_64+avx2`) — see §32 |
-| `--gui-backend=libui_ng` | Use native OS controls (default: stub) |
+| `--gui-backend=libui_ng` | Use native OS controls |
 | `--gui-backend=tui` | Use terminal UI backend |
-| `--zig-backend file.zbr` | Delegate to `zebra-bootstrap.exe` (Zig compiler) |
-| `--listen PORT` | (debug mode) expose DAP on `PORT` instead of launching IDE |
 
 ---
 
@@ -3977,8 +3971,6 @@ Running `zebra test --tag math_test` runs every test in the file; running
 - Test files should not define `def main()` — the test runner generates its
   own entry point automatically.
 - `def main()` is silently suppressed when compiling in test mode.
-- Both the Zig backend (`--zig-backend`) and the selfhost pipeline support
-  `zebra test`.
 
 ## 34. Tuple / multi-return
 

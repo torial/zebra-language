@@ -1,5 +1,6 @@
+# (was a `guard ... else` body until the keyword was freed 2026-09-15; same mismatch)
 def makeInt(n: int): int
-    guard n > 0 else
+    if not n > 0
         return "guard else"
     return n
 

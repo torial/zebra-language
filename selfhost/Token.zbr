@@ -245,8 +245,6 @@ class Keywords
             return TokenKind.kw_invariant()
         if word == "where"
             return TokenKind.kw_where()
-        if word == "abstract"
-            return TokenKind.kw_abstract()
         if word == "export"
             return TokenKind.kw_export()
         if word == "extern"
@@ -259,8 +257,6 @@ class Keywords
         # no "protected": BUG-315. It was a synonym for `private` and its documented
         # meaning ("the class and subclasses") needs inheritance this language does not
         # have. Do not re-add without a hierarchy to justify it.
-        if word == "readonly"
-            return TokenKind.kw_readonly()
         if word == "bool"
             return TokenKind.kw_bool()
         if word == "char"
@@ -343,8 +339,6 @@ class Keywords
             return TokenKind.kw_false()
         if word == "nil"
             return TokenKind.kw_nil()
-        if word == "vari"
-            return TokenKind.kw_vari()
         if word == "raise"
             return TokenKind.kw_raise()
         if word == "throws"
@@ -357,8 +351,11 @@ class Keywords
             return TokenKind.kw_except()
         if word == "union"
             return TokenKind.kw_union()
-        if word == "arena"
-            return TokenKind.kw_arena()
-        if word == "guard"
-            return TokenKind.kw_guard()
+        # `guard`, `arena`, `readonly`, `abstract` and `vari` left this table on
+        # 2026-09-15 (Sean): guard was `if not` with a second spelling and an odd `else,`
+        # form; arena's construct was removed long ago (`allocate Arena()`); readonly was
+        # parsed into a flag nothing read; abstract and vari were reserved for features
+        # that were never built. Their kw_* variants stay in TokenKind as dead code until
+        # the bootstrap's grammar goes (bootstrap_sunset.md Step 4). Same recipe as
+        # defer/errdefer: both token tables, tests inverted, a freed-words fixture.
         return nil

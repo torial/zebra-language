@@ -128,15 +128,22 @@ def selftest():
 def main():
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-    tok = (ROOT / "src" / "Token.zig").read_text(encoding="utf-8", errors="replace")
-    pairs = re.findall(r'\.\{\s*"([a-z_]+)"\s*,\s*\.(kw_\w+)\s*\}', tok)
+    # THE TABLE IS selfhost/Token.zbr's since 2026-09-15 (bootstrap_sunset.md Step 1):
+    # `if word == "x"` followed by `return TokenKind.kw_y()`. It was src/Token.zig's
+    # `.{ "x", .kw_y }` table until then; the bootstrap's Earley grammar and AstBuilder
+    # are still consulted for reachability / R2 WHILE THEY EXIST, and read as empty once
+    # src/ is gone (Step 3), at which point the selfhost sources are the only subject.
+    tok = (ROOT / "selfhost" / "Token.zbr").read_text(encoding="utf-8", errors="replace")
+    pairs = re.findall(r'if\s+word\s*==\s*"([a-z_]+)"\s*\n\s*return\s+TokenKind\.(kw_\w+)\(\)', tok)
     if len(pairs) < 40:
-        fail(f"extracted only {len(pairs)} keyword pairs from src/Token.zig (expected 40+); "
+        fail(f"extracted only {len(pairs)} keyword pairs from selfhost/Token.zbr (expected 40+); "
              "the regex has stopped matching, so this would blame the LANGUAGE for the "
              "tool's failure")
 
-    gram = (ROOT / "src" / "ZebraGrammar.zig").read_text(encoding="utf-8", errors="replace")
-    ast = (ROOT / "src" / "AstBuilder.zig").read_text(encoding="utf-8", errors="replace")
+    def _optional(p):
+        return p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
+    gram = _optional(ROOT / "src" / "ZebraGrammar.zig")
+    ast = _optional(ROOT / "src" / "AstBuilder.zig")
 
     # The selfhost parses by hand, consuming TokenKind values directly, so its sources
     # are a second and independent place a keyword can be reachable from. Scanning only
@@ -156,7 +163,7 @@ def main():
     kws = dict(pairs)
     if "def" not in kws:
         fail("control keyword 'def' is absent from the keyword table")
-    if f"t(.{kws['def']})" not in gram:
+    if gram and f"t(.{kws['def']})" not in gram:
         fail(f"positive control {kws['def']} classified UNREACHABLE in the grammar — "
              "the Earley scan is not seeing rule text")
     if kws["def"] not in selfhost:
@@ -178,7 +185,7 @@ def main():
         why = ("reserved but NO rule in EITHER compiler can accept it"
                if flagged[w] == "R1" else
                "parses, then AstBuilder refuses it as unimplemented")
-        print(f"  src/Token.zig: [{flagged[w]}] `{w}` — {why}. Free the word, implement "
+        print(f"  selfhost/Token.zbr: [{flagged[w]}] `{w}` — {why}. Free the word, implement "
               f"the feature, or add it to BASELINE in tools/lint_reserved_words.py "
               f"with the reason it stays.")
 

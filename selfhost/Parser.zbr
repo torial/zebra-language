@@ -916,7 +916,7 @@ class Parser
         var t = .peek().text
         if t == "def"
             return .errorAt("a function definition ('def') can't appear in expression position — use a lambda `def(args) body`, or move it to its own statement")
-        if t == "if" or t == "for" or t == "while" or t == "return" or t == "branch" or t == "raise" or t == "var" or t == "const" or t == "guard" or t == "with"
+        if t == "if" or t == "for" or t == "while" or t == "return" or t == "branch" or t == "raise" or t == "var" or t == "const" or t == "with"
             return .errorAt("'" + t + "' is a statement keyword and can't be used as an expression here")
         if t.len == 0
             return .errorAt("unexpected end of input while parsing an expression")
@@ -931,7 +931,7 @@ class Parser
     # allows declarations there) — say so instead of "unexpected top-level token".
     def unexpectedTopLevelMsg(): str
         var t = .peek().text
-        if t == "if" or t == "for" or t == "while" or t == "return" or t == "branch" or t == "raise" or t == "guard" or t == "with" or t == "print"
+        if t == "if" or t == "for" or t == "while" or t == "return" or t == "branch" or t == "raise" or t == "with" or t == "print"
             return .errorAt("'" + t + "' is a statement and can't appear at the top level — only declarations (def, class, struct, enum, union, use, var, const) belong here; move it into a function")
         if t.len == 0
             return .errorAt("unexpected end of input at the top level")
@@ -998,13 +998,9 @@ class Parser
                 return true
             on TokenKind.kw_private
                 return true
-            on TokenKind.kw_abstract
-                return true
             on TokenKind.kw_export
                 return true
             on TokenKind.kw_static
-                return true
-            on TokenKind.kw_readonly
                 return true
             on TokenKind.kw_extern
                 return true
@@ -2295,16 +2291,12 @@ class Parser
 
         else if .textIs("branch")
             return .parseBranchStmt()?
-        else if .textIs("arena")
-            raise "the 'arena' keyword is removed; use 'allocate Arena()' instead"
         else if .textIs("allocate")
             return .parseAllocateStmt()?
         else if .textIs("with")
             return .parseWithStmt()?
         else if .textIs("using")
             return .parseInStmt()?
-        else if .textIs("guard")
-            return .parseGuardStmt()?
         else if .textIs("require")
             return .parseContractStmt("require")?
         else if .textIs("ensure")
@@ -2470,24 +2462,9 @@ class Parser
         expr_list.add(expr)
         return PNode.stmt_in(PInScope(expr_list, stmts, line, col))
 
-    def parseGuardStmt(): PNode throws
-        const line = .peek().line
-        const col = .peek().col
-        .expectText("guard")?
-        const cond_expr = .parseExpr()?
-        .expectText("else")?
-        var cond_list = List(PNode)()
-        cond_list.add(cond_expr)
-        var else_stmts = List(PNode)()
-        if .textIs(",")
-            .advance()
-            # Inline form: `guard Expr else, Stmt`
-            else_stmts.add(.parseStmt()?)
-        else
-            # Block form: `guard Expr else eol Block`
-            .skipEol()
-            else_stmts = .parseBlock()?
-        return PNode.stmt_guard(PGuard(cond_list, else_stmts, line, col))
+    # parseGuardStmt was here until 2026-09-15: `guard` is an ordinary identifier now
+    # (it was `if not cond` with a second spelling). PNode.stmt_guard / Stmt.guard_ and
+    # their walker arms are dead code until bootstrap_sunset.md Step 4 removes them.
 
     def parseForInStmt(): PNode throws
         const line = .peek().line

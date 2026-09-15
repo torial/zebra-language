@@ -18,15 +18,17 @@ So a vocabulary read off the enum contains `arena`, which no current program can
 arena-scoped program uses. A coverage tool built on it would report a live keyword as
 untested and a removed one as uncovered, in both directions at once.
 
-THREE SOURCES EXIST AND THEY DISAGREE, so all three are read and reconciled rather than one
+TWO SOURCES EXIST AND THEY DISAGREE, so both are read and reconciled rather than one
 being trusted:
 
-    src/Token.zig       `.{ "word", .kw_x }`   -- the bootstrap's table, 80 words
-    selfhost/Token.zbr  `if word == "..."`     -- the selfhost's table, 79 words
+    selfhost/Token.zbr  `if word == "..."`     -- the compiler's table, 79 words
     selfhost/Parser.zbr a pipe-delimited string of statement keywords, hand-maintained
 
-`allocate` is in the first and third but not the second; the selfhost reaches it
-contextually. A tool that read any single source would be wrong about something.
+`allocate` is in the second but not the first; the compiler reaches it contextually. A
+tool that read any single source would be wrong about something. (Until 2026-09-15 a
+third source, the bootstrap's `src/Token.zig` table, was reconciled in too; it had
+stopped contributing any word the compiler's own table lacked, and it retires with the
+bootstrap -- bootstrap_sunset.md Step 1.)
 """
 import io
 import os
@@ -35,7 +37,6 @@ import subprocess
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BS_TOKEN = os.path.join(REPO, 'src', 'Token.zig')
 SH_TOKEN = os.path.join(REPO, 'selfhost', 'Token.zbr')
 SH_PARSER = os.path.join(REPO, 'selfhost', 'Parser.zbr')
 
@@ -45,11 +46,6 @@ STR = re.compile(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'')
 
 VOCAB_FLOOR = 60
 DISAGREE_CEILING = 6
-
-
-def _bootstrap_words():
-    src = io.open(BS_TOKEN, encoding='utf-8').read()
-    return {m.group(1) for m in re.finditer(r'\.\{\s*"([a-z_]+)"\s*,\s*\.kw_\w+\s*\}', src)}
 
 
 def _selfhost_words():
@@ -68,30 +64,28 @@ def _selfhost_stmt_words():
 
 def vocabulary(explain=False):
     """The union of every source, because each is incomplete in a different direction."""
-    bs, sh, st = _bootstrap_words(), _selfhost_words(), _selfhost_stmt_words()
-    words = bs | sh | st
+    sh, st = _selfhost_words(), _selfhost_stmt_words()
+    words = sh | st
     if len(words) < VOCAB_FLOOR:
         print('zbr_vocab: REFUSING -- derived only %d keyword(s) (floor %d) from\n'
-              '  %s: %d\n  %s: %d\n  %s: %d\n'
+              '  %s: %d\n  %s: %d\n'
               'A pattern has stopped matching, and every count downstream would be wrong in '
               'the REASSURING direction: with a small vocabulary almost nothing looks '
-              'uncovered.' % (len(words), VOCAB_FLOOR, BS_TOKEN, len(bs), SH_TOKEN, len(sh),
-                              SH_PARSER, len(st)), file=sys.stderr)
+              'uncovered.' % (len(words), VOCAB_FLOOR, SH_TOKEN, len(sh), SH_PARSER, len(st)),
+              file=sys.stderr)
         sys.exit(2)
     if explain:
-        only_bs = sorted(bs - sh - st)
-        only_sh = sorted((sh | st) - bs)
-        print('  vocabulary: %d word(s)  [bootstrap %d, selfhost %d, stmt-string %d]'
-              % (len(words), len(bs), len(sh), len(st)))
-        if only_bs:
-            print('  only the BOOTSTRAP maps: %s' % ' '.join(only_bs))
-        if only_sh:
-            print('  only the SELFHOST maps: %s' % ' '.join(only_sh))
-        if len(only_bs) + len(only_sh) > DISAGREE_CEILING:
-            print('zbr_vocab: REFUSING -- the two compilers disagree on %d keyword(s), over '
-                  'the ceiling of %d. That is either a real divergence worth a ticket or an '
-                  'extraction that has drifted; either way the union below is not trustworthy.'
-                  % (len(only_bs) + len(only_sh), DISAGREE_CEILING), file=sys.stderr)
+        only_st = sorted(st - sh)
+        print('  vocabulary: %d word(s)  [token table %d, stmt-string %d]'
+              % (len(words), len(sh), len(st)))
+        if only_st:
+            print('  only the stmt-string lists: %s' % ' '.join(only_st))
+        if len(only_st) > DISAGREE_CEILING:
+            print('zbr_vocab: REFUSING -- the token table and the statement-keyword string '
+                  'disagree on %d keyword(s), over the ceiling of %d. That is either a word '
+                  'reached contextually (allocate) or a hand-kept list that has drifted; '
+                  'either way the union below is not trustworthy.'
+                  % (len(only_st), DISAGREE_CEILING), file=sys.stderr)
             sys.exit(2)
     return sorted(words)
 

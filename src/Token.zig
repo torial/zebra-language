@@ -344,7 +344,6 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "has",         .kw_has },
     .{ "static",      .kw_static },
     .{ "invariant",   .kw_invariant },
-    .{ "abstract",    .kw_abstract },
     .{ "export",      .kw_export },
     .{ "extern",      .kw_extern },
     // no "internal": BUG-316. It named a real middle visibility level (hidden
@@ -359,7 +358,6 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     // no "protected": BUG-315. It was a synonym for `private` and its documented
     // meaning ("the class and subclasses") needs inheritance this language does not
     // have. Do not re-add without a hierarchy to justify it.
-    .{ "readonly",    .kw_readonly },
     .{ "bool",        .kw_bool },
     .{ "char",        .kw_char },
     .{ "int",         .kw_int },
@@ -406,16 +404,13 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "true",        .kw_true },
     .{ "false",       .kw_false },
     .{ "nil",         .kw_nil },
-    .{ "vari",        .kw_vari },
     .{ "capture",     .kw_capture },
     .{ "with",        .kw_with },
     .{ "except",      .kw_except },
     .{ "union",       .kw_union  },
-    .{ "guard",       .kw_guard  },
     .{ "raise",       .kw_raise  },
     .{ "throws",      .kw_throws },
     .{ "where",       .kw_where  },
-    .{ "arena",       .kw_arena     },
     .{ "allocate",    .kw_allocate  },
 });
 

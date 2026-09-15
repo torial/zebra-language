@@ -58,6 +58,15 @@ StringBuilder, SysProcess, Build/BuildTarget, Ws/Tcp/Udp conns, Sqlite*, CodeEdi
 HttpRequest, Chan, Regex): an unknown method is a Zebra refusal naming the set, not a Zig
 error (surface: +16 receivers / +133 methods, all derived); it found QUICKSTART's
 `t.elapsedMs()` naming a method that never existed (`elapsed()`).
+**Bootstrap sunset Step 1** (2026-09-15, `docs/design/bootstrap_sunset.md`): the last three
+delegations to `zebra-bootstrap` are retired — `--zig-backend`, `--gui-backend=glfw`
+(refused by name; `tui`, `libui_ng` and the default `stub` remain) and `zebra debug --listen` (the DAP relay
+is stdio-only) — so the compiler has one pipeline (surface: −2 flags, −2 command forms).
+**`guard`, `arena`, `readonly`, `abstract`, `vari` freed as identifiers** (2026-09-15, Sean,
+reading the book: guard "feels like it doesn't belong"): `guard` was `if not cond` with a
+second spelling and an `else,` comma form; `arena`'s construct had been removed long ago;
+`readonly` was parsed into a flag nothing read; `abstract` and `vari` were reserved for
+features never built (surface: −5 keywords, 74 now). Rewrite: `guard c else` → `if not c`.
 
 ## [0.15] — 2026-05 (in progress)
 
