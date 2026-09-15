@@ -1014,7 +1014,7 @@ def mightUseNameInExpr(name: str, expr: Expr): bool
 # of one fact -- kept adjacent to that mapping by the fixture bug338, which constructs one
 # of each; add a name in both places or the fixture says so.
 def isBuiltinTypeName(name: str): bool
-    return name == "String" or name == "StringBuilder" or name == "Regex" or name == "StrSet" or name == "Allocator" or name == "WsConn" or name == "TcpConn" or name == "UdpSocket" or name == "SqliteDb" or name == "SqliteRow" or name == "HttpRequest" or name == "Gui" or name == "CodeEditor" or name == "SysProcess" or name == "Timer" or name == "JsonValue" or name == "byte" or name == "usize" or name == "int128" or name == "uint128"
+    return name == "StringBuilder" or name == "Regex" or name == "StrSet" or name == "Allocator" or name == "WsConn" or name == "TcpConn" or name == "UdpSocket" or name == "SqliteDb" or name == "SqliteRow" or name == "HttpRequest" or name == "Gui" or name == "CodeEditor" or name == "SysProcess" or name == "Timer" or name == "JsonValue" or name == "byte" or name == "usize" or name == "int128" or name == "uint128"
 
 def isStdlibNs(name: str): bool
     return name == "Math" or name == "File" or name == "sys" or name == "Arg" or name == "Json" or name == "DynLib" or name == "Http" or name == "Ws" or name == "HttpResponse" or name == "Regex" or name == "DateTime" or name == "Hash" or name == "Crypto" or name == "Random" or name == "Terminal" or name == "Log" or name == "Csv" or name == "Timer" or name == "Progress" or name == "Profile" or name == "Uri" or name == "Compress" or name == "Mime" or name == "Tcp" or name == "Udp" or name == "Sqlite" or name == "Net" or name == "Gui" or name == "Shell" or name == "Dir" or name == "Path" or name == "Reflect" or name == "Build"

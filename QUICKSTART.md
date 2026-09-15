@@ -310,12 +310,13 @@ def main()
 | `bool`          | `bool`               |                                      |
 | `char`          | `u21`                | Unicode codepoint                    |
 | `str`           | `[]const u8`         | immutable string slice               |
-| `String`        | `[]const u8`         | alias for `str`                      |
 | `int8…128`      | `i8…i128`            | sized signed integers                |
 | `uint8…128`     | `u8…u128`            | sized unsigned integers              |
 | `float16…128`   | `f16…f128`           | sized floats                         |
 | `StringBuilder` | `std.ArrayList(u8)`  | growable string buffer               |
 | `void`          | `void`               |                                      |
+
+`str` has exactly one spelling. (`String` was an alias until 2026-09-15; the compiler now refuses it and names `str`.)
 
 Optionals: `T?` → `?T` in Zig.  `nil` → `null`.
 
@@ -1098,7 +1099,7 @@ else: label = "non-pos"
 if grade >= 90: letter = "A" else if grade >= 80: letter = "B" else: letter = "F"
 
 # Inline if with return (common idiom)
-def sign(n: int): String
+def sign(n: int): str
     if n > 0: return "pos"
     else if n < 0: return "neg"
     else: return "zero"
@@ -1294,7 +1295,7 @@ var result = sb.build()              # str (drains the builder)
 
 A method not in this reference is a **front-end refusal** (`'str' has no method 'x'`, BUG-369),
 not a Zig error from the build — the same holds for `List` (`'List' has no method 'first'`).
-An `extend String` block adds methods the checker then accepts.
+An `extend str` block adds methods the checker then accepts.
 
 **Returns `str`:**
 
@@ -2444,7 +2445,7 @@ that names the missing annotation.
 - Field with non-primitive type (e.g. `var tags: List(int)`) →
   `field 'tags' has unsupported type 'List(int)' (only int/float/bool/str supported in 0.9)`.
 
-**Scope-1 (current):** only `int` / `float` / `bool` / `str` (and `String` alias)
+**Scope-1 (current):** only `int` / `float` / `bool` / `str`
 fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are deferred
 — attempting to use them gives the hard-error above at compile time.
 

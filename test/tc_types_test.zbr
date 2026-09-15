@@ -106,11 +106,11 @@ def main()
 
     # 9. typeName
     assert TcTypes.typeName(TcType.int_())    == "int"
-    assert TcTypes.typeName(TcType.string_()) == "String"
+    assert TcTypes.typeName(TcType.string_()) == "str"
     assert TcTypes.typeName(TcType.void_())   == "void"
     assert TcTypes.typeName(TcType.unknown_()) == "<unknown>"
     assert TcTypes.typeName(TcType.optional(TcType.int_())) == "?int"
-    assert TcTypes.typeName(TcType.optional(TcType.optional(TcType.string_()))) == "??String"
+    assert TcTypes.typeName(TcType.optional(TcType.optional(TcType.string_()))) == "??str"
     var sym_point = TcSymRef("Point", TcSymbolKind.struct_)
     assert TcTypes.typeName(TcType.named(sym_point)) == "Point"
     var cross = TcCrossRef("Ast", "DeclMethod")

@@ -48,7 +48,10 @@ verified, previous version kept once (surface: +`zebra up`, +`--to`); **`defer` 
 `errdefer` freed** as identifiers (surface: −2 keywords; they were reserved, implemented
 only in the bootstrap, and refused by the shipping compiler); a parameter named like a
 top-level def no longer takes the function's address (BUG-427); macOS builds are no
-longer marked experimental (the rc2 smoke ran green on `macos-latest`).
+longer marked experimental (the rc2 smoke ran green on `macos-latest`); **the `String`
+alias of `str` is removed** (2026-09-15, Sean: "nuke String") — one type, one spelling;
+the parser refuses `String` wherever a type is read and names `str` (rewrite is the one
+token; `extend String` → `extend str`).
 
 ## [0.15] — 2026-05 (in progress)
 

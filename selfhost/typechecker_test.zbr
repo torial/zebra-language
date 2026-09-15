@@ -49,7 +49,7 @@ def typeIsUnknown(t: Type_): bool
 def testTypeFromName()
     check(typeIsInt(typeFromName("int")), "typeFromName(int)")
     check(typeIsString(typeFromName("str")), "typeFromName(str)")
-    check(typeIsString(typeFromName("String")), "typeFromName(String)")
+    check(typeIsString(typeFromName("str")), "typeFromName(str)")
     check(typeIsNamed(typeFromName("Foo")), "typeFromName(Foo) → named")
     # Type_.unknown_ constructed directly
     check(typeIsUnknown(Type_.unknown_), "Type_.unknown_")

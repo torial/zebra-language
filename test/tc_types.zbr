@@ -304,7 +304,7 @@ class TcTypes
                 on TcType.float_  return "float"
                 on TcType.bool_   return "bool"
                 on TcType.char_   return "char"
-                on TcType.string_ return "String"
+                on TcType.string_ return "str"
                 on TcType.void_   return "void"
                 on TcType.int_n   return "int<N>"
                 on TcType.uint_n  return "uint<N>"

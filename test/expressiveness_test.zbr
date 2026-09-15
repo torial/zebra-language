@@ -1,5 +1,5 @@
 class Greeter
-    def greet(name: String, greeting: String = "Hello")
+    def greet(name: str, greeting: str = "Hello")
         print(greeting + ", " + name + "!")
 
     def check(value: int, lo: int, hi: int): bool

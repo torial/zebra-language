@@ -1107,12 +1107,9 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                         ext_tn0 = etn0.name
                     else
                         pass
-                # `extend str` and `extend String` are ONE target. The receiver side
-                # (extTypeName) canonicalises a str value to "String", so a block written
-                # `extend str` -- the spelling QUICKSTART §42 documents -- registered under
-                # "str" and no call ever found it. Found by test/trip_test.zbr 2026-09-14.
-                if ext_tn0 == "str"
-                    ext_tn0 = "String"
+                # BUG-425 history: until 2026-09-15 `extend str` and `extend String` were one
+                # target and the receiver side (extTypeName) canonicalised to "String". The
+                # `String` alias is gone (the parser refuses it), so "str" is the only key.
                 if ext_tn0.len > 0
                     for emem0 in ext.members
                         if emem0 is Decl.method as emth0
@@ -2041,7 +2038,7 @@ def napiTypeName(name: str): bool
         return true
     if name == "bool"
         return true
-    if name == "str" or name == "String"
+    if name == "str"
         return true
     return false
 
@@ -2053,7 +2050,7 @@ def napiTypeRefName(tr: TypeRef?): str
 
 def napiIsStr(tr: TypeRef?): bool
     var nm: str = napiTypeRefName(tr)
-    return nm == "str" or nm == "String"
+    return nm == "str"
 
 def napiTsType(tr: TypeRef?): str
     var nm: str = napiTypeRefName(tr)
@@ -2061,7 +2058,7 @@ def napiTsType(tr: TypeRef?): str
         return "number"
     if nm == "bool"
         return "boolean"
-    if nm == "str" or nm == "String"
+    if nm == "str"
         return "string"
     return "void"
 
@@ -2598,10 +2595,10 @@ def stmtLine(s: Stmt): int
 
 struct CallChain
     var recv: Expr
-    var method: String
+    var method: str
     var args: List(Arg)
 
-    cue init(recv: Expr, method: String, args: List(Arg))
+    cue init(recv: Expr, method: str, args: List(Arg))
         .recv = recv
         .method = method
         .args = args
@@ -3721,8 +3718,6 @@ struct Generator
             return "u21"
         if name == "str"
             return "[]const u8"
-        if name == "String"
-            return "[]const u8"
         if name == "int8"
             return "i8"
         if name == "int16"
@@ -3759,7 +3754,7 @@ struct Generator
 
     def isStringTypeRef(tr: TypeRef): bool
         if tr is TypeRef.named as n
-            return n.name == "str" or n.name == "String"
+            return n.name == "str"
         return false
 
     # ── genUse ────────────────────────────────────────────────────────────────
@@ -4135,7 +4130,7 @@ struct Generator
             return false
         var t = tr!
         if t is TypeRef.named as n
-            return n.name == "str" or n.name == "String"
+            return n.name == "str"
         return false
 
     def isFloatFieldType(tr: TypeRef?): bool
@@ -4867,7 +4862,7 @@ struct Generator
                 return "float"
             if nt.name == "bool"
                 return "bool"
-            if nt.name == "str" or nt.name == "String"
+            if nt.name == "str"
                 return "str"
         return ""
 
@@ -5134,7 +5129,7 @@ struct Generator
                 if p.type_ != nil
                     var ptype = p.type_!
                     if ptype is TypeRef.named as nt
-                        if nt.name == "str" or nt.name == "String"
+                        if nt.name == "str"
                             sp.add(p.name)
             w.emit(" {\n")
             # Root entry point (Zig 0.16): inject _io/_args/_allocator init + dep propagation
@@ -5266,7 +5261,7 @@ struct Generator
                                         var ptpos = 0
                                         for ptelem in pttr.elems
                                             if ptelem is TypeRef.named as pten
-                                                if pten.name == "str" or pten.name == "String"
+                                                if pten.name == "str"
                                                     bg.list_tuple_str_pos.add("${p2.name}:${ptpos.toString()}")
                                             ptpos = ptpos + 1
                         on TypeRef.named as nt2
@@ -5799,8 +5794,6 @@ struct Generator
                 tname = n.name
             else
                 tname = "Unknown"
-        if tname == "str"
-            tname = "String"           # same canonicalisation as the registration pass
         writeIndent()
         w.emit("// extend ")
         w.emit(tname)
@@ -5818,7 +5811,7 @@ struct Generator
         w.emit(mth.name)
         w.emit("(self: ")
         # Map builtin type names to Zig types
-        if tname == "str" or tname == "String"
+        if tname == "str"
             w.emit("[]const u8")
         else if tname == "int"
             w.emit("i64")
@@ -5850,7 +5843,7 @@ struct Generator
             # stdlib method chains on `this` (e.g. `this.upper().concat("!")`) dispatch
             # to string codegen instead of a raw `_mc.concat(...)` method call.
             var ext_self_t: Type_ = Type_.named(tname)
-            if tname == "str" or tname == "String"
+            if tname == "str"
                 ext_self_t = Type_.string_
             else if tname == "int"
                 ext_self_t = Type_.int_
@@ -6684,7 +6677,7 @@ struct Generator
         if n.type_ != nil
             branch n.type_!
                 on TypeRef.named as tn
-                    if tn.name == "str" or tn.name == "String"
+                    if tn.name == "str"
                         str_params.add(n.name)
                     if tn.name == "StrSet"
                         strset_locals.add(n.name)
@@ -6698,7 +6691,7 @@ struct Generator
                                 var tpos = 0
                                 for telem in ttr.elems
                                     if telem is TypeRef.named as ten
-                                        if ten.name == "str" or ten.name == "String"
+                                        if ten.name == "str"
                                             list_tuple_str_pos.add("${n.name}:${tpos.toString()}")
                                     tpos = tpos + 1
                     if gtn.name == "Chan"
@@ -7335,7 +7328,7 @@ struct Generator
 
     def isStringArgExpr(e: Expr): bool
         if e is Expr.ident as id
-            return id.name == "str" or id.name == "String"
+            return id.name == "str"
         return false
 
     def genTypeFromExpr(e: Expr)
@@ -7715,7 +7708,7 @@ struct Generator
             var ftype = lookupFieldType(fname!)
             if ftype != nil
                 if ftype! is TypeRef.named as nt
-                    return nt.name == "str" or nt.name == "String"
+                    return nt.name == "str"
         return false
 
     def isListField(field_name: str): bool
@@ -8138,7 +8131,7 @@ struct Generator
     # BUG-027 fix: takes object by value so a ^Expr caller auto-derefs at call site.
     # Emits `var _mc_N = obj_call; _mc_N.method(args);` and returns true.
     # Returns false if obj is not a call expression (no hoisting needed).
-    def hoistCallOnTemp(obj: Expr, method_name: String, call_args: List(Arg)): bool
+    def hoistCallOnTemp(obj: Expr, method_name: str, call_args: List(Arg)): bool
         branch obj
             on Expr.call
                 var uid = w.nextUid()
@@ -8179,7 +8172,7 @@ struct Generator
     # For a plain call (not a method-on-call), emits `var _mc_N = <expr>;` and returns "_mc_N".
     # For MethodCall(object=Call, ...), hoists the inner chain first, then hoists this level.
     # Takes expr by value so ^Expr callers auto-deref at the call site.
-    def hoistCallChain(expr: Expr): String
+    def hoistCallChain(expr: Expr): str
         var ch = tryChain(expr)
         if ch != nil
             var chain = ch!
@@ -8202,7 +8195,7 @@ struct Generator
 
     # ── genIf ─────────────────────────────────────────────────────────────────
 
-    def genIsCaptureThen(cond_expr: Expr, cap: String, stmts: List(Stmt))
+    def genIsCaptureThen(cond_expr: Expr, cap: str, stmts: List(Stmt))
         # Helper called from genIf when is_capture is set.
         # Takes Expr by value so callers with ^Expr get auto-deref at the call site.
         # BUG-137: the capture binding shadows any same-named module var.
@@ -9913,7 +9906,7 @@ struct Generator
     def extTypeName(t: Type_): str
         branch t
             on Type_.string_
-                return "String"
+                return "str"
             on Type_.int_
                 return "int"
             on Type_.uint_
@@ -12197,7 +12190,7 @@ struct Generator
                 var ftype = lookupFieldType(id.name)
                 if ftype != nil
                     if ftype! is TypeRef.named as nt
-                        if nt.name == "str" or nt.name == "String"
+                        if nt.name == "str"
                             return true
             on Expr.member as m
                 # Common string field names

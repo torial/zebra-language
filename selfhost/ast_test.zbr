@@ -30,8 +30,8 @@ class AstTest
 
     def testNamedTypeRef()
         const s = Ast.Span(2, 1, 2, 6)
-        const nr = Ast.NamedTypeRef(s, "String")
-        assert nr.name == "String"
+        const nr = Ast.NamedTypeRef(s, "str")
+        assert nr.name == "str"
         assert nr.span.line == 2
 
     def testExprIntLit()

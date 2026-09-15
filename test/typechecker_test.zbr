@@ -89,7 +89,7 @@ def main()
     print("10. multiple errors in checkMethod OK")
 
     # 11. typeQuery helpers
-    assert tc.typeName(TcType.string_()) == "String"
+    assert tc.typeName(TcType.string_()) == "str"
     assert tc.typeName(TcType.optional(TcType.int_())) == "?int"
     assert tc.isNumeric(TcType.int_())
     assert not tc.isNumeric(TcType.bool_())

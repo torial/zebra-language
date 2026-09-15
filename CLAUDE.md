@@ -2772,7 +2772,10 @@ fixture; the trip keeps them live together, which is the property no single fixt
 Two smaller things it turned up: `defer`/`errdefer` were reserved and refused by the parser
 (freed 2026-09-15, and the freed-words fixture found **BUG-427** on its first run -- a ctor
 parameter named like a top-level def took the function's address), and an unused `as n` in a
-branch arm is refused with no column (recorded in NEXT_STEPS_to_1.0).
+branch arm is refused with no column (recorded in NEXT_STEPS_to_1.0). BUG-425's root --
+two spellings for one type -- was closed at the root on 2026-09-15: **the `String` alias is
+removed**; `Parser.eatTypeName` refuses it naming `str` (fixture
+`test/fail_fixtures/string_alias_rejected_test.zbr`), and "str" is the only extend key.
 
 ## Self-hosting
 

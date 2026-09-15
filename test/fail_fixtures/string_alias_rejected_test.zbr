@@ -1,0 +1,20 @@
+# `String` removed 2026-09-15 — one type, one spelling: `str`.
+#
+# Until this date `String` was an undocumented alias of `str` (QUICKSTART said so
+# in one line; nothing else did). It cost more than it gave: BUG-425 was a whole
+# feature (`extend str`) silently not working because one side of the compiler
+# canonicalised to "String" and the other registered under "str". The 1.0
+# surface freeze wants exactly one name per type, so the alias is gone and the
+# parser refuses it at the single chokepoint every type annotation and `extend`
+# target passes through, naming the rewrite:
+#
+#   string_alias_rejected_test.zbr:N:C: error: `String` is not a Zebra type: write `str`.
+#
+# The refusal is positioned (a parse error), so `-c` sees it and the LSP can
+# offer the one-token fix.
+class Greeter
+    def greet(name: String): str
+        return "hi " + name
+
+def main
+    print(Greeter().greet("x"))

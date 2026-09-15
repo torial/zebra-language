@@ -415,7 +415,7 @@ struct PReturn
 
 struct PIf
     var cond: List(PNode)
-    var is_capture: String?
+    var is_capture: str?
     var then_stmts: List(PNode)
     var else_stmts: List(PNode)
     var line: int
@@ -1339,6 +1339,12 @@ class Parser
             sb.append(")")
             return sb.build()
         if .isId()
+            # `String` was an undocumented alias of `str` until 2026-09-15 (Sean: "nuke
+            # String"). One spelling for one type; refuse it here, the chokepoint every
+            # type annotation and `extend` target passes through, naming the rewrite.
+            # (`String.X` is left alone: that is a module qualifier, not the alias.)
+            if text == "String" and .peekAt(1).text != "."
+                raise .errorAt("`String` is not a Zebra type: write `str`. (`String` was an alias of `str`; it was removed so the type has one spelling.)")
             .advance()
             # Handle dotted names: Token.Token, Ast.Module, etc.
             if .textIs(".")
@@ -1374,8 +1380,8 @@ class Parser
             .advance()
             return text
         # `byte` alias (lexed: plain id above, so this branch handles it if
-        # the lexer ever splits it out; also covers `String` alias).
-        if text == "byte" or text == "String"
+        # the lexer ever splits it out).
+        if text == "byte"
             .advance()
             return text
         # `same` — constrained parameter type ("same type: this class")
@@ -2210,12 +2216,12 @@ class Parser
             # `zig"std.mem.span(...)"` at the call site.
             var ext_str: str = ""
             var ext_str_where: str = ""
-            if return_type == "str" or return_type == "String"
+            if return_type == "str"
                 ext_str = return_type
                 ext_str_where = "return type"
             for sp in params
                 if ext_str == ""
-                    if sp.type_name == "str" or sp.type_name == "String"
+                    if sp.type_name == "str"
                         ext_str = sp.type_name
                         ext_str_where = "parameter `" + sp.name + "`"
             if ext_str != ""
@@ -2329,7 +2335,7 @@ class Parser
         .expectText("if")?
         const cond_expr = .parseExpr()?
         # Optional capture binding: `if x is Variant as name`
-        var capture_name: String? = nil
+        var capture_name: str? = nil
         if .textIs("as")
             .advance()
             capture_name = .eatId()?

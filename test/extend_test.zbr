@@ -1,4 +1,4 @@
-extend String
+extend str
     def shout(): str
         return this.upper().concat("!")
 

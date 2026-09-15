@@ -1313,6 +1313,11 @@ smoke_run test/bug226_tokenize_forheader_test.zbr "bug226_tokenize_forheader_tes
 smoke_tc_fail test/fail_fixtures/str_plus_number_rejected_test.zbr \
     "cannot concatenate 'str' and 'int'"
 
+# `String` alias removed 2026-09-15 (Sean: "nuke String"). One type, one spelling.
+# The parser refuses the old name wherever a type is read, naming `str`.
+smoke_tc_fail test/fail_fixtures/string_alias_rejected_test.zbr \
+    "\`String\` is not a Zebra type: write \`str\`"
+
 # BUG-220: a top-level `def` whose name matches a preamble parameter/local used to
 # fail to compile (15 of 16 everyday names — count, data, total, buf, body, color).
 # Top-level defs now emit under the reserved `_zbr_fn_` prefix, mirroring `_zbr_mv_`

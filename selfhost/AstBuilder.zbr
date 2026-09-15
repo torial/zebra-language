@@ -1174,7 +1174,7 @@ class ASTBuilder
             on PNode.expr_catch as pc
                 const expr_val = .buildExpr(pc.expr.at(0))?
                 const fb_val = .buildExpr(pc.fallback.at(0))?
-                var ev: String? = nil
+                var ev: str? = nil
                 if pc.binding != ""
                     ev = pc.binding
                 return Expr.catch_(ExprCatch(spanOf(expr_val), expr_val, ev, fb_val))

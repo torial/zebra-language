@@ -1889,7 +1889,7 @@ pub fn _zbr_fn_mightUseNameInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:1016
 pub fn _zbr_fn_isBuiltinTypeName(name: []const u8) bool {
 // zbr:selfhost/CgHelpers.zbr:1017
-    return (((((((((((((((((((std.mem.eql(u8, name, "String") or std.mem.eql(u8, name, "StringBuilder")) or std.mem.eql(u8, name, "Regex")) or std.mem.eql(u8, name, "StrSet")) or std.mem.eql(u8, name, "Allocator")) or std.mem.eql(u8, name, "WsConn")) or std.mem.eql(u8, name, "TcpConn")) or std.mem.eql(u8, name, "UdpSocket")) or std.mem.eql(u8, name, "SqliteDb")) or std.mem.eql(u8, name, "SqliteRow")) or std.mem.eql(u8, name, "HttpRequest")) or std.mem.eql(u8, name, "Gui")) or std.mem.eql(u8, name, "CodeEditor")) or std.mem.eql(u8, name, "SysProcess")) or std.mem.eql(u8, name, "Timer")) or std.mem.eql(u8, name, "JsonValue")) or std.mem.eql(u8, name, "byte")) or std.mem.eql(u8, name, "usize")) or std.mem.eql(u8, name, "int128")) or std.mem.eql(u8, name, "uint128"));
+    return ((((((((((((((((((std.mem.eql(u8, name, "StringBuilder") or std.mem.eql(u8, name, "Regex")) or std.mem.eql(u8, name, "StrSet")) or std.mem.eql(u8, name, "Allocator")) or std.mem.eql(u8, name, "WsConn")) or std.mem.eql(u8, name, "TcpConn")) or std.mem.eql(u8, name, "UdpSocket")) or std.mem.eql(u8, name, "SqliteDb")) or std.mem.eql(u8, name, "SqliteRow")) or std.mem.eql(u8, name, "HttpRequest")) or std.mem.eql(u8, name, "Gui")) or std.mem.eql(u8, name, "CodeEditor")) or std.mem.eql(u8, name, "SysProcess")) or std.mem.eql(u8, name, "Timer")) or std.mem.eql(u8, name, "JsonValue")) or std.mem.eql(u8, name, "byte")) or std.mem.eql(u8, name, "usize")) or std.mem.eql(u8, name, "int128")) or std.mem.eql(u8, name, "uint128"));
 }
 
 // zbr:selfhost/CgHelpers.zbr:1019

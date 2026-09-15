@@ -1,10 +1,10 @@
 class Greeter
-    def greet(name: String): String
+    def greet(name: str): str
         return name
 
 class Program
     static
         def main
             var g: Greeter = zig"${Greeter}{}"
-            var msg: String = g.greet("world")
+            var msg: str = g.greet("world")
             print(msg)

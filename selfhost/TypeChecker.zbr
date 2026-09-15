@@ -575,8 +575,6 @@ def typeFromName(n: str): Type_
         return Type_.char_
     if n == "str"
         return Type_.string_
-    if n == "String"
-        return Type_.string_
     if n == "StringBuilder"
         return Type_.string_builder
     if n == "Regex"
@@ -1487,8 +1485,8 @@ def isString(t: Type_): bool
         on Type_.string_
             return true
         on Type_.cross_module as cm
-            # BUG-075: String class imported cross-module yields cross_module, not string_.
-            return cm.type_name == "String"
+            # BUG-075: a str-typed member imported cross-module yields cross_module, not string_.
+            return cm.type_name == "str"
         else
             return false
 
@@ -1517,7 +1515,7 @@ def isString(t: Type_): bool
 # The pseudo-class an `extend <Builtin>` block registers under: "" for a target that is
 # not one of the builtins the tables cover.
 def extendKeyFor(target: str): str
-    if target == "String" or target == "str"
+    if target == "str"
         return "$extend:str"
     if target == "List"
         return "$extend:List"
