@@ -51,7 +51,13 @@ top-level def no longer takes the function's address (BUG-427); macOS builds are
 longer marked experimental (the rc2 smoke ran green on `macos-latest`); **the `String`
 alias of `str` is removed** (2026-09-15, Sean: "nuke String") — one type, one spelling;
 the parser refuses `String` wherever a type is read and names `str` (rewrite is the one
-token; `extend String` → `extend str`).
+token; `extend String` → `extend str`); **`b.requires("^1.0")`** — a build.zbr states the
+compiler range it was tested against and is refused by name, in the front end, outside it
+(surface: +1 Build method); **the runtime object receivers are closed tables** (Timer,
+StringBuilder, SysProcess, Build/BuildTarget, Ws/Tcp/Udp conns, Sqlite*, CodeEditor, Gui,
+HttpRequest, Chan, Regex): an unknown method is a Zebra refusal naming the set, not a Zig
+error (surface: +16 receivers / +133 methods, all derived); it found QUICKSTART's
+`t.elapsedMs()` naming a method that never existed (`elapsed()`).
 
 ## [0.15] — 2026-05 (in progress)
 

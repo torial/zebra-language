@@ -703,6 +703,12 @@ smoke_run_bootstrap() {
 smoke_run_bootstrap test/build_smoke_test.zbr "build api: ok"
 # Declarative style: same API surface but no b.run() call (auto-run injected by `zebra build`).
 smoke_run_bootstrap test/build_declarative_test.zbr "build declarative: ok"
+# b.requires("RANGE"), the project-side version pin (2026-09-15): the satisfied forms
+# run; the unsatisfiable `^99.0` is refused by name (fail fixture) -- and through the
+# real `zebra build` path in tools/cli_check.sh.
+smoke_run test/build_requires_test.zbr "build requires: ok"
+smoke_tc_fail test/fail_fixtures/build_requires_rejected_test.zbr \
+    "requires Zebra ^99.0 but this compiler is"
 
 # List(^T).add(val) auto-boxing: struct values heap-boxed when stored in List(^T).
 smoke test/list_ref_autobox_test.zbr
@@ -1317,6 +1323,12 @@ smoke_tc_fail test/fail_fixtures/str_plus_number_rejected_test.zbr \
 # The parser refuses the old name wherever a type is read, naming `str`.
 smoke_tc_fail test/fail_fixtures/string_alias_rejected_test.zbr \
     "\`String\` is not a Zebra type: write \`str\`"
+
+# 2026-09-15: the runtime object receivers (Timer, StringBuilder, Chan, Sqlite*, Tcp/Udp/Ws
+# conns, Build/BuildTarget, CodeEditor, Gui, HttpRequest, Regex) are closed tables. The
+# fixture's `t.elapsedMs()` is the name QUICKSTART documented and the compiler never had.
+smoke_tc_fail test/fail_fixtures/runtime_receiver_unknown_method_test.zbr \
+    "'Timer' has no method 'elapsedMs' (elapsed/elapsedMicros/reset)"
 
 # BUG-220: a top-level `def` whose name matches a preamble parameter/local used to
 # fail to compile (15 of 16 everyday names — count, data, total, buf, body, color).

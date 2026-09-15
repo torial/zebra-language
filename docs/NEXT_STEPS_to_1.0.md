@@ -77,7 +77,11 @@ PROMISE, which §15 says is the open act.
    If rc2's macOS leg was green, the note is stale and the flag can flip; if it was not,
    1.0 should say two platforms, not three-with-an-asterisk. Either way it is a decision
    the queue does not currently hold.
-7. **The bootstrap sunset needs a 1.0 decision, not a trend line.** The selfhost is the
+7. **The bootstrap sunset needs a 1.0 decision, not a trend line.** DECIDED 2026-09-15:
+   (a), plan in `docs/design/bootstrap_sunset.md` -- which also corrects this entry: the
+   selfhost has been its own regen authority since 2026-08-30 (`rebuild.sh` regenerates
+   with `zebra.exe`); what the bootstrap still is, is `selfhost-div`'s witness and three
+   delegated flags. Was: The selfhost is the
    shipping compiler; the FROZEN bootstrap is still the regen authority and
    `selfhost-div`'s only independent witness. A 1.0 that ships two compilers with the
    primary one unable to regenerate itself is a fact the release notes have to explain.
@@ -89,6 +93,25 @@ PROMISE, which §15 says is the open act.
    editor extensions beyond the LSP and zebra-ide (a TextMate/tree-sitter grammar is a
    two-hour adoption item worth doing anyway), no Zig-version portability (a release is
    pinned to the Zig it bundles, which is the right answer and should be stated).
+
+DECISIONS 2026-09-15 (Sean, on the 2026-09-14 read above and the surface measurement):
+- **`String` alias removed** ("Your str case wins! Let's nuke String"). DONE 2026-09-15:
+  the parser refuses `String` wherever a type is read (`eatTypeName`, so annotations,
+  generics args and `extend` targets all hit one line) naming `str`; every alias
+  site in selfhost/*.zbr is gone (the BUG-425 canonicalisation flips to "str" as the
+  only key; `_ext_str_*` is the emitted name); 18 corpus files and `selfhost/Ast.zbr`
+  (89 annotations) rewritten mechanically; fixture
+  `test/fail_fixtures/string_alias_rejected_test.zbr`; QUICKSTART §3 row dropped.
+  The bootstrap (`src/`) keeps accepting the alias only because it is retiring (next).
+- **Item 7 → (a)**: the selfhost becomes regen authority and the bootstrap is retired
+  ("Let's move to no bootstrap. Worth the effort imo"). Plan: `docs/design/bootstrap_sunset.md`.
+- **Item 3 → `b.requires("^1.0")`** on the Build object in `build.zbr`, compared to
+  `_zbr_version`, refused by name with `zebra up` as the suggested fix.
+- **Open receiver tables** (the ~16 stdlib runtime object types whose instance methods
+  the generic dispatch passes through unguarded): close them via the BUG-369 recipe
+  ("resolving in general also gives us better -c coverage"), and teach
+  `surface_inventory.py` to derive them, so `docs/SURFACE.md` §2's "not yet in the
+  derived set" paragraph shrinks to arities.
 
 ORDERING CHANGE among existing items: the **warning tier** (below) moves from "several
 items need it" to "the freeze needs it" (item 4). The **trip test** stays where its own

@@ -1,0 +1,14 @@
+# b.requires out of range -- refused in the front end, by name, with the fix.
+#
+#   build_requires_rejected_test.zbr:N:C: error: this project requires Zebra ^99.0 but
+#   this compiler is X.Y.Z -- run `zebra up` (or `zebra up --to VERSION`), or change
+#   b.requires if the project has been retested
+#
+# `^99.0` is unsatisfiable by construction so the fixture never has to move. The check
+# runs while COMPILING build.zbr (a string literal is required for exactly that reason),
+# so `-c` sees it and no build program is ever run under the wrong compiler.
+def main()
+    var b = Build.new()
+    b.requires("^99.0")
+    var app = b.exe("never", "test/toplevel_main_test.zbr")
+    b.run()

@@ -2826,6 +2826,16 @@ b.exe("app", "src/main.zbr").platform("aarch64-linux").option("optimize", "Relea
 | `target.option(key, val)` | Pass a build option through to zig |
 | `target.linkLib(other)` | Record a lib dependency edge |
 | `b.dependency(name, ver)` | Stub for future package manager |
+| `b.requires(range)` | Refuse to build under a compiler outside `range` (see below) |
+
+**`b.requires("^1.0")` — the version a project was tested against.** The compiler that
+compiles `build.zbr` checks its own version against the literal range *in the front end*
+(so `zebra -c build.zbr` sees it and no build program ever runs under the wrong compiler)
+and refuses by name: `this project requires Zebra ^1.0 but this compiler is 0.9.0 -- run
+\`zebra up\``. Ranges: `^X.Y[.Z]` same major, at least X.Y.Z (major 0: same minor);
+`~X.Y[.Z]` same major.minor; `>=X.Y[.Z]`; `X.Y[.Z]` exact. A prerelease tag on the
+installed compiler is ignored (0.9.0-rc2 satisfies `^0.9`). The argument must be a string
+literal.
 
 ### `zebra repl` — interactive REPL
 
@@ -3589,7 +3599,7 @@ r.close()
 | `Mime.lookup(filename)`           | str          | MIME type by extension                       |
 | `Uri.parse(s)`                    | `UriResult?` | Scheme/host/path/query/fragment              |
 | `Terminal.clearScreen()` etc.     | void         | ANSI helpers                                 |
-| `Timer.start()`                   | `Timer`      | `t.elapsedMs()` for measurement              |
+| `Timer.start()`                   | `Timer`      | `t.elapsed()` ms as float; `t.elapsedMicros()` int; `t.reset()` |
 
 ### `Compress` — gzip compression
 

@@ -1545,6 +1545,65 @@ def setMethodKnown(name: str): bool
 def jsonMethodKnown(name: str): bool
     return name == "at" or name == "keys" or name == "values" or name == "entries" or name == "getStr" or name == "getInt" or name == "getFloat" or name == "getBool" or name == "getList" or name == "getObj" or name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify" or name == "toString" or name == "put" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "append" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
 
+# ── The runtime OBJECT receivers (2026-09-15, Sean: "resolving in general also gives us
+# better -c coverage") ─────────────────────────────────────────────────────────────────
+# Until this date the generic instance dispatch let an unknown method on any of these
+# reach zig. Each table below is DERIVED from the compiler's own dispatch (every name a
+# TypeChecker or CodeGen arm for the type compares against, the GuiContext struct's pub
+# fns across the tui/libui_ng/stub backends, the Build/BuildTarget generators) and
+# cross-checked against QUICKSTART's tables -- which is how QUICKSTART's `t.elapsedMs()`
+# was found to name a method that never existed (`elapsed()` is the millisecond timer).
+# The corpus sweep and zebra-ide's `-c` sweep are the controls. `tools/surface_inventory.py`
+# reads these predicates, so each is a promised set with a diff.
+
+def timerMethodKnown(name: str): bool
+    return name == "elapsed" or name == "elapsedMicros" or name == "reset"
+
+def regexMethodKnown(name: str): bool
+    return name == "match" or name == "test" or name == "find" or name == "findAll" or name == "replace" or name == "split" or name == "groups"
+
+def codeEditorMethodKnown(name: str): bool
+    return name == "setText" or name == "getText" or name == "setReadOnly" or name == "render" or name == "restyle" or name == "setErrorMarkers" or name == "setLanguage" or name == "getLanguage" or name == "getCursorLine" or name == "getCursorCol" or name == "setCursorPosition" or name == "sci" or name == "sciStr" or name == "hotkey" or name == "takeModified" or name == "takeCharAdded" or name == "takeMarginClick" or name == "takeKey"
+
+def stringBuilderMethodKnown(name: str): bool
+    return name == "append" or name == "appendChar" or name == "add" or name == "build" or name == "toString" or name == "clear" or name == "len"
+
+def sysProcessMethodKnown(name: str): bool
+    return name == "isRunning" or name == "alive" or name == "kill" or name == "write" or name == "readAvailable" or name == "readErrAvailable" or name == "closeStdin" or name == "exitCode"
+
+def buildMethodKnown(name: str): bool
+    return name == "exe" or name == "lib" or name == "test_" or name == "target" or name == "run" or name == "dependency" or name == "requires"
+
+def buildTargetMethodKnown(name: str): bool
+    return name == "linkLib" or name == "platform" or name == "option"
+
+def wsConnMethodKnown(name: str): bool
+    return name == "send" or name == "recv" or name == "close"
+
+def tcpConnMethodKnown(name: str): bool
+    return name == "write" or name == "read" or name == "readAll" or name == "readLine" or name == "readBytes" or name == "close"
+
+def udpSocketMethodKnown(name: str): bool
+    return name == "send" or name == "recv" or name == "close"
+
+def sqliteDbMethodKnown(name: str): bool
+    return name == "exec" or name == "query" or name == "begin" or name == "commit" or name == "rollback" or name == "close"
+
+def sqliteRowMethodKnown(name: str): bool
+    return name == "asInt" or name == "asStr" or name == "asFloat" or name == "asBool"
+
+def sqliteRowListMethodKnown(name: str): bool
+    return name == "at" or name == "count" or name == "len"
+
+def guiMethodKnown(name: str): bool
+    return name == "send" or name == "text" or name == "separator" or name == "sameLine" or name == "spacing" or name == "indent" or name == "unindent" or name == "button" or name == "buttonId" or name == "checkbox" or name == "slider" or name == "input" or name == "inputMultiline" or name == "selectable" or name == "textColored" or name == "beginTable" or name == "tableSetupColumn" or name == "tableHeadersRow" or name == "tableNextRow" or name == "tableNextColumn" or name == "endTable" or name == "childWindow" or name == "treeNode" or name == "treePop" or name == "setColor" or name == "setColorsDark" or name == "setStyleFloat" or name == "setVec2" or name == "scaleAllSizes" or name == "getDpi" or name == "panel" or name == "window" or name == "beginHBox" or name == "endHBox" or name == "beginVBox" or name == "endVBox" or name == "beginTabs" or name == "beginTabPage" or name == "endTabPage" or name == "endTabs" or name == "vbox" or name == "hbox" or name == "progressBar" or name == "combobox" or name == "spinbox" or name == "openFile" or name == "saveFile" or name == "openFolder" or name == "msgBox" or name == "msgBoxError"
+
+def httpRequestMethodKnown(name: str): bool
+    return false   # no methods: method/path/content/query are FIELDS
+
+def chanMethodKnown(name: str): bool
+    return name == "send" or name == "recv" or name == "tryRecv" or name == "recvTimeout" or name == "close"
+
 def stringMethodReturn(name: str): Type_?
     if name == "trim" or name == "trimLeft" or name == "trimRight"
         return Type_.string_
@@ -1613,6 +1672,91 @@ def stringMethodReturn(name: str): Type_?
     if name == "decodeBase64" or name == "encodeBase64"
         return Type_.string_
     return nil
+
+# ── b.requires("^1.0"): the project-side version pin ─────────────────────────
+# NEXT_STEPS_to_1.0 item 3 (Sean 2026-09-15: "I like the b.require approach"). A
+# build.zbr states the compiler range it was tested against; the compiler that
+# compiles it refuses, by name, when it is outside the range, and suggests `zebra up`.
+# The check is a FRONT-END check on a string literal (so `-c` sees it and the LSP can
+# show it), not a runtime one: the compiled build program would already be the wrong
+# compiler's output. The literal is required for that reason.
+#
+# Spec grammar (npm-shaped, the subset people actually write):
+#   ^X.Y[.Z]   same major, at least X.Y.Z   (major 0: same minor, at least the patch)
+#   ~X.Y[.Z]   same major.minor, at least Z
+#   >=X.Y[.Z]  at least
+#   X.Y[.Z]    exactly (also `=X.Y.Z`)
+# A prerelease tag on the INSTALLED version is dropped: 0.9.0-rc2 counts as 0.9.0, so a
+# release candidate satisfies the range its release will. Missing parts are 0.
+def semverParts(v: str): List(int)
+    var core: str = v
+    var dash: int = core.indexOf("-")
+    if dash >= 0
+        core = core.substring(0, dash)
+    var out: List(int) = List(int)()
+    for p in core.split(".")
+        var n: int? = p.trim().tryInt()
+        if n as nv
+            out.add(nv)
+        else
+            out.add(0)
+    while out.len < 3
+        out.add(0)
+    return out
+
+# -1 / 0 / 1 on the first three parts.
+def semverCmp(a: List(int), b: List(int)): int
+    var i: int = 0
+    while i < 3
+        if a.at(i) < b.at(i)
+            return -1
+        if a.at(i) > b.at(i)
+            return 1
+        i = i + 1
+    return 0
+
+# true when the installed version is inside the range (the spec is assumed well-formed;
+# semverSpecOk gates it).
+def semverSatisfies(installed: str, spec: str): bool
+    var sp: str = spec.trim()
+    var op: str = ""
+    if sp.startsWith(">=")
+        op = ">="
+        sp = sp.substring(2, sp.len)
+    else if sp.startsWith("^") or sp.startsWith("~") or sp.startsWith("=")
+        op = sp.substring(0, 1)
+        sp = sp.substring(1, sp.len)
+    var want: List(int) = semverParts(sp)
+    var have: List(int) = semverParts(installed)
+    var c: int = semverCmp(have, want)
+    if op == ">="
+        return c >= 0
+    if op == "^"
+        if c < 0
+            return false
+        if want.at(0) == 0
+            return have.at(0) == 0 and have.at(1) == want.at(1)
+        return have.at(0) == want.at(0)
+    if op == "~"
+        return c >= 0 and have.at(0) == want.at(0) and have.at(1) == want.at(1)
+    return c == 0
+
+# A spec is well-formed when, after the operator, it is 1-3 dot-separated integers.
+def semverSpecOk(spec: str): bool
+    var sp: str = spec.trim()
+    if sp.startsWith(">=")
+        sp = sp.substring(2, sp.len)
+    else if sp.startsWith("^") or sp.startsWith("~") or sp.startsWith("=")
+        sp = sp.substring(1, sp.len)
+    if sp.len == 0
+        return false
+    var parts: List(str) = sp.split(".")
+    if parts.len > 3
+        return false
+    for p in parts
+        if p.tryInt() == nil
+            return false
+    return true
 
 # ── Stdlib arity checking (#5a) ──────────────────────────────────────────────
 # Data source: tools/stdlib_arity.tsv, where EVERY row was compiled against the
@@ -2824,6 +2968,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                            "'str' has no method '" + mem.member + "' (see QUICKSTART §14 for the string methods)")
                                 return Type_.unknown_
                         on Type_.timer_handle
+                            if not timerMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'Timer' has no method '" + mem.member + "' (elapsed/elapsedMicros/reset)")
+                                return Type_.unknown_
                             var tmname: str = mem.member
                             if tmname == "elapsed"
                                 return Type_.float_
@@ -2832,6 +2980,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if tmname == "reset"
                                 return Type_.void_
                         on Type_.regex
+                            if not regexMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'Regex' has no method '" + mem.member + "' (match/test/find/findAll/replace/split/groups)")
+                                return Type_.unknown_
                             var mname: str = mem.member
                             if mname == "find" or mname == "replace"
                                 return Type_.string_
@@ -2839,12 +2991,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.bool_
                             if mname == "findAll" or mname == "groups" or mname == "split"
                                 return Type_.list_(Type_.string_)
-                            # BUG-393: `matches` / `replaceAll` passed -c and failed in
-                            # Zig ("no field or member function"). The Regex method set
-                            # is QUICKSTART's table; name it.
-                            ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'Regex' has no method '" + mname + "' (match/test/find/findAll/replace/split/groups)")
-                            return Type_.unknown_
+                            # BUG-393 (`matches`/`replaceAll` reached zig) is what regexMethodKnown above refuses.
                         on Type_.code_editor
+                            if not codeEditorMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'CodeEditor' has no method '" + mem.member + "' (setText/getText/setReadOnly/render/restyle/setErrorMarkers/setLanguage/getLanguage/getCursorLine/getCursorCol/setCursorPosition/sci/sciStr/hotkey/takeModified/takeCharAdded/takeMarginClick/takeKey)")
+                                return Type_.unknown_
                             # BUG-212, second half. `_code_editor_get_text` returns
                             # []const u8, but with no TC type for the call the interpolator
                             # picked {any} and printed a BYTE ARRAY -- `{ 104, 105 }` for
@@ -2870,6 +3022,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if cemn == "hotkey"
                                 return Type_.void_
                         on Type_.string_builder
+                            if not stringBuilderMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'StringBuilder' has no method '" + mem.member + "' (append/appendChar/add/build/toString/clear/len)")
+                                return Type_.unknown_
                             var sbmname: str = mem.member
                             if sbmname == "build" or sbmname == "toString"
                                 return Type_.string_
@@ -2890,6 +3046,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                        "'StringBuilder' has no '" + sbmname + "'" + sb_hint + " -- methods are append, appendChar, clear, len, build, toString")
                             return Type_.unknown_
                         on Type_.sys_process
+                            if not sysProcessMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'SysProcess' has no method '" + mem.member + "' (isRunning/alive/kill/write/readAvailable/readErrAvailable/closeStdin/exitCode)")
+                                return Type_.unknown_
                             var pmname: str = mem.member
                             if pmname == "pid"
                                 return Type_.int_
@@ -2908,34 +3068,82 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if pmname == "closeStdin"
                                 return Type_.void_
                         on Type_.build_ctx
+                            if not buildMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'Build' has no method '" + mem.member + "' (exe/lib/test_/target/run/dependency/requires)")
+                                return Type_.unknown_
                             var bcmname: str = mem.member
                             if bcmname == "exe" or bcmname == "lib" or bcmname == "test_" or bcmname == "target"
                                 return Type_.build_target
+                            if bcmname == "requires"
+                                # The project-side version pin (see semverSatisfies). Checked
+                                # HERE, against the compiler doing the compiling.
+                                var installed_v: str = zig"_zbr_version"
+                                if c.args.len != 1
+                                    ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                               "b.requires takes one string literal, the compiler range this project was tested against, e.g. b.requires(\"^1.0\")")
+                                    return Type_.void_
+                                if c.args.at(0).value is Expr.string_lit as req_lit
+                                    var req_spec: str = req_lit.text
+                                    if not semverSpecOk(req_spec)
+                                        ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                                   "b.requires(\"" + req_spec + "\"): not a version range; write ^X.Y, ~X.Y.Z, >=X.Y.Z or X.Y.Z")
+                                    else if not semverSatisfies(installed_v, req_spec)
+                                        ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                                   "this project requires Zebra " + req_spec + " but this compiler is " + installed_v + " -- run `zebra up` (or `zebra up --to VERSION`), or change b.requires if the project has been retested")
+                                else
+                                    ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                               "b.requires takes a string LITERAL (the check happens at compile time, before the build program exists)")
+                                return Type_.void_
                             return Type_.void_  # run(), dependency()
                         on Type_.build_target
+                            if not buildTargetMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'BuildTarget' has no method '" + mem.member + "' (linkLib/platform/option)")
+                                return Type_.unknown_
                             return Type_.build_target  # linkLib, platform, option chain back to self
                         on Type_.ws_conn
+                            if not wsConnMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'WsConn' has no method '" + mem.member + "' (send/recv/close)")
+                                return Type_.unknown_
                             var wsmname: str = mem.member
                             if wsmname == "send" or wsmname == "close"
                                 return Type_.void_
                             if wsmname == "recv"
                                 return Type_.optional(Type_.string_)
                         on Type_.tcp_conn
+                            if not tcpConnMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'TcpConn' has no method '" + mem.member + "' (write/read/readAll/readLine/readBytes/close)")
+                                return Type_.unknown_
                             var tcpmname: str = mem.member
                             if tcpmname == "read" or tcpmname == "readAll" or tcpmname == "readLine" or tcpmname == "readBytes"
                                 return Type_.string_
                             return Type_.void_  # write, close
                         on Type_.udp_socket
+                            if not udpSocketMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'UdpSocket' has no method '" + mem.member + "' (send/recv/close)")
+                                return Type_.unknown_
                             var udpmname: str = mem.member
                             if udpmname == "recv"
                                 return Type_.string_
                             return Type_.void_  # send, close
                         on Type_.sqlite_db
+                            if not sqliteDbMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'SqliteDb' has no method '" + mem.member + "' (exec/query/begin/commit/rollback/close)")
+                                return Type_.unknown_
                             var sqmname: str = mem.member
                             if sqmname == "query"
                                 return Type_.sqlite_row_list  # iterable; for-in yields sqlite_row
                             return Type_.void_  # exec, begin, commit, rollback, close
                         on Type_.sqlite_row
+                            if not sqliteRowMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'SqliteRow' has no method '" + mem.member + "' (asInt/asStr/asFloat/asBool)")
+                                return Type_.unknown_
                             var sqrmname: str = mem.member
                             if sqrmname == "asInt" or sqrmname == "asBool"
                                 return Type_.int_
@@ -2945,6 +3153,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.float_
                             return Type_.unknown_
                         on Type_.sqlite_row_list
+                            if not sqliteRowListMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'SqliteRowList' has no method '" + mem.member + "' (at/count/len)")
+                                return Type_.unknown_
                             # A query result (`db.query(...)`) is a materialized,
                             # random-accessible row list, so `.at(i)` yields a
                             # `sqlite_row` (whose `.asInt`/`.asStr`/`.asFloat` then
@@ -2959,6 +3171,16 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.sqlite_row
                             if sqlmname == "count" or sqlmname == "len"
                                 return Type_.int_
+                        on Type_.gui_context
+                            if not guiMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'Gui' has no method '" + mem.member + "' (QUICKSTART §30 lists the Gui widget calls)")
+                                return Type_.unknown_
+                        on Type_.http_request
+                            if not httpRequestMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'HttpRequest' has no method '" + mem.member + "' (it has no methods; method/path/content/query are fields)")
+                                return Type_.unknown_
                         on Type_.list_ as list_elem
                             var lmname: str = mem.member
                             # BUG-314: mutating a COPY of a nested container is silently lost.
@@ -2995,6 +3217,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                            "'List' has no method '" + lmname + "' (add/at/set/remove/count/contains/find/any/all/map/filter/reduce/sort/sortBy/reverse/clear/join)")
                                 return Type_.unknown_
                         on Type_.chan_ as chan_elem
+                            if not chanMethodKnown(mem.member)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'Chan(T)' has no method '" + mem.member + "' (send/recv/tryRecv/recvTimeout/close)")
+                                return Type_.unknown_
                             var cmname: str = mem.member
                             if cmname == "recv" or cmname == "tryRecv" or cmname == "recvTimeout"
                                 return Type_.optional(chan_elem)

@@ -29,9 +29,13 @@ after 1.0 is a promise change and needs, in the same commit, a `CHANGELOG.md` li
 for a removal — the deprecation steps in §4.
 
 **Not yet in the derived set, and therefore covered only by QUICKSTART's word until the
-tool learns to see them:** instance methods on the runtime object types (`DateTime`,
-`Regex`, connections, GUI widgets, `File` handles), argument arities and types. Closing
-that gap is a pre-1.0 task on the tool, not a reason to promise less.
+tool learns to see them:** instance methods on the runtime object types that have no
+`Type_` variant of their own (`DateTime`, `File` handles, `HttpResponse`, the GUI widget
+structs), argument arities and types. The sixteen types that do have a variant (`Regex`,
+`Timer`, `StringBuilder`, `SysProcess`, `Build`/`BuildTarget`, the `Ws`/`Tcp`/`Udp`
+connections, `Sqlite*`, `CodeEditor`, `Gui`, `HttpRequest`, `Chan(T)`) were closed on
+2026-09-15 and are in the derived set. Closing the rest is a pre-1.0 task on the tool,
+not a reason to promise less.
 
 ## 3. What is NOT frozen — say it, so absence reads as a decision
 

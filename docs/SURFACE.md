@@ -75,6 +75,70 @@ named in the tool's header; what it cannot see is listed there too.
 
 `append` `appendBool` `appendFloat` `appendInt` `at` `entries` `getBool` `getFloat` `getInt` `getList` `getObj` `getStr` `isArray` `isNull` `isObject` `keys` `put` `putBool` `putFloat` `putInt` `stringify` `toString` `values`
 
+### Regex (7)
+
+`find` `findAll` `groups` `match` `replace` `split` `test`
+
+### Timer (3)
+
+`elapsed` `elapsedMicros` `reset`
+
+### StringBuilder (7)
+
+`add` `append` `appendChar` `build` `clear` `len` `toString`
+
+### SysProcess (8)
+
+`alive` `closeStdin` `exitCode` `isRunning` `kill` `readAvailable` `readErrAvailable` `write`
+
+### Build (7)
+
+`dependency` `exe` `lib` `requires` `run` `target` `test_`
+
+### BuildTarget (3)
+
+`linkLib` `option` `platform`
+
+### WsConn (3)
+
+`close` `recv` `send`
+
+### TcpConn (6)
+
+`close` `read` `readAll` `readBytes` `readLine` `write`
+
+### UdpSocket (3)
+
+`close` `recv` `send`
+
+### SqliteDb (6)
+
+`begin` `close` `commit` `exec` `query` `rollback`
+
+### SqliteRow (4)
+
+`asBool` `asFloat` `asInt` `asStr`
+
+### SqliteRowList (3)
+
+`at` `count` `len`
+
+### CodeEditor (18)
+
+`getCursorCol` `getCursorLine` `getLanguage` `getText` `hotkey` `render` `restyle` `sci` `sciStr` `setCursorPosition` `setErrorMarkers` `setLanguage` `setReadOnly` `setText` `takeCharAdded` `takeKey` `takeMarginClick` `takeModified`
+
+### Gui (50)
+
+`beginHBox` `beginTabPage` `beginTable` `beginTabs` `beginVBox` `button` `buttonId` `checkbox` `childWindow` `combobox` `endHBox` `endTabPage` `endTable` `endTabs` `endVBox` `getDpi` `hbox` `indent` `input` `inputMultiline` `msgBox` `msgBoxError` `openFile` `openFolder` `panel` `progressBar` `sameLine` `saveFile` `scaleAllSizes` `selectable` `send` `separator` `setColor` `setColorsDark` `setStyleFloat` `setVec2` `slider` `spacing` `spinbox` `tableHeadersRow` `tableNextColumn` `tableNextRow` `tableSetupColumn` `text` `textColored` `treeNode` `treePop` `unindent` `vbox` `window`
+
+### HttpRequest (no methods; fields) (0)
+
+
+
+### Chan(T) (5)
+
+`close` `recv` `recvTimeout` `send` `tryRecv`
+
 ## Namespaces (31) and static members (171; 1 namespace(s) OPEN: Math)
 
 ### Arg (1) <!-- genArgCall -->

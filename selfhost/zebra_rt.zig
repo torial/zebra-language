@@ -1296,6 +1296,10 @@ pub fn _build_target_option(t: *_BuildTarget, _k: []const u8, _v: []const u8) *_
     _ = _k; _ = _v; return t;
 }
 pub fn _build_dep_stub(_n: []const u8, _v: []const u8) void { _ = _n; _ = _v; }
+/// `b.requires("^1.0")`: the version range is checked by the COMPILER's front end (a
+/// build program that reached this line was compiled by a compiler in range), so the
+/// runtime side is a marker only.
+pub fn _build_requires(_b: *_Build, _spec: []const u8) void { _ = _b; _ = _spec; }
 pub fn _build_target_by_name(b: *_Build, name: []const u8) *_BuildTarget {
     for (b.targets.items) |t| {
         if (std.mem.eql(u8, t.name, name)) return t;

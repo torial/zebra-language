@@ -162,6 +162,34 @@ chk "\`zebra up\` outside an installed layout REFUSES by name, before any downlo
     "$([ "$RC" = 2 ] && case "$ERR" in *"REFUSING"*"not an installed release"*) echo 0;; *) echo 1;; esac || echo 1)" \
     "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
 
+# ---- `b.requires("^99.0")` (2026-09-15): the project-side version pin ----------------
+# NEXT_STEPS_to_1.0 item 3. A build.zbr states the compiler range it was tested against
+# and the compiler REFUSES, by name, when it is outside it -- in the FRONT END (a string
+# literal, checked while compiling build.zbr), so `zebra build` never runs a build program
+# under the wrong compiler. `^99.0` can never be satisfied, which makes the leg
+# deterministic across every release; the satisfied form (`^0.9`) is covered by
+# test/build_requires_test.zbr in the smoke. The suggested fix is `zebra up`.
+mkdir -p "$W/proj_req"
+cat > "$W/proj_req/app.zbr" <<'ZBR'
+def main()
+    print("app ran")
+ZBR
+cat > "$W/proj_req/build.zbr" <<'ZBR'
+def main()
+    var b = Build.new()
+    b.requires("^99.0")
+    var app = b.exe("demo", "app.zbr")
+    b.run()
+ZBR
+( cd "$W/proj_req" && timeout "$TMO" "$ZEBRA" build >"$O" 2>"$E" </dev/null )
+RC=$?; ERR=$(tr -d '' < "$E")
+chk "\`zebra build\` REFUSES a build.zbr whose b.requires range excludes this compiler, naming both and \`zebra up\`" \
+    "$([ "$RC" != 0 ] && case "$ERR" in *"requires Zebra ^99.0"*"zebra up"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | grep -m1 requires)]"
+chk "  ... and no binary was produced (the refusal is in the front end, before any build runs)" \
+    "$([ ! -e "$W/proj_req/demo" ] && [ ! -e "$W/proj_req/demo.exe" ] && [ ! -e "$W/proj_req/zig-out/bin/demo" ] && [ ! -e "$W/proj_req/zig-out/bin/demo.exe" ] && echo 0 || echo 1)" \
+    "files=[$(ls "$W/proj_req" | tr '\n' ' ')]"
+
 # ---- `zebra test --list` / `--only` (zebra-ide's tests pane, 2026-09-09) -----------
 # `--list` is front-end only: label<TAB>line per test that WOULD run, from the harness's
 # own inclusion rule, so the list and the run cannot disagree. A test with a parameter

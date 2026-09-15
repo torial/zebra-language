@@ -403,7 +403,7 @@ a session arriving cold can tell what to *skip* rather than guessing:
 | `design` | a design/decision note | read only when touching that subsystem; may describe intent that is not built. Each carries its own `Status:` line |
 | `generated` | produced by a tool | **skip.** Edit the tool, not the file |
 
-**6 of the 39 documents are `historical` or `generated`** <!-- doc-gen: 39 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> <!-- doc-gen: 6 = for f in *.md docs/*.md docs/design/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
+**6 of the 40 documents are `historical` or `generated`** <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> <!-- doc-gen: 6 = for f in *.md docs/*.md docs/design/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
 i.e. skippable with confidence. That is the point: the surface area of this repo's
 documentation is what let one wrong claim live in four files at once, and "which of these
 is current?" was previously answerable only by reading them.
@@ -847,12 +847,19 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   smaller file -- verified by renaming genMimeCall.
                                 #   Red-checked three ways: a doc edit, a compiler table
                                 #   edit (`str: -trimLeft`), an extractor break.
-                                #   CANNOT SEE: instance methods on the runtime OBJECT
-                                #   types (DateTime, Regex, connections, GUI widgets --
-                                #   per-type generators with no shared shape), arities,
-                                #   argument types, or semantics. The counts print every
+                                #   CANNOT SEE: instance methods on the runtime object
+                                #   types WITHOUT a Type_ variant (DateTime, File handles,
+                                #   HttpResponse, the GUI widget structs -- per-type
+                                #   generators with no shared shape), arities, argument
+                                #   types, or semantics. The 16 that HAVE a variant (Timer,
+                                #   StringBuilder, SysProcess, Build/BuildTarget, Ws/Tcp/Udp
+                                #   conns, Sqlite*, CodeEditor, Gui, HttpRequest, Chan,
+                                #   Regex) were closed 2026-09-15 by the BUG-369 recipe --
+                                #   a *MethodKnown predicate per type, derived from the
+                                #   dispatch arms, refusing unknown names in the front end
+                                #   -- and are derived here since. The counts print every
                                 #   run. 79 keywords (81 until defer/errdefer were freed), 31 namespaces / 171 members,
-                                #   5 receivers / 120 methods on the day it was written.
+                                #   21 receivers / 253 methods (5 / 120 on the day it was written).
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
                                 #   224 fenced `zebra` blocks existed and NOTHING verified
@@ -2076,12 +2083,12 @@ than "what do we know":
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
 | **our own tools are not lying** | `hazard_lint` (+ its controls) | 106 scripts | <!-- doc-gen: 106 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
-| docs' checkable claims still resolve | `doc_lint` | 39 tracked documents <!-- doc-gen: 39 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
+| docs' checkable claims still resolve | `doc_lint` | 40 tracked documents <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 79 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords × both compilers |
-| **the docs' EXAMPLES actually parse** | `doc_example_check` | `live` docs only; the gate prints its own block and doc counts | <!-- doc-gen: 39 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' -->
+| **the docs' EXAMPLES actually parse** | `doc_example_check` | `live` docs only; the gate prints its own block and doc counts | <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
 
@@ -2687,7 +2694,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **637** <!-- doc-gen: 637 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **638** <!-- doc-gen: 638 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

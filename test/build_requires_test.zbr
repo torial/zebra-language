@@ -1,0 +1,19 @@
+# b.requires("RANGE") -- the project-side version pin (NEXT_STEPS_to_1.0 item 3,
+# 2026-09-15). The compiler compiling this file checks its own `_zbr_version`
+# against the literal range in the FRONT END and refuses by name when outside it
+# (tools/cli_check.sh has the refusing leg with `^99.0`; test/fail_fixtures/
+# build_requires_rejected_test.zbr pins the diagnostic text). This fixture is the
+# satisfied side: every form of range the check accepts, all satisfied by any 0.9.x
+# or later compiler... except the two exact/tilde forms, which are pinned to the
+# 0.9 line on purpose and must be BUMPED when `_zbr_version` leaves 0.9 -- that is
+# the fixture reminding us the check is real.
+def main()
+    var b = Build.new()
+    b.requires(">=0.9")
+    b.requires(">=0.9.0")
+    b.requires("^0.9")          # major 0: same minor, at least 0.9.0
+    b.requires("~0.9.0")        # same major.minor
+    b.requires("0.9.0")         # exact (a prerelease of 0.9.0 counts as 0.9.0)
+    b.requires("=0.9.0")
+    var app = b.exe("req_app", "test/toplevel_main_test.zbr")
+    print("build requires: ok")

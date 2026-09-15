@@ -1,0 +1,18 @@
+# 2026-09-15: the runtime OBJECT receivers are closed tables now (Timer, StringBuilder,
+# SysProcess, Build, BuildTarget, WsConn, TcpConn, UdpSocket, SqliteDb/Row/RowList,
+# CodeEditor, Gui, HttpRequest, Chan, Regex). Until this date an unknown method on any of
+# them passed `-c` and died inside zig with a diagnostic about generated code. Same
+# recipe as BUG-369 for str/List: the predicate in TypeChecker.zbr IS the surface, and
+# tools/surface_inventory.py derives docs/SURFACE.md from it.
+#
+#   runtime_receiver_unknown_method_test.zbr:N:C: error: 'Timer' has no method 'elapsedMs' (elapsed/elapsedMicros/reset)
+#
+# `elapsedMs` is not an invented name: QUICKSTART's Timer row documented it, and no
+# such method ever existed (`elapsed()` returns milliseconds). Closing the table is what
+# found the doc bug; the fixture keeps the pair honest in both directions.
+def main()
+    var t = Timer.start()
+    var ms = t.elapsedMs()
+    var sb = StringBuilder()
+    sb.appendLine("x")
+    print(ms)

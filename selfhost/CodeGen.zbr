@@ -17512,6 +17512,18 @@ struct Generator
             genExpr(obj)
             w.emit(")")
             return
+        if mname == "requires"
+            # Checked in the front end (TypeChecker: semverSatisfies); the emitted call is
+            # a no-op that keeps the statement a statement.
+            w.emit("_build_requires(")
+            genExpr(obj)
+            w.emit(", ")
+            if args.len >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
         if mname == "dependency"
             w.emit("_build_dep_stub(")
             if args.len >= 1

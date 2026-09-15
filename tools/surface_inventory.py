@@ -22,9 +22,10 @@ WHAT IT DERIVES, and from where (each an oracle the compiler already runs on):
                       method on these is REFUSED, so the predicate IS the surface.
 
 WHAT IT DOES NOT SEE (say it, or a clean run gets over-read): instance methods on the
-runtime OBJECT types (DateTime, Regex, TcpConn, File handles, GUI widgets ...) -- codegen
-dispatches those by name inside per-type generators with no shared shape, so they are not
-derived here yet; argument arities and types; semantics. The heading counts print every
+runtime object types that have NO Type_ variant of their own (DateTime, File handles,
+HttpResponse, the GUI widget structs) -- those still dispatch by name inside per-type
+generators; the 16 that do have a variant were closed 2026-09-15 and are derived above;
+argument arities and types; semantics. The heading counts print every
 run so a section that silently collapsed reads as a drop, not as a clean pass.
 
 REFUSES (exit 2) rather than reporting a match when a section falls under its floor: an
@@ -47,7 +48,7 @@ CODEGEN = REPO / "selfhost" / "CodeGen.zbr"
 CHECKER = REPO / "selfhost" / "TypeChecker.zbr"
 MAIN = REPO / "selfhost" / "main.zbr"
 
-FLOORS = dict(keywords=60, namespaces=25, members=150, receivers=5, receiver_methods=80,
+FLOORS = dict(keywords=60, namespaces=25, members=150, receivers=20, receiver_methods=220,
               cli_lines=30, flags=15)
 
 
@@ -151,7 +152,16 @@ def namespaces():
 # ---- builtin receiver methods -----------------------------------------------------------
 RECEIVERS = [("str", "strMethodKnown"), ("List(T)", "listMethodKnown"),
              ("HashMap(K, V)", "hashmapMethodKnown"), ("Set(T)", "setMethodKnown"),
-             ("JsonValue", "jsonMethodKnown")]
+             ("JsonValue", "jsonMethodKnown"),
+             # 2026-09-15: the runtime object receivers, closed the same way.
+             ("Regex", "regexMethodKnown"), ("Timer", "timerMethodKnown"),
+             ("StringBuilder", "stringBuilderMethodKnown"), ("SysProcess", "sysProcessMethodKnown"),
+             ("Build", "buildMethodKnown"), ("BuildTarget", "buildTargetMethodKnown"),
+             ("WsConn", "wsConnMethodKnown"), ("TcpConn", "tcpConnMethodKnown"),
+             ("UdpSocket", "udpSocketMethodKnown"), ("SqliteDb", "sqliteDbMethodKnown"),
+             ("SqliteRow", "sqliteRowMethodKnown"), ("SqliteRowList", "sqliteRowListMethodKnown"),
+             ("CodeEditor", "codeEditorMethodKnown"), ("Gui", "guiMethodKnown"),
+             ("HttpRequest (no methods; fields)", "httpRequestMethodKnown"), ("Chan(T)", "chanMethodKnown")]
 
 
 def receivers():
