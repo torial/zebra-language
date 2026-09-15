@@ -21,7 +21,7 @@ def sumViaForIn(): int throws
 
 def test_forin_over_throws_call()
     var got = sumViaForIn() catch 0
-    assert_eq got, 6
+    assert got == 6
 
 def main()
     print("forin_throws_test: run with 'zebra test'")

@@ -67,6 +67,13 @@ reading the book: guard "feels like it doesn't belong"): `guard` was `if not con
 second spelling and an `else,` comma form; `arena`'s construct had been removed long ago;
 `readonly` was parsed into a flag nothing read; `abstract` and `vari` were reserved for
 features never built (surface: −5 keywords, 74 now). Rewrite: `guard c else` → `if not c`.
+**`assert_eq`, `assert_ne`, `assert_true`, `assert_false` freed** (2026-09-15): one `assert`.
+A plain `assert a == b` (any of `== != < <= > >=`) now names both operands on failure —
+`assert failed at f.zbr:12: left == right -- left: 3, right: 4` — for every primitive
+kind, and for two sides the checker cannot type it decides by type at runtime (so
+`assert x == y` on untyped strings compares contents, as `assert_eq` did). Rewrite:
+`assert_eq a, b` → `assert a == b`; `assert_true e` → `assert e`; `assert_false e` →
+`assert not (e)` (surface: −4 keywords, 70 now).
 
 ## [0.15] — 2026-05 (in progress)
 

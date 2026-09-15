@@ -14,20 +14,20 @@ def test_fetch_method_chain()
     ys.add(8)
     ys.add(9)
     m.put("k", ys)
-    assert_eq m.fetch("k").at(1), 8
-    assert_eq m.fetch("k").at(2), 9
+    assert m.fetch("k").at(1) == 8
+    assert m.fetch("k").at(2) == 9
 
 def test_fetch_scalar_to_local()
     var m = HashMap(str, int)()
     m.put("x", 42)
     var v = m.fetch("x")
-    assert_eq v, 42
+    assert v == 42
 
 def test_fetch_str_value()
     var m = HashMap(str, str)()
     m.put("greet", "hello")
     var g = m.fetch("greet")
-    assert_eq g, "hello"
+    assert g == "hello"
 
 def main()
     print("hashmap_fetch_chain_test: run with 'zebra test'")

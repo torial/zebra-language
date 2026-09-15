@@ -25,15 +25,15 @@ def test_forwarded_list_param_mutates()
     var ys = List(int)()
     ys.add(1)
     forward(ys)
-    assert_eq ys.len, 2
-    assert_eq ys.at(1), 99
+    assert ys.len == 2
+    assert ys.at(1) == 99
 
 def test_cursor_forwarded_through_wrapper()
     var pos = List(int)()
     pos.add(0)
     cursorBump(pos)
     cursorBump(pos)
-    assert_eq pos.at(0), 2
+    assert pos.at(0) == 2
 
 def main()
     print("transitive_list_param_test: run with 'zebra test'")

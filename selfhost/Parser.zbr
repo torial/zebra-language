@@ -2278,14 +2278,6 @@ class Parser
             return .parseVarStmt(true)?
         else if .textIs("assert")
             return .parseAssertStmt()?
-        else if .textIs("assert_eq")
-            return .parseAssertCmpStmt(true)?
-        else if .textIs("assert_ne")
-            return .parseAssertCmpStmt(false)?
-        else if .textIs("assert_true")
-            return .parseAssertUnaryStmt(true)?
-        else if .textIs("assert_false")
-            return .parseAssertUnaryStmt(false)?
         else if .textIs("raise")
             return .parseRaiseStmt()?
 
@@ -2617,27 +2609,10 @@ class Parser
         .skipEol()
         return PNode.stmt_assert(PAssert(cond_list, msg_list, line, col))
 
-    def parseAssertCmpStmt(is_eq: bool): PNode throws
-        const line = .peek().line
-        const col = .peek().col
-        .advance()
-        const lhs = .parseExpr()?
-        .expectText(",")?
-        const rhs = .parseExpr()?
-        .skipEol()
-        if is_eq
-            return PNode.stmt_assert_eq(PAssertCmp(lhs, rhs, line, col))
-        return PNode.stmt_assert_ne(PAssertCmp(lhs, rhs, line, col))
-
-    def parseAssertUnaryStmt(is_true: bool): PNode throws
-        const line = .peek().line
-        const col = .peek().col
-        .advance()
-        const expr = .parseExpr()?
-        .skipEol()
-        if is_true
-            return PNode.stmt_assert_true(PAssertUnary(expr, line, col))
-        return PNode.stmt_assert_false(PAssertUnary(expr, line, col))
+    # parseAssertCmpStmt / parseAssertUnaryStmt were here until 2026-09-15: the four
+    # assert_* keywords are ordinary identifiers now; `assert a == b` prints both operands
+    # itself. PNode.stmt_assert_* / Stmt.assert_cmp / assert_unary and their walker arms
+    # are dead code until bootstrap_sunset.md Step 4 removes them.
 
     def parseRaiseStmt(): PNode throws
         const line = .peek().line

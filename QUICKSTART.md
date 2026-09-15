@@ -633,7 +633,7 @@ class Config
 
     @tag("unit", "fast")
     static def test_defaults()   # tagged for selective test runs
-        assert_eq .load(), "{}"
+        assert .load() == "{}"
 ```
 
 - **`@once`** — the first call executes the body and stores the result in a hidden
@@ -3864,30 +3864,32 @@ automatically discovered and run:
 
 ```zebra
 def test_addition()
-    assert_eq 1 + 1, 2
-    assert_ne 0, 1
+    assert 1 + 1 == 2
+    assert 0 != 1
 
 def test_strings()
-    assert_eq "hello", "hello"
-    assert_ne "foo", "bar"
+    assert "hello" == "hello"
+    assert "foo" != "bar"
 
 def test_booleans()
-    assert_true  5 > 3
-    assert_false 1 > 2
-    assert_true  not false
+    assert 5 > 3
+    assert not (1 > 2)
 ```
 
 ### Assert statements
 
-| Statement | Meaning |
-|-----------|---------|
-| `assert_eq <lhs>, <rhs>` | Fail unless `lhs == rhs` |
-| `assert_ne <lhs>, <rhs>` | Fail unless `lhs != rhs` |
-| `assert_true <expr>` | Fail unless `expr` is true |
-| `assert_false <expr>` | Fail unless `expr` is false |
+One statement, `assert <expr>` (optionally `assert <expr>, "message"`). When the
+expression is a comparison (`== != < <= > >=`) the failure names both sides:
 
-Each assert throws `error.ZebraError` on failure with a descriptive message.
-Test functions are automatically typed `anyerror!void` — no `throws` needed.
+```
+FAIL: test_addition: assert failed at math_test.zbr:2: left == right -- left: 3, right: 2
+```
+
+Inside a `test_*` function a failing assert is that test's verdict (`error.ZebraError`,
+the run continues); elsewhere it panics with the same text. Test functions are
+automatically typed `anyerror!void` — no `throws` needed. (`assert_eq`, `assert_ne`,
+`assert_true`, `assert_false` were keywords until 2026-09-15; they are ordinary
+identifiers now — rewrite `assert_eq a, b` as `assert a == b`.)
 
 ### Running tests
 
@@ -3902,7 +3904,7 @@ PASS: test_addition
 RUN: test_strings
 PASS: test_strings
 RUN: test_booleans
-FAIL: test_booleans: assert_true failed
+FAIL: test_booleans: assert failed at test_file.zbr:11: left > right -- left: 1, right: 2
 
 2 passed, 1 failed
 ```
@@ -3933,11 +3935,11 @@ Apply one or more string tags to a test function:
 ```zebra
 @tag("unit", "math")
 def test_addition()
-    assert_eq 1 + 1, 2
+    assert 1 + 1 == 2
 
 @tag("integration")
 def test_database()
-    assert_true db_ping()
+    assert db_ping()
 ```
 
 Run only the tests whose tags include a given value:
@@ -3959,7 +3961,7 @@ So given a file `math_test.zbr` containing:
 class Arithmetic
     @tag("unit")
     static def test_add()
-        assert_eq 2 + 2, 4
+        assert 2 + 2 == 4
 ```
 
 Running `zebra test --tag math_test` runs every test in the file; running

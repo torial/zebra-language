@@ -279,14 +279,6 @@ class Keywords
             return TokenKind.kw_implies()
         if word == "assert"
             return TokenKind.kw_assert()
-        if word == "assert_eq"
-            return TokenKind.kw_assert_eq()
-        if word == "assert_ne"
-            return TokenKind.kw_assert_ne()
-        if word == "assert_true"
-            return TokenKind.kw_assert_true()
-        if word == "assert_false"
-            return TokenKind.kw_assert_false()
         if word == "branch"
             return TokenKind.kw_branch()
         if word == "on"
@@ -351,6 +343,9 @@ class Keywords
             return TokenKind.kw_except()
         if word == "union"
             return TokenKind.kw_union()
+        # `assert_eq`, `assert_ne`, `assert_true` and `assert_false` left this table on
+        # 2026-09-15 too: four reserved words for what one `assert` does, now that a
+        # plain `assert a == b` prints both operands on failure (CodeGen.genAssertCmpShow).
         # `guard`, `arena`, `readonly`, `abstract` and `vari` left this table on
         # 2026-09-15 (Sean): guard was `if not` with a second spelling and an odd `else,`
         # form; arena's construct was removed long ago (`allocate Arena()`); readonly was

@@ -25,27 +25,27 @@ def test_list_len()
     xs.add("a")
     xs.add("b")
     xs.add("c")
-    assert_eq xs.len, 3
+    assert xs.len == 3
 
 def test_hashmap_len()
     var m = HashMap(str, int)()
     m.put("x", 1)
     m.put("y", 2)
-    assert_eq m.len, 2
+    assert m.len == 2
 
 def test_str_count_substring()
     # `str.count(sub)` is the substring-count method (kept), not a size accessor.
-    assert_eq "banana".count("a"), 3
-    assert_eq "banana".count("na"), 2
+    assert "banana".count("a") == 3
+    assert "banana".count("na") == 2
 
 def test_maintained_len_field()
     var bag = IntBag()
-    assert_eq bag.len, 0
+    assert bag.len == 0
     bag.add(10)
     bag.add(20)
-    assert_eq bag.len, 2
+    assert bag.len == 2
     bag.removeAll()
-    assert_eq bag.len, 0
+    assert bag.len == 0
 
 def main()
     print("len_size_test: run with 'zebra test'")

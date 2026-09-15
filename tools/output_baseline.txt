@@ -239,8 +239,8 @@ bug253-uninit: OK
 bug255: OK
 === bug256_bitwise_not_test sha1=2395b95e11bf ===
 bug256: OK
-=== bug259_runtime_exit_code_test sha1=cc7de8b230cd ===
-thread <TID> panic: assert failed at test/bug259_runtime_exit_code_test.zbr:29
+=== bug259_runtime_exit_code_test sha1=8f672d5a46a1 ===
+thread <TID> panic: assert failed at test/bug259_runtime_exit_code_test.zbr:29: left == right -- left: 1, right: 2
 === bug260_bindlist_param_test sha1=aa80f1a2a92a ===
 1
 3

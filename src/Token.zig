@@ -370,10 +370,6 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     // inside ensure blocks by Tokenizer. They are NOT in the keyword map.
     .{ "implies",     .kw_implies },
     .{ "assert",       .kw_assert },
-    .{ "assert_eq",    .kw_assert_eq },
-    .{ "assert_ne",    .kw_assert_ne },
-    .{ "assert_true",  .kw_assert_true },
-    .{ "assert_false", .kw_assert_false },
     .{ "branch",       .kw_branch },
     .{ "on",          .kw_on },
     .{ "if",          .kw_if },

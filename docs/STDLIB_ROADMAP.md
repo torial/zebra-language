@@ -171,8 +171,8 @@ This is a LANGUAGE FEATURE not just a stdlib module — needs grammar, AST, TC, 
 ### 11. `Test` — Built-in test runner
 ```zebra
 def test_addition
-    assert_eq add(2, 3), 5
-    assert_eq add(-1, 1), 0
+    assert add(2, 3) == 5
+    assert add(-1, 1) == 0
 
 def test_throws_on_null
     assert_raises

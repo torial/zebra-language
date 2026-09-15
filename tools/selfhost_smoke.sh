@@ -549,7 +549,7 @@ smoke test/tc_iface_generic_match_test.zbr
 # Generic class that does not implement the interface must fail.
 smoke_tc_fail test/tc_iface_generic_mismatch_test.zbr "type mismatch"
 
-# `zebra test` subcommand: assert_eq/ne/true/false + test runner.
+# `zebra test` subcommand: assert (one form since 2026-09-15) + test runner.
 smoke_test test/test_module_test.zbr
 
 # Random instance form (A3, #216): Random.new(seed) → independent PRNG stream;
@@ -597,6 +597,11 @@ smoke_test test/hashmap_fetch_chain_test.zbr
 # BUG-368: a test fn that raises nothing (plain `assert`, `pass`) is void, and the
 # harness could not call it. Mixed void/raising, top-level and class-static.
 smoke_test test/bug368_plain_assert_test_fn_test.zbr
+# 2026-09-15: assert_eq/ne/true/false freed; plain `assert a == b` names both operands on
+# failure, for every primitive kind AND for two sides the checker could not type (decided
+# by type at runtime, as the old helper did). One deliberately failing test pins the text.
+smoke_test_verdicts test/assert_operands_test.zbr "FAIL: test_shows_operands: assert failed at test/assert_operands_test.zbr:38: left == right -- left: 3, right: 4"
+smoke_test_verdicts test/assert_operands_test.zbr "4 passed, 1 failed"
 # BUG-369: an unknown method on a builtin receiver is a Zebra refusal, not a Zig error
 # about generated code; the _ok control runs one call per real method family.
 smoke_tc_fail test/bug369_str_unknown_method_fail.zbr "'str' has no method 'frobnicate'"

@@ -10543,7 +10543,120 @@ struct Generator
         w.emit("}\n")
         return EnsureCtx(true, uses_result)
 
+    # The "kind" of an assert operand for the operand-printing lowering below: "str",
+    # "int", "uint", "float", "bool", "char", or "" when the checker cannot say (unknown
+    # types, classes, optionals, containers). Literals count as their own kind so
+    # `assert n == 3` qualifies; an int literal is "int" so `assert u == 3` (u: uint)
+    # is refused here (peer resolution of u64 against i64 is a Zig error) and takes
+    # the old path.
+    def assertOperandKind(e: Expr): str
+        branch e
+            on Expr.string_lit as _
+                return "str"
+            on Expr.int_lit as _
+                return "int"
+            on Expr.float_lit as _
+                return "float"
+            on Expr.bool_lit as _
+                return "bool"
+            else
+                pass
+        if .infer_ctx == nil
+            return ""
+        var t: Type_ = inferExpr(e, .infer_ctx!)
+        branch t
+            on Type_.string_ return "str"
+            on Type_.int_ return "int"
+            on Type_.uint_ return "uint"
+            on Type_.float_ return "float"
+            on Type_.bool_ return "bool"
+            on Type_.char_ return "char"
+            else
+                return ""
+
+    # 2026-09-15: `assert_eq`/`assert_ne`/`assert_true`/`assert_false` were freed as
+    # keywords. What they bought -- the failure line naming BOTH operands -- plain
+    # `assert` now does itself whenever the asserted expression is a comparison of two
+    # primitive operands: `assert a == b` fails as
+    #   assert failed at f.zbr:12: left == right -- left: 3, right: 4
+    # Operands are bound to temps first, so each is evaluated exactly once. The
+    # comparison itself is re-emitted here for the primitive kinds (str via
+    # std.mem.eql, the rest by operator) rather than through genBinary, because genBinary
+    # dispatches on the ORIGINAL expressions' types and the temps carry none; that is
+    # also why anything not primitive-on-both-sides keeps the older lowering below.
+    # Returns true when it emitted.
+    def genAssertCmpShow(a: StmtAssert): bool
+        if a.message != nil
+            return false
+        if a.cond is Expr.binary as bin
+            var op: str = ""
+            branch bin.op
+                on BinaryOp.eq op = "=="
+                on BinaryOp.ne op = "!="
+                on BinaryOp.lt op = "<"
+                on BinaryOp.le op = "<="
+                on BinaryOp.gt op = ">"
+                on BinaryOp.ge op = ">="
+                else
+                    return false
+            var lk: str = assertOperandKind(bin.left)
+            var rk: str = assertOperandKind(bin.right)
+            var any_eq: bool = false
+            if lk == "" or rk == "" or lk != rk
+                # The checker cannot name both sides (a stdlib object's method result,
+                # say `rng.bytes(8)`). For `==`/`!=` the comparison moves to the runtime,
+                # which decides by TYPE (u8-like → std.mem.eql, else `==`) exactly as the
+                # freed `assert_eq` helper did -- so `assert x == y` on two strings the
+                # checker never typed keeps working, where a raw `==` on two slices is a
+                # Zig error. `nil` stays on the old path (genBinary knows `== nil`).
+                if op != "==" and op != "!="
+                    return false
+                if bin.left is Expr.nil_ or bin.right is Expr.nil_
+                    return false
+                any_eq = true
+            if lk == "str" and op != "==" and op != "!="
+                return false
+            if (lk == "bool" or lk == "char") and op != "==" and op != "!="
+                return false
+            var loc: str = fwdSlashes(source_file) + ":" + a.span.line.toString()
+            writeIndent()
+            w.emit("{\n")
+            indent = indent + 1
+            writeIndent()
+            w.emit("const _al = ")
+            genExpr(bin.left)
+            w.emit(";\n")
+            writeIndent()
+            w.emit("const _ar = ")
+            genExpr(bin.right)
+            w.emit(";\n")
+            writeIndent()
+            var cmp: str = ""
+            if any_eq
+                if op == "=="
+                    cmp = "_zbr_assert_any_eq(_al, _ar)"
+                else
+                    cmp = "!_zbr_assert_any_eq(_al, _ar)"
+            else if lk == "str"
+                if op == "=="
+                    cmp = "std.mem.eql(u8, _al, _ar)"
+                else
+                    cmp = "!std.mem.eql(u8, _al, _ar)"
+            else
+                cmp = "_al " + op + " _ar"
+            if in_test_fn
+                w.emit("try _zbr_assert_cmp_err(" + cmp + ", _al, _ar, \"" + op + "\", \"" + loc + "\");\n")
+            else
+                w.emit("if (!(" + cmp + ")) _zbr_assert_cmp_panic(_al, _ar, \"" + op + "\", \"" + loc + "\");\n")
+            indent = indent - 1
+            writeIndent()
+            w.emit("}\n")
+            return true
+        return false
+
     def genAssert(a: StmtAssert)
+        if genAssertCmpShow(a)
+            return
         writeIndent()
         # BUG-386: inside a `test_*` fn an assert is a test assertion. `zebra test`
         # runs every test in one process and reports each verdict; a panic here

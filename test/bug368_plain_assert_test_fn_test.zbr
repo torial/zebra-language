@@ -14,7 +14,7 @@ def test_pass_only()
     pass
 
 def test_raising_family()
-    assert_eq 2 * 21, 42
+    assert 2 * 21 == 42
 
 class Box
     var n: int = 0
@@ -22,7 +22,7 @@ class Box
         def test_static_plain()
             assert 3 > 2
         def test_static_raising()
-            assert_true 5 > 3
+            assert 5 > 3
 
 def main()
     print("bug368: run with 'zebra test'")

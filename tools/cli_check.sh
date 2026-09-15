@@ -216,7 +216,7 @@ def test_alpha()
     assert 1 == 1
 
 def test_beta()
-    assert_eq 2, 2
+    assert 2 == 2
 
 def test_with_param(x: int)
     pass

@@ -1,0 +1,41 @@
+# 2026-09-15: `assert_eq`/`assert_ne`/`assert_true`/`assert_false` are ordinary
+# identifiers; a plain `assert` on a comparison prints BOTH operands when it fails,
+# which is the one thing the four keywords ever bought (Sean: four reserved words for
+# what one `assert` does). Inside a test_* fn the failure is the test's verdict, not a
+# panic (BUG-386), so this fixture is run under `zebra test` and the smoke asserts the
+# operand text appears in the FAIL line. The passing tests pin every operand kind the
+# lowering handles: str (std.mem.eql, not `==` on slices), int, float, bool, char, and a
+# pair the checker cannot type (a stdlib object's method result) that the runtime
+# decides by type -- the case a raw `==` gets wrong.
+def test_str_eq()
+    var s = "hi"
+    assert s == "hi"
+    assert s != "ho"
+
+def test_numbers()
+    var n = 3
+    var f = 1.5
+    assert n < 4
+    assert n >= 3
+    assert f == 1.5
+    assert f > 1.0
+
+def test_bool_char()
+    var t = true
+    var c = 'x'
+    assert t == true
+    assert c == 'x'
+    assert not (c == 'y')
+
+def test_untyped_str_sides()
+    var a = Random.new(7)
+    var b = Random.new(7)
+    assert a.bytes(4) == b.bytes(4)
+
+def test_shows_operands()
+    var got = 3
+    var want = 4
+    assert got == want
+
+def main()
+    pass

@@ -271,6 +271,35 @@ pub fn _zebra_assert_cmp(a: anytype, b: anytype, expect_eq: bool) anyerror!void 
         return error.ZebraError;
     }
 }
+/// `assert a == b` on two primitive operands (2026-09-15, the replacement for the freed
+/// assert_eq/assert_ne/assert_true/assert_false): the failure names both operands.
+fn _zbr_assert_fmt(comptime T: type) []const u8 {
+    if (comptime _zbr_is_u8_like(T)) return "\"{s}\"";
+    return switch (@typeInfo(T)) {
+        .float, .comptime_float => "{d}",
+        else => "{any}",
+    };
+}
+pub fn _zbr_assert_cmp_msg(a: anytype, b: anytype, op: []const u8, loc: []const u8) []const u8 {
+    const fmt = comptime "assert failed at {s}: left {s} right -- left: " ++ _zbr_assert_fmt(@TypeOf(a)) ++ ", right: " ++ _zbr_assert_fmt(@TypeOf(b));
+    return std.fmt.allocPrint(_allocator, fmt, .{ loc, op, a, b }) catch "assert failed";
+}
+/// `assert a == b` when the checker could not type both sides: decide by TYPE at
+/// comptime, the way the freed assert_eq helper (_zebra_assert_cmp) did.
+pub fn _zbr_assert_any_eq(a: anytype, b: anytype) bool {
+    if (comptime (_zbr_is_u8_like(@TypeOf(a)) and _zbr_is_u8_like(@TypeOf(b))))
+        return std.mem.eql(u8, @as([]const u8, a), @as([]const u8, b));
+    return a == b;
+}
+pub fn _zbr_assert_cmp_panic(a: anytype, b: anytype, op: []const u8, loc: []const u8) noreturn {
+    std.debug.panic("{s}\n", .{_zbr_assert_cmp_msg(a, b, op, loc)});
+}
+pub fn _zbr_assert_cmp_err(ok: bool, a: anytype, b: anytype, op: []const u8, loc: []const u8) anyerror!void {
+    if (!ok) {
+        _error_ctx = .{ .message = _zbr_assert_cmp_msg(a, b, op, loc) };
+        return error.ZebraError;
+    }
+}
 /// BUG-386: a plain `assert` inside a `test_*` fn -- fails the test, not the process.
 pub fn _zebra_assert_at(val: bool, msg: []const u8) anyerror!void {
     if (!val) {

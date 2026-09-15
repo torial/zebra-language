@@ -856,7 +856,7 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   a *MethodKnown predicate per type, derived from the
                                 #   dispatch arms, refusing unknown names in the front end
                                 #   -- and are derived here since. The counts print every
-                                #   run. 74 keywords (81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari), 31 namespaces / 171 members,
+                                #   run. 70 keywords (81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four), 31 namespaces / 171 members,
                                 #   21 receivers / 253 methods (5 / 120 on the day it was written).
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
@@ -881,7 +881,7 @@ python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate poin
                                 #   FRONT END ONLY (`zebra -c`) — a doc fragment has no
                                 #   modules around it, so a full compile would drown syntax
                                 #   errors in missing-dependency noise.
-                                #   Baselined at 11 <!-- doc-gen: 11 = grep -vc '^#' tools/doc_example_baseline.txt -->
+                                #   Baselined at 7 <!-- doc-gen: 7 = grep -vc '^#' tools/doc_example_baseline.txt -->
                                 #   (was 27), so it fails only on NEW breakage. That
                                 #   baseline is REAL DEBT a reader hits, in three families:
                                 #   `print` WITHOUT PARENS (pre-`()`-mandatory Cobra syntax),
@@ -2099,7 +2099,7 @@ than "what do we know":
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
 | **our own tools are not lying** | `hazard_lint` (+ its controls) | 107 scripts | <!-- doc-gen: 107 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 40 tracked documents <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
-| **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 71 keywords, 1 baselined |
+| **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 67 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords × both compilers |
@@ -2709,7 +2709,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **639** <!-- doc-gen: 639 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **640** <!-- doc-gen: 640 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.
