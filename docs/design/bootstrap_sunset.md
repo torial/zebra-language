@@ -67,8 +67,8 @@ installer, the LSP, zebra-ide, or any documented user path except `--zig-backend
 
 ## 3. The steps, each gated
 
-**Step 0 — prove the recovery path (no deletion).** A new script (working name
-regen_recover, under tools/): build a scratch `zebra` from the *committed* `selfhost/*.zig`
+**Step 0 — prove the recovery path (no deletion).** DONE 2026-09-15 as
+`tools/regen_recover.sh` (+ the `regen-recover` daily gate): build a scratch `zebra` from the *committed* `selfhost/*.zig`
 (`git show HEAD:...`, no working-tree state), re-emit the working tree's `*.zbr` with it,
 and report the diff against the working tree's `*.zig` — empty on a clean tree (which is
 the round-trip property restated from git rather than from `zig-out`), and the

@@ -234,7 +234,7 @@ per-tier counts, computed from the registrations rather than written down.
 | `--fast` | 32 <!-- doc-gen: 32 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
 | (default) | 34 <!-- doc-gen: 34 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
 | `--full` | 42 <!-- doc-gen: 42 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 50 <!-- doc-gen: 50 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--daily` | 51 <!-- doc-gen: 51 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -1007,6 +1007,21 @@ bash tools/selfhost_divergence_check.sh  # THE COMPILER-SOURCES AGREEMENT GATE,
                                 #   Gating that would mean a red board for being right.
                                 #   REFUSES if the bootstrap is absent: it IS the comparison,
                                 #   and a vacuous run must not look like agreement.
+                                #   RETIRES with the bootstrap (docs/design/bootstrap_sunset.md
+                                #   Step 2); the property it gates is round-trip Step 1.
+bash tools/regen_recover.sh --gate  # THE RECOVERY-PATH GATE, registered as `regen-recover`
+                                #   (DAILY tier, 2026-09-15; bootstrap_sunset.md Step 0).
+                                #   Builds a compiler from the COMMITTED selfhost/*.zig with
+                                #   `zig build-exe` -- no Zebra compiler in the loop -- and
+                                #   re-emits the working tree's *.zbr with it; on a clean
+                                #   tree the diff is EMPTY (the round-trip fixed point
+                                #   restated from git rather than from zig-out). This is
+                                #   what covers "zebra.exe cannot compile its own source"
+                                #   once src/ is gone, and it works for ANY commit in
+                                #   history, not just the one the bootstrap was frozen at.
+                                #   THE RECIPE when zebra.exe cannot build itself:
+                                #   `bash tools/regen_recover.sh --install` (optionally
+                                #   `--from <last good sha>`), then `zig build`, then gates.
 bash tools/debug_map_check.sh   # THE DEBUG SOURCE-MAP GATE, registered as `debug-map`
                                 #   (FAST tier, ~10s). `zebra debug` is a DAP relay: it
                                 #   sits between an IDE and lldb-dap and rewrites every
@@ -2082,7 +2097,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 106 scripts | <!-- doc-gen: 106 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 107 scripts | <!-- doc-gen: 107 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 40 tracked documents <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (both compilers) | 79 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

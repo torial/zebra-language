@@ -544,6 +544,11 @@ run_full "divergence"    "gate PASS" env JOBS="$JOBS" bash tools/divergence_chec
 # HANGS and CRASHES (accept/reject divergences are expected and are not failures). It
 # would have caught BUG-199 -- an 18-byte parser infinite loop -- automatically.
 run_daily "selfhost-div" "PASS" bash tools/selfhost_divergence_check.sh
+# bootstrap_sunset.md Step 0 (2026-09-15): the recovery path that replaces the bootstrap.
+# A compiler built from the COMMITTED selfhost/*.zig (no Zebra compiler in the loop)
+# must re-emit the working tree byte-for-byte. Empty diff on a clean tree = the round-trip
+# fixed point restated from git. When it is not empty, --install is the way back.
+run_daily "regen-recover" "PASS" bash tools/regen_recover.sh --gate
 run_daily "gramgen"      "gate PASS" python fuzz/gramgen.py --gate
 # THE "ZEBRA ACCEPTS, ZIG REJECTS" FUZZER (2026-09-09): gen.py's well-formed programs,
 # emitted by the selfhost, sema'd by zig. Any leak signature not in fuzz/leak_baseline.txt
