@@ -44,7 +44,11 @@ Post-rc2, on main and headed for 0.9.1 or 1.0: `StringBuilder.build()` non-consu
 typed-param expression lambda is passable as a `sig` (BUG-426); the derived stable
 surface `docs/SURFACE.md` and its `surface-freeze` gate; `test/boundary/trip.zbr`;
 **`zebra up`** (`--check`, `--to VER`) — the installed release updates itself: checksum
-verified, previous version kept once (surface: +`zebra up`, +`--to`).
+verified, previous version kept once (surface: +`zebra up`, +`--to`); **`defer` and
+`errdefer` freed** as identifiers (surface: −2 keywords; they were reserved, implemented
+only in the bootstrap, and refused by the shipping compiler); a parameter named like a
+top-level def no longer takes the function's address (BUG-427); macOS builds are no
+longer marked experimental (the rc2 smoke ran green on `macos-latest`).
 
 ## [0.15] — 2026-05 (in progress)
 

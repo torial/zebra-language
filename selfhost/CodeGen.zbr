@@ -6555,7 +6555,7 @@ struct Generator
                             is_mut = true
         if is_mut and n.init_expr != nil and not n.is_const
             if n.init_expr! is Expr.ident as fid
-                if isTopLevelMethod(fid.name)
+                if isTopLevelMethod(fid.name) and not isLocalOrParamName(fid.name)   # BUG-427
                     writeIndent()
                     var zn_fnref: str = zigSafeName(n.name)
                     # BUG-220: this path writes the function's Zig name directly rather than
@@ -7625,7 +7625,10 @@ struct Generator
         # names are function values, so we need `&` to take a pointer.
         if a.op == AssignOp.assign
             if a.value is Expr.ident as vid
-                if isTopLevelMethod(vid.name)
+                # BUG-427: a PARAMETER or local named like a top-level def shadows it --
+                # `cue init(later: str)` with `.later = later` and a `def later(...)` in
+                # the module took the function's address instead of the parameter.
+                if isTopLevelMethod(vid.name) and not isLocalOrParamName(vid.name)
                     # BUG-220: writes the function's Zig name directly (with `&`),
                     # bypassing genIdent — same as the var-init fn-ref path.
                     w.emit("&")

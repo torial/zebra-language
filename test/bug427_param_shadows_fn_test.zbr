@@ -1,0 +1,21 @@
+# BUG-427: a constructor/method PARAMETER (or local) named like a top-level def shadowed
+# nothing -- `.later = later` inside `cue init(later: str)` emitted `&_zbr_fn_later`, the
+# FUNCTION's address, because the fn-ref assignment path asked only "is this a top-level
+# method name" and never "is it bound as a local or parameter here". Found by the
+# defer/errdefer freed-words fixture, 2026-09-15. isLocalOrParamName already existed.
+class Job
+    var later: str
+    cue init(later: str)
+        .later = later
+    def rebind(later: str)
+        .later = later
+
+def later(n: int): int
+    return n + 1
+
+def main()
+    var j = Job("x")
+    j.rebind("y")
+    var f = later                    # the unshadowed fn-ref path must still work
+    print(j.later + " " + later(1).toString() + " " + f(2).toString())
+    print("bug427: ok")

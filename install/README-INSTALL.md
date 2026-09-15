@@ -25,7 +25,8 @@ curl -fsSL https://raw.githubusercontent.com/torial/zebra-language/main/install/
 ```
 
 Installs to `~/.zebra/current` and prints the `export PATH=...` line to add to your shell
-profile. macOS builds are experimental until a smoke has run green there.
+profile. macOS (Apple Silicon) is a first-class platform since 0.9.0-rc2: the release
+workflow builds it, smokes it, and refuses to publish if that leg is red.
 
 ## Updating
 

@@ -1697,7 +1697,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isStmtKeyword(self: *_zbr_ty_Parser, text: []const u8) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1039
-        const kws: []const u8 = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|allocate|filter|defer|";
+        const kws: []const u8 = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|allocate|filter|";
 // zbr:selfhost/Parser.zbr:1040
         const needle: []const u8 = _str_concat(_str_concat("|", text, _zbr_rt._allocator), "|", _zbr_rt._allocator);
 // zbr:selfhost/Parser.zbr:1041

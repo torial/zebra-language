@@ -851,7 +851,7 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   types (DateTime, Regex, connections, GUI widgets --
                                 #   per-type generators with no shared shape), arities,
                                 #   argument types, or semantics. The counts print every
-                                #   run. 81 keywords, 31 namespaces / 171 members,
+                                #   run. 79 keywords (81 until defer/errdefer were freed), 31 namespaces / 171 members,
                                 #   5 receivers / 120 methods on the day it was written.
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
@@ -2077,7 +2077,7 @@ than "what do we know":
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
 | **our own tools are not lying** | `hazard_lint` (+ its controls) | 106 scripts | <!-- doc-gen: 106 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 39 tracked documents <!-- doc-gen: 39 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
-| **a reserved word is used, or justified** | `reserved-words` (both compilers) | 81 keywords, 1 baselined |
+| **a reserved word is used, or justified** | `reserved-words` (both compilers) | 79 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords × both compilers |
@@ -2687,7 +2687,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **635** <!-- doc-gen: 635 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **637** <!-- doc-gen: 637 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.
@@ -2769,8 +2769,10 @@ Findings: **BUG-424** `Math.abs(int)` emitted the unsigned `@abs`; **BUG-425** `
 (the documented spelling) never resolved, only `extend String`; **BUG-426** a typed-param
 expression lambda was a generic fn and could not be passed as a `sig`. Each got its own
 fixture; the trip keeps them live together, which is the property no single fixture has.
-Two smaller things it turned up are recorded in NEXT_STEPS_to_1.0: `defer` is reserved and
-refused by the parser, and an unused `as n` in a branch arm is refused with no column.
+Two smaller things it turned up: `defer`/`errdefer` were reserved and refused by the parser
+(freed 2026-09-15, and the freed-words fixture found **BUG-427** on its first run -- a ctor
+parameter named like a top-level def took the function's address), and an unused `as n` in a
+branch arm is refused with no column (recorded in NEXT_STEPS_to_1.0).
 
 ## Self-hosting
 

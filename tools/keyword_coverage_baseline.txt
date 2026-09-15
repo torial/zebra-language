@@ -11,9 +11,8 @@
 #             REJECTED by the shipping selfhost. Removing it means ~62 lines across grammar
 #             rules, AST node types and codegen. If the bootstrap retires it vanishes for
 #             free. See NEXT_STEPS "FREEZE THE BOOTSTRAP, THEN MOVE TO N-1".
-#   defer     PARKED, same reason. Bootstrap-only, and it is FULLY implemented there --
-#   errdefer  StmtDefer is a real AST node with `genDefer` at src/CodeGen.zig:13425.
-#             Sean: "bleedthrough from zig and we can kill".
+#   defer     FREED 2026-09-15 (both token tables; the StmtDefer machinery is dead code
+#   errdefer  until the bootstrap retires). Sean: "bleedthrough from zig and we can kill".
 #   vari      Marked for removal (variadic parameters, a feature not being supported).
 #             Rejected by BOTH compilers today, so this one is not bootstrap-parked -- it is
 #             simply unimplemented in both and can go whenever someone is in Token.zig.
@@ -27,7 +26,5 @@
 # `continue` left this list on 2026-08-29 (test/loop_continue_break_test.zbr).
 #
 abstract
-defer
-errdefer
 implies
 vari

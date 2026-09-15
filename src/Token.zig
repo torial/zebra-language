@@ -390,8 +390,10 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     // `stop` is an extremely common method name (Sound/Animation/Tween :Stop()).
     // Reserving it broke `.stop()` calls — tokenize it as a plain identifier.
     .{ "return",      .kw_return },
-    .{ "defer",       .kw_defer },
-    .{ "errdefer",    .kw_errdefer },
+    // `defer` / `errdefer` FREED 2026-09-15 (Sean). Fully implemented here, never parsed
+    // by the shipping selfhost -- a reserved word that did nothing for users. The
+    // kw_ variants, StmtDefer rules and genDefer stay as dead code until this compiler
+    // retires; only the WORDS leave the table, so both lex as identifiers.
     .{ "this",        .kw_this },
     .{ "to",          .kw_to },
     .{ "and",         .kw_and },

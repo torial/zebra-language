@@ -315,10 +315,10 @@ class Keywords
         # very common method name — Sound/Animation/Tween :Stop()).
         if word == "return"
             return TokenKind.kw_return()
-        if word == "defer"
-            return TokenKind.kw_defer()
-        if word == "errdefer"
-            return TokenKind.kw_errdefer()
+        # `defer` / `errdefer` FREED 2026-09-15 (Sean: "bleedthrough from zig and we can
+        # kill"). The bootstrap implemented them fully and this parser never accepted them,
+        # so the words were reserved and refused. The kw_ variants and Ast.StmtDefer stay
+        # as dead code until the bootstrap retires (keyword_coverage_baseline's note).
         if word == "this"
             return TokenKind.kw_this()
         if word == "to"

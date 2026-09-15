@@ -631,20 +631,22 @@ test "parse: chained orelse then catch" {
     try expectAccepts("class Foo\n\tdef run\n\t\tx = getVal() orelse fallback() catch |e| 0\n");
 }
 
-// ── Acceptance: defer / errdefer ───────────────────────────────────────────────
+// ── Rejection: defer / errdefer (freed as identifiers 2026-09-15) ─────────────
+// `defer`/`errdefer` are no longer keywords (src/Token.zig table entries removed,
+// mirroring selfhost/Token.zbr). `defer cleanup()` is now two adjacent
+// expressions, which the statement grammar refuses; the words themselves are
+// ordinary identifiers (see test/defer_freed_words_test.zbr).
 
-test "parse: defer simple statement" {
-    // StmtDefer → kw_defer Stmt
-    try expectAccepts("class Foo\n\tdef run\n\t\tdefer cleanup()\n");
+test "parse: defer statement form is refused" {
+    try expectRejects("class Foo\n\tdef run\n\t\tdefer cleanup()\n");
 }
 
-test "parse: errdefer simple statement" {
-    // StmtDefer → kw_errdefer Stmt
-    try expectAccepts("class Foo\n\tdef run\n\t\terrdefer rollback()\n");
+test "parse: errdefer statement form is refused" {
+    try expectRejects("class Foo\n\tdef run\n\t\terrdefer rollback()\n");
 }
 
-test "parse: defer followed by other statements" {
-    try expectAccepts("class Foo\n\tdef run\n\t\tdefer close(file)\n\t\tx = readAll(file)\n");
+test "parse: defer is an ordinary identifier" {
+    try expectAccepts("class Foo\n\tdef run\n\t\tdefer = 1\n\t\terrdefer(defer)\n");
 }
 
 // ── Acceptance: old expression (contract) ─────────────────────────────────────

@@ -6,6 +6,17 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-427: a parameter named like a top-level `def` was emitted as the FUNCTION's address — FIXED 2026-09-15
+
+`cue init(later: str)` with `.later = later`, beside a module-level `def later(n: int)`,
+emitted `_self.later = &_zbr_fn_later;` — "expected type 'str', found '*const fn (i64)
+i64'". The fn-ref assignment and var-init paths (BUG-220) asked only `isTopLevelMethod`
+and never whether the name was bound as a local or parameter; `isLocalOrParamName`
+already existed for the module-var case (BUG-137) and now guards both sites. A plain
+top-level function's parameter was unaffected (a different emit path). Found by the
+`defer`/`errdefer` freed-words fixture on its first run.
+Fixture: `test/bug427_param_shadows_fn_test.zbr`.
+
 ### BUG-424: `Math.abs(int)` emitted Zig's UNSIGNED `@abs` — a type error in return position, a silent u64 elsewhere — FIXED 2026-09-14
 
 `@abs` of an `i64` is a `u64`. `return Math.abs(a - b)` from an `int` function failed with

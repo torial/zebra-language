@@ -738,6 +738,8 @@ smoke_run test/bug351_sb_build_nonconsuming_test.zbr "bug351: ok"
 smoke_run test/bug424_math_abs_int_test.zbr "bug424: ok"
 smoke_run test/bug425_extend_str_spelling_test.zbr "bug425: ok"
 smoke_run test/bug426_expr_lambda_sig_test.zbr "bug426: ok"
+smoke_run test/defer_freed_words_test.zbr "defer: freed"
+smoke_run test/bug427_param_shadows_fn_test.zbr "bug427: ok"
 
 # BUG-238: `except` in an enum-dotted branch arm, reached through `use`. Reported as a
 # regression that did not reproduce; registered as a RUNNING guard (smoke_run, not

@@ -1,0 +1,24 @@
+# `defer` and `errdefer` are ORDINARY IDENTIFIERS (freed 2026-09-15, Sean: "bleedthrough
+# from zig"). They had been reserved since the grammar was written, implemented in the
+# bootstrap, and refused by the shipping selfhost -- a keyword that did nothing but take
+# two names away. Same shape as test/bug315_protected_freed_test.zbr: each word in every
+# position a user would reach for. Its first run also found BUG-427: a ctor PARAMETER
+# named like a top-level def (`cue init(errdefer: str)` beside `def errdefer(...)`) took
+# the function's address instead of the parameter.
+class Job
+    var defer: int
+    var errdefer: str
+    cue init(defer: int, errdefer: str)
+        .defer = defer
+        .errdefer = errdefer
+    def defer_(): int
+        return .defer * 2
+
+def errdefer(defer: int): int
+    return defer + 1
+
+def main()
+    var defer = 20
+    var j = Job(defer, "later")
+    print("${j.defer} ${j.errdefer} ${j.defer_()} ${errdefer(defer)}")
+    print("defer: freed")

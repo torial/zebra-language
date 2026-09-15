@@ -119,19 +119,18 @@ test "error union type and orelse" {
     );
 }
 
-test "defer and errdefer" {
+test "defer and errdefer are ordinary identifiers" {
+    // Freed as keywords 2026-09-15; they now name members like any other word.
     try expectPrint(
         \\class Res
-        \\    def open
-        \\        defer pass
-        \\        errdefer pass
+        \\    var defer: int
+        \\    var errdefer: int
         \\
     ,
         \\(module
         \\  (class Res
-        \\    (method open
-        \\      (defer (pass))
-        \\      (errdefer (pass)))))
+        \\    (var defer (type int))
+        \\    (var errdefer (type int))))
     );
 }
 

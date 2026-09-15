@@ -69,7 +69,7 @@ jobs:
             sha: b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489
             plat: macos-aarch64
             exe: zebra
-            experimental: true
+            experimental: false   # rc2's smoke ran green on macos-latest (2026-09-12); a red leg now fails the release
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.experimental }}
     timeout-minutes: 60

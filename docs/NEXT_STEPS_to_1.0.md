@@ -71,7 +71,8 @@ PROMISE, which §15 says is the open act.
    Reconcile before 1.0: either renumber the CHANGELOG headings as milestones (`[M15]`) with
    a note, or fold them into release sections. The §15 "final CHANGELOG pass" should
    include this or it will be the first issue filed against the release.
-6. **macOS is still `experimental: true` in release.yml and the install doc says "until a
+6. DONE 2026-09-15 (Sean: "the smoke being green is very good"): `experimental: false`,
+   install doc updated. Was: **macOS is still `experimental: true` in release.yml and the install doc says "until a
    smoke has run green there" -- the release workflow RUNS that smoke on macos-latest.**
    If rc2's macOS leg was green, the note is stale and the flag can flip; if it was not,
    1.0 should say two platforms, not three-with-an-asterisk. Either way it is a decision
@@ -281,10 +282,11 @@ the entry says the asymmetric cells are the point. Worth naming the pattern and 
 unsigned, BUG-425 `extend str` never resolved, BUG-426 typed-param expression lambda not
 passable as a `sig`) plus two things for this queue to decide rather than fix:
 
-- **`defer` is a reserved word the parser refuses** (`unexpected expression token:
-  'defer'`); so is `errdefer`. Either implement (Zig has the mechanism one line below
-  the emit) or free the words before 1.0 -- a reserved word that does nothing is the
-  `aspect` situation (U4) again. `continue` works and was merely uncovered.
+- **`defer` / `errdefer` FREED 2026-09-15** (Sean: "bleedthrough from zig and we can
+  kill" -- the decision was already in tools/keyword_coverage_baseline.txt). Both token
+  tables; the bootstrap's StmtDefer machinery stays as dead code until it retires.
+  `test/defer_freed_words_test.zbr`, whose first run found BUG-427. `continue` works and
+  was merely uncovered.
 - An unused `as n` binding in a branch arm is refused (Zig's unused-capture error
   surfacing as a Zebra error) **with no column** -- `diag-columns` cannot see it because
   it is not a front-end diagnostic. Fine as a rule; the position is the defect.

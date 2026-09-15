@@ -490,16 +490,6 @@ pub const _zbr_ty_Keywords = struct {
 // zbr:selfhost/Token.zbr:317
             return _zbr_ty_TokenKind{ .kw_return = {} };
         }
-// zbr:selfhost/Token.zbr:318
-        if (std.mem.eql(u8, word, "defer")) {
-// zbr:selfhost/Token.zbr:319
-            return _zbr_ty_TokenKind{ .kw_defer = {} };
-        }
-// zbr:selfhost/Token.zbr:320
-        if (std.mem.eql(u8, word, "errdefer")) {
-// zbr:selfhost/Token.zbr:321
-            return _zbr_ty_TokenKind{ .kw_errdefer = {} };
-        }
 // zbr:selfhost/Token.zbr:322
         if (std.mem.eql(u8, word, "this")) {
 // zbr:selfhost/Token.zbr:323

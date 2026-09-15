@@ -1036,7 +1036,7 @@ class Parser
     def isStmtKeyword(text: str): bool
         # Returns true when `text` starts a statement (not a branch pattern).
         # Used to distinguish `on Pat, print "stmt"` from `on Pat1, Pat2`.
-        var kws = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|allocate|filter|defer|"
+        var kws = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|allocate|filter|"
         var needle = "|" + text + "|"
         return needle in kws
 
