@@ -1578,16 +1578,19 @@ class Parser
             name = .peek().text
             .advance()
             if not .textIs(")")
-                type_params.add(.eatId()?)
-                # Skip optional `where T implements Interface` constraint clause
+                var tp0: str = .eatId()?
+                # Optional `where T implements Interface` constraint clause. Carried as
+                # "T|Interface(T)" in the PNode (AstBuilder splits it into TypeParam.
+                # constraint); the checker enforces it at instantiation (2026-09-16).
                 if .textIs("where")
-                    .skipConstraintClause()
+                    tp0 = tp0 + "|" + .parseConstraintClause(tp0)?
+                type_params.add(tp0)
                 while .textIs(",")
                     .advance()
-                    type_params.add(.eatId()?)
-                    # Skip optional constraint on this param
+                    var tpn: str = .eatId()?
                     if .textIs("where")
-                        .skipConstraintClause()
+                        tpn = tpn + "|" + .parseConstraintClause(tpn)?
+                    type_params.add(tpn)
             .expectText(")")?
         else
             name = .eatId()?
@@ -1717,19 +1720,16 @@ class Parser
         var type_params = List(str)()
         return PNode.struct_(PClass(name, type_params, ifaces, List(str)(), members, invs, is_reflectable, is_derive_debug, is_derive_eq, is_derive_hash, nil, _dl, _dc))
 
-    # `where T implements Comparable(T)`: skip to the closing `)` or the next `,` at
-    # depth 0 -- the constraint may itself carry a generic instantiation (2026-09-16),
-    # whose `(`/`)` must not end the clause early. (Constraints are recorded nowhere yet.)
-    def skipConstraintClause()
-        var depth: int = 0
-        while not .isEof()
-            if depth == 0 and (.textIs(")") or .textIs(","))
-                return
-            if .textIs("(") or .isOpenCall()
-                depth = depth + 1
-            else if .textIs(")")
-                depth = depth - 1
-            .advance()
+    # `where T implements Comparable(T)` (QUICKSTART §17: the full form, naming the
+    # parameter again). Returns the interface text, e.g. "Comparable(T)". Parsed and
+    # IGNORED from the day it was written until 2026-09-16; the checker enforces it now.
+    def parseConstraintClause(tp: str): str throws
+        .expectText("where")?
+        const again: str = .eatId()?
+        if again != tp
+            raise .errorAt("`where` must name the type parameter it constrains: write `" + tp + " where " + tp + " implements ...`")
+        .expectText("implements")?
+        return .eatTypeName()?
 
     def parseInterfaceDecl(): PNode throws
         .expectText("interface")?

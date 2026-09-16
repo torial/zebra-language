@@ -1,0 +1,27 @@
+# `class Sorted(T where T implements Comparable(T))` is ENFORCED at instantiation
+# (2026-09-16). The clause had been parsed and ignored since it was written --
+# QUICKSTART said "not yet enforced" -- so `Sorted(Plain)()` built a class whose
+# methods called compareTo on a type without one, and the diagnostic was zig's.
+# The constraint is checked with the parameter substituted: T=Plain asks for
+# Comparable(Plain), exactly the key `implements Comparable(Plain)` would register.
+#
+#   generic_constraint_unmet_test.zbr:N:C: error: 'Plain' does not implement Comparable(Plain), which Sorted's type parameter T requires (`T where T implements Comparable(T)`)
+interface Comparable(T)
+    def compareTo(other: T): int
+
+class Plain
+    var x: int
+    cue init(x: int)
+        .x = x
+
+class Sorted(T where T implements Comparable(T))
+    var items: List(T)
+    cue init()
+        items = List()
+    def add(v: T)
+        items.add(v)
+
+def main()
+    var bad = Sorted(Plain)()
+    bad.add(Plain(1))
+    print("unreachable")

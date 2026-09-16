@@ -1707,7 +1707,9 @@ var top = s.pop()
 
 - Generic class instantiation: `Stack(int)()` — type arg, then constructor args.
 - The constraint clause is `T where T implements InterfaceName` (full form, not
-  the shorthand `T where Comparable`). The clause is parsed and not yet enforced.
+  the shorthand `T where Comparable`). Enforced at instantiation and at an annotation
+  (2026-09-16): `SortedList(Plain)()` is refused unless `Plain implements Comparable(Plain)`,
+  and a primitive argument is refused by name.
 
 ### Generic interfaces
 
@@ -1738,8 +1740,11 @@ print(c.compareTo(Score(1)))       # 2
 This is how a class refers to itself in an interface signature (the old `same`
 keyword, removed the same day, did this for one case). `implements Comparable` on a
 generic interface, or with the wrong number of arguments, is a front-end error naming the
-count. Not yet: a generic *class* implementing a generic interface, and an interface
-extending a generic one.
+count. A value of type `Comparable(Score)` is typed as the interface: a method it does
+not declare is refused (`interface 'Comparable' has no method ...`), and a call through
+it has the method's return type -- except a method returning one of the interface's own
+type parameters (`def convert(x: A): B`), which is untyped at the call. Not yet: a
+generic *class* implementing a generic interface, and an interface extending a generic one.
 
 ---
 

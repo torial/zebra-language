@@ -736,6 +736,17 @@ smoke_run test/guard_freed_words_test.zbr "guard: freed"
 # Generic interfaces (2026-09-16): `interface X(T)` as a comptime type function; the
 # vtable per instantiation; calls through the value, params, returns, two args.
 smoke_run test/generic_interface_test.zbr "generic interface: ok"
+# Second pass (2026-09-16): the checker types a generic-interface value as the interface.
+smoke_run test/generic_interface_typed_test.zbr "generic interface typed: ok"
+smoke_tc_fail test/fail_fixtures/interface_unknown_method_test.zbr \
+    "interface 'Shape' has no method 'bogus' (methods: area)"
+smoke_tc_fail test/fail_fixtures/generic_interface_unknown_method_test.zbr \
+    "interface 'Comparable' has no method 'compare' (methods: compareTo)"
+# `where T implements X` enforced at instantiation and at a generic annotation (2026-09-16).
+smoke_tc_fail test/fail_fixtures/generic_constraint_unmet_test.zbr \
+    "'Plain' does not implement Comparable(Plain), which Sorted's type parameter T requires"
+smoke_tc_fail test/fail_fixtures/generic_constraint_primitive_test.zbr \
+    "'int' is a primitive and cannot implement Comparable(int)"
 smoke_tc_fail test/fail_fixtures/generic_interface_arity_test.zbr \
     "interface 'Comparable' takes 1 type argument(s)"
 smoke_run test/bug427_param_shadows_fn_test.zbr "bug427: ok"

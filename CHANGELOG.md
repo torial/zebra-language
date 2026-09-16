@@ -80,8 +80,14 @@ names itself (`other: Comparable`) and a class names itself (surface: −1 keywo
 / `class Score implements Comparable(Score)` / `var c: Comparable(Score)`. Emitted as a comptime
 type function, one vtable per instantiation with the parameters substituted; the wrong
 argument count is refused in the front end. Not yet: a generic class implementing a generic
-interface, an interface extending a generic one, and the checker types values of a generic
-interface type as unknown (no method-name refusal through them). QUICKSTART §17.
+interface, an interface extending a generic one. QUICKSTART §17.
+**Interface values refuse unknown members; `where` constraints enforced** (2026-09-16):
+a call through an interface-typed value -- plain or generic, `Comparable(Score)` is now
+typed as the interface -- to a method the interface (or one it extends) does not declare
+is a front-end error naming the methods; until now it reached zig. `class Sorted(T where
+T implements Comparable(T))` is enforced at `Sorted(X)()` and at a `Sorted(X)` annotation
+with T substituted; a primitive argument is refused by name. The clause had been parsed
+and ignored since it was written.
 **Bootstrap sunset Step 2**: the comparison tooling is retired to `tools/attic/` —
 `selfhost-div` and `interp-escape` leave the gate tiers (49 daily / 41 full), `compile_check
 --bootstrap` and the parity/scaling probes go, `mutation_check` regenerates via the

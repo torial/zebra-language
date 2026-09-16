@@ -122,11 +122,20 @@ DECISIONS 2026-09-15 (Sean, on the 2026-09-14 read above and the surface measure
   `implements Comparable(Score)`, instantiations as annotations, one vtable per
   instantiation with the parameters substituted, arity refused in the front end
   (test/generic_interface_test.zbr, fail_fixtures/generic_interface_arity_test.zbr).
-  LEFT for a second pass: a generic class implementing a generic interface (the
-  in-struct vtable path is still named-only), an interface extending a generic one,
-  the `where` constraint (parsed, not enforced -- true before this too), and typing a
-  generic-interface value in the checker (today `Comparable(Score)` is `unknown_`, so
-  `-c` cannot refuse a wrong method name through it).
+  SECOND PASS 2026-09-16 (overnight): the checker types a generic-interface value as
+  the interface (a wrong method name through `Comparable(Score)` is refused; return
+  types flow; a method returning the interface's own type parameter is untyped at the
+  call), and -- found on the way -- PLAIN interface values had never refused an unknown
+  member either (`sh.bogus()` on a `Shape` reached zig): both refuse now
+  (fail_fixtures/interface_unknown_method_test, generic_interface_unknown_method_test;
+  test/generic_interface_typed_test). The `where T implements X` constraint is
+  ENFORCED at instantiation and at an annotation, with T substituted
+  (fail_fixtures/generic_constraint_unmet_test, generic_constraint_primitive_test).
+  STILL LEFT: a generic class implementing a generic interface (the in-struct vtable
+  path is named-only), an interface extending a generic one. Paper cut seen while
+  probing: `items = List(T)()` inside a generic class body is "undefined name: 'T'"
+  (the idiom is `items = List()`); the resolver does not know the class's type
+  parameters as names.
 
 ORDERING CHANGE among existing items: the **warning tier** (below) moves from "several
 items need it" to "the freeze needs it" (item 4). The **trip test** stays where its own

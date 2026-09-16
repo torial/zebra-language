@@ -1,0 +1,16 @@
+# The other shape of an unmet constraint: a primitive type argument. `int` can
+# implement nothing, so `Sorted(int)` -- here as a nilable ANNOTATION rather than a
+# construction, the second site the check covers -- is refused by name (2026-09-16).
+#
+#   generic_constraint_primitive_test.zbr:N:C: error: 'int' is a primitive and cannot implement Comparable(int), which Sorted's type parameter T requires
+interface Comparable(T)
+    def compareTo(other: T): int
+
+class Sorted(T where T implements Comparable(T))
+    var items: List(T)
+    cue init()
+        items = List()
+
+def main()
+    var worse: Sorted(int)? = nil
+    print(worse == nil)

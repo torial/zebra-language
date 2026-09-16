@@ -1,0 +1,36 @@
+# The second pass on generic interfaces (2026-09-16): a value of `Comparable(Score)` is
+# typed as the interface, so (1) a call through it infers the method's return type --
+# `c.compareTo(b) + 1` is int arithmetic, not an untyped operand; (2) a method that
+# returns one of the interface's own type parameters (`convert(x: A): B`) is typed
+# unknown rather than a bogus `B`, so it still flows into an untyped local; (3) a
+# generic interface that EXTENDS another exposes the base's methods through the
+# value. The fail fixtures beside this pin the refusal of an undeclared member.
+interface Named
+    def name(): str
+
+interface Comparable(T) implements Named
+    def compareTo(other: T): int
+
+interface Converter(A, B)
+    def convert(x: A): B
+
+class Score implements Comparable(Score), Converter(int, str)
+    var value: int
+    cue init(v: int)
+        value = v
+    def compareTo(other: Score): int
+        return value - other.value
+    def name(): str
+        return "score" + value.toString()
+    def convert(x: int): str
+        return "<" + (value + x).toString() + ">"
+
+def main()
+    var c: Comparable(Score) = Score(3)
+    var n: int = c.compareTo(Score(1)) + 1
+    print(n)                                   # 3
+    print(c.name())                            # score3  (through the extended base)
+    var cv: Converter(int, str) = Score(3)
+    var s = cv.convert(4)
+    print(s)                                   # <7>
+    print("generic interface typed: ok")

@@ -343,7 +343,12 @@ class ASTBuilder
             mixins.add(TypeRef.named(NamedTypeRef(zspan(), mixin_name)))
         var tparams: List(TypeParam) = List(TypeParam)()
         for tp in c.type_params
-            tparams.add(TypeParam(tp, nil))
+            # "T|Comparable(T)" carries a `where` constraint (Parser.parseConstraintClause).
+            var bar: int = tp.indexOf("|")
+            if bar >= 0
+                tparams.add(TypeParam(tp.substring(0, bar), tp.substring(bar + 1, tp.len)))
+            else
+                tparams.add(TypeParam(tp, nil))
         var inv_exprs: List(Expr) = List(Expr)()
         for inv_pn in c.invs
             inv_exprs.add(.buildExpr(inv_pn)?)

@@ -1,0 +1,19 @@
+# A value of a generic interface type is typed as that interface (2026-09-16, generic
+# interfaces second pass): a method it does not declare is refused in the front end.
+# Before this the checker typed `Comparable(Score)` values as unknown and the call went
+# through to zig.
+#
+#   generic_interface_unknown_method_test.zbr:N:C: error: interface 'Comparable' has no method 'compare' (methods: compareTo)
+interface Comparable(T)
+    def compareTo(other: T): int
+
+class Score implements Comparable(Score)
+    var value: int
+    cue init(v: int)
+        value = v
+    def compareTo(other: Score): int
+        return value - other.value
+
+def main()
+    var c: Comparable(Score) = Score(3)
+    print(c.compare(Score(1)))

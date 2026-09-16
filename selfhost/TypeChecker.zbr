@@ -31,6 +31,29 @@ use AstWalk exposing collectOldNodes
 def internString(s: str): str
     return s
 
+# Generic interfaces seen by populateModuleTypes (this module and every dep), as a
+# pipe-delimited text so typeFromRef -- a free function with no ModuleTypes in reach --
+# can type a value of `Comparable(Score)` as the interface `Comparable` instead of
+# unknown_ (2026-09-16, generic interfaces second pass). Entry shape: "|Name:T,U|".
+var _generic_ifaces: str = "|"
+
+def genericIfaceParams(name: str): str?
+    var i: int = _generic_ifaces.indexOf("|" + name + ":")
+    if i < 0
+        return nil
+    var rest: str = _generic_ifaces.substring(i + name.len + 2, _generic_ifaces.len)
+    var j: int = rest.indexOf("|")
+    if j < 0
+        return rest
+    return rest.substring(0, j)
+
+# The base name of an `implements` key: "Comparable(Score)" → "Comparable".
+def ifaceKeyBase(key: str): str
+    var k: int = key.indexOf("(")
+    if k < 0
+        return key
+    return key.substring(0, k)
+
 # ── Cross-module type reference ──────────────────────────────────────────────
 # An instance of a user-defined type from an imported module, stored as
 # (module_alias, type_name) — no Symbol pointers, safe across compilation
@@ -344,6 +367,10 @@ class ModuleTypes
     # interface names declared via `implements`. Populated from DeclClass.ifaces
     # by populateModuleTypes (Phase 3C).
     var class_interfaces: HashMap(str, str)
+    # `class SortedList(T where T implements Comparable(T))`: class → "T=Comparable(T)|..."
+    # (only the constrained params). Enforced at instantiation (2026-09-16).
+    var generic_constraints: HashMap(str, str)
+    var generic_params: HashMap(str, str)          # class → "T,U" (every type param, in order)
     # "ClassName.memberName" keys for fields/methods marked private.
     # Enforced in inferExpr Expr.member: access from outside the owning class is an error.
     var private_member_keys: HashMap(str, bool)
@@ -372,6 +399,8 @@ class ModuleTypes
         union_names = HashMap()
         all_variant_keys = List()
         class_interfaces = HashMap()
+        generic_constraints = HashMap()
+        generic_params = HashMap()
         private_member_keys = HashMap()
         type_alias_names = HashMap()
         enum_names = HashMap()
@@ -447,6 +476,22 @@ class ModuleTypes
     def addClassInterfaces(class_name: str, ifaces_pipe: str)
         .class_interfaces.put(internString(class_name), internString(ifaces_pipe))
 
+    def addGenericConstraints(class_name: str, spec: str)
+        .generic_constraints.put(internString(class_name), internString(spec))
+
+    def genericConstraints(class_name: str): str?
+        if .generic_constraints.contains(class_name)
+            return .generic_constraints.fetch(class_name)
+        return nil
+
+    def addGenericParams(class_name: str, csv: str)
+        .generic_params.put(internString(class_name), internString(csv))
+
+    def genericParams(class_name: str): str?
+        if .generic_params.contains(class_name)
+            return .generic_params.fetch(class_name)
+        return nil
+
     # B5(a): true iff `name` is a declared interface.
     def isInterface(name: str): bool
         if .classOf(name) as ct
@@ -467,7 +512,11 @@ class ModuleTypes
         for ifc in ifaces_str.split("|")
             if ifc == iface_name
                 return true
-            if .classConformsToDepth(ifc, iface_name, depth - 1)
+            # `implements Comparable(Score)` conforms to `Comparable` -- the value's
+            # type carries the base name (typeFromRef) while the key carries the args.
+            if ifaceKeyBase(ifc) == iface_name
+                return true
+            if .classConformsToDepth(ifaceKeyBase(ifc), iface_name, depth - 1)
                 return true
         return false
 
@@ -732,6 +781,12 @@ def typeFromRef(tr: TypeRef): Type_
                 return Type_.chan_(typeFromRef(g.args.at(0)))
             if gname == "Set" and g.args.len == 1
                 return Type_.set_(typeFromRef(g.args.at(0)))
+            # A generic interface instantiation is the interface for typing purposes:
+            # its method set is registered under the base name. (A method returning
+            # one of the interface's type parameters is typed unknown_ at the call --
+            # the argument is not carried here; see the interface arm of Expr.member.)
+            if genericIfaceParams(gname) != nil
+                return Type_.named(gname)
             return Type_.unknown_
         on TypeRef.tuple as tt
             var ttelems: List(Type_) = List()
@@ -899,6 +954,19 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 ct.is_class = true
                 addClassMembers(mt, ct, c.members)
                 mt.addClass(ct)
+                var gcs: str = ""
+                var gps: str = ""
+                for tp in c.type_params
+                    if gps != ""
+                        gps = gps + ","
+                    gps = gps + tp.name
+                    if tp.constraint as tpc
+                        if gcs != ""
+                            gcs = gcs + "|"
+                        gcs = gcs + tp.name + "=" + tpc
+                if gcs != ""
+                    mt.addGenericConstraints(c.name, gcs)
+                    mt.addGenericParams(c.name, gps)
                 if c.ifaces.len > 0
                     var ci_pipe: str = ""
                     var ci_i: int = 0
@@ -972,6 +1040,15 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 ict.is_interface = true
                 addClassMembers(mt, ict, iface.members)
                 mt.addClass(ict)
+                if iface.type_params.len > 0 and genericIfaceParams(iface.name) == nil
+                    var gip: str = ""
+                    var gi: int = 0
+                    while gi < iface.type_params.len
+                        if gi > 0
+                            gip = gip + ","
+                        gip = gip + iface.type_params.at(gi).name
+                        gi += 1
+                    _generic_ifaces = _generic_ifaces + iface.name + ":" + gip + "|"
             on Decl.mixin_ as mx
                 # Register mixin under its own name so pass 2 can merge it.
                 var mct = ClassTypes(mx.name)
@@ -1476,6 +1553,22 @@ class InferCtx
     # True if name is a type alias in this module or any dep.
     def isTypeAlias(name: str): bool
         return .module_types.isTypeAlias(name) or .dep_types.isTypeAlias(name)
+
+    def genericParamNames(class_name: str): List(str)
+        var out: List(str) = List(str)()
+        var gp: str? = .module_types.genericParams(class_name)
+        if gp == nil
+            gp = .dep_types.genericParams(class_name)
+        if gp as gpv
+            for n in gpv.split(",")
+                out.add(n)
+        return out
+
+    def genericConstraintsAny(class_name: str): str?
+        var gc: str? = .module_types.genericConstraints(class_name)
+        if gc != nil
+            return gc
+        return .dep_types.genericConstraints(class_name)
 
     # True if class_name is known to implement iface_name in this module or any dep.
     def classConformsToAny(class_name: str, iface_name: str): bool
@@ -2919,7 +3012,27 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         on Type_.named as tn
                             var rt: Type_? = ctx.methodReturnAny(tn, mem.member)
                             if rt as rt_v
+                                # A generic interface method returning one of its own type
+                                # parameters (`def convert(x: A): B`): the argument is not
+                                # carried in Type_.named, so the result is unknown_ rather
+                                # than a bogus named("B").
+                                if genericIfaceParams(tn) as gparams
+                                    if rt_v is Type_.named as rtn
+                                        for gp in gparams.split(",")
+                                            if gp == rtn
+                                                return Type_.unknown_
                                 return rt_v
+                            # An INTERFACE receiver (plain or generic): a member the
+                            # interface does not declare -- nor any interface it extends
+                            # -- is refused here, naming the methods. Until 2026-09-16
+                            # interfaces were left to Zig, so `sh.bogus()` on a `Shape`
+                            # value reached "no field or member function named 'bogus'".
+                            if ctx.module_types.classOf(tn) as iface_ct
+                                if iface_ct.is_interface and mem.member != "toString"
+                                    if not interfaceHasMethod(ctx, tn, mem.member, 16)
+                                        ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                                   "interface '" + tn + "' has no method '" + mem.member + "'" + methodListHint(iface_ct))
+                                        return Type_.unknown_
                             # BUG-409: a method the class does not have (`c.bumpp()`) reached
                             # Zig ("no field or member function named 'bumpp' in 'C'"). A
                             # USER class or struct of THIS module (registered by
@@ -3369,6 +3482,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     if gc.callee is Expr.ident as gid
                         var gcname: str = gid.name
                         if ctx.hasClassAny(gcname)
+                            var targ_names: List(str) = List(str)()
+                            for ta in gc.args
+                                if ta.value is Expr.ident as tai
+                                    targ_names.add(tai.name)
+                                else
+                                    targ_names.add("")
+                            checkGenericConstraints(ctx, gcname, targ_names, gid.span)
                             return Type_.named(gcname)
                         if gcname == "HashMap" and gc.args.len == 2
                             if gc.args.at(0).value is Expr.ident as kn
@@ -4139,6 +4259,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             var t: Type_ = Type_.unknown_
             if dv.type_ != nil
                 t = typeFromRef(dv.type_!)
+                checkAnnotationConstraints(ctx, dv.type_!, dv.span)
             else
                 if dv.init_expr != nil
                     t = inferExpr(dv.init_expr!, ctx)
@@ -5377,6 +5498,115 @@ def checkHatClassDecl(decl: Decl, file: str, ctx: InferCtx)
 # keywords and failed as "use of undeclared identifier". The checker knows every one
 # of these at declaration time.
 # BUG-409 helper: " (methods: a/b/c)" for the refusal, or "" when the class has none.
+# `where T implements X` ENFORCED (2026-09-16; parsed and ignored since it was written).
+# At an instantiation of a constrained generic class -- `SortedList(Score)()` or the
+# annotation `var s: SortedList(Score)` -- each constrained argument must be a class or
+# struct that implements the constraint with the parameters substituted
+# (`Comparable(T)` → `Comparable(Score)`). A primitive can implement nothing and is
+# refused by name; an argument that is not a known type (a type parameter of an
+# enclosing generic, an alias) is not judged. Non-identifier arguments (a nested
+# generic) are skipped: they cannot name a class either.
+def substTypeParams(text: str, params: List(str), args: List(str)): str
+    var out: str = ""
+    var i: int = 0
+    while i < text.len
+        var ch: str = text.substring(i, i + 1)
+        if isIdentStart(ch)
+            var j: int = i
+            while j < text.len and isIdentChar(text.substring(j, j + 1))
+                j += 1
+            var word: str = text.substring(i, j)
+            var k: int = 0
+            var replaced: bool = false
+            while k < params.len
+                if params.at(k) == word and k < args.len and args.at(k) != ""
+                    out = out + args.at(k)
+                    replaced = true
+                k += 1
+            if not replaced
+                out = out + word
+            i = j
+        else
+            out = out + ch
+            i += 1
+    return out
+
+def isIdentStart(ch: str): bool
+    return (ch >= "a" and ch <= "z") or (ch >= "A" and ch <= "Z") or ch == "_"
+
+def isIdentChar(ch: str): bool
+    return isIdentStart(ch) or (ch >= "0" and ch <= "9")
+
+def isPrimitiveTypeName(n: str): bool
+    return n == "int" or n == "uint" or n == "float" or n == "bool" or n == "char" or n == "str" or n == "byte" or n == "float32" or n == "int32" or n == "int64" or n == "int8" or n == "int16" or n == "uint8" or n == "uint16" or n == "uint32" or n == "uint64" or n == "void"
+
+# An annotation `SortedList(Score)`, possibly under `?` / `^`, checked the same way.
+def checkAnnotationConstraints(ctx: InferCtx, tr: TypeRef, sp: Ast.Span)
+    branch tr
+        on TypeRef.generic as g
+            if ctx.hasClassAny(g.name)
+                var names: List(str) = List(str)()
+                for ga in g.args
+                    if ga is TypeRef.named as gan
+                        names.add(gan.name)
+                    else
+                        names.add("")
+                checkGenericConstraints(ctx, g.name, names, sp)
+        on TypeRef.nilable as inner
+            checkAnnotationConstraints(ctx, inner, sp)
+        on TypeRef.ref_to as inner
+            checkAnnotationConstraints(ctx, inner, sp)
+        else
+            pass
+
+def checkGenericConstraints(ctx: InferCtx, cls: str, args: List(str), sp: Ast.Span)
+    var spec: str? = ctx.genericConstraintsAny(cls)
+    if spec == nil
+        return
+    # The class's parameter names, in order, from its registered constraint spec are
+    # only the CONSTRAINED ones; the positional list comes from the declaration.
+    var decl_params: List(str) = ctx.genericParamNames(cls)
+    for entry in spec!.split("|")
+        var eq: int = entry.indexOf("=")
+        if eq < 0
+            continue
+        var pname: str = entry.substring(0, eq)
+        var ctext: str = entry.substring(eq + 1, entry.len)
+        var pos: int = -1
+        var pi: int = 0
+        while pi < decl_params.len
+            if decl_params.at(pi) == pname
+                pos = pi
+            pi += 1
+        if pos < 0 or pos >= args.len
+            continue
+        var arg: str = args.at(pos)
+        if arg == ""
+            continue
+        var want: str = substTypeParams(ctext, decl_params, args)
+        if ctx.hasClassAny(arg)
+            if not ctx.classConformsToAny(arg, want)
+                ctx.addErr(ctx.file, sp.line, sp.col,
+                           "'" + arg + "' does not implement " + want + ", which " + cls + "'s type parameter " + pname + " requires (`" + pname + " where " + pname + " implements " + ctext + "`)")
+        else if isPrimitiveTypeName(arg)
+            ctx.addErr(ctx.file, sp.line, sp.col,
+                       "'" + arg + "' is a primitive and cannot implement " + want + ", which " + cls + "'s type parameter " + pname + " requires")
+
+# True iff interface `iface` declares `method`, itself or through an interface it
+# extends (class_interfaces holds the extension list; keys may carry generic args).
+def interfaceHasMethod(ctx: InferCtx, iface: str, method: str, depth: int): bool
+    if depth <= 0
+        return false
+    if ctx.methodReturnAny(iface, method) != nil
+        return true
+    if not ctx.module_types.class_interfaces.contains(iface)
+        return false
+    var parents: str = ctx.module_types.class_interfaces.fetch(iface)
+    for p in parents.split("|")
+        if interfaceHasMethod(ctx, ifaceKeyBase(p), method, depth - 1)
+            return true
+    return false
+
 def methodListHint(ct: ClassTypes): str
     var names: List(str) = List(str)()
     for k in ct.method_returns.keys()

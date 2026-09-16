@@ -1,0 +1,22 @@
+# A member an interface does not declare is refused through an interface-typed value
+# (2026-09-16). Until then interfaces were excluded from the BUG-409 unknown-method
+# refusal ("left to the arms that know them"), so `sh.bogus()` reached zig as
+# "no field or member function named 'bogus'" -- a diagnostic about generated code.
+# The lookup follows `implements` between interfaces, so a method declared on the
+# base interface is NOT refused (tc_iface_transitive_match_test covers the accept).
+#
+#   interface_unknown_method_test.zbr:N:C: error: interface 'Shape' has no method 'bogus' (methods: area)
+interface Shape
+    def area(): int
+
+class Sq implements Shape
+    var s: int
+    cue init(s: int)
+        .s = s
+    def area(): int
+        return .s * .s
+
+def main()
+    var sh: Shape = Sq(3)
+    print(sh.area())
+    print(sh.bogus())
