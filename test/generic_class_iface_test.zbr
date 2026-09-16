@@ -1,0 +1,54 @@
+# A GENERIC class implementing an interface -- plain and generic -- and its instances
+# coerced to the interface from every position (2026-09-16, the last edge of generic
+# interfaces). Three things had to move: (1) a generic instance's vtable lives INSIDE
+# the instantiated struct, and the coercion reads it off the value with
+# `@TypeOf(v.*)._vtable_<Iface>` instead of reconstructing `Box(i64)` from the
+# initializer -- so an ident, a call result and a return all coerce, not only the
+# inline ctor; (2) `implements Comparable(Box(T))` resolves like any generic interface
+# reference, with T substituted in the shim signatures; (3) a generic class type is a
+# POINTER wherever it is spelled (`def show(b: Box(int))`, `var c: Box(int)`), as a named
+# class already was -- until this fixture `show(a)` was "expected type 'T', found '*T'".
+interface Show
+    def show(): str
+
+interface Comparable(T)
+    def compareTo(other: T): int
+
+class Box(T) implements Show, Comparable(Box(T))
+    var v: int
+    var extra: T?
+    cue init(v: int)
+        .v = v
+        .extra = nil
+    def show(): str
+        return "box" + .v.toString()
+    def compareTo(other: Box(T)): int
+        return .v - other.v
+
+def describe(s: Show): str
+    return "<" + s.show() + ">"
+
+def asShow(b: Box(int)): Show
+    return b
+
+def gap(a: Comparable(Box(int)), b: Box(int)): int
+    return a.compareTo(b)
+
+def peek(b: Box(int)): int
+    return b.v
+
+def main()
+    var a = Box(int)(3)
+    var b = Box(int)(1)
+    print(peek(a))                          # 3   (a generic instance as a typed param)
+    var s: Show = a                         # ident
+    print(s.show())                         # box3
+    var s2: Show = Box(int)(4)              # inline ctor
+    print(s2.show())                        # box4
+    print(describe(b))                      # <box1>  (arg coercion)
+    print(asShow(a).show())                 # box3    (return coercion)
+    var c: Comparable(Box(int)) = a         # generic interface on a generic class
+    print(c.compareTo(b))                   # 2
+    print(gap(a, b))                        # 2
+    print(s is Show)                        # true    (membership includes generic classes)
+    print("generic class iface: ok")

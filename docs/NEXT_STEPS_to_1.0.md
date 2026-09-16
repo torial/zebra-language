@@ -131,8 +131,16 @@ DECISIONS 2026-09-15 (Sean, on the 2026-09-14 read above and the surface measure
   test/generic_interface_typed_test). The `where T implements X` constraint is
   ENFORCED at instantiation and at an annotation, with T substituted
   (fail_fixtures/generic_constraint_unmet_test, generic_constraint_primitive_test).
-  STILL LEFT: a generic class implementing a generic interface (the in-struct vtable
-  path is named-only), an interface extending a generic one. Paper cut seen while
+  THIRD PASS the same night: a generic class implementing plain and generic
+  interfaces (test/generic_class_iface_test). Found on the way, and worse than the
+  edge itself: a generic instance coerced to ANY interface from an identifier hit
+  "undeclared identifier '_vtable_Box_Show'" (only the inline ctor worked), and a
+  generic class type as a parameter or annotation was emitted as the VALUE type, so
+  `def show(b: Box(int))` refused its own instances ("expected type 'T', found '*T'").
+  Both fixed: the coercion reads the vtable off the value (`@TypeOf(v.*)._vtable_I`)
+  and `Box(int)` is a pointer like every class. STILL LEFT: an interface extending a
+  generic one; two instantiations of one generic interface by one generic class (the
+  in-struct vtable is keyed on the interface's base name). Paper cut seen while
   probing: `items = List(T)()` inside a generic class body is "undefined name: 'T'"
   (the idiom is `items = List()`); the resolver does not know the class's type
   parameters as names.

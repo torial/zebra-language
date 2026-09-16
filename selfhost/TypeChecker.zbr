@@ -36,6 +36,10 @@ def internString(s: str): str
 # can type a value of `Comparable(Score)` as the interface `Comparable` instead of
 # unknown_ (2026-09-16, generic interfaces second pass). Entry shape: "|Name:T,U|".
 var _generic_ifaces: str = "|"
+# Generic CLASSES seen by populateModuleTypes ("|Box|Stack|"), so an annotation
+# `Box(int)` types as the class -- the same Type_.named("Box") its constructor call
+# infers to -- and a value so annotated coerces to an interface / dispatches methods.
+var _generic_classes: str = "|"
 
 def genericIfaceParams(name: str): str?
     var i: int = _generic_ifaces.indexOf("|" + name + ":")
@@ -787,6 +791,8 @@ def typeFromRef(tr: TypeRef): Type_
             # the argument is not carried here; see the interface arm of Expr.member.)
             if genericIfaceParams(gname) != nil
                 return Type_.named(gname)
+            if ("|" + gname + "|") in _generic_classes
+                return Type_.named(gname)
             return Type_.unknown_
         on TypeRef.tuple as tt
             var ttelems: List(Type_) = List()
@@ -967,6 +973,8 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 if gcs != ""
                     mt.addGenericConstraints(c.name, gcs)
                     mt.addGenericParams(c.name, gps)
+                if c.type_params.len > 0 and not (("|" + c.name + "|") in _generic_classes)
+                    _generic_classes = _generic_classes + c.name + "|"
                 if c.ifaces.len > 0
                     var ci_pipe: str = ""
                     var ci_i: int = 0

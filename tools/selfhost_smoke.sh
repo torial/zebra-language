@@ -747,6 +747,9 @@ smoke_tc_fail test/fail_fixtures/generic_constraint_unmet_test.zbr \
     "'Plain' does not implement Comparable(Plain), which Sorted's type parameter T requires"
 smoke_tc_fail test/fail_fixtures/generic_constraint_primitive_test.zbr \
     "'int' is a primitive and cannot implement Comparable(int)"
+# A generic class implementing plain and generic interfaces; instances coerce from
+# ident/ctor/arg/return; generic class types are pointers everywhere (2026-09-16).
+smoke_run test/generic_class_iface_test.zbr "generic class iface: ok"
 smoke_tc_fail test/fail_fixtures/generic_interface_arity_test.zbr \
     "interface 'Comparable' takes 1 type argument(s)"
 smoke_run test/bug427_param_shadows_fn_test.zbr "bug427: ok"

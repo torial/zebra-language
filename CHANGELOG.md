@@ -88,6 +88,13 @@ is a front-end error naming the methods; until now it reached zig. `class Sorted
 T implements Comparable(T))` is enforced at `Sorted(X)()` and at a `Sorted(X)` annotation
 with T substituted; a primitive argument is refused by name. The clause had been parsed
 and ignored since it was written.
+**Generic classes implement interfaces, and their types are references** (2026-09-16):
+`class Box(T) implements Show, Comparable(Box(T))` works, and a `Box(int)` instance
+coerces to the interface from an identifier, an argument or a return -- until now only
+the inline constructor form did (an identifier reached zig as an undeclared `_vtable_`
+symbol). `Box(int)` spelled as a parameter or annotation is now `*Box(i64)` in Zig,
+matching what the constructor returns; `def show(b: Box(int))` had refused its own
+instances.
 **Bootstrap sunset Step 2**: the comparison tooling is retired to `tools/attic/` —
 `selfhost-div` and `interp-escape` leave the gate tiers (49 daily / 41 full), `compile_check
 --bootstrap` and the parity/scaling probes go, `mutation_check` regenerates via the

@@ -1743,8 +1743,12 @@ generic interface, or with the wrong number of arguments, is a front-end error n
 count. A value of type `Comparable(Score)` is typed as the interface: a method it does
 not declare is refused (`interface 'Comparable' has no method ...`), and a call through
 it has the method's return type -- except a method returning one of the interface's own
-type parameters (`def convert(x: A): B`), which is untyped at the call. Not yet: a
-generic *class* implementing a generic interface, and an interface extending a generic one.
+type parameters (`def convert(x: A): B`), which is untyped at the call. A generic *class*
+may implement a plain or a generic interface (`class Box(T) implements Show,
+Comparable(Box(T))`), and its instances coerce to the interface from an identifier, a
+constructor, an argument or a return; a generic class type is a reference wherever it is
+spelled (`def show(b: Box(int))`), as a named class is. Not yet: an interface extending a
+generic one.
 
 ---
 

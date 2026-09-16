@@ -3748,6 +3748,13 @@ struct Generator
         if gtr.name == "ThreadPool"
             w.emit("*_ThreadPool")
             return
+        # A generic CLASS instance is a pointer, exactly as a named class is (`init`
+        # returns `*@This()`): `Box(int)` as a parameter, annotation or interface
+        # argument is `*_zbr_ty_Box(i64)`. Until 2026-09-16 the star was missing here,
+        # so `def show(b: Box(int))` refused its own value ("expected type 'T', found
+        # '*T'") and `implements Comparable(Box(T))` bound T to the value type.
+        if class_names.contains_(gtr.name) and isGenericClassName(gtr.name)
+            w.emit("*")
         emitTypeName(gtr.name)                              # BUG-281 B
         if gtr.args.len > 0
             w.emit("(")
@@ -4363,7 +4370,10 @@ struct Generator
             var cig3 = ig.indented()
             for tr in n.ifaces
                 cig3.writeIndent()
-                w.emit(typeRefStr(tr))
+                if ifaceRef(tr) as ck_ir3
+                    w.emit(ck_ir3.zig)           # `Comparable(_zbr_ty_Box(T))` for a generic one
+                else
+                    w.emit(typeRefStr(tr))
                 w.emit(".check(@This());\n")
             ig.writeIndent()
             w.emit("}\n")
@@ -4378,12 +4388,15 @@ struct Generator
         while gvi < gv_work.len
             var gv_tr = gv_work.at(gvi)
             gvi = gvi + 1
-            if gv_tr is TypeRef.named as gnt
-                if not gv_seen.contains_(gnt.name)
-                    gv_seen.add(gnt.name)
-                    var gv_ifc = findInterfaceDecl(gnt.name)
+            # A generic interface (`implements Comparable(Box(T))`) resolves through
+            # ifaceRef like a named one; the vtable is keyed on the BASE name inside the
+            # struct (one instantiation of an interface per generic class).
+            if ifaceRef(gv_tr) as gv_ir
+                if not gv_seen.contains_(gv_ir.base)
+                    gv_seen.add(gv_ir.base)
+                    var gv_ifc = findInterfaceDecl(gv_ir.base)
                     if gv_ifc as gv_decl
-                        ig.genIfaceVtableInStruct(gv_decl)
+                        ig.genIfaceVtableInStruct(gv_decl, gv_ir)
                         for gv_super in gv_decl.ifaces
                             gv_work.add(gv_super)
         fg.writeIndent()
@@ -4486,10 +4499,11 @@ struct Generator
                 var any = false
                 for cdecl in m.decls
                     if cdecl is Decl.class_ as cls
-                        if cls.type_params.len == 0
-                            if module_types.classConformsTo(cls.name, ifc.name)
-                                w.emit("    if ((_tag & 0xFFFFFFFF) == _ttag_" + cls.name + ") return true;\n")
-                                any = true
+                        # Generic classes too (2026-09-16): `_ttag_<Class>` is emitted at
+                        # file scope for them since the in-struct vtable pass.
+                        if module_types.classConformsTo(cls.name, ifc.name)
+                            w.emit("    if ((_tag & 0xFFFFFFFF) == _ttag_" + cls.name + ") return true;\n")
+                            any = true
                 if not any
                     w.emit("    _ = _tag;\n")
                 w.emit("    return false;\n}\n")
@@ -4538,15 +4552,49 @@ struct Generator
             return nil
         if not module_types.classConformsTo(cn, iface_name)
             if not dep_types.classConformsTo(cn, iface_name)
-                return nil
+                # A generic class registers its key with its OWN parameter
+                # (`Comparable(Box(T))`); the site asks with the instantiation
+                # (`Comparable(Box(int))`). Conformance is by the interface's base.
+                var ib: str = iface_name
+                var ip: int = iface_name.indexOf("(")
+                if ip >= 0
+                    ib = iface_name.substring(0, ip)
+                if not (isGenericClassName(cn) and (module_types.classConformsTo(cn, ib) or dep_types.classConformsTo(cn, ib)))
+                    return nil
         return cn
+
+    # True iff `name` declares a generic class in this module (`class Box(T)`).
+    def isGenericClassName(name: str): bool
+        for decl in module_decls
+            if decl is Decl.class_ as cls
+                if cls.name == name
+                    return cls.type_params.len > 0
+        return false
+
+    # The interface fat pointer for a concrete value: `.{ .ptr = <value>, .vtable = ... }`.
+    # A plain class's vtable is the file-scope `_vtable_<Class>_<vt>`. A GENERIC class
+    # (2026-09-16, the "generic class implementing an interface" pass) carries its vtable
+    # INSIDE each instantiated struct as `_vtable_<Base>`, and the value knows its own
+    # instantiation: `@TypeOf(v.*)._vtable_Base` reaches it without the codegen having to
+    # reconstruct `Box(i64)` from wherever the value came from (a ctor, a local, a call).
+    # `@TypeOf` never evaluates its operand at runtime, so the value is emitted ONCE, into
+    # a block-local, and the type is read from that.
+    def genFatPtr(value: Expr, cn: str, ir: IfaceRef)
+        if isGenericClassName(cn)
+            var fuid = w.nextUid()
+            var lbl = "blk_if" + fuid.toString()
+            w.emit(lbl + ": { const _ip = ")
+            genExpr(value)
+            w.emit("; break :" + lbl + " .{ .ptr = _ip, .vtable = &@TypeOf(_ip.*)._vtable_" + ir.base + " }; }")
+        else
+            w.emit(".{ .ptr = ")
+            genExpr(value)
+            w.emit(", .vtable = &_vtable_" + cn + "_" + ir.vt + " }")
 
     def genInterfaceArgCoercion(arg: Expr, param_type: TypeRef): bool
         if ifaceRef(param_type) as pir
             if ifaceCoercionClass(arg, pir.name) as cn
-                w.emit(".{ .ptr = ")
-                genExpr(arg)
-                w.emit(", .vtable = &_vtable_" + cn + "_" + pir.vt + " }")
+                genFatPtr(arg, cn, pir)
                 return true
         return false
 
@@ -4664,7 +4712,7 @@ struct Generator
     # reference @This() (the instantiated struct), not a class name. Coercion sites
     # reference these as `Box(i64)._vtable_<Iface>`. Emits at the current generator's
     # indent (call as `ig.genIfaceVtableInStruct(iface)` with ig = struct body).
-    def genIfaceVtableInStruct(ifc: DeclInterface)
+    def genIfaceVtableInStruct(ifc: DeclInterface, ir: IfaceRef)
         var iname = ifc.name
         for m in ifc.members
             if m is Decl.method as meth
@@ -4674,14 +4722,20 @@ struct Generator
                     var zp_shim2: str = zigSafeName(p.name)
                     w.emit(", " + zp_shim2 + ": ")
                     if p.type_ != nil
-                        genType(p.type_!)
+                        if ir.args.len > 0
+                            genType(substTypeRef(p.type_!, ifc.type_params, ir.args))
+                        else
+                            genType(p.type_!)
                     else
                         w.emit("anytype")
                 w.emit(") ")
                 if meth.throws_
                     w.emit("anyerror!")
                 if meth.return_type != nil
-                    genType(meth.return_type!)
+                    if ir.args.len > 0
+                        genType(substTypeRef(meth.return_type!, ifc.type_params, ir.args))
+                    else
+                        genType(meth.return_type!)
                 else
                     w.emit("void")
                 if meth.throws_
@@ -4698,7 +4752,7 @@ struct Generator
                     w.emit(zigSafeName(p.name))
                 w.emit("); }\n")
         writeIndent()
-        w.emit("const _vtable_${iname} = ${iname}.VTable{")
+        w.emit("const _vtable_${iname} = ${ir.zig}.VTable{")
         for m in ifc.members
             if m is Decl.method as meth
                 w.emit(" .${meth.name} = &_shim_${iname}_${meth.name},")
@@ -4711,15 +4765,15 @@ struct Generator
         while vti < vt_work.len
             var vt_tr = vt_work.at(vti)
             vti = vti + 1
-            if vt_tr is TypeRef.named as vnt
-                if not vt_seen.contains_(vnt.name)
-                    vt_seen.add(vnt.name)
+            if ifaceRef(vt_tr) as vt_ir2
+                if not vt_seen.contains_(vt_ir2.base)
+                    vt_seen.add(vt_ir2.base)
                     w.emit(" .__as_")
-                    w.emit(vnt.name)
+                    w.emit(vt_ir2.base)
                     w.emit(" = &_vtable_")
-                    w.emit(vnt.name)
+                    w.emit(vt_ir2.base)
                     w.emit(",")
-                    var vsd = findInterfaceDecl(vnt.name)
+                    var vsd = findInterfaceDecl(vt_ir2.base)
                     if vsd as vsdecl
                         for vst in vsdecl.ifaces
                             vt_work.add(vst)
@@ -6676,9 +6730,9 @@ struct Generator
                             var zn_ifc: str = zigSafeName(n.name)
                             # `.ptr` = the ctor call WITH its args (genExpr emits
                             # `Class.init(args)`); a non-default ctor needs the args.
-                            w.emit(ikw + " " + zn_ifc + ": " + itn_ir.zig + " = .{ .ptr = ")
-                            genExpr(iinit)
-                            w.emit(", .vtable = &_vtable_" + iclass_name + "_" + itn_ir.vt + " };\n")
+                            w.emit(ikw + " " + zn_ifc + ": " + itn_ir.zig + " = ")
+                            genFatPtr(iinit, iclass_name, itn_ir)
+                            w.emit(";\n")
                             return
                         if itr is TypeRef.ref_to as irto
                             if ifaceRef(irto) as irtn_ir
@@ -6689,9 +6743,9 @@ struct Generator
                                 writeIndent()
                                 w.emit("const _iface_" + iuid.toString() + " = _allocator.create(" + irtn_ir.zig + ") catch @panic(\"OOM\");\n")
                                 writeIndent()
-                                w.emit("_iface_" + iuid.toString() + ".* = .{ .ptr = ")
-                                genExpr(iinit)
-                                w.emit(", .vtable = &_vtable_" + iclass_name + "_" + irtn_ir.vt + " };\n")
+                                w.emit("_iface_" + iuid.toString() + ".* = ")
+                                genFatPtr(iinit, iclass_name, irtn_ir)
+                                w.emit(";\n")
                                 writeIndent()
                                 var zn_ifc2: str = zigSafeName(n.name)
                                 w.emit(ikw2 + " " + zn_ifc2 + ": *" + irtn_ir.zig + " = _iface_" + iuid.toString() + ";\n")
@@ -6707,39 +6761,15 @@ struct Generator
                             var ikw3: str = "const"
                             if is_mut
                                 ikw3 = "var"
-                            # Generic-class ctor — nested call `Box(int)(42)`: the vtable
-                            # lives inside the monomorphized struct, so reference it as
-                            # `&Box(i64)._vtable_I`, reconstructing the instantiation from
-                            # the inner call's type args.
-                            var did_generic = false
-                            if iinit is Expr.call as g_outer
-                                if g_outer.callee is Expr.call as g_inner
-                                    if g_inner.callee is Expr.ident as g_id
-                                        if g_id.name == cc!
-                                            writeIndent()
-                                            var zn_ifc3: str = zigSafeName(n.name)
-                                            w.emit(ikw3 + " " + zn_ifc3 + ": " + itn2.zig + " = .{ .ptr = ")
-                                            genExpr(iinit)
-                                            # BUG-281 B: the instantiation names the
-                                            # generic TYPE; `_vtable_<Iface>` below is a
-                                            # member of the struct it returns, not a
-                                            # file-scope symbol, so only this half moves.
-                                            w.emit(", .vtable = &" + typeZigName(cc!) + "(")
-                                            var g_first = true
-                                            for g_ta in g_inner.args
-                                                if not g_first
-                                                    w.emit(", ")
-                                                g_first = false
-                                                genTypeFromExpr(g_ta.value)
-                                            w.emit(")._vtable_" + itn2.vt + " };\n")
-                                            did_generic = true
-                            if did_generic
-                                return
+                            # (A generic-class ctor `Box(int)(42)` used to reconstruct
+                            # `Box(i64)._vtable_I` from the inner call's type args here;
+                            # genFatPtr reads the instantiation off the value instead, so
+                            # a generic instance coerces from an ident or a call too.)
                             writeIndent()
                             var zn_ifc4: str = zigSafeName(n.name)
-                            w.emit(ikw3 + " " + zn_ifc4 + ": " + itn2.zig + " = .{ .ptr = ")
-                            genExpr(iinit)
-                            w.emit(", .vtable = &_vtable_" + cc! + "_" + itn2.vt + " };\n")
+                            w.emit(ikw3 + " " + zn_ifc4 + ": " + itn2.zig + " = ")
+                            genFatPtr(iinit, cc!, itn2)
+                            w.emit(";\n")
                             return
                         # Interface→interface upcast: `var b: IBase = f` where f: IFoo
                         # and IFoo implements IBase. The two fat-pointer structs are
@@ -8148,9 +8178,9 @@ struct Generator
             if ifaceRef(iret) as iret_ir
                 if ifaceCoercionClass(r.value!, iret_ir.name) as iret_cn
                     writeIndent()
-                    w.emit("return .{ .ptr = ")
-                    genExpr(r.value!)
-                    w.emit(", .vtable = &_vtable_" + iret_cn + "_" + iret_ir.vt + " };\n")
+                    w.emit("return ")
+                    genFatPtr(r.value!, iret_cn, iret_ir)
+                    w.emit(";\n")
                     return
         # BUG-350: `return s.split(sep)` from a `List(str)` function emitted the raw
         # SplitIterator ("expected 'array_list...', found 'mem.SplitIterator'"); only
@@ -8196,9 +8226,9 @@ struct Generator
                                     writeIndent()
                                     w.emit("const _iface_" + ruid.toString() + " = _allocator.create(" + rtn_ir.zig + ") catch @panic(\"OOM\");\n")
                                     writeIndent()
-                                    w.emit("_iface_" + ruid.toString() + ".* = .{ .ptr = ")
-                                    genExpr(rv)
-                                    w.emit(", .vtable = &_vtable_" + rvid.name + "_" + rtn_ir.vt + " };\n")
+                                    w.emit("_iface_" + ruid.toString() + ".* = ")
+                                    genFatPtr(rv, rvid.name, rtn_ir)
+                                    w.emit(";\n")
                                     writeIndent()
                                     w.emit("return _iface_" + ruid.toString() + ";\n")
                                     return
