@@ -1,0 +1,7 @@
+# Iter(T) is only a generator's return type; bind the call, its type is inferred.
+def ones(): Iter(int)
+    yield 1
+
+def main()
+    var it: Iter(int) = ones()
+    print(it.next()!)

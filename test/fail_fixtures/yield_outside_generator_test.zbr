@@ -1,0 +1,7 @@
+# `yield` belongs in a def whose return type is Iter(T).
+def count(): int
+    yield 1
+    return 2
+
+def main()
+    print(count())

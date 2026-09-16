@@ -821,7 +821,7 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   a *MethodKnown predicate per type, derived from the
                                 #   dispatch arms, refusing unknown names in the front end
                                 #   -- and are derived here since. The counts print every
-                                #   run. 68 keywords (81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four, 70 until same, 69 until has), 31 namespaces / 171 members,
+                                #   run. 69 keywords (`yield` added 2026-09-16; 68 after `has`; 81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four, 70 until same, 69 until has), 31 namespaces / 171 members,
                                 #   21 receivers / 253 methods (5 / 120 on the day it was written).
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
@@ -2624,7 +2624,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **645** <!-- doc-gen: 645 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **647** <!-- doc-gen: 647 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

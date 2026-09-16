@@ -16,7 +16,7 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use Ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclTypeAlias, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, FnTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtIn, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprSetLit, ExprDictLit, DictEntry, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain, ExprIf
+use Ast exposing StmtYield, Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclTypeAlias, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, FnTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtIn, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprSetLit, ExprDictLit, DictEntry, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain, ExprIf
 use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PTypeAlias, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PWith, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain, PIfExpr
 
 def zspan(): Span
@@ -739,6 +739,10 @@ class ASTBuilder
                     const msg = .buildExpr(pas.message.at(0))?
                     return Stmt.assert_(StmtAssert(Span(pas.line, pas.col, pas.line, pas.col), cond_expr, msg))
                 return Stmt.assert_(StmtAssert(Span(pas.line, pas.col, pas.line, pas.col), cond_expr, nil))
+
+            on PNode.stmt_yield as py
+                const yval = .buildExpr(py.value.at(0))?
+                return Stmt.yield_(StmtYield(Span(py.line, py.col, py.line, py.col), yval))
 
             on PNode.stmt_raise as pr
                 if pr.message.len >= 2

@@ -331,10 +331,15 @@ That is the Perlis test failing -- materialising a list you will walk once and d
 attention to the irrelevant. Liskov's CLU had iterators for exactly this. Reopen with the
 dogfood evidence rather than in the abstract.
 
-**2026-09-16: the consumer half exists.** `cue iter` / `cue next` (above) make any type a
-`for x in obj` iterable, lazily -- the custom splitter Sean wrote in .NET is now writable in
-Zebra as a class with a `cue next(): str?`. What is still missing is the *producer* sugar
-(`yield`): every lazy iterator is hand-written state today.
+**2026-09-16: both halves exist -- CLOSED.** `cue iter` / `cue next` (above) make any type a
+`for x in obj` iterable, lazily; and `def f(...): Iter(T)` with `yield` writes that class
+for you (CodeGen.genGeneratorFn: the body lowered to basic blocks, `next()` a
+`while (true) switch (state)`, locals as fields). The .NET lazy splitter is now
+`def split(s: str, sep: str): Iter(str)` with a `yield` in a loop. What is NOT in v1, each
+refused by name rather than miscompiled: a generator METHOD (needs the receiver captured),
+a yield under `branch`/`try`/`with`/`using`/`allocate` or `if x as y`, a yielding `for`
+over anything but a List / range / cue iterable, and `Iter(T)` as an annotation (the call
+is bound and inferred). Any of those is a bounded extension of the same lowering.
 
 ## THE WRITTEN MEMORY MODEL — what it would actually contain
 

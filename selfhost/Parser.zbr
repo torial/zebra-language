@@ -58,6 +58,7 @@ union PNode
     stmt_assign: ^PAssign
     stmt_assert: ^PAssert
     stmt_raise: ^PRaise
+    stmt_yield: ^PYield
     stmt_try_catch: ^PTryCatch
     stmt_expr: ^PNode
     stmt_print: List(PNode)
@@ -610,6 +611,16 @@ struct PAssert
         .line = line
         .col = col
 
+# `yield expr` (2026-09-16): a generator's produced value.
+struct PYield
+    var value: List(PNode)
+    var line: int
+    var col: int
+    cue init(value: List(PNode), line: int, col: int)
+        .value = value
+        .line = line
+        .col = col
+
 struct PRaise
     var message: List(PNode)
     var line: int
@@ -893,7 +904,7 @@ class Parser
         var t = .peek().text
         if t == "def"
             return .errorAt("a function definition ('def') can't appear in expression position — use a lambda `def(args) body`, or move it to its own statement")
-        if t == "if" or t == "for" or t == "while" or t == "return" or t == "branch" or t == "raise" or t == "var" or t == "const" or t == "with"
+        if t == "if" or t == "for" or t == "while" or t == "return" or t == "branch" or t == "raise" or t == "yield" or t == "var" or t == "const" or t == "with"
             return .errorAt("'" + t + "' is a statement keyword and can't be used as an expression here")
         if t.len == 0
             return .errorAt("unexpected end of input while parsing an expression")
@@ -2292,6 +2303,8 @@ class Parser
             return .parseAssertStmt()?
         else if .textIs("raise")
             return .parseRaiseStmt()?
+        else if .textIs("yield")
+            return .parseYieldStmt()?
 
         else if .textIs("branch")
             return .parseBranchStmt()?
@@ -2625,6 +2638,17 @@ class Parser
     # assert_* keywords are ordinary identifiers now; `assert a == b` prints both operands
     # itself. PNode.stmt_assert_* / Stmt.assert_cmp / assert_unary and their walker arms
     # are dead code until bootstrap_sunset.md Step 4 removes them.
+
+    def parseYieldStmt(): PNode throws
+        const line = .peek().line
+        const col = .peek().col
+        .expectText("yield")?
+        var val_list = List(PNode)()
+        if .isEol() or .isEof() or .isDedent()
+            raise .errorAt("`yield` takes the value to produce: `yield expr` (a generator finishes with a bare `return`)")
+        val_list.add(.parseExpr()?)
+        .skipEol()
+        return PNode.stmt_yield(PYield(val_list, line, col))
 
     def parseRaiseStmt(): PNode throws
         const line = .peek().line

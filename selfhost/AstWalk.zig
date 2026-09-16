@@ -948,16 +948,265 @@ pub fn _zbr_fn_mightUseNameStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
 // zbr:selfhost/AstWalk.zbr:498
             return false;
         },
-        .break_ => {
+        .yield_ => |_ptr_yl| {
+            const yl = _ptr_yl.*;
 // zbr:selfhost/AstWalk.zbr:500
-            return false;
+            return _zbr_fn_mightUseNameInExpr(name, yl.value.*);
         },
-        .continue_ => {
+        .break_ => {
 // zbr:selfhost/AstWalk.zbr:502
             return false;
         },
-        .pass_ => {
+        .continue_ => {
 // zbr:selfhost/AstWalk.zbr:504
+            return false;
+        },
+        .pass_ => {
+// zbr:selfhost/AstWalk.zbr:506
+            return false;
+        },
+    }
+}
+
+// zbr:selfhost/AstWalk.zbr:512
+pub fn _zbr_fn_stmtsContainYield(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+// zbr:selfhost/AstWalk.zbr:513
+    for (stmts.items) |s| {
+// zbr:selfhost/AstWalk.zbr:514
+        if (_zbr_fn_stmtContainsYield(s)) {
+// zbr:selfhost/AstWalk.zbr:515
+            return true;
+        }
+    }
+// zbr:selfhost/AstWalk.zbr:516
+    return false;
+}
+
+// zbr:selfhost/AstWalk.zbr:518
+pub fn _zbr_fn_stmtContainsYield(s: _zbr_ty_Stmt) bool {
+// zbr:selfhost/AstWalk.zbr:519
+    switch (s) {
+        .yield_ => {
+// zbr:selfhost/AstWalk.zbr:521
+            return true;
+        },
+        .if_ => |_ptr_si| {
+            const si = _ptr_si.*;
+// zbr:selfhost/AstWalk.zbr:523
+            if (_zbr_fn_stmtsContainYield(si.then_stmts)) {
+// zbr:selfhost/AstWalk.zbr:524
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:525
+            for (si.else_ifs.items) |ei| {
+// zbr:selfhost/AstWalk.zbr:526
+                if (_zbr_fn_stmtsContainYield(ei.stmts)) {
+// zbr:selfhost/AstWalk.zbr:527
+                    return true;
+                }
+            }
+// zbr:selfhost/AstWalk.zbr:528
+            if (si.else_stmts) |es| {
+// zbr:selfhost/AstWalk.zbr:529
+                return _zbr_fn_stmtsContainYield(es);
+            }
+// zbr:selfhost/AstWalk.zbr:530
+            return false;
+        },
+        .while_ => |_ptr_w| {
+            const w = _ptr_w.*;
+// zbr:selfhost/AstWalk.zbr:532
+            return _zbr_fn_stmtsContainYield(w.stmts);
+        },
+        .for_in => |_ptr_f| {
+            const f = _ptr_f.*;
+// zbr:selfhost/AstWalk.zbr:534
+            if (_zbr_fn_stmtsContainYield(f.stmts)) {
+// zbr:selfhost/AstWalk.zbr:535
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:536
+            if (f.else_) |fe| {
+// zbr:selfhost/AstWalk.zbr:537
+                return _zbr_fn_stmtsContainYield(fe);
+            }
+// zbr:selfhost/AstWalk.zbr:538
+            return false;
+        },
+        .for_num => |_ptr_fn_| {
+            const fn_ = _ptr_fn_.*;
+// zbr:selfhost/AstWalk.zbr:540
+            if (_zbr_fn_stmtsContainYield(fn_.stmts)) {
+// zbr:selfhost/AstWalk.zbr:541
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:542
+            if (fn_.else_) |fe| {
+// zbr:selfhost/AstWalk.zbr:543
+                return _zbr_fn_stmtsContainYield(fe);
+            }
+// zbr:selfhost/AstWalk.zbr:544
+            return false;
+        },
+        .branch_ => |_ptr_b| {
+            const b = _ptr_b.*;
+// zbr:selfhost/AstWalk.zbr:548
+            for (b.cases.items) |bc| {
+// zbr:selfhost/AstWalk.zbr:549
+                if (_zbr_fn_stmtsContainYield(bc.stmts)) {
+// zbr:selfhost/AstWalk.zbr:550
+                    return true;
+                }
+            }
+// zbr:selfhost/AstWalk.zbr:551
+            if (b.else_) |be| {
+// zbr:selfhost/AstWalk.zbr:552
+                return _zbr_fn_stmtsContainYield(be);
+            }
+// zbr:selfhost/AstWalk.zbr:553
+            return false;
+        },
+        .try_catch => |_ptr_tcs| {
+            const tcs = _ptr_tcs.*;
+// zbr:selfhost/AstWalk.zbr:555
+            if (_zbr_fn_stmtsContainYield(tcs.stmts)) {
+// zbr:selfhost/AstWalk.zbr:556
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:557
+            for (tcs.clauses.items) |cc| {
+// zbr:selfhost/AstWalk.zbr:558
+                if (_zbr_fn_stmtsContainYield(cc.stmts)) {
+// zbr:selfhost/AstWalk.zbr:559
+                    return true;
+                }
+            }
+// zbr:selfhost/AstWalk.zbr:560
+            return false;
+        },
+        .with_ => |_ptr_wth| {
+            const wth = _ptr_wth.*;
+// zbr:selfhost/AstWalk.zbr:562
+            return _zbr_fn_stmtsContainYield(wth.stmts);
+        },
+        .in_scope => |_ptr_ins| {
+            const ins = _ptr_ins.*;
+// zbr:selfhost/AstWalk.zbr:564
+            return _zbr_fn_stmtsContainYield(ins.stmts);
+        },
+        .allocate_ => |_ptr_alc| {
+            const alc = _ptr_alc.*;
+// zbr:selfhost/AstWalk.zbr:566
+            return _zbr_fn_stmtsContainYield(alc.stmts);
+        },
+        else => {
+// zbr:selfhost/AstWalk.zbr:568
+            return false;
+        },
+    }
+}
+
+// zbr:selfhost/AstWalk.zbr:575
+pub fn _zbr_fn_stmtNeedsLowering(s: _zbr_ty_Stmt) bool {
+// zbr:selfhost/AstWalk.zbr:576
+    if (_zbr_fn_stmtContainsYield(s)) {
+// zbr:selfhost/AstWalk.zbr:577
+        return true;
+    }
+// zbr:selfhost/AstWalk.zbr:578
+    return _zbr_fn_stmtHasEscape(s, true);
+}
+
+// zbr:selfhost/AstWalk.zbr:580
+pub fn _zbr_fn_stmtsHaveEscape(stmts: std.ArrayList(_zbr_ty_Stmt), loop_exits_count: bool) bool {
+// zbr:selfhost/AstWalk.zbr:581
+    for (stmts.items) |s| {
+// zbr:selfhost/AstWalk.zbr:582
+        if (_zbr_fn_stmtHasEscape(s, loop_exits_count)) {
+// zbr:selfhost/AstWalk.zbr:583
+            return true;
+        }
+    }
+// zbr:selfhost/AstWalk.zbr:584
+    return false;
+}
+
+// zbr:selfhost/AstWalk.zbr:586
+pub fn _zbr_fn_stmtHasEscape(s: _zbr_ty_Stmt, loop_exits_count: bool) bool {
+// zbr:selfhost/AstWalk.zbr:587
+    switch (s) {
+        .return_ => {
+// zbr:selfhost/AstWalk.zbr:589
+            return true;
+        },
+        .break_ => {
+// zbr:selfhost/AstWalk.zbr:591
+            return loop_exits_count;
+        },
+        .continue_ => {
+// zbr:selfhost/AstWalk.zbr:593
+            return loop_exits_count;
+        },
+        .if_ => |_ptr_si| {
+            const si = _ptr_si.*;
+// zbr:selfhost/AstWalk.zbr:595
+            if (_zbr_fn_stmtsHaveEscape(si.then_stmts, loop_exits_count)) {
+// zbr:selfhost/AstWalk.zbr:596
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:597
+            for (si.else_ifs.items) |ei| {
+// zbr:selfhost/AstWalk.zbr:598
+                if (_zbr_fn_stmtsHaveEscape(ei.stmts, loop_exits_count)) {
+// zbr:selfhost/AstWalk.zbr:599
+                    return true;
+                }
+            }
+// zbr:selfhost/AstWalk.zbr:600
+            if (si.else_stmts) |es| {
+// zbr:selfhost/AstWalk.zbr:601
+                return _zbr_fn_stmtsHaveEscape(es, loop_exits_count);
+            }
+// zbr:selfhost/AstWalk.zbr:602
+            return false;
+        },
+        .while_ => |_ptr_w| {
+            const w = _ptr_w.*;
+// zbr:selfhost/AstWalk.zbr:604
+            return _zbr_fn_stmtsHaveEscape(w.stmts, false);
+        },
+        .for_in => |_ptr_f| {
+            const f = _ptr_f.*;
+// zbr:selfhost/AstWalk.zbr:606
+            if (_zbr_fn_stmtsHaveEscape(f.stmts, false)) {
+// zbr:selfhost/AstWalk.zbr:607
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:608
+            if (f.else_) |fe| {
+// zbr:selfhost/AstWalk.zbr:609
+                return _zbr_fn_stmtsHaveEscape(fe, loop_exits_count);
+            }
+// zbr:selfhost/AstWalk.zbr:610
+            return false;
+        },
+        .for_num => |_ptr_fn_| {
+            const fn_ = _ptr_fn_.*;
+// zbr:selfhost/AstWalk.zbr:612
+            if (_zbr_fn_stmtsHaveEscape(fn_.stmts, false)) {
+// zbr:selfhost/AstWalk.zbr:613
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:614
+            if (fn_.else_) |fe| {
+// zbr:selfhost/AstWalk.zbr:615
+                return _zbr_fn_stmtsHaveEscape(fe, loop_exits_count);
+            }
+// zbr:selfhost/AstWalk.zbr:616
+            return false;
+        },
+        else => {
+// zbr:selfhost/AstWalk.zbr:618
             return false;
         },
     }

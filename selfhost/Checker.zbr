@@ -299,6 +299,8 @@ class DeadCodeChecker
             on Stmt.with_ as sw2
                 .walkExpr(sw2.target, file, false)
                 .walkStmts(sw2.stmts, file)
+            on Stmt.yield_ as sy
+                .walkExpr(sy.value, file, false)
             on Stmt.raise_ as sr2
                 if sr2.message != nil
                     .walkExpr(sr2.message!, file, false)

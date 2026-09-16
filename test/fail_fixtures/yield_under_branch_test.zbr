@@ -1,0 +1,16 @@
+# The lowering splits if/while/for; a yield under `branch` is refused rather than
+# miscompiled.
+enum Color
+    red
+    blue
+
+def names(c: Color): Iter(str)
+    branch c
+        on Color.red
+            yield "red"
+        on Color.blue
+            yield "blue"
+
+def main()
+    for n in names(Color.red)
+        print(n)

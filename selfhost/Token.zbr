@@ -164,6 +164,7 @@ union TokenKind
     # selfhost never parsed it at all — so reserving the word only made `aspect`
     # unusable as an identifier, which it is in real code. `@aspect` if ever built.
     kw_raise
+    kw_yield
     kw_throws
     kw_capture
     kw_with
@@ -319,6 +320,9 @@ class Keywords
             return TokenKind.kw_nil()
         if word == "raise"
             return TokenKind.kw_raise()
+        # Generators (2026-09-16): `yield v` inside a def returning `Iter(T)`.
+        if word == "yield"
+            return TokenKind.kw_yield()
         if word == "throws"
             return TokenKind.kw_throws()
         if word == "capture"

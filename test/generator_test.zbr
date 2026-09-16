@@ -1,0 +1,106 @@
+# Generators (2026-09-16): `def f(...): Iter(T)` with `yield` lowers to a class with
+# `cue next` (a resumable state machine over the body's control flow), so `for x in f()`
+# and `f().next()` work like any cue iterable. The consumer half (cue iter/next) landed
+# the same day; this is the producer half.
+def evens(limit: int): Iter(int)
+    var i = 0
+    while i < limit
+        yield i
+        i = i + 2
+
+# A range loop, an if, and an early finish.
+def smallOdds(stop: int): Iter(int)
+    for i in 0.to(stop)
+        if i > 7
+            return
+        if i % 2 == 1
+            yield i
+
+# A List, a yield-free loop inside (emitted as an ordinary statement), a for/else.
+def wordsLonger(words: List(str), n: int): Iter(str)
+    var kept = 0
+    for w in words
+        var total = 0
+        for c in w.bytes()
+            total = total + 1
+        if total > n
+            kept = kept + 1
+            yield w
+    else
+        yield "(none skipped by break)"
+    yield "kept ${kept}"
+
+# Composition: a generator consuming another generator, with break.
+def firstEvensSquared(count: int): Iter(int)
+    var seen = 0
+    for e in evens(1000)
+        if seen >= count
+            break
+        seen = seen + 1
+        yield e * e
+
+# Lazy: an unbounded producer is fine as long as the consumer stops.
+def naturals(): Iter(int)
+    var n = 1
+    while true
+        yield n
+        n = n + 1
+
+class Pair
+    var a: int
+    var b: int
+    cue init(a: int, b: int)
+        .a = a
+        .b = b
+    cue toString(): str
+        return "(${.a}, ${.b})"
+
+def pairs(n: int): Iter(Pair)
+    for i in 0.to(n)
+        for j in i.to(n)
+            yield Pair(i, j)
+
+def main()
+    var out = ""
+    for x in evens(7)
+        out = out + x.toString() + " "
+    print("evens: ${out}")
+
+    out = ""
+    for o in smallOdds(100)
+        out = out + o.toString() + " "
+    print("odds: ${out}")
+
+    var ws = List(str)()
+    ws.add("a")
+    ws.add("hello")
+    ws.add("hi")
+    ws.add("world")
+    for w in wordsLonger(ws, 2)
+        print("word: ${w}")
+
+    out = ""
+    for sq in firstEvensSquared(4)
+        out = out + sq.toString() + " "
+    print("squares: ${out}")
+
+    # Manual protocol: next() returns nil when done.
+    var it = evens(4)
+    print(it.next()!)
+    print(it.next()!)
+    var third = it.next()
+    print(third == nil)
+
+    var nat = naturals()
+    var sum = 0
+    for k in 0.to(10)
+        sum = sum + nat.next()!
+    print("sum 1..10 = ${sum}")
+
+    var pc = 0
+    for p in pairs(3)
+        pc = pc + 1
+        if pc == 2
+            print(p)
+    print("pairs: ${pc}")
+    print("generator: OK")

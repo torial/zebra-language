@@ -496,9 +496,123 @@ def mightUseNameStmt(name: str, stmt: Stmt): bool
                 if mightUseNameInExpr(name, ce)
                     return true
             return false
+        on Stmt.yield_ as yl
+            return mightUseNameInExpr(name, yl.value)
         on Stmt.break_
             return false
         on Stmt.continue_
             return false
         on Stmt.pass_
+            return false
+
+# Generators (2026-09-16): does this statement list produce a value anywhere inside
+# it. if/while/for bodies are descended for the lowering; branch/try/with/using/
+# allocate are descended too, so the checker can refuse a yield under them. Shared by the checker
+# (shape rules) and codegen (which lowers only the statements that carry a yield).
+def stmtsContainYield(stmts: List(Stmt)): bool
+    for s in stmts
+        if stmtContainsYield(s)
+            return true
+    return false
+
+def stmtContainsYield(s: Stmt): bool
+    branch s
+        on Stmt.yield_
+            return true
+        on Stmt.if_ as si
+            if stmtsContainYield(si.then_stmts)
+                return true
+            for ei in si.else_ifs
+                if stmtsContainYield(ei.stmts)
+                    return true
+            if si.else_stmts as es
+                return stmtsContainYield(es)
+            return false
+        on Stmt.while_ as w
+            return stmtsContainYield(w.stmts)
+        on Stmt.for_in as f
+            if stmtsContainYield(f.stmts)
+                return true
+            if f.else_ as fe
+                return stmtsContainYield(fe)
+            return false
+        on Stmt.for_num as fn_
+            if stmtsContainYield(fn_.stmts)
+                return true
+            if fn_.else_ as fe
+                return stmtsContainYield(fe)
+            return false
+        # The block-holding statements the lowering does NOT handle are still walked, so
+        # the checker can refuse a yield under them by name rather than miscompile it.
+        on Stmt.branch_ as b
+            for bc in b.cases
+                if stmtsContainYield(bc.stmts)
+                    return true
+            if b.else_ as be
+                return stmtsContainYield(be)
+            return false
+        on Stmt.try_catch as tcs
+            if stmtsContainYield(tcs.stmts)
+                return true
+            for cc in tcs.clauses
+                if stmtsContainYield(cc.stmts)
+                    return true
+            return false
+        on Stmt.with_ as wth
+            return stmtsContainYield(wth.stmts)
+        on Stmt.in_scope as ins
+            return stmtsContainYield(ins.stmts)
+        on Stmt.allocate_ as alc
+            return stmtsContainYield(alc.stmts)
+        else
+            return false
+
+# A statement the generator lowering must split rather than emit whole: it carries a
+# `yield`, or a `return` (the generator's "done" -- a plain `return;` inside next()
+# would be a void return from a `?T` function), or a `break`/`continue` that targets an
+# ENCLOSING lowered loop (one directly under an `if`, not inside the statement's own
+# loop, whose break stays a plain Zig break).
+def stmtNeedsLowering(s: Stmt): bool
+    if stmtContainsYield(s)
+        return true
+    return stmtHasEscape(s, true)
+
+def stmtsHaveEscape(stmts: List(Stmt), loop_exits_count: bool): bool
+    for s in stmts
+        if stmtHasEscape(s, loop_exits_count)
+            return true
+    return false
+
+def stmtHasEscape(s: Stmt, loop_exits_count: bool): bool
+    branch s
+        on Stmt.return_
+            return true
+        on Stmt.break_
+            return loop_exits_count
+        on Stmt.continue_
+            return loop_exits_count
+        on Stmt.if_ as si
+            if stmtsHaveEscape(si.then_stmts, loop_exits_count)
+                return true
+            for ei in si.else_ifs
+                if stmtsHaveEscape(ei.stmts, loop_exits_count)
+                    return true
+            if si.else_stmts as es
+                return stmtsHaveEscape(es, loop_exits_count)
+            return false
+        on Stmt.while_ as w
+            return stmtsHaveEscape(w.stmts, false)
+        on Stmt.for_in as f
+            if stmtsHaveEscape(f.stmts, false)
+                return true
+            if f.else_ as fe
+                return stmtsHaveEscape(fe, loop_exits_count)
+            return false
+        on Stmt.for_num as fn_
+            if stmtsHaveEscape(fn_.stmts, false)
+                return true
+            if fn_.else_ as fe
+                return stmtsHaveEscape(fe, loop_exits_count)
+            return false
+        else
             return false

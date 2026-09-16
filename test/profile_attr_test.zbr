@@ -1,12 +1,21 @@
-
+# The report is sorted by MEASURED time, so three trivial functions timed in
+# nanoseconds print in whatever order the clock happened to give -- output_sweep saw
+# Calc.mul and helper swap (2026-09-16, a latent flake, not a compiler change). Each
+# function now does strictly more work than the next, so the order is add, mul, helper.
 class Calc
     @profile
     def add(a: int, b: int): int
-        return a + b
+        var acc = 0
+        for i in 0.to(300000)
+            acc = acc + i
+        return a + b + (acc - acc)
 
     @profile
     def mul(a: int, b: int): int
-        return a * b
+        var acc = 0
+        for i in 0.to(3000)
+            acc = acc + i
+        return a * b + (acc - acc)
 
 @profile
 def helper(n: int): int

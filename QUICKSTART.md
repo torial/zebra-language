@@ -616,6 +616,50 @@ def main()
 - `cue deinit` (end-of-scope teardown) is **not** in the set yet; its semantics are an
   open 1.0 decision (`docs/NEXT_STEPS_to_1.0.md`).
 
+### Generators — `yield` writes the iterator for you
+
+A top-level `def` whose return type is `Iter(T)` is a **generator**: its body runs
+lazily, one `yield` at a time, and the compiler turns it into a class with `cue next`.
+So `for x in f()` and `f().next()` work exactly as they do for a hand-written iterator,
+and nothing is materialised.
+
+```zebra
+def evens(limit: int): Iter(int)
+    var i = 0
+    while i < limit
+        yield i
+        i = i + 2
+
+def longWords(words: List(str), n: int): Iter(str)
+    for w in words
+        if w.len > n
+            yield w
+
+def main()
+    for x in evens(7)            # 0 2 4 6
+        print(x)
+    var it = evens(4)
+    print(it.next()!)            # 0
+    print(it.next()!)            # 2
+    for sq in evens(100)         # a generator can consume a generator, and stop early
+        if sq > 6: break
+        print(sq * sq)
+```
+
+- `yield v` produces a value; a bare `return` finishes early (a generator cannot
+  `return` a value). The last statement finishing is the end too.
+- Locals live across yields: `i` above is a field of the generated class, so an
+  unbounded producer (`while true: yield n`) is fine as long as the consumer stops.
+- `Iter(T)` is only a **return type** — bind the call (`var it = evens(4)`) and the
+  type is inferred; it cannot annotate a variable or a parameter.
+- The lowering splits `if` / `while` / `for` around a yield. A `for` that yields
+  iterates a List, a range (`a.to(b)`, `a : b`), or anything with `cue next`/`cue iter`
+  (another generator included), with one loop variable and no `if` filter. A yield
+  under `branch`, `try`, `with`, `using` or `allocate`, or under `if x as y`, is refused
+  by name — restructure with an `if` chain, or bind the value first. Statements with no
+  yield inside them are unaffected.
+- Generators are top-level `def`s for now; a method cannot yield.
+
 ### Static members (`static def` / `static var`)
 
 `static def` and `static var` declare members that belong to the **type**, not to

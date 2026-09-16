@@ -11,8 +11,8 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
-use AstWalk exposing collectOldNodes, mightUseName
+use Ast exposing StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
+use AstWalk exposing collectOldNodes, mightUseName, stmtsContainYield, stmtContainsYield, stmtNeedsLowering
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -773,6 +773,21 @@ def typeArgToType(e: Expr): Type_
         else
             return Type_.unknown_
 
+# Generators (2026-09-16): a top-level `def f(...): Iter(T)` whose body uses `yield`
+# lowers to a class `_zbr_gen_f` with `cue next(): T?` (CodeGen.genGeneratorFn). The
+# checker types a call to f as that class, so `for x in f()`, `f().next()` and a
+# hand-written iterator all go the same way. `Iter(T)` is ONLY a generator's return
+# type -- it is not a type a variable can be annotated with (bind the call).
+def iterElemRef(tr: TypeRef?): TypeRef?
+    if tr as t
+        if t is TypeRef.generic as g
+            if g.name == "Iter" and g.args.len == 1
+                return g.args.at(0)
+    return nil
+
+def generatorClassName(fn_name: str): str
+    return "_zbr_gen_" + fn_name
+
 def typeFromRef(tr: TypeRef): Type_
     branch tr
         on TypeRef.named as n
@@ -1094,7 +1109,15 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
             on Decl.method as topfn
                 # Top-level def: register under "" sentinel so bare calls inside
                 # class methods can resolve the return type via methodReturnAny.
-                if topfn.return_type != nil
+                if iterElemRef(topfn.return_type) as gen_elem_ref
+                    # A generator: the call yields the generated iterator class.
+                    var gen_cls: str = generatorClassName(topfn.name)
+                    var gen_ct = ClassTypes(gen_cls)
+                    gen_ct.setMethodReturn("next", Type_.optional(typeFromRef(gen_elem_ref)))
+                    mt.addClass(gen_ct)
+                    mt.addCue(gen_cls, "next")
+                    module_fns.setMethodReturn(topfn.name, Type_.named(gen_cls))
+                else if topfn.return_type != nil
                     module_fns.setMethodReturn(topfn.name, typeFromRef(topfn.return_type!))
                 else
                     module_fns.setMethodReturn(topfn.name, Type_.void_)
@@ -1231,6 +1254,7 @@ class InferCtx
     var current_class: str
     var scope: HashMap(str, Type_)
     var current_return_type: Type_?  # nil at module scope; current method's return type inside method bodies
+    var current_yield_type: Type_?   # set inside a generator body: what `yield` must produce
     var errors: List(Diagnostic)
     var warnings: List(Diagnostic)
     # When true, checkVarDecl also flags `unresolved` inferred types for
@@ -1283,6 +1307,7 @@ class InferCtx
         .current_class = current_class
         scope = HashMap()
         .current_return_type = nil
+        .current_yield_type = nil
         errors = List(Diagnostic)()
         warnings = List(Diagnostic)()
         .strict = false
@@ -1331,6 +1356,9 @@ class InferCtx
 
     def withReturnType(rt: Type_?)
         .current_return_type = rt
+
+    def withYieldType(yt: Type_?)
+        .current_yield_type = yt
 
     # Phase 17c — attach merged dependency ModuleTypes (from codegen's
     # buildModuleTypes over transitive deps) so inferExpr can see unions /
@@ -4340,6 +4368,8 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 else
                     pass
             walkStmts(si2.stmts, ctx)
+        on Stmt.yield_ as syl
+            walkExpr(syl.value, ctx)
         on Stmt.raise_ as sra
             if sra.message != nil
                 walkExpr(sra.message!, ctx)
@@ -5090,6 +5120,8 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
     for s in stmts
         branch s
             on Stmt.var_ as dv
+                if iterElemRef(dv.type_) != nil
+                    ctx.addErr(file, dv.span.line, dv.span.col, "`Iter(T)` is a generator's return type, not an annotation; bind the call and let the type be inferred: `var " + dv.name + " = f()`")
                 # BUG-359. LOCALS (and params, in checkDecl) only: a module-level var
                 # emits mangled (`_zbr_mv_<name>`) and a field is reached as `self.<name>`,
                 # so neither can collide with the runtime's globals — and CodeGen.zbr
@@ -5238,12 +5270,20 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                         ctx.bind(cc_name, Type_.unknown_)
                     checkStmts(cc.stmts, file, ctx)
             on Stmt.return_ as sr
+                if ctx.current_yield_type != nil and sr.value != nil
+                    ctx.addErr(file, sr.span.line, sr.span.col, "a generator finishes with a bare `return`; it produces values with `yield`")
                 if ctx.current_return_type as ret_type
                     if sr.value != nil
                         checkExpr(sr.value!, ret_type, file, sr.span.line, sr.span.col, ctx)
                 # Arg counts + types over the whole return expression (audit #3).
                 if sr.value != nil
                     checkCallsInExpr(sr.value!, file, sr.span.line, ctx)
+            on Stmt.yield_ as syl
+                if ctx.current_yield_type as yt
+                    checkExpr(syl.value, yt, file, syl.span.line, syl.span.col, ctx)
+                    checkCallsInExpr(syl.value, file, syl.span.line, ctx)
+                else
+                    ctx.addErr(file, syl.span.line, syl.span.col, "`yield` belongs in a generator: a top-level `def` whose return type is `Iter(T)`")
             on Stmt.assign as sasn
                 checkCallsInExpr(sasn.value, file, sasn.span.line, ctx)  # audit #3
                 # BUG-354: a parameter is a Zig `const`; `p = ...` leaked "cannot assign to
@@ -5417,6 +5457,78 @@ def checkOldIsNotParam(o: ExprOld, params: List(Param), file: str, ctx: InferCtx
         else
             pass
 
+# Generators, the shapes the lowering handles (2026-09-16). A statement that carries a
+# `yield` is split into resumable states by CodeGen.genGeneratorFn; only `if`, `while`
+# and `for` can carry one. Statements with no yield inside them are emitted as they are,
+# so the rules bite only where a yield actually sits. A `for` around a yield iterates a
+# List, a numeric range, or a type with `cue next`/`cue iter`; `if x as y` around a
+# yield is refused (the binding would have to survive a resume -- bind it first).
+def checkGeneratorStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
+    for s in stmts
+        if not stmtNeedsLowering(s)
+            continue
+        branch s
+            on Stmt.yield_
+                pass
+            on Stmt.return_
+                pass
+            on Stmt.break_
+                pass
+            on Stmt.continue_
+                pass
+            on Stmt.if_ as si
+                if si.is_capture != nil
+                    ctx.addErr(file, si.span.line, si.span.col, "a generator cannot `yield` under `if x as y`; bind the value first (`var y = x!`) and test `if x != nil`")
+                for ei in si.else_ifs
+                    if ei.is_capture != nil
+                        ctx.addErr(file, ei.span.line, ei.span.col, "a generator cannot `yield` under `else if x as y`; bind the value first")
+                checkGeneratorStmts(si.then_stmts, file, ctx)
+                for ei2 in si.else_ifs
+                    checkGeneratorStmts(ei2.stmts, file, ctx)
+                if si.else_stmts as es
+                    checkGeneratorStmts(es, file, ctx)
+            on Stmt.while_ as w
+                checkGeneratorStmts(w.stmts, file, ctx)
+            on Stmt.for_num as fn_
+                checkGeneratorStmts(fn_.stmts, file, ctx)
+                if fn_.else_ as fe
+                    checkGeneratorStmts(fe, file, ctx)
+            on Stmt.for_in as f
+                if f.vars.len != 1 or f.filter != nil
+                    ctx.addErr(file, f.span.line, f.span.col, "a `for` that yields takes one loop variable and no `if` filter (move the filter into the body)")
+                else
+                    var ok: bool = false
+                    if f.iter is Expr.call as fc
+                        if fc.callee is Expr.member as fcm
+                            if fcm.member == "to"
+                                ok = true
+                    if not ok
+                        var it: Type_ = inferExpr(f.iter, ctx)
+                        if it is Type_.ref_to as itr
+                            it = itr
+                        if it is Type_.list_
+                            ok = true
+                        if it is Type_.named as itn
+                            if ctx.hasCueAny(itn, "next") or ctx.hasCueAny(itn, "iter")
+                                ok = true
+                    if not ok
+                        ctx.addErr(file, f.span.line, f.span.col, "a `for` that yields iterates a List, a range (`a.to(b)`), or a type with `cue next`/`cue iter`; materialise anything else first")
+                checkGeneratorStmts(f.stmts, file, ctx)
+                if f.else_ as fe
+                    checkGeneratorStmts(fe, file, ctx)
+            on Stmt.branch_ as b
+                ctx.addErr(file, b.span.line, b.span.col, "a generator cannot `yield` or `return` inside `branch` yet; use an `if` chain there")
+            on Stmt.try_catch as tcs
+                ctx.addErr(file, tcs.span.line, tcs.span.col, "a generator cannot `yield` or `return` inside a try/catch")
+            on Stmt.with_ as wth
+                ctx.addErr(file, wth.span.line, wth.span.col, "a generator cannot `yield` or `return` inside `with`")
+            on Stmt.allocate_ as alc
+                ctx.addErr(file, alc.span.line, alc.span.col, "a generator cannot `yield` or `return` inside `allocate`")
+            on Stmt.in_scope as ins
+                ctx.addErr(file, ins.span.line, ins.span.col, "a generator cannot `yield` or `return` inside `using`")
+            else
+                pass
+
 def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
     branch decl
         on Decl.method as dm
@@ -5427,9 +5539,18 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                 var olds: List(ExprOld) = collectOldNodes(ens)
                 for o in olds
                     checkOldIsNotParam(o, dm.params, file, ctx)
+            if iterElemRef(dm.return_type) != nil and ctx.current_class != ""
+                ctx.addErr(file, dm.span.line, dm.span.col, "a generator (`Iter(T)` return type) is a top-level `def` for now; a method cannot yield")
+            for gp in dm.params
+                if iterElemRef(gp.type_) != nil
+                    ctx.addErr(file, gp.span.line, gp.span.col, "`Iter(T)` is a generator's return type, not a parameter type; take the iterator's class or bind the call with `var it = f()`")
             if dm.stmts as dm_stmts
                 var saved_class: str = ctx.current_class
-                if dm.return_type != nil
+                ctx.withYieldType(nil)
+                if iterElemRef(dm.return_type) as gen_elem_r
+                    ctx.withReturnType(nil)
+                    ctx.withYieldType(typeFromRef(gen_elem_r))
+                else if dm.return_type != nil
                     ctx.withReturnType(typeFromRef(dm.return_type!))
                 var pnames: str = " "
                 for p in dm.params
@@ -5443,6 +5564,9 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                 ctx.setParamsHere(pnames)
                 ctx.resetCopyLocals()
                 checkStmts(dm_stmts, file, ctx)
+                if ctx.current_yield_type != nil
+                    checkGeneratorStmts(dm_stmts, file, ctx)
+                ctx.withYieldType(nil)
                 ctx.setParamsHere(" ")
                 ctx.resetCopyLocals()
                 var scope_ctx: InferCtx = InferCtx(ctx.module_types, ctx.current_class)

@@ -485,6 +485,7 @@ union Stmt
     copy_out: ^StmtCopyOut
     print_: ^StmtPrint
     contract: ^StmtContract
+    yield_: ^StmtYield
 
 struct ElseIf
     var span: Span
@@ -607,6 +608,15 @@ struct StmtReturn
     var value: ^Expr?
 
     cue init(span: Span, value: ^Expr?)
+        .span = span
+        .value = value
+
+# `yield value` inside a generator (a def returning Iter(T)), 2026-09-16.
+struct StmtYield
+    var span: Span
+    var value: ^Expr
+
+    cue init(span: Span, value: ^Expr)
         .span = span
         .value = value
 

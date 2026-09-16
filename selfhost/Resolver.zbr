@@ -201,9 +201,16 @@ class Resolver
     # read-only iteration; the underlying array is shared with the parse tree.
     def enterClass(name: str, members: List(PNode), type_params: List(str)) throws
         .class_scope = HashMap()
-        # Register generic type params so they resolve: valid names in method bodies
+        # Register generic type params so they resolve: valid names in method bodies.
+        # A constrained parameter arrives as "T|Comparable(T)" (Parser.parseConstraintClause);
+        # the NAME is the part before the bar -- registering the whole string made
+        # `List(T)()` inside a `where`-constrained class "undefined name: 'T'" (2026-09-16).
         for tp in type_params
-            .class_scope.put(tp, 6)
+            var tp_name: str = tp
+            var bar: int = tp.indexOf("|")
+            if bar >= 0
+                tp_name = tp.substring(0, bar)
+            .class_scope.put(tp_name, 6)
             .symbol_count = .symbol_count + 1
         # Sub-pass: collect field and method names before resolving any body
         for member in members
@@ -262,6 +269,9 @@ class Resolver
                     .symbol_count = .symbol_count + 1
             on PNode.stmt_return as r
                 for expr in r.value
+                    .resolveExpr(expr)?
+            on PNode.stmt_yield as y
+                for expr in y.value
                     .resolveExpr(expr)?
             on PNode.stmt_if as i
                 for expr in i.cond

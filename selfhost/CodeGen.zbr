@@ -22,9 +22,9 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use Ast exposing Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
+use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
 use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
-use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr
+use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
 
@@ -935,6 +935,10 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     for decl in m.decls
         if decl is Decl.class_ as c
             cn.add(c.name)
+        # A generator def is also a class: `_zbr_gen_<name>` (genGeneratorFn).
+        if decl is Decl.method as gm
+            if generatorElemRef(gm) != nil
+                cn.add("_zbr_gen_" + gm.name)
     # Add cross-module class names from dependencies
     var i: int = 0
     while i < extra_class_names.len
@@ -1336,6 +1340,260 @@ def zbrFnSymbol(name: str, is_export: bool): str
 # absent from all four: they emit bare on both the declaration and the reference side,
 # consistently, so `typeZigName` leaving them alone is the correct answer and not an
 # oversight.
+# ── Generators (2026-09-16) ──────────────────────────────────────────────────
+# `def f(...): Iter(T)` with `yield` in the body lowers to a class `_zbr_gen_f` holding
+# the parameters, every local declared at a resumable level, and a state number; its
+# `next()` is `while (true) switch (state)` over BASIC BLOCKS. Each block is a run of
+# ordinary statements (emitted by genStmt as they are) plus one terminator: a jump, a
+# conditional jump, a yield (set the resume state, return the value), the loop
+# bookkeeping of a `for`, or done. Locals live as fields so they survive a return;
+# genIdent already routes a captured name to `self.<name>` (capture_fields).
+# Statements with no yield inside them are not split at all -- a yield-free `if` or
+# loop is one ordinary statement in its block, locals and all.
+def generatorElemRef(m: DeclMethod): TypeRef?
+    if m.return_type as rt
+        if rt is TypeRef.generic as g
+            if g.name == "Iter" and g.args.len == 1
+                return g.args.at(0)
+    return nil
+
+# Terminator kinds.
+const GT_GOTO: int = 0        # goto `next_b`
+const GT_YIELD: int = 1       # state = next_b; return value
+const GT_COND: int = 2        # if cond: goto then_b else goto else_b
+const GT_DONE: int = 3        # state = -1; return null
+const GT_NUM_INIT: int = 4    # for_num: var = start, _stop = stop [, _step = step]; goto next_b
+const GT_NUM_HEAD: int = 5    # for_num: if var < _stop goto then_b else goto else_b
+const GT_NUM_STEP: int = 6    # for_num: var += step; goto next_b
+const GT_LIST_INIT: int = 7   # for_in list/range: _it = expr, _ix = 0; goto next_b
+const GT_LIST_HEAD: int = 8   # for_in list: if _ix < len { var = items[_ix]; _ix += 1; goto then_b } else goto else_b
+const GT_CUE_INIT: int = 9    # for_in cue iterable: _it = expr[.iter()]; goto next_b
+const GT_CUE_HEAD: int = 10   # for_in cue iterable: n = _it.next(); if n == null goto else_b else { var = n.?; goto then_b }
+const GT_RANGE_INIT: int = 11 # for_in a.to(b): var = a, _stop = b; goto next_b
+
+class GenBlock
+    var id: int
+    var stmts: List(Stmt)    # IN REVERSE ORDER (lowerSeq walks backwards); emit from the end
+    var kind: int
+    var next_b: int
+    var then_b: int
+    var else_b: int
+    var expr: Expr?          # yield value / condition / loop iterable / range start
+    var expr2: Expr?         # range stop / for_num stop
+    var expr3: Expr?         # for_num step
+    var var_name: str        # loop variable (loops) 
+    var loop_id: int         # numbers the cursor fields (_it_N, _ix_N, _stop_N, _step_N)
+    var cue_iter: bool       # GT_CUE_INIT: call .iter() on the expression first
+
+    cue init(id: int)
+        .id = id
+        .stmts = List(Stmt)()
+        .kind = GT_GOTO
+        .next_b = -1
+        .then_b = -1
+        .else_b = -1
+        .expr = nil
+        .expr2 = nil
+        .expr3 = nil
+        .var_name = ""
+        .loop_id = 0
+        .cue_iter = false
+
+# The lowering. Blocks are created from the END of each sequence backwards so every
+# block knows its successor when it is made; `-1` is the done state.
+class GenLower
+    var blocks: List(GenBlock)
+    var loops: int
+    var infer: InferCtx
+
+    cue init(infer: InferCtx)
+        .blocks = List(GenBlock)()
+        .loops = 0
+        .infer = infer
+
+    def newBlock(): GenBlock
+        var b = GenBlock(.blocks.len)
+        .blocks.add(b)
+        return b
+
+    def lowerSeq(stmts: List(Stmt), next: int, brk: int, cont: int): int
+        var cur: int = next
+        var pending: GenBlock? = nil
+        var i: int = stmts.len - 1
+        while i >= 0
+            var s = stmts.at(i)
+            if not stmtNeedsLowering(s)
+                if pending == nil
+                    var nb = .newBlock()
+                    nb.kind = GT_GOTO
+                    nb.next_b = cur
+                    pending = nb
+                    cur = nb.id
+                pending!.stmts.add(s)
+            else
+                pending = nil
+                cur = .lowerOne(s, cur, brk, cont)
+            i = i - 1
+        return cur
+
+    def lowerOne(s: Stmt, next: int, brk: int, cont: int): int
+        branch s
+            on Stmt.yield_ as y
+                var yb = .newBlock()
+                yb.kind = GT_YIELD
+                yb.expr = y.value
+                yb.next_b = next
+                return yb.id
+            on Stmt.return_
+                var rb = .newBlock()
+                rb.kind = GT_DONE
+                return rb.id
+            on Stmt.break_
+                var bb = .newBlock()
+                bb.kind = GT_GOTO
+                bb.next_b = brk
+                return bb.id
+            on Stmt.continue_
+                var cb = .newBlock()
+                cb.kind = GT_GOTO
+                cb.next_b = cont
+                return cb.id
+            on Stmt.if_ as si
+                var else_entry: int = next
+                if si.else_stmts as es
+                    else_entry = .lowerSeq(es, next, brk, cont)
+                var k: int = si.else_ifs.len - 1
+                while k >= 0
+                    var ei = si.else_ifs.at(k)
+                    var eb = .newBlock()
+                    eb.kind = GT_COND
+                    eb.expr = ei.cond
+                    eb.then_b = .lowerSeq(ei.stmts, next, brk, cont)
+                    eb.else_b = else_entry
+                    else_entry = eb.id
+                    k = k - 1
+                var ib = .newBlock()
+                ib.kind = GT_COND
+                ib.expr = si.cond
+                ib.then_b = .lowerSeq(si.then_stmts, next, brk, cont)
+                ib.else_b = else_entry
+                return ib.id
+            on Stmt.while_ as w
+                var hb = .newBlock()
+                hb.kind = GT_COND
+                hb.expr = w.cond
+                hb.else_b = next
+                hb.then_b = .lowerSeq(w.stmts, hb.id, next, hb.id)
+                return hb.id
+            on Stmt.for_num as fn_
+                .loops = .loops + 1
+                var lid: int = .loops
+                var exit_b: int = next
+                if fn_.else_ as fe
+                    exit_b = .lowerSeq(fe, next, brk, cont)
+                var head = .newBlock()
+                head.kind = GT_NUM_HEAD
+                head.var_name = fn_.var_
+                head.loop_id = lid
+                head.else_b = exit_b
+                var step = .newBlock()
+                step.kind = GT_NUM_STEP
+                step.var_name = fn_.var_
+                step.loop_id = lid
+                if fn_.step != nil
+                    var st1: Expr = fn_.step!
+                    step.expr3 = st1
+                step.next_b = head.id
+                head.then_b = .lowerSeq(fn_.stmts, step.id, next, step.id)
+                var init_b = .newBlock()
+                init_b.kind = GT_NUM_INIT
+                init_b.var_name = fn_.var_
+                init_b.loop_id = lid
+                init_b.expr = fn_.start
+                init_b.expr2 = fn_.stop_
+                if fn_.step != nil
+                    var st2: Expr = fn_.step!
+                    init_b.expr3 = st2
+                init_b.next_b = head.id
+                return init_b.id
+            on Stmt.for_in as f
+                .loops = .loops + 1
+                var lid2: int = .loops
+                var exit2: int = next
+                if f.else_ as fe2
+                    exit2 = .lowerSeq(fe2, next, brk, cont)
+                var vname: str = f.vars.at(0)
+                # Range: `for i in a.to(b)` is a numeric loop with step 1.
+                var is_range: bool = false
+                var range_start: Expr? = nil
+                var range_stop: Expr? = nil
+                if f.iter is Expr.call as fc
+                    if fc.callee is Expr.member as fcm
+                        if fcm.member == "to" and fc.args.len == 1
+                            is_range = true
+                            range_start = fcm.object
+                            range_stop = fc.args.at(0).value
+                if is_range
+                    var rhead = .newBlock()
+                    rhead.kind = GT_NUM_HEAD
+                    rhead.var_name = vname
+                    rhead.loop_id = lid2
+                    rhead.else_b = exit2
+                    var rstep = .newBlock()
+                    rstep.kind = GT_NUM_STEP
+                    rstep.var_name = vname
+                    rstep.loop_id = lid2
+                    rstep.next_b = rhead.id
+                    rhead.then_b = .lowerSeq(f.stmts, rstep.id, next, rstep.id)
+                    var rinit = .newBlock()
+                    rinit.kind = GT_RANGE_INIT
+                    rinit.var_name = vname
+                    rinit.loop_id = lid2
+                    rinit.expr = range_start
+                    rinit.expr2 = range_stop
+                    rinit.next_b = rhead.id
+                    return rinit.id
+                # Cue iterable or List: decided by the iterable's type.
+                var it_t: Type_ = inferExpr(f.iter, .infer)
+                if it_t is Type_.ref_to as itr
+                    it_t = itr
+                var is_cue: bool = false
+                var cue_iter: bool = false
+                if it_t is Type_.named as itn
+                    if .infer.hasCueAny(itn, "iter")
+                        is_cue = true
+                        cue_iter = true
+                    else if .infer.hasCueAny(itn, "next")
+                        is_cue = true
+                var head2 = .newBlock()
+                head2.var_name = vname
+                head2.loop_id = lid2
+                head2.else_b = exit2
+                if is_cue
+                    head2.kind = GT_CUE_HEAD
+                else
+                    head2.kind = GT_LIST_HEAD
+                head2.then_b = .lowerSeq(f.stmts, head2.id, next, head2.id)
+                var init2 = .newBlock()
+                init2.var_name = vname
+                init2.loop_id = lid2
+                init2.expr = f.iter
+                init2.next_b = head2.id
+                if is_cue
+                    init2.kind = GT_CUE_INIT
+                    init2.cue_iter = cue_iter
+                else
+                    init2.kind = GT_LIST_INIT
+                return init2.id
+            else
+                # The checker refused every other yield-carrying statement; a plain
+                # statement never reaches here (lowerSeq keeps it in a block).
+                var ob = .newBlock()
+                ob.kind = GT_GOTO
+                ob.next_b = next
+                ob.stmts.add(s)
+                return ob.id
+
 def zbrTypeSymbol(name: str): str
     return "_zbr_ty_" + name
 
@@ -2554,6 +2812,8 @@ def stmtLine(s: Stmt): int
             return p.span.line
         on Stmt.raise_ as r
             return r.span.line
+        on Stmt.yield_ as yl
+            return yl.span.line
         on Stmt.try_catch as tc
             return tc.span.line
         on Stmt.assert_ as a
@@ -5141,8 +5401,334 @@ struct Generator
 
     # ── genMethod ─────────────────────────────────────────────────────────────
 
+    # ── Generators: emission ─────────────────────────────────────────────────
+    # A Zig type for a generator field from an inferred Type_; "" when the mapping is
+    # not known (the field then carries a @compileError naming the local).
+    def genFieldZigType(t: Type_): str
+        branch t
+            on Type_.int_
+                return "i64"
+            on Type_.uint_
+                return "u64"
+            on Type_.int_n
+                return zigTypeForListElem(t)
+            on Type_.uint_n
+                return zigTypeForListElem(t)
+            on Type_.float_
+                return "f64"
+            on Type_.float_n
+                return zigTypeForListElem(t)
+            on Type_.bool_
+                return "bool"
+            on Type_.char_
+                return "u21"
+            on Type_.string_
+                return "[]const u8"
+            on Type_.str_slice
+                return "[]const u8"
+            on Type_.list_ as le
+                var lz: str = genFieldZigType(le)
+                if lz == ""
+                    return ""
+                return "std.ArrayList(" + lz + ")"
+            on Type_.optional as oi
+                var oz: str = genFieldZigType(oi)
+                if oz == ""
+                    return ""
+                return "?" + oz
+            on Type_.hashmap_ as hm
+                var vz: str = genFieldZigType(hm.val_t)
+                if vz == ""
+                    return ""
+                if isString(hm.key_t)
+                    return "std.StringHashMap(" + vz + ")"
+                var kz: str = genFieldZigType(hm.key_t)
+                if kz == ""
+                    return ""
+                return "std.AutoHashMap(" + kz + ", " + vz + ")"
+            on Type_.named as n
+                if class_names.contains_(n)
+                    return "*" + typeZigName(n)
+                if struct_names.contains_(n) or enum_names.contains_(n) or union_names.contains_(n)
+                    return typeZigName(n)
+                return ""
+            else
+                return ""
+
+    def emitGenField(name: str, zig_t: str, dflt: str)
+        writeIndent()
+        emitName(name)
+        w.emit(": ")
+        if zig_t == ""
+            w.emit("@compileError(\"generator local '" + name + "' needs a type annotation (var " + name + ": T = ...)\")")
+        else
+            w.emit(zig_t)
+        w.emit(dflt)
+        w.emit(",\n")
+
+    def genGeneratorFn(m: DeclMethod)
+        var elem_ref: TypeRef = generatorElemRef(m)!
+        var gen_cls: str = "_zbr_gen_" + m.name
+        var mstmts: List(Stmt) = List(Stmt)()
+        if m.stmts as ms0
+            mstmts = ms0
+        # Types for every local: the same pre-walk genMethod does.
+        var ctx = InferCtx(.module_types, "")
+        ctx.withDepTypes(.dep_types)
+        var ps = StrSet()
+        var sp = StrSet()
+        for pp in m.params
+            ps.add(pp.name)
+            if pp.type_ != nil
+                var ppt: Type_ = typeFromRef(pp.type_!)
+                ctx.bind(pp.name, ppt)
+                if isString(ppt)
+                    sp.add(pp.name)
+            else
+                ctx.bind(pp.name, Type_.unknown_)
+        walkStmts(mstmts, ctx)
+        # Lower to blocks.
+        var lower = GenLower(ctx)
+        var entry: int = lower.lowerSeq(mstmts, -1, -1, -1)
+        # Every name that must live in the struct: params, resumable-level locals,
+        # loop variables. (A local inside a yield-free statement stays a Zig local.)
+        var cf = StrSet()
+        var local_names: List(str) = List(str)()
+        var local_ann: HashMap(str, TypeRef) = HashMap()
+        for pp2 in m.params
+            cf.add(pp2.name)
+        for b in lower.blocks
+            for bs in b.stmts
+                if bs is Stmt.var_ as dv
+                    if not cf.contains_(dv.name) and dv.name != "_"
+                        cf.add(dv.name)
+                        local_names.add(dv.name)
+                        if dv.type_ as dvt
+                            local_ann.put(dv.name, dvt)
+            if b.var_name != "" and not cf.contains_(b.var_name)
+                cf.add(b.var_name)
+                local_names.add(b.var_name)
+        for ln in local_names
+            if isString(ctx.localType(ln))
+                sp.add(ln)
+        # ── the struct ──
+        var sg = indented()
+        writeIndent()
+        w.emit("pub const " + typeZigName(gen_cls) + " = struct {\n")
+        sg.writeIndent()
+        sg.w.emit("_state: i64 = " + entry.toString() + ",\n")
+        for pp3 in m.params
+            sg.writeIndent()
+            sg.emitName(pp3.name)
+            sg.w.emit(": ")
+            if pp3.type_ != nil
+                sg.genType(pp3.type_!)
+            else
+                sg.w.emit("@compileError(\"generator parameter '" + pp3.name + "' needs a type\")")
+            sg.w.emit(",\n")
+        for lname in local_names
+            if local_ann.contains(lname)
+                sg.writeIndent()
+                sg.emitName(lname)
+                sg.w.emit(": ")
+                sg.genType(local_ann.fetch(lname))
+                sg.w.emit(" = undefined,\n")
+            else
+                sg.emitGenField(lname, sg.genFieldZigType(ctx.localType(lname)), " = undefined")
+        # Loop cursors.
+        for b2 in lower.blocks
+            var lid: str = b2.loop_id.toString()
+            if b2.kind == GT_NUM_INIT or b2.kind == GT_RANGE_INIT
+                sg.emitGenField("_stop_" + lid, "i64", " = 0")
+                sg.emitGenField("_step_" + lid, "i64", " = 1")
+            if b2.kind == GT_LIST_INIT
+                var lt: Type_ = inferExpr(b2.expr!, ctx)
+                if lt is Type_.ref_to as ltr
+                    lt = ltr
+                sg.emitGenField("_it_" + lid, sg.genFieldZigType(lt), " = undefined")
+                sg.emitGenField("_ix_" + lid, "usize", " = 0")
+            if b2.kind == GT_CUE_INIT
+                var ct: Type_ = inferExpr(b2.expr!, ctx)
+                if ct is Type_.ref_to as ctr
+                    ct = ctr
+                if b2.cue_iter
+                    if ct is Type_.named as cn0
+                        if ctx.methodReturnAny(cn0, "iter") as irt
+                            ct = irt
+                sg.emitGenField("_it_" + lid, sg.genFieldZigType(ct), " = undefined")
+        # ── next() ──
+        sg.writeIndent()
+        sg.w.emit("pub fn next(self: *@This()) ?")
+        sg.genType(elem_ref)
+        sg.w.emit(" {\n")
+        var wg = sg.indented()
+        wg.writeIndent()
+        wg.w.emit("while (true) {\n")
+        var swg = wg.indented()
+        swg.writeIndent()
+        swg.w.emit("switch (self._state) {\n")
+        var cg = swg.indented()
+        # The statement emitter: a method context whose bare names are the fields.
+        var bg = cg.withMethodCtx(nil, nil, false, List(Decl)(), ps, sp, "self")
+        bg = bg.withInferCtx(ctx)
+        bg = bg.withCaptureFields(cf)
+        for blk in lower.blocks
+            cg.writeIndent()
+            cg.w.emit(blk.id.toString() + " => {\n")
+            var si: int = blk.stmts.len - 1
+            while si >= 0
+                var st = blk.stmts.at(si)
+                if st is Stmt.var_ as dv2
+                    if dv2.name == "_"
+                        bg.genStmt(st)
+                    else
+                        # Declare as genLocalVar would, then park the value in the field.
+                        bg.genStmt(st)
+                        bg.writeIndent()
+                        bg.w.emit("self.")
+                        bg.emitName(dv2.name)
+                        bg.w.emit(" = ")
+                        bg.emitName(dv2.name)
+                        bg.w.emit(";\n")
+                else
+                    bg.genStmt(st)
+                si = si - 1
+            bg.genGenTerminator(blk)
+            cg.writeIndent()
+            cg.w.emit("},\n")
+        cg.writeIndent()
+        cg.w.emit("else => return null,\n")
+        swg.writeIndent()
+        swg.w.emit("}\n")
+        wg.writeIndent()
+        wg.w.emit("}\n")
+        sg.writeIndent()
+        sg.w.emit("}\n")
+        writeIndent()
+        w.emit("};\n\n")
+        # ── the factory: the def itself ──
+        writeIndent()
+        w.emit("pub fn " + topLevelFnZigName(m.name) + "(")
+        var pi: int = 0
+        for pp4 in m.params
+            if pi > 0
+                w.emit(", ")
+            emitName(pp4.name)
+            w.emit(": ")
+            if pp4.type_ != nil
+                genType(pp4.type_!)
+            else
+                w.emit("anytype")
+            pi = pi + 1
+        w.emit(") *" + typeZigName(gen_cls) + " {\n")
+        sg.writeIndent()
+        sg.w.emit("const _g = _allocator.create(" + typeZigName(gen_cls) + ") catch @panic(\"OOM\");\n")
+        sg.writeIndent()
+        sg.w.emit("_g.* = .{")
+        var pi2: int = 0
+        for pp5 in m.params
+            if pi2 > 0
+                sg.w.emit(",")
+            sg.w.emit(" .")
+            sg.emitName(pp5.name)
+            sg.w.emit(" = ")
+            sg.emitName(pp5.name)
+            pi2 = pi2 + 1
+        sg.w.emit(" };\n")
+        sg.writeIndent()
+        sg.w.emit("return _g;\n")
+        writeIndent()
+        w.emit("}\n\n")
+
+    def genGenGoto(target: int)
+        writeIndent()
+        if target < 0
+            w.emit("self._state = -1; return null;\n")
+        else
+            w.emit("self._state = " + target.toString() + "; continue;\n")
+
+    def genGenTerminator(b: GenBlock)
+        var lid: str = b.loop_id.toString()
+        if b.kind == GT_GOTO
+            genGenGoto(b.next_b)
+        else if b.kind == GT_DONE
+            genGenGoto(-1)
+        else if b.kind == GT_YIELD
+            writeIndent()
+            w.emit("self._state = " + b.next_b.toString() + "; return ")
+            genExpr(b.expr!)
+            w.emit(";\n")
+        else if b.kind == GT_COND
+            writeIndent()
+            w.emit("if (")
+            genExpr(b.expr!)
+            w.emit(") { self._state = " + b.then_b.toString() + "; } else { self._state = " + b.else_b.toString() + "; } continue;\n")
+        else if b.kind == GT_NUM_INIT or b.kind == GT_RANGE_INIT
+            writeIndent()
+            w.emit("self.")
+            emitName(b.var_name)
+            w.emit(" = ")
+            if b.kind == GT_RANGE_INIT
+                genExpr(b.expr!)
+            else
+                genExpr(b.expr!)
+            w.emit(";\n")
+            writeIndent()
+            w.emit("self._stop_" + lid + " = ")
+            genExpr(b.expr2!)
+            w.emit(";\n")
+            if b.expr3 != nil
+                writeIndent()
+                w.emit("self._step_" + lid + " = ")
+                genExpr(b.expr3!)
+                w.emit(";\n")
+            genGenGoto(b.next_b)
+        else if b.kind == GT_NUM_HEAD
+            writeIndent()
+            w.emit("if (self.")
+            emitName(b.var_name)
+            w.emit(" < self._stop_" + lid + ") { self._state = " + b.then_b.toString() + "; } else { self._state = " + b.else_b.toString() + "; } continue;\n")
+        else if b.kind == GT_NUM_STEP
+            writeIndent()
+            w.emit("self.")
+            emitName(b.var_name)
+            w.emit(" += self._step_" + lid + ";\n")
+            genGenGoto(b.next_b)
+        else if b.kind == GT_LIST_INIT
+            writeIndent()
+            w.emit("self._it_" + lid + " = ")
+            genExpr(b.expr!)
+            w.emit(";\n")
+            writeIndent()
+            w.emit("self._ix_" + lid + " = 0;\n")
+            genGenGoto(b.next_b)
+        else if b.kind == GT_LIST_HEAD
+            writeIndent()
+            w.emit("if (self._ix_" + lid + " < self._it_" + lid + ".items.len) { self.")
+            emitName(b.var_name)
+            w.emit(" = self._it_" + lid + ".items[self._ix_" + lid + "]; self._ix_" + lid + " += 1; self._state = " + b.then_b.toString() + "; } else { self._state = " + b.else_b.toString() + "; } continue;\n")
+        else if b.kind == GT_CUE_INIT
+            writeIndent()
+            w.emit("self._it_" + lid + " = ")
+            genExpr(b.expr!)
+            if b.cue_iter
+                w.emit(".iter()")
+            w.emit(";\n")
+            genGenGoto(b.next_b)
+        else if b.kind == GT_CUE_HEAD
+            writeIndent()
+            w.emit("const _n_" + lid + " = self._it_" + lid + ".next();\n")
+            writeIndent()
+            w.emit("if (_n_" + lid + " == null) { self._state = " + b.else_b.toString() + "; } else { self.")
+            emitName(b.var_name)
+            w.emit(" = _n_" + lid + ".?; self._state = " + b.then_b.toString() + "; } continue;\n")
+
     def genMethod(m: DeclMethod)
         var has_self = owner != "" and not m.mods.is_static
+        # Generators (2026-09-16): a top-level `def f(...): Iter(T)` is a class + factory.
+        if owner == "" and not in_namespace and generatorElemRef(m) != nil
+            genGeneratorFn(m)
+            return
         # @once: emit cache field + public wrapper, then emit private impl function.
         # BUG-220: a TOP-LEVEL def (owner == "") emits under the reserved `_zbr_fn_`
         # prefix so it cannot collide with a preamble parameter/local.  Methods are
@@ -6567,6 +7153,10 @@ struct Generator
                 line("continue;")
             on Stmt.contract
                 pass  # partitioned out in buildMethod; no-op if residual
+            on Stmt.yield_ as yl
+                # Only reachable inside genGeneratorFn's lowering, which handles yield
+                # itself; the checker refuses `yield` outside a generator.
+                line("@compileError(\"yield outside a generator\"); // zbr yield line ${yl.span.line.toString()}")
 
     # ── genLocalVar ───────────────────────────────────────────────────────────
 
@@ -12227,6 +12817,15 @@ struct Generator
         # BUG-352: nor while a loop variable of that name is in scope
         if active_loop_vars.contains_(name)
             return false
+        # ...nor while a plain local of that name is bound (`var items = List(T)()` in a
+        # method of a class with an `items` field): the local shadows the field, as
+        # QUICKSTART §5 says. Until 2026-09-16 the bare read emitted `_self.items` and
+        # the local was left unused -- zig refused with `unused local variable`. The
+        # assignment/HashMap/List call sites already checked hasLocal first; the bare
+        # ident read (BUG-281 F) did not.
+        if .infer_ctx != nil
+            if (.infer_ctx!).hasLocal(name)
+                return false
         for d in owner_members
             if d is Decl.var_ as fld
                 if fld.name == name

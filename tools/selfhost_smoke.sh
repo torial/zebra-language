@@ -1177,6 +1177,26 @@ smoke_run test/derive_eql_explicit_test.zbr "derive_eql_explicit: OK"
 # four refusals: unknown cue name (Parser CUE_NAMES), a cue written as `def`, `cue hash`
 # without `cue equals`, and a cue with the wrong signature. `deinit` is deliberately absent.
 smoke_run test/cue_protocol_test.zbr "cue_protocol: OK"
+# 2026-09-16: `List(T)()` as a local inside a `where`-constrained generic class (the
+# resolver registered "T|Show" as the parameter name), and a local shadowing a
+# same-named field emitted as the field in bare reads.
+smoke_run test/generic_typeparam_local_test.zbr "generic_typeparam_local: OK"
+
+# Generators (2026-09-16): `def f(...): Iter(T)` + `yield` -> a class with `cue next`,
+# lowered to a state machine over the body (CodeGen.genGeneratorFn). The positive fixture
+# covers while/range/List/composition loops, if, for/else, break, early return, an
+# unbounded producer, the manual next() protocol and a class element. Refusals: yield
+# outside a generator, `return v` inside one, `Iter(T)` as an annotation, yield under
+# `branch` (the lowering splits only if/while/for).
+smoke_run test/generator_test.zbr "generator: OK"
+smoke_tc_fail test/fail_fixtures/yield_outside_generator_test.zbr \
+    "\`yield\` belongs in a generator"
+smoke_tc_fail test/fail_fixtures/generator_return_value_test.zbr \
+    "a generator finishes with a bare \`return\`"
+smoke_tc_fail test/fail_fixtures/iter_annotation_rejected_test.zbr \
+    "\`Iter(T)\` is a generator's return type, not an annotation"
+smoke_tc_fail test/fail_fixtures/yield_under_branch_test.zbr \
+    "a generator cannot \`yield\` or \`return\` inside \`branch\`"
 smoke_tc_fail test/fail_fixtures/cue_unknown_name_test.zbr \
     "unknown cue 'frobnicate': the cues are init, toString, equals, hash, compare, iter, next"
 smoke_tc_fail test/fail_fixtures/cue_def_tostring_test.zbr \

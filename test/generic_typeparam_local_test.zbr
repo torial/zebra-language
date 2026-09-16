@@ -1,0 +1,41 @@
+# Two paper cuts found while probing generic classes (2026-09-16):
+#  1. inside a `where`-constrained generic class, `List(T)()` as a LOCAL was
+#     "undefined name: 'T'" -- the resolver registered the whole "T|Show" constraint
+#     string as the parameter name (the field-assignment form happened to work).
+#  2. a local that shadows a same-named field (`var items` in a class with `.items`)
+#     was emitted as the FIELD in bare reads, leaving the local unused (a zig error).
+interface Show
+    def show(): str
+
+class Box(T where T implements Show) implements Show
+    var items: List(T)
+    var v: T
+
+    cue init(v: T)
+        .v = v
+        var items = List(T)()      # (1) T resolves; (2) `items` is this local below
+        items.add(v)
+        items.add(v)
+        .items = items
+
+    def show(): str
+        return "Box(" + .v.show() + ")"
+
+    def count(): int
+        var xs = List(T)()
+        for it in .items
+            xs.add(it)
+        return xs.len
+
+class N implements Show
+    var n: int
+    cue init(n: int)
+        .n = n
+    def show(): str
+        return .n.toString()
+
+def main()
+    var b = Box(N)(N(3))
+    print(b.show())
+    print(b.count())
+    print("generic_typeparam_local: OK")

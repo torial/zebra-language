@@ -10,6 +10,7 @@ const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
 const _zebra_gt = _zbr_rt._zebra_gt;
+const _zebra_ge = _zbr_rt._zebra_ge;
 const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
 const _zbr_print = _zbr_rt._zbr_print;
@@ -335,41 +336,50 @@ pub const _zbr_ty_Resolver = struct {
         _ = name;
 // zbr:selfhost/Resolver.zbr:203
         self.class_scope = std.StringHashMap(i64).init(_zbr_rt._allocator);
-// zbr:selfhost/Resolver.zbr:205
+// zbr:selfhost/Resolver.zbr:208
         for (type_params.items) |tp| {
-// zbr:selfhost/Resolver.zbr:206
-            self.class_scope.put(_intern(tp), 6) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:207
+// zbr:selfhost/Resolver.zbr:209
+            var tp_name: []const u8 = tp;
+// zbr:selfhost/Resolver.zbr:210
+            const bar: i64 = (if (std.mem.indexOf(u8, tp, "|")) |_i| @as(i64, @intCast(_i)) else @as(i64, -1));
+// zbr:selfhost/Resolver.zbr:211
+            if (_zebra_ge(bar, 0)) {
+// zbr:selfhost/Resolver.zbr:212
+                tp_name = tp[@intCast(0)..@intCast(bar)];
+            }
+// zbr:selfhost/Resolver.zbr:213
+            self.class_scope.put(_intern(tp_name), 6) catch @panic("OOM");
+// zbr:selfhost/Resolver.zbr:214
             self.symbol_count = (self.symbol_count + 1);
         }
-// zbr:selfhost/Resolver.zbr:209
+// zbr:selfhost/Resolver.zbr:216
         for (members.items) |member| {
-// zbr:selfhost/Resolver.zbr:210
+// zbr:selfhost/Resolver.zbr:217
             (try self.collectMember(member));
         }
-// zbr:selfhost/Resolver.zbr:212
+// zbr:selfhost/Resolver.zbr:219
         for (members.items) |member| {
-// zbr:selfhost/Resolver.zbr:213
+// zbr:selfhost/Resolver.zbr:220
             (try self.resolveMember(member));
         }
     }
 
-    // zbr:selfhost/Resolver.zbr:215
+    // zbr:selfhost/Resolver.zbr:222
     pub fn collectMember(self: *_zbr_ty_Resolver, member: _zbr_ty_PNode) anyerror!void {
-// zbr:selfhost/Resolver.zbr:216
+// zbr:selfhost/Resolver.zbr:223
         switch (member) {
             .method_ => |_ptr_m| {
                 const m = _ptr_m.*;
-// zbr:selfhost/Resolver.zbr:218
+// zbr:selfhost/Resolver.zbr:225
                 self.class_scope.put(_intern(m.name), 1) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:219
+// zbr:selfhost/Resolver.zbr:226
                 self.symbol_count = (self.symbol_count + 1);
             },
             .field_ => |_ptr_f| {
                 const f = _ptr_f.*;
-// zbr:selfhost/Resolver.zbr:221
+// zbr:selfhost/Resolver.zbr:228
                 self.class_scope.put(_intern(f.name), 2) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:222
+// zbr:selfhost/Resolver.zbr:229
                 self.symbol_count = (self.symbol_count + 1);
             },
             else => {
@@ -378,18 +388,18 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
-    // zbr:selfhost/Resolver.zbr:226
+    // zbr:selfhost/Resolver.zbr:233
     pub fn resolveMember(self: *_zbr_ty_Resolver, member: _zbr_ty_PNode) anyerror!void {
-// zbr:selfhost/Resolver.zbr:227
+// zbr:selfhost/Resolver.zbr:234
         switch (member) {
             .method_ => |_ptr_m| {
                 const m = _ptr_m.*;
-// zbr:selfhost/Resolver.zbr:229
+// zbr:selfhost/Resolver.zbr:236
                 (try self.enterMethod(m.params, m.stmts));
             },
             .init_ => |_ptr_i| {
                 const i = _ptr_i.*;
-// zbr:selfhost/Resolver.zbr:231
+// zbr:selfhost/Resolver.zbr:238
                 (try self.enterMethod(i.params, i.stmts));
             },
             else => {
@@ -398,192 +408,200 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
-    // zbr:selfhost/Resolver.zbr:236
+    // zbr:selfhost/Resolver.zbr:243
     pub fn enterMethod(self: *_zbr_ty_Resolver, params: std.ArrayList(_zbr_ty_PParam), stmts: std.ArrayList(_zbr_ty_PNode)) anyerror!void {
-// zbr:selfhost/Resolver.zbr:237
+// zbr:selfhost/Resolver.zbr:244
         self.method_scope = std.StringHashMap(i64).init(_zbr_rt._allocator);
-// zbr:selfhost/Resolver.zbr:238
+// zbr:selfhost/Resolver.zbr:245
         for (params.items) |p| {
-// zbr:selfhost/Resolver.zbr:239
+// zbr:selfhost/Resolver.zbr:246
             self.method_scope.put(_intern(p.name), 3) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:240
+// zbr:selfhost/Resolver.zbr:247
             self.symbol_count = (self.symbol_count + 1);
         }
-// zbr:selfhost/Resolver.zbr:241
+// zbr:selfhost/Resolver.zbr:248
         (try self.resolveStmts(stmts));
     }
 
-    // zbr:selfhost/Resolver.zbr:245
+    // zbr:selfhost/Resolver.zbr:252
     pub fn resolveStmts(self: *_zbr_ty_Resolver, stmts: std.ArrayList(_zbr_ty_PNode)) anyerror!void {
-// zbr:selfhost/Resolver.zbr:246
+// zbr:selfhost/Resolver.zbr:253
         for (stmts.items) |stmt| {
-// zbr:selfhost/Resolver.zbr:247
+// zbr:selfhost/Resolver.zbr:254
             (try self.resolveStmt(stmt));
         }
     }
 
-    // zbr:selfhost/Resolver.zbr:249
+    // zbr:selfhost/Resolver.zbr:256
     pub fn resolveStmt(self: *_zbr_ty_Resolver, stmt: _zbr_ty_PNode) anyerror!void {
-// zbr:selfhost/Resolver.zbr:250
+// zbr:selfhost/Resolver.zbr:257
         switch (stmt) {
             .stmt_var => |_ptr_v| {
                 const v = _ptr_v.*;
-// zbr:selfhost/Resolver.zbr:253
+// zbr:selfhost/Resolver.zbr:260
                 for (v.init_expr.items) |expr| {
-// zbr:selfhost/Resolver.zbr:254
+// zbr:selfhost/Resolver.zbr:261
                     (try self.resolveExpr(expr));
                 }
-// zbr:selfhost/Resolver.zbr:255
+// zbr:selfhost/Resolver.zbr:262
                 self.method_scope.put(_intern(v.name), 4) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:256
+// zbr:selfhost/Resolver.zbr:263
                 self.symbol_count = (self.symbol_count + 1);
             },
             .stmt_destruct => |_ptr_d| {
                 const d = _ptr_d.*;
-// zbr:selfhost/Resolver.zbr:258
+// zbr:selfhost/Resolver.zbr:265
                 for (d.init_expr.items) |expr| {
-// zbr:selfhost/Resolver.zbr:259
+// zbr:selfhost/Resolver.zbr:266
                     (try self.resolveExpr(expr));
                 }
-// zbr:selfhost/Resolver.zbr:260
+// zbr:selfhost/Resolver.zbr:267
                 for (d.names.items) |nm| {
-// zbr:selfhost/Resolver.zbr:261
+// zbr:selfhost/Resolver.zbr:268
                     self.method_scope.put(_intern(nm), 4) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:262
+// zbr:selfhost/Resolver.zbr:269
                     self.symbol_count = (self.symbol_count + 1);
                 }
             },
             .stmt_return => |_ptr_r| {
                 const r = _ptr_r.*;
-// zbr:selfhost/Resolver.zbr:264
+// zbr:selfhost/Resolver.zbr:271
                 for (r.value.items) |expr| {
-// zbr:selfhost/Resolver.zbr:265
+// zbr:selfhost/Resolver.zbr:272
+                    (try self.resolveExpr(expr));
+                }
+            },
+            .stmt_yield => |_ptr_y| {
+                const y = _ptr_y.*;
+// zbr:selfhost/Resolver.zbr:274
+                for (y.value.items) |expr| {
+// zbr:selfhost/Resolver.zbr:275
                     (try self.resolveExpr(expr));
                 }
             },
             .stmt_if => |_ptr_i| {
                 const i = _ptr_i.*;
-// zbr:selfhost/Resolver.zbr:267
+// zbr:selfhost/Resolver.zbr:277
                 for (i.cond.items) |expr| {
-// zbr:selfhost/Resolver.zbr:268
+// zbr:selfhost/Resolver.zbr:278
                     (try self.resolveExpr(expr));
                 }
-// zbr:selfhost/Resolver.zbr:269
+// zbr:selfhost/Resolver.zbr:279
                 if (i.is_capture) |ic| {
-// zbr:selfhost/Resolver.zbr:270
+// zbr:selfhost/Resolver.zbr:280
                     self.method_scope.put(_intern(ic), 4) catch @panic("OOM");
-// zbr:selfhost/Resolver.zbr:271
+// zbr:selfhost/Resolver.zbr:281
                     self.symbol_count = (self.symbol_count + 1);
                 }
-// zbr:selfhost/Resolver.zbr:272
+// zbr:selfhost/Resolver.zbr:282
                 (try self.resolveStmts(i.then_stmts));
-// zbr:selfhost/Resolver.zbr:273
+// zbr:selfhost/Resolver.zbr:283
                 (try self.resolveStmts(i.else_stmts));
             },
             .stmt_while => |_ptr_w| {
                 const w = _ptr_w.*;
-// zbr:selfhost/Resolver.zbr:275
+// zbr:selfhost/Resolver.zbr:285
                 for (w.cond.items) |expr| {
-// zbr:selfhost/Resolver.zbr:276
+// zbr:selfhost/Resolver.zbr:286
                     (try self.resolveExpr(expr));
                 }
-// zbr:selfhost/Resolver.zbr:277
+// zbr:selfhost/Resolver.zbr:287
                 (try self.resolveStmts(w.stmts));
             },
             .stmt_for_in => |_ptr_f| {
                 const f = _ptr_f.*;
-// zbr:selfhost/Resolver.zbr:279
+// zbr:selfhost/Resolver.zbr:289
                 for (f.iter.items) |expr| {
-// zbr:selfhost/Resolver.zbr:280
+// zbr:selfhost/Resolver.zbr:290
                     (try self.resolveExpr(expr));
                 }
-// zbr:selfhost/Resolver.zbr:281
+// zbr:selfhost/Resolver.zbr:291
                 for (f.var_names.items) |var_name| {
-// zbr:selfhost/Resolver.zbr:282
+// zbr:selfhost/Resolver.zbr:292
                     self.method_scope.put(_intern(var_name), 4) catch @panic("OOM");
                 }
-// zbr:selfhost/Resolver.zbr:283
+// zbr:selfhost/Resolver.zbr:293
                 (try self.resolveStmts(f.stmts));
-// zbr:selfhost/Resolver.zbr:284
+// zbr:selfhost/Resolver.zbr:294
                 (try self.resolveStmts(f.else_stmts));
             },
             .stmt_assign => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/Resolver.zbr:286
+// zbr:selfhost/Resolver.zbr:296
                 for (a.target.items) |expr| {
-// zbr:selfhost/Resolver.zbr:287
+// zbr:selfhost/Resolver.zbr:297
                     (try self.resolveExpr(expr));
                 }
-// zbr:selfhost/Resolver.zbr:288
+// zbr:selfhost/Resolver.zbr:298
                 for (a.value.items) |expr| {
-// zbr:selfhost/Resolver.zbr:289
+// zbr:selfhost/Resolver.zbr:299
                     (try self.resolveExpr(expr));
                 }
             },
             .stmt_assert => |_ptr_a| {
                 const a = _ptr_a.*;
-// zbr:selfhost/Resolver.zbr:291
+// zbr:selfhost/Resolver.zbr:301
                 for (a.cond.items) |expr| {
-// zbr:selfhost/Resolver.zbr:292
+// zbr:selfhost/Resolver.zbr:302
                     (try self.resolveExpr(expr));
                 }
-// zbr:selfhost/Resolver.zbr:293
+// zbr:selfhost/Resolver.zbr:303
                 for (a.message.items) |expr| {
-// zbr:selfhost/Resolver.zbr:294
+// zbr:selfhost/Resolver.zbr:304
                     (try self.resolveExpr(expr));
                 }
             },
             .stmt_raise => |_ptr_r| {
                 const r = _ptr_r.*;
-// zbr:selfhost/Resolver.zbr:296
+// zbr:selfhost/Resolver.zbr:306
                 for (r.message.items) |expr| {
-// zbr:selfhost/Resolver.zbr:297
+// zbr:selfhost/Resolver.zbr:307
                     (try self.resolveExpr(expr));
                 }
             },
             .stmt_try_catch => |_ptr_tc| {
                 const tc = _ptr_tc.*;
-// zbr:selfhost/Resolver.zbr:299
+// zbr:selfhost/Resolver.zbr:309
                 (try self.resolveStmts(tc.body_stmts));
-// zbr:selfhost/Resolver.zbr:300
+// zbr:selfhost/Resolver.zbr:310
                 if (!std.mem.eql(u8, tc.catch_binding, "")) {
-// zbr:selfhost/Resolver.zbr:301
+// zbr:selfhost/Resolver.zbr:311
                     self.method_scope.put(_intern(tc.catch_binding), 4) catch @panic("OOM");
                 }
-// zbr:selfhost/Resolver.zbr:302
+// zbr:selfhost/Resolver.zbr:312
                 (try self.resolveStmts(tc.catch_stmts));
             },
             .stmt_branch => |_ptr_br| {
                 const br = _ptr_br.*;
-// zbr:selfhost/Resolver.zbr:304
+// zbr:selfhost/Resolver.zbr:314
                 for (br.subject.items) |expr| {
-// zbr:selfhost/Resolver.zbr:305
+// zbr:selfhost/Resolver.zbr:315
                     (try self.resolveExpr(expr));
                 }
-// zbr:selfhost/Resolver.zbr:306
+// zbr:selfhost/Resolver.zbr:316
                 for (br.arms.items) |arm| {
-// zbr:selfhost/Resolver.zbr:307
+// zbr:selfhost/Resolver.zbr:317
                     if (!std.mem.eql(u8, arm.binding, "")) {
-// zbr:selfhost/Resolver.zbr:308
+// zbr:selfhost/Resolver.zbr:318
                         self.method_scope.put(_intern(arm.binding), 4) catch @panic("OOM");
                     }
-// zbr:selfhost/Resolver.zbr:309
+// zbr:selfhost/Resolver.zbr:319
                     (try self.resolveStmts(arm.stmts));
                 }
-// zbr:selfhost/Resolver.zbr:310
+// zbr:selfhost/Resolver.zbr:320
                 (try self.resolveStmts(br.else_stmts));
             },
             .stmt_expr => |_ptr_inner| {
                 const inner = _ptr_inner.*;
-// zbr:selfhost/Resolver.zbr:312
+// zbr:selfhost/Resolver.zbr:322
                 (try self.resolveExpr(inner));
             },
             .stmt_print => |arg_nodes| {
-// zbr:selfhost/Resolver.zbr:314
+// zbr:selfhost/Resolver.zbr:324
                 const arg_list: std.ArrayList(_zbr_ty_PNode) = arg_nodes;
-// zbr:selfhost/Resolver.zbr:315
+// zbr:selfhost/Resolver.zbr:325
                 for (arg_list.items) |an| {
-// zbr:selfhost/Resolver.zbr:316
+// zbr:selfhost/Resolver.zbr:326
                     (try self.resolveExpr(an));
                 }
             },
@@ -602,121 +620,121 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
-    // zbr:selfhost/Resolver.zbr:328
+    // zbr:selfhost/Resolver.zbr:338
     pub fn resolveExpr(self: *_zbr_ty_Resolver, expr: _zbr_ty_PNode) anyerror!void {
-// zbr:selfhost/Resolver.zbr:329
+// zbr:selfhost/Resolver.zbr:339
         switch (expr) {
             .expr_id => |_ptr_id| {
                 const id = _ptr_id.*;
-// zbr:selfhost/Resolver.zbr:331
+// zbr:selfhost/Resolver.zbr:341
                 if ((!self.isInScope(id.name))) {
-// zbr:selfhost/Resolver.zbr:332
+// zbr:selfhost/Resolver.zbr:342
                     self.errors.append(_zbr_rt._allocator, _zbr_ty_ResolveError.init(self.fmtErrAt(id.line, id.col, _str_concat(_str_concat("undefined name: '", id.name, _zbr_rt._allocator), "'", _zbr_rt._allocator)))) catch @panic("OOM");
                 }
             },
             .expr_binary => |_ptr_b| {
                 const b = _ptr_b.*;
-// zbr:selfhost/Resolver.zbr:334
+// zbr:selfhost/Resolver.zbr:344
                 for (b.left.items) |e| {
-// zbr:selfhost/Resolver.zbr:335
+// zbr:selfhost/Resolver.zbr:345
                     (try self.resolveExpr(e));
                 }
-// zbr:selfhost/Resolver.zbr:336
+// zbr:selfhost/Resolver.zbr:346
                 for (b.right.items) |e| {
-// zbr:selfhost/Resolver.zbr:337
+// zbr:selfhost/Resolver.zbr:347
                     (try self.resolveExpr(e));
                 }
             },
             .expr_unary => |_ptr_u| {
                 const u = _ptr_u.*;
-// zbr:selfhost/Resolver.zbr:339
+// zbr:selfhost/Resolver.zbr:349
                 for (u.operand.items) |e| {
-// zbr:selfhost/Resolver.zbr:340
+// zbr:selfhost/Resolver.zbr:350
                     (try self.resolveExpr(e));
                 }
             },
             .expr_call => |_ptr_c| {
                 const c = _ptr_c.*;
-// zbr:selfhost/Resolver.zbr:342
+// zbr:selfhost/Resolver.zbr:352
                 for (c.callee.items) |e| {
-// zbr:selfhost/Resolver.zbr:343
+// zbr:selfhost/Resolver.zbr:353
                     (try self.resolveExpr(e));
                 }
-// zbr:selfhost/Resolver.zbr:347
+// zbr:selfhost/Resolver.zbr:357
                 var generic_ctor: bool = false;
-// zbr:selfhost/Resolver.zbr:348
+// zbr:selfhost/Resolver.zbr:358
                 for (c.callee.items) |ce| {
-// zbr:selfhost/Resolver.zbr:349
+// zbr:selfhost/Resolver.zbr:359
                     if (ce == .expr_id) {
                         const cid_ptr = ce.expr_id;
                         const cid = cid_ptr.*;
-// zbr:selfhost/Resolver.zbr:350
+// zbr:selfhost/Resolver.zbr:360
                         if ((((((std.mem.eql(u8, cid.name, "List") or std.mem.eql(u8, cid.name, "HashMap")) or std.mem.eql(u8, cid.name, "Set")) or std.mem.eql(u8, cid.name, "Atomic")) or std.mem.eql(u8, cid.name, "Chan")) or std.mem.eql(u8, cid.name, "ObjectPool"))) {
-// zbr:selfhost/Resolver.zbr:351
+// zbr:selfhost/Resolver.zbr:361
                             generic_ctor = true;
                         }
                     }
                 }
-// zbr:selfhost/Resolver.zbr:352
+// zbr:selfhost/Resolver.zbr:362
                 for (c.args.items) |e| {
-// zbr:selfhost/Resolver.zbr:353
+// zbr:selfhost/Resolver.zbr:363
                     var skip_e: bool = false;
-// zbr:selfhost/Resolver.zbr:354
+// zbr:selfhost/Resolver.zbr:364
                     if (generic_ctor) {
-// zbr:selfhost/Resolver.zbr:355
+// zbr:selfhost/Resolver.zbr:365
                         if (e == .expr_id) {
                             const aid_ptr = e.expr_id;
                             const aid = aid_ptr.*;
-// zbr:selfhost/Resolver.zbr:356
+// zbr:selfhost/Resolver.zbr:366
                             if (_zbr_fn_isBuiltinTypeName(aid.name)) {
-// zbr:selfhost/Resolver.zbr:357
+// zbr:selfhost/Resolver.zbr:367
                                 skip_e = true;
                             }
                         }
                     }
-// zbr:selfhost/Resolver.zbr:358
+// zbr:selfhost/Resolver.zbr:368
                     if ((!skip_e)) {
-// zbr:selfhost/Resolver.zbr:359
+// zbr:selfhost/Resolver.zbr:369
                         (try self.resolveExpr(e));
                     }
                 }
             },
             .expr_index => |_ptr_ix| {
                 const ix = _ptr_ix.*;
-// zbr:selfhost/Resolver.zbr:361
+// zbr:selfhost/Resolver.zbr:371
                 for (ix.object.items) |e| {
-// zbr:selfhost/Resolver.zbr:362
+// zbr:selfhost/Resolver.zbr:372
                     (try self.resolveExpr(e));
                 }
-// zbr:selfhost/Resolver.zbr:363
+// zbr:selfhost/Resolver.zbr:373
                 for (ix.index.items) |e| {
-// zbr:selfhost/Resolver.zbr:364
+// zbr:selfhost/Resolver.zbr:374
                     (try self.resolveExpr(e));
                 }
             },
             .expr_slice => |_ptr_sl| {
                 const sl = _ptr_sl.*;
-// zbr:selfhost/Resolver.zbr:366
+// zbr:selfhost/Resolver.zbr:376
                 for (sl.object.items) |e| {
-// zbr:selfhost/Resolver.zbr:367
+// zbr:selfhost/Resolver.zbr:377
                     (try self.resolveExpr(e));
                 }
-// zbr:selfhost/Resolver.zbr:368
+// zbr:selfhost/Resolver.zbr:378
                 for (sl.start.items) |e| {
-// zbr:selfhost/Resolver.zbr:369
+// zbr:selfhost/Resolver.zbr:379
                     (try self.resolveExpr(e));
                 }
-// zbr:selfhost/Resolver.zbr:370
+// zbr:selfhost/Resolver.zbr:380
                 for (sl.stop_.items) |e| {
-// zbr:selfhost/Resolver.zbr:371
+// zbr:selfhost/Resolver.zbr:381
                     (try self.resolveExpr(e));
                 }
             },
             .expr_member => |_ptr_m| {
                 const m = _ptr_m.*;
-// zbr:selfhost/Resolver.zbr:373
+// zbr:selfhost/Resolver.zbr:383
                 for (m.base.items) |e| {
-// zbr:selfhost/Resolver.zbr:374
+// zbr:selfhost/Resolver.zbr:384
                     (try self.resolveExpr(e));
                 }
             },
@@ -728,56 +746,56 @@ pub const _zbr_ty_Resolver = struct {
             },
             .expr_except => |_ptr_ex| {
                 const ex = _ptr_ex.*;
-// zbr:selfhost/Resolver.zbr:383
+// zbr:selfhost/Resolver.zbr:393
                 for (ex.base.items) |e| {
-// zbr:selfhost/Resolver.zbr:384
+// zbr:selfhost/Resolver.zbr:394
                     (try self.resolveExpr(e));
                 }
-// zbr:selfhost/Resolver.zbr:385
+// zbr:selfhost/Resolver.zbr:395
                 for (ex.fields.items) |f| {
-// zbr:selfhost/Resolver.zbr:386
+// zbr:selfhost/Resolver.zbr:396
                     for (f.value.items) |v| {
-// zbr:selfhost/Resolver.zbr:387
+// zbr:selfhost/Resolver.zbr:397
                         (try self.resolveExpr(v));
                     }
                 }
             },
             .expr_string_interp => |_ptr_si| {
                 const si = _ptr_si.*;
-// zbr:selfhost/Resolver.zbr:389
+// zbr:selfhost/Resolver.zbr:399
                 for (si.parts.items) |part| {
-// zbr:selfhost/Resolver.zbr:390
+// zbr:selfhost/Resolver.zbr:400
                     (try self.resolveExpr(part));
                 }
             },
             .expr_opt_chain => |_ptr_poc| {
                 const poc = _ptr_poc.*;
-// zbr:selfhost/Resolver.zbr:392
+// zbr:selfhost/Resolver.zbr:402
                 for (poc.base.items) |e| {
-// zbr:selfhost/Resolver.zbr:393
+// zbr:selfhost/Resolver.zbr:403
                     (try self.resolveExpr(e));
                 }
-// zbr:selfhost/Resolver.zbr:394
+// zbr:selfhost/Resolver.zbr:404
                 for (poc.args.items) |e| {
-// zbr:selfhost/Resolver.zbr:395
+// zbr:selfhost/Resolver.zbr:405
                     (try self.resolveExpr(e));
                 }
             },
             .expr_if_expr => |_ptr_pie| {
                 const pie = _ptr_pie.*;
-// zbr:selfhost/Resolver.zbr:397
+// zbr:selfhost/Resolver.zbr:407
                 for (pie.cond.items) |e| {
-// zbr:selfhost/Resolver.zbr:398
+// zbr:selfhost/Resolver.zbr:408
                     (try self.resolveExpr(e));
                 }
-// zbr:selfhost/Resolver.zbr:399
+// zbr:selfhost/Resolver.zbr:409
                 for (pie.then_expr.items) |e| {
-// zbr:selfhost/Resolver.zbr:400
+// zbr:selfhost/Resolver.zbr:410
                     (try self.resolveExpr(e));
                 }
-// zbr:selfhost/Resolver.zbr:401
+// zbr:selfhost/Resolver.zbr:411
                 for (pie.else_expr.items) |e| {
-// zbr:selfhost/Resolver.zbr:402
+// zbr:selfhost/Resolver.zbr:412
                     (try self.resolveExpr(e));
                 }
             },
@@ -787,171 +805,171 @@ pub const _zbr_ty_Resolver = struct {
         }
     }
 
-    // zbr:selfhost/Resolver.zbr:409
+    // zbr:selfhost/Resolver.zbr:419
     pub fn isInScope(self: *_zbr_ty_Resolver, name: []const u8) bool {
-// zbr:selfhost/Resolver.zbr:410
+// zbr:selfhost/Resolver.zbr:420
         if (self.method_scope.contains(name)) {
-// zbr:selfhost/Resolver.zbr:411
+// zbr:selfhost/Resolver.zbr:421
             return true;
         }
-// zbr:selfhost/Resolver.zbr:412
-        if (self.class_scope.contains(name)) {
-// zbr:selfhost/Resolver.zbr:413
-            return true;
-        }
-// zbr:selfhost/Resolver.zbr:414
-        if (self.module_scope.contains(name)) {
-// zbr:selfhost/Resolver.zbr:415
-            return true;
-        }
-// zbr:selfhost/Resolver.zbr:416
-        if (self.isBuiltin(name)) {
-// zbr:selfhost/Resolver.zbr:417
-            return true;
-        }
-// zbr:selfhost/Resolver.zbr:418
-        return false;
-    }
-
-    // zbr:selfhost/Resolver.zbr:420
-    pub fn isBuiltin(self: *_zbr_ty_Resolver, name: []const u8) bool {
 // zbr:selfhost/Resolver.zbr:422
-        if ((((std.mem.eql(u8, name, "int") or std.mem.eql(u8, name, "str")) or std.mem.eql(u8, name, "bool")) or std.mem.eql(u8, name, "float"))) {
+        if (self.class_scope.contains(name)) {
 // zbr:selfhost/Resolver.zbr:423
             return true;
         }
+// zbr:selfhost/Resolver.zbr:424
+        if (self.module_scope.contains(name)) {
+// zbr:selfhost/Resolver.zbr:425
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:426
+        if (self.isBuiltin(name)) {
+// zbr:selfhost/Resolver.zbr:427
+            return true;
+        }
 // zbr:selfhost/Resolver.zbr:428
-        if ((std.mem.eql(u8, name, "char") or std.mem.eql(u8, name, "uint"))) {
-// zbr:selfhost/Resolver.zbr:429
-            return true;
-        }
-// zbr:selfhost/Resolver.zbr:434
-        if ((((std.mem.eql(u8, name, "int8") or std.mem.eql(u8, name, "int16")) or std.mem.eql(u8, name, "int32")) or std.mem.eql(u8, name, "int64"))) {
-// zbr:selfhost/Resolver.zbr:435
-            return true;
-        }
-// zbr:selfhost/Resolver.zbr:436
-        if ((((std.mem.eql(u8, name, "uint8") or std.mem.eql(u8, name, "uint16")) or std.mem.eql(u8, name, "uint32")) or std.mem.eql(u8, name, "uint64"))) {
-// zbr:selfhost/Resolver.zbr:437
+        return false;
+    }
+
+    // zbr:selfhost/Resolver.zbr:430
+    pub fn isBuiltin(self: *_zbr_ty_Resolver, name: []const u8) bool {
+// zbr:selfhost/Resolver.zbr:432
+        if ((((std.mem.eql(u8, name, "int") or std.mem.eql(u8, name, "str")) or std.mem.eql(u8, name, "bool")) or std.mem.eql(u8, name, "float"))) {
+// zbr:selfhost/Resolver.zbr:433
             return true;
         }
 // zbr:selfhost/Resolver.zbr:438
-        if (((std.mem.eql(u8, name, "float16") or std.mem.eql(u8, name, "float32")) or std.mem.eql(u8, name, "float64"))) {
+        if ((std.mem.eql(u8, name, "char") or std.mem.eql(u8, name, "uint"))) {
 // zbr:selfhost/Resolver.zbr:439
             return true;
         }
-// zbr:selfhost/Resolver.zbr:440
-        if (((std.mem.eql(u8, name, "f16") or std.mem.eql(u8, name, "f32")) or std.mem.eql(u8, name, "f64"))) {
-// zbr:selfhost/Resolver.zbr:441
-            return true;
-        }
-// zbr:selfhost/Resolver.zbr:442
-        if (((std.mem.eql(u8, name, "nil") or std.mem.eql(u8, name, "true")) or std.mem.eql(u8, name, "false"))) {
-// zbr:selfhost/Resolver.zbr:443
-            return true;
-        }
 // zbr:selfhost/Resolver.zbr:444
-        if (((std.mem.eql(u8, name, "this") or std.mem.eql(u8, name, "print")) or std.mem.eql(u8, name, "assert"))) {
+        if ((((std.mem.eql(u8, name, "int8") or std.mem.eql(u8, name, "int16")) or std.mem.eql(u8, name, "int32")) or std.mem.eql(u8, name, "int64"))) {
 // zbr:selfhost/Resolver.zbr:445
             return true;
         }
+// zbr:selfhost/Resolver.zbr:446
+        if ((((std.mem.eql(u8, name, "uint8") or std.mem.eql(u8, name, "uint16")) or std.mem.eql(u8, name, "uint32")) or std.mem.eql(u8, name, "uint64"))) {
 // zbr:selfhost/Resolver.zbr:447
-        if ((((std.mem.eql(u8, name, "List") or std.mem.eql(u8, name, "HashMap")) or std.mem.eql(u8, name, "StringBuilder")) or std.mem.eql(u8, name, "Chan"))) {
+            return true;
+        }
 // zbr:selfhost/Resolver.zbr:448
-            return true;
-        }
+        if (((std.mem.eql(u8, name, "float16") or std.mem.eql(u8, name, "float32")) or std.mem.eql(u8, name, "float64"))) {
 // zbr:selfhost/Resolver.zbr:449
-        if ((((std.mem.eql(u8, name, "Atomic") or std.mem.eql(u8, name, "ThreadPool")) or std.mem.eql(u8, name, "ObjectPool")) or std.mem.eql(u8, name, "Set"))) {
+            return true;
+        }
 // zbr:selfhost/Resolver.zbr:450
-            return true;
-        }
+        if (((std.mem.eql(u8, name, "f16") or std.mem.eql(u8, name, "f32")) or std.mem.eql(u8, name, "f64"))) {
 // zbr:selfhost/Resolver.zbr:451
-        if (std.mem.eql(u8, name, "DynLib")) {
+            return true;
+        }
 // zbr:selfhost/Resolver.zbr:452
+        if (((std.mem.eql(u8, name, "nil") or std.mem.eql(u8, name, "true")) or std.mem.eql(u8, name, "false"))) {
+// zbr:selfhost/Resolver.zbr:453
             return true;
         }
+// zbr:selfhost/Resolver.zbr:454
+        if (((std.mem.eql(u8, name, "this") or std.mem.eql(u8, name, "print")) or std.mem.eql(u8, name, "assert"))) {
+// zbr:selfhost/Resolver.zbr:455
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:457
+        if ((((std.mem.eql(u8, name, "List") or std.mem.eql(u8, name, "HashMap")) or std.mem.eql(u8, name, "StringBuilder")) or std.mem.eql(u8, name, "Chan"))) {
 // zbr:selfhost/Resolver.zbr:458
-        if (_zbr_fn_isStdlibNs(name)) {
+            return true;
+        }
 // zbr:selfhost/Resolver.zbr:459
+        if ((((std.mem.eql(u8, name, "Atomic") or std.mem.eql(u8, name, "ThreadPool")) or std.mem.eql(u8, name, "ObjectPool")) or std.mem.eql(u8, name, "Set"))) {
+// zbr:selfhost/Resolver.zbr:460
             return true;
         }
-// zbr:selfhost/Resolver.zbr:463
-        if (((std.mem.eql(u8, name, "WsConn") or std.mem.eql(u8, name, "CsvWriter")) or std.mem.eql(u8, name, "Calendar"))) {
-// zbr:selfhost/Resolver.zbr:464
+// zbr:selfhost/Resolver.zbr:461
+        if (std.mem.eql(u8, name, "DynLib")) {
+// zbr:selfhost/Resolver.zbr:462
             return true;
         }
+// zbr:selfhost/Resolver.zbr:468
+        if (_zbr_fn_isStdlibNs(name)) {
 // zbr:selfhost/Resolver.zbr:469
-        if (std.mem.eql(u8, name, "CodeEditor")) {
-// zbr:selfhost/Resolver.zbr:470
-            return true;
-        }
-// zbr:selfhost/Resolver.zbr:471
-        if (((std.mem.eql(u8, name, "SqliteDb") or std.mem.eql(u8, name, "SqliteRow")) or std.mem.eql(u8, name, "Base64"))) {
-// zbr:selfhost/Resolver.zbr:472
             return true;
         }
 // zbr:selfhost/Resolver.zbr:473
-        if ((std.mem.eql(u8, name, "Allocator") or std.mem.eql(u8, name, "Arena"))) {
+        if (((std.mem.eql(u8, name, "WsConn") or std.mem.eql(u8, name, "CsvWriter")) or std.mem.eql(u8, name, "Calendar"))) {
 // zbr:selfhost/Resolver.zbr:474
             return true;
         }
-// zbr:selfhost/Resolver.zbr:475
-        if (((std.mem.eql(u8, name, "Debug") or std.mem.eql(u8, name, "FixedBuffer")) or std.mem.eql(u8, name, "StackFallback"))) {
-// zbr:selfhost/Resolver.zbr:476
-            return true;
-        }
-// zbr:selfhost/Resolver.zbr:477
-        if (((std.mem.eql(u8, name, "Page") or std.mem.eql(u8, name, "Smp")) or std.mem.eql(u8, name, "C"))) {
-// zbr:selfhost/Resolver.zbr:478
-            return true;
-        }
 // zbr:selfhost/Resolver.zbr:479
-        if (self.isSimdName(name)) {
+        if (std.mem.eql(u8, name, "CodeEditor")) {
 // zbr:selfhost/Resolver.zbr:480
             return true;
         }
 // zbr:selfhost/Resolver.zbr:481
+        if (((std.mem.eql(u8, name, "SqliteDb") or std.mem.eql(u8, name, "SqliteRow")) or std.mem.eql(u8, name, "Base64"))) {
+// zbr:selfhost/Resolver.zbr:482
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:483
+        if ((std.mem.eql(u8, name, "Allocator") or std.mem.eql(u8, name, "Arena"))) {
+// zbr:selfhost/Resolver.zbr:484
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:485
+        if (((std.mem.eql(u8, name, "Debug") or std.mem.eql(u8, name, "FixedBuffer")) or std.mem.eql(u8, name, "StackFallback"))) {
+// zbr:selfhost/Resolver.zbr:486
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:487
+        if (((std.mem.eql(u8, name, "Page") or std.mem.eql(u8, name, "Smp")) or std.mem.eql(u8, name, "C"))) {
+// zbr:selfhost/Resolver.zbr:488
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:489
+        if (self.isSimdName(name)) {
+// zbr:selfhost/Resolver.zbr:490
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:491
         return false;
     }
 
-    // zbr:selfhost/Resolver.zbr:483
+    // zbr:selfhost/Resolver.zbr:493
     pub fn isSimdName(self: *_zbr_ty_Resolver, name: []const u8) bool {
         _ = self;
-// zbr:selfhost/Resolver.zbr:485
-        if ((!(std.mem.indexOf(u8, name, "x") != null))) {
-// zbr:selfhost/Resolver.zbr:486
-            return false;
-        }
-// zbr:selfhost/Resolver.zbr:487
-        const parts: std.ArrayList([]const u8) = blk092_2: { var _ll_2: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_2 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_2.next()) |_se_2| { _ll_2.append(_zbr_rt._allocator, _se_2) catch @panic("OOM"); } break :blk092_2 _ll_2; };
-// zbr:selfhost/Resolver.zbr:488
-        if ((@as(i64, @intCast(parts.items.len)) != 2)) {
-// zbr:selfhost/Resolver.zbr:489
-            return false;
-        }
-// zbr:selfhost/Resolver.zbr:490
-        if (std.mem.eql(u8, _zbr_at(parts.items, 1), "")) {
-// zbr:selfhost/Resolver.zbr:491
-            return false;
-        }
-// zbr:selfhost/Resolver.zbr:492
-        const prefix: []const u8 = _zbr_at(parts.items, 0);
-// zbr:selfhost/Resolver.zbr:493
-        if (((std.mem.eql(u8, prefix, "f16") or std.mem.eql(u8, prefix, "f32")) or std.mem.eql(u8, prefix, "f64"))) {
-// zbr:selfhost/Resolver.zbr:494
-            return true;
-        }
 // zbr:selfhost/Resolver.zbr:495
-        if ((((std.mem.eql(u8, prefix, "i8") or std.mem.eql(u8, prefix, "i16")) or std.mem.eql(u8, prefix, "i32")) or std.mem.eql(u8, prefix, "i64"))) {
+        if ((!(std.mem.indexOf(u8, name, "x") != null))) {
 // zbr:selfhost/Resolver.zbr:496
-            return true;
+            return false;
         }
 // zbr:selfhost/Resolver.zbr:497
-        if ((((std.mem.eql(u8, prefix, "u8") or std.mem.eql(u8, prefix, "u16")) or std.mem.eql(u8, prefix, "u32")) or std.mem.eql(u8, prefix, "u64"))) {
+        const parts: std.ArrayList([]const u8) = blk092_2: { var _ll_2: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_2 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_2.next()) |_se_2| { _ll_2.append(_zbr_rt._allocator, _se_2) catch @panic("OOM"); } break :blk092_2 _ll_2; };
 // zbr:selfhost/Resolver.zbr:498
+        if ((@as(i64, @intCast(parts.items.len)) != 2)) {
+// zbr:selfhost/Resolver.zbr:499
+            return false;
+        }
+// zbr:selfhost/Resolver.zbr:500
+        if (std.mem.eql(u8, _zbr_at(parts.items, 1), "")) {
+// zbr:selfhost/Resolver.zbr:501
+            return false;
+        }
+// zbr:selfhost/Resolver.zbr:502
+        const prefix: []const u8 = _zbr_at(parts.items, 0);
+// zbr:selfhost/Resolver.zbr:503
+        if (((std.mem.eql(u8, prefix, "f16") or std.mem.eql(u8, prefix, "f32")) or std.mem.eql(u8, prefix, "f64"))) {
+// zbr:selfhost/Resolver.zbr:504
             return true;
         }
-// zbr:selfhost/Resolver.zbr:499
+// zbr:selfhost/Resolver.zbr:505
+        if ((((std.mem.eql(u8, prefix, "i8") or std.mem.eql(u8, prefix, "i16")) or std.mem.eql(u8, prefix, "i32")) or std.mem.eql(u8, prefix, "i64"))) {
+// zbr:selfhost/Resolver.zbr:506
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:507
+        if ((((std.mem.eql(u8, prefix, "u8") or std.mem.eql(u8, prefix, "u16")) or std.mem.eql(u8, prefix, "u32")) or std.mem.eql(u8, prefix, "u64"))) {
+// zbr:selfhost/Resolver.zbr:508
+            return true;
+        }
+// zbr:selfhost/Resolver.zbr:509
         return false;
     }
 
@@ -961,7 +979,7 @@ const _reflect_Resolver_name: []const u8 = "Resolver";
 const _reflect_Resolver_fields: []const []const u8 = &.{"module_scope", "class_scope", "method_scope", "errors", "symbol_count", "file_name", "source"};
 const _reflect_Resolver_field_types: []const []const u8 = &.{"HashMap(str, int)", "HashMap(str, int)", "HashMap(str, int)", "List(ResolveError)", "int", "str", "str"};
 
-// zbr:selfhost/Resolver.zbr:503
+// zbr:selfhost/Resolver.zbr:513
 pub fn main(_zinit: std.process.Init) void {
     _zbr_rt._io = _zinit.io;
     _zbr_rt._args = _zinit.minimal.args;
@@ -969,7 +987,7 @@ pub fn main(_zinit: std.process.Init) void {
     _zbr_rt._allocator = _prog_alloc();
     defer _zbr_rt._arena.deinit();
     _initModuleVars();
-// zbr:selfhost/Resolver.zbr:504
+// zbr:selfhost/Resolver.zbr:514
     _zbr_print("{s}\n", .{"resolver: loaded (run resolver_test.zbr to exercise)"});
 }
 

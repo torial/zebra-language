@@ -1129,6 +1129,8 @@ def nameEscapesStmt(name: str, stmt: Stmt): bool
                 if nameEscapesInExpr(name, ce)
                     return true
             return false
+        on Stmt.yield_ as yl
+            return nameEscapesInExpr(name, yl.value)
         on Stmt.break_
             return false
         on Stmt.continue_
@@ -1883,6 +1885,8 @@ def stmtMutatesSelf(s: Stmt): bool
             return false
         on Stmt.contract
             return false
+        on Stmt.yield_ as yl
+            return exprHasSelfCall(yl.value)
         else
             return true
 

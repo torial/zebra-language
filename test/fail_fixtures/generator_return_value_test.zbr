@@ -1,0 +1,8 @@
+# A generator finishes with a bare `return`; a value there is a mistake.
+def ones(): Iter(int)
+    yield 1
+    return 2
+
+def main()
+    for x in ones()
+        print(x)

@@ -133,6 +133,16 @@ value (was `eql(*const Self)`); the one corpus use of `.eql(` became `.equals(`.
 `def toString` → `cue toString`. `cue deinit` is deliberately absent -- end-of-scope
 teardown is an open 1.0 decision (NEXT_STEPS_to_1.0). QUICKSTART §5 "Cues"; surface: +1
 section, `docs/SURFACE.md` "Cues (7)".
+**Generators** (2026-09-16, Sean: "let's do the yield"): a top-level `def f(...): Iter(T)`
+whose body uses `yield` is lowered to a class with `cue next` -- a resumable state machine
+over the body's control flow (`if`/`while`/`for`, with `break`, `continue`, early `return`
+and `for`/`else`), locals kept as fields. `for x in f()`, `f().next()`, and a generator
+consuming another generator all go through the cue protocol; nothing is materialised.
+`Iter(T)` is a return type only; `yield` outside a generator, a `return` with a value
+inside one, and a yield under `branch`/`try`/`with`/`using`/`allocate` or `if x as y` are
+refused by name. This is the producer half of the iterators gap (the .NET lazy-splitter
+receipt in NEXT_STEPS_to_1.0). QUICKSTART §5 "Generators"; surface: +1 keyword (`yield`,
+69).
 
 ## [0.15] — 2026-05 (in progress)
 
