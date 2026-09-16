@@ -54,7 +54,14 @@ cd "$REPO"
 # 2026-06-27: reconciled 73→70 — the preamble's actual count had dropped to 70 (three
 #   escape hatches removed during earlier 0.16 stdlib work) while this baseline stayed at
 #   73. Lowering to match is safe: it only tightens the gate (fewer uses allowed).
-EXPECTED_PREAMBLE=70
+# 2026-09-16: reconciled 70→77 (red since BUG-279 leg 3, 2026-08-09, at 72; nobody owned
+#   it). The growth is Zig 0.16's allocator-taking ArrayList API -- `append(allocator, x)`,
+#   `deinit(allocator)`, `appendSlice(allocator, ..)` -- which turns ONE page_allocator-
+#   backed list into several MENTIONS of the same escape hatch: the Profile cluster alone
+#   went 9 -> 13 with no new long-lived allocation (_profile_entries and its name/time
+#   stacks, as before). This gate counts mentions, so the number rises with the API, not
+#   with the memory model. If it moves again, re-cluster before bumping.
+EXPECTED_PREAMBLE=77
 
 # (A second leg counted src/*.zig, the Zig-implemented bootstrap, at 7. Retired with
 #  it 2026-09-16 -- bootstrap_sunset.md Step 3. The selfhost's own emitted literals

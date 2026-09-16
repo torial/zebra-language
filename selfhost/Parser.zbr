@@ -172,12 +172,16 @@ struct PBranchOn
     var filter_cond: List(PNode)
     var stmts: List(PNode)
     var struct_pat_node: List(PNode)
-    cue init(patterns: List(str), binding: str, filter_cond: List(PNode), stmts: List(PNode))
+    var line: int          # of the `on` keyword (2026-09-16: an arm can carry a diagnostic)
+    var col: int
+    cue init(patterns: List(str), binding: str, filter_cond: List(PNode), stmts: List(PNode), line: int = 0, col: int = 0)
         .patterns = patterns
         .binding = binding
         .filter_cond = filter_cond
         .stmts = stmts
         .struct_pat_node = List(PNode)()
+        .line = line
+        .col = col
 
 struct PTupleLit
     var elems: List(PNode)
@@ -2630,6 +2634,8 @@ class Parser
                 if .isDedent()
                     break
                 if .textIs("on")
+                    const on_line = .peek().line
+                    const on_col = .peek().col
                     .advance()
                     # Parse pattern list: one or more comma-separated patterns.
                     # After a comma, if the next token is a statement keyword (print, return,
@@ -2679,7 +2685,7 @@ class Parser
                     else if not .isEol() and not .isDedent() and not .isEof()
                         # Inline single-line arm: `on Pattern  return value` or `on Pat, stmt`
                         stmts.add(.parseStmt()?)
-                    var arm = PBranchOn(patterns, binding, filter_cond, stmts)
+                    var arm = PBranchOn(patterns, binding, filter_cond, stmts, on_line, on_col)
                     arm.struct_pat_node = struct_pat_node
                     arms.add(arm)
                 else if .textIs("else")

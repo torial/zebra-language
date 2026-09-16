@@ -881,7 +881,7 @@ class ASTBuilder
             if arm.filter_cond.len > 0
                 var gexpr = .buildExpr(arm.filter_cond.at(0))?
                 filter_exprs.add(gexpr)
-            var bo = BranchOn(zspan(), values, arm_stmts, binding_opt, filter_exprs)
+            var bo = BranchOn(Span(arm.line, arm.col, arm.line, arm.col), values, arm_stmts, binding_opt, filter_exprs)
             # Struct pattern: parser stored the full call node in struct_pat_node.
             if arm.struct_pat_node.len > 0
                 var call_expr = .buildExpr(arm.struct_pat_node.at(0))?

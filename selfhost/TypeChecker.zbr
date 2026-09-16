@@ -12,7 +12,7 @@
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
 use Ast exposing StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
-use AstWalk exposing collectOldNodes
+use AstWalk exposing collectOldNodes, mightUseName
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -5268,6 +5268,18 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                             else
                                 ctx.bind(bname, Type_.unknown_)
                     checkStmts(c.stmts, file, ctx)
+                    # An `as name` binding the arm never reads (2026-09-16). Zig refused
+                    # the emitted switch capture with "unused capture", which the source
+                    # map returned as a Zebra error carrying a line and NO column; the
+                    # front end says it, at the arm's value, first. mightUseName is the
+                    # codegen's own conservative walker (an unmodelled form counts as a
+                    # use). A guarded arm is exempt (the guard reads the binding); `as _`
+                    # is the spelling for "don't care".
+                    if c.binding as arm_bname
+                        if arm_bname != "_" and c.guard_expr.len == 0
+                            if not mightUseName(arm_bname, c.stmts)
+                                ctx.addErr(file, c.span.line, c.span.col,
+                                           "unused binding '" + arm_bname + "' in this arm: use it, or write the arm without `as " + arm_bname + "`")
                 if sb.else_ as sb_else
                     checkStmts(sb_else, file, ctx)
                 # Infer subject type once for all exhaustiveness checks.

@@ -347,6 +347,13 @@ passable as a `sig`) plus two things for this queue to decide rather than fix:
 - An unused `as n` binding in a branch arm is refused (Zig's unused-capture error
   surfacing as a Zebra error) **with no column** -- `diag-columns` cannot see it because
   it is not a front-end diagnostic. Fine as a rule; the position is the defect.
+  FIXED 2026-09-16: the checker refuses it at the `on` keyword, with a column
+  (fail_fixtures/branch_unused_binding_test; a guarded arm and `as _` are exempt,
+  test/branch_binding_forms_test). Branch arms carry a real span now (they had 0:0).
+  Fixing it exposed two emit bugs in the if-chain branch form (the one taken when the
+  subject's union type is not known, e.g. a `for` variable): a USED binding got a
+  `_ = x;` discard ("pointless discard"), and `as _` emitted `const _`. Both fixed; the
+  name-use walkers moved from CgHelpers to AstWalk so the checker can share them.
 
 Grow it: every future bug class should get a line in the trip as well as a fixture.
 

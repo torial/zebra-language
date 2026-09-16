@@ -6795,9 +6795,9 @@ pub fn main(_zinit: std.process.Init) void {
     @import("Lexer.zig")._initModuleVars();
     @import("Resolver.zig")._initModuleVars();
     @import("CgHelpers.zig")._initModuleVars();
+    @import("AstWalk.zig")._initModuleVars();
     @import("Ast.zig")._initModuleVars();
     @import("TypeChecker.zig")._initModuleVars();
-    @import("AstWalk.zig")._initModuleVars();
     @import("AstBuilder.zig")._initModuleVars();
     @import("CodeGen.zig")._initModuleVars();
     @import("Checker.zig")._initModuleVars();

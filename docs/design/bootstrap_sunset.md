@@ -143,9 +143,12 @@ each a single quick-gate commit.
 - **`divergence_check` skips multi-module files** (any file with a local `use`) because
   the bootstrap could not materialise dependencies through stdout. The reference has been
   the N-1 anchor since 2026-09-01 and it takes `--output-dir`, so the skip is now a
-  coverage gap, not a necessity. Lifting it compares ~60 more files against the anchor
-  and may surface real regressions the first time; do it on a quiet day with the
-  `REGRESSION` list read by name.
+  coverage gap, not a necessity. LIFTED 2026-09-16 (overnight): every file is compared;
+  a pre-lift `--results` file is refused rather than scored. First run (torial, 57
+  multi-module files now compared): 0 regressions from the lift itself; the one
+  REGRESSION it reported was `branch_guard_test`, refused by the same night's
+  unused-binding rule (two unguarded arms bound a payload they never read) -- a
+  corpus file the smoke never registered, caught by this gate. Fixed in the fixture.
 - **Generic interfaces.** Freeing `same` (2026-09-16) left the self-typed interface method
   with one spelling — the interface names itself — because `interface X(T)` does not
   parse. The proper replacement is a language addition, queued in NEXT_STEPS_to_1.0.

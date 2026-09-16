@@ -14,9 +14,9 @@
 #   BOOTSTRAP GAP = selfhost handles it, bootstrap does not  (bootstrap lags — e.g.
 #                   SIMD / f32x8, which the bootstrap never learned).
 #
-# Bootstrap emits to STDOUT (no --output-dir), so it can only materialize a single
-# root file. Files with a local `use` (multi-module) are therefore selfhost-only
-# here and reported separately, not as divergences.
+# (The bootstrap emitted to STDOUT, so it could only materialize a single root file, and
+# files with a local `use` were selfhost-only here until 2026-09-16. Both sides take
+# --output-dir now and every file is compared.)
 #
 # Usage:
 #   bash tools/divergence_check.sh                # test/ + examples/ (report only)
@@ -111,16 +111,16 @@ emit_and_check() { # $1=compiler $2=mode(boot|self) $3=absfile $4=workdir
 
 if [ "${1:-}" = "--worker" ]; then
   f="$2"; name=$(basename "$f" .zbr)
-  # multi-module (has a local `use`): skipped since the bootstrap days (it could not
-  # materialize deps via stdout). The N-1 anchor takes --output-dir, so this skip is now
-  # a coverage gap rather than a necessity -- bootstrap_sunset.md lists lifting it.
-  if grep -qE '^use ' "$f"; then
-    s=$(emit_and_check "$SELF" self "$f" "$OUT/ws-$name")
-    echo "$name|MULTI|$s"; exit 0
-  fi
+  # Multi-module (has a local `use`) was SKIPPED from the bootstrap days until 2026-09-16:
+  # the bootstrap could not materialize deps via stdout. Both sides emit with
+  # --output-dir now, which writes the root AND every dep beside it, so these files are
+  # compared like any other. The fourth field marks them so the summary can say how many
+  # of the corpus the lift added.
+  m=""
+  grep -qE '^use ' "$f" && m="M"
   b=$(emit_and_check "$BOOT" boot "$f" "$OUT/wb-$name")
   s=$(emit_and_check "$SELF" self "$f" "$OUT/ws-$name")
-  echo "$name|$b|$s"; exit 0
+  echo "$name|$b|$s|$m"; exit 0
 fi
 
 ONLY=""; GATE=0; RESULTS=""; MAX=0; CLASSIFY=0
@@ -249,7 +249,7 @@ else
 fi
 
 # classify
-self_gap=""; boot_gap=""; agree_fail=""; multi_selffail=""; infra_names=""
+self_gap=""; boot_gap=""; agree_fail=""; infra_names=""
 np=0; naf=0; nsg=0; nbg=0; nnomain=0; nmulti=0; nexpected=0; ninfra=0
 # Names the smoke suite registers as "the front end must REJECT this".
 #
@@ -259,13 +259,15 @@ np=0; naf=0; nsg=0; nbg=0; nnomain=0; nmulti=0; nexpected=0; ninfra=0
 # `corpus_ls.sh test` does not recurse -- an unstruck gap. Now one derivation with two
 # consumers, the same argument corpus_ls.sh and positive_set.sh already make.
 # (derived BEFORE the sweep, above -- see the note there)
-while IFS='|' read -r name b s; do
+while IFS='|' read -r name b s m; do
   [ -z "$name" ] && continue
+  # A results file from before 2026-09-16 carries `MULTI` in the anchor column: those
+  # rows were never compared. Re-run rather than score them.
   if [ "$b" = MULTI ]; then
-    nmulti=$((nmulti+1))
-    [ "$s" = CFAIL ] || [ "$s" = EMITFAIL ] && multi_selffail="$multi_selffail $name($s)"
-    continue
+    echo "divergence: REFUSING -- $name was recorded before multi-module files were compared (a pre-2026-09-16 --results file). Delete it and re-run." >&2
+    exit 2
   fi
+  [ "$m" = M ] && nmulti=$((nmulti+1))
   # normalize NOMAIN (library) — skip from divergence accounting
   if [ "$b" = NOMAIN ] || [ "$s" = NOMAIN ]; then nnomain=$((nnomain+1)); continue; fi
   # BUG-302: zig could not read its OWN stdlib, three tries running. That says nothing
@@ -303,7 +305,7 @@ done <<< "$results"
 
 echo "═══ divergence vs the N-1 anchor ═══ (jobs=$JOBS${ONLY:+, only=$ONLY})"
 echo "single-module files: $np agree-pass · $naf agree-fail · $nnomain library(no-main) · $nexpected selfhost-rejects-by-design"
-echo "multi-module (not compared -- a bootstrap-era skip the N-1 anchor no longer needs; bootstrap_sunset.md follow-up): $nmulti"
+echo "of which multi-module (compared since 2026-09-16; skipped from the bootstrap days until then): $nmulti"
 echo
 _dretries=0
 [ -f "$OUT/retries.txt" ] && _dretries=$(wc -l < "$OUT/retries.txt" | tr -d ' ')
@@ -325,7 +327,6 @@ echo "▶ ADVANCES ($nbg) — THIS compiler handles it, the N-1 anchor did not (
 [ -n "$boot_gap" ] && echo "   $boot_gap" || echo "   (none)"
 echo
 echo "· agree-fail (both fail — genuinely-broken test or both lag): $agree_fail"
-[ -n "$multi_selffail" ] && { echo; echo "· multi-module selfhost failures (not A/B-checkable): $multi_selffail"; }
 
 # ── Gate ─────────────────────────────────────────────────────────────────────
 # The gate signal is SELFHOST GAPS == 0: a single-module program the bootstrap
@@ -335,8 +336,8 @@ echo "· agree-fail (both fail — genuinely-broken test or both lag): $agree_fa
 #
 # Deliberately NOT gated (informational only): BOOTSTRAP GAPS (selfhost LEADS — a
 # sunsetting-bootstrap lag, see NEXT_STEPS 5-family triage), agree-fail (negative/
-# diagnostic tests that are meant to fail compilation), and multi-module selfhost
-# failures (a separate interop/crossmod WIP baseline, not A/B-checkable here).
+# diagnostic tests that are meant to fail compilation). Multi-module files are
+# compared like every other since 2026-09-16.
 #
 # This is a heavy sweep (both compilers × full corpus × `zig build-exe`), so it is a
 # per-SESSION / pre-release gate like compile_check.sh — not a per-commit hook.

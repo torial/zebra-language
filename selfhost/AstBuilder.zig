@@ -1683,7 +1683,7 @@ pub const _zbr_ty_ASTBuilder = struct {
                 filter_exprs.append(_zbr_rt._allocator, gexpr) catch @panic("OOM");
             }
 // zbr:selfhost/AstBuilder.zbr:884
-            var bo = _zbr_ty_BranchOn.init(_zbr_fn_zspan(), values, arm_stmts, binding_opt, filter_exprs);
+            var bo = _zbr_ty_BranchOn.init(_zbr_ty_Span.init(arm.line, arm.col, arm.line, arm.col), values, arm_stmts, binding_opt, filter_exprs);
 // zbr:selfhost/AstBuilder.zbr:886
             if (_zebra_gt(@as(i64, @intCast(arm.struct_pat_node.items.len)), 0)) {
 // zbr:selfhost/AstBuilder.zbr:887

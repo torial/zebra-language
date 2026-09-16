@@ -7,11 +7,11 @@ def checkShape(s: Shape): str
     branch s
         on Shape.circle as r if r > 5.0
             return "big circle"
-        on Shape.circle as r
+        on Shape.circle
             return "small circle"
         on Shape.square as side if side > 10.0
             return "big square"
-        on Shape.square as side
+        on Shape.square
             return "small square"
         on Shape.point
             return "point"

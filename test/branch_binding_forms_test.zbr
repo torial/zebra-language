@@ -1,0 +1,26 @@
+# The three arm spellings that are NOT an unused binding (the control for
+# fail_fixtures/branch_unused_binding_test): a binding read only inside a call
+# argument, one read only by the arm's guard, and the explicit `as _` don't-care.
+union Shape
+    circle: int
+    square: int
+    dot: int
+
+def main()
+    var xs = List(int)()
+    var shapes = List(Shape)()
+    shapes.add(Shape.circle(3))
+    shapes.add(Shape.square(4))
+    shapes.add(Shape.dot(0))
+    for s in shapes
+        branch s
+            on Shape.circle as r
+                xs.add(r)                  # read as a call argument
+            on Shape.square as q if q > 2
+                xs.add(100)                # read by the guard only
+            on Shape.dot as _
+                xs.add(-1)                 # explicit don't-care
+            else
+                xs.add(-2)
+    print(xs.len)                          # 3
+    print("branch binding forms: ok")

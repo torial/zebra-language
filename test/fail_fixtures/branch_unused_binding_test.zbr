@@ -1,0 +1,19 @@
+# An `as name` binding a branch arm never reads is refused in the FRONT END, at the
+# arm (2026-09-16). Until then Zig refused the emitted switch capture ("unused
+# capture") and the source map returned it as a Zebra error with a line and NO column
+# -- the one diagnostic `diag-columns` could not see, because it was not ours.
+# `on Shape.circle` without `as` is the fix; a guarded arm is exempt (the guard reads
+# the binding), and `as _` says "don't care" explicitly.
+#
+#   branch_unused_binding_test.zbr:N:C: error: unused binding 'r' in this arm: use it, or write the arm without `as r`
+union Shape
+    circle: int
+    square: int
+
+def main()
+    var s = Shape.circle(3)
+    branch s
+        on Shape.circle as r
+            print("circle")
+        on Shape.square as q
+            print(q)

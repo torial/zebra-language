@@ -95,6 +95,11 @@ the inline constructor form did (an identifier reached zig as an undeclared `_vt
 symbol). `Box(int)` spelled as a parameter or annotation is now `*Box(i64)` in Zig,
 matching what the constructor returns; `def show(b: Box(int))` had refused its own
 instances.
+**Unused `as` bindings are a front-end error** (2026-09-16): a branch arm that binds a
+payload it never reads is refused at the arm, with a position (`unused binding 'r' in
+this arm`); it used to surface as Zig's "unused capture" with a line and no column. A
+guarded arm and `as _` are exempt. Two emit defects in the if-chain branch form went
+with it: a used binding discarded ("pointless discard") and `as _` emitted as `const _`.
 **Bootstrap sunset Step 2**: the comparison tooling is retired to `tools/attic/` —
 `selfhost-div` and `interp-escape` leave the gate tiers (49 daily / 41 full), `compile_check
 --bootstrap` and the parity/scaling probes go, `mutation_check` regenerates via the

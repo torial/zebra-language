@@ -23,8 +23,8 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
-use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
-use AstWalk exposing collectOldNodes
+use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
+use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
 
 
@@ -9605,7 +9605,11 @@ struct Generator
                         w.emit(tag_name)
                 w.emit(") {\n")
                 var ig = indented()
-                if cas.binding != nil
+                # `as _` binds nothing (Zig rejects `const _`); an unused binding is a
+                # front-end error since 2026-09-16, so the discard below fires only when
+                # the arm does not read the name -- Zig rejects a discard of a USED
+                # constant ("pointless discard"), which this path emitted unconditionally.
+                if cas.binding != nil and cas.binding! != "_"
                     ig.writeIndent()
                     ig.w.emit("const ")
                     ig.w.emit(cas.binding!)
@@ -9617,9 +9621,7 @@ struct Generator
                         if v0b is Expr.member as mb
                             ig.w.emit(mb.member)
                     ig.w.emit(";\n")
-                    # Suppress unused-const warning: emit `_ = binding;` when no guard.
-                    # When a guard is present, the guard expression already uses the binding.
-                    if cas.guard_expr.len == 0
+                    if cas.guard_expr.len == 0 and not mightUseName(cas.binding!, cas.stmts)
                         ig.writeIndent()
                         ig.w.emit("_ = ")
                         ig.w.emit(cas.binding!)
