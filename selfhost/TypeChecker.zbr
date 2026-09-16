@@ -5809,9 +5809,12 @@ def checkCueShapes(tname: str, members: List(Decl), derive_eq: bool, next_types:
                     ctx.addErr(file, dm.span.line, dm.span.col, "`toString` is a cue -- the compiler calls it for print and string interpolation -- so it is written `cue toString(): str`, not `def`")
                 if dm.name == "eql" and dm.params.len == 1
                     ctx.addErr(file, dm.span.line, dm.span.col, "`eql` was @derive(Eq)'s name for the `==` hook; write `cue equals(other: " + tname + "): bool`")
-                # The other cue names are refused as `def` too: the runtime finds `compare`
-                # and `hash` by name, so a `def compare` would silently drive `<` and HashMap.
-                if (dm.name == "equals" or dm.name == "hash" or dm.name == "compare" or dm.name == "iter" or dm.name == "next")
+                # `equals`, `hash` and `compare` are refused as `def` too: the runtime finds
+                # `compare` and `hash` by name (@hasDecl), so a `def compare` would silently
+                # drive `<` and HashMap. `iter` and `next` are NOT refused -- nothing dispatches
+                # on them unless declared `cue` (zebra-ide has a DAP `def next(): int`, the
+                # debugger command; a def named like a protocol method is not the protocol).
+                if (dm.name == "equals" or dm.name == "hash" or dm.name == "compare")
                     ctx.addErr(file, dm.span.line, dm.span.col, "`" + dm.name + "` is a cue (a method the compiler calls for you); write `cue " + dm.name + "` instead of `def`")
                 continue
             var rt: str = ""

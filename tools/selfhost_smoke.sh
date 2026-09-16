@@ -1197,6 +1197,10 @@ smoke_tc_fail test/fail_fixtures/iter_annotation_rejected_test.zbr \
     "\`Iter(T)\` is a generator's return type, not an annotation"
 smoke_tc_fail test/fail_fixtures/yield_under_branch_test.zbr \
     "a generator cannot \`yield\` or \`return\` inside \`branch\`"
+
+# BUG-428: an unresolvable `use` used to fall off the end of compileDep_use silently.
+smoke_tc_fail test/bug428_unresolved_use_fail.zbr \
+    "\`use nosuch_module\`: module not found -- no nosuch_module.zbr"
 smoke_tc_fail test/fail_fixtures/cue_unknown_name_test.zbr \
     "unknown cue 'frobnicate': the cues are init, toString, equals, hash, compare, iter, next"
 smoke_tc_fail test/fail_fixtures/cue_def_tostring_test.zbr \

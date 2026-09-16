@@ -2023,6 +2023,16 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**FULL tier 2026-09-16 (generators, bundle82): 37/38 in ONE invocation, ~85 min at JOBS=2 on
+torial; the one red was `doc-lint` on the corpus-count oracle (645 vs 647 -- the two generator
+fixtures), fixed in CLAUDE.md and re-run green standalone before the commit.** smoke
+**532/532**, round-trip byte-identical, `compile_check-inline` 379/0, `output_sweep` 466
+identical (1223 s), `full_sweep` 0 regressions vs 485, `examples_sweep` 0 vs 19, `divergence`
+0 regressions vs the N-1 anchor (2285 s). The cues FULL that gated `f6cf4c7` the same day was
+also 37/38: its red was `output_sweep` on `profile_attr_test`, whose profile report is sorted
+by timing and so flipped order between runs -- the fixture now does strictly ordered work
+(baseline unchanged), and this run is the receipt that the flake is gone.
+
 **DAILY tier 2026-09-16 (closing the overnight): 46/46 PASS in ONE invocation, ~60 min at
 JOBS=2 on torial, on `16c154d`.** The night landed four gated commits after the sunset closed:
 interfaces refusing unknown members + `where T implements X` enforced (QUICK), generic classes
@@ -2624,7 +2634,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **647** <!-- doc-gen: 647 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **648** <!-- doc-gen: 648 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.
@@ -2780,8 +2790,8 @@ Key idioms worth remembering up front:
   that code is `@hasDecl`-guarded so the build passes — it is waiting on the pin bump
   (`tools/bump_libui_pin.sh` after a push), not on code. To try the unpushed shim on
   Windows WITHOUT the pin: `set ZEBRA_LIBUI_PATH=C:\Projects\zig-libui-ng` before running
-  a GUI program (luiBuildZon then emits `.path` instead of the pinned url). Nothing has yet
-  run on Windows with a window open. Full status, owed list, open worklist:
+  a GUI program (luiBuildZon then emits `.path` -- RELATIVE to the scaffold dir, zig refuses
+  an absolute one -- instead of the pinned url; first exercised on Windows 2026-09-16). Full status, owed list, open worklist:
   `C:\Projects\zebra-ide\PLAN.md` (last section); wiki `concept_zebra-lightweight-ide` §7b.
   (This bullet was lost once already — 2026-09-08, a bundle overwrote a device-side edit —
   so it now lives in the copy that gets shipped.)

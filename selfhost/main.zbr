@@ -542,6 +542,18 @@ class MultiCompiler
             if not zs_seen
                 zig_sources.add(zig_dep_path)
             return
+        # Nothing matched. Until 2026-09-16 this fell off the end and compilation went on
+        # with the `use` unresolved -- genUse still emitted `@import("<dep>.zig")`, the
+        # checker never saw the module, and the failure surfaced (if at all) as zig
+        # errors about types it had never been told about. Say it here, by name.
+        var looked: str = "beside " + parent_path
+        if src_dir == ""
+            looked = "in the current directory"
+        if module_path != ""
+            looked = looked + " or on --module-path " + module_path
+        # Worded "module not found" so tools/doc_example_check.py files a doc fragment
+        # whose `use` target is not beside it as an ARTIFACT, not a broken example.
+        raise "`use " + u.path + "`: module not found -- no " + dep_name + ".zbr (or .c / .lib / .a / .so / .dylib / .zig) " + looked
 
     def alreadyTypeScanned(p: str): bool
         var i: int = 0
@@ -716,9 +728,10 @@ class MultiCompiler
                 File.write(dst_path, File.read(src_path))
             i = i + 1
 
-    def moduleNameOf(zbr_path: str): str
+    def moduleNameOf(zbr_path_in: str): str
         # Return the Zig module basename for a .zbr path: strip any dir prefix
         # and the .zbr extension. E.g. "selfhost/Lexer.zbr" -> "Lexer".
+        var zbr_path: str = zbr_path_in.replace("\\", "/")   # Windows paths (see dirOf)
         var base: str = zbr_path
         if zbr_path.contains("/")
             var parts: List(str) = List(str)()
@@ -731,8 +744,14 @@ class MultiCompiler
                 break
         return base
 
-    def dirOf(path: str): str
-        # Find directory part by splitting on "/"
+    def dirOf(path_in: str): str
+        # Find directory part by splitting on "/". A Windows path arrives with
+        # backslashes (`src\ide.zbr` from PowerShell) and until 2026-09-16 the dir came
+        # back "" -- every `use` then looked in the CWD, found nothing, and compilation
+        # went on SILENTLY with the deps unresolved: no checker for them, no cross-module
+        # types, and the scaffold picked up whatever stale .zig sat in the temp dir.
+        # Seven zig errors against code that had not changed. Normalise first.
+        var path: str = path_in.replace("\\", "/")
         if not path.contains("/")
             return ""
         var parts: List(str) = List(str)()
@@ -2982,12 +3001,59 @@ pub fn build(b: *std.Build) void {
 }
 """
 
+# Path `target` expressed relative to directory `from_dir`: both made absolute against the
+# cwd, separators normalised to `/`, Windows drive letters compared case-insensitively.
+# On different drives there is no relative spelling and `target` comes back as given.
+def absPath(p_in: str): str
+    var p: str = p_in.replace("\\", "/")
+    if p.startsWith("/") or (p.len > 1 and p[1..2] == ":")
+        return p
+    return sys.cwd().replace("\\", "/") + "/" + p
+
+def pathParts(p: str): List(str)
+    var out: List(str) = List(str)()
+    for part in p.split("/")
+        if part == "" or part == "."
+            continue
+        out.add(part)
+    return out
+
+def relativePath(from_dir: str, target: str): str
+    var a: List(str) = pathParts(absPath(from_dir))
+    var b: List(str) = pathParts(absPath(target))
+    if a.len > 0 and b.len > 0 and a.at(0).endsWith(":") and b.at(0).endsWith(":")
+        if a.at(0).lower() != b.at(0).lower()
+            return target.replace("\\", "/")
+    var i: int = 0
+    while i < a.len and i < b.len and a.at(i) == b.at(i)
+        i = i + 1
+    var out: str = ""
+    var k: int = i
+    while k < a.len
+        out = out + "../"
+        k = k + 1
+    var j: int = i
+    while j < b.len
+        out = out + b.at(j)
+        if j + 1 < b.len
+            out = out + "/"
+        j = j + 1
+    if out == ""
+        return "."
+    if out.endsWith("/")
+        out = out[0 .. out.len - 1]
+    return out
+
 # ZEBRA_LIBUI_PATH (2026-09-08): point the GUI dependency at a LOCAL zig-libui-ng
 # checkout instead of the pinned URL — `.path = ...` needs no push and no hash. This
 # is how unpushed shim work (OnNotify, OnKey) is tried on Windows before the pin
 # moves: `set ZEBRA_LIBUI_PATH=C:\Projects\zig-libui-ng` then run the program.
 # Never the default: a pin is reproducible, a path is whatever is on that disk.
-def luiBuildZon(): str
+#
+# zig refuses an ABSOLUTE `.path` ("expected path relative to build root"), so the
+# value is emitted relative to the scaffold directory `proj`. Found 2026-09-16 on the
+# first Windows run of the override (the doc said it worked; nothing had run it).
+def luiBuildZon(proj: str): str
     var dep: str = """        .zig_libui_ng = .{
             .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#93c7f54b2051d17b9f69d203ff3cd4500e60d285",
             .hash = "bindings_libui_ng-0.1.0-p2CY9VwQQgApSplQXciuuEWGImM_PPrHwvCG9f_SXioP",
@@ -2995,7 +3061,7 @@ def luiBuildZon(): str
 """
     if sys.getenv("ZEBRA_LIBUI_PATH") as lp
         if lp != ""
-            dep = "        .zig_libui_ng = .{ .path = \"" + lp.replace("\\", "/") + "\" },\n"
+            dep = "        .zig_libui_ng = .{ .path = \"" + relativePath(proj, lp) + "\" },\n"
     return """
 .{
     .name         = .app,
@@ -3094,7 +3160,7 @@ def compileGuiProject(zig_path: str, mode_run: bool, backend: str, scaffold_only
     var bzon: str = tuiBuildZon()
     if backend == "libui_ng"
         bz = luiBuildZig()
-        bzon = luiBuildZon()
+        bzon = luiBuildZon(proj)
     # Always (re)write the generated build files — they are templates, and a
     # stale scaffold from a prior run must pick up an updated dependency pin
     # rather than silently keeping the old one.

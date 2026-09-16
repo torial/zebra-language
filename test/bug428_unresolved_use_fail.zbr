@@ -1,0 +1,6 @@
+# BUG-428: a `use` that resolves to nothing is a refusal, not a silent fall-through
+# (it used to compile on with the module unknown and fail inside zig).
+use nosuch_module
+
+def main()
+    print(1)

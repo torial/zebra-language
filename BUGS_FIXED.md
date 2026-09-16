@@ -6,6 +6,20 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-428: a Windows path (`src\ide.zbr`) made every `use` resolve NOWHERE, and the compiler went on silently — FIXED 2026-09-16
+
+`zebra --gui-backend=libui_ng src\ide.zbr` from PowerShell: `dirOf` split on `/` only,
+so the source directory came back "", every `use` looked beside the CWD, found nothing,
+and `compileDep_use` FELL OFF THE END with no error. The root was emitted with no
+checker view of its modules (a class-typed field by value, its methods dispatched as
+List calls, module constants prefixed as types) against whatever stale `<dep>.zig` sat
+in the temp scaffold from an earlier run -- seven zig errors, none about a line that had
+changed. The same command with forward slashes was fine, which is why it survived on a
+Windows-first project. Two fixes: `dirOf`/`moduleNameOf` normalise `\` to `/`; an
+unresolvable `use` is a refusal naming the dep and where it looked, never a fall-through.
+Fixture: `test/bug428_unresolved_use_fail.zbr` (the refusal; the path half
+is Windows-only and covered by running zebra-ide from PowerShell).
+
 ### BUG-427: a parameter named like a top-level `def` was emitted as the FUNCTION's address — FIXED 2026-09-15
 
 `cue init(later: str)` with `.later = later`, beside a module-level `def later(n: int)`,

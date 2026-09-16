@@ -143,6 +143,14 @@ inside one, and a yield under `branch`/`try`/`with`/`using`/`allocate` or `if x 
 refused by name. This is the producer half of the iterators gap (the .NET lazy-splitter
 receipt in NEXT_STEPS_to_1.0). QUICKSTART §5 "Generators"; surface: +1 keyword (`yield`,
 69).
+**BUG-428** (2026-09-16): a backslash source path (`zebra src\app.zbr` from PowerShell)
+resolved every `use` nowhere and compiled on silently against stale dependency output;
+paths are normalised and an unresolvable `use` is now refused by name. `def next` /
+`def iter` are ordinary methods again (only `cue next` makes a type iterable; zebra-ide's
+DAP client has a `next()` command). Same day: `ZEBRA_LIBUI_PATH` emitted an absolute
+`.path` into the scaffold's `build.zig.zon`, which zig refuses ("expected path relative to
+build root"); it is now written relative to the scaffold directory -- the override's first
+run on Windows.
 
 ## [0.15] — 2026-05 (in progress)
 

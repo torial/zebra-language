@@ -605,9 +605,11 @@ def main()
         print(i)
 ```
 
-- The names are reserved for the protocol: `def toString` (or `def equals`, `hash`,
-  `compare`, `iter`, `next`) is refused with a message naming the `cue` spelling, and
-  `cue somethingElse` is refused too — anything not in the table is a `def`.
+- `def toString` (or `def equals`, `hash`, `compare`) is refused with a message naming
+  the `cue` spelling — those four are found by name, so one spelling keeps them honest.
+  `def next` / `def iter` stay ordinary methods (a DAP client's `next()` is a debugger
+  command, not an iterator); only `cue next` makes a type iterable. `cue somethingElse`
+  is refused too — anything not in the table is a `def`.
 - Shapes are checked at the declaration (`cue compare` returning `bool` is an error
   there, not inside the emitted Zig). `cue hash` without `cue equals` is refused: a
   key is found by hash and *confirmed* by equals.
