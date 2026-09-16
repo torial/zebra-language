@@ -2023,6 +2023,21 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-09-16 (closing the overnight): 46/46 PASS in ONE invocation, ~60 min at
+JOBS=2 on torial, on `16c154d`.** The night landed four gated commits after the sunset closed:
+interfaces refusing unknown members + `where T implements X` enforced (QUICK), generic classes
+implementing interfaces with generic class types as references (FULL), and the unused-branch-
+binding refusal with the divergence multi-module lift (FULL). smoke **521/521** (368 s),
+round-trip byte-identical, `output_sweep` 466 identical (656 s), `full_sweep` 0 regressions vs
+485 with the positive set 377/377, **`divergence` now compares the 57 multi-module files** it
+had skipped since the bootstrap days (1371 s; 0 regressions vs the N-1 anchor), `regen-recover`
+PASS, `gramgen` 960/0/0, `leakgen` 100/0/0, every GUI scaffold, `node-addon`. Two things
+worth keeping from the night's reds, neither a defect: a new fixture that is not yet `git
+add`ed is INVISIBLE to `full_sweep` and to the corpus oracle (both enumerate `git ls-files`),
+so a smoke-green tree can fail FULL on a file the smoke ran happily -- stage before gating;
+and the divergence lift's first run named exactly one regression, `branch_guard_test`, which
+was the same night's unused-binding rule finding a corpus file the smoke never registered.
+
 **DAILY tier 2026-09-16: 46/46 PASS in ONE invocation, ~68 min at JOBS=2 on torial -- the first
 daily after bootstrap sunset Step 3 (`2ffb8ea`: `src/` deleted, one binary, no dependencies).**
 smoke **513/513** (403 s), round-trip byte-identical, `boundary` 33/0, `cli-surface` 42/42,
