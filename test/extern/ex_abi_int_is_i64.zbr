@@ -1,14 +1,13 @@
-# @extern accepts
-# ABI HAZARD, INTENTIONALLY ACCEPTED -- this probe documents a sharp edge rather
-# than asserting a diagnostic.
+# @extern rejects ambiguous
+# ABI HAZARD, NOW REFUSED. Zebra `int` is i64. C `int` is 32-bit. So
+# `extern def f(n: int)` against a C `int` parameter is an ABI MISMATCH THAT LINKS
+# CLEANLY and corrupts the stack.
 #
-# Zebra `int` is i64. C `int` is 32-bit. So `extern def f(n: int)` against a C
-# `int` parameter is an ABI MISMATCH THAT LINKS CLEANLY and corrupts the stack.
-# The chosen design (docs/extern_ffi_design.md, decision A) does not warn: the
-# compiler cannot know which C type is meant.
-#
-# If a later version DOES warn, this probe fails, and that failure is the signal
-# to rewrite it -- a warning here would be an improvement, not a regression.
+# This probe was written as `accepts` against decision A of docs/extern_ffi_design.md
+# ("the compiler cannot know which C type is meant") with the note that a later
+# warning would fail it and be the signal to rewrite it. BUG-270 (2026-08-06) did
+# exactly that: `int` in an extern signature is refused, naming `int32`/`int64`.
+# Rewritten 2026-09-16 when the runner lost its bootstrap leg and the red was read.
 extern def zebra_probe_wide(n: int): int
 
 def main()

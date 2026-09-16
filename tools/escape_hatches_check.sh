@@ -56,13 +56,9 @@ cd "$REPO"
 #   73. Lowering to match is safe: it only tightens the gate (fewer uses allowed).
 EXPECTED_PREAMBLE=70
 
-# src/ — the Zig-implemented compiler.  page_allocator should appear ONLY in:
-#   - 1× docstring comment (AstBuilder.zig)
-#   - 4× CodeGen.zig (2× emitted Zig string literals for `_arena` and
-#         `_str_pool` initializers; 2× in surrounding comments)
-#   - 1× Builtins.zig comment (Page builtin documentation)
-#   - 1× CodeGen.zig emitted string literal for `Page()` allocate source
-EXPECTED_SRC=7
+# (A second leg counted src/*.zig, the Zig-implemented bootstrap, at 7. Retired with
+#  it 2026-09-16 -- bootstrap_sunset.md Step 3. The selfhost's own emitted literals
+#  live in selfhost/CodeGen.zbr and reach programs through the preamble count above.)
 
 # ── Count ─────────────────────────────────────────────────────────────────
 
@@ -75,7 +71,6 @@ count_in() {
 }
 
 ACTUAL_PREAMBLE="$(count_in 'page_allocator\b' selfhost/stdlib_preamble.zig)"
-ACTUAL_SRC="$(count_in 'page_allocator\b' 'src/*.zig')"
 
 FAIL=0
 
@@ -83,14 +78,6 @@ if [[ "$ACTUAL_PREAMBLE" -ne "$EXPECTED_PREAMBLE" ]]; then
     echo "escape_hatches_check: stdlib_preamble.zig count drift" >&2
     echo "  expected: $EXPECTED_PREAMBLE  actual: $ACTUAL_PREAMBLE" >&2
     echo "  file:     selfhost/stdlib_preamble.zig" >&2
-    FAIL=1
-fi
-
-if [[ "$ACTUAL_SRC" -ne "$EXPECTED_SRC" ]]; then
-    echo "escape_hatches_check: src/ page_allocator count drift" >&2
-    echo "  expected: $EXPECTED_SRC  actual: $ACTUAL_SRC" >&2
-    echo "  file(s):  src/*.zig" >&2
-    grep -n "page_allocator\b" src/*.zig >&2 || true
     FAIL=1
 fi
 
@@ -106,4 +93,3 @@ fi
 
 echo "escape_hatches_check: OK"
 echo "  selfhost/stdlib_preamble.zig: $ACTUAL_PREAMBLE page_allocator uses (baseline $EXPECTED_PREAMBLE)"
-echo "  src/*.zig:                    $ACTUAL_SRC page_allocator uses (baseline $EXPECTED_SRC)"

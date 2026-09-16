@@ -41,7 +41,7 @@ A language-neutral compiler builtin. Returns the **Zig substrate category** of
 
 - Implemented by extending the existing `Reflect` namespace (reuses its
   resolver/TC recognition). TypeChecker: returns `str`. CodeGen
-  (`genReflectCall`, both `src/CodeGen.zig` and `selfhost/CodeGen.zbr`): emits a
+  (`genReflectCall`, both `src/CodeGen.zig` and `selfhost/CodeGen.zbr`): emits a <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
   comptime `switch (@typeInfo(@TypeOf(x))) { … }`.
 - Resolved by Zig at **comptime** — zero runtime cost. `@TypeOf` does **not**
   evaluate its operand, so `Reflect.hostKind(f())` is side-effect-safe.

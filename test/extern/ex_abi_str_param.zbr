@@ -1,10 +1,11 @@
-# @extern accepts
-# ABI HAZARD, same class. Zebra `str` is a slice ([]const u8: pointer + length),
+# @extern rejects not a C-ABI type
+# ABI HAZARD, NOW REFUSED. Zebra `str` is a slice ([]const u8: pointer + length),
 # NOT a NUL-terminated C string. Passing one to a C function expecting `char*`
 # is wrong in a way that links.
 #
-# Recorded so that whoever adds a `cstr` type (decision B) has a probe already
-# pointed at the problem it solves.
+# Written as `accepts` (recorded "so that whoever adds a `cstr` type has a probe
+# already pointed at the problem"); BUG-269 (2026-08-15) refuses it at the
+# declaration, naming `^byte`. Rewritten 2026-09-16, same occasion as ex_abi_int_is_i64.
 extern def zebra_probe_name(s: str): int32
 
 def main()

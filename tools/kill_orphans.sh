@@ -53,7 +53,7 @@ done
 WIN_ROOT="$(cd "$ROOT" && pwd -W 2>/dev/null || echo "$ROOT")"
 WIN_ROOT="$(echo "$WIN_ROOT" | tr '/' '\\' | tr 'A-Z' 'a-z')"
 
-NAMES="zebra.exe zebra-bootstrap.exe zebra-selfhost.exe zebra-selfhost-B.exe zig.exe"
+NAMES="zebra.exe zebra-selfhost.exe zebra-selfhost-B.exe zebra-recover.exe zig.exe"
 FILTER=""
 for n in $NAMES; do
     FILTER="${FILTER}${FILTER:+ or }Name='$n'"

@@ -2,7 +2,7 @@
 # extern_check.sh — the FFI red-team suite (BUG-258).
 #
 # INTENT-AUTHORED, like boundary_check and for the same reason: every expectation
-# in test/extern/ was written from docs/design/extern_ffi_design.md BEFORE the feature
+# in test/extern/ was written from docs/extern_ffi_design.md BEFORE the feature
 # existed, and committed RED. A suite written after the implementation can only
 # ever confirm what the compiler already does. If you ever find yourself editing
 # an expectation to match observed output, stop -- that converts this into a
@@ -16,21 +16,18 @@
 #   # @extern emits-not <text>      -> emitted Zig must NOT contain <text>
 # `emits` / `emits-not` may appear more than once in a file.
 #
-# CHECKS BOTH COMPILERS. That is not thoroughness for its own sake: the bootstrap
-# is the regen authority AND the --gui-backend path, and it is the one that today
-# accepts `extern` and emits `unreachable; // abstract` -- output that COMPILES.
-# A suite that only watched the selfhost would call this feature done while the
-# compiler that regenerates it still miscompiled the keyword.
+# CHECKED BOTH COMPILERS until 2026-09-16 (the bootstrap was the regen authority and
+# the one that accepted `extern` and emitted `unreachable; // abstract`, output that
+# COMPILES). The bootstrap is gone -- bootstrap_sunset.md Step 3 -- so the `boot`
+# leg went with it; the loops below keep their shape for one compiler.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-SELF="zig-out/bin/zebra.exe"
-BOOT="zig-out/bin/zebra-bootstrap.exe"
+SELF="zig-out/bin/zebra.exe"; [ -x "$SELF" ] || SELF="zig-out/bin/zebra"
 DIR="test/extern"
 ONLY="${1:-}"
 
 [ -x "$SELF" ] || { echo "extern-check: $SELF not built"; exit 1; }
-[ -x "$BOOT" ] || { echo "extern-check: $BOOT not built"; exit 1; }
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 PASS=0; FAIL=0; CHECKED=0
@@ -46,16 +43,10 @@ grn()  { printf '  \033[32mok\033[0m    %s\n' "$1"; PASS=$((PASS+1)); }
 emit() {
     local compiler="$1" src="$2" tag="$3"
     local out="$WORK/$tag"; mkdir -p "$out"
-    if [ "$compiler" = boot ]; then
-        "$BOOT" --emit-zig "$src" > "$out/e.zig" 2>/dev/null || return 1
-        [ -s "$out/e.zig" ] || return 1
-        printf '%s' "$out/e.zig"
-    else
-        "$SELF" --output-dir "$out" "$src" >/dev/null 2>&1
-        local base; base="$(basename "$src" .zbr)"
-        [ -f "$out/$base.zig" ] || return 1
-        printf '%s' "$out/$base.zig"
-    fi
+    "$SELF" --output-dir "$out" "$src" >/dev/null 2>&1
+    local base; base="$(basename "$src" .zbr)"
+    [ -f "$out/$base.zig" ] || return 1
+    printf '%s' "$out/$base.zig"
 }
 
 check_one() {
@@ -70,15 +61,15 @@ check_one() {
 
     case "$kind" in
       accepts)
-        for c in self boot; do
-            local bin; [ "$c" = self ] && bin="$SELF" || bin="$BOOT"
+        for c in self; do
+            local bin="$SELF"
             if "$bin" -c "$zbr" >/dev/null 2>&1; then grn "$base [$c] accepted"
             else red "$base [$c] REJECTED but should be accepted"; fi
         done ;;
       rejects)
         arg="$(grep -m1 '^# @extern rejects ' "$zbr" | sed -E 's/^# @extern rejects[[:space:]]*//')"
-        for c in self boot; do
-            local bin; [ "$c" = self ] && bin="$SELF" || bin="$BOOT"
+        for c in self; do
+            local bin="$SELF"
             local out; out="$("$bin" -c "$zbr" 2>&1)"
             if [ -n "$out" ] && printf '%s' "$out" | grep -qi -- "$arg"; then
                 grn "$base [$c] refused, naming '$arg'"
@@ -103,7 +94,7 @@ check_one() {
         else red "$base [self] output differs (want '$(tr '\n' '|' < "$exp")' got '$(printf '%s' "$got" | tr '\n' '|')')"; fi ;;
       emits|emits-not)
         local f
-        for c in self boot; do
+        for c in self; do
             if ! f="$(emit "$c" "$zbr" "$base.$c")"; then
                 red "$base [$c] produced no emitted Zig — cannot assert its shape"
                 continue

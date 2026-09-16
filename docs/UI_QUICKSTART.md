@@ -169,7 +169,7 @@ Instead the text is styled directly with `SCI_STARTSTYLING` / `SCI_SETSTYLING`
 from a small Zebra tokenizer in `selfhost/gui_libui_ng_section.zig`. It is a real
 Zebra tokenizer rather than another language's lexer wearing Zebra's keyword
 list, so "Zebra syntax highlighting" is an accurate description of it. The
-keyword set was taken from `src/Token.zig`'s table.
+keyword set was taken from the compiler's keyword table (`selfhost/Token.zbr`).
 
 Two limits, stated rather than discovered:
 
@@ -297,8 +297,7 @@ def main()
 
 ## Package hashes (2026-07-27)
 
-Pinned in `selfhost/main.zbr` `luiBuildZon()` (the single source of truth; the
-older `src/main.zig` bootstrap path is no longer used for libui_ng):
+Pinned in `selfhost/main.zbr` `luiBuildZon()` (the single source of truth):
 
 | Dependency    | Commit     | Hash                                                                |
 |---------------|------------|--------------------------------------------------------------------|

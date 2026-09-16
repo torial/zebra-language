@@ -97,7 +97,7 @@ expect "M4 one gate silently skipped" 1 "RAN $((_NSTATIC - 1)) OF ${_NSTATIC}"
 # a registration nobody updated, and it must not be able to outlive its bug.
 fresh
 sed -i 's|^run_daily()  { _PIN_TICKET=""; _run daily  "\$@"; }|&\npin_static() { local l="$1" t="$2"; shift 2; _PIN_TICKET="$t"; _run static "$l" "$@"; _PIN_TICKET=""; }|' "$PROBE"
-sed -i 's|^run_static "grammar-export" "matches"    python tools/grammar_export.py --check|pin_static "grammar-export" "BUG-000" "matches" python tools/grammar_export.py --check|' "$PROBE"
+sed -i 's|^run_static "hazard-lint"    "0 hazard"  python tools/hazard_lint.py|pin_static "hazard-lint" "BUG-000" "0 hazard" python tools/hazard_lint.py|' "$PROBE"
 expect "M5 pinned gate that now passes" 1 "retire the pin"
 
 echo

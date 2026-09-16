@@ -681,7 +681,7 @@ Both land on the complexity-as-reflection-data item.
 
 | Lampson | already in Zebra as |
 |---|---|
-| "Plan to throw one away" | the bootstrap, being retired |
+| "Plan to throw one away" | the bootstrap, retired 2026-09-16 |
 | "Exterminate features" (Thacker) | `lint_reserved_words` |
 | "End-to-end" -- application-level checking is what is logically necessary, other checks are for performance | the gate ladder: only `output_sweep`/`smoke_run` RUN anything, and the compile-only gates are the "for performance" ones |
 | "Keep basic interfaces stable" / "keep a place to stand" | the 0.9 versioning question |

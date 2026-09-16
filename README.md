@@ -60,9 +60,9 @@ versions. Building from source is below; how a release is cut is in
   the tree currently builds against 0.16 and is only tested there.) Zig is also a
   RUNTIME dependency: every program is emitted as Zig and built with `zig build-exe`,
   which is why a release bundles it.
-- A network connection on first build, to fetch the one external dependency
-  ([`torial/earley`](https://github.com/torial/earley), pinned by URL and hash).
-  Subsequent builds use Zig's package cache.
+- Nothing else. `build.zig.zon` declares no dependencies (the Earley parser the
+  Zig-implemented bootstrap used left with it on 2026-09-16), so the first build needs
+  no network.
 - **Windows and Linux** are the tested platforms: Windows is where the gates run day
   to day; Linux has built and passed the full smoke since 2026-09-06
   ([docs/LINUX_BUILD.md](docs/LINUX_BUILD.md)). macOS is untested.
@@ -79,14 +79,16 @@ zig build test                               # run the test suite
 
 That is the whole of it — no submodules, no sibling checkouts, no preparation step.
 Verified 2026-08-05 by cloning into an empty directory on a cold package cache and
-building; it produces `zig-out/bin/zebra.exe` and `zig-out/bin/zebra-bootstrap.exe`.
+building; it produces `zig-out/bin/zebra.exe` (and, until the Zig-implemented bootstrap
+was retired on 2026-09-16, `zebra-bootstrap.exe` beside it; the build has no dependencies
+at all now).
 
 *(Until 2026-08-05 this was not true. The Earley dependency was declared as
 `.path = "../earley"` — a sibling directory that is not part of this repository — so
 a clean clone failed with `unable to open '../earley': FileNotFound` for everyone
 except the author, whose working copy already had the sibling. It is now pinned by
-URL and hash. If you are developing against a local Earley checkout, see the comment
-in `build.zig.zon` for the one-line override.)*
+URL and hash — and on 2026-09-16 the dependency went away entirely with the bootstrap
+that used it.)*
 
 ## Continuous integration
 

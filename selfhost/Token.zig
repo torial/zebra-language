@@ -315,237 +315,232 @@ pub const _zbr_ty_Keywords = struct {
 // zbr:selfhost/Token.zbr:239
             return _zbr_ty_TokenKind{ .kw_as = {} };
         }
-// zbr:selfhost/Token.zbr:240
-        if (std.mem.eql(u8, word, "has")) {
-// zbr:selfhost/Token.zbr:241
-            return _zbr_ty_TokenKind{ .kw_has = {} };
-        }
-// zbr:selfhost/Token.zbr:242
-        if (std.mem.eql(u8, word, "static")) {
 // zbr:selfhost/Token.zbr:243
+        if (std.mem.eql(u8, word, "static")) {
+// zbr:selfhost/Token.zbr:244
             return _zbr_ty_TokenKind{ .kw_static = {} };
         }
-// zbr:selfhost/Token.zbr:244
-        if (std.mem.eql(u8, word, "invariant")) {
 // zbr:selfhost/Token.zbr:245
+        if (std.mem.eql(u8, word, "invariant")) {
+// zbr:selfhost/Token.zbr:246
             return _zbr_ty_TokenKind{ .kw_invariant = {} };
         }
-// zbr:selfhost/Token.zbr:246
-        if (std.mem.eql(u8, word, "where")) {
 // zbr:selfhost/Token.zbr:247
+        if (std.mem.eql(u8, word, "where")) {
+// zbr:selfhost/Token.zbr:248
             return _zbr_ty_TokenKind{ .kw_where = {} };
         }
-// zbr:selfhost/Token.zbr:248
-        if (std.mem.eql(u8, word, "export")) {
 // zbr:selfhost/Token.zbr:249
+        if (std.mem.eql(u8, word, "export")) {
+// zbr:selfhost/Token.zbr:250
             return _zbr_ty_TokenKind{ .kw_export = {} };
         }
-// zbr:selfhost/Token.zbr:250
-        if (std.mem.eql(u8, word, "extern")) {
 // zbr:selfhost/Token.zbr:251
+        if (std.mem.eql(u8, word, "extern")) {
+// zbr:selfhost/Token.zbr:252
             return _zbr_ty_TokenKind{ .kw_extern = {} };
         }
-// zbr:selfhost/Token.zbr:253
-        if (std.mem.eql(u8, word, "public")) {
 // zbr:selfhost/Token.zbr:254
+        if (std.mem.eql(u8, word, "public")) {
+// zbr:selfhost/Token.zbr:255
             return _zbr_ty_TokenKind{ .kw_public = {} };
         }
-// zbr:selfhost/Token.zbr:255
-        if (std.mem.eql(u8, word, "private")) {
 // zbr:selfhost/Token.zbr:256
+        if (std.mem.eql(u8, word, "private")) {
+// zbr:selfhost/Token.zbr:257
             return _zbr_ty_TokenKind{ .kw_private = {} };
         }
-// zbr:selfhost/Token.zbr:260
-        if (std.mem.eql(u8, word, "bool")) {
 // zbr:selfhost/Token.zbr:261
+        if (std.mem.eql(u8, word, "bool")) {
+// zbr:selfhost/Token.zbr:262
             return _zbr_ty_TokenKind{ .kw_bool = {} };
         }
-// zbr:selfhost/Token.zbr:262
-        if (std.mem.eql(u8, word, "char")) {
 // zbr:selfhost/Token.zbr:263
+        if (std.mem.eql(u8, word, "char")) {
+// zbr:selfhost/Token.zbr:264
             return _zbr_ty_TokenKind{ .kw_char = {} };
         }
-// zbr:selfhost/Token.zbr:264
-        if (std.mem.eql(u8, word, "int")) {
 // zbr:selfhost/Token.zbr:265
+        if (std.mem.eql(u8, word, "int")) {
+// zbr:selfhost/Token.zbr:266
             return _zbr_ty_TokenKind{ .kw_int = {} };
         }
-// zbr:selfhost/Token.zbr:266
-        if (std.mem.eql(u8, word, "uint")) {
 // zbr:selfhost/Token.zbr:267
+        if (std.mem.eql(u8, word, "uint")) {
+// zbr:selfhost/Token.zbr:268
             return _zbr_ty_TokenKind{ .kw_uint = {} };
         }
-// zbr:selfhost/Token.zbr:268
-        if (std.mem.eql(u8, word, "float")) {
 // zbr:selfhost/Token.zbr:269
+        if (std.mem.eql(u8, word, "float")) {
+// zbr:selfhost/Token.zbr:270
             return _zbr_ty_TokenKind{ .kw_float = {} };
         }
-// zbr:selfhost/Token.zbr:270
-        if (std.mem.eql(u8, word, "require")) {
 // zbr:selfhost/Token.zbr:271
+        if (std.mem.eql(u8, word, "require")) {
+// zbr:selfhost/Token.zbr:272
             return _zbr_ty_TokenKind{ .kw_require = {} };
         }
-// zbr:selfhost/Token.zbr:272
-        if (std.mem.eql(u8, word, "ensure")) {
 // zbr:selfhost/Token.zbr:273
+        if (std.mem.eql(u8, word, "ensure")) {
+// zbr:selfhost/Token.zbr:274
             return _zbr_ty_TokenKind{ .kw_ensure = {} };
         }
-// zbr:selfhost/Token.zbr:276
-        if (std.mem.eql(u8, word, "implies")) {
 // zbr:selfhost/Token.zbr:277
+        if (std.mem.eql(u8, word, "implies")) {
+// zbr:selfhost/Token.zbr:278
             return _zbr_ty_TokenKind{ .kw_implies = {} };
         }
-// zbr:selfhost/Token.zbr:278
-        if (std.mem.eql(u8, word, "assert")) {
 // zbr:selfhost/Token.zbr:279
+        if (std.mem.eql(u8, word, "assert")) {
+// zbr:selfhost/Token.zbr:280
             return _zbr_ty_TokenKind{ .kw_assert = {} };
         }
-// zbr:selfhost/Token.zbr:280
-        if (std.mem.eql(u8, word, "branch")) {
 // zbr:selfhost/Token.zbr:281
+        if (std.mem.eql(u8, word, "branch")) {
+// zbr:selfhost/Token.zbr:282
             return _zbr_ty_TokenKind{ .kw_branch = {} };
         }
-// zbr:selfhost/Token.zbr:282
-        if (std.mem.eql(u8, word, "on")) {
 // zbr:selfhost/Token.zbr:283
+        if (std.mem.eql(u8, word, "on")) {
+// zbr:selfhost/Token.zbr:284
             return _zbr_ty_TokenKind{ .kw_on = {} };
         }
-// zbr:selfhost/Token.zbr:284
-        if (std.mem.eql(u8, word, "if")) {
 // zbr:selfhost/Token.zbr:285
+        if (std.mem.eql(u8, word, "if")) {
+// zbr:selfhost/Token.zbr:286
             return _zbr_ty_TokenKind{ .kw_if = {} };
         }
-// zbr:selfhost/Token.zbr:286
-        if (std.mem.eql(u8, word, "else")) {
 // zbr:selfhost/Token.zbr:287
+        if (std.mem.eql(u8, word, "else")) {
+// zbr:selfhost/Token.zbr:288
             return _zbr_ty_TokenKind{ .kw_else = {} };
         }
-// zbr:selfhost/Token.zbr:288
-        if (std.mem.eql(u8, word, "while")) {
 // zbr:selfhost/Token.zbr:289
+        if (std.mem.eql(u8, word, "while")) {
+// zbr:selfhost/Token.zbr:290
             return _zbr_ty_TokenKind{ .kw_while = {} };
         }
-// zbr:selfhost/Token.zbr:290
-        if (std.mem.eql(u8, word, "for")) {
 // zbr:selfhost/Token.zbr:291
+        if (std.mem.eql(u8, word, "for")) {
+// zbr:selfhost/Token.zbr:292
             return _zbr_ty_TokenKind{ .kw_for = {} };
         }
-// zbr:selfhost/Token.zbr:292
-        if (std.mem.eql(u8, word, "break")) {
 // zbr:selfhost/Token.zbr:293
+        if (std.mem.eql(u8, word, "break")) {
+// zbr:selfhost/Token.zbr:294
             return _zbr_ty_TokenKind{ .kw_break = {} };
         }
-// zbr:selfhost/Token.zbr:294
-        if (std.mem.eql(u8, word, "continue")) {
 // zbr:selfhost/Token.zbr:295
+        if (std.mem.eql(u8, word, "continue")) {
+// zbr:selfhost/Token.zbr:296
             return _zbr_ty_TokenKind{ .kw_continue = {} };
         }
-// zbr:selfhost/Token.zbr:296
-        if (std.mem.eql(u8, word, "pass")) {
 // zbr:selfhost/Token.zbr:297
+        if (std.mem.eql(u8, word, "pass")) {
+// zbr:selfhost/Token.zbr:298
             return _zbr_ty_TokenKind{ .kw_pass = {} };
         }
-// zbr:selfhost/Token.zbr:298
-        if (std.mem.eql(u8, word, "print")) {
 // zbr:selfhost/Token.zbr:299
+        if (std.mem.eql(u8, word, "print")) {
+// zbr:selfhost/Token.zbr:300
             return _zbr_ty_TokenKind{ .kw_print = {} };
         }
-// zbr:selfhost/Token.zbr:302
-        if (std.mem.eql(u8, word, "return")) {
 // zbr:selfhost/Token.zbr:303
+        if (std.mem.eql(u8, word, "return")) {
+// zbr:selfhost/Token.zbr:304
             return _zbr_ty_TokenKind{ .kw_return = {} };
         }
-// zbr:selfhost/Token.zbr:308
-        if (std.mem.eql(u8, word, "this")) {
 // zbr:selfhost/Token.zbr:309
+        if (std.mem.eql(u8, word, "this")) {
+// zbr:selfhost/Token.zbr:310
             return _zbr_ty_TokenKind{ .kw_this = {} };
         }
-// zbr:selfhost/Token.zbr:310
-        if (std.mem.eql(u8, word, "to")) {
 // zbr:selfhost/Token.zbr:311
+        if (std.mem.eql(u8, word, "to")) {
+// zbr:selfhost/Token.zbr:312
             return _zbr_ty_TokenKind{ .kw_to = {} };
         }
-// zbr:selfhost/Token.zbr:312
-        if (std.mem.eql(u8, word, "and")) {
 // zbr:selfhost/Token.zbr:313
+        if (std.mem.eql(u8, word, "and")) {
+// zbr:selfhost/Token.zbr:314
             return _zbr_ty_TokenKind{ .kw_and = {} };
         }
-// zbr:selfhost/Token.zbr:314
-        if (std.mem.eql(u8, word, "or")) {
 // zbr:selfhost/Token.zbr:315
+        if (std.mem.eql(u8, word, "or")) {
+// zbr:selfhost/Token.zbr:316
             return _zbr_ty_TokenKind{ .kw_or = {} };
         }
-// zbr:selfhost/Token.zbr:316
-        if (std.mem.eql(u8, word, "not")) {
 // zbr:selfhost/Token.zbr:317
+        if (std.mem.eql(u8, word, "not")) {
+// zbr:selfhost/Token.zbr:318
             return _zbr_ty_TokenKind{ .kw_not = {} };
         }
-// zbr:selfhost/Token.zbr:318
-        if (std.mem.eql(u8, word, "in")) {
 // zbr:selfhost/Token.zbr:319
+        if (std.mem.eql(u8, word, "in")) {
+// zbr:selfhost/Token.zbr:320
             return _zbr_ty_TokenKind{ .kw_in = {} };
         }
-// zbr:selfhost/Token.zbr:320
-        if (std.mem.eql(u8, word, "using")) {
 // zbr:selfhost/Token.zbr:321
+        if (std.mem.eql(u8, word, "using")) {
+// zbr:selfhost/Token.zbr:322
             return _zbr_ty_TokenKind{ .kw_using = {} };
         }
-// zbr:selfhost/Token.zbr:322
-        if (std.mem.eql(u8, word, "orelse")) {
 // zbr:selfhost/Token.zbr:323
+        if (std.mem.eql(u8, word, "orelse")) {
+// zbr:selfhost/Token.zbr:324
             return _zbr_ty_TokenKind{ .kw_orelse = {} };
         }
-// zbr:selfhost/Token.zbr:324
-        if (std.mem.eql(u8, word, "catch")) {
 // zbr:selfhost/Token.zbr:325
+        if (std.mem.eql(u8, word, "catch")) {
+// zbr:selfhost/Token.zbr:326
             return _zbr_ty_TokenKind{ .kw_catch = {} };
         }
-// zbr:selfhost/Token.zbr:326
-        if (std.mem.eql(u8, word, "true")) {
 // zbr:selfhost/Token.zbr:327
+        if (std.mem.eql(u8, word, "true")) {
+// zbr:selfhost/Token.zbr:328
             return _zbr_ty_TokenKind{ .kw_true = {} };
         }
-// zbr:selfhost/Token.zbr:328
-        if (std.mem.eql(u8, word, "false")) {
 // zbr:selfhost/Token.zbr:329
+        if (std.mem.eql(u8, word, "false")) {
+// zbr:selfhost/Token.zbr:330
             return _zbr_ty_TokenKind{ .kw_false = {} };
         }
-// zbr:selfhost/Token.zbr:330
-        if (std.mem.eql(u8, word, "nil")) {
 // zbr:selfhost/Token.zbr:331
+        if (std.mem.eql(u8, word, "nil")) {
+// zbr:selfhost/Token.zbr:332
             return _zbr_ty_TokenKind{ .kw_nil = {} };
         }
-// zbr:selfhost/Token.zbr:332
-        if (std.mem.eql(u8, word, "raise")) {
 // zbr:selfhost/Token.zbr:333
+        if (std.mem.eql(u8, word, "raise")) {
+// zbr:selfhost/Token.zbr:334
             return _zbr_ty_TokenKind{ .kw_raise = {} };
         }
-// zbr:selfhost/Token.zbr:334
-        if (std.mem.eql(u8, word, "throws")) {
 // zbr:selfhost/Token.zbr:335
+        if (std.mem.eql(u8, word, "throws")) {
+// zbr:selfhost/Token.zbr:336
             return _zbr_ty_TokenKind{ .kw_throws = {} };
         }
-// zbr:selfhost/Token.zbr:336
-        if (std.mem.eql(u8, word, "capture")) {
 // zbr:selfhost/Token.zbr:337
+        if (std.mem.eql(u8, word, "capture")) {
+// zbr:selfhost/Token.zbr:338
             return _zbr_ty_TokenKind{ .kw_capture = {} };
         }
-// zbr:selfhost/Token.zbr:338
-        if (std.mem.eql(u8, word, "with")) {
 // zbr:selfhost/Token.zbr:339
+        if (std.mem.eql(u8, word, "with")) {
+// zbr:selfhost/Token.zbr:340
             return _zbr_ty_TokenKind{ .kw_with = {} };
         }
-// zbr:selfhost/Token.zbr:340
-        if (std.mem.eql(u8, word, "except")) {
 // zbr:selfhost/Token.zbr:341
+        if (std.mem.eql(u8, word, "except")) {
+// zbr:selfhost/Token.zbr:342
             return _zbr_ty_TokenKind{ .kw_except = {} };
         }
-// zbr:selfhost/Token.zbr:342
-        if (std.mem.eql(u8, word, "union")) {
 // zbr:selfhost/Token.zbr:343
+        if (std.mem.eql(u8, word, "union")) {
+// zbr:selfhost/Token.zbr:344
             return _zbr_ty_TokenKind{ .kw_union = {} };
         }
-// zbr:selfhost/Token.zbr:357
+// zbr:selfhost/Token.zbr:358
         return null;
     }
 

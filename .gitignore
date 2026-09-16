@@ -53,13 +53,12 @@ fix_016*.py
 .claude
 
 
-# Generated Zig from test/*.zbr fixtures — inert reference snapshots regenerated
-# by smoke / compile-check (the selfhost routes these to a temp dir; the bootstrap
-# still writes beside the source, hence the ignore). Nothing compiles them
-# (test/main.zig imports the compiler *modules*, not per-test .zig). The
-# hand-written harness + standalone .zig are kept via the exceptions below.
+# Generated Zig from test/*.zbr fixtures — inert reference snapshots that older
+# tooling wrote beside the source (the compiler routes emits to a temp dir now).
+# Nothing compiles them. The hand-written standalone .zig fixtures are kept via the
+# exceptions below. (test/main.zig, the bootstrap's integration harness, was deleted
+# 2026-09-16 with src/.)
 test/**/*.zig
-!test/main.zig
 !test/ZigMath.zig
 !test/bug262_native_zig_dep.zig
 !test/bench_zig.zig

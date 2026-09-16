@@ -1,33 +1,35 @@
-# Differential dogfood sweep
+# Dogfood sweep
 
-A hand-directed complement to the differential fuzzer (`fuzz/`). Where the fuzzer
-generates *random* well-formed programs, this sweep curates *realistic* programs
-that exercise stdlib/idiom **combinations** a real user reaches for — the kind that
-surfaced the Mosaic POC findings (`C:\Projects\mosaic\docs\ZEBRA_FINDINGS.md`).
+A hand-directed complement to the fuzzer (`fuzz/`). Where the fuzzer generates
+*random* well-formed programs, this sweep curates *realistic* programs that exercise
+stdlib/idiom **combinations** a real user reaches for — the kind that surfaced the
+Mosaic POC findings (`C:\Projects\mosaic\docs\ZEBRA_FINDINGS.md`).
 
 ## Why it exists
 
-The round-trip gate (`tools/bootstrap_check.sh`) proves the selfhost reproduces its
-own output (a *fixed point*), but it does **not** compare the selfhost against the
-bootstrap. So a codegen change that makes the two compilers *disagree* on a user
-program passes the round-trip silently. This sweep is the differential net for that:
-every probe is emitted by **both** compilers and compile-checked, then classified.
+The round-trip gate (`tools/bootstrap_check.sh`) proves the compiler reproduces its own
+output (a *fixed point*); the corpus gates sweep programs we wrote as tests. Neither
+sees a realistic combination nobody wrote a fixture for. Every probe here is emitted
+and compile-checked, then classified.
+
+**Until 2026-09-16 this was DIFFERENTIAL**: each probe went through both the bootstrap
+and the selfhost and the verdicts named the one that disagreed (BUG-173/177/179 came
+from that). The bootstrap is retired (`docs/design/bootstrap_sunset.md`); the findings
+snapshot below is kept in its original vocabulary.
 
 ## Run
 
 ```bash
-bash tools/dogfood/run.sh      # needs zig-out/bin/{zebra,zebra-bootstrap}.exe + zig
+bash tools/dogfood/run.sh      # needs zig-out/bin/zebra[.exe] + zig
 ```
 
 Verdicts:
 
 | verdict | meaning | action |
 |---|---|---|
-| `clean` | both emit + both compile | the pattern works |
-| `SHARED-GAP` | both reject | a real language gap (fix both + validate differentially) |
-| `DIVERGE self-fails` | bootstrap ok, selfhost rejects | **converge the selfhost** (safe — cf. BUG-173/177) |
-| `DIVERGE boot-fails` | selfhost ok, bootstrap rejects | selfhost-ahead (cf. BUG-179) — mind the `--update` trap |
-| `BOTH-EMIT-FAIL` | both fail to emit | usually a probe syntax error |
+| `clean` | emits + compiles | the pattern works |
+| `GAP` | emitted, `zig` refused it | a language/codegen gap — file it, add a fixture |
+| `EMIT-FAIL` | the compiler refused the probe | usually a probe syntax error; else a gap in the front end |
 
 ## Adding probes
 

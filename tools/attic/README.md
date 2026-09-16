@@ -32,6 +32,22 @@ selfhost against `zebra-bootstrap`, and a comparison with one side gone reports 
 | `triage_diagnostic_candidates.py` | ran a minimal program per parity candidate through BOTH compilers | same |
 | `scaling_probe.py` | selfhost vs bootstrap compile time against program size | the selfhost-only half is `--jobs`-shaped timing anyone can take with `time`; keep here as the last record of the two curves |
 
+## Retired with the bootstrap's CODE (2026-09-16, `bootstrap_sunset.md` Step 3)
+
+`src/` -- the Zig-implemented compiler, 16 files, ~37,500 lines -- and the
+`zebra-bootstrap` build target are deleted in this step (`git log -- src/` is the record;
+nothing of it is kept here). These scripts had `src/` or the bootstrap binary as their
+subject or their oracle:
+
+| script | was | why it stopped meaning anything |
+|---|---|---|
+| `zig_test_check.sh` | the `zig-test` fast gate (BUG-279): the bootstrap's 120 unit + 11 integration tests via `zig build test-zig` | the code under test is gone; the compiler's own tests are the `.zbr` fixtures `selfhost_smoke.sh` runs |
+| `grammar_export.py` | the `grammar-export` static gate: `grammar.txt` generated from `src/ZebraGrammar.zig`'s Earley rule table | no rule table exists any more -- the selfhost parses by hand. `grammar.txt` is FROZEN at the last export (2026-09-15) and `fuzz/gramgen.py` still reads it; a future grammar document would be derived from the parser some other way |
+| `lint_decl_exhaustive.py` | the `decl-exhaustive` static gate, BUG-103's pin: no `else => {}` in `src/`'s Ast.Decl switches | oracle and subject were both `src/*.zig` |
+| `rebuild_guard_check.sh` | falsified `rebuild.sh`'s footgun-4 guard ("an input of the bootstrap is newer than the binary that embeds it") | the selfhost reads the preamble from disk at codegen time; there is no embedding binary to be stale against, and the guard is gone from `rebuild.sh` |
+| `unreachable_runtime.sh` | which preamble helpers the bootstrap emitted and the selfhost never did | no second emitter |
+| `check_explicit_try.sh` | counted implicit-`try` sites with the bootstrap's `--warn-implicit-try` | §28b made implicit propagation an error (2026-07-02); the selfhost never had the flag |
+
 ## Criteria for moving something here
 
 All four, checked rather than assumed:

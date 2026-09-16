@@ -334,10 +334,11 @@ def _stage(detail):
 def _classify(res):
     """Return 'HANG'|'CRASH'|'PARSE-DIVERGENCE'|'DIVERGENCE'|None (no signal).
 
-    PARSE-DIVERGENCE = one compiler accepted a grammar-valid program the other
-    rejected AT THE PARSE STAGE — the purest front-end signal (two implementations
-    of one grammar disagreeing on acceptance). Split out from resolve/type
-    divergences, which are expected for semantic garbage."""
+    PARSE-DIVERGENCE = the compiler REFUSED a grammar-valid program AT THE PARSE
+    STAGE — the front-end signal (the grammar document and the parser disagreeing
+    on acceptance). Split out from resolve/type refusals, which are expected for
+    semantic garbage. (The names date from the differential harness, when the
+    second implementation was the bootstrap; since 2026-09-16 there is one.)"""
     d = (res.detail or '')
     if 'TIMEOUT' in d:
         return 'HANG'
@@ -377,8 +378,9 @@ def _report_unique(uniq, out_dir):
 # Deterministic per-session regression gate. Fixed seeds/depths → the SAME programs
 # every run, so it can't flake. Fails (exit 1) ONLY on a HANG or a CRASH — the
 # unambiguous bugs (any input reaching one is a defect regardless of semantics).
-# Accept/reject DIVERGENCEs are expected (grammar-valid ≠ semantically-valid, and the
-# sunsetting bootstrap legitimately lags on some constructs) → they do NOT fail the gate.
+# Refusals (reported as DIVERGENCE for historical reasons -- the harness was
+# differential until the bootstrap was retired, 2026-09-16) are expected: grammar-valid
+# ≠ semantically-valid → they do NOT fail the gate.
 # This is what would have caught BUG-199 (an 18-byte parser infinite loop) automatically.
 GATE_SEEDS  = (1, 2, 3, 4)
 GATE_DEPTHS = (7, 11)          # shallow isolates constructs; deeper stresses recursion

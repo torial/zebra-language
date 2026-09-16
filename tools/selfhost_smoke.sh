@@ -613,9 +613,9 @@ smoke_tc_fail test/bug369_container_unknown_method_fail.zbr "'JsonValue' has no 
 # Multi-error parse recovery: two parse errors must both appear in the output.
 smoke_multi_parse_fail test/multi_parse_error_test.zbr ":3:9:" ":7:9:"
 
-# Run a fixture via the bootstrap compiler (not selfhost) and check its stdout
-# contains the expected substring.  Used for runtime API smoke tests where
-# the selfhost TC/codegen parity for that feature is not yet ported.
+# Run a fixture (compile + execute) and check its stdout contains the expected
+# substring. (The comment above it said "via the bootstrap compiler" until 2026-09-16;
+# it has run $ZEBRA, the selfhost, since the Phase 22 cutover.)
 smoke_run() {
     local zbr="$1"
     local expected="$2"

@@ -1,11 +1,9 @@
 # QUICK tier on every push and PR. ~10-15 min.
 #
-# A plain checkout is all this needs. The Earley dependency is pinned in
-# build.zig.zon by URL + hash, so `zig build` fetches it. Until 2026-08-05 it was
-# `.path = "../earley"` -- a sibling directory not in the repo -- and these
-# workflows carried a second checkout step to fake that layout. Pinning the
-# dependency removed the need, and fixed the same problem for every human
-# cloning the repo, which was the larger half of it.
+# A plain checkout is all this needs; build.zig.zon declares no dependencies since
+# 2026-09-16 (the Earley parser went with the bootstrap). Until 2026-08-05 the Earley
+# dependency was `.path = "../earley"` -- a sibling directory not in the repo -- and
+# these workflows carried a second checkout step to fake that layout.
 name: gates (quick)
 
 on:

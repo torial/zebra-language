@@ -82,27 +82,11 @@ last_out() { head -c 400 "$LAST_OUT_FILE" 2>/dev/null; }
 echo "gate self-check — can each gate still fail?"
 echo
 
-# ── doctor: stale-bootstrap detection ────────────────────────────────────────
-# Perturbs an mtime only; content is untouched, and the mtime is restored from a
-# sibling file afterwards.
-if [ -f selfhost/stdlib_preamble.zig ] && [ -f zig-out/bin/zebra-bootstrap.exe ]; then
-    base=$(run_rc bash tools/doctor.sh)
-    if [ "$base" -ne 0 ]; then
-        note "doctor: skipped (already exits $base on the UNPERTURBED tree, so a failure"
-        note "        after planting would prove nothing — clear that first)"
-    else
-        touch selfhost/stdlib_preamble.zig
-        got=$(run_rc bash tools/doctor.sh)
-        touch -r selfhost/napi_preamble.zig selfhost/stdlib_preamble.zig
-        case "$got" in
-            1) pass "doctor flags a stale bootstrap (clean 0 -> planted 1)" ;;
-            0) bad "doctor did NOT flag a preamble newer than the bootstrap that embeds it" ;;
-            *) bad "doctor CRASHED (rc=$got) instead of reporting: $(last_out)" ;;
-        esac
-    fi
-else
-    note "doctor: skipped (no built bootstrap to compare against)"
-fi
+# (the doctor stale-bootstrap leg was here until 2026-09-16: it planted a preamble
+# newer than zebra-bootstrap.exe, which EMBEDDED the preamble at build time, and
+# required doctor to refuse. The bootstrap is gone -- bootstrap_sunset.md Step 3 --
+# and the selfhost reads the preamble from disk at codegen time, so there is no
+# binary for it to be stale against and nothing for doctor to flag.)
 
 # (the interp-escape lint leg was here until 2026-09-15: the lint guarded a
 # bootstrap-only double-escape and retired with it -- bootstrap_sunset.md Step 2.)

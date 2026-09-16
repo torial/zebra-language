@@ -19,9 +19,13 @@ class Cell
 def arena(vari: int): int
     return vari * 2
 
-# `same` joined the freed words on 2026-09-16.
+# `same` joined the freed words on 2026-09-16, and `has` the same day with the bootstrap
+# (only its Earley grammar ever accepted the word; the selfhost never did).
 def same(same: int): int
     return same
+
+def has(has: bool): bool
+    return not has
 
 def main()
     var guard = 4
@@ -29,5 +33,5 @@ def main()
     var abstract = "abs"
     var c = Cell(guard, readonly, abstract)
     var vari = arena(c.vari())
-    print("${c.guard} ${c.readonly} ${c.abstract} ${vari} ${arena(guard)} ${same(9)}")
+    print("${c.guard} ${c.readonly} ${c.abstract} ${vari} ${arena(guard)} ${same(9)} ${has(false)}")
     print("guard: freed")

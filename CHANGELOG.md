@@ -86,6 +86,17 @@ interface type as unknown (no method-name refusal through them). QUICKSTART §17
 `selfhost-div` and `interp-escape` leave the gate tiers (49 daily / 41 full), `compile_check
 --bootstrap` and the parity/scaling probes go, `mutation_check` regenerates via the
 selfhost. `zig-test` stays until Step 3 deletes `src/`.
+**Bootstrap sunset Step 3** (2026-09-16): `src/` -- the Zig-implemented compiler Zebra was
+first written in, 16 files, 37,549 lines -- and the `zebra-bootstrap` build target are
+deleted; `build.zig.zon` declares no dependencies (the Earley parser went with it), so a
+clean clone builds offline. One compiler, `zebra`, which regenerates itself from its
+committed emit (`tools/regen_recover.sh` is the recovery path for any commit in history).
+The three gates whose oracle was `src/` retire with it (`zig-test`, `grammar-export` --
+`grammar.txt` is frozen at the last export -- and `decl-exhaustive`; 46 daily / 38 full),
+and `fuzz/harness.py` and `tools/dogfood` become validity sweeps rather than differential
+ones. **`has` freed** as an identifier: only the bootstrap's grammar ever accepted the word
+(a Cobra-era class attribute list); the selfhost never parsed it (surface: −1 keyword, 68).
+The next release archive no longer contains `zebra-bootstrap`.
 
 ## [0.15] — 2026-05 (in progress)
 

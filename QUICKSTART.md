@@ -3,7 +3,7 @@
 
 This file is the **agent-facing quick reference** for the Zebra language (.zbr files).
 It covers syntax, semantics, and idioms needed to read and write Zebra without
-scanning the full compiler source. For the compiler's own implementation see `src/`.
+scanning the full compiler source. For the compiler's own implementation see `selfhost/`.
 
 > **Reading order:** New to Zebra? Start with the **Getting Started** section
 > below, then §1–§14 for everyday syntax.  §15–§23 are reference for specialised

@@ -116,7 +116,7 @@ jobs:
           v="${{ needs.tag-matches-version.outputs.version }}"
           name="zebra-${v}_zig0.16-${{ matrix.plat }}"
           mkdir -p "dist/$name"
-          cp -r zig-out/bin/. "dist/$name/"          # zebra[.exe], zebra-bootstrap, vendor/sqlite/sqlite3.c
+          cp -r zig-out/bin/. "dist/$name/"          # zebra[.exe], the preamble + GUI sections, vendor/sqlite/sqlite3.c
           cp -r zig-toolchain "dist/$name/zig"        # the Zig this binary was built and tested with
           cp README.md QUICKSTART.md CHANGELOG.md LICENSE "dist/$name/"
           mkdir -p "dist/$name/docs" && cp docs/UI_QUICKSTART.md docs/DEBUGGING.md "dist/$name/docs/"

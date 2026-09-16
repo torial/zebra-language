@@ -46,7 +46,7 @@ not from view(). This is the standard "immediate mode over reactive loop" patter
 - `95d01af`: `Checkbox.OnToggled` — add `comptime f`, remove erroneous `void catch` (Zig 0.16 inner-function closure capture restriction)
 - `39665dc`: update libui-ng dep to InitCommonControls-fixed commit
 
-**Widget cache adapter — COMPLETE** (~300 lines in `src/CodeGen.zig`):
+**Widget cache adapter — COMPLETE** (~300 lines in `src/CodeGen.zig`): <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 
 Retained-mode mismatch solved by two parallel caches:
 
@@ -75,7 +75,7 @@ const _LuiMut = struct {
 **Package hashes (pinned, 2026-07-27 — supersede the 2026-05-22 pins):**
 - zig-libui-ng: `bindings_libui_ng-0.1.0-p2CY9cIOQgD6ELPBtySSzOXKEbM3EBCHC0aB6xktF89h` (commit `8677b01`, branch `main`)
 - libui-ng: `N-V-__8AAJUpKQC_gvsKqMnq2StXzP7vXUVZ-2SFoxrur37u` (commit `85976bc`, branch `main`)
-- Source of truth: `selfhost/main.zbr` `luiBuildZon()` (not the older `src/main.zig`).
+- Source of truth: `selfhost/main.zbr` `luiBuildZon()` (not the older `src/main.zig`). <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/main.zbr -->
 
 **MVP limitations:**
 - `beginPanel`/`beginWindow`/table/tree/color/style calls are no-ops (all widgets render in one flat vbox)
@@ -167,10 +167,10 @@ Options:
 
 **ZigZag TUI backend — shipped 2026-05-21:**
 
-- `--gui-backend=tui` flag added to both bootstrap (`src/main.zig`) and selfhost (`selfhost/main.zbr`).
+- `--gui-backend=tui` flag added to both bootstrap (`src/main.zig`) and selfhost (`selfhost/main.zbr`). <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/main.zbr -->
 - Selfhost delegates `--gui-backend=XXX` to bootstrap (GUI compilation requires `zig build` + package deps, not `zig run`).
-- `src/CodeGen.zig`: `.tui` enum variant; full `_tui_*` function suite injected into the generated Zig preamble.
-- `src/main.zig`: `gui_tui_project_build_zig` + `gui_tui_project_build_zig_zon` templates; `compileGuiProject` parameterized on backend.
+- `src/CodeGen.zig`: `.tui` enum variant; full `_tui_*` function suite injected into the generated Zig preamble. <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
+- `src/main.zig`: `gui_tui_project_build_zig` + `gui_tui_project_build_zig_zon` templates; `compileGuiProject` parameterized on backend. <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/main.zbr -->
 - ZigZag dep: `git+https://github.com/meszmate/zigzag#v0.1.5`, hash `zigzag-0.1.2-YXwYS17aEQBlpxPETTrhY5leFh7vV0DpnXJbHogs4Lsv`.
 - Counter example compiles and links against ZigZag successfully.
 

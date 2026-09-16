@@ -5,7 +5,7 @@
 **Origin:** F5 (preamble-internal names leak into the user namespace) from the
 CherryCobbler dogfood; escalated to an architecture change on Sean's suggestion.
 **Scope:** codegen only — changes what the Zebra compiler *emits*, in both
-`src/CodeGen.zig` (bootstrap) and `selfhost/CodeGen.zbr`, kept equivalent.
+`src/CodeGen.zig` (bootstrap) and `selfhost/CodeGen.zbr`, kept equivalent. <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 
 ---
 
@@ -234,7 +234,7 @@ Keep bootstrap ↔ selfhost convergence at every step (this is gated, supervised
 **Status after commit `33996f3` (Phase 1 scaffold):** the `--single-file` flag and
 `CodeGen.single_file` global exist and are inert (byte-identical emit verified). The
 next increment is the **behavioral** single-module namespacing. Anchors below are in
-`src/CodeGen.zig` `pub fn generate(...)` — reference by the quoted marker (line numbers
+`src/CodeGen.zig` `pub fn generate(...)` — reference by the quoted marker (line numbers <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 drift), and remember the **twin edit** in `selfhost/CodeGen.zbr` for parity.
 
 The top-level emit is one linear sequence writing to `g.w`, in this order:
@@ -274,7 +274,7 @@ identically under `--single-file` (behavior parity); (b) a program with a top-le
 
 ### 7a.1 — increment landed: single-module namespacing (both compilers, 2026-07-21)
 
-Both `src/CodeGen.zig` (bootstrap) and `selfhost/CodeGen.zbr` implement Approach A behind
+Both `src/CodeGen.zig` (bootstrap) and `selfhost/CodeGen.zbr` implement Approach A behind <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 `--single-file` (default off), kept equivalent through the round-trip. The selfhost carries
 a file-scope `var _single_file` + `setSingleFile()` (mirror of the bootstrap's
 `pub var single_file`), wired from `selfhost/main.zbr`; `generateFullWithDeps` /
@@ -338,7 +338,7 @@ pub fn _initModuleVars() void { _mod_Token._initModuleVarsImpl(); _mod_Lexer…;
 pub fn main(_zinit) void { … _initModuleVars(); _mod_main.run(); }
 ```
 
-**Three code changes per compiler (`src/CodeGen.zig` + `selfhost/CodeGen.zbr`):**
+**Three code changes per compiler (`src/CodeGen.zig` + `selfhost/CodeGen.zbr`):** <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 
 1. **genUse rewrite.** Replace `@import("<path>.zig")` with the module struct name
    `_mod_<sanitized path>` (dots/slashes → `_`). So `use Mod` → `const Mod = _mod_Mod;`
@@ -348,7 +348,7 @@ pub fn main(_zinit) void { … _initModuleVars(); _mod_main.run(); }
    means the *class*; the struct must not also be bare `Lexer`).
 
 2. **Driver assembly.** Both drivers already compile deps depth-first and write one `.zig`
-   per module (`MultiCompiler.compileDep` → `generateDepWith`; `src/main.zig` →
+   per module (`MultiCompiler.compileDep` → `generateDepWith`; `src/main.zig` → <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/main.zbr -->
    `compileZbrToZig`). Under `--single-file`, instead of writing per-module files, accumulate
    each module's `generateModuleWith` output (decls only, no preamble/entry) wrapped in
    `const _mod_<name> = struct { … };`, in the existing post-order (deps before root); after

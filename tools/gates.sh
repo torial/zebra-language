@@ -24,7 +24,7 @@
 # THE LADDER IS CUT ON BUILD-DEPENDENCE, NOT ON SECONDS (2026-08-19)
 # -----------------------------------------------------------------
 # The obvious cut is by cost, and it is wrong. Timings are taken on a WARM tree, so a
-# gate that measures 1s because the binaries happen to be current (zig-test, ffi-lib,
+# gate that measures 1s because the binaries happen to be current (ffi-lib,
 # diag-columns) costs a full build on a cold one. A tier whose advertised cost stops
 # being true exactly when you most want it — mid-edit, stale tree — is a tier that
 # lies. Build-dependence is stable, derivable, and maps onto the real question:
@@ -350,11 +350,11 @@ run_static "hazard-lint"    "0 hazard"  python tools/hazard_lint.py
 run_static "doc-lint"       "0 stale"   python tools/doc_lint.py --quiet
 run_static "keyword-coverage" "0 NEW"  python tools/lint_keyword_coverage.py
 run_fast "doc-example"    "0 NEW"     python tools/doc_example_check.py --quiet
-# The parser's rule table is the authority; grammar.txt is generated from it. Before
-# 2026-08-04 the two had drifted badly enough that fuzz/gramgen.py -- which reads
-# grammar.txt -- was generating 9 constructs the parser does not have and never reaching
-# 40 that it does.
-run_static "grammar-export" "matches"    python tools/grammar_export.py --check
+# (`grammar-export` sat here 2026-08-04 .. 2026-09-16: grammar.txt was GENERATED from the
+# bootstrap's Earley rule table, src/ZebraGrammar.zig, and the gate asserted the document
+# matched the table. The table left with the bootstrap -- sunset Step 3 -- so grammar.txt
+# is FROZEN at the last export; the selfhost parses by hand and has no rule table to
+# derive from. fuzz/gramgen.py still reads it. tools/attic/grammar_export.py.)
 # The STABLE SURFACE (keywords, CLI, namespaces + static members, builtin receiver methods),
 # derived from the compiler's own tables into docs/SURFACE.md. Same shape as grammar-export:
 # the compiler is the authority, the document is generated, and a diff is a surface change
@@ -365,12 +365,10 @@ run_static "surface-freeze" "matches"    python tools/surface_inventory.py --che
 # NOT in CLAUDE.md's uncovered table either -- the one state that table exists to make
 # impossible. Three unrelated failures sat on committed code as a result, and two of
 # them were hiding STALE TESTS asserting removed syntax.
-#
-# Deliberately NOT `zig build test`, which is a SUPERSET: it also runs selfhost_smoke
-# (~14 min) and compile_check (~6 min), both already gated here, so the command would
-# cost ~20 minutes of duplication to buy ~4 seconds of new coverage. `test-zig` is the
-# uncovered part alone. escape_hatches joins it once BUG-279 leg 3 clears.
-run_fast "zig-test"       "tests passed"  bash tools/zig_test_check.sh
+# (`zig-test` sat here 2026-08-09 .. 2026-09-16 -- BUG-279: the bootstrap's Zig unit
+# and integration tests, run via `zig build test-zig`. The code they tested is gone,
+# sunset Step 3; the compiler's own tests are the .zbr fixtures smoke runs.
+# tools/attic/zig_test_check.sh.)
 run_quick "smoke"          "passed"    bash tools/selfhost_smoke.sh
 run_quick "round-trip"     "PASS"      bash tools/bootstrap_check.sh
 # The only gate that RUNS emitted output, hence the only one that can see BUG-221 —
@@ -463,7 +461,10 @@ run_static "oom-unreachable" "0 hazard" python tools/lint_oom_unreachable.py
 # had drifted twice before anyone wrote the one-line check.
 run_static "fn-twins"       "0 drift"  python tools/lint_fn_twins.py
 run_static "root-clean"     "0 compiled" bash tools/root_clean_check.sh
-run_static "decl-exhaustive" "0 issue" python tools/lint_decl_exhaustive.py
+# (`decl-exhaustive` sat here 2026-08-26 .. 2026-09-16, BUG-103's pin: no `else => {}`
+# in the bootstrap's Ast.Decl switches. Oracle and subject were both src/*.zig; gone with
+# it, sunset Step 3. The selfhost's `branch` over Decl is checked by lint_fallthrough and
+# by the compiler's own exhaustiveness rule. tools/attic/lint_decl_exhaustive.py.)
 # A3: the boundary-value suite. The ONLY gate here whose expectations were written from
 # INTENT rather than recorded from behaviour — output_sweep is a golden baseline and so
 # can never find something that was wrong on day one. 33 probes, ~30s, and it found  <!-- doc-gen: 33 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' -->

@@ -4,35 +4,13 @@
     .minimum_zig_version = "0.15.0",
     .fingerprint = 0x15575db627803ed6,
 
-    .dependencies = .{
-        // Pinned by URL + hash 2026-08-05 so that ANYONE can build this repo from a
-        // clean clone. It was `.path = "../earley"` — a sibling directory that is not
-        // part of this repository — so `git clone && zig build` failed at step one with
-        // `unable to open '../earley': FileNotFound` for everyone except the author.
-        // Found by actually cloning into a scratch directory and building, which is the
-        // only thing that could have found it: every existing checkout already had the
-        // sibling present.
-        //
-        // The pin is commit e757e96 of torial/earley ("migration to 0.16 zig"), which
-        // was byte-for-byte what this repo had been building against — the local
-        // checkout was clean and exactly in sync with origin/master when it was taken.
-        //
-        // TO DEVELOP AGAINST A LOCAL EARLEY, replace this block with
-        //     .earley = .{ .path = "../earley" },
-        // and do not commit that. To move the pin after pushing an earley change:
-        //     zig fetch https://github.com/torial/earley/archive/<sha>.tar.gz
-        // and paste the hash it prints. (`zig fetch --save=earley` is NOT the way here:
-        // with a dependency of that name already present it overwrites the existing
-        // key's VALUE, leaving `.path = "https://…"` and no hash at all.)
-        .earley = .{
-            .url = "https://github.com/torial/earley/archive/e757e96427d85a13b4b3d35079fc01832c3a88c8.tar.gz",
-            .hash = "earley-0.1.0-CvxQMKBtAwCa5LusAxuzngLdo5nUfGYJ6pon1qhEirD_",
-        },
-    },
+    // No dependencies. The Earley parser (torial/earley) was pulled in by the
+    // Zig-implemented bootstrap in src/, retired 2026-09-16 (bootstrap_sunset.md Step 3).
+    .dependencies = .{},
 
     .paths = .{
         "build.zig",
         "build.zig.zon",
-        "src",
+        "selfhost",
     },
 }

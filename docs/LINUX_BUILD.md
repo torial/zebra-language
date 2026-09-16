@@ -25,11 +25,11 @@ leg 3, pre-existing) — it is the one `zig build test` step that fails.
 1. **Environment on POSIX (Zig 0.16).** `std.posix.getenv/setenv` are gone and
    `std.process.Environ{ .block = .global }` exists only on Windows. The runtime now
    owns `_environ`, filled by the emitted `main()` from `_zinit.minimal.environ`
-   (codegen emits the line, both compilers), and `_sys_getenv` reads it via
+   (codegen emits the line), and `_sys_getenv` reads it via
    `getPosix`. `_sys_setenv` on POSIX keeps an in-process override map consulted first
    by `_sys_getenv` (and also calls libc `setenv` when libc is linked), so set-then-get
-   behaves the same on every platform. The bootstrap's `Debugger.zig` gets the same
-   via `process_environ`, stored by `src/main.zig`.
+   behaves the same on every platform. (The bootstrap's `Debugger.zig` got the same
+   via `process_environ`; retired with `src/` 2026-09-16.)
 2. **Panics leaked Zig internals on POSIX.** A runtime `assert` printed a Zig stack
    trace pointing at the emitted `.zig` and `std/start.zig`; Windows never did, and
    `test/bug259_runtime_exit_code_test.zbr` asserts it must not. Emitted programs now

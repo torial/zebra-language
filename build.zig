@@ -5,12 +5,10 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // Self-hosted-backend fast path for DEBUG builds (#233): Zig's self-hosted x86_64
-    // backend + linker builds the primary zebra.exe (selfhost) ~6x faster than LLVM+LLD
-    // (≈1.4s vs 8.5s here) with byte-identical output (validated via the bootstrap
-    // round-trip, which rebuilds the selfhost compiler and diffs its full self-emit).
-    // Default ON for Debug; release builds keep LLVM for codegen quality.  Applied only
-    // to zebra.exe — the bootstrap (src/) is miscompiled by the self-hosted backend (see
-    // below), so it stays on LLVM.  `-Dfast-backend=false` forces LLVM (cross-check).
+    // backend + linker builds zebra.exe ~6x faster than LLVM+LLD (≈1.4s vs 8.5s here)
+    // with byte-identical output (validated via the round-trip, which rebuilds the
+    // compiler from its own emit and diffs the result). Default ON for Debug; release
+    // builds keep LLVM for codegen quality. `-Dfast-backend=false` forces LLVM.
     const fast_backend = (b.option(bool, "fast-backend",
         "Build the debug zebra.exe with Zig's self-hosted backend (~6x faster; Debug only)") orelse true) and optimize == .Debug;
     const setFastBackend = struct {
@@ -19,21 +17,14 @@ pub fn build(b: *std.Build) void {
         }
     }.apply;
 
-    const earley_dep = b.dependency("earley", .{ .target = target, .optimize = optimize });
-    const earley_mod = earley_dep.module("earley");
-
-    // ── Bootstrap compiler: Zig-implemented backend ──────────────────────────
+    // ── The stdlib preamble, embedded at build time ──────────────────────────
     //
-    // After Phase 22 cutover, this is NOT the primary `zebra` binary.
-    // Primary use: bootstrap_check.sh Step 1 (emit selfhost/*.zig from *.zbr).
-    // Installed as zebra-bootstrap.exe; used via --zig-backend escape hatch.
+    // The compiler inlines selfhost/stdlib_preamble.zig into every emitted program
+    // (and reads the installed copy at codegen time for the runtime-module shape).
+    // Until 2026-09-16 this block fed the Zig-implemented bootstrap in src/; that
+    // compiler is gone (docs/design/bootstrap_sunset.md), and the reading stays so
+    // the marker/CRLF invariants below keep being enforced by the build itself.
 
-    const compiler_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target   = target,
-        .optimize = optimize,
-    });
-    compiler_mod.addImport("earley", earley_mod);
     const raw_preamble = b.build_root.handle.readFileAlloc(b.graph.io, "selfhost/stdlib_preamble.zig", b.allocator, std.Io.Limit.limited(256 * 1024)) catch @panic("selfhost/stdlib_preamble.zig missing");
     // Strip the file header (HOW-TO comment + allocator setup) — CodeGen emits those dynamically.
     // The static helpers start at the STDLIB_PREAMBLE_HELPERS_START marker.
@@ -65,27 +56,12 @@ pub fn build(b: *std.Build) void {
     const napi_end   = std.mem.indexOf(u8, raw_napi, napi_end_marker)   orelse @panic("NAPI_PREAMBLE_HELPERS_END marker missing from selfhost/napi_preamble.zig");
     preamble_opts.addOption([]const u8, "napi_preamble", raw_napi[napi_start..napi_end]);
 
-    compiler_mod.addOptions("build_options", preamble_opts);
-
-    const bootstrap_exe = b.addExecutable(.{
-        .name        = "zebra-bootstrap",
-        .root_module = compiler_mod,
-    });
-    // The bootstrap stays on LLVM even in Debug. It is the regeneration authority — it
-    // produces the committed selfhost/*.zig fixed point (via `update-selfhost`) — so it
-    // uses the battle-tested LLVM backend, not the newer self-hosted one.  (#234 found the
-    // self-hosted backend compiles the bootstrap *correctly* — full --bootstrap parity is
-    // identical to LLVM — so this is conservatism about committed artifacts, NOT a
-    // miscompile.  Note: self-hosted-built binaries on Windows have a stdout-to-pipe bug —
-    // they write correctly to a file/redirect but nothing to a pipe; harmless here since
-    // every gate uses redirect/--output-dir, but pipe `zebra ... | x` needs -Dfast-backend=false.)
-    b.installArtifact(bootstrap_exe);
-
-    // ── Primary zebra binary: selfhost pipeline (Phase 22 cutover) ──────────
+    // ── The zebra binary ────────────────────────────────────────────────────
     //
-    // Compiled from selfhost/main.zig (checked-in fixed point from the
-    // bootstrap round-trip). Default mode: Lex → Parse → Resolve → TC →
-    // CodeGen → zig run. No external module deps — uses relative @imports.
+    // Compiled from selfhost/main.zig -- the checked-in fixed point of the
+    // compiler's own emit (tools/bootstrap_check.sh proves it; tools/regen_recover.sh
+    // rebuilds it from git if the working compiler is broken). Pipeline: Lex →
+    // Parse → Resolve → TC → CodeGen → zig. No external deps; relative @imports.
 
     const selfhost_mod = b.createModule(.{
         .root_source_file = b.path("selfhost/main.zig"),
@@ -118,9 +94,8 @@ pub fn build(b: *std.Build) void {
     );
     b.getInstallStep().dependOn(&install_preamble.step);
 
-    // The tui GUI backend section (GUI-via-selfhost Phase 2): read at runtime for
-    // --gui-backend=tui, resolved next to stdlib_preamble.zig. Bootstrap doesn't
-    // use it (it has the inline switch); selfhost-only resource.
+    // The GUI backend sections: read at runtime for --gui-backend=tui / libui_ng,
+    // resolved next to stdlib_preamble.zig.
     const install_gui_tui = b.addInstallFile(
         b.path("selfhost/gui_tui_section.zig"),
         "bin/gui_tui_section.zig",
@@ -137,129 +112,13 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the Zebra compiler");
     run_step.dependOn(&run.step);
 
-    // ── Explicit module graph for tools and integration tests ─────────────────
-    //
-    // When src files are split across multiple modules (grammar tool, integ
-    // tests) each file must belong to exactly one module.  We therefore create
-    // one module per source file and wire every cross-file `@import` as a
-    // named module dependency using the same string the source uses (e.g.
-    // `"Token.zig"`), so the existing source files need no changes.
-
-    const token_mod = b.createModule(.{
-        .root_source_file = b.path("src/Token.zig"),
-        .target   = target,
-        .optimize = optimize,
-    });
-
-    const tokenizer_mod = b.createModule(.{
-        .root_source_file = b.path("src/Tokenizer.zig"),
-        .target   = target,
-        .optimize = optimize,
-    });
-    tokenizer_mod.addImport("Token.zig", token_mod);
-
-    const zebra_grammar_mod = b.createModule(.{
-        .root_source_file = b.path("src/ZebraGrammar.zig"),
-        .target   = target,
-        .optimize = optimize,
-    });
-    zebra_grammar_mod.addImport("earley",    earley_mod);
-    zebra_grammar_mod.addImport("Token.zig", token_mod);
-
-    const ast_mod = b.createModule(.{
-        .root_source_file = b.path("src/Ast.zig"),
-        .target   = target,
-        .optimize = optimize,
-    });
-
-    const parser_mod = b.createModule(.{
-        .root_source_file = b.path("src/Parser.zig"),
-        .target   = target,
-        .optimize = optimize,
-    });
-    parser_mod.addImport("earley",           earley_mod);
-    parser_mod.addImport("Token.zig",        token_mod);
-    parser_mod.addImport("Tokenizer.zig",    tokenizer_mod);
-    parser_mod.addImport("ZebraGrammar.zig", zebra_grammar_mod);
-
-    const ast_builder_mod = b.createModule(.{
-        .root_source_file = b.path("src/AstBuilder.zig"),
-        .target   = target,
-        .optimize = optimize,
-    });
-    ast_builder_mod.addImport("earley",           earley_mod);
-    ast_builder_mod.addImport("Ast.zig",          ast_mod);
-    ast_builder_mod.addImport("Parser.zig",       parser_mod);
-    ast_builder_mod.addImport("Token.zig",        token_mod);
-    ast_builder_mod.addImport("ZebraGrammar.zig", zebra_grammar_mod);
-
-    const ast_printer_mod = b.createModule(.{
-        .root_source_file = b.path("src/AstPrinter.zig"),
-        .target   = target,
-        .optimize = optimize,
-    });
-    ast_printer_mod.addImport("Ast.zig", ast_mod);
-
-    // ── Grammar listing ───────────────────────────────────────────────────────
-
-    const grammar_tool_mod = b.createModule(.{
-        .root_source_file = b.path("tools/print_grammar.zig"),
-        .target   = target,
-        .optimize = optimize,
-    });
-    grammar_tool_mod.addImport("earley",       earley_mod);
-    grammar_tool_mod.addImport("ZebraGrammar", zebra_grammar_mod);
-
-    const grammar_exe  = b.addExecutable(.{ .name = "print-grammar", .root_module = grammar_tool_mod });
-    const grammar_run  = b.addRunArtifact(grammar_exe);
-    const grammar_step = b.step("grammar", "Print the Zebra grammar as a BNF listing");
-    grammar_step.dependOn(&grammar_run.step);
-
     // ── Tests ─────────────────────────────────────────────────────────────────
-
-    // Unit tests: single module rooted at src/main.zig — relative imports work
-    // naturally; only the external 'earley' dep needs registering.
-    const unit_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target   = target,
-        .optimize = optimize,
-    });
-    unit_mod.addImport("earley", earley_mod);
-    unit_mod.addOptions("build_options", preamble_opts);
-    const unit_tests = b.addTest(.{ .name = "unit", .root_module = unit_mod });
-
-    // Integration tests: test/main.zig imports the explicit module graph.
-    const integ_mod = b.createModule(.{
-        .root_source_file = b.path("test/main.zig"),
-        .target   = target,
-        .optimize = optimize,
-    });
-    integ_mod.addImport("Tokenizer",   tokenizer_mod);
-    integ_mod.addImport("Parser",      parser_mod);
-    integ_mod.addImport("AstBuilder",  ast_builder_mod);
-    integ_mod.addImport("AstPrinter",  ast_printer_mod);
-    const integ_tests = b.addTest(.{ .name = "integration", .root_module = integ_mod });
-
+    //
+    // The compiler's own unit tests are Zebra fixtures run by the smoke suite
+    // (selfhost/ast_test.zbr, typechecker_test.zbr, ...). The Zig-side `unit` and
+    // `integration` test binaries and the `test-zig` step tested the bootstrap in
+    // src/ and left with it (2026-09-16, bootstrap_sunset.md Step 3).
     const test_step = b.step("test", "Run all tests");
-    test_step.dependOn(&b.addRunArtifact(unit_tests).step);
-    test_step.dependOn(&b.addRunArtifact(integ_tests).step);
-
-    // BUG-279: the ZIG-side tests alone, with none of the heavy legs `test` also pulls
-    // in. `zig build test` is a SUPERSET — it adds selfhost_smoke (~14 min) and
-    // compile_check (~6 min), BOTH of which the gate tiers already run — so putting the
-    // command itself in a tier would buy ~4 seconds of coverage for ~20 minutes of
-    // duplicated work. These two binaries are covered by NOTHING else.
-    //
-    // That gap is not theoretical: three unrelated failures sat on committed code
-    // because these tests were in neither a tier nor CLAUDE.md's uncovered table, and
-    // two of them turned out to be hiding STALE TESTS asserting removed syntax.
-    //
-    // escape_hatches_check is deliberately NOT here yet — it is currently red on a
-    // page_allocator count review that belongs to another author (BUG-279 leg 3). Add
-    // it once that clears; the gate is written to pick it up with one line.
-    const zigtest_step = b.step("test-zig", "Run ONLY the Zig unit + integration tests (no smoke, no compile_check)");
-    zigtest_step.dependOn(&b.addRunArtifact(unit_tests).step);
-    zigtest_step.dependOn(&b.addRunArtifact(integ_tests).step);
 
     // Selfhost smoke: run tools/selfhost_smoke.sh after building zebra.exe.
     // Exercises the full lex→parse→resolve→TC→codegen pipeline on 10 fixtures
@@ -268,7 +127,7 @@ pub fn build(b: *std.Build) void {
     smoke_run.step.dependOn(&exe.step);
     test_step.dependOn(&smoke_run.step);
 
-    // Escape-hatches guard: fails if `page_allocator` count in src/ or in
+    // Escape-hatches guard: fails if the `page_allocator` count in
     // selfhost/stdlib_preamble.zig drifts from the recorded baseline.  Cheap;
     // catches accidental new escape hatches before they're committed.
     const escape_check = b.addSystemCommand(&.{ "bash", "tools/escape_hatches_check.sh" });
@@ -318,19 +177,18 @@ pub fn build(b: *std.Build) void {
     // ── Selfhost update ───────────────────────────────────────────────────────
     //
     // `zig build update-selfhost` emits all selfhost/*.zig from selfhost/*.zbr
-    // using zebra-bootstrap.exe (the authoritative Zig-compiled compiler).
-    // Using bootstrap — not the selfhost binary — avoids the chicken-and-egg
-    // where a codegen bug in selfhost/CodeGen.zbr causes the selfhost binary to
-    // regenerate that same bug. Round-trip fidelity is tested separately by
-    // `zig build bootstrap` (the full 5-step check).
+    // using the zebra.exe built from the COMMITTED selfhost/*.zig (the N-1
+    // regen authority since 2026-08-30). Round-trip fidelity is tested separately
+    // by `zig build bootstrap` (the full 5-step check); a broken compiler is
+    // recovered with tools/regen_recover.sh.
     // After this step, run `zig build` again to rebuild zebra.exe.
     // Does NOT call zig build recursively — that would cause a recursive build
     // error; the two-step idiom is intentional.
     const update_run = b.addSystemCommand(&.{ "bash", "tools/bootstrap_check.sh", "--update" });
-    update_run.step.dependOn(&bootstrap_exe.step); // only needs the Zig-compiled bootstrap, not zebra.exe
+    update_run.step.dependOn(b.getInstallStep());
     // BUG-210: this step regenerates selfhost/*.zig from selfhost/*.zbr but declares
     // no .zbr inputs, so Zig's build cache would skip it after a .zbr-only edit
-    // (fixed argv + unchanged bootstrap dep → cache hit), silently leaving the
+    // (fixed argv + unchanged deps → cache hit), silently leaving the
     // generated .zig stale. Force it to always run — regeneration is the point.
     update_run.has_side_effects = true;
     const update_selfhost_step = b.step("update-selfhost", "Regenerate selfhost/*.zig from .zbr sources (then run 'zig build')");

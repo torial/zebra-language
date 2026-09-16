@@ -77,7 +77,9 @@ PROMISE, which §15 says is the open act.
    If rc2's macOS leg was green, the note is stale and the flag can flip; if it was not,
    1.0 should say two platforms, not three-with-an-asterisk. Either way it is a decision
    the queue does not currently hold.
-7. **The bootstrap sunset needs a 1.0 decision, not a trend line.** DECIDED 2026-09-15:
+7. **The bootstrap sunset needs a 1.0 decision, not a trend line.** DECIDED 2026-09-15
+   and DONE 2026-09-16 (Steps 0-3; `src/` is deleted, one compiler, no dependencies;
+   Step 4 -- the dead keyword machinery -- is the remainder):
    (a), plan in `docs/design/bootstrap_sunset.md` -- which also corrects this entry: the
    selfhost has been its own regen authority since 2026-08-30 (`rebuild.sh` regenerates
    with `zebra.exe`); what the bootstrap still is, is `selfhost-div`'s witness and three
@@ -105,6 +107,8 @@ DECISIONS 2026-09-15 (Sean, on the 2026-09-14 read above and the surface measure
   The bootstrap (`src/`) keeps accepting the alias only because it is retiring (next).
 - **Item 7 → (a)**: the selfhost becomes regen authority and the bootstrap is retired
   ("Let's move to no bootstrap. Worth the effort imo"). Plan: `docs/design/bootstrap_sunset.md`.
+  DONE through Step 3, 2026-09-16 (`src/` deleted). It freed one more word on the way
+  out: `has`, which only the bootstrap's grammar ever accepted (68 keywords).
 - **Item 3 → `b.requires("^1.0")`** on the Build object in `build.zbr`, compared to
   `_zbr_version`, refused by name with `zebra up` as the suggested fix.
 - **Open receiver tables** (the ~16 stdlib runtime object types whose instance methods
@@ -167,9 +171,11 @@ one that **silently produces a wrong model**. A propagated error is honest and r
 "it failed here"; a swallowed OOM destroys replay fidelity far more thoroughly. `update`
 still does no I/O and holds no hidden state either way.
 
-**WHAT IT TOUCHES HERE:** the tui template in `src/CodeGen.zig` (the `.tui` arm, ~3853+)
-declares `init`/`update`/`view`, plus the `build.zig.zon` fingerprint whose regeneration
-procedure is documented at `src/main.zig:1281`.
+**WHAT IT TOUCHES HERE:** the tui section (`selfhost/gui_tui_section.zig`, selected by
+`CodeGen.guiSelectPreamble`) declares `init`/`update`/`view`, plus the `build.zig.zon`
+fingerprint whose regeneration procedure is documented beside `luiBuildZon()` in
+`selfhost/main.zbr`. (The bootstrap's inline `.tui` arm and its `main.zig:1281` note
+are gone with `src/`, 2026-09-16.)
 
 **ALSO WORTH TRACKING, not adopting:** their recent Windows resize-detection and Kitty
 graphics fixes. This repo is Windows-primary, so that work is directly relevant — and it
@@ -457,9 +463,10 @@ flip — a residual guess becomes a "cannot infer type of X; annotate" compile e
 Systemic fix for the F7/BUG-162/BUG-168 class. Raises the priority of §24e.
 
 **Spike findings (2026-07-15) — scope decided [Sean: "flip the selfhost if it guesses"]:**
-The guess INSTRUMENTATION + gate are **bootstrap-only** (bootstrap sites:
-`src/CodeGen.zig` ~7503 list_dispatch, ~7562 len_count, ~16196 add; `noteInferenceGuess`
-+ `warn_inference_guess`). But the **selfhost guesses too** — `genBinary` add
+The guess INSTRUMENTATION + gate were **bootstrap-only** at the time (three sites in
+the bootstrap's `CodeGen.zig`: list_dispatch, len_count, add; `noteInferenceGuess`
++ `warn_inference_guess`; `--warn-inference-guess` is native since, and
+`check_inference_guess.sh` runs `zebra.exe`). But the **selfhost guesses too** — `genBinary` add
 (`selfhost/CodeGen.zbr:8818`) does `if isStringBoth(l/r) → _str_concat; else → numeric +`,
 so an un-inferable operand silently defaults to numeric `+` (the same F7/BUG-168
 fallback). `isPrimType` (just below `isStringBoth`) is the "proven-prim" check the gate

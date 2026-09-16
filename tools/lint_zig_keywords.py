@@ -2,9 +2,9 @@
 """lint_zig_keywords.py — THE KEYWORD-ORACLE GATE (BUG-280 defect 2).
 
 Codegen must escape a user identifier that is a ZIG keyword as `@"name"`, or the
-generated Zig does not parse.  The decision is made by `isZigKeyword`, which exists
-TWICE -- `src/CodeGen.zig` (bootstrap) and `selfhost/CgHelpers.zbr` -- and in both
-places it is a hand-written list.
+generated Zig does not parse.  The decision is made by `isZigKeyword` in
+`selfhost/CgHelpers.zbr`, a hand-written list.  (Until 2026-09-16 a second copy lived
+in `src/CodeGen.zig`, the bootstrap, and this checked both; bootstrap_sunset.md Step 3.)
 
 WHY THIS EXISTS, AND THE RECEIPT IS NOT THE OBVIOUS ONE.  On 2026-08-13 the list held
 37 entries against Zig 0.16's 46, and every one of the 12 missing words was ALSO a
@@ -112,15 +112,6 @@ def selfhost_keywords(text=None):
     return set(re.findall(r'name == "([^"]+)"', m.group(1)))
 
 
-def bootstrap_keywords(text=None):
-    if text is None:
-        text = io.open(REPO / "src" / "CodeGen.zig", encoding="utf-8").read()
-    m = re.search(r"fn isZigKeyword\(name: \[\]const u8\) bool \{(.*?)\n\}", text, re.S)
-    if not m:
-        return None
-    return set(re.findall(r'\.\{\s*"([^"]+)"\s*,\s*\{\}\s*\}', m.group(1)))
-
-
 # --------------------------------------------------------------------------- controls
 #
 # Both directions, on synthetic input, before every scan.  A gate that has stopped
@@ -135,17 +126,9 @@ def _synth_selfhost(words):
             + ' or '.join('name == "%s"' % w for w in words) + '\n')
 
 
-def _synth_bootstrap(words):
-    return ('fn isZigKeyword(name: []const u8) bool {\n'
-            + '    const kws = std.StaticStringMap(void).initComptime(&.{\n'
-            + '        ' + ' '.join('.{ "%s", {} },' % w for w in words) + '\n'
-            + '    });\n    return kws.get(name) != null;\n}\n')
-
-
 def selftest(oracle, verbose=False):
     dead = []
-    for label, extract, synth in (("selfhost", selfhost_keywords, _synth_selfhost),
-                                  ("bootstrap", bootstrap_keywords, _synth_bootstrap)):
+    for label, extract, synth in (("selfhost", selfhost_keywords, _synth_selfhost),):
         got_gapped = extract(synth(GAPPED))
         got_complete = extract(synth(COMPLETE))
         if got_gapped is None or got_complete is None:
@@ -176,8 +159,7 @@ def main():
         return 0
 
     rc = 0
-    for label, path, got in (("bootstrap", "src/CodeGen.zig", bootstrap_keywords()),
-                             ("selfhost", "selfhost/CgHelpers.zbr", selfhost_keywords())):
+    for label, path, got in (("selfhost", "selfhost/CgHelpers.zbr", selfhost_keywords()),):
         if got is None:
             fail_refuse("could not find isZigKeyword in %s — it moved or was renamed. "
                         "Fix this extractor; do not assume the compiler is clean." % path)
@@ -202,7 +184,7 @@ def main():
     print("              NOT checked: isZigPrimitiveName, the other half of zigSafeName —")
     print("              it is pattern-based for iN/uN and its fixed tail is a closed set.")
     if rc == 0:
-        print("[zig-keywords] both compilers cover all %d keywords of Zig %s"
+        print("[zig-keywords] isZigKeyword's entries cover all %d keywords of Zig %s"
               % (len(oracle), ver))
     return rc
 

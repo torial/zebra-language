@@ -76,6 +76,7 @@
 98	`name in some_list` always routed to `std.mem.indexOf(u8, …)` — FIXED
 100	✅ FIXED (side-effect of BUG-099, 2026-05-05)
 102	Selfhost typechecker `to!` force-unwrap audit — FIXED 2026-05-06
+103	TC `extractFromDecls`/`extractFromMembers` silently skip unknown decla
 105	`Color.red` infers to `.unknown` instead of `.named(Color)` — FIXED 20
 107	✅ VERIFIED 2026-05-18 — codegen never runs on a diagnosed tree
 109	✅ FIXED 2026-05-05 — `.reuse_address` flipped to `false`
@@ -127,6 +128,7 @@
 217	`CodeEditor.setText` handed Scintilla a non-NUL-terminated buffer → se
 219	`sys.run` DEADLOCKS when a child writes more than a pipe buffer to std
 222	stdlib calls accept TOO FEW arguments — `s.count()` compiles and panic
+279	`zig build test` is red on committed code, in no gate tier — ⚠ LEGS 1+
 324	a FAILED compile still left a runnable `.exe` in `--output-dir`, and i
 325	`--emit-zig` wrote DEPENDENCY `.zig` files into the source directory, 
 348	`zebra debug` could never find the bootstrap on Linux — `.exe` suffix 

@@ -7,7 +7,8 @@
 # way: new code that dispatches on an un-inferred type breaks the gate instead
 # of silently emitting a guess Zig may reject (or, worse, accept wrongly).
 #
-# Guess sites instrumented by --warn-inference-guess (see src/CodeGen.zig):
+# Guess sites instrumented by --warn-inference-guess (selfhost/CodeGen.zbr; the
+# bootstrap's src/CodeGen.zig had the same three until it was retired 2026-09-16):
 #   add          numeric `+` emitted without proving both operands numeric
 #   len_count    unknown receiver → `.items.len` ArrayList fallback
 #   list_dispatch unknown receiver + List-shaped method name → assume List
@@ -19,14 +20,14 @@
 # flip a previously-clean file). `--full` forces a complete scan (pre-release/CI).
 #
 # The language-level flip (a guess becomes a Zebra-level "cannot infer type of
-# X; annotate" compile error, in BOTH compilers) is the remaining piece; see
+# X; annotate" compile error) is the remaining piece; see
 # NEXT_STEPS §28a. Until it lands, this gate protects the repo.
 #
 # Usage: bash tools/check_inference_guess.sh [--full]   (run from repo root)
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-BOOT="zig-out/bin/zebra-bootstrap.exe"
+BOOT="zig-out/bin/zebra.exe"; [[ -x "$BOOT" ]] || BOOT="zig-out/bin/zebra"
 STAMP="zig-out/.inference_guess_stamp"
 [[ -x "$BOOT" ]] || { echo "check_inference_guess: $BOOT not built (run 'zig build')" >&2; exit 2; }
 

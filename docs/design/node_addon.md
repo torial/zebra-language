@@ -76,7 +76,10 @@ zig build-lib <intermediate>.zig -dynamic -lc \
 
 Everything is gated behind node-addon mode and is a no-op in every other mode.
 
-| Concern | Bootstrap (`src/`) | Selfhost (`selfhost/`) |
+(The Bootstrap column is history as of 2026-09-16 -- `src/` is gone, bootstrap_sunset.md
+Step 3; the Selfhost column is the code.)
+
+| Concern | Bootstrap (`src/`, retired) | Selfhost (`selfhost/`) |
 |---------|--------------------|------------------------|
 | `@node_export` AST flag | `ast.zig` `Modifiers.node_export` | `Ast.zbr` `Modifiers.is_node_export` |
 | Recognize the directive | `AstBuilder.zig` (`processTopDecl` + `collectMemberDecls`) | `Parser.zbr` (`PMethod`, both directive sites) + `AstBuilder.zbr` |

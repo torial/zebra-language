@@ -40,6 +40,6 @@ Written 2026-09-10 for the first public release, `0.9.0_zig0.16` (public 0.9 = i
 - macOS has never built Zebra; its job is `continue-on-error` until a smoke is green there.
 - `winget` / `scoop` / Homebrew manifests are an hour each once the first release exists;
   not started.
-- The `zebra-bootstrap` binary is shipped because `zig-out/bin` is copied whole. Nothing
-  in the shipped compiler calls it since 2026-09-15 (`--zig-backend` is gone); it leaves
-  the archive when `src/` does (docs/design/bootstrap_sunset.md Step 3).
+- The `zebra-bootstrap` binary shipped in rc1/rc2 because `zig-out/bin` is copied whole.
+  Gone from the build since 2026-09-16 (docs/design/bootstrap_sunset.md Step 3), so the
+  next release's archive is `zebra[.exe]`, the preamble + GUI sections, and sqlite3.c.

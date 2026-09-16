@@ -1,36 +1,27 @@
-# Zebra compiler fuzzer — differential + validity testing
+# Zebra compiler fuzzer — validity testing
 
-A grammar-directed, **type-aware** fuzzer that stress-tests the self-hosting
-equivalence guarantee: the Zig-implemented compiler (`zebra-bootstrap.exe`) and
-the Zebra-implemented compiler (`zebra.exe`) must be **functionally equivalent** —
-they should accept the same programs and produce programs that behave the same.
+A grammar-directed, **type-aware** fuzzer that stress-tests the compiler on programs
+nobody wrote: it must not crash or hang, and what it emits must be Zig that `zig`
+accepts (and, with `--run`, a program that runs).
 
-## Why
+**Until 2026-09-16 this was a DIFFERENTIAL fuzzer.** Two compilers existed -- the
+Zig-implemented bootstrap (`zebra-bootstrap.exe`, `src/`) and the Zebra-implemented
+selfhost (`zebra.exe`) -- and the oracle was that they agree: accept the same programs,
+emit Zig that `zig` judges the same way, produce the same stdout. That found BUG-159
+and BUG-160, equivalence bugs the byte-identical round-trip gate structurally cannot
+catch because they only manifest on user code shapes absent from the compiler's own
+sources. The bootstrap was retired (`docs/design/bootstrap_sunset.md`); the second
+implementation no longer exists, so the surviving oracle is validity, and the verdict
+names below keep their B-side spelling so `gramgen.py`'s classifier reads unchanged.
 
-Equivalence is otherwise verified only by the byte-identical round-trip gate
-(which runs on the compilers' *own* source) and a fixed hand-written corpus. This
-fuzzer generates arbitrary well-formed programs and checks both compilers agree —
-turning "tested on the examples we wrote" into "checked on random inputs, here are
-the minimized cases where they diverge." It has already found and fixed two real
-self-hosting equivalence bugs (BUG-159, BUG-160) that the round-trip gate
-structurally cannot catch, because they only manifest on user code shapes absent
-from the compiler's own sources.
+## The oracle — what is checked
 
-## The oracle — what "equivalent" means here
-
-We do **not** compare the two compilers' emitted Zig byte-for-byte. Both emitters
-prepend a large runtime preamble, and the two preambles differ cosmetically
-(ordering, comments, helper spelling) while being semantically identical — a
-byte-diff is all false positives. Instead the oracle is three layers, cheapest
-first:
-
-1. **Crash-freedom** — neither compiler may panic / error where the other
-   succeeds (`crash-A` / `crash-B`).
-2. **Validity** — the Zig each compiler emits must compile (`zig build-obj`).
-   If one compiler's emit is rejected by `zig` and the other's is accepted, that
-   is a divergence (`zig-diverge-A` / `zig-diverge-B`).
-3. **Runtime equivalence** (opt-in `--run`) — build an executable from each emit,
-   run both, and compare stdout (`run-divergence`).
+1. **Crash-freedom** — the compiler may not panic or hang (`crash-B` with a panic
+   marker or `TIMEOUT` in the detail; a plain refusal is the same verdict and is
+   expected for grammar-valid semantic garbage).
+2. **Validity** — the Zig it emits must compile (`zig build-obj`; `zig-fail`).
+3. **Runs** (opt-in `--run`) — build an executable from the emit and run it
+   (`run-hang`).
 
 ## Pieces
 
@@ -39,9 +30,10 @@ first:
   a program the front end accepted and zig refused (the user sees a Zig diagnostic about
   code they never wrote — BUG-336..339, 354). DAILY gate (`--gate`, fixed seeds, fails on
   any signature not in `leak_baseline.txt`; every baseline line must name a BUG). Its first
-  3,000 programs found BUG-360..366. `harness.py`'s bootstrap-vs-selfhost differential is
-  the older question and its selfhost leg predates runtime-module emission (it compiles
-  `m.zig` alone, without the `zebra_rt.zig` beside it) — prefer leakgen.
+  3,000 programs found BUG-360..366. `harness.py` is the older oracle and predates
+  runtime-module emission (it compiles `m.zig` alone, without the `zebra_rt.zig` beside
+  it) — prefer leakgen for the emit-validity question; `gramgen.py --gate` still drives
+  `harness.py` for the hang/crash question, emit only.
 
 - `gen.py` — type-aware generator. `gen(seed)` yields a well-formed (resolves +
   type-checks) Zebra program, only ever emitting an expression of the required
@@ -76,22 +68,20 @@ python fuzz/run.py --n 200 --shrink        # shrink findings to minimal repros
 python fuzz/gen.py 42                       # just print the program for seed 42
 ```
 
-Run from the repo root; needs `zig-out/bin/{zebra-bootstrap,zebra}.exe` built
+Run from the repo root; needs `zig-out/bin/zebra[.exe]` built
 (`zig build`) and `zig` on PATH (or `ZIG=/path/to/zig`). Set `PYTHONUTF8=1`.
 
 ## Verdict buckets
 
 | verdict | meaning |
 |---|---|
-| `ok` | both accept; emits compile (and, with `--run`, produce identical stdout) |
-| `zig-diverge-A` / `zig-diverge-B` | one compiler's emit is rejected by `zig`, the other's accepted — **an equivalence bug** (B = selfhost side) |
-| `run-divergence` | both emits compile but produce **different stdout** — an equivalence bug |
-| `crash-A` / `crash-B` | one compiler errored/panicked where the other didn't |
-| `both-zig-fail` | both emit Zig that `zig` rejects — a **shared** robustness gap, not an equivalence bug |
-| `both-reject` | both refuse the program (generator produced invalid Zebra) |
+| `ok` | accepted; the emit compiles (and, with `--run`, the program ran) |
+| `crash-B` | the compiler refused, panicked or hung (`gramgen` splits these by the detail text: TIMEOUT → HANG, panic marker → CRASH, else a refusal) |
+| `zig-fail` | the emit is Zig that `zig` rejects — a robustness gap (leakgen's question, with a baseline) |
+| `run-hang` | the built program did not finish |
 
-Divergences and crashes are the equivalence findings; `both-zig-fail` flags shared
-compiler gaps; `both-reject` is a generator-tuning signal.
+(`crash-A`, `zig-diverge-A/B`, `run-divergence`, `both-zig-fail`, `both-reject` were the
+differential verdicts and can no longer occur.)
 
 ## Findings
 

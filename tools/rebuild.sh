@@ -17,14 +17,14 @@
 #      reasons unrelated to your change.
 #   3. An orphaned `zebra.exe`/`zig.exe` from a timed-out run keeps a file lock
 #      on zig-out/bin, and the build dies with `AccessDenied` on compiler_rt.dll.
-#   4. The regen runs `zebra.exe` (N-1 since 2026-08-30). The BOOTSTRAP still EMBEDS
-#      the preamble files at
-#      its own build time (build.zig:37-59, `b.addOptions`). So after a preamble
-#      edit, regenerating with the existing binary emits the OLD runtime — and
-#      every gate downstream then measures it. Observed 2026-07-28: a preamble
-#      edit + rebuild.sh reported OK and produced zero changes to selfhost/*.zig.
-#      Fixed below by rebuilding the bootstrap BEFORE the regen when a preamble
-#      file is newer than the binary.
+#   4. (RETIRED 2026-09-16 with the bootstrap, sunset Step 3.) The Zig-implemented
+#      bootstrap EMBEDDED the preamble files at its own build time, so after a
+#      preamble edit a regen with the existing binary emitted the OLD runtime
+#      (observed 2026-07-28, and again 2026-08-26 for a src/*.zig edit). The
+#      selfhost reads selfhost/stdlib_preamble.zig FROM DISK at codegen time,
+#      repo-relative first, so the regen always sees the current preamble and
+#      there is no binary to be stale against. The guard, and
+#      tools/rebuild_guard_check.sh that falsified it, are in tools/attic/.
 #
 # Encoding the sequence once beats remembering it every time.
 #
@@ -51,9 +51,7 @@
 # NOTE: a `selfhost/stdlib_preamble.zig` edit needs the FULL sequence too. The
 # preamble is inlined into each emitted program at emit time, so the compiler
 # itself only picks up a preamble change after regeneration — this is exactly
-# what made BUG-219's first fix appear not to work. Footgun 4 above is the same
-# trap one level further out: there, regeneration was skipped; here, it ran
-# against a binary that predated the edit.
+# what made BUG-219's first fix appear not to work.
 #
 # What this does NOT do: run any gate. Use tools/gates.sh for that.
 
@@ -68,8 +66,6 @@ cd "$REPO"
 # (2026-09-08: the literal `.exe` made a SUCCESSFUL Linux build report "missing".)
 ZEXE=zig-out/bin/zebra.exe
 [[ "$(uname -s)" == Linux ]] && ZEXE=zig-out/bin/zebra
-ZBOOT=zig-out/bin/zebra-bootstrap.exe
-[[ "$(uname -s)" == Linux ]] && ZBOOT=zig-out/bin/zebra-bootstrap
 
 REGEN=1
 MODULES=""
@@ -131,32 +127,6 @@ step "clearing orphaned processes (this tree only)"
 bash "$SCRIPT_DIR/kill_orphans.sh" || true
 
 if [[ $REGEN -eq 1 ]]; then
-    # Footgun 4: the regen below runs zebra-bootstrap.exe, and build.zig EMBEDS
-    # the preamble files into that binary at build time. A preamble edit is
-    # therefore invisible to the regen until the bootstrap itself is rebuilt, and
-    # the regen silently emits the previous runtime. Only pre-build when a
-    # preamble file is actually newer than the binary — a .zbr-only edit (the
-    # common case) pays nothing, and a tree whose selfhost/*.zig is currently
-    # broken is not blocked from being regenerated back to health.
-    #
-    # THE LIST WAS TOO NARROW UNTIL 2026-08-26. The preamble files are EMBEDDED at build
-    # time; everything in src/ is COMPILED INTO the binary. Both make the bootstrap stale
-    # in exactly the same way, and only the first was covered. Adding File.tryDelete to
-    # src/TypeChecker.zig and then using it from selfhost/main.zbr regenerated against a
-    # bootstrap 35 minutes older than the change, and the regen failed with
-    # `expected 'bool', got 'void'` -- a type error about the very feature being added,
-    # which reads as "your new code is wrong" rather than "your compiler is stale".
-    # That is the reassuring-but-wrong reading again, so the fix belongs here rather than
-    # in a paragraph asking people to remember.
-    BOOT="$ZBOOT"
-    for f in selfhost/stdlib_preamble.zig selfhost/napi_preamble.zig src/*.zig build.zig; do
-        if [[ -f "$f" && ( ! -f "$BOOT" || "$f" -nt "$BOOT" ) ]]; then
-            step "rebuilding the bootstrap first ($f is newer; it is embedded at build time)"
-            zbuild_or_fail "zig build failed — the bootstrap still embeds the OLD $f, so regenerating now would emit a stale runtime"
-            break
-        fi
-    done
-
     if [[ -n "$MODULES" ]]; then
         # ---- single-module regen -------------------------------------------------
         # Extracted from tools/mutation_check.py's regen(), which has run this path
@@ -280,9 +250,6 @@ fi
 # After a SUCCESSFUL build the binaries correspond to the current sources by construction,
 # so stamping them is not faking the check — it is recording what the build just
 # established, in the medium the check reads. Only ever done on the success path.
-if [[ -x "$ZBOOT" ]]; then
-    touch "$ZBOOT"
-fi
 if [[ -x "$ZEXE" ]]; then
     touch "$ZEXE"
 fi

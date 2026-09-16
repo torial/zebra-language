@@ -196,7 +196,7 @@ Two new builtin methods added directly to the `sys` and `File` namespaces
 `sys.sleep` enables polling loops (e.g. `tools/watch.zbr`).
 `File.modtime` enables change detection without shelling out to `stat`.
 
-Both implemented in `src/CodeGen.zig` + `selfhost/CodeGen.zbr`.
+Both implemented in `selfhost/CodeGen.zbr` (and, until 2026-09-16, the bootstrap).
 
 ---
 

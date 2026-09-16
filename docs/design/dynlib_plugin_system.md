@@ -7,11 +7,11 @@
 
 Four components were added together to make the plugin system work:
 
-1. **Interface vtable construction** — Both `src/CodeGen.zig` and `selfhost/CodeGen.zbr` now emit C-compatible vtable structs and shim functions when a class declares `implements IFaceName`. This was the enabling primitive; DynLib is just one consumer.
+1. **Interface vtable construction** — Both `src/CodeGen.zig` and `selfhost/CodeGen.zbr` now emit C-compatible vtable structs and shim functions when a class declares `implements IFaceName`. This was the enabling primitive; DynLib is just one consumer. <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 
 2. **Interface coercion at assignment and return** — The codegens detect when a class-constructor expression is being assigned to an interface-typed variable (or returned from an interface-pointer-returning method) and emit the fat-pointer initialization instead of the normal struct init.
 
-3. **DynLib stdlib** — `_DynLib` struct, `_dynlib_open`, and `_dynlib_close` helpers in `selfhost/stdlib_preamble.zig`; `DynLib` registered in `src/Builtins.zig`; `DynLib.open` / `.lookup` / `.close` dispatch in both codegens.
+3. **DynLib stdlib** — `_DynLib` struct, `_dynlib_open`, and `_dynlib_close` helpers in `selfhost/stdlib_preamble.zig`; `DynLib` registered in `src/Builtins.zig`; `DynLib.open` / `.lookup` / `.close` dispatch in both codegens. <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3) -->
 
 4. **Demo + test** — `examples/hello_plugin.zbr`, `examples/plugin_host.zbr`, and `test/dynlib_iface_test.zbr`.
 
@@ -39,7 +39,7 @@ The shim bridges the vtable's `fn(ptr: *anyopaque, ...)` signature (required for
 
 `DynLib.open(...)` returns `*_DynLib` at the Zig level. The TypeChecker doesn't know about `DynLib` — tracking which local variables hold DynLib handles is done in codegen via a `dynlib_vars: StrSet` (selfhost) / `*std.StringHashMap(void)` (bootstrap) that is populated when a `var x = DynLib.open(...)` statement is compiled. This lets instance method dispatch (`lib.lookup(...)`, `lib.close()`) be recognized without threading DynLib type info through the TC.
 
-The tradeoff: the heuristic breaks if `DynLib.open` is called in a non-trivial expression (e.g., returned from a helper and assigned to a var). For the current use case this is fine; a proper fix would add `DynLib` as a known type in `src/TypeChecker.zig`.
+The tradeoff: the heuristic breaks if `DynLib.open` is called in a non-trivial expression (e.g., returned from a helper and assigned to a var). For the current use case this is fine; a proper fix would add `DynLib` as a known type in `src/TypeChecker.zig`. <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/TypeChecker.zbr -->
 
 ### `lookup` codegen
 
@@ -72,9 +72,9 @@ This isn't in CI because it requires platform-specific shared-library build flag
 
 | File | Change |
 |------|--------|
-| `src/CodeGen.zig` | Vtable shim emission; interface coercion (var + return); DynLib dispatch; `dynlib_vars` tracking; `module` field on Generator |
-| `src/Builtins.zig` | `DynLib` registered as known stdlib name |
-| `selfhost/CodeGen.zbr` | Mirrors all src/CodeGen.zig changes |
+| `src/CodeGen.zig` | Vtable shim emission; interface coercion (var + return); DynLib dispatch; `dynlib_vars` tracking; `module` field on Generator | <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
+| `src/Builtins.zig` | `DynLib` registered as known stdlib name | <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3) -->
+| `selfhost/CodeGen.zbr` | Mirrors all src/CodeGen.zig changes | <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 | `selfhost/stdlib_preamble.zig` | `_DynLib` struct + `_dynlib_open` + `_dynlib_close` helpers |
 | `selfhost/Resolver.zbr` | `DynLib` added to `isBuiltin()` |
 | `test/dynlib_iface_test.zbr` | Integration test: vtable dispatch without DLL loading |

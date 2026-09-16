@@ -14,17 +14,24 @@ surface). [`../tools/PROBES.md`](../tools/PROBES.md), [`../fuzz/README.md`](../f
 
 ## Architecture overview
 
-Two compilers exist and must stay in sync:
+One compiler, written in Zebra:
 
 | Binary | Source | Role |
 |--------|--------|------|
-| `zig-out/bin/zebra-bootstrap.exe` | `src/*.zig` | Zig-implemented; the "trusted" reference |
-| `zig-out/bin/zebra.exe` | `selfhost/*.zig` (generated from `selfhost/*.zbr`) | Selfhost; the primary compiler |
+| `zig-out/bin/zebra.exe` | `selfhost/*.zig` (generated from `selfhost/*.zbr`) | the compiler |
 
-The selfhost compiler is written *in Zebra* (`.zbr` files) and compiled to
-Zig (`.zig` files) by the bootstrap compiler.  The `.zig` files are checked
-into version control so the repo is always buildable without a pre-existing
-selfhost binary.
+The compiler is written *in Zebra* (`.zbr` files) and compiled to Zig (`.zig`
+files) by the previous generation of itself — the `zebra.exe` built from the
+COMMITTED `.zig` (the N-1 regen authority, since 2026-08-30). The `.zig` files
+are checked into version control so the repo is always buildable with nothing
+but `zig`; `tools/regen_recover.sh` rebuilds a compiler from them for any commit
+in history when the working one is broken.
+
+Until 2026-09-16 a second compiler existed — the Zig-implemented bootstrap in
+`src/`, `zebra-bootstrap.exe` — and this document described keeping the two in
+sync. It was retired in `docs/design/bootstrap_sunset.md`; the "both compilers"
+sections below are gone with it, and its counterpart files (one `.zig` per stage
+under `src/`) are only in `git log`.
 
 ---
 
@@ -33,7 +40,7 @@ selfhost binary.
 ```bash
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"   # add Zig to PATH (Git Bash)
 
-zig build                        # build both binaries
+zig build                        # build zebra.exe
 zig build test                   # full test suite + selfhost smoke tests
 zig build update-selfhost        # re-emit selfhost/*.zig from *.zbr sources
 bash tools/bootstrap_check.sh   # 5-step round-trip identity check
@@ -45,27 +52,14 @@ bash tools/bootstrap_check.sh   # 5-step round-trip identity check
 
 ## The edit-compile-test cycle
 
-### Feature in bootstrap only (`src/*.zig`)
-
-1. Edit the relevant file(s) in `src/`.
-2. `zig build test` — full suite.
-3. Update `selfhost/*.zbr` for parity (or file a gap note in `docs/SELFHOST_JOURNAL.md`).
-4. `zig build update-selfhost` — regenerate `selfhost/*.zig`.
-5. `zig build test` again to confirm the selfhost side is green.
-6. `bash tools/bootstrap_check.sh` — 5-step round-trip must pass.
-
-### Feature in selfhost only (`selfhost/*.zbr`)
+### A compiler change (`selfhost/*.zbr`)
 
 1. Edit the relevant `selfhost/*.zbr` file(s).
-2. `zig build update-selfhost` — bootstrap compiles the `.zbr` → `.zig`.
-   This is the step that validates your Zebra code actually compiles.
-3. `zig build test` — full suite.
-4. `bash tools/bootstrap_check.sh` — round-trip check.
-
-### Both compilers (the common case)
-
-Do both sequences above.  If you change `src/Parser.zig`, mirror it in
-`selfhost/Parser.zbr`; run `update-selfhost` after each `.zbr` change.
+2. `bash tools/rebuild.sh` — regenerate `selfhost/*.zig` with the N-1 compiler
+   and build (`--module CodeGen` for the ~10 s inner loop). This is the step
+   that validates your Zebra code actually compiles.
+3. `bash tools/gates.sh` — the QUICK tier (smoke + round-trip + the static gates).
+4. `bash tools/gates.sh --full` before committing a codegen change.
 
 ---
 
@@ -74,7 +68,7 @@ Do both sequences above.  If you change `src/Parser.zig`, mirror it in
 `tools/bootstrap_check.sh` verifies the selfhost compiler can reproduce
 its own source code byte-for-byte:
 
-1. **Regenerate** — bootstrap emits fresh `.zig` files into `/tmp/bs-zig`.
+1. **Regenerate** — the committed compiler emits fresh `.zig` files into `/tmp/bs-zig`.
 2. **Build A** — compile selfhost-A from those fresh `.zig` files.
 3. **Re-emit** — selfhost-A emits its OWN source (selfhost compiles selfhost).
 4. **Build B** — compile selfhost-B from selfhost-A's output.
@@ -224,7 +218,8 @@ The rule: `if x as n` is safe for plain optionals (`str?`, `int?`,
 
 ### `TypeRef?` fields behave like `^T?` in dep-mode
 
-`TypeRef` is a union type.  The bootstrap TypeChecker incorrectly resolves
+`TypeRef` is a union type.  The TypeChecker (a bootstrap-era gap that the
+selfhost inherited) incorrectly resolves
 `TypeRef?` field accesses as non-optional in certain dep-mode contexts —
 `if x as n` then reports `'if x as n' requires an optional type, got
 'TypeRef'`.
@@ -251,12 +246,14 @@ before starting another.
 
 ---
 
-## Filing a selfhost gap vs fixing in place
+## The equivalence rule, after the port
 
-If a bootstrap feature is hard to port to the selfhost compiler right now,
-file a gap note in `docs/SELFHOST_JOURNAL.md` instead of dropping the feature.
-The equivalence rule: **the selfhost and bootstrap compilers must be
-functionally equivalent**.  Never drop a feature in the selfhost port.
+While the bootstrap existed the rule was "the selfhost must be functionally
+equivalent to the Zig compiler in `src/`", and a feature too hard to port was
+filed as a gap in `docs/SELFHOST_JOURNAL.md` rather than dropped. The port is
+complete and the reference is gone; the rule is now **equivalence with the
+previous release** — the N-1 anchor `tools/divergence_check.sh` compares
+against — and a feature that stops working is a `REGRESSION` there, not a gap.
 
 ---
 
@@ -310,21 +307,20 @@ Each `selfhost/*.zbr` file corresponds to one compiler phase:
 | `Checker.zbr` | — | `zebra check` dead-code detector (optional tool) |
 | `stdlib_preamble.zig` | — | Hand-written Zig runtime included in every compiled output |
 
-The bootstrap (`src/`) counterparts follow the same pipeline:
-`Tokenizer.zig` → `Parser.zig` → `Resolver.zig` → `TypeChecker.zig`
-→ `CodeGen.zig` → `main.zig`.
+(The bootstrap's `src/` counterparts followed the same pipeline, one `.zig`
+per stage; retired 2026-09-16.)
 
 ## Which file to edit
 
 | Symptom | Start here |
 |---------|------------|
-| Parse error or wrong AST | `src/Parser.zig` (bootstrap), `selfhost/Parser.zbr` |
-| Resolver error / binding gap | `src/Resolver.zig`, `selfhost/Resolver.zbr` |
-| Type mismatch / inference gap | `src/TypeChecker.zig`, `selfhost/TypeChecker.zbr` |
-| Wrong Zig output / codegen bug | `src/CodeGen.zig`, `selfhost/CodeGen.zbr` |
-| Wrong helper emit | `selfhost/CgHelpers.zbr`, `src/CodeGen.zig` |
-| New AST node type | `src/Ast.zig`, `selfhost/Ast.zbr`, then all phases |
-| New token / keyword | `src/Tokenizer.zig`, `selfhost/Lexer.zbr`, then Parser |
+| Parse error or wrong AST | `selfhost/Parser.zbr` |
+| Resolver error / binding gap | `selfhost/Resolver.zbr` |
+| Type mismatch / inference gap | `selfhost/TypeChecker.zbr` |
+| Wrong Zig output / codegen bug | `selfhost/CodeGen.zbr` |
+| Wrong helper emit | `selfhost/CgHelpers.zbr` |
+| New AST node type | `selfhost/Ast.zbr`, then all phases |
+| New token / keyword | `selfhost/Token.zbr` (the table), `selfhost/Lexer.zbr`, then Parser |
 | New stdlib function | `selfhost/stdlib_preamble.zig` + codegen dispatch |
 | Dead-code checker gap | `selfhost/Checker.zbr` |
 
@@ -378,10 +374,9 @@ if map.fetch(key) as val   # single lookup
 ## Committing selfhost changes
 
 1. Edit `.zbr` source(s).
-2. `zig build update-selfhost` — confirms `.zbr` compiles and updates `.zig`.
-3. `zig build test` — full suite green.
-4. `bash tools/bootstrap_check.sh` — round-trip clean.
-5. Commit BOTH the `.zbr` and `.zig` files together.
+2. `bash tools/rebuild.sh` — confirms `.zbr` compiles and updates `.zig`.
+3. `bash tools/gates.sh` (or `--full`) — green.
+4. Commit BOTH the `.zbr` and `.zig` files together.
 
 Never commit `.zig` without the corresponding `.zbr` change — the files
 must stay in sync or the next `update-selfhost` will diverge.

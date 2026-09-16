@@ -1,9 +1,10 @@
 <!-- doc-status: design -->
 # Bootstrap sunset — retiring `src/` and `zebra-bootstrap`
 
-**Status:** PLAN, decided in principle (Sean, 2026-09-15: "I agree re a). Let's move to no
-bootstrap. Worth the effort imo"). Each step below is gated and lands as its own commit;
-nothing is deleted until the step that replaces it is green.
+**Status:** DONE through Step 3 (2026-09-16); Step 4 open. Decided in principle by Sean,
+2026-09-15 ("I agree re a). Let's move to no bootstrap. Worth the effort imo"). Each step
+below was gated and landed as its own commit; nothing was deleted until the step that
+replaced it was green.
 **Supersedes:** `docs/design/regen_authority_decision.md` (2026-07-22, "keep the bootstrap
 as the independent regen authority") — overtaken by events on 2026-08-30, when
 `tools/rebuild.sh` and `tools/bootstrap_check.sh` Step 1 switched the regeneration of
@@ -28,8 +29,8 @@ consulted by:
 | `smoke_run_bootstrap` in `selfhost_smoke.sh` (4 fixtures) | `build_smoke`/`build_declarative` run under the bootstrap because of a *stale* comment ("selfhost parity for Build is pending" — `zebra build` was ported 2026-09-04 and `test/build_requires_test.zbr` runs the Build API through the selfhost today); `bug124`/`bug250` pin bugs *in the bootstrap's own codegen* | move the two Build fixtures to `smoke_run`; delete the two bootstrap-only pins (their bugs die with the code they pin) |
 | `compile_check.sh --bootstrap`, `divergence_check.sh`, `diagnostic_parity.py`, `mutation_check.py`, `scaling_probe.py`, `triage_diagnostic_candidates.py` | compare the two compilers | **retire** the comparison modes; `mutation_check` keeps its selfhost-only mode |
 | `lint_interp_escape.py` | a bootstrap-only hazard | **retire** (already noted as "retire with bootstrap") |
-| `zbr_vocab.py` / `lint_reserved_words.py` | read the keyword table from `src/Token.zig` (and `zbr_vocab` cross-checks it against `selfhost/Token.zbr`) | **repoint** to `selfhost/Token.zbr` only; `surface_inventory.py` and `keyword_coverage` inherit the change |
-| `zig-test` gate (131 tests: `src/*.zig` unit tests + `test/main.zig` integration) | tests of the *bootstrap's* tokenizer/parser/printer | **retire** the gate with the code; the selfhost's own tests are `.zbr` fixtures in the smoke (`selfhost/ast_test.zbr`, `typechecker_test.zbr`, …), which stay |
+| `zbr_vocab.py` / `lint_reserved_words.py` | read the keyword table from `src/Token.zig` (and `zbr_vocab` cross-checks it against `selfhost/Token.zbr`) | **repoint** to `selfhost/Token.zbr` only; `surface_inventory.py` and `keyword_coverage` inherit the change | <!-- doc-lint-ok: the retired file, named as the record of what was repointed -->
+| `zig-test` gate (131 tests: `src/*.zig` unit tests + `test/main.zig` integration) | tests of the *bootstrap's* tokenizer/parser/printer | **retire** the gate with the code; the selfhost's own tests are `.zbr` fixtures in the smoke (`selfhost/ast_test.zbr`, `typechecker_test.zbr`, …), which stay | <!-- doc-lint-ok: the retired files, named as the record of what was retired -->
 | `doctor.sh` / `rebuild.sh` footgun 4 / `rebuild_guard_check.sh` | "preamble newer than the bootstrap that embeds it" | the *selfhost* embeds the preamble the same way (`build.zig` `preamble_opts` is shared), so the guard survives with `zebra.exe` as the binary it compares against — mostly a rename |
 | `n1_reference.sh` | builds the N-1 anchor from a tag; no bootstrap dependency of its own | unchanged |
 | `release.yml`, `install/` | ship `zebra.exe` only already | unchanged |
@@ -94,17 +95,33 @@ bootstrap legs removed; `zig-test` gate retired. `tier_selfcheck.sh` after every
 `gates.sh` edit. Gate counts change (static/fast/quick/full/daily) — each oracle in
 `CLAUDE.md`'s table updated in the same commit.
 
-**Step 3 — delete `src/` and the `zebra-bootstrap` build target.** `build.zig` loses
-`bootstrap_exe`, the `earley`/module graph that only it used, `test/main.zig`,
-`test/*.zig` hand-written integration tests. `rebuild.sh`/`doctor.sh` rename their
-"bootstrap" guard to the selfhost binary. `CLAUDE.md` "Self-hosting" section rewritten.
-`regen_authority_decision.md` gets a superseded banner pointing here. FULL gate, then a
-DAILY run.
+**Step 3 — delete `src/` and the `zebra-bootstrap` build target.** DONE 2026-09-16.
+`src/` (16 files, 37,549 lines) and the Zig integration harness `test/main.zig` deleted; `build.zig` loses <!-- doc-lint-ok: the deleted file, named as the record -->
+`bootstrap_exe`, the `earley` dependency (`build.zig.zon` has none now), the per-file
+module graph, the `unit`/`integration` test binaries and `test-zig`/`grammar` steps;
+`update-selfhost` depends on the install step. Three gates retired with their oracles
+(`zig-test`, `grammar-export` — `grammar.txt` is FROZEN at the last export and
+`gramgen` still reads it — and `decl-exhaustive`): tiers are 14 static / 28 fast / 30
+quick / 38 full / 46 daily. `rebuild.sh`'s footgun-4 guard is GONE rather than renamed:
+the selfhost reads the preamble from disk at codegen time, so there is no embedding
+binary to be stale against (`rebuild_guard_check.sh` to the attic with it, and
+`gate_selfcheck`'s doctor leg). `fuzz/harness.py` is a validity oracle rather than a
+differential one; `extern_check.sh`, `check_inference_guess.sh`, `lint_zig_keywords.py`,
+`escape_hatches_check.sh` lost their bootstrap legs; `unreachable_runtime.sh` and
+`check_explicit_try.sh` retired. `lint_reserved_words.py` learned that the selfhost
+parser reaches most keywords BY TEXT (`.textIs("and")`) — with the Earley table gone it
+would have called 43 live keywords unreachable — and its one true finding was `has`,
+which only the bootstrap's grammar ever accepted: freed (surface 69 → 68 keywords).
+`CLAUDE.md` "Self-hosting" rewritten; `regen_authority_decision.md` carries the
+superseded banner. `bug_fixture_baseline.txt` grew by two -- BUG-103 and BUG-279 were
+pinned by the retired gates (`decl-exhaustive`, `zig-test`) and their subject is the
+deleted code, so no fixture can exist; the baseline records that rather than a gate
+pretending otherwise. FULL gate, then a DAILY run.
 
-**Step 4 — the dead keyword machinery goes with it.** `StmtDefer` grammar rules,
-`AstBuilder`/`CodeGen` `genDefer`, and `abstract` (`keyword_coverage_baseline.txt`)
-were kept only because the bootstrap's tests referenced them. They leave in Step 3's
-commit or the one after.
+**Step 4 — the dead keyword machinery goes with it.** `StmtDefer`, `guard`, `assert_*`
+and `same_` AST/AstBuilder/CodeGen paths, the `kw_*` variants for every freed word
+(`Token.zbr` keeps them as dead enum members until this step), and `abstract` were kept
+only because the bootstrap's tests referenced them. They leave in the commit after Step 3.
 
 Order is not negotiable: 0 before 3. Steps 1 and 2 can land in either order and are
 each a single quick-gate commit.

@@ -41,17 +41,17 @@ So the blockage reported against `zebra-sprocket` is real: there is no route fro
 **Two of the three pieces already exist**, which is what makes this tractable:
 
 - **C-ABI-sized types.** `int8/16/32/64`, `uint8/16/32/64`, `float32/64` all exist and map
-  to `i32`, `u8`, … (`src/Builtins.zig:201+`). `int32` is `c_int` on every platform Zebra
+  to `i32`, `u8`, … (`src/Builtins.zig:201+`). `int32` is `c_int` on every platform Zebra <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3) -->
   targets, so the ABI is expressible without new syntax.
 - **Linking.** `BuildTarget.linkLib` exists in the Build stdlib
-  (`src/CodeGen.zig:10059` → `_build_target_link_lib`), reachable from `build.zbr`.
+  (`src/CodeGen.zig:10059` → `_build_target_link_lib`), reachable from `build.zbr`. <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
   *Caveat: `BuildTarget` is one of the seven names with no corpus coverage at all
   (see the 0.9-beta checklist §E), so it is declared but unexercised — confirm it works
   before depending on it.*
 - **Missing: the declaration itself.** That is this document.
 
 `@cImport(@cInclude("x.h"))` also exists for C deps that ship a header
-(`src/CodeGen.zig:4908`). `extern` is for the case with no header, or where you want a
+(`src/CodeGen.zig:4908`). `extern` is for the case with no header, or where you want a <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 single symbol without pulling a translation unit.
 
 ---
@@ -113,7 +113,7 @@ existing call correct.
 
 ### 3.3 Bootstrap
 
-5. `src/CodeGen.zig:6141` is the `unreachable; // abstract` site. An extern method must
+5. `src/CodeGen.zig:6141` is the `unreachable; // abstract` site. An extern method must <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
    take a different branch and emit the declaration. **This is not optional politeness** —
    the bootstrap is the regen authority *and* the `--gui-backend` path, and leaving it
    emitting UB for a now-supported keyword is worse than the current state, because the
@@ -135,7 +135,7 @@ existing call correct.
 9. QUICKSTART §23 currently presents `zig"…"` as *the* escape hatch. It needs an `extern`
    section stating the ABI rule (`int32`, not `int`) and pointing at `BuildTarget.linkLib`.
 10. `grammar.txt` needs no edit — it is generated, and `kw_extern` is already in the rule
-    table at `src/ZebraGrammar.zig:348,351,370`. This implementation makes the document
+    table at `src/ZebraGrammar.zig:348,351,370`. This implementation makes the document <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3) -->
     true rather than requiring it to change.
 
 ---
@@ -238,7 +238,7 @@ design from than "FFI is broken".
 
 **Known remaining friction, not yet chased.** Zebra *has* automatic C-source linking —
 `use foo` where `foo.c` exists routes it into `c_sources` and on to `zig build-exe`
-(`src/main.zig:446-453`) — but a plain `use zlib_probe` alongside the probe resolved to
+(`src/main.zig:446-453`) — but a plain `use zlib_probe` alongside the probe resolved to <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/main.zbr -->
 `zlib_probe.zig` and failed with `unable to load 'zlib_probe.zig': FileNotFound`. So the
 manual two-step (emit, then `zig build-exe p.zig lib.c`) works while the one-command path
 does not, at least from a temp emit directory. **Root cause found the same day and filed as BUG-260:** the selfhost has NO
@@ -311,7 +311,7 @@ not have passed while BUG-261 existed. Registering it retired one of
 `@import("<dep>.zig")._error_ctx` per `use` for cross-module error propagation, and a C dep
 has neither. Fixing only the first left the feature working in the default emit shape and
 broken under `--no-runtime-module`, caught by **`compile_check-inline`** and by nothing
-else in the FULL tier. The bootstrap had the guard already (`src/CodeGen.zig:2821`).
+else in the FULL tier. The bootstrap had the guard already (`src/CodeGen.zig:2821`). <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 
 If a third site that `@import`s a dependency is ever added, it needs the same skip.
 

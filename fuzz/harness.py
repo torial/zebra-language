@@ -1,16 +1,22 @@
 #!/usr/bin/env python
-"""Differential + validity oracle for a single generated Zebra program.
+"""Validity oracle for a single generated Zebra program.
 
 For each program:
-  1. Emit Zig via the Zig-implemented compiler  (zebra-bootstrap.exe)
-  2. Emit Zig via the Zebra-implemented compiler (zebra.exe, the selfhost)
-  3. Classify:
-       crash-A / crash-B     — one compiler errored/panicked, exposing a bug
-       emit-divergence       — both emitted, but the Zig differs (THE key finding:
-                               a self-hosting equivalence bug)
-       zig-fail              — identical emit that `zig` rejects (usually a
-                               generator-quality issue; bucketed separately)
-       ok                    — identical emit that `zig` accepts
+  1. Emit Zig via zebra.exe.
+  2. Classify:
+       crash-B               — the compiler errored/panicked (a TIMEOUT in the detail
+                               is a HANG; a panic marker is a CRASH; anything else is
+                               a refusal, which is expected for grammar-valid garbage)
+       zig-fail              — an emit that `zig` rejects (usually a generator-quality
+                               issue; bucketed separately)
+       ok                    — an emit that `zig` accepts (and runs, with run=True)
+
+Until 2026-09-16 this was a DIFFERENTIAL oracle: the same program went through the
+Zig-implemented bootstrap (zebra-bootstrap.exe) as compiler A and the selfhost as
+compiler B, and the verdicts crash-A / emit-divergence / zig-diverge-A / run-divergence
+named the two disagreeing. The bootstrap was retired (docs/design/bootstrap_sunset.md
+Step 3); the B-side verdict names are kept so fuzz/gramgen.py's classifier reads the
+same, and the A-side ones can no longer occur.
 
 Runs from the zebra-language root so the emitted-Zig preamble path resolves.
 Deterministic: same program in, same verdict out.
@@ -19,8 +25,7 @@ import os, subprocess, tempfile, hashlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-BOOT = ROOT / 'zig-out' / 'bin' / 'zebra-bootstrap.exe'
-SELF = ROOT / 'zig-out' / 'bin' / 'zebra.exe'
+SELF = ROOT / 'zig-out' / 'bin' / ('zebra.exe' if os.name == 'nt' else 'zebra')
 ZIG  = os.environ.get('ZIG', r'C:\Users\Sean\.zvm\bin\zig.exe')
 WORK = Path(os.environ.get('FUZZ_WORK', str(ROOT / '.fuzz_tmp')))
 WORK.mkdir(exist_ok=True)
@@ -31,16 +36,16 @@ class Result:
     def __init__(self, verdict, detail='', a='', b=''):
         self.verdict = verdict      # ok | emit-divergence | crash-A | crash-B | both-crash | zig-fail
         self.detail = detail
-        self.a = a                  # emitted zig (bootstrap)
-        self.b = b                  # emitted zig (selfhost)
+        self.a = a                  # unused since 2026-09-16 (was the bootstrap's emit)
+        self.b = b                  # emitted zig
     def __repr__(self):
         return f'<{self.verdict}: {self.detail[:60]}>'
 
 
 def _emit(compiler, zbr_path, out_dir, mode):
-    """Emit Zig via `compiler`. The two compilers differ in emit CLI:
-       mode='stdout'  (bootstrap): `--emit-zig zbr`           → Zig on stdout
-       mode='outdir'  (selfhost) : `--emit-zig --output-dir D zbr` → D/<stem>.zig
+    """Emit Zig via `compiler`. mode='outdir': `--emit-zig --output-dir D zbr` →
+    D/<stem>.zig. (mode='stdout' was the bootstrap's shape; a stdout redirect of the
+    selfhost writes the ROOT only, BUG-317, so never use it here.)
     Return (ok, zig_text, err)."""
     if mode == 'stdout':
         argv = [str(compiler), '--emit-zig', str(zbr_path)]
@@ -93,39 +98,25 @@ def _run(exe):
 
 
 def check(zbr_src, tag='t', zig_check=True, run=False):
-    # The two compilers embed cosmetically-different preambles, so a byte-identical
-    # *emit* comparison is confounded.  The real equivalence checks are: neither
-    # compiler crashes; each emit compiles with `zig`; and (when zig_check) both
-    # built programs produce the same output — a run-divergence is a semantic
-    # self-hosting bug immune to emit-format cosmetics.
+    # The equivalence checks that survive the bootstrap sunset: the compiler does not
+    # crash or hang; the emit compiles with `zig`; and (run=True) the built program
+    # runs. `b` carries the emit so callers that diff it still work.
     h = hashlib.sha1(zbr_src.encode()).hexdigest()[:10]
     zbr = WORK / f'{tag}_{h}.zbr'
     zbr.write_text(zbr_src, encoding='utf-8', newline='\n')
-    ao, az, aerr = _emit(BOOT, zbr, WORK / f'a_{h}', 'stdout')
     bo, bz, berr = _emit(SELF, zbr, WORK / f'b_{h}', 'outdir')
-    if not ao and not bo:
-        return Result('both-reject', f'A:{aerr[:70]} | B:{berr[:70]}')
-    if not ao:
-        return Result('crash-A', aerr, b=bz)
     if not bo:
-        return Result('crash-B', berr, a=az)
+        return Result('crash-B', berr)
     if not zig_check:
-        return Result('ok', a=az)
-    ca, artA, ea = _zig_build(az, tag + 'A', exe=run)
+        return Result('ok', b=bz)
     cb, artB, eb = _zig_build(bz, tag + 'B', exe=run)
-    if ca and not cb:
-        return Result('zig-diverge-B', f'selfhost emit rejected by zig: {eb[:120]}', a=az, b=bz)
-    if cb and not ca:
-        return Result('zig-diverge-A', f'bootstrap emit rejected by zig: {ea[:120]}', a=az, b=bz)
-    if not ca and not cb:
-        return Result('both-zig-fail', (ea or eb)[:120], a=az)
+    if not cb:
+        return Result('zig-fail', f'emit rejected by zig: {eb[:120]}', b=bz)
     if run:
-        ra, outA, codeA = _run(artA)
         rb, outB, codeB = _run(artB)
-        if (outA, codeA) != (outB, codeB):
-            return Result('run-divergence',
-                          f'A:(code={codeA},out={outA[:40]!r}) B:(code={codeB},out={outB[:40]!r})', a=az, b=bz)
-    return Result('ok', a=az)
+        if not rb:
+            return Result('run-hang', f'B:(code={codeB},out={outB[:40]!r})', b=bz)
+    return Result('ok', b=bz)
 
 
 def _first_diff(a, b):

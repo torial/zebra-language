@@ -16,21 +16,24 @@ surface), [`DEBUGGING.md`](DEBUGGING.md).
 
 ## 1. The mental model — defense in depth
 
-Correctness here rests on **two compilers that must be functionally equivalent**:
-`zebra-bootstrap.exe` (Zig-implemented, `src/`, the trusted reference) and
-`zebra.exe` (self-hosted, `selfhost/*.zbr`, the primary). Every tool below checks
-a different slice of "do they agree, and is what they emit correct?". No single
-tool is sufficient — each has a blind spot the next one covers:
+Correctness here rested, until 2026-09-16, on **two compilers that must be functionally
+equivalent** — `zebra-bootstrap.exe` (Zig-implemented, `src/`) and `zebra.exe`
+(self-hosted, `selfhost/*.zbr`). The bootstrap is retired (`docs/design/bootstrap_sunset.md`);
+the second reference is now the **previous release** (the N-1 anchor `divergence_check.sh`
+compares against) and the committed `selfhost/*.zig` (`regen_recover.sh`). Every tool
+below checks a different slice of "is what the compiler emits correct?". No single tool
+is sufficient — each has a blind spot the next one covers (`CLAUDE.md`'s gate catalogue
+is the current, complete list; this table is the shape):
 
 | Layer | Tool | Proves | Blind spot (→ covered by) |
 |---|---|---|---|
 | Emit | `selfhost_smoke.sh` | parse→resolve→typecheck→emit **succeed** on the hand corpus | doesn't compile the emitted Zig (→ `compile_check`); only fixtures we wrote (→ fuzzer) |
 | Compile | `compile_check.sh` | the emitted Zig **compiles** (`zig build-exe -fno-emit-bin`) | doesn't **run** it; only the positive smoke set |
 | Round-trip | `bootstrap_check.sh` | selfhost compiles **itself** byte-identically (self-consistent, deterministic) | only code shapes **in the compiler's own source** (→ fuzzer) |
-| Differential | `fuzz/run.py` | bootstrap ≡ selfhost on **random** user programs (emit + compile + run) | only the generator's grammar surface (→ `COVERAGE_MAP.md`) |
+| Validity | `fuzz/leakgen.py`, `fuzz/run.py` | **random** well-formed programs emit Zig that `zig` accepts (was bootstrap ≡ selfhost until 2026-09-16) | only the generator's grammar surface (→ `COVERAGE_MAP.md`) |
 | Inference | `check_inference_guess.sh` | no type-dispatch site emits a **guess** Zig might reject | narrow — one bug class |
 | Feature | `fmt_safety.py`, `lsp_*_smoke` | one subsystem behaves + preserves semantics | scoped to that subsystem |
-| Style/discipline | `check_explicit_try.sh`, `escape_hatches_check.sh` | corpus stays on the intended idiom / memory model | prevents regressions, not new bugs |
+| Style/discipline | `escape_hatches_check.sh` (`check_explicit_try.sh` retired 2026-09-16) | corpus stays on the intended idiom / memory model | prevents regressions, not new bugs |
 | Intent | `boundary_check.sh` | edge cases behave as the language INTENDS (written from intent, not recorded) | only the 20 probes written so far |
 | **The tools themselves** | `hazard_lint.py` | our own scripts do not carry the hazards that have already produced wrong numbers | text patterns only; a NEW hazard class needs a receipt first |
 | **The docs** | `doc_lint.py` | the docs' *checkable* references still resolve | cannot check prose claims, counts, or anything inferred from a gate's silence |
@@ -59,11 +62,11 @@ export PATH="/c/Users/Sean/.zvm/bin:$PATH"        # Zig on PATH (Git Bash)
 bash tools/sysload.sh                              # 0. check RAM/CPU before heavy builds
 bash tools/bootstrap_check.sh --quick              # 1. does the .zbr compile at all? (~fast)
 # ...iterate until --quick passes, THEN:
-bash tools/bootstrap_check.sh --update && zig build # 2. regen selfhost/*.zig + build zebra.exe
+bash tools/rebuild.sh                              # 2. regen selfhost/*.zig + build zebra.exe
 bash tools/selfhost_smoke.sh                       # 3. emit corpus (231 tests)
 bash tools/bootstrap_check.sh                      # 4. FULL 5-step round-trip (byte-identical A≡B)
 bash tools/check_inference_guess.sh                # 5. 0 inference-guess sites
-python fuzz/run.py --n 25 --start 0 --run          # 6. differential + run oracle (25 seeds)
+python fuzz/leakgen.py --gate                      # 6. random well-formed programs emit valid Zig
 # subsystem gates, only if you touched them:
 python tools/fmt_safety.py                         # if you changed the formatter
 python tools/lsp_server_smoke.py                   # if you changed the LSP (runLsp)
@@ -71,8 +74,8 @@ bash tools/lsp_diagnostics_smoke.sh                # if you changed diagnostics
 ```
 
 Green across #3–#6 is the bar this project has held for every commit. A change that
-touches the **shared preamble** (`selfhost/stdlib_preamble.zig`) additionally needs
-a `zig build` before any bootstrap-emitted parity check — see the tells below.
+touches the **runtime preamble** (`selfhost/stdlib_preamble.zig`) needs the regen too —
+the preamble is inlined at emit time (BUG-219's first fix looked like it hadn't worked).
 
 ---
 
@@ -83,12 +86,13 @@ Each entry: **what it proves · how to run · reading the output · tells & gotc
 ### Build / regen
 
 **`tools/bootstrap_check.sh`** — the workhorse. Three modes:
-- `--quick` — steps 1–2 only: bootstrap re-emits all `selfhost/*.zig` into
+- `--quick` — steps 1–2 only: the committed compiler re-emits all `selfhost/*.zig` into
   `/tmp/bs-zig`, builds `zebra-selfhost.exe` from them. **Use this while iterating**
   — it's the fast "did my `.zbr` even compile?" loop (~1–2 min build). Does **not**
   touch `selfhost/*.zig` (working tree stays clean) and does **not** round-trip.
 - `--update` — steps 1–2 then re-emits `selfhost/*.zig` **in place** via
-  `zebra-bootstrap.exe` (== `zig build update-selfhost`). Run this + `zig build`
+  `zebra.exe` built from the committed `.zig` (== `zig build update-selfhost`;
+  `tools/rebuild.sh` wraps this). Run this + `zig build`
   when you need `zebra.exe` itself to reflect the change. Snapshots+restores on
   failure so a partial emit never leaves a mixed tree.
 - (no flag) — the full **5-step round-trip**: regen → build selfhost-A → A re-emits
@@ -100,9 +104,8 @@ Each entry: **what it proves · how to run · reading the output · tells & gotc
   → spurious "has no member `_initAllocator`" errors). Never run `zig build` *during*
   an `--update` (they race the same output).
 
-**`zig build`** — builds both binaries. `zebra.exe` uses the **fast backend**
-(`-fno-llvm -fno-lld`, ~6× faster link); `zebra-bootstrap.exe` uses LLVM
-(regen-authority conservatism). `zig build test` runs the unit tests + smoke.
+**`zig build`** — builds `zebra.exe`, with the **fast backend** in Debug
+(`-fno-llvm -fno-lld`, ~6× faster link). `zig build test` runs smoke + compile_check.
 `zig build update-selfhost` == `bootstrap_check.sh --update`.
 
 **`tools/sysload.sh`** — one-line RAM/CPU report. Run before any heavy build (the
@@ -120,7 +123,7 @@ is `compile_check.sh`.
 
 **`tools/compile_check.sh`** — closes smoke's gap: emits every positive smoke test
 and runs `zig build-exe -fno-emit-bin` (semantic analysis, no link) on the result.
-`--bootstrap` runs it through `zebra-bootstrap.exe`. Reach for this when you touch
+Reach for this when you touch
 codegen or the preamble and want to know the emitted Zig actually type-checks
 (especially after a Zig-toolchain bump — the C1–C4 drift class in `FEATURE_AUDIT`).
 
@@ -131,8 +134,9 @@ this keeps it there. `0 guess sites` = pass. A non-zero count names a site where
 codegen fell back to an assumption Zig may reject (or, worse, accept wrongly).
 Incremental by default; forces a full re-scan when the compiler binary is newer.
 
-**`tools/check_explicit_try.sh`** — §28b gate: fails if any throws-call relies on
-legacy auto-`try` instead of explicit `?`. Incremental; `--full` for CI certainty.
+(`check_explicit_try.sh`, the §28b measure of throws-calls relying on legacy auto-`try`,
+drove the bootstrap's `--warn-implicit-try`; §28b made the shape a compile error and the
+script retired with the bootstrap, 2026-09-16 -- `tools/attic/`.)
 
 **`tools/escape_hatches_check.sh`** — fails if a **new** `std.heap.page_allocator`
 use appears (Zebra uses one program-wide arena; each page_allocator escape is
@@ -222,7 +226,7 @@ hours-saver:
 
 | Symptom | Almost certainly | Fix |
 |---|---|---|
-| Bootstrap-emitted Zig fails with **"method invocation only supports one level of implicit pointer dereferencing"** on a method you *just added to the preamble* | `zebra-bootstrap.exe` is **stale** — it embeds the OLD preamble (edited `.zbr`/preamble but didn't `zig build`) | `zig build`, then re-test |
+| Emitted Zig fails with **"method invocation only supports one level of implicit pointer dereferencing"** on a method you *just added to the preamble* | the compiler was not regenerated after the preamble edit (the preamble is inlined at emit time) | `bash tools/rebuild.sh`, then re-test |
 | A build sits at **0% CPU for many minutes** | the **fast-backend link** is genuinely slow here (not hung) — `zebra.exe` links can take 10–15 min under memory pressure | wait; check `sysload.sh`; don't kill it |
 | `--emit-zig` / `print` produces **empty stdout** when piped | on the **fast backend**, `print` and `--emit-zig` go to **stderr** (Zig's `std.debug.print`); real stdout is `Terminal.write` | redirect `2>file`, or use `--output-dir DIR` / `--out file` |
 | `fmt_safety.py` reports hundreds of emit diffs after a clean format | you're comparing a **temp-dir copy** against the original path — the diffs are all `// Source:`/`// zbr:` path comments | strip those lines (the gate already does) |

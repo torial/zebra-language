@@ -8,7 +8,7 @@ rejection, not a low score), then the seven ranked axes. Measurements live in
 
 ## 0.9 — RETIRE THE IMGUI GUI BACKEND — **DONE 2026-08-29** <!-- doc-lint-ok: the file references below are a record of what was DELETED, not pointers to live work; the paths are dangling BY DESIGN -->
 
-**Landed in two commits.** Compiler: 601 lines out of `src/CodeGen.zig` (the `.glfw` arm,
+**Landed in two commits.** Compiler: 601 lines out of `src/CodeGen.zig` (the `.glfw` arm, <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 which was the imgui backend, plus the `.sdl2`/`.dx12` arm, which was never imgui's dependent
 -- 178 lines of duplicated stub for backends never built). `GuiBackend` is now
 `{ stub, tui, libui_ng }`. Files: 99 tracked, 35,125 lines -- `IDE/` (20),
@@ -55,10 +55,10 @@ mentions suggest, because almost all of it is one contiguous emitted-template bl
 
 | what | where | size |
 |---|---|---|
-| the `.glfw` arm — THE imgui backend | `src/CodeGen.zig:3252-3674` | **422 lines**, one `writeAll` of a `\\` template |
-| `.sdl2, .dx12` arm | `src/CodeGen.zig:3675-3852` | **178 lines** |
+| the `.glfw` arm — THE imgui backend | `src/CodeGen.zig:3252-3674` | **422 lines**, one `writeAll` of a `\\` template | <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
+| `.sdl2, .dx12` arm | `src/CodeGen.zig:3675-3852` | **178 lines** | <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 | enum members | `GuiBackend = enum { stub, glfw, sdl2, dx12, tui, libui_ng }` | 3 to drop |
-| build template line | `src/main.zig:1217` (`exe.linkLibrary(zgui_dep.artifact("imgui"))`) | 1 |
+| build template line | `src/main.zig:1217` (`exe.linkLibrary(zgui_dep.artifact("imgui"))`) | 1 | <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/main.zbr -->
 | vendored | `vendor/ImGuiColorTextEdit` (43 tracked files), `vendor/fonts` (36 files, 15 MB) | |
 | the IDE | `IDE/ZebraIDE.zbr` + `IDE/ZebraIDE_gui/` | 5 tracked `.zbr` | <!-- doc-lint-ok: deleted 2026-08-29; this row is the record of WHAT was removed, so the path is dangling by design -->
 
@@ -101,7 +101,7 @@ and move to N-1 sooner than later.** The keyword removals below are PARKED behin
 `abstract` are **bootstrap-ONLY** -- measured 2026-08-29, the shipping compiler rejects all
 three (`class X is abstract` compiles under the bootstrap, `rc=1` under the selfhost). Sean
 had marked them for removal, which is ~62 lines across grammar rules, AST node types and
-codegen paths (`genDefer` is a real function at `src/CodeGen.zig:13425`). **If the bootstrap
+codegen paths (`genDefer` is a real function at `src/CodeGen.zig:13425`). **If the bootstrap <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 retires they vanish for free.** Do not do that surgery until this is decided.
 
 **THE ONE REAL ARGUMENT FOR KEEPING A SECOND IMPLEMENTATION** is already written in
@@ -170,7 +170,7 @@ fallback -- lldb-dap IS installed on this machine but is NOT on PATH, so the fal
 load-bearing, not belt-and-braces); PATH augmentation -> `sys.setenv` before spawn (sound
 because the process does nothing else); our own DAP framing -> `sys.readBytes(n)` +
 `Terminal.write`, which the LSP server already does and `lsp-smoke` already gates; relay
-threads -> `sys.go`. PORT THE 30 x 100ms CONNECT RETRY (src/Debugger.zig:1058) -- without
+threads -> `sys.go`. PORT THE 30 x 100ms CONNECT RETRY (src/Debugger.zig:1058) -- without <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3) -->
 it, connecting before lldb-dap has bound is an intermittent failure that works locally.
 
 **WHAT IS NOT SETTLED, and do not quote a number for it.** `transform` touches only two
@@ -198,7 +198,7 @@ deleted. It lives in main.zbr rather than a new `selfhost/Repl.zbr` <!-- doc-lin
 module must join the FILES list in `bootstrap_check.sh` and `rebuild.sh` and the build's
 import set, i.e. the regeneration machinery rewritten hours earlier for criterion 2.
 
-**The port is SIMPLER than the original and the difference is worth knowing.** src/Repl.zig
+**The port is SIMPLER than the original and the difference is worth knowing.** src/Repl.zig <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3) -->
 compiled in-process, injected a sentinel `debug.print` into the emitted Zig at the new
 cell's line, ran it, and showed output past the sentinel. The Zebra version writes the
 session as an ordinary `.zbr`, re-invokes the compiler, and shows the SUFFIX beyond what
@@ -218,7 +218,7 @@ Gated: `tools/cli_check.sh` drives a real session and asserts state crosses a ce
 boundary, a decl cell is accepted AND callable, and `:clear` really resets (proven by the
 failure of the cell after it).
 
-**REMAINING:** `zebra debug` (src/Debugger.zig, 1123 lines -- a DAP protocol proxy, a
+**REMAINING:** `zebra debug` (src/Debugger.zig, 1123 lines -- a DAP protocol proxy, a <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3) -->
 materially different and larger job than a read-eval loop), plus `--zig-backend` and the
 `stub` GUI backend, which are policy rather than code.
 
@@ -229,8 +229,8 @@ selfhost does not:
 
 | job | what backs it | cost to remove |
 |---|---|---|
-| `zebra repl` | `src/Repl.zig` | **579 lines** to port or drop |
-| `zebra debug` | `src/Debugger.zig` | **1123 lines** to port or drop |
+| `zebra repl` | `src/Repl.zig` | **579 lines** to port or drop | <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3) -->
+| `zebra debug` | `src/Debugger.zig` | **1123 lines** to port or drop | <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3) -->
 | `zebra build` | preamble `_build_*` -- **88 lines, and already in the SELFHOST's own preamble** | possibly zero (see below) |
 | `--zig-backend` | a flag, not code | a policy decision |
 | `--gui-backend=stub` | the `stub` backend only | tui and libui_ng are already native |
@@ -581,7 +581,7 @@ port -- and note the two `cli-surface` legs above are the ready-made witness for
    which was not noticed when this plan was written an hour earlier.** `selfhost/main.zbr:2695`
    reads `gui_selfhost = gui_backend == "tui" or gui_backend == "libui_ng"`, so the two
    SURVIVING backends are ALREADY native to the selfhost. The only ones that still delegate
-   are `glfw` -- which IS the imgui backend (`src/CodeGen.zig:3252-3674`) -- and explicit
+   are `glfw` -- which IS the imgui backend (`src/CodeGen.zig:3252-3674`) -- and explicit <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
    `stub`. So the 0.9 item at the top of this file is not merely adjacent to the sunset: it
    removes the bootstrap's last RUNTIME job. Two docket entries, one piece of work.
 
@@ -629,7 +629,7 @@ port -- and note the two `cli-surface` legs above are the ready-made witness for
    **AND IT REMOVES THE BOOTSTRAP AS A GATE REQUIREMENT.** With criterion 4 landed, no gate
    needs `zebra-bootstrap.exe`. What remains are RUNTIME delegations -- `repl`, `debug`,
    `build` -- plus `--zig-backend` and the `stub` GUI backend, which are policy rather than
-   code. The honest remaining distance is 1,702 lines (src/Repl.zig 579, src/Debugger.zig
+   code. The honest remaining distance is 1,702 lines (src/Repl.zig 579, src/Debugger.zig <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3) -->
    1123) and three decisions.
 
 
@@ -783,8 +783,8 @@ Two things to know before wiring them in, both from the file itself:
 **SLICE 1 LANDED 2026-08-22: `& | ^`, BOTH COMPILERS.** The parser was the ENTIRE gap, in both compilers.
 Everything downstream already existed and had simply never been reachable: the
 `bit_and`/`bit_or`/`bit_xor` AST tags in both ASTs, `binaryOpStr` in the selfhost, the
-`.bit_and => "&"` emit at `src/CodeGen.zig:692`, and — decisively — the typing rule at
-`src/TypeChecker.zig:4306`, whose comment already read *"preserve the operand type"*.
+`.bit_and => "&"` emit at `src/CodeGen.zig:692`, and — decisively — the typing rule at <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
+`src/TypeChecker.zig:4306`, whose comment already read *"preserve the operand type"*. <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/TypeChecker.zbr -->
 Type-following was not a new decision; it was a decision someone made months ago and
 never wired a parser to.
 
@@ -1590,7 +1590,7 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
   emitted `.zig` — multi-module GUI apps still need dep `.zig` files copied into the
   scaffold (single-file / no-dep GUI apps like the game work now; residual "GUI
   module-resolution" limit). (b) **only glfw** still delegates to the bootstrap (same recipe
-  to port when wanted: extract its arm from `src/CodeGen.zig`, add a section file +
+  to port when wanted: extract its arm from `src/CodeGen.zig`, add a section file + <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
   build template + backend name to `gui_selfhost`). (c) `--gui-backend=stub` explicit still
   delegates (plain `zebra run` already emits stub via the selfhost).
 - [ ] ~~**GUI builds via selfhost emission — phase the bootstrap out of the GUI path**~~
@@ -1614,9 +1614,9 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
     `bootstrap_check` breaks + every GUI stub test shifts. That gate-holding restructure is the
     crux, NOT the tui glue (static strings — mechanical copy, watch CRLF/escaping in `.zbr`).
   - **Reference map (bootstrap side, to copy/mirror):** backend `switch(g.gui_backend)` =
-    `src/CodeGen.zig:3061-4683` (stub 3062-3234, imgui ~3234-3835, **tui 3841-4114**, libui
+    `src/CodeGen.zig:3061-4683` (stub 3062-3234, imgui ~3234-3835, **tui 3841-4114**, libui <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
     4124-4683; each arm ends `const _gui_active_backend = _gui_<x>_backend`). Scaffold =
-    `compileGuiProject` `src/main.zig:1348-1417`; build.zig/.zon templates `1188-1300`
+    `compileGuiProject` `src/main.zig:1348-1417`; build.zig/.zon templates `1188-1300` <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/main.zbr -->
     (tui template `1254-1300`). Selfhost currently: parses `gui_backend` (`selfhost/main.zbr:2094`)
     only to delegate (`~2320`); CodeGen emits `_gui_active_backend.*` CALLS but has NO
     `gui_backend` field/param (never threaded).
@@ -1645,8 +1645,8 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
     to build+run. **Remaining:** (a) deliver the tui section — file `selfhost/gui_tui_section.zig`
     read at runtime (resolve like `preamble_path`, install next to exe in build.zig) is cleaner
     than a 508-line embed [triple-quoted `"""` works but bloats CodeGen]; (b) port the
-    scaffold+zig-build driver (`compileGuiProject` `src/main.zig:1348-1417`, uses `.stdout=.inherit`
-    already) + the tui build.zig/.zon templates (`src/main.zig:1254-1300`) into `selfhost/main.zbr`;
+    scaffold+zig-build driver (`compileGuiProject` `src/main.zig:1348-1417`, uses `.stdout=.inherit` <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/main.zbr -->
+    already) + the tui build.zig/.zon templates (`src/main.zig:1254-1300`) into `selfhost/main.zbr`; <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/main.zbr -->
     (c) route `--gui-backend=tui` through emit-then-scaffold instead of delegating (`selfhost/main.zbr`
     ~2320). **Acceptance: `zebra --gui-backend=tui examples/tears_of_the_tuon.zbr` builds + runs the
     game WITHOUT the BUG-204/206 workarounds (revert those in the example to prove it);
@@ -1778,7 +1778,7 @@ is DERIVED (3 samples + volatile-field normalisation), never hand-listed.
     works, so throws DETECTION is fine; the try-block CATCH-wiring at genMemberCall ~12950
     (`callee_throws2 and try_block_label != nil`) doesn't fire for `.outer()` despite both conditions
     appearing set — a context bug (couldn't pin statically; needs instrumentation). The bootstrap does
-    this at the STATEMENT level (src/CodeGen.zig genStmt ~6843: `e is call and try_block_label and
+    this at the STATEMENT level (src/CodeGen.zig genStmt ~6843: `e is call and try_block_label and <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
     exprCallIsThrows`) — mirroring that (statement-level catch) is the likely clean convergence, but
     verify it doesn't double-emit with the existing 12950 path.
   </details>

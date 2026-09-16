@@ -9,7 +9,7 @@ Design: a small typed-expression grammar.  `gen_expr(ty, env)` only ever emits
 an expression of type `ty` built from in-scope vars (env: name -> type) and
 size-bounded literals (so comptime arithmetic can't overflow i64 at Zig compile
 time).  The subset grows over time (see CAPS); start conservative so a clean
-baseline means "both compilers agree", then widen to hunt divergences.
+baseline means "every program compiles", then widen to hunt gaps.
 """
 import random
 import re

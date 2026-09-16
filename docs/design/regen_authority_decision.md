@@ -1,7 +1,10 @@
 <!-- doc-status: design -->
 # Decision: keep the bootstrap as the independent regen authority
 
-**Status:** accepted (2026-07-22)
+**Status:** SUPERSEDED. Accepted 2026-07-22; overtaken 2026-08-30 when `rebuild.sh` made
+the selfhost its own regen authority (N-1), and closed 2026-09-16 when `src/` was deleted
+— see `docs/design/bootstrap_sunset.md`. Kept as the record of why the bootstrap was held
+for as long as it was; the single-file section still holds.
 **Context:** raised after BUG-181 was resolved (the selfhost `zebra.exe` can now
 self-compile `selfhost/main.zbr`), which reopened the single-file Phase 5/6 question:
 should we make the selfhost the regeneration authority, or teach the bootstrap the

@@ -55,8 +55,9 @@ not a reason to promise less.
   builds with the bundled Zig is the promise; "builds with whatever Zig is on PATH" is
   not, and `ZEBRA_ZIG` exists precisely so that a user who overrides the pin knows they
   have.
-- The **bootstrap compiler** (`zebra-bootstrap`), whichever of the three 1.0 dispositions
-  in NEXT_STEPS_to_1.0 it gets. Only `zebra` is promised.
+- Anything in `zig-out/bin` other than `zebra` itself (the preamble and GUI section files
+  it reads, `vendor/sqlite`). The bootstrap compiler, which this line used to name, was
+  retired 2026-09-16.
 
 ## 4. How something leaves — deprecation by migration
 

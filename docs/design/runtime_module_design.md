@@ -156,7 +156,7 @@ file that is spliced inline, so this lands *before* any codegen change and is pr
 the ordinary gates while emission is unchanged. It is the largest mechanical part of the
 work and `zig` can validate it on its own.
 
-Deliberately **not** mirrored into `src/CodeGen.zig`. The bootstrap hardcodes the
+Deliberately **not** mirrored into `src/CodeGen.zig`. The bootstrap hardcodes the <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
 pre-`STDLIB_PREAMBLE_HELPERS_START` header (build.zig strips that region from the file
 before embedding the rest) and emits the GUI section from its own inline switch — so
 bootstrap emit will lack `pub` in exactly those two regions while selfhost emit has it.

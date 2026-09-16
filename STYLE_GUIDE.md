@@ -104,7 +104,7 @@ direction.
 
 Compiler-generated identifiers (`_allocator`, `_arena`, `_intern`,
 `_error_ctx`, `_str_pool`) are out of scope — those are emitted as-is
-by `src/CodeGen.zig` and aren't user-authored.
+by the compiler (`selfhost/CodeGen.zbr`) and aren't user-authored.
 
 📋 **Tracker:** BUG-115.  Final sweep direction (drop or convert to
 `private`) decided when 0.14 lands or BUG-115 is closed wontfix.

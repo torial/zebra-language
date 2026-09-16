@@ -237,8 +237,9 @@ class Keywords
             return TokenKind.kw_is()
         if word == "as"
             return TokenKind.kw_as()
-        if word == "has"
-            return TokenKind.kw_has()
+        # `has` left on 2026-09-16 (bootstrap sunset Step 3): only the bootstrap's
+        # Earley grammar ever accepted it (HasOpt, a Cobra-era class attribute list);
+        # the selfhost never parsed it, so with src/ gone it was reserved for nothing.
         if word == "static"
             return TokenKind.kw_static()
         if word == "invariant"

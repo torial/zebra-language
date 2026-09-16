@@ -86,9 +86,15 @@ def classify(pairs, gram, ast, selfhost):
     refused = set(re.findall(r"error: (\w+)[^\"]*? are not yet implemented", ast))
     refused |= set(re.findall(r"error: '(\w+)' statements are not yet implemented", ast))
 
+    # The selfhost parser reaches a keyword two ways: by token (`TokenKind.kw_x`) or,
+    # far more often, BY TEXT (`.textIs("and")`, `text == "if"`). Until 2026-09-16 the
+    # text form was invisible here and the bootstrap's Earley table covered for it;
+    # with src/ gone (bootstrap_sunset.md Step 3) that scan would have reported 43
+    # live keywords as unreachable. The word as a quoted literal counts.
     out = {}
     for word, token in sorted(pairs):
-        if f"t(.{token})" not in gram and token not in selfhost:
+        if f"t(.{token})" not in gram and token not in selfhost \
+                and f'"{word}"' not in selfhost:
             out[word] = "R1"
         elif word in refused or (word + "s") in refused or word.rstrip("s") in refused:
             out[word] = "R2"
@@ -100,9 +106,11 @@ def selftest():
     than facts about today's compiler — so this does not break on the day a real
     keyword is freed (rule 4: pin controls to the mechanism, not to a known gap)."""
     pairs = [("alive", "kw_alive"), ("selfhostonly", "kw_selfhostonly"),
+             ("bytext", "kw_bytext"),
              ("ghost", "kw_ghost"), ("halfdone", "kw_halfdone")]
     gram = "rule: t(.kw_alive) ... rule: t(.kw_halfdone)"
-    selfhost = "if k is TokenKind.kw_selfhostonly"
+    selfhost = 'if k is TokenKind.kw_selfhostonly\n    while .textIs("bytext")'
+
     ast = 'std.debug.panic("{d}:{d}: error: halfdone declarations are not yet implemented"'
     got = classify(pairs, gram, ast, selfhost)
     want = {"ghost": "R1", "halfdone": "R2"}
@@ -110,6 +118,8 @@ def selftest():
         ("a keyword used by the Earley grammar is not flagged", "alive" not in got),
         ("a keyword used ONLY by the selfhost parser is not flagged",
          "selfhostonly" not in got),
+        ("a keyword the selfhost parser matches BY TEXT is not flagged",
+         "bytext" not in got),
         ("a keyword no compiler accepts is flagged R1", got.get("ghost") == "R1"),
         ("a keyword that parses then panics is flagged R2", got.get("halfdone") == "R2"),
         ("nothing else is flagged", got == want),
@@ -131,8 +141,8 @@ def main():
     # THE TABLE IS selfhost/Token.zbr's since 2026-09-15 (bootstrap_sunset.md Step 1):
     # `if word == "x"` followed by `return TokenKind.kw_y()`. It was src/Token.zig's
     # `.{ "x", .kw_y }` table until then; the bootstrap's Earley grammar and AstBuilder
-    # are still consulted for reachability / R2 WHILE THEY EXIST, and read as empty once
-    # src/ is gone (Step 3), at which point the selfhost sources are the only subject.
+    # were consulted for reachability / R2 while they existed; src/ is gone since
+    # 2026-09-16 (Step 3) and reads as empty, so the selfhost sources are the subject.
     tok = (ROOT / "selfhost" / "Token.zbr").read_text(encoding="utf-8", errors="replace")
     pairs = re.findall(r'if\s+word\s*==\s*"([a-z_]+)"\s*\n\s*return\s+TokenKind\.(kw_\w+)\(\)', tok)
     if len(pairs) < 40:
@@ -182,7 +192,7 @@ def main():
     new = sorted(w for w in flagged if w not in BASELINE)
 
     for w in new:
-        why = ("reserved but NO rule in EITHER compiler can accept it"
+        why = ("reserved but NO parser path accepts it"
                if flagged[w] == "R1" else
                "parses, then AstBuilder refuses it as unimplemented")
         print(f"  selfhost/Token.zbr: [{flagged[w]}] `{w}` — {why}. Free the word, implement "

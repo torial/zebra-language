@@ -158,7 +158,7 @@ single-shared-arena model doesn't have).
 - `selfhost/stdlib_preamble.zig` — a minimal `_TsAlloc` (a `std.Io.Mutex` around the child
   allocator's vtable; Zig 0.16 dropped `std.heap.ThreadSafeAllocator`). `_prog_alloc()`
   returns the wrapped arena by default, the bare arena under `-fsingle-threaded`. The
-  bootstrap hardcodes the same globals in `src/CodeGen.zig` (the pre-`HELPERS_START`
+  bootstrap hardcodes the same globals in `src/CodeGen.zig` (the pre-`HELPERS_START` <!-- doc-lint-ok: bootstrap source, retired 2026-09-16 (bootstrap_sunset.md Step 3); the selfhost mirror is selfhost/CodeGen.zbr -->
   preamble region is bootstrap-hardcoded; keep the two in sync — dual-maintenance, noted).
 - **`--single-threaded` flag** — the program commits to spawning no threads; the compiler
   passes `-fsingle-threaded`, so `builtin.single_threaded` is true and the wrapper (and its
