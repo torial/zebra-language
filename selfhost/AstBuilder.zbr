@@ -1515,9 +1515,8 @@ class ASTBuilder
                             alias_args.add(Expr.int_lit(ExprIntLit(zspan(), arg_text, IntBase.decimal)))
             return TypeRef.alias_applied(AliasAppliedTypeRef(zspan(), alias_name, alias_args))
 
-        # `same` — constrained type placeholder
-        if s == "same"
-            return TypeRef.same_()
+        # (`same` → TypeRef.same_ was here until 2026-09-16; the word is an identifier now and
+        # TypeRef.same_ is dead until bootstrap_sunset.md Step 4 removes it.)
 
         # Tuple type: "(T1,T2,...)" → TypeRef.tuple(TupleTypeRef([T1, T2, ...]))
         if s.startsWith("(")

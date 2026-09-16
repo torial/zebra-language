@@ -363,7 +363,6 @@ pub const keyword_map = std.StaticStringMap(TokenKind).initComptime(.{
     .{ "int",         .kw_int },
     .{ "uint",        .kw_uint },
     .{ "float",       .kw_float },
-    .{ "same",        .kw_same },
     .{ "require",     .kw_require },
     .{ "ensure",      .kw_ensure },
     // "old" and "result" are context-sensitive: emitted as kw_old/kw_result only

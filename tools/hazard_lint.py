@@ -120,7 +120,7 @@ def check_h1(path, text, lines, tree):
                     mode = str(k.value.value)
             # The target must NAME a .zbr. An open() handed straight to subprocess as a
             # stdout handle does no Python-level newline translation, so a file-level
-            # guard alone produces noise here -- tools/scaling_probe.py:59 opening a
+            # guard alone produces noise here -- tools/attic/scaling_probe.py:59 opening a
             # '.zig' redirect target was the false positive that established this.
             target = ast.get_source_segment(text, node.args[0]) if node.args else ""
             if ("w" in mode or "a" in mode) and "b" not in mode and "zbr" in (target or ""):

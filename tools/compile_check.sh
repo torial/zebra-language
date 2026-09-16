@@ -6,22 +6,21 @@
 # -fno-emit-bin` (semantic analysis, no linking) on the result.
 #
 # Test set is derived from tools/selfhost_smoke.sh's POSITIVE entries
-# (smoke / smoke_turbo / smoke_test / smoke_run / smoke_run_bootstrap / smoke_warn),
+# (smoke / smoke_turbo / smoke_test / smoke_run / smoke_warn),
 # which excludes negative tests (smoke_*_fail) and library-only modules.
 #
 # Usage:
 #   bash tools/compile_check.sh                 # selfhost (zebra.exe), all tests
-#   bash tools/compile_check.sh --bootstrap     # bootstrap (zebra-bootstrap.exe)
 #   bash tools/compile_check.sh --single-file   # emit each test with --single-file, then check
 #   bash tools/compile_check.sh --no-runtime-module # emit with the INLINE runtime, then check
 #   bash tools/compile_check.sh --only hashmap   # only tests whose name contains 'hashmap'
 #   JOBS=8 bash tools/compile_check.sh           # override parallelism (default 4)
 #
 # --single-file mode: appends --single-file to the emit, so it checks the namespaced
-# `const _Mod = struct {…}` shape (docs/design/single_file_emit_design.md §7a/§7b). The selfhost
+# `const _Mod = struct {…}` shape (docs/single_file_emit_design.md §7a/§7b). The selfhost
 # does the full multi-module merge (Phase 2: deps become `const _mod_X = struct {…}` in one
-# file), so cross-module tests ARE checked there. The bootstrap is single-module only for
-# now (Phase 2 is selfhost-first), so `--bootstrap --single-file` still skips multi-module.
+# file), so cross-module tests ARE checked there. (A --bootstrap mode existed until
+# 2026-09-15; retired with the bootstrap, bootstrap_sunset.md Step 2.)
 # A clean run matches the multi-file baseline test-for-test (zero regressions).
 #
 # Parallelism: per-test emit+typecheck is independent, so the worklist is fanned out
@@ -41,22 +40,12 @@ OUT="${TMPDIR:-/tmp}/zbr-compile-check"
 # source/C files the emit step doesn't materialize). Not bugs — harness limits.
 SKIP=" c_interop_test zig_interop_test forgot_parens_test "
 
-# Bootstrap mode emits to STDOUT (the bootstrap CLI has no --output-dir), so it can
-# only materialize the single root file — multi-file tests whose deps are separate
-# modules can't be checked this way. Skip them in --bootstrap mode only (they pass
-# under the selfhost, whose --output-dir emits the deps alongside the root).
-BOOTSTRAP_SKIP=" crossmod_hatopt_test crossmod_optret_test crossmod_struct_pat_test crossmod_types_test crossmod_arith_test crossmod_infer_test crossmod_expose_test val_test test_module_test "
+# (BOOTSTRAP_SKIP / SINGLE_FILE_SKIP were here until 2026-09-15: the --bootstrap mode and
+# its single-module --single-file both retired with the bootstrap, bootstrap_sunset.md
+# Step 2. The selfhost's --output-dir emits deps alongside the root, so nothing is skipped.)
 
-# The bootstrap's --single-file is single-module only (Phase 2 is selfhost-first): its dep
-# modules are still emitted unwrapped, so multi-module programs don't line up. Skip them
-# under --bootstrap --single-file only. The `*crossmod*` glob (applied below) covers the
-# crossmod_* family + bug168_crossmod_prim_return_test; these are the remaining multi-module
-# tests that don't match that glob. The SELFHOST does the full merge, so it skips nothing here.
-SINGLE_FILE_SKIP=" val_test test_module_test "
-
-zebra_for() { # $1 = mode
-  local p
-  if [ "$1" = bootstrap ]; then p="$REPO/zig-out/bin/zebra-bootstrap"; else p="$REPO/zig-out/bin/zebra"; fi
+zebra_for() { # $1 = mode (only "selfhost" since 2026-09-15; --bootstrap retired, bootstrap_sunset.md Step 2)
+  local p="$REPO/zig-out/bin/zebra"
   if [ -x "$p.exe" ]; then echo "$p.exe"; else echo "$p"; fi
 }
 
@@ -73,12 +62,8 @@ if [ "${1:-}" = "--worker" ]; then
   [ "${CC_INLINE_RT:-0}" = 1 ] && sf_flag="--no-runtime-module"
   wdir="$OUT/w-$name"; rm -rf "$wdir"; mkdir -p "$wdir"
   main="$wdir/$name.zig"
-  if [ "$mode" = bootstrap ]; then
-    # BUG-302 one layer up: keep the compiler's own account. See full_sweep.check_one.
-    "$zebra" $sf_flag --emit-zig "$REPO/$rel" > "$main" 2>"$wdir/emit.err" || { mkdir -p "$OUT/evidence" 2>/dev/null; cp "$wdir/emit.err" "$OUT/evidence/$name.emit.err" 2>/dev/null; echo "EMITFAIL $name"; exit 0; }
-  else
-    "$zebra" $sf_flag --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>"$wdir/emit.err" || { mkdir -p "$OUT/evidence" 2>/dev/null; cp "$wdir/emit.err" "$OUT/evidence/$name.emit.err" 2>/dev/null; echo "EMITFAIL $name"; exit 0; }
-  fi
+  # BUG-302 one layer up: keep the compiler's own account. See full_sweep.check_one.
+  "$zebra" $sf_flag --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>"$wdir/emit.err" || { mkdir -p "$OUT/evidence" 2>/dev/null; cp "$wdir/emit.err" "$OUT/evidence/$name.emit.err" 2>/dev/null; echo "EMITFAIL $name"; exit 0; }
   [ -f "$main" ] || { echo "SKIP $name"; exit 0; }          # library module (no main)
   grep -q "pub fn main" "$main" || { echo "SKIP $name"; exit 0; }
   # BUG-302: a failure to read ZIG'S OWN stdlib is not a verdict on our emitted code.
@@ -105,7 +90,6 @@ fi
 MODE=selfhost; ONLY=""; SF=0; RM=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --bootstrap)   MODE=bootstrap; shift;;
     --single-file) SF=1; shift;;
     --no-runtime-module) RM=1; shift;;
     --only)        ONLY="${2:-}"; shift 2;;
@@ -127,21 +111,12 @@ rm -f "$OUT/retries.txt"
 # drift silently the first time a registration helper is added.
 tests=$(bash "$REPO/tools/positive_set.sh") || exit 2
 
-# Build the filtered worklist (apply SKIP / BOOTSTRAP_SKIP / --only up front).
+# Build the filtered worklist (apply SKIP / --only up front).
 worklist=""; skip=0
 for f in $tests; do
   name=$(basename "$f" .zbr)
   if [ -n "$ONLY" ]; then case "$name" in *"$ONLY"*) ;; *) continue;; esac; fi
   case "$SKIP" in *" $name "*) skip=$((skip+1)); continue;; esac
-  if [ "$MODE" = bootstrap ]; then
-    case "$BOOTSTRAP_SKIP" in *" $name "*) skip=$((skip+1)); continue;; esac
-  fi
-  if [ "$SF" = 1 ] && [ "$MODE" = bootstrap ]; then
-    # Bootstrap single-file is single-module only (Phase 2 is selfhost-first): drop the
-    # multi-module tests. The selfhost merges them, so it checks the full corpus.
-    case "$name" in *crossmod*) skip=$((skip+1)); continue;; esac
-    case "$SINGLE_FILE_SKIP" in *" $name "*) skip=$((skip+1)); continue;; esac
-  fi
   worklist="$worklist$f"$'\n'
 done
 

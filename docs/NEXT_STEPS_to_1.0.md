@@ -113,6 +113,14 @@ DECISIONS 2026-09-15 (Sean, on the 2026-09-14 read above and the surface measure
   `surface_inventory.py` to derive them, so `docs/SURFACE.md` §2's "not yet in the
   derived set" paragraph shrinks to arities.
 
+- **Generic interfaces** (2026-09-16, from freeing `same`): `interface Comparable(T)` /
+  `implements Comparable(Score)` do not parse today; interfaces are the one declaration
+  kind without type parameters. Until then a self-typed interface method names the
+  interface (`other: Comparable`) and the conformance check does not compare that
+  parameter across the boundary. Parser, the `implements X(A)` form, substitution in the
+  conformance check and the vtable; about a day. A language ADDITION, so it follows the
+  stability policy's step 0 (SURFACE diff + CHANGELOG line).
+
 ORDERING CHANGE among existing items: the **warning tier** (below) moves from "several
 items need it" to "the freeze needs it" (item 4). The **trip test** stays where its own
 entry puts it -- the highest-yield thing to run BEFORE declaring a surface stable, since a

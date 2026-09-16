@@ -104,17 +104,8 @@ else
     note "doctor: skipped (no built bootstrap to compare against)"
 fi
 
-# ── interp-escape lint: a known hazard must be reported ──────────────────────
-# `${...}` interpolation plus an escaped quote is the BUG-216 shape the bootstrap
-# double-escapes.
-mkdir -p "$OUT/lint"
-printf 'def f(x: str): str\n    return "a ${x} b \\" c"\n' > "$OUT/lint/hazard.zbr"
-r=$(run_checker $PY tools/lint_interp_escape.py ".selfcheck_tmp/lint/hazard.zbr")
-case "$r" in
-    CRASH*)      bad "interp-escape lint CRASHED: ${r#CRASH }" ;;
-    *"1 hazard"*) pass "interp-escape lint fires on a planted hazard" ;;
-    *)           bad "interp-escape lint did NOT fire on a planted hazard" ;;
-esac
+# (the interp-escape lint leg was here until 2026-09-15: the lint guarded a
+# bootstrap-only double-escape and retired with it -- bootstrap_sunset.md Step 2.)
 
 # ── fallthrough lint: a known hazard must be reported ────────────────────────
 # A value-returning fn whose TAIL branch has an arm that CONTAINS a return but can

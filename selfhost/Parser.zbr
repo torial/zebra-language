@@ -1380,10 +1380,7 @@ class Parser
         if text == "byte"
             .advance()
             return text
-        # `same` — constrained parameter type ("same type: this class")
-        if text == "same"
-            .advance()
-            return text
+        # (`same` was accepted here until 2026-09-16 -- freed; it is an identifier now.)
         # Tuple type: (T1, T2, ...) → "(T1,T2,...)"
         if text == "("
             .advance()

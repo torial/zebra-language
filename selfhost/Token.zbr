@@ -267,8 +267,6 @@ class Keywords
             return TokenKind.kw_uint()
         if word == "float"
             return TokenKind.kw_float()
-        if word == "same"
-            return TokenKind.kw_same()
         if word == "require"
             return TokenKind.kw_require()
         if word == "ensure"
@@ -346,6 +344,9 @@ class Keywords
         # `assert_eq`, `assert_ne`, `assert_true` and `assert_false` left this table on
         # 2026-09-15 too: four reserved words for what one `assert` does, now that a
         # plain `assert a == b` prints both operands on failure (CodeGen.genAssertCmpShow).
+        # `same` left on 2026-09-16 (Sean: "let's nuke that"): the self-typed interface
+        # parameter (Eiffel's `like Current`) that was undocumented and used by one fixture;
+        # an interface names itself (`other: Comparable`) and a class names itself instead.
         # `guard`, `arena`, `readonly`, `abstract` and `vari` left this table on
         # 2026-09-15 (Sean): guard was `if not` with a second spelling and an odd `else,`
         # form; arena's construct was removed long ago (`allocate Arena()`); readonly was

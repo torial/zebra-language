@@ -21,7 +21,7 @@ consulted by:
 
 | Consumer | What it uses the bootstrap for | Disposition |
 |---|---|---|
-| `selfhost-div` gate (`tools/selfhost_divergence_check.sh`) | the two-implementation comparison: does the bootstrap still read every selfhost module the selfhost reads? Informational when the selfhost has *outgrown* it (that number rises every time a keyword is freed), gated only for "the compiler refuses its own sources and the bootstrap accepts them" | **retire**; the property it gates ("the compiler accepts its own sources") is already `round-trip`'s Step 1 |
+| `selfhost-div` gate (`tools/attic/selfhost_divergence_check.sh` since Step 2) | the two-implementation comparison: does the bootstrap still read every selfhost module the selfhost reads? Informational when the selfhost has *outgrown* it (that number rises every time a keyword is freed), gated only for "the compiler refuses its own sources and the bootstrap accepts them" | **retire**; the property it gates ("the compiler accepts its own sources") is already `round-trip`'s Step 1 |
 | `--zig-backend` (`zebra --zig-backend x.zbr`) | delegates the whole compile to the bootstrap | **remove** the flag (surface −1 flag, CHANGELOG line) |
 | `--gui-backend=glfw` / `stub` | delegated to the bootstrap; `tui` and `libui_ng` are native | **remove** `glfw`; `stub` is the native default said explicitly (`contract_mode_check.sh`'s bootstrap legs go with them) |
 | `zebra debug --listen PORT` (TCP DAP) | delegates; stdio mode is native | **port or drop**: zebra-ide uses stdio; drop the TCP mode with a usage line saying so |
@@ -83,7 +83,10 @@ drop the two bootstrap-only pins; repoint `zbr_vocab`/`lint_reserved_words` to
 gate; `cli_check` gets a leg asserting `--zig-backend` is *refused by name* (a removed
 flag is a surface change and gets the same receipt an added one does).
 
-**Step 2 — retire the comparison tooling.** `selfhost-div` gate out of `gates.sh`;
+**Step 2 — retire the comparison tooling.** DONE 2026-09-16 (`zig-test` deliberately kept
+until Step 3 removes the code it tests — an unrun suite is what BUG-279 forbids; and
+`divergence_check`'s multi-module skip is now a coverage gap the N-1 anchor no longer
+needs, listed as a follow-up in §5). `selfhost-div` gate out of `gates.sh`;
 `compile_check --bootstrap`, `divergence_check`, `diagnostic_parity`,
 `triage_diagnostic_candidates`, `scaling_probe`'s bootstrap legs, `lint_interp_escape`
 deleted (with their `CLAUDE.md` entries and `doc_lint` counts); `contract_mode_check`
@@ -113,3 +116,15 @@ each a single quick-gate commit.
 - Not single-file (`docs/design/regen_authority_decision.md` §"Single-file does not
   force the authority question" still holds; `--single-file` stays a shipped feature).
 - Not a change to the N-1 anchor mechanism, which becomes *more* important, not less.
+
+## 5. Follow-ups the sunset exposed (not part of the steps)
+
+- **`divergence_check` skips multi-module files** (any file with a local `use`) because
+  the bootstrap could not materialise dependencies through stdout. The reference has been
+  the N-1 anchor since 2026-09-01 and it takes `--output-dir`, so the skip is now a
+  coverage gap, not a necessity. Lifting it compares ~60 more files against the anchor
+  and may surface real regressions the first time; do it on a quiet day with the
+  `REGRESSION` list read by name.
+- **Generic interfaces.** Freeing `same` (2026-09-16) left the self-typed interface method
+  with one spelling — the interface names itself — because `interface X(T)` does not
+  parse. The proper replacement is a language addition, queued in NEXT_STEPS_to_1.0.

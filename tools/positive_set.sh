@@ -8,7 +8,7 @@
 # drift would be SILENT — a gate would simply check fewer files.
 #
 # The source of truth is selfhost_smoke.sh's own registrations: a helper that asserts
-# SUCCESS (smoke / smoke_turbo / smoke_test / smoke_run / smoke_run_bootstrap /
+# SUCCESS (smoke / smoke_turbo / smoke_test / smoke_run /
 # smoke_warn) marks a positive test; the *_fail helpers mark negatives and are excluded,
 # as are library-only modules that are never registered at all.
 #
@@ -37,7 +37,7 @@ fi
 # is why full_sweep has a DEPMISS bucket at all.
 SKIP=" c_interop_test forgot_parens_test "
 
-out=$(grep -hE '^(smoke|smoke_turbo|smoke_test|smoke_run|smoke_run_bootstrap|smoke_warn) +test/' "$SMOKE" \
+out=$(grep -hE '^(smoke|smoke_turbo|smoke_test|smoke_run|smoke_warn) +test/' "$SMOKE" \
       | awk '{print $2}' | sort -u)
 
 # Drop the skips with ONE grep rather than a basename-per-file loop: 278 process

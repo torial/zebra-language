@@ -74,6 +74,12 @@ kind, and for two sides the checker cannot type it decides by type at runtime (s
 `assert x == y` on untyped strings compares contents, as `assert_eq` did). Rewrite:
 `assert_eq a, b` → `assert a == b`; `assert_true e` → `assert e`; `assert_false e` →
 `assert not (e)` (surface: −4 keywords, 70 now).
+**`same` freed** (2026-09-16): the undocumented self-typed interface parameter; an interface
+names itself (`other: Comparable`) and a class names itself (surface: −1 keyword, 69).
+**Bootstrap sunset Step 2**: the comparison tooling is retired to `tools/attic/` —
+`selfhost-div` and `interp-escape` leave the gate tiers (49 daily / 41 full), `compile_check
+--bootstrap` and the parity/scaling probes go, `mutation_check` regenerates via the
+selfhost. `zig-test` stays until Step 3 deletes `src/`.
 
 ## [0.15] — 2026-05 (in progress)
 

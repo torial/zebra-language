@@ -1,5 +1,7 @@
+# (`other: same` until 2026-09-16 -- the `same` keyword was freed; an interface names
+# itself and the class names itself.)
 interface Comparable
-    def compareTo(other: same): int
+    def compareTo(other: Comparable): int
 
 class Score implements Comparable
     var value: int
@@ -7,7 +9,7 @@ class Score implements Comparable
     cue init(v: int)
         value = v
 
-    def compareTo(other: same): int
+    def compareTo(other: Score): int
         return value - other.value
 
 # A generic class that constrains T to Comparable.

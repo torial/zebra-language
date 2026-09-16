@@ -336,7 +336,6 @@ echo "gates: $MODE (JOBS=$JOBS)"
 bash "$SCRIPT_DIR/sysload.sh" 2>/dev/null | sed 's/^/  /'
 echo
 
-run_static "interp-escape"  "0 hazard"  python tools/lint_interp_escape.py
 run_static "fallthrough"    "0 hazard"  python tools/lint_fallthrough.py
 # The only gate aimed at OUR OWN TOOLING rather than at Zebra code. Five bugs in
 # tools/mutation_check.py in two days, none of which crashed or exited non-zero -- every
@@ -543,7 +542,11 @@ run_full "divergence"    "gate PASS" env JOBS="$JOBS" bash tools/divergence_chec
 # The parser's only fuzz coverage: 960 deterministic grammar-derived programs, gated on
 # HANGS and CRASHES (accept/reject divergences are expected and are not failures). It
 # would have caught BUG-199 -- an 18-byte parser infinite loop -- automatically.
-run_daily "selfhost-div" "PASS" bash tools/selfhost_divergence_check.sh
+# `selfhost-div` (the two-implementation comparison on the compiler's own sources) was
+# registered here until 2026-09-15 -- retired with the bootstrap, bootstrap_sunset.md
+# Step 2; the property it gated (the compiler accepts its own sources) is round-trip's
+# Step 1. `interp-escape` (a bootstrap-only double-escape hazard) left the static tier
+# the same day. Both scripts are in tools/attic/.
 # bootstrap_sunset.md Step 0 (2026-09-15): the recovery path that replaces the bootstrap.
 # A compiler built from the COMMITTED selfhost/*.zig (no Zebra compiler in the loop)
 # must re-emit the working tree byte-for-byte. Empty diff on a clean tree = the round-trip

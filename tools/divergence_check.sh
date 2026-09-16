@@ -111,7 +111,9 @@ emit_and_check() { # $1=compiler $2=mode(boot|self) $3=absfile $4=workdir
 
 if [ "${1:-}" = "--worker" ]; then
   f="$2"; name=$(basename "$f" .zbr)
-  # multi-module (has a local `use`) → bootstrap can't materialize deps via stdout.
+  # multi-module (has a local `use`): skipped since the bootstrap days (it could not
+  # materialize deps via stdout). The N-1 anchor takes --output-dir, so this skip is now
+  # a coverage gap rather than a necessity -- bootstrap_sunset.md lists lifting it.
   if grep -qE '^use ' "$f"; then
     s=$(emit_and_check "$SELF" self "$f" "$OUT/ws-$name")
     echo "$name|MULTI|$s"; exit 0
@@ -299,9 +301,9 @@ while IFS='|' read -r name b s; do
   fi
 done <<< "$results"
 
-echo "═══ selfhost ↔ bootstrap divergence ═══ (jobs=$JOBS${ONLY:+, only=$ONLY})"
+echo "═══ divergence vs the N-1 anchor ═══ (jobs=$JOBS${ONLY:+, only=$ONLY})"
 echo "single-module files: $np agree-pass · $naf agree-fail · $nnomain library(no-main) · $nexpected selfhost-rejects-by-design"
-echo "multi-module (selfhost-only, bootstrap N/A): $nmulti"
+echo "multi-module (not compared -- a bootstrap-era skip the N-1 anchor no longer needs; bootstrap_sunset.md follow-up): $nmulti"
 echo
 _dretries=0
 [ -f "$OUT/retries.txt" ] && _dretries=$(wc -l < "$OUT/retries.txt" | tr -d ' ')

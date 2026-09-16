@@ -230,11 +230,11 @@ per-tier counts, computed from the registrations rather than written down.
 
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
-| `--static` | 17 <!-- doc-gen: 17 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 32 <!-- doc-gen: 32 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 34 <!-- doc-gen: 34 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 42 <!-- doc-gen: 42 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 51 <!-- doc-gen: 51 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--static` | 16 <!-- doc-gen: 16 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
+| `--fast` | 31 <!-- doc-gen: 31 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 33 <!-- doc-gen: 33 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 41 <!-- doc-gen: 41 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 49 <!-- doc-gen: 49 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -621,14 +621,11 @@ python fuzz/leakgen.py --gate   # THE "ZEBRA ACCEPTS, ZIG REJECTS" FUZZER, regis
                                 #   job), anything gen.py does not generate (its caps list
                                 #   is the coverage -- grow it with every bug class), and a
                                 #   crash of the built program (never run).
-python tools/lint_interp_escape.py # THE INTERP-ESCAPE GATE (static, instant, no build):
-                                #   flags a Zebra string that is BOTH interpolated (`${`) and
-                                #   contains `\"`. The bootstrap — still the REGEN AUTHORITY for
-                                #   selfhost/*.zig — double-escapes that combination, so the
-                                #   corruption lands in the shipping compiler. It silently broke
-                                #   all 3 genCopyOut `<<-`/`<-` diagnostics (they emitted a Zig
-                                #   PARSE error instead of their message) until 2026-07-27.
-                                #   BUG-216. 0 = clean. Retire when the bootstrap is fixed/gone.
+                                #   (`lint_interp_escape.py`, the INTERP-ESCAPE GATE, sat here
+                                #   2026-07-27 .. 2026-09-15: it flagged `${` plus `\"` in one
+                                #   string because the BOOTSTRAP double-escaped that shape
+                                #   (BUG-216). Retired with the bootstrap -- sunset Step 2;
+                                #   the script is in tools/attic/.)
 python tools/hazard_lint.py        # THE TOOLING GATE (static, instant, no build) — the
                                 #   only gate pointed at `tools/` rather than at Zebra code.
                                 #   Five bugs were found in tools/mutation_check.py between
@@ -856,7 +853,7 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   a *MethodKnown predicate per type, derived from the
                                 #   dispatch arms, refusing unknown names in the front end
                                 #   -- and are derived here since. The counts print every
-                                #   run. 70 keywords (81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four), 31 namespaces / 171 members,
+                                #   run. 69 keywords (81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four, 70 until same), 31 namespaces / 171 members,
                                 #   21 receivers / 253 methods (5 / 120 on the day it was written).
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
@@ -960,53 +957,16 @@ bash tools/stream_check.sh      # THE STREAM-SEPARATION GATE, registered as `str
                                 #   The markers on the two streams are DIFFERENT strings, so a
                                 #   harness that captured one stream twice fails rather than
                                 #   passes. 0 failures = clean.
-bash tools/selfhost_divergence_check.sh  # THE COMPILER-SOURCES AGREEMENT GATE,
-                                #   registered as `selfhost-div` (DAILY tier, ~3 min).
-                                #   Points BOTH compilers at the modules the compiler is
-                                #   BUILT FROM and requires them to agree.
-                                #   THE GAP IT FILLS: `divergence_check` sweeps test/ and
-                                #   examples/. Nothing compared the two compilers on
-                                #   selfhost/*.zbr, and BUG-332 lived there.
-                                #   WHY THE N-1 ANCHOR CANNOT REPLACE IT: that comparison
-                                #   asks "did this compiler LOSE something", i.e.
-                                #   regressions. BUG-332 never worked, so an N-1 selfhost
-                                #   rejects the same code. Only a genuinely INDEPENDENT
-                                #   implementation catches a long-standing wrong answer,
-                                #   and the bootstrap is the only one this tree has. That
-                                #   is the whole remaining argument for keeping it.
-                                #   IT BUYS BLAME, NOT DETECTION -- stated narrowly because
-                                #   the first draft overclaimed. When the selfhost wrongly
-                                #   refuses a module, REGENERATION FAILS, so rebuild.sh
-                                #   already stops. What is missing is that the error names
-                                #   the SOURCE FILE, reading as "your code is wrong" when
-                                #   the truth is "your compiler is wrong". BUG-332 cost
-                                #   hours to that misattribution.
-                                #   IT CANNOT BE MUTATION-VERIFIED against its own founding
-                                #   bug: reverting that fix stops the compiler regenerating,
-                                #   so no mutant binary exists to test -- the attempt gave a
-                                #   broken tree and a FALSE PASS against the last good
-                                #   binary. Proven red instead with SELFDIV_SELF_OVERRIDE
-                                #   pointed at a stub refusing one module (11/12, names it).
-                                #   ASYMMETRIC ON PURPOSE: selfhost refuses + bootstrap
-                                #   accepts = FAIL; the reverse is INFORMATIONAL, because
-                                #   the bootstrap is frozen and gating that would turn every
-                                #   new language feature into a failure.
-                                #   IT PRINTS ITS OWN COVERAGE EVERY RUN (12/12 on
-                                #   2026-09-05). The bootstrap is frozen, so the share of
-                                #   the compiler it can still read only falls. When it falls
-                                #   far enough the bootstrap has stopped being a reference
-                                #   and can be deleted -- a decision with a number attached
-                                #   rather than one taken when somebody tires of it.
-                                #   SCOPED to bootstrap_check.sh's FILES list, not a glob:
-                                #   selfhost/ also holds ten aux/phase-test files, and one
-                                #   (pipeline_test.zbr) has call sites stale behind an API
-                                #   change, so the SELFHOST correctly refuses it while the
-                                #   bootstrap accepts -- the REVERSE of the target bug.
-                                #   Gating that would mean a red board for being right.
-                                #   REFUSES if the bootstrap is absent: it IS the comparison,
-                                #   and a vacuous run must not look like agreement.
-                                #   RETIRES with the bootstrap (docs/design/bootstrap_sunset.md
-                                #   Step 2); the property it gates is round-trip Step 1.
+                                #   (`selfhost_divergence_check.sh`, the COMPILER-SOURCES
+                                #   AGREEMENT GATE `selfhost-div`, sat here 2026-09-05 ..
+                                #   2026-09-15: both compilers read the modules the compiler
+                                #   is BUILT FROM and had to agree. It bought BLAME, not
+                                #   detection -- the selfhost refusing its own source already
+                                #   stops rebuild.sh; the gate named the compiler instead of
+                                #   the source file (BUG-332 cost hours to that
+                                #   misattribution). Retired with the bootstrap, sunset
+                                #   Step 2: round-trip Step 1 keeps the property, and
+                                #   regen-recover below is the recovery. tools/attic/.)
 bash tools/regen_recover.sh --gate  # THE RECOVERY-PATH GATE, registered as `regen-recover`
                                 #   (DAILY tier, 2026-09-15; bootstrap_sunset.md Step 0).
                                 #   Builds a compiler from the COMMITTED selfhost/*.zig with
@@ -2092,14 +2052,14 @@ than "what do we know":
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
 | **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 11 opted in; the gate prints the ratio | <!-- doc-gen: 11 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
-| static hazard classes | `lint_interp_escape`, `lint_fallthrough` | all `.zbr` |
+| static hazard classes | `lint_fallthrough` (`lint_interp_escape` retired 2026-09-15 with the bootstrap) | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
-| **the gates can still fail** | `gate_selfcheck.sh` | 7 gates |
+| **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 107 scripts | <!-- doc-gen: 107 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 102 scripts | <!-- doc-gen: 102 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 40 tracked documents <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
-| **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 67 keywords, 1 baselined |
+| **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 66 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords × both compilers |
@@ -2839,7 +2799,11 @@ Key idioms worth remembering up front:
 - Keep intermediate Zig files using `zebra --emit-zig` or `--output-dir DIR`.
 - `--zig-backend`, `--gui-backend=glfw` and `debug --listen` -- the last three
   delegations to `zebra-bootstrap.exe` -- were retired 2026-09-15 (bootstrap_sunset.md
-  Step 1); the compiler has one pipeline.
+  Step 1); the compiler has one pipeline. Step 2 the same day retired the comparison
+  tooling (`selfhost-div`, `interp-escape`, `compile_check --bootstrap`,
+  `diagnostic_parity`, `scaling_probe`; `mutation_check` regenerates via the selfhost).
+  `zig-test` stays registered until Step 3 deletes `src/` -- an unrun test suite is the
+  state BUG-279 exists to forbid.
 
 ## Notes
 
