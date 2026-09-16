@@ -114,32 +114,24 @@ union TokenKind
     kw_adds
     kw_is
     kw_as
-    kw_has
     kw_static
     kw_invariant
     kw_where
-    kw_abstract
     kw_export
     kw_extern
     kw_public
     kw_private
-    kw_readonly
     kw_bool
     kw_char
     kw_int
     kw_uint
     kw_float
-    kw_same
     kw_require
     kw_ensure
     kw_old
     kw_result
     kw_implies
     kw_assert
-    kw_assert_eq
-    kw_assert_ne
-    kw_assert_true
-    kw_assert_false
     kw_branch
     kw_on
     kw_if
@@ -152,8 +144,6 @@ union TokenKind
     kw_print
     kw_stop
     kw_return
-    kw_defer
-    kw_errdefer
     kw_this
     kw_to
     kw_and
@@ -166,7 +156,6 @@ union TokenKind
     kw_true
     kw_false
     kw_nil
-    kw_vari
     # U4a tail 2026-08-13: kw_error and kw_try are GONE -- both were reserved and
     # consumed by no rule in either compiler. They waited on the EMIT rather than the
     # parse, and that cleared with BUG-280 plus the isZigKeyword oracle.
@@ -180,8 +169,6 @@ union TokenKind
     kw_with
     kw_except
     kw_union
-    kw_arena
-    kw_guard
 
 class Token
     var kind: TokenKind
@@ -304,8 +291,8 @@ class Keywords
             return TokenKind.kw_return()
         # `defer` / `errdefer` FREED 2026-09-15 (Sean: "bleedthrough from zig and we can
         # kill"). The bootstrap implemented them fully and this parser never accepted them,
-        # so the words were reserved and refused. The kw_ variants and Ast.StmtDefer stay
-        # as dead code until the bootstrap retires (keyword_coverage_baseline's note).
+        # so the words were reserved and refused. The kw_ variants and Ast.StmtDefer went
+        # with the bootstrap (sunset Step 4, 2026-09-16).
         if word == "this"
             return TokenKind.kw_this()
         if word == "to"
@@ -352,7 +339,7 @@ class Keywords
         # 2026-09-15 (Sean): guard was `if not` with a second spelling and an odd `else,`
         # form; arena's construct was removed long ago (`allocate Arena()`); readonly was
         # parsed into a flag nothing read; abstract and vari were reserved for features
-        # that were never built. Their kw_* variants stay in TokenKind as dead code until
-        # the bootstrap's grammar goes (bootstrap_sunset.md Step 4). Same recipe as
-        # defer/errdefer: both token tables, tests inverted, a freed-words fixture.
+        # that were never built. Their kw_* variants left TokenKind with the bootstrap
+        # (sunset Step 4, 2026-09-16). Same recipe as defer/errdefer: both token tables,
+        # tests inverted, a freed-words fixture.
         return nil

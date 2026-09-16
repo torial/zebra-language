@@ -7,8 +7,8 @@
 # STATUS, 2026-08-29 -- READ BEFORE ACTING ON ANY OF THESE.
 #
 #   abstract  FREED 2026-09-15, with guard/arena/readonly/vari (test/guard_freed_words_test).
-#   defer     FREED 2026-09-15 (both token tables; the StmtDefer machinery is dead code
-#   errdefer  until the bootstrap retires). Sean: "bleedthrough from zig and we can kill".
+#   defer     FREED 2026-09-15 (both token tables; the StmtDefer machinery went with the
+#   errdefer  bootstrap, sunset Step 4). Sean: "bleedthrough from zig and we can kill".
 #   vari      FREED 2026-09-15 (variadic parameters, a feature never built).
 #   implies   KEPT, deliberately. A reserved word for a contract operator (`a implies b`,
 #             Eiffel-style logical implication) that is NOT implemented -- lint_reserved_words

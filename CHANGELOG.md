@@ -97,6 +97,11 @@ and `fuzz/harness.py` and `tools/dogfood` become validity sweeps rather than dif
 ones. **`has` freed** as an identifier: only the bootstrap's grammar ever accepted the word
 (a Cobra-era class attribute list); the selfhost never parsed it (surface: −1 keyword, 68).
 The next release archive no longer contains `zebra-bootstrap`.
+**Bootstrap sunset Step 4** (2026-09-16): the dead machinery behind every freed keyword is
+gone -- the `defer`/`guard`/`assert_eq..false` statement forms and the `same` type in the
+AST, their parser nodes, builder and codegen paths, 13 dead token variants, and two runtime
+helpers (`_zebra_assert_cmp`, `_zebra_assert_bool`) that no program has emitted since
+2026-09-15. No user-visible change; the sunset is complete.
 
 ## [0.15] — 2026-05 (in progress)
 

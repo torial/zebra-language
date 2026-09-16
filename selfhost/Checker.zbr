@@ -10,7 +10,7 @@
 #   2. Phantoms   — union variants constructed but never matched (forgotten handler).
 #   3. Unreachable — module-level def functions unreachable from any root.
 
-use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, DeclNamespace, DeclUse, Param, Expr, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprCast, ExprToNonNil, ExprIsNil, ExprOrelse, ExprCatch, ExprIf, ExprLambda, ExprListLit, ExprDictLit, ExprArrayLit, ExprStringInterp, ExprTuple, ExprTypeCheck, ExprChainedCmp, ExprExcept, ExprOld, ExprIndex, ExprSlice, ExprTry, Arg, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssign, StmtDefer, StmtWith, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtAllocate, StmtCopyOut, StmtContract, StmtPrint, StmtAssert, StmtAssertCmp, StmtAssertUnary, BranchOn, ElseIf, CatchClause, LambdaBody, StringPart, DictEntry, ExceptField
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, DeclNamespace, DeclUse, Param, Expr, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprCast, ExprToNonNil, ExprIsNil, ExprOrelse, ExprCatch, ExprIf, ExprLambda, ExprListLit, ExprDictLit, ExprArrayLit, ExprStringInterp, ExprTuple, ExprTypeCheck, ExprChainedCmp, ExprExcept, ExprOld, ExprIndex, ExprSlice, ExprTry, Arg, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssign, StmtWith, StmtRaise, StmtTryCatch, StmtDestruct, StmtAllocate, StmtCopyOut, StmtContract, StmtPrint, StmtAssert, BranchOn, ElseIf, CatchClause, LambdaBody, StringPart, DictEntry, ExceptField
 use Parser exposing PNode, PUse, PModule
 use Resolver
 use AstBuilder exposing ASTBuilder
@@ -296,8 +296,6 @@ class DeadCodeChecker
                     .walkExpr(sv.init_expr!, file, false)
             on Stmt.expr as se
                 .walkExpr(se, file, false)
-            on Stmt.defer_ as sd
-                .walkStmt(sd.stmt, file)
             on Stmt.with_ as sw2
                 .walkExpr(sw2.target, file, false)
                 .walkStmts(sw2.stmts, file)
@@ -313,9 +311,6 @@ class DeadCodeChecker
                     var cl: CatchClause = stc.clauses.at(cli)
                     .walkStmts(cl.stmts, file)
                     cli = cli + 1
-            on Stmt.guard_ as sg
-                .walkExpr(sg.cond, file, false)
-                .walkStmts(sg.else_stmts, file)
             on Stmt.destruct as sdt
                 .walkExpr(sdt.init_expr, file, false)
             on Stmt.allocate_ as sal
@@ -333,16 +328,6 @@ class DeadCodeChecker
                 .walkExpr(sa2.cond, file, false)
                 if sa2.message != nil
                     .walkExpr(sa2.message!, file, false)
-            on Stmt.assert_eq_ as saeq
-                .walkExpr(saeq.lhs, file, false)
-                .walkExpr(saeq.rhs, file, false)
-            on Stmt.assert_ne_ as sane
-                .walkExpr(sane.lhs, file, false)
-                .walkExpr(sane.rhs, file, false)
-            on Stmt.assert_true_ as sat
-                .walkExpr(sat.expr, file, false)
-            on Stmt.assert_false_ as saf
-                .walkExpr(saf.expr, file, false)
             on Stmt.contract as sct
                 var cti: int = 0
                 while cti < sct.exprs.len

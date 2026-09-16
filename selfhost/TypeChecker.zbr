@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtDefer, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtGuard, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
+use Ast exposing StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
 use AstWalk exposing collectOldNodes
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
@@ -4083,16 +4083,6 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             walkExpr(sa.cond, ctx)
             if sa.message != nil
                 walkExpr(sa.message!, ctx)
-        on Stmt.assert_eq_ as sac
-            walkExpr(sac.lhs, ctx)
-            walkExpr(sac.rhs, ctx)
-        on Stmt.assert_ne_ as sac
-            walkExpr(sac.lhs, ctx)
-            walkExpr(sac.rhs, ctx)
-        on Stmt.assert_true_ as sau
-            walkExpr(sau.expr, ctx)
-        on Stmt.assert_false_ as sau
-            walkExpr(sau.expr, ctx)
         on Stmt.pass_
             pass
         on Stmt.break_
@@ -4160,8 +4150,6 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                     ctx.markCopyLocal(dv.name)
         on Stmt.expr as e
             walkExpr(e, ctx)
-        on Stmt.defer_ as sd
-            walkStmt(sd.stmt, ctx)
         on Stmt.with_ as sw2
             walkExpr(sw2.target, ctx)
             # BUG-248, and a wrong turn worth recording. A first attempt seeded
@@ -4211,9 +4199,6 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             walkStmts(stc.stmts, ctx)
             for cc in stc.clauses
                 walkStmts(cc.stmts, ctx)
-        on Stmt.guard_ as sg
-            walkExpr(sg.cond, ctx)
-            walkStmts(sg.else_stmts, ctx)
         on Stmt.destruct as sds
             walkExpr(sds.init_expr, ctx)
             var destruct_recv_t: Type_ = inferExpr(sds.init_expr, ctx)
@@ -5136,9 +5121,6 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 checkStmts(sw.stmts, file, ctx)
             on Stmt.in_scope as si
                 checkStmts(si.stmts, file, ctx)
-            on Stmt.guard_ as sg
-                checkCallsInExpr(sg.cond, file, sg.span.line, ctx)  # BUG-142
-                checkStmts(sg.else_stmts, file, ctx)
             on Stmt.allocate_ as sal
                 checkStmts(sal.stmts, file, ctx)
             on Stmt.branch_ as sb

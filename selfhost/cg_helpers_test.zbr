@@ -89,7 +89,6 @@ def testTypeRefStrSimple()
     assert typeRefStr(TypeRef.named(NamedTypeRef(sp, "int")))  == "int"
     assert typeRefStr(TypeRef.named(NamedTypeRef(sp, "bool"))) == "bool"
     assert typeRefStr(TypeRef.void_)  == "void"
-    assert typeRefStr(TypeRef.same_)  == "same"
     print("4a. typeRefStr simple: OK")
 
 def testTypeRefStrGeneric()

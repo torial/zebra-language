@@ -8,7 +8,7 @@
 #   Fields/variants that collide with Zebra keywords are suffixed with `_`:
 #   body→stmts, throws→throws_, getter/setter→getter_/setter_,
 #   exposing→exposed, vari→variadic, branch→branch_, pass→pass_,
-#   raise→raise_, guard→guard_, all/any→all_/any_, on→cases.
+#   raise→raise_, all/any→all_/any_, on→cases.
 
 # ── Source location ──────────────────────────────────────────────────────────
 
@@ -57,9 +57,7 @@ union Decl
 struct Modifiers
     var is_public: bool
     var is_private: bool
-    var is_abstract: bool
     var is_static: bool
-    var is_readonly: bool
     var is_extern: bool
     var is_reflectable: bool
     var is_profile: bool
@@ -77,12 +75,10 @@ struct Modifiers
     # post-pass; no-op in every other mode.
     var is_node_export: bool
 
-    cue init(is_public: bool = false, is_private: bool = false, is_abstract: bool = false, is_static: bool = false, is_readonly: bool = false, is_extern: bool = false, is_reflectable: bool = false, is_profile: bool = false, is_once: bool = false, is_export: bool = false, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false, is_pure: bool = false, is_node_export: bool = false)
+    cue init(is_public: bool = false, is_private: bool = false, is_static: bool = false, is_extern: bool = false, is_reflectable: bool = false, is_profile: bool = false, is_once: bool = false, is_export: bool = false, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false, is_pure: bool = false, is_node_export: bool = false)
         .is_public = is_public
         .is_private = is_private
-        .is_abstract = is_abstract
         .is_static = is_static
-        .is_readonly = is_readonly
         .is_extern = is_extern
         .is_reflectable = is_reflectable
         .is_profile = is_profile
@@ -392,7 +388,6 @@ union TypeRef
     ref_to: ^TypeRef
     generic: GenericTypeRef
     void_
-    same_
     tuple: TupleTypeRef
     alias_applied: AliasAppliedTypeRef
     fn_type: FnTypeRef
@@ -461,7 +456,7 @@ enum AssignOp
     double_gt_eq
 
 # ── Statements ───────────────────────────────────────────────────────────────
-# Notes: branch/pass/raise/guard are keywords; use branch_/pass_/raise_/guard_.
+# Notes: branch/pass/raise are keywords; use branch_/pass_/raise_.
 
 union Stmt
     if_: ^StmtIf
@@ -471,22 +466,16 @@ union Stmt
     branch_: ^StmtBranch
     return_: ^StmtReturn
     assert_: ^StmtAssert
-    assert_eq_: ^StmtAssertCmp
-    assert_ne_: ^StmtAssertCmp
-    assert_true_: ^StmtAssertUnary
-    assert_false_: ^StmtAssertUnary
     pass_: Span
     break_: Span
     continue_: Span
     assign: ^StmtAssign
     var_: ^DeclVar
     expr: ^Expr
-    defer_: ^StmtDefer
     with_: ^StmtWith
     in_scope: ^StmtIn
     raise_: ^StmtRaise
     try_catch: ^StmtTryCatch
-    guard_: ^StmtGuard
     destruct: ^StmtDestruct
     allocate_: ^StmtAllocate
     copy_out: ^StmtCopyOut
@@ -627,24 +616,6 @@ struct StmtAssert
         .cond = cond
         .message = message
 
-struct StmtAssertCmp
-    var span: Span
-    var lhs: ^Expr
-    var rhs: ^Expr
-
-    cue init(span: Span, lhs: ^Expr, rhs: ^Expr)
-        .span = span
-        .lhs = lhs
-        .rhs = rhs
-
-struct StmtAssertUnary
-    var span: Span
-    var expr: ^Expr
-
-    cue init(span: Span, expr: ^Expr)
-        .span = span
-        .expr = expr
-
 struct StmtAssign
     var span: Span
     var target: ^Expr
@@ -656,16 +627,6 @@ struct StmtAssign
         .target = target
         .op = op
         .value = value
-
-struct StmtDefer
-    var span: Span
-    var is_err: bool
-    var stmt: ^Stmt
-
-    cue init(span: Span, is_err: bool, stmt: ^Stmt)
-        .span = span
-        .is_err = is_err
-        .stmt = stmt
 
 struct StmtWith
     var span: Span
@@ -718,16 +679,6 @@ struct StmtTryCatch
         .span = span
         .stmts = stmts
         .clauses = clauses
-
-struct StmtGuard
-    var span: Span
-    var cond: ^Expr
-    var else_stmts: List(Stmt)
-
-    cue init(span: Span, cond: ^Expr, else_stmts: List(Stmt))
-        .span = span
-        .cond = cond
-        .else_stmts = else_stmts
 
 struct StmtDestruct
     var span: Span

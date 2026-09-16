@@ -248,29 +248,6 @@ pub fn _zbr_is_u8_like(comptime T: type) bool {
     }
     return false;
 }
-pub fn _zebra_assert_cmp(a: anytype, b: anytype, expect_eq: bool) anyerror!void {
-    const is_str = comptime _zbr_is_u8_like(@TypeOf(a));
-    const ok = if (comptime is_str)
-        std.mem.eql(u8, @as([]const u8, a), @as([]const u8, b))
-    else
-        a == b;
-    if (ok != expect_eq) {
-        if (comptime is_str) {
-            if (expect_eq) {
-                _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_eq failed: \"{s}\" != \"{s}\"", .{@as([]const u8, a), @as([]const u8, b)}) catch "assert_eq failed" };
-            } else {
-                _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_ne failed: \"{s}\" == \"{s}\"", .{@as([]const u8, a), @as([]const u8, b)}) catch "assert_ne failed" };
-            }
-        } else {
-            if (expect_eq) {
-                _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_eq failed: {} != {}", .{a, b}) catch "assert_eq failed" };
-            } else {
-                _error_ctx = .{ .message = std.fmt.allocPrint(_allocator, "assert_ne failed: {} == {}", .{a, b}) catch "assert_ne failed" };
-            }
-        }
-        return error.ZebraError;
-    }
-}
 /// `assert a == b` on two primitive operands (2026-09-15, the replacement for the freed
 /// assert_eq/assert_ne/assert_true/assert_false): the failure names both operands.
 fn _zbr_assert_fmt(comptime T: type) []const u8 {
@@ -285,7 +262,7 @@ pub fn _zbr_assert_cmp_msg(a: anytype, b: anytype, op: []const u8, loc: []const 
     return std.fmt.allocPrint(_allocator, fmt, .{ loc, op, a, b }) catch "assert failed";
 }
 /// `assert a == b` when the checker could not type both sides: decide by TYPE at
-/// comptime, the way the freed assert_eq helper (_zebra_assert_cmp) did.
+/// comptime, the way the freed assert_eq helper (_zebra_assert_cmp, removed 2026-09-16) did.
 pub fn _zbr_assert_any_eq(a: anytype, b: anytype) bool {
     if (comptime (_zbr_is_u8_like(@TypeOf(a)) and _zbr_is_u8_like(@TypeOf(b))))
         return std.mem.eql(u8, @as([]const u8, a), @as([]const u8, b));
@@ -304,12 +281,6 @@ pub fn _zbr_assert_cmp_err(ok: bool, a: anytype, b: anytype, op: []const u8, loc
 pub fn _zebra_assert_at(val: bool, msg: []const u8) anyerror!void {
     if (!val) {
         _error_ctx = .{ .message = msg };
-        return error.ZebraError;
-    }
-}
-pub fn _zebra_assert_bool(val: bool, expect_true: bool) anyerror!void {
-    if (val != expect_true) {
-        _error_ctx = .{ .message = if (expect_true) "assert_true failed: got false" else "assert_false failed: got true" };
         return error.ZebraError;
     }
 }

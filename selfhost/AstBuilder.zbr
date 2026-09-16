@@ -16,8 +16,8 @@
 #   - For str.split() iteration the TC must see local List vars: List(str) —
 #     annotate explicitly where needed.
 
-use Ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclTypeAlias, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, FnTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtIn, StmtGuard, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprSetLit, ExprDictLit, DictEntry, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain, ExprIf
-use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PAssertCmp, PAssertUnary, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PTypeAlias, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PWith, PGuard, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain, PIfExpr
+use Ast exposing Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclTypeAlias, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, FnTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtIn, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprSetLit, ExprDictLit, DictEntry, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain, ExprIf
+use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PTypeAlias, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PWith, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain, PIfExpr
 
 def zspan(): Span
     return Span(0, 0, 0, 0)
@@ -138,10 +138,10 @@ def spanOfFirst(es: List(Expr)): Span
     return spanOf(es.at(0))
 
 def zmods(): Modifiers
-    return Modifiers(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false)
+    return Modifiers(false, false, false, false, false, false, false, false, false, false, false, false, false)
 
 def zstatic(): Modifiers
-    return Modifiers(false, false, false, true, false, false, false, false, false, false, false, false, false, false, false)
+    return Modifiers(false, false, true, false, false, false, false, false, false, false, false, false, false)
 
 # Strip surrounding quote characters from a string token text.
 # The selfhost Lexer captures token text including the surrounding " or '.
@@ -734,28 +734,6 @@ class ASTBuilder
                     return Stmt.assert_(StmtAssert(Span(pas.line, pas.col, pas.line, pas.col), cond_expr, msg))
                 return Stmt.assert_(StmtAssert(Span(pas.line, pas.col, pas.line, pas.col), cond_expr, nil))
 
-            on PNode.stmt_assert_eq as pac
-                const lhs = .buildExpr(pac.lhs)?
-                const rhs = .buildExpr(pac.rhs)?
-                const sp = Span(pac.line, pac.col, pac.line, pac.col)
-                return Stmt.assert_eq_(StmtAssertCmp(sp, lhs, rhs))
-
-            on PNode.stmt_assert_ne as pac
-                const lhs = .buildExpr(pac.lhs)?
-                const rhs = .buildExpr(pac.rhs)?
-                const sp = Span(pac.line, pac.col, pac.line, pac.col)
-                return Stmt.assert_ne_(StmtAssertCmp(sp, lhs, rhs))
-
-            on PNode.stmt_assert_true as pau
-                const expr = .buildExpr(pau.expr)?
-                const sp = Span(pau.line, pau.col, pau.line, pau.col)
-                return Stmt.assert_true_(StmtAssertUnary(sp, expr))
-
-            on PNode.stmt_assert_false as pau
-                const expr = .buildExpr(pau.expr)?
-                const sp = Span(pau.line, pau.col, pau.line, pau.col)
-                return Stmt.assert_false_(StmtAssertUnary(sp, expr))
-
             on PNode.stmt_raise as pr
                 if pr.message.len >= 2
                     const msg = .buildExpr(pr.message.at(0))?
@@ -791,10 +769,6 @@ class ASTBuilder
                 const value_expr = .buildExpr(pco.value.at(0))?
                 return Stmt.copy_out(StmtCopyOut(Span(pco.line, pco.col, pco.line, pco.col), target_expr, value_expr, pco.deep))
 
-            on PNode.stmt_guard as pg
-                const cond_expr = .buildExpr(pg.cond.at(0))?
-                var else_stmts: List(Stmt) = .buildStmts(pg.else_stmts)?
-                return Stmt.guard_(StmtGuard(Span(pg.line, pg.col, pg.line, pg.col), cond_expr, else_stmts))
 
             on PNode.stmt_with as pw
                 const target_expr = .buildExpr(pw.target.at(0))?
@@ -1518,9 +1492,6 @@ class ASTBuilder
                                 arg_text = "-" + a2
                             alias_args.add(Expr.int_lit(ExprIntLit(zspan(), arg_text, IntBase.decimal)))
             return TypeRef.alias_applied(AliasAppliedTypeRef(zspan(), alias_name, alias_args))
-
-        # (`same` → TypeRef.same_ was here until 2026-09-16; the word is an identifier now and
-        # TypeRef.same_ is dead until bootstrap_sunset.md Step 4 removes it.)
 
         # Tuple type: "(T1,T2,...)" → TypeRef.tuple(TupleTypeRef([T1, T2, ...]))
         if s.startsWith("(")

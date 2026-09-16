@@ -78,8 +78,8 @@ PROMISE, which §15 says is the open act.
    1.0 should say two platforms, not three-with-an-asterisk. Either way it is a decision
    the queue does not currently hold.
 7. **The bootstrap sunset needs a 1.0 decision, not a trend line.** DECIDED 2026-09-15
-   and DONE 2026-09-16 (Steps 0-3; `src/` is deleted, one compiler, no dependencies;
-   Step 4 -- the dead keyword machinery -- is the remainder):
+   and DONE 2026-09-16 (Steps 0-4; `src/` is deleted, one compiler, no dependencies,
+   and the dead keyword machinery is gone):
    (a), plan in `docs/design/bootstrap_sunset.md` -- which also corrects this entry: the
    selfhost has been its own regen authority since 2026-08-30 (`rebuild.sh` regenerates
    with `zebra.exe`); what the bootstrap still is, is `selfhost-div`'s witness and three
@@ -324,7 +324,7 @@ passable as a `sig`) plus two things for this queue to decide rather than fix:
 
 - **`defer` / `errdefer` FREED 2026-09-15** (Sean: "bleedthrough from zig and we can
   kill" -- the decision was already in tools/keyword_coverage_baseline.txt). Both token
-  tables; the bootstrap's StmtDefer machinery stays as dead code until it retires.
+  tables; the StmtDefer machinery went with the bootstrap (sunset Step 4, 2026-09-16).
   `test/defer_freed_words_test.zbr`, whose first run found BUG-427. `continue` works and
   was merely uncovered.
 - An unused `as n` binding in a branch arm is refused (Zig's unused-capture error

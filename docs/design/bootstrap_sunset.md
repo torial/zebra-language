@@ -1,7 +1,7 @@
 <!-- doc-status: design -->
 # Bootstrap sunset — retiring `src/` and `zebra-bootstrap`
 
-**Status:** DONE through Step 3 (2026-09-16); Step 4 open. Decided in principle by Sean,
+**Status:** DONE, all four steps (2026-09-16). Decided in principle by Sean,
 2026-09-15 ("I agree re a). Let's move to no bootstrap. Worth the effort imo"). Each step
 below was gated and landed as its own commit; nothing was deleted until the step that
 replaced it was green.
@@ -118,10 +118,14 @@ pinned by the retired gates (`decl-exhaustive`, `zig-test`) and their subject is
 deleted code, so no fixture can exist; the baseline records that rather than a gate
 pretending otherwise. FULL gate, then a DAILY run.
 
-**Step 4 — the dead keyword machinery goes with it.** `StmtDefer`, `guard`, `assert_*`
-and `same_` AST/AstBuilder/CodeGen paths, the `kw_*` variants for every freed word
-(`Token.zbr` keeps them as dead enum members until this step), and `abstract` were kept
-only because the bootstrap's tests referenced them. They leave in the commit after Step 3.
+**Step 4 — the dead keyword machinery goes with it.** DONE 2026-09-16. `Stmt.defer_`,
+`guard_`, `assert_eq_/ne_/true_/false_` and `TypeRef.same_` with their structs, the
+PNode variants and AstBuilder arms that built them, every consumer arm across CgHelpers
+(35), CodeGen (21), TypeChecker (7) and Checker (6), `genDefer`/`genGuard`/`genAssertCmp`/
+`genAssertUnary`, the preamble's `_zebra_assert_cmp`/`_zebra_assert_bool`, `Modifiers.
+is_abstract`/`is_readonly`, and the 13 dead `kw_*` variants in `TokenKind`. Nothing
+user-visible: every one of these was unreachable since its keyword was freed, which is why
+it could wait for the bootstrap's tests to stop referencing it.
 
 Order is not negotiable: 0 before 3. Steps 1 and 2 can land in either order and are
 each a single quick-gate commit.

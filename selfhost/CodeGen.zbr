@@ -22,7 +22,7 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use Ast exposing Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
+use Ast exposing Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
 use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
 use AstWalk exposing collectOldNodes
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
@@ -788,12 +788,6 @@ def stmtMentionsThis(s: Stmt): bool
                 if bodyMentionsThis(cl.stmts)
                     return true
             return false
-        on Stmt.defer_ as d
-            return stmtMentionsThis(d.stmt)
-        on Stmt.guard_ as g
-            if exprMentionsThis(g.cond)
-                return true
-            return bodyMentionsThis(g.else_stmts)
         else
             pass
     return false
@@ -858,8 +852,6 @@ def typeRefStr(tr: TypeRef): str
             return s + ")"
         on TypeRef.void_
             return "void"
-        on TypeRef.same_
-            return "same"
         on TypeRef.tuple
             return "tuple"
         on TypeRef.alias_applied as aa
@@ -2566,16 +2558,6 @@ def stmtLine(s: Stmt): int
             return tc.span.line
         on Stmt.assert_ as a
             return a.span.line
-        on Stmt.assert_eq_ as a
-            return a.span.line
-        on Stmt.assert_ne_ as a
-            return a.span.line
-        on Stmt.assert_true_ as a
-            return a.span.line
-        on Stmt.assert_false_ as a
-            return a.span.line
-        on Stmt.defer_ as d
-            return d.span.line
         on Stmt.with_ as ww
             return ww.span.line
         on Stmt.in_scope as si_l
@@ -2584,8 +2566,6 @@ def stmtLine(s: Stmt): int
             return al.span.line
         on Stmt.copy_out as co
             return co.span.line
-        on Stmt.guard_ as g
-            return g.span.line
         on Stmt.destruct as d
             return d.span.line
         on Stmt.expr as e
@@ -3644,11 +3624,6 @@ struct Generator
             on TypeRef.void_
                 w.emit("void")
 
-            on TypeRef.same_
-                if owner != ""
-                    emitTypeName(owner)                     # BUG-281 B
-                else
-                    w.emit("@This()")
 
             on TypeRef.tuple as ttr
                 w.emit("struct { ")
@@ -6101,8 +6076,6 @@ struct Generator
                     addAddrOfMutationsInStmts(ww2.stmts, out)
                 on Stmt.in_scope as si3
                     addAddrOfMutationsInStmts(si3.stmts, out)
-                on Stmt.guard_ as g2
-                    addAddrOfMutationsInStmts(g2.else_stmts, out)
                 on Stmt.var_ as n
                     if n.init_expr != nil
                         addAddrOfMutationsInExpr(n.init_expr!, out)
@@ -6121,16 +6094,6 @@ struct Generator
                         ppi += 1
                 on Stmt.assert_ as asr
                     addAddrOfMutationsInExpr(asr.cond, out)
-                on Stmt.assert_eq_ as asr
-                    addAddrOfMutationsInExpr(asr.lhs, out)
-                    addAddrOfMutationsInExpr(asr.rhs, out)
-                on Stmt.assert_ne_ as asr
-                    addAddrOfMutationsInExpr(asr.lhs, out)
-                    addAddrOfMutationsInExpr(asr.rhs, out)
-                on Stmt.assert_true_ as asr
-                    addAddrOfMutationsInExpr(asr.expr, out)
-                on Stmt.assert_false_ as asr
-                    addAddrOfMutationsInExpr(asr.expr, out)
                 else
                     pass
 
@@ -6443,16 +6406,6 @@ struct Generator
                 genTryCatch(tc)
             on Stmt.assert_ as a
                 genAssert(a)
-            on Stmt.assert_eq_ as a
-                genAssertCmp(a, true)
-            on Stmt.assert_ne_ as a
-                genAssertCmp(a, false)
-            on Stmt.assert_true_ as a
-                genAssertUnary(a, true)
-            on Stmt.assert_false_ as a
-                genAssertUnary(a, false)
-            on Stmt.defer_ as d
-                genDefer(d)
             on Stmt.with_ as ww
                 genWith(ww)
             on Stmt.in_scope as si
@@ -6461,8 +6414,6 @@ struct Generator
                 genAllocate(al)
             on Stmt.copy_out as co
                 genCopyOut(co)
-            on Stmt.guard_ as g
-                genGuard(g)
             on Stmt.destruct as d
                 genDestruct(d)
             on Stmt.expr as e
@@ -10865,39 +10816,6 @@ struct Generator
             w.emit(a.span.line.toString())
             w.emit("\\n\", .{});\n")
 
-    def genAssertCmp(a: StmtAssertCmp, is_eq: bool)
-        writeIndent()
-        w.emit("try _zebra_assert_cmp(")
-        genExpr(a.lhs)
-        w.emit(", ")
-        genExpr(a.rhs)
-        if is_eq
-            w.emit(", true);\n")
-        else
-            w.emit(", false);\n")
-
-    def genAssertUnary(a: StmtAssertUnary, expect_true: bool)
-        writeIndent()
-        w.emit("try _zebra_assert_bool(")
-        genExpr(a.expr)
-        if expect_true
-            w.emit(", true);\n")
-        else
-            w.emit(", false);\n")
-
-    # ── genDefer ──────────────────────────────────────────────────────────────
-
-    def genDefer(d: StmtDefer)
-        writeIndent()
-        if d.is_err
-            w.emit("errdefer {\n")
-        else
-            w.emit("defer {\n")
-        var ig = indented()
-        ig.genStmt(d.stmt)
-        writeIndent()
-        w.emit("}\n")
-
     # ── genWith ───────────────────────────────────────────────────────────────
 
     def genWith(ww: StmtWith)
@@ -11153,18 +11071,6 @@ struct Generator
             w.emit(" = ")
             genExpr(co.value)
             w.emit(";\n")
-
-    # ── genGuard ──────────────────────────────────────────────────────────────
-
-    def genGuard(g: StmtGuard)
-        writeIndent()
-        w.emit("if (!(")
-        genExpr(g.cond)
-        w.emit(")) {\n")
-        var ig = indented()
-        ig.genStmts(g.else_stmts)
-        writeIndent()
-        w.emit("}\n")
 
     # ── genDestruct ───────────────────────────────────────────────────────────
 

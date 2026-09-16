@@ -212,8 +212,6 @@ def testTypeFromRef()
     # ref_to wraps Type_.ref_to.
     check(isRefTo(typeFromRef(TypeRef.ref_to(namedRef("Foo")))), "typeFromRef(ref_to) → ref_to")
 
-    # same_ is not mapped in 16b — falls to unknown_.
-    check(typeIsUnknown(typeFromRef(TypeRef.same_)), "typeFromRef(same_) → unknown_")
 
 # ── Phase 16b: buildModuleTypes on a hand-built Module ──────────────────────
 # Construct a tiny Module with one class:  class Foo { var name: str }

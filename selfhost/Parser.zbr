@@ -50,10 +50,6 @@ union PNode
     stmt_var: ^PVar
     stmt_assign: ^PAssign
     stmt_assert: ^PAssert
-    stmt_assert_eq: ^PAssertCmp
-    stmt_assert_ne: ^PAssertCmp
-    stmt_assert_true: ^PAssertUnary
-    stmt_assert_false: ^PAssertUnary
     stmt_raise: ^PRaise
     stmt_try_catch: ^PTryCatch
     stmt_expr: ^PNode
@@ -62,7 +58,6 @@ union PNode
     stmt_copy_out: ^PCopyOut
     stmt_with: ^PWith
     stmt_in: ^PInScope
-    stmt_guard: ^PGuard
     stmt_destruct: ^PDestruct
     stmt_require: List(PNode)
     stmt_ensure: List(PNode)
@@ -488,17 +483,6 @@ struct PInScope
         .line = line
         .col = col
 
-struct PGuard
-    var cond: List(PNode)
-    var else_stmts: List(PNode)
-    var line: int
-    var col: int
-    cue init(cond: List(PNode), else_stmts: List(PNode), line: int, col: int)
-        .cond = cond
-        .else_stmts = else_stmts
-        .line = line
-        .col = col
-
 struct POrelse
     var expr: List(PNode)
     var fallback: List(PNode)
@@ -610,26 +594,6 @@ struct PAssert
     cue init(cond: List(PNode), message: List(PNode), line: int, col: int)
         .cond = cond
         .message = message
-        .line = line
-        .col = col
-
-struct PAssertCmp
-    var lhs: PNode
-    var rhs: PNode
-    var line: int
-    var col: int
-    cue init(lhs: PNode, rhs: PNode, line: int, col: int)
-        .lhs = lhs
-        .rhs = rhs
-        .line = line
-        .col = col
-
-struct PAssertUnary
-    var expr: PNode
-    var line: int
-    var col: int
-    cue init(expr: PNode, line: int, col: int)
-        .expr = expr
         .line = line
         .col = col
 
@@ -2650,8 +2614,6 @@ class Parser
                 msg_list.add(.parseExpr()?)
         .skipEol()
         return PNode.stmt_raise(PRaise(msg_list, line, col))
-
-
 
     def parseBranchStmt(): PNode throws
         const line = .peek().line

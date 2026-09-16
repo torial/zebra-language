@@ -227,8 +227,6 @@ def typeRefStr(tr: TypeRef): str
             return b.build()
         on TypeRef.void_
             return "void"
-        on TypeRef.same_
-            return "same"
         on TypeRef.tuple as t
             var b2: StringBuilder = StringBuilder()
             b2.append("(")
@@ -414,14 +412,6 @@ def bodyHasRaise(stmts: List(Stmt)): bool
         branch s
             on Stmt.raise_
                 return true
-            on Stmt.assert_eq_
-                return true
-            on Stmt.assert_ne_
-                return true
-            on Stmt.assert_true_
-                return true
-            on Stmt.assert_false_
-                return true
             on Stmt.var_ as n
                 if n.init_expr != nil
                     if exprHasTry(n.init_expr!)
@@ -479,17 +469,6 @@ def bodyHasRaise(stmts: List(Stmt)): bool
             on Stmt.in_scope as si_r
                 if bodyHasRaise(si_r.stmts)
                     return true
-            on Stmt.defer_ as d
-                # Defer body is a single statement; wrap in a temporary list to recurse.
-                var dl = List(Stmt)()
-                dl.add(d.stmt)
-                if bodyHasRaise(dl)
-                    return true
-            on Stmt.guard_ as g
-                if exprHasTry(g.cond)
-                    return true
-                if bodyHasRaise(g.else_stmts)
-                    return true
             on Stmt.try_catch
                 # try/catch absorbs raises -- do not propagate outward.
                 pass
@@ -536,9 +515,6 @@ def bodyHasAssert(stmts: List(Stmt)): bool
                     return true
             on Stmt.in_scope as si_r
                 if bodyHasAssert(si_r.stmts)
-                    return true
-            on Stmt.guard_ as g
-                if bodyHasAssert(g.else_stmts)
                     return true
             on Stmt.try_catch
                 pass
@@ -1135,10 +1111,6 @@ def mightUseNameStmt(name: str, stmt: Stmt): bool
             if mightUseNameInExpr(name, fnum.stop_)
                 return true
             return mightUseName(name, fnum.stmts)
-        on Stmt.guard_ as g
-            if mightUseNameInExpr(name, g.cond)
-                return true
-            return mightUseName(name, g.else_stmts)
         # BUG-169: statement forms that were unmodelled (→ conservative
         # `else => true`), which skips a needed unused-capture/local discard
         # when one appears in the body.  `branch_` is the one the fuzzer's
@@ -1176,24 +1148,10 @@ def mightUseNameStmt(name: str, stmt: Stmt): bool
             if a.message != nil
                 return mightUseNameInExpr(name, a.message!)
             return false
-        on Stmt.defer_ as d
-            return mightUseNameStmt(name, d.stmt)
         # BUG-169 retirement: model every remaining ident-bearing statement, so
         # the final `else` is unreachable (all selfhost Stmt forms handled) →
         # false.  Mirrors the bootstrap's exhaustive switch; round-trip enforces
         # parity.  Retires the walker-drift class (F2/F6/F11).
-        on Stmt.assert_eq_ as aeq
-            if mightUseNameInExpr(name, aeq.lhs)
-                return true
-            return mightUseNameInExpr(name, aeq.rhs)
-        on Stmt.assert_ne_ as ane
-            if mightUseNameInExpr(name, ane.lhs)
-                return true
-            return mightUseNameInExpr(name, ane.rhs)
-        on Stmt.assert_true_ as atr
-            return mightUseNameInExpr(name, atr.expr)
-        on Stmt.assert_false_ as afa
-            return mightUseNameInExpr(name, afa.expr)
         on Stmt.with_ as wth
             if mightUseNameInExpr(name, wth.target)
                 return true
@@ -1457,10 +1415,6 @@ def nameEscapesStmt(name: str, stmt: Stmt): bool
             if nameEscapesInExpr(name, fnum.stop_)
                 return true
             return nameEscapes(name, fnum.stmts)
-        on Stmt.guard_ as g
-            if nameEscapesInExpr(name, g.cond)
-                return true
-            return nameEscapes(name, g.else_stmts)
         # BUG-169: statement forms that were unmodelled (→ conservative
         # `else => true`), which skips a needed unused-capture/local discard
         # when one appears in the body.  `branch_` is the one the fuzzer's
@@ -1498,24 +1452,10 @@ def nameEscapesStmt(name: str, stmt: Stmt): bool
             if a.message != nil
                 return nameEscapesInExpr(name, a.message!)
             return false
-        on Stmt.defer_ as d
-            return nameEscapesStmt(name, d.stmt)
         # BUG-169 retirement: model every remaining ident-bearing statement, so
         # the final `else` is unreachable (all selfhost Stmt forms handled) →
         # false.  Mirrors the bootstrap's exhaustive switch; round-trip enforces
         # parity.  Retires the walker-drift class (F2/F6/F11).
-        on Stmt.assert_eq_ as aeq
-            if nameEscapesInExpr(name, aeq.lhs)
-                return true
-            return nameEscapesInExpr(name, aeq.rhs)
-        on Stmt.assert_ne_ as ane
-            if nameEscapesInExpr(name, ane.lhs)
-                return true
-            return nameEscapesInExpr(name, ane.rhs)
-        on Stmt.assert_true_ as atr
-            return nameEscapesInExpr(name, atr.expr)
-        on Stmt.assert_false_ as afa
-            return nameEscapesInExpr(name, afa.expr)
         on Stmt.with_ as wth
             if nameEscapesInExpr(name, wth.target)
                 return true
@@ -1593,10 +1533,6 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
             if nameUsedInExpr(name, fnum.stop_)
                 return true
             return nameUsedInStmts(name, fnum.stmts)
-        on Stmt.guard_ as g
-            if nameUsedInExpr(name, g.cond)
-                return true
-            return nameUsedInStmts(name, g.else_stmts)
         on Stmt.destruct as d
             return nameUsedInExpr(name, d.init_expr)
         on Stmt.print_ as p
@@ -1632,8 +1568,6 @@ def nameUsedInStmt(name: str, stmt: Stmt): bool
             if r.details != nil
                 return nameUsedInExpr(name, r.details!)
             return false
-        on Stmt.defer_ as d
-            return nameUsedInStmt(name, d.stmt)
         on Stmt.with_ as wth
             # `with EXPR` block (contextual self): a name can be used in the
             # header expr OR the body.
@@ -1747,8 +1681,6 @@ def seedEscapedFromReturns(stmts: List(Stmt), out: StrSet)
                 seedEscapedFromReturns(tc.stmts, out)
                 for cl in tc.clauses
                     seedEscapedFromReturns(cl.stmts, out)
-            on Stmt.guard_ as g
-                seedEscapedFromReturns(g.else_stmts, out)
             else
                 pass
 
@@ -1814,9 +1746,6 @@ def propagateEscapesOnce(stmts: List(Stmt), out: StrSet): bool
                 for cl in tc.clauses
                     if propagateEscapesOnce(cl.stmts, out)
                         grew = true
-            on Stmt.guard_ as g
-                if propagateEscapesOnce(g.else_stmts, out)
-                    grew = true
             else
                 pass
     return grew
@@ -2158,22 +2087,10 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet, ic: InferCtx?)
                 scanMutationsInto(tc.stmts, out, ic)
                 for cl in tc.clauses
                     scanMutationsInto(cl.stmts, out, ic)
-            on Stmt.guard_ as g
-                scanMutationsInto(g.else_stmts, out, ic)
             on Stmt.allocate_ as al
                 scanMutationsInto(al.stmts, out, ic)
             on Stmt.assert_ as a
                 scanMutationsInExpr(a.cond, out, ic)
-            on Stmt.assert_eq_ as a
-                scanMutationsInExpr(a.lhs, out, ic)
-                scanMutationsInExpr(a.rhs, out, ic)
-            on Stmt.assert_ne_ as a
-                scanMutationsInExpr(a.lhs, out, ic)
-                scanMutationsInExpr(a.rhs, out, ic)
-            on Stmt.assert_true_ as a
-                scanMutationsInExpr(a.expr, out, ic)
-            on Stmt.assert_false_ as a
-                scanMutationsInExpr(a.expr, out, ic)
             on Stmt.print_ as p
                 var pi = 0
                 while pi < p.args.len
@@ -2304,22 +2221,8 @@ def stmtMutatesSelf(s: Stmt): bool
             if exprHasSelfCall(al.source)
                 return true
             return methodMutatesSelf(al.stmts)
-        on Stmt.guard_ as g
-            if exprHasSelfCall(g.cond)
-                return true
-            return methodMutatesSelf(g.else_stmts)
-        on Stmt.defer_ as d
-            return stmtMutatesSelf(d.stmt)
         on Stmt.assert_ as a
             return exprHasSelfCall(a.cond)
-        on Stmt.assert_eq_ as a
-            return exprHasSelfCall(a.lhs) or exprHasSelfCall(a.rhs)
-        on Stmt.assert_ne_ as a
-            return exprHasSelfCall(a.lhs) or exprHasSelfCall(a.rhs)
-        on Stmt.assert_true_ as a
-            return exprHasSelfCall(a.expr)
-        on Stmt.assert_false_ as a
-            return exprHasSelfCall(a.expr)
         on Stmt.pass_
             return false
         on Stmt.break_
