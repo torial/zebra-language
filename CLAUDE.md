@@ -2023,6 +2023,16 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-09-16: 46/46 PASS in ONE invocation, ~68 min at JOBS=2 on torial -- the first
+daily after bootstrap sunset Step 3 (`2ffb8ea`: `src/` deleted, one binary, no dependencies).**
+smoke **513/513** (403 s), round-trip byte-identical, `boundary` 33/0, `cli-surface` 42/42,
+`output_sweep` **466 files behaviour identical** (734 s), `full_sweep` 0 regressions vs **485**,
+`examples_sweep` 0 vs 19, `divergence` 0 regressions vs the N-1 anchor (1442 s -- the heaviest
+gate, and the one that now carries the equivalence question the bootstrap used to),
+`regen-recover` PASS (27 s), `gramgen` 960/0/0 against the FROZEN grammar.txt, `leakgen`
+100/0/0, all three `gui-scaffold`s, `libui-section`, `node-addon`. 46 = 49 minus the three
+gates whose oracle was `src/`; nothing pinned. The FULL that gated the commit was 38/38.
+
 **DAILY tier 2026-09-11: 49/49 PASS in ONE invocation, 1h51m at JOBS=1 on torial -- the run
 `v0.9.0-rc1_zig0.16` is tagged on (`e9b7ef2`).** smoke **498/498**, round-trip byte-identical,
 `boundary` 32/0, `cli-surface` 37/37, `dynlib-roundtrip` PASS **on Windows**, `output_sweep`
