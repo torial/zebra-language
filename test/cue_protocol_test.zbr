@@ -1,0 +1,148 @@
+# Cues (2026-09-16): a `cue` is a method the compiler calls for you. `init` was the
+# only one; this fixture covers the rest -- toString (print / `${}`), equals (`==`,
+# `!=`), hash (HashMap / Set keys), compare (`<` `<=` `>` `>=` and sort), and
+# iter / next (`for x in obj`). `deinit` is deliberately NOT here: its end-of-scope
+# semantics are an open 1.0 decision.
+
+class Money
+    var cents: int
+    var currency: str
+
+    cue init(cents: int, currency: str)
+        .cents = cents
+        .currency = currency
+
+    cue toString(): str
+        return "${.currency} ${.cents / 100}.${.cents % 100}"
+
+    cue equals(other: Money): bool
+        return .cents == other.cents and .currency == other.currency
+
+    cue hash(): int
+        return .cents * 31 + .currency.len
+
+    cue compare(other: Money): int
+        return .cents - other.cents
+
+# A struct gets the same cues (by value).
+struct Version
+    var major: int
+    var minor: int
+
+    cue toString(): str
+        return "v${.major}.${.minor}"
+
+    cue equals(other: Version): bool
+        return .major == other.major and .minor == other.minor
+
+    cue compare(other: Version): int
+        if .major != other.major
+            return .major - other.major
+        return .minor - other.minor
+
+# `cue iter` returns an iterator type; that type declares `cue next`.
+class Countdown
+    var start: int
+
+    cue init(start: int)
+        .start = start
+
+    cue iter(): CountdownIter
+        return CountdownIter(.start)
+
+class CountdownIter
+    var n: int
+
+    cue init(n: int)
+        .n = n
+
+    cue next(): int?
+        if .n <= 0
+            return nil
+        .n = .n - 1
+        return .n + 1
+
+# A type can be its own iterator: `cue next` with no `cue iter`.
+class Words
+    var items: List(str)
+    var i: int
+
+    cue init(items: List(str))
+        .items = items
+        .i = 0
+
+    cue next(): str?
+        if .i >= .items.len
+            return nil
+        .i = .i + 1
+        return .items.at(.i - 1)
+
+def main()
+    var a = Money(150, "USD")
+    var b = Money(150, "USD")
+    var c = Money(999, "USD")
+
+    # toString: print and interpolation both go through the cue.
+    print(a)
+    print("a is ${a}")
+    print(a.toString())
+
+    # equals: == and != route through the cue (not pointer identity).
+    assert a == b, "equals: same value"
+    assert a != c, "equals: different value"
+    assert not (a == c), "equals: negated"
+
+    # compare: relational operators and sort.
+    assert a < c, "compare: lt"
+    assert c > a, "compare: gt"
+    assert a <= b, "compare: le on equal"
+    assert a >= b, "compare: ge on equal"
+    var prices = List(Money)()
+    prices.add(c)
+    prices.add(a)
+    prices.add(Money(5, "USD"))
+    prices.sort()
+    print(prices.at(0))
+    print(prices.at(1))
+    print(prices.at(2))
+
+    # hash: a HashMap keyed by the class looks up by hash then equals.
+    var tally: HashMap(Money, int) = HashMap()
+    tally.put(a, 1)
+    tally.put(b, 2)      # same key as a -> overwrites
+    tally.put(c, 3)
+    print("tally size ${tally.count()}")
+    print("tally[a] ${tally.get(a)!}")
+    var seen: Set(Money) = Set()
+    seen.add(a)
+    seen.add(b)
+    print("seen size ${seen.count()}")
+
+    # struct cues, by value.
+    var v1 = Version(major: 1, minor: 2)
+    var v2 = Version(major: 1, minor: 10)
+    print(v1)
+    assert v1 == Version(major: 1, minor: 2), "struct equals"
+    assert v1 < v2, "struct compare"
+    var vs = List(Version)()
+    vs.add(v2)
+    vs.add(v1)
+    vs.sort()
+    print(vs.at(0))
+
+    # iter / next: for-in over a cue iterable, both shapes, with for-else.
+    var out = ""
+    for n in Countdown(3)
+        out = out + n.toString() + " "
+    print("countdown: ${out}")
+    var ws = List(str)()
+    ws.add("alpha")
+    ws.add("beta")
+    for wd in Words(ws)
+        print("word ${wd} (${wd.len})")
+    for n2 in Countdown(0)
+        print("never ${n2}")
+    else
+        print("countdown empty")
+
+    print("cue_protocol: OK")

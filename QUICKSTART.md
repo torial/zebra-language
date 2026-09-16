@@ -556,6 +556,66 @@ class Counter
   table.
 - Constructor call: `Counter()` or `Counter(arg1, arg2)`.
 
+### Cues — methods the compiler calls for you
+
+`cue` marks a method that the **compiler** calls, not (only) your code — Python's
+dunder methods, without the underscores. `init` is one; the full set is closed:
+
+| cue | shape | the compiler calls it for |
+|-----|-------|---------------------------|
+| `cue init(...)` | no return type | `T(...)` construction |
+| `cue toString(): str` | no params | `print(x)`, `"${x}"`, `x.toString()` |
+| `cue equals(other: T): bool` | one param | `x == y`, `x != y` |
+| `cue hash(): int` | no params; needs `equals` | `HashMap(T, V)` / `Set(T)` keys |
+| `cue compare(other: T): int` | negative / zero / positive | `<` `<=` `>` `>=`, `list.sort()` |
+| `cue iter(): I` | `I` declares `cue next` | `for x in obj` |
+| `cue next(): E?` | `nil` when exhausted | `for x in obj` (on `obj` itself or its `iter()`) |
+
+```zebra
+class Money
+    var cents: int
+    cue init(cents: int)
+        .cents = cents
+    cue toString(): str
+        return "${.cents / 100}.${.cents % 100}"
+    cue equals(other: Money): bool
+        return .cents == other.cents
+    cue hash(): int
+        return .cents
+    cue compare(other: Money): int
+        return .cents - other.cents
+
+class Countdown
+    var n: int
+    cue init(n: int)
+        .n = n
+    cue next(): int?          # a type with `cue next` is its own iterator
+        if .n <= 0: return nil
+        .n = .n - 1
+        return .n + 1
+
+def main()
+    var a = Money(150)
+    print(a)                  # 1.50           (toString)
+    print(a == Money(150))    # true           (equals — value, not identity)
+    var tally: HashMap(Money, int) = HashMap()
+    tally.put(a, 1)           # hashed by `hash`, confirmed by `equals`
+    print(a < Money(999))     # true           (compare)
+    for i in Countdown(3)     # 3 2 1          (next)
+        print(i)
+```
+
+- The names are reserved for the protocol: `def toString` (or `def equals`, `hash`,
+  `compare`, `iter`, `next`) is refused with a message naming the `cue` spelling, and
+  `cue somethingElse` is refused too — anything not in the table is a `def`.
+- Shapes are checked at the declaration (`cue compare` returning `bool` is an error
+  there, not inside the emitted Zig). `cue hash` without `cue equals` is refused: a
+  key is found by hash and *confirmed* by equals.
+- Structs get the same cues, by value. `@derive(Debug, Eq, Hash)` (§43) writes
+  `toString` / `equals` / `hash` for you — a hand-written cue wins over the derived one.
+- `cue deinit` (end-of-scope teardown) is **not** in the set yet; its semantics are an
+  open 1.0 decision (`docs/NEXT_STEPS_to_1.0.md`).
+
 ### Static members (`static def` / `static var`)
 
 `static def` and `static var` declare members that belong to the **type**, not to
@@ -4732,8 +4792,8 @@ extend List(str)
 
 ## 43. `@derive(Debug, Eq, Hash)` — auto-generated methods
 
-`@derive` placed on a `struct` declaration instructs the compiler to auto-generate
-implementations of `toString`, `eql`, and/or `hash` based on the struct's fields.
+`@derive` placed on a `struct` declaration writes the cues you didn't (§5 "Cues"):
+`toString`, `equals`, and/or `hash`, field by field.
 
 ```zebra
 @derive(Debug, Eq, Hash)
@@ -4742,18 +4802,18 @@ struct Point
     var y: float
 
 # Generated automatically — no need to write these:
-#   def toString(): str    → "Point(x=1.0, y=2.0)"
-#   def eql(other: Point): bool
-#   def hash(): int
+#   cue toString(): str    → "Point(x=1.0, y=2.0)"
+#   cue equals(other: Point): bool
+#   cue hash(): int
 ```
 
 **What each trait generates:**
 
-| Trait | Method generated | Behavior |
-|-------|-----------------|----------|
-| `Debug` | `toString(): str` | `"TypeName(field1=val1, field2=val2)"` format |
-| `Eq` | `eql(other: Self): bool` | Field-by-field equality; also enables `==` on the struct |
-| `Hash` | `hash(): int` | FNV-1a over all fields; required for use as a `HashMap` key |
+| Trait | Cue generated | Behavior |
+|-------|---------------|----------|
+| `Debug` | `cue toString(): str` | `"TypeName(field1=val1, field2=val2)"` format |
+| `Eq` | `cue equals(other: Self): bool` | Field-by-field equality; `==` / `!=` route through it |
+| `Hash` | `cue hash(): int` | FNV-1a over all fields; makes the struct a `HashMap` / `Set` key |
 
 **Usage:**
 
@@ -4770,20 +4830,20 @@ def main()
     var green = Color(r: 0,   g: 255, b: 0)
 
     print(red.toString())          # → Color(r=255, g=0, b=0)
-    print(red == red2)             # → true   (Eq rewires `==` to call eql)
+    print(red == red2)             # → true   (Eq rewires `==` to call equals)
     print(red == green)            # → false
 
     var seen = HashMap(Color, bool)()
     seen.set(red, true)
-    print(seen.get(red))           # → true  (uses derived hash + eql)
+    print(seen.get(red))           # → true  (uses derived hash + equals)
 ```
 
 **Notes:**
 
 - Any subset of `(Debug, Eq, Hash)` may be specified.
-- If you write your own `toString` / `eql` / `hash`, the `@derive` version for that
-  trait is suppressed — user methods take precedence.
-- `Eq` also rewires the `==` operator on the struct so `a == b` calls `a.eql(b)`.
+- If you write your own `cue toString` / `cue equals` / `cue hash`, the `@derive`
+  version for that trait is suppressed — your cue takes precedence.
+- `Eq` also rewires the `==` operator on the struct so `a == b` calls `a.equals(b)`.
 - `Hash` requires all fields to have a hash-able type.  Fields that are themselves
   structs must also carry `@derive(Hash)`.
 - `@derive` applies only to `struct` — not `class`, `enum`, or `union`.

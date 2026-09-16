@@ -1169,6 +1169,22 @@ smoke_run test/set_literal_test.zbr "set_literal: OK"
 smoke_run test/dict_literal_test.zbr "dict_literal: OK"
 # BUG-203: explicit `.eql(value)` on a @derive(Eq) struct addresses the value arg.
 smoke_run test/derive_eql_explicit_test.zbr "derive_eql_explicit: OK"
+
+# Cues (2026-09-16): `cue` is no longer only `init`. toString / equals / hash / compare /
+# iter / next are the methods the compiler calls for you (print and `${}`, `==`/`!=`,
+# HashMap/Set keys via _zbr_CueCtx, `<`..`>=` and sort via _zbr_has_cue, `for x in obj`).
+# One positive fixture covering every cue on a class, a struct, and both iterator shapes;
+# four refusals: unknown cue name (Parser CUE_NAMES), a cue written as `def`, `cue hash`
+# without `cue equals`, and a cue with the wrong signature. `deinit` is deliberately absent.
+smoke_run test/cue_protocol_test.zbr "cue_protocol: OK"
+smoke_tc_fail test/fail_fixtures/cue_unknown_name_test.zbr \
+    "unknown cue 'frobnicate': the cues are init, toString, equals, hash, compare, iter, next"
+smoke_tc_fail test/fail_fixtures/cue_def_tostring_test.zbr \
+    "\`toString\` is a cue"
+smoke_tc_fail test/fail_fixtures/cue_hash_without_equals_test.zbr \
+    "\`cue hash\` needs \`cue equals\` on the same type"
+smoke_tc_fail test/fail_fixtures/cue_bad_signature_test.zbr \
+    "\`cue compare\` takes the other value and returns int"
 # Full-corpus sweep (2026-07-24): stale tests using removed syntax, refreshed to
 # current forms (print("x") not print "x"; `: T` not `as T`) and now gated.
 smoke_run test/branch_inline_return_test.zbr "branch inline return OK"

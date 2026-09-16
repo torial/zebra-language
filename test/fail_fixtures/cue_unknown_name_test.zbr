@@ -1,0 +1,13 @@
+# Cues are a closed set (Parser CUE_NAMES). `cue frobnicate` is not one of them.
+class Widget
+    var n: int
+
+    cue init(n: int)
+        .n = n
+
+    cue frobnicate(): int
+        return .n
+
+def main()
+    var w = Widget(1)
+    print(w.n)

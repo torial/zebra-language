@@ -1,7 +1,8 @@
-# BUG-203: an explicit `.eql(value)` call on a @derive(Eq) struct must address the
-# value argument (the generated eql takes `other: *const Self`). Previously this
-# emitted `a.eql(b)` and failed to compile ("expected *const Color, found Color");
-# only the `==` operator worked. Both must now work.
+# BUG-203: an explicit call to the @derive(Eq) equality method must work alongside `==`.
+# Historically the generated method was `eql(other: *const Self)` and a bare `a.eql(b)`
+# failed to compile ("expected *const Color, found Color"). Since cues (2026-09-16) the
+# derived method is `equals(other: Self)` by value -- the same shape a hand-written
+# `cue equals` has -- so `a.equals(b)` and `a == b` are the same call.
 
 @derive(Eq)
 struct Color
@@ -14,8 +15,8 @@ def main()
     var b = Color(r: 1, g: 2, b: 3)
     var c = Color(r: 9, g: 9, b: 9)
 
-    assert a.eql(b), "explicit eql: equal structs"
-    assert not a.eql(c), "explicit eql: unequal structs"
+    assert a.equals(b), "explicit eql: equal structs"
+    assert not a.equals(c), "explicit eql: unequal structs"
     # Regression guard: the == rewrite (which already addressed the arg) still works.
     assert a == b, "== equal"
     assert a != c, "!= unequal"

@@ -2972,7 +2972,8 @@ struct Generator
     # Variable names bound to DynLib handles (result of DynLib.open).
     # Used to dispatch .close() and .lookup() to DynLib-specific codegen.
     var dynlib_vars          : StrSet
-    var derive_eq_structs    : StrSet   # struct names with @derive(Eq) — route == to .eql()
+    var derive_eq_structs    : StrSet   # struct names with @derive(Eq) — route == to .equals()
+    var derive_hash_structs  : StrSet   # struct names with @derive(Hash) — HashMap keys via _zbr_CueCtx
     var datetime_vars        : StrSet   # local var names holding _DateTime instances
     # Gap 1 (sig-takes-closure): per-module list of thunk specs collected by
     # genCall; emitted at module end by flushPendingThunks.  See cg_helpers
@@ -3076,6 +3077,7 @@ struct Generator
         .method_return_type    = nil
         .dynlib_vars           = StrSet()
         .derive_eq_structs     = StrSet()
+        .derive_hash_structs   = StrSet()
         .datetime_vars         = StrSet()
         .pending_thunks        = ThunkList()
         .closure_lambdas       = HashMap(str, ExprLambda)()
@@ -3689,6 +3691,17 @@ struct Generator
                 else
                     w.emit("anytype")
                 w.emit(")")
+            else if gtr.args.len == 2 and cueHashKeyName(gtr.args.at(0)) != ""
+                # A key type with `cue hash` + `cue equals` (or @derive(Hash, Eq)) is
+                # looked up by CONTENT through those cues, not by AutoHashMap's bytes-
+                # or-address hashing (2026-09-16). _zbr_CueCtx is in the preamble.
+                w.emit("std.HashMap(")
+                genType(gtr.args.at(0))
+                w.emit(", ")
+                genType(gtr.args.at(1))
+                w.emit(", _zbr_CueCtx(")
+                genType(gtr.args.at(0))
+                w.emit("), std.hash_map.default_max_load_percentage)")
             else
                 w.emit("std.AutoHashMap(")
                 var ai = 0
@@ -3721,6 +3734,12 @@ struct Generator
             var set_key_str = gtr.args.len >= 1 and isStringTypeRef(gtr.args.at(0))
             if set_key_str
                 w.emit("std.StringHashMap(void)")
+            else if gtr.args.len >= 1 and cueHashKeyName(gtr.args.at(0)) != ""
+                w.emit("std.HashMap(")
+                genType(gtr.args.at(0))
+                w.emit(", void, _zbr_CueCtx(")
+                genType(gtr.args.at(0))
+                w.emit("), std.hash_map.default_max_load_percentage)")
             else
                 w.emit("std.AutoHashMap(")
                 if gtr.args.len >= 1
@@ -4095,6 +4114,8 @@ struct Generator
         struct_names.add(n.name)
         if n.mods.is_derive_eq
             derive_eq_structs.add(n.name)
+        if n.mods.is_derive_hash
+            derive_hash_structs.add(n.name)
         if n.mods.is_derive_debug
             toString_types.add(n.name)
         # ^T field tracking for auto-deref moved to the PRE-PASS (BUG-294): doing it
@@ -4180,14 +4201,24 @@ struct Generator
                 w.emit(".check(@This());\n")
             ig.writeIndent()
             w.emit("}\n")
-        if n.mods.is_derive_debug
+        # @derive writes the cues you did not: a hand-written `cue toString` /
+        # `cue equals` / `cue hash` on the same struct wins (QUICKSTART §43 promised
+        # this; it was not enforced until 2026-09-16).
+        if n.mods.is_derive_debug and not hasCueMember(n.members, "toString")
             ig.genDeriveToString(n)
-        if n.mods.is_derive_eq
+        if n.mods.is_derive_eq and not hasCueMember(n.members, "equals")
             ig.genDeriveEql(n)
-        if n.mods.is_derive_hash
+        if n.mods.is_derive_hash and not hasCueMember(n.members, "hash")
             ig.genDeriveHash(n)
         writeIndent()
         w.emit("};\n\n")
+
+    def hasCueMember(members: List(Decl), cue_name: str): bool
+        for mem in members
+            if mem is Decl.method as dm
+                if dm.mods.is_cue and dm.name == cue_name
+                    return true
+        return false
 
     def isStrFieldType(tr: TypeRef?): bool
         if tr == nil
@@ -4247,11 +4278,14 @@ struct Generator
         writeIndent()
         w.emit("}\n")
 
+    # The generated `equals` takes `other` BY VALUE (it took `*const` as `eql` until
+    # 2026-09-16), so `a == b`, an explicit `a.equals(b)` and the HashMap key context all
+    # call it the same way a hand-written `cue equals(other: T)` is called.
     def genDeriveEql(n: DeclStruct)
         writeIndent()
-        w.emit("pub fn eql(self: *const ")
+        w.emit("pub fn equals(self: *const ")
         emitTypeName(n.name)                                # BUG-281 B
-        w.emit(", other: *const ")
+        w.emit(", other: ")
         emitTypeName(n.name)                                # BUG-281 B
         w.emit(") bool {\n")
         var ig_eq = indented()
@@ -7409,6 +7443,12 @@ struct Generator
                             branch type_hint!
                                 on TypeRef.generic as gtr
                                     var key_is_str = gtr.args.len > 0 and isStringTypeRef(gtr.args.at(0))
+                                    if gtr.args.len == 2 and cueHashKeyName(gtr.args.at(0)) != ""
+                                        # cue-hash key: the annotation already names the
+                                        # right map type (std.HashMap + _zbr_CueCtx).
+                                        genType(type_hint!)
+                                        w.emit(".init(_allocator)")
+                                        return
                                     if key_is_str
                                         w.emit("std.StringHashMap(")
                                         if gtr.args.len >= 2
@@ -7436,6 +7476,10 @@ struct Generator
                             branch type_hint!
                                 on TypeRef.generic as gtr
                                     var set_key_str = gtr.args.len > 0 and isStringTypeRef(gtr.args.at(0))
+                                    if gtr.args.len > 0 and cueHashKeyName(gtr.args.at(0)) != ""
+                                        genType(type_hint!)
+                                        w.emit(".init(_allocator)")
+                                        return
                                     if set_key_str
                                         w.emit("std.StringHashMap(void)")
                                     else
@@ -8686,6 +8730,71 @@ struct Generator
                     ig.w.emit("}\n")
                 writeIndent()
                 w.emit("}\n")
+                return
+            # `for x in obj` over a type with `cue iter`/`cue next` (2026-09-16):
+            #   { var _it = obj.iter();   -- or obj itself when it declares `cue next`
+            #     while (true) { const _n = _it.next(); if (_n == null) break; const x = _n.?; body } }
+            var cue_kind: int = cueIterKind(fi.iter)
+            if cue_kind != 0
+                var cue_elem: Type_ = cueIterElem(fi.iter)
+                writeIndent()
+                w.emit("{\n")
+                ig.writeIndent()
+                ig.w.emit("var _it_" + vname + " = ")
+                genExpr(fi.iter)
+                if cue_kind == 1
+                    ig.w.emit(".iter()")
+                ig.w.emit(";\n")
+                # A class iterator is a pointer (never mutated → Zig would demand `const`);
+                # a struct iterator mutates in place (needs `var`). Address-of covers both.
+                ig.writeIndent()
+                ig.w.emit("_ = &_it_" + vname + ";\n")
+                var label_cu: str? = nil
+                var wg_cu = ig
+                var bg_cu = ig.indented()
+                if fi.else_ != nil
+                    var uid_cu = w.nextUid()
+                    label_cu = "_fels_" + uid_cu.toString()
+                    ig.writeIndent()
+                    ig.w.emit("const " + label_cu! + " = " + label_cu! + ": {\n")
+                    wg_cu = ig.indented()
+                    bg_cu = wg_cu.indented()
+                    bg_cu.for_else_label = label_cu!
+                wg_cu.writeIndent()
+                wg_cu.w.emit("while (true) {\n")
+                bg_cu.writeIndent()
+                bg_cu.w.emit("const _n_" + vname + " = _it_" + vname + ".next();\n")
+                bg_cu.writeIndent()
+                bg_cu.w.emit("if (_n_" + vname + " == null) break;\n")
+                bg_cu.writeIndent()
+                bg_cu.w.emit("const " + zigSafeName(vname) + " = _n_" + vname + ".?;\n")
+                for_loop_vars.add(vname)
+                if cue_elem is Type_.string_
+                    str_params.add(vname)
+                else if not (cue_elem is Type_.unknown_)
+                    if bg_cu.infer_ctx != nil
+                        bg_cu.infer_ctx!.bind(vname, cue_elem)
+                if not nameUsedInStmts(vname, fi.stmts)
+                    bg_cu.writeIndent()
+                    bg_cu.w.emit("_ = " + zigSafeName(vname) + ";\n")
+                bg_cu.emitForGuard(fi)
+                bg_cu.genStmts(fi.stmts)
+                wg_cu.writeIndent()
+                wg_cu.w.emit("}\n")
+                if label_cu != nil
+                    wg_cu.writeIndent()
+                    wg_cu.w.emit("break :" + label_cu! + " true;\n")
+                    ig.writeIndent()
+                    ig.w.emit("};\n")
+                    ig.writeIndent()
+                    ig.w.emit("if (" + label_cu! + ") {\n")
+                    wg_cu.genStmts(fi.else_!)
+                    ig.writeIndent()
+                    ig.w.emit("}\n")
+                writeIndent()
+                w.emit("}\n")
+                if not _flv_had
+                    for_loop_vars.removeOne(vname)
                 return
             if isSplitIter(fi.iter)
                 # for p in str.split(sep) → while loop with splitSequence iterator
@@ -12321,14 +12430,15 @@ struct Generator
                 genExpr(b.right)
                 w.emit(")")
                 return
-            # @derive(Eq) struct: route == / != through the generated eql() method.
+            # `cue equals` (hand-written, or the one @derive(Eq) writes): route == / !=
+            # through it. Classes are pointers and structs pass by value; either way the
+            # call is `left.equals(right)`.
             if not either_nil
-                var left_eq_struct = .isDeriveEqExpr(b.left)
-                if left_eq_struct
+                if .isEqualsCueExpr(b.left)
                     if b.op == BinaryOp.ne
                         w.emit("!")
                     genExpr(b.left)
-                    w.emit(".eql(&")
+                    w.emit(".equals(")
                     genExpr(b.right)
                     w.emit(")")
                     return
@@ -12489,14 +12599,73 @@ struct Generator
                 w.emit(um2.member)
                 w.emit(" = {} }")
 
-    def isDeriveEqExpr(e: Expr): bool
-        # Detect @derive(Eq) struct variable: ident whose type name is in derive_eq_structs.
+    # True iff `e` is a value whose type answers `==` through `equals`: a @derive(Eq)
+    # struct or any class/struct declaring `cue equals` (this module or a dep).
+    def isEqualsCueExpr(e: Expr): bool
         if .infer_ctx == nil
             return false
         var t: Type_ = inferExpr(e, .infer_ctx!)
+        if t is Type_.ref_to as rt
+            t = rt
         if t is Type_.named as tn
-            return derive_eq_structs.contains_(tn)
+            if derive_eq_structs.contains_(tn)
+                return true
+            return .infer_ctx!.hasCueAny(tn, "equals")
         return false
+
+    # `for x in obj` over a type that declares `cue iter` (1) or `cue next` directly (2);
+    # 0 when the iterable is not a cue-iterable type.
+    def cueIterKind(e: Expr): int
+        var tn: str = cueIterTypeName(e)
+        if tn == ""
+            return 0
+        if .infer_ctx!.hasCueAny(tn, "iter")
+            return 1
+        if .infer_ctx!.hasCueAny(tn, "next")
+            return 2
+        return 0
+
+    # The named type of a cue-iterable expression, or "" (also "" with no checker).
+    def cueIterTypeName(e: Expr): str
+        if .infer_ctx == nil
+            return ""
+        var t: Type_ = inferExpr(e, .infer_ctx!)
+        if t is Type_.ref_to as rt
+            t = rt
+        if t is Type_.named as tn
+            if .infer_ctx!.hasCueAny(tn, "iter") or .infer_ctx!.hasCueAny(tn, "next")
+                return tn
+        return ""
+
+    # What `next()` yields for a cue-iterable expression, `?` removed; unknown_ if unresolved.
+    def cueIterElem(e: Expr): Type_
+        var tn: str = cueIterTypeName(e)
+        if tn == ""
+            return Type_.unknown_
+        var it_cls: str = tn
+        if .infer_ctx!.hasCueAny(tn, "iter")
+            if .infer_ctx!.methodReturnAny(tn, "iter") as irt
+                if irt is Type_.named as irn
+                    it_cls = irn
+        if .infer_ctx!.methodReturnAny(it_cls, "next") as nrt
+            if nrt is Type_.optional as ninner
+                return ninner
+        return Type_.unknown_
+
+    # The key type's name when a HashMap/Set key TypeRef names a `cue hash` type, else "".
+    def cueHashKeyName(tr: TypeRef): str
+        if tr is TypeRef.named as kn
+            if isHashCueType(kn.name)
+                return kn.name
+        return ""
+
+    # True iff `name` is a type whose HashMap/Set keys go through `cue hash`/`cue equals`.
+    def isHashCueType(name: str): bool
+        if derive_hash_structs.contains_(name)
+            return true
+        if .infer_ctx == nil
+            return false
+        return .infer_ctx!.hasCueAny(name, "hash")
 
     # ── genUnary ──────────────────────────────────────────────────────────────
 
@@ -13559,17 +13728,8 @@ struct Generator
             if isDetailsMemberOnCatchVar(m.object, catch_var)
                 w.emit("(if (_error_ctx.details) |_det| _det.toString() else \"\")")
                 return
-        # BUG-203: explicit `.eql(v)` on a @derive(Eq) struct. The generated eql is
-        # `fn eql(self: *const Self, other: *const Self)`, so a value argument must be
-        # addressed — mirrors the == path in genBinary, which emits `left.eql(&right)`.
-        # Guarded by isDeriveEqExpr (same as ==) so a user-overridden by-value eql is
-        # treated identically to == rather than newly broken.
-        if mname == "eql" and args.len == 1 and isDeriveEqExpr(m.object)
-            genExpr(m.object)
-            w.emit(".eql(&")
-            genExpr(args.at(0).value)
-            w.emit(")")
-            return
+        # (BUG-203's `.eql(&v)` special case retired 2026-09-16: the generated method is
+        # `equals(self, other: T)` by value, so an explicit `a.equals(b)` is an ordinary call.)
         # DateTime.inZone — unique enough name; dispatch without type inference
         if mname == "inZone"
             w.emit("_dt_in_zone(")

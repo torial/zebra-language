@@ -17,6 +17,13 @@
 use Token exposing TokenKind
 use Lexer
 
+# The cues -- methods the compiler calls for you on a language event, declared with
+# `cue` instead of `def` (2026-09-16). init on construction, toString on print and
+# interpolation, equals on ==, hash for HashMap/Set keys (needs equals), compare on
+# < <= > >= and sort(), iter/next on for-in. tools/surface_inventory.py reads this
+# line for docs/SURFACE.md; the list is the surface.
+var CUE_NAMES: str = "|init|toString|equals|hash|compare|iter|next|"
+
 # -- Parse tree node types -----------------------------------------------------
 
 union PNode
@@ -373,7 +380,8 @@ struct PMethod
     var is_extern: bool
     var line: int
     var col: int
-    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool, type_params: List(str), is_pure: bool = false, is_node_export: bool = false, line: int = 0, col: int = 0, is_extern: bool = false)
+    var is_cue: bool       # declared with `cue`, not `def` (2026-09-16): a method the compiler calls
+    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool, type_params: List(str), is_pure: bool = false, is_node_export: bool = false, line: int = 0, col: int = 0, is_extern: bool = false, is_cue: bool = false)
         .name = name
         .is_static = is_static
         .is_private = is_private
@@ -390,6 +398,7 @@ struct PMethod
         .is_pure = is_pure
         .is_node_export = is_node_export
         .is_extern = is_extern
+        .is_cue = is_cue
         .line = line
         .col = col
 
@@ -1972,7 +1981,15 @@ class Parser
         else if .textIs("const")
             return .parseDeclField(true, is_static, pending_private, pending_public)?
         else if .textIs("cue")
-            return .parseDeclInit()?
+            if .peekAt(1).text == "init"
+                return .parseDeclInit()?
+            # `cue toString()`, `cue equals(other: T)`, ... -- a method the COMPILER calls on
+            # a language event (print, ==, HashMap keys, <, for-in), the way it calls init
+            # on construction. Zebra's dunders (2026-09-16, Sean). The set is closed:
+            var cue_base: str = .peekAt(1).text
+            if not (("|" + cue_base + "|") in CUE_NAMES)
+                raise .errorAt("unknown cue '" + cue_base + "': the cues are init, toString, equals, hash, compare, iter, next (a method the compiler calls for you; anything else is a `def`)")
+            return .parseMethodDecl(is_static, pending_private, pending_public, false, false, List(str)(), false, false, false, false, true)?
         else if .textIs("invariant")
             return .parseInvariantDecl()?
         raise .errorAt("unexpected member: '" + .peek().text + "'")
@@ -2048,10 +2065,13 @@ class Parser
             stmts = .parseBlock()?
         return PNode.init_(PInit(params, stmts))
 
-    def parseMethodDecl(is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: List(str), is_export: bool, is_pure: bool = false, is_node_export: bool = false, is_extern: bool = false): PNode throws
+    def parseMethodDecl(is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: List(str), is_export: bool, is_pure: bool = false, is_node_export: bool = false, is_extern: bool = false, is_cue: bool = false): PNode throws
         const line = .peek().line
         const col = .peek().col
-        .expectText("def")?
+        if is_cue
+            .expectText("cue")?
+        else
+            .expectText("def")?
         const _dl = .peek().line
         const _dc = .peek().col - 1
         var name = ""
@@ -2214,7 +2234,7 @@ class Parser
                         ext_str_where = "parameter `" + sp.name + "`"
             if ext_str != ""
                 raise .errorAt("`" + ext_str + "` is not a C-ABI type in an `extern` signature (" + ext_str_where + " of `" + name + "`): Zebra's `" + ext_str + "` is a slice (pointer + length) and C has no such type. Write `^byte` for a C `char*`, then `zig\"std.mem.span(...)\"` to read it back as a str.")
-        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export, _dl, _dc, is_extern))
+        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export, _dl, _dc, is_extern, is_cue))
 
     # -- Block and statements --------------------------------------------------
 

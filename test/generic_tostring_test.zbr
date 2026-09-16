@@ -7,7 +7,7 @@ class Box(T)
     def get(): T
         return value
 
-    def toString(): str
+    cue toString(): str
         return "Box"
 
 class Pair(A, B)
@@ -18,7 +18,7 @@ class Pair(A, B)
         first = a
         second = b
 
-    def toString(): str
+    cue toString(): str
         return "Pair"
 
 def main()

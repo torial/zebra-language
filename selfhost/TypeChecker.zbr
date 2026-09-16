@@ -375,6 +375,7 @@ class ModuleTypes
     # (only the constrained params). Enforced at instantiation (2026-09-16).
     var generic_constraints: HashMap(str, str)
     var generic_params: HashMap(str, str)          # class → "T,U" (every type param, in order)
+    var cue_keys: HashMap(str, bool)               # "Type.next" for every `cue` method (2026-09-16)
     # "ClassName.memberName" keys for fields/methods marked private.
     # Enforced in inferExpr Expr.member: access from outside the owning class is an error.
     var private_member_keys: HashMap(str, bool)
@@ -405,6 +406,7 @@ class ModuleTypes
         class_interfaces = HashMap()
         generic_constraints = HashMap()
         generic_params = HashMap()
+        cue_keys = HashMap()
         private_member_keys = HashMap()
         type_alias_names = HashMap()
         enum_names = HashMap()
@@ -487,6 +489,12 @@ class ModuleTypes
         if .generic_constraints.contains(class_name)
             return .generic_constraints.fetch(class_name)
         return nil
+
+    def addCue(type_name: str, cue_name: str)
+        .cue_keys.put(internString(type_name + "." + cue_name), true)
+
+    def hasCue(type_name: str, cue_name: str): bool
+        return .cue_keys.contains(type_name + "." + cue_name)
 
     def addGenericParams(class_name: str, csv: str)
         .generic_params.put(internString(class_name), internString(csv))
@@ -885,6 +893,8 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
             on Decl.method as m
                 if m.mods.is_private
                     mt.addPrivateMemberKey(ct.name, m.name)
+                if m.mods.is_cue
+                    mt.addCue(ct.name, m.name)
                 if m.return_type != nil
                     ct.setMethodReturn(m.name, typeFromRef(m.return_type!))
                 else
@@ -992,14 +1002,19 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 var ct2 = ClassTypes(s.name)
                 ct2.is_struct = true
                 addClassMembers(mt, ct2, s.members)
-                # BUG-409: `@derive(Debug/Eq/Hash)` generates toString/eql/hash in
-                # codegen; register them here so the unknown-method refusal knows them.
+                # BUG-409: `@derive(Debug/Eq/Hash)` generates the toString/equals/hash
+                # cues in codegen; register them here so the unknown-method refusal knows
+                # them, and as cues so `==`/HashMap/sort see the struct as they would a
+                # hand-written cue (2026-09-16).
                 if s.mods.is_derive_debug
                     ct2.setMethodReturn("toString", Type_.string_)
+                    mt.addCue(s.name, "toString")
                 if s.mods.is_derive_eq
-                    ct2.setMethodReturn("eql", Type_.bool_)
+                    ct2.setMethodReturn("equals", Type_.bool_)
+                    mt.addCue(s.name, "equals")
                 if s.mods.is_derive_hash
                     ct2.setMethodReturn("hash", Type_.uint_)
+                    mt.addCue(s.name, "hash")
                 mt.addClass(ct2)
                 if s.ifaces.len > 0
                     var si_pipe: str = ""
@@ -1561,6 +1576,12 @@ class InferCtx
     # True if name is a type alias in this module or any dep.
     def isTypeAlias(name: str): bool
         return .module_types.isTypeAlias(name) or .dep_types.isTypeAlias(name)
+
+    # True iff `type_name` declares `cue <cue>` (this module or a dep).
+    def hasCueAny(type_name: str, cue_name: str): bool
+        if .module_types.hasCue(type_name, cue_name)
+            return true
+        return .dep_types.hasCue(type_name, cue_name)
 
     def genericParamNames(class_name: str): List(str)
         var out: List(str) = List(str)()
@@ -4522,6 +4543,18 @@ def forInVarTypes(fi: StmtForIn, ctx: InferCtx): List(Type_)
                     t1 = se
                 on Type_.str_slice
                     t1 = Type_.string_
+                on Type_.named as cn
+                    # `for x in obj` over a type with `cue iter`/`cue next` (2026-09-16):
+                    # the element is what next() yields, with its `?` removed.
+                    var it_cls: str = cn
+                    if ctx.hasCueAny(cn, "iter")
+                        if ctx.methodReturnAny(cn, "iter") as irt
+                            if irt is Type_.named as irn
+                                it_cls = irn
+                    if ctx.hasCueAny(it_cls, "next")
+                        if ctx.methodReturnAny(it_cls, "next") as nrt
+                            if nrt is Type_.optional as ninner
+                                t1 = ninner
                 else
                     pass
         out.add(t1)
@@ -5636,6 +5669,64 @@ def methodListHint(ct: ClassTypes): str
     names.sort()
     return " (methods: " + names.join("/") + ")"
 
+# The cues' signatures, and the two names that MUST be cues. toString was always a
+# method the compiler called (print, interpolation) while looking like an ordinary def;
+# eql was @derive(Eq)'s name for the == hook. Both are `cue` now, and a `def` spelling is
+# refused with the rewrite, so the protocol has one spelling.
+def checkCueShapes(tname: str, members: List(Decl), derive_eq: bool, next_types: List(str), file: str, ctx: InferCtx)
+    var has_equals: bool = derive_eq
+    var hash_decl: DeclMethod? = nil
+    for mem in members
+        if mem is Decl.method as dm
+            if not dm.mods.is_cue
+                if dm.mods.is_static
+                    continue
+                if dm.name == "toString"
+                    ctx.addErr(file, dm.span.line, dm.span.col, "`toString` is a cue -- the compiler calls it for print and string interpolation -- so it is written `cue toString(): str`, not `def`")
+                if dm.name == "eql" and dm.params.len == 1
+                    ctx.addErr(file, dm.span.line, dm.span.col, "`eql` was @derive(Eq)'s name for the `==` hook; write `cue equals(other: " + tname + "): bool`")
+                # The other cue names are refused as `def` too: the runtime finds `compare`
+                # and `hash` by name, so a `def compare` would silently drive `<` and HashMap.
+                if (dm.name == "equals" or dm.name == "hash" or dm.name == "compare" or dm.name == "iter" or dm.name == "next")
+                    ctx.addErr(file, dm.span.line, dm.span.col, "`" + dm.name + "` is a cue (a method the compiler calls for you); write `cue " + dm.name + "` instead of `def`")
+                continue
+            var rt: str = ""
+            if dm.return_type as rtr
+                if rtr is TypeRef.named as rtn
+                    rt = rtn.name
+            if dm.name == "toString"
+                if dm.params.len != 0 or rt != "str"
+                    ctx.addErr(file, dm.span.line, dm.span.col, "`cue toString` takes no parameters and returns str: `cue toString(): str`")
+            else if dm.name == "equals"
+                has_equals = true
+                if dm.params.len != 1 or rt != "bool"
+                    ctx.addErr(file, dm.span.line, dm.span.col, "`cue equals` takes the other value and returns bool: `cue equals(other: " + tname + "): bool`")
+            else if dm.name == "hash"
+                hash_decl = dm
+                if dm.params.len != 0 or rt != "int"
+                    ctx.addErr(file, dm.span.line, dm.span.col, "`cue hash` takes no parameters and returns int: `cue hash(): int`")
+            else if dm.name == "compare"
+                if dm.params.len != 1 or rt != "int"
+                    ctx.addErr(file, dm.span.line, dm.span.col, "`cue compare` takes the other value and returns int (negative, zero, positive): `cue compare(other: " + tname + "): int`")
+            else if dm.name == "next"
+                var next_ok: bool = false
+                if dm.return_type as ntr
+                    if ntr is TypeRef.nilable
+                        next_ok = true
+                if dm.params.len != 0 or not next_ok
+                    ctx.addErr(file, dm.span.line, dm.span.col, "`cue next` takes no parameters and returns the element or nil when done: `cue next(): T?`")
+            else if dm.name == "iter"
+                var iter_ok: bool = false
+                if dm.return_type as itr
+                    if itr is TypeRef.named as itn
+                        if next_types.contains(itn.name)
+                            iter_ok = true
+                if dm.params.len != 0 or not iter_ok
+                    ctx.addErr(file, dm.span.line, dm.span.col, "`cue iter` takes no parameters and returns a type that declares `cue next(): T?`: `cue iter(): " + tname + "Iter`")
+    if hash_decl as hd
+        if not has_equals
+            ctx.addErr(file, hd.span.line, hd.span.col, "`cue hash` needs `cue equals` on the same type (a HashMap key is looked up by hash, then confirmed by equals)")
+
 def checkDeclShapes(m: Module, file: str, ctx: InferCtx)
     var iface_names: List(str) = List(str)()
     var iface_arity: HashMap(str, int) = HashMap()   # generic interfaces: name → type-param count
@@ -5646,8 +5737,25 @@ def checkDeclShapes(m: Module, file: str, ctx: InferCtx)
             iface_arity.put(ifd0.name, ifd0.type_params.len)
         if d0 is Decl.mixin_ as mxd0
             mixin_names.add(mxd0.name)
+    # Cue shapes (2026-09-16): every type declaring `cue next` first, so `cue iter` can be
+    # checked against it in one pass regardless of declaration order.
+    var next_types: List(str) = List(str)()
+    for d1 in m.decls
+        if d1 is Decl.class_ as c1
+            for mem1 in c1.members
+                if mem1 is Decl.method as dm1
+                    if dm1.mods.is_cue and dm1.name == "next"
+                        next_types.add(c1.name)
+        if d1 is Decl.struct_ as s1
+            for mem1s in s1.members
+                if mem1s is Decl.method as dm1s
+                    if dm1s.mods.is_cue and dm1s.name == "next"
+                        next_types.add(s1.name)
     for d in m.decls
+        if d is Decl.struct_ as sd
+            checkCueShapes(sd.name, sd.members, sd.mods.is_derive_eq, next_types, file, ctx)
         if d is Decl.class_ as c
+            checkCueShapes(c.name, c.members, false, next_types, file, ctx)
             for mem in c.members
                 if mem is Decl.method as dm
                     if dm.name == "init"

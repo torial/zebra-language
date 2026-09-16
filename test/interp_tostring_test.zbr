@@ -2,7 +2,7 @@ class Point
     var x: int = 0
     var y: int = 0
 
-    def toString(): str
+    cue toString(): str
         return "(${x}, ${y})"
 
 class Color
@@ -10,7 +10,7 @@ class Color
     var g: int = 0
     var b: int = 0
 
-    def toString(): str
+    cue toString(): str
         return "rgb(${r}, ${g}, ${b})"
 
 class NoToString

@@ -120,6 +120,19 @@ gone -- the `defer`/`guard`/`assert_eq..false` statement forms and the `same` ty
 AST, their parser nodes, builder and codegen paths, 13 dead token variants, and two runtime
 helpers (`_zebra_assert_cmp`, `_zebra_assert_bool`) that no program has emitted since
 2026-09-15. No user-visible change; the sunset is complete.
+**Cues** (2026-09-16, Sean: "the intention is for it to be the equivalent of the dunder
+methods for python"): `cue` was only ever `init`. It now marks every method the compiler
+calls for you -- `cue toString(): str` (print, `${}`), `cue equals(other: T): bool`
+(`==`/`!=`, value not identity), `cue hash(): int` (`HashMap`/`Set` keys, through a hash
+context that confirms by `equals`; requires `equals`), `cue compare(other: T): int`
+(`<`..`>=` and `sort()`), and `cue iter(): I` / `cue next(): E?` (`for x in obj`, on the
+object itself or on what `iter()` returns). The set is closed (Parser `CUE_NAMES`; an unknown
+cue is refused naming the seven), shapes are checked at the declaration, and writing a cue
+name as `def` is refused with the `cue` spelling. `@derive(Eq)` now generates `equals` by
+value (was `eql(*const Self)`); the one corpus use of `.eql(` became `.equals(`. Rewrite:
+`def toString` → `cue toString`. `cue deinit` is deliberately absent -- end-of-scope
+teardown is an open 1.0 decision (NEXT_STEPS_to_1.0). QUICKSTART §5 "Cues"; surface: +1
+section, `docs/SURFACE.md` "Cues (7)".
 
 ## [0.15] — 2026-05 (in progress)
 

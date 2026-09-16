@@ -12,6 +12,8 @@ surface without a deliberate `--write` in the same commit.
 
 WHAT IT DERIVES, and from where (each an oracle the compiler already runs on):
   keywords            tools/zbr_vocab.py -- the reconciled union of both compilers' tables
+  cues                selfhost/Parser.zbr -- CUE_NAMES, the closed set the parser accepts after
+                      `cue` (2026-09-16); the compiler calls these methods for you
   CLI                 selfhost/main.zbr  -- the usageLine("...") text (BUG-321: ONE usage text)
   namespaces+members  selfhost/CodeGen.zbr -- the `if id.name == "NS"` dispatch names its
                       generator (genXxxCall); every `mname == "m"` in that generator's body
@@ -48,8 +50,9 @@ CODEGEN = REPO / "selfhost" / "CodeGen.zbr"
 CHECKER = REPO / "selfhost" / "TypeChecker.zbr"
 MAIN = REPO / "selfhost" / "main.zbr"
 
-FLOORS = dict(keywords=60, namespaces=25, members=150, receivers=20, receiver_methods=220,
+FLOORS = dict(keywords=60, cues=5, namespaces=25, members=150, receivers=20, receiver_methods=220,
               cli_lines=30, flags=15)
+PARSER = REPO / "selfhost" / "Parser.zbr"
 
 
 def refuse(msg):
@@ -65,6 +68,17 @@ def read(p):
 def keywords():
     import zbr_vocab
     return zbr_vocab.vocabulary()
+
+
+# ---- cues -------------------------------------------------------------------------------
+def cues():
+    m = re.search(r'var CUE_NAMES: str = "\|((?:[A-Za-z]+\|)+)"', PARSER.read_text(encoding="utf-8"))
+    if not m:
+        refuse("CUE_NAMES not found in selfhost/Parser.zbr (extractor pattern stopped matching)")
+    names = [n for n in m.group(1).split("|") if n]
+    if len(names) < FLOORS["cues"]:
+        refuse("only %d cues derived (floor %d)" % (len(names), FLOORS["cues"]))
+    return names
 
 
 # ---- CLI --------------------------------------------------------------------------------
@@ -186,6 +200,7 @@ def receivers():
 # ---- render -----------------------------------------------------------------------------
 def render():
     kw = keywords()
+    cu = cues()
     forms, flags = cli()
     ns, generic = namespaces()
     rc = receivers()
@@ -201,6 +216,10 @@ def render():
     o.append("## Keywords (%d)" % len(kw))
     o.append("")
     o.append(" ".join("`%s`" % k for k in kw))
+    o.append("")
+    o.append("## Cues (%d)" % len(cu))
+    o.append("")
+    o.append(" ".join("`cue %s`" % c for c in cu))
     o.append("")
     o.append("## Command forms (%d)" % len(forms))
     o.append("")

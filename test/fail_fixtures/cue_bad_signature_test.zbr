@@ -1,0 +1,14 @@
+# A cue's shape is fixed: `cue compare(other: T): int`. A bool-returning compare is
+# refused at the declaration, not discovered inside the emitted Zig.
+class Ver
+    var n: int
+
+    cue init(n: int)
+        .n = n
+
+    cue compare(other: Ver): bool
+        return .n < other.n
+
+def main()
+    var v = Ver(1)
+    print(v.n)

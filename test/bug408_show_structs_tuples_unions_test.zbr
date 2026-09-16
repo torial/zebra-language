@@ -6,7 +6,7 @@ class Pt
     var x: int
     cue init(x: int)
         .x = x
-    def toString(): str
+    cue toString(): str
         return "Pt(${.x})"
 class Raw
     var y: int

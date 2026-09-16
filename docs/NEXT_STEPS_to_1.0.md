@@ -284,6 +284,43 @@ to be a warning class with `--warnings-as-errors` for those who want the tighter
 So do cost diagnostics, transformation notices, and any future advisory. **Building the tier
 once unblocks all of them**; adding each as a bespoke flag does not.
 
+## DECIDED 2026-09-16 — `cue` IS THE PROTOCOL KEYWORD; `cue deinit` IS THE OPEN ONE
+
+Sean: "the intention is for it to be the equivalent of the dunder methods for python" --
+then, on the analysis: "I'm actually ok if you do all the ones but `deinit` now".
+
+**The rule.** A `cue` is a method the *compiler* calls, at a place the language defines;
+a `def` is a method *your code* calls. The set is closed and lives in one place
+(`selfhost/Parser.zbr` `CUE_NAMES`, derived into `docs/SURFACE.md` "Cues" by
+`surface_inventory.py`), so adding one is a surface change with a diff. Landed 2026-09-16:
+`init`, `toString`, `equals`, `hash`, `compare`, `iter`, `next` -- QUICKSTART §5 "Cues",
+`test/cue_protocol_test.zbr`, four refusal fixtures. The ranking that put these first: each
+already had a compiler call site (print/`${}`, `==`, HashMap keys, `<`/sort, for-in) that was
+either name-dispatched by convention (`toString`) or missing (a class as a HashMap key hashed
+its POINTER; `<` on a user type was a Zig error). Cues made the convention checkable.
+
+**Open: `cue deinit`.** Every other cue is called at a syntactic site. `deinit` is called at
+end of *scope* or end of *arena*, and the language has no written memory model yet (the
+section below). What has to be hashed through with Sean, scenario by scenario, before it
+lands: (1) a class instance is a pointer -- when the last local goes out of scope, does
+`deinit` fire, and what about the instance still held in a List? (2) inside `allocate`
+(arena scope), does the arena's drop call `deinit` on each object it holds, in what order,
+and does a `deinit` that touches another arena-held object see it alive? (3) a struct by
+value copied into a List: one `deinit` or two? (4) `errdefer`-shaped cleanup on a throw
+mid-constructor. (5) interaction with `--turbo`/`--release` (never stripped -- it is not a
+contract). The candidate semantics that survives (1)-(3) is "arena-scoped only: `deinit`
+runs when the arena that owns the object is dropped, in reverse allocation order, and
+never for the default allocator" -- which makes it useless outside `allocate`, so it is not
+decided. Do not land a `deinit` that fires at the end of a block for a pointer type;
+that is the C++ destructor on a reference type and it double-frees the moment the object
+escapes.
+
+**Not cues, on purpose:** `len` / `contains` (`x.len` is a field on the builtins, and a user
+type declaring `def len(): int` is an ordinary method -- no operator dispatches on it),
+`at` / index (no `[]` operator on user types yet; when there is, it goes in this list),
+arithmetic operators (rejected: `+` on a user type reads as overloading, and the language
+has taken the Zig position on that).
+
 ## ITERATORS / GENERATORS — a real gap, with a real receipt
 
 `yield` was removed and nothing replaced it. Sean's case: parsing a large string with
@@ -293,6 +330,11 @@ lazy splitter in .NET cut RAM pressure **and** increased speed.
 That is the Perlis test failing -- materialising a list you will walk once and discard is
 attention to the irrelevant. Liskov's CLU had iterators for exactly this. Reopen with the
 dogfood evidence rather than in the abstract.
+
+**2026-09-16: the consumer half exists.** `cue iter` / `cue next` (above) make any type a
+`for x in obj` iterable, lazily -- the custom splitter Sean wrote in .NET is now writable in
+Zebra as a class with a `cue next(): str?`. What is still missing is the *producer* sugar
+(`yield`): every lazy iterator is hand-written state today.
 
 ## THE WRITTEN MEMORY MODEL — what it would actually contain
 

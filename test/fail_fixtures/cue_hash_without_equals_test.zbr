@@ -1,0 +1,14 @@
+# `cue hash` without `cue equals`: a HashMap key is found by hash and CONFIRMED by
+# equals, so a hash on its own would silently fall back to pointer identity.
+class Key
+    var id: int
+
+    cue init(id: int)
+        .id = id
+
+    cue hash(): int
+        return .id
+
+def main()
+    var k = Key(1)
+    print(k.id)

@@ -1,0 +1,14 @@
+# `toString` is a cue: the compiler calls it for print / interpolation. Writing it as
+# a `def` is refused and the message names the `cue` spelling.
+class Widget
+    var n: int
+
+    cue init(n: int)
+        .n = n
+
+    def toString(): str
+        return "Widget(${.n})"
+
+def main()
+    var w = Widget(1)
+    print(w)
