@@ -336,7 +336,8 @@ class ASTBuilder
             members.add(.buildMember(pn)?)
         var ifaces: List(TypeRef) = List(TypeRef)()
         for iface in c.ifaces
-            ifaces.add(TypeRef.named(NamedTypeRef(zspan(), iface)))
+            # `Comparable(Score)` → TypeRef.generic; a bare name → TypeRef.named (2026-09-16)
+            ifaces.add(.parseTypeRefRequired(iface))
         var mixins: List(TypeRef) = List(TypeRef)()
         for mixin_name in c.mixins
             mixins.add(TypeRef.named(NamedTypeRef(zspan(), mixin_name)))
@@ -358,8 +359,11 @@ class ASTBuilder
             members.add(.buildMember(pn)?)
         var ifaces: List(TypeRef) = List(TypeRef)()
         for iface in c.ifaces
-            ifaces.add(TypeRef.named(NamedTypeRef(zspan(), iface)))
-        return Decl.interface_(DeclInterface(nameSpan(c.line, c.col, c.name), zmods(), c.name, ifaces, members))
+            ifaces.add(.parseTypeRefRequired(iface))
+        var itparams: List(TypeParam) = List(TypeParam)()
+        for itp in c.type_params
+            itparams.add(TypeParam(itp, nil))
+        return Decl.interface_(DeclInterface(nameSpan(c.line, c.col, c.name), zmods(), c.name, ifaces, members, itparams))
 
     # ── Mixin ─────────────────────────────────────────────────────────────────
 
@@ -386,7 +390,7 @@ class ASTBuilder
             members.add(.buildMember(pn)?)
         var ifaces: List(TypeRef) = List(TypeRef)()
         for iface in s.ifaces
-            ifaces.add(TypeRef.named(NamedTypeRef(zspan(), iface)))
+            ifaces.add(.parseTypeRefRequired(iface))
         var inv_exprs: List(Expr) = List(Expr)()
         for inv_pn in s.invs
             inv_exprs.add(.buildExpr(inv_pn)?)

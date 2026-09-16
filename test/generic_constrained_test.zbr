@@ -1,9 +1,10 @@
-# (`other: same` until 2026-09-16 -- the `same` keyword was freed; an interface names
-# itself and the class names itself.)
-interface Comparable
-    def compareTo(other: Comparable): int
+# `other: same` until 2026-09-16 (the keyword was freed); generic interfaces landed the
+# same day, so this is the spelling `same` was standing in for: the implementing class
+# passes itself as the type argument.
+interface Comparable(T)
+    def compareTo(other: T): int
 
-class Score implements Comparable
+class Score implements Comparable(Score)
     var value: int
 
     cue init(v: int)
@@ -14,7 +15,7 @@ class Score implements Comparable
 
 # A generic class that constrains T to Comparable.
 # The TypeChecker enforces this at instantiation.
-class MinHeap(T where T implements Comparable)
+class MinHeap(T where T implements Comparable(T))
     var best: T
 
     cue init(seed: T)

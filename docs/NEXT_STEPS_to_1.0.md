@@ -113,13 +113,16 @@ DECISIONS 2026-09-15 (Sean, on the 2026-09-14 read above and the surface measure
   `surface_inventory.py` to derive them, so `docs/SURFACE.md` §2's "not yet in the
   derived set" paragraph shrinks to arities.
 
-- **Generic interfaces** (2026-09-16, from freeing `same`): `interface Comparable(T)` /
-  `implements Comparable(Score)` do not parse today; interfaces are the one declaration
-  kind without type parameters. Until then a self-typed interface method names the
-  interface (`other: Comparable`) and the conformance check does not compare that
-  parameter across the boundary. Parser, the `implements X(A)` form, substitution in the
-  conformance check and the vtable; about a day. A language ADDITION, so it follows the
-  stability policy's step 0 (SURFACE diff + CHANGELOG line).
+- **Generic interfaces** (2026-09-16, from freeing `same`; Sean: "let's prioritize for
+  1.0"). LANDED the same day: `interface Comparable(T)` as a comptime type function,
+  `implements Comparable(Score)`, instantiations as annotations, one vtable per
+  instantiation with the parameters substituted, arity refused in the front end
+  (test/generic_interface_test.zbr, fail_fixtures/generic_interface_arity_test.zbr).
+  LEFT for a second pass: a generic class implementing a generic interface (the
+  in-struct vtable path is still named-only), an interface extending a generic one,
+  the `where` constraint (parsed, not enforced -- true before this too), and typing a
+  generic-interface value in the checker (today `Comparable(Score)` is `unknown_`, so
+  `-c` cannot refuse a wrong method name through it).
 
 ORDERING CHANGE among existing items: the **warning tier** (below) moves from "several
 items need it" to "the freeze needs it" (item 4). The **trip test** stays where its own

@@ -1694,8 +1694,8 @@ class Stack(T)
         .items.remove(.items.count() - 1)
         return last
 
-# Constrained generic — T must implement Comparable:
-class SortedList(T where T implements Comparable)
+# Constrained generic — T must implement Comparable(T):
+class SortedList(T where T implements Comparable(T))
     ...
 
 # Usage:
@@ -1707,7 +1707,39 @@ var top = s.pop()
 
 - Generic class instantiation: `Stack(int)()` — type arg, then constructor args.
 - The constraint clause is `T where T implements InterfaceName` (full form, not
-  the shorthand `T where Comparable`).
+  the shorthand `T where Comparable`). The clause is parsed and not yet enforced.
+
+### Generic interfaces
+
+An interface can take type parameters (2026-09-16); the implementing class passes the
+arguments, and every spelling of one instantiation is one type:
+
+```zebra
+interface Comparable(T)
+    def compareTo(other: T): int
+
+interface Converter(A, B)
+    def convert(x: A): B
+
+class Score implements Comparable(Score)
+    var value: int
+    cue init(v: int)
+        value = v
+    def compareTo(other: Score): int
+        return value - other.value
+
+def bigger(a: Comparable(Score), b: Score): bool
+    return a.compareTo(b) > 0
+
+var c: Comparable(Score) = Score(3)
+print(c.compareTo(Score(1)))       # 2
+```
+
+This is how a class refers to itself in an interface signature (the old `same`
+keyword, removed the same day, did this for one case). `implements Comparable` on a
+generic interface, or with the wrong number of arguments, is a front-end error naming the
+count. Not yet: a generic *class* implementing a generic interface, and an interface
+extending a generic one.
 
 ---
 

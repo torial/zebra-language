@@ -1,0 +1,47 @@
+# Generic interfaces (2026-09-16, Sean: "let's prioritize for 1.0"). `interface X(T)`
+# is emitted as a comptime type function, so `Comparable(Score)` is one Zig type
+# wherever it is spelled; the class's vtable is built for that instantiation with T
+# substituted in every shim signature. Exercised: the direct call, a call THROUGH
+# the interface value, the value passed to an interface-typed parameter, an
+# interface-typed return, and two instantiations of one interface in one program.
+interface Comparable(T)
+    def compareTo(other: T): int
+
+interface Converter(A, B)
+    def convert(x: A): B
+
+class Score implements Comparable(Score)
+    var value: int
+    cue init(v: int)
+        value = v
+    def compareTo(other: Score): int
+        return value - other.value
+
+class Label implements Comparable(Label), Converter(int, str)
+    var text: str
+    cue init(t: str)
+        text = t
+    def compareTo(other: Label): int
+        return text.len - other.text.len
+    def convert(x: int): str
+        return text + "#" + x.toString()
+
+def bigger(a: Comparable(Score), b: Score): bool
+    return a.compareTo(b) > 0
+
+def asComparable(s: Score): Comparable(Score)
+    return s
+
+def main()
+    var a = Score(3)
+    var b = Score(1)
+    print(a.compareTo(b))                    # 2  (direct)
+    var c: Comparable(Score) = a
+    print(c.compareTo(b))                    # 2  (through the interface value)
+    print(bigger(a, b))                      # true (interface-typed parameter)
+    print(asComparable(b).compareTo(a))      # -2 (interface-typed return)
+    var l: Comparable(Label) = Label("abcd")
+    print(l.compareTo(Label("ab")))          # 2  (second instantiation)
+    var cv: Converter(int, str) = Label("tag")
+    print(cv.convert(7))                     # tag#7 (two type parameters)
+    print("generic interface: ok")

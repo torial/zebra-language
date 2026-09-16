@@ -1617,15 +1617,13 @@ class Parser
                 type_params.add(.eatId()?)
                 # Skip optional `where T implements Interface` constraint clause
                 if .textIs("where")
-                    while not .textIs(")") and not .textIs(",")
-                        .advance()
+                    .skipConstraintClause()
                 while .textIs(",")
                     .advance()
                     type_params.add(.eatId()?)
                     # Skip optional constraint on this param
                     if .textIs("where")
-                        while not .textIs(")") and not .textIs(",")
-                            .advance()
+                        .skipConstraintClause()
             .expectText(")")?
         else
             name = .eatId()?
@@ -1638,10 +1636,12 @@ class Parser
             raise .errorAt("Zebra has no class inheritance: share behaviour with a mixin (`class Dog adds Barking`) and get polymorphism from an interface (`class Dog implements Animal`) -- QUICKSTART §5, §16, §17")
         if .textIs("implements")
             .advance()
-            ifaces.add(.eatId()?)
+            # `implements Comparable(Score)` (2026-09-16): a type name, which may carry
+            # type arguments; eatTypeName reads either form.
+            ifaces.add(.eatTypeName()?)
             while .textIs(",")
                 .advance()
-                ifaces.add(.eatId()?)
+                ifaces.add(.eatTypeName()?)
         var mixins = List(str)()
         if .textIs("adds")
             .advance()
@@ -1753,18 +1753,46 @@ class Parser
         var type_params = List(str)()
         return PNode.struct_(PClass(name, type_params, ifaces, List(str)(), members, invs, is_reflectable, is_derive_debug, is_derive_eq, is_derive_hash, nil, _dl, _dc))
 
+    # `where T implements Comparable(T)`: skip to the closing `)` or the next `,` at
+    # depth 0 -- the constraint may itself carry a generic instantiation (2026-09-16),
+    # whose `(`/`)` must not end the clause early. (Constraints are recorded nowhere yet.)
+    def skipConstraintClause()
+        var depth: int = 0
+        while not .isEof()
+            if depth == 0 and (.textIs(")") or .textIs(","))
+                return
+            if .textIs("(") or .isOpenCall()
+                depth = depth + 1
+            else if .textIs(")")
+                depth = depth - 1
+            .advance()
+
     def parseInterfaceDecl(): PNode throws
         .expectText("interface")?
         const _dl = .peek().line
         const _dc = .peek().col - 1
-        const name = .eatId()?
+        var name: str = ""
+        var type_params = List(str)()
+        # Generic interface (2026-09-16): `interface Comparable(T)` -- the name is
+        # tokenized as open_call because `(` follows it, exactly as for a generic class.
+        if .isOpenCall()
+            name = .peek().text
+            .advance()
+            if not .textIs(")")
+                type_params.add(.eatId()?)
+                while .textIs(",")
+                    .advance()
+                    type_params.add(.eatId()?)
+            .expectText(")")?
+        else
+            name = .eatId()?
         var ifaces = List(str)()
         if .textIs("implements")
             .advance()
-            ifaces.add(.eatId()?)
+            ifaces.add(.eatTypeName()?)
             while .textIs(",")
                 .advance()
-                ifaces.add(.eatId()?)
+                ifaces.add(.eatTypeName()?)
         .skipEol()
         var members = List(PNode)()
         if .isIndent()
@@ -1776,7 +1804,6 @@ class Parser
                 members.add(.parseMemberDecl(false)?)
             if .isDedent()
                 .advance()
-        var type_params = List(str)()
         # Empty bodies are legal only for struct/class (marker types). interface/
         # mixin/extend/enum require a body — matches the grammar and the bootstrap.
         if members.len == 0

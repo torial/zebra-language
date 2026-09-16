@@ -733,6 +733,11 @@ smoke_run test/defer_freed_words_test.zbr "defer: freed"
 # guard/arena/readonly/abstract/vari freed 2026-09-15 (Sean, on reading the book: guard
 # "feels like it doesn't belong"); same recipe, one fixture for the five words.
 smoke_run test/guard_freed_words_test.zbr "guard: freed"
+# Generic interfaces (2026-09-16): `interface X(T)` as a comptime type function; the
+# vtable per instantiation; calls through the value, params, returns, two args.
+smoke_run test/generic_interface_test.zbr "generic interface: ok"
+smoke_tc_fail test/fail_fixtures/generic_interface_arity_test.zbr \
+    "interface 'Comparable' takes 1 type argument(s)"
 smoke_run test/bug427_param_shadows_fn_test.zbr "bug427: ok"
 
 # BUG-238: `except` in an enum-dotted branch arm, reached through `use`. Reported as a

@@ -76,6 +76,12 @@ kind, and for two sides the checker cannot type it decides by type at runtime (s
 `assert not (e)` (surface: −4 keywords, 70 now).
 **`same` freed** (2026-09-16): the undocumented self-typed interface parameter; an interface
 names itself (`other: Comparable`) and a class names itself (surface: −1 keyword, 69).
+**Generic interfaces** (2026-09-16, Sean: "let's prioritize for 1.0"): `interface Comparable(T)`
+/ `class Score implements Comparable(Score)` / `var c: Comparable(Score)`. Emitted as a comptime
+type function, one vtable per instantiation with the parameters substituted; the wrong
+argument count is refused in the front end. Not yet: a generic class implementing a generic
+interface, an interface extending a generic one, and the checker types values of a generic
+interface type as unknown (no method-name refusal through them). QUICKSTART §17.
 **Bootstrap sunset Step 2**: the comparison tooling is retired to `tools/attic/` —
 `selfhost-div` and `interp-escape` leave the gate tiers (49 daily / 41 full), `compile_check
 --bootstrap` and the parity/scaling probes go, `mutation_check` regenerates via the

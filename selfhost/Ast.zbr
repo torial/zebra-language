@@ -160,13 +160,15 @@ struct DeclInterface
     var name: str
     var ifaces: List(TypeRef)
     var members: List(Decl)
+    var type_params: List(TypeParam)   # generic interface `interface Comparable(T)` (2026-09-16)
 
-    cue init(span: Span, mods: Modifiers, name: str, ifaces: List(TypeRef), members: List(Decl))
+    cue init(span: Span, mods: Modifiers, name: str, ifaces: List(TypeRef), members: List(Decl), type_params: List(TypeParam))
         .span = span
         .mods = mods
         .name = name
         .ifaces = ifaces
         .members = members
+        .type_params = type_params
 
 # ── Struct ───────────────────────────────────────────────────────────────────
 

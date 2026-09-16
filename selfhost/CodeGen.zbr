@@ -22,7 +22,7 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use Ast exposing Decl, DeclUse, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
+use Ast exposing Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtAssertCmp, StmtAssertUnary, StmtDefer, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtGuard, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
 use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, mightUseName, mightUseNameInExpr, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
 use AstWalk exposing collectOldNodes
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
@@ -2810,6 +2810,85 @@ class Writer
     def noteLine(n: int)
         cur_line = n
 
+# ── Generic interfaces (2026-09-16) ─────────────────────────────────────────
+# An `implements`/annotation reference to an interface, resolved once so every site
+# that used to read `TypeRef.named as itn` and spell `itn.name` three ways (the
+# decl lookup, the Zig type, the vtable symbol) reads one record instead.
+#   name  the registration key shared with TypeChecker.ifaceKey: "Shape" or "Comparable(Score)"
+#   base  the declaration's name: "Comparable"
+#   zig   the Zig type text: "Shape" or "Comparable(*_zbr_ty_Score)"
+#   vt    the identifier-safe suffix for `_vtable_<Class>_<vt>`: "Shape" or "Comparable__Score"
+struct IfaceRef
+    var name: str
+    var base: str
+    var zig: str
+    var vt: str
+    var args: List(TypeRef)
+    cue init(name: str, base: str, zig: str, vt: str, args: List(TypeRef))
+        .name = name
+        .base = base
+        .zig = zig
+        .vt = vt
+        .args = args
+
+# The registration key for an interface reference -- MUST match TypeChecker.ifaceKey.
+def ifaceKeyOf(tr: TypeRef): str
+    branch tr
+        on TypeRef.named as n
+            return n.name
+        on TypeRef.generic as g
+            var s = g.name + "("
+            var i = 0
+            while i < g.args.len
+                if i > 0
+                    s = s + ","
+                s = s + ifaceKeyOf(g.args.at(i))
+                i = i + 1
+            return s + ")"
+        else
+            return typeRefStr(tr)
+
+# "Comparable(Score)" → "Comparable__Score": a Zig identifier fragment.
+def ifaceVtSuffix(key: str): str
+    var out: str = ""
+    for ch in key.chars()
+        if ch == '('
+            out = out + "__"
+        else if ch == ')'
+            pass
+        else if ch == ',' or ch == '.' or ch == ' '
+            out = out + "_"
+        else if ch == '^' or ch == '?' or ch == '*'
+            out = out + "p"
+        else
+            out = out + ch.toString()
+    return out
+
+# Substitute the interface's type parameters (by name) with the instantiation's
+# arguments inside a member signature type. `T` → `Score`, `List(T)` → `List(Score)`.
+def substTypeRef(tr: TypeRef, params: List(TypeParam), args: List(TypeRef)): TypeRef
+    branch tr
+        on TypeRef.named as n
+            var pi = 0
+            while pi < params.len and pi < args.len
+                if params.at(pi).name == n.name
+                    return args.at(pi)
+                pi = pi + 1
+            return tr
+        on TypeRef.nilable as inner
+            return TypeRef.nilable(substTypeRef(inner, params, args))
+        on TypeRef.error_union as inner
+            return TypeRef.error_union(substTypeRef(inner, params, args))
+        on TypeRef.ref_to as inner
+            return TypeRef.ref_to(substTypeRef(inner, params, args))
+        on TypeRef.generic as g
+            var nargs: List(TypeRef) = List(TypeRef)()
+            for a in g.args
+                nargs.add(substTypeRef(a, params, args))
+            return TypeRef.generic(GenericTypeRef(g.span, g.name, nargs))
+        else
+            return tr
+
 # ── Generator ─────────────────────────────────────────────────────────────────
 
 struct Generator
@@ -4112,7 +4191,10 @@ struct Generator
             var cig2 = ig.indented()
             for tr in n.ifaces
                 cig2.writeIndent()
-                w.emit(typeRefStr(tr))
+                if ifaceRef(tr) as ck_ir
+                    w.emit(ck_ir.zig)            # `Comparable(*_zbr_ty_Score)` for a generic one
+                else
+                    w.emit(typeRefStr(tr))
                 w.emit(".check(@This());\n")
             ig.writeIndent()
             w.emit("}\n")
@@ -4380,11 +4462,43 @@ struct Generator
     # ── Interface vtable helpers ───────────────────────────────────────────────
 
     def findInterfaceDecl(name: str): DeclInterface?
+        # A registration key may carry type arguments ("Comparable(Score)"); the
+        # declaration is found by the base name.
+        var base: str = name
+        var paren: int = name.indexOf("(")
+        if paren >= 0
+            base = name.substring(0, paren)
         for decl in module_decls
             if decl is Decl.interface_ as ifc
-                if ifc.name == name
+                if ifc.name == base
                     return ifc
         return nil
+
+    # The Zig type text for a TypeRef, as genType would emit it, captured as a string:
+    # a Generator copy with a fresh Writer (the `except` idiom every derived Generator
+    # uses; genType touches nothing on the shared Writer but the buffer).
+    def zigTypeText(tr: TypeRef): str
+        var g2 = this except
+            w = Writer()
+        g2.genType(tr)
+        return g2.w.output()
+
+    # Resolve an `implements` entry or an annotation to the interface it names, or nil
+    # when it names no interface of this module (a class, a generic container, a dep
+    # interface the coercion sites cannot see -- the same nil they answered before).
+    def ifaceRef(tr: TypeRef): IfaceRef?
+        branch tr
+            on TypeRef.named as n
+                if findInterfaceDecl(n.name) == nil
+                    return nil
+                return IfaceRef(n.name, n.name, n.name, n.name, List(TypeRef)())
+            on TypeRef.generic as g
+                if findInterfaceDecl(g.name) == nil
+                    return nil
+                var key: str = ifaceKeyOf(tr)
+                return IfaceRef(key, g.name, zigTypeText(tr), ifaceVtSuffix(key), g.args)
+            else
+                return nil
 
     # Interface RTTI: emit `fn _zbr_implements_<Iface>(_tag: u64) bool` per
     # interface — true iff the concrete class identified by `_tag`'s low 32 bits
@@ -4453,17 +4567,12 @@ struct Generator
         return cn
 
     def genInterfaceArgCoercion(arg: Expr, param_type: TypeRef): bool
-        var iface_name: str = ""
-        branch param_type
-            on TypeRef.named as itn
-                iface_name = itn.name
-            else
-                return false
-        if ifaceCoercionClass(arg, iface_name) as cn
-            w.emit(".{ .ptr = ")
-            genExpr(arg)
-            w.emit(", .vtable = &_vtable_" + cn + "_" + iface_name + " }")
-            return true
+        if ifaceRef(param_type) as pir
+            if ifaceCoercionClass(arg, pir.name) as cn
+                w.emit(".{ .ptr = ")
+                genExpr(arg)
+                w.emit(", .vtable = &_vtable_" + cn + "_" + pir.vt + " }")
+                return true
         return false
 
     def concreteClassOf(e: Expr): str?
@@ -4507,8 +4616,12 @@ struct Generator
                             work.add(st)
         return false
 
-    def genIfaceVtable(class_name: str, ifc: DeclInterface)
-        var iname = ifc.name
+    def genIfaceVtable(class_name: str, ifc: DeclInterface, ir: IfaceRef)
+        # `ir` is the instantiation the class implements: for a generic interface its
+        # args substitute the interface's type params in every shim signature, the
+        # vtable const is named by the mangled key, and the VTable type is the
+        # instantiation (`Comparable(*_zbr_ty_Score).VTable`).
+        var iname = ir.vt
         for m in ifc.members
             if m is Decl.method as meth
                 w.emit("fn _shim_${class_name}_${iname}_${meth.name}(ptr: *anyopaque")
@@ -4516,14 +4629,14 @@ struct Generator
                     var zp_shim: str = zigSafeName(p.name)
                     w.emit(", " + zp_shim + ": ")
                     if p.type_ != nil
-                        genType(p.type_!)
+                        genType(substTypeRef(p.type_!, ifc.type_params, ir.args))
                     else
                         w.emit("anytype")
                 w.emit(") ")
                 if meth.throws_
                     w.emit("anyerror!")
                 if meth.return_type != nil
-                    genType(meth.return_type!)
+                    genType(substTypeRef(meth.return_type!, ifc.type_params, ir.args))
                 else
                     w.emit("void")
                 # BUG-281 B: the shim BODY calls the class's method, so it names the
@@ -4538,7 +4651,7 @@ struct Generator
                 for p in meth.params
                     w.emit(", " + p.name)
                 w.emit("); }\n")
-        w.emit("const _vtable_${class_name}_${iname} = ${iname}.VTable{")
+        w.emit("const _vtable_${class_name}_${iname} = ${ir.zig}.VTable{")
         for m in ifc.members
             if m is Decl.method as meth
                 w.emit(" .${meth.name} = &_shim_${class_name}_${iname}_${meth.name},")
@@ -4739,7 +4852,10 @@ struct Generator
             var cig2 = ig.indented()
             for tr in n.ifaces
                 cig2.writeIndent()
-                w.emit(typeRefStr(tr))
+                if ifaceRef(tr) as ck_ir
+                    w.emit(ck_ir.zig)            # `Comparable(*_zbr_ty_Score)` for a generic one
+                else
+                    w.emit(typeRefStr(tr))
                 w.emit(".check(@This());\n")
             ig.writeIndent()
             w.emit("}\n")
@@ -4758,12 +4874,12 @@ struct Generator
         while _vti < _vt_work.len
             var _vt_tr = _vt_work.at(_vti)
             _vti = _vti + 1
-            if _vt_tr is TypeRef.named as nt
-                if not _vt_seen.contains_(nt.name)
-                    _vt_seen.add(nt.name)
-                    var ifc = findInterfaceDecl(nt.name)
+            if ifaceRef(_vt_tr) as vt_ir
+                if not _vt_seen.contains_(vt_ir.name)
+                    _vt_seen.add(vt_ir.name)
+                    var ifc = findInterfaceDecl(vt_ir.base)
                     if ifc as ifc_decl
-                        genIfaceVtable(n.name, ifc_decl)
+                        genIfaceVtable(n.name, ifc_decl, vt_ir)
                         for _super_tr in ifc_decl.ifaces
                             _vt_work.add(_super_tr)
         w.emit("const _ttag_")
@@ -5588,15 +5704,47 @@ struct Generator
     #       pub fn check(comptime T: type) void { comptime { if (!@hasDecl...) } }
     #   };
     def genInterface(ifc: DeclInterface)
+        # Generic interface (2026-09-16): `interface Comparable(T)` becomes a comptime
+        # type function -- `pub fn Comparable(comptime T: type) type { return struct {...}; }`
+        # -- so `Comparable(Score)` anywhere else is that call, and Zig memoises it, which
+        # is what makes two spellings of the same instantiation the same type. The body is
+        # the non-generic body one level deeper, with the parameter names bare (`T` is
+        # not a user type, so genType emits it as written).
+        var is_gen: bool = ifc.type_params.len > 0
+        if is_gen
+            writeIndent()
+            w.emit("pub fn ")
+            w.emit(ifc.name)
+            w.emit("(")
+            var gpi = 0
+            while gpi < ifc.type_params.len
+                if gpi > 0
+                    w.emit(", ")
+                w.emit("comptime ")
+                w.emit(ifc.type_params.at(gpi).name)
+                w.emit(": type")
+                gpi = gpi + 1
+            w.emit(") type {\n")
+            var gig = indented()
+            gig.genInterfaceBody(ifc, true)
+            writeIndent()
+            w.emit("}\n\n")
+            return
+        genInterfaceBody(ifc, false)
+
+    def genInterfaceBody(ifc: DeclInterface, is_gen: bool)
         var ig = indented()
         var vtig = ig.indented()
         var mig = ig.indented()
 
         # ── struct header ────────────────────────────────────────────────
         writeIndent()
-        w.emit("pub const ")
-        w.emit(ifc.name)
-        w.emit(" = struct {\n")
+        if is_gen
+            w.emit("return struct {\n")
+        else
+            w.emit("pub const ")
+            w.emit(ifc.name)
+            w.emit(" = struct {\n")
 
         # ── fat-pointer fields ───────────────────────────────────────────
         ig.writeIndent()
@@ -5761,7 +5909,9 @@ struct Generator
         # ── check() — comptime conformance verifier ──────────────────────
         w.emit("\n")
         ig.writeIndent()
-        w.emit("pub fn check(comptime T: type) void {\n")
+        # `_Impl`, not `T`: a generic interface's own type parameter is in scope here
+        # and Zig refuses the shadow.
+        w.emit("pub fn check(comptime _Impl: type) void {\n")
         var cig = ig.indented()
         cig.writeIndent()
         w.emit("comptime {\n")
@@ -5769,9 +5919,9 @@ struct Generator
         for mem in ifc.members
             if mem is Decl.method as mth
                 ccig.writeIndent()
-                w.emit("if (!@hasDecl(T, \"")
+                w.emit("if (!@hasDecl(_Impl, \"")
                 w.emit(mth.name)
-                w.emit("\")) @compileError(\"type \" ++ @typeName(T) ++ \" does not implement ")
+                w.emit("\")) @compileError(\"type \" ++ @typeName(_Impl) ++ \" does not implement ")
                 w.emit(ifc.name)
                 w.emit(".")
                 w.emit(mth.name)
@@ -5783,7 +5933,10 @@ struct Generator
 
         # ── struct footer ────────────────────────────────────────────────
         writeIndent()
-        w.emit("};\n\n")
+        if is_gen
+            w.emit("};\n")
+        else
+            w.emit("};\n\n")
 
     # ── genExtend ────────────────────────────────────────────────────────────
     # extend Type → standalone functions prefixed with _ext_Type_
@@ -6564,44 +6717,40 @@ struct Generator
                     if ic.callee is Expr.ident as iid
                         var iclass_name = iid.name
                         var itr = n.type_!
-                        if itr is TypeRef.named as itn
-                            var ifc = findInterfaceDecl(itn.name)
-                            if ifc != nil
-                                var ikw: str = "const"
-                                if is_mut
-                                    ikw = "var"
-                                writeIndent()
-                                var zn_ifc: str = zigSafeName(n.name)
-                                # `.ptr` = the ctor call WITH its args (genExpr emits
-                                # `Class.init(args)`); a non-default ctor needs the args.
-                                w.emit(ikw + " " + zn_ifc + ": " + itn.name + " = .{ .ptr = ")
-                                genExpr(iinit)
-                                w.emit(", .vtable = &_vtable_" + iclass_name + "_" + itn.name + " };\n")
-                                return
+                        if ifaceRef(itr) as itn_ir
+                            var ikw: str = "const"
+                            if is_mut
+                                ikw = "var"
+                            writeIndent()
+                            var zn_ifc: str = zigSafeName(n.name)
+                            # `.ptr` = the ctor call WITH its args (genExpr emits
+                            # `Class.init(args)`); a non-default ctor needs the args.
+                            w.emit(ikw + " " + zn_ifc + ": " + itn_ir.zig + " = .{ .ptr = ")
+                            genExpr(iinit)
+                            w.emit(", .vtable = &_vtable_" + iclass_name + "_" + itn_ir.vt + " };\n")
+                            return
                         if itr is TypeRef.ref_to as irto
-                            if irto is TypeRef.named as irtn
-                                var ifc2 = findInterfaceDecl(irtn.name)
-                                if ifc2 != nil
-                                    var iuid = w.nextUid()
-                                    var ikw2: str = "const"
-                                    if is_mut
-                                        ikw2 = "var"
-                                    writeIndent()
-                                    w.emit("const _iface_" + iuid.toString() + " = _allocator.create(" + irtn.name + ") catch @panic(\"OOM\");\n")
-                                    writeIndent()
-                                    w.emit("_iface_" + iuid.toString() + ".* = .{ .ptr = ")
-                                    genExpr(iinit)
-                                    w.emit(", .vtable = &_vtable_" + iclass_name + "_" + irtn.name + " };\n")
-                                    writeIndent()
-                                    var zn_ifc2: str = zigSafeName(n.name)
-                                    w.emit(ikw2 + " " + zn_ifc2 + ": *" + irtn.name + " = _iface_" + iuid.toString() + ";\n")
-                                    return
+                            if ifaceRef(irto) as irtn_ir
+                                var iuid = w.nextUid()
+                                var ikw2: str = "const"
+                                if is_mut
+                                    ikw2 = "var"
+                                writeIndent()
+                                w.emit("const _iface_" + iuid.toString() + " = _allocator.create(" + irtn_ir.zig + ") catch @panic(\"OOM\");\n")
+                                writeIndent()
+                                w.emit("_iface_" + iuid.toString() + ".* = .{ .ptr = ")
+                                genExpr(iinit)
+                                w.emit(", .vtable = &_vtable_" + iclass_name + "_" + irtn_ir.vt + " };\n")
+                                writeIndent()
+                                var zn_ifc2: str = zigSafeName(n.name)
+                                w.emit(ikw2 + " " + zn_ifc2 + ": *" + irtn_ir.zig + " = _iface_" + iuid.toString() + ";\n")
+                                return
                 # Generalized concrete→interface coercion for an ident or method-call
                 # RHS (the constructor RHS is handled above). e.g. `var b: IBase = d`
                 # where d is a concrete class, or `var b: I = Box(i64).init(42)`.
                 var itr2 = n.type_!
-                if itr2 is TypeRef.named as itn2
-                    if findInterfaceDecl(itn2.name) != nil
+                if ifaceRef(itr2) as itn2
+                    if true
                         var cc: str? = concreteClassOf(iinit)
                         if cc != nil
                             var ikw3: str = "const"
@@ -6618,7 +6767,7 @@ struct Generator
                                         if g_id.name == cc!
                                             writeIndent()
                                             var zn_ifc3: str = zigSafeName(n.name)
-                                            w.emit(ikw3 + " " + zn_ifc3 + ": " + itn2.name + " = .{ .ptr = ")
+                                            w.emit(ikw3 + " " + zn_ifc3 + ": " + itn2.zig + " = .{ .ptr = ")
                                             genExpr(iinit)
                                             # BUG-281 B: the instantiation names the
                                             # generic TYPE; `_vtable_<Iface>` below is a
@@ -6631,15 +6780,15 @@ struct Generator
                                                     w.emit(", ")
                                                 g_first = false
                                                 genTypeFromExpr(g_ta.value)
-                                            w.emit(")._vtable_" + itn2.name + " };\n")
+                                            w.emit(")._vtable_" + itn2.vt + " };\n")
                                             did_generic = true
                             if did_generic
                                 return
                             writeIndent()
                             var zn_ifc4: str = zigSafeName(n.name)
-                            w.emit(ikw3 + " " + zn_ifc4 + ": " + itn2.name + " = .{ .ptr = ")
+                            w.emit(ikw3 + " " + zn_ifc4 + ": " + itn2.zig + " = .{ .ptr = ")
                             genExpr(iinit)
-                            w.emit(", .vtable = &_vtable_" + cc! + "_" + itn2.name + " };\n")
+                            w.emit(", .vtable = &_vtable_" + cc! + "_" + itn2.vt + " };\n")
                             return
                         # Interface→interface upcast: `var b: IBase = f` where f: IFoo
                         # and IFoo implements IBase. The two fat-pointer structs are
@@ -6652,7 +6801,7 @@ struct Generator
                                 if rnm != itn2.name
                                     var rifc = findInterfaceDecl(rnm)
                                     if rifc as rifc_decl
-                                        if superIfacesContains(rifc_decl, itn2.name)
+                                        if superIfacesContains(rifc_decl, itn2.base)
                                             var iiuid = w.nextUid()
                                             var ikw4: str = "const"
                                             if is_mut
@@ -6663,7 +6812,7 @@ struct Generator
                                             w.emit(";\n")
                                             writeIndent()
                                             var zn_ifc5: str = zigSafeName(n.name)
-                                            w.emit(ikw4 + " " + zn_ifc5 + ": " + itn2.name + " = .{ .ptr = _ifsrc_" + iiuid.toString() + ".ptr, .vtable = _ifsrc_" + iiuid.toString() + ".vtable.__as_" + itn2.name + " };\n")
+                                            w.emit(ikw4 + " " + zn_ifc5 + ": " + itn2.zig + " = .{ .ptr = _ifsrc_" + iiuid.toString() + ".ptr, .vtable = _ifsrc_" + iiuid.toString() + ".vtable.__as_" + itn2.base + " };\n")
                                             return
         writeIndent()
         # const vs var already computed above
@@ -8045,12 +8194,12 @@ struct Generator
             var iret: TypeRef = method_return_type!
             if iret is TypeRef.nilable as iret_inner
                 iret = iret_inner
-            if iret is TypeRef.named as iret_n
-                if ifaceCoercionClass(r.value!, iret_n.name) as iret_cn
+            if ifaceRef(iret) as iret_ir
+                if ifaceCoercionClass(r.value!, iret_ir.name) as iret_cn
                     writeIndent()
                     w.emit("return .{ .ptr = ")
                     genExpr(r.value!)
-                    w.emit(", .vtable = &_vtable_" + iret_cn + "_" + iret_n.name + " };\n")
+                    w.emit(", .vtable = &_vtable_" + iret_cn + "_" + iret_ir.vt + " };\n")
                     return
         # BUG-350: `return s.split(sep)` from a `List(str)` function emitted the raw
         # SplitIterator ("expected 'array_list...', found 'mem.SplitIterator'"); only
@@ -8087,19 +8236,18 @@ struct Generator
             if method_return_type != nil
                 var ret = method_return_type!
                 if ret is TypeRef.ref_to as rtr
-                    if rtr is TypeRef.named as rtn
-                        var rfc = findInterfaceDecl(rtn.name)
-                        if rfc != nil
+                    if ifaceRef(rtr) as rtn_ir
+                        if true
                             var rv = r.value!
                             if rv is Expr.call as rvc
                                 if rvc.callee is Expr.ident as rvid
                                     var ruid = w.nextUid()
                                     writeIndent()
-                                    w.emit("const _iface_" + ruid.toString() + " = _allocator.create(" + rtn.name + ") catch @panic(\"OOM\");\n")
+                                    w.emit("const _iface_" + ruid.toString() + " = _allocator.create(" + rtn_ir.zig + ") catch @panic(\"OOM\");\n")
                                     writeIndent()
                                     w.emit("_iface_" + ruid.toString() + ".* = .{ .ptr = ")
                                     genExpr(rv)
-                                    w.emit(", .vtable = &_vtable_" + rvid.name + "_" + rtn.name + " };\n")
+                                    w.emit(", .vtable = &_vtable_" + rvid.name + "_" + rtn_ir.vt + " };\n")
                                     writeIndent()
                                     w.emit("return _iface_" + ruid.toString() + ";\n")
                                     return

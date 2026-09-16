@@ -562,6 +562,25 @@ class ModuleTypes
 # `Type_.named(...)` that passes through typeFromName; direct constructions
 # elsewhere must intern at their own call site.
 
+# The registration key for an `implements` entry -- MUST match CodeGen.ifaceKeyOf:
+# "Shape" for a bare name, "Comparable(Score)" for a generic interface instantiation
+# (2026-09-16), "" for a shape that names no interface.
+def ifaceKey(tr: TypeRef): str
+    branch tr
+        on TypeRef.named as n
+            return n.name
+        on TypeRef.generic as g
+            var s: str = g.name + "("
+            var i: int = 0
+            while i < g.args.len
+                if i > 0
+                    s = s + ","
+                s = s + ifaceKey(g.args.at(i))
+                i = i + 1
+            return s + ")"
+        else
+            return ""
+
 def typeFromName(n: str): Type_
     if n == "int"
         return Type_.int_
@@ -885,10 +904,11 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     var ci_i: int = 0
                     while ci_i < c.ifaces.len
                         var ci_ref: TypeRef = c.ifaces.at(ci_i)
-                        if ci_ref is TypeRef.named as ci_nr
+                        var ci_key: str = ifaceKey(ci_ref)
+                        if ci_key != ""
                             if ci_i > 0
                                 ci_pipe = ci_pipe + "|"
-                            ci_pipe = ci_pipe + ci_nr.name
+                            ci_pipe = ci_pipe + ci_key
                         ci_i += 1
                     if ci_pipe != ""
                         mt.addClassInterfaces(c.name, ci_pipe)
@@ -910,10 +930,11 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     var si_i: int = 0
                     while si_i < s.ifaces.len
                         var si_ref: TypeRef = s.ifaces.at(si_i)
-                        if si_ref is TypeRef.named as si_nr
+                        var si_key: str = ifaceKey(si_ref)
+                        if si_key != ""
                             if si_i > 0
                                 si_pipe = si_pipe + "|"
-                            si_pipe = si_pipe + si_nr.name
+                            si_pipe = si_pipe + si_key
                         si_i += 1
                     if si_pipe != ""
                         mt.addClassInterfaces(s.name, si_pipe)
@@ -937,10 +958,11 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     var ii_i: int = 0
                     while ii_i < iface.ifaces.len
                         var ii_ref: TypeRef = iface.ifaces.at(ii_i)
-                        if ii_ref is TypeRef.named as ii_nr
+                        var ii_key: str = ifaceKey(ii_ref)
+                        if ii_key != ""
                             if ii_i > 0
                                 ii_pipe = ii_pipe + "|"
-                            ii_pipe = ii_pipe + ii_nr.name
+                            ii_pipe = ii_pipe + ii_key
                         ii_i += 1
                     if ii_pipe != ""
                         mt.addClassInterfaces(iface.name, ii_pipe)
@@ -5384,10 +5406,12 @@ def methodListHint(ct: ClassTypes): str
 
 def checkDeclShapes(m: Module, file: str, ctx: InferCtx)
     var iface_names: List(str) = List(str)()
+    var iface_arity: HashMap(str, int) = HashMap()   # generic interfaces: name → type-param count
     var mixin_names: List(str) = List(str)()
     for d0 in m.decls
         if d0 is Decl.interface_ as ifd0
             iface_names.add(ifd0.name)
+            iface_arity.put(ifd0.name, ifd0.type_params.len)
         if d0 is Decl.mixin_ as mxd0
             mixin_names.add(mxd0.name)
     for d in m.decls
@@ -5400,6 +5424,23 @@ def checkDeclShapes(m: Module, file: str, ctx: InferCtx)
                 if ir is TypeRef.named as irn
                     if mixin_names.contains(irn.name)
                         ctx.addErr(file, c.span.line, c.span.col, "'" + irn.name + "' is a mixin: bring it in with `adds " + irn.name + "`, not `implements`")
+                # Generic interfaces (2026-09-16): the instantiation must carry exactly the
+                # interface's type parameters. Without this a bare `implements Comparable`
+                # of a generic interface reached zig as `Comparable.VTable` on a function.
+                var ir_base: str = ""
+                var ir_argc: int = 0
+                if ir is TypeRef.named as irn2
+                    ir_base = irn2.name
+                if ir is TypeRef.generic as irg
+                    ir_base = irg.name
+                    ir_argc = irg.args.len
+                if ir_base != "" and iface_arity.contains(ir_base)
+                    var want_n: int = iface_arity.fetch(ir_base)
+                    if want_n != ir_argc
+                        if want_n == 0
+                            ctx.addErr(file, c.span.line, c.span.col, "'" + ir_base + "' is not a generic interface: write `implements " + ir_base + "`")
+                        else
+                            ctx.addErr(file, c.span.line, c.span.col, "interface '" + ir_base + "' takes " + want_n.toString() + " type argument(s): write `implements " + ir_base + "(...)` with " + want_n.toString() + " type(s)")
             for mr in c.mixins
                 if mr is TypeRef.named as mrn
                     if iface_names.contains(mrn.name)

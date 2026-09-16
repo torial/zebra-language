@@ -1,0 +1,18 @@
+# A generic interface must be instantiated with exactly its type parameters, and the
+# refusal is a FRONT-END one (2026-09-16). Before this check `implements Comparable`
+# on a generic interface reached zig as `Comparable.VTable` (a member lookup on a
+# function) -- a diagnostic about generated code for a one-token mistake.
+#
+#   generic_interface_arity_test.zbr:N:C: error: interface 'Comparable' takes 1 type argument(s): write `implements Comparable(...)` with 1 type(s)
+interface Comparable(T)
+    def compareTo(other: T): int
+
+class Score implements Comparable
+    var value: int
+    cue init(v: int)
+        value = v
+    def compareTo(other: Score): int
+        return value - other.value
+
+def main()
+    print(Score(1).compareTo(Score(2)))
