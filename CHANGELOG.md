@@ -152,6 +152,12 @@ view (insert at position, delete, rename via `uiTabSetName`) with `g.tabSelected
 with an int Msg panicked "incorrect alignment" (a comptime_int's address read back as
 the Msg type). libui-ng is now a subtree of zig-libui-ng (`libui/`), one repo.
 
+**GUI exit and tui clock** (2026-09-17): the libui section owns its window -- the close
+request ends the loop (`should_not_close`) and deinit destroys the window and frees the
+table models, so libui's leak check at uiUninit is quiet and no render touches a destroyed
+widget; the tui `g.every` clock is `std.Io.Timestamp` (0.16 has no `milliTimestamp`), which
+the FAST tier could not have caught -- a tui scaffold compiles only in the DAILY tier.
+
 **Menus and message-carrying widgets** (2026-09-17, `concept_zebra-gui-declarative` §6b):
 `g.beginMenu` / `menuItem(label, msg)` / `menuSeparator` / `menuQuit` / `endMenu` declare a
 native menubar in the view (the window is now created after the first render, so libui

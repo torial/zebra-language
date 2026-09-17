@@ -1115,11 +1115,14 @@ fn _lui_take_key() i64 {
     _lui_key_n -= 1;
     return @intCast(v);
 }
+// The window is OURS to destroy (deinit), so the close request only ends the loop:
+// returning should_close would make libui destroy the window while the frame that
+// carried the request still renders into it (GTK: "unexpectedly destroyed").
 fn _lui_on_close(_w: *_ui.Window, _q: ?*bool) anyerror!_ui.Window.ClosingAction {
     _ = _w;
     if (_q) |p| p.* = true;
     _ui.Quit();
-    return .should_close;
+    return .should_not_close;
 }
 // Widget callbacks: record on the node; the next render reads it (the bridge).
 fn _lui_btn_cb(_btn: *_ui.Button, _m: ?*_LuiNode) anyerror!void { _ = _btn; if (_m) |p| p.clicked = true; }
@@ -1178,7 +1181,16 @@ fn _lui_every(_ms: i64, _msg: *const anyopaque, _len: usize, _send_fn: *const fn
 fn _lui_sweep_everys() void {
     for (_lui_everys.items) |_r| _r.stale = _r.seen != _lui_frame_n;
 }
+// Exit: destroy the window (which destroys every control in the tree, the uiTables
+// included), THEN free what the tree owned outside the controls -- table models,
+// which libui's leak check at uiUninit names by address if they are still alive.
+fn _lui_free_models(_n: *_LuiNode) void {
+    for (_n.children.items) |_c| _lui_free_models(_c);
+    if (_n.table) |_t| { _lui_table_free(_t); _n.table = null; }
+}
 fn _lui_deinit() void {
+    if (_lui_window) |_w| { _ui.Control.Destroy(_w.as_control()); _lui_window = null; }
+    _lui_free_models(_lui_root);
     _lui_keyed.deinit();
     _ui.Uninit();
 }

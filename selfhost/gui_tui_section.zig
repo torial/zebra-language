@@ -469,6 +469,7 @@ fn _tui_deinit() void {
     if (_tui_terminal) |*_t| _t.deinit();
     _tui_terminal = null;
 }
+fn _tui_now_ms() i64 { return @intCast(@divTrunc(std.Io.Timestamp.now(_io, .awake).nanoseconds, std.time.ns_per_ms)); }
 // g.every on the tui: the input poll is the clock. A record is sent when its period
 // has elapsed, while the view keeps declaring it (seen == the last frame).
 const _TuiEvery = struct { ms: i64, bytes: [64]u8 align(16) = undefined, len: usize = 0, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque, seen: u32 = 0, last: i64 = 0 };
@@ -481,12 +482,12 @@ fn _tui_every(_ms: i64, _msg: *const anyopaque, _len: usize, _send_fn: *const fn
         if (_r.ms == _ms and _r.len == _len and std.mem.eql(u8, _r.bytes[0.._len], _src[0.._len])) { _r.seen = _tui_frame_n; return; }
     }
     const _r = _allocator.create(_TuiEvery) catch return;
-    _r.* = .{ .ms = _ms, .send_fn = _send_fn, .send_ptr = _send_ptr, .seen = _tui_frame_n, .len = _len, .last = std.time.milliTimestamp() };
+    _r.* = .{ .ms = _ms, .send_fn = _send_fn, .send_ptr = _send_ptr, .seen = _tui_frame_n, .len = _len, .last = _tui_now_ms() };
     @memcpy(_r.bytes[0.._len], _src[0.._len]);
     _tui_everys.append(_allocator, _r) catch { _allocator.destroy(_r); };
 }
 fn _tui_fire_everys() void {
-    const _now = std.time.milliTimestamp();
+    const _now = _tui_now_ms();
     for (_tui_everys.items) |_r| {
         if (_r.seen + 1 < _tui_frame_n) continue;   // not declared last frame: paused
         if (_now - _r.last >= _r.ms) { _r.last = _now; _r.send_fn(_r.send_ptr, @ptrCast(&_r.bytes), _r.len); }
