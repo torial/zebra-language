@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-430. Next new bug: BUG-431.**
+**Last bug number generated: BUG-433. Next new bug: BUG-434.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,40 @@
 > measured in.
 
 ---
+
+### BUG-431: no way to narrow an `int` to a `byte`, and the checker lets the attempt through to Zig — OPEN (found 2026-09-17, dogfood)
+
+`buf[k] = v` with `buf: List(byte)` and `v: int`, or `var b: byte = v`, passes `zebra -c`
+and fails inside zig with `expected type 'u8', found 'i64'` (mapped back to the .zbr line,
+at least). `int` has no `toByte()`; QUICKSTART §21 says numeric conversions are methods and
+lists `toFloat/toInt/toString/toFloat32` -- nothing lands on `byte`. A LITERAL coerces
+(`buf[k] = 2` is fine), so the only in-language workaround is to branch on the value
+(`if v == 1: buf[k] = 1 else if v == 2: ...`), which is what `kolakoski_kol.zbr` and
+`kolakoski_kolw.zbr` (wiki, `pages/fable/`) do -- and the second program was silently WRONG
+for K(3,4) because its branch table stopped at 3 and everything above became 0; a real
+narrowing would have been correct or refused. Two halves: (1) add `int.toByte()` (refuse or
+wrap out-of-range -- say which); (2) the checker should refuse `int` where `byte` is expected,
+the BUG-369 recipe. The zig escape `zig"@as(u8, @intCast(v))"` works today.
+
+### BUG-432: a `+` sign flag in a format spec is silently dropped — OPEN (found 2026-09-17, dogfood)
+
+`"${d:+.1f}"` prints `65.0`, not `+65.0` -- the spec grammar in QUICKSTART §17 is
+`[fill][align][width][.prec][type]` with no sign field, and an unknown character in the spec
+is ignored rather than refused. Either support `+` (C's `%+.1f`, the oracle
+`kolakoski_kol.c` prints with it) or refuse the spec with a diagnostic; silently printing a
+different number than asked is the worst of the three. Workaround in `kolakoski_kol.zbr`:
+a hand-built sign string.
+
+### BUG-433: `Random.new(seed)` instance methods are not checked — `rng.randBool()` reaches Zig — OPEN (found 2026-09-17, dogfood)
+
+`var rng = Random.new(17)` then `rng.randBool()` (the STATIC name; the instance one is
+`nextBool`) passes `zebra -c` and fails in zig: `no field or member function named
+'randBool' in 'zebra_rt._Random'`. `Random` is one of the runtime object types WITHOUT a
+`Type_` variant that `surface_inventory` lists as uncovered; the BUG-369 recipe (a
+`*MethodKnown` predicate derived from the dispatch arms, refusing unknown names in the front
+end) closed 16 such types on 2026-09-15 and did not reach this one. While there: the static
+and instance forms having different verbs (`randInt` / `nextInt`) is the trap that produced
+this; one verb would remove it.
 
 ### BUG-430: `zebra lsp` rename on Windows returns edits only for the opened file — the `use` graph's URIs disagree (`file://C:/…` vs `file:///C:/…`) — OPEN (found 2026-09-17)
 
