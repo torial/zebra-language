@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-434. Next new bug: BUG-435.**
+**Last bug number generated: BUG-435. Next new bug: BUG-436.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -59,6 +59,19 @@ for K(3,4) because its branch table stopped at 3 and everything above became 0; 
 narrowing would have been correct or refused. Two halves: (1) add `int.toByte()` (refuse or
 wrap out-of-range -- say which); (2) the checker should refuse `int` where `byte` is expected,
 the BUG-369 recipe. The zig escape `zig"@as(u8, @intCast(v))"` works today.
+
+### BUG-435: `List` has no way to reserve capacity, so the largest list a program can build is about a third of RAM — OPEN (found 2026-09-17, dogfood)
+
+`List(byte)` grows by `append` only, and the runtime's ArrayList doubles: a 3.5 GB ring
+filled one byte at a time asked for 4 GB at its last doubling while still holding 2 GB,
+and the program died `panic: OOM` in an 8 GB container that had room for the list twice
+over. There is no `reserve(n)` / `withCapacity(n)` / `List(T)(n)` on the surface (SURFACE.md
+List section, QUICKSTART §10). Workaround in `kolakoski_kolw2.zbr` (wiki, `pages/fable/`):
+`zig"out.ensureTotalCapacity(_zbr_rt._allocator, @as(usize, @intCast(n))) catch unreachable;"`
+-- which also shows the escape hatch cannot spell `@panic("OOM")`, because a `\"` inside a
+`zig"..."` literal reaches the emit as `\"` and zig refuses it (a second, smaller defect;
+`catch unreachable` was the way round). Proposed: `List(T).withCapacity(n)` or
+`list.reserve(n)`, one emit arm each.
 
 ### BUG-434: a `Random` cannot be a class field — OPEN (found 2026-09-17, dogfood)
 
