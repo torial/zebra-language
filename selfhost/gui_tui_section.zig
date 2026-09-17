@@ -10,7 +10,7 @@ const _GuiBackend = struct {
     // g.every(ms, msg): a timer SUBSCRIPTION. The view declares the timers it wants
     // each frame; one that stops being declared is disarmed. The message bytes are
     // copied (the Msg type is only known to the run loop) and sent with send_fn.
-    everyFn:       *const fn (ms: i64, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque) void, send_ptr: *anyopaque) void,
+    everyFn:       *const fn (ms: i64, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     textFn:        *const fn (s: []const u8) void,
     separatorFn:   *const fn () void,
     sameLineFn:    *const fn () void,
@@ -71,6 +71,18 @@ const _GuiBackend = struct {
     selectTabFn:   *const fn (id: []const u8, index: i64) void,
     minSizeFn:     *const fn (id: []const u8, width: i64, height: i64) void,
     hotkeyFn:      *const fn (vk: i64, mods: i64) void,
+    // §6b (2026-09-17): message-carrying forms and menus. `msg` is the Msg's bytes
+    // (copied; the Msg type is only known to the run loop) sent with send_fn; `cap`
+    // is a Zebra closure's bytes and `thunk` the comptime-generated call that turns
+    // the widget's value into a Msg and sends it.
+    actionFn:      *const fn (label: []const u8, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    toggleFn:      *const fn (label: []const u8, checked: bool, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    fieldFn:       *const fn (label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    beginMenuFn:   *const fn (name: []const u8) void,
+    menuItemFn:    *const fn (label: []const u8, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    menuSeparatorFn: *const fn () void,
+    menuQuitFn:    *const fn () void,
+    endMenuFn:     *const fn () void,
     takeKeyFn:     *const fn () i64,
     progressBarFn: *const fn (label: []const u8, value: f64) void,
     comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64) i64,
@@ -112,7 +124,7 @@ const _LowLevel = struct {
 const GuiContext = struct {
     _b: *const _GuiBackend,
     lowLevel: _LowLevel,
-    _send_fn: ?*const fn(*anyopaque, *const anyopaque) void = null,
+    _send_fn: ?*const fn (*anyopaque, *const anyopaque, usize) void = null,
     _send_ptr: ?*anyopaque = null,
     pub fn send(self: GuiContext, msg: anytype) void {
         // A literal (`g.send(2)` with an int Msg) is a comptime_int: taking its address
@@ -120,7 +132,7 @@ const GuiContext = struct {
         // 2026-09-17 by examples/table_strip_smoke.zbr). Land it in a runtime value first.
         const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
         const _v: _T = msg;
-        if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&_v));
+        if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&_v), @sizeOf(_T));
     }
     // Subscribe to time: `msg` is sent every `ms` milliseconds for as long as the view
     // keeps declaring it. The only way a program gets a frame without an event.
@@ -213,6 +225,58 @@ const GuiContext = struct {
     // consumed wherever the focus is and queued; takeKey pops (mods << 16) | vk, or 0.
     pub fn hotkey(self: GuiContext, vk: i64, mods: i64) void { self._b.hotkeyFn(vk, mods); }
     pub fn takeKey(self: GuiContext) i64 { return self._b.takeKeyFn(); }
+    // ── message-carrying forms (§6b): the widget carries the Msg it sends ──
+    // A button that sends `msg` when clicked. (`button(label)` -> bool is the bridge
+    // form and goes away in §6c, when this becomes `button`.)
+    pub fn action(self: GuiContext, label: []const u8, msg: anytype) void {
+        const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
+        const _v: _T = msg;
+        if (self._send_fn) |f| self._b.actionFn(label, @ptrCast(&_v), @sizeOf(_T), f, self._send_ptr.?);
+    }
+    // A checkbox; `on` is a Zebra closure `def(checked: bool): Msg` called when it flips.
+    pub fn toggle(self: GuiContext, label: []const u8, checked: bool, on: anytype) void {
+        // a bare fn (a non-capturing lambda) has no size: store its POINTER; a
+        // closure struct is stored by value (fn-twins: the fn-or-pointer test is _zbr_is_fnlike's)
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: bool, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.toggleFn(label, checked, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // A text entry; `on` is `def(text: str): Msg`, called on every change.
+    pub fn field(self: GuiContext, label: []const u8, initial: []const u8, on: anytype) void {
+        // a bare fn (a non-capturing lambda) has no size: store its POINTER; a
+        // closure struct is stored by value (fn-twins: the fn-or-pointer test is _zbr_is_fnlike's)
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.fieldFn(label, initial, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // ── menus (§6b): declared in the first render, before the window exists ──
+    pub fn beginMenu(self: GuiContext, name: []const u8) void { self._b.beginMenuFn(name); }
+    pub fn menuItem(self: GuiContext, label: []const u8, msg: anytype) void {
+        const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
+        const _v: _T = msg;
+        if (self._send_fn) |f| self._b.menuItemFn(label, @ptrCast(&_v), @sizeOf(_T), f, self._send_ptr.?);
+    }
+    pub fn menuSeparator(self: GuiContext) void { self._b.menuSeparatorFn(); }
+    pub fn menuQuit(self: GuiContext) void { self._b.menuQuitFn(); }
+    pub fn endMenu(self: GuiContext) void { self._b.endMenuFn(); }
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
@@ -268,9 +332,34 @@ fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, 
     const _MvuQueue = struct { buf: [32]MsgType = undefined, len: usize = 0 };
     var _pq = _MvuQueue{};
     const _sfn = struct {
-        fn send(ctx: *anyopaque, mp: *const anyopaque) void {
+        fn send(ctx: *anyopaque, mp: *const anyopaque, len: usize) void {
             const q: *_MvuQueue = @ptrCast(@alignCast(ctx));
-            if (q.len < 32) { q.buf[q.len] = (@as(*const MsgType, @ptrCast(@alignCast(mp)))).* ; q.len += 1; }
+            if (q.len >= 32) return;
+            if (len == @sizeOf(MsgType)) {
+                q.buf[q.len] = (@as(*const MsgType, @ptrCast(@alignCast(mp)))).*;
+                q.len += 1;
+                return;
+            }
+            // `Msg.tick` on a union(enum) is the TAG, not the union; build the
+            // (payload-less) union from it. Found 2026-09-17: the old queue read the
+            // union's size off a one-byte tag and worked by the accident of layout.
+            if (comptime @typeInfo(MsgType) == .@"union") {
+                if (comptime @typeInfo(MsgType).@"union".tag_type) |Tag| {
+                    if (len == @sizeOf(Tag)) {
+                        const t: *const Tag = @ptrCast(@alignCast(mp));
+                        switch (t.*) {
+                            inline else => |tv| {
+                                if (comptime @FieldType(MsgType, @tagName(tv)) == void) {
+                                    q.buf[q.len] = @unionInit(MsgType, @tagName(tv), {});
+                                    q.len += 1;
+                                }
+                            },
+                        }
+                        return;
+                    }
+                }
+            }
+            std.debug.print("gui: a message of {d} bytes does not match the Msg type ({d} bytes); dropped\n", .{ len, @sizeOf(MsgType) });
         }
     }.send;
     var _model = if (comptime _zbr_is_fnlike(@TypeOf(_mvu_init))) _mvu_init() else blk: { var _m = _mvu_init; break :blk _m.call(); };
@@ -382,10 +471,10 @@ fn _tui_deinit() void {
 }
 // g.every on the tui: the input poll is the clock. A record is sent when its period
 // has elapsed, while the view keeps declaring it (seen == the last frame).
-const _TuiEvery = struct { ms: i64, bytes: [64]u8 align(16) = undefined, len: usize = 0, send_fn: *const fn (*anyopaque, *const anyopaque) void, send_ptr: *anyopaque, seen: u32 = 0, last: i64 = 0 };
+const _TuiEvery = struct { ms: i64, bytes: [64]u8 align(16) = undefined, len: usize = 0, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque, seen: u32 = 0, last: i64 = 0 };
 var _tui_everys: std.ArrayList(*_TuiEvery) = .empty;
 var _tui_frame_n: u32 = 1;
-fn _tui_every(_ms: i64, _msg: *const anyopaque, _len: usize, _send_fn: *const fn (*anyopaque, *const anyopaque) void, _send_ptr: *anyopaque) void {
+fn _tui_every(_ms: i64, _msg: *const anyopaque, _len: usize, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
     if (_len > 64) return;
     const _src: [*]const u8 = @ptrCast(_msg);
     for (_tui_everys.items) |_r| {
@@ -400,7 +489,7 @@ fn _tui_fire_everys() void {
     const _now = std.time.milliTimestamp();
     for (_tui_everys.items) |_r| {
         if (_r.seen + 1 < _tui_frame_n) continue;   // not declared last frame: paused
-        if (_now - _r.last >= _r.ms) { _r.last = _now; _r.send_fn(_r.send_ptr, @ptrCast(&_r.bytes)); }
+        if (_now - _r.last >= _r.ms) { _r.last = _now; _r.send_fn(_r.send_ptr, @ptrCast(&_r.bytes), _r.len); }
     }
 }
 fn _tui_new_frame() bool {
@@ -453,6 +542,26 @@ fn _tui_spacing() void { _tui_current_row += 1; }
 fn _tui_indent() void { _tui_indent_level += 1; }
 fn _tui_unindent() void { if (_tui_indent_level > 0) _tui_indent_level -= 1; }
 fn _tui_button_id(id: []const u8, label: []const u8) bool { _ = id; return _tui_button(label); }
+// §6b message forms on the tui: the immediate-mode widget, and the message on change.
+fn _tui_action(label: []const u8, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+    if (_tui_button(label)) send_fn(send_ptr, msg, len);
+}
+fn _tui_toggle(label: []const u8, checked: bool, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+    _ = cap_len;
+    const now = _tui_checkbox(label, checked);
+    if (now != checked) thunk(cap, now, send_fn, send_ptr);
+}
+fn _tui_field(label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+    _ = cap_len;
+    const now = _tui_input(label, text);
+    if (!std.mem.eql(u8, now, text)) thunk(cap, now, send_fn, send_ptr);
+}
+// menus: the tui has no menubar; items render as a row of buttons under the title
+fn _tui_begin_menu(name: []const u8) void { _tui_text(name); _tui_indent(); }
+fn _tui_menu_item(label: []const u8, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void { _tui_action(label, msg, len, send_fn, send_ptr); }
+fn _tui_menu_separator() void {}
+fn _tui_menu_quit() void { if (_tui_button("Quit")) _tui_quit = true; }
+fn _tui_end_menu() void { _tui_unindent(); }
 fn _tui_button(label: []const u8) bool {
     const _row = _tui_current_row;
     _tui_current_row += 1;
@@ -650,6 +759,14 @@ const _gui_tui_backend = _GuiBackend{
     .selectTabFn    = _tui_select_tab,
     .minSizeFn      = _tui_min_size,
     .hotkeyFn       = _tui_hotkey,
+    .actionFn       = _tui_action,
+    .toggleFn       = _tui_toggle,
+    .fieldFn        = _tui_field,
+    .beginMenuFn    = _tui_begin_menu,
+    .menuItemFn     = _tui_menu_item,
+    .menuSeparatorFn = _tui_menu_separator,
+    .menuQuitFn     = _tui_menu_quit,
+    .endMenuFn      = _tui_end_menu,
     .takeKeyFn      = _tui_take_key,
     .progressBarFn = _tui_progressbar,
     .comboboxFn    = _tui_combobox,

@@ -3215,6 +3215,10 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 | `g.tabSelected(id)` / `g.selectTab(id, i)` | int / void | Selected page index in emission order (-1 with no pages) / select from the model. TUI backend: -1 / no-op |
 | `g.minSize(id, w, h)`                      | void     | Minimum-size hint (points, 0 = none) for the id-keyed widget: a box, tab strip, panel, editor, button or input. Applied on top of the natural minimum; how a side pane gets a width. TUI backend: no-op |
 | `g.beginTable(id, cols)` … `g.endTable()`  | bool / void | A list (libui-ng `uiTable`, one text column per `cols`): `tableSetupColumn(name)` per column, `tableHeadersRow()` to show the header, then per row `tableNextRow()` and per cell `tableNextColumn()` + `g.text(cell)`. Rows are diffed frame to frame. `g.tableSelectedRow(id)` is the selected row (-1 none), `g.tableActivatedRow(id)` the row double-clicked since the last call (-1 none). TUI backend: no-op / -1 |
+| `g.action(label, msg)`                     | void     | A button that sends `msg` when clicked (the message-carrying form; `button(label)` → bool is the bridge form, gone in §6c). |
+| `g.toggle(label, checked, on)`             | void     | A checkbox; `on` is `def(b: bool): Msg`, called when it flips. The model drives the widget: pass the model's value. |
+| `g.field(label, text, on)`                 | void     | A text entry; `on` is `def(s: str): Msg`, called on every change. A model change that differs from what the entry shows is pushed; keystrokes never disturb the caret. |
+| `g.beginMenu(name)` … `g.endMenu()`        | void     | A native menubar menu, declared in the view: `g.menuItem(label, msg)`, `g.menuSeparator()`, `g.menuQuit()`. libui fixes the menubar when the window is created, so the FIRST render decides which menus and items exist; declare them in every render. TUI: a row of buttons. |
 | `g.every(ms, msg)`                         | void     | Subscribe to time: `msg` is sent every `ms` milliseconds while the view keeps declaring it. **The frame is an event** (2026-09-17): `view` runs after a click, a change, a queued `g.send`, or a subscribed timer — never on its own. A `g.send` from view on every pass is a livelock and is dropped after 8 passes with a warning naming `every`. |
 | `g.hotkey(vk, mods)` / `g.takeKey()`       | void / int | Window-wide key chords, the `CodeEditor.hotkey/takeKey` convention at the window: a claimed chord is consumed wherever the focus is and queued; `takeKey` pops `(mods << 16) \| vk`, or 0. Mods: 1 ctrl, 2 shift, 4 alt; `vk` the Windows virtual-key code. TUI backend: 0 |
 | `g.window(label, callback)`                | void     | Floating sub-window                        |
@@ -3334,6 +3338,28 @@ editor.sciStr(SCI_SETTEXT, 0, "def main()\n")  # lParam is a NUL-terminated copy
 on — markers, indicators, annotations, folding, search-in-target — so the widget
 API stays small. Unknown message ids return 0. On the `tui` backend both return 0
 and do nothing, so a program using them still compiles and runs headless.
+
+**Menus.** Declared in the view like everything else; the window is created after the
+first render precisely so libui sees the menus first.
+
+```zebra
+def view(g: Gui, m: Model)
+    g.beginMenu("File")
+    g.menuItem("Open…", Msg.open_file)
+    g.menuItem("Save", Msg.save_file)
+    g.menuSeparator()
+    g.menuQuit()
+    g.endMenu()
+    g.action("Build", Msg.build)                      # a button that sends
+    g.toggle("Verbose", m.verbose, def(b: bool): Msg
+        return Msg.set_verbose(b)
+    )
+    g.field("find", m.find_text, def(s: str): Msg
+        return Msg.find_changed(s)
+    )
+```
+
+Smoke: `examples/menu_smoke.zbr`.
 
 **Tables.** Immediate-mode over a retained `uiTable`: the view emits the whole
 grid every frame and the section diffs it into the model (changed cells, added

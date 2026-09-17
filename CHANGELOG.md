@@ -152,6 +152,16 @@ view (insert at position, delete, rename via `uiTabSetName`) with `g.tabSelected
 with an int Msg panicked "incorrect alignment" (a comptime_int's address read back as
 the Msg type). libui-ng is now a subtree of zig-libui-ng (`libui/`), one repo.
 
+**Menus and message-carrying widgets** (2026-09-17, `concept_zebra-gui-declarative` §6b):
+`g.beginMenu` / `menuItem(label, msg)` / `menuSeparator` / `menuQuit` / `endMenu` declare a
+native menubar in the view (the window is now created after the first render, so libui
+sees the menus first); `g.action(label, msg)`, `g.toggle(label, checked, on)`,
+`g.field(label, text, on)` carry the Msg (or a `def(value): Msg` closure) they send.
+Fixed on the way: `g.send(Msg.tick)` on a `union(enum)` passed the one-byte TAG and the
+queue read the union's size off it -- worked by the accident of layout; the queue now
+builds the payload-less union from a tag. Witness `examples/menu_smoke.zbr` (clicked,
+toggled and typed into under Xvfb).
+
 **The GUI section is a tree** (2026-09-17, `concept_zebra-gui-declarative` §6a step 2):
 every `g.*` call is a node matched to the retained one by kind + key (`##id`, label) or
 position; a miss inserts at the node's position (`uiBoxInsertAt`, the fork's), a node the

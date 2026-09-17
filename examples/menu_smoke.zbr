@@ -1,0 +1,63 @@
+# Menus + message-carrying widgets smoke (2026-09-17, concept_zebra-gui-declarative §6b).
+# A native menubar declared in the view (File / Edit), whose items carry the Msg they
+# send; a button, a checkbox and a text field in the message-carrying forms -- no
+# polling, no bool returns: the event goes straight to update. The counter shows
+# the model moving. Compile control: --gui-backend=tui (menus render as buttons).
+
+union Msg
+    bump
+    reset
+    set_loud: bool
+    set_name: str
+    tick
+
+class Model
+    var count: int = 0
+    var loud: bool = false
+    var name: str = "zebra"
+    var ticks: int = 0
+
+def menuInit(): Model
+    return Model()
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.bump
+            m.count = m.count + 1
+        on Msg.reset
+            m.count = 0
+        on Msg.set_loud as b
+            m.loud = b
+        on Msg.set_name as s
+            m.name = s
+        on Msg.tick
+            m.ticks = m.ticks + 1
+    return m
+
+def view(g: Gui, m: Model)
+    g.every(1000, Msg.tick)
+    g.beginMenu("File")
+    g.menuItem("Bump", Msg.bump)
+    g.menuItem("Reset", Msg.reset)
+    g.menuSeparator()
+    g.menuQuit()
+    g.endMenu()
+    g.beginMenu("Edit")
+    g.menuItem("Bump twice", Msg.bump)
+    g.endMenu()
+    using g.vbox("##root", true)
+        var shout: str = ""
+        if m.loud
+            shout = "!"
+        g.text("count ${m.count}${shout}   name ${m.name}   ticks ${m.ticks}")
+        g.action("Bump", Msg.bump)
+        g.action("Reset", Msg.reset)
+        g.toggle("Loud", m.loud, def(b: bool): Msg
+            return Msg.set_loud(b)
+        )
+        g.field("name", m.name, def(s: str): Msg
+            return Msg.set_name(s)
+        )
+
+def main()
+    Gui.run("Menu Smoke", 500, 300, menuInit, update, view)
