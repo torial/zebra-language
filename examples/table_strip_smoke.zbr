@@ -34,7 +34,7 @@ def view(g: Gui, m: Model)
         g.beginTabPage("##a", "alpha.zbr")
         g.endTabPage()
         var lbl: str = "beta.zbr"
-        if m.ticks % 2 == 0
+        if (m.ticks / 20) % 2 == 0      # ticks are ~10/s: renames every two seconds
             lbl = "beta.zbr *"
         g.beginTabPage("##b", lbl)
         g.endTabPage()
@@ -51,12 +51,12 @@ def view(g: Gui, m: Model)
                     g.tableSetupColumn("text")
                     g.tableHeadersRow()
                     var i: int = 0
-                    while i < 3 + (m.ticks % 3)
+                    while i < 3 + ((m.ticks / 30) % 3)   # a row comes and goes every three seconds
                         g.tableNextRow()
                         g.tableNextColumn()
                         g.text(i.toString())
                         g.tableNextColumn()
-                        g.text("row ${i} at tick ${m.ticks / 10}")
+                        g.text("row ${i} at second ${m.ticks / 10}")
                         i = i + 1
                     g.endTable()
                 var act: int = g.tableActivatedRow("##rows")

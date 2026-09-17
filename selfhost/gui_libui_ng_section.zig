@@ -1470,7 +1470,9 @@ fn _lui_begin_tab_page(_id: []const u8, _label: []const u8) void {
         const _at: c_int = @min(_ord, _ui.Tab.NumPages(_t));
         _lui_page_shift(_t, _at, 1);
         _ui.Tab.InsertAt(_t, _lb[0.._n :0], _at, _p.box.as_control());
-        _ui.Tab.SetMargined(_t, _at, true);
+        // no uiTab margins: the page box is padded itself, and an EMPTY page (a strip)
+        // would otherwise reserve a margin band under the tabs
+        _ui.Tab.SetMargined(_t, _at, false);
         _p.idx = _at;
         _p.attached = true;
         @memcpy(_p.label[0.._n], _label[0.._n]);
