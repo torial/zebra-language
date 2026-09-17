@@ -28,7 +28,7 @@ def view(g: Gui, m: Model)
     var k: int = g.takeKey()
     if k != 0
         g.send(2)
-    g.send(1)
+    g.every(100, 1)      # the tick is a subscription; a g.send here would be a livelock
     using g.vbox("##root", true)
         g.beginTabs("##strip", false)
         g.beginTabPage("##a", "alpha.zbr")

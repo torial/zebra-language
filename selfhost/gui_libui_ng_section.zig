@@ -7,6 +7,10 @@ const _GuiBackend = struct {
     deinitFn:      *const fn () void,
     newFrameFn:    *const fn () bool,
     endFrameFn:    *const fn () void,
+    // g.every(ms, msg): a timer SUBSCRIPTION. The view declares the timers it wants
+    // each frame; one that stops being declared is disarmed. The message bytes are
+    // copied (the Msg type is only known to the run loop) and sent with send_fn.
+    everyFn:       *const fn (ms: i64, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque) void, send_ptr: *anyopaque) void,
     textFn:        *const fn (s: []const u8) void,
     separatorFn:   *const fn () void,
     sameLineFn:    *const fn () void,
@@ -117,6 +121,13 @@ const GuiContext = struct {
         const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
         const _v: _T = msg;
         if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&_v));
+    }
+    // Subscribe to time: `msg` is sent every `ms` milliseconds for as long as the view
+    // keeps declaring it. The only way a program gets a frame without an event.
+    pub fn every(self: GuiContext, ms: i64, msg: anytype) void {
+        const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
+        const _v: _T = msg;
+        if (self._send_fn) |f| self._b.everyFn(ms, @ptrCast(&_v), @sizeOf(_T), f, self._send_ptr.?);
     }
     pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
     pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
@@ -266,15 +277,42 @@ fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, 
     }.send;
     var _model = if (comptime _zbr_is_fnlike(@TypeOf(_mvu_init))) _mvu_init() else blk: { var _m = _mvu_init; break :blk _m.call(); };
     const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend }, ._send_fn = _sfn, ._send_ptr = &_pq };
+    // THE FRAME IS AN EVENT (2026-09-17, concept_zebra-gui-declarative). newFrameFn
+    // blocks until the toolkit has an event (a click, a change, a subscribed timer).
+    // Then: render; while the render sent messages, update for each and render again,
+    // so the model change is on screen before the loop blocks. A view that sends on
+    // every pass never settles -- that was a heartbeat under the old 100 ms timer and
+    // is a livelock here -- so passes are capped and the leftover dropped, once, loudly.
+    var _warned_livelock = false;
     while (_gui_active_backend.newFrameFn()) {
-        if (comptime _zbr_is_fnlike(@TypeOf(_mvu_view))) _mvu_view(_g, _model) else { var _mv = _mvu_view; _mv.call(_g, _model); }
-        for (_pq.buf[0.._pq.len]) |msg| {
-            if (comptime _zbr_is_fnlike(@TypeOf(_mvu_update)))
-                _model = _mvu_update(_model, msg)
-            else { var _mu = _mvu_update; _model = _mu.call(_model, msg); }
+        var _passes: usize = 0;
+        while (true) {
+            // messages first (a subscribed timer or a widget callback may have queued
+            // one before this frame started), then render; a render that sends loops.
+            if (_pq.len > 0) {
+                if (_passes >= 8) {
+                    if (!_warned_livelock) {
+                        _warned_livelock = true;
+                        std.debug.print("gui: the view sent messages on 8 consecutive passes after one event; a heartbeat belongs in g.every(ms, msg), not g.send from view. Dropping the rest.\n", .{});
+                    }
+                    _pq.len = 0;
+                    break;
+                }
+                const _n = _pq.len;
+                var _i: usize = 0;
+                while (_i < _n) : (_i += 1) {
+                    const msg = _pq.buf[_i];
+                    if (comptime _zbr_is_fnlike(@TypeOf(_mvu_update)))
+                        _model = _mvu_update(_model, msg)
+                    else { var _mu = _mvu_update; _model = _mu.call(_model, msg); }
+                }
+                if (_pq.len > _n) { std.mem.copyForwards(MsgType, _pq.buf[0 .. _pq.len - _n], _pq.buf[_n.._pq.len]); _pq.len -= _n; } else _pq.len = 0;
+                _passes += 1;
+            }
+            if (comptime _zbr_is_fnlike(@TypeOf(_mvu_view))) _mvu_view(_g, _model) else { var _mv = _mvu_view; _mv.call(_g, _model); }
+            _gui_active_backend.endFrameFn();
+            if (_pq.len == 0) break;
         }
-        _pq.len = 0;
-        _gui_active_backend.endFrameFn();
     }
 }
 // ─── CodeEditor widget — Scintilla via libui-scintilla ───────────────────────
@@ -882,10 +920,40 @@ fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
     _lui_root_box = try _ui.Box.New(.Vertical);
     _lui_root_box.?.SetPadded(true);
     _lui_push_box(_lui_root_box.?);
-    _ui.Timer(anyopaque, anyerror, 100, _lui_poll_tick, null);
+    _lui_everys = .empty;
     _lui_frame = 0; _lui_quit = false;
 }
-fn _lui_poll_tick(_: ?*anyopaque) anyerror!_ui.TimerAction { return .rearm; }
+// g.every(ms, msg) subscriptions. A record lives while the view keeps declaring it
+// (seen == the frame it was last declared in); the sweep marks the rest stale and the
+// next tick disarms them. Redeclaring a stale one re-arms it. Until 2026-09-17 a fixed
+// 100 ms timer drove EVERY frame; now a program that never subscribes idles at zero.
+const _LuiEvery = struct { ms: i64, bytes: [64]u8 align(16) = undefined, len: usize = 0, send_fn: *const fn (*anyopaque, *const anyopaque) void, send_ptr: *anyopaque, seen: u32 = 0, stale: bool = false, armed: bool = false };
+var _lui_everys: std.ArrayList(*_LuiEvery) = .empty;
+fn _lui_every_tick(_rp: ?*_LuiEvery) anyerror!_ui.TimerAction {
+    const _r = _rp orelse return .disarm;
+    if (_r.stale) { _r.armed = false; return .disarm; }
+    _r.send_fn(_r.send_ptr, @ptrCast(&_r.bytes));
+    return .rearm;
+}
+fn _lui_every(_ms: i64, _msg: *const anyopaque, _len: usize, _send_fn: *const fn (*anyopaque, *const anyopaque) void, _send_ptr: *anyopaque) void {
+    if (_len > 64) return;
+    const _src: [*]const u8 = @ptrCast(_msg);
+    for (_lui_everys.items) |_r| {
+        if (_r.ms == _ms and _r.len == _len and std.mem.eql(u8, _r.bytes[0.._len], _src[0.._len])) {
+            _r.seen = _lui_frame_n;
+            if (!_r.armed) { _r.stale = false; _r.armed = true; _ui.Timer(_LuiEvery, anyerror, @intCast(@max(_ms, 1)), _lui_every_tick, _r); }
+            return;
+        }
+    }
+    const _r = _allocator.create(_LuiEvery) catch return;
+    _r.* = .{ .ms = _ms, .send_fn = _send_fn, .send_ptr = _send_ptr, .seen = _lui_frame_n, .armed = true, .len = _len };
+    @memcpy(_r.bytes[0.._len], _src[0.._len]);
+    _lui_everys.append(_allocator, _r) catch { _allocator.destroy(_r); return; };
+    _ui.Timer(_LuiEvery, anyerror, @intCast(@max(_ms, 1)), _lui_every_tick, _r);
+}
+fn _lui_sweep_everys() void {
+    for (_lui_everys.items) |_r| _r.stale = _r.seen != _lui_frame_n;
+}
 fn _lui_deinit() void {
     _lui_icache.deinit();
     _lui_dcache.deinit(_allocator);
@@ -904,6 +972,7 @@ fn _lui_endframe() void {
     _lui_box_depth = 1; // reset to root box only
     _lui_sweep_unseen();
     _lui_sweep_pages();
+    _lui_sweep_everys();
     _lui_frame_n +%= 1;
     if (_lui_frame_n == 0) _lui_frame_n = 1;
     if (_lui_frame == 0) {
@@ -1626,6 +1695,7 @@ const _gui_lui_backend = _GuiBackend{
     .initFn             = _lui_init,
     .deinitFn           = _lui_deinit,
     .newFrameFn         = _lui_newframe,
+    .everyFn       = _lui_every,
     .endFrameFn         = _lui_endframe,
     .textFn             = _lui_text,
     .separatorFn        = _lui_sep,

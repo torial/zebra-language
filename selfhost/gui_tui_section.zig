@@ -7,6 +7,10 @@ const _GuiBackend = struct {
     deinitFn:      *const fn () void,
     newFrameFn:    *const fn () bool,
     endFrameFn:    *const fn () void,
+    // g.every(ms, msg): a timer SUBSCRIPTION. The view declares the timers it wants
+    // each frame; one that stops being declared is disarmed. The message bytes are
+    // copied (the Msg type is only known to the run loop) and sent with send_fn.
+    everyFn:       *const fn (ms: i64, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque) void, send_ptr: *anyopaque) void,
     textFn:        *const fn (s: []const u8) void,
     separatorFn:   *const fn () void,
     sameLineFn:    *const fn () void,
@@ -117,6 +121,13 @@ const GuiContext = struct {
         const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
         const _v: _T = msg;
         if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&_v));
+    }
+    // Subscribe to time: `msg` is sent every `ms` milliseconds for as long as the view
+    // keeps declaring it. The only way a program gets a frame without an event.
+    pub fn every(self: GuiContext, ms: i64, msg: anytype) void {
+        const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
+        const _v: _T = msg;
+        if (self._send_fn) |f| self._b.everyFn(ms, @ptrCast(&_v), @sizeOf(_T), f, self._send_ptr.?);
     }
     pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
     pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
@@ -260,15 +271,42 @@ fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, 
     }.send;
     var _model = if (comptime _zbr_is_fnlike(@TypeOf(_mvu_init))) _mvu_init() else blk: { var _m = _mvu_init; break :blk _m.call(); };
     const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend }, ._send_fn = _sfn, ._send_ptr = &_pq };
+    // THE FRAME IS AN EVENT (2026-09-17, concept_zebra-gui-declarative). newFrameFn
+    // blocks until the toolkit has an event (a click, a change, a subscribed timer).
+    // Then: render; while the render sent messages, update for each and render again,
+    // so the model change is on screen before the loop blocks. A view that sends on
+    // every pass never settles -- that was a heartbeat under the old 100 ms timer and
+    // is a livelock here -- so passes are capped and the leftover dropped, once, loudly.
+    var _warned_livelock = false;
     while (_gui_active_backend.newFrameFn()) {
-        if (comptime _zbr_is_fnlike(@TypeOf(_mvu_view))) _mvu_view(_g, _model) else { var _mv = _mvu_view; _mv.call(_g, _model); }
-        for (_pq.buf[0.._pq.len]) |msg| {
-            if (comptime _zbr_is_fnlike(@TypeOf(_mvu_update)))
-                _model = _mvu_update(_model, msg)
-            else { var _mu = _mvu_update; _model = _mu.call(_model, msg); }
+        var _passes: usize = 0;
+        while (true) {
+            // messages first (a subscribed timer or a widget callback may have queued
+            // one before this frame started), then render; a render that sends loops.
+            if (_pq.len > 0) {
+                if (_passes >= 8) {
+                    if (!_warned_livelock) {
+                        _warned_livelock = true;
+                        std.debug.print("gui: the view sent messages on 8 consecutive passes after one event; a heartbeat belongs in g.every(ms, msg), not g.send from view. Dropping the rest.\n", .{});
+                    }
+                    _pq.len = 0;
+                    break;
+                }
+                const _n = _pq.len;
+                var _i: usize = 0;
+                while (_i < _n) : (_i += 1) {
+                    const msg = _pq.buf[_i];
+                    if (comptime _zbr_is_fnlike(@TypeOf(_mvu_update)))
+                        _model = _mvu_update(_model, msg)
+                    else { var _mu = _mvu_update; _model = _mu.call(_model, msg); }
+                }
+                if (_pq.len > _n) { std.mem.copyForwards(MsgType, _pq.buf[0 .. _pq.len - _n], _pq.buf[_n.._pq.len]); _pq.len -= _n; } else _pq.len = 0;
+                _passes += 1;
+            }
+            if (comptime _zbr_is_fnlike(@TypeOf(_mvu_view))) _mvu_view(_g, _model) else { var _mv = _mvu_view; _mv.call(_g, _model); }
+            _gui_active_backend.endFrameFn();
+            if (_pq.len == 0) break;
         }
-        _pq.len = 0;
-        _gui_active_backend.endFrameFn();
     }
 }
 // ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
@@ -338,8 +376,33 @@ fn _tui_deinit() void {
     if (_tui_terminal) |*_t| _t.deinit();
     _tui_terminal = null;
 }
+// g.every on the tui: the input poll is the clock. A record is sent when its period
+// has elapsed, while the view keeps declaring it (seen == the last frame).
+const _TuiEvery = struct { ms: i64, bytes: [64]u8 align(16) = undefined, len: usize = 0, send_fn: *const fn (*anyopaque, *const anyopaque) void, send_ptr: *anyopaque, seen: u32 = 0, last: i64 = 0 };
+var _tui_everys: std.ArrayList(*_TuiEvery) = .empty;
+var _tui_frame_n: u32 = 1;
+fn _tui_every(_ms: i64, _msg: *const anyopaque, _len: usize, _send_fn: *const fn (*anyopaque, *const anyopaque) void, _send_ptr: *anyopaque) void {
+    if (_len > 64) return;
+    const _src: [*]const u8 = @ptrCast(_msg);
+    for (_tui_everys.items) |_r| {
+        if (_r.ms == _ms and _r.len == _len and std.mem.eql(u8, _r.bytes[0.._len], _src[0.._len])) { _r.seen = _tui_frame_n; return; }
+    }
+    const _r = _allocator.create(_TuiEvery) catch return;
+    _r.* = .{ .ms = _ms, .send_fn = _send_fn, .send_ptr = _send_ptr, .seen = _tui_frame_n, .len = _len, .last = std.time.milliTimestamp() };
+    @memcpy(_r.bytes[0.._len], _src[0.._len]);
+    _tui_everys.append(_allocator, _r) catch { _allocator.destroy(_r); };
+}
+fn _tui_fire_everys() void {
+    const _now = std.time.milliTimestamp();
+    for (_tui_everys.items) |_r| {
+        if (_r.seen + 1 < _tui_frame_n) continue;   // not declared last frame: paused
+        if (_now - _r.last >= _r.ms) { _r.last = _now; _r.send_fn(_r.send_ptr, @ptrCast(&_r.bytes)); }
+    }
+}
 fn _tui_new_frame() bool {
     if (_tui_quit) return false;
+    _tui_frame_n +%= 1;
+    _tui_fire_everys();
     const _t = &(_tui_terminal orelse return false);
     _tui_click_y = -1;
     _tui_indent_level = 0;
@@ -521,6 +584,7 @@ const _gui_tui_backend = _GuiBackend{
     .initFn             = _tui_init,
     .deinitFn           = _tui_deinit,
     .newFrameFn         = _tui_new_frame,
+    .everyFn            = _tui_every,
     .endFrameFn         = _tui_end_frame,
     .textFn             = _tui_text,
     .separatorFn        = _tui_separator,

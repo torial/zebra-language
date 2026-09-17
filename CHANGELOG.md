@@ -152,6 +152,11 @@ view (insert at position, delete, rename via `uiTabSetName`) with `g.tabSelected
 with an int Msg panicked "incorrect alignment" (a comptime_int's address read back as
 the Msg type). libui-ng is now a subtree of zig-libui-ng (`libui/`), one repo.
 
+**GUI frames are events** (2026-09-17, `concept_zebra-gui-declarative` §6a step 1): the
+100 ms poll timer is gone; `view` runs after an event and re-runs while it sends messages
+(capped, livelock refused by name); `g.every(ms, msg)` is the timer subscription. Idle
+CPU of the table smoke under Xvfb: 29.98 cpu-s per 30 s → 0.82.
+
 **BUG-429** (2026-09-17): a GUI program run by the compiler received no `--` arguments and
 no `ZEBRA_COMPILER`; the generated build.zig now forwards `b.args` to its run step and the
 GUI run path sets the environment like the other two.
