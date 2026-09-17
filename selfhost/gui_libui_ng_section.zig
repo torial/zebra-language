@@ -61,6 +61,8 @@ const _GuiBackend = struct {
     beginTabPageFn: *const fn (id: []const u8, label: []const u8) void,
     endTabPageFn:  *const fn () void,
     endTabsFn:     *const fn () void,
+    tabSelectedFn: *const fn (id: []const u8) i64,
+    selectTabFn:   *const fn (id: []const u8, index: i64) void,
     progressBarFn: *const fn (label: []const u8, value: f64) void,
     comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64) i64,
     spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64) i64,
@@ -167,12 +169,18 @@ const GuiContext = struct {
     pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
     pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
     pub fn endVBox(self: GuiContext) void { self._b.endVBoxFn(); }
-    // Tabs (libui uiTab). Pages are created on first sight, like boxes (frame-0
-    // rule applies); labels are fixed at creation — libui-ng has no rename.
+    // Tabs (libui uiTab). A page is inserted at its emission ordinal the first frame
+    // the view emits it, removed the frame the view stops, and re-inserted when it
+    // comes back -- so page order follows the view's order. A page's label follows
+    // the view too (uiTabSetName, torial's libui-ng fork; upstream fixes a label at
+    // Append). tabSelected reads the user's choice (-1 with no pages); selectTab sets
+    // it. Both index pages in emission order.
     pub fn beginTabs(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginTabsFn(id, stretch); }
     pub fn beginTabPage(self: GuiContext, id: []const u8, label: []const u8) void { self._b.beginTabPageFn(id, label); }
     pub fn endTabPage(self: GuiContext) void { self._b.endTabPageFn(); }
     pub fn endTabs(self: GuiContext) void { self._b.endTabsFn(); }
+    pub fn tabSelected(self: GuiContext, id: []const u8) i64 { return self._b.tabSelectedFn(id); }
+    pub fn selectTab(self: GuiContext, id: []const u8, index: i64) void { self._b.selectTabFn(id, index); }
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
@@ -803,6 +811,7 @@ fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
     _lui_box_icache = std.StringHashMap(*_ui.Box).init(_allocator);
     _lui_grp_cache = std.StringHashMap(_LuiPanel).init(_allocator);
     _lui_tab_cache = std.StringHashMap(*_ui.Tab).init(_allocator);
+    _lui_page_cache = std.StringHashMap(*_LuiPage).init(_allocator);
     _lui_vis = std.StringHashMap(*_LuiVis).init(_allocator);
     _lui_tab_depth = 0;
     _lui_box_depth = 0;
@@ -834,6 +843,7 @@ fn _lui_newframe() bool {
 fn _lui_endframe() void {
     _lui_box_depth = 1; // reset to root box only
     _lui_sweep_unseen();
+    _lui_sweep_pages();
     _lui_frame_n +%= 1;
     if (_lui_frame_n == 0) _lui_frame_n = 1;
     if (_lui_frame == 0) {
@@ -1159,7 +1169,15 @@ fn _lui_begin_vbox(_id: []const u8, _stretch: bool) void {
 fn _lui_end_vbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
 var _lui_tab_cache: std.StringHashMap(*_ui.Tab) = undefined;
 var _lui_tab_stack: [8]?*_ui.Tab = [_]?*_ui.Tab{null} ** 8;
+var _lui_tab_ord: [8]c_int = [_]c_int{0} ** 8;
 var _lui_tab_depth: usize = 0;
+// One record per tab PAGE, keyed by the page id. `idx` is the page's position in
+// its uiTab while attached; `seen` is the frame the view last emitted it. The
+// end-of-frame sweep (`_lui_sweep_pages`) deletes attached pages the view dropped
+// -- uiTabDelete detaches the child without destroying it, so a page that comes
+// back is re-inserted with the same box.
+const _LuiPage = struct { tab: *_ui.Tab, box: *_ui.Box, idx: c_int = 0, attached: bool = false, seen: u32 = 0, label: [256]u8 = undefined, label_len: usize = 0 };
+var _lui_page_cache: std.StringHashMap(*_LuiPage) = undefined;
 fn _lui_begin_tabs(_id: []const u8, _stretch: bool) void {
     const _e = _lui_tab_cache.getOrPut(_id) catch return;
     if (!_e.found_existing) {
@@ -1168,30 +1186,77 @@ fn _lui_begin_tabs(_id: []const u8, _stretch: bool) void {
         _e.value_ptr.* = _t;
     }
     _lui_vis_touch(_id, _e.value_ptr.*.as_control());
-    if (_lui_tab_depth < 8) { _lui_tab_stack[_lui_tab_depth] = _e.value_ptr.*; _lui_tab_depth += 1; }
+    if (_lui_tab_depth < 8) { _lui_tab_stack[_lui_tab_depth] = _e.value_ptr.*; _lui_tab_ord[_lui_tab_depth] = 0; _lui_tab_depth += 1; }
+}
+fn _lui_page_shift(_t: *_ui.Tab, _from: c_int, _delta: c_int) void {
+    var _it = _lui_page_cache.valueIterator();
+    while (_it.next()) |_pp| {
+        const _p = _pp.*;
+        if (_p.tab == _t and _p.attached and _p.idx >= _from) _p.idx += _delta;
+    }
 }
 fn _lui_begin_tab_page(_id: []const u8, _label: []const u8) void {
-    const _e = _lui_box_icache.getOrPut(_id) catch return;
+    const _t: *_ui.Tab = if (_lui_tab_depth > 0) (_lui_tab_stack[_lui_tab_depth - 1] orelse return) else return;
+    const _ord = _lui_tab_ord[_lui_tab_depth - 1];
+    _lui_tab_ord[_lui_tab_depth - 1] += 1;
+    const _e = _lui_page_cache.getOrPut(_id) catch return;
     if (!_e.found_existing) {
         const _pg = _ui.Box.New(.Vertical) catch return;
         _pg.SetPadded(true);
-        if (_lui_tab_depth > 0) {
-            if (_lui_tab_stack[_lui_tab_depth - 1]) |_t| {
-                const _n = @min(_label.len, 255);
-                var _lb: [256]u8 = undefined;
-                @memcpy(_lb[0.._n], _label[0.._n]);
-                _lb[_n] = 0;
-                _ui.Tab.Append(_t, _lb[0.._n :0], _pg.as_control());
-                const _idx = _ui.Tab.NumPages(_t) - 1;
-                _ui.Tab.SetMargined(_t, _idx, true);
-            }
-        }
-        _e.value_ptr.* = _pg;
+        const _p = _allocator.create(_LuiPage) catch return;
+        _p.* = .{ .tab = _t, .box = _pg };
+        _e.key_ptr.* = _allocator.dupe(u8, _id) catch _id;
+        _e.value_ptr.* = _p;
     }
-    _lui_push_box(_e.value_ptr.*);
+    const _p = _e.value_ptr.*;
+    _p.seen = _lui_frame_n;
+    const _n = @min(_label.len, 255);
+    var _lb: [256]u8 = undefined;
+    @memcpy(_lb[0.._n], _label[0.._n]);
+    _lb[_n] = 0;
+    if (!_p.attached) {
+        // Insert at this frame's ordinal so page order follows the view's order.
+        const _at: c_int = @min(_ord, _ui.Tab.NumPages(_t));
+        _lui_page_shift(_t, _at, 1);
+        _ui.Tab.InsertAt(_t, _lb[0.._n :0], _at, _p.box.as_control());
+        _ui.Tab.SetMargined(_t, _at, true);
+        _p.idx = _at;
+        _p.attached = true;
+        @memcpy(_p.label[0.._n], _label[0.._n]);
+        _p.label_len = _n;
+    } else if (_p.label_len != _n or !std.mem.eql(u8, _p.label[0.._n], _label[0.._n])) {
+        _ui.Tab.SetName(_t, _p.idx, _lb[0.._n :0]);
+        @memcpy(_p.label[0.._n], _label[0.._n]);
+        _p.label_len = _n;
+    }
+    _lui_push_box(_p.box);
 }
 fn _lui_end_tab_page() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
 fn _lui_end_tabs() void { if (_lui_tab_depth > 0) _lui_tab_depth -= 1; }
+// Frame end: pages the view stopped emitting leave their uiTab (the box survives
+// for a later re-insert). Deleting shifts the indices after it.
+fn _lui_sweep_pages() void {
+    var _it = _lui_page_cache.valueIterator();
+    while (_it.next()) |_pp| {
+        const _p = _pp.*;
+        if (!_p.attached or _p.seen == _lui_frame_n) continue;
+        _ui.Tab.Delete(_p.tab, _p.idx);
+        _p.attached = false;
+        _lui_page_shift(_p.tab, _p.idx + 1, -1);
+    }
+}
+fn _lui_tab_selected(_id: []const u8) i64 {
+    const _t = _lui_tab_cache.get(_id) orelse return -1;
+    if (_ui.Tab.NumPages(_t) == 0) return -1;
+    return @as(i64, @intCast(_ui.Tab.Selected(_t)));
+}
+fn _lui_select_tab(_id: []const u8, _index: i64) void {
+    const _t = _lui_tab_cache.get(_id) orelse return;
+    const _n = _ui.Tab.NumPages(_t);
+    if (_index < 0 or _index >= @as(i64, @intCast(_n))) return;
+    const _want: c_int = @intCast(_index);
+    if (_ui.Tab.Selected(_t) != _want) _ui.Tab.SetSelected(_t, _want);
+}
 fn _lui_begin_panel(_label: []const u8) bool {
     if (_lui_grp_cache.get(_label)) |_p| {
         _lui_vis_touch(_label, _p.grp.as_control());
@@ -1350,6 +1415,8 @@ const _gui_lui_backend = _GuiBackend{
     .beginTabPageFn = _lui_begin_tab_page,
     .endTabPageFn   = _lui_end_tab_page,
     .endTabsFn      = _lui_end_tabs,
+    .tabSelectedFn  = _lui_tab_selected,
+    .selectTabFn    = _lui_select_tab,
     .progressBarFn = _lui_progressbar,
     .comboboxFn    = _lui_combobox,
     .spinboxFn     = _lui_spinbox,

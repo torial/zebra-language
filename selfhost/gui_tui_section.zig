@@ -61,6 +61,8 @@ const _GuiBackend = struct {
     beginTabPageFn: *const fn (id: []const u8, label: []const u8) void,
     endTabPageFn:  *const fn () void,
     endTabsFn:     *const fn () void,
+    tabSelectedFn: *const fn (id: []const u8) i64,
+    selectTabFn:   *const fn (id: []const u8, index: i64) void,
     progressBarFn: *const fn (label: []const u8, value: f64) void,
     comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64) i64,
     spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64) i64,
@@ -171,6 +173,8 @@ const GuiContext = struct {
     pub fn beginTabPage(self: GuiContext, id: []const u8, label: []const u8) void { self._b.beginTabPageFn(id, label); }
     pub fn endTabPage(self: GuiContext) void { self._b.endTabPageFn(); }
     pub fn endTabs(self: GuiContext) void { self._b.endTabsFn(); }
+    pub fn tabSelected(self: GuiContext, id: []const u8) i64 { return self._b.tabSelectedFn(id); }
+    pub fn selectTab(self: GuiContext, id: []const u8, index: i64) void { self._b.selectTabFn(id, index); }
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
@@ -475,6 +479,8 @@ fn _tui_begin_tabs(id: []const u8, stretch: bool) void { _ = id; _ = stretch; }
 fn _tui_begin_tab_page(id: []const u8, label: []const u8) void { _ = id; _ = label; }
 fn _tui_end_tab_page() void {}
 fn _tui_end_tabs() void {}
+fn _tui_tab_selected(id: []const u8) i64 { _ = id; return -1; }
+fn _tui_select_tab(id: []const u8, index: i64) void { _ = id; _ = index; }
 fn _tui_end_vbox() void {}
 fn _tui_progressbar(_l: []const u8, _v: f64) void { _ = _l; _ = _v; }
 fn _tui_combobox(_l: []const u8, _items: []const []const u8, _sel: i64) i64 { _ = _l; _ = _items; return _sel; }
@@ -543,6 +549,8 @@ const _gui_tui_backend = _GuiBackend{
     .beginTabPageFn = _tui_begin_tab_page,
     .endTabPageFn   = _tui_end_tab_page,
     .endTabsFn      = _tui_end_tabs,
+    .tabSelectedFn  = _tui_tab_selected,
+    .selectTabFn    = _tui_select_tab,
     .progressBarFn = _tui_progressbar,
     .comboboxFn    = _tui_combobox,
     .spinboxFn     = _tui_spinbox,

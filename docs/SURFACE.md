@@ -129,9 +129,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `getCursorCol` `getCursorLine` `getLanguage` `getText` `hotkey` `render` `restyle` `sci` `sciStr` `setCursorPosition` `setErrorMarkers` `setLanguage` `setReadOnly` `setText` `takeCharAdded` `takeKey` `takeMarginClick` `takeModified`
 
-### Gui (50)
+### Gui (52)
 
-`beginHBox` `beginTabPage` `beginTable` `beginTabs` `beginVBox` `button` `buttonId` `checkbox` `childWindow` `combobox` `endHBox` `endTabPage` `endTable` `endTabs` `endVBox` `getDpi` `hbox` `indent` `input` `inputMultiline` `msgBox` `msgBoxError` `openFile` `openFolder` `panel` `progressBar` `sameLine` `saveFile` `scaleAllSizes` `selectable` `send` `separator` `setColor` `setColorsDark` `setStyleFloat` `setVec2` `slider` `spacing` `spinbox` `tableHeadersRow` `tableNextColumn` `tableNextRow` `tableSetupColumn` `text` `textColored` `treeNode` `treePop` `unindent` `vbox` `window`
+`beginHBox` `beginTabPage` `beginTable` `beginTabs` `beginVBox` `button` `buttonId` `checkbox` `childWindow` `combobox` `endHBox` `endTabPage` `endTable` `endTabs` `endVBox` `getDpi` `hbox` `indent` `input` `inputMultiline` `msgBox` `msgBoxError` `openFile` `openFolder` `panel` `progressBar` `sameLine` `saveFile` `scaleAllSizes` `selectTab` `selectable` `send` `separator` `setColor` `setColorsDark` `setStyleFloat` `setVec2` `slider` `spacing` `spinbox` `tabSelected` `tableHeadersRow` `tableNextColumn` `tableNextRow` `tableSetupColumn` `text` `textColored` `treeNode` `treePop` `unindent` `vbox` `window`
 
 ### HttpRequest (no methods; fields) (0)
 

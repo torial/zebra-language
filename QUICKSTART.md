@@ -3212,6 +3212,7 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 | `g.panel(label, callback)`                 | void     | Collapsible child window                   |
 | `g.beginPanel(id)` / `g.endPanel(id)`     | void     | libui-ng titled group box (retained-mode open/close pair)  |
 | `g.beginTabs(id, stretch)` / `g.endTabs()` | void    | Tab control (libui-ng `uiTab`); pages go between `g.beginTabPage(id, label)` / `g.endTabPage()`. TUI backend: no-op |
+| `g.tabSelected(id)` / `g.selectTab(id, i)` | int / void | Selected page index in emission order (-1 with no pages) / select from the model. TUI backend: -1 / no-op |
 | `g.window(label, callback)`                | void     | Floating sub-window                        |
 | `g.textColored(s, r, g, b, a)`            | void     | Colored text label                         |
 | `g.selectable(label, selected)`            | bool     | Selectable list item                       |
@@ -3343,10 +3344,18 @@ g.endTabPage()
 g.endTabs()
 ```
 
-Pages are created on first sight of their id and appended in order; there is no
-rename/select/close yet (libui-ng's `uiTab` has no select API — see
-`zebra-ide/PLAN.md` §3 for the document-pointer workaround). Smoke:
-`examples/tabs_sci_smoke.zbr` (builds under `--gui-backend=tui` as the compile control).
+A page is inserted at its position in the view the first frame it is emitted,
+removed the frame the view stops emitting it, and re-inserted (same box) when it
+comes back — so the page order is the view's order. A page's label follows the
+view too: pass `"main.zbr *"` when the buffer is dirty and the tab renames (this
+needs the torial libui-ng fork's `uiTabSetName`; upstream fixes a label at append).
+`g.tabSelected(id)` returns the index (in emission order) of the page the user has
+selected, or -1 with no pages; `g.selectTab(id, index)` selects one from the model.
+A tab can be a bare STRIP — pages holding nothing, the content below the tab in
+the same vbox, `tabSelected` driving the model — which is how zebra-ide keeps one
+Scintilla control for all its documents. TUI backend: `tabSelected` is -1,
+`selectTab` a no-op. Smoke: `examples/tabs_sci_smoke.zbr` (builds under
+`--gui-backend=tui` as the compile control).
 
 ### Persistent frame state with `capture` (frame-callback form)
 
