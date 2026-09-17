@@ -3213,6 +3213,9 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 | `g.beginPanel(id)` / `g.endPanel(id)`     | void     | libui-ng titled group box (retained-mode open/close pair)  |
 | `g.beginTabs(id, stretch)` / `g.endTabs()` | void    | Tab control (libui-ng `uiTab`); pages go between `g.beginTabPage(id, label)` / `g.endTabPage()`. TUI backend: no-op |
 | `g.tabSelected(id)` / `g.selectTab(id, i)` | int / void | Selected page index in emission order (-1 with no pages) / select from the model. TUI backend: -1 / no-op |
+| `g.minSize(id, w, h)`                      | void     | Minimum-size hint (points, 0 = none) for the id-keyed widget: a box, tab strip, panel, editor, button or input. Applied on top of the natural minimum; how a side pane gets a width. TUI backend: no-op |
+| `g.beginTable(id, cols)` … `g.endTable()`  | bool / void | A list (libui-ng `uiTable`, one text column per `cols`): `tableSetupColumn(name)` per column, `tableHeadersRow()` to show the header, then per row `tableNextRow()` and per cell `tableNextColumn()` + `g.text(cell)`. Rows are diffed frame to frame. `g.tableSelectedRow(id)` is the selected row (-1 none), `g.tableActivatedRow(id)` the row double-clicked since the last call (-1 none). TUI backend: no-op / -1 |
+| `g.hotkey(vk, mods)` / `g.takeKey()`       | void / int | Window-wide key chords, the `CodeEditor.hotkey/takeKey` convention at the window: a claimed chord is consumed wherever the focus is and queued; `takeKey` pops `(mods << 16) \| vk`, or 0. Mods: 1 ctrl, 2 shift, 4 alt; `vk` the Windows virtual-key code. TUI backend: 0 |
 | `g.window(label, callback)`                | void     | Floating sub-window                        |
 | `g.textColored(s, r, g, b, a)`            | void     | Colored text label                         |
 | `g.selectable(label, selected)`            | bool     | Selectable list item                       |
@@ -3330,6 +3333,27 @@ editor.sciStr(SCI_SETTEXT, 0, "def main()\n")  # lParam is a NUL-terminated copy
 on — markers, indicators, annotations, folding, search-in-target — so the widget
 API stays small. Unknown message ids return 0. On the `tui` backend both return 0
 and do nothing, so a program using them still compiles and runs headless.
+
+**Tables.** Immediate-mode over a retained `uiTable`: the view emits the whole
+grid every frame and the section diffs it into the model (changed cells, added
+and removed rows), so a list that changes per tick costs only the rows that did.
+
+```zebra
+if g.beginTable("##refs", 2)
+    g.tableSetupColumn("line")
+    g.tableSetupColumn("text")
+    g.tableHeadersRow()
+    for r in m.refs
+        g.tableNextRow()
+        g.tableNextColumn()
+        g.text(r.line.toString())
+        g.tableNextColumn()
+        g.text(r.text)
+    g.endTable()
+var go: int = g.tableActivatedRow("##refs")     # double-click: jump there
+```
+
+Smoke: `examples/table_strip_smoke.zbr` (also the strip, `minSize`, window hotkeys).
 
 **Tabs.** Retained-mode open/close pairs like `beginPanel`:
 

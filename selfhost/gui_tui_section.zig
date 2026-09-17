@@ -29,8 +29,10 @@ const _GuiBackend = struct {
     tableSetupColumnFn: *const fn (label: []const u8) void,
     tableHeadersRowFn:  *const fn () void,
     tableNextRowFn:     *const fn () void,
-    tableNextColumnFn:  *const fn () bool,
+    tableNextColumnFn:  *const fn () void,
     endTableFn:         *const fn () void,
+    tableSelectedRowFn:  *const fn (id: []const u8) i64,
+    tableActivatedRowFn: *const fn (id: []const u8) i64,
     beginChildFn:       *const fn (id: []const u8, w: f64, h: f64) bool,
     endChildFn:         *const fn () void,
     treeNodeFn:         *const fn (label: []const u8) bool,
@@ -63,6 +65,9 @@ const _GuiBackend = struct {
     endTabsFn:     *const fn () void,
     tabSelectedFn: *const fn (id: []const u8) i64,
     selectTabFn:   *const fn (id: []const u8, index: i64) void,
+    minSizeFn:     *const fn (id: []const u8, width: i64, height: i64) void,
+    hotkeyFn:      *const fn (vk: i64, mods: i64) void,
+    takeKeyFn:     *const fn () i64,
     progressBarFn: *const fn (label: []const u8, value: f64) void,
     comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64) i64,
     spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64) i64,
@@ -106,7 +111,12 @@ const GuiContext = struct {
     _send_fn: ?*const fn(*anyopaque, *const anyopaque) void = null,
     _send_ptr: ?*anyopaque = null,
     pub fn send(self: GuiContext, msg: anytype) void {
-        if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&msg));
+        // A literal (`g.send(2)` with an int Msg) is a comptime_int: taking its address
+        // and reading it back as the Msg type panicked "incorrect alignment" (found
+        // 2026-09-17 by examples/table_strip_smoke.zbr). Land it in a runtime value first.
+        const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
+        const _v: _T = msg;
+        if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&_v));
     }
     pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
     pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
@@ -128,8 +138,12 @@ const GuiContext = struct {
     pub fn tableSetupColumn(self: GuiContext, label: []const u8) void { self._b.tableSetupColumnFn(label); }
     pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
     pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
-    pub fn tableNextColumn(self: GuiContext) bool { return self._b.tableNextColumnFn(); }
+    pub fn tableNextColumn(self: GuiContext) void { self._b.tableNextColumnFn(); }
     pub fn endTable(self: GuiContext) void { self._b.endTableFn(); }
+    // Row the user has selected in the table (-1: none) / row double-clicked since
+    // the last call (-1: none). libui-ng backend only; tui returns -1.
+    pub fn tableSelectedRow(self: GuiContext, id: []const u8) i64 { return self._b.tableSelectedRowFn(id); }
+    pub fn tableActivatedRow(self: GuiContext, id: []const u8) i64 { return self._b.tableActivatedRowFn(id); }
     pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
         const _vis = self._b.beginChildFn(id, w, h);
         if (_vis) {
@@ -175,6 +189,15 @@ const GuiContext = struct {
     pub fn endTabs(self: GuiContext) void { self._b.endTabsFn(); }
     pub fn tabSelected(self: GuiContext, id: []const u8) i64 { return self._b.tabSelectedFn(id); }
     pub fn selectTab(self: GuiContext, id: []const u8, index: i64) void { self._b.selectTabFn(id, index); }
+    // Minimum-size hint for an id-keyed widget (box, tab strip, panel, editor,
+    // button, input): 0 = none. libui had no size hints; uiControlSetMinSize is the
+    // torial fork's. The tui backend ignores it.
+    pub fn minSize(self: GuiContext, id: []const u8, width: i64, height: i64) void { self._b.minSizeFn(id, width, height); }
+    // Window-wide key chords, the CodeEditor's hotkey/takeKey convention lifted to
+    // the window (uiWindowOnKey, torial libui-ng fork): a registered chord is
+    // consumed wherever the focus is and queued; takeKey pops (mods << 16) | vk, or 0.
+    pub fn hotkey(self: GuiContext, vk: i64, mods: i64) void { self._b.hotkeyFn(vk, mods); }
+    pub fn takeKey(self: GuiContext) i64 { return self._b.takeKeyFn(); }
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
@@ -446,7 +469,7 @@ fn _tui_begin_table(id: []const u8, cols: i64) bool { _ = id; _ = cols; return t
 fn _tui_table_setup_column(label: []const u8) void { _ = label; }
 fn _tui_table_headers_row() void {}
 fn _tui_table_next_row() void { _tui_current_row += 1; }
-fn _tui_table_next_column() bool { return true; }
+fn _tui_table_next_column() void {}
 fn _tui_end_table() void {}
 fn _tui_begin_child(id: []const u8, w: f64, h: f64) bool { _ = id; _ = w; _ = h; return true; }
 fn _tui_end_child() void {}
@@ -481,6 +504,10 @@ fn _tui_end_tab_page() void {}
 fn _tui_end_tabs() void {}
 fn _tui_tab_selected(id: []const u8) i64 { _ = id; return -1; }
 fn _tui_select_tab(id: []const u8, index: i64) void { _ = id; _ = index; }
+fn _tui_min_size(id: []const u8, width: i64, height: i64) void { _ = id; _ = width; _ = height; }
+fn _tui_hotkey(vk: i64, mods: i64) void { _ = vk; _ = mods; }
+fn _tui_table_row_q(id: []const u8) i64 { _ = id; return -1; }
+fn _tui_take_key() i64 { return 0; }
 fn _tui_end_vbox() void {}
 fn _tui_progressbar(_l: []const u8, _v: f64) void { _ = _l; _ = _v; }
 fn _tui_combobox(_l: []const u8, _items: []const []const u8, _sel: i64) i64 { _ = _l; _ = _items; return _sel; }
@@ -519,6 +546,8 @@ const _gui_tui_backend = _GuiBackend{
     .tableNextRowFn     = _tui_table_next_row,
     .tableNextColumnFn  = _tui_table_next_column,
     .endTableFn         = _tui_end_table,
+    .tableSelectedRowFn  = _tui_table_row_q,
+    .tableActivatedRowFn = _tui_table_row_q,
     .beginChildFn       = _tui_begin_child,
     .endChildFn         = _tui_end_child,
     .treeNodeFn         = _tui_tree_node,
@@ -551,6 +580,9 @@ const _gui_tui_backend = _GuiBackend{
     .endTabsFn      = _tui_end_tabs,
     .tabSelectedFn  = _tui_tab_selected,
     .selectTabFn    = _tui_select_tab,
+    .minSizeFn      = _tui_min_size,
+    .hotkeyFn       = _tui_hotkey,
+    .takeKeyFn      = _tui_take_key,
     .progressBarFn = _tui_progressbar,
     .comboboxFn    = _tui_combobox,
     .spinboxFn     = _tui_spinbox,

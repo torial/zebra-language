@@ -2786,13 +2786,16 @@ Key idioms worth remembering up front:
   `spawnPipedIn/exitCode/readStdinAvailable/stdinClosed/writeStdout` and `--` program-arg
   passthrough; `zebra lsp` resolves the `use` graph from disk (gate `lsp-workspace`); the
   libui section hides widgets the view stops emitting and has `editor.hotkey/takeKey`.
-  The libui pin in `luiBuildZon` still points at 93c7f54b, which LACKS OnNotify/OnKey;
-  that code is `@hasDecl`-guarded so the build passes — it is waiting on the pin bump
-  (`tools/bump_libui_pin.sh` after a push), not on code. To try the unpushed shim on
-  Windows WITHOUT the pin: `set ZEBRA_LIBUI_PATH=C:\Projects\zig-libui-ng` before running
-  a GUI program (luiBuildZon then emits `.path` -- RELATIVE to the scaffold dir, zig refuses
-  an absolute one -- instead of the pinned url; first exercised on Windows 2026-09-16). Full status, owed list, open worklist:
-  `C:\Projects\zebra-ide\PLAN.md` (last section); wiki `concept_zebra-lightweight-ide` §7b.
+  The libui pin in `luiBuildZon` still points at 93c7f54b, which LACKS OnNotify/OnKey
+  and uiTabSetName; that code is `@hasDecl`-guarded so the build passes — it is waiting
+  on the pin bump (`tools/bump_libui_pin.sh` after a push), not on code. **Since
+  2026-09-17 there is ONE repo: libui-ng is a subtree of zig-libui-ng at `libui/`, a path
+  dependency in its build.zig.zon** — a C change and its binding land in one commit, and
+  the pin bump is one hop. To run against the unpushed checkout on Windows:
+  `set ZEBRA_LIBUI_PATH=C:\Projects\zig-libui-ng` before a GUI program (luiBuildZon then
+  emits `.path` -- RELATIVE to the scaffold dir, zig refuses an absolute one -- instead of
+  the pinned url; first exercised 2026-09-16). Full status, owed list, open worklist:
+  `C:\Projects\zebra-ide\PLAN.md` (last section); wiki `concept_zebra-lightweight-ide` §7f.
   (This bullet was lost once already — 2026-09-08, a bundle overwrote a device-side edit —
   so it now lives in the copy that gets shipped.)
 - Platform: Windows is the primary dev environment; bash paths via Git Bash.

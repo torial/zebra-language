@@ -29,8 +29,10 @@ const _GuiBackend = struct {
     tableSetupColumnFn: *const fn (label: []const u8) void,
     tableHeadersRowFn:  *const fn () void,
     tableNextRowFn:     *const fn () void,
-    tableNextColumnFn:  *const fn () bool,
+    tableNextColumnFn:  *const fn () void,
     endTableFn:         *const fn () void,
+    tableSelectedRowFn:  *const fn (id: []const u8) i64,
+    tableActivatedRowFn: *const fn (id: []const u8) i64,
     beginChildFn:       *const fn (id: []const u8, w: f64, h: f64) bool,
     endChildFn:         *const fn () void,
     treeNodeFn:         *const fn (label: []const u8) bool,
@@ -63,6 +65,9 @@ const _GuiBackend = struct {
     endTabsFn:     *const fn () void,
     tabSelectedFn: *const fn (id: []const u8) i64,
     selectTabFn:   *const fn (id: []const u8, index: i64) void,
+    minSizeFn:     *const fn (id: []const u8, width: i64, height: i64) void,
+    hotkeyFn:      *const fn (vk: i64, mods: i64) void,
+    takeKeyFn:     *const fn () i64,
     progressBarFn: *const fn (label: []const u8, value: f64) void,
     comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64) i64,
     spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64) i64,
@@ -106,7 +111,12 @@ const GuiContext = struct {
     _send_fn: ?*const fn(*anyopaque, *const anyopaque) void = null,
     _send_ptr: ?*anyopaque = null,
     pub fn send(self: GuiContext, msg: anytype) void {
-        if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&msg));
+        // A literal (`g.send(2)` with an int Msg) is a comptime_int: taking its address
+        // and reading it back as the Msg type panicked "incorrect alignment" (found
+        // 2026-09-17 by examples/table_strip_smoke.zbr). Land it in a runtime value first.
+        const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
+        const _v: _T = msg;
+        if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&_v));
     }
     pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
     pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
@@ -128,8 +138,12 @@ const GuiContext = struct {
     pub fn tableSetupColumn(self: GuiContext, label: []const u8) void { self._b.tableSetupColumnFn(label); }
     pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
     pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
-    pub fn tableNextColumn(self: GuiContext) bool { return self._b.tableNextColumnFn(); }
+    pub fn tableNextColumn(self: GuiContext) void { self._b.tableNextColumnFn(); }
     pub fn endTable(self: GuiContext) void { self._b.endTableFn(); }
+    // Row the user has selected in the table (-1: none) / row double-clicked since
+    // the last call (-1: none). libui-ng backend only; tui returns -1.
+    pub fn tableSelectedRow(self: GuiContext, id: []const u8) i64 { return self._b.tableSelectedRowFn(id); }
+    pub fn tableActivatedRow(self: GuiContext, id: []const u8) i64 { return self._b.tableActivatedRowFn(id); }
     pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
         const _vis = self._b.beginChildFn(id, w, h);
         if (_vis) {
@@ -181,6 +195,15 @@ const GuiContext = struct {
     pub fn endTabs(self: GuiContext) void { self._b.endTabsFn(); }
     pub fn tabSelected(self: GuiContext, id: []const u8) i64 { return self._b.tabSelectedFn(id); }
     pub fn selectTab(self: GuiContext, id: []const u8, index: i64) void { self._b.selectTabFn(id, index); }
+    // Minimum-size hint for an id-keyed widget (box, tab strip, panel, editor,
+    // button, input): 0 = none. libui had no size hints; uiControlSetMinSize is the
+    // torial fork's. The tui backend ignores it.
+    pub fn minSize(self: GuiContext, id: []const u8, width: i64, height: i64) void { self._b.minSizeFn(id, width, height); }
+    // Window-wide key chords, the CodeEditor's hotkey/takeKey convention lifted to
+    // the window (uiWindowOnKey, torial libui-ng fork): a registered chord is
+    // consumed wherever the focus is and queued; takeKey pops (mods << 16) | vk, or 0.
+    pub fn hotkey(self: GuiContext, vk: i64, mods: i64) void { self._b.hotkeyFn(vk, mods); }
+    pub fn takeKey(self: GuiContext) i64 { return self._b.takeKeyFn(); }
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
@@ -764,6 +787,41 @@ fn _lui_push_box(_b: *_ui.Box) void {
     if (_lui_box_depth < 32) { _lui_box_stack[_lui_box_depth] = _b; _lui_box_depth += 1; }
 }
 fn _lui_pop_box() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
+// Window-level chords (uiWindowOnKey). Same shape as the CodeEditor's: registered
+// chords are consumed and queued, everything else passes to the focused control.
+var _lui_hot: [32]u32 = [_]u32{0} ** 32;
+var _lui_hot_n: usize = 0;
+var _lui_keys: [16]u32 = [_]u32{0} ** 16;
+var _lui_key_n: usize = 0;
+fn _lui_on_key(_w: *_ui.Window, vk: c_int, mods: c_int, _d: ?*anyopaque) bool {
+    _ = _w;
+    _ = _d;
+    const _chord: u32 = (@as(u32, @intCast(mods & 0xffff)) << 16) | @as(u32, @intCast(vk & 0xffff));
+    var i: usize = 0;
+    while (i < _lui_hot_n) : (i += 1) {
+        if (_lui_hot[i] == _chord) {
+            if (_lui_key_n < _lui_keys.len) { _lui_keys[_lui_key_n] = _chord; _lui_key_n += 1; }
+            return true;
+        }
+    }
+    return false;
+}
+fn _lui_hotkey(vk: i64, mods: i64) void {
+    if (_lui_hot_n >= _lui_hot.len) return;
+    const _chord: u32 = (@as(u32, @intCast(mods & 0xffff)) << 16) | @as(u32, @intCast(vk & 0xffff));
+    var i: usize = 0;
+    while (i < _lui_hot_n) : (i += 1) if (_lui_hot[i] == _chord) return;
+    _lui_hot[_lui_hot_n] = _chord;
+    _lui_hot_n += 1;
+}
+fn _lui_take_key() i64 {
+    if (_lui_key_n == 0) return 0;
+    const v = _lui_keys[0];
+    var i: usize = 1;
+    while (i < _lui_key_n) : (i += 1) _lui_keys[i - 1] = _lui_keys[i];
+    _lui_key_n -= 1;
+    return @intCast(v);
+}
 fn _lui_on_close(_w: *_ui.Window, _q: ?*bool) anyerror!_ui.Window.ClosingAction {
     _ = _w;
     if (_q) |p| p.* = true;
@@ -812,6 +870,7 @@ fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
     _lui_grp_cache = std.StringHashMap(_LuiPanel).init(_allocator);
     _lui_tab_cache = std.StringHashMap(*_ui.Tab).init(_allocator);
     _lui_page_cache = std.StringHashMap(*_LuiPage).init(_allocator);
+    _lui_table_cache = std.StringHashMap(*_LuiTable).init(_allocator);
     _lui_vis = std.StringHashMap(*_LuiVis).init(_allocator);
     _lui_tab_depth = 0;
     _lui_box_depth = 0;
@@ -819,6 +878,7 @@ fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
     const _tz: [:0]u8 = try std.fmt.bufPrintZ(&_tbuf, "{s}", .{_title});
     _lui_window = try _ui.Window.New(_tz, @intCast(_width), @intCast(_height), .hide_menubar);
     _ui.Window.OnClosing(_lui_window.?, bool, anyerror, _lui_on_close, &_lui_quit);
+    if (comptime @hasDecl(_ui.Window, "OnKey")) _ui.Window.OnKey(_lui_window.?, anyopaque, _lui_on_key, null);
     _lui_root_box = try _ui.Box.New(.Vertical);
     _lui_root_box.?.SetPadded(true);
     _lui_push_box(_lui_root_box.?);
@@ -931,6 +991,7 @@ fn _lui_dget() _LuiIR {
     return .{ .m = _m, .fresh = true };
 }
 fn _lui_text(_s: []const u8) void {
+    if (_lui_cur_table != null and _lui_table_cell_text(_s)) return;
     const _r = _lui_dget();
     const _n = @min(_s.len, 510);
     var _tb: [512]u8 = undefined;
@@ -960,9 +1021,199 @@ fn _lui_selectable(_l: []const u8) bool { _ = _l; return false; }
 fn _lui_text_colored(_rv: f32, _gv: f32, _bv: f32, _av: f32, _s: []const u8) void {
     _ = _rv; _ = _gv; _ = _bv; _ = _av; _lui_text(_s);
 }
-fn _lui_begin_table(_id: []const u8, _cols: i64) bool { _ = _id; _ = _cols; return true; }
-fn _lui_table_setup_col(_l: []const u8) void { _ = _l; }
-fn _lui_table_next_col() bool { return true; }
+// Tables (2026-09-17): libui-ng's uiTable is model-based; Zebra's g.beginTable /
+// tableNextRow / tableNextColumn / g.text is immediate-mode. The adapter keeps a
+// committed grid of owned, terminated strings per table id (what the uiTableModel
+// reads), builds this frame's grid from the calls, and at endTable diffs the two:
+// changed cells -> RowChanged, extra rows -> RowInserted, missing rows -> RowDeleted.
+// The uiTable itself is created at the first endTable, when the column names are
+// known (libui fixes them at append). Selection is ZeroOrOne; a double-click is
+// queued as the "activated" row for g.tableActivatedRow.
+const _LuiRow = std.ArrayList([:0]u8);
+const _LuiTable = struct {
+    handler: _ui.Table.Model.Handler = undefined,
+    model: ?*_ui.Table.Model = null,
+    table: ?*_ui.Table = null,
+    ncols: usize = 0,
+    names: std.ArrayList([:0]u8) = .empty,
+    header: bool = false,
+    rows: std.ArrayList(_LuiRow) = .empty,
+    build: std.ArrayList(_LuiRow) = .empty,
+    cur_col: usize = 0,
+    activated: i64 = -1,
+    seen: u32 = 0,
+};
+var _lui_table_cache: std.StringHashMap(*_LuiTable) = undefined;
+var _lui_cur_table: ?*_LuiTable = null;
+fn _lui_tbl_num_columns(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model) callconv(.c) c_int {
+    _ = _m;
+    const _t: *_LuiTable = @fieldParentPtr("handler", _h);
+    return @intCast(_t.ncols);
+}
+fn _lui_tbl_column_type(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model, _c: c_int) callconv(.c) _ui.Table.Value.Type {
+    _ = _h; _ = _m; _ = _c;
+    return .String;
+}
+fn _lui_tbl_num_rows(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model) callconv(.c) c_int {
+    _ = _m;
+    const _t: *_LuiTable = @fieldParentPtr("handler", _h);
+    return @intCast(_t.rows.items.len);
+}
+fn _lui_tbl_cell_value(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model, _r: c_int, _c: c_int) callconv(.c) ?*_ui.Table.Value {
+    _ = _m;
+    const _t: *_LuiTable = @fieldParentPtr("handler", _h);
+    const _ri: usize = @intCast(@max(_r, 0));
+    const _ci: usize = @intCast(@max(_c, 0));
+    var _s: [:0]const u8 = "";
+    if (_ri < _t.rows.items.len and _ci < _t.rows.items[_ri].items.len) _s = _t.rows.items[_ri].items[_ci];
+    return _ui.Table.Value.uiNewTableValueString(_s.ptr);
+}
+fn _lui_tbl_set_cell_value(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model, _r: c_int, _c: c_int, _v: ?*const _ui.Table.Value) callconv(.c) void {
+    _ = _h; _ = _m; _ = _r; _ = _c; _ = _v;
+}
+fn _lui_tbl_dbl(_tb: *_ui.Table, _row: c_int, _tp: ?*_LuiTable) anyerror!void {
+    _ = _tb;
+    if (_tp) |_t| _t.activated = @intCast(_row);
+}
+fn _lui_row_free(_r: *_LuiRow) void {
+    for (_r.items) |_c| _allocator.free(_c);
+    _r.deinit(_allocator);
+}
+fn _lui_begin_table(_id: []const u8, _cols: i64) bool {
+    const _e = _lui_table_cache.getOrPut(_id) catch return false;
+    if (!_e.found_existing) {
+        const _t = _allocator.create(_LuiTable) catch return false;
+        _t.* = .{};
+        _t.ncols = @intCast(@max(_cols, 1));
+        _t.handler = .{
+            .NumColumns = _lui_tbl_num_columns,
+            .ColumnType = _lui_tbl_column_type,
+            .NumRows = _lui_tbl_num_rows,
+            .CellValue = _lui_tbl_cell_value,
+            .SetCellValue = _lui_tbl_set_cell_value,
+        };
+        _t.model = _ui.Table.Model.New(&_t.handler) catch null;
+        _e.key_ptr.* = _allocator.dupe(u8, _id) catch _id;
+        _e.value_ptr.* = _t;
+    }
+    const _t = _e.value_ptr.*;
+    _t.seen = _lui_frame_n;
+    // a fresh build grid; rows are added by tableNextRow
+    for (_t.build.items) |*_r| _lui_row_free(_r);
+    _t.build.clearRetainingCapacity();
+    _t.cur_col = 0;
+    _lui_cur_table = _t;
+    if (_t.table) |_tb| _lui_vis_touch(_id, _tb.as_control());
+    return true;
+}
+fn _lui_table_setup_col(_l: []const u8) void {
+    const _t = _lui_cur_table orelse return;
+    if (_t.table != null or _t.names.items.len >= _t.ncols) return;
+    const _z = _allocator.dupeZ(u8, _l) catch return;
+    _t.names.append(_allocator, _z) catch {};
+}
+fn _lui_table_headers_row() void {
+    const _t = _lui_cur_table orelse return;
+    _t.header = true;
+}
+fn _lui_table_next_row() void {
+    const _t = _lui_cur_table orelse return;
+    _t.build.append(_allocator, .empty) catch return;
+    _t.cur_col = 0;
+}
+fn _lui_table_next_col() void {
+    const _t = _lui_cur_table orelse return;
+    // the first call of a row lands on column 0 when no cell has been written yet
+    if (_t.build.items.len == 0) return;
+    const _row = &_t.build.items[_t.build.items.len - 1];
+    if (_row.items.len > _t.cur_col) _t.cur_col += 1;
+}
+// g.text inside a table writes the current cell (called from _lui_text).
+fn _lui_table_cell_text(_s: []const u8) bool {
+    const _t = _lui_cur_table orelse return false;
+    if (_t.build.items.len == 0) _t.build.append(_allocator, .empty) catch return true;
+    const _row = &_t.build.items[_t.build.items.len - 1];
+    while (_row.items.len < _t.cur_col) _row.append(_allocator, _allocator.dupeZ(u8, "") catch return true) catch return true;
+    const _z = _allocator.dupeZ(u8, _s) catch return true;
+    if (_row.items.len == _t.cur_col) {
+        _row.append(_allocator, _z) catch { _allocator.free(_z); return true; };
+    } else {
+        // two texts in one cell: join with a space, ImGui-style wrapping is not a thing here
+        const _old = _row.items[_t.cur_col];
+        const _j = std.fmt.allocPrintSentinel(_allocator, "{s} {s}", .{ _old, _z }, 0) catch { _allocator.free(_z); return true; };
+        _allocator.free(_old);
+        _allocator.free(_z);
+        _row.items[_t.cur_col] = _j;
+    }
+    _t.cur_col += 1;
+    return true;
+}
+fn _lui_end_table() void {
+    const _t = _lui_cur_table orelse return;
+    _lui_cur_table = null;
+    if (_t.table == null) {
+        const _m = _t.model orelse return;
+        var _params: _ui.Table.Params = .{ .Model = _m, .RowBackgroundColorModelColumn = -1 };
+        const _tb = _ui.Table.New(&_params) catch return;
+        var _c: usize = 0;
+        while (_c < _t.ncols) : (_c += 1) {
+            const _nm: [:0]const u8 = if (_c < _t.names.items.len) _t.names.items[_c] else "";
+            _ui.Table.AppendColumn(_tb, _nm, .{ .Text = .{ .text_column = @intCast(_c), .editable = .Never } });
+        }
+        _ui.Table.HeaderSetVisible(_tb, _t.header);
+        _ui.Table.SetSelectionMode(_tb, .ZeroOrOne);
+        _ui.Table.OnRowDoubleClicked(_tb, _LuiTable, anyerror, _lui_tbl_dbl, _t);
+        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _tb.as_control(), .stretch);
+        _t.table = _tb;
+    }
+    // diff build -> rows, notifying the model per row
+    const _m = _t.model;
+    const _common = @min(_t.rows.items.len, _t.build.items.len);
+    var _i: usize = 0;
+    while (_i < _common) : (_i += 1) {
+        const _old = &_t.rows.items[_i];
+        const _new = &_t.build.items[_i];
+        var _same = _old.items.len == _new.items.len;
+        if (_same) {
+            var _k: usize = 0;
+            while (_k < _old.items.len) : (_k += 1) {
+                if (!std.mem.eql(u8, _old.items[_k], _new.items[_k])) { _same = false; break; }
+            }
+        }
+        if (!_same) {
+            _lui_row_free(_old);
+            _t.rows.items[_i] = _new.*;
+            _new.* = .empty;
+            _ui.Table.Model.RowChanged(_m, @intCast(_i));
+        }
+    }
+    while (_t.rows.items.len > _t.build.items.len) {
+        var _last = _t.rows.pop() orelse break;
+        _lui_row_free(&_last);
+        _ui.Table.Model.RowDeleted(_m, @intCast(_t.rows.items.len));
+    }
+    while (_i < _t.build.items.len) : (_i += 1) {
+        _t.rows.append(_allocator, _t.build.items[_i]) catch break;
+        _t.build.items[_i] = .empty;
+        _ui.Table.Model.RowInserted(_m, @intCast(_t.rows.items.len - 1));
+    }
+    for (_t.build.items) |*_r| _lui_row_free(_r);
+    _t.build.clearRetainingCapacity();
+}
+fn _lui_table_selected_row(_id: []const u8) i64 {
+    const _t = _lui_table_cache.get(_id) orelse return -1;
+    const _tb = _t.table orelse return -1;
+    const _sel = _ui.Table.GetSelection(_tb) orelse return -1;
+    defer _ui.Table.uiFreeTableSelection(_sel);
+    if (_sel.NumRows < 1) return -1;
+    return @intCast(_sel.Rows[0]);
+}
+fn _lui_table_activated_row(_id: []const u8) i64 {
+    const _t = _lui_table_cache.get(_id) orelse return -1;
+    const _v = _t.activated;
+    _t.activated = -1;
+    return _v;
+}
 fn _lui_begin_child(_id: []const u8, _cw: f64, _ch: f64) bool {
     _ = _id; _ = _cw; _ = _ch; return true;
 }
@@ -1245,6 +1496,19 @@ fn _lui_sweep_pages() void {
         _lui_page_shift(_p.tab, _p.idx + 1, -1);
     }
 }
+// Minimum-size hint by id: containers and editors live in the visibility registry,
+// id-keyed widgets in _lui_icache. Only calls into libui when the hint changes --
+// uiControlSetMinSize relayouts, and the view repeats the call every frame.
+fn _lui_min_size(_id: []const u8, _w: i64, _h: i64) void {
+    var _ctrl: ?*_ui.Control = null;
+    if (_lui_vis.get(_id)) |_v| _ctrl = _v.ctrl;
+    if (_ctrl == null) { if (_lui_icache.get(_id)) |_m| _ctrl = _m.ctrl; }
+    const _c = _ctrl orelse return;
+    const _cw: c_int = @intCast(@max(_w, 0));
+    const _ch: c_int = @intCast(@max(_h, 0));
+    if (_c.MinWidth == _cw and _c.MinHeight == _ch) return;
+    _ui.Control.SetMinSize(_c, _cw, _ch);
+}
 fn _lui_tab_selected(_id: []const u8) i64 {
     const _t = _lui_tab_cache.get(_id) orelse return -1;
     if (_ui.Tab.NumPages(_t) == 0) return -1;
@@ -1381,10 +1645,12 @@ const _gui_lui_backend = _GuiBackend{
     .textColoredFn      = _lui_text_colored,
     .beginTableFn       = _lui_begin_table,
     .tableSetupColumnFn = _lui_table_setup_col,
-    .tableHeadersRowFn  = _lui_noop_void,
-    .tableNextRowFn     = _lui_noop_void,
+    .tableHeadersRowFn  = _lui_table_headers_row,
+    .tableNextRowFn     = _lui_table_next_row,
     .tableNextColumnFn  = _lui_table_next_col,
-    .endTableFn         = _lui_noop_void,
+    .endTableFn         = _lui_end_table,
+    .tableSelectedRowFn  = _lui_table_selected_row,
+    .tableActivatedRowFn = _lui_table_activated_row,
     .beginChildFn       = _lui_begin_child,
     .endChildFn         = _lui_noop_void,
     .treeNodeFn         = _lui_noop_bool,
@@ -1417,6 +1683,9 @@ const _gui_lui_backend = _GuiBackend{
     .endTabsFn      = _lui_end_tabs,
     .tabSelectedFn  = _lui_tab_selected,
     .selectTabFn    = _lui_select_tab,
+    .minSizeFn      = _lui_min_size,
+    .hotkeyFn       = _lui_hotkey,
+    .takeKeyFn      = _lui_take_key,
     .progressBarFn = _lui_progressbar,
     .comboboxFn    = _lui_combobox,
     .spinboxFn     = _lui_spinbox,

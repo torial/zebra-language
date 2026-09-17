@@ -143,6 +143,15 @@ inside one, and a yield under `branch`/`try`/`with`/`using`/`allocate` or `if x 
 refused by name. This is the producer half of the iterators gap (the .NET lazy-splitter
 receipt in NEXT_STEPS_to_1.0). QUICKSTART §5 "Generators"; surface: +1 keyword (`yield`,
 69).
+**GUI, 2026-09-17** (the libui-ng fork grows what the IDE needed): tab pages follow the
+view (insert at position, delete, rename via `uiTabSetName`) with `g.tabSelected` /
+`g.selectTab`; `g.minSize(id, w, h)` over `uiControlSetMinSize`; window-wide chords
+`g.hotkey` / `g.takeKey` over `uiWindowOnKey`; `g.beginTable` is a real `uiTable`
+(immediate-mode grid diffed into the model; `tableSelectedRow` / `tableActivatedRow`;
+`tableNextColumn` is void now -- nothing had used it). Also fixed: `g.send(<literal>)`
+with an int Msg panicked "incorrect alignment" (a comptime_int's address read back as
+the Msg type). libui-ng is now a subtree of zig-libui-ng (`libui/`), one repo.
+
 **BUG-428** (2026-09-16): a backslash source path (`zebra src\app.zbr` from PowerShell)
 resolved every `use` nowhere and compiled on silently against stale dependency output;
 paths are normalised and an unresolvable `use` is now refused by name. `def next` /

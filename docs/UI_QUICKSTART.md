@@ -109,7 +109,7 @@ column fills available width in its parent HBox.
 | `g.separator()`                  | Horizontal separator rule.                                     |
 | `g.selectable(label)`            | No-op in libui-ng (returns false). Use `g.button` instead.     |
 | `g.textColored(r,g,b,a, s)`      | Text only (color ignored).                                     |
-| `g.beginTable` / table ops       | No-op. Render as a VBox of buttons for MVP.                    |
+| `g.beginTable` / table ops       | `uiTable`, text columns, rows diffed per frame (QUICKSTART §30). |
 | `g.childWindow(id, w, h, fn)`    | No-op. Use `beginVBox`/`endVBox` instead.                      |
 | `g.panel`, `g.window`            | No-op in libui-ng.                                             |
 
@@ -249,12 +249,12 @@ def update(m: Model, msg: Msg): Model
 - **No dynamic layout**: All boxes are created on frame 0. Conditional
   `beginHBox`/`beginVBox` calls (different branches of an if) will cause
   layout corruption.
-- **No tables**: `beginTable`/`tableNextRow` etc. are no-ops. Use a VBox of
-  buttons or text labels as a workaround.
+- **Tables are lists**: `beginTable`/`tableNextRow`/`g.text` cells only (no
+  widgets in cells); `tableSelectedRow` / `tableActivatedRow` read the user.
 - **No colour**: `textColored` renders without colour.
 - **No selectable**: `g.selectable` always returns false. Use `g.button`.
-- **No fixed widths**: `beginVBox` fills its share of the parent HBox. Fixed
-  pixel widths are not supported.
+- **Widths are hints**: `beginVBox` fills its share of the parent HBox; give a
+  pane a floor with `g.minSize(id, w, h)` (a minimum, never a fixed size).
 - **No syntax highlighting**: `CodeEditor.forZebra()` does not yet wire Scintilla
   lexer in the libui-ng backend. Plain editing works.
 

@@ -1,0 +1,70 @@
+# Table + tab strip + window hotkeys smoke (2026-09-17; the libui-ng fork's additions).
+# A uiTable fed immediate-mode (beginTable / tableNextRow / g.text per cell) whose
+# rows change every tick; a tab STRIP with empty pages whose labels rename; a
+# window-wide Ctrl+S chord; a min-size hint on the side pane.
+# Compile control: builds with --gui-backend=tui (tables, tabs and keys are no-ops there).
+
+const KEY_CTRL: int = 1
+const VK_S: int = 0x53
+
+class Model
+    var ticks: int = 0
+    var saved: int = 0
+    var picked: int = -1
+    var activated: int = -1
+
+def smokeInit(): Model
+    return Model()
+
+def update(m: Model, msg: int): Model
+    if msg == 1
+        m.ticks = m.ticks + 1
+    if msg == 2
+        m.saved = m.saved + 1
+    return m
+
+def view(g: Gui, m: Model)
+    g.hotkey(VK_S, KEY_CTRL)
+    var k: int = g.takeKey()
+    if k != 0
+        g.send(2)
+    g.send(1)
+    using g.vbox("##root", true)
+        g.beginTabs("##strip", false)
+        g.beginTabPage("##a", "alpha.zbr")
+        g.endTabPage()
+        var lbl: str = "beta.zbr"
+        if m.ticks % 2 == 0
+            lbl = "beta.zbr *"
+        g.beginTabPage("##b", lbl)
+        g.endTabPage()
+        g.endTabs()
+        var picked: int = g.tabSelected("##strip")
+        if picked >= 0 and picked != m.picked
+            m.picked = picked
+        using g.hbox("##body", true)
+            using g.vbox("##side", false)
+                g.minSize("##side", 240, 0)
+                g.text("ticks ${m.ticks}  saved ${m.saved}  tab ${m.picked}")
+                if g.beginTable("##rows", 2)
+                    g.tableSetupColumn("line")
+                    g.tableSetupColumn("text")
+                    g.tableHeadersRow()
+                    var i: int = 0
+                    while i < 3 + (m.ticks % 3)
+                        g.tableNextRow()
+                        g.tableNextColumn()
+                        g.text(i.toString())
+                        g.tableNextColumn()
+                        g.text("row ${i} at tick ${m.ticks / 10}")
+                        i = i + 1
+                    g.endTable()
+                var act: int = g.tableActivatedRow("##rows")
+                if act >= 0
+                    m.activated = act
+                g.text("selected ${g.tableSelectedRow("##rows")}  activated ${m.activated}")
+            using g.vbox("##main", true)
+                g.text("main pane")
+
+def main()
+    Gui.run("Table Strip Smoke", 800, 600, smokeInit, update, view)
