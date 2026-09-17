@@ -8,6 +8,8 @@
 # pins: BUG-327 a build that calls b.run() succeeds and produces the named binary, and
 #       running the build FILE directly refuses by name rather than HANGING (exit 124
 #       would mean layer 2's infinite self-invocation had returned).
+# pins: BUG-429 a GUI scaffold's build.zig forwards the run step's `--` arguments (the
+#       GUI run path dropped them; zebra-ide opened with no files).
 # pins: BUG-322 `zebra repl` and `zebra build` are exercised from a directory OUTSIDE
 #       the repo, which is the only place that bug was ever visible.
 # THE CLI-SURFACE GATE — the only gate that exercises the compiler AS A COMMAND.
@@ -460,6 +462,18 @@ chk "a VALID flag is still accepted" "$([ "$RC" = 0 ] && echo 0 || echo 1)" "exi
 run --TURBO hello.zbr
 chk "a case-wrong flag is refused rather than silently ignored" \
     "$([ "$RC" != 0 ] && echo 0 || echo 1)" "exit=$RC"
+
+# ---- BUG-429: a GUI run forwards `--` program arguments --------------------------
+# zebra-ide opened with no files: the GUI run path (`zig build ... run`) dropped the
+# arguments the non-GUI run paths forward, and the generated build.zig had no
+# addArgs for the run step anyway. Scaffold-only is enough to witness the build.zig
+# half without opening a window; the argv half is the same code path.
+printf 'def view(g: Gui, m: int)\n    g.text("args")\ndef main()\n    Gui.run("a", 200, 100, def(): int\n        return 0\n    , def(m: int, msg: int): int\n        return m\n    , view)\n' > "$W/guiargs.zbr"
+run --gui-backend=tui --scaffold-only --output-dir "$W/ga" guiargs.zbr -- one two
+GA_BZ=$(ls "$W"/ga/guiargs_gui_tui/build.zig "$W"/ga/*/build.zig 2>/dev/null | head -1)
+chk "a GUI scaffold's build.zig forwards run-step args (BUG-429)" \
+    "$(grep -q 'run_step.addArgs(args)' "${GA_BZ:-/dev/null}" 2>/dev/null && echo 0 || echo 1)" \
+    "exit=$RC build.zig=[$GA_BZ] stderr=[$(echo "$ERR" | tail -1)]"
 
 echo
 printf '  %s passed, %s pinned (known-broken), %s FAILED\n' "$pass" "$xfail" "$fail"

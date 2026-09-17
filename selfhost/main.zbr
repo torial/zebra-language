@@ -2948,6 +2948,7 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
     const run_step = b.addRunArtifact(exe);
+    if (b.args) |args| run_step.addArgs(args);   // `zebra app.zbr -- a b` reaches the program
     b.step("run", "Run the app").dependOn(&run_step.step);
 }
 """
@@ -2997,6 +2998,7 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
     const run_step = b.addRunArtifact(exe);
+    if (b.args) |args| run_step.addArgs(args);   // `zebra app.zbr -- a b` reaches the program
     b.step("run", "Run the app").dependOn(&run_step.step);
 }
 """
@@ -3144,7 +3146,7 @@ def copyGuiDeps(zig_path: str, srcDir: str)
                 File.copy(from, srcDir + "/" + name)
                 todo.add(from)
 
-def compileGuiProject(zig_path: str, mode_run: bool, backend: str, scaffold_only: bool): int
+def compileGuiProject(zig_path: str, mode_run: bool, backend: str, scaffold_only: bool, prog_args: List(str)): int
     var suffix: str = "_gui_tui"
     if backend == "libui_ng"
         suffix = "_gui_libui_ng"
@@ -3180,6 +3182,15 @@ def compileGuiProject(zig_path: str, mode_run: bool, backend: str, scaffold_only
     argv.add(proj + "/.zig-cache")
     if mode_run
         argv.add("run")
+        # BUG-429 (2026-09-17): the GUI run path dropped the `--` program arguments and
+        # did not hand the child ZEBRA_COMPILER -- both of which the non-GUI run paths
+        # do. zebra-ide opened with no files and "could not start `zebra lsp`".
+        if prog_args.len > 0
+            argv.add("--")
+            for pa in prog_args
+                argv.add(pa)
+        if sys.getenv("ZEBRA_COMPILER") == nil
+            sys.setenv("ZEBRA_COMPILER", sys.selfExe())
     return sys.exec_inherit(argv)
 
 # BUG-300 WORKAROUND — retry the scratch unlink instead of assuming it took.
@@ -4450,7 +4461,7 @@ def main()
     # with the backend's dependency, then build/run it. Replaces the old
     # delegate-to-bootstrap path.
     if gui_selfhost
-        var grc: int = compileGuiProject(zig_path, not mode_c, gui_backend, scaffold_only)
+        var grc: int = compileGuiProject(zig_path, not mode_c, gui_backend, scaffold_only, prog_args)
         if grc != 0
             sys.exit(1)
         sys.exit(0)

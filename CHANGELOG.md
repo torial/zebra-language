@@ -152,6 +152,10 @@ view (insert at position, delete, rename via `uiTabSetName`) with `g.tabSelected
 with an int Msg panicked "incorrect alignment" (a comptime_int's address read back as
 the Msg type). libui-ng is now a subtree of zig-libui-ng (`libui/`), one repo.
 
+**BUG-429** (2026-09-17): a GUI program run by the compiler received no `--` arguments and
+no `ZEBRA_COMPILER`; the generated build.zig now forwards `b.args` to its run step and the
+GUI run path sets the environment like the other two.
+
 **BUG-428** (2026-09-16): a backslash source path (`zebra src\app.zbr` from PowerShell)
 resolved every `use` nowhere and compiled on silently against stale dependency output;
 paths are normalised and an unresolvable `use` is now refused by name. `def next` /

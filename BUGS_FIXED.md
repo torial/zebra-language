@@ -6,6 +6,17 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-429: a GUI program run by the compiler got NO `--` arguments (and no ZEBRA_COMPILER) — FIXED 2026-09-17
+
+`zebra --gui-backend=libui_ng src\ide.zbr -- src\lsp.zbr src\buffers.zbr` opened the IDE
+with no files and "could not start `zebra lsp`". The two non-GUI run paths forward
+`prog_args` and hand the child `ZEBRA_COMPILER`; the GUI path (`zig build ... run`) did
+neither, and the generated build.zig had no `addArgs` on its run step, so even a manual
+`zig build run -- x` dropped them. Both fixed; the scaffold templates (tui and libui)
+forward `b.args`. Found from a screenshot: a tab strip with no pages is invisible, and
+the reason was two layers down. Witness: `tools/cli_check.sh` BUG-429 leg (scaffold-only,
+asserts the run step forwards args).
+
 ### BUG-428: a Windows path (`src\ide.zbr`) made every `use` resolve NOWHERE, and the compiler went on silently — FIXED 2026-09-16
 
 `zebra --gui-backend=libui_ng src\ide.zbr` from PowerShell: `dirOf` split on `/` only,
