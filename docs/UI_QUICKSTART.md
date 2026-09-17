@@ -246,9 +246,9 @@ def update(m: Model, msg: Msg): Model
 
 ## Limitations (MVP)
 
-- **No dynamic layout**: All boxes are created on frame 0. Conditional
-  `beginHBox`/`beginVBox` calls (different branches of an if) will cause
-  layout corruption.
+- **Layout is dynamic** (since 2026-09-17): a box, line, panel or page that the
+  view emits conditionally is inserted where it appears and removed when it
+  stops; keyed widgets (`##id`, a label) keep their identity when they move.
 - **Tables are lists**: `beginTable`/`tableNextRow`/`g.text` cells only (no
   widgets in cells); `tableSelectedRow` / `tableActivatedRow` read the user.
 - **No colour**: `textColored` renders without colour.

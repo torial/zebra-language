@@ -184,6 +184,10 @@ const GuiContext = struct {
             self._b.endPanelFn();
         }
     }
+    // The open/close pair QUICKSTART documents (a titled group box); until 2026-09-17
+    // only the callback form existed and the doc example could not compile.
+    pub fn beginPanel(self: GuiContext, label: []const u8) bool { return self._b.beginPanelFn(label); }
+    pub fn endPanel(self: GuiContext, label: []const u8) void { _ = label; self._b.endPanelFn(); }
     pub fn window(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginWindowFn(label)) {
             if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);  // fn OR fn pointer (matches the preamble; the section had drifted — 09-08)
@@ -735,15 +739,12 @@ fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, _w: f6
             _ce_style(_ed);
         }
         if (_ed.read_only) _ = _ed.scint.?.sendMessage(2171, 1, 0);
-        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _ed.scint.?.as_control(), .stretch);
     } else {
         _ce_restyle_if_dirty(_ed);
     }
-    // visibility: the editor's own address is its key (refuter, 09-08: `id` is not
-    // the identity here — one _CodeEditor is one Scintilla control, whatever the id)
-    var _kb: [32]u8 = undefined;
-    const _kz = std.fmt.bufPrint(&_kb, "ce:{x}", .{@intFromPtr(_ed)}) catch return;
-    _lui_vis_touch(_kz, _ed.scint.?.as_control());
+    // the editor is a node keyed by its own address (one _CodeEditor, one control,
+    // whatever id the view passes); the tree inserts it where the view emits it
+    _lui_editor_node(_ed);
 }
 fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
 fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 {
@@ -780,51 +781,205 @@ fn _code_editor_sci_str(_ed: *_CodeEditor, msg: i64, wparam: i64, text: []const 
     defer _allocator.free(_z);
     return @bitCast(_s.sendMessage(@intCast(msg), @bitCast(wparam), @intFromPtr(_z.ptr)));
 }
-// ─── libui-ng retained-mode adapter ──────────────────────────────────────────
+// ─── libui-ng retained-mode adapter: THE TREE (2026-09-17) ───────────────────
+// concept_zebra-gui-declarative §3. Every g.* call adds a NODE under the open
+// container; a node matches the retained node of the same kind at the same key (an
+// `##id`, a label) or, without a key, at the same position among its siblings. A
+// match updates only what differs (a label's text, an entry's text if the widget
+// does not already show it); a miss creates the control and inserts it at the
+// node's position (uiBoxInsertAt, uiTabInsertAt -- both the fork's); a retained
+// node the view did not revisit is removed when its container closes. There is no
+// hiding, no frame-0 rule, no positional counter: a box that appears is a child
+// inserted where it appears. The seven caches this replaced are gone.
 const _ui = @import("ui");
-const _LuiMut = struct {
-    ctrl: ?*_ui.Control = null,
-    lbl: ?*_ui.Label = null,
+const _LuiKind = enum { root, hbox, vbox, panel, tabs, page, text, sep, button, checkbox, slider, input, input_ml, combobox, spinbox, progress, editor, table };
+const _LuiNode = struct {
+    kind: _LuiKind,
+    key: []const u8 = "",
+    ctrl: ?*_ui.Control = null,     // what sits in the parent (box child / tab page)
+    box: ?*_ui.Box = null,          // containers: where the children go
+    tab: ?*_ui.Tab = null,
+    children: std.ArrayList(*_LuiNode) = .empty,
+    seen: u32 = 0,
+    stretch: bool = false,
+    // per-kind state; the bridge (§2) reads these in the frame an event caused
     clicked: bool = false,
     checked: bool = false,
-    text_buf: [1024]u8 = undefined,
-    text_len: usize = 0,
     sval: c_int = 0,
     smin: f64 = 0,
     smax: f64 = 1,
-    pb: ?*_ui.ProgressBar = null,
+    text_buf: [1024]u8 = undefined,  // entry text; a button's / page's label
+    text_len: usize = 0,
+    lbl: ?*_ui.Label = null,
     btn: ?*_ui.Button = null,
-    // MVU visibility (2026-09-08): an id-keyed widget the view did not emit this
-    // frame is HIDDEN at frame end, and shown again when the view emits it. Before
-    // this, a widget created once stayed visible forever, so a view could only ever
-    // grow — the IDE's tab row was a fixed row of MAX_TABS buttons because a closed
-    // tab could not be removed. uiBox skips hidden children in its layout.
-    seen: u32 = 0,
-    hidden: bool = false,
+    chk: ?*_ui.Checkbox = null,
+    sld: ?*_ui.Slider = null,
+    ent: ?*_ui.Entry = null,
+    mle: ?*_ui.MultilineEntry = null,
+    cmb: ?*_ui.Combobox = null,
+    spn: ?*_ui.Spinbox = null,
+    pb: ?*_ui.ProgressBar = null,
+    grp: ?*_ui.Group = null,
+    ed: ?*_CodeEditor = null,
+    table: ?*_LuiTable = null,
 };
-const _LuiPanel = struct { inner: *_ui.Box, grp: *_ui.Group };
-var _lui_icache: std.StringHashMap(*_LuiMut) = undefined;
-var _lui_dcache: std.ArrayList(*_LuiMut) = undefined;
-var _lui_didx: usize = 0;
+var _lui_root: *_LuiNode = undefined;
+var _lui_stack: [32]*_LuiNode = undefined;
+var _lui_cursor: [32]usize = [_]usize{0} ** 32;
+var _lui_depth: usize = 0;
+var _lui_keyed: std.StringHashMap(*_LuiNode) = undefined;   // id -> node, for the by-id reads
 var _lui_frame: u32 = 0;
-var _lui_frame_n: u32 = 1;   // monotonic frame counter for seen/hidden (0 = never seen)
+var _lui_frame_n: u32 = 1;   // the render being built; a node's `seen` == this means "in it"
 var _lui_quit: bool = false;
 var _lui_win_w: i64 = 800;
 var _lui_win_h: i64 = 600;
 var _lui_window: ?*_ui.Window = null;
 var _lui_root_box: ?*_ui.Box = null;
-var _lui_box_stack: [32]?*_ui.Box = [_]?*_ui.Box{null} ** 32;
-var _lui_box_depth: usize = 0;
-var _lui_box_icache: std.StringHashMap(*_ui.Box) = undefined;
-var _lui_grp_cache: std.StringHashMap(_LuiPanel) = undefined;
-fn _lui_cur_box() ?*_ui.Box {
-    if (_lui_box_depth == 0) return null;
-    return _lui_box_stack[_lui_box_depth - 1];
+fn _lui_top() *_LuiNode { return _lui_stack[_lui_depth - 1]; }
+fn _lui_cur_box() ?*_ui.Box { return _lui_top().box; }
+fn _lui_push(_n: *_LuiNode) void {
+    if (_lui_depth < 32) { _lui_stack[_lui_depth] = _n; _lui_cursor[_lui_depth] = 0; _lui_depth += 1; }
 }
-fn _lui_push_box(_b: *_ui.Box) void {
-    if (_lui_box_depth < 32) { _lui_box_stack[_lui_box_depth] = _b; _lui_box_depth += 1; }
+fn _lui_pop() void {
+    if (_lui_depth <= 1) return;
+    _lui_depth -= 1;
+    _lui_close(_lui_stack[_lui_depth]);
 }
-fn _lui_pop_box() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
+fn _lui_reset_stack() void {
+    _lui_depth = 0;
+    _lui_push(_lui_root);
+}
+fn _lui_z(_buf: []u8, _s: []const u8) [:0]u8 {
+    const _n = @min(_s.len, _buf.len - 1);
+    @memcpy(_buf[0.._n], _s[0.._n]);
+    _buf[_n] = 0;
+    return _buf[0.._n :0];
+}
+fn _lui_set_text(_n: *_LuiNode, _s: []const u8) void {
+    const _k = @min(_s.len, _n.text_buf.len);
+    @memcpy(_n.text_buf[0.._k], _s[0.._k]);
+    _n.text_len = _k;
+}
+fn _lui_text_same(_n: *_LuiNode, _s: []const u8) bool {
+    return std.mem.eql(u8, _n.text_buf[0.._n.text_len], _s[0..@min(_s.len, _n.text_buf.len)]);
+}
+// Position of a child among the parent's ATTACHED children == its index in the box
+// (every node has a control from the moment it is a child). Pages likewise in a tab.
+fn _lui_index_of(_p: *_LuiNode, _n: *_LuiNode) c_int {
+    var _bi: c_int = 0;
+    for (_p.children.items) |_s| { if (_s == _n) return _bi; _bi += 1; }
+    return _bi;
+}
+const _LuiGet = struct { n: *_LuiNode, fresh: bool };
+// The match. Keyed: the retained sibling with that kind and key, moved to this
+// position if it drifted (a closed tab shifts its neighbours). Positional: whatever
+// sits at this position if it is the same kind and not already claimed this frame.
+fn _lui_child(_kind: _LuiKind, _key: []const u8) _LuiGet {
+    const _p = _lui_top();
+    const _i = _lui_cursor[_lui_depth - 1];
+    _lui_cursor[_lui_depth - 1] += 1;
+    if (_key.len > 0) {
+        var _j: usize = 0;
+        while (_j < _p.children.items.len) : (_j += 1) {
+            const _c = _p.children.items[_j];
+            if (_c.kind == _kind and _c.seen != _lui_frame_n and std.mem.eql(u8, _c.key, _key)) {
+                if (_j != _i) _lui_move(_p, _j, _i);
+                _c.seen = _lui_frame_n;
+                return .{ .n = _c, .fresh = false };
+            }
+        }
+    } else if (_i < _p.children.items.len) {
+        const _c = _p.children.items[_i];
+        if (_c.kind == _kind and _c.key.len == 0 and _c.seen != _lui_frame_n) {
+            _c.seen = _lui_frame_n;
+            return .{ .n = _c, .fresh = false };
+        }
+    }
+    const _n = _allocator.create(_LuiNode) catch unreachable;
+    _n.* = .{ .kind = _kind, .seen = _lui_frame_n };
+    if (_key.len > 0) {
+        _n.key = _allocator.dupe(u8, _key) catch "";
+        _lui_keyed.put(_n.key, _n) catch {};
+    }
+    _p.children.insert(_allocator, @min(_i, _p.children.items.len), _n) catch unreachable;
+    return .{ .n = _n, .fresh = true };
+}
+// A fresh node has just made its control: put it into the parent at its position.
+fn _lui_attach(_n: *_LuiNode, _stretch: bool) void {
+    const _p = _lui_top();
+    const _c = _n.ctrl orelse return;
+    _n.stretch = _stretch;
+    const _bi = _lui_index_of(_p, _n);
+    if (_p.kind == .tabs) {
+        if (_p.tab) |_t| {
+            var _lb: [256]u8 = undefined;
+            _ui.Tab.InsertAt(_t, _lui_z(&_lb, _n.text_buf[0.._n.text_len]), _bi, _c);
+            _ui.Tab.SetMargined(_t, _bi, false);   // the page box is padded itself; no band under a strip
+        }
+    } else if (_p.box) |_b| {
+        _ui.Box.InsertAt(_b, _c, _bi, if (_stretch) .stretch else .dont_stretch);
+    }
+}
+fn _lui_move(_p: *_LuiNode, _from: usize, _to: usize) void {
+    const _n = _p.children.orderedRemove(_from);
+    const _at = @min(_to, _p.children.items.len);
+    _p.children.insert(_allocator, _at, _n) catch unreachable;
+    const _c = _n.ctrl orelse return;
+    if (_p.kind == .tabs) {
+        if (_p.tab) |_t| {
+            _ui.Tab.Delete(_t, @intCast(_from));
+            var _lb: [256]u8 = undefined;
+            _ui.Tab.InsertAt(_t, _lui_z(&_lb, _n.text_buf[0.._n.text_len]), @intCast(_at), _c);
+            _ui.Tab.SetMargined(_t, @intCast(_at), false);
+        }
+    } else if (_p.box) |_b| {
+        _ui.Box.Delete(_b, @intCast(_from));
+        _ui.Box.InsertAt(_b, _c, @intCast(_at), if (_n.stretch) .stretch else .dont_stretch);
+    }
+}
+// Container closed: children the view did not revisit leave. Their controls are
+// destroyed -- except an editor's Scintilla, which belongs to its _CodeEditor and
+// is only detached, so a pane the view brings back keeps its document.
+fn _lui_close(_p: *_LuiNode) void {
+    var _j: usize = 0;
+    while (_j < _p.children.items.len) {
+        const _c = _p.children.items[_j];
+        if (_c.seen != _lui_frame_n) {
+            _lui_detach(_p, _c, @intCast(_j));
+            _lui_free_node(_c);
+            _ = _p.children.orderedRemove(_j);
+            continue;
+        }
+        _j += 1;
+    }
+}
+fn _lui_detach(_p: *_LuiNode, _c: *_LuiNode, _bi: c_int) void {
+    if (_c.ctrl == null) return;
+    if (_p.kind == .tabs) { if (_p.tab) |_t| _ui.Tab.Delete(_t, _bi); }
+    else if (_p.box) |_b| _ui.Box.Delete(_b, _bi);
+}
+fn _lui_free_node(_n: *_LuiNode) void {
+    // children first, from the back, so editors inside are detached before their box dies
+    var _j: usize = _n.children.items.len;
+    while (_j > 0) {
+        _j -= 1;
+        const _c = _n.children.items[_j];
+        _lui_detach(_n, _c, @intCast(_j));
+        _lui_free_node(_c);
+    }
+    _n.children.deinit(_allocator);
+    if (_n.key.len > 0) {
+        if (_lui_keyed.get(_n.key)) |_k| { if (_k == _n) _ = _lui_keyed.remove(_n.key); }
+    }
+    if (_n.kind != .editor) {
+        if (_n.ctrl) |_c| _ui.Control.Destroy(_c);   // a table's uiTable dies with its host box
+    }
+    if (_n.kind == .table) {
+        if (_n.table) |_t| _lui_table_free(_t);      // rows and model, after the control
+    }
+    if (_n.key.len > 0) _allocator.free(_n.key);
+    _allocator.destroy(_n);
+}
 // Window-level chords (uiWindowOnKey). Same shape as the CodeEditor's: registered
 // chords are consumed and queued, everything else passes to the focused control.
 var _lui_hot: [32]u32 = [_]u32{0} ** 32;
@@ -866,52 +1021,19 @@ fn _lui_on_close(_w: *_ui.Window, _q: ?*bool) anyerror!_ui.Window.ClosingAction 
     _ui.Quit();
     return .should_close;
 }
-fn _lui_btn_cb(_btn: *_ui.Button, _m: ?*_LuiMut) anyerror!void {
-    _ = _btn;
-    if (_m) |p| p.clicked = true;
-}
-fn _lui_chk_cb(_chk: *_ui.Checkbox, _m: ?*_LuiMut) anyerror!void {
-    if (_m) |p| p.checked = _chk.Checked();
-}
-fn _lui_entry_cb(_ent: *_ui.Entry, _m: ?*_LuiMut) anyerror!void {
-    if (_m) |p| {
-        const _s = std.mem.span(_ent.Text());
-        const _n = @min(_s.len, 1023);
-        @memcpy(p.text_buf[0.._n], _s[0.._n]);
-        p.text_len = _n;
-    }
-}
-fn _lui_mle_cb(_mle: *_ui.MultilineEntry, _m: ?*_LuiMut) anyerror!void {
-    if (_m) |p| {
-        const _s = std.mem.span(_mle.Text());
-        const _n = @min(_s.len, 1023);
-        @memcpy(p.text_buf[0.._n], _s[0.._n]);
-        p.text_len = _n;
-    }
-}
-fn _lui_slider_cb(_sld: *_ui.Slider, _m: ?*_LuiMut) anyerror!void {
-    if (_m) |p| p.sval = _sld.Value();
-}
-fn _lui_cmb_cb(_c: *_ui.Combobox, _m: ?*_LuiMut) anyerror!void {
-    if (_m) |p| p.sval = _c.Selected();
-}
-fn _lui_spn_cb(_s: *_ui.Spinbox, _m: ?*_LuiMut) anyerror!void {
-    if (_m) |p| p.sval = _s.Value();
-}
+// Widget callbacks: record on the node; the next render reads it (the bridge).
+fn _lui_btn_cb(_btn: *_ui.Button, _m: ?*_LuiNode) anyerror!void { _ = _btn; if (_m) |p| p.clicked = true; }
+fn _lui_chk_cb(_chk: *_ui.Checkbox, _m: ?*_LuiNode) anyerror!void { if (_m) |p| p.checked = _chk.Checked(); }
+fn _lui_entry_cb(_ent: *_ui.Entry, _m: ?*_LuiNode) anyerror!void { if (_m) |p| _lui_set_text(p, std.mem.span(_ent.Text())); }
+fn _lui_mle_cb(_mle: *_ui.MultilineEntry, _m: ?*_LuiNode) anyerror!void { if (_m) |p| _lui_set_text(p, std.mem.span(_mle.Text())); }
+fn _lui_slider_cb(_sld: *_ui.Slider, _m: ?*_LuiNode) anyerror!void { if (_m) |p| p.sval = _sld.Value(); }
+fn _lui_cmb_cb(_c: *_ui.Combobox, _m: ?*_LuiNode) anyerror!void { if (_m) |p| p.sval = _c.Selected(); }
+fn _lui_spn_cb(_s: *_ui.Spinbox, _m: ?*_LuiNode) anyerror!void { if (_m) |p| p.sval = _s.Value(); }
 fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
     _lui_win_w = _width; _lui_win_h = _height;
     var _d = _ui.InitData{ .options = .{ .Size = @sizeOf(_ui.InitOptions) } };
     try _ui.Init(&_d);
-    _lui_icache = std.StringHashMap(*_LuiMut).init(_allocator);
-    _lui_dcache = .empty;
-    _lui_box_icache = std.StringHashMap(*_ui.Box).init(_allocator);
-    _lui_grp_cache = std.StringHashMap(_LuiPanel).init(_allocator);
-    _lui_tab_cache = std.StringHashMap(*_ui.Tab).init(_allocator);
-    _lui_page_cache = std.StringHashMap(*_LuiPage).init(_allocator);
-    _lui_table_cache = std.StringHashMap(*_LuiTable).init(_allocator);
-    _lui_vis = std.StringHashMap(*_LuiVis).init(_allocator);
-    _lui_tab_depth = 0;
-    _lui_box_depth = 0;
+    _lui_keyed = std.StringHashMap(*_LuiNode).init(_allocator);
     var _tbuf: [256]u8 = undefined;
     const _tz: [:0]u8 = try std.fmt.bufPrintZ(&_tbuf, "{s}", .{_title});
     _lui_window = try _ui.Window.New(_tz, @intCast(_width), @intCast(_height), .hide_menubar);
@@ -919,7 +1041,9 @@ fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
     if (comptime @hasDecl(_ui.Window, "OnKey")) _ui.Window.OnKey(_lui_window.?, anyopaque, _lui_on_key, null);
     _lui_root_box = try _ui.Box.New(.Vertical);
     _lui_root_box.?.SetPadded(true);
-    _lui_push_box(_lui_root_box.?);
+    _lui_root = try _allocator.create(_LuiNode);
+    _lui_root.* = .{ .kind = .root, .box = _lui_root_box, .ctrl = _lui_root_box.?.as_control() };
+    _lui_reset_stack();
     _lui_everys = .empty;
     _lui_frame = 0; _lui_quit = false;
 }
@@ -955,26 +1079,25 @@ fn _lui_sweep_everys() void {
     for (_lui_everys.items) |_r| _r.stale = _r.seen != _lui_frame_n;
 }
 fn _lui_deinit() void {
-    _lui_icache.deinit();
-    _lui_dcache.deinit(_allocator);
-    _lui_box_icache.deinit();
-    _lui_grp_cache.deinit();
-    _lui_vis.deinit();
+    _lui_keyed.deinit();
     _ui.Uninit();
 }
 fn _lui_newframe() bool {
-    _lui_didx = 0;
+    _lui_reset_stack();
     if (_lui_frame == 0) return true;
     if (_lui_quit) return false;
     return _ui.MainStep(.blocking) == .running and !_lui_quit;
 }
+// Render done: close every container the view left open (the root last, which
+// removes what the view dropped at top level), sweep timers, advance the frame,
+// and on the very first render put the tree in the window and show it.
 fn _lui_endframe() void {
-    _lui_box_depth = 1; // reset to root box only
-    _lui_sweep_unseen();
-    _lui_sweep_pages();
+    while (_lui_depth > 1) _lui_pop();
+    _lui_close(_lui_root);
     _lui_sweep_everys();
     _lui_frame_n +%= 1;
     if (_lui_frame_n == 0) _lui_frame_n = 1;
+    _lui_reset_stack();
     if (_lui_frame == 0) {
         _lui_frame = 1;
         if (_lui_window) |_w| {
@@ -984,104 +1107,28 @@ fn _lui_endframe() void {
         }
     }
 }
-const _LuiIR = struct { m: *_LuiMut, fresh: bool };
-fn _lui_iget(_label: []const u8) _LuiIR {
-    if (_lui_icache.get(_label)) |_m| {
-        _m.seen = _lui_frame_n;
-        return .{ .m = _m, .fresh = false };
-    }
-    const _m = _allocator.create(_LuiMut) catch unreachable;
-    _m.* = .{};
-    _m.seen = _lui_frame_n;
-    // The key must outlive the frame: the caller's slice may be a temporary
-    // (`"##tab:" + path` built in the view), so own a copy.
-    const _key = _allocator.dupe(u8, _label) catch unreachable;
-    _lui_icache.put(_key, _m) catch unreachable;
-    return .{ .m = _m, .fresh = true };
-}
-// Visibility registry for widgets that are not _LuiMut: containers (hbox / vbox /
-// panel / tab strip) and code editors. `_lui_vis_touch` is called every frame the
-// view emits the widget; the sweep hides what was not touched. (Refuter, 2026-09-08:
-// the first version swept id-keyed buttons only — a view that dropped a row, a
-// panel or a `g.text` line left it on screen.) Tab PAGES are not registered: hiding
-// a page's box would leave an empty tab, which is worse than a stale one.
-const _LuiVis = struct { ctrl: *_ui.Control, seen: u32 = 0, hidden: bool = false };
-var _lui_vis: std.StringHashMap(*_LuiVis) = undefined;
-fn _lui_vis_touch(_key: []const u8, _ctrl: *_ui.Control) void {
-    if (_lui_vis.get(_key)) |_v| { _v.seen = _lui_frame_n; return; }
-    const _v = _allocator.create(_LuiVis) catch return;
-    _v.* = .{ .ctrl = _ctrl, .seen = _lui_frame_n };
-    const _k = _allocator.dupe(u8, _key) catch return;
-    _lui_vis.put(_k, _v) catch {};
-}
-// Frame end: hide widgets the view stopped emitting; show ones it resumed. Three
-// families: id-keyed _LuiMut (buttons, inputs, …), positional _LuiMut (`g.text`,
-// separators, progress bars — everything past this frame's count is stale), and
-// the registry above.
-fn _lui_sweep_unseen() void {
-    var _it = _lui_icache.valueIterator();
-    while (_it.next()) |_pm| {
-        const _m = _pm.*;
-        _lui_set_hidden(_m, _m.seen != _lui_frame_n);
-    }
-    var _i: usize = 0;
-    while (_i < _lui_dcache.items.len) : (_i += 1) {
-        _lui_set_hidden(_lui_dcache.items[_i], _i >= _lui_didx);
-    }
-    var _vt = _lui_vis.valueIterator();
-    while (_vt.next()) |_pv| {
-        const _v = _pv.*;
-        const _stale = _v.seen != _lui_frame_n;
-        if (_stale and !_v.hidden) { _v.ctrl.Hide(); _v.hidden = true; }
-        else if (!_stale and _v.hidden) { _v.ctrl.Show(); _v.hidden = false; }
-    }
-}
-fn _lui_set_hidden(_m: *_LuiMut, _want_hidden: bool) void {
-    if (_want_hidden and !_m.hidden) {
-        if (_m.ctrl) |_c| _c.Hide();
-        if (_m.lbl) |_l| _l.as_control().Hide();
-        _m.hidden = true;
-    } else if (!_want_hidden and _m.hidden) {
-        if (_m.ctrl) |_c| _c.Show();
-        if (_m.lbl) |_l| _l.as_control().Show();
-        _m.hidden = false;
-    }
-}
-fn _lui_dget() _LuiIR {
-    if (_lui_didx < _lui_dcache.items.len) {
-        const _m = _lui_dcache.items[_lui_didx];
-        _lui_didx += 1;
-        return .{ .m = _m, .fresh = false };
-    }
-    const _m = _allocator.create(_LuiMut) catch unreachable;
-    _m.* = .{};
-    _lui_dcache.append(_allocator, _m) catch unreachable;
-    _lui_didx += 1;
-    return .{ .m = _m, .fresh = true };
-}
+// ── leaves ──
 fn _lui_text(_s: []const u8) void {
     if (_lui_cur_table != null and _lui_table_cell_text(_s)) return;
-    const _r = _lui_dget();
-    const _n = @min(_s.len, 510);
+    const _r = _lui_child(.text, "");
     var _tb: [512]u8 = undefined;
-    @memcpy(_tb[0.._n], _s[0.._n]);
-    _tb[_n] = 0;
-    const _tz: [:0]u8 = _tb[0.._n :0];
     if (_r.fresh) {
-        const _lbl = _ui.Label.New(_tz) catch return;
-        _r.m.lbl = _lbl;
-        _r.m.ctrl = _lbl.as_control();
-        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _lbl.as_control(), .dont_stretch);
-    } else {
-        if (_r.m.lbl) |_lb| _lb.SetText(_tz);
+        const _lbl = _ui.Label.New(_lui_z(&_tb, _s)) catch return;
+        _r.n.lbl = _lbl;
+        _r.n.ctrl = _lbl.as_control();
+        _lui_set_text(_r.n, _s);
+        _lui_attach(_r.n, false);
+    } else if (!_lui_text_same(_r.n, _s)) {
+        if (_r.n.lbl) |_l| _l.SetText(_lui_z(&_tb, _s));
+        _lui_set_text(_r.n, _s);
     }
 }
 fn _lui_sep() void {
-    const _r = _lui_dget();
+    const _r = _lui_child(.sep, "");
     if (_r.fresh) {
         const _sep = _ui.Separator.New(.Horizontal) catch return;
-        _r.m.ctrl = _sep.as_control();
-        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _sep.as_control(), .dont_stretch);
+        _r.n.ctrl = _sep.as_control();
+        _lui_attach(_r.n, false);
     }
 }
 fn _lui_noop_void() void {}
@@ -1089,6 +1136,246 @@ fn _lui_noop_bool(_l: []const u8) bool { _ = _l; return true; }
 fn _lui_selectable(_l: []const u8) bool { _ = _l; return false; }
 fn _lui_text_colored(_rv: f32, _gv: f32, _bv: f32, _av: f32, _s: []const u8) void {
     _ = _rv; _ = _gv; _ = _bv; _ = _av; _lui_text(_s);
+}
+fn _lui_button_id(_id: []const u8, _label: []const u8) bool {
+    const _r = _lui_child(.button, _id);
+    var _lb: [256]u8 = undefined;
+    if (_r.fresh) {
+        const _btn = _ui.Button.New(_lui_z(&_lb, _label)) catch return false;
+        _ui.Button.OnClicked(_btn, _LuiNode, anyerror, _lui_btn_cb, _r.n);
+        _r.n.btn = _btn;
+        _r.n.ctrl = _btn.as_control();
+        _lui_set_text(_r.n, _label);
+        _lui_attach(_r.n, false);
+    } else if (!_lui_text_same(_r.n, _label)) {
+        if (_r.n.btn) |_b| _ui.Button.SetText(_b, _lui_z(&_lb, _label));
+        _lui_set_text(_r.n, _label);
+    }
+    const _clicked = _r.n.clicked;
+    _r.n.clicked = false;
+    return _clicked;
+}
+fn _lui_button(_label: []const u8) bool { return _lui_button_id(_label, _label); }
+fn _lui_checkbox(_label: []const u8, _value: bool) bool {
+    const _r = _lui_child(.checkbox, _label);
+    if (_r.fresh) {
+        var _lb: [256]u8 = undefined;
+        const _chk = _ui.Checkbox.New(_lui_z(&_lb, _label)) catch return _value;
+        _chk.SetChecked(_value);
+        _r.n.checked = _value;
+        _ui.Checkbox.OnToggled(_chk, _LuiNode, anyerror, _lui_chk_cb, _r.n);
+        _r.n.chk = _chk;
+        _r.n.ctrl = _chk.as_control();
+        _lui_attach(_r.n, false);
+    }
+    return _r.n.checked;
+}
+// A labelled widget is ONE node: an unpadded vbox holding the label and the control.
+fn _lui_labelled(_n: *_LuiNode, _label: []const u8, _c: *_ui.Control, _stretch_inner: bool) void {
+    var _lb: [256]u8 = undefined;
+    const _vb = _ui.Box.New(.Vertical) catch return;
+    _vb.SetPadded(false);
+    const _l = _ui.Label.New(_lui_z(&_lb, _label)) catch return;
+    _ui.Box.Append(_vb, _l.as_control(), .dont_stretch);
+    _ui.Box.Append(_vb, _c, if (_stretch_inner) .stretch else .dont_stretch);
+    _n.lbl = _l;
+    _n.ctrl = _vb.as_control();
+}
+fn _lui_slider(_label: []const u8, _value: f64, _min: f64, _max: f64) f64 {
+    const _r = _lui_child(.slider, _label);
+    if (_r.fresh) {
+        const _sld = _ui.Slider.New(0, 1000) catch return _value;
+        const _raw: c_int = @intFromFloat((_value - _min) / (_max - _min) * 1000.0);
+        const _init: c_int = if (_raw < 0) 0 else if (_raw > 1000) 1000 else _raw;
+        _sld.SetValue(_init);
+        _r.n.sval = _init; _r.n.smin = _min; _r.n.smax = _max;
+        _ui.Slider.OnChanged(_sld, _LuiNode, anyerror, _lui_slider_cb, _r.n);
+        _r.n.sld = _sld;
+        _lui_labelled(_r.n, _label, _sld.as_control(), false);
+        _lui_attach(_r.n, false);
+    }
+    const _t = @as(f64, @floatFromInt(_r.n.sval)) / 1000.0;
+    return _r.n.smin + _t * (_r.n.smax - _r.n.smin);
+}
+fn _lui_input(_label: []const u8, _value: []const u8) []const u8 {
+    const _r = _lui_child(.input, _label);
+    if (_r.fresh) {
+        const _ent = _ui.Entry.New(.Entry) catch return _value;
+        var _vtb: [1024]u8 = undefined;
+        _ent.SetText(_lui_z(&_vtb, _value));
+        _lui_set_text(_r.n, _value);
+        _ui.Entry.OnChanged(_ent, _LuiNode, anyerror, _lui_entry_cb, _r.n);
+        _r.n.ent = _ent;
+        _lui_labelled(_r.n, _label, _ent.as_control(), false);
+        _lui_attach(_r.n, false);
+    }
+    return _r.n.text_buf[0.._r.n.text_len];
+}
+fn _lui_input_ml(_label: []const u8, _value: []const u8, _mw: f64, _mh: f64) []const u8 {
+    _ = _mw; _ = _mh;
+    const _r = _lui_child(.input_ml, _label);
+    if (_r.fresh) {
+        const _mle = _ui.MultilineEntry.New(.Wrapping) catch return _value;
+        var _vtb: [1024]u8 = undefined;
+        _mle.SetText(_lui_z(&_vtb, _value));
+        _lui_set_text(_r.n, _value);
+        _ui.MultilineEntry.OnChanged(_mle, _LuiNode, anyerror, _lui_mle_cb, _r.n);
+        _r.n.mle = _mle;
+        _lui_labelled(_r.n, _label, _mle.as_control(), true);
+        _lui_attach(_r.n, true);
+    }
+    return _r.n.text_buf[0.._r.n.text_len];
+}
+fn _lui_combobox(_label: []const u8, _items: []const []const u8, _sel: i64) i64 {
+    const _r = _lui_child(.combobox, _label);
+    if (_r.fresh) {
+        const _cmb = _ui.Combobox.New() catch return _sel;
+        for (_items) |_it| {
+            var _lb: [256]u8 = undefined;
+            _ui.Combobox.Append(_cmb, _lui_z(&_lb, _it));
+        }
+        const _init: c_int = @intCast(_sel);
+        _cmb.SetSelected(_init);
+        _r.n.sval = _init;
+        _ui.Combobox.OnSelected(_cmb, _LuiNode, anyerror, _lui_cmb_cb, _r.n);
+        _r.n.cmb = _cmb;
+        _r.n.ctrl = _cmb.as_control();
+        _lui_attach(_r.n, false);
+    }
+    return @as(i64, @intCast(_r.n.sval));
+}
+fn _lui_spinbox(_label: []const u8, _value: i64, _min: i64, _max: i64) i64 {
+    const _r = _lui_child(.spinbox, _label);
+    if (_r.fresh) {
+        const _spn = _ui.Spinbox.New(.{ .Integer = .{ .min = @intCast(_min), .max = @intCast(_max) } }) catch return _value;
+        _spn.SetValue(@intCast(_value));
+        _r.n.sval = @intCast(_value);
+        _ui.Spinbox.OnChanged(_spn, _LuiNode, anyerror, _lui_spn_cb, _r.n);
+        _r.n.spn = _spn;
+        _r.n.ctrl = _spn.as_control();
+        _lui_attach(_r.n, false);
+    }
+    return @as(i64, @intCast(_r.n.sval));
+}
+fn _lui_progressbar(_label: []const u8, _value: f64) void {
+    const _r = _lui_child(.progress, _label);
+    const _pct: c_int = @intFromFloat(_value * 100.0);
+    const _clamped: c_int = if (_pct < 0) 0 else if (_pct > 100) 100 else _pct;
+    if (_r.fresh) {
+        const _pb = _ui.ProgressBar.New() catch return;
+        _pb.SetValue(_clamped);
+        _r.n.pb = _pb;
+        _r.n.sval = _clamped;
+        _r.n.ctrl = _pb.as_control();
+        _lui_attach(_r.n, false);
+    } else if (_r.n.sval != _clamped) {
+        if (_r.n.pb) |_pb| _pb.SetValue(_clamped);
+        _r.n.sval = _clamped;
+    }
+}
+// ── containers ──
+fn _lui_begin_box(_kind: _LuiKind, _id: []const u8, _stretch: bool, _padded: bool) void {
+    const _r = _lui_child(_kind, _id);
+    if (_r.fresh) {
+        const _b = _ui.Box.New(if (_kind == .hbox) .Horizontal else .Vertical) catch return;
+        _b.SetPadded(_padded);
+        _r.n.box = _b;
+        _r.n.ctrl = _b.as_control();
+        _lui_attach(_r.n, _stretch);
+    }
+    _lui_push(_r.n);
+}
+fn _lui_begin_hbox(_id: []const u8, _stretch: bool) void { _lui_begin_box(.hbox, _id, _stretch, true); }
+fn _lui_end_hbox() void { _lui_pop(); }
+fn _lui_begin_vbox(_id: []const u8, _stretch: bool) void { _lui_begin_box(.vbox, _id, _stretch, false); }
+fn _lui_end_vbox() void { _lui_pop(); }
+fn _lui_begin_panel(_label: []const u8) bool {
+    const _r = _lui_child(.panel, _label);
+    if (_r.fresh) {
+        var _lb: [256]u8 = undefined;
+        const _grp = _ui.Group.New(_lui_z(&_lb, _label)) catch return true;
+        const _inner = _ui.Box.New(.Vertical) catch return true;
+        _inner.SetPadded(true);
+        _grp.SetChild(_inner.as_control());
+        _grp.SetMargined(true);
+        _r.n.grp = _grp;
+        _r.n.box = _inner;
+        _r.n.ctrl = _grp.as_control();
+        _lui_attach(_r.n, false);
+    }
+    _lui_push(_r.n);
+    return true;
+}
+fn _lui_end_panel() void { _lui_pop(); }
+// Tabs: the strip is a container whose children are pages; a page is a box that
+// is inserted into the uiTab at its position, renamed when its label changes
+// (uiTabSetName -- the fork's), and deleted when the view drops it.
+fn _lui_begin_tabs(_id: []const u8, _stretch: bool) void {
+    const _r = _lui_child(.tabs, _id);
+    if (_r.fresh) {
+        const _t = _ui.Tab.New() catch return;
+        _r.n.tab = _t;
+        _r.n.ctrl = _t.as_control();
+        _lui_attach(_r.n, _stretch);
+    }
+    _lui_push(_r.n);
+}
+fn _lui_begin_tab_page(_id: []const u8, _label: []const u8) void {
+    const _p = _lui_top();
+    if (_p.kind != .tabs) { _lui_begin_box(.vbox, _id, true, true); return; }
+    const _r = _lui_child(.page, _id);
+    if (_r.fresh) {
+        const _pg = _ui.Box.New(.Vertical) catch return;
+        _pg.SetPadded(true);
+        _r.n.box = _pg;
+        _r.n.ctrl = _pg.as_control();
+        _lui_set_text(_r.n, _label);
+        _lui_attach(_r.n, true);
+    } else if (!_lui_text_same(_r.n, _label)) {
+        var _lb: [256]u8 = undefined;
+        if (_p.tab) |_t| _ui.Tab.SetName(_t, _lui_index_of(_p, _r.n), _lui_z(&_lb, _label));
+        _lui_set_text(_r.n, _label);
+    }
+    _lui_push(_r.n);
+}
+fn _lui_end_tab_page() void { _lui_pop(); }
+fn _lui_end_tabs() void { _lui_pop(); }
+fn _lui_tab_selected(_id: []const u8) i64 {
+    const _n = _lui_keyed.get(_id) orelse return -1;
+    const _t = _n.tab orelse return -1;
+    if (_ui.Tab.NumPages(_t) == 0) return -1;
+    return @as(i64, @intCast(_ui.Tab.Selected(_t)));
+}
+fn _lui_select_tab(_id: []const u8, _index: i64) void {
+    const _n = _lui_keyed.get(_id) orelse return;
+    const _t = _n.tab orelse return;
+    const _np = _ui.Tab.NumPages(_t);
+    if (_index < 0 or _index >= @as(i64, @intCast(_np))) return;
+    const _want: c_int = @intCast(_index);
+    if (_ui.Tab.Selected(_t) != _want) _ui.Tab.SetSelected(_t, _want);
+}
+// Minimum-size hint by id. Only calls into libui when the hint changes --
+// uiControlSetMinSize relayouts, and the view repeats the call every render.
+fn _lui_min_size(_id: []const u8, _w: i64, _h: i64) void {
+    const _n = _lui_keyed.get(_id) orelse return;
+    const _c = _n.ctrl orelse return;
+    const _cw: c_int = @intCast(@max(_w, 0));
+    const _ch: c_int = @intCast(@max(_h, 0));
+    if (_c.MinWidth == _cw and _c.MinHeight == _ch) return;
+    _ui.Control.SetMinSize(_c, _cw, _ch);
+}
+// A code editor is a node keyed by the editor's address: one _CodeEditor is one
+// Scintilla control whatever id the view passes. Its control is never destroyed
+// with the node (see _lui_free_node), so a pane that comes back keeps its document.
+fn _lui_editor_node(_ed: *_CodeEditor) void {
+    var _kb: [32]u8 = undefined;
+    const _kz = std.fmt.bufPrint(&_kb, "ce:{x}", .{@intFromPtr(_ed)}) catch return;
+    const _r = _lui_child(.editor, _kz);
+    if (_r.fresh) {
+        _r.n.ed = _ed;
+        _r.n.ctrl = _ed.scint.?.as_control();
+        _lui_attach(_r.n, true);
+    }
 }
 // Tables (2026-09-17): libui-ng's uiTable is model-based; Zebra's g.beginTable /
 // tableNextRow / tableNextColumn / g.text is immediate-mode. The adapter keeps a
@@ -1108,11 +1395,11 @@ const _LuiTable = struct {
     header: bool = false,
     rows: std.ArrayList(_LuiRow) = .empty,
     build: std.ArrayList(_LuiRow) = .empty,
+    host: ?*_ui.Box = null,         // the node's placeholder box; the uiTable goes in it
     cur_col: usize = 0,
     activated: i64 = -1,
     seen: u32 = 0,
 };
-var _lui_table_cache: std.StringHashMap(*_LuiTable) = undefined;
 var _lui_cur_table: ?*_LuiTable = null;
 fn _lui_tbl_num_columns(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model) callconv(.c) c_int {
     _ = _m;
@@ -1149,11 +1436,14 @@ fn _lui_row_free(_r: *_LuiRow) void {
     _r.deinit(_allocator);
 }
 fn _lui_begin_table(_id: []const u8, _cols: i64) bool {
-    const _e = _lui_table_cache.getOrPut(_id) catch return false;
-    if (!_e.found_existing) {
+    const _r = _lui_child(.table, _id);
+    if (_r.fresh) {
+        const _host = _ui.Box.New(.Vertical) catch return false;
+        _host.SetPadded(false);
         const _t = _allocator.create(_LuiTable) catch return false;
         _t.* = .{};
         _t.ncols = @intCast(@max(_cols, 1));
+        _t.host = _host;
         _t.handler = .{
             .NumColumns = _lui_tbl_num_columns,
             .ColumnType = _lui_tbl_column_type,
@@ -1162,18 +1452,27 @@ fn _lui_begin_table(_id: []const u8, _cols: i64) bool {
             .SetCellValue = _lui_tbl_set_cell_value,
         };
         _t.model = _ui.Table.Model.New(&_t.handler) catch null;
-        _e.key_ptr.* = _allocator.dupe(u8, _id) catch _id;
-        _e.value_ptr.* = _t;
+        _r.n.table = _t;
+        _r.n.box = _host;
+        _r.n.ctrl = _host.as_control();
+        _lui_attach(_r.n, true);
     }
-    const _t = _e.value_ptr.*;
-    _t.seen = _lui_frame_n;
-    // a fresh build grid; rows are added by tableNextRow
-    for (_t.build.items) |*_r| _lui_row_free(_r);
+    const _t = _r.n.table orelse return false;
+    for (_t.build.items) |*_row| _lui_row_free(_row);
     _t.build.clearRetainingCapacity();
     _t.cur_col = 0;
     _lui_cur_table = _t;
-    if (_t.table) |_tb| _lui_vis_touch(_id, _tb.as_control());
     return true;
+}
+fn _lui_table_free(_t: *_LuiTable) void {
+    for (_t.rows.items) |*_row| _lui_row_free(_row);
+    _t.rows.deinit(_allocator);
+    for (_t.build.items) |*_row| _lui_row_free(_row);
+    _t.build.deinit(_allocator);
+    for (_t.names.items) |_nm| _allocator.free(_nm);
+    _t.names.deinit(_allocator);
+    if (_t.model) |_m| _ui.Table.Model.Free(_m);
+    _allocator.destroy(_t);
 }
 fn _lui_table_setup_col(_l: []const u8) void {
     const _t = _lui_cur_table orelse return;
@@ -1192,7 +1491,6 @@ fn _lui_table_next_row() void {
 }
 fn _lui_table_next_col() void {
     const _t = _lui_cur_table orelse return;
-    // the first call of a row lands on column 0 when no cell has been written yet
     if (_t.build.items.len == 0) return;
     const _row = &_t.build.items[_t.build.items.len - 1];
     if (_row.items.len > _t.cur_col) _t.cur_col += 1;
@@ -1232,7 +1530,7 @@ fn _lui_end_table() void {
         _ui.Table.HeaderSetVisible(_tb, _t.header);
         _ui.Table.SetSelectionMode(_tb, .ZeroOrOne);
         _ui.Table.OnRowDoubleClicked(_tb, _LuiTable, anyerror, _lui_tbl_dbl, _t);
-        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _tb.as_control(), .stretch);
+        if (_t.host) |_hb| _ui.Box.Append(_hb, _tb.as_control(), .stretch);
         _t.table = _tb;
     }
     // diff build -> rows, notifying the model per row
@@ -1270,7 +1568,8 @@ fn _lui_end_table() void {
     _t.build.clearRetainingCapacity();
 }
 fn _lui_table_selected_row(_id: []const u8) i64 {
-    const _t = _lui_table_cache.get(_id) orelse return -1;
+    const _n = _lui_keyed.get(_id) orelse return -1;
+    const _t = _n.table orelse return -1;
     const _tb = _t.table orelse return -1;
     const _sel = _ui.Table.GetSelection(_tb) orelse return -1;
     defer _ui.Table.uiFreeTableSelection(_sel);
@@ -1278,7 +1577,8 @@ fn _lui_table_selected_row(_id: []const u8) i64 {
     return @intCast(_sel.Rows[0]);
 }
 fn _lui_table_activated_row(_id: []const u8) i64 {
-    const _t = _lui_table_cache.get(_id) orelse return -1;
+    const _n = _lui_keyed.get(_id) orelse return -1;
+    const _t = _n.table orelse return -1;
     const _v = _t.activated;
     _t.activated = -1;
     return _v;
@@ -1320,349 +1620,6 @@ fn _lui_ll_get_mouse_pos() _GuiVec2 { return .{ -1, -1 }; }
 // Button keyed by a stable id, so its LABEL may change frame to frame (a tab row
 // whose captions are file names, a Play/Pause toggle). `g.button(label)` keys on
 // the label itself, which is right for fixed captions and wrong for these.
-fn _lui_button_id(_id: []const u8, _label: []const u8) bool {
-    const _r = _lui_iget(_id);
-    const _n = @min(_label.len, 255);
-    var _lb: [256]u8 = undefined;
-    @memcpy(_lb[0.._n], _label[0.._n]);
-    _lb[_n] = 0;
-    const _lz: [:0]u8 = _lb[0.._n :0];
-    if (_r.fresh) {
-        const _btn = _ui.Button.New(_lz) catch return false;
-        _ui.Button.OnClicked(_btn, _LuiMut, anyerror, _lui_btn_cb, _r.m);
-        _r.m.btn = _btn;
-        _r.m.ctrl = _btn.as_control();
-        @memcpy(_r.m.text_buf[0.._n], _label[0.._n]);
-        _r.m.text_len = _n;
-        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _btn.as_control(), .dont_stretch);
-    } else if (!std.mem.eql(u8, _r.m.text_buf[0.._r.m.text_len], _label[0.._n])) {
-        if (_r.m.btn) |_b| _ui.Button.SetText(_b, _lz);
-        @memcpy(_r.m.text_buf[0.._n], _label[0.._n]);
-        _r.m.text_len = _n;
-    }
-    const _clicked = _r.m.clicked;
-    _r.m.clicked = false;
-    return _clicked;
-}
-fn _lui_button(_label: []const u8) bool {
-    const _r = _lui_iget(_label);
-    if (_r.fresh) {
-        const _n = @min(_label.len, 255);
-        var _lb: [256]u8 = undefined;
-        @memcpy(_lb[0.._n], _label[0.._n]);
-        _lb[_n] = 0;
-        const _lz: [:0]u8 = _lb[0.._n :0];
-        const _btn = _ui.Button.New(_lz) catch return false;
-        _ui.Button.OnClicked(_btn, _LuiMut, anyerror, _lui_btn_cb, _r.m);
-        _r.m.ctrl = _btn.as_control();
-        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _btn.as_control(), .dont_stretch);
-    }
-    const _clicked = _r.m.clicked;
-    _r.m.clicked = false;
-    return _clicked;
-}
-fn _lui_checkbox(_label: []const u8, _value: bool) bool {
-    const _r = _lui_iget(_label);
-    if (_r.fresh) {
-        const _n = @min(_label.len, 255);
-        var _lb: [256]u8 = undefined;
-        @memcpy(_lb[0.._n], _label[0.._n]);
-        _lb[_n] = 0;
-        const _lz: [:0]u8 = _lb[0.._n :0];
-        const _chk = _ui.Checkbox.New(_lz) catch return _value;
-        _chk.SetChecked(_value);
-        _r.m.checked = _value;
-        _ui.Checkbox.OnToggled(_chk, _LuiMut, anyerror, _lui_chk_cb, _r.m);
-        _r.m.ctrl = _chk.as_control();
-        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _chk.as_control(), .dont_stretch);
-    }
-    return _r.m.checked;
-}
-fn _lui_slider(_label: []const u8, _value: f64, _min: f64, _max: f64) f64 {
-    const _r = _lui_iget(_label);
-    if (_r.fresh) {
-        const _n = @min(_label.len, 255);
-        var _lb: [256]u8 = undefined;
-        @memcpy(_lb[0.._n], _label[0.._n]);
-        _lb[_n] = 0;
-        const _lz: [:0]u8 = _lb[0.._n :0];
-        const _sllbl = _ui.Label.New(_lz) catch return _value;
-        const _sld = _ui.Slider.New(0, 1000) catch return _value;
-        const _raw: c_int = @intFromFloat((_value - _min) / (_max - _min) * 1000.0);
-        const _init: c_int = if (_raw < 0) 0 else if (_raw > 1000) 1000 else _raw;
-        _sld.SetValue(_init);
-        _r.m.sval = _init; _r.m.smin = _min; _r.m.smax = _max;
-        _ui.Slider.OnChanged(_sld, _LuiMut, anyerror, _lui_slider_cb, _r.m);
-        _r.m.ctrl = _sld.as_control();
-        _r.m.lbl = _sllbl;
-        if (_lui_cur_box()) |_vb| {
-            _ui.Box.Append(_vb, _sllbl.as_control(), .dont_stretch);
-            _ui.Box.Append(_vb, _sld.as_control(), .dont_stretch);
-        }
-    }
-    const _t = @as(f64, @floatFromInt(_r.m.sval)) / 1000.0;
-    return _r.m.smin + _t * (_r.m.smax - _r.m.smin);
-}
-fn _lui_input(_label: []const u8, _value: []const u8) []const u8 {
-    const _r = _lui_iget(_label);
-    if (_r.fresh) {
-        const _n = @min(_label.len, 255);
-        var _lb: [256]u8 = undefined;
-        @memcpy(_lb[0.._n], _label[0.._n]);
-        _lb[_n] = 0;
-        const _lz: [:0]u8 = _lb[0.._n :0];
-        const _enlbl = _ui.Label.New(_lz) catch return _value;
-        const _ent = _ui.Entry.New(.Entry) catch return _value;
-        const _vn = @min(_value.len, 1022);
-        var _vtb: [1024]u8 = undefined;
-        @memcpy(_vtb[0.._vn], _value[0.._vn]);
-        _vtb[_vn] = 0;
-        _ent.SetText(_vtb[0.._vn :0]);
-        @memcpy(_r.m.text_buf[0.._vn], _value[0.._vn]);
-        _r.m.text_len = _vn;
-        _ui.Entry.OnChanged(_ent, _LuiMut, anyerror, _lui_entry_cb, _r.m);
-        _r.m.ctrl = _ent.as_control();
-        _r.m.lbl = _enlbl;
-        if (_lui_cur_box()) |_vb| {
-            _ui.Box.Append(_vb, _enlbl.as_control(), .dont_stretch);
-            _ui.Box.Append(_vb, _ent.as_control(), .dont_stretch);
-        }
-    }
-    return _r.m.text_buf[0.._r.m.text_len];
-}
-fn _lui_input_ml(_label: []const u8, _value: []const u8, _mw: f64, _mh: f64) []const u8 {
-    _ = _mw; _ = _mh;
-    const _r = _lui_iget(_label);
-    if (_r.fresh) {
-        const _n = @min(_label.len, 255);
-        var _lb: [256]u8 = undefined;
-        @memcpy(_lb[0.._n], _label[0.._n]);
-        _lb[_n] = 0;
-        const _lz: [:0]u8 = _lb[0.._n :0];
-        const _mllbl = _ui.Label.New(_lz) catch return _value;
-        const _mle = _ui.MultilineEntry.New(.Wrapping) catch return _value;
-        const _vn = @min(_value.len, 1022);
-        var _vtb: [1024]u8 = undefined;
-        @memcpy(_vtb[0.._vn], _value[0.._vn]);
-        _vtb[_vn] = 0;
-        _mle.SetText(_vtb[0.._vn :0]);
-        @memcpy(_r.m.text_buf[0.._vn], _value[0.._vn]);
-        _r.m.text_len = _vn;
-        _ui.MultilineEntry.OnChanged(_mle, _LuiMut, anyerror, _lui_mle_cb, _r.m);
-        _r.m.ctrl = _mle.as_control();
-        _r.m.lbl = _mllbl;
-        if (_lui_cur_box()) |_vb| {
-            _ui.Box.Append(_vb, _mllbl.as_control(), .dont_stretch);
-            _ui.Box.Append(_vb, _mle.as_control(), .stretch);
-        }
-    }
-    return _r.m.text_buf[0.._r.m.text_len];
-}
-fn _lui_box_key(_id: []const u8) []const u8 {
-    // getOrPut stores the caller's slice as the key; a temporary id would dangle
-    if (_lui_box_icache.contains(_id)) return _id;
-    return _allocator.dupe(u8, _id) catch _id;
-}
-fn _lui_begin_hbox(_id: []const u8, _stretch: bool) void {
-    const _e = _lui_box_icache.getOrPut(_lui_box_key(_id)) catch return;
-    if (!_e.found_existing) {
-        const _hb = _ui.Box.New(.Horizontal) catch return;
-        _hb.SetPadded(true);
-        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _hb.as_control(), if (_stretch) _ui.Stretchy.stretch else _ui.Stretchy.dont_stretch);
-        _e.value_ptr.* = _hb;
-    }
-    _lui_vis_touch(_id, _e.value_ptr.*.as_control());
-    _lui_push_box(_e.value_ptr.*);
-}
-fn _lui_end_hbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
-fn _lui_begin_vbox(_id: []const u8, _stretch: bool) void {
-    const _e = _lui_box_icache.getOrPut(_lui_box_key(_id)) catch return;
-    if (!_e.found_existing) {
-        const _vb2 = _ui.Box.New(.Vertical) catch return;
-        _vb2.SetPadded(false);
-        if (_lui_cur_box()) |_pvb| _ui.Box.Append(_pvb, _vb2.as_control(), if (_stretch) _ui.Stretchy.stretch else _ui.Stretchy.dont_stretch);
-        _e.value_ptr.* = _vb2;
-    }
-    _lui_vis_touch(_id, _e.value_ptr.*.as_control());
-    _lui_push_box(_e.value_ptr.*);
-}
-fn _lui_end_vbox() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
-var _lui_tab_cache: std.StringHashMap(*_ui.Tab) = undefined;
-var _lui_tab_stack: [8]?*_ui.Tab = [_]?*_ui.Tab{null} ** 8;
-var _lui_tab_ord: [8]c_int = [_]c_int{0} ** 8;
-var _lui_tab_depth: usize = 0;
-// One record per tab PAGE, keyed by the page id. `idx` is the page's position in
-// its uiTab while attached; `seen` is the frame the view last emitted it. The
-// end-of-frame sweep (`_lui_sweep_pages`) deletes attached pages the view dropped
-// -- uiTabDelete detaches the child without destroying it, so a page that comes
-// back is re-inserted with the same box.
-const _LuiPage = struct { tab: *_ui.Tab, box: *_ui.Box, idx: c_int = 0, attached: bool = false, seen: u32 = 0, label: [256]u8 = undefined, label_len: usize = 0 };
-var _lui_page_cache: std.StringHashMap(*_LuiPage) = undefined;
-fn _lui_begin_tabs(_id: []const u8, _stretch: bool) void {
-    const _e = _lui_tab_cache.getOrPut(_id) catch return;
-    if (!_e.found_existing) {
-        const _t = _ui.Tab.New() catch return;
-        if (_lui_cur_box()) |_pb| _ui.Box.Append(_pb, _t.as_control(), if (_stretch) _ui.Stretchy.stretch else _ui.Stretchy.dont_stretch);
-        _e.value_ptr.* = _t;
-    }
-    _lui_vis_touch(_id, _e.value_ptr.*.as_control());
-    if (_lui_tab_depth < 8) { _lui_tab_stack[_lui_tab_depth] = _e.value_ptr.*; _lui_tab_ord[_lui_tab_depth] = 0; _lui_tab_depth += 1; }
-}
-fn _lui_page_shift(_t: *_ui.Tab, _from: c_int, _delta: c_int) void {
-    var _it = _lui_page_cache.valueIterator();
-    while (_it.next()) |_pp| {
-        const _p = _pp.*;
-        if (_p.tab == _t and _p.attached and _p.idx >= _from) _p.idx += _delta;
-    }
-}
-fn _lui_begin_tab_page(_id: []const u8, _label: []const u8) void {
-    const _t: *_ui.Tab = if (_lui_tab_depth > 0) (_lui_tab_stack[_lui_tab_depth - 1] orelse return) else return;
-    const _ord = _lui_tab_ord[_lui_tab_depth - 1];
-    _lui_tab_ord[_lui_tab_depth - 1] += 1;
-    const _e = _lui_page_cache.getOrPut(_id) catch return;
-    if (!_e.found_existing) {
-        const _pg = _ui.Box.New(.Vertical) catch return;
-        _pg.SetPadded(true);
-        const _p = _allocator.create(_LuiPage) catch return;
-        _p.* = .{ .tab = _t, .box = _pg };
-        _e.key_ptr.* = _allocator.dupe(u8, _id) catch _id;
-        _e.value_ptr.* = _p;
-    }
-    const _p = _e.value_ptr.*;
-    _p.seen = _lui_frame_n;
-    const _n = @min(_label.len, 255);
-    var _lb: [256]u8 = undefined;
-    @memcpy(_lb[0.._n], _label[0.._n]);
-    _lb[_n] = 0;
-    if (!_p.attached) {
-        // Insert at this frame's ordinal so page order follows the view's order.
-        const _at: c_int = @min(_ord, _ui.Tab.NumPages(_t));
-        _lui_page_shift(_t, _at, 1);
-        _ui.Tab.InsertAt(_t, _lb[0.._n :0], _at, _p.box.as_control());
-        // no uiTab margins: the page box is padded itself, and an EMPTY page (a strip)
-        // would otherwise reserve a margin band under the tabs
-        _ui.Tab.SetMargined(_t, _at, false);
-        _p.idx = _at;
-        _p.attached = true;
-        @memcpy(_p.label[0.._n], _label[0.._n]);
-        _p.label_len = _n;
-    } else if (_p.label_len != _n or !std.mem.eql(u8, _p.label[0.._n], _label[0.._n])) {
-        _ui.Tab.SetName(_t, _p.idx, _lb[0.._n :0]);
-        @memcpy(_p.label[0.._n], _label[0.._n]);
-        _p.label_len = _n;
-    }
-    _lui_push_box(_p.box);
-}
-fn _lui_end_tab_page() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
-fn _lui_end_tabs() void { if (_lui_tab_depth > 0) _lui_tab_depth -= 1; }
-// Frame end: pages the view stopped emitting leave their uiTab (the box survives
-// for a later re-insert). Deleting shifts the indices after it.
-fn _lui_sweep_pages() void {
-    var _it = _lui_page_cache.valueIterator();
-    while (_it.next()) |_pp| {
-        const _p = _pp.*;
-        if (!_p.attached or _p.seen == _lui_frame_n) continue;
-        _ui.Tab.Delete(_p.tab, _p.idx);
-        _p.attached = false;
-        _lui_page_shift(_p.tab, _p.idx + 1, -1);
-    }
-}
-// Minimum-size hint by id: containers and editors live in the visibility registry,
-// id-keyed widgets in _lui_icache. Only calls into libui when the hint changes --
-// uiControlSetMinSize relayouts, and the view repeats the call every frame.
-fn _lui_min_size(_id: []const u8, _w: i64, _h: i64) void {
-    var _ctrl: ?*_ui.Control = null;
-    if (_lui_vis.get(_id)) |_v| _ctrl = _v.ctrl;
-    if (_ctrl == null) { if (_lui_icache.get(_id)) |_m| _ctrl = _m.ctrl; }
-    const _c = _ctrl orelse return;
-    const _cw: c_int = @intCast(@max(_w, 0));
-    const _ch: c_int = @intCast(@max(_h, 0));
-    if (_c.MinWidth == _cw and _c.MinHeight == _ch) return;
-    _ui.Control.SetMinSize(_c, _cw, _ch);
-}
-fn _lui_tab_selected(_id: []const u8) i64 {
-    const _t = _lui_tab_cache.get(_id) orelse return -1;
-    if (_ui.Tab.NumPages(_t) == 0) return -1;
-    return @as(i64, @intCast(_ui.Tab.Selected(_t)));
-}
-fn _lui_select_tab(_id: []const u8, _index: i64) void {
-    const _t = _lui_tab_cache.get(_id) orelse return;
-    const _n = _ui.Tab.NumPages(_t);
-    if (_index < 0 or _index >= @as(i64, @intCast(_n))) return;
-    const _want: c_int = @intCast(_index);
-    if (_ui.Tab.Selected(_t) != _want) _ui.Tab.SetSelected(_t, _want);
-}
-fn _lui_begin_panel(_label: []const u8) bool {
-    if (_lui_grp_cache.get(_label)) |_p| {
-        _lui_vis_touch(_label, _p.grp.as_control());
-        _lui_push_box(_p.inner);
-        return true;
-    }
-    const _n = @min(_label.len, 255);
-    var _lb: [256]u8 = undefined;
-    @memcpy(_lb[0.._n], _label[0.._n]);
-    _lb[_n] = 0;
-    const _lz: [:0]u8 = _lb[0.._n :0];
-    const _grp = _ui.Group.New(_lz) catch return true;
-    const _inner = _ui.Box.New(.Vertical) catch return true;
-    _inner.SetPadded(true);
-    _grp.SetChild(_inner.as_control());
-    _grp.SetMargined(true);
-    if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _grp.as_control(), .dont_stretch);
-    const _gk = _allocator.dupe(u8, _label) catch _label;
-    _lui_grp_cache.put(_gk, .{ .inner = _inner, .grp = _grp }) catch {};
-    _lui_vis_touch(_label, _grp.as_control());
-    _lui_push_box(_inner);
-    return true;
-}
-fn _lui_end_panel() void { if (_lui_box_depth > 1) _lui_box_depth -= 1; }
-fn _lui_progressbar(_label: []const u8, _value: f64) void {
-    _ = _label;
-    const _r = _lui_dget();
-    const _pct: c_int = @intFromFloat(_value * 100.0);
-    const _clamped: c_int = if (_pct < 0) 0 else if (_pct > 100) 100 else _pct;
-    if (_r.fresh) {
-        const _pb = _ui.ProgressBar.New() catch return;
-        _pb.SetValue(_clamped);
-        _r.m.pb = _pb;
-        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _pb.as_control(), .dont_stretch);
-    } else {
-        if (_r.m.pb) |_pb| _pb.SetValue(_clamped);
-    }
-}
-fn _lui_combobox(_label: []const u8, _items: []const []const u8, _sel: i64) i64 {
-    const _r = _lui_iget(_label);
-    if (_r.fresh) {
-        const _cmb = _ui.Combobox.New() catch return _sel;
-        for (_items) |_it| {
-            const _n = @min(_it.len, 255);
-            var _lb: [256]u8 = undefined;
-            @memcpy(_lb[0.._n], _it[0.._n]);
-            _lb[_n] = 0;
-            const _lz: [:0]u8 = _lb[0.._n :0];
-            _ui.Combobox.Append(_cmb, _lz);
-        }
-        const _init: c_int = @intCast(_sel);
-        _cmb.SetSelected(_init);
-        _r.m.sval = _init;
-        _ui.Combobox.OnSelected(_cmb, _LuiMut, anyerror, _lui_cmb_cb, _r.m);
-        _r.m.ctrl = _cmb.as_control();
-        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _cmb.as_control(), .dont_stretch);
-    }
-    return @as(i64, @intCast(_r.m.sval));
-}
-fn _lui_spinbox(_label: []const u8, _value: i64, _min: i64, _max: i64) i64 {
-    const _r = _lui_iget(_label);
-    if (_r.fresh) {
-        const _spn = _ui.Spinbox.New(.{ .Integer = .{ .min = @intCast(_min), .max = @intCast(_max) } }) catch return _value;
-        _spn.SetValue(@intCast(_value));
-        _r.m.sval = @intCast(_value);
-        _ui.Spinbox.OnChanged(_spn, _LuiMut, anyerror, _lui_spn_cb, _r.m);
-        _r.m.ctrl = _spn.as_control();
-        if (_lui_cur_box()) |_vb| _ui.Box.Append(_vb, _spn.as_control(), .dont_stretch);
-    }
-    return @as(i64, @intCast(_r.m.sval));
-}
 fn _lui_open_file() ?[]const u8 {
     const _cpath = _ui.Window.OpenFile(_lui_window.?) orelse return null;
     defer _ui.FreeText(_cpath);

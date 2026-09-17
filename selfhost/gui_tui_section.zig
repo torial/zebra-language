@@ -184,6 +184,10 @@ const GuiContext = struct {
             self._b.endPanelFn();
         }
     }
+    // The open/close pair QUICKSTART documents (a titled group box); until 2026-09-17
+    // only the callback form existed and the doc example could not compile.
+    pub fn beginPanel(self: GuiContext, label: []const u8) bool { return self._b.beginPanelFn(label); }
+    pub fn endPanel(self: GuiContext, label: []const u8) void { _ = label; self._b.endPanelFn(); }
     pub fn window(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginWindowFn(label)) {
             if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);  // fn OR fn pointer (matches the preamble; the section had drifted — 09-08)

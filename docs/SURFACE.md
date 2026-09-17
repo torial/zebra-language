@@ -129,9 +129,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `getCursorCol` `getCursorLine` `getLanguage` `getText` `hotkey` `render` `restyle` `sci` `sciStr` `setCursorPosition` `setErrorMarkers` `setLanguage` `setReadOnly` `setText` `takeCharAdded` `takeKey` `takeMarginClick` `takeModified`
 
-### Gui (58)
+### Gui (60)
 
-`beginHBox` `beginTabPage` `beginTable` `beginTabs` `beginVBox` `button` `buttonId` `checkbox` `childWindow` `combobox` `endHBox` `endTabPage` `endTable` `endTabs` `endVBox` `every` `getDpi` `hbox` `hotkey` `indent` `input` `inputMultiline` `minSize` `msgBox` `msgBoxError` `openFile` `openFolder` `panel` `progressBar` `sameLine` `saveFile` `scaleAllSizes` `selectTab` `selectable` `send` `separator` `setColor` `setColorsDark` `setStyleFloat` `setVec2` `slider` `spacing` `spinbox` `tabSelected` `tableActivatedRow` `tableHeadersRow` `tableNextColumn` `tableNextRow` `tableSelectedRow` `tableSetupColumn` `takeKey` `text` `textColored` `treeNode` `treePop` `unindent` `vbox` `window`
+`beginHBox` `beginPanel` `beginTabPage` `beginTable` `beginTabs` `beginVBox` `button` `buttonId` `checkbox` `childWindow` `combobox` `endHBox` `endPanel` `endTabPage` `endTable` `endTabs` `endVBox` `every` `getDpi` `hbox` `hotkey` `indent` `input` `inputMultiline` `minSize` `msgBox` `msgBoxError` `openFile` `openFolder` `panel` `progressBar` `sameLine` `saveFile` `scaleAllSizes` `selectTab` `selectable` `send` `separator` `setColor` `setColorsDark` `setStyleFloat` `setVec2` `slider` `spacing` `spinbox` `tabSelected` `tableActivatedRow` `tableHeadersRow` `tableNextColumn` `tableNextRow` `tableSelectedRow` `tableSetupColumn` `takeKey` `text` `textColored` `treeNode` `treePop` `unindent` `vbox` `window`
 
 ### HttpRequest (no methods; fields) (0)
 

@@ -152,6 +152,15 @@ view (insert at position, delete, rename via `uiTabSetName`) with `g.tabSelected
 with an int Msg panicked "incorrect alignment" (a comptime_int's address read back as
 the Msg type). libui-ng is now a subtree of zig-libui-ng (`libui/`), one repo.
 
+**The GUI section is a tree** (2026-09-17, `concept_zebra-gui-declarative` §6a step 2):
+every `g.*` call is a node matched to the retained one by kind + key (`##id`, label) or
+position; a miss inserts at the node's position (`uiBoxInsertAt`, the fork's), a node the
+view drops is removed when its container closes, a keyed node that moved is moved.
+Conditional layout works; the frame-0 rule, hiding, and the positional label counter are
+gone. `g.beginPanel` / `g.endPanel` exist now (QUICKSTART had documented them).
+Witness: `examples/tree_churn_smoke.zbr` under GTK -- boxes that come and go mid-siblings,
+line runs, rotating keyed buttons, a panel, a rotating renaming strip.
+
 **GUI frames are events** (2026-09-17, `concept_zebra-gui-declarative` §6a step 1): the
 100 ms poll timer is gone; `view` runs after an event and re-runs while it sends messages
 (capped, livelock refused by name); `g.every(ms, msg)` is the timer subscription. Idle
