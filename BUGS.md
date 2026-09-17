@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-433. Next new bug: BUG-434.**
+**Last bug number generated: BUG-434. Next new bug: BUG-435.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -59,6 +59,21 @@ for K(3,4) because its branch table stopped at 3 and everything above became 0; 
 narrowing would have been correct or refused. Two halves: (1) add `int.toByte()` (refuse or
 wrap out-of-range -- say which); (2) the checker should refuse `int` where `byte` is expected,
 the BUG-369 recipe. The zig escape `zig"@as(u8, @intCast(v))"` works today.
+
+### BUG-434: a `Random` cannot be a class field — OPEN (found 2026-09-17, dogfood)
+
+`class LStream` with `var rng: Random = Random.new(1)` fails at the field type:
+`error: use of undeclared identifier 'Random'` (the type name does not resolve to the
+runtime's `_Random`); the untyped form `var rng = Random.new(1)` instead emits `anytype`
+as the field's Zig type (`expected type expression, found 'anytype'`). A generator object
+that wants its own seeded stream has no way to hold one. Workaround in `kolakoski_kolw2.zbr`
+(wiki, `pages/fable/`): the process-global `Random.seed`/`Random.randBool`. Same family as
+BUG-433 -- the instance side of `Random` is the half nothing exercises.
+
+Also seen the same evening, filed under BUG-431's heading rather than separately:
+`u8x16.splat(a)` with `a: int` is `expected type 'u8', found 'i64'` -- the splat emits
+`@as(u8, a)` and there is no narrowing to reach it; the workaround loads the vector from a
+16-byte list filled through the branch table.
 
 ### BUG-432: a `+` sign flag in a format spec is silently dropped — OPEN (found 2026-09-17, dogfood)
 
