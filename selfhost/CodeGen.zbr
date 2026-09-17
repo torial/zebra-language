@@ -12835,6 +12835,27 @@ struct Generator
     # ── genBinary ─────────────────────────────────────────────────────────────
 
     def genBinary(b: ExprBinary)
+        # SIMD (§32): every operator on a vector operand is native Zig -- `a == b` is a
+        # @Vector(N, bool), `<` likewise, `+ - * /` lane-wise. The string/cue/helper
+        # routes below (std.mem.eql, _zebra_gt, @divTrunc) would all be wrong here.
+        if .infer_ctx != nil and (isSimdOperand(b.left) or isSimdOperand(b.right))
+            if b.op == BinaryOp.div and not simdOperandIsFloat(b.left)
+                # integer lanes: Zig wants @divTrunc, as for scalars
+                w.emit("@divTrunc(")
+                genExpr(b.left)
+                w.emit(", ")
+                genExpr(b.right)
+                w.emit(")")
+                return
+            if b.op == BinaryOp.eq or b.op == BinaryOp.ne or b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge or b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div
+                w.emit("(")
+                genExpr(b.left)
+                w.emit(" ")
+                w.emit(binaryOpStr(b.op))
+                w.emit(" ")
+                genExpr(b.right)
+                w.emit(")")
+                return
         if b.op == BinaryOp.add
             # Check if string concatenation — use _str_concat which is always safe (no try needed)
             if .isStringBoth(b.left, "bin_add_l") or .isStringBoth(b.right, "bin_add_r")
@@ -14322,6 +14343,21 @@ struct Generator
 
     def genMemberCall(m: ExprMember, args: List(Arg))
         var mname = m.member
+        # SIMD instance methods (§32): sum/dot/max_element/min_element, lane-wise min/max,
+        # and select/any/all/count on a boolxN mask. These names are also legal user
+        # methods and List names, so dispatch to the vector builtins ONLY when the
+        # receiver is provably a SIMD vector (a named `f32x8`/`boolx16`/... type) --
+        # and FIRST, before any name-based route below can claim `any`/`all`/`count`.
+        if simdMethodNameCg(mname)
+            var recv_is_simd = false
+            if .infer_ctx != nil
+                var simd_recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
+                if simd_recv_t is Type_.named as simd_rn
+                    if isSimdTypeName(simd_rn)
+                        recv_is_simd = true
+            if recv_is_simd
+                genSimdInstanceCall(m.object, mname, args)
+                return
         # e.details.toString() inside a catch block → (if (_error_ctx.details) |_det| _det.toString() else "")
         if mname == "toString" and catch_var != ""
             if isDetailsMemberOnCatchVar(m.object, catch_var)
@@ -16488,6 +16524,15 @@ struct Generator
                 genExpr(m.object)
                 w.emit("))")
             return
+        # BUG-431: `int.toByte()` -- the narrowing that had no spelling. Truncating
+        # (low 8 bits, like `${n:c}`), through the same preamble helper.
+        if mname == "toByte" and args.len == 0 and .infer_ctx != nil
+            var tb_t: Type_ = inferExpr(m.object, .infer_ctx!)
+            if tb_t is Type_.int_
+                w.emit("_zbr_byte(")
+                genExpr(m.object)
+                w.emit(")")
+                return
         # BUG-146: try* parse a string, returning null on failure (?f64/?i64).
         if mname == "tryFloat"
             w.emit("(std.fmt.parseFloat(f64, ")
@@ -16700,16 +16745,9 @@ struct Generator
         # vector (a named `f32x8`/`i32x4`/… type); otherwise fall through to normal
         # method dispatch.  (Bootstrap gets this right; the selfhost previously
         # assumed the names never clashed and mis-emitted `@reduce` on user types.)
-        if mname == "sum" or mname == "max_element" or mname == "min_element" or (mname == "dot" and args.len > 0)
-            var recv_is_simd = false
-            if .infer_ctx != nil
-                var simd_recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
-                if simd_recv_t is Type_.named as simd_rn
-                    if isSimdTypeName(simd_rn)
-                        recv_is_simd = true
-            if recv_is_simd
-                genSimdInstanceCall(m.object, mname, args)
-                return
+        # (the SIMD reductions moved to the top of genMemberCall, 2026-09-18: `any`/`all`/
+        # `count` are also List names, and the name-based List routes above this point
+        # emitted NOTHING for a zero-argument `mask.any()`.)
         # BUG-116: char methods — dispatch to std.ascii predicates when receiver is char_
         if mname == "isAlpha" or mname == "isDigit" or mname == "isWhitespace" or mname == "isUpper" or mname == "isLower" or mname == "toUpper" or mname == "toLower"
             var is_char116 = false
@@ -17214,9 +17252,34 @@ struct Generator
             return true
         if prefix == "u8" or prefix == "u16" or prefix == "u32" or prefix == "u64"
             return true
+        # a comparison mask: `u8x16 == u8x16` is a boolx16 (@Vector(16, bool))
+        if prefix == "bool"
+            return true
+        return false
+
+    def simdMethodNameCg(name: str): bool
+        return name == "sum" or name == "dot" or name == "max_element" or name == "min_element" or name == "min" or name == "max" or name == "select" or name == "any" or name == "all" or name == "count"
+
+    # true when the checker types `e` as a SIMD vector or mask (a named `f32x8`, `boolx16`, ...)
+    def isSimdOperand(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var t: Type_ = inferExpr(e, .infer_ctx!)
+        if t is Type_.named as tn
+            return isSimdTypeName(tn)
+        return false
+
+    def simdOperandIsFloat(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var t: Type_ = inferExpr(e, .infer_ctx!)
+        if t is Type_.named as tn
+            return isSimdTypeName(tn) and tn.startsWith("f")
         return false
 
     def simdElemZig(prefix: str): str
+        if prefix == "bool"
+            return "bool"
         if prefix == "f16"
             return "f16"
         if prefix == "f32"
@@ -17264,19 +17327,32 @@ struct Generator
         var elem_zig = simdElemZig(parts.at(0))
         var lanes = parts.at(1)
         if mname == "splat"
-            # f32x8.splat(v) → @as(@Vector(8, f32), @splat(@as(f32, v)))
-            w.emit("@as(@Vector(")
+            # f32x8.splat(v) → _zbr_vec_splat(@Vector(8, f32), v). The helper narrows or
+            # widens the scalar to the lane type (an `int` into u8 lanes was BUG-431's
+            # `expected type 'u8', found 'i64'` when this emitted a bare @as).
+            w.emit("_zbr_vec_splat(@Vector(")
             w.emit(lanes)
             w.emit(", ")
             w.emit(elem_zig)
-            w.emit("), @splat(@as(")
-            w.emit(elem_zig)
-            w.emit(", ")
+            w.emit("), ")
             if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
-            w.emit(")))")
+            w.emit(")")
+            return
+        if mname == "cast"
+            # i16x16.cast(v) → lane-wise conversion from another vector of the same width
+            w.emit("_zbr_vec_cast(@Vector(")
+            w.emit(lanes)
+            w.emit(", ")
+            w.emit(elem_zig)
+            w.emit("), ")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("undefined")
+            w.emit(")")
             return
         if mname == "load"
             # Tier 3 (BUG-197): two forms.
@@ -17330,6 +17406,48 @@ struct Generator
             return
         if mname == "min_element"
             w.emit("@reduce(.Min, ")
+            genExpr(obj)
+            w.emit(")")
+            return
+        # lane-wise min/max of two vectors
+        if mname == "min" or mname == "max"
+            if mname == "min"
+                w.emit("@min(")
+            else
+                w.emit("@max(")
+            genExpr(obj)
+            w.emit(", ")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("undefined")
+            w.emit(")")
+            return
+        # mask methods (receiver is a boolxN): select / any / all / count
+        if mname == "select"
+            w.emit("_zbr_vec_select(")
+            genExpr(obj)
+            w.emit(", ")
+            if args.len > 1
+                genExpr(args.at(0).value)
+                w.emit(", ")
+                genExpr(args.at(1).value)
+            else
+                w.emit("undefined, undefined")
+            w.emit(")")
+            return
+        if mname == "any"
+            w.emit("@reduce(.Or, ")
+            genExpr(obj)
+            w.emit(")")
+            return
+        if mname == "all"
+            w.emit("@reduce(.And, ")
+            genExpr(obj)
+            w.emit(")")
+            return
+        if mname == "count"
+            w.emit("_zbr_vec_count(")
             genExpr(obj)
             w.emit(")")
             return

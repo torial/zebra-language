@@ -141,6 +141,10 @@ named in the tool's header; what it cannot see is listed there too.
 
 `close` `recv` `recvTimeout` `send` `tryRecv`
 
+### SIMD vector / boolxN mask (QUICKSTART §32) (10)
+
+`all` `any` `count` `dot` `max` `max_element` `min` `min_element` `select` `sum`
+
 ## Namespaces (31) and static members (171; 1 namespace(s) OPEN: Math)
 
 ### Arg (1) <!-- genArgCall -->

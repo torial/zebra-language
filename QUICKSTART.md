@@ -2193,7 +2193,8 @@ a cast in another language:
 - For optional / union / class **downcasts**, use `if x is T as binding`.
   The `as` here is a binding clause, not a cast expression.
 - For **numeric conversions**, use the typed `.toFloat()` / `.toInt()` /
-  `.toString()` methods on the source value.
+  `.toString()` methods on the source value; `int.toByte()` narrows to a `byte`
+  (truncating to the low 8 bits, like `${n:c}`; BUG-431, 2026-09-18).
 - For raw bit-pattern conversions, drop into `zig"…"` (§23).
 
 ---
@@ -4004,7 +4005,32 @@ var dp: float32 = a.dot(b)         # @reduce(.Add, a * b)
 # Type annotations use the SIMD type name directly
 var iv: i32x4 = i32x4(10, 20, 30, 40)
 var isum: int32 = iv.sum()
+
+# Comparison → a MASK, `boolxN` (@Vector(N, bool)); lane-wise, native Zig
+var m: boolx4 = iv > i32x4.splat(15)      # {false, true, true, true}
+var n: int = m.count()                    # lanes that are true → 3
+var some: bool = m.any()                  # @reduce(.Or)
+var every: bool = m.all()                 # @reduce(.And)
+var picked: i32x4 = m.select(iv, i32x4.splat(0))   # where m take iv, else 0
+
+# Lane-wise min / max between two vectors (the reductions above are max_element/min_element)
+var lo: i32x4 = iv.min(i32x4.splat(25))
+var hi: i32x4 = iv.max(i32x4.splat(25))
+
+# Lane conversion between vector types of the same width: i16x16.cast(u8vec)
+# (int↔int narrows/widens, float↔float, int→float, float→int)
+var wide: i16x16 = i16x16.cast(u8x16.splat(200))
+
+# A splat narrows or widens its scalar to the lane type, so an `int` variable
+# splats into u8 lanes (until 2026-09-18 that was zig's "expected u8, found i64")
+var seven: int = 7
+var s8: u8x16 = u8x16.splat(seven)
 ```
+
+Integer-lane `/` truncates (`@divTrunc`), as for scalars. A vector receiver is a
+**closed table**: an unknown method (`v.summ()`) is refused in the front end, and the mask
+methods (`select/any/all/count`) belong to `boolxN` while the reductions and `min`/`max`
+belong to the numeric vectors -- calling one on the other is refused too.
 
 ### Feeding computed data into SIMD
 
@@ -4031,8 +4057,9 @@ back to `float` (f64). A reduction (`.sum()`/`.dot()`) works on an un-annotated
 - SIMD types use Zig/C short names (`f32`, `i16`) not Zebra long names
   (`float32`, `int16`) as the element prefix. Both spellings now work as
   `List` element types (`List(f32)` ≡ `List(float32)`).
-- Arithmetic operators (`+`, `-`, `*`, `/`) are element-wise.
-- Comparison and logical operators on SIMD vectors are not yet supported.
+- Arithmetic operators (`+`, `-`, `*`, `/`) are element-wise; comparison operators
+  (`== != < <= > >=`) are element-wise too and produce a `boolxN` mask (2026-09-18).
+- Not yet supported: `and`/`or`/`not` on masks (use `select`), and `shuffle`/permutes.
 - Selfhost parity (for `selfhost/*.zbr` round-trip) is tracked as a future sprint.
 
 ### CPU target and SIMD width

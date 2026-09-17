@@ -21,6 +21,22 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ---
 
+## Unreleased (after 0.9.0)
+
+- **SIMD comparison masks, select, lane-wise min/max, casts (2026-09-18; QUICKSTART §32).**
+  `==`/`!=`/`<`/`<=`/`>`/`>=` on vectors produce a `boolxN` mask; `mask.select(a, b)`,
+  `mask.any()`, `mask.all()`, `mask.count()`; `a.min(b)`/`a.max(b)` lane-wise;
+  `i16x16.cast(v)` converts lanes between vector types of one width; `T.splat(x)` narrows
+  or widens its scalar to the lane type (an `int` into `u8x16` no longer reaches zig's
+  "expected u8, found i64", BUG-431's SIMD half). Integer-lane `/` is `@divTrunc`. Vector
+  receivers are a closed table (`simdMethodKnown`; SURFACE.md gained the section), split by
+  receiver kind: a reduction on a mask or `select` on a numeric vector is refused in the front
+  end. Fixture `test/simd_mask_test.zbr` (values derived by hand before the first run) plus
+  two refusal fixtures. Not yet: `and`/`or`/`not` on masks, `shuffle`.
+- **`int.toByte()`** (BUG-431, first half): the `int` → `byte` narrowing, truncating to the
+  low 8 bits. The checker still lets `buf[k] = some_int` through to zig for a `List(byte)`;
+  that half stays open.
+
 ## Release 0.9.0 — rc1 2026-09-11 (`e9b7ef2`), rc2 2026-09-12 (`62b4387`)
 
 The first release meant for someone other than its authors: one folder per platform

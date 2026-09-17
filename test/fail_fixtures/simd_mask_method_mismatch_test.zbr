@@ -1,0 +1,7 @@
+# SIMD §32 (2026-09-18): the mask methods belong to boolxN and the reductions to the
+# numeric vectors; a `sum()` on a mask is refused in the front end, not left to zig.
+def main()
+    var a: i32x4 = i32x4(1, 5, 3, 8)
+    var m: boolx4 = a > i32x4.splat(2)
+    var s: int = m.sum()
+    print("${s}")

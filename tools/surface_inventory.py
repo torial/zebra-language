@@ -175,7 +175,8 @@ RECEIVERS = [("str", "strMethodKnown"), ("List(T)", "listMethodKnown"),
              ("UdpSocket", "udpSocketMethodKnown"), ("SqliteDb", "sqliteDbMethodKnown"),
              ("SqliteRow", "sqliteRowMethodKnown"), ("SqliteRowList", "sqliteRowListMethodKnown"),
              ("CodeEditor", "codeEditorMethodKnown"), ("Gui", "guiMethodKnown"),
-             ("HttpRequest (no methods; fields)", "httpRequestMethodKnown"), ("Chan(T)", "chanMethodKnown")]
+             ("HttpRequest (no methods; fields)", "httpRequestMethodKnown"), ("Chan(T)", "chanMethodKnown"),
+             ("SIMD vector / boolxN mask (QUICKSTART §32)", "simdMethodKnown")]
 
 
 def receivers():

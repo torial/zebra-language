@@ -822,7 +822,8 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   dispatch arms, refusing unknown names in the front end
                                 #   -- and are derived here since. The counts print every
                                 #   run. 69 keywords (`yield` added 2026-09-16; 68 after `has`; 81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four, 70 until same, 69 until has), 31 namespaces / 171 members,
-                                #   21 receivers / 253 methods (5 / 120 on the day it was written).
+                                #   22 receivers / 263 methods (5 / 120 on the day it was written;
+                                #   the SIMD vector/mask table joined 2026-09-18).
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
                                 #   224 fenced `zebra` blocks existed and NOTHING verified
@@ -2023,6 +2024,18 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**FULL tier 2026-09-18 (SIMD masks/select, bundle105): 37/38 in ONE invocation at JOBS=2 on
+torial + `release-mode` green standalone -- ASSEMBLED, per the precedent below.** smoke
+**536/536**, round-trip byte-identical, `compile_check-inline` 380/0, `output_sweep` 466
+identical (793 s), `full_sweep` 0 regressions vs 485, `examples_sweep` 0 vs 19, `divergence`
+0 regressions vs the N-1 anchor, `surface-freeze` matching the new SIMD receiver section.
+The one in-tier red was `release-mode`'s "index past the end" probe reporting a FABRICATED
+value under `--release`; re-run standalone minutes later on the same binary: **all 5 checks
+pass**, and the same probe refuses in the container's build too. The tier ran through a
+Claude Desktop crash on the host, and the probe emits to a fixed `%TEMP%/past_end.zig` path
+that any concurrent zebra run can clobber -- recorded as NON-REPRODUCING rather than
+explained; a second occurrence should make that path unique per run before anything else.
+
 **FULL tier 2026-09-16 (generators, bundle82): 37/38 in ONE invocation, ~85 min at JOBS=2 on
 torial; the one red was `doc-lint` on the corpus-count oracle (645 vs 647 -- the two generator
 fixtures), fixed in CLAUDE.md and re-run green standalone before the commit.** smoke
@@ -2634,7 +2647,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **648** <!-- doc-gen: 648 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **649** <!-- doc-gen: 649 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

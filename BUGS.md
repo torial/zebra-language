@@ -46,7 +46,7 @@
 
 ---
 
-### BUG-431: no way to narrow an `int` to a `byte`, and the checker lets the attempt through to Zig — OPEN (found 2026-09-17, dogfood)
+### BUG-431: no way to narrow an `int` to a `byte`, and the checker lets the attempt through to Zig — OPEN (found 2026-09-17, dogfood) <!-- bug-open-ok: half (1) landed 2026-09-18 -- `int.toByte()` and a `splat` that narrows; half (2), the checker refusing `int` where `byte` is expected, is open -->
 
 `buf[k] = v` with `buf: List(byte)` and `v: int`, or `var b: byte = v`, passes `zebra -c`
 and fails inside zig with `expected type 'u8', found 'i64'` (mapped back to the .zbr line,

@@ -506,6 +506,8 @@ class Resolver
             return true
         if prefix == "u8" or prefix == "u16" or prefix == "u32" or prefix == "u64"
             return true
+        if prefix == "bool"
+            return true
         return false
 
 # -- Main ----------------------------------------------------------------------

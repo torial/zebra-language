@@ -1,0 +1,6 @@
+# SIMD §32 (2026-09-18): a vector receiver is a closed table (BUG-369 recipe); a typo
+# is refused here rather than as zig's "no field or member function named 'summ'".
+def main()
+    var a: i32x4 = i32x4(1, 5, 3, 8)
+    var s: int = a.summ()
+    print("${s}")

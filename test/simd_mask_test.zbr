@@ -1,0 +1,66 @@
+# SIMD comparison masks, select, lane-wise min/max, casts, and a splat that narrows
+# (QUICKSTART §32; the 1.0 slice, 2026-09-18). Expected values written by hand before
+# the first run. Also pins BUG-431's `int.toByte()`.
+
+def main()
+    var a: i32x4 = i32x4(1, 5, 3, 8)
+    var b: i32x4 = i32x4(4, 5, 2, 9)
+
+    # comparisons are masks
+    var eq: boolx4 = a == b
+    var lt: boolx4 = a < b
+    var ge: boolx4 = a >= b
+    print("eq count ${eq.count()} any ${eq.any()} all ${eq.all()}")     # 1 true false
+    assert eq.count() == 1
+    assert eq.any()
+    assert not eq.all()
+    print("lt count ${lt.count()} ge count ${ge.count()}")               # 2 2
+    print("ne count ${(a != b).count()}")                                # 3
+
+    # select: where a < b take a else b -> the lane-wise minimum, two ways
+    var lo: i32x4 = lt.select(a, b)
+    var lo2: i32x4 = a.min(b)
+    var hi: i32x4 = a.max(b)
+    print("lo ${lo.sum()} lo2 ${lo2.sum()} hi ${hi.sum()}")            # 1+5+2+8=16 16 4+5+3+9=21
+    assert lo.sum() == 16
+    assert hi.sum() == 21
+    assert (lo == lo2).all()
+    print("lo==lo2 all ${(lo == lo2).all()}")                            # true
+
+    # arithmetic stays lane-wise; integer division truncates
+    var d: i32x4 = (a + b) / i32x4.splat(2)
+    print("d sum ${d.sum()}")                                            # (5+10+5+17)/2 -> 2+5+2+8=17
+    assert d.sum() == 17
+
+    # a splat from an `int` variable into narrow lanes (BUG-431's shape)
+    var n: int = 7
+    var s8: u8x16 = u8x16.splat(n)
+    print("s8 sum ${s8.sum()}")                                          # 112
+    assert s8.sum() == 112
+
+    # lane cast: u8 lanes widened to i16, then back
+    var bytes: List(byte) = List(byte)()
+    var k: int = 0
+    while k < 16
+        bytes.add(k.toByte())
+        k = k + 1
+    var v8: u8x16 = u8x16.load(bytes, 0)
+    var v16: i16x16 = i16x16.cast(v8)
+    var twice: i16x16 = v16 + v16
+    print("v16 sum ${v16.sum()} twice max ${twice.max_element()}")     # 120 30
+    var back: u8x16 = u8x16.cast(twice)
+    print("back sum ${back.sum()}")                                     # 240
+    assert v16.sum() == 120
+    assert back.sum() == 240
+
+    # float lanes compare too
+    var f: f32x4 = f32x4(1.5, 2.5, 3.5, 4.5)
+    var big: boolx4 = f > f32x4.splat(2.0)
+    print("big count ${big.count()} picked sum ${big.select(f, f32x4.splat(0.0)).sum()}")   # 3 10.5
+    assert big.count() == 3
+
+    # toByte truncates
+    var t: byte = 300.toByte()
+    print("toByte ${t}")                                                 # 44
+    assert t == 44
+    print("simd_mask: OK")

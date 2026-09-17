@@ -1469,6 +1469,9 @@ def isReadOnlyMethod(name: str): bool
     # SIMD reduction methods — read-only; receivers must not be marked `var`
     if name == "sum" or name == "dot" or name == "max_element" or name == "min_element"
         return true
+    # SIMD §32 (2026-09-18): lane-wise min/max and the mask methods read their receiver too
+    if name == "min" or name == "max" or name == "select" or name == "any" or name == "all"
+        return true
     # SysProcess methods — proc is a pointer; none of these reassign the pointer itself
     if name == "kill" or name == "isRunning" or name == "write" or name == "readAvailable" or name == "readErrAvailable" or name == "closeStdin" or name == "exitCode"
         return true

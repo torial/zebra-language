@@ -2559,7 +2559,39 @@ def isSimdTypeName(name: str): bool
         return true
     if prefix == "u8" or prefix == "u16" or prefix == "u32" or prefix == "u64"
         return true
+    # a comparison mask (`u8x16 == u8x16` is a `boolx16`)
+    if prefix == "bool"
+        return true
     return false
+
+# The SIMD surface (QUICKSTART §32), as a promised set. Reductions on any vector; lane-wise
+# min/max between two vectors; select/any/all/count on a mask. Codegen dispatches these to
+# @reduce/@min/@max/@select ONLY on a provably-SIMD receiver, so the predicate here is what
+# refuses a typo (`v.summ()`) in the front end rather than letting it reach zig (BUG-433's
+# shape, for vectors).
+def simdMethodKnown(name: str): bool
+    return name == "sum" or name == "dot" or name == "max_element" or name == "min_element" or name == "min" or name == "max" or name == "select" or name == "any" or name == "all" or name == "count"
+
+# which half of the surface a receiver gets: masks (boolxN) have select/any/all/count,
+# numeric vectors have the reductions and lane-wise min/max
+def simdMethodFits(tn: str, name: str): bool
+    var is_mask: bool = tn.startsWith("bool")
+    if name == "select" or name == "any" or name == "all" or name == "count"
+        return is_mask
+    return not is_mask
+
+# the scalar type of a vector's lanes, for the reductions: f* -> float, i*/u* -> int
+def simdLaneScalar(tn: str): Type_
+    if tn.startsWith("f")
+        return Type_.float_
+    if tn.startsWith("bool")
+        return Type_.bool_
+    return Type_.int_
+
+# the mask type of a vector type: u8x16 -> boolx16
+def simdMaskName(tn: str): str
+    var parts: List(str) = tn.split("x")
+    return "boolx" + parts.at(1)
 
 # BUG-283: validate every `${Name}` in a zig"..." literal against the types this module
 # can see.  Codegen substitutes the emitted spelling; an unknown name must be refused
@@ -3048,13 +3080,16 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.float_
                             if mem.member == "toString"
                                 return Type_.string_
+                            # BUG-431: the int -> byte narrowing (truncating, low 8 bits)
+                            if mem.member == "toByte"
+                                return Type_.uint_n(8)
                             # `n.to(m)` is the method-form range (§28a); its element
                             # type is handled by isRangeIterExpr, the range itself
                             # stays untyped here as it always was.
                             if mem.member == "to"
                                 return Type_.unknown_
                             ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                       "'int' has no method '" + mem.member + "' (to/toFloat/toFloat32/toString; abs, min, max, pow are Math.* functions)")
+                                       "'int' has no method '" + mem.member + "' (to/toFloat/toFloat32/toByte/toString; abs, min, max, pow are Math.* functions)")
                             return Type_.unknown_
                         on Type_.float_
                             if mem.member == "toInt"
@@ -3067,6 +3102,28 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                        "'float' has no method '" + mem.member + "' (toInt/toFloat32/toString; abs, floor, ceil, round, sqrt are Math.* functions)")
                             return Type_.unknown_
                         on Type_.named as tn
+                            if isSimdTypeName(tn)
+                                if not simdMethodKnown(mem.member) or not simdMethodFits(tn, mem.member)
+                                    ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                               "'" + tn + "' has no method '" + mem.member + "' (sum/dot/max_element/min_element/min/max on a vector; select/any/all/count on a boolxN mask; QUICKSTART §32)")
+                                    return Type_.unknown_
+                                var sm: str = mem.member
+                                if sm == "sum" or sm == "dot" or sm == "max_element" or sm == "min_element"
+                                    return simdLaneScalar(tn)
+                                if sm == "min" or sm == "max"
+                                    return Type_.named(tn)
+                                if sm == "any" or sm == "all"
+                                    return Type_.bool_
+                                if sm == "count"
+                                    return Type_.int_
+                                if sm == "select"
+                                    # the type of the chosen vectors is the first argument's
+                                    if c.args.len > 0
+                                        var sel_t: Type_ = inferExpr(c.args.at(0).value, ctx)
+                                        if sel_t is Type_.named as sel_tn
+                                            if isSimdTypeName(sel_tn)
+                                                return sel_t
+                                    return Type_.unknown_
                             var rt: Type_? = ctx.methodReturnAny(tn, mem.member)
                             if rt as rt_v
                                 # A generic interface method returning one of its own type
@@ -3634,6 +3691,22 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
         on Expr.binary as b
             var lt: Type_ = inferExpr(b.left, ctx)
             var rt: Type_ = inferExpr(b.right, ctx)
+            # SIMD (§32): a vector operand makes the comparison a MASK (boolxN) and the
+            # arithmetic a vector of the same type. Checked before the scalar arms so
+            # `==` on vectors is not typed bool_ and `+` is not left unknown_.
+            var simd_tn: str = ""
+            if lt is Type_.named as ltn
+                if isSimdTypeName(ltn)
+                    simd_tn = ltn
+            if simd_tn == ""
+                if rt is Type_.named as rtn
+                    if isSimdTypeName(rtn)
+                        simd_tn = rtn
+            if simd_tn != ""
+                if b.op == BinaryOp.eq or b.op == BinaryOp.ne or b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge
+                    return Type_.named(simdMaskName(simd_tn))
+                if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div
+                    return Type_.named(simd_tn)
             branch b.op
                 on BinaryOp.add
                     # String concatenation: if either side is a string, result is string.

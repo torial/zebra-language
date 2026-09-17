@@ -214,20 +214,108 @@ pub inline fn _zbr_shr(a: anytype, b: anytype) _zbr_shift_t(@TypeOf(a)) {
     return std.math.shr(T, @as(T, a), b);
 }
 
+// SIMD (QUICKSTART §32). Comparison operators on vectors are native Zig and yield
+// @Vector(N, bool) -- a `boolxN` in Zebra. These helpers carry the pieces that need a
+// comptime type: select, the mask count, lane conversion and a splat whose scalar may be
+// wider than the lane (an `int` into u8 lanes -- the BUG-431 shape).
+pub inline fn _zbr_vec_select(m: anytype, a: anytype, b: anytype) @TypeOf(a) {
+    return @select(@typeInfo(@TypeOf(a)).vector.child, m, a, b);
+}
+pub inline fn _zbr_vec_count(m: anytype) i64 {
+    const n = @typeInfo(@TypeOf(m)).vector.len;
+    const ones: @Vector(n, u16) = @splat(1);
+    const zeros: @Vector(n, u16) = @splat(0);
+    return @as(i64, @reduce(.Add, @select(u16, m, ones, zeros)));
+}
+pub inline fn _zbr_vec_scalar(comptime T: type, v: anytype) T {
+    // a scalar into a lane type: int->int narrows/widens with @intCast, float<->float
+    // with @floatCast, int->float with @floatFromInt, float->int with @intFromFloat;
+    // comptime literals coerce.
+    const S = @TypeOf(v);
+    if (S == comptime_int or S == comptime_float) return @as(T, v);
+    return switch (@typeInfo(T)) {
+        .int => switch (@typeInfo(S)) {
+            .int => @as(T, @intCast(v)),
+            .float => @as(T, @intFromFloat(v)),
+            else => @as(T, v),
+        },
+        .float => switch (@typeInfo(S)) {
+            .int => @as(T, @floatFromInt(v)),
+            .float => @as(T, @floatCast(v)),
+            else => @as(T, v),
+        },
+        else => @as(T, v),
+    };
+}
+pub inline fn _zbr_vec_splat(comptime V: type, v: anytype) V {
+    return @splat(_zbr_vec_scalar(@typeInfo(V).vector.child, v));
+}
+pub inline fn _zbr_vec_cast(comptime V: type, src: anytype) V {
+    // lane-wise conversion between vector types of the same length
+    const T = @typeInfo(V).vector.child;
+    const S = @typeInfo(@TypeOf(src)).vector.child;
+    if (S == T) return src;
+    return switch (@typeInfo(T)) {
+        .int => switch (@typeInfo(S)) {
+            .int => @as(V, @intCast(src)),
+            .float => @as(V, @intFromFloat(src)),
+            else => @compileError("SIMD cast: unsupported source lane type"),
+        },
+        .float => switch (@typeInfo(S)) {
+            .int => @as(V, @floatFromInt(src)),
+            .float => @as(V, @floatCast(src)),
+            else => @compileError("SIMD cast: unsupported source lane type"),
+        },
+        else => @compileError("SIMD cast: unsupported target lane type"),
+    };
+}
+
+// Cues: a `cue compare(other: T): int` / `cue equals` / `cue hash` on a user type is a
+// method the compiler calls for you. The comparison helpers and the sort look for them
+// by name on the (pointer-unwrapped) type; `_zbr_CueCtx` is the HashMap context that
+// routes `hash`/`equals` to the cues.
+pub inline fn _zbr_has_cue(comptime T: type, comptime name: []const u8) bool {
+    const U = switch (@typeInfo(T)) {
+        .pointer => |p| p.child,
+        else => T,
+    };
+    return switch (@typeInfo(U)) {
+        .@"struct", .@"union", .@"enum" => @hasDecl(U, name),
+        else => false,
+    };
+}
+pub fn _zbr_CueCtx(comptime K: type) type {
+    return struct {
+        pub fn hash(_: @This(), k: K) u64 {
+            const h = k.hash();
+            return switch (@typeInfo(@TypeOf(h))) {
+                .int => |i| if (i.signedness == .signed) @as(u64, @bitCast(@as(i64, h))) else @as(u64, h),
+                else => @as(u64, h),
+            };
+        }
+        pub fn eql(_: @This(), a: K, b: K) bool {
+            return a.equals(b);
+        }
+    };
+}
 pub fn _zebra_lt(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.lessThan(u8, a, b);
+    if (comptime _zbr_has_cue(@TypeOf(a), "compare")) return a.compare(b) < 0;
     return a < b;
 }
 pub fn _zebra_le(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .gt;
+    if (comptime _zbr_has_cue(@TypeOf(a), "compare")) return a.compare(b) <= 0;
     return a <= b;
 }
 pub fn _zebra_gt(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) == .gt;
+    if (comptime _zbr_has_cue(@TypeOf(a), "compare")) return a.compare(b) > 0;
     return a > b;
 }
 pub fn _zebra_ge(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .lt;
+    if (comptime _zbr_has_cue(@TypeOf(a), "compare")) return a.compare(b) >= 0;
     return a >= b;
 }
 pub fn _zebra_eq(a: anytype, b: anytype) bool {
@@ -438,6 +526,7 @@ pub fn _zebra_sort_natural(comptime T: type, items: []T) void {
     const _I = struct {
         fn less(_: void, a: T, b: T) bool {
             if (comptime T == []const u8) return std.mem.lessThan(u8, a, b);
+            if (comptime _zbr_has_cue(T, "compare")) return a.compare(b) < 0;
             return a < b;
         }
     };
@@ -445,8 +534,11 @@ pub fn _zebra_sort_natural(comptime T: type, items: []T) void {
 }
 // BUG-418: the HashMap behind `HashMap(K, V)` when K is a generic class's type parameter --
 // only at instantiation is it known whether the key is a str (content-hashed) or not.
+// A key type with `cue hash` is hashed through its cue (and compared through `cue equals`).
 pub fn _zbr_HashMap(comptime K: type, comptime V: type) type {
-    return if (K == []const u8) std.StringHashMap(V) else std.AutoHashMap(K, V);
+    if (K == []const u8) return std.StringHashMap(V);
+    if (comptime _zbr_has_cue(K, "hash")) return std.HashMap(K, V, _zbr_CueCtx(K), std.hash_map.default_max_load_percentage);
+    return std.AutoHashMap(K, V);
 }
 // BUG-422: `xs.sortBy(def(p) = p.dist())` -- a ONE-argument KEY function (Python's
 // `key=`) sorts ascending by the key; a two-argument comparator is unchanged.

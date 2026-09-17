@@ -758,6 +758,16 @@ smoke_tc_fail test/fail_fixtures/generic_interface_arity_test.zbr \
     "interface 'Comparable' takes 1 type argument(s)"
 smoke_run test/bug427_param_shadows_fn_test.zbr "bug427: ok"
 
+# SIMD §32, the 1.0 slice (2026-09-18): comparison masks (boolxN), select/any/all/count,
+# lane-wise min/max, casts, a splat that narrows an `int` into u8 lanes (BUG-431's
+# shape), and `int.toByte()`. Expected values were derived by hand before the first run.
+# The two refusals pin that vectors are a closed table split by receiver kind.
+smoke_run test/simd_mask_test.zbr "simd_mask: OK"
+smoke_tc_fail test/fail_fixtures/simd_unknown_method_test.zbr \
+    "'i32x4' has no method 'summ'"
+smoke_tc_fail test/fail_fixtures/simd_mask_method_mismatch_test.zbr \
+    "'boolx4' has no method 'sum'"
+
 # BUG-238: `except` in an enum-dotted branch arm, reached through `use`. Reported as a
 # regression that did not reproduce; registered as a RUNNING guard (smoke_run, not
 # smoke) because the failure was a parse error in the DEP, which only a real import
