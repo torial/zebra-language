@@ -6,6 +6,85 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-431: no way to narrow an `int` to a `byte`, and the checker lets the attempt through to Zig — FIXED 2026-09-18
+
+**Fix (both halves, 2026-09-18).** (1) `int.toByte()` truncates to the low 8 bits, and `T.splat(x)`
+narrows/widens through `_zbr_vec_splat` (landed with the SIMD mask slice, `f58acfc`). (2) The
+checker refuses a NAMED int value (ident, member, call, index) flowing into a byte slot --
+`var b: byte = n`, `buf[i] = n`, a byte parameter or field init -- with `expected byte, found int`
+naming `.toByte()` (`narrowsIntToByte`, placed BEFORE the `isPrimitive` guards, which do not count
+`uint_n(8)` and returned first on the initial attempt). Literals and arithmetic on literals still
+fold. Fixtures: `test/bug431_434_435_dogfood_test.zbr`, `test/fail_fixtures/bug431_int_into_byte_test.zbr`,
+`..._decl_test.zbr`. The wiki dogfood programs still carry their branch-table workarounds by design
+(they date the cost); `kolakoski_kolw2.zbr` is the one to straighten.
+
+`buf[k] = v` with `buf: List(byte)` and `v: int`, or `var b: byte = v`, passes `zebra -c`
+and fails inside zig with `expected type 'u8', found 'i64'` (mapped back to the .zbr line,
+at least). `int` has no `toByte()`; QUICKSTART §21 says numeric conversions are methods and
+lists `toFloat/toInt/toString/toFloat32` -- nothing lands on `byte`. A LITERAL coerces
+(`buf[k] = 2` is fine), so the only in-language workaround is to branch on the value
+(`if v == 1: buf[k] = 1 else if v == 2: ...`), which is what `kolakoski_kol.zbr` and
+`kolakoski_kolw.zbr` (wiki, `pages/fable/`) do -- and the second program was silently WRONG
+for K(3,4) because its branch table stopped at 3 and everything above became 0; a real
+narrowing would have been correct or refused. Two halves: (1) add `int.toByte()` (refuse or
+wrap out-of-range -- say which); (2) the checker should refuse `int` where `byte` is expected,
+the BUG-369 recipe. The zig escape `zig"@as(u8, @intCast(v))"` works today.
+
+### BUG-435: `List` has no way to reserve capacity, so the largest list a program can build is about a third of RAM — FIXED 2026-09-18
+
+**Fix (2026-09-18).** `list.reserve(n)` -- one checker entry (`listMethodKnown`, void) and one emit arm
+(`ensureTotalCapacity(_allocator, n) catch @panic("OOM")`); `count()` unchanged. QUICKSTART §10,
+SURFACE.md. The `\"`-inside-`zig"..."` sub-defect is NOT fixed here and is not separately filed:
+`reserve` removes the reason anyone needed it. Fixture: the dogfood trio.
+
+`List(byte)` grows by `append` only, and the runtime's ArrayList doubles: a 3.5 GB ring
+filled one byte at a time asked for 4 GB at its last doubling while still holding 2 GB,
+and the program died `panic: OOM` in an 8 GB container that had room for the list twice
+over. There is no `reserve(n)` / `withCapacity(n)` / `List(T)(n)` on the surface (SURFACE.md
+List section, QUICKSTART §10). Workaround in `kolakoski_kolw2.zbr` (wiki, `pages/fable/`):
+`zig"out.ensureTotalCapacity(_zbr_rt._allocator, @as(usize, @intCast(n))) catch unreachable;"`
+-- which also shows the escape hatch cannot spell `@panic("OOM")`, because a `\"` inside a
+`zig"..."` literal reaches the emit as `\"` and zig refuses it (a second, smaller defect;
+`catch unreachable` was the way round). Proposed: `List(T).withCapacity(n)` or
+`list.reserve(n)`, one emit arm each.
+
+### BUG-434: a `Random` cannot be a class field — FIXED 2026-09-18
+
+**Fix (2026-09-18).** `Random` is a named type in the checker (`typeFromName`, `Random.new` returns
+`named("Random")`), and codegen emits the type name as the runtime's `_Random`; a typed field, a typed
+local and an untyped `var rng = Random.new(s)` all carry the type, so the instance verbs are typed
+(int/float/bool/str). QUICKSTART §14 shows the field form. Fixture: the dogfood trio.
+
+`class LStream` with `var rng: Random = Random.new(1)` fails at the field type:
+`error: use of undeclared identifier 'Random'` (the type name does not resolve to the
+runtime's `_Random`); the untyped form `var rng = Random.new(1)` instead emits `anytype`
+as the field's Zig type (`expected type expression, found 'anytype'`). A generator object
+that wants its own seeded stream has no way to hold one. Workaround in `kolakoski_kolw2.zbr`
+(wiki, `pages/fable/`): the process-global `Random.seed`/`Random.randBool`. Same family as
+BUG-433 -- the instance side of `Random` is the half nothing exercises.
+
+Also seen the same evening, filed under BUG-431's heading rather than separately:
+`u8x16.splat(a)` with `a: int` is `expected type 'u8', found 'i64'` -- the splat emits
+`@as(u8, a)` and there is no narrowing to reach it; the workaround loads the vector from a
+16-byte list filled through the branch table.
+
+### BUG-433: `Random.new(seed)` instance methods are not checked — `rng.randBool()` reaches Zig — FIXED 2026-09-18
+
+**Fix (2026-09-18).** Fell out of BUG-434: with the receiver typed, `randomMethodKnown`
+(`nextInt`/`nextFloat`/`nextBool`/`bytes`) refuses anything else in the front end -- `'Random' has no
+method 'randBool' (nextInt/nextFloat/nextBool/bytes)`. It is a `surface_inventory` RECEIVER now
+("Random instance"). The static/instance verb split is left as is. Fixture:
+`test/fail_fixtures/bug433_random_unknown_method_test.zbr`.
+
+`var rng = Random.new(17)` then `rng.randBool()` (the STATIC name; the instance one is
+`nextBool`) passes `zebra -c` and fails in zig: `no field or member function named
+'randBool' in 'zebra_rt._Random'`. `Random` is one of the runtime object types WITHOUT a
+`Type_` variant that `surface_inventory` lists as uncovered; the BUG-369 recipe (a
+`*MethodKnown` predicate derived from the dispatch arms, refusing unknown names in the front
+end) closed 16 such types on 2026-09-15 and did not reach this one. While there: the static
+and instance forms having different verbs (`randInt` / `nextInt`) is the trap that produced
+this; one verb would remove it.
+
 ### BUG-429: a GUI program run by the compiler got NO `--` arguments (and no ZEBRA_COMPILER) — FIXED 2026-09-17
 
 `zebra --gui-backend=libui_ng src\ide.zbr -- src\lsp.zbr src\buffers.zbr` opened the IDE

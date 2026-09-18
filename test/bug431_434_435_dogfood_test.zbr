@@ -1,0 +1,50 @@
+# The Kolakoski dogfood trio (2026-09-18): BUG-435 List.reserve, BUG-434 a Random held in
+# a class field, and BUG-431's toByte beside a literal store. Values derived by hand.
+
+class Stream
+    var rng: Random = Random.new(7)
+    var seen: int = 0
+
+    def roll(): int
+        this.seen = this.seen + 1
+        return this.rng.nextInt(1, 6)
+
+def main()
+    # BUG-435: reserve, then fill -- the count is the number added, not the capacity
+    var big: List(byte) = List(byte)()
+    big.reserve(100000)
+    var k: int = 0
+    while k < 5
+        big.add(k.toByte())          # BUG-431 first half: the narrowing has a spelling
+        k = k + 1
+    big[0] = 9                        # a literal into a byte slot still coerces
+    print("len ${big.len} first ${big[0]} last ${big[4]}")     # len 5 first 9 last 4
+    assert big.len == 5
+    assert big[0] == 9
+    assert big[4] == 4
+
+    # BUG-434: two streams with the same seed agree with each other and differ from a
+    # third seed -- the field really holds its own PRNG
+    var s1 = Stream()
+    var s2 = Stream()
+    var same: bool = true
+    var i: int = 0
+    while i < 20
+        if s1.roll() != s2.roll()
+            same = false
+        i = i + 1
+    var s3 = Stream()
+    s3.rng = Random.new(99)
+    var differ: bool = false
+    i = 0
+    while i < 20
+        if s1.roll() != s3.roll()
+            differ = true
+        i = i + 1
+    print("same-seed agree ${same}  other-seed differ ${differ}  rolls ${s1.seen}")   # true true 40
+    assert same
+    assert differ
+    assert s1.seen == 40
+    var f: float = s1.rng.nextFloat()
+    assert f >= 0.0 and f < 1.0
+    print("dogfood trio: OK")

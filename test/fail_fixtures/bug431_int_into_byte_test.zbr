@@ -1,0 +1,8 @@
+# BUG-431 second half (2026-09-18): an int VALUE into a byte slot is refused in the
+# front end, naming .toByte(); until now it reached zig as "expected type 'u8', found 'i64'".
+def main()
+    var buf: List(byte) = List(byte)()
+    buf.add(0)
+    var v: int = sys.args().len
+    buf[0] = v
+    print("${buf[0]}")

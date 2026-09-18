@@ -124,10 +124,8 @@
 210	`zig build update-selfhost` can skip regeneration after a `.zbr`-only 
 211	selfhost `nameUsedInStmt` ignored `using` blocks → spurious param disc
 213	selfhost `typeFromName` missing `SysProcess` → `proc.isRunning()` mis-
-215	two-argument `str.indexOf(sub, from)` silently dropped the offset ✅ FI
 217	`CodeEditor.setText` handed Scintilla a non-NUL-terminated buffer → se
 219	`sys.run` DEADLOCKS when a child writes more than a pipe buffer to std
-222	stdlib calls accept TOO FEW arguments — `s.count()` compiles and panic
 279	`zig build test` is red on committed code, in no gate tier — ⚠ LEGS 1+
 324	a FAILED compile still left a runnable `.exe` in `--output-dir`, and i
 325	`--emit-zig` wrote DEPENDENCY `.zig` files into the source directory, 

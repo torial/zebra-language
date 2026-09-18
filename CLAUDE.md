@@ -822,8 +822,9 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   dispatch arms, refusing unknown names in the front end
                                 #   -- and are derived here since. The counts print every
                                 #   run. 69 keywords (`yield` added 2026-09-16; 68 after `has`; 81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four, 70 until same, 69 until has), 31 namespaces / 171 members,
-                                #   22 receivers / 263 methods (5 / 120 on the day it was written;
-                                #   the SIMD vector/mask table joined 2026-09-18).
+                                #   23 receivers / 286 methods by SURFACE.md's section counts (5 / 120
+                                #   on the day it was written; the SIMD vector/mask table and the
+                                #   Random instance joined 2026-09-18).
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
                                 #   224 fenced `zebra` blocks existed and NOTHING verified
@@ -2024,6 +2025,24 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**FULL tier 2026-09-18 (dogfood trio, bundle106): 37/38 in ONE invocation at JOBS=2 on torial
++ `doc-lint` green standalone -- ASSEMBLED.** smoke **540/540**, round-trip byte-identical,
+`compile_check-inline` 381/0, `output_sweep` 466 identical, `full_sweep` 0 regressions vs 485,
+`examples_sweep` 0 vs 19, `divergence` 0 regressions vs the N-1 anchor (1772 s), `release-mode`
+and `contract-mode` 11/11. **The one red is a new failure shape for `doc-lint`: a `doc-gen`
+ORACLE COMMAND TIMED OUT (60 s) and D6 reported it as a stale reference.** The gate took
+112 s where it takes 13 s idle; smoke took **2517 s** against 660 s in the QUICK four hours
+earlier on the same tree -- a VS Code process was at 12.6 CPU-hours and 1 GB during the
+run. So the tier's board can go red on LOAD ALONE through the one static gate that shells
+out per oracle, and the message reads exactly like a real drift. Standalone: 0 stale. Not
+"fixed" here; the honest option would be for D6 to report a timed-out oracle as INCONCLUSIVE
+rather than as a stale reference, and that is a change to the instrument, left as a proposal.
+Also this run: the QUICK that preceded it went red on `doc-lint` for the corpus oracle
+(649 vs 650) because CLAUDE.md was edited WHILE the tier was reading it -- the rule two
+sections up, broken by the person who could quote it -- and on `bug-fixture`, which was BLIND
+TO `test/fail_fixtures/` (flat-path regex, the must_reject_set shape); widened, and the wider
+view found BUG-215 and BUG-222 already pinned there. Baseline 131 -> 129.
+
 **FULL tier 2026-09-18 (SIMD masks/select, bundle105): 37/38 in ONE invocation at JOBS=2 on
 torial + `release-mode` green standalone -- ASSEMBLED, per the precedent below.** smoke
 **536/536**, round-trip byte-identical, `compile_check-inline` 380/0, `output_sweep` 466
@@ -2647,7 +2666,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **649** <!-- doc-gen: 649 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **650** <!-- doc-gen: 650 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

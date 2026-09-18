@@ -1,0 +1,7 @@
+# BUG-433: `rng.randBool()` (the STATIC name on an instance) used to reach zig as
+# "no field or member function named 'randBool'". Refused in the front end now that a
+# Random receiver is typed (BUG-434) and its instance verbs are a closed table.
+def main()
+    var rng = Random.new(42)
+    var b: bool = rng.randBool()
+    print("${b}")

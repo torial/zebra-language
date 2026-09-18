@@ -3779,6 +3779,9 @@ struct Generator
                 if n.name == "Timer"
                     w.emit("TimerHandle")             # BUG-345: the preamble's handle struct
                     return
+                if n.name == "Random"
+                    w.emit("_Random")                 # BUG-434: a seeded stream as a field / typed local
+                    return
                 if n.name == "DynLib"
                     w.emit("*_DynLib")
                     return
@@ -15136,6 +15139,18 @@ struct Generator
                                     item_ref_type = inner_named
                         else
                             pass
+                    if mname == "reserve"
+                        # BUG-435: `xs.reserve(n)` -- capacity for n items up front. Growth
+                        # by doubling made a 3.4 GB list OOM an 8 GB machine at its last
+                        # doubling; this is the one-call fix a big ring needs.
+                        genExpr(m.object)
+                        w.emit(".ensureTotalCapacity(_allocator, @as(usize, @intCast(")
+                        if args.len > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("0")
+                        w.emit("))) catch @panic(\"OOM\")")
+                        return
                     if mname == "add"
                         genExpr(m.object)
                         w.emit(".append(_allocator, ")

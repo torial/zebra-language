@@ -34,8 +34,18 @@ confirmed via `tools/bootstrap_check.sh`.
   end. Fixture `test/simd_mask_test.zbr` (values derived by hand before the first run) plus
   two refusal fixtures. Not yet: `and`/`or`/`not` on masks, `shuffle`.
 - **`int.toByte()`** (BUG-431, first half): the `int` → `byte` narrowing, truncating to the
-  low 8 bits. The checker still lets `buf[k] = some_int` through to zig for a `List(byte)`;
-  that half stays open.
+  low 8 bits.
+- **An int VALUE into a byte slot is refused in the front end** (BUG-431, second half,
+  2026-09-18): `buf[k] = n`, `var b: byte = n`, a byte parameter or field init fed a named
+  int (ident, member, call, index) now says `expected byte, found int` and names
+  `.toByte()`, instead of zig's "expected type 'u8', found 'i64'" about generated code.
+  Literals and arithmetic on literals still fold as before. Two refusal fixtures.
+- **`List.reserve(n)`** (BUG-435): pre-size the backing store without changing `count()`.
+  Growth by doubling briefly holds old+new; a 3.5 GB list went OOM on that, and the only
+  workaround was a `zig"..."` literal that could not spell `\"`.
+- **`Random` as a class field** (BUG-434): `var rng: Random = Random.new(7)` in a class
+  declaration; `Random` is a named type in the checker and emits as the runtime struct.
+  Fixture `test/bug431_434_435_dogfood_test.zbr` (all three, from the Kolakoski dogfood).
 
 ## Release 0.9.0 — rc1 2026-09-11 (`e9b7ef2`), rc2 2026-09-12 (`62b4387`)
 

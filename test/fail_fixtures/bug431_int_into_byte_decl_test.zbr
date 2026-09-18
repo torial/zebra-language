@@ -1,0 +1,5 @@
+# BUG-431 second half, the declaration shape: `var b: byte = <int value>`.
+def main()
+    var v: int = sys.args().len
+    var b: byte = v
+    print("${b}")

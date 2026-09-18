@@ -683,6 +683,10 @@ def typeFromName(n: str): Type_
         return Type_.sys_process
     if n == "Timer"
         return Type_.timer_handle
+    # BUG-434 (2026-09-18): `Random` as a declared type (a class field holding its own
+    # seeded stream). Named, like CsvWriter; the instance methods are typed in the named arm.
+    if n == "Random"
+        return Type_.named("Random")
     # PARITY 2026-09-04: the bootstrap maps this (src/TypeChecker.zig) and the selfhost
     # did not, so `var v: JsonValue` resolved to named("JsonValue") and every Json method
     # on it failed at CODEGEN -- "no field or member function named getInt". Front-end
@@ -1700,7 +1704,7 @@ def strMethodKnown(name: str): bool
 # (`pop`, `toString`, `fetch`). `first`/`last`/`isEmpty`/`insert`/`push` do NOT exist --
 # they were the names people reach for, and each was a Zig error until now.
 def listMethodKnown(name: str): bool
-    return name == "add" or name == "at" or name == "fetch" or name == "count" or name == "len" or name == "set" or name == "remove" or name == "any" or name == "all" or name == "find" or name == "map" or name == "filter" or name == "reduce" or name == "sort" or name == "sortBy" or name == "contains" or name == "clear" or name == "join" or name == "pop" or name == "toString" or name == "items" or name == "append" or name == "reverse"
+    return name == "reserve" or name == "add" or name == "at" or name == "fetch" or name == "count" or name == "len" or name == "set" or name == "remove" or name == "any" or name == "all" or name == "find" or name == "map" or name == "filter" or name == "reduce" or name == "sort" or name == "sortBy" or name == "contains" or name == "clear" or name == "join" or name == "pop" or name == "toString" or name == "items" or name == "append" or name == "reverse"
 
 # BUG-369, second half (2026-09-09): HashMap, Set and JsonValue, same derivation --
 # every candidate name probed at three arities through zig, kept if some arity compiled
@@ -1727,6 +1731,9 @@ def jsonMethodKnown(name: str): bool
 # was found to name a method that never existed (`elapsed()` is the millisecond timer).
 # The corpus sweep and zebra-ide's `-c` sweep are the controls. `tools/surface_inventory.py`
 # reads these predicates, so each is a promised set with a diff.
+
+def randomMethodKnown(name: str): bool
+    return name == "nextInt" or name == "nextFloat" or name == "nextBool" or name == "bytes"
 
 def timerMethodKnown(name: str): bool
     return name == "elapsed" or name == "elapsedMicros" or name == "reset"
@@ -2892,6 +2899,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             return Type_.regex
                         if bname == "Timer" and mem.member == "start"
                             return Type_.timer_handle
+                        # BUG-434: `Random.new(seed)` is a Random, so an un-annotated local or
+                        # a field initialiser types the instance and its `next*` dispatch.
+                        if bname == "Random" and mem.member == "new"
+                            return Type_.named("Random")
                         # CodeEditor.forZebra() (and any future static factory) →
                         # code_editor. The bare CodeEditor() ctor already infers via
                         # typeFromName above. Mirrors bootstrap TypeChecker:3523.
@@ -3181,6 +3192,21 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             # this it prints as a BYTE ARRAY (`{ 97, 44, 98 }`) — valid Zig
                             # producing wrong output, the BUG-226 class that no
                             # compile-only gate can see.
+                            # BUG-434: a Random held in a field / typed local. The instance verbs
+                            # are `next*` (QUICKSTART §14); BUG-433's `randBool` typo is refused.
+                            if tn == "Random"
+                                if not randomMethodKnown(mem.member)
+                                    ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                               "'Random' has no method '" + mem.member + "' (nextInt/nextFloat/nextBool/bytes)")
+                                    return Type_.unknown_
+                                if mem.member == "nextInt"
+                                    return Type_.int_
+                                if mem.member == "nextFloat"
+                                    return Type_.float_
+                                if mem.member == "nextBool"
+                                    return Type_.bool_
+                                if mem.member == "bytes"
+                                    return Type_.string_
                             if tn == "CsvWriter"
                                 if mem.member == "build"
                                     return Type_.string_
@@ -3448,7 +3474,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return list_elem
                             if lmname == "join"
                                 return Type_.string_
-                            if lmname == "reverse" or lmname == "clear" or lmname == "sort" or lmname == "sortBy" or lmname == "add" or lmname == "set" or lmname == "remove"
+                            if lmname == "reverse" or lmname == "clear" or lmname == "sort" or lmname == "sortBy" or lmname == "add" or lmname == "set" or lmname == "remove" or lmname == "reserve"
                                 return Type_.void_
                             if lmname == "count" or lmname == "len"
                                 return Type_.int_
@@ -4587,6 +4613,34 @@ def checkLiteralHomogeneity(elems: List(Expr), kind: str, ctx: InferCtx)
                 anchor = t
         i = i + 1
 
+# BUG-431 (second half, 2026-09-18): an `int` VALUE flowing into a `byte` slot. Zig folds a
+# literal (`buf[k] = 2`, `var b: byte = 3 * 4`) but refuses a runtime i64 ("expected type
+# 'u8', found 'i64'") -- valid Zebra by the checker, a zig error by the compile. Refused
+# here, naming `.toByte()`. Only a NAMED value counts (an ident, member, call, index);
+# literals and arithmetic on them are left to zig, which folds them.
+def narrowsIntToByte(declared: Type_, inferred: Type_, e: Expr): bool
+    var is_byte: bool = false
+    if declared is Type_.uint_n as dn
+        if dn == 8
+            is_byte = true
+    if not is_byte
+        return false
+    if not (inferred is Type_.int_)
+        return false
+    branch e
+        on Expr.ident as _
+            return true
+        on Expr.member as _
+            return true
+        on Expr.call as _
+            return true
+        on Expr.index as _
+            return true
+        else
+            return false
+
+const BYTE_NARROW_HINT: str = "-- an int does not narrow to a byte on its own; use `.toByte()` (low 8 bits) (QUICKSTART §21)"
+
 def typesCompatible(declared: Type_, inferred: Type_): bool
     if not isPrimitive(declared)
         return true
@@ -4756,6 +4810,11 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
                 if not ctx.classConformsToAny(inf_class, exp_class)
                     ctx.addErr(file, d_line, d_col, "type mismatch: expected " + exp_class + ", got " + inf_class + " (which does not implement " + exp_class + ")")
         return inferred
+    # BUG-431 (second half): an int VALUE into a byte slot (call args, returns, field
+    # inits). Before the isPrimitive guard, which does not count uint_n(8).
+    if narrowsIntToByte(exp, inferred, e)
+        ctx.addErr(file, d_line, d_col, "type mismatch: expected byte, got int " + BYTE_NARROW_HINT)
+        return exp
     if not isPrimitive(exp)
         return inferred
     if optionalIntoPlain(exp, inferred)
@@ -5166,6 +5225,13 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
                     if not ctx.classConformsToAny(inf_class, dec_class)
                         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + dec_class + ", found " + inf_class + " (which does not implement " + dec_class + ")")
         return
+    # BUG-431 (second half): `var b: byte = <int value>`. Checked BEFORE the isPrimitive
+    # guard below, which does not count uint_n(8) as primitive and would return first.
+    if dv.init_expr != nil
+        if declared is Type_.uint_n
+            if narrowsIntToByte(declared, inferExpr(dv.init_expr!, ctx), dv.init_expr!)
+                ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected byte, found int " + BYTE_NARROW_HINT)
+                return
     if not isPrimitive(declared)
         return
     if dv.init_expr == nil
@@ -5380,6 +5446,17 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                     if inferExpr(sa_ix.object, ctx) is Type_.string_
                         ctx.addErr(file, sasn.span.line, sasn.span.col,
                                    "strings are immutable -- 's[i] = ...' is not allowed; build a new string with StringBuilder (sb.append(...) then sb.build())")
+                # BUG-431: `buf[k] = v` into a List(byte), or `b = v` into a byte, with v an int
+                var sa_slot: Type_ = Type_.unknown_
+                if sasn.target is Expr.index as sa_ix2
+                    var sa_cont: Type_ = inferExpr(sa_ix2.object, ctx)
+                    if sa_cont is Type_.list_ as sa_el
+                        sa_slot = sa_el
+                else
+                    sa_slot = inferExpr(sasn.target, ctx)
+                if narrowsIntToByte(sa_slot, inferExpr(sasn.value, ctx), sasn.value)
+                    ctx.addErr(file, sasn.span.line, sasn.span.col,
+                               "type mismatch: expected byte, found int " + BYTE_NARROW_HINT)
             on Stmt.expr as se
                 checkCallsInExpr(se, file, 0, ctx)  # BUG-142 (line derived from callee span)
                 # Audit #2: a bare function name as a statement is a forgotten call.

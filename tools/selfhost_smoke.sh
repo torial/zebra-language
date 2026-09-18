@@ -768,6 +768,18 @@ smoke_tc_fail test/fail_fixtures/simd_unknown_method_test.zbr \
 smoke_tc_fail test/fail_fixtures/simd_mask_method_mismatch_test.zbr \
     "'boolx4' has no method 'sum'"
 
+# The Kolakoski dogfood trio (2026-09-18): BUG-435 List.reserve, BUG-434 Random as a field
+# type, BUG-431's checker half -- an int VALUE into a byte slot refused in the front end
+# (a literal still coerces; the positive fixture stores one).
+smoke_run test/bug431_434_435_dogfood_test.zbr "dogfood trio: OK"
+smoke_tc_fail test/fail_fixtures/bug431_int_into_byte_test.zbr \
+    "expected byte, found int"
+smoke_tc_fail test/fail_fixtures/bug431_int_into_byte_decl_test.zbr \
+    "expected byte, found int"
+# BUG-433 rides along: the instance verbs are a closed table once the receiver is typed.
+smoke_tc_fail test/fail_fixtures/bug433_random_unknown_method_test.zbr \
+    "'Random' has no method 'randBool'"
+
 # BUG-238: `except` in an enum-dotted branch arm, reached through `use`. Reported as a
 # regression that did not reproduce; registered as a RUNNING guard (smoke_run, not
 # smoke) because the failure was a parse error in the DEP, which only a real import

@@ -46,48 +46,6 @@
 
 ---
 
-### BUG-431: no way to narrow an `int` to a `byte`, and the checker lets the attempt through to Zig — OPEN (found 2026-09-17, dogfood) <!-- bug-open-ok: half (1) landed 2026-09-18 -- `int.toByte()` and a `splat` that narrows; half (2), the checker refusing `int` where `byte` is expected, is open -->
-
-`buf[k] = v` with `buf: List(byte)` and `v: int`, or `var b: byte = v`, passes `zebra -c`
-and fails inside zig with `expected type 'u8', found 'i64'` (mapped back to the .zbr line,
-at least). `int` has no `toByte()`; QUICKSTART §21 says numeric conversions are methods and
-lists `toFloat/toInt/toString/toFloat32` -- nothing lands on `byte`. A LITERAL coerces
-(`buf[k] = 2` is fine), so the only in-language workaround is to branch on the value
-(`if v == 1: buf[k] = 1 else if v == 2: ...`), which is what `kolakoski_kol.zbr` and
-`kolakoski_kolw.zbr` (wiki, `pages/fable/`) do -- and the second program was silently WRONG
-for K(3,4) because its branch table stopped at 3 and everything above became 0; a real
-narrowing would have been correct or refused. Two halves: (1) add `int.toByte()` (refuse or
-wrap out-of-range -- say which); (2) the checker should refuse `int` where `byte` is expected,
-the BUG-369 recipe. The zig escape `zig"@as(u8, @intCast(v))"` works today.
-
-### BUG-435: `List` has no way to reserve capacity, so the largest list a program can build is about a third of RAM — OPEN (found 2026-09-17, dogfood)
-
-`List(byte)` grows by `append` only, and the runtime's ArrayList doubles: a 3.5 GB ring
-filled one byte at a time asked for 4 GB at its last doubling while still holding 2 GB,
-and the program died `panic: OOM` in an 8 GB container that had room for the list twice
-over. There is no `reserve(n)` / `withCapacity(n)` / `List(T)(n)` on the surface (SURFACE.md
-List section, QUICKSTART §10). Workaround in `kolakoski_kolw2.zbr` (wiki, `pages/fable/`):
-`zig"out.ensureTotalCapacity(_zbr_rt._allocator, @as(usize, @intCast(n))) catch unreachable;"`
--- which also shows the escape hatch cannot spell `@panic("OOM")`, because a `\"` inside a
-`zig"..."` literal reaches the emit as `\"` and zig refuses it (a second, smaller defect;
-`catch unreachable` was the way round). Proposed: `List(T).withCapacity(n)` or
-`list.reserve(n)`, one emit arm each.
-
-### BUG-434: a `Random` cannot be a class field — OPEN (found 2026-09-17, dogfood)
-
-`class LStream` with `var rng: Random = Random.new(1)` fails at the field type:
-`error: use of undeclared identifier 'Random'` (the type name does not resolve to the
-runtime's `_Random`); the untyped form `var rng = Random.new(1)` instead emits `anytype`
-as the field's Zig type (`expected type expression, found 'anytype'`). A generator object
-that wants its own seeded stream has no way to hold one. Workaround in `kolakoski_kolw2.zbr`
-(wiki, `pages/fable/`): the process-global `Random.seed`/`Random.randBool`. Same family as
-BUG-433 -- the instance side of `Random` is the half nothing exercises.
-
-Also seen the same evening, filed under BUG-431's heading rather than separately:
-`u8x16.splat(a)` with `a: int` is `expected type 'u8', found 'i64'` -- the splat emits
-`@as(u8, a)` and there is no narrowing to reach it; the workaround loads the vector from a
-16-byte list filled through the branch table.
-
 ### BUG-432: a `+` sign flag in a format spec is silently dropped — OPEN (found 2026-09-17, dogfood)
 
 `"${d:+.1f}"` prints `65.0`, not `+65.0` -- the spec grammar in QUICKSTART §17 is
@@ -96,17 +54,6 @@ is ignored rather than refused. Either support `+` (C's `%+.1f`, the oracle
 `kolakoski_kol.c` prints with it) or refuse the spec with a diagnostic; silently printing a
 different number than asked is the worst of the three. Workaround in `kolakoski_kol.zbr`:
 a hand-built sign string.
-
-### BUG-433: `Random.new(seed)` instance methods are not checked — `rng.randBool()` reaches Zig — OPEN (found 2026-09-17, dogfood)
-
-`var rng = Random.new(17)` then `rng.randBool()` (the STATIC name; the instance one is
-`nextBool`) passes `zebra -c` and fails in zig: `no field or member function named
-'randBool' in 'zebra_rt._Random'`. `Random` is one of the runtime object types WITHOUT a
-`Type_` variant that `surface_inventory` lists as uncovered; the BUG-369 recipe (a
-`*MethodKnown` predicate derived from the dispatch arms, refusing unknown names in the front
-end) closed 16 such types on 2026-09-15 and did not reach this one. While there: the static
-and instance forms having different verbs (`randInt` / `nextInt`) is the trap that produced
-this; one verb would remove it.
 
 ### BUG-430: `zebra lsp` rename on Windows returns edits only for the opened file — the `use` graph's URIs disagree (`file://C:/…` vs `file:///C:/…`) — OPEN (found 2026-09-17)
 

@@ -986,6 +986,9 @@ items.sort()                         # natural ascending (numeric / lexicographi
 items.sort(def(a, b) = a > b)        # custom comparator (descending here); same as sortBy
 items.sortBy(def(x) = x.score)     # ONE-argument KEY function: ascending by the key (BUG-422)
 items.reverse()                      # in place (2026-09-10)
+items.reserve(100000)                # pre-size the backing store; count() unchanged (BUG-435, 2026-09-18).
+                                     # Worth it when the final size is known and large -- growth by
+                                     # doubling briefly holds old+new, which was a 3.5 GB list going OOM.
 
 # NESTED containers are VALUES: `.at()` on a List(List(T)) hands back a COPY, so
 # mutating it would not reach the parent -- and the compiler refuses that (BUG-314):
@@ -2194,7 +2197,10 @@ a cast in another language:
   The `as` here is a binding clause, not a cast expression.
 - For **numeric conversions**, use the typed `.toFloat()` / `.toInt()` /
   `.toString()` methods on the source value; `int.toByte()` narrows to a `byte`
-  (truncating to the low 8 bits, like `${n:c}`; BUG-431, 2026-09-18).
+  (truncating to the low 8 bits, like `${n:c}`; BUG-431, 2026-09-18). An int
+  VALUE flowing into a byte slot without it -- `buf[i] = n`, `var b: byte = n`,
+  a byte parameter -- is refused by the checker naming `.toByte()`; a literal or
+  arithmetic on literals (`buf[i] = 2`) still folds, as before.
 - For raw bit-pattern conversions, drop into `zig"…"` (§23).
 
 ---
@@ -3558,6 +3564,16 @@ global state, or to give each worker its own stream:
 ```
 var rng = Random.new(42)
 var roll = rng.nextInt(1, 6)        # same seed → same sequence, every run
+```
+
+`Random` is an ordinary type name, so a stream can live in a class field (BUG-434,
+fixed 2026-09-18):
+
+```zebra
+class Stream
+    var rng: Random = Random.new(7)
+    def roll(): int
+        return this.rng.nextInt(1, 6)
 ```
 
 ### `Regex` — regular expressions

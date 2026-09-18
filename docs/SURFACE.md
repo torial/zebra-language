@@ -61,9 +61,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `bytes` `center` `charAt` `chars` `codePointCount` `concat` `contains` `containsIgnoreCase` `count` `decodeBase64` `encodeBase64` `endsWith` `endsWithIgnoreCase` `eqlIgnoreCase` `format` `fromHex` `hash` `indexOf` `indexOfFrom` `indexOfIgnoreCase` `isAlpha` `isAlphanumeric` `isEmpty` `isNumeric` `isPrintable` `isValidUtf8` `join` `lastIndexOf` `len` `lines` `lower` `padLeft` `padRight` `repeat` `replace` `replaceAll` `reverse` `split` `startsWith` `startsWithIgnoreCase` `substring` `toFloat` `toFloat32` `toHex` `toInt` `toIntBase` `toString` `tokenize` `trim` `trimLeft` `trimRight` `tryFloat` `tryInt` `upper`
 
-### List(T) (23)
+### List(T) (24)
 
-`add` `all` `any` `append` `at` `clear` `contains` `count` `fetch` `filter` `find` `items` `join` `len` `map` `pop` `reduce` `remove` `reverse` `set` `sort` `sortBy` `toString`
+`add` `all` `any` `append` `at` `clear` `contains` `count` `fetch` `filter` `find` `items` `join` `len` `map` `pop` `reduce` `remove` `reserve` `reverse` `set` `sort` `sortBy` `toString`
 
 ### HashMap(K, V) (12)
 
@@ -144,6 +144,10 @@ named in the tool's header; what it cannot see is listed there too.
 ### SIMD vector / boolxN mask (QUICKSTART §32) (10)
 
 `all` `any` `count` `dot` `max` `max_element` `min` `min_element` `select` `sum`
+
+### Random instance (QUICKSTART §14) (4)
+
+`bytes` `nextBool` `nextFloat` `nextInt`
 
 ## Namespaces (31) and static members (171; 1 namespace(s) OPEN: Math)
 

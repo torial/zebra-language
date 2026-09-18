@@ -104,7 +104,13 @@ def main() -> int:
     # genuinely-guarded bugs were reported as "no fixture at all" the moment they were
     # marked FIXED. A gate that cries wolf gets switched off, and this one is supposed
     # to make fixes stick.
-    tests = tracked("test") + tracked("test/boundary")
+    # test/fail_fixtures/*.zbr too (2026-09-18): the smoke suite's must-reject fixtures
+    # live there, three of them bug-named, and this gate reported BUG-433's as "no fixture
+    # at all" the day it was filed FIXED. The registration regex below had the same
+    # blindness must_reject_set.sh once had -- a flat-path pattern -- so it is widened in
+    # step; a directory the gate enumerates but cannot see registered is worse than one it
+    # ignores, because the file then reads as unexercised debt.
+    tests = tracked("test") + tracked("test/boundary") + tracked("test/fail_fixtures")
     by_name, mentions = {}, {}
     for t in tests:
         m = re.match(r"^bug0*(\d+)[_.]", t.name)
@@ -126,7 +132,7 @@ def main() -> int:
     #      compile_check's known-bad witness, and is unregistered ON PURPOSE);
     #   3. it is referenced by any other gate script.
     smoke_text = SMOKE.read_text(encoding="utf-8") if SMOKE.exists() else ""
-    registered = set(re.findall(r"test/([A-Za-z0-9_]+)\.zbr", smoke_text))
+    registered = set(re.findall(r"test/(?:fail_fixtures/)?([A-Za-z0-9_]+)\.zbr", smoke_text))
 
     tool_text = ""
     for pat in ("*.sh", "*.py"):
@@ -137,7 +143,7 @@ def main() -> int:
                 tool_text += f.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 pass
-    driven = set(re.findall(r"test/([A-Za-z0-9_]+)\.zbr", tool_text))
+    driven = set(re.findall(r"test/(?:fail_fixtures/)?([A-Za-z0-9_]+)\.zbr", tool_text))
 
     # Boundary probes are driven as a DIRECTORY, not by name: boundary_check.sh globs
     # test/boundary/*.zbr and runs every one. So the per-name regex above can never see
