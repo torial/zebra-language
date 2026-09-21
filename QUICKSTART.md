@@ -3161,6 +3161,68 @@ def main()
 - `view(g, model)` — renders widgets; call `g.send(msg)` to queue messages
 - Messages are queued during `view` and processed after it returns
 
+### Components — `g.scope(map, view, model)` (2026-09-18)
+
+A component is an MVU triple of its own -- a model struct, a `Msg` union, an
+`update` and a `view` -- that knows nothing about the app that mounts it. The app
+holds the component's model in a field, gives its `Msg` union a variant that carries
+the component's message, and mounts the view with `g.scope`:
+
+```zebra
+union CounterMsg
+    inc
+    dec
+
+struct Counter
+    var n: int
+
+def counterUpdate(m: Counter, msg: CounterMsg): Counter
+    branch msg
+        on CounterMsg.inc return Counter(n: m.n + 1)
+        on CounterMsg.dec return Counter(n: m.n - 1)
+
+def counterView(g: Gui, m: Counter)
+    g.text("count: ${m.n}")
+    g.action("+", CounterMsg.inc)      # sends CounterMsg -- the counter never sees Msg
+    g.action("-", CounterMsg.dec)
+
+union Msg
+    left: CounterMsg                   # the app's Msg carries the child's
+    right: CounterMsg
+
+struct Model
+    var a: Counter
+    var b: Counter
+
+def wrapLeft(cm: CounterMsg): Msg
+    return Msg.left(cm)
+
+def wrapRight(cm: CounterMsg): Msg
+    return Msg.right(cm)
+
+def update(model: Model, msg: Msg): Model
+    branch msg
+        on Msg.left as cm  return model except a = counterUpdate(model.a, cm)
+        on Msg.right as cm return model except b = counterUpdate(model.b, cm)
+
+def view(g: Gui, model: Model)
+    g.scope(wrapLeft, counterView, model.a)     # same component, mounted twice;
+    g.scope(wrapRight, counterView, model.b)    # the map is what tells them apart
+```
+
+`g.scope(map, view, model)` renders `view(g', model)` with a `g'` whose every send --
+`g.send`, `g.action`, `g.toggle`, `g.field`, `g.every`, `g.menuItem` -- passes the
+child's message through `map` (`ChildMsg -> Msg`) on its way to the app's queue. It is
+Elm's `Html.map`. `map` and `view` are top-level `def`s or lambdas; scopes nest (a
+component may `g.scope` its own children, and its `update` routes the same way). A
+message the child sends is delivered to the app's `update` as `Msg.left(cm)`; the app
+does not need to know the child's variants. Three values and no closure, deliberately:
+a closure built per render is the shape that exhausted the sig pool (BUG-358).
+
+Before `g.scope` a child view could call `g.send(CounterMsg.inc)` and the message was
+silently DROPPED (a size mismatch against the app's `Msg`, reported on stderr) -- there was
+no way to hand a message up a level. Example: `examples/scope_smoke.zbr`.
+
 ### `Gui.run` — frame-callback form (TUI only)
 
 ```zebra
@@ -3232,6 +3294,7 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 | `g.textColored(s, r, g, b, a)`            | void     | Colored text label                         |
 | `g.selectable(label, selected)`            | bool     | Selectable list item                       |
 | `g.send(msg)`                              | void     | Dispatch a message (MVU only)              |
+| `g.scope(map, view, model)`                | void     | Render a child component's `view(g, model)` with every message it sends passed through `map` (ChildMsg -> Msg). Components, above. |
 
 ### Layout boxes (libui-ng / stub / TUI)
 

@@ -3489,6 +3489,19 @@ pub const GuiContext = struct {
     pub fn send(self: GuiContext, msg: anytype) void {
         if (self._send_fn) |f| f(self._send_ptr.?, @ptrCast(&msg));
     }
+    // MVU HIERARCHY (2026-09-18, QUICKSTART §30 "Components"): the stub-backend twin of the
+    // sections' GuiContext.scope -- a child view rendered under a message MAP (ChildMsg ->
+    // Msg), Elm's Html.map. Three values, no closure. The stub queue is untyped-by-size
+    // (send carries no length), so the wrapper reads the child message directly.
+    pub fn scope(self: GuiContext, map: anytype, view: anytype, model: anytype) void {
+        const _W = _ScopeWrap(@TypeOf(map));
+        var cg = GuiContext{ ._b = self._b, .lowLevel = self.lowLevel };
+        if (self._send_fn) |pf| {
+            cg._send_fn = _W.send;
+            cg._send_ptr = @ptrCast(_W.get(pf, self._send_ptr.?, map));
+        }
+        if (comptime _zbr_is_fnlike(@TypeOf(view))) view(cg, model) else { var _v = view; _v.call(cg, model); }
+    }
     pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
     pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
     pub fn sameLine(self: GuiContext) void { self._b.sameLineFn(); }
@@ -3592,6 +3605,41 @@ pub fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void
             _gui_active_backend.endFrameFn();
         }
     }
+}
+// Stub-backend twin of the sections' _ScopeWrap (see the tui section for the argument):
+// one heap instance per (parent send, parent queue, map), found again on re-render.
+fn _ScopeWrap(comptime MapT: type) type {
+    const is_fn = _zbr_is_fnlike(MapT);
+    const ChildMsg = if (is_fn) @typeInfo(MapT).@"fn".params[0].type.? else @typeInfo(@TypeOf(MapT.call)).@"fn".params[1].type.?;
+    const SendFn = *const fn (*anyopaque, *const anyopaque) void;
+    const MapStore = if (is_fn) *const MapT else MapT;
+    return struct {
+        parent_fn: SendFn,
+        parent_ptr: *anyopaque,
+        map: MapStore,
+        next: ?*@This(),
+        var head: ?*@This() = null;
+        fn get(pf: SendFn, pp: *anyopaque, map: MapT) *@This() {
+            const ms: MapStore = map;
+            var it = head;
+            while (it) |w| : (it = w.next) {
+                if (w.parent_fn == pf and w.parent_ptr == pp and (!is_fn or w.map == ms)) {
+                    if (!is_fn) w.map = ms;
+                    return w;
+                }
+            }
+            const w = _allocator.create(@This()) catch @panic("OOM");
+            w.* = .{ .parent_fn = pf, .parent_ptr = pp, .map = ms, .next = head };
+            head = w;
+            return w;
+        }
+        fn send(ctx: *anyopaque, mp: *const anyopaque) void {
+            const w: *@This() = @ptrCast(@alignCast(ctx));
+            const cm: ChildMsg = (@as(*const ChildMsg, @ptrCast(@alignCast(mp)))).*;
+            const pm = if (comptime is_fn) w.map(cm) else blk: { var m = w.map; break :blk m.call(cm); };
+            w.parent_fn(w.parent_ptr, @ptrCast(&pm));
+        }
+    };
 }
 pub fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, _mvu_update: anytype, _mvu_view: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");

@@ -1,0 +1,62 @@
+# Components with g.scope (QUICKSTART §30): one Counter component, written once, mounted
+# twice under the app. The counter's view sends CounterMsg through the buttons it declares;
+# g.scope(map, view, model) wraps each one into the app's Msg (left / right) on its way to
+# the queue, so the counter never learns the app's message type and the app's update only
+# ever sees Msg. Click the four buttons; the two counters move independently.
+#
+#   zebra --gui-backend=tui examples/scope_smoke.zbr
+#   zebra --gui-backend=libui_ng examples/scope_smoke.zbr
+
+union CounterMsg
+    inc
+    dec
+
+struct Counter
+    var n: int
+
+def counterUpdate(m: Counter, msg: CounterMsg): Counter
+    branch msg
+        on CounterMsg.inc return Counter(n: m.n + 1)
+        on CounterMsg.dec return Counter(n: m.n - 1)
+
+def counterView(g: Gui, m: Counter)
+    g.text("count: ${m.n}")
+    g.action("+", CounterMsg.inc)
+    g.action("-", CounterMsg.dec)
+
+union Msg
+    left: CounterMsg
+    right: CounterMsg
+    quit
+
+struct Model
+    var a: Counter
+    var b: Counter
+
+def wrapLeft(cm: CounterMsg): Msg
+    return Msg.left(cm)
+
+def wrapRight(cm: CounterMsg): Msg
+    return Msg.right(cm)
+
+def makeModel(): Model
+    return Model(a: Counter(n: 0), b: Counter(n: 0))
+
+def update(model: Model, msg: Msg): Model
+    branch msg
+        on Msg.left as cm
+            return model except a = counterUpdate(model.a, cm)
+        on Msg.right as cm
+            return model except b = counterUpdate(model.b, cm)
+        on Msg.quit
+            return model
+
+def view(g: Gui, model: Model)
+    g.text("left")
+    g.scope(wrapLeft, counterView, model.a)
+    g.separator()
+    g.text("right")
+    g.scope(wrapRight, counterView, model.b)
+
+def main()
+    Gui.run("scope", 320, 240, makeModel, update, view)

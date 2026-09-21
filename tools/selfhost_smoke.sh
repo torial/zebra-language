@@ -1356,6 +1356,13 @@ smoke_run test/module_var_shadow_test.zbr "module_var_shadow_test: OK"
 # gate: pre-fix it panicked with "incorrect alignment".
 smoke_run test/mvu_mixed_union_test.zbr "update: set_label -> hello"
 
+# MVU hierarchy, g.scope(map, view, model) (2026-09-18, QUICKSTART §30 "Components"): one
+# Counter component mounted three ways -- two direct mounts told apart ONLY by their map
+# (a def and a lambda), and one two levels down, so a scope's parent is itself a scope's
+# wrapper. update() prints which mount each message came through; the expected order
+# was derived by hand before the first run. Stub backend, one frame.
+smoke_run test/gui_scope_test.zbr "pair -> x.n = 99 y.n = 199"
+
 # BUG-215: two-argument `str.indexOf(sub, from)` silently dropped the offset —
 # every search restarted at 0.  Found via the IDE crashing on Check / List Targets.
 # Was a codegen @compileError (asserted with smoke_emit_contains); #5a moved it into

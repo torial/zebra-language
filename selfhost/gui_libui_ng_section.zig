@@ -141,6 +141,23 @@ const GuiContext = struct {
         const _v: _T = msg;
         if (self._send_fn) |f| self._b.everyFn(ms, @ptrCast(&_v), @sizeOf(_T), f, self._send_ptr.?);
     }
+    // MVU HIERARCHY (2026-09-18, QUICKSTART §30 "Components"): render a child component's
+    // `view(g, model)` under a message MAP. Every message the child sends through this `g`
+    // -- send, action, toggle, field, every, menuItem -- is passed through `map`
+    // (ChildMsg -> Msg) before it reaches the parent's queue, so the child never knows the
+    // parent's Msg type and the parent's update sees `Msg.child(cm)`. Elm's Html.map.
+    // Three VALUES, no closure: a `def map(cm: ChildMsg): Msg`, a `def view(g: Gui, m:
+    // ChildModel)`, and the child model -- the shape Gui.run already takes, and not the
+    // closure-per-frame shape that exhausted the sig pool (BUG-358). Scopes nest.
+    pub fn scope(self: GuiContext, map: anytype, view: anytype, model: anytype) void {
+        const _W = _ScopeWrap(@TypeOf(map));
+        var cg = GuiContext{ ._b = self._b, .lowLevel = self.lowLevel };
+        if (self._send_fn) |pf| {
+            cg._send_fn = _W.send;
+            cg._send_ptr = @ptrCast(_W.get(pf, self._send_ptr.?, map));
+        }
+        if (comptime _zbr_is_fnlike(@TypeOf(view))) view(cg, model) else { var _v = view; _v.call(cg, model); }
+    }
     pub fn text(self: GuiContext, s: []const u8) void { self._b.textFn(s); }
     pub fn separator(self: GuiContext) void { self._b.separatorFn(); }
     pub fn sameLine(self: GuiContext) void { self._b.sameLineFn(); }
@@ -325,6 +342,67 @@ fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
             _gui_active_backend.endFrameFn();
         }
     }
+}
+// The send-function a scoped child's `g` carries (see GuiContext.scope). One instance per
+// (parent send, parent queue, map) triple, allocated ONCE and kept for the life of the
+// program: a retained-mode callback registered inside the child (`g.action`) stores this
+// pointer and fires it from a later event, long after scope() has returned, so it cannot
+// live on scope()'s stack. Two mounts of one child under different maps (`Msg.left`,
+// `Msg.right`) are two instances; the same mount re-rendered finds its instance again.
+fn _ScopeWrap(comptime MapT: type) type {
+    const is_fn = _zbr_is_fnlike(MapT);
+    const ChildMsg = if (is_fn) @typeInfo(MapT).@"fn".params[0].type.? else @typeInfo(@TypeOf(MapT.call)).@"fn".params[1].type.?;
+    const SendFn = *const fn (*anyopaque, *const anyopaque, usize) void;
+    const MapStore = if (is_fn) *const MapT else MapT;
+    return struct {
+        parent_fn: SendFn,
+        parent_ptr: *anyopaque,
+        map: MapStore,
+        next: ?*@This(),
+        var head: ?*@This() = null;
+        fn get(pf: SendFn, pp: *anyopaque, map: MapT) *@This() {
+            const ms: MapStore = map;
+            var it = head;
+            while (it) |w| : (it = w.next) {
+                if (w.parent_fn == pf and w.parent_ptr == pp and (!is_fn or w.map == ms)) {
+                    if (!is_fn) w.map = ms; // a closure: same code, latest captures
+                    return w;
+                }
+            }
+            const w = _allocator.create(@This()) catch @panic("OOM");
+            w.* = .{ .parent_fn = pf, .parent_ptr = pp, .map = ms, .next = head };
+            head = w;
+            return w;
+        }
+        fn send(ctx: *anyopaque, mp: *const anyopaque, len: usize) void {
+            const w: *@This() = @ptrCast(@alignCast(ctx));
+            var cm: ChildMsg = undefined;
+            if (len == @sizeOf(ChildMsg)) {
+                cm = (@as(*const ChildMsg, @ptrCast(@alignCast(mp)))).*;
+            } else if (comptime @typeInfo(ChildMsg) == .@"union" and @typeInfo(ChildMsg).@"union".tag_type != null) {
+                // `ChildMsg.tick` on a union(enum) is the TAG (same accident the root queue handles).
+                const Tag = @typeInfo(ChildMsg).@"union".tag_type.?;
+                if (len != @sizeOf(Tag)) {
+                    std.debug.print("gui: a scoped message of {d} bytes does not match the child Msg type ({d} bytes); dropped\n", .{ len, @sizeOf(ChildMsg) });
+                    return;
+                }
+                const t: *const Tag = @ptrCast(@alignCast(mp));
+                switch (t.*) {
+                    inline else => |tv| {
+                        if (comptime @FieldType(ChildMsg, @tagName(tv)) == void) {
+                            cm = @unionInit(ChildMsg, @tagName(tv), {});
+                        } else return;
+                    },
+                }
+            } else {
+                std.debug.print("gui: a scoped message of {d} bytes does not match the child Msg type ({d} bytes); dropped\n", .{ len, @sizeOf(ChildMsg) });
+                return;
+            }
+            const pm = if (comptime is_fn) w.map(cm) else blk: { var m = w.map; break :blk m.call(cm); };
+            const PM = @TypeOf(pm);
+            w.parent_fn(w.parent_ptr, @ptrCast(&pm), @sizeOf(PM));
+        }
+    };
 }
 fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, _mvu_update: anytype, _mvu_view: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");

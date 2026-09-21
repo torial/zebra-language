@@ -23,6 +23,18 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **MVU components: `g.scope(map, view, model)` (2026-09-18; QUICKSTART §30 "Components").**
+  Renders a child component's `view(g, model)` under a message map (`ChildMsg -> Msg`):
+  every send the child makes through that `g` -- `send`, `action`, `toggle`, `field`,
+  `every`, `menuItem` -- is wrapped by `map` on its way to the app's queue, so a component
+  is an MVU triple of its own and the app's `update` sees only its own `Msg`. Elm's
+  `Html.map`. Scopes nest; one component mounts many times, told apart by the map. Three
+  values, no closure (BUG-358's shape avoided). All three backends; in the retained ones the
+  scope's send-wrapper is a per-(parent, map) instance that outlives the view call, because
+  a button registered inside the child fires it from a later event. Before this a child's
+  `g.send(ChildMsg.x)` was dropped as a size mismatch. Fixture `test/gui_scope_test.zbr`
+  (three mounts, one nested, expected order written first); `examples/scope_smoke.zbr`
+  under `gui-scaffold-scope` and `libui-section` (DAILY). SURFACE: Gui +`scope`.
 - **SIMD comparison masks, select, lane-wise min/max, casts (2026-09-18; QUICKSTART §32).**
   `==`/`!=`/`<`/`<=`/`>`/`>=` on vectors produce a `boolxN` mask; `mask.select(a, b)`,
   `mask.any()`, `mask.all()`, `mask.count()`; `a.min(b)`/`a.max(b)` lane-wise;

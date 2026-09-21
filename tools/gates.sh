@@ -579,6 +579,11 @@ run_daily "gui-scaffold-panel" "startup path clean" bash tools/gui_scaffold_chec
 # in the used module). Neither counter nor panel_smoke has a `use`, so nothing in this
 # repo ran that shape until 2026-09-09 -- zebra-ide's model_test did, one repo over.
 run_daily "gui-scaffold-modules" "startup path clean" bash tools/gui_scaffold_check.sh examples/gui_modules_smoke.zbr
+# g.scope (2026-09-18): a child component mounted twice under one app through a message
+# map, its buttons registered as RETAINED callbacks that fire the scope's wrapper from a
+# later event -- the shape the stub backend cannot run (no `action`) and the smoke
+# fixture therefore cannot reach.
+run_daily "gui-scaffold-scope" "startup path clean" bash tools/gui_scaffold_check.sh examples/scope_smoke.zbr
 # THE GUI-BACKEND WITNESS WITHOUT WINDOWS (2026-09-07; registered 2026-09-09 -- it had
 # been run by hand and by zebra-ide's check.sh only): the libui_ng project for six
 # examples, `zig build-obj -fno-emit-bin` against the REAL zig-libui-ng bindings, plus

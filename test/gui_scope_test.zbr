@@ -1,0 +1,103 @@
+# MVU hierarchy (QUICKSTART §30 "Components"): g.scope(map, view, model) renders a child
+# component's view under a message map, Elm's Html.map. One Counter component is mounted
+# THREE ways -- twice directly under the app (Msg.left / Msg.right, a def and a lambda as
+# the map) and once two levels down (App -> Pair -> Counter), so a scope nests inside a
+# scope. The child sends CounterMsg and never sees Msg; the parent's update sees only its
+# own type. Stub backend: one frame; update() prints which mount each message came through.
+# Expected order was written by hand before the first run: the view sends left, right,
+# pair.first, pair.second, then the app's own reset.
+union CounterMsg
+    inc
+    dec
+
+struct Counter
+    var n: int
+
+def counterUpdate(m: Counter, msg: CounterMsg): Counter
+    branch msg
+        on CounterMsg.inc return Counter(n: m.n + 1)
+        on CounterMsg.dec return Counter(n: m.n - 1)
+
+def counterView(g: Gui, m: Counter)
+    g.text("n = ${m.n}")
+    # the stub backend's buttons never fire; send directly so the frame carries a message
+    if m.n >= 100
+        g.send(CounterMsg.dec)
+    else
+        g.send(CounterMsg.inc)
+
+# a middle component: a pair of counters, itself scoped by the app
+union PairMsg
+    first: CounterMsg
+    second: CounterMsg
+
+struct Pair
+    var x: Counter
+    var y: Counter
+
+def wrapFirst(cm: CounterMsg): PairMsg
+    return PairMsg.first(cm)
+
+def wrapSecond(cm: CounterMsg): PairMsg
+    return PairMsg.second(cm)
+
+def pairUpdate(p: Pair, msg: PairMsg): Pair
+    branch msg
+        on PairMsg.first as cm
+            return p except x = counterUpdate(p.x, cm)
+        on PairMsg.second as cm
+            return p except y = counterUpdate(p.y, cm)
+
+def pairView(g: Gui, p: Pair)
+    g.text("pair")
+    g.scope(wrapFirst, counterView, p.x)
+    g.scope(wrapSecond, counterView, p.y)
+
+union Msg
+    left: CounterMsg
+    right: CounterMsg
+    pair: PairMsg
+    reset
+
+struct Model
+    var a: Counter
+    var b: Counter
+    var pr: Pair
+
+def wrapLeft(cm: CounterMsg): Msg
+    return Msg.left(cm)
+
+def wrapPair(pm: PairMsg): Msg
+    return Msg.pair(pm)
+
+def makeModel(): Model
+    return Model(a: Counter(n: 0), b: Counter(n: 10), pr: Pair(x: Counter(n: 100), y: Counter(n: 200)))
+
+def update(model: Model, msg: Msg): Model
+    branch msg
+        on Msg.left as cm
+            var na: Counter = counterUpdate(model.a, cm)
+            print("left -> a.n = ${na.n}")
+            return model except a = na
+        on Msg.right as cm
+            var nb: Counter = counterUpdate(model.b, cm)
+            print("right -> b.n = ${nb.n}")
+            return model except b = nb
+        on Msg.pair as pm
+            var np: Pair = pairUpdate(model.pr, pm)
+            print("pair -> x.n = ${np.x.n} y.n = ${np.y.n}")
+            return model except pr = np
+        on Msg.reset
+            print("reset")
+            return makeModel()
+
+def view(g: Gui, model: Model)
+    g.text("three mounts")
+    g.scope(wrapLeft, counterView, model.a)
+    g.scope(def(cm: CounterMsg): Msg = Msg.right(cm), counterView, model.b)
+    g.scope(wrapPair, pairView, model.pr)
+    g.send(Msg.reset)
+
+def main()
+    Gui.run("scope", 300, 200, makeModel, update, view)
+    print("gui_scope: OK")

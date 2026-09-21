@@ -218,7 +218,7 @@ per-tier counts, computed from the registrations rather than written down.
 | `--fast` | 28 <!-- doc-gen: 28 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
 | (default) | 30 <!-- doc-gen: 30 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
 | `--full` | 38 <!-- doc-gen: 38 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 46 <!-- doc-gen: 46 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--daily` | 47 <!-- doc-gen: 47 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -2025,6 +2025,22 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**FULL tier 2026-09-18 (g.scope, bundle107): 37/38 in ONE invocation at JOBS=2 on torial +
+`output_sweep` green standalone -- ASSEMBLED.** QUICK 30/30 first. smoke **541/541** (497 s),
+round-trip byte-identical, `compile_check-inline` 382/0, `full_sweep` 0 regressions vs 485,
+`examples_sweep` 0 vs 19, `divergence` 0 regressions vs the N-1 anchor, `release-mode` and
+`contract-mode`. The in-tier red was `output_sweep` on `bug259_runtime_exit_code_test`: a
+program that panics deterministically on its line 29 produced an EMPTY capture (sha1
+da39a3ee, zero bytes) -- not a changed message, no output at all. `--only` on it: identical
+to baseline; the whole gate re-run standalone: **466 files behaviour identical**. Recorded as
+a non-reproducing empty capture under load (the run overlapped the same VS Code process as
+the trio's tier), the third load-shaped red on this machine in four days after the doc-lint
+oracle timeout and the release-mode probe; none of the three reproduced, and each landed on
+a different gate. The GUI runtime change itself is covered by `gui-scaffold-scope` and
+`libui-section` (DAILY) plus the container's tui scaffold and libui section builds, and by
+the smoke fixture on the stub backend; a click through `examples/scope_smoke.zbr` on torial
+is still the only proof the retained callback fires through the wrapper.
+
 **FULL tier 2026-09-18 (dogfood trio, bundle106): 37/38 in ONE invocation at JOBS=2 on torial
 + `doc-lint` green standalone -- ASSEMBLED.** smoke **540/540**, round-trip byte-identical,
 `compile_check-inline` 381/0, `output_sweep` 466 identical, `full_sweep` 0 regressions vs 485,
@@ -2666,7 +2682,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **650** <!-- doc-gen: 650 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **651** <!-- doc-gen: 651 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.
@@ -2727,6 +2743,14 @@ CodeEditor across a module boundary) and BUG-357 (`sys.args()` in a used module)
 only by zebra-ide's model_test, one repo over; `bug_fixture_check` said so on the first
 static run after they were marked fixed. `libui_section_check` compiles the same example's
 libui_ng shape, which is where BUG-343 lives.
+
+**A fourth, `gui-scaffold-scope` (2026-09-18), runs it on `examples/scope_smoke.zbr`** --
+one Counter component mounted twice under the app through `g.scope(map, view, model)`, its
+buttons registered as RETAINED callbacks that fire the scope's send-wrapper from a later
+event. That is the shape the stub backend cannot run (it has no `action`) and so the smoke
+fixture `test/gui_scope_test.zbr` cannot reach: the wrapper has to outlive `scope()`, which
+is why it is a per-(parent, map) heap instance and not a stack local. `libui-section` compiles
+the same example against the bindings, so `_ScopeWrap` is instantiated in both sections.
 
 Run it as `bash tools/gui_scaffold_check.sh [examples/foo.zbr]`. It builds a real tui app,
 so it is minutes, not seconds — treat it like `compile_check`: per-session and
