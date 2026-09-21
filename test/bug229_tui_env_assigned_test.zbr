@@ -18,8 +18,17 @@
 struct Model
     var n: int
 
+union Msg
+    none
+
+def makeModel(): Model
+    return Model(n: 0)
+
+def update(m: Model, msg: Msg): Model
+    return m
+
 def view(g: Gui, m: Model)
     g.text("bug229")
 
 def main()
-    Gui.run(Model(n: 0), def(g: Gui, m: Model) = view(g, m))
+    Gui.run("bug229", 200, 100, makeModel, update, view)

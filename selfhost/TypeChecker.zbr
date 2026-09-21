@@ -1775,7 +1775,7 @@ def sqliteRowListMethodKnown(name: str): bool
     return name == "at" or name == "count" or name == "len"
 
 def guiMethodKnown(name: str): bool
-    return name == "send" or name == "text" or name == "separator" or name == "sameLine" or name == "spacing" or name == "indent" or name == "unindent" or name == "button" or name == "buttonId" or name == "checkbox" or name == "slider" or name == "input" or name == "inputMultiline" or name == "selectable" or name == "textColored" or name == "beginTable" or name == "tableSetupColumn" or name == "tableHeadersRow" or name == "tableNextRow" or name == "tableNextColumn" or name == "endTable" or name == "childWindow" or name == "treeNode" or name == "treePop" or name == "setColor" or name == "setColorsDark" or name == "setStyleFloat" or name == "setVec2" or name == "scaleAllSizes" or name == "getDpi" or name == "panel" or name == "window" or name == "beginHBox" or name == "endHBox" or name == "beginVBox" or name == "endVBox" or name == "beginTabs" or name == "beginTabPage" or name == "endTabPage" or name == "endTabs" or name == "tabSelected" or name == "selectTab" or name == "minSize" or name == "hotkey" or name == "takeKey" or name == "every" or name == "scope" or name == "beginPanel" or name == "action" or name == "toggle" or name == "field" or name == "beginMenu" or name == "menuItem" or name == "menuSeparator" or name == "menuQuit" or name == "endMenu" or name == "endPanel" or name == "tableSelectedRow" or name == "tableActivatedRow" or name == "vbox" or name == "hbox" or name == "progressBar" or name == "combobox" or name == "spinbox" or name == "openFile" or name == "saveFile" or name == "openFolder" or name == "msgBox" or name == "msgBoxError"
+    return name == "send" or name == "text" or name == "separator" or name == "sameLine" or name == "spacing" or name == "indent" or name == "unindent" or name == "button" or name == "slider" or name == "inputMultiline" or name == "selectable" or name == "textColored" or name == "beginTable" or name == "tableSetupColumn" or name == "tableHeadersRow" or name == "tableNextRow" or name == "tableNextColumn" or name == "endTable" or name == "childWindow" or name == "treeNode" or name == "treePop" or name == "setColor" or name == "setColorsDark" or name == "setStyleFloat" or name == "setVec2" or name == "scaleAllSizes" or name == "getDpi" or name == "panel" or name == "window" or name == "beginHBox" or name == "endHBox" or name == "beginVBox" or name == "endVBox" or name == "beginTabs" or name == "beginTabPage" or name == "endTabPage" or name == "endTabs" or name == "tabSelected" or name == "selectTab" or name == "minSize" or name == "hotkey" or name == "takeKey" or name == "every" or name == "scope" or name == "beginPanel" or name == "toggle" or name == "field" or name == "beginMenu" or name == "menuItem" or name == "menuSeparator" or name == "menuQuit" or name == "endMenu" or name == "endPanel" or name == "tableSelectedRow" or name == "tableActivatedRow" or name == "vbox" or name == "hbox" or name == "progressBar" or name == "combobox" or name == "spinbox" or name == "openFile" or name == "saveFile" or name == "openFolder" or name == "msgBox" or name == "msgBoxError"
 
 def httpRequestMethodKnown(name: str): bool
     return false   # no methods: method/path/content/query are FIELDS
@@ -2895,6 +2895,16 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         if ctx.hasClassAny(bname)
                             if ctx.methodReturnAny(bname, mem.member) as user_static_ret
                                 return user_static_ret
+                        # The frame-callback `Gui.run(title, w, h, frame)` retired 2026-09-21
+                        # (CHANGELOG): its only reason to exist was the value-returning
+                        # widgets, which went with it. Six arguments or a refusal that names
+                        # the MVU form, instead of codegen padding a 2- or 4-argument call
+                        # with `undefined` and letting zig report the mess.
+                        if bname == "Gui" and mem.member == "run"
+                            if c.args.len != 6
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "Gui.run takes (title, width, height, init, update, view) -- the frame-callback form Gui.run(title, w, h, frame) was retired 2026-09-21; write init/update/view (QUICKSTART §30)")
+                                return Type_.void_
                         if bname == "Regex" and mem.member == "compile"
                             return Type_.regex
                         if bname == "Timer" and mem.member == "start"

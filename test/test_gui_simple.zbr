@@ -1,5 +1,20 @@
-def frame(g: Gui)
+# The smallest MVU program: a model with nothing in it, no messages, one line of text.
+# (Until 2026-09-21 this was the frame-callback form `Gui.run(title, w, h, frame)`, which
+# was retired with the value-returning widgets that were its only reason to exist.)
+struct Model
+    var n: int
+
+union Msg
+    none
+
+def makeModel(): Model
+    return Model(n: 0)
+
+def update(m: Model, msg: Msg): Model
+    return m
+
+def view(g: Gui, m: Model)
     g.text("Hello from GUI")
 
 def main()
-    Gui.run("Test", 400, 300, frame)
+    Gui.run("Test", 400, 300, makeModel, update, view)

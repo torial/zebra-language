@@ -20,8 +20,7 @@ def update(model: Model, msg: Msg): Model
 
 def view(g: Gui, model: Model)
     g.text(label(model.count))
-    if g.button("+1")
-        g.send(Msg.inc)
+    g.button("+1", Msg.inc)
 
 def main()
     var ed: CodeEditor = CodeEditor.forFile("scratch.txt")

@@ -848,7 +848,7 @@ python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate poin
                                 #   FRONT END ONLY (`zebra -c`) — a doc fragment has no
                                 #   modules around it, so a full compile would drown syntax
                                 #   errors in missing-dependency noise.
-                                #   Baselined at 7 <!-- doc-gen: 7 = grep -vc '^#' tools/doc_example_baseline.txt -->
+                                #   Baselined at 5 <!-- doc-gen: 5 = grep -vc '^#' tools/doc_example_baseline.txt -->
                                 #   (was 27), so it fails only on NEW breakage. That
                                 #   baseline is REAL DEBT a reader hits, in three families:
                                 #   `print` WITHOUT PARENS (pre-`()`-mandatory Cobra syntax),
@@ -2025,6 +2025,25 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**FULL tier 2026-09-21 (the §6c GUI cut, bundle108): 38/38 PASS in ONE invocation at JOBS=2 on
+torial** -- the first clean FULL of this stretch, after three consecutive tiers each carried
+one load-shaped red. smoke **543/543** (723 s), round-trip byte-identical,
+`compile_check-inline` 383/0, `output_sweep` **466 files behaviour identical** (which is the
+receipt that the two frame-form fixtures converted to MVU print exactly what they did),
+`full_sweep` 0 regressions vs 485, `examples_sweep` 0 vs 19, `divergence` 0 regressions vs
+the N-1 anchor, `release-mode`, `contract-mode` 11/11. The QUICK before it was 28/30 with
+both reds doc-side and both fixed before FULL: the corpus oracle (651 -> 650: one fixture
+added, `test/zebra_ide.zbr` deleted <!-- doc-lint-ok: the deletion is the record -->) and `doc-example` on a UI_QUICKSTART block that had sat
+in the broken-examples baseline with 6-space indentation -- the surface rewrite touched the
+block, its hash moved out from under the baseline entry, and the honest fix was the block,
+not the baseline (7 -> 5: that one plus a QUICKSTART block the rewrite fixed in passing).
+What the tier CANNOT say about this commit: whether a click on a real backend still routes
+through `button(label, msg)` -- `gui-scaffold-*` and `libui-section` (DAILY) build and
+start the four GUI examples, the container did the same plus the libui section for all
+seven; the click is Sean's. Corpus: 12 files, 67 sites; `test/gui_test.zbr` (the counter)
+runs under the smoke for the first time -- it had been `registration_baseline` debt since
+the file existed.
+
 **FULL tier 2026-09-18 (g.scope, bundle107): 37/38 in ONE invocation at JOBS=2 on torial +
 `output_sweep` green standalone -- ASSEMBLED.** QUICK 30/30 first. smoke **541/541** (497 s),
 round-trip byte-identical, `compile_check-inline` 382/0, `full_sweep` 0 regressions vs 485,
@@ -2682,7 +2701,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **651** <!-- doc-gen: 651 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **650** <!-- doc-gen: 650 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.
@@ -2697,8 +2716,8 @@ The size of that gap is now **measured rather than estimated**, which it was not
 paragraph was first written (it said "57 are in no known category" against a corpus of 421).
 `registration_check` is the instrument: every tracked `test/*.zbr` must have its status
 asserted by *something* — a smoke registration, the full_sweep pass baseline, or an entry in
-`tools/registration_exempt.txt` **with a reason**. As of 2026-08-26 that leaves **13**
-<!-- doc-gen: 13 = python tools/registration_check.py 2>/dev/null | grep -oE '[0-9]+ unasserted' | grep -oE '^[0-9]+' -->
+`tools/registration_exempt.txt` **with a reason**. As of 2026-08-26 that leaves **11**
+<!-- doc-gen: 11 = python tools/registration_check.py 2>/dev/null | grep -oE '[0-9]+ unasserted' | grep -oE '^[0-9]+' -->
 unasserted, against 37 exempt-with-reason. Down from 57, and from 18 on 2026-08-26 when
 reading full_sweep's newly-kept evidence named the last three. Shrink it, never grow it — and note
 the number now carries an oracle, so this paragraph cannot quietly go stale the way the last

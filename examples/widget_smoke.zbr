@@ -23,8 +23,7 @@ def update(model: Model, msg: Msg): Model
 def view(g: Gui, model: Model)
     g.text("Progress demo")
     g.progressBar("progress", model.progress)
-    if g.button("Advance")
-        g.send(Msg.tick)
+    g.button("Advance", Msg.tick)
     g.separator()
     g.text("Combobox demo")
     var items: List(str) = ["Apple", "Banana", "Cherry"]

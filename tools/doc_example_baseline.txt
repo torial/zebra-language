@@ -2,9 +2,7 @@
 # recorded so the gate fails only on NEW breakage. Shrink this; do not grow
 # it. Each line is <doc>#<block index>. See tools/doc_example_check.py.
 COMPILER_WORKFLOW.md#f313822302
-QUICKSTART.md#5ade3adee2
 QUICKSTART.md#8a323e2c27
 QUICKSTART.md#c8a6271284
 STDLIB_ROADMAP.md#a5db04af6b
 STYLE_GUIDE.md#09f91bd806
-UI_QUICKSTART.md#3f89e93c79

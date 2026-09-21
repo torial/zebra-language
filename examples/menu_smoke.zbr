@@ -50,8 +50,8 @@ def view(g: Gui, m: Model)
         if m.loud
             shout = "!"
         g.text("count ${m.count}${shout}   name ${m.name}   ticks ${m.ticks}")
-        g.action("Bump", Msg.bump)
-        g.action("Reset", Msg.reset)
+        g.button("Bump", Msg.bump)
+        g.button("Reset", Msg.reset)
         g.toggle("Loud", m.loud, def(b: bool): Msg
             return Msg.set_loud(b)
         )

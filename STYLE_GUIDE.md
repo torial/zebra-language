@@ -911,7 +911,9 @@ Full form (`T where T implements X`), not the shorthand `T where Comparable`.
 ### 15.1 Implicit capture is the default ✅ ESTABLISHED (QS §19)
 
 Free variables auto-close. Don't write a `capture` block unless you need
-**persistent per-instance state across frames** (the GUI case in QS §30).
+**persistent per-instance state** that outlives one call of the closure -- a generator,
+a memo, a counter handed to a callback. (The GUI case that motivated `capture`, a
+per-frame closure in `Gui.run`, was retired 2026-09-21; GUI state lives in the MVU model.)
 
 ```zebra
 # ✓ Implicit capture:
@@ -920,12 +922,11 @@ var bump = def()
     counter += 1
 
 # ✓ Explicit capture only when needed:
-Gui.run("App", 800, 600, def(g: Gui)
+var nextId = def(): int
     capture
-        var state = AppState()       # allocated once, reused per frame
-    state.tick()
-    state.render(g)
-)
+        var n: int = 0               # allocated once, kept across calls
+    n += 1
+    return n
 ```
 
 ### 15.2 Expression vs statement-body lambdas ✅ ESTABLISHED

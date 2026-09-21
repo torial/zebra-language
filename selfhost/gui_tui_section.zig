@@ -164,11 +164,7 @@ const GuiContext = struct {
     pub fn spacing(self: GuiContext) void { self._b.spacingFn(); }
     pub fn indent(self: GuiContext) void { self._b.indentFn(); }
     pub fn unindent(self: GuiContext) void { self._b.unindentFn(); }
-    pub fn button(self: GuiContext, label: []const u8) bool { return self._b.buttonFn(label); }
-    pub fn buttonId(self: GuiContext, id: []const u8, label: []const u8) bool { return self._b.buttonIdFn(id, label); }
-    pub fn checkbox(self: GuiContext, label: []const u8, value: bool) bool { return self._b.checkboxFn(label, value); }
     pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
-    pub fn input(self: GuiContext, label: []const u8, value: []const u8) []const u8 { return self._b.inputFn(label, value); }
     pub fn inputMultiline(self: GuiContext, label: []const u8, value: []const u8, width: f64, height: f64) []const u8 { return self._b.inputMultilineFn(label, value, width, height); }
     pub fn selectable(self: GuiContext, label: []const u8) bool { return self._b.selectableFn(label); }
     pub fn textColored(self: GuiContext, r: f64, gv: f64, b_: f64, a: f64, s: []const u8) void {
@@ -243,9 +239,12 @@ const GuiContext = struct {
     pub fn hotkey(self: GuiContext, vk: i64, mods: i64) void { self._b.hotkeyFn(vk, mods); }
     pub fn takeKey(self: GuiContext) i64 { return self._b.takeKeyFn(); }
     // ── message-carrying forms (§6b): the widget carries the Msg it sends ──
-    // A button that sends `msg` when clicked. (`button(label)` -> bool is the bridge
-    // form and goes away in §6c, when this becomes `button`.)
-    pub fn action(self: GuiContext, label: []const u8, msg: anytype) void {
+    // A button that sends `msg` when clicked. (Was `action` until 2026-09-21, while the
+    // value-returning `button(label) -> bool` bridge form still existed; that form,
+    // `buttonId`, `checkbox` and `input` are gone -- `button`/`toggle`/`field` carry the
+    // message. `slider`, `selectable` and `inputMultiline` are the last value-returning
+    // widgets, awaiting message forms.)
+    pub fn button(self: GuiContext, label: []const u8, msg: anytype) void {
         const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
         const _v: _T = msg;
         if (self._send_fn) |f| self._b.actionFn(label, @ptrCast(&_v), @sizeOf(_T), f, self._send_ptr.?);
@@ -320,23 +319,6 @@ const _GuiHBox = struct {
     pub fn end(self: _GuiHBox) void { self._b.endHBoxFn(); }
 };
 const Gui = GuiContext;
-fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
-    _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
-    defer _gui_active_backend.deinitFn();
-    const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend } };
-    if (comptime _zbr_is_fnlike(@TypeOf(frame))) {
-        while (_gui_active_backend.newFrameFn()) {
-            frame(_g);
-            _gui_active_backend.endFrameFn();
-        }
-    } else {
-        var _mframe = frame;
-        while (_gui_active_backend.newFrameFn()) {
-            _mframe.call(_g);
-            _gui_active_backend.endFrameFn();
-        }
-    }
-}
 // The send-function a scoped child's `g` carries (see GuiContext.scope). One instance per
 // (parent send, parent queue, map) triple, allocated ONCE and kept for the life of the
 // program: a retained-mode callback registered inside the child (`g.action`) stores this

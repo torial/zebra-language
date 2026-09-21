@@ -1,0 +1,7 @@
+# The frame-callback `Gui.run(title, w, h, frame)` was retired 2026-09-21. It is refused by
+# name at the call rather than padded with `undefined` and handed to zig.
+def frame(g: Gui)
+    g.text("hello")
+
+def main()
+    Gui.run("Test", 400, 300, frame)

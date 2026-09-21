@@ -24,10 +24,8 @@ def update(m: Model, msg: Msg): Model
 def view(g: Gui, m: Model)
     # Toolbar row — buttons side by side
     g.beginHBox("toolbar", false)
-    if g.button("+")
-        g.send(Msg.inc)
-    if g.button("-")
-        g.send(Msg.dec)
+    g.button("+", Msg.inc)
+    g.button("-", Msg.dec)
     g.endHBox()
 
     g.separator()
@@ -41,9 +39,7 @@ def view(g: Gui, m: Model)
     g.endVBox()
 
     g.beginVBox("right", true)
-    var newName = g.input("##name", m.name)
-    if newName != m.name
-        g.send(Msg.name_changed(newName))
+    g.field("##name", m.name, def(s: str): Msg = Msg.name_changed(s))
     g.endVBox()
 
     g.endHBox()

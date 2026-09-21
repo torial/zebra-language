@@ -1237,7 +1237,7 @@ Full reasoning, including what we deliberately do NOT copy from SQLite and why, 
     Four remain uncovered, each for a stated reason rather than an oversight:
     `Csv` (BUG-242), `Progress` (BUG-241), `Ws` (a server; `ws_smoke_test` does not
     terminate, so it needs a client+server fixture with a bounded wait), and `Shell`
-    (the only user is `test/zebra_ide.zbr`, an IDE harness that is not a unit test).
+    (its only user was `test/zebra_ide.zbr`, the ImGui-era IDE harness, deleted 2026-09-21). <!-- doc-lint-ok: the harness was deleted with the frame-callback Gui.run form; the entry records why Shell is uncovered -->
   - [ ] **(a2) The four remaining namespaces**, in the order the blockers clear: fix
     BUG-241 and BUG-242 (then registration is a one-liner each), write a bounded
     client+server fixture for `Ws`, and a `Shell` test that does not depend on which

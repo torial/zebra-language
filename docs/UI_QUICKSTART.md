@@ -43,8 +43,8 @@ Gui.run(title: str, width: int, height: int, init, update, view)
 - `update(model, msg)` — pure function: old model + message → new model
 - `view(g, model)` — renders widgets; calls `g.send(msg)` to dispatch
 
-The legacy 4-argument frame-callback form (`Gui.run(title, w, h, frame_fn)`)
-is not recommended for libui-ng.
+The 4-argument frame-callback form (`Gui.run(title, w, h, frame_fn)`) was retired on
+2026-09-21; `Gui.run` takes the six MVU arguments and refuses anything else.
 
 ---
 
@@ -57,8 +57,8 @@ libui-ng organises widgets in horizontal and vertical boxes. Widgets are
 def view(g: Gui, m: Model)
     # Toolbar row — buttons side by side
     g.beginHBox("toolbar", false)
-    if g.button("Open"):  g.send(Msg.open)
-    if g.button("Save"):  g.send(Msg.save)
+    g.button("Open", Msg.open)
+    g.button("Save", Msg.save)
     g.endHBox()
 
     g.separator()
@@ -66,11 +66,11 @@ def view(g: Gui, m: Model)
     # Main area — two panels side by side, filling height
     g.beginHBox("main", true)
 
-      g.beginVBox("left_panel", true)
-      g.text("File: " + m.filepath)
-      g.endVBox()
+    g.beginVBox("left_panel", true)
+    g.text("File: " + m.filepath)
+    g.endVBox()
 
-      m.editor.render(g, "##editor", 0, 0)   # Scintilla fills remaining space
+    m.editor.render(g, "##editor", 0, 0)   # Scintilla fills remaining space
 
     g.endHBox()
 ```
@@ -101,10 +101,10 @@ column fills available width in its parent HBox.
 | Widget                           | Notes                                                          |
 |----------------------------------|----------------------------------------------------------------|
 | `g.text(s)`                      | Label. Text updated each frame.                                |
-| `g.button(label)`                | Returns `true` once per click. Label is immutable (part of ID). |
-| `g.checkbox(label, value)`       | Returns new state. Value synced to OS checkbox.                |
+| `g.button(label, msg)`           | Sends `msg` on click. Keyed by its label. (`action` until 2026-09-21; the bool `button`, `buttonId`, `checkbox`, `input` are gone.) |
+| `g.toggle(label, checked, on)`   | Checkbox; `on: def(b: bool): Msg` is called when it flips. The model drives it. |
+| `g.field(label, text, on)`       | Entry; `on: def(s: str): Msg` on every change.                  |
 | `g.slider(label, value, min, max)` | Returns current value. Range is set at creation time.        |
-| `g.input(label, value)`          | Single-line entry. Returns current text each frame.            |
 | `g.inputMultiline(label, val, w, h)` | Multi-line entry. `w`/`h` args ignored (fills box).       |
 | `g.separator()`                  | Horizontal separator rule.                                     |
 | `g.selectable(label)`            | No-op in libui-ng (returns false). Use `g.button` instead.     |
@@ -115,7 +115,7 @@ column fills available width in its parent HBox.
 
 **Widget IDs:** Interactive widget IDs are the `label` string. If two widgets
 share a label they share state — prefix with `##` to hide the label and make
-the ID unique, e.g. `g.input("##filepath", m.filepath)`.
+the ID unique, e.g. `g.field("##filepath", m.filepath, on)`.
 
 ---
 
@@ -285,8 +285,8 @@ def view(g: Gui, m: Model)
     g.text("Count: " + m.count.toString())
     g.separator()
     g.beginHBox("btns", false)
-    if g.button("+"):  g.send(Msg.inc)
-    if g.button("-"):  g.send(Msg.dec)
+    g.button("+", Msg.inc)
+    g.button("-", Msg.dec)
     g.endHBox()
 
 def main()

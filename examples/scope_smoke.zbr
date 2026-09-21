@@ -21,8 +21,8 @@ def counterUpdate(m: Counter, msg: CounterMsg): Counter
 
 def counterView(g: Gui, m: Counter)
     g.text("count: ${m.n}")
-    g.action("+", CounterMsg.inc)
-    g.action("-", CounterMsg.dec)
+    g.button("+", CounterMsg.inc)
+    g.button("-", CounterMsg.dec)
 
 union Msg
     left: CounterMsg

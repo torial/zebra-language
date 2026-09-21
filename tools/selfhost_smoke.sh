@@ -943,8 +943,8 @@ smoke_run test/dns_test.zbr "-> 127.0.0.1"
 #   Progress  BUG-241: broken since the Zig 0.16 migration (std.Progress.start signature)
 #   Ws        ws_smoke_test.zbr is a SERVER and does not terminate -- smoke_run would hang.
 #             Needs a client+server fixture with a bounded wait, not a registration.
-#   Shell     its only user is test/zebra_ide.zbr, an IDE harness rather than a unit
-#             test. Needs a purpose-built test,
+#   Shell     its only user WAS test/zebra_ide.zbr, the ImGui-era IDE harness, deleted
+#             2026-09-21 with the frame-callback Gui.run form. Needs a purpose-built test,
 #             and one that does not depend on which shell utilities the host happens to have.
 # Audit #2: a bare function name as a statement warns (forgotten call) instead of
 # a cryptic Zig "value ignored" error.
@@ -1362,6 +1362,14 @@ smoke_run test/mvu_mixed_union_test.zbr "update: set_label -> hello"
 # wrapper. update() prints which mount each message came through; the expected order
 # was derived by hand before the first run. Stub backend, one frame.
 smoke_run test/gui_scope_test.zbr "pair -> x.n = 99 y.n = 199"
+
+# The frame-callback Gui.run(title, w, h, frame) was RETIRED 2026-09-21 (CHANGELOG): refused
+# by name with the MVU signature, instead of codegen padding a 2- or 4-argument call with
+# `undefined` for zig to choke on. test/gui_test.zbr is the counter it used to be, as MVU,
+# run under the stub (one frame, prints the widgets it declares).
+smoke_tc_fail test/fail_fixtures/gui_run_frame_form_test.zbr \
+    "Gui.run takes (title, width, height, init, update, view)"
+smoke_run test/gui_test.zbr "Done!"
 
 # BUG-215: two-argument `str.indexOf(sub, from)` silently dropped the offset —
 # every search restarted at 0.  Found via the IDE crashing on Check / List Targets.

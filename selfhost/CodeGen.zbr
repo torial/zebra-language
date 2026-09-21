@@ -19611,27 +19611,9 @@ struct Generator
                 genExpr(args.at(5).value)
                 w.emit(")")
             else
-                w.emit("_gui_run(")
-                if args.len > 0
-                    genExpr(args.at(0).value)
-                else
-                    w.emit("\"App\"")
-                w.emit(", ")
-                if args.len >= 2
-                    genExpr(args.at(1).value)
-                else
-                    w.emit("800")
-                w.emit(", ")
-                if args.len >= 3
-                    genExpr(args.at(2).value)
-                else
-                    w.emit("600")
-                w.emit(", ")
-                if args.len >= 4
-                    genExpr(args.at(3).value)
-                else
-                    w.emit("undefined")
-                w.emit(")")
+                # The frame-callback form was retired 2026-09-21; the checker refuses
+                # anything but six arguments before this is reached.
+                w.emit("@compileError(\"Gui.run takes (title, width, height, init, update, view)\")")
             return
         if mname == "setColor"
             w.emit("_gui_active_backend.setColorFn(")

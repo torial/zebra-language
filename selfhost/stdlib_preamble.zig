@@ -3508,11 +3508,7 @@ pub const GuiContext = struct {
     pub fn spacing(self: GuiContext) void { self._b.spacingFn(); }
     pub fn indent(self: GuiContext) void { self._b.indentFn(); }
     pub fn unindent(self: GuiContext) void { self._b.unindentFn(); }
-    pub fn button(self: GuiContext, label: []const u8) bool { return self._b.buttonFn(label); }
-    pub fn buttonId(self: GuiContext, id: []const u8, label: []const u8) bool { return self._b.buttonIdFn(id, label); }
-    pub fn checkbox(self: GuiContext, label: []const u8, value: bool) bool { return self._b.checkboxFn(label, value); }
     pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
-    pub fn input(self: GuiContext, label: []const u8, value: []const u8) []const u8 { return self._b.inputFn(label, value); }
     pub fn inputMultiline(self: GuiContext, label: []const u8, value: []const u8, width: f64, height: f64) []const u8 { return self._b.inputMultilineFn(label, value, width, height); }
     pub fn selectable(self: GuiContext, label: []const u8) bool { return self._b.selectableFn(label); }
     pub fn textColored(self: GuiContext, r: f64, gv: f64, b_: f64, a: f64, s: []const u8) void {
@@ -3559,6 +3555,31 @@ pub const GuiContext = struct {
             self._b.endWindowFn();
         }
     }
+    // ── message-carrying forms, stub twins (2026-09-21) ──────────────────────────
+    // The stub backend is one frame that prints what the view declares and never fires an
+    // event, so a message-carrying widget prints its label and drops the message. Until
+    // 2026-09-21 the stub had none of these: a program using `button(label, msg)` (then
+    // `action`), `toggle`, `field`, a menu or `every` compiled under the front end and
+    // failed inside zig under the DEFAULT backend, which is why no smoke fixture could
+    // use them. The value-returning `button`/`buttonId`/`checkbox`/`input` are gone.
+    pub fn button(self: GuiContext, label: []const u8, msg: anytype) void { _ = msg; _ = self._b.buttonFn(label); }
+    pub fn toggle(self: GuiContext, label: []const u8, checked: bool, on: anytype) void { _ = on; _ = self._b.checkboxFn(label, checked); }
+    pub fn field(self: GuiContext, label: []const u8, initial: []const u8, on: anytype) void { _ = on; _ = self._b.inputFn(label, initial); }
+    pub fn every(self: GuiContext, ms: i64, msg: anytype) void { _ = self; _ = msg; std.debug.print("[gui] every: {d} ms\n", .{ms}); }
+    pub fn beginMenu(self: GuiContext, name: []const u8) void { _ = self; std.debug.print("[gui] menu: {s}\n", .{name}); }
+    pub fn menuItem(self: GuiContext, label: []const u8, msg: anytype) void { _ = self; _ = msg; std.debug.print("[gui] menuItem: {s}\n", .{label}); }
+    pub fn menuSeparator(self: GuiContext) void { _ = self; std.debug.print("[gui] menuSeparator\n", .{}); }
+    pub fn menuQuit(self: GuiContext) void { _ = self; std.debug.print("[gui] menuQuit\n", .{}); }
+    pub fn endMenu(self: GuiContext) void { _ = self; }
+    pub fn beginPanel(self: GuiContext, label: []const u8) bool { return self._b.beginPanelFn(label); }
+    pub fn endPanel(self: GuiContext, label: []const u8) void { _ = label; self._b.endPanelFn(); }
+    pub fn hotkey(self: GuiContext, vk: i64, mods: i64) void { _ = self; _ = vk; _ = mods; }
+    pub fn takeKey(self: GuiContext) i64 { _ = self; return 0; }
+    pub fn tableSelectedRow(self: GuiContext, id: []const u8) i64 { _ = self; _ = id; return -1; }
+    pub fn tableActivatedRow(self: GuiContext, id: []const u8) i64 { _ = self; _ = id; return -1; }
+    pub fn minSize(self: GuiContext, id: []const u8, width: i64, height: i64) void { _ = self; _ = id; _ = width; _ = height; }
+    pub fn tabSelected(self: GuiContext, id: []const u8) i64 { _ = self; _ = id; return 0; }
+    pub fn selectTab(self: GuiContext, id: []const u8, index: i64) void { _ = self; _ = id; _ = index; }
     pub fn beginHBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginHBoxFn(id, stretch); }
     pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
     pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
@@ -3589,23 +3610,6 @@ pub const _GuiHBox = struct {
     pub fn end(self: _GuiHBox) void { self._b.endHBoxFn(); }
 };
 pub const Gui = GuiContext;
-pub fn _gui_run(title: []const u8, width: i64, height: i64, frame: anytype) void {
-    _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
-    defer _gui_active_backend.deinitFn();
-    const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend } };
-    if (comptime _zbr_is_fnlike(@TypeOf(frame))) {
-        while (_gui_active_backend.newFrameFn()) {
-            frame(_g);
-            _gui_active_backend.endFrameFn();
-        }
-    } else {
-        var _mframe = frame;
-        while (_gui_active_backend.newFrameFn()) {
-            _mframe.call(_g);
-            _gui_active_backend.endFrameFn();
-        }
-    }
-}
 // Stub-backend twin of the sections' _ScopeWrap (see the tui section for the argument):
 // one heap instance per (parent send, parent queue, map), found again on re-render.
 fn _ScopeWrap(comptime MapT: type) type {

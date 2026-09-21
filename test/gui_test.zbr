@@ -1,12 +1,26 @@
+# The counter, MVU form. (The frame-callback + `capture` form it replaced was retired
+# 2026-09-21 -- see CHANGELOG.)
+struct Model
+    var count: int
+
+union Msg
+    inc
+    reset
+
+def makeModel(): Model
+    return Model(count: 0)
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.inc return Model(count: m.count + 1)
+        on Msg.reset return Model(count: 0)
+
+def view(g: Gui, m: Model)
+    g.text("Count: ${m.count}")
+    g.button("Increment", Msg.inc)
+    g.button("Reset", Msg.reset)
+    g.separator()
+    g.text("Done!")
+
 def main()
-    var frame = def(g: Gui)
-        capture
-            var count: int = 0
-        g.text("Count: ${count}")
-        if g.button("Increment")
-            count = count + 1
-        if g.button("Reset")
-            count = 0
-        g.separator()
-        g.text("Done!")
-    Gui.run("Counter", 400, 300, frame)
+    Gui.run("Counter", 400, 300, makeModel, update, view)

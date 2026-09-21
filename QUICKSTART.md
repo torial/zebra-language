@@ -2017,8 +2017,8 @@ def view(g: Gui, model: Model)
             var clicks: int = 0
         clicks += 1
         print("Clicked ${clicks} times")
-    if g.button("Click me")
-        click_count()
+    click_count()
+    g.text("rendered")
 ```
 
 ### §19.3 Function-pointer types — `def(P): R`
@@ -3148,9 +3148,9 @@ def update(model: Counter, msg: Msg): Counter
 def view(g: Gui, model: Counter)
     g.text("Count: " + model.count.toString())
     g.separator()
-    if g.button("+"):  g.send(Msg.inc)
-    if g.button("-"):  g.send(Msg.dec)
-    if g.button("Reset"):  g.send(Msg.reset)
+    g.button("+", Msg.inc)
+    g.button("-", Msg.dec)
+    g.button("Reset", Msg.reset)
 
 def main()
     Gui.run("Counter", 400, 200, makeCounter, update, view)
@@ -3183,8 +3183,8 @@ def counterUpdate(m: Counter, msg: CounterMsg): Counter
 
 def counterView(g: Gui, m: Counter)
     g.text("count: ${m.n}")
-    g.action("+", CounterMsg.inc)      # sends CounterMsg -- the counter never sees Msg
-    g.action("-", CounterMsg.dec)
+    g.button("+", CounterMsg.inc)      # sends CounterMsg -- the counter never sees Msg
+    g.button("-", CounterMsg.dec)
 
 union Msg
     left: CounterMsg                   # the app's Msg carries the child's
@@ -3211,7 +3211,7 @@ def view(g: Gui, model: Model)
 ```
 
 `g.scope(map, view, model)` renders `view(g', model)` with a `g'` whose every send --
-`g.send`, `g.action`, `g.toggle`, `g.field`, `g.every`, `g.menuItem` -- passes the
+`g.send`, `g.button`, `g.toggle`, `g.field`, `g.every`, `g.menuItem` -- passes the
 child's message through `map` (`ChildMsg -> Msg`) on its way to the app's queue. It is
 Elm's `Html.map`. `map` and `view` are top-level `def`s or lambdas; scopes nest (a
 component may `g.scope` its own children, and its `update` routes the same way). A
@@ -3223,36 +3223,14 @@ Before `g.scope` a child view could call `g.send(CounterMsg.inc)` and the messag
 silently DROPPED (a size mismatch against the app's `Msg`, reported on stderr) -- there was
 no way to hand a message up a level. Example: `examples/scope_smoke.zbr`.
 
-### `Gui.run` — frame-callback form (TUI only)
+### The frame-callback form is gone (2026-09-21)
 
-```zebra
-Gui.run(title: str, width: int, height: int, frame: def(g: Gui))
-```
-
-Calls `frame` once per rendered frame.  Use a `capture` block to keep state
-across frames.
-
-**Not supported** in the libui-ng retained-mode backend — libui-ng events are
-callback-driven, not frame-polled.  For portable code, prefer MVU.
-
-### MVU vs frame-callback — when to use each
-
-| | MVU | Frame-callback |
-|---|---|---|
-| **State model** | Explicit typed struct — immutable transitions | Anything (mutable via `capture`) |
-| **Testability** | High — `update` is a pure function | Low — state lives in closure |
-| **Backend support** | All backends | TUI only |
-| **Best for** | Production apps, anything you want to test | Quick prototypes, IDE-style tools |
-| **State that spans frames** | In the model struct | In a `capture` block |
-
-**Use MVU when:**
-- You want testable UI logic (test `update` without a GUI).
-- You need libui-ng (native OS controls) or cross-backend portability.
-- The app has clear, discrete state transitions.
-
-**Use frame-callback when:**
-- You're building a dev tool or immediate-mode editor where state is naturally mutable.
-- You want minimal boilerplate for a quick prototype.
+`Gui.run(title, w, h, frame)` -- one closure called every frame, state kept in a
+`capture` block -- was retired. It existed for the value-returning widgets (`if
+g.button(...)`), which never worked in the libui-ng backend (events, not frames), and it
+went with them. A four-argument `Gui.run` is refused by name with the MVU signature. To
+port: the `capture` variables become the model struct, each `if g.button(...)` becomes a
+message, and the body becomes `view`.
 
 > **Changed 2026-08-29 with the imgui removal.** Low-level draw calls (`g.ll.*`) were
 > imgui-only and are **gone** -- there is no replacement. The `CodeEditor` widget is
@@ -3265,12 +3243,9 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 | Call                                       | Returns  | Notes                                      |
 |--------------------------------------------|----------|--------------------------------------------|
 | `g.text(s)`                                | void     | Text label                                 |
-| `g.button(label)`                          | bool     | True on click                              |
-| `g.buttonId(id, label)`                    | bool     | Button keyed by `id`; `label` may change between frames (tab rows, toggles) |
-| `g.checkbox(label, value)`                 | bool     | New checked state                          |
-| `g.slider(label, value, min, max)`         | float    | Drag slider (float range)                  |
-| `g.input(label, value)`                    | str      | Single-line text input                     |
-| `g.inputMultiline(label, value, w, h)`     | str      | Multi-line text area                       |
+| `g.button(label, msg)`                     | void     | A button that sends `msg` when clicked. Keyed by its label; two buttons with one label are told apart by order. (Was `action` until 2026-09-21; the value-returning `button(label) -> bool`, `buttonId`, `checkbox` and `input` are gone -- `toggle`/`field` carry the message.) |
+| `g.slider(label, value, min, max)`         | float    | Drag slider (float range). The last value-returning widgets, with `selectable` and `inputMultiline`: read the result and `g.send` when it differs from the model. A message form is owed. |
+| `g.inputMultiline(label, value, w, h)`     | str      | Multi-line text area (value-returning; see `slider`) |
 | `g.progressBar(label, value)`              | void     | Progress bar; `value` is 0.0–1.0           |
 | `g.combobox(label, items, selected)`       | int      | Drop-down; `items: List(str)`, returns new index |
 | `g.spinbox(label, value, min, max)`        | int      | Integer spinner with bounds                |
@@ -3284,7 +3259,6 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 | `g.tabSelected(id)` / `g.selectTab(id, i)` | int / void | Selected page index in emission order (-1 with no pages) / select from the model. TUI backend: -1 / no-op |
 | `g.minSize(id, w, h)`                      | void     | Minimum-size hint (points, 0 = none) for the id-keyed widget: a box, tab strip, panel, editor, button or input. Applied on top of the natural minimum; how a side pane gets a width. TUI backend: no-op |
 | `g.beginTable(id, cols)` … `g.endTable()`  | bool / void | A list (libui-ng `uiTable`, one text column per `cols`): `tableSetupColumn(name)` per column, `tableHeadersRow()` to show the header, then per row `tableNextRow()` and per cell `tableNextColumn()` + `g.text(cell)`. Rows are diffed frame to frame. `g.tableSelectedRow(id)` is the selected row (-1 none), `g.tableActivatedRow(id)` the row double-clicked since the last call (-1 none). TUI backend: no-op / -1 |
-| `g.action(label, msg)`                     | void     | A button that sends `msg` when clicked (the message-carrying form; `button(label)` → bool is the bridge form, gone in §6c). |
 | `g.toggle(label, checked, on)`             | void     | A checkbox; `on` is `def(b: bool): Msg`, called when it flips. The model drives the widget: pass the model's value. |
 | `g.field(label, text, on)`                 | void     | A text entry; `on` is `def(s: str): Msg`, called on every change. A model change that differs from what the entry shows is pushed; keystrokes never disturb the caret. |
 | `g.beginMenu(name)` … `g.endMenu()`        | void     | A native menubar menu, declared in the view: `g.menuItem(label, msg)`, `g.menuSeparator()`, `g.menuQuit()`. libui fixes the menubar when the window is created, so the FIRST render decides which menus and items exist; declare them in every render. TUI: a row of buttons. |
@@ -3300,14 +3274,14 @@ callback-driven, not frame-polled.  For portable code, prefer MVU.
 
 ```zebra
 g.beginHBox("row", stretch: false)
-    g.button("Left")
-    g.button("Right")
+    g.button("Left", Msg.left)
+    g.button("Right", Msg.right)
 g.endHBox()
 
 # With `using` desugaring:
 using g.hbox("row", false)
-    g.button("Left")
-    g.button("Right")
+    g.button("Left", Msg.left)
+    g.button("Right", Msg.right)
 ```
 
 | Call                                | Notes                                  |
@@ -3325,21 +3299,26 @@ retained-mode and works on all backends that support group boxes.
 
 ```zebra
 g.beginPanel("Settings")
-    g.checkbox("Enable logging", enabled)
-    g.slider("Volume", volume, 0, 100)
+    g.toggle("Enable logging", m.logging, def(b: bool): Msg = Msg.set_logging(b))
+    g.slider("Volume", m.volume, 0, 100)
 g.endPanel("Settings")   # id must match begin
 ```
 
 ### File dialogs (libui-ng only; stub/TUI return nil)
 
-```zebra
-if g.button("Open…")
-    var p = g.openFile()
-    if p as path
-        g.send(Msg.opened(path))
+A dialog needs the window, so it belongs to the view, and a button only sends a
+message: `update` records that a dialog was asked for, the next render shows it and
+sends the answer, and `update` clears the request (`examples/file_dialog_smoke.zbr`).
 
-if g.button("Alert")
-    g.msgBox("Info", "Operation complete.")
+```zebra
+def view(g: Gui, m: Model)
+    g.button("Open…", Msg.ask_open)
+    if m.want_open                      # set by update on Msg.ask_open
+        var p = g.openFile()
+        if p as path
+            g.send(Msg.opened(path))    # update clears want_open
+        else
+            g.send(Msg.cancelled)
 ```
 
 | Call                               | Returns | Notes                                  |
@@ -3420,7 +3399,7 @@ def view(g: Gui, m: Model)
     g.menuSeparator()
     g.menuQuit()
     g.endMenu()
-    g.action("Build", Msg.build)                      # a button that sends
+    g.button("Build", Msg.build)                      # a button that sends
     g.toggle("Verbose", m.verbose, def(b: bool): Msg
         return Msg.set_verbose(b)
     )
@@ -3478,18 +3457,19 @@ Scintilla control for all its documents. TUI backend: `tabSelected` is -1,
 `selectTab` a no-op. Smoke: `examples/tabs_sci_smoke.zbr` (builds under
 `--gui-backend=tui` as the compile control).
 
-### Persistent frame state with `capture` (frame-callback form)
+### A CodeEditor in the model
 
 ```zebra
-Gui.run("IDE", 1000, 750, def(g: Gui)
-    capture
-        var editor = CodeEditor.forZebra()
-        var inited: bool = false
-    if not inited
-        editor.setText(File.read("main.zbr"))
-        inited = true
-    editor.render(g, "##ed", 800, 600)
-)
+struct Model
+    var editor: CodeEditor
+
+def makeModel(): Model
+    var ed = CodeEditor.forZebra()
+    ed.setText(File.read("main.zbr"))
+    return Model(editor: ed)
+
+def view(g: Gui, m: Model)
+    m.editor.render(g, "##ed", 800, 600)
 ```
 
 ### Backend isolation

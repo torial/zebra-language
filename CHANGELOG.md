@@ -23,6 +23,32 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **REMOVED: the value-returning widget bridge forms `button(label) -> bool`, `buttonId`,
+  `checkbox(label, v) -> bool`, `input(label, v) -> str`; `action` RENAMED `button`
+  (2026-09-21, the §6c cut promised in QUICKSTART since 2026-09-17).** `g.button(label,
+  msg)`, `g.toggle(label, checked, on)` and `g.field(label, text, on)` carry the message;
+  the checker refuses the old names. A button is keyed by its label (the tree matches by
+  key and consumes the match, so two buttons with one label are distinct nodes in order --
+  `buttonId`'s separate key is not needed). 12 corpus files rewritten, 67 sites, nearly all
+  the two-line `if g.button(x)` / `g.send(m)` shape; the three that were not: a text entry
+  (`field`), rotating keyed buttons (`button` keyed by label), and the file-dialog example,
+  which now uses zebra-ide's idiom (update records the request, the next render shows the
+  dialog and sends the answer). `slider`, `selectable` and `inputMultiline` are the LAST
+  value-returning widgets, kept because a message form is new plumbing in two backends;
+  owed before 1.0. **The stub backend gains the whole message-form family** (`button`,
+  `toggle`, `field`, `every`, menus, panels, hotkeys, tab and table queries) as prints and
+  no-ops -- until now a program using any of them failed inside zig under the DEFAULT
+  backend, which is why no smoke fixture could use them and every example needing them was
+  DAILY-only. zebra-ide's `g.action` sites renamed in the same sitting.
+- **REMOVED: the frame-callback `Gui.run(title, w, h, frame)` form (2026-09-21).** One closure
+  per frame with state in a `capture` block. It existed for the value-returning widgets
+  (`if g.button(...)`) and never worked in the libui-ng backend, where the frame is an event.
+  `Gui.run` takes the six MVU arguments; a 4-argument (or any other arity) call is refused by
+  name with the signature, instead of codegen padding it with `undefined` for zig to report.
+  The four corpus programs that used it are MVU now; `test/zebra_ide.zbr`, the ImGui-era IDE
+  harness, is deleted (the IDE lives in zebra-ide). Fixture
+  `test/fail_fixtures/gui_run_frame_form_test.zbr`; `test/gui_test.zbr` (the counter) now
+  RUNS under the smoke, which it never had.
 - **MVU components: `g.scope(map, view, model)` (2026-09-18; QUICKSTART §30 "Components").**
   Renders a child component's `view(g, model)` under a message map (`ChildMsg -> Msg`):
   every send the child makes through that `g` -- `send`, `action`, `toggle`, `field`,
