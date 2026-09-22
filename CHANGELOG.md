@@ -23,6 +23,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **`g.area(id, w, h, draw, on)` (2026-09-22).** A drawing surface on libui's `uiArea`
+  (Direct2D / Cairo / CoreGraphics, one API): `draw: def(c: Gui)` paints with `line`, `rect`,
+  `fillRect`, `circle`, `fillCircle`, `drawText`, `canvasWidth/Height`; it runs at paint time,
+  captures what it needs from the model, and the area repaints when the captured bytes change.
+  `on: def(x, y, button): Msg` on a mouse press. `examples/area_smoke.zbr`; gate
+  `gui-scaffold-area`. Codegen: every method on a `Gui` receiver is a closure struct consumer
+  now (BUG-358's exemption named three builders; the area's capturing draw closure hit the
+  65th-frame pool exhaustion on its first tui run).
 - **`g.comboboxEditable(label, items, text, on)` (2026-09-22).** A drop-down that also takes
   typed text, on libui's `uiEditableCombobox`; `on: def(s: str): Msg`, the model drives the
   text. `examples/combobox_editable_smoke.zbr`. Item 6 of the controls plan -- the last coded

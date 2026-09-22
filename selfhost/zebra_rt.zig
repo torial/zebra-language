@@ -3415,6 +3415,15 @@ pub const _GuiBackend = struct {
     textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
     beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
     tableSetupColumnFn: *const fn (label: []const u8) void,
+    areaFn:         *const fn (id: []const u8, w: i64, h: i64) void,
+    canvasWidthFn:  *const fn () f64,
+    canvasHeightFn: *const fn () f64,
+    lineFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, color: i64, thickness: f64) void,
+    rectFn:         *const fn (x: f64, y: f64, w: f64, h: f64, color: i64, thickness: f64) void,
+    fillRectFn:     *const fn (x: f64, y: f64, w: f64, h: f64, color: i64) void,
+    circleFn:       *const fn (cx: f64, cy: f64, r: f64, color: i64, thickness: f64) void,
+    fillCircleFn:   *const fn (cx: f64, cy: f64, r: f64, color: i64) void,
+    drawTextFn:     *const fn (x: f64, y: f64, s: []const u8, color: i64, size: f64) void,
     tableSetupCheckColumnFn: *const fn (label: []const u8) void,
     tableCheckFn: *const fn (checked: bool) void,
     tableHeadersRowFn:  *const fn () void,
@@ -3567,6 +3576,23 @@ pub const GuiContext = struct {
     pub fn tableSelectedRow(self: GuiContext, id: []const u8) i64 { _ = self; _ = id; return -1; }
     pub fn tableActivatedRow(self: GuiContext, id: []const u8) i64 { _ = self; _ = id; return -1; }
     pub fn minSize(self: GuiContext, id: []const u8, width: i64, height: i64) void { _ = self; _ = id; _ = width; _ = height; }
+    // A drawing surface: `draw: def(g: Gui)` paints with the verbs below; `on: def(x: float,
+    // y: float, button: int): Msg` on a mouse press. The stub calls draw once, so the verbs print.
+    pub fn area(self: GuiContext, id: []const u8, w: i64, h: i64, draw: anytype, on: anytype) void {
+        _ = on;
+        self._b.areaFn(id, w, h);
+        if (comptime _zbr_is_fnlike(@TypeOf(draw))) draw(self) else { var _c = draw; _c.call(self); }
+    }
+    // ── drawing, valid inside an area's draw closure (no-ops elsewhere) ──
+    // colours are 0xRRGGBB ints; coordinates are floats in the area's own pixels.
+    pub fn canvasWidth(self: GuiContext) f64 { return self._b.canvasWidthFn(); }
+    pub fn canvasHeight(self: GuiContext) f64 { return self._b.canvasHeightFn(); }
+    pub fn line(self: GuiContext, x1: f64, y1: f64, x2: f64, y2: f64, color: i64, thickness: f64) void { self._b.lineFn(x1, y1, x2, y2, color, thickness); }
+    pub fn rect(self: GuiContext, x: f64, y: f64, w: f64, h: f64, color: i64, thickness: f64) void { self._b.rectFn(x, y, w, h, color, thickness); }
+    pub fn fillRect(self: GuiContext, x: f64, y: f64, w: f64, h: f64, color: i64) void { self._b.fillRectFn(x, y, w, h, color); }
+    pub fn circle(self: GuiContext, cx: f64, cy: f64, r: f64, color: i64, thickness: f64) void { self._b.circleFn(cx, cy, r, color, thickness); }
+    pub fn fillCircle(self: GuiContext, cx: f64, cy: f64, r: f64, color: i64) void { self._b.fillCircleFn(cx, cy, r, color); }
+    pub fn drawText(self: GuiContext, x: f64, y: f64, s: []const u8, color: i64, size: f64) void { self._b.drawTextFn(x, y, s, color, size); }
     pub fn tabSelected(self: GuiContext, id: []const u8) i64 { _ = self; _ = id; return 0; }
     pub fn selectTab(self: GuiContext, id: []const u8, index: i64) void { _ = self; _ = id; _ = index; }
     pub fn beginHBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginHBoxFn(id, stretch); }
@@ -3731,6 +3757,15 @@ pub fn _stub_begin_form(id: []const u8) void { std.debug.print("[gui] form: {s}\
 pub fn _stub_end_form() void {}
 pub fn _stub_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void { _ = r; _ = gv; _ = b_; _ = a; std.debug.print("[gui] textColored: {s}\n", .{s}); }
 pub fn _stub_begin_table(id: []const u8, cols: i64) bool { std.debug.print("[gui] beginTable: {s} cols={d}\n", .{ id, cols }); return true; }
+pub fn _stub_area(id: []const u8, w: i64, h: i64) void { std.debug.print("[gui] area: {s} {d}x{d}\n", .{id, w, h}); }
+pub fn _stub_canvas_w() f64 { return 0; }
+pub fn _stub_canvas_h() f64 { return 0; }
+pub fn _stub_line(x1: f64, y1: f64, x2: f64, y2: f64, color: i64, t: f64) void { std.debug.print("[gui] line ({d:.0},{d:.0})-({d:.0},{d:.0}) #{x:0>6} t={d:.1}\n", .{x1, y1, x2, y2, @as(u32, @intCast(color & 0xffffff)), t}); }
+pub fn _stub_rect(x: f64, y: f64, w: f64, h: f64, color: i64, t: f64) void { std.debug.print("[gui] rect ({d:.0},{d:.0}) {d:.0}x{d:.0} #{x:0>6} t={d:.1}\n", .{x, y, w, h, @as(u32, @intCast(color & 0xffffff)), t}); }
+pub fn _stub_fill_rect(x: f64, y: f64, w: f64, h: f64, color: i64) void { std.debug.print("[gui] fillRect ({d:.0},{d:.0}) {d:.0}x{d:.0} #{x:0>6}\n", .{x, y, w, h, @as(u32, @intCast(color & 0xffffff))}); }
+pub fn _stub_circle(cx: f64, cy: f64, r: f64, color: i64, t: f64) void { std.debug.print("[gui] circle ({d:.0},{d:.0}) r={d:.0} #{x:0>6} t={d:.1}\n", .{cx, cy, r, @as(u32, @intCast(color & 0xffffff)), t}); }
+pub fn _stub_fill_circle(cx: f64, cy: f64, r: f64, color: i64) void { std.debug.print("[gui] fillCircle ({d:.0},{d:.0}) r={d:.0} #{x:0>6}\n", .{cx, cy, r, @as(u32, @intCast(color & 0xffffff))}); }
+pub fn _stub_draw_text(x: f64, y: f64, s: []const u8, color: i64, size: f64) void { std.debug.print("[gui] drawText ({d:.0},{d:.0}) \"{s}\" #{x:0>6} size={d:.0}\n", .{x, y, s, @as(u32, @intCast(color & 0xffffff)), size}); }
 pub fn _stub_table_setup_check_column(label: []const u8) void { std.debug.print("[gui] tableSetupCheckColumn: {s}\n", .{label}); }
 pub fn _stub_table_check(checked: bool) void { std.debug.print("[gui] tableCheck: {}\n", .{checked}); }
 pub fn _stub_table_setup_column(label: []const u8) void { std.debug.print("[gui] tableSetupColumn: {s}\n", .{label}); }
@@ -3799,6 +3834,15 @@ pub const _gui_stub_backend = _GuiBackend{
     .beginTableFn       = _stub_begin_table,
     .tableSetupColumnFn = _stub_table_setup_column,
     .tableSetupCheckColumnFn = _stub_table_setup_check_column,
+    .areaFn         = _stub_area,
+    .canvasWidthFn  = _stub_canvas_w,
+    .canvasHeightFn = _stub_canvas_h,
+    .lineFn         = _stub_line,
+    .rectFn         = _stub_rect,
+    .fillRectFn     = _stub_fill_rect,
+    .circleFn       = _stub_circle,
+    .fillCircleFn   = _stub_fill_circle,
+    .drawTextFn     = _stub_draw_text,
     .tableCheckFn = _stub_table_check,
     .tableHeadersRowFn  = _stub_table_headers_row,
     .tableNextRowFn     = _stub_table_next_row,

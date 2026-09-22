@@ -68,6 +68,15 @@ const _GuiBackend = struct {
     endTabsFn:     *const fn () void,
     tabSelectedFn: *const fn (id: []const u8) i64,
     selectTabFn:   *const fn (id: []const u8, index: i64) void,
+    areaFn:         *const fn (id: []const u8, w: i64, h: i64, dcap: *const anyopaque, dcap_len: usize, tdraw: *const fn (*const anyopaque, GuiContext) void, cap: *const anyopaque, cap_len: usize, tclick: *const fn (*const anyopaque, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    canvasWidthFn:  *const fn () f64,
+    canvasHeightFn: *const fn () f64,
+    lineFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, color: i64, thickness: f64) void,
+    rectFn:         *const fn (x: f64, y: f64, w: f64, h: f64, color: i64, thickness: f64) void,
+    fillRectFn:     *const fn (x: f64, y: f64, w: f64, h: f64, color: i64) void,
+    circleFn:       *const fn (cx: f64, cy: f64, r: f64, color: i64, thickness: f64) void,
+    fillCircleFn:   *const fn (cx: f64, cy: f64, r: f64, color: i64) void,
+    drawTextFn:     *const fn (x: f64, y: f64, s: []const u8, color: i64, size: f64) void,
     minSizeFn:     *const fn (id: []const u8, width: i64, height: i64) void,
     hotkeyFn:      *const fn (vk: i64, mods: i64) void,
     // §6b (2026-09-17): message-carrying forms and menus. `msg` is the Msg's bytes
@@ -267,6 +276,43 @@ const GuiContext = struct {
     // button, input): 0 = none. libui had no size hints; uiControlSetMinSize is the
     // torial fork's. The tui backend ignores it.
     pub fn minSize(self: GuiContext, id: []const u8, width: i64, height: i64) void { self._b.minSizeFn(id, width, height); }
+    // A drawing surface (libui uiArea: Direct2D / Cairo / CoreGraphics). `draw: def(g: Gui)`
+    // paints with the verbs below and is called at paint time -- it captures what it needs
+    // from the model; the area repaints when those captured bytes change. `on: def(x: float,
+    // y: float, button: int): Msg` fires on a mouse press. w, h are a minimum size.
+    pub fn area(self: GuiContext, id: []const u8, w: i64, h: i64, draw: anytype, on: anytype) void {
+        const dbare = comptime (_zbr_is_fnlike(@TypeOf(draw)) and @typeInfo(@TypeOf(draw)) != .pointer);
+        const Dr = if (dbare) *const @TypeOf(draw) else @TypeOf(draw);
+        const dpayload: Dr = if (dbare) &draw else draw;
+        const DThunk = struct {
+            fn call(cap: *const anyopaque, g: GuiContext) void {
+                const f: *const Dr = @ptrCast(@alignCast(cap));
+                if (comptime _zbr_is_fnlike(Dr)) f.*(g) else { var c = f.*; c.call(g); }
+            }
+        };
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, x: f64, y: f64, btn: i64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(x, y, btn) else blk: { var c = f.*; break :blk c.call(x, y, btn); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.areaFn(id, w, h, @ptrCast(&dpayload), @sizeOf(Dr), DThunk.call, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // ── drawing, valid inside an area's draw closure (no-ops elsewhere) ──
+    // colours are 0xRRGGBB ints; coordinates are floats in the area's own pixels.
+    pub fn canvasWidth(self: GuiContext) f64 { return self._b.canvasWidthFn(); }
+    pub fn canvasHeight(self: GuiContext) f64 { return self._b.canvasHeightFn(); }
+    pub fn line(self: GuiContext, x1: f64, y1: f64, x2: f64, y2: f64, color: i64, thickness: f64) void { self._b.lineFn(x1, y1, x2, y2, color, thickness); }
+    pub fn rect(self: GuiContext, x: f64, y: f64, w: f64, h: f64, color: i64, thickness: f64) void { self._b.rectFn(x, y, w, h, color, thickness); }
+    pub fn fillRect(self: GuiContext, x: f64, y: f64, w: f64, h: f64, color: i64) void { self._b.fillRectFn(x, y, w, h, color); }
+    pub fn circle(self: GuiContext, cx: f64, cy: f64, r: f64, color: i64, thickness: f64) void { self._b.circleFn(cx, cy, r, color, thickness); }
+    pub fn fillCircle(self: GuiContext, cx: f64, cy: f64, r: f64, color: i64) void { self._b.fillCircleFn(cx, cy, r, color); }
+    pub fn drawText(self: GuiContext, x: f64, y: f64, s: []const u8, color: i64, size: f64) void { self._b.drawTextFn(x, y, s, color, size); }
     // Window-wide key chords, the CodeEditor's hotkey/takeKey convention lifted to
     // the window (uiWindowOnKey, torial libui-ng fork): a registered chord is
     // consumed wherever the focus is and queued; takeKey pops (mods << 16) | vk, or 0.
@@ -879,6 +925,19 @@ fn _tui_end_tab_page() void {}
 fn _tui_end_tabs() void {}
 fn _tui_tab_selected(id: []const u8) i64 { _ = id; return -1; }
 fn _tui_select_tab(id: []const u8, index: i64) void { _ = id; _ = index; }
+fn _tui_area(id: []const u8, w: i64, h: i64, dcap: *const anyopaque, dcap_len: usize, tdraw: *const fn (*const anyopaque, GuiContext) void, cap: *const anyopaque, cap_len: usize, tclick: *const fn (*const anyopaque, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+    _ = dcap; _ = dcap_len; _ = tdraw; _ = cap; _ = cap_len; _ = tclick; _ = send_fn; _ = send_ptr;
+    var _b: [256]u8 = undefined;
+    _tui_text(std.fmt.bufPrint(&_b, "[area {s} {d}x{d}]", .{ id, w, h }) catch id);
+}
+fn _tui_canvas_w() f64 { return 0; }
+fn _tui_canvas_h() f64 { return 0; }
+fn _tui_line(x1: f64, y1: f64, x2: f64, y2: f64, color: i64, t: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = color; _ = t; }
+fn _tui_rect(x: f64, y: f64, w: f64, h: f64, color: i64, t: f64) void { _ = x; _ = y; _ = w; _ = h; _ = color; _ = t; }
+fn _tui_fill_rect(x: f64, y: f64, w: f64, h: f64, color: i64) void { _ = x; _ = y; _ = w; _ = h; _ = color; }
+fn _tui_circle(cx: f64, cy: f64, r: f64, color: i64, t: f64) void { _ = cx; _ = cy; _ = r; _ = color; _ = t; }
+fn _tui_fill_circle(cx: f64, cy: f64, r: f64, color: i64) void { _ = cx; _ = cy; _ = r; _ = color; }
+fn _tui_draw_text(x: f64, y: f64, s: []const u8, color: i64, size: f64) void { _ = x; _ = y; _ = s; _ = color; _ = size; }
 fn _tui_min_size(id: []const u8, width: i64, height: i64) void { _ = id; _ = width; _ = height; }
 fn _tui_hotkey(vk: i64, mods: i64) void { _ = vk; _ = mods; }
 fn _tui_table_row_q(id: []const u8) i64 { _ = id; return -1; }
@@ -971,6 +1030,15 @@ const _gui_tui_backend = _GuiBackend{
     .tabSelectedFn  = _tui_tab_selected,
     .selectTabFn    = _tui_select_tab,
     .minSizeFn      = _tui_min_size,
+    .areaFn         = _tui_area,
+    .canvasWidthFn  = _tui_canvas_w,
+    .canvasHeightFn = _tui_canvas_h,
+    .lineFn         = _tui_line,
+    .rectFn         = _tui_rect,
+    .fillRectFn     = _tui_fill_rect,
+    .circleFn       = _tui_circle,
+    .fillCircleFn   = _tui_fill_circle,
+    .drawTextFn     = _tui_draw_text,
     .hotkeyFn       = _tui_hotkey,
     .actionFn       = _tui_action,
     .toggleFn       = _tui_toggle,

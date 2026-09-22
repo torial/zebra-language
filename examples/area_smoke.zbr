@@ -1,0 +1,61 @@
+# area_smoke.zbr -- g.area (2026-09-22): a drawing surface on libui's uiArea
+# (Direct2D / Cairo / CoreGraphics). The draw closure paints a 3x3 board from
+# the model with the g.line / g.fillCircle / g.drawText verbs; a mouse press
+# sends the cell as a message; update flips it; the area repaints because the
+# closure's captured bytes changed. "Clear" proves the model side without a
+# click. Stub prints the verbs; gui-scaffold + libui-section compile it; the
+# click witness is a person.
+struct Model
+    var cells: List(int)
+    var clicks: int
+
+union Msg
+    press: int
+    clear
+
+def init(): Model
+    var cells: List(int) = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    return Model(cells: cells, clicks: 0)
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.press as cell
+            var out: List(int) = []
+            var i = 0
+            for c in m.cells
+                if i == cell
+                    out.append((c + 1) % 3)
+                else
+                    out.append(c)
+                i += 1
+            return Model(cells: out, clicks: m.clicks + 1)
+        on Msg.clear
+            return init()
+
+def view(g: Gui, m: Model)
+    g.text("clicks: " + m.clicks.toString())
+    g.area("board", 240, 240, def(c: Gui)
+        capture
+            var cells: List(int) = m.cells
+        var side = 240.0
+        var k = 80.0
+        c.fillRect(0.0, 0.0, side, side, 0xFAFAF0)
+        c.line(k, 0.0, k, side, 0x333333, 2.0)
+        c.line(k * 2.0, 0.0, k * 2.0, side, 0x333333, 2.0)
+        c.line(0.0, k, side, k, 0x333333, 2.0)
+        c.line(0.0, k * 2.0, side, k * 2.0, 0x333333, 2.0)
+        var i = 0
+        for v in cells
+            var cx = (i % 3).toFloat() * k + k / 2.0
+            var cy = (i / 3).toFloat() * k + k / 2.0
+            if v == 1
+                c.fillCircle(cx, cy, 28.0, 0x2A6EBB)
+            else if v == 2
+                c.circle(cx, cy, 28.0, 0xBB2A2A, 4.0)
+            i += 1
+        c.drawText(6.0, side - 22.0, "click a cell", 0x777777, 12.0)
+    , def(x: float, y: float, button: int): Msg = if(button == 1, Msg.press((y / 80.0).toInt() * 3 + (x / 80.0).toInt()), Msg.clear))
+    g.button("Clear", Msg.clear)
+
+def main()
+    Gui.run("area smoke", 300, 320, init, update, view)

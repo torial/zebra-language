@@ -16,6 +16,7 @@
 # table_check_smoke.zbr: a uiTable checkbox column -- tableSetupCheckColumn / tableCheck, the (row, checked) thunk (2026-09-22)
 # form_smoke.zbr: g.beginForm/endForm on uiForm, with a conditional row (the rebuild path) (2026-09-22)
 # combobox_editable_smoke.zbr: g.comboboxEditable on uiEditableCombobox (2026-09-22)
+# area_smoke.zbr: g.area on uiArea -- the draw verbs against Draw.Path/Brush/TextLayout, the Area.Handler (2026-09-22)
 # pins: BUG-343 gui_modules_smoke.zbr `use`s a module named `sci`, compiled against the real libui_ng section
 set -u
 cd "$(dirname "$0")/.."
@@ -28,7 +29,7 @@ if [ -z "$B" ]; then
   done
 fi
 [ -f "${B:-/nonexistent}/ui.zig" ] || { echo "libui_section_check: no bindings (set LIBUI_BINDINGS)"; exit 2; }
-examples=("$@"); [ ${#examples[@]} -eq 0 ] && examples=(examples/tabs_sci_smoke.zbr examples/styler_smoke.zbr examples/editor_min.zbr examples/editor_events_smoke.zbr examples/panel_smoke.zbr examples/gui_modules_smoke.zbr examples/scope_smoke.zbr examples/slider_smoke.zbr examples/radio_smoke.zbr examples/entry_kinds_smoke.zbr examples/table_check_smoke.zbr examples/form_smoke.zbr examples/combobox_editable_smoke.zbr)
+examples=("$@"); [ ${#examples[@]} -eq 0 ] && examples=(examples/tabs_sci_smoke.zbr examples/styler_smoke.zbr examples/editor_min.zbr examples/editor_events_smoke.zbr examples/panel_smoke.zbr examples/gui_modules_smoke.zbr examples/scope_smoke.zbr examples/slider_smoke.zbr examples/radio_smoke.zbr examples/entry_kinds_smoke.zbr examples/table_check_smoke.zbr examples/form_smoke.zbr examples/combobox_editable_smoke.zbr examples/area_smoke.zbr)
 fail=0
 for ex in "${examples[@]}"; do
   name=$(basename "$ex" .zbr)

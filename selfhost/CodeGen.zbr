@@ -13596,13 +13596,17 @@ struct Generator
                 if getIdentName(m.object) as on2
                     if thread_pool_locals.contains_(on2)
                         return true
-            # BUG-358: the GUI section's SYNCHRONOUS builders (`g.panel(label, cb)`,
-            # `g.window`, `g.childWindow`) take `callback: anytype` and call
-            # `callback.call(self)` before returning — exactly the sys.go shape. Routing
-            # them through the closure-via-sig pool burned one of the 64 slots per CALL,
-            # and a `view()` re-runs on every render, so an MVU view with a panel died on
-            # its 65th frame ("closure-via-sig pool exhausted") — a few seconds on tui.
-            if m.member == "panel" or m.member == "window" or m.member == "childWindow"
+            # BUG-358: the GUI section's builders take a closure `anytype` and either call
+            # it before returning (the old `g.panel(label, cb)`) or COPY ITS BYTES into the
+            # widget node (every `on:` since 2026-09-21, and `g.area`'s draw closure since
+            # 2026-09-22) -- the sys.go shape either way. Routing one through the
+            # closure-via-sig pool burned one of the 64 slots per CALL, and a `view()`
+            # re-runs on every render, so an MVU view died on its 65th frame ("closure-via-
+            # sig pool exhausted"). It was three named builders; it is EVERY method on a
+            # Gui receiver now, because every one of them consumes the struct.
+            # (Only with an inference context: this predicate runs before one exists for
+            # some call sites, and the three-name form never reached inferExpr there.)
+            if .infer_ctx != nil
                 var rt3: Type_ = inferExpr(m.object, .infer_ctx!)
                 if rt3 is Type_.gui_context
                     return true

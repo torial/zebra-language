@@ -3259,6 +3259,7 @@ message, and the body becomes `view`.
 | `g.spacing()`                              | void     | Cosmetic, TUI only; a no-op on libui-ng.   |
 | `g.indent()` / `g.unindent()`             | void     | Cosmetic, TUI only; a no-op on libui-ng.   |
 | `g.beginPanel(id)` / `g.endPanel(id)`     | void     | Titled group box (libui `uiGroup`; an indented heading on the TUI). The one panel form since 2026-09-22: the callback `g.panel`, `g.window` and `g.childWindow` are removed. |
+| `g.area(id, w, h, draw, on)`               | void     | A drawing surface (2026-09-22; libui `uiArea` -- Direct2D / Cairo / CoreGraphics). `draw: def(c: Gui)` paints with `c.line/rect/fillRect/circle/fillCircle/drawText` and `c.canvasWidth()/canvasHeight()`; it runs at paint time and captures what it needs from the model (`capture` block), and the area repaints when those captured values change. `on: def(x: float, y: float, button: int): Msg` on a mouse press. Colours are `0xRRGGBB`. Stub prints the verbs; TUI shows a placeholder. `examples/area_smoke.zbr` |
 | `g.beginForm(id)` / `g.endForm(id)`       | void     | A form (2026-09-22): labels left, controls right, aligned (libui `uiForm`). Each child widget's own label is its row label -- `g.field("Host", ...)` inside a form is a `Host` row. A plain vbox on the other backends. `examples/form_smoke.zbr` |
 | `g.beginTabs(id, stretch)` / `g.endTabs()` | void    | Tab control (libui-ng `uiTab`); pages go between `g.beginTabPage(id, label)` / `g.endTabPage()`. TUI backend: no-op |
 | `g.tabSelected(id)` / `g.selectTab(id, i)` | int / void | Selected page index in emission order (-1 with no pages) / select from the model. TUI backend: -1 / no-op |
@@ -3321,6 +3322,31 @@ g.beginForm("settings")
     g.toggle("Use TLS", m.tls, def(b: bool): Msg = Msg.set_tls(b))
 g.endForm("settings")
 ```
+
+### Drawing (libui-ng; a placeholder on the TUI)
+
+`g.area(id, w, h, draw, on)` is a canvas. The draw closure is called by the toolkit at
+paint time, not by `view`, so it must `capture` what it reads from the model; the runtime
+keeps the closure's bytes and repaints only when they change (a message that changes a
+captured value repaints, one that does not, does not). Coordinates are the area's own
+pixels; `w, h` are a minimum size.
+
+```zebra
+g.area("board", 240, 240, def(c: Gui)
+    capture
+        var cells: List(int) = m.cells
+    c.fillRect(0.0, 0.0, 240.0, 240.0, 0xFAFAF0)
+    c.line(80.0, 0.0, 80.0, 240.0, 0x333333, 2.0)
+    c.fillCircle(40.0, 40.0, 28.0, 0x2A6EBB)
+    c.drawText(6.0, 218.0, "click a cell", 0x777777, 12.0)
+, def(x: float, y: float, button: int): Msg = Msg.press((y / 80.0).toInt() * 3 + (x / 80.0).toInt()))
+```
+
+The verbs: `line(x1, y1, x2, y2, color, thickness)`, `rect(x, y, w, h, color, thickness)`,
+`fillRect(x, y, w, h, color)`, `circle(cx, cy, r, color, thickness)`, `fillCircle(cx, cy, r,
+color)`, `drawText(x, y, s, color, size)` (size 0 = the control font), `canvasWidth()`,
+`canvasHeight()`. Outside a draw closure they do nothing. Not yet: drag and move events,
+keys, images, gradients, transforms -- libui has them all; bind when something needs one.
 
 ### File dialogs (libui-ng only; stub/TUI return nil)
 

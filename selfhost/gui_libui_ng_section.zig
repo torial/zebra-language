@@ -68,6 +68,15 @@ const _GuiBackend = struct {
     endTabsFn:     *const fn () void,
     tabSelectedFn: *const fn (id: []const u8) i64,
     selectTabFn:   *const fn (id: []const u8, index: i64) void,
+    areaFn:         *const fn (id: []const u8, w: i64, h: i64, dcap: *const anyopaque, dcap_len: usize, tdraw: *const fn (*const anyopaque, GuiContext) void, cap: *const anyopaque, cap_len: usize, tclick: *const fn (*const anyopaque, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    canvasWidthFn:  *const fn () f64,
+    canvasHeightFn: *const fn () f64,
+    lineFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, color: i64, thickness: f64) void,
+    rectFn:         *const fn (x: f64, y: f64, w: f64, h: f64, color: i64, thickness: f64) void,
+    fillRectFn:     *const fn (x: f64, y: f64, w: f64, h: f64, color: i64) void,
+    circleFn:       *const fn (cx: f64, cy: f64, r: f64, color: i64, thickness: f64) void,
+    fillCircleFn:   *const fn (cx: f64, cy: f64, r: f64, color: i64) void,
+    drawTextFn:     *const fn (x: f64, y: f64, s: []const u8, color: i64, size: f64) void,
     minSizeFn:     *const fn (id: []const u8, width: i64, height: i64) void,
     hotkeyFn:      *const fn (vk: i64, mods: i64) void,
     // §6b (2026-09-17): message-carrying forms and menus. `msg` is the Msg's bytes
@@ -273,6 +282,43 @@ const GuiContext = struct {
     // button, input): 0 = none. libui had no size hints; uiControlSetMinSize is the
     // torial fork's. The tui backend ignores it.
     pub fn minSize(self: GuiContext, id: []const u8, width: i64, height: i64) void { self._b.minSizeFn(id, width, height); }
+    // A drawing surface (libui uiArea: Direct2D / Cairo / CoreGraphics). `draw: def(g: Gui)`
+    // paints with the verbs below and is called at paint time -- it captures what it needs
+    // from the model; the area repaints when those captured bytes change. `on: def(x: float,
+    // y: float, button: int): Msg` fires on a mouse press. w, h are a minimum size.
+    pub fn area(self: GuiContext, id: []const u8, w: i64, h: i64, draw: anytype, on: anytype) void {
+        const dbare = comptime (_zbr_is_fnlike(@TypeOf(draw)) and @typeInfo(@TypeOf(draw)) != .pointer);
+        const Dr = if (dbare) *const @TypeOf(draw) else @TypeOf(draw);
+        const dpayload: Dr = if (dbare) &draw else draw;
+        const DThunk = struct {
+            fn call(cap: *const anyopaque, g: GuiContext) void {
+                const f: *const Dr = @ptrCast(@alignCast(cap));
+                if (comptime _zbr_is_fnlike(Dr)) f.*(g) else { var c = f.*; c.call(g); }
+            }
+        };
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, x: f64, y: f64, btn: i64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(x, y, btn) else blk: { var c = f.*; break :blk c.call(x, y, btn); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.areaFn(id, w, h, @ptrCast(&dpayload), @sizeOf(Dr), DThunk.call, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // ── drawing, valid inside an area's draw closure (no-ops elsewhere) ──
+    // colours are 0xRRGGBB ints; coordinates are floats in the area's own pixels.
+    pub fn canvasWidth(self: GuiContext) f64 { return self._b.canvasWidthFn(); }
+    pub fn canvasHeight(self: GuiContext) f64 { return self._b.canvasHeightFn(); }
+    pub fn line(self: GuiContext, x1: f64, y1: f64, x2: f64, y2: f64, color: i64, thickness: f64) void { self._b.lineFn(x1, y1, x2, y2, color, thickness); }
+    pub fn rect(self: GuiContext, x: f64, y: f64, w: f64, h: f64, color: i64, thickness: f64) void { self._b.rectFn(x, y, w, h, color, thickness); }
+    pub fn fillRect(self: GuiContext, x: f64, y: f64, w: f64, h: f64, color: i64) void { self._b.fillRectFn(x, y, w, h, color); }
+    pub fn circle(self: GuiContext, cx: f64, cy: f64, r: f64, color: i64, thickness: f64) void { self._b.circleFn(cx, cy, r, color, thickness); }
+    pub fn fillCircle(self: GuiContext, cx: f64, cy: f64, r: f64, color: i64) void { self._b.fillCircleFn(cx, cy, r, color); }
+    pub fn drawText(self: GuiContext, x: f64, y: f64, s: []const u8, color: i64, size: f64) void { self._b.drawTextFn(x, y, s, color, size); }
     // Window-wide key chords, the CodeEditor's hotkey/takeKey convention lifted to
     // the window (uiWindowOnKey, torial libui-ng fork): a registered chord is
     // consumed wherever the focus is and queued; takeKey pops (mods << 16) | vk, or 0.
@@ -1068,7 +1114,7 @@ fn _code_editor_sci_str(_ed: *_CodeEditor, msg: i64, wparam: i64, text: []const 
 // hiding, no frame-0 rule, no positional counter: a box that appears is a child
 // inserted where it appears. The seven caches this replaced are gone.
 const _ui = @import("ui");
-const _LuiKind = enum { root, hbox, vbox, panel, tabs, page, text, sep, button, checkbox, slider, input, input_ml, combobox, combobox_ed, radio, spinbox, progress, form, editor, table };
+const _LuiKind = enum { root, hbox, vbox, panel, tabs, page, text, sep, button, checkbox, slider, input, input_ml, combobox, combobox_ed, radio, spinbox, progress, form, area, editor, table };
 const _LuiNode = struct {
     kind: _LuiKind,
     key: []const u8 = "",
@@ -1095,6 +1141,14 @@ const _LuiNode = struct {
     cmb: ?*_ui.Combobox = null,
     rad: ?*_ui.RadioButtons = null,
     ecmb: ?*_ui.EditableCombobox = null,
+    // an area: the handler lives IN the node (stable address; @fieldParentPtr finds the node),
+    // the draw closure's bytes are the repaint key
+    area: ?*_ui.Area = null,
+    ah: _ui.Area.Handler = undefined,
+    dcap: [512]u8 align(8) = undefined,
+    dcap_len: usize = 0,
+    thunk_draw: ?*const fn (*const anyopaque, GuiContext) void = null,
+    thunk_click: ?*const fn (*const anyopaque, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
     spn: ?*_ui.Spinbox = null,
     pb: ?*_ui.ProgressBar = null,
     grp: ?*_ui.Group = null,
@@ -1105,9 +1159,9 @@ const _LuiNode = struct {
     ed: ?*_CodeEditor = null,
     table: ?*_LuiTable = null,
     // message-carrying forms: the Msg bytes / the closure bytes + its thunk
-    msg: [64]u8 align(16) = undefined,
+    msg: [64]u8 align(8) = undefined,
     msg_len: usize = 0,
-    cap: [128]u8 align(16) = undefined,
+    cap: [128]u8 align(8) = undefined,
     cap_len: usize = 0,
     thunk_b: ?*const fn (*const anyopaque, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
     thunk_s: ?*const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
@@ -1998,6 +2052,133 @@ fn _lui_select_tab(_id: []const u8, _index: i64) void {
 }
 // Minimum-size hint by id. Only calls into libui when the hint changes --
 // uiControlSetMinSize relayouts, and the view repeats the call every render.
+// ── area: a drawing surface ──
+var _lui_paint: ?*_ui.Draw.Params = null;   // set while a Draw callback runs; the verbs need it
+fn _lui_area_draw(_h: *_ui.Area.Handler, _a: *_ui.Area, _p: *_ui.Draw.Params) callconv(.c) void {
+    _ = _a;
+    const _n: *_LuiNode = @fieldParentPtr("ah", _h);
+    const _t = _n.thunk_draw orelse return;
+    _lui_paint = _p;
+    defer _lui_paint = null;
+    const _g = GuiContext{ ._b = &_gui_active_backend, .lowLevel = .{ ._b = &_gui_active_backend } };
+    _t(@ptrCast(&_n.dcap), _g);
+}
+fn _lui_area_mouse(_h: *_ui.Area.Handler, _a: *_ui.Area, _e: *_ui.Area.MouseEvent) callconv(.c) void {
+    _ = _a;
+    const _n: *_LuiNode = @fieldParentPtr("ah", _h);
+    if (_e.Down == 0) return;
+    if (_n.thunk_click) |t| t(@ptrCast(&_n.cap), _e.X, _e.Y, @intCast(_e.Down), _n.send_fn.?, _n.send_ptr.?);
+}
+fn _lui_area_crossed(_h: *_ui.Area.Handler, _a: *_ui.Area, _left: c_int) callconv(.c) void { _ = _h; _ = _a; _ = _left; }
+fn _lui_area_drag(_h: *_ui.Area.Handler, _a: *_ui.Area) callconv(.c) void { _ = _h; _ = _a; }
+fn _lui_area_key(_h: *_ui.Area.Handler, _a: *_ui.Area, _e: *_ui.Area.KeyEvent) callconv(.c) c_int { _ = _h; _ = _a; _ = _e; return 0; }
+fn _lui_area(_id: []const u8, _w: i64, _h: i64, _dcap: *const anyopaque, _dcap_len: usize, _tdraw: *const fn (*const anyopaque, GuiContext) void, _cap: *const anyopaque, _cap_len: usize, _tclick: *const fn (*const anyopaque, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    if (_dcap_len > 512 or _cap_len > 128) return;
+    const _r = _lui_child(.area, _id);
+    const _dsrc: [*]const u8 = @ptrCast(_dcap);
+    if (_r.fresh) {
+        _r.n.ah = .{ .Draw = _lui_area_draw, .MouseEvent = _lui_area_mouse, .MouseCrossed = _lui_area_crossed, .DragBroken = _lui_area_drag, .KeyEvent = _lui_area_key };
+        const _a = _ui.Area.Handler.New(&_r.n.ah, .Area) catch return;
+        _r.n.area = _a;
+        _r.n.ctrl = _a.as_control();
+        _ui.Control.SetMinSize(_r.n.ctrl.?, @intCast(@max(_w, 0)), @intCast(@max(_h, 0)));
+        _lui_attach(_r.n, true);
+        @memcpy(_r.n.dcap[0.._dcap_len], _dsrc[0.._dcap_len]);
+        _r.n.dcap_len = _dcap_len;
+    } else if (_r.n.dcap_len != _dcap_len or !std.mem.eql(u8, _r.n.dcap[0.._dcap_len], _dsrc[0.._dcap_len])) {
+        // the closure captured something that changed: repaint
+        @memcpy(_r.n.dcap[0.._dcap_len], _dsrc[0.._dcap_len]);
+        _r.n.dcap_len = _dcap_len;
+        if (_r.n.area) |_a| _ui.Area.QueueRedrawAll(_a);
+    }
+    _r.n.thunk_draw = _tdraw;
+    const _src: [*]const u8 = @ptrCast(_cap);
+    @memcpy(_r.n.cap[0.._cap_len], _src[0.._cap_len]);
+    _r.n.cap_len = _cap_len;
+    _r.n.thunk_click = _tclick;
+    _r.n.send_fn = _send_fn;
+    _r.n.send_ptr = _send_ptr;
+}
+fn _lui_brush(_color: i64) _ui.Draw.Brush {
+    const _c: u32 = @intCast(_color & 0xffffff);
+    return _ui.Draw.Brush.init(.{ .Type = .Solid, .R = @as(f64, @floatFromInt((_c >> 16) & 0xff)) / 255.0, .G = @as(f64, @floatFromInt((_c >> 8) & 0xff)) / 255.0, .B = @as(f64, @floatFromInt(_c & 0xff)) / 255.0, .A = 1.0 });
+}
+fn _lui_stroke_path(_path: *_ui.Draw.Path, _color: i64, _t: f64) void {
+    const _p = _lui_paint orelse return;
+    const _ctx = _p.Context orelse return;
+    var _b = _lui_brush(_color);
+    var _sp = _ui.Draw.StrokeParams.init(.{ .Thickness = if (_t > 0) _t else 1.0, .Cap = .Round, .Join = .Round });
+    _ui.Draw.Context.Stroke(_ctx, _path, &_b, &_sp);
+}
+fn _lui_fill_path(_path: *_ui.Draw.Path, _color: i64) void {
+    const _p = _lui_paint orelse return;
+    const _ctx = _p.Context orelse return;
+    var _b = _lui_brush(_color);
+    _ui.Draw.Context.Fill(_ctx, _path, &_b);
+}
+fn _lui_canvas_w() f64 { return if (_lui_paint) |_p| _p.AreaWidth else 0; }
+fn _lui_canvas_h() f64 { return if (_lui_paint) |_p| _p.AreaHeight else 0; }
+fn _lui_line(_x1: f64, _y1: f64, _x2: f64, _y2: f64, _color: i64, _t: f64) void {
+    if (_lui_paint == null) return;
+    const _path = _ui.Draw.Path.New(.Winding) orelse return;
+    defer _ui.Draw.Path.Free(_path);
+    _ui.Draw.Path.NewFigure(_path, _x1, _y1);
+    _ui.Draw.Path.LineTo(_path, _x2, _y2);
+    _ui.Draw.Path.End(_path);
+    _lui_stroke_path(_path, _color, _t);
+}
+fn _lui_rect(_x: f64, _y: f64, _w: f64, _h: f64, _color: i64, _t: f64) void {
+    if (_lui_paint == null) return;
+    const _path = _ui.Draw.Path.New(.Winding) orelse return;
+    defer _ui.Draw.Path.Free(_path);
+    _ui.Draw.Path.AddRectangle(_path, _x, _y, _w, _h);
+    _ui.Draw.Path.End(_path);
+    _lui_stroke_path(_path, _color, _t);
+}
+fn _lui_fill_rect(_x: f64, _y: f64, _w: f64, _h: f64, _color: i64) void {
+    if (_lui_paint == null) return;
+    const _path = _ui.Draw.Path.New(.Winding) orelse return;
+    defer _ui.Draw.Path.Free(_path);
+    _ui.Draw.Path.AddRectangle(_path, _x, _y, _w, _h);
+    _ui.Draw.Path.End(_path);
+    _lui_fill_path(_path, _color);
+}
+fn _lui_circle(_cx: f64, _cy: f64, _r: f64, _color: i64, _t: f64) void {
+    if (_lui_paint == null) return;
+    const _path = _ui.Draw.Path.New(.Winding) orelse return;
+    defer _ui.Draw.Path.Free(_path);
+    _ui.Draw.Path.NewFigureWithArc(_path, _cx, _cy, _r, 0, 2.0 * std.math.pi, false);
+    _ui.Draw.Path.CloseFigure(_path);
+    _ui.Draw.Path.End(_path);
+    _lui_stroke_path(_path, _color, _t);
+}
+fn _lui_fill_circle(_cx: f64, _cy: f64, _r: f64, _color: i64) void {
+    if (_lui_paint == null) return;
+    const _path = _ui.Draw.Path.New(.Winding) orelse return;
+    defer _ui.Draw.Path.Free(_path);
+    _ui.Draw.Path.NewFigureWithArc(_path, _cx, _cy, _r, 0, 2.0 * std.math.pi, false);
+    _ui.Draw.Path.CloseFigure(_path);
+    _ui.Draw.Path.End(_path);
+    _lui_fill_path(_path, _color);
+}
+fn _lui_draw_text(_x: f64, _y: f64, _s: []const u8, _color: i64, _size: f64) void {
+    const _p = _lui_paint orelse return;
+    const _ctx = _p.Context orelse return;
+    var _zb: [1024]u8 = undefined;
+    const _as = _ui.AttributedString.New(_lui_z(&_zb, _s)) catch return;
+    defer _ui.AttributedString.uiFreeAttributedString(_as);
+    const _c: u32 = @intCast(_color & 0xffffff);
+    const _attr = _ui.Attribute.uiNewColorAttribute(@as(f64, @floatFromInt((_c >> 16) & 0xff)) / 255.0, @as(f64, @floatFromInt((_c >> 8) & 0xff)) / 255.0, @as(f64, @floatFromInt(_c & 0xff)) / 255.0, 1.0);
+    _ui.AttributedString.SetAttribute(_as, _attr, 0, _ui.AttributedString.uiAttributedStringLen(_as));
+    var _fd: _ui.FontDescriptor = undefined;
+    _ui.FontDescriptor.LoadControlFont(&_fd);
+    defer _ui.FontDescriptor.Free(&_fd);
+    if (_size > 0) _fd.Size = _size;
+    var _params = _ui.Draw.TextLayout.Params{ .String = _as, .DefaultFont = &_fd, .Width = @max(_p.AreaWidth - _x, 1.0), .Align = .Left };
+    const _tl = _ui.Draw.TextLayout.New(&_params) catch return;
+    defer _ui.Draw.TextLayout.Free(_tl);
+    _ui.Draw.Context.Text(_ctx, _tl, _x, _y);
+}
 fn _lui_min_size(_id: []const u8, _w: i64, _h: i64) void {
     const _n = _lui_keyed.get(_id) orelse return;
     const _c = _n.ctrl orelse return;
@@ -2385,6 +2566,15 @@ const _gui_lui_backend = _GuiBackend{
     .tabSelectedFn  = _lui_tab_selected,
     .selectTabFn    = _lui_select_tab,
     .minSizeFn      = _lui_min_size,
+    .areaFn         = _lui_area,
+    .canvasWidthFn  = _lui_canvas_w,
+    .canvasHeightFn = _lui_canvas_h,
+    .lineFn         = _lui_line,
+    .rectFn         = _lui_rect,
+    .fillRectFn     = _lui_fill_rect,
+    .circleFn       = _lui_circle,
+    .fillCircleFn   = _lui_fill_circle,
+    .drawTextFn     = _lui_draw_text,
     .hotkeyFn       = _lui_hotkey,
     .actionFn       = _lui_action,
     .toggleFn       = _lui_toggle,

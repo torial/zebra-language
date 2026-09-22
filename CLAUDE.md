@@ -218,7 +218,7 @@ per-tier counts, computed from the registrations rather than written down.
 | `--fast` | 28 <!-- doc-gen: 28 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
 | (default) | 30 <!-- doc-gen: 30 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
 | `--full` | 38 <!-- doc-gen: 38 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 47 <!-- doc-gen: 47 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--daily` | 49 <!-- doc-gen: 49 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -2813,6 +2813,13 @@ event. That is the shape the stub backend cannot run (it has no `action`) and so
 fixture `test/gui_scope_test.zbr` cannot reach: the wrapper has to outlive `scope()`, which
 is why it is a per-(parent, map) heap instance and not a stack local. `libui-section` compiles
 the same example against the bindings, so `_ScopeWrap` is instantiated in both sections.
+
+**A fifth, `gui-scaffold-area` (2026-09-22), runs it on `examples/area_smoke.zbr`** -- a
+capturing draw closure handed to `g.area` on every render. The BUG-358 shape moved here when
+the callback panels were removed: the first tui build of that example died on its 65th frame,
+"closure-via-sig pool exhausted", because codegen's struct-consumer exemption named three
+builders by name. It names the receiver type now (every method on a `Gui` copies or calls
+its closure), and this registration is where that regression would show.
 
 Run it as `bash tools/gui_scaffold_check.sh [examples/foo.zbr]`. It builds a real tui app,
 so it is minutes, not seconds — treat it like `compile_check`: per-session and
