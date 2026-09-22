@@ -3068,8 +3068,8 @@ def relativePath(from_dir: str, target: str): str
 # first Windows run of the override (the doc said it worked; nothing had run it).
 def luiBuildZon(proj: str): str
     var dep: str = """        .zig_libui_ng = .{
-            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#93c7f54b2051d17b9f69d203ff3cd4500e60d285",
-            .hash = "bindings_libui_ng-0.1.0-p2CY9VwQQgApSplQXciuuEWGImM_PPrHwvCG9f_SXioP",
+            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#787c9a289123ef6b02f68287d5ab156e1b0f0989",
+            .hash = "bindings_libui_ng-0.1.0-p2CY9QehawCgztZV09id4BRCb65HQCZ-dRwhE7Jtocel",
         },
 """
     if sys.getenv("ZEBRA_LIBUI_PATH") as lp

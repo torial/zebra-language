@@ -5587,7 +5587,7 @@ pub fn _zbr_fn_relativePath(from_dir: []const u8, target: []const u8) []const u8
 // zbr:selfhost/main.zbr:3069
 pub fn _zbr_fn_luiBuildZon(proj: []const u8) []const u8 {
 // zbr:selfhost/main.zbr:3070
-    var dep: []const u8 = "        .zig_libui_ng = .{\n            .url  = \"git+https://github.com/torial/zig-libui-ng?ref=main#93c7f54b2051d17b9f69d203ff3cd4500e60d285\",\n            .hash = \"bindings_libui_ng-0.1.0-p2CY9VwQQgApSplQXciuuEWGImM_PPrHwvCG9f_SXioP\",\n        },\n";
+    var dep: []const u8 = "        .zig_libui_ng = .{\n            .url  = \"git+https://github.com/torial/zig-libui-ng?ref=main#787c9a289123ef6b02f68287d5ab156e1b0f0989\",\n            .hash = \"bindings_libui_ng-0.1.0-p2CY9QehawCgztZV09id4BRCb65HQCZ-dRwhE7Jtocel\",\n        },\n";
 // zbr:selfhost/main.zbr:3071
     if (_sys_getenv("ZEBRA_LIBUI_PATH")) |lp| {
 // zbr:selfhost/main.zbr:3072
