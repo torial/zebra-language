@@ -1691,6 +1691,17 @@ def lspPathToUri(p: str): str
         return "file:///" + n
     return "file://" + n
 
+# BUG-430: a client may spell a drive path `file://C:/x` (two slashes -- zebra-ide's
+# rename_workspace_test does; the spec form is `file:///C:/x`). LSP says URIs are opaque
+# and compared as strings, so the disk-resolved modules this server ADDS to a workspace
+# must be spelled the way the requesting document was, or the client's own edit list
+# never matches them: on torial the rename named `file:///C:/.../geo.zbr` beside the
+# client's `file://C:/.../main.zbr` and the edit for geo.zbr was dropped as unknown.
+def lspSpellLike(template: str, u: str): str
+    if template.startsWith("file://") and not template.startsWith("file:///") and u.startsWith("file:///")
+        return "file://" + u[8..u.len]
+    return u
+
 def lspDirOfPath(p: str): str
     var n: str = p.replace("\\", "/")
     var i: int = n.lastIndexOf("/")
@@ -1753,7 +1764,7 @@ def lspWorkspaceDocs(docs: HashMap(str, str), uri: str): HashMap(str, str)
         var rel: str = n.replace(".", "/") + ".zbr"
         var mp: str = dir + "/" + rel
         if File.exists(mp)
-            var mu: str = lspPathToUri(mp)
+            var mu: str = lspSpellLike(uri, lspPathToUri(mp))
             if ws.get(mu) == nil
                 ws.set(mu, File.read(mp))
     # dependents: siblings that use this document's module
@@ -1763,7 +1774,7 @@ def lspWorkspaceDocs(docs: HashMap(str, str), uri: str): HashMap(str, str)
             if not entry.endsWith(".zbr")
                 continue
             var sp: str = dir + "/" + entry
-            var su: str = lspPathToUri(sp)
+            var su: str = lspSpellLike(uri, lspPathToUri(sp))
             if ws.get(su) != nil
                 continue
             if File.isDir(sp)

@@ -23,6 +23,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **`List.reserve(n)` asks for what it was told** (2026-09-21): it emitted the non-precise
+  `ensureTotalCapacity`, which rounds n up the 1.5x growth ladder, and the runtime arena adds
+  another 1.5x to its node -- `reserve(3.9e9)` asked mmap for 8.78 GB and panicked OOM with
+  7.4 GB free (found by the Kolakoski ring, measured with strace). Now `Precise`; a 5 GB
+  reserve succeeds where 3.9 failed. The arena's own 1.5x remains.
+- **`zebra lsp` on Windows: rename/references reach the unopened module again** (BUG-430):
+  the disk-resolved modules are spelled the way the client spelled the open document
+  (`file://C:/x` or `file:///C:/x`), so a two-slash client no longer drops their edits.
 - **Postfix `catch` inside a method-level `catch` block** (BUG-436): `A.f() catch 0` in a method
   that ends in `catch |e|` emitted two catches and zig refused it; one flag in codegen, fixture
   `bug436_catch_in_catch_block_test`.

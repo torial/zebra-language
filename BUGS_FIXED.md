@@ -6,6 +6,29 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-430: `zebra lsp` rename on Windows returns edits only for the opened file — the `use` graph's URIs disagree (`file://C:/…` vs `file:///C:/…`) — FIXED 2026-09-21
+
+**Fix (2026-09-21).** The server owns it: `lspSpellLike` in `selfhost/main.zbr` spells every
+module `lspWorkspaceDocs` adds from disk the way the REQUESTING document's URI was spelled
+(two slashes if the client sent two), because LSP compares URIs as strings and a client's
+edit list drops what it cannot match. zebra-ide's `uriOf` was already the spec form; it was
+the test's own `"file://" + path` that exposed it, and any client may spell it that way.
+Eighth leg of `tools/lsp_workspace_smoke.py`, which discriminates only on a drive path (the
+two-slash form of a driveless path is RELATIVE and round-trips unchanged -- red-checked on
+Linux and found green, so the leg SKIPs and says so there); red on torial against the
+pre-fix binary, then green. `# pins: BUG-430` on the script.
+
+zebra-ide's `rename_workspace_test` (a rename of a symbol used from an UNOPENED module)
+passes on Linux and fails on torial: the workspace edit names only `main.zbr`, and the
+panic's URI list shows the two spellings side by side, `file://C:/Users/…/main.zbr`
+(the client's) and `file:///C:/Users/…` (the server's resolved-from-disk modules), so
+the server's edit for `geo.zbr` is not matched to a known document. Whether it broke
+with BUG-428's path normalisation (dirOf now returns a real directory for a backslash
+path, so the graph resolves where it silently did not before) or has always been so on
+Windows is not established -- the test had not been run on torial since 2026-09-09.
+Where to look: the URI builder in `zebra lsp`'s workspace resolution vs `uriOf` in
+zebra-ide/buffers.zbr; one of them must own the third slash.
+
 ### BUG-436: a postfix `catch` on a throws call inside a method-level `catch` block emits two catches — FIXED 2026-09-21
 
 **Fix (2026-09-21).** The `Expr.catch_` arm of `genExpr` now sets `in_try_expr` around its

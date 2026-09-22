@@ -55,19 +55,6 @@ is ignored rather than refused. Either support `+` (C's `%+.1f`, the oracle
 different number than asked is the worst of the three. Workaround in `kolakoski_kol.zbr`:
 a hand-built sign string.
 
-### BUG-430: `zebra lsp` rename on Windows returns edits only for the opened file — the `use` graph's URIs disagree (`file://C:/…` vs `file:///C:/…`) — OPEN (found 2026-09-17)
-
-zebra-ide's `rename_workspace_test` (a rename of a symbol used from an UNOPENED module)
-passes on Linux and fails on torial: the workspace edit names only `main.zbr`, and the
-panic's URI list shows the two spellings side by side, `file://C:/Users/…/main.zbr`
-(the client's) and `file:///C:/Users/…` (the server's resolved-from-disk modules), so
-the server's edit for `geo.zbr` is not matched to a known document. Whether it broke
-with BUG-428's path normalisation (dirOf now returns a real directory for a backslash
-path, so the graph resolves where it silently did not before) or has always been so on
-Windows is not established -- the test had not been run on torial since 2026-09-09.
-Where to look: the URI builder in `zebra lsp`'s workspace resolution vs `uriOf` in
-zebra-ide/buffers.zbr; one of them must own the third slash.
-
 ### BUG-333: `docs/UI_QUICKSTART.md` contradicts itself on CodeEditor syntax highlighting — OPEN (found 2026-09-06)
 
 **Where.** The "CodeEditor (Scintilla)" section documents, at length and correctly, that every

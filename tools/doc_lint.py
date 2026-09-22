@@ -300,6 +300,8 @@ def _bash():
 
 
 DOC_GEN = re.compile(r"<!--\s*doc-gen:\s*(.+?)\s*=\s*(.+?)\s*-->")
+INCONCLUSIVE = []          # oracles that could not be evaluated this run (see check_gen)
+INCONCLUSIVE_CEILING = 3   # more than this and the run REFUSES rather than reporting green
 
 
 def check_gen(path, text):
@@ -316,11 +318,32 @@ def check_gen(path, text):
         # in CLAUDE.md carry multiple oracles today.
         for m in DOC_GEN.finditer(ln):
             claimed, cmd = m.group(1).strip(), m.group(2).strip()
-            try:
-                got = subprocess.run([_bash(), "-c", cmd], cwd=str(REPO), capture_output=True,
-                                     timeout=60).stdout.decode("utf-8", "replace").strip()
-            except (OSError, subprocess.SubprocessError) as e:
-                hits.append(Finding("D6", rel, i, f"doc-gen command failed to run ({e}): {cmd}"))
+            # A TIMED-OUT ORACLE IS INCONCLUSIVE, NOT STALE (2026-09-21). On 2026-09-18 a
+            # FULL tier went red on this gate alone because one oracle took >60 s under
+            # load (smoke was 4x its idle time in the same run) and the finding read
+            # "failed to run" beside the real drifts -- a message indistinguishable from
+            # a stale count, on the one static gate that shells out per oracle. Standalone
+            # it was 0 stale. So: retry once at double the budget; a second timeout is
+            # recorded as INCONCLUSIVE, printed every run (zero included), and NOT a
+            # failure -- with a ceiling, because a gate whose instruments all timed out
+            # has evaluated nothing and must not print green (main() refuses past it).
+            got, timed_out = None, False
+            for budget in (60, 120):
+                try:
+                    got = subprocess.run([_bash(), "-c", cmd], cwd=str(REPO), capture_output=True,
+                                         timeout=budget).stdout.decode("utf-8", "replace").strip()
+                    timed_out = False
+                    break
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    continue
+                except (OSError, subprocess.SubprocessError) as e:
+                    hits.append(Finding("D6", rel, i, f"doc-gen command failed to run ({e}): {cmd}"))
+                    break
+            if timed_out:
+                INCONCLUSIVE.append(f"{rel}:{i}: `{cmd}` timed out twice (60 s, then 120 s)")
+                continue
+            if got is None:
                 continue
             if got != claimed:
                 hits.append(Finding("D6", rel, i,
@@ -531,7 +554,17 @@ def main():
                 print(f"    info {h}")
 
     hits = live
-    print(f"\n[doc-lint] {len(hits)} stale reference(s) across {len(files)} document(s)")
+    # Printed every run, zero included: a count that appears only when it is bad is a
+    # count nobody has a baseline for (the output_sweep transients discipline).
+    print(f"\n[doc-lint] {len(INCONCLUSIVE)} INCONCLUSIVE oracle(s) (timed out; not counted as stale)")
+    for line in INCONCLUSIVE:
+        print(f"    ? {line}")
+    if len(INCONCLUSIVE) > INCONCLUSIVE_CEILING:
+        print(f"[doc-lint] REFUSING TO REPORT: {len(INCONCLUSIVE)} oracles could not be evaluated "
+              f"(ceiling {INCONCLUSIVE_CEILING}) -- this run measured too little to be green. "
+              f"Re-run on a quieter machine.")
+        return 2
+    print(f"[doc-lint] {len(hits)} stale reference(s) across {len(files)} document(s)")
     if "--quiet" not in argv:
         print("  NOT checked (do not read a clean run as 'the docs are accurate'):")
         for u in UNCOVERED:

@@ -695,6 +695,15 @@ python tools/doc_lint.py           # THE DOC-DRIFT GATE (static, instant, no bui
                                 #   anything inferred from a gate's SILENCE are NOT checked,
                                 #   and a clean run must not be read as "the docs are
                                 #   accurate". 0 = clean. QUICK tier.
+                                #   A TIMED-OUT ORACLE IS INCONCLUSIVE, NOT STALE (2026-09-21).
+                                #   The 2026-09-18 FULL went red on this gate alone because
+                                #   one oracle command took >60 s under load and D6 reported
+                                #   "failed to run" beside the real drifts. Now: retry once
+                                #   at 120 s; a second timeout is listed as `?` under an
+                                #   INCONCLUSIVE count printed EVERY run (zero included) and
+                                #   is not a failure -- past 3 of them the run REFUSES (exit
+                                #   2), because a gate whose instruments could not be
+                                #   evaluated has measured nothing and must not print green.
 bash tools/release_mode_check.sh   # THE ONLY GATE THAT BUILDS WITH `--release` (FULL tier).
                                 #   Every other gate in every tier is DEBUG. That is exactly
                                 #   how BUG-228 survived 19 green gates for four days:
@@ -1048,6 +1057,15 @@ python tools/lsp_workspace_smoke.py  # THE `use`-GRAPH GATE, registered as `lsp-
                                 #   left the definition alone and the program stopped
                                 #   compiling; Definition into an unopened module was null.
                                 #   Found by zebra-ide's rename_workspace_test.
+                                #   AN EIGHTH LEG ON WINDOWS ONLY (BUG-430, 2026-09-21): a
+                                #   client that spells the open document `file://C:/x`
+                                #   (two slashes) must get the disk-resolved modules spelled
+                                #   the same way, because LSP compares URIs as strings. It
+                                #   SKIPS, and says so, where the temp dir has no drive
+                                #   letter: there the two-slash form is a RELATIVE path and
+                                #   the server spells it back with two slashes fixed or not
+                                #   -- measured by red-checking on Linux and getting green.
+                                #   So its count is 8/8 on torial and 7/7 in the container.
 bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surface`
                                 #   (FAST tier, ~16s) -- the only gate that exercises the
                                 #   compiler AS A COMMAND rather than as a translator.
@@ -2025,6 +2043,15 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**FULL tier 2026-09-22 (BUG-430 + doc-lint INCONCLUSIVE + reserve precise, bundles 110-112):
+38/38 PASS in ONE invocation at JOBS=2 on torial, ~2h20m.** smoke **544/544** (734 s), round-trip
+byte-identical, `boundary` 33/0, `lsp-workspace` **8/8** (the new drive-path leg, red at 7/8
+against the pre-fix binary minutes earlier), `compile_check-inline` 384/0, `output_sweep` 466
+identical (1244 s), `full_sweep` 0 regressions vs 485 (1073 s), `examples_sweep` 0 vs 19,
+`divergence` 0 regressions vs the N-1 anchor, `release-mode` clean, `contract-mode` 11/11. The
+QUICK before it was 30/30 first time. Two FULLs in one evening is ~4.5 h of the laptop; the
+next batch should go in one.
+
 **FULL tier 2026-09-21 (BUG-436, bundle109): 38/38 PASS in ONE invocation at JOBS=2 on torial,
 ~2h04m (16:42 -> 18:46).** smoke **544/544** (656 s), round-trip byte-identical, `boundary` 33/0,
 `compile_check-inline` 384/0, `output_sweep` 466 identical (1219 s), `full_sweep` 0 regressions
@@ -2086,7 +2113,8 @@ earlier on the same tree -- a VS Code process was at 12.6 CPU-hours and 1 GB dur
 run. So the tier's board can go red on LOAD ALONE through the one static gate that shells
 out per oracle, and the message reads exactly like a real drift. Standalone: 0 stale. Not
 "fixed" here; the honest option would be for D6 to report a timed-out oracle as INCONCLUSIVE
-rather than as a stale reference, and that is a change to the instrument, left as a proposal.
+rather than as a stale reference, and that is a change to the instrument, left as a proposal
+(landed 2026-09-21: retry at 120 s, then INCONCLUSIVE, refusing past three -- see the gate's entry).
 Also this run: the QUICK that preceded it went red on `doc-lint` for the corpus oracle
 (649 vs 650) because CLAUDE.md was edited WHILE the tier was reading it -- the rule two
 sections up, broken by the person who could quote it -- and on `bug-fixture`, which was BLIND

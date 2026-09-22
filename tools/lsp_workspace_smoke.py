@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pins: BUG-430  (the drive-path leg; real on Windows, SKIPs and says so elsewhere)
 """`zebra lsp` sees the `use` graph around a document, not only OPEN documents.
 
     py tools/lsp_workspace_smoke.py [path/to/zebra]
@@ -84,5 +85,29 @@ rep = run([
 ch = (rep.get(2, {}).get("result") or {}).get("changes", {})
 check(set(ch.keys()) == {U["geo.zbr"], U["main.zbr"]}, f"rename from geo.zbr reaches its unopened dependent main.zbr, not other.zbr (got {sorted(ch.keys())})")
 
-print(f"lsp workspace smoke: {7 - fails}/7 passed")
+# BUG-430: a client that spells the open document `file://C:/x` (two slashes; the spec
+# form is `file:///C:/x`) must get the disk-resolved modules spelled the SAME way, because
+# LSP compares URIs as strings and the client's edit list otherwise drops them (zebra-ide's
+# rename_workspace_test on torial: geo.zbr's edit named `file:///C:/...` beside the client's
+# `file://C:/.../main.zbr`). ONLY A DRIVE PATH CAN DISCRIMINATE: without a drive letter the
+# two-slash form is a RELATIVE path (`file://tmp/x` -> `tmp/x`), which the server spells back
+# with two slashes whether or not the fix is present -- measured, red-check 2026-09-21. So the
+# leg runs where it means something and says SKIP elsewhere rather than printing a pass.
+wsf = ws.replace("\\", "/")
+if len(wsf) > 1 and wsf[1] == ":":
+    U2 = {n: "file://" + wsf + "/" + n for n in ("geo.zbr", "main.zbr")}
+    rep = run([
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        {"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {"uri": U2["main.zbr"], "languageId": "zebra", "version": 1, "text": main}}},
+        {"jsonrpc": "2.0", "id": 2, "method": "textDocument/rename", "params": {"textDocument": {"uri": U2["main.zbr"]}, "position": {"line": call_line, "character": call_col}, "newName": "surface"}},
+        {"jsonrpc": "2.0", "id": 3, "method": "shutdown", "params": {}},
+    ])
+    ch = (rep.get(2, {}).get("result") or {}).get("changes", {})
+    check(set(ch.keys()) == {U2["geo.zbr"], U2["main.zbr"]}, f"BUG-430: a two-slash client URI gets its unopened module spelled the same way (got {sorted(ch.keys())})")
+    total = 8
+else:
+    print("  SKIP: BUG-430 leg needs a drive-letter path (two-slash form is relative here; cannot discriminate)")
+    total = 7
+
+print(f"lsp workspace smoke: {total - fails}/{total} passed")
 sys.exit(1 if fails else 0)
