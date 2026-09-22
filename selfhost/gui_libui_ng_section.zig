@@ -30,6 +30,8 @@ const _GuiBackend = struct {
     textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
     beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
     tableSetupColumnFn: *const fn (label: []const u8) void,
+    tableSetupCheckColumnFn: *const fn (label: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    tableCheckFn: *const fn (checked: bool) void,
     tableHeadersRowFn:  *const fn () void,
     tableNextRowFn:     *const fn () void,
     tableNextColumnFn:  *const fn () void,
@@ -202,6 +204,24 @@ const GuiContext = struct {
     }
     pub fn beginTable(self: GuiContext, id: []const u8, cols: i64) bool { return self._b.beginTableFn(id, cols); }
     pub fn tableSetupColumn(self: GuiContext, label: []const u8) void { self._b.tableSetupColumnFn(label); }
+    // A checkbox column: the cell is `tableCheck(checked)` (in place of `g.text`), and a
+    // click sends `on(row, checked)` -- `on: def(row: int, checked: bool): Msg`. The model
+    // drives the boxes. One check column per table in this cut.
+    pub fn tableSetupCheckColumn(self: GuiContext, label: []const u8, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, row: i64, checked: bool, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(row, checked) else blk: { var c = f.*; break :blk c.call(row, checked); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.tableSetupCheckColumnFn(label, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    pub fn tableCheck(self: GuiContext, checked: bool) void { self._b.tableCheckFn(checked); }
     pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
     pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
     pub fn tableNextColumn(self: GuiContext) void { self._b.tableNextColumnFn(); }
@@ -1948,6 +1968,13 @@ const _LuiTable = struct {
     cur_col: usize = 0,
     activated: i64 = -1,
     seen: u32 = 0,
+    // the one checkbox column (-1 none): cells hold "1"/"0", a click fires thunk_rb(row, checked)
+    check_col: i64 = -1,
+    cap: [128]u8 align(8) = undefined,
+    cap_len: usize = 0,
+    thunk_rb: ?*const fn (*const anyopaque, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
+    send_fn: ?*const fn (*anyopaque, *const anyopaque, usize) void = null,
+    send_ptr: ?*anyopaque = null,
 };
 var _lui_cur_table: ?*_LuiTable = null;
 fn _lui_tbl_num_columns(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model) callconv(.c) c_int {
@@ -1956,8 +1983,9 @@ fn _lui_tbl_num_columns(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model) call
     return @intCast(_t.ncols);
 }
 fn _lui_tbl_column_type(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model, _c: c_int) callconv(.c) _ui.Table.Value.Type {
-    _ = _h; _ = _m; _ = _c;
-    return .String;
+    _ = _m;
+    const _t: *_LuiTable = @fieldParentPtr("handler", _h);
+    return if (@as(i64, _c) == _t.check_col) .Int else .String;
 }
 fn _lui_tbl_num_rows(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model) callconv(.c) c_int {
     _ = _m;
@@ -1971,10 +1999,17 @@ fn _lui_tbl_cell_value(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model, _r: c
     const _ci: usize = @intCast(@max(_c, 0));
     var _s: [:0]const u8 = "";
     if (_ri < _t.rows.items.len and _ci < _t.rows.items[_ri].items.len) _s = _t.rows.items[_ri].items[_ci];
+    if (@as(i64, _c) == _t.check_col) return _ui.Table.Value.uiNewTableValueInt(if (std.mem.eql(u8, _s, "1")) 1 else 0);
     return _ui.Table.Value.uiNewTableValueString(_s.ptr);
 }
 fn _lui_tbl_set_cell_value(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model, _r: c_int, _c: c_int, _v: ?*const _ui.Table.Value) callconv(.c) void {
-    _ = _h; _ = _m; _ = _r; _ = _c; _ = _v;
+    _ = _m;
+    const _t: *_LuiTable = @fieldParentPtr("handler", _h);
+    if (@as(i64, _c) != _t.check_col) return;
+    const _val = _v orelse return;
+    // the model is NOT updated here: the message goes to update, the next render
+    // re-emits the rows, and the diff below flips the box (or leaves it, if update declined)
+    if (_t.thunk_rb) |t| t(@ptrCast(&_t.cap), @intCast(_r), _ui.Table.Value.uiTableValueInt(_val) != 0, _t.send_fn.?, _t.send_ptr.?);
 }
 fn _lui_tbl_dbl(_tb: *_ui.Table, _row: c_int, _tp: ?*_LuiTable) anyerror!void {
     _ = _tb;
@@ -2029,6 +2064,22 @@ fn _lui_table_setup_col(_l: []const u8) void {
     const _z = _allocator.dupeZ(u8, _l) catch return;
     _t.names.append(_allocator, _z) catch {};
 }
+fn _lui_table_setup_check_col(_l: []const u8, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    const _t = _lui_cur_table orelse return;
+    if (_cap_len > 128) return;
+    if (_t.table == null and _t.names.items.len < _t.ncols) {
+        _t.check_col = @intCast(_t.names.items.len);
+        const _z = _allocator.dupeZ(u8, _l) catch return;
+        _t.names.append(_allocator, _z) catch {};
+    }
+    const _src: [*]const u8 = @ptrCast(_cap);
+    @memcpy(_t.cap[0.._cap_len], _src[0.._cap_len]);
+    _t.cap_len = _cap_len;
+    _t.thunk_rb = _thunk;
+    _t.send_fn = _send_fn;
+    _t.send_ptr = _send_ptr;
+}
+fn _lui_table_check(_checked: bool) void { _ = _lui_table_cell_text(if (_checked) "1" else "0"); }
 fn _lui_table_headers_row() void {
     const _t = _lui_cur_table orelse return;
     _t.header = true;
@@ -2074,7 +2125,10 @@ fn _lui_end_table() void {
         var _c: usize = 0;
         while (_c < _t.ncols) : (_c += 1) {
             const _nm: [:0]const u8 = if (_c < _t.names.items.len) _t.names.items[_c] else "";
-            _ui.Table.AppendColumn(_tb, _nm, .{ .Text = .{ .text_column = @intCast(_c), .editable = .Never } });
+            if (@as(i64, @intCast(_c)) == _t.check_col)
+                _ui.Table.AppendColumn(_tb, _nm, .{ .Checkbox = .{ .checkbox_column = @intCast(_c), .editable = .Always } })
+            else
+                _ui.Table.AppendColumn(_tb, _nm, .{ .Text = .{ .text_column = @intCast(_c), .editable = .Never } });
         }
         _ui.Table.HeaderSetVisible(_tb, _t.header);
         _ui.Table.SetSelectionMode(_tb, .ZeroOrOne);
@@ -2222,6 +2276,8 @@ const _gui_lui_backend = _GuiBackend{
     .textColoredFn      = _lui_text_colored,
     .beginTableFn       = _lui_begin_table,
     .tableSetupColumnFn = _lui_table_setup_col,
+    .tableSetupCheckColumnFn = _lui_table_setup_check_col,
+    .tableCheckFn = _lui_table_check,
     .tableHeadersRowFn  = _lui_table_headers_row,
     .tableNextRowFn     = _lui_table_next_row,
     .tableNextColumnFn  = _lui_table_next_col,

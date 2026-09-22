@@ -1,0 +1,69 @@
+# table_check_smoke.zbr -- a checkbox column in a table (2026-09-22). The cell is
+# g.tableCheck(checked) where a text cell would be g.text; a click sends
+# on(row, checked). The model drives the boxes: "All" / "None" flip every row
+# without a click, and the "Save" line proves the model is what changed.
+# gui-scaffold + libui-section compile it; the click witness is a person.
+struct Pick
+    var row: int
+    var checked: bool
+
+struct Model
+    var names: List(str)
+    var picked: List(bool)
+
+union Msg
+    pick_row: Pick
+    all
+    none
+
+def init(): Model
+    var names: List(str) = ["main.zbr", "Parser.zbr", "README.md"]
+    var picked: List(bool) = [true, false, true]
+    return Model(names: names, picked: picked)
+
+def setAll(m: Model, v: bool): Model
+    var out: List(bool) = []
+    for x in m.picked
+        out.append(v)
+    return Model(names: m.names, picked: out)
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.pick_row as pk
+            var out: List(bool) = []
+            var i = 0
+            for x in m.picked
+                if i == pk.row
+                    out.append(pk.checked)
+                else
+                    out.append(x)
+                i += 1
+            return Model(names: m.names, picked: out)
+        on Msg.all
+            return setAll(m, true)
+        on Msg.none
+            return setAll(m, false)
+
+def view(g: Gui, m: Model)
+    if g.beginTable("##files", 2)
+        g.tableSetupCheckColumn("Save", def(row: int, checked: bool): Msg = Msg.pick_row(Pick(row: row, checked: checked)))
+        g.tableSetupColumn("File")
+        g.tableHeadersRow()
+        var i = 0
+        for name in m.names
+            g.tableNextRow()
+            g.tableCheck(m.picked[i])
+            g.tableNextColumn()
+            g.text(name)
+            i += 1
+        g.endTable()
+    var n = 0
+    for p in m.picked
+        if p
+            n += 1
+    g.text("Save " + n.toString() + " of " + m.names.len.toString())
+    g.button("All", Msg.all)
+    g.button("None", Msg.none)
+
+def main()
+    Gui.run("table check", 360, 260, init, update, view)

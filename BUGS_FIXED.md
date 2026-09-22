@@ -29,6 +29,25 @@ Windows is not established -- the test had not been run on torial since 2026-09-
 Where to look: the URI builder in `zebra lsp`'s workspace resolution vs `uriOf` in
 zebra-ide/buffers.zbr; one of them must own the third slash.
 
+### BUG-437: `xs.append(v)` on a List passes the checker and emits StringBuilder's `appendSlice` — FIXED 2026-09-22
+
+**Fix (2026-09-22).** `append` is `add` in the List arm of `genMethodCall`. Fixture
+`test/bug437_list_append_alias_test.zbr` (smoke_run): a struct field, a literal and a call result
+appended to `List(bool)` / `List(int)` / `List(str)`; red before the fix
+(`expected type '[]const bool', found 'bool'`).
+
+`listMethodKnown` has accepted `append` since BUG-369 derived it from the dispatch arms, but
+the only List arm is `add`, so the call fell out of the typed dispatch to the name-keyed
+StringBuilder path at the bottom of `genMethodCall` and emitted `.appendSlice(_allocator, v)`.
+Zig refused the slice. A leak of the leakgen class -- front end accepts, zig rejects -- found
+by hand writing `examples/table_check_smoke.zbr`, which is where the plan said such leaks get
+found (BUG-336..339, 354). Every Python hand writes `append`; the predicate said yes; nothing
+downstream had the arm. Filed FIXED in the same commit.
+
+Same commit, no number: the stub backend's `g.tableNextColumn()` returned `bool` where both
+sections return `void`, so a bare call was "value of type 'bool' ignored" under the DEFAULT
+backend -- every table example had only ever been built for libui. The stub is void now.
+
 ### BUG-436: a postfix `catch` on a throws call inside a method-level `catch` block emits two catches — FIXED 2026-09-21
 
 **Fix (2026-09-21).** The `Expr.catch_` arm of `genExpr` now sets `in_try_expr` around its

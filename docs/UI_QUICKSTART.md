@@ -111,7 +111,7 @@ column fills available width in its parent HBox.
 | `g.radio(label, items, sel, on)`  | One radio button per item (`uiRadioButtons`); `on: def(i: int): Msg`. The model drives the selection. |
 | `g.separator()`                  | Horizontal separator rule.                                     |
 | `g.textColored(r,g,b,a, s)`      | Text only (color ignored).                                     |
-| `g.beginTable` / table ops       | `uiTable`, text columns, rows diffed per frame (QUICKSTART §30). |
+| `g.beginTable` / table ops       | `uiTable`, text columns, rows diffed per frame (QUICKSTART §30). `tableSetupCheckColumn(name, on)` + `tableCheck(checked)` for a checkbox column; `on(row, checked)`. |
 | `g.childWindow(id, w, h, fn)`    | No-op. Use `beginVBox`/`endVBox` instead.                      |
 | `g.panel`, `g.window`            | No-op in libui-ng.                                             |
 
@@ -251,8 +251,9 @@ def update(m: Model, msg: Msg): Model
 - **Layout is dynamic** (since 2026-09-17): a box, line, panel or page that the
   view emits conditionally is inserted where it appears and removed when it
   stops; keyed widgets (`##id`, a label) keep their identity when they move.
-- **Tables are lists**: `beginTable`/`tableNextRow`/`g.text` cells only (no
-  widgets in cells); `tableSelectedRow` / `tableActivatedRow` read the user.
+- **Tables are lists**: `beginTable`/`tableNextRow`/`g.text` cells, plus one
+  checkbox column (`tableSetupCheckColumn`/`tableCheck`); no other widgets in
+  cells. `tableSelectedRow` / `tableActivatedRow` read the user.
 - **No colour**: `textColored` renders without colour.
 - **Widths are hints**: `beginVBox` fills its share of the parent HBox; give a
   pane a floor with `g.minSize(id, w, h)` (a minimum, never a fixed size).

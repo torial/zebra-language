@@ -1,0 +1,19 @@
+# `xs.append(v)` on a List is `add` (2026-09-22). listMethodKnown accepted the name and
+# codegen had no arm for it, so the call fell through to the StringBuilder path and zig
+# refused `appendSlice` -- a leak of the leakgen class, found by hand.
+struct Pick
+    var row: int
+    var checked: bool
+
+def main()
+    var pk = Pick(row: 2, checked: true)
+    var flags: List(bool) = []
+    flags.append(pk.checked)
+    flags.append(false)
+    var rows: List(int) = []
+    rows.append(pk.row)
+    rows.add(5)
+    var names: List(str) = []
+    names.append("a")
+    names.append(pk.row.toString())
+    print("append: " + flags.len.toString() + " " + rows.len.toString() + " " + names.join(",") + " " + rows.at(1).toString())

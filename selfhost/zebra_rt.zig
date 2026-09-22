@@ -3415,9 +3415,11 @@ pub const _GuiBackend = struct {
     textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
     beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
     tableSetupColumnFn: *const fn (label: []const u8) void,
+    tableSetupCheckColumnFn: *const fn (label: []const u8) void,
+    tableCheckFn: *const fn (checked: bool) void,
     tableHeadersRowFn:  *const fn () void,
     tableNextRowFn:     *const fn () void,
-    tableNextColumnFn:  *const fn () bool,
+    tableNextColumnFn:  *const fn () void,
     endTableFn:         *const fn () void,
     beginChildFn:       *const fn (id: []const u8, w: f64, h: f64) bool,
     endChildFn:         *const fn () void,
@@ -3517,9 +3519,11 @@ pub const GuiContext = struct {
     }
     pub fn beginTable(self: GuiContext, id: []const u8, cols: i64) bool { return self._b.beginTableFn(id, cols); }
     pub fn tableSetupColumn(self: GuiContext, label: []const u8) void { self._b.tableSetupColumnFn(label); }
+    pub fn tableSetupCheckColumn(self: GuiContext, label: []const u8, on: anytype) void { _ = on; self._b.tableSetupCheckColumnFn(label); }
+    pub fn tableCheck(self: GuiContext, checked: bool) void { self._b.tableCheckFn(checked); }
     pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
     pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
-    pub fn tableNextColumn(self: GuiContext) bool { return self._b.tableNextColumnFn(); }
+    pub fn tableNextColumn(self: GuiContext) void { self._b.tableNextColumnFn(); }
     pub fn endTable(self: GuiContext) void { self._b.endTableFn(); }
     pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
         const _vis = self._b.beginChildFn(id, w, h);
@@ -3748,10 +3752,12 @@ pub fn _stub_begin_window(label: []const u8) bool {
 pub fn _stub_end_window() void {}
 pub fn _stub_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void { _ = r; _ = gv; _ = b_; _ = a; std.debug.print("[gui] textColored: {s}\n", .{s}); }
 pub fn _stub_begin_table(id: []const u8, cols: i64) bool { std.debug.print("[gui] beginTable: {s} cols={d}\n", .{ id, cols }); return true; }
+pub fn _stub_table_setup_check_column(label: []const u8) void { std.debug.print("[gui] tableSetupCheckColumn: {s}\n", .{label}); }
+pub fn _stub_table_check(checked: bool) void { std.debug.print("[gui] tableCheck: {}\n", .{checked}); }
 pub fn _stub_table_setup_column(label: []const u8) void { std.debug.print("[gui] tableSetupColumn: {s}\n", .{label}); }
 pub fn _stub_table_headers_row() void {}
 pub fn _stub_table_next_row() void {}
-pub fn _stub_table_next_column() bool { return true; }
+pub fn _stub_table_next_column() void {}
 pub fn _stub_end_table() void {}
 pub fn _stub_begin_child(id: []const u8, w: f64, h: f64) bool { _ = id; _ = w; _ = h; return true; }
 pub fn _stub_end_child() void {}
@@ -3814,6 +3820,8 @@ pub const _gui_stub_backend = _GuiBackend{
     .textColoredFn      = _stub_text_colored,
     .beginTableFn       = _stub_begin_table,
     .tableSetupColumnFn = _stub_table_setup_column,
+    .tableSetupCheckColumnFn = _stub_table_setup_check_column,
+    .tableCheckFn = _stub_table_check,
     .tableHeadersRowFn  = _stub_table_headers_row,
     .tableNextRowFn     = _stub_table_next_row,
     .tableNextColumnFn  = _stub_table_next_column,

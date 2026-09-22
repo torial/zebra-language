@@ -30,6 +30,8 @@ const _GuiBackend = struct {
     textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
     beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
     tableSetupColumnFn: *const fn (label: []const u8) void,
+    tableSetupCheckColumnFn: *const fn (label: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    tableCheckFn: *const fn (checked: bool) void,
     tableHeadersRowFn:  *const fn () void,
     tableNextRowFn:     *const fn () void,
     tableNextColumnFn:  *const fn () void,
@@ -202,6 +204,24 @@ const GuiContext = struct {
     }
     pub fn beginTable(self: GuiContext, id: []const u8, cols: i64) bool { return self._b.beginTableFn(id, cols); }
     pub fn tableSetupColumn(self: GuiContext, label: []const u8) void { self._b.tableSetupColumnFn(label); }
+    // A checkbox column: the cell is `tableCheck(checked)` (in place of `g.text`), and a
+    // click sends `on(row, checked)` -- `on: def(row: int, checked: bool): Msg`. The model
+    // drives the boxes. One check column per table in this cut.
+    pub fn tableSetupCheckColumn(self: GuiContext, label: []const u8, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, row: i64, checked: bool, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(row, checked) else blk: { var c = f.*; break :blk c.call(row, checked); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.tableSetupCheckColumnFn(label, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    pub fn tableCheck(self: GuiContext, checked: bool) void { self._b.tableCheckFn(checked); }
     pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
     pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
     pub fn tableNextColumn(self: GuiContext) void { self._b.tableNextColumnFn(); }
@@ -822,6 +842,8 @@ fn _tui_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void {
 }
 fn _tui_begin_table(id: []const u8, cols: i64) bool { _ = id; _ = cols; return true; }
 fn _tui_table_setup_column(label: []const u8) void { _ = label; }
+fn _tui_table_setup_check_column(label: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void { _ = label; _ = cap; _ = cap_len; _ = thunk; _ = send_fn; _ = send_ptr; }
+fn _tui_table_check(checked: bool) void { _tui_text(if (checked) "[x]" else "[ ]"); }
 fn _tui_table_headers_row() void {}
 fn _tui_table_next_row() void { _tui_current_row += 1; }
 fn _tui_table_next_column() void {}
@@ -908,6 +930,8 @@ const _gui_tui_backend = _GuiBackend{
     .textColoredFn      = _tui_text_colored,
     .beginTableFn       = _tui_begin_table,
     .tableSetupColumnFn = _tui_table_setup_column,
+    .tableSetupCheckColumnFn = _tui_table_setup_check_column,
+    .tableCheckFn = _tui_table_check,
     .tableHeadersRowFn  = _tui_table_headers_row,
     .tableNextRowFn     = _tui_table_next_row,
     .tableNextColumnFn  = _tui_table_next_column,

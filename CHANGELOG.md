@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **Table checkbox column (2026-09-22).** `g.tableSetupCheckColumn(name, on)` in place of
+  `tableSetupColumn`, `g.tableCheck(checked)` in place of `g.text` for its cells; a click sends
+  `on(row, checked)` and the model drives the boxes. One per table in this cut.
+  `examples/table_check_smoke.zbr`. Item 3 of the controls plan.
+- **BUG-437**: `xs.append(v)` on a List is `add` (it passed the checker and emitted
+  StringBuilder's `appendSlice`). Also: the stub backend's `tableNextColumn` returns void like
+  the sections, so table programs build under the default backend.
 - **`g.radio`, `g.password`, `g.search` (2026-09-22).** `g.radio(label, items, selected, on)` is one
   radio button per item on `uiRadioButtons`, `on: def(i: int): Msg`; `g.password` / `g.search` are
   `field` on libui's masked and search-styled entries. All three message-form from birth; the

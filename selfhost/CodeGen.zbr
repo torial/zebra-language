@@ -15166,7 +15166,10 @@ struct Generator
                             w.emit("0")
                         w.emit("))) catch @panic(\"OOM\")")
                         return
-                    if mname == "add"
+                    # `append` is `add`: listMethodKnown accepted it and no arm emitted it, so
+                    # `xs.append(v)` fell through to the StringBuilder path and zig refused the
+                    # `appendSlice` (found 2026-09-22 writing table_check_smoke).
+                    if mname == "add" or mname == "append"
                         genExpr(m.object)
                         w.emit(".append(_allocator, ")
                         if args.len > 0
