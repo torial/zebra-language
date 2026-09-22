@@ -25,6 +25,8 @@ const _GuiBackend = struct {
     inputMultilineFn: *const fn (label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     beginPanelFn:       *const fn (label: []const u8) bool,
     endPanelFn:         *const fn () void,
+    beginFormFn:        *const fn (id: []const u8) void,
+    endFormFn:          *const fn () void,
     beginWindowFn:      *const fn (label: []const u8) bool,
     endWindowFn:        *const fn () void,
     textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
@@ -262,6 +264,10 @@ const GuiContext = struct {
     // The open/close pair QUICKSTART documents (a titled group box); until 2026-09-17
     // only the callback form existed and the doc example could not compile.
     pub fn beginPanel(self: GuiContext, label: []const u8) bool { return self._b.beginPanelFn(label); }
+    // A form: label on the left, control on the right, labels aligned (libui's
+    // uiForm). Each child's own `label` is the row label; boxes elsewhere.
+    pub fn beginForm(self: GuiContext, id: []const u8) void { self._b.beginFormFn(id); }
+    pub fn endForm(self: GuiContext, id: []const u8) void { _ = id; self._b.endFormFn(); }
     pub fn endPanel(self: GuiContext, label: []const u8) void { _ = label; self._b.endPanelFn(); }
     pub fn window(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginWindowFn(label)) {
@@ -834,6 +840,9 @@ fn _tui_begin_panel(label: []const u8) bool {
     return true;
 }
 fn _tui_end_panel() void { if (_tui_indent_level > 0) _tui_indent_level -= 1; }
+// a form is a vbox in the tui: the widgets already print `label: value`
+fn _tui_begin_form(id: []const u8) void { _ = id; }
+fn _tui_end_form() void {}
 fn _tui_begin_window(label: []const u8) bool { return _tui_begin_panel(label); }
 fn _tui_end_window() void { _tui_end_panel(); }
 fn _tui_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void {
@@ -925,6 +934,8 @@ const _gui_tui_backend = _GuiBackend{
     .inputMultilineFn   = _tui_input_multiline,
     .beginPanelFn       = _tui_begin_panel,
     .endPanelFn         = _tui_end_panel,
+    .beginFormFn        = _tui_begin_form,
+    .endFormFn          = _tui_end_form,
     .beginWindowFn      = _tui_begin_window,
     .endWindowFn        = _tui_end_window,
     .textColoredFn      = _tui_text_colored,

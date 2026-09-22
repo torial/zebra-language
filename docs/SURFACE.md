@@ -129,9 +129,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `getCursorCol` `getCursorLine` `getLanguage` `getText` `hotkey` `render` `restyle` `sci` `sciStr` `setCursorPosition` `setErrorMarkers` `setLanguage` `setReadOnly` `setText` `takeCharAdded` `takeKey` `takeMarginClick` `takeModified`
 
-### Gui (69)
+### Gui (71)
 
-`beginHBox` `beginMenu` `beginPanel` `beginTabPage` `beginTable` `beginTabs` `beginVBox` `button` `childWindow` `combobox` `endHBox` `endMenu` `endPanel` `endTabPage` `endTable` `endTabs` `endVBox` `every` `field` `getDpi` `hbox` `hotkey` `indent` `inputMultiline` `menuItem` `menuQuit` `menuSeparator` `minSize` `msgBox` `msgBoxError` `openFile` `openFolder` `panel` `password` `progressBar` `radio` `sameLine` `saveFile` `scaleAllSizes` `scope` `search` `selectTab` `send` `separator` `setColor` `setColorsDark` `setStyleFloat` `setVec2` `slider` `spacing` `spinbox` `tabSelected` `tableActivatedRow` `tableCheck` `tableHeadersRow` `tableNextColumn` `tableNextRow` `tableSelectedRow` `tableSetupCheckColumn` `tableSetupColumn` `takeKey` `text` `textColored` `toggle` `treeNode` `treePop` `unindent` `vbox` `window`
+`beginForm` `beginHBox` `beginMenu` `beginPanel` `beginTabPage` `beginTable` `beginTabs` `beginVBox` `button` `childWindow` `combobox` `endForm` `endHBox` `endMenu` `endPanel` `endTabPage` `endTable` `endTabs` `endVBox` `every` `field` `getDpi` `hbox` `hotkey` `indent` `inputMultiline` `menuItem` `menuQuit` `menuSeparator` `minSize` `msgBox` `msgBoxError` `openFile` `openFolder` `panel` `password` `progressBar` `radio` `sameLine` `saveFile` `scaleAllSizes` `scope` `search` `selectTab` `send` `separator` `setColor` `setColorsDark` `setStyleFloat` `setVec2` `slider` `spacing` `spinbox` `tabSelected` `tableActivatedRow` `tableCheck` `tableHeadersRow` `tableNextColumn` `tableNextRow` `tableSelectedRow` `tableSetupCheckColumn` `tableSetupColumn` `takeKey` `text` `textColored` `toggle` `treeNode` `treePop` `unindent` `vbox` `window`
 
 ### HttpRequest (no methods; fields) (0)
 

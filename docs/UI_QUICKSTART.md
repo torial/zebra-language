@@ -93,6 +93,8 @@ column fills available width in its parent HBox.
   frame. Do not add conditional layout switches (create all boxes unconditionally,
   then conditionally show/hide content by using state flags).
 - `g.sameLine()` is a no-op in libui-ng. Use `beginHBox`/`endHBox` instead.
+- `g.beginForm(id)` / `g.endForm(id)` is the settings-dialog layout: label
+  column left, controls right, aligned. Each child's label is its row label.
 
 ---
 

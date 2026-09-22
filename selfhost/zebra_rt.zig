@@ -3410,6 +3410,8 @@ pub const _GuiBackend = struct {
     inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
     beginPanelFn:       *const fn (label: []const u8) bool,
     endPanelFn:         *const fn () void,
+    beginFormFn:        *const fn (id: []const u8) void,
+    endFormFn:          *const fn () void,
     beginWindowFn:      *const fn (label: []const u8) bool,
     endWindowFn:        *const fn () void,
     textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
@@ -3579,6 +3581,8 @@ pub const GuiContext = struct {
     pub fn menuQuit(self: GuiContext) void { _ = self; std.debug.print("[gui] menuQuit\n", .{}); }
     pub fn endMenu(self: GuiContext) void { _ = self; }
     pub fn beginPanel(self: GuiContext, label: []const u8) bool { return self._b.beginPanelFn(label); }
+    pub fn beginForm(self: GuiContext, id: []const u8) void { self._b.beginFormFn(id); }
+    pub fn endForm(self: GuiContext, id: []const u8) void { _ = id; self._b.endFormFn(); }
     pub fn endPanel(self: GuiContext, label: []const u8) void { _ = label; self._b.endPanelFn(); }
     pub fn hotkey(self: GuiContext, vk: i64, mods: i64) void { _ = self; _ = vk; _ = mods; }
     pub fn takeKey(self: GuiContext) i64 { _ = self; return 0; }
@@ -3745,6 +3749,8 @@ pub fn _stub_begin_panel(label: []const u8) bool {
     return true;
 }
 pub fn _stub_end_panel() void {}
+pub fn _stub_begin_form(id: []const u8) void { std.debug.print("[gui] form: {s}\n", .{id}); }
+pub fn _stub_end_form() void {}
 pub fn _stub_begin_window(label: []const u8) bool {
     std.debug.print("[gui] window: {s}\n", .{label});
     return true;
@@ -3815,6 +3821,8 @@ pub const _gui_stub_backend = _GuiBackend{
     .inputMultilineFn   = _stub_input_multiline,
     .beginPanelFn       = _stub_begin_panel,
     .endPanelFn         = _stub_end_panel,
+    .beginFormFn        = _stub_begin_form,
+    .endFormFn          = _stub_end_form,
     .beginWindowFn      = _stub_begin_window,
     .endWindowFn        = _stub_end_window,
     .textColoredFn      = _stub_text_colored,

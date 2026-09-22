@@ -3258,6 +3258,7 @@ message, and the body becomes `view`.
 | `g.indent()` / `g.unindent()`             | void     | Indentation level                          |
 | `g.panel(label, callback)`                 | void     | Collapsible child window                   |
 | `g.beginPanel(id)` / `g.endPanel(id)`     | void     | libui-ng titled group box (retained-mode open/close pair)  |
+| `g.beginForm(id)` / `g.endForm(id)`       | void     | A form (2026-09-22): labels left, controls right, aligned (libui `uiForm`). Each child widget's own label is its row label -- `g.field("Host", ...)` inside a form is a `Host` row. A plain vbox on the other backends. `examples/form_smoke.zbr` |
 | `g.beginTabs(id, stretch)` / `g.endTabs()` | void    | Tab control (libui-ng `uiTab`); pages go between `g.beginTabPage(id, label)` / `g.endTabPage()`. TUI backend: no-op |
 | `g.tabSelected(id)` / `g.selectTab(id, i)` | int / void | Selected page index in emission order (-1 with no pages) / select from the model. TUI backend: -1 / no-op |
 | `g.minSize(id, w, h)`                      | void     | Minimum-size hint (points, 0 = none) for the id-keyed widget: a box, tab strip, panel, editor, button or input. Applied on top of the natural minimum; how a side pane gets a width. TUI backend: no-op |
@@ -3305,6 +3306,22 @@ g.beginPanel("Settings")
     g.toggle("Enable logging", m.logging, def(b: bool): Msg = Msg.set_logging(b))
     g.slider("Volume", m.volume, 0.0, 100.0, def(v: float): Msg = Msg.set_volume(v))
 g.endPanel("Settings")   # id must match begin
+```
+
+### Forms (libui-ng)
+
+`g.beginForm(id)` / `g.endForm(id)` lay their children out as a settings
+dialog: the label column on the left, aligned, the control on the right. A
+widget's own label is its row label, so the view reads the same as it would in a
+vbox; only the geometry changes. Rows may come and go with the model (a
+conditional widget inserts or removes its row).
+
+```zebra
+g.beginForm("settings")
+    g.field("Host name", m.name, def(s: str): Msg = Msg.set_name(s))
+    g.spinbox("Port", m.port, 1, 65535, def(n: int): Msg = Msg.set_port(n))
+    g.toggle("Use TLS", m.tls, def(b: bool): Msg = Msg.set_tls(b))
+g.endForm("settings")
 ```
 
 ### File dialogs (libui-ng only; stub/TUI return nil)

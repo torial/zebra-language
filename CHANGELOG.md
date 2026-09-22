@@ -23,6 +23,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **`g.beginForm` / `g.endForm` (2026-09-22).** The settings-dialog layout on libui's `uiForm`:
+  label column left, controls right, aligned; a child widget's own label is its row label.
+  Rows follow the model (uiForm has no InsertAt, so a mid-form insertion rebuilds the form).
+  A vbox on the other backends. `examples/form_smoke.zbr`. Item 4 of the controls plan.
 - **Table checkbox column (2026-09-22).** `g.tableSetupCheckColumn(name, on)` in place of
   `tableSetupColumn`, `g.tableCheck(checked)` in place of `g.text` for its cells; a click sends
   `on(row, checked)` and the model drives the boxes. One per table in this cut.

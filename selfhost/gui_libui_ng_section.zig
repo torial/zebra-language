@@ -25,6 +25,8 @@ const _GuiBackend = struct {
     inputMultilineFn: *const fn (label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     beginPanelFn:       *const fn (label: []const u8) bool,
     endPanelFn:         *const fn () void,
+    beginFormFn:        *const fn (id: []const u8) void,
+    endFormFn:          *const fn () void,
     beginWindowFn:      *const fn (label: []const u8) bool,
     endWindowFn:        *const fn () void,
     textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
@@ -262,6 +264,10 @@ const GuiContext = struct {
     // The open/close pair QUICKSTART documents (a titled group box); until 2026-09-17
     // only the callback form existed and the doc example could not compile.
     pub fn beginPanel(self: GuiContext, label: []const u8) bool { return self._b.beginPanelFn(label); }
+    // A form: label on the left, control on the right, labels aligned (libui's
+    // uiForm). Each child's own `label` is the row label; boxes elsewhere.
+    pub fn beginForm(self: GuiContext, id: []const u8) void { self._b.beginFormFn(id); }
+    pub fn endForm(self: GuiContext, id: []const u8) void { _ = id; self._b.endFormFn(); }
     pub fn endPanel(self: GuiContext, label: []const u8) void { _ = label; self._b.endPanelFn(); }
     pub fn window(self: GuiContext, label: []const u8, callback: anytype) void {
         if (self._b.beginWindowFn(label)) {
@@ -1068,7 +1074,7 @@ fn _code_editor_sci_str(_ed: *_CodeEditor, msg: i64, wparam: i64, text: []const 
 // hiding, no frame-0 rule, no positional counter: a box that appears is a child
 // inserted where it appears. The seven caches this replaced are gone.
 const _ui = @import("ui");
-const _LuiKind = enum { root, hbox, vbox, panel, tabs, page, text, sep, button, checkbox, slider, input, input_ml, combobox, radio, spinbox, progress, editor, table };
+const _LuiKind = enum { root, hbox, vbox, panel, tabs, page, text, sep, button, checkbox, slider, input, input_ml, combobox, radio, spinbox, progress, form, editor, table };
 const _LuiNode = struct {
     kind: _LuiKind,
     key: []const u8 = "",
@@ -1097,6 +1103,10 @@ const _LuiNode = struct {
     spn: ?*_ui.Spinbox = null,
     pb: ?*_ui.ProgressBar = null,
     grp: ?*_ui.Group = null,
+    form: ?*_ui.Form = null,
+    // under a form: the row label (a widget's own label, which _lui_labelled would otherwise draw)
+    flabel: [128]u8 = undefined,
+    flabel_len: usize = 0,
     ed: ?*_CodeEditor = null,
     table: ?*_LuiTable = null,
     // message-carrying forms: the Msg bytes / the closure bytes + its thunk
@@ -1206,9 +1216,24 @@ fn _lui_attach(_n: *_LuiNode, _stretch: bool) void {
             _ui.Tab.InsertAt(_t, _lui_z(&_lb, _n.text_buf[0.._n.text_len]), _bi, _c);
             _ui.Tab.SetMargined(_t, _bi, false);   // the page box is padded itself; no band under a strip
         }
+    } else if (_p.kind == .form) {
+        // uiForm has no InsertAt: append at the end, otherwise rebuild from scratch
+        if (_bi == @as(c_int, @intCast(_p.children.items.len)) - 1) _lui_form_append(_p, _n) else _lui_form_rebuild(_p);
     } else if (_p.box) |_b| {
         _ui.Box.InsertAt(_b, _c, _bi, if (_stretch) .stretch else .dont_stretch);
     }
+}
+fn _lui_form_append(_p: *_LuiNode, _n: *_LuiNode) void {
+    const _f = _p.form orelse return;
+    const _c = _n.ctrl orelse return;
+    var _lb: [256]u8 = undefined;
+    _ui.Form.Append(_f, _lui_z(&_lb, _n.flabel[0.._n.flabel_len]), _c, if (_n.stretch) .stretch else .dont_stretch);
+}
+fn _lui_form_rebuild(_p: *_LuiNode) void {
+    const _f = _p.form orelse return;
+    var _k = _ui.Form.NumChildren(_f);
+    while (_k > 0) : (_k -= 1) _ui.Form.Delete(_f, _k - 1);
+    for (_p.children.items) |_ch| _lui_form_append(_p, _ch);
 }
 fn _lui_move(_p: *_LuiNode, _from: usize, _to: usize) void {
     const _n = _p.children.orderedRemove(_from);
@@ -1222,6 +1247,8 @@ fn _lui_move(_p: *_LuiNode, _from: usize, _to: usize) void {
             _ui.Tab.InsertAt(_t, _lui_z(&_lb, _n.text_buf[0.._n.text_len]), @intCast(_at), _c);
             _ui.Tab.SetMargined(_t, @intCast(_at), false);
         }
+    } else if (_p.kind == .form) {
+        _lui_form_rebuild(_p);
     } else if (_p.box) |_b| {
         _ui.Box.Delete(_b, @intCast(_from));
         _ui.Box.InsertAt(_b, _c, @intCast(_at), if (_n.stretch) .stretch else .dont_stretch);
@@ -1246,6 +1273,7 @@ fn _lui_close(_p: *_LuiNode) void {
 fn _lui_detach(_p: *_LuiNode, _c: *_LuiNode, _bi: c_int) void {
     if (_c.ctrl == null) return;
     if (_p.kind == .tabs) { if (_p.tab) |_t| _ui.Tab.Delete(_t, _bi); }
+    else if (_p.kind == .form) { if (_p.form) |_f| _ui.Form.Delete(_f, _bi); }
     else if (_p.box) |_b| _ui.Box.Delete(_b, _bi);
 }
 fn _lui_free_node(_n: *_LuiNode) void {
@@ -1678,6 +1706,13 @@ fn _lui_checkbox(_label: []const u8, _value: bool) bool {
 // A labelled widget is ONE node: an unpadded vbox holding the label and the control.
 fn _lui_labelled(_n: *_LuiNode, _label: []const u8, _c: *_ui.Control, _stretch_inner: bool) void {
     var _lb: [256]u8 = undefined;
+    if (_lui_top().kind == .form) {
+        const _k = @min(_label.len, _n.flabel.len);
+        @memcpy(_n.flabel[0.._k], _label[0.._k]);
+        _n.flabel_len = _k;
+        _n.ctrl = _c;
+        return;
+    }
     const _vb = _ui.Box.New(.Vertical) catch return;
     _vb.SetPadded(false);
     const _l = _ui.Label.New(_lui_z(&_lb, _label)) catch return;
@@ -1876,6 +1911,18 @@ fn _lui_begin_panel(_label: []const u8) bool {
     return true;
 }
 fn _lui_end_panel() void { _lui_pop(); }
+fn _lui_begin_form(_id: []const u8) void {
+    const _r = _lui_child(.form, _id);
+    if (_r.fresh) {
+        const _f = _ui.Form.New() catch return;
+        _f.SetPadded(true);
+        _r.n.form = _f;
+        _r.n.ctrl = _f.as_control();
+        _lui_attach(_r.n, false);
+    }
+    _lui_push(_r.n);
+}
+fn _lui_end_form() void { _lui_pop(); }
 // Tabs: the strip is a container whose children are pages; a page is a box that
 // is inserted into the uiTab at its position, renamed when its label changes
 // (uiTabSetName -- the fork's), and deleted when the view drops it.
@@ -2271,6 +2318,8 @@ const _gui_lui_backend = _GuiBackend{
     .inputMultilineFn   = _lui_input_ml,
     .beginPanelFn       = _lui_begin_panel,
     .endPanelFn         = _lui_end_panel,
+    .beginFormFn        = _lui_begin_form,
+    .endFormFn          = _lui_end_form,
     .beginWindowFn      = _lui_noop_bool,
     .endWindowFn        = _lui_noop_void,
     .textColoredFn      = _lui_text_colored,

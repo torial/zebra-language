@@ -1,0 +1,48 @@
+# form_smoke.zbr -- g.beginForm / g.endForm (2026-09-22): a settings dialog with the
+# labels on the left and the controls on the right, aligned (libui's uiForm). Each
+# widget's own label is its row label. The "Advanced" toggle adds a row in the
+# middle, which exercises the rebuild path (uiForm has no InsertAt). Boxes on
+# other backends. gui-scaffold + libui-section compile it.
+struct Model
+    var name: str
+    var port: int
+    var tls: bool
+    var advanced: bool
+    var timeout: int
+
+union Msg
+    set_name: str
+    set_port: int
+    set_tls: bool
+    set_advanced: bool
+    set_timeout: int
+
+def init(): Model
+    return Model(name: "torial", port: 8080, tls: true, advanced: false, timeout: 30)
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.set_name as s
+            return m except name = s
+        on Msg.set_port as n
+            return m except port = n
+        on Msg.set_tls as b
+            return m except tls = b
+        on Msg.set_advanced as b
+            return m except advanced = b
+        on Msg.set_timeout as n
+            return m except timeout = n
+
+def view(g: Gui, m: Model)
+    g.beginForm("settings")
+    g.field("Host name", m.name, def(s: str): Msg = Msg.set_name(s))
+    g.spinbox("Port", m.port, 1, 65535, def(n: int): Msg = Msg.set_port(n))
+    if m.advanced
+        g.spinbox("Timeout (s)", m.timeout, 1, 600, def(n: int): Msg = Msg.set_timeout(n))
+    g.toggle("Use TLS", m.tls, def(b: bool): Msg = Msg.set_tls(b))
+    g.toggle("Advanced", m.advanced, def(b: bool): Msg = Msg.set_advanced(b))
+    g.endForm("settings")
+    g.text(m.name + ":" + m.port.toString() + " tls=" + m.tls.toString())
+
+def main()
+    Gui.run("form smoke", 380, 260, init, update, view)
