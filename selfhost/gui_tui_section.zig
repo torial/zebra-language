@@ -77,6 +77,8 @@ const _GuiBackend = struct {
     actionFn:      *const fn (label: []const u8, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     toggleFn:      *const fn (label: []const u8, checked: bool, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     fieldFn:       *const fn (label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    passwordFn:    *const fn (label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    searchFn:      *const fn (label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     beginMenuFn:   *const fn (name: []const u8) void,
     menuItemFn:    *const fn (label: []const u8, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     menuSeparatorFn: *const fn () void,
@@ -85,6 +87,7 @@ const _GuiBackend = struct {
     takeKeyFn:     *const fn () i64,
     progressBarFn: *const fn (label: []const u8, value: f64) void,
     comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    radioFn:       *const fn (label: []const u8, items: []const []const u8, selected: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     openFileFn:    *const fn () ?[]const u8,
     saveFileFn:    *const fn () ?[]const u8,
@@ -310,6 +313,40 @@ const GuiContext = struct {
         };
         if (self._send_fn) |f| self._b.fieldFn(label, initial, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
     }
+    // A masked entry (password); otherwise `field`.
+    pub fn password(self: GuiContext, label: []const u8, initial: []const u8, on: anytype) void {
+        // a bare fn (a non-capturing lambda) has no size: store its POINTER; a
+        // closure struct is stored by value (fn-twins: the fn-or-pointer test is _zbr_is_fnlike's)
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.passwordFn(label, initial, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // A search-styled entry (clear button on platforms that have one); otherwise `field`.
+    pub fn search(self: GuiContext, label: []const u8, initial: []const u8, on: anytype) void {
+        // a bare fn (a non-capturing lambda) has no size: store its POINTER; a
+        // closure struct is stored by value (fn-twins: the fn-or-pointer test is _zbr_is_fnlike's)
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.searchFn(label, initial, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
     // ── menus (§6b): declared in the first render, before the window exists ──
     pub fn beginMenu(self: GuiContext, name: []const u8) void { self._b.beginMenuFn(name); }
     pub fn menuItem(self: GuiContext, label: []const u8, msg: anytype) void {
@@ -337,6 +374,21 @@ const GuiContext = struct {
             }
         };
         if (self._send_fn) |f| self._b.comboboxFn(label, items.items, selected, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // Radio buttons, one per item; `on` is `def(i: int): Msg` with the chosen index. The model drives the selection.
+    pub fn radio(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: i64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.radioFn(label, items.items, selected, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
     }
     // An integer spinner over [min, max]; `on` is `def(n: int): Msg`.
     pub fn spinbox(self: GuiContext, label: []const u8, current: i64, min: i64, max: i64, on: anytype) void {
@@ -672,6 +724,21 @@ fn _tui_field(label: []const u8, text: []const u8, cap: *const anyopaque, cap_le
     const now = _tui_input(label, text);
     if (!std.mem.eql(u8, now, text)) thunk(cap, now, send_fn, send_ptr);
 }
+fn _tui_password(label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+    _ = cap_len;
+    var _mask: [256]u8 = undefined;
+    const _n = @min(text.len, _mask.len);
+    @memset(_mask[0.._n], '*');
+    const now = _tui_input(label, _mask[0.._n]);
+    _ = now;
+    // no editing in the tui: a masked field never fires
+    _ = thunk; _ = send_fn; _ = send_ptr; _ = cap;
+}
+fn _tui_search(label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+    _ = cap_len;
+    const now = _tui_input(label, text);
+    if (!std.mem.eql(u8, now, text)) thunk(cap, now, send_fn, send_ptr);
+}
 // menus: the tui has no menubar; items render as a row of buttons under the title
 fn _tui_begin_menu(name: []const u8) void { _tui_text(name); _tui_indent(); }
 fn _tui_menu_item(label: []const u8, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void { _tui_action(label, msg, len, send_fn, send_ptr); }
@@ -802,6 +869,11 @@ fn _tui_combobox(_l: []const u8, _items: []const []const u8, _sel: i64, _cap: *c
     _ = _cap; _ = _cap_len; _ = _thunk; _ = _send_fn; _ = _send_ptr;
     if (_sel >= 0 and _sel < @as(i64, @intCast(_items.len))) { var _b: [256]u8 = undefined; _tui_text(std.fmt.bufPrint(&_b, "{s}: {s}", .{ _l, _items[@intCast(_sel)] }) catch _l); } else _tui_text(_l);
 }
+fn _tui_radio(_l: []const u8, _items: []const []const u8, _sel: i64, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    _ = _cap; _ = _cap_len; _ = _thunk; _ = _send_fn; _ = _send_ptr;
+    _tui_text(_l);
+    for (_items, 0..) |_it, _k| { var _b: [256]u8 = undefined; _tui_text(std.fmt.bufPrint(&_b, "  {s} {s}", .{ if (@as(i64, @intCast(_k)) == _sel) "(*)" else "( )", _it }) catch _it); }
+}
 fn _tui_spinbox(_l: []const u8, _v: i64, _min: i64, _max: i64, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
     _ = _min; _ = _max; _ = _cap; _ = _cap_len; _ = _thunk; _ = _send_fn; _ = _send_ptr;
     var _b: [256]u8 = undefined; _tui_text(std.fmt.bufPrint(&_b, "{s}: {d}", .{ _l, _v }) catch _l);
@@ -879,6 +951,8 @@ const _gui_tui_backend = _GuiBackend{
     .actionFn       = _tui_action,
     .toggleFn       = _tui_toggle,
     .fieldFn        = _tui_field,
+    .passwordFn     = _tui_password,
+    .searchFn       = _tui_search,
     .beginMenuFn    = _tui_begin_menu,
     .menuItemFn     = _tui_menu_item,
     .menuSeparatorFn = _tui_menu_separator,
@@ -887,6 +961,7 @@ const _gui_tui_backend = _GuiBackend{
     .takeKeyFn      = _tui_take_key,
     .progressBarFn = _tui_progressbar,
     .comboboxFn    = _tui_combobox,
+    .radioFn       = _tui_radio,
     .spinboxFn     = _tui_spinbox,
     .openFileFn    = _tui_open_file,
     .saveFileFn    = _tui_save_file,

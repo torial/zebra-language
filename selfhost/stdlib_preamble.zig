@@ -3405,6 +3405,8 @@ pub const _GuiBackend = struct {
     checkboxFn:    *const fn (label: []const u8, value: bool) bool,
     sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
+    passwordFn:    *const fn (label: []const u8, value: []const u8) void,
+    searchFn:      *const fn (label: []const u8, value: []const u8) void,
     inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
     beginPanelFn:       *const fn (label: []const u8) bool,
     endPanelFn:         *const fn () void,
@@ -3445,6 +3447,7 @@ pub const _GuiBackend = struct {
     endVBoxFn:   *const fn () void,
     progressBarFn: *const fn (label: []const u8, value: f64) void,
     comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64) i64,
+    radioFn:       *const fn (label: []const u8, items: []const []const u8, selected: i64) void,
     spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64) i64,
     openFileFn:    *const fn () ?[]const u8,
     saveFileFn:    *const fn () ?[]const u8,
@@ -3563,6 +3566,8 @@ pub const GuiContext = struct {
     pub fn button(self: GuiContext, label: []const u8, msg: anytype) void { _ = msg; _ = self._b.buttonFn(label); }
     pub fn toggle(self: GuiContext, label: []const u8, checked: bool, on: anytype) void { _ = on; _ = self._b.checkboxFn(label, checked); }
     pub fn field(self: GuiContext, label: []const u8, initial: []const u8, on: anytype) void { _ = on; _ = self._b.inputFn(label, initial); }
+    pub fn password(self: GuiContext, label: []const u8, initial: []const u8, on: anytype) void { _ = on; self._b.passwordFn(label, initial); }
+    pub fn search(self: GuiContext, label: []const u8, initial: []const u8, on: anytype) void { _ = on; self._b.searchFn(label, initial); }
     pub fn every(self: GuiContext, ms: i64, msg: anytype) void { _ = self; _ = msg; std.debug.print("[gui] every: {d} ms\n", .{ms}); }
     pub fn beginMenu(self: GuiContext, name: []const u8) void { _ = self; std.debug.print("[gui] menu: {s}\n", .{name}); }
     pub fn menuItem(self: GuiContext, label: []const u8, msg: anytype) void { _ = self; _ = msg; std.debug.print("[gui] menuItem: {s}\n", .{label}); }
@@ -3586,6 +3591,7 @@ pub const GuiContext = struct {
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
     pub fn combobox(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64, on: anytype) void { _ = on; _ = self._b.comboboxFn(label, items.items, selected); }
+    pub fn radio(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64, on: anytype) void { _ = on; self._b.radioFn(label, items.items, selected); }
     pub fn spinbox(self: GuiContext, label: []const u8, value: i64, min: i64, max: i64, on: anytype) void { _ = on; _ = self._b.spinboxFn(label, value, min, max); }
     pub fn openFile(self: GuiContext) ?[]const u8 { return self._b.openFileFn(); }
     pub fn saveFile(self: GuiContext) ?[]const u8 { return self._b.saveFileFn(); }
@@ -3775,6 +3781,9 @@ pub fn _stub_begin_vbox(id: []const u8, stretch: bool) void { _ = id; _ = stretc
 pub fn _stub_end_vbox() void {}
 pub fn _stub_progressbar(_l: []const u8, _v: f64) void { std.debug.print("[gui] progressBar: {s} {d:.1}%\n", .{_l, _v * 100.0}); }
 pub fn _stub_combobox(_l: []const u8, _items: []const []const u8, _sel: i64) i64 { std.debug.print("[gui] combobox: {s} sel={d}/{d}\n", .{_l, _sel, _items.len}); return _sel; }
+pub fn _stub_password(_l: []const u8, _v: []const u8) void { std.debug.print("[gui] password: {s} ({d} chars)\n", .{_l, _v.len}); }
+pub fn _stub_search(_l: []const u8, _v: []const u8) void { std.debug.print("[gui] search: {s} = {s}\n", .{_l, _v}); }
+pub fn _stub_radio(_l: []const u8, _items: []const []const u8, _sel: i64) void { std.debug.print("[gui] radio: {s} sel={d}/{d}\n", .{_l, _sel, _items.len}); }
 pub fn _stub_spinbox(_l: []const u8, _v: i64, _min: i64, _max: i64) i64 { std.debug.print("[gui] spinbox: {s} val={d} [{d},{d}]\n", .{_l, _v, _min, _max}); return _v; }
 pub fn _stub_open_file() ?[]const u8 { std.debug.print("[gui] openFile (no window)\n", .{}); return null; }
 pub fn _stub_save_file() ?[]const u8 { std.debug.print("[gui] saveFile (no window)\n", .{}); return null; }
@@ -3837,6 +3846,9 @@ pub const _gui_stub_backend = _GuiBackend{
     .endVBoxFn   = _stub_end_vbox,
     .progressBarFn = _stub_progressbar,
     .comboboxFn    = _stub_combobox,
+    .radioFn       = _stub_radio,
+    .passwordFn    = _stub_password,
+    .searchFn      = _stub_search,
     .spinboxFn     = _stub_spinbox,
     .openFileFn    = _stub_open_file,
     .saveFileFn    = _stub_save_file,

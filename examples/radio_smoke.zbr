@@ -1,0 +1,30 @@
+# radio_smoke.zbr -- g.radio (2026-09-22): one button per item, the model drives
+# the selection, the closure turns the chosen index into a Msg. The "Next" button
+# proves the model side: it advances the selection without the user clicking a
+# radio, and the buttons follow. gui-scaffold + libui-section compile it; the
+# click witness is a person.
+struct Model
+    var size: int
+
+union Msg
+    pick: int
+    next
+
+def init(): Model
+    return Model(size: 1)
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.pick as i
+            return Model(size: i)
+        on Msg.next
+            return Model(size: (m.size + 1) % 3)
+
+def view(g: Gui, m: Model)
+    var sizes: List(str) = ["Small", "Medium", "Large"]
+    g.radio("Size", sizes, m.size, def(i: int): Msg = Msg.pick(i))
+    g.text("chosen: " + sizes[m.size])
+    g.button("Next", Msg.next)
+
+def main()
+    Gui.run("radio smoke", 300, 200, init, update, view)

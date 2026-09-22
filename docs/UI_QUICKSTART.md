@@ -104,9 +104,11 @@ column fills available width in its parent HBox.
 | `g.button(label, msg)`           | Sends `msg` on click. Keyed by its label. (`action` until 2026-09-21; the bool `button`, `buttonId`, `checkbox`, `input` are gone.) |
 | `g.toggle(label, checked, on)`   | Checkbox; `on: def(b: bool): Msg` is called when it flips. The model drives it. |
 | `g.field(label, text, on)`       | Entry; `on: def(s: str): Msg` on every change.                  |
+| `g.password(label, text, on)` / `g.search(label, text, on)` | `field` on a masked / search-styled entry (`uiNewPasswordEntry`, `uiNewSearchEntry`). |
 | `g.slider(label, value, min, max, on)` | `on: def(v: float): Msg` as it moves. The model drives it; range set at creation. (Message form since 2026-09-22.) |
 | `g.inputMultiline(label, text, on)` | Multi-line entry; `on: def(s: str): Msg` on every change. Fills its box; size with `minSize`. |
 | `g.combobox(label, items, sel, on)` / `g.spinbox(label, value, min, max, on)` | `on: def(i: int): Msg`. The model drives both. |
+| `g.radio(label, items, sel, on)`  | One radio button per item (`uiRadioButtons`); `on: def(i: int): Msg`. The model drives the selection. |
 | `g.separator()`                  | Horizontal separator rule.                                     |
 | `g.textColored(r,g,b,a, s)`      | Text only (color ignored).                                     |
 | `g.beginTable` / table ops       | `uiTable`, text columns, rows diffed per frame (QUICKSTART §30). |

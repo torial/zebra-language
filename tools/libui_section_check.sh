@@ -11,6 +11,8 @@
 # Not a runtime witness: only `zig build` + running the example on Windows is.
 # scope_smoke.zbr: g.scope's _ScopeWrap instantiated in the libui section (2026-09-18)
 # slider_smoke.zbr: the four message-form widgets -- slider/inputMultiline/combobox/spinbox thunks (2026-09-22)
+# radio_smoke.zbr: g.radio on uiRadioButtons (2026-09-22)
+# entry_kinds_smoke.zbr: g.password / g.search on uiNewPasswordEntry / uiNewSearchEntry (2026-09-22)
 # pins: BUG-343 gui_modules_smoke.zbr `use`s a module named `sci`, compiled against the real libui_ng section
 set -u
 cd "$(dirname "$0")/.."
@@ -23,7 +25,7 @@ if [ -z "$B" ]; then
   done
 fi
 [ -f "${B:-/nonexistent}/ui.zig" ] || { echo "libui_section_check: no bindings (set LIBUI_BINDINGS)"; exit 2; }
-examples=("$@"); [ ${#examples[@]} -eq 0 ] && examples=(examples/tabs_sci_smoke.zbr examples/styler_smoke.zbr examples/editor_min.zbr examples/editor_events_smoke.zbr examples/panel_smoke.zbr examples/gui_modules_smoke.zbr examples/scope_smoke.zbr examples/slider_smoke.zbr)
+examples=("$@"); [ ${#examples[@]} -eq 0 ] && examples=(examples/tabs_sci_smoke.zbr examples/styler_smoke.zbr examples/editor_min.zbr examples/editor_events_smoke.zbr examples/panel_smoke.zbr examples/gui_modules_smoke.zbr examples/scope_smoke.zbr examples/slider_smoke.zbr examples/radio_smoke.zbr examples/entry_kinds_smoke.zbr)
 fail=0
 for ex in "${examples[@]}"; do
   name=$(basename "$ex" .zbr)

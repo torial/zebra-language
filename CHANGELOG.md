@@ -23,6 +23,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **`g.radio`, `g.password`, `g.search` (2026-09-22).** `g.radio(label, items, selected, on)` is one
+  radio button per item on `uiRadioButtons`, `on: def(i: int): Msg`; `g.password` / `g.search` are
+  `field` on libui's masked and search-styled entries. All three message-form from birth; the
+  model drives each. `examples/radio_smoke.zbr`, `examples/entry_kinds_smoke.zbr` (both in
+  `libui-section`). Items 1-2 of the controls plan (wiki `plan_zebra-gui-controls-2026-09-22`).
 - **REMOVED: the last value-returning widgets (2026-09-22).** `g.slider`, `g.inputMultiline`,
   `g.combobox` and `g.spinbox` now take a closure that turns the new value into a Msg
   (`g.slider(label, value, min, max, def(v: float): Msg = ...)`, `g.inputMultiline(label, text,

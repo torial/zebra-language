@@ -1,0 +1,38 @@
+# entry_kinds_smoke.zbr -- g.password and g.search (2026-09-22): field's shape on
+# libui's masked and search-styled entries. The "Clear" button proves the model
+# side: it empties both entries without a keystroke. gui-scaffold + libui-section
+# compile it; the typing witness is a person.
+struct Model
+    var user: str
+    var secret: str
+    var query: str
+
+union Msg
+    set_user: str
+    set_secret: str
+    set_query: str
+    clear
+
+def init(): Model
+    return Model(user: "sean", secret: "hunter2", query: "")
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.set_user as s
+            return Model(user: s, secret: m.secret, query: m.query)
+        on Msg.set_secret as s
+            return Model(user: m.user, secret: s, query: m.query)
+        on Msg.set_query as s
+            return Model(user: m.user, secret: m.secret, query: s)
+        on Msg.clear
+            return Model(user: "", secret: "", query: "")
+
+def view(g: Gui, m: Model)
+    g.field("User", m.user, def(s: str): Msg = Msg.set_user(s))
+    g.password("Password", m.secret, def(s: str): Msg = Msg.set_secret(s))
+    g.search("Find", m.query, def(s: str): Msg = Msg.set_query(s))
+    g.text("secret is " + m.secret.len.toString() + " chars; query: " + m.query)
+    g.button("Clear", Msg.clear)
+
+def main()
+    Gui.run("entry kinds", 320, 220, init, update, view)

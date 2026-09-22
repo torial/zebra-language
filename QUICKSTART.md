@@ -3244,11 +3244,14 @@ message, and the body becomes `view`.
 |--------------------------------------------|----------|--------------------------------------------|
 | `g.text(s)`                                | void     | Text label                                 |
 | `g.button(label, msg)`                     | void     | A button that sends `msg` when clicked. Keyed by its label; two buttons with one label are told apart by order. (Was `action` until 2026-09-21; the value-returning `button(label) -> bool`, `buttonId`, `checkbox` and `input` are gone -- `toggle`/`field` carry the message.) |
+| `g.password(label, text, on)`              | void     | `field` on a masked entry: what is typed shows as dots. Same `on`. (2026-09-22) |
+| `g.search(label, text, on)`                | void     | `field` on a search-styled entry (a clear button where the platform has one). Same `on`. (2026-09-22) |
 | `g.slider(label, value, min, max, on)`     | void     | Drag slider (float range); `on` is `def(v: float): Msg`, called as it moves. The model drives the widget: pass the model's value, and a message that changes it moves the knob. (Message form since 2026-09-22; no widget returns a value any more.) |
 | `g.inputMultiline(label, text, on)`        | void     | Multi-line text area; `on` is `def(s: str): Msg` on every change. A model change that differs from what the entry shows is pushed; keystrokes never disturb the caret. |
 | `g.progressBar(label, value)`              | void     | Progress bar; `value` is 0.0–1.0           |
 | `g.combobox(label, items, selected, on)`   | void     | Drop-down; `items: List(str)`, `on` is `def(i: int): Msg` with the chosen index |
 | `g.spinbox(label, value, min, max, on)`    | void     | Integer spinner with bounds; `on` is `def(n: int): Msg` |
+| `g.radio(label, items, selected, on)`      | void     | One radio button per item, exactly one selected; `items: List(str)`, `on` is `def(i: int): Msg`. Pick-one-of-N that a combobox would hide behind a click (2026-09-22). |
 | `g.separator()`                            | void     | Horizontal rule                            |
 | `g.sameLine()`                             | void     | Next widget on same line                   |
 | `g.spacing()`                              | void     | Extra vertical space                       |
