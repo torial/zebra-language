@@ -23,6 +23,9 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **Postfix `catch` inside a method-level `catch` block** (BUG-436): `A.f() catch 0` in a method
+  that ends in `catch |e|` emitted two catches and zig refused it; one flag in codegen, fixture
+  `bug436_catch_in_catch_block_test`.
 - **REMOVED: the value-returning widget bridge forms `button(label) -> bool`, `buttonId`,
   `checkbox(label, v) -> bool`, `input(label, v) -> str`; `action` RENAMED `button`
   (2026-09-21, the §6c cut promised in QUICKSTART since 2026-09-17).** `g.button(label,

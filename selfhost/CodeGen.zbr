@@ -12208,7 +12208,16 @@ struct Generator
                     w.emit(")")
             on Expr.catch_ as ca2
                 w.emit("(")
+                # BUG-436: inside a method-level `catch` block, a throws call gets the
+                # block's catch-break wrapper (emitTryBlockCatch) unless the enclosing
+                # operator already handles the error. `?` says so via in_try_expr; the
+                # postfix `catch` did not, so `A.f() catch 0` emitted BOTH wrappers --
+                # `f() catch |_tc_e| {...} catch 0` -- and zig refused the second
+                # ("expected error union type"). Same flag, same reason.
+                var ca2_saved_ite = in_try_expr
+                in_try_expr = true
                 genExpr(ca2.expr)
+                in_try_expr = ca2_saved_ite
                 w.emit(" catch ")
                 if ca2.err_var != nil
                     w.emit("|")

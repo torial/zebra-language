@@ -2025,6 +2025,21 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**FULL tier 2026-09-21 (BUG-436, bundle109): 38/38 PASS in ONE invocation at JOBS=2 on torial,
+~2h04m (16:42 -> 18:46).** smoke **544/544** (656 s), round-trip byte-identical, `boundary` 33/0,
+`compile_check-inline` 384/0, `output_sweep` 466 identical (1219 s), `full_sweep` 0 regressions
+vs 485 (1133 s), `examples_sweep` 0 vs 19, `divergence` 0 regressions vs the N-1 anchor
+(**3185 s** -- the slowest reading yet for that gate; recorded, not explained), `release-mode`
+clean, `contract-mode` 11/11. **The QUICK before it took two attempts, and the first attempt's
+red is a new shape worth a line:** `smoke` FAILED at 266 s with **no FAIL line at all** -- its
+log stopped after `bug245_shell_process_run_test_run` (363 PASS) and the next registration is
+`sys_spawn_piped_test`, which spawns `zebra lsp` under `timeout 60`; the gate sat ~4 minutes
+past its last write and then the whole smoke shell was gone. Standalone straight after:
+**544/544** in 6 min; the relaunched QUICK 30/30 and this FULL 544/544. One occurrence, cause
+not established, and the discipline from the 08-19 note applies -- a third occurrence stops
+being a transient. (The first attempt's other red was the corpus oracle, 650 -> 651, a fixture
+added without bumping the count: the rule broken again by the person who can quote it.)
+
 **FULL tier 2026-09-21 (the §6c GUI cut, bundle108): 38/38 PASS in ONE invocation at JOBS=2 on
 torial** -- the first clean FULL of this stretch, after three consecutive tiers each carried
 one load-shaped red. smoke **543/543** (723 s), round-trip byte-identical,
@@ -2701,7 +2716,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **650** <!-- doc-gen: 650 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **651** <!-- doc-gen: 651 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

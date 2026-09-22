@@ -6,6 +6,23 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-436: a postfix `catch` on a throws call inside a method-level `catch` block emits two catches — FIXED 2026-09-21
+
+**Fix (2026-09-21).** The `Expr.catch_` arm of `genExpr` now sets `in_try_expr` around its
+operand, exactly as the `?` arm does, so the enclosing block's catch-break wrapper
+(`emitTryBlockCatch`) is not ALSO emitted. One flag, the same reason. Fixture
+`test/bug436_catch_in_catch_block_test.zbr` (smoke_run), red before the fix with the message
+below; smoke 544/544 after.
+
+Found writing the book's chapter 16 (`FileAnalyzer.analyze(f) catch "..."` inside a `main` that
+ends in `catch |e|`). Inside a method with a method-level `catch` clause, every throws call is
+wrapped `catch |_tc_e| { _try_err = _tc_e; break :_try_blk; }` unless an enclosing operator
+handles the error; `expr?` said so through `in_try_expr`, the postfix `catch` did not, so
+`A.f() catch 0` emitted `A.f() catch |_tc_e| {...} catch 0` and zig refused the second
+(`expected error union type, found 'str'`). Static-class and instance-method calls took that
+path; a top-level fn call did not, which is why it hid — QUICKSTART §12 shows the postfix form
+on a top-level fn only.
+
 ### BUG-431: no way to narrow an `int` to a `byte`, and the checker lets the attempt through to Zig — FIXED 2026-09-18
 
 **Fix (both halves, 2026-09-18).** (1) `int.toByte()` truncates to the low 8 bits, and `T.splat(x)`

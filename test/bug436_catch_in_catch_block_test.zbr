@@ -1,0 +1,36 @@
+# BUG-436: a postfix `catch` on a throws call INSIDE a method-level `catch` block
+# emitted both the block's catch-break wrapper and the inline catch, and zig refused
+# the second ("expected error union type"). Static-class and instance-method calls
+# took that path; a top-level fn did not, which is why it hid.
+
+class A
+    var n: int
+
+    cue init(n: int)
+        this.n = n
+
+    static
+        def f(x: str): str throws
+            if x == "" : raise "empty"
+            return x.upper()
+
+    def g(x: int): int throws
+        if x < 0 : raise "negative"
+        return x + n
+
+def top(x: str): str throws
+    if x == "" : raise "empty"
+    return x.upper()
+
+def main()
+    var a = A(10)
+    var s1 = A.f("hi") catch "x"
+    var s2 = A.f("") catch "z"
+    var i1 = a.g(5) catch -1
+    var i2 = a.g(-5) catch -1
+    var s3 = top("") catch "t"
+    print("bug436: ${s1} ${s2} ${i1} ${i2} ${s3}")
+    var r = top("")?
+    print(r)
+catch |e|
+    print("caught: ${e.message}")
