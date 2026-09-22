@@ -1,0 +1,45 @@
+# slider_smoke.zbr -- the four message-form widgets that used to return values
+# (2026-09-22): slider, inputMultiline, combobox, spinbox. The model drives each
+# widget; the closure turns the new value into a Msg. gui-scaffold + libui-section
+# compile it; the drag/type witness is a person.
+struct Model
+    var volume: float
+    var notes: str
+    var fruit: int
+    var count: int
+
+union Msg
+    set_volume: float
+    set_notes: str
+    pick: int
+    spin: int
+    reset
+
+def init(): Model
+    return Model(volume: 50.0, notes: "type here", fruit: 1, count: 5)
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.set_volume as v
+            return Model(volume: v, notes: m.notes, fruit: m.fruit, count: m.count)
+        on Msg.set_notes as s
+            return Model(volume: m.volume, notes: s, fruit: m.fruit, count: m.count)
+        on Msg.pick as i
+            return Model(volume: m.volume, notes: m.notes, fruit: i, count: m.count)
+        on Msg.spin as n
+            return Model(volume: m.volume, notes: m.notes, fruit: m.fruit, count: n)
+        on Msg.reset
+            return init()
+
+def view(g: Gui, m: Model)
+    g.text("volume = " + m.volume.toString())
+    g.slider("Volume", m.volume, 0.0, 100.0, def(v: float): Msg = Msg.set_volume(v))
+    var items: List(str) = ["Apple", "Banana", "Cherry"]
+    g.combobox("Fruit", items, m.fruit, def(i: int): Msg = Msg.pick(i))
+    g.spinbox("Count", m.count, 0, 20, def(n: int): Msg = Msg.spin(n))
+    g.inputMultiline("Notes", m.notes, def(s: str): Msg = Msg.set_notes(s))
+    g.text(m.notes.len.toString() + " chars, fruit " + m.fruit.toString() + ", count " + m.count.toString())
+    g.button("Reset", Msg.reset)
+
+def main()
+    Gui.run("Slider Smoke", 420, 360, init, update, view)

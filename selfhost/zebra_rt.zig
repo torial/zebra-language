@@ -3410,7 +3410,6 @@ pub const _GuiBackend = struct {
     endPanelFn:         *const fn () void,
     beginWindowFn:      *const fn (label: []const u8) bool,
     endWindowFn:        *const fn () void,
-    selectableFn:       *const fn (label: []const u8) bool,
     textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
     beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
     tableSetupColumnFn: *const fn (label: []const u8) void,
@@ -3508,9 +3507,8 @@ pub const GuiContext = struct {
     pub fn spacing(self: GuiContext) void { self._b.spacingFn(); }
     pub fn indent(self: GuiContext) void { self._b.indentFn(); }
     pub fn unindent(self: GuiContext) void { self._b.unindentFn(); }
-    pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
-    pub fn inputMultiline(self: GuiContext, label: []const u8, value: []const u8, width: f64, height: f64) []const u8 { return self._b.inputMultilineFn(label, value, width, height); }
-    pub fn selectable(self: GuiContext, label: []const u8) bool { return self._b.selectableFn(label); }
+    pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64, on: anytype) void { _ = on; _ = self._b.sliderFn(label, value, min, max); }
+    pub fn inputMultiline(self: GuiContext, label: []const u8, initial: []const u8, on: anytype) void { _ = on; _ = self._b.inputMultilineFn(label, initial, 0, 0); }
     pub fn textColored(self: GuiContext, r: f64, gv: f64, b_: f64, a: f64, s: []const u8) void {
         self._b.textColoredFn(@floatCast(r), @floatCast(gv), @floatCast(b_), @floatCast(a), s);
     }
@@ -3587,8 +3585,8 @@ pub const GuiContext = struct {
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
-    pub fn combobox(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64) i64 { return self._b.comboboxFn(label, items.items, selected); }
-    pub fn spinbox(self: GuiContext, label: []const u8, value: i64, min: i64, max: i64) i64 { return self._b.spinboxFn(label, value, min, max); }
+    pub fn combobox(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64, on: anytype) void { _ = on; _ = self._b.comboboxFn(label, items.items, selected); }
+    pub fn spinbox(self: GuiContext, label: []const u8, value: i64, min: i64, max: i64, on: anytype) void { _ = on; _ = self._b.spinboxFn(label, value, min, max); }
     pub fn openFile(self: GuiContext) ?[]const u8 { return self._b.openFileFn(); }
     pub fn saveFile(self: GuiContext) ?[]const u8 { return self._b.saveFileFn(); }
     pub fn openFolder(self: GuiContext) ?[]const u8 { return self._b.openFolderFn(); }
@@ -3742,7 +3740,6 @@ pub fn _stub_begin_window(label: []const u8) bool {
     return true;
 }
 pub fn _stub_end_window() void {}
-pub fn _stub_selectable(label: []const u8) bool { std.debug.print("[gui] selectable: {s}\n", .{label}); return false; }
 pub fn _stub_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void { _ = r; _ = gv; _ = b_; _ = a; std.debug.print("[gui] textColored: {s}\n", .{s}); }
 pub fn _stub_begin_table(id: []const u8, cols: i64) bool { std.debug.print("[gui] beginTable: {s} cols={d}\n", .{ id, cols }); return true; }
 pub fn _stub_table_setup_column(label: []const u8) void { std.debug.print("[gui] tableSetupColumn: {s}\n", .{label}); }
@@ -3805,7 +3802,6 @@ pub const _gui_stub_backend = _GuiBackend{
     .endPanelFn         = _stub_end_panel,
     .beginWindowFn      = _stub_begin_window,
     .endWindowFn        = _stub_end_window,
-    .selectableFn       = _stub_selectable,
     .textColoredFn      = _stub_text_colored,
     .beginTableFn       = _stub_begin_table,
     .tableSetupColumnFn = _stub_table_setup_column,

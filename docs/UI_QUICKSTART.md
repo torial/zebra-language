@@ -104,10 +104,10 @@ column fills available width in its parent HBox.
 | `g.button(label, msg)`           | Sends `msg` on click. Keyed by its label. (`action` until 2026-09-21; the bool `button`, `buttonId`, `checkbox`, `input` are gone.) |
 | `g.toggle(label, checked, on)`   | Checkbox; `on: def(b: bool): Msg` is called when it flips. The model drives it. |
 | `g.field(label, text, on)`       | Entry; `on: def(s: str): Msg` on every change.                  |
-| `g.slider(label, value, min, max)` | Returns current value. Range is set at creation time.        |
-| `g.inputMultiline(label, val, w, h)` | Multi-line entry. `w`/`h` args ignored (fills box).       |
+| `g.slider(label, value, min, max, on)` | `on: def(v: float): Msg` as it moves. The model drives it; range set at creation. (Message form since 2026-09-22.) |
+| `g.inputMultiline(label, text, on)` | Multi-line entry; `on: def(s: str): Msg` on every change. Fills its box; size with `minSize`. |
+| `g.combobox(label, items, sel, on)` / `g.spinbox(label, value, min, max, on)` | `on: def(i: int): Msg`. The model drives both. |
 | `g.separator()`                  | Horizontal separator rule.                                     |
-| `g.selectable(label)`            | No-op in libui-ng (returns false). Use `g.button` instead.     |
 | `g.textColored(r,g,b,a, s)`      | Text only (color ignored).                                     |
 | `g.beginTable` / table ops       | `uiTable`, text columns, rows diffed per frame (QUICKSTART §30). |
 | `g.childWindow(id, w, h, fn)`    | No-op. Use `beginVBox`/`endVBox` instead.                      |
@@ -252,7 +252,6 @@ def update(m: Model, msg: Msg): Model
 - **Tables are lists**: `beginTable`/`tableNextRow`/`g.text` cells only (no
   widgets in cells); `tableSelectedRow` / `tableActivatedRow` read the user.
 - **No colour**: `textColored` renders without colour.
-- **No selectable**: `g.selectable` always returns false. Use `g.button`.
 - **Widths are hints**: `beginVBox` fills its share of the parent HBox; give a
   pane a floor with `g.minSize(id, w, h)` (a minimum, never a fixed size).
 - **No syntax highlighting**: `CodeEditor.forZebra()` does not yet wire Scintilla

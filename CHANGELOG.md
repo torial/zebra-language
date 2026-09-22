@@ -23,6 +23,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **REMOVED: the last value-returning widgets (2026-09-22).** `g.slider`, `g.inputMultiline`,
+  `g.combobox` and `g.spinbox` now take a closure that turns the new value into a Msg
+  (`g.slider(label, value, min, max, def(v: float): Msg = ...)`, `g.inputMultiline(label, text,
+  on)` -- the ignored `w, h` are gone --, `g.combobox(label, items, sel, on)`, `g.spinbox(label,
+  value, min, max, on)`), the same shape as `toggle`/`field`; the model drives each widget and a
+  message that changes the model moves it. `g.selectable`, a no-op on libui-ng, is removed. No
+  widget returns a value any more, which is what §6c set out to reach. `examples/slider_smoke.zbr`;
+  `libui-section` compiles the thunks against the real bindings.
 - **`List.reserve(n)` asks for what it was told** (2026-09-21): it emitted the non-precise
   `ensureTotalCapacity`, which rounds n up the 1.5x growth ladder, and the runtime arena adds
   another 1.5x to its node -- `reserve(3.9e9)` asked mmap for 8.78 GB and panicked OOM with

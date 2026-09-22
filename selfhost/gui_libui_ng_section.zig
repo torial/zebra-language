@@ -20,14 +20,13 @@ const _GuiBackend = struct {
     buttonFn:      *const fn (label: []const u8) bool,
     buttonIdFn:    *const fn (id: []const u8, label: []const u8) bool,
     checkboxFn:    *const fn (label: []const u8, value: bool) bool,
-    sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
+    sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, f64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
-    inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
+    inputMultilineFn: *const fn (label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     beginPanelFn:       *const fn (label: []const u8) bool,
     endPanelFn:         *const fn () void,
     beginWindowFn:      *const fn (label: []const u8) bool,
     endWindowFn:        *const fn () void,
-    selectableFn:       *const fn (label: []const u8) bool,
     textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
     beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
     tableSetupColumnFn: *const fn (label: []const u8) void,
@@ -85,8 +84,8 @@ const _GuiBackend = struct {
     endMenuFn:     *const fn () void,
     takeKeyFn:     *const fn () i64,
     progressBarFn: *const fn (label: []const u8, value: f64) void,
-    comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64) i64,
-    spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64) i64,
+    comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     openFileFn:    *const fn () ?[]const u8,
     saveFileFn:    *const fn () ?[]const u8,
     openFolderFn:  *const fn () ?[]const u8,
@@ -164,9 +163,37 @@ const GuiContext = struct {
     pub fn spacing(self: GuiContext) void { self._b.spacingFn(); }
     pub fn indent(self: GuiContext) void { self._b.indentFn(); }
     pub fn unindent(self: GuiContext) void { self._b.unindentFn(); }
-    pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
-    pub fn inputMultiline(self: GuiContext, label: []const u8, value: []const u8, width: f64, height: f64) []const u8 { return self._b.inputMultilineFn(label, value, width, height); }
-    pub fn selectable(self: GuiContext, label: []const u8) bool { return self._b.selectableFn(label); }
+    // ── the value-returning widgets became message forms (2026-09-22): the model drives the widget, `on` maps the new value to a Msg ──
+    // A slider over [min, max]; `on` is `def(v: float): Msg`, called as it moves.
+    pub fn slider(self: GuiContext, label: []const u8, current: f64, min: f64, max: f64, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: f64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.sliderFn(label, current, min, max, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // A multi-line entry; `on` is `def(s: str): Msg`, called on every change.
+    pub fn inputMultiline(self: GuiContext, label: []const u8, initial: []const u8, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.inputMultilineFn(label, initial, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
     pub fn textColored(self: GuiContext, r: f64, gv: f64, b_: f64, a: f64, s: []const u8) void {
         self._b.textColoredFn(@floatCast(r), @floatCast(gv), @floatCast(b_), @floatCast(a), s);
     }
@@ -248,8 +275,8 @@ const GuiContext = struct {
     // A button that sends `msg` when clicked. (Was `action` until 2026-09-21, while the
     // value-returning `button(label) -> bool` bridge form still existed; that form,
     // `buttonId`, `checkbox` and `input` are gone -- `button`/`toggle`/`field` carry the
-    // message. `slider`, `selectable` and `inputMultiline` are the last value-returning
-    // widgets, awaiting message forms.)
+    // message. `slider`, `inputMultiline`, `combobox` and `spinbox` followed on
+    // 2026-09-22; `selectable` -- a no-op on libui -- is gone. No widget returns a value.)
     pub fn button(self: GuiContext, label: []const u8, msg: anytype) void {
         const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
         const _v: _T = msg;
@@ -302,8 +329,36 @@ const GuiContext = struct {
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
-    pub fn combobox(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64) i64 { return self._b.comboboxFn(label, items.items, selected); }
-    pub fn spinbox(self: GuiContext, label: []const u8, value: i64, min: i64, max: i64) i64 { return self._b.spinboxFn(label, value, min, max); }
+    // A drop-down; `on` is `def(i: int): Msg` with the chosen index.
+    pub fn combobox(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: i64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.comboboxFn(label, items.items, selected, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // An integer spinner over [min, max]; `on` is `def(n: int): Msg`.
+    pub fn spinbox(self: GuiContext, label: []const u8, current: i64, min: i64, max: i64, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: i64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.spinboxFn(label, current, min, max, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
     pub fn openFile(self: GuiContext) ?[]const u8 { return self._b.openFileFn(); }
     pub fn saveFile(self: GuiContext) ?[]const u8 { return self._b.saveFileFn(); }
     pub fn openFolder(self: GuiContext) ?[]const u8 { return self._b.openFolderFn(); }
@@ -978,6 +1033,8 @@ const _LuiNode = struct {
     cap_len: usize = 0,
     thunk_b: ?*const fn (*const anyopaque, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
     thunk_s: ?*const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
+    thunk_f: ?*const fn (*const anyopaque, f64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
+    thunk_i: ?*const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
     send_fn: ?*const fn (*anyopaque, *const anyopaque, usize) void = null,
     send_ptr: ?*anyopaque = null,
 };
@@ -1188,10 +1245,27 @@ fn _lui_on_close(_w: *_ui.Window, _q: ?*bool) anyerror!_ui.Window.ClosingAction 
 fn _lui_btn_cb(_btn: *_ui.Button, _m: ?*_LuiNode) anyerror!void { _ = _btn; if (_m) |p| p.clicked = true; }
 fn _lui_chk_cb(_chk: *_ui.Checkbox, _m: ?*_LuiNode) anyerror!void { if (_m) |p| p.checked = _chk.Checked(); }
 fn _lui_entry_cb(_ent: *_ui.Entry, _m: ?*_LuiNode) anyerror!void { if (_m) |p| _lui_set_text(p, std.mem.span(_ent.Text())); }
-fn _lui_mle_cb(_mle: *_ui.MultilineEntry, _m: ?*_LuiNode) anyerror!void { if (_m) |p| _lui_set_text(p, std.mem.span(_mle.Text())); }
-fn _lui_slider_cb(_sld: *_ui.Slider, _m: ?*_LuiNode) anyerror!void { if (_m) |p| p.sval = _sld.Value(); }
-fn _lui_cmb_cb(_c: *_ui.Combobox, _m: ?*_LuiNode) anyerror!void { if (_m) |p| p.sval = _c.Selected(); }
-fn _lui_spn_cb(_s: *_ui.Spinbox, _m: ?*_LuiNode) anyerror!void { if (_m) |p| p.sval = _s.Value(); }
+fn _lui_mle_cb(_mle: *_ui.MultilineEntry, _m: ?*_LuiNode) anyerror!void {
+    const _n = _m orelse return;
+    _lui_set_text(_n, std.mem.span(_mle.Text()));
+    if (_n.thunk_s) |t| t(@ptrCast(&_n.cap), _n.text_buf[0.._n.text_len], _n.send_fn.?, _n.send_ptr.?);
+}
+fn _lui_slider_cb(_sld: *_ui.Slider, _m: ?*_LuiNode) anyerror!void {
+    const _n = _m orelse return;
+    _n.sval = _sld.Value();
+    const _t = @as(f64, @floatFromInt(_n.sval)) / 1000.0;
+    if (_n.thunk_f) |t| t(@ptrCast(&_n.cap), _n.smin + _t * (_n.smax - _n.smin), _n.send_fn.?, _n.send_ptr.?);
+}
+fn _lui_cmb_cb(_c: *_ui.Combobox, _m: ?*_LuiNode) anyerror!void {
+    const _n = _m orelse return;
+    _n.sval = _c.Selected();
+    if (_n.thunk_i) |t| t(@ptrCast(&_n.cap), @as(i64, @intCast(_n.sval)), _n.send_fn.?, _n.send_ptr.?);
+}
+fn _lui_spn_cb(_s: *_ui.Spinbox, _m: ?*_LuiNode) anyerror!void {
+    const _n = _m orelse return;
+    _n.sval = _s.Value();
+    if (_n.thunk_i) |t| t(@ptrCast(&_n.cap), @as(i64, @intCast(_n.sval)), _n.send_fn.?, _n.send_ptr.?);
+}
 fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
     _lui_win_w = _width; _lui_win_h = _height;
     var _d = _ui.InitData{ .options = .{ .Size = @sizeOf(_ui.InitOptions) } };
@@ -1484,7 +1558,6 @@ fn _lui_sep() void {
 }
 fn _lui_noop_void() void {}
 fn _lui_noop_bool(_l: []const u8) bool { _ = _l; return true; }
-fn _lui_selectable(_l: []const u8) bool { _ = _l; return false; }
 fn _lui_text_colored(_rv: f32, _gv: f32, _bv: f32, _av: f32, _s: []const u8) void {
     _ = _rv; _ = _gv; _ = _bv; _ = _av; _lui_text(_s);
 }
@@ -1532,21 +1605,30 @@ fn _lui_labelled(_n: *_LuiNode, _label: []const u8, _c: *_ui.Control, _stretch_i
     _n.lbl = _l;
     _n.ctrl = _vb.as_control();
 }
-fn _lui_slider(_label: []const u8, _value: f64, _min: f64, _max: f64) f64 {
+fn _lui_slider(_label: []const u8, _value: f64, _min: f64, _max: f64, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, f64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    if (_cap_len > 128) return;
     const _r = _lui_child(.slider, _label);
+    const _raw: c_int = @intFromFloat((_value - _min) / (_max - _min) * 1000.0);
+    const _want: c_int = if (_raw < 0) 0 else if (_raw > 1000) 1000 else _raw;
     if (_r.fresh) {
-        const _sld = _ui.Slider.New(0, 1000) catch return _value;
-        const _raw: c_int = @intFromFloat((_value - _min) / (_max - _min) * 1000.0);
-        const _init: c_int = if (_raw < 0) 0 else if (_raw > 1000) 1000 else _raw;
-        _sld.SetValue(_init);
-        _r.n.sval = _init; _r.n.smin = _min; _r.n.smax = _max;
+        const _sld = _ui.Slider.New(0, 1000) catch return;
+        _sld.SetValue(_want);
+        _r.n.sval = _want; _r.n.smin = _min; _r.n.smax = _max;
         _ui.Slider.OnChanged(_sld, _LuiNode, anyerror, _lui_slider_cb, _r.n);
         _r.n.sld = _sld;
         _lui_labelled(_r.n, _label, _sld.as_control(), false);
         _lui_attach(_r.n, false);
+    } else if (_r.n.sval != _want) {
+        // the model moved (a message set it): follow the model
+        if (_r.n.sld) |_s| _s.SetValue(_want);
+        _r.n.sval = _want;
     }
-    const _t = @as(f64, @floatFromInt(_r.n.sval)) / 1000.0;
-    return _r.n.smin + _t * (_r.n.smax - _r.n.smin);
+    const _src: [*]const u8 = @ptrCast(_cap);
+    @memcpy(_r.n.cap[0.._cap_len], _src[0.._cap_len]);
+    _r.n.cap_len = _cap_len;
+    _r.n.thunk_f = _thunk;
+    _r.n.send_fn = _send_fn;
+    _r.n.send_ptr = _send_ptr;
 }
 fn _lui_input(_label: []const u8, _value: []const u8) []const u8 {
     const _r = _lui_child(.input, _label);
@@ -1562,51 +1644,79 @@ fn _lui_input(_label: []const u8, _value: []const u8) []const u8 {
     }
     return _r.n.text_buf[0.._r.n.text_len];
 }
-fn _lui_input_ml(_label: []const u8, _value: []const u8, _mw: f64, _mh: f64) []const u8 {
-    _ = _mw; _ = _mh;
+fn _lui_input_ml(_label: []const u8, _text: []const u8, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    if (_cap_len > 128) return;
     const _r = _lui_child(.input_ml, _label);
+    var _vtb: [1024]u8 = undefined;
     if (_r.fresh) {
-        const _mle = _ui.MultilineEntry.New(.Wrapping) catch return _value;
-        var _vtb: [1024]u8 = undefined;
-        _mle.SetText(_lui_z(&_vtb, _value));
-        _lui_set_text(_r.n, _value);
+        const _mle = _ui.MultilineEntry.New(.Wrapping) catch return;
+        _mle.SetText(_lui_z(&_vtb, _text));
+        _lui_set_text(_r.n, _text);
         _ui.MultilineEntry.OnChanged(_mle, _LuiNode, anyerror, _lui_mle_cb, _r.n);
         _r.n.mle = _mle;
         _lui_labelled(_r.n, _label, _mle.as_control(), true);
         _lui_attach(_r.n, true);
+    } else if (!_lui_text_same(_r.n, _text)) {
+        // a message set the text: push it (keystrokes never reach here -- OnChanged already recorded them)
+        if (_r.n.mle) |_e| _e.SetText(_lui_z(&_vtb, _text));
+        _lui_set_text(_r.n, _text);
     }
-    return _r.n.text_buf[0.._r.n.text_len];
+    const _src: [*]const u8 = @ptrCast(_cap);
+    @memcpy(_r.n.cap[0.._cap_len], _src[0.._cap_len]);
+    _r.n.cap_len = _cap_len;
+    _r.n.thunk_s = _thunk;
+    _r.n.send_fn = _send_fn;
+    _r.n.send_ptr = _send_ptr;
 }
-fn _lui_combobox(_label: []const u8, _items: []const []const u8, _sel: i64) i64 {
+fn _lui_combobox(_label: []const u8, _items: []const []const u8, _sel: i64, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    if (_cap_len > 128) return;
     const _r = _lui_child(.combobox, _label);
+    const _want: c_int = @intCast(_sel);
     if (_r.fresh) {
-        const _cmb = _ui.Combobox.New() catch return _sel;
+        const _cmb = _ui.Combobox.New() catch return;
         for (_items) |_it| {
             var _lb: [256]u8 = undefined;
             _ui.Combobox.Append(_cmb, _lui_z(&_lb, _it));
         }
-        const _init: c_int = @intCast(_sel);
-        _cmb.SetSelected(_init);
-        _r.n.sval = _init;
+        _cmb.SetSelected(_want);
+        _r.n.sval = _want;
         _ui.Combobox.OnSelected(_cmb, _LuiNode, anyerror, _lui_cmb_cb, _r.n);
         _r.n.cmb = _cmb;
         _r.n.ctrl = _cmb.as_control();
         _lui_attach(_r.n, false);
+    } else if (_r.n.sval != _want) {
+        if (_r.n.cmb) |_c| _c.SetSelected(_want);
+        _r.n.sval = _want;
     }
-    return @as(i64, @intCast(_r.n.sval));
+    const _src: [*]const u8 = @ptrCast(_cap);
+    @memcpy(_r.n.cap[0.._cap_len], _src[0.._cap_len]);
+    _r.n.cap_len = _cap_len;
+    _r.n.thunk_i = _thunk;
+    _r.n.send_fn = _send_fn;
+    _r.n.send_ptr = _send_ptr;
 }
-fn _lui_spinbox(_label: []const u8, _value: i64, _min: i64, _max: i64) i64 {
+fn _lui_spinbox(_label: []const u8, _value: i64, _min: i64, _max: i64, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    if (_cap_len > 128) return;
     const _r = _lui_child(.spinbox, _label);
+    const _want: c_int = @intCast(_value);
     if (_r.fresh) {
-        const _spn = _ui.Spinbox.New(.{ .Integer = .{ .min = @intCast(_min), .max = @intCast(_max) } }) catch return _value;
-        _spn.SetValue(@intCast(_value));
-        _r.n.sval = @intCast(_value);
+        const _spn = _ui.Spinbox.New(.{ .Integer = .{ .min = @intCast(_min), .max = @intCast(_max) } }) catch return;
+        _spn.SetValue(_want);
+        _r.n.sval = _want;
         _ui.Spinbox.OnChanged(_spn, _LuiNode, anyerror, _lui_spn_cb, _r.n);
         _r.n.spn = _spn;
         _r.n.ctrl = _spn.as_control();
         _lui_attach(_r.n, false);
+    } else if (_r.n.sval != _want) {
+        if (_r.n.spn) |_s| _s.SetValue(_want);
+        _r.n.sval = _want;
     }
-    return @as(i64, @intCast(_r.n.sval));
+    const _src: [*]const u8 = @ptrCast(_cap);
+    @memcpy(_r.n.cap[0.._cap_len], _src[0.._cap_len]);
+    _r.n.cap_len = _cap_len;
+    _r.n.thunk_i = _thunk;
+    _r.n.send_fn = _send_fn;
+    _r.n.send_ptr = _send_ptr;
 }
 fn _lui_progressbar(_label: []const u8, _value: f64) void {
     const _r = _lui_child(.progress, _label);
@@ -2021,7 +2131,6 @@ const _gui_lui_backend = _GuiBackend{
     .endPanelFn         = _lui_end_panel,
     .beginWindowFn      = _lui_noop_bool,
     .endWindowFn        = _lui_noop_void,
-    .selectableFn       = _lui_selectable,
     .textColoredFn      = _lui_text_colored,
     .beginTableFn       = _lui_begin_table,
     .tableSetupColumnFn = _lui_table_setup_col,

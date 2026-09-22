@@ -20,14 +20,13 @@ const _GuiBackend = struct {
     buttonFn:      *const fn (label: []const u8) bool,
     buttonIdFn:    *const fn (id: []const u8, label: []const u8) bool,
     checkboxFn:    *const fn (label: []const u8, value: bool) bool,
-    sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64) f64,
+    sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, f64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
-    inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
+    inputMultilineFn: *const fn (label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     beginPanelFn:       *const fn (label: []const u8) bool,
     endPanelFn:         *const fn () void,
     beginWindowFn:      *const fn (label: []const u8) bool,
     endWindowFn:        *const fn () void,
-    selectableFn:       *const fn (label: []const u8) bool,
     textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
     beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
     tableSetupColumnFn: *const fn (label: []const u8) void,
@@ -85,8 +84,8 @@ const _GuiBackend = struct {
     endMenuFn:     *const fn () void,
     takeKeyFn:     *const fn () i64,
     progressBarFn: *const fn (label: []const u8, value: f64) void,
-    comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64) i64,
-    spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64) i64,
+    comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     openFileFn:    *const fn () ?[]const u8,
     saveFileFn:    *const fn () ?[]const u8,
     openFolderFn:  *const fn () ?[]const u8,
@@ -164,9 +163,37 @@ const GuiContext = struct {
     pub fn spacing(self: GuiContext) void { self._b.spacingFn(); }
     pub fn indent(self: GuiContext) void { self._b.indentFn(); }
     pub fn unindent(self: GuiContext) void { self._b.unindentFn(); }
-    pub fn slider(self: GuiContext, label: []const u8, value: f64, min: f64, max: f64) f64 { return self._b.sliderFn(label, value, min, max); }
-    pub fn inputMultiline(self: GuiContext, label: []const u8, value: []const u8, width: f64, height: f64) []const u8 { return self._b.inputMultilineFn(label, value, width, height); }
-    pub fn selectable(self: GuiContext, label: []const u8) bool { return self._b.selectableFn(label); }
+    // ── the value-returning widgets became message forms (2026-09-22): the model drives the widget, `on` maps the new value to a Msg ──
+    // A slider over [min, max]; `on` is `def(v: float): Msg`, called as it moves.
+    pub fn slider(self: GuiContext, label: []const u8, current: f64, min: f64, max: f64, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: f64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.sliderFn(label, current, min, max, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // A multi-line entry; `on` is `def(s: str): Msg`, called on every change.
+    pub fn inputMultiline(self: GuiContext, label: []const u8, initial: []const u8, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.inputMultilineFn(label, initial, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
     pub fn textColored(self: GuiContext, r: f64, gv: f64, b_: f64, a: f64, s: []const u8) void {
         self._b.textColoredFn(@floatCast(r), @floatCast(gv), @floatCast(b_), @floatCast(a), s);
     }
@@ -242,8 +269,8 @@ const GuiContext = struct {
     // A button that sends `msg` when clicked. (Was `action` until 2026-09-21, while the
     // value-returning `button(label) -> bool` bridge form still existed; that form,
     // `buttonId`, `checkbox` and `input` are gone -- `button`/`toggle`/`field` carry the
-    // message. `slider`, `selectable` and `inputMultiline` are the last value-returning
-    // widgets, awaiting message forms.)
+    // message. `slider`, `inputMultiline`, `combobox` and `spinbox` followed on
+    // 2026-09-22; `selectable` -- a no-op on libui -- is gone. No widget returns a value.)
     pub fn button(self: GuiContext, label: []const u8, msg: anytype) void {
         const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
         const _v: _T = msg;
@@ -296,8 +323,36 @@ const GuiContext = struct {
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
-    pub fn combobox(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64) i64 { return self._b.comboboxFn(label, items.items, selected); }
-    pub fn spinbox(self: GuiContext, label: []const u8, value: i64, min: i64, max: i64) i64 { return self._b.spinboxFn(label, value, min, max); }
+    // A drop-down; `on` is `def(i: int): Msg` with the chosen index.
+    pub fn combobox(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: i64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.comboboxFn(label, items.items, selected, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // An integer spinner over [min, max]; `on` is `def(n: int): Msg`.
+    pub fn spinbox(self: GuiContext, label: []const u8, current: i64, min: i64, max: i64, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: i64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.spinboxFn(label, current, min, max, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
     pub fn openFile(self: GuiContext) ?[]const u8 { return self._b.openFileFn(); }
     pub fn saveFile(self: GuiContext) ?[]const u8 { return self._b.saveFileFn(); }
     pub fn openFolder(self: GuiContext) ?[]const u8 { return self._b.openFolderFn(); }
@@ -495,8 +550,8 @@ fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = 
 fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
 fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
 fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
-    const _r = _g.inputMultiline(id, _ed.text, w, h);
-    if (!_ed.read_only) { _ed.text = _r; }
+    _ = _g; _ = w; _ = h;
+    _ = _tui_input(id, _ed.text);      // display only: the tui has no editable text control
 }
 fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }
 fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
@@ -654,8 +709,9 @@ fn _tui_checkbox(label: []const u8, value: bool) bool {
     }
     return value;
 }
-fn _tui_slider(label: []const u8, value: f64, min: f64, max: f64) f64 {
-    _ = min; _ = max;
+fn _tui_slider(label: []const u8, value: f64, min: f64, max: f64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, f64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+    // display only: the tui cannot drag, so the thunk never fires here
+    _ = min; _ = max; _ = cap; _ = cap_len; _ = thunk; _ = send_fn; _ = send_ptr;
     if (_tui_terminal) |*_t| {
         const _col = _tui_indent_level * 2;
         var _buf: [256]u8 = undefined;
@@ -663,7 +719,6 @@ fn _tui_slider(label: []const u8, value: f64, min: f64, max: f64) f64 {
         _t.writeAt(_tui_current_row, _col, _s) catch {};
         _tui_current_row += 1;
     }
-    return value;
 }
 fn _tui_input(label: []const u8, value: []const u8) []const u8 {
     if (_tui_terminal) |*_t| {
@@ -675,9 +730,10 @@ fn _tui_input(label: []const u8, value: []const u8) []const u8 {
     }
     return value;
 }
-fn _tui_input_multiline(label: []const u8, value: []const u8, w: f64, h: f64) []const u8 {
-    _ = w; _ = h;
-    return _tui_input(label, value);
+fn _tui_input_multiline(label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+    _ = cap_len;
+    const now = _tui_input(label, text);
+    if (!std.mem.eql(u8, now, text)) thunk(cap, now, send_fn, send_ptr);
 }
 fn _tui_begin_panel(label: []const u8) bool {
     if (_tui_terminal) |*_t| {
@@ -693,11 +749,6 @@ fn _tui_begin_panel(label: []const u8) bool {
 fn _tui_end_panel() void { if (_tui_indent_level > 0) _tui_indent_level -= 1; }
 fn _tui_begin_window(label: []const u8) bool { return _tui_begin_panel(label); }
 fn _tui_end_window() void { _tui_end_panel(); }
-fn _tui_selectable(label: []const u8) bool {
-    const _row = _tui_current_row;
-    _tui_text(label);
-    return _tui_click_y == @as(i32, _row);
-}
 fn _tui_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void {
     _ = r; _ = gv; _ = b_; _ = a;
     _tui_text(s);
@@ -747,8 +798,14 @@ fn _tui_table_row_q(id: []const u8) i64 { _ = id; return -1; }
 fn _tui_take_key() i64 { return 0; }
 fn _tui_end_vbox() void {}
 fn _tui_progressbar(_l: []const u8, _v: f64) void { _ = _l; _ = _v; }
-fn _tui_combobox(_l: []const u8, _items: []const []const u8, _sel: i64) i64 { _ = _l; _ = _items; return _sel; }
-fn _tui_spinbox(_l: []const u8, _v: i64, _min: i64, _max: i64) i64 { _ = _l; _ = _min; _ = _max; return _v; }
+fn _tui_combobox(_l: []const u8, _items: []const []const u8, _sel: i64, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    _ = _cap; _ = _cap_len; _ = _thunk; _ = _send_fn; _ = _send_ptr;
+    if (_sel >= 0 and _sel < @as(i64, @intCast(_items.len))) { var _b: [256]u8 = undefined; _tui_text(std.fmt.bufPrint(&_b, "{s}: {s}", .{ _l, _items[@intCast(_sel)] }) catch _l); } else _tui_text(_l);
+}
+fn _tui_spinbox(_l: []const u8, _v: i64, _min: i64, _max: i64, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    _ = _min; _ = _max; _ = _cap; _ = _cap_len; _ = _thunk; _ = _send_fn; _ = _send_ptr;
+    var _b: [256]u8 = undefined; _tui_text(std.fmt.bufPrint(&_b, "{s}: {d}", .{ _l, _v }) catch _l);
+}
 fn _tui_open_file() ?[]const u8 { return null; }
 fn _tui_save_file() ?[]const u8 { return null; }
 fn _tui_open_folder() ?[]const u8 { return null; }
@@ -776,7 +833,6 @@ const _gui_tui_backend = _GuiBackend{
     .endPanelFn         = _tui_end_panel,
     .beginWindowFn      = _tui_begin_window,
     .endWindowFn        = _tui_end_window,
-    .selectableFn       = _tui_selectable,
     .textColoredFn      = _tui_text_colored,
     .beginTableFn       = _tui_begin_table,
     .tableSetupColumnFn = _tui_table_setup_column,

@@ -27,14 +27,11 @@ def view(g: Gui, model: Model)
     g.separator()
     g.text("Combobox demo")
     var items: List(str) = ["Apple", "Banana", "Cherry"]
-    var picked: int = g.combobox("Fruit", items, model.selected)
-    if picked != model.selected
-        g.send(Msg.pick(picked))
+    # message forms (2026-09-22): the model drives the widget, the closure names the Msg
+    g.combobox("Fruit", items, model.selected, def(i: int): Msg = Msg.pick(i))
     g.separator()
     g.text("Spinbox demo (selected: " + model.selected.toString() + ")")
-    var n: int = g.spinbox("Count", model.count, 0, 20)
-    if n != model.count
-        g.send(Msg.spin(n))
+    g.spinbox("Count", model.count, 0, 20, def(n: int): Msg = Msg.spin(n))
 
 def main()
     Gui.run("Widget Smoke", 400, 400, init, update, view)

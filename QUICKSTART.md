@@ -3244,11 +3244,11 @@ message, and the body becomes `view`.
 |--------------------------------------------|----------|--------------------------------------------|
 | `g.text(s)`                                | void     | Text label                                 |
 | `g.button(label, msg)`                     | void     | A button that sends `msg` when clicked. Keyed by its label; two buttons with one label are told apart by order. (Was `action` until 2026-09-21; the value-returning `button(label) -> bool`, `buttonId`, `checkbox` and `input` are gone -- `toggle`/`field` carry the message.) |
-| `g.slider(label, value, min, max)`         | float    | Drag slider (float range). The last value-returning widgets, with `selectable` and `inputMultiline`: read the result and `g.send` when it differs from the model. A message form is owed. |
-| `g.inputMultiline(label, value, w, h)`     | str      | Multi-line text area (value-returning; see `slider`) |
+| `g.slider(label, value, min, max, on)`     | void     | Drag slider (float range); `on` is `def(v: float): Msg`, called as it moves. The model drives the widget: pass the model's value, and a message that changes it moves the knob. (Message form since 2026-09-22; no widget returns a value any more.) |
+| `g.inputMultiline(label, text, on)`        | void     | Multi-line text area; `on` is `def(s: str): Msg` on every change. A model change that differs from what the entry shows is pushed; keystrokes never disturb the caret. |
 | `g.progressBar(label, value)`              | void     | Progress bar; `value` is 0.0–1.0           |
-| `g.combobox(label, items, selected)`       | int      | Drop-down; `items: List(str)`, returns new index |
-| `g.spinbox(label, value, min, max)`        | int      | Integer spinner with bounds                |
+| `g.combobox(label, items, selected, on)`   | void     | Drop-down; `items: List(str)`, `on` is `def(i: int): Msg` with the chosen index |
+| `g.spinbox(label, value, min, max, on)`    | void     | Integer spinner with bounds; `on` is `def(n: int): Msg` |
 | `g.separator()`                            | void     | Horizontal rule                            |
 | `g.sameLine()`                             | void     | Next widget on same line                   |
 | `g.spacing()`                              | void     | Extra vertical space                       |
@@ -3266,7 +3266,6 @@ message, and the body becomes `view`.
 | `g.hotkey(vk, mods)` / `g.takeKey()`       | void / int | Window-wide key chords, the `CodeEditor.hotkey/takeKey` convention at the window: a claimed chord is consumed wherever the focus is and queued; `takeKey` pops `(mods << 16) \| vk`, or 0. Mods: 1 ctrl, 2 shift, 4 alt; `vk` the Windows virtual-key code. TUI backend: 0 |
 | `g.window(label, callback)`                | void     | Floating sub-window                        |
 | `g.textColored(s, r, g, b, a)`            | void     | Colored text label                         |
-| `g.selectable(label, selected)`            | bool     | Selectable list item                       |
 | `g.send(msg)`                              | void     | Dispatch a message (MVU only)              |
 | `g.scope(map, view, model)`                | void     | Render a child component's `view(g, model)` with every message it sends passed through `map` (ChildMsg -> Msg). Components, above. |
 
@@ -3300,7 +3299,7 @@ retained-mode and works on all backends that support group boxes.
 ```zebra
 g.beginPanel("Settings")
     g.toggle("Enable logging", m.logging, def(b: bool): Msg = Msg.set_logging(b))
-    g.slider("Volume", m.volume, 0, 100)
+    g.slider("Volume", m.volume, 0.0, 100.0, def(v: float): Msg = Msg.set_volume(v))
 g.endPanel("Settings")   # id must match begin
 ```
 

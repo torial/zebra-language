@@ -129,9 +129,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `getCursorCol` `getCursorLine` `getLanguage` `getText` `hotkey` `render` `restyle` `sci` `sciStr` `setCursorPosition` `setErrorMarkers` `setLanguage` `setReadOnly` `setText` `takeCharAdded` `takeKey` `takeMarginClick` `takeModified`
 
-### Gui (65)
+### Gui (64)
 
-`beginHBox` `beginMenu` `beginPanel` `beginTabPage` `beginTable` `beginTabs` `beginVBox` `button` `childWindow` `combobox` `endHBox` `endMenu` `endPanel` `endTabPage` `endTable` `endTabs` `endVBox` `every` `field` `getDpi` `hbox` `hotkey` `indent` `inputMultiline` `menuItem` `menuQuit` `menuSeparator` `minSize` `msgBox` `msgBoxError` `openFile` `openFolder` `panel` `progressBar` `sameLine` `saveFile` `scaleAllSizes` `scope` `selectTab` `selectable` `send` `separator` `setColor` `setColorsDark` `setStyleFloat` `setVec2` `slider` `spacing` `spinbox` `tabSelected` `tableActivatedRow` `tableHeadersRow` `tableNextColumn` `tableNextRow` `tableSelectedRow` `tableSetupColumn` `takeKey` `text` `textColored` `toggle` `treeNode` `treePop` `unindent` `vbox` `window`
+`beginHBox` `beginMenu` `beginPanel` `beginTabPage` `beginTable` `beginTabs` `beginVBox` `button` `childWindow` `combobox` `endHBox` `endMenu` `endPanel` `endTabPage` `endTable` `endTabs` `endVBox` `every` `field` `getDpi` `hbox` `hotkey` `indent` `inputMultiline` `menuItem` `menuQuit` `menuSeparator` `minSize` `msgBox` `msgBoxError` `openFile` `openFolder` `panel` `progressBar` `sameLine` `saveFile` `scaleAllSizes` `scope` `selectTab` `send` `separator` `setColor` `setColorsDark` `setStyleFloat` `setVec2` `slider` `spacing` `spinbox` `tabSelected` `tableActivatedRow` `tableHeadersRow` `tableNextColumn` `tableNextRow` `tableSelectedRow` `tableSetupColumn` `takeKey` `text` `textColored` `toggle` `treeNode` `treePop` `unindent` `vbox` `window`
 
 ### HttpRequest (no methods; fields) (0)
 
