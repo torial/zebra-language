@@ -23,6 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **REMOVED: `g.panel(label, callback)`, `g.window`, `g.childWindow` (2026-09-22).** The
+  callback builders were TUI-only and no-ops on libui-ng; `beginPanel`/`endPanel` (now void, as
+  the QUICKSTART example always assumed) and the boxes are the forms. `sameLine`/`spacing`/`indent`
+  and `textColored`'s colour stay, documented as cosmetic no-ops on libui-ng. Item 5 of the
+  controls plan. (The BUG-358 closure-via-sig shape left with `g.panel`; `panel_smoke` keeps two
+  group boxes and its many-frames property.)
 - **`g.beginForm` / `g.endForm` (2026-09-22).** The settings-dialog layout on libui's `uiForm`:
   label column left, controls right, aligned; a child widget's own label is its row label.
   Rows follow the model (uiForm has no InsertAt, so a mid-form insertion rebuilds the form).

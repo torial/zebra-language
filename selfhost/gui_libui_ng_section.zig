@@ -23,12 +23,10 @@ const _GuiBackend = struct {
     sliderFn:      *const fn (label: []const u8, value: f64, min: f64, max: f64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, f64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     inputFn:       *const fn (label: []const u8, value: []const u8) []const u8,
     inputMultilineFn: *const fn (label: []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
-    beginPanelFn:       *const fn (label: []const u8) bool,
+    beginPanelFn:       *const fn (label: []const u8) void,
     endPanelFn:         *const fn () void,
     beginFormFn:        *const fn (id: []const u8) void,
     endFormFn:          *const fn () void,
-    beginWindowFn:      *const fn (label: []const u8) bool,
-    endWindowFn:        *const fn () void,
     textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
     beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
     tableSetupColumnFn: *const fn (label: []const u8) void,
@@ -40,8 +38,6 @@ const _GuiBackend = struct {
     endTableFn:         *const fn () void,
     tableSelectedRowFn:  *const fn (id: []const u8) i64,
     tableActivatedRowFn: *const fn (id: []const u8) i64,
-    beginChildFn:       *const fn (id: []const u8, w: f64, h: f64) bool,
-    endChildFn:         *const fn () void,
     treeNodeFn:         *const fn (label: []const u8) bool,
     treePopFn:          *const fn () void,
     setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
@@ -232,13 +228,6 @@ const GuiContext = struct {
     // the last call (-1: none). libui-ng backend only; tui returns -1.
     pub fn tableSelectedRow(self: GuiContext, id: []const u8) i64 { return self._b.tableSelectedRowFn(id); }
     pub fn tableActivatedRow(self: GuiContext, id: []const u8) i64 { return self._b.tableActivatedRowFn(id); }
-    pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
-        const _vis = self._b.beginChildFn(id, w, h);
-        if (_vis) {
-            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);  // fn OR fn pointer (matches the preamble; the section had drifted — 09-08)
-        }
-        self._b.endChildFn();
-    }
     pub fn treeNode(self: GuiContext, label: []const u8) bool { return self._b.treeNodeFn(label); }
     pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
     pub fn setColor(self: GuiContext, role: []const u8, r: f64, g: f64, b: f64, a: f64) void {
@@ -255,26 +244,14 @@ const GuiContext = struct {
         self._b.scaleAllSizesFn(@floatCast(scale));
     }
     pub fn getDpi(self: GuiContext) f64 { return @floatCast(self._b.getDpiFn()); }
-    pub fn panel(self: GuiContext, label: []const u8, callback: anytype) void {
-        if (self._b.beginPanelFn(label)) {
-            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);  // fn OR fn pointer (matches the preamble; the section had drifted — 09-08)
-            self._b.endPanelFn();
-        }
-    }
     // The open/close pair QUICKSTART documents (a titled group box); until 2026-09-17
     // only the callback form existed and the doc example could not compile.
-    pub fn beginPanel(self: GuiContext, label: []const u8) bool { return self._b.beginPanelFn(label); }
+    pub fn beginPanel(self: GuiContext, label: []const u8) void { self._b.beginPanelFn(label); }
     // A form: label on the left, control on the right, labels aligned (libui's
     // uiForm). Each child's own `label` is the row label; boxes elsewhere.
     pub fn beginForm(self: GuiContext, id: []const u8) void { self._b.beginFormFn(id); }
     pub fn endForm(self: GuiContext, id: []const u8) void { _ = id; self._b.endFormFn(); }
     pub fn endPanel(self: GuiContext, label: []const u8) void { _ = label; self._b.endPanelFn(); }
-    pub fn window(self: GuiContext, label: []const u8, callback: anytype) void {
-        if (self._b.beginWindowFn(label)) {
-            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);  // fn OR fn pointer (matches the preamble; the section had drifted — 09-08)
-            self._b.endWindowFn();
-        }
-    }
     pub fn beginHBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginHBoxFn(id, stretch); }
     pub fn endHBox(self: GuiContext) void { self._b.endHBoxFn(); }
     pub fn beginVBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginVBoxFn(id, stretch); }
@@ -1893,12 +1870,12 @@ fn _lui_begin_hbox(_id: []const u8, _stretch: bool) void { _lui_begin_box(.hbox,
 fn _lui_end_hbox() void { _lui_pop(); }
 fn _lui_begin_vbox(_id: []const u8, _stretch: bool) void { _lui_begin_box(.vbox, _id, _stretch, false); }
 fn _lui_end_vbox() void { _lui_pop(); }
-fn _lui_begin_panel(_label: []const u8) bool {
+fn _lui_begin_panel(_label: []const u8) void {
     const _r = _lui_child(.panel, _label);
     if (_r.fresh) {
         var _lb: [256]u8 = undefined;
-        const _grp = _ui.Group.New(_lui_z(&_lb, _label)) catch return true;
-        const _inner = _ui.Box.New(.Vertical) catch return true;
+        const _grp = _ui.Group.New(_lui_z(&_lb, _label)) catch return;
+        const _inner = _ui.Box.New(.Vertical) catch return;
         _inner.SetPadded(true);
         _grp.SetChild(_inner.as_control());
         _grp.SetMargined(true);
@@ -1908,7 +1885,6 @@ fn _lui_begin_panel(_label: []const u8) bool {
         _lui_attach(_r.n, false);
     }
     _lui_push(_r.n);
-    return true;
 }
 fn _lui_end_panel() void { _lui_pop(); }
 fn _lui_begin_form(_id: []const u8) void {
@@ -2233,9 +2209,6 @@ fn _lui_table_activated_row(_id: []const u8) i64 {
     _t.activated = -1;
     return _v;
 }
-fn _lui_begin_child(_id: []const u8, _cw: f64, _ch: f64) bool {
-    _ = _id; _ = _cw; _ = _ch; return true;
-}
 fn _lui_set_color(_role: []const u8, _rv: f32, _gv: f32, _bv: f32, _av: f32) void {
     _ = _role; _ = _rv; _ = _gv; _ = _bv; _ = _av;
 }
@@ -2320,8 +2293,6 @@ const _gui_lui_backend = _GuiBackend{
     .endPanelFn         = _lui_end_panel,
     .beginFormFn        = _lui_begin_form,
     .endFormFn          = _lui_end_form,
-    .beginWindowFn      = _lui_noop_bool,
-    .endWindowFn        = _lui_noop_void,
     .textColoredFn      = _lui_text_colored,
     .beginTableFn       = _lui_begin_table,
     .tableSetupColumnFn = _lui_table_setup_col,
@@ -2333,8 +2304,6 @@ const _gui_lui_backend = _GuiBackend{
     .endTableFn         = _lui_end_table,
     .tableSelectedRowFn  = _lui_table_selected_row,
     .tableActivatedRowFn = _lui_table_activated_row,
-    .beginChildFn       = _lui_begin_child,
-    .endChildFn         = _lui_noop_void,
     .treeNodeFn         = _lui_noop_bool,
     .treePopFn          = _lui_noop_void,
     .setColorFn         = _lui_set_color,

@@ -14,19 +14,19 @@ def update(model: Model, msg: Msg): Model
         on Msg.reset return Model(count: 0)
 
 def view(g: Gui, model: Model)
-    g.panel("Controls", def(g: Gui)
-        g.button("+1", Msg.inc)
-        g.sameLine()
-        g.button("Reset", Msg.reset)
-    )
-    g.panel("Status", def(g: Gui)
-        # `model` belongs to the ENCLOSING function, and Zebra lambdas do not capture
-        # implicitly -- a bare read emits Zig's "'model' not accessible from inner
-        # function". An explicit `capture` block is the documented mechanism.
-        capture
-            var model: Model = model
-        g.text("Count: " + model.count.toString())
-    )
+    # Two titled group boxes. The callback form `g.panel(label, def(g: Gui) ...)` was
+    # removed 2026-09-22 (TUI-only, a no-op on libui, and the BUG-358 closure-via-sig
+    # shape with it); the open/close pair is the one form. Still renders far more than
+    # 64 frames headless, which is what gui-scaffold-panel measures.
+    g.beginPanel("Controls")
+    g.beginHBox("controls_row", false)
+    g.button("+1", Msg.inc)
+    g.button("Reset", Msg.reset)
+    g.endHBox()
+    g.endPanel("Controls")
+    g.beginPanel("Status")
+    g.text("Count: " + model.count.toString())
+    g.endPanel("Status")
 
 def main()
     Gui.run("Panel Smoke", 400, 300, init, update, view)

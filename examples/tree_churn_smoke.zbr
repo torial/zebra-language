@@ -46,9 +46,9 @@ def view(g: Gui, m: Model)
                 k = k + 1
         # 4. a panel that comes and goes every third tick
         if m.ticks % 3 != 0
-            if g.beginPanel("Sometimes")
-                g.text("inside the panel")
-                g.endPanel("Sometimes")
+            g.beginPanel("Sometimes")
+            g.text("inside the panel")
+            g.endPanel("Sometimes")
         # 5. a strip whose pages rotate and rename
         g.beginTabs("##strip", true)
         var p: int = 0

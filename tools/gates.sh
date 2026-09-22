@@ -572,7 +572,9 @@ run_daily "leakgen"      "gate PASS" python fuzz/leakgen.py --gate
 run_daily "gui-scaffold" "startup path clean" bash tools/gui_scaffold_check.sh
 # BUG-358: a view() with a closure-taking builder (`g.panel`) re-runs per frame; the
 # counter example has none, so it could never see the 65th-frame death. Leg 2 of this
-# run renders far more than 64 frames headless.
+# run renders far more than 64 frames headless. (2026-09-22: the callback builders --
+# panel/window/childWindow -- are gone, so that shape cannot recur; the example keeps
+# two group boxes and the many-frames property, which is still worth a second scaffold.)
 run_daily "gui-scaffold-panel" "startup path clean" bash tools/gui_scaffold_check.sh examples/panel_smoke.zbr
 # BUG-340/343/355/357: a GUI program built from MORE THAN ONE MODULE (deps emitted beside
 # the scaffold, a used module named `sci`, a CodeEditor across the boundary, sys.args()

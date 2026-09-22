@@ -3108,8 +3108,9 @@ file (e.g. `myapp_gui_libui_ng/`, `myapp_gui_tui/`, `myapp_gui/`) and invokes
 - Native controls: Win32 on Windows, GTK3 on Linux, Cocoa on macOS.
 - Retained-mode internally: Zebra's immediate-mode API is translated to a widget
   tree on frame 0 and updated on subsequent events. Widget order must be stable.
-- `sameLine()`, `treeNode()`, table/tree APIs are no-ops (use `beginHBox` for
-  horizontal layout).
+- `sameLine()`, `spacing()`, `indent()`, `textColored()`'s colour and the style
+  setters are cosmetic no-ops (use `beginHBox` for horizontal layout); `treeNode()`
+  is a no-op (no tree widget yet). Tables work (§30 table).
 - Low-level draw calls (`ll.*`) are no-ops.
 
 **TUI backend notes:**
@@ -3253,11 +3254,10 @@ message, and the body becomes `view`.
 | `g.spinbox(label, value, min, max, on)`    | void     | Integer spinner with bounds; `on` is `def(n: int): Msg` |
 | `g.radio(label, items, selected, on)`      | void     | One radio button per item, exactly one selected; `items: List(str)`, `on` is `def(i: int): Msg`. Pick-one-of-N that a combobox would hide behind a click (2026-09-22). |
 | `g.separator()`                            | void     | Horizontal rule                            |
-| `g.sameLine()`                             | void     | Next widget on same line                   |
-| `g.spacing()`                              | void     | Extra vertical space                       |
-| `g.indent()` / `g.unindent()`             | void     | Indentation level                          |
-| `g.panel(label, callback)`                 | void     | Collapsible child window                   |
-| `g.beginPanel(id)` / `g.endPanel(id)`     | void     | libui-ng titled group box (retained-mode open/close pair)  |
+| `g.sameLine()`                             | void     | Cosmetic, TUI only; a no-op on libui-ng (use `beginHBox`). |
+| `g.spacing()`                              | void     | Cosmetic, TUI only; a no-op on libui-ng.   |
+| `g.indent()` / `g.unindent()`             | void     | Cosmetic, TUI only; a no-op on libui-ng.   |
+| `g.beginPanel(id)` / `g.endPanel(id)`     | void     | Titled group box (libui `uiGroup`; an indented heading on the TUI). The one panel form since 2026-09-22: the callback `g.panel`, `g.window` and `g.childWindow` are removed. |
 | `g.beginForm(id)` / `g.endForm(id)`       | void     | A form (2026-09-22): labels left, controls right, aligned (libui `uiForm`). Each child widget's own label is its row label -- `g.field("Host", ...)` inside a form is a `Host` row. A plain vbox on the other backends. `examples/form_smoke.zbr` |
 | `g.beginTabs(id, stretch)` / `g.endTabs()` | void    | Tab control (libui-ng `uiTab`); pages go between `g.beginTabPage(id, label)` / `g.endTabPage()`. TUI backend: no-op |
 | `g.tabSelected(id)` / `g.selectTab(id, i)` | int / void | Selected page index in emission order (-1 with no pages) / select from the model. TUI backend: -1 / no-op |
@@ -3269,8 +3269,7 @@ message, and the body becomes `view`.
 | `g.beginMenu(name)` … `g.endMenu()`        | void     | A native menubar menu, declared in the view: `g.menuItem(label, msg)`, `g.menuSeparator()`, `g.menuQuit()`. libui fixes the menubar when the window is created, so the FIRST render decides which menus and items exist; declare them in every render. TUI: a row of buttons. |
 | `g.every(ms, msg)`                         | void     | Subscribe to time: `msg` is sent every `ms` milliseconds while the view keeps declaring it. **The frame is an event** (2026-09-17): `view` runs after a click, a change, a queued `g.send`, or a subscribed timer — never on its own. A `g.send` from view on every pass is a livelock and is dropped after 8 passes with a warning naming `every`. |
 | `g.hotkey(vk, mods)` / `g.takeKey()`       | void / int | Window-wide key chords, the `CodeEditor.hotkey/takeKey` convention at the window: a claimed chord is consumed wherever the focus is and queued; `takeKey` pops `(mods << 16) \| vk`, or 0. Mods: 1 ctrl, 2 shift, 4 alt; `vk` the Windows virtual-key code. TUI backend: 0 |
-| `g.window(label, callback)`                | void     | Floating sub-window                        |
-| `g.textColored(s, r, g, b, a)`            | void     | Colored text label                         |
+| `g.textColored(s, r, g, b, a)`            | void     | Colored text label; plain text on libui-ng. |
 | `g.send(msg)`                              | void     | Dispatch a message (MVU only)              |
 | `g.scope(map, view, model)`                | void     | Render a child component's `view(g, model)` with every message it sends passed through `map` (ChildMsg -> Msg). Components, above. |
 
@@ -3297,9 +3296,7 @@ using g.hbox("row", false)
 ### Panels / group boxes (libui-ng)
 
 `g.beginPanel(id)` / `g.endPanel(id)` draw a titled group box around their
-contents (the libui-ng `uiGroup` widget).  Unlike `g.panel(label, callback)`
-(which is callback-based and TUI-only), the `begin`/`end` pair is
-retained-mode and works on all backends that support group boxes.
+contents (the libui-ng `uiGroup` widget; an indented heading on the TUI).
 
 ```zebra
 g.beginPanel("Settings")

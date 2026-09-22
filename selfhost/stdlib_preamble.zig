@@ -3408,12 +3408,10 @@ pub const _GuiBackend = struct {
     passwordFn:    *const fn (label: []const u8, value: []const u8) void,
     searchFn:      *const fn (label: []const u8, value: []const u8) void,
     inputMultilineFn: *const fn (label: []const u8, value: []const u8, width: f64, height: f64) []const u8,
-    beginPanelFn:       *const fn (label: []const u8) bool,
+    beginPanelFn:       *const fn (label: []const u8) void,
     endPanelFn:         *const fn () void,
     beginFormFn:        *const fn (id: []const u8) void,
     endFormFn:          *const fn () void,
-    beginWindowFn:      *const fn (label: []const u8) bool,
-    endWindowFn:        *const fn () void,
     textColoredFn:      *const fn (r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void,
     beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
     tableSetupColumnFn: *const fn (label: []const u8) void,
@@ -3423,8 +3421,6 @@ pub const _GuiBackend = struct {
     tableNextRowFn:     *const fn () void,
     tableNextColumnFn:  *const fn () void,
     endTableFn:         *const fn () void,
-    beginChildFn:       *const fn (id: []const u8, w: f64, h: f64) bool,
-    endChildFn:         *const fn () void,
     treeNodeFn:         *const fn (label: []const u8) bool,
     treePopFn:          *const fn () void,
     setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
@@ -3527,13 +3523,6 @@ pub const GuiContext = struct {
     pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
     pub fn tableNextColumn(self: GuiContext) void { self._b.tableNextColumnFn(); }
     pub fn endTable(self: GuiContext) void { self._b.endTableFn(); }
-    pub fn childWindow(self: GuiContext, id: []const u8, w: f64, h: f64, callback: anytype) void {
-        const _vis = self._b.beginChildFn(id, w, h);
-        if (_vis) {
-            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);
-        }
-        self._b.endChildFn();
-    }
     pub fn treeNode(self: GuiContext, label: []const u8) bool { return self._b.treeNodeFn(label); }
     pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
     pub fn setColor(self: GuiContext, role: []const u8, r: f64, g: f64, b: f64, a: f64) void {
@@ -3550,18 +3539,6 @@ pub const GuiContext = struct {
         self._b.scaleAllSizesFn(@floatCast(scale));
     }
     pub fn getDpi(self: GuiContext) f64 { return @floatCast(self._b.getDpiFn()); }
-    pub fn panel(self: GuiContext, label: []const u8, callback: anytype) void {
-        if (self._b.beginPanelFn(label)) {
-            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);
-            self._b.endPanelFn();
-        }
-    }
-    pub fn window(self: GuiContext, label: []const u8, callback: anytype) void {
-        if (self._b.beginWindowFn(label)) {
-            if (comptime _zbr_is_fnlike(@TypeOf(callback))) callback(self) else callback.call(self);
-            self._b.endWindowFn();
-        }
-    }
     // ── message-carrying forms, stub twins (2026-09-21) ──────────────────────────
     // The stub backend is one frame that prints what the view declares and never fires an
     // event, so a message-carrying widget prints its label and drops the message. Until
@@ -3580,7 +3557,7 @@ pub const GuiContext = struct {
     pub fn menuSeparator(self: GuiContext) void { _ = self; std.debug.print("[gui] menuSeparator\n", .{}); }
     pub fn menuQuit(self: GuiContext) void { _ = self; std.debug.print("[gui] menuQuit\n", .{}); }
     pub fn endMenu(self: GuiContext) void { _ = self; }
-    pub fn beginPanel(self: GuiContext, label: []const u8) bool { return self._b.beginPanelFn(label); }
+    pub fn beginPanel(self: GuiContext, label: []const u8) void { self._b.beginPanelFn(label); }
     pub fn beginForm(self: GuiContext, id: []const u8) void { self._b.beginFormFn(id); }
     pub fn endForm(self: GuiContext, id: []const u8) void { _ = id; self._b.endFormFn(); }
     pub fn endPanel(self: GuiContext, label: []const u8) void { _ = label; self._b.endPanelFn(); }
@@ -3744,18 +3721,12 @@ pub fn _stub_input_multiline(label: []const u8, value: []const u8, width: f64, h
     std.debug.print("[gui] inputMultiline: {s} ({d}x{d})\n", .{ label, width, height });
     return value;
 }
-pub fn _stub_begin_panel(label: []const u8) bool {
+pub fn _stub_begin_panel(label: []const u8) void {
     std.debug.print("[gui] panel: {s}\n", .{label});
-    return true;
 }
 pub fn _stub_end_panel() void {}
 pub fn _stub_begin_form(id: []const u8) void { std.debug.print("[gui] form: {s}\n", .{id}); }
 pub fn _stub_end_form() void {}
-pub fn _stub_begin_window(label: []const u8) bool {
-    std.debug.print("[gui] window: {s}\n", .{label});
-    return true;
-}
-pub fn _stub_end_window() void {}
 pub fn _stub_text_colored(r: f32, gv: f32, b_: f32, a: f32, s: []const u8) void { _ = r; _ = gv; _ = b_; _ = a; std.debug.print("[gui] textColored: {s}\n", .{s}); }
 pub fn _stub_begin_table(id: []const u8, cols: i64) bool { std.debug.print("[gui] beginTable: {s} cols={d}\n", .{ id, cols }); return true; }
 pub fn _stub_table_setup_check_column(label: []const u8) void { std.debug.print("[gui] tableSetupCheckColumn: {s}\n", .{label}); }
@@ -3765,8 +3736,6 @@ pub fn _stub_table_headers_row() void {}
 pub fn _stub_table_next_row() void {}
 pub fn _stub_table_next_column() void {}
 pub fn _stub_end_table() void {}
-pub fn _stub_begin_child(id: []const u8, w: f64, h: f64) bool { _ = id; _ = w; _ = h; return true; }
-pub fn _stub_end_child() void {}
 pub fn _stub_tree_node(label: []const u8) bool { std.debug.print("[gui] treeNode: {s}\n", .{label}); return true; }
 pub fn _stub_tree_pop() void {}
 pub fn _stub_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void { _ = role; _ = r; _ = g; _ = b; _ = a; }
@@ -3823,8 +3792,6 @@ pub const _gui_stub_backend = _GuiBackend{
     .endPanelFn         = _stub_end_panel,
     .beginFormFn        = _stub_begin_form,
     .endFormFn          = _stub_end_form,
-    .beginWindowFn      = _stub_begin_window,
-    .endWindowFn        = _stub_end_window,
     .textColoredFn      = _stub_text_colored,
     .beginTableFn       = _stub_begin_table,
     .tableSetupColumnFn = _stub_table_setup_column,
@@ -3834,8 +3801,6 @@ pub const _gui_stub_backend = _GuiBackend{
     .tableNextRowFn     = _stub_table_next_row,
     .tableNextColumnFn  = _stub_table_next_column,
     .endTableFn         = _stub_end_table,
-    .beginChildFn       = _stub_begin_child,
-    .endChildFn         = _stub_end_child,
     .treeNodeFn         = _stub_tree_node,
     .treePopFn          = _stub_tree_pop,
     .setColorFn         = _stub_set_color,

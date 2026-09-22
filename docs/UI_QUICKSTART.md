@@ -114,8 +114,7 @@ column fills available width in its parent HBox.
 | `g.separator()`                  | Horizontal separator rule.                                     |
 | `g.textColored(r,g,b,a, s)`      | Text only (color ignored).                                     |
 | `g.beginTable` / table ops       | `uiTable`, text columns, rows diffed per frame (QUICKSTART §30). `tableSetupCheckColumn(name, on)` + `tableCheck(checked)` for a checkbox column; `on(row, checked)`. |
-| `g.childWindow(id, w, h, fn)`    | No-op. Use `beginVBox`/`endVBox` instead.                      |
-| `g.panel`, `g.window`            | No-op in libui-ng.                                             |
+| `g.sameLine`, `g.spacing`, `g.indent` | Cosmetic no-ops here (TUI only). `beginHBox` for a row.   |
 
 **Widget IDs:** Interactive widget IDs are the `label` string. If two widgets
 share a label they share state — prefix with `##` to hide the label and make
