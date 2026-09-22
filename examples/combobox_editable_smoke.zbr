@@ -1,0 +1,30 @@
+# combobox_editable_smoke.zbr -- g.comboboxEditable (2026-09-22): a drop-down that
+# also takes typed text (recent files, "or enter your own"). `on` fires with the
+# text on a pick or a keystroke; the model drives the text, and "Last" proves it
+# by setting the entry without the user touching it. gui-scaffold + libui-section
+# compile it; the typing witness is a person.
+struct Model
+    var path: str
+
+union Msg
+    set_path: str
+    last
+
+def init(): Model
+    return Model(path: "")
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.set_path as s
+            return Model(path: s)
+        on Msg.last
+            return Model(path: "src/main.zbr")
+
+def view(g: Gui, m: Model)
+    var recent: List(str) = ["src/main.zbr", "src/Parser.zbr", "README.md"]
+    g.comboboxEditable("Open", recent, m.path, def(s: str): Msg = Msg.set_path(s))
+    g.text("path: " + m.path)
+    g.button("Last", Msg.last)
+
+def main()
+    Gui.run("editable combobox", 340, 200, init, update, view)

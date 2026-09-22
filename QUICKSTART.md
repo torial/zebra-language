@@ -3252,6 +3252,7 @@ message, and the body becomes `view`.
 | `g.progressBar(label, value)`              | void     | Progress bar; `value` is 0.0–1.0           |
 | `g.combobox(label, items, selected, on)`   | void     | Drop-down; `items: List(str)`, `on` is `def(i: int): Msg` with the chosen index |
 | `g.spinbox(label, value, min, max, on)`    | void     | Integer spinner with bounds; `on` is `def(n: int): Msg` |
+| `g.comboboxEditable(label, items, text, on)` | void   | A drop-down that also takes typed text (recent files, "or enter your own"); `on` is `def(s: str): Msg` on a pick or a keystroke. The model drives the text (2026-09-22). |
 | `g.radio(label, items, selected, on)`      | void     | One radio button per item, exactly one selected; `items: List(str)`, `on` is `def(i: int): Msg`. Pick-one-of-N that a combobox would hide behind a click (2026-09-22). |
 | `g.separator()`                            | void     | Horizontal rule                            |
 | `g.sameLine()`                             | void     | Cosmetic, TUI only; a no-op on libui-ng (use `beginHBox`). |

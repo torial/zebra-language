@@ -88,6 +88,7 @@ const _GuiBackend = struct {
     progressBarFn: *const fn (label: []const u8, value: f64) void,
     comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     radioFn:       *const fn (label: []const u8, items: []const []const u8, selected: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    comboboxEditableFn: *const fn (label: []const u8, items: []const []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     openFileFn:    *const fn () ?[]const u8,
     saveFileFn:    *const fn () ?[]const u8,
@@ -398,6 +399,22 @@ const GuiContext = struct {
             }
         };
         if (self._send_fn) |f| self._b.radioFn(label, items.items, selected, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // A drop-down that also takes typed text; `on` is `def(s: str): Msg` on every change
+    // (a pick from the list or a keystroke). The model drives the text.
+    pub fn comboboxEditable(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), initial: []const u8, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.comboboxEditableFn(label, items.items, initial, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
     }
     // An integer spinner over [min, max]; `on` is `def(n: int): Msg`.
     pub fn spinbox(self: GuiContext, label: []const u8, current: i64, min: i64, max: i64, on: anytype) void {
@@ -1051,7 +1068,7 @@ fn _code_editor_sci_str(_ed: *_CodeEditor, msg: i64, wparam: i64, text: []const 
 // hiding, no frame-0 rule, no positional counter: a box that appears is a child
 // inserted where it appears. The seven caches this replaced are gone.
 const _ui = @import("ui");
-const _LuiKind = enum { root, hbox, vbox, panel, tabs, page, text, sep, button, checkbox, slider, input, input_ml, combobox, radio, spinbox, progress, form, editor, table };
+const _LuiKind = enum { root, hbox, vbox, panel, tabs, page, text, sep, button, checkbox, slider, input, input_ml, combobox, combobox_ed, radio, spinbox, progress, form, editor, table };
 const _LuiNode = struct {
     kind: _LuiKind,
     key: []const u8 = "",
@@ -1077,6 +1094,7 @@ const _LuiNode = struct {
     mle: ?*_ui.MultilineEntry = null,
     cmb: ?*_ui.Combobox = null,
     rad: ?*_ui.RadioButtons = null,
+    ecmb: ?*_ui.EditableCombobox = null,
     spn: ?*_ui.Spinbox = null,
     pb: ?*_ui.ProgressBar = null,
     grp: ?*_ui.Group = null,
@@ -1326,6 +1344,11 @@ fn _lui_entry_cb(_ent: *_ui.Entry, _m: ?*_LuiNode) anyerror!void { if (_m) |p| _
 fn _lui_mle_cb(_mle: *_ui.MultilineEntry, _m: ?*_LuiNode) anyerror!void {
     const _n = _m orelse return;
     _lui_set_text(_n, std.mem.span(_mle.Text()));
+    if (_n.thunk_s) |t| t(@ptrCast(&_n.cap), _n.text_buf[0.._n.text_len], _n.send_fn.?, _n.send_ptr.?);
+}
+fn _lui_ecmb_cb(_c: *_ui.EditableCombobox, _m: ?*_LuiNode) anyerror!void {
+    const _n = _m orelse return;
+    _lui_set_text(_n, std.mem.span(_c.Text()));
     if (_n.thunk_s) |t| t(@ptrCast(&_n.cap), _n.text_buf[0.._n.text_len], _n.send_fn.?, _n.send_ptr.?);
 }
 fn _lui_slider_cb(_sld: *_ui.Slider, _m: ?*_LuiNode) anyerror!void {
@@ -1752,6 +1775,33 @@ fn _lui_input_ml(_label: []const u8, _text: []const u8, _cap: *const anyopaque, 
     } else if (!_lui_text_same(_r.n, _text)) {
         // a message set the text: push it (keystrokes never reach here -- OnChanged already recorded them)
         if (_r.n.mle) |_e| _e.SetText(_lui_z(&_vtb, _text));
+        _lui_set_text(_r.n, _text);
+    }
+    const _src: [*]const u8 = @ptrCast(_cap);
+    @memcpy(_r.n.cap[0.._cap_len], _src[0.._cap_len]);
+    _r.n.cap_len = _cap_len;
+    _r.n.thunk_s = _thunk;
+    _r.n.send_fn = _send_fn;
+    _r.n.send_ptr = _send_ptr;
+}
+fn _lui_combobox_editable(_label: []const u8, _items: []const []const u8, _text: []const u8, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    if (_cap_len > 128) return;
+    const _r = _lui_child(.combobox_ed, _label);
+    var _vtb: [1024]u8 = undefined;
+    if (_r.fresh) {
+        const _c = _ui.EditableCombobox.New() catch return;
+        for (_items) |_it| {
+            var _lb: [256]u8 = undefined;
+            _ui.EditableCombobox.Append(_c, _lui_z(&_lb, _it));
+        }
+        _c.SetText(_lui_z(&_vtb, _text));
+        _lui_set_text(_r.n, _text);
+        _ui.EditableCombobox.OnChanged(_c, _LuiNode, anyerror, _lui_ecmb_cb, _r.n);
+        _r.n.ecmb = _c;
+        _lui_labelled(_r.n, _label, _c.as_control(), false);
+        _lui_attach(_r.n, false);
+    } else if (!_lui_text_same(_r.n, _text)) {
+        if (_r.n.ecmb) |_e| _e.SetText(_lui_z(&_vtb, _text));
         _lui_set_text(_r.n, _text);
     }
     const _src: [*]const u8 = @ptrCast(_cap);
@@ -2350,6 +2400,7 @@ const _gui_lui_backend = _GuiBackend{
     .progressBarFn = _lui_progressbar,
     .comboboxFn    = _lui_combobox,
     .radioFn       = _lui_radio,
+    .comboboxEditableFn = _lui_combobox_editable,
     .spinboxFn     = _lui_spinbox,
     .openFileFn    = _lui_open_file,
     .saveFileFn    = _lui_save_file,

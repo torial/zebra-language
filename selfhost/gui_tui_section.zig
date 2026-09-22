@@ -88,6 +88,7 @@ const _GuiBackend = struct {
     progressBarFn: *const fn (label: []const u8, value: f64) void,
     comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     radioFn:       *const fn (label: []const u8, items: []const []const u8, selected: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    comboboxEditableFn: *const fn (label: []const u8, items: []const []const u8, text: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     spinboxFn:     *const fn (label: []const u8, value: i64, min: i64, max: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     openFileFn:    *const fn () ?[]const u8,
     saveFileFn:    *const fn () ?[]const u8,
@@ -392,6 +393,22 @@ const GuiContext = struct {
             }
         };
         if (self._send_fn) |f| self._b.radioFn(label, items.items, selected, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // A drop-down that also takes typed text; `on` is `def(s: str): Msg` on every change
+    // (a pick from the list or a keystroke). The model drives the text.
+    pub fn comboboxEditable(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), initial: []const u8, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, value: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(value) else blk: { var c = f.*; break :blk c.call(value); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.comboboxEditableFn(label, items.items, initial, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
     }
     // An integer spinner over [min, max]; `on` is `def(n: int): Msg`.
     pub fn spinbox(self: GuiContext, label: []const u8, current: i64, min: i64, max: i64, on: anytype) void {
@@ -877,6 +894,10 @@ fn _tui_radio(_l: []const u8, _items: []const []const u8, _sel: i64, _cap: *cons
     _tui_text(_l);
     for (_items, 0..) |_it, _k| { var _b: [256]u8 = undefined; _tui_text(std.fmt.bufPrint(&_b, "  {s} {s}", .{ if (@as(i64, @intCast(_k)) == _sel) "(*)" else "( )", _it }) catch _it); }
 }
+fn _tui_combobox_editable(_l: []const u8, _items: []const []const u8, _t: []const u8, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    _ = _items; _ = _cap; _ = _cap_len; _ = _thunk; _ = _send_fn; _ = _send_ptr;
+    _ = _tui_input(_l, _t);
+}
 fn _tui_spinbox(_l: []const u8, _v: i64, _min: i64, _max: i64, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
     _ = _min; _ = _max; _ = _cap; _ = _cap_len; _ = _thunk; _ = _send_fn; _ = _send_ptr;
     var _b: [256]u8 = undefined; _tui_text(std.fmt.bufPrint(&_b, "{s}: {d}", .{ _l, _v }) catch _l);
@@ -965,6 +986,7 @@ const _gui_tui_backend = _GuiBackend{
     .progressBarFn = _tui_progressbar,
     .comboboxFn    = _tui_combobox,
     .radioFn       = _tui_radio,
+    .comboboxEditableFn = _tui_combobox_editable,
     .spinboxFn     = _tui_spinbox,
     .openFileFn    = _tui_open_file,
     .saveFileFn    = _tui_save_file,

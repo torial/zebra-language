@@ -23,6 +23,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **`g.comboboxEditable(label, items, text, on)` (2026-09-22).** A drop-down that also takes
+  typed text, on libui's `uiEditableCombobox`; `on: def(s: str): Msg`, the model drives the
+  text. `examples/combobox_editable_smoke.zbr`. Item 6 of the controls plan -- the last coded
+  item; 7 (tree view) and 8 (Area drawing) stay deferred by design.
 - **REMOVED: `g.panel(label, callback)`, `g.window`, `g.childWindow` (2026-09-22).** The
   callback builders were TUI-only and no-ops on libui-ng; `beginPanel`/`endPanel` (now void, as
   the QUICKSTART example always assumed) and the boxes are the forms. `sameLine`/`spacing`/`indent`

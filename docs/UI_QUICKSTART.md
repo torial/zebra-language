@@ -110,6 +110,7 @@ column fills available width in its parent HBox.
 | `g.slider(label, value, min, max, on)` | `on: def(v: float): Msg` as it moves. The model drives it; range set at creation. (Message form since 2026-09-22.) |
 | `g.inputMultiline(label, text, on)` | Multi-line entry; `on: def(s: str): Msg` on every change. Fills its box; size with `minSize`. |
 | `g.combobox(label, items, sel, on)` / `g.spinbox(label, value, min, max, on)` | `on: def(i: int): Msg`. The model drives both. |
+| `g.comboboxEditable(label, items, text, on)` | `uiEditableCombobox`; `on: def(s: str): Msg` on pick or keystroke. |
 | `g.radio(label, items, sel, on)`  | One radio button per item (`uiRadioButtons`); `on: def(i: int): Msg`. The model drives the selection. |
 | `g.separator()`                  | Horizontal separator rule.                                     |
 | `g.textColored(r,g,b,a, s)`      | Text only (color ignored).                                     |
