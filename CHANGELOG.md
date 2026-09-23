@@ -23,6 +23,24 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **Editable text cells and button cells in tables (2026-09-23).** `g.tableSetupEditColumn(name,
+  on)` -- cells are `g.text` as before, committing an edit sends `on(row, text)` and the next
+  render shows what the model holds (a declined edit snaps back); `g.tableSetupButtonColumn(name,
+  on)` -- cells are the labels, a click sends `on(row)`. libui's `uiTableAppendTextColumn`
+  with `AlwaysEditable` and `uiTableAppendButtonColumn`; one of each per table, like the
+  check column. The first witness delivered a dangling byte instead of the text: libui frees
+  the cell value when `SetCellValue` returns and the message is handled later from the queue,
+  so the runtime now owns the text before it crosses. Witnessed on GTK (edit, refused empty
+  edit, remove). `examples/table_edit_smoke.zbr`; libui-section.
+- **`Gui.registerIcon(name, w, h, rgba)` -- the program's own tree icons (2026-09-23).**
+  Straight-alpha RGBA bytes in a `str` (any size; `StringBuilder.appendChar` builds one, or
+  read a raw file), premultiplied by the runtime for libui's `uiImage`; the name then works in
+  `treeNodeIcon` / `treeLeafIcon` beside the built-in four, and registering it again replaces
+  the image. Registrations before `Gui.run` are queued until `uiInit` -- libui's allocator
+  does not exist before it, and the first witness tripped `g_ptr_array_add`'s assertion by
+  registering from `main`. No decoder yet: a PNG is the program's to decode. Stub prints,
+  TUI ignores; witnessed on GTK (green/red discs with real alpha, a grey square, beside
+  the built-in `warn`). `examples/icon_smoke.zbr`; libui-section.
 - **`g.canvas(id, w, h, draw, onMouse, onKey)` -- the area with the whole mouse and the
   keyboard (2026-09-23).** `onMouse(ev, x, y, b)` delivers 1 press, 2 release, 3 move (`b` =
   held buttons, so a drag is a move with `b != 0`), 4 enter, 5 leave; `onKey(vk, mods, down)`

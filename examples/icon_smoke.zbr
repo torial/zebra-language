@@ -1,0 +1,77 @@
+# icon_smoke.zbr -- Gui.registerIcon(name, w, h, rgba): the program's own tree icons
+# (2026-09-23). Straight-alpha RGBA bytes, w*h*4 of them, built here with
+# StringBuilder.appendChar (a byte) -- a program would more often read them from a file.
+# Registered names sit beside the built-in set for treeNodeIcon / treeLeafIcon. Stub prints
+# the registration; gui-scaffold + libui-section compile it.
+struct Model
+    var picked: str
+
+union Msg
+    pick: str
+
+def init(): Model
+    return Model(picked: "")
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.pick as k
+            return m except picked = k
+
+# a 12x12 icon: `r,g,b` inside a circle of radius 5.5 around the centre, transparent outside
+def disc(r: int, g: int, b: int): str
+    var sb = StringBuilder()
+    var y: int = 0
+    while y < 12
+        var x: int = 0
+        while x < 12
+            var dx: float = x.toFloat() - 5.5
+            var dy: float = y.toFloat() - 5.5
+            if dx * dx + dy * dy <= 30.25
+                sb.appendChar(r)
+                sb.appendChar(g)
+                sb.appendChar(b)
+                sb.appendChar(255)
+            else
+                sb.appendChar(0)
+                sb.appendChar(0)
+                sb.appendChar(0)
+                sb.appendChar(0)
+            x = x + 1
+        y = y + 1
+    return sb.build()
+
+# a 12x12 icon: a filled square with a one-pixel darker border
+def square(r: int, g: int, b: int): str
+    var sb = StringBuilder()
+    var y: int = 0
+    while y < 12
+        var x: int = 0
+        while x < 12
+            var edge: bool = x == 0 or y == 0 or x == 11 or y == 11
+            sb.appendChar(if(edge, r / 2, r))
+            sb.appendChar(if(edge, g / 2, g))
+            sb.appendChar(if(edge, b / 2, b))
+            sb.appendChar(255)
+            x = x + 1
+        y = y + 1
+    return sb.build()
+
+def view(g: Gui, m: Model)
+    g.beginTree("kinds", def(k: str): Msg = Msg.pick(k), def(k: str): Msg = Msg.pick(k), def(k: str, o: bool): Msg = Msg.pick(if(o, k, k)))
+    g.treeNodeIcon("ok", "passing", true, "green")
+    g.treeLeafIcon("ok/a", "parser_test", "green")
+    g.treeLeafIcon("ok/b", "lexer_test", "green")
+    g.treePop()
+    g.treeNodeIcon("bad", "failing", true, "red")
+    g.treeLeafIcon("bad/a", "codegen_test", "red")
+    g.treePop()
+    g.treeLeafIcon("skip", "skipped", "grey")
+    g.treeLeafIcon("builtin", "built-in warn", "warn")
+    g.endTree()
+    g.text("picked: " + m.picked)
+
+def main()
+    Gui.registerIcon("green", 12, 12, disc(0x2E, 0xB8, 0x4E))
+    Gui.registerIcon("red", 12, 12, disc(0xD8, 0x3A, 0x3A))
+    Gui.registerIcon("grey", 12, 12, square(0xA0, 0xA0, 0xA0))
+    Gui.run("icons", 260, 260, init, update, view)

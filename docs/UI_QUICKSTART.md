@@ -113,13 +113,14 @@ column fills available width in its parent HBox.
 | `g.beginTree(id, onSelect, onActivate, onExpand)` … `endTree` | `uiTree`, native single-column tree; `treeNode(key, label, expanded)` / `treeLeaf(key, label)` / `treePop`; `treeNodeIcon` / `treeLeafIcon` add an icon from the built-in set (folder, file, dot, warn). Model-driven expansion. QUICKSTART §30 "Trees". |
 | `g.tooltip(text)` | Tooltip for the widget emitted just before it (2026-09-23). |
 | `Gui.clipboardText()` / `Gui.setClipboardText(s)` | The system clipboard, plain text; statics, called from `update`. |
+| `Gui.registerIcon(name, w, h, rgba)` | A `uiImage` from the program's RGBA bytes, usable as a tree icon by name. |
 | `g.area(id, w, h, draw, on)`     | `uiArea`: `draw: def(c: Gui)` paints with `c.line/rect/fillRect/circle/fillCircle/drawText`; `on(x, y, button)` on a press. QUICKSTART §30 "Drawing". |
 | `g.canvas(id, w, h, draw, onMouse, onKey)` | The same `uiArea` with press/release/move/enter/leave (`onMouse(ev, x, y, b)`) and keys (`onKey(vk, mods, down)`, hotkey's VK vocabulary). QUICKSTART §30 "Drawing". |
 | `g.comboboxEditable(label, items, text, on)` | `uiEditableCombobox`; `on: def(s: str): Msg` on pick or keystroke. |
 | `g.radio(label, items, sel, on)`  | One radio button per item (`uiRadioButtons`); `on: def(i: int): Msg`. The model drives the selection. |
 | `g.separator()`                  | Horizontal separator rule.                                     |
 | `g.textColored(r,g,b,a, s)`      | Text only (color ignored).                                     |
-| `g.beginTable` / table ops       | `uiTable`, text columns, rows diffed per frame (QUICKSTART §30). `tableSetupCheckColumn(name, on)` + `tableCheck(checked)` for a checkbox column; `on(row, checked)`. |
+| `g.beginTable` / table ops       | `uiTable`, text columns, rows diffed per frame (QUICKSTART §30). `tableSetupCheckColumn(name, on)` + `tableCheck(checked)` for a checkbox column; `on(row, checked)`. `tableSetupEditColumn(name, on)` for an editable text column (`on(row, text)`), `tableSetupButtonColumn(name, on)` for a button per row (`on(row)`). |
 | `g.sameLine`, `g.spacing`, `g.indent` | Cosmetic no-ops here (TUI only). `beginHBox` for a row.   |
 
 **Widget IDs:** Interactive widget IDs are the `label` string. If two widgets
@@ -259,8 +260,9 @@ def update(m: Model, msg: Msg): Model
   view emits conditionally is inserted where it appears and removed when it
   stops; keyed widgets (`##id`, a label) keep their identity when they move.
 - **Tables are lists**: `beginTable`/`tableNextRow`/`g.text` cells, plus one
-  checkbox column (`tableSetupCheckColumn`/`tableCheck`); no other widgets in
-  cells. `tableSelectedRow` / `tableActivatedRow` read the user.
+  checkbox column (`tableSetupCheckColumn`/`tableCheck`), one editable text column
+  (`tableSetupEditColumn`) and one button column (`tableSetupButtonColumn`); no
+  other widgets in cells. `tableSelectedRow` / `tableActivatedRow` read the user.
 - **No colour**: `textColored` renders without colour.
 - **Widths are hints**: `beginVBox` fills its share of the parent HBox; give a
   pane a floor with `g.minSize(id, w, h)` (a minimum, never a fixed size).

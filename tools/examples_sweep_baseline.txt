@@ -12,6 +12,7 @@ game_of_life
 gui_modules_smoke
 hbox_smoke
 hello
+icon_smoke
 kv_store
 lambda_calc
 life
@@ -29,6 +30,7 @@ showcase
 slider_smoke
 styler_smoke
 table_check_smoke
+table_edit_smoke
 table_strip_smoke
 tabs_smoke
 tears_combat_test

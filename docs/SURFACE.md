@@ -129,9 +129,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `getCursorCol` `getCursorLine` `getLanguage` `getText` `hotkey` `render` `restyle` `sci` `sciStr` `setCursorPosition` `setErrorMarkers` `setLanguage` `setReadOnly` `setText` `takeCharAdded` `takeKey` `takeMarginClick` `takeModified`
 
-### Gui (85)
+### Gui (87)
 
-`area` `beginForm` `beginHBox` `beginMenu` `beginPanel` `beginTabPage` `beginTable` `beginTabs` `beginTree` `beginVBox` `button` `canvas` `canvasHeight` `canvasWidth` `circle` `combobox` `comboboxEditable` `drawText` `endForm` `endHBox` `endMenu` `endPanel` `endTabPage` `endTable` `endTabs` `endTree` `endVBox` `every` `field` `fillCircle` `fillRect` `getDpi` `hbox` `hotkey` `indent` `inputMultiline` `line` `menuItem` `menuQuit` `menuSeparator` `minSize` `msgBox` `msgBoxError` `openFile` `openFolder` `password` `progressBar` `radio` `rect` `sameLine` `saveFile` `scaleAllSizes` `scope` `search` `selectTab` `send` `separator` `setColor` `setColorsDark` `setStyleFloat` `setVec2` `slider` `spacing` `spinbox` `tabSelected` `tableActivatedRow` `tableCheck` `tableHeadersRow` `tableNextColumn` `tableNextRow` `tableSelectedRow` `tableSetupCheckColumn` `tableSetupColumn` `takeKey` `text` `textColored` `toggle` `tooltip` `treeLeaf` `treeLeafIcon` `treeNode` `treeNodeIcon` `treePop` `unindent` `vbox`
+`area` `beginForm` `beginHBox` `beginMenu` `beginPanel` `beginTabPage` `beginTable` `beginTabs` `beginTree` `beginVBox` `button` `canvas` `canvasHeight` `canvasWidth` `circle` `combobox` `comboboxEditable` `drawText` `endForm` `endHBox` `endMenu` `endPanel` `endTabPage` `endTable` `endTabs` `endTree` `endVBox` `every` `field` `fillCircle` `fillRect` `getDpi` `hbox` `hotkey` `indent` `inputMultiline` `line` `menuItem` `menuQuit` `menuSeparator` `minSize` `msgBox` `msgBoxError` `openFile` `openFolder` `password` `progressBar` `radio` `rect` `sameLine` `saveFile` `scaleAllSizes` `scope` `search` `selectTab` `send` `separator` `setColor` `setColorsDark` `setStyleFloat` `setVec2` `slider` `spacing` `spinbox` `tabSelected` `tableActivatedRow` `tableCheck` `tableHeadersRow` `tableNextColumn` `tableNextRow` `tableSelectedRow` `tableSetupButtonColumn` `tableSetupCheckColumn` `tableSetupColumn` `tableSetupEditColumn` `takeKey` `text` `textColored` `toggle` `tooltip` `treeLeaf` `treeLeafIcon` `treeNode` `treeNodeIcon` `treePop` `unindent` `vbox`
 
 ### HttpRequest (no methods; fields) (0)
 
@@ -149,7 +149,7 @@ named in the tool's header; what it cannot see is listed there too.
 
 `bytes` `nextBool` `nextFloat` `nextInt`
 
-## Namespaces (31) and static members (173; 1 namespace(s) OPEN: Math)
+## Namespaces (31) and static members (174; 1 namespace(s) OPEN: Math)
 
 ### Arg (1) <!-- genArgCall -->
 
@@ -183,9 +183,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `append` `copy` `delete` `exists` `isDir` `isFile` `listDir` `modtime` `read` `readLines` `rename` `size` `tryDelete` `write` `writeLines`
 
-### Gui (9) <!-- genGuiCall -->
+### Gui (10) <!-- genGuiCall -->
 
-`clipboardText` `getDpi` `run` `scaleAllSizes` `setClipboardText` `setColor` `setColorsDark` `setStyleFloat` `setVec2`
+`clipboardText` `getDpi` `registerIcon` `run` `scaleAllSizes` `setClipboardText` `setColor` `setColorsDark` `setStyleFloat` `setVec2`
 
 ### Hash (9) <!-- genHashCall -->
 

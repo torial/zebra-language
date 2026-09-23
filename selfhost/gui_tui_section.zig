@@ -31,6 +31,8 @@ const _GuiBackend = struct {
     beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
     tableSetupColumnFn: *const fn (label: []const u8) void,
     tableSetupCheckColumnFn: *const fn (label: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    tableSetupEditColumnFn: *const fn (label: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    tableSetupButtonColumnFn: *const fn (label: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     tableCheckFn: *const fn (checked: bool) void,
     tableHeadersRowFn:  *const fn () void,
     tableNextRowFn:     *const fn () void,
@@ -46,6 +48,7 @@ const _GuiBackend = struct {
     tooltipFn:     *const fn (text: []const u8) void,
     clipboardTextFn:    *const fn () []const u8,
     setClipboardTextFn: *const fn (text: []const u8) void,
+    registerIconFn:     *const fn (name: []const u8, w: i64, h: i64, rgba: []const u8) void,
     treePopFn:     *const fn () void,
     endTreeFn:     *const fn () void,
     setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
@@ -237,6 +240,38 @@ const GuiContext = struct {
             }
         };
         if (self._send_fn) |f| self._b.tableSetupCheckColumnFn(label, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // Editable and button columns (2026-09-23), the check column's shape: one of each per
+    // table. An edit column's cells are `g.text(s)` as usual; committing an edit sends
+    // `on(row, text)` and the next render shows whatever the model now holds. A button
+    // column's cells are the button labels; a click sends `on(row)`.
+    pub fn tableSetupEditColumn(self: GuiContext, label: []const u8, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, row: i64, txt: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(row, txt) else blk: { var c = f.*; break :blk c.call(row, txt); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.tableSetupEditColumnFn(label, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    pub fn tableSetupButtonColumn(self: GuiContext, label: []const u8, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, row: i64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(row) else blk: { var c = f.*; break :blk c.call(row); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.tableSetupButtonColumnFn(label, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
     }
     pub fn tableCheck(self: GuiContext, checked: bool) void { self._b.tableCheckFn(checked); }
     pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
@@ -653,6 +688,7 @@ fn _ScopeWrap(comptime MapT: type) type {
 }
 fn _gui_clipboard_text() []const u8 { return _gui_active_backend.clipboardTextFn(); }
 fn _gui_set_clipboard_text(text: []const u8) void { _gui_active_backend.setClipboardTextFn(text); }
+fn _gui_register_icon(name: []const u8, w: i64, h: i64, rgba: []const u8) void { _gui_active_backend.registerIconFn(name, w, h, rgba); }
 fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, _mvu_update: anytype, _mvu_view: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
@@ -990,6 +1026,8 @@ fn _tui_begin_table(id: []const u8, cols: i64) bool { _ = id; _ = cols; return t
 fn _tui_table_setup_column(label: []const u8) void { _ = label; }
 fn _tui_table_setup_check_column(label: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void { _ = label; _ = cap; _ = cap_len; _ = thunk; _ = send_fn; _ = send_ptr; }
 fn _tui_table_check(checked: bool) void { _tui_text(if (checked) "[x]" else "[ ]"); }
+fn _tui_table_setup_edit_col(label: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void { _ = label; _ = cap; _ = cap_len; _ = thunk; _ = send_fn; _ = send_ptr; }
+fn _tui_table_setup_button_col(label: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void { _ = label; _ = cap; _ = cap_len; _ = thunk; _ = send_fn; _ = send_ptr; }
 fn _tui_table_headers_row() void {}
 fn _tui_table_next_row() void { _tui_current_row += 1; }
 fn _tui_table_next_column() void {}
@@ -1016,6 +1054,7 @@ fn _tui_tooltip(text: []const u8) void { _ = text; }
 var _tui_clip: []const u8 = "";
 fn _tui_clipboard_text() []const u8 { return _tui_clip; }
 fn _tui_set_clipboard_text(text: []const u8) void { _tui_clip = _allocator.dupe(u8, text) catch ""; }
+fn _tui_register_icon(name: []const u8, w: i64, h: i64, rgba: []const u8) void { _ = name; _ = w; _ = h; _ = rgba; }
 fn _tui_tree_leaf(key: []const u8, label: []const u8) void {
     _ = key;
     if (_tui_tree_hidden > 0) return;
@@ -1128,6 +1167,8 @@ const _gui_tui_backend = _GuiBackend{
     .beginTableFn       = _tui_begin_table,
     .tableSetupColumnFn = _tui_table_setup_column,
     .tableSetupCheckColumnFn = _tui_table_setup_check_column,
+    .tableSetupEditColumnFn = _tui_table_setup_edit_col,
+    .tableSetupButtonColumnFn = _tui_table_setup_button_col,
     .tableCheckFn = _tui_table_check,
     .tableHeadersRowFn  = _tui_table_headers_row,
     .tableNextRowFn     = _tui_table_next_row,
@@ -1143,6 +1184,7 @@ const _gui_tui_backend = _GuiBackend{
     .tooltipFn          = _tui_tooltip,
     .clipboardTextFn    = _tui_clipboard_text,
     .setClipboardTextFn = _tui_set_clipboard_text,
+    .registerIconFn     = _tui_register_icon,
     .treePopFn          = _tui_tree_pop,
     .endTreeFn          = _tui_end_tree,
     .setColorFn         = _tui_set_color,

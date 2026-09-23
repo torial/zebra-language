@@ -3425,6 +3425,8 @@ pub const _GuiBackend = struct {
     fillCircleFn:   *const fn (cx: f64, cy: f64, r: f64, color: i64) void,
     drawTextFn:     *const fn (x: f64, y: f64, s: []const u8, color: i64, size: f64) void,
     tableSetupCheckColumnFn: *const fn (label: []const u8) void,
+    tableSetupEditColumnFn: *const fn (label: []const u8) void,
+    tableSetupButtonColumnFn: *const fn (label: []const u8) void,
     tableCheckFn: *const fn (checked: bool) void,
     tableHeadersRowFn:  *const fn () void,
     tableNextRowFn:     *const fn () void,
@@ -3438,6 +3440,7 @@ pub const _GuiBackend = struct {
     tooltipFn:     *const fn (text: []const u8) void,
     clipboardTextFn:    *const fn () []const u8,
     setClipboardTextFn: *const fn (text: []const u8) void,
+    registerIconFn:     *const fn (name: []const u8, w: i64, h: i64, rgba: []const u8) void,
     treePopFn:     *const fn () void,
     endTreeFn:     *const fn () void,
     setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
@@ -3536,6 +3539,8 @@ pub const GuiContext = struct {
     pub fn beginTable(self: GuiContext, id: []const u8, cols: i64) bool { return self._b.beginTableFn(id, cols); }
     pub fn tableSetupColumn(self: GuiContext, label: []const u8) void { self._b.tableSetupColumnFn(label); }
     pub fn tableSetupCheckColumn(self: GuiContext, label: []const u8, on: anytype) void { _ = on; self._b.tableSetupCheckColumnFn(label); }
+    pub fn tableSetupEditColumn(self: GuiContext, label: []const u8, on: anytype) void { _ = on; self._b.tableSetupEditColumnFn(label); }
+    pub fn tableSetupButtonColumn(self: GuiContext, label: []const u8, on: anytype) void { _ = on; self._b.tableSetupButtonColumnFn(label); }
     pub fn tableCheck(self: GuiContext, checked: bool) void { self._b.tableCheckFn(checked); }
     pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
     pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
@@ -3825,6 +3830,8 @@ pub fn _stub_circle(cx: f64, cy: f64, r: f64, color: i64, t: f64) void { std.deb
 pub fn _stub_fill_circle(cx: f64, cy: f64, r: f64, color: i64) void { std.debug.print("[gui] fillCircle ({d:.0},{d:.0}) r={d:.0} #{x:0>6}\n", .{cx, cy, r, @as(u32, @intCast(color & 0xffffff))}); }
 pub fn _stub_draw_text(x: f64, y: f64, s: []const u8, color: i64, size: f64) void { std.debug.print("[gui] drawText ({d:.0},{d:.0}) \"{s}\" #{x:0>6} size={d:.0}\n", .{x, y, s, @as(u32, @intCast(color & 0xffffff)), size}); }
 pub fn _stub_table_setup_check_column(label: []const u8) void { std.debug.print("[gui] tableSetupCheckColumn: {s}\n", .{label}); }
+pub fn _stub_table_setup_edit_column(label: []const u8) void { std.debug.print("[gui] tableSetupEditColumn: {s}\n", .{label}); }
+pub fn _stub_table_setup_button_column(label: []const u8) void { std.debug.print("[gui] tableSetupButtonColumn: {s}\n", .{label}); }
 pub fn _stub_table_check(checked: bool) void { std.debug.print("[gui] tableCheck: {}\n", .{checked}); }
 pub fn _stub_table_setup_column(label: []const u8) void { std.debug.print("[gui] tableSetupColumn: {s}\n", .{label}); }
 pub fn _stub_table_headers_row() void {}
@@ -3846,6 +3853,10 @@ pub fn _stub_clipboard_text() []const u8 { return _stub_clip; }
 pub fn _stub_set_clipboard_text(text: []const u8) void { _stub_clip = _allocator.dupe(u8, text) catch ""; std.debug.print("[gui] clipboard: {s}\n", .{text}); }
 pub fn _gui_clipboard_text() []const u8 { return _gui_active_backend.clipboardTextFn(); }
 pub fn _gui_set_clipboard_text(text: []const u8) void { _gui_active_backend.setClipboardTextFn(text); }
+// Gui.registerIcon(name, w, h, rgba) (2026-09-23): straight-alpha RGBA bytes, w*h*4 of them, under a
+// name treeNodeIcon/treeLeafIcon then accept beside the built-in set. The stub prints; TUI ignores.
+pub fn _stub_register_icon(name: []const u8, w: i64, h: i64, rgba: []const u8) void { std.debug.print("[gui] registerIcon: {s} {d}x{d} ({d} bytes)\n", .{ name, w, h, rgba.len }); }
+pub fn _gui_register_icon(name: []const u8, w: i64, h: i64, rgba: []const u8) void { _gui_active_backend.registerIconFn(name, w, h, rgba); }
 pub fn _stub_tree_pop() void { if (_stub_tree_depth > 0) _stub_tree_depth -= 1; }
 pub fn _stub_end_tree() void {}
 pub fn _stub_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void { _ = role; _ = r; _ = g; _ = b; _ = a; }
@@ -3907,6 +3918,8 @@ pub const _gui_stub_backend = _GuiBackend{
     .beginTableFn       = _stub_begin_table,
     .tableSetupColumnFn = _stub_table_setup_column,
     .tableSetupCheckColumnFn = _stub_table_setup_check_column,
+    .tableSetupEditColumnFn = _stub_table_setup_edit_column,
+    .tableSetupButtonColumnFn = _stub_table_setup_button_column,
     .areaFn         = _stub_area,
     .canvasWidthFn  = _stub_canvas_w,
     .canvasHeightFn = _stub_canvas_h,
@@ -3929,6 +3942,7 @@ pub const _gui_stub_backend = _GuiBackend{
     .tooltipFn          = _stub_tooltip,
     .clipboardTextFn    = _stub_clipboard_text,
     .setClipboardTextFn = _stub_set_clipboard_text,
+    .registerIconFn     = _stub_register_icon,
     .treePopFn          = _stub_tree_pop,
     .endTreeFn          = _stub_end_tree,
     .setColorFn         = _stub_set_color,

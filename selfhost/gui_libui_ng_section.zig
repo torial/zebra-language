@@ -31,6 +31,8 @@ const _GuiBackend = struct {
     beginTableFn:       *const fn (id: []const u8, cols: i64) bool,
     tableSetupColumnFn: *const fn (label: []const u8) void,
     tableSetupCheckColumnFn: *const fn (label: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    tableSetupEditColumnFn: *const fn (label: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    tableSetupButtonColumnFn: *const fn (label: []const u8, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     tableCheckFn: *const fn (checked: bool) void,
     tableHeadersRowFn:  *const fn () void,
     tableNextRowFn:     *const fn () void,
@@ -46,6 +48,7 @@ const _GuiBackend = struct {
     tooltipFn:     *const fn (text: []const u8) void,
     clipboardTextFn:    *const fn () []const u8,
     setClipboardTextFn: *const fn (text: []const u8) void,
+    registerIconFn:     *const fn (name: []const u8, w: i64, h: i64, rgba: []const u8) void,
     treePopFn:     *const fn () void,
     endTreeFn:     *const fn () void,
     setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
@@ -237,6 +240,38 @@ const GuiContext = struct {
             }
         };
         if (self._send_fn) |f| self._b.tableSetupCheckColumnFn(label, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // Editable and button columns (2026-09-23), the check column's shape: one of each per
+    // table. An edit column's cells are `g.text(s)` as usual; committing an edit sends
+    // `on(row, text)` and the next render shows whatever the model now holds. A button
+    // column's cells are the button labels; a click sends `on(row)`.
+    pub fn tableSetupEditColumn(self: GuiContext, label: []const u8, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, row: i64, txt: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(row, txt) else blk: { var c = f.*; break :blk c.call(row, txt); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.tableSetupEditColumnFn(label, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    pub fn tableSetupButtonColumn(self: GuiContext, label: []const u8, on: anytype) void {
+        const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
+        const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
+        const payload: On = if (bare) &on else on;
+        const Thunk = struct {
+            fn call(cap: *const anyopaque, row: i64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const On = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(On)) f.*(row) else blk: { var c = f.*; break :blk c.call(row); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.tableSetupButtonColumnFn(label, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
     }
     pub fn tableCheck(self: GuiContext, checked: bool) void { self._b.tableCheckFn(checked); }
     pub fn tableHeadersRow(self: GuiContext) void { self._b.tableHeadersRowFn(); }
@@ -659,6 +694,7 @@ fn _ScopeWrap(comptime MapT: type) type {
 }
 fn _gui_clipboard_text() []const u8 { return _gui_active_backend.clipboardTextFn(); }
 fn _gui_set_clipboard_text(text: []const u8) void { _gui_active_backend.setClipboardTextFn(text); }
+fn _gui_register_icon(name: []const u8, w: i64, h: i64, rgba: []const u8) void { _gui_active_backend.registerIconFn(name, w, h, rgba); }
 fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, _mvu_update: anytype, _mvu_view: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
@@ -1547,6 +1583,8 @@ fn _lui_init(_title: []const u8, _width: i64, _height: i64) anyerror!void {
     _lui_win_w = _width; _lui_win_h = _height;
     var _d = _ui.InitData{ .options = .{ .Size = @sizeOf(_ui.InitOptions) } };
     try _ui.Init(&_d);
+    _lui_inited = true;
+    _lui_flush_pending_icons();
     _lui_keyed = std.StringHashMap(*_LuiNode).init(_allocator);
     _lui_title_len = @min(_title.len, 255);
     @memcpy(_lui_title[0.._lui_title_len], _title[0.._lui_title_len]);
@@ -2560,8 +2598,70 @@ fn _lui_tree_leaf(_key: []const u8, _label: []const u8) void { _lui_tree_leaf_ic
 // yet; a Gui.loadImage(path) would slot in beside this table.
 const _lui_icon_names = [_][]const u8{ "", "folder", "file", "dot", "warn" };
 var _lui_icons: [_lui_icon_names.len]?*_ui.Image = .{null} ** _lui_icon_names.len;
+// Gui.registerIcon (2026-09-23): the program's own icons, straight-alpha RGBA bytes handed
+// in at any size, premultiplied here (libui wants that), indexed after the built-ins.
+const _lui_reg_cap = 250 - _lui_icon_names.len;
+var _lui_reg_names: [_lui_reg_cap][]const u8 = undefined;
+var _lui_reg_images: [_lui_reg_cap]?*_ui.Image = .{null} ** _lui_reg_cap;
+var _lui_reg_n: usize = 0;
+// Registrations made before Gui.run (the natural place: main() before the loop) are queued,
+// because libui's allocator does not exist before uiInit -- calling uiNewImage there trips
+// g_ptr_array_add's assertion. _lui_init flushes the queue right after uiInit.
+var _lui_inited: bool = false;
+const _LuiPendingIcon = struct { name: []const u8, w: i64, h: i64, rgba: []const u8 };
+var _lui_pending_icons: [_lui_reg_cap]_LuiPendingIcon = undefined;
+var _lui_pending_n: usize = 0;
+fn _lui_flush_pending_icons() void {
+    var _k: usize = 0;
+    while (_k < _lui_pending_n) : (_k += 1) {
+        const _p = _lui_pending_icons[_k];
+        _lui_register_icon(_p.name, _p.w, _p.h, _p.rgba);
+        _allocator.free(_p.name);
+        _allocator.free(_p.rgba);
+    }
+    _lui_pending_n = 0;
+}
+fn _lui_register_icon(_name: []const u8, _w: i64, _h: i64, _rgba: []const u8) void {
+    if (_w <= 0 or _h <= 0 or _name.len == 0) return;
+    if (!_lui_inited) {
+        if (_lui_pending_n >= _lui_reg_cap) return;
+        _lui_pending_icons[_lui_pending_n] = .{ .name = _allocator.dupe(u8, _name) catch return, .w = _w, .h = _h, .rgba = _allocator.dupe(u8, _rgba) catch return };
+        _lui_pending_n += 1;
+        return;
+    }
+    const _wu: usize = @intCast(_w);
+    const _hu: usize = @intCast(_h);
+    if (_rgba.len < _wu * _hu * 4) return;
+    const _buf = _allocator.alloc(u8, _wu * _hu * 4) catch return;
+    defer _allocator.free(_buf);
+    var _i: usize = 0;
+    while (_i < _wu * _hu * 4) : (_i += 4) {
+        const _a: u32 = _rgba[_i + 3];
+        _buf[_i] = @intCast((@as(u32, _rgba[_i]) * _a + 127) / 255);
+        _buf[_i + 1] = @intCast((@as(u32, _rgba[_i + 1]) * _a + 127) / 255);
+        _buf[_i + 2] = @intCast((@as(u32, _rgba[_i + 2]) * _a + 127) / 255);
+        _buf[_i + 3] = @intCast(_a);
+    }
+    const _im = _ui.Image.New(@floatFromInt(_w), @floatFromInt(_h)) catch return;
+    _ui.Image.Append(_im, @ptrCast(_buf.ptr), @intCast(_w), @intCast(_h), @intCast(_w * 4));
+    var _k: usize = 0;
+    while (_k < _lui_reg_n) : (_k += 1) {
+        if (std.mem.eql(u8, _lui_reg_names[_k], _name)) {
+            // re-registered under the same name: the tree keeps its index, the image changes
+            if (_lui_reg_images[_k]) |_old| _ui.Image.Free(_old);
+            _lui_reg_images[_k] = _im;
+            return;
+        }
+    }
+    if (_lui_reg_n >= _lui_reg_cap) { _ui.Image.Free(_im); return; }
+    _lui_reg_names[_lui_reg_n] = _allocator.dupe(u8, _name) catch return;
+    _lui_reg_images[_lui_reg_n] = _im;
+    _lui_reg_n += 1;
+}
 fn _lui_icon_index(_name: []const u8) u8 {
     for (_lui_icon_names, 0..) |_n, _i| { if (_i > 0 and std.mem.eql(u8, _n, _name)) return @intCast(_i); }
+    var _k: usize = 0;
+    while (_k < _lui_reg_n) : (_k += 1) { if (std.mem.eql(u8, _lui_reg_names[_k], _name)) return @intCast(_lui_icon_names.len + _k); }
     return 0;
 }
 fn _lui_icon_px(_buf: *[16 * 16 * 4]u8, _x: usize, _y: usize, _r: u8, _g: u8, _b: u8, _a: u8) void {
@@ -2578,7 +2678,11 @@ fn _lui_icon_rect(_buf: *[16 * 16 * 4]u8, _x0: usize, _y0: usize, _x1: usize, _y
     while (_y < _y1) : (_y += 1) { var _x = _x0; while (_x < _x1) : (_x += 1) _lui_icon_px(_buf, _x, _y, _r, _g, _b, 255); }
 }
 fn _lui_icon_image(_idx: u8) ?*_ui.Image {
-    if (_idx == 0 or _idx >= _lui_icon_names.len) return null;
+    if (_idx >= _lui_icon_names.len) {
+        const _k: usize = @as(usize, _idx) - _lui_icon_names.len;
+        return if (_k < _lui_reg_n) _lui_reg_images[_k] else null;
+    }
+    if (_idx == 0) return null;
     if (_lui_icons[_idx]) |_im| return _im;
     var _buf: [16 * 16 * 4]u8 = .{0} ** (16 * 16 * 4);
     switch (_idx) {
@@ -2755,6 +2859,15 @@ const _LuiTable = struct {
     cap: [128]u8 align(8) = undefined,
     cap_len: usize = 0,
     thunk_rb: ?*const fn (*const anyopaque, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
+    // the one editable text column and the one button column (2026-09-23), same shape
+    edit_col: i64 = -1,
+    ecap: [128]u8 align(8) = undefined,
+    ecap_len: usize = 0,
+    thunk_rs: ?*const fn (*const anyopaque, i64, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
+    button_col: i64 = -1,
+    bcap: [128]u8 align(8) = undefined,
+    bcap_len: usize = 0,
+    thunk_ri: ?*const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
     send_fn: ?*const fn (*anyopaque, *const anyopaque, usize) void = null,
     send_ptr: ?*anyopaque = null,
 };
@@ -2787,6 +2900,19 @@ fn _lui_tbl_cell_value(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model, _r: c
 fn _lui_tbl_set_cell_value(_h: *_ui.Table.Model.Handler, _m: *_ui.Table.Model, _r: c_int, _c: c_int, _v: ?*const _ui.Table.Value) callconv(.c) void {
     _ = _m;
     const _t: *_LuiTable = @fieldParentPtr("handler", _h);
+    if (@as(i64, _c) == _t.button_col) {
+        // a button column: libui calls SetCellValue with NULL for the click
+        if (_t.thunk_ri) |t| t(@ptrCast(&_t.bcap), @intCast(_r), _t.send_fn.?, _t.send_ptr.?);
+        return;
+    }
+    if (@as(i64, _c) == _t.edit_col) {
+        const _ev = _v orelse return;
+        // libui frees the value when this returns and the message is handled LATER (the
+        // queue), so the text must be owned: the first witness delivered a dangling byte.
+        const _s = _allocator.dupe(u8, std.mem.span(_ui.Table.Value.String(_ev))) catch return;
+        if (_t.thunk_rs) |t| t(@ptrCast(&_t.ecap), @intCast(_r), _s, _t.send_fn.?, _t.send_ptr.?);
+        return;
+    }
     if (@as(i64, _c) != _t.check_col) return;
     const _val = _v orelse return;
     // the model is NOT updated here: the message goes to update, the next render
@@ -2862,6 +2988,36 @@ fn _lui_table_setup_check_col(_l: []const u8, _cap: *const anyopaque, _cap_len: 
     _t.send_ptr = _send_ptr;
 }
 fn _lui_table_check(_checked: bool) void { _ = _lui_table_cell_text(if (_checked) "1" else "0"); }
+fn _lui_table_setup_edit_col(_l: []const u8, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, i64, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    const _t = _lui_cur_table orelse return;
+    if (_cap_len > 128) return;
+    if (_t.table == null and _t.names.items.len < _t.ncols) {
+        _t.edit_col = @intCast(_t.names.items.len);
+        const _z = _allocator.dupeZ(u8, _l) catch return;
+        _t.names.append(_allocator, _z) catch {};
+    }
+    const _src: [*]const u8 = @ptrCast(_cap);
+    @memcpy(_t.ecap[0.._cap_len], _src[0.._cap_len]);
+    _t.ecap_len = _cap_len;
+    _t.thunk_rs = _thunk;
+    _t.send_fn = _send_fn;
+    _t.send_ptr = _send_ptr;
+}
+fn _lui_table_setup_button_col(_l: []const u8, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    const _t = _lui_cur_table orelse return;
+    if (_cap_len > 128) return;
+    if (_t.table == null and _t.names.items.len < _t.ncols) {
+        _t.button_col = @intCast(_t.names.items.len);
+        const _z = _allocator.dupeZ(u8, _l) catch return;
+        _t.names.append(_allocator, _z) catch {};
+    }
+    const _src: [*]const u8 = @ptrCast(_cap);
+    @memcpy(_t.bcap[0.._cap_len], _src[0.._cap_len]);
+    _t.bcap_len = _cap_len;
+    _t.thunk_ri = _thunk;
+    _t.send_fn = _send_fn;
+    _t.send_ptr = _send_ptr;
+}
 fn _lui_table_headers_row() void {
     const _t = _lui_cur_table orelse return;
     _t.header = true;
@@ -2909,6 +3065,10 @@ fn _lui_end_table() void {
             const _nm: [:0]const u8 = if (_c < _t.names.items.len) _t.names.items[_c] else "";
             if (@as(i64, @intCast(_c)) == _t.check_col)
                 _ui.Table.AppendColumn(_tb, _nm, .{ .Checkbox = .{ .checkbox_column = @intCast(_c), .editable = .Always } })
+            else if (@as(i64, @intCast(_c)) == _t.edit_col)
+                _ui.Table.AppendColumn(_tb, _nm, .{ .Text = .{ .text_column = @intCast(_c), .editable = .Always } })
+            else if (@as(i64, @intCast(_c)) == _t.button_col)
+                _ui.Table.AppendColumn(_tb, _nm, .{ .Button = .{ .button_column = @intCast(_c), .button_clickable = .Always } })
             else
                 _ui.Table.AppendColumn(_tb, _nm, .{ .Text = .{ .text_column = @intCast(_c), .editable = .Never } });
         }
@@ -3056,6 +3216,8 @@ const _gui_lui_backend = _GuiBackend{
     .beginTableFn       = _lui_begin_table,
     .tableSetupColumnFn = _lui_table_setup_col,
     .tableSetupCheckColumnFn = _lui_table_setup_check_col,
+    .tableSetupEditColumnFn = _lui_table_setup_edit_col,
+    .tableSetupButtonColumnFn = _lui_table_setup_button_col,
     .tableCheckFn = _lui_table_check,
     .tableHeadersRowFn  = _lui_table_headers_row,
     .tableNextRowFn     = _lui_table_next_row,
@@ -3071,6 +3233,7 @@ const _gui_lui_backend = _GuiBackend{
     .tooltipFn          = _lui_tooltip,
     .clipboardTextFn    = _lui_clipboard_text,
     .setClipboardTextFn = _lui_set_clipboard_text,
+    .registerIconFn     = _lui_register_icon,
     .treePopFn          = _lui_tree_pop,
     .endTreeFn          = _lui_end_tree,
     .setColorFn         = _lui_set_color,

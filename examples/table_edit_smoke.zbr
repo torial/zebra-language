@@ -1,0 +1,56 @@
+# table_edit_smoke.zbr -- g.tableSetupEditColumn / tableSetupButtonColumn (2026-09-23): an
+# editable text column and a button column, the check column's shape. An edit column's
+# cells are g.text as usual; committing an edit sends on(row, text) and the next render
+# shows what the model now holds (a declined edit snaps back). A button column's cells are
+# the labels; a click sends on(row). Stub prints the column setup; gui-scaffold +
+# libui-section compile it.
+struct Model
+    var names: List(str)
+    var log: str
+
+struct Edit
+    var row: int
+    var text: str
+
+union Msg
+    rename: Edit
+    remove: int
+
+def init(): Model
+    return Model(names: ["alpha", "beta", "gamma"], log: "")
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.rename as e
+            if e.text.len == 0
+                return m except log = "empty name refused for row " + e.row.toString()
+            var out: List(str) = List(str)()
+            var i = 0
+            for n in m.names
+                out.add(if(i == e.row, e.text, n))
+                i += 1
+            return m except names = out, log = "row " + e.row.toString() + " -> " + e.text
+        on Msg.remove as r
+            var out: List(str) = List(str)()
+            var i = 0
+            for n in m.names
+                if i != r
+                    out.add(n)
+                i += 1
+            return m except names = out, log = "removed row " + r.toString()
+
+def view(g: Gui, m: Model)
+    if g.beginTable("##names", 2)
+        g.tableSetupEditColumn("Name", def(row: int, text: str): Msg = Msg.rename(Edit(row: row, text: text)))
+        g.tableSetupButtonColumn("", def(row: int): Msg = Msg.remove(row))
+        g.tableHeadersRow()
+        for n in m.names
+            g.tableNextRow()
+            g.text(n)
+            g.tableNextColumn()
+            g.text("Remove")
+        g.endTable()
+    g.text(m.names.len.toString() + " names; " + m.log)
+
+def main()
+    Gui.run("editable table", 300, 240, init, update, view)

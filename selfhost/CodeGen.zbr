@@ -19648,6 +19648,21 @@ struct Generator
                 w.emit("\"\"")
             w.emit(")")
             return
+        # Gui.registerIcon(name, w, h, rgba) (2026-09-23): the program's own icon bytes
+        if mname == "registerIcon"
+            if args.len != 4
+                w.emit("@compileError(\"Gui.registerIcon takes (name, width, height, rgba)\")")
+                return
+            w.emit("_gui_register_icon(")
+            genExpr(args.at(0).value)
+            w.emit(", ")
+            genExpr(args.at(1).value)
+            w.emit(", ")
+            genExpr(args.at(2).value)
+            w.emit(", ")
+            genExpr(args.at(3).value)
+            w.emit(")")
+            return
         if mname == "setColor"
             w.emit("_gui_active_backend.setColorFn(")
             if args.len >= 1
