@@ -1,0 +1,20 @@
+# tabs_smoke.zbr -- g.beginTabs / beginTabPage / endTabPage / endTabs on every backend
+# (2026-09-23). The stub had no tabs until tools/gui_surface_drift.py's first run: a program
+# with a tab strip failed inside zig under the DEFAULT backend while both native sections
+# had them. Stub prints `[gui] tabs:` / `[gui] tab:`; gui-scaffold + libui-section compile it.
+struct Model
+    var n: int
+union Msg
+    inc
+def init(): Model
+    return Model(n: 0)
+def update(m: Model, msg: Msg): Model
+    return m except n = m.n + 1
+def view(g: Gui, m: Model)
+    g.beginTabs("t", true)
+    g.beginTabPage("one", "One")
+    g.button("+", Msg.inc)
+    g.endTabPage()
+    g.endTabs()
+def main()
+    Gui.run("tabs", 200, 100, init, update, view)

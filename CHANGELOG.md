@@ -23,6 +23,17 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **Tabs on the stub backend, and a gate for the class (2026-09-23).** `g.beginTabs` /
+  `beginTabPage` / `endTabPage` / `endTabs` had no stub implementation, so a program with a
+  tab strip failed INSIDE ZIG under the default backend while both native sections had them
+  -- the same shape as `_gui_set_clipboard_text` missing from the scaffold the day before.
+  `tools/gui_surface_drift.py` (`gui-surface`, STATIC) now holds the three GUI regions to one
+  surface: GuiContext verbs identical across stub/tui/libui, backend fields identical across
+  tui/libui, `_gui_*` helpers identical and covering CodeGen's emits, and
+  `TypeChecker.guiMethodKnown` equal to the verb set. Found the tabs gap on its first run.
+  `examples/tabs_smoke.zbr` is the stub witness; libui-section compiles it too. The examples
+  baseline went 36 -> 40: `styler_smoke`, `table_strip_smoke` and `tree_churn_smoke` had been
+  failing on the stub for the same reason, unnamed, since tabs landed.
 - **Tooltips, the clipboard and tree icons (2026-09-23).** `g.tooltip(text)` names the widget
   emitted just before it; `Gui.clipboardText()` / `Gui.setClipboardText(s)` read and write the
   system clipboard as plain text (statics: there is no widget to hang them on; stub/TUI keep a

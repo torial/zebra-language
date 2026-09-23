@@ -3609,6 +3609,13 @@ pub const GuiContext = struct {
     pub fn circle(self: GuiContext, cx: f64, cy: f64, r: f64, color: i64, thickness: f64) void { self._b.circleFn(cx, cy, r, color, thickness); }
     pub fn fillCircle(self: GuiContext, cx: f64, cy: f64, r: f64, color: i64) void { self._b.fillCircleFn(cx, cy, r, color); }
     pub fn drawText(self: GuiContext, x: f64, y: f64, s: []const u8, color: i64, size: f64) void { self._b.drawTextFn(x, y, s, color, size); }
+    // Tabs on the stub (2026-09-23): prints, like the rest of the message-form family. Found by
+    // tools/gui_surface_drift.py on its first run -- a program with g.beginTabs failed inside zig
+    // under the DEFAULT backend while both native sections had them.
+    pub fn beginTabs(self: GuiContext, id: []const u8, stretch: bool) void { _ = self; _ = stretch; std.debug.print("[gui] tabs: {s}\n", .{id}); }
+    pub fn beginTabPage(self: GuiContext, id: []const u8, label: []const u8) void { _ = self; _ = id; std.debug.print("[gui] tab: {s}\n", .{label}); }
+    pub fn endTabPage(self: GuiContext) void { _ = self; }
+    pub fn endTabs(self: GuiContext) void { _ = self; std.debug.print("[gui] ---\n", .{}); }
     pub fn tabSelected(self: GuiContext, id: []const u8) i64 { _ = self; _ = id; return 0; }
     pub fn selectTab(self: GuiContext, id: []const u8, index: i64) void { _ = self; _ = id; _ = index; }
     pub fn beginHBox(self: GuiContext, id: []const u8, stretch: bool) void { self._b.beginHBoxFn(id, stretch); }

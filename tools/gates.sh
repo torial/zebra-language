@@ -460,6 +460,12 @@ run_static "oom-unreachable" "0 hazard" python tools/lint_oom_unreachable.py
 # section must have a byte-identical twin in the preamble. Three copies of one dispatch
 # had drifted twice before anyone wrote the one-line check.
 run_static "fn-twins"       "0 drift"  python tools/lint_fn_twins.py
+# The GUI-surface drift check (2026-09-23): the preamble's GUI region is REPLACED by a
+# section per native backend, so GuiContext's verbs, the backend table, the `_gui_*` helpers
+# CodeGen emits and TypeChecker's guiMethodKnown are four hand-kept copies of one surface.
+# Its first run found `beginTabs` missing from the stub (a tabs program failed inside zig on
+# the DEFAULT backend); `_gui_set_clipboard_text` had been the same shape a day earlier.
+run_static "gui-surface"    "all checks pass" python tools/gui_surface_drift.py
 run_static "root-clean"     "0 compiled" bash tools/root_clean_check.sh
 # (`decl-exhaustive` sat here 2026-08-26 .. 2026-09-16, BUG-103's pin: no `else => {}`
 # in the bootstrap's Ast.Decl switches. Oracle and subject were both src/*.zig; gone with

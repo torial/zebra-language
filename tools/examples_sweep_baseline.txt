@@ -26,11 +26,15 @@ scintilla_editor
 scope_smoke
 showcase
 slider_smoke
+styler_smoke
 table_check_smoke
+table_strip_smoke
+tabs_smoke
 tears_combat_test
 tears_of_the_tuon
 tears_playthrough
 tears_village_demo
 tooltip_clipboard_smoke
+tree_churn_smoke
 tree_smoke
 widget_smoke
