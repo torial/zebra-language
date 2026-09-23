@@ -3430,8 +3430,11 @@ pub const _GuiBackend = struct {
     tableNextRowFn:     *const fn () void,
     tableNextColumnFn:  *const fn () void,
     endTableFn:         *const fn () void,
-    treeNodeFn:         *const fn (label: []const u8) bool,
-    treePopFn:          *const fn () void,
+    beginTreeFn:   *const fn (id: []const u8) void,
+    treeNodeFn:    *const fn (key: []const u8, label: []const u8, expanded: bool) void,
+    treeLeafFn:    *const fn (key: []const u8, label: []const u8) void,
+    treePopFn:     *const fn () void,
+    endTreeFn:     *const fn () void,
     setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
     setColorsDarkFn:    *const fn () void,
     setStyleFloatFn:    *const fn (name: []const u8, value: f32) void,
@@ -3533,8 +3536,11 @@ pub const GuiContext = struct {
     pub fn tableNextRow(self: GuiContext) void { self._b.tableNextRowFn(); }
     pub fn tableNextColumn(self: GuiContext) void { self._b.tableNextColumnFn(); }
     pub fn endTable(self: GuiContext) void { self._b.endTableFn(); }
-    pub fn treeNode(self: GuiContext, label: []const u8) bool { return self._b.treeNodeFn(label); }
+    pub fn beginTree(self: GuiContext, id: []const u8, onSelect: anytype, onActivate: anytype, onExpand: anytype) void { _ = onSelect; _ = onActivate; _ = onExpand; self._b.beginTreeFn(id); }
+    pub fn treeNode(self: GuiContext, key: []const u8, label: []const u8, expanded: bool) void { self._b.treeNodeFn(key, label, expanded); }
+    pub fn treeLeaf(self: GuiContext, key: []const u8, label: []const u8) void { self._b.treeLeafFn(key, label); }
     pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
+    pub fn endTree(self: GuiContext) void { self._b.endTreeFn(); }
     pub fn setColor(self: GuiContext, role: []const u8, r: f64, g: f64, b: f64, a: f64) void {
         self._b.setColorFn(role, @floatCast(r), @floatCast(g), @floatCast(b), @floatCast(a));
     }
@@ -3773,8 +3779,12 @@ pub fn _stub_table_headers_row() void {}
 pub fn _stub_table_next_row() void {}
 pub fn _stub_table_next_column() void {}
 pub fn _stub_end_table() void {}
-pub fn _stub_tree_node(label: []const u8) bool { std.debug.print("[gui] treeNode: {s}\n", .{label}); return true; }
-pub fn _stub_tree_pop() void {}
+var _stub_tree_depth: usize = 0;
+pub fn _stub_begin_tree(id: []const u8) void { std.debug.print("[gui] beginTree: {s}\n", .{id}); _stub_tree_depth = 0; }
+pub fn _stub_tree_node(key: []const u8, label: []const u8, expanded: bool) void { std.debug.print("[gui] tree d={d} {s} {s} ({s})\n", .{ _stub_tree_depth, if (expanded) "v" else ">", label, key }); _stub_tree_depth += 1; }
+pub fn _stub_tree_leaf(key: []const u8, label: []const u8) void { std.debug.print("[gui] tree d={d} - {s} ({s})\n", .{ _stub_tree_depth, label, key }); }
+pub fn _stub_tree_pop() void { if (_stub_tree_depth > 0) _stub_tree_depth -= 1; }
+pub fn _stub_end_tree() void {}
 pub fn _stub_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void { _ = role; _ = r; _ = g; _ = b; _ = a; }
 pub fn _stub_set_colors_dark() void {}
 pub fn _stub_set_style_float(name: []const u8, value: f32) void { _ = name; _ = value; }
@@ -3848,8 +3858,11 @@ pub const _gui_stub_backend = _GuiBackend{
     .tableNextRowFn     = _stub_table_next_row,
     .tableNextColumnFn  = _stub_table_next_column,
     .endTableFn         = _stub_end_table,
+    .beginTreeFn        = _stub_begin_tree,
     .treeNodeFn         = _stub_tree_node,
+    .treeLeafFn         = _stub_tree_leaf,
     .treePopFn          = _stub_tree_pop,
+    .endTreeFn          = _stub_end_tree,
     .setColorFn         = _stub_set_color,
     .setColorsDarkFn    = _stub_set_colors_dark,
     .setStyleFloatFn    = _stub_set_style_float,

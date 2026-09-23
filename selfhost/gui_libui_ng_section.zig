@@ -38,8 +38,11 @@ const _GuiBackend = struct {
     endTableFn:         *const fn () void,
     tableSelectedRowFn:  *const fn (id: []const u8) i64,
     tableActivatedRowFn: *const fn (id: []const u8) i64,
-    treeNodeFn:         *const fn (label: []const u8) bool,
-    treePopFn:          *const fn () void,
+    beginTreeFn:   *const fn (id: []const u8, scap: *const anyopaque, scap_len: usize, tsel: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, acap: *const anyopaque, acap_len: usize, tact: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, ecap: *const anyopaque, ecap_len: usize, texp: *const fn (*const anyopaque, []const u8, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    treeNodeFn:    *const fn (key: []const u8, label: []const u8, expanded: bool) void,
+    treeLeafFn:    *const fn (key: []const u8, label: []const u8) void,
+    treePopFn:     *const fn () void,
+    endTreeFn:     *const fn () void,
     setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
     setColorsDarkFn:    *const fn () void,
     setStyleFloatFn:    *const fn (name: []const u8, value: f32) void,
@@ -238,8 +241,53 @@ const GuiContext = struct {
     // the last call (-1: none). libui-ng backend only; tui returns -1.
     pub fn tableSelectedRow(self: GuiContext, id: []const u8) i64 { return self._b.tableSelectedRowFn(id); }
     pub fn tableActivatedRow(self: GuiContext, id: []const u8) i64 { return self._b.tableActivatedRowFn(id); }
-    pub fn treeNode(self: GuiContext, label: []const u8) bool { return self._b.treeNodeFn(label); }
+    // A tree (libui uiTree: SysTreeView32 / GtkTreeView / NSOutlineView -- one text column,
+    // the subset every OS has natively). The view emits the whole tree each render --
+    // `treeNode(key, label, expanded)` opens a node, its children follow, `treePop` closes
+    // it, `treeLeaf(key, label)` is a childless node -- and the section diffs it against
+    // the last render by key. The model drives expansion: pass the model's `expanded`, and
+    // `onExpand(key, open)` is where a click reports so the model can decide.
+    // `onSelect(key)` on selection, `onActivate(key)` on a double-click / Enter.
+    pub fn beginTree(self: GuiContext, id: []const u8, onSelect: anytype, onActivate: anytype, onExpand: anytype) void {
+        const onSelectbare = comptime (_zbr_is_fnlike(@TypeOf(onSelect)) and @typeInfo(@TypeOf(onSelect)) != .pointer);
+        const OnselectOn = if (onSelectbare) *const @TypeOf(onSelect) else @TypeOf(onSelect);
+        const onSelectpayload: OnselectOn = if (onSelectbare) &onSelect else onSelect;
+        const OnselectThunk = struct {
+            fn call(cap: *const anyopaque, key: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const OnselectOn = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(OnselectOn)) f.*(key) else blk: { var c = f.*; break :blk c.call(key); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        const onActivatebare = comptime (_zbr_is_fnlike(@TypeOf(onActivate)) and @typeInfo(@TypeOf(onActivate)) != .pointer);
+        const OnactivateOn = if (onActivatebare) *const @TypeOf(onActivate) else @TypeOf(onActivate);
+        const onActivatepayload: OnactivateOn = if (onActivatebare) &onActivate else onActivate;
+        const OnactivateThunk = struct {
+            fn call(cap: *const anyopaque, key: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const OnactivateOn = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(OnactivateOn)) f.*(key) else blk: { var c = f.*; break :blk c.call(key); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        const onExpandbare = comptime (_zbr_is_fnlike(@TypeOf(onExpand)) and @typeInfo(@TypeOf(onExpand)) != .pointer);
+        const OnexpandOn = if (onExpandbare) *const @TypeOf(onExpand) else @TypeOf(onExpand);
+        const onExpandpayload: OnexpandOn = if (onExpandbare) &onExpand else onExpand;
+        const OnexpandThunk = struct {
+            fn call(cap: *const anyopaque, key: []const u8, open: bool, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const OnexpandOn = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(OnexpandOn)) f.*(key, open) else blk: { var c = f.*; break :blk c.call(key, open); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.beginTreeFn(id, @ptrCast(&onSelectpayload), @sizeOf(OnselectOn), OnselectThunk.call, @ptrCast(&onActivatepayload), @sizeOf(OnactivateOn), OnactivateThunk.call, @ptrCast(&onExpandpayload), @sizeOf(OnexpandOn), OnexpandThunk.call, f, self._send_ptr.?);
+    }
+    pub fn treeNode(self: GuiContext, key: []const u8, label: []const u8, expanded: bool) void { self._b.treeNodeFn(key, label, expanded); }
+    pub fn treeLeaf(self: GuiContext, key: []const u8, label: []const u8) void { self._b.treeLeafFn(key, label); }
     pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
+    pub fn endTree(self: GuiContext) void { self._b.endTreeFn(); }
     pub fn setColor(self: GuiContext, role: []const u8, r: f64, g: f64, b: f64, a: f64) void {
         self._b.setColorFn(role, @floatCast(r), @floatCast(g), @floatCast(b), @floatCast(a));
     }
@@ -1114,7 +1162,7 @@ fn _code_editor_sci_str(_ed: *_CodeEditor, msg: i64, wparam: i64, text: []const 
 // hiding, no frame-0 rule, no positional counter: a box that appears is a child
 // inserted where it appears. The seven caches this replaced are gone.
 const _ui = @import("ui");
-const _LuiKind = enum { root, hbox, vbox, panel, tabs, page, text, sep, button, checkbox, slider, input, input_ml, combobox, combobox_ed, radio, spinbox, progress, form, area, editor, table };
+const _LuiKind = enum { root, hbox, vbox, panel, tabs, page, text, sep, button, checkbox, slider, input, input_ml, combobox, combobox_ed, radio, spinbox, progress, form, area, tree, editor, table };
 const _LuiNode = struct {
     kind: _LuiKind,
     key: []const u8 = "",
@@ -1158,6 +1206,7 @@ const _LuiNode = struct {
     flabel_len: usize = 0,
     ed: ?*_CodeEditor = null,
     table: ?*_LuiTable = null,
+    tree: ?*_LuiTree = null,
     // message-carrying forms: the Msg bytes / the closure bytes + its thunk
     msg: [64]u8 align(8) = undefined,
     msg_len: usize = 0,
@@ -1343,6 +1392,7 @@ fn _lui_free_node(_n: *_LuiNode) void {
     }
     if (_n.kind == .table) {
         if (_n.table) |_t| _lui_table_free(_t);      // rows and model, after the control
+        if (_n.tree) |_t| _lui_tree_free(_t);
     }
     if (_n.key.len > 0) _allocator.free(_n.key);
     _allocator.destroy(_n);
@@ -2179,6 +2229,240 @@ fn _lui_draw_text(_x: f64, _y: f64, _s: []const u8, _color: i64, _size: f64) voi
     defer _ui.Draw.TextLayout.Free(_tl);
     _ui.Draw.Context.Text(_ctx, _tl, _x, _y);
 }
+// ── tree: uiTree over a retained node tree the view re-emits each render ──
+// A node record is heap-allocated once per key and never moves: its address is the
+// `void *` libui's model sees. The build pass records (parent, key, label, expanded) in
+// emission order; endTree diffs it against the retained children lists per parent.
+const _LuiTNode = struct {
+    key: [:0]u8,
+    label: [:0]u8,
+    expanded: bool = false,
+    leaf: bool = false,
+    parent: ?*_LuiTNode = null,
+    children: std.ArrayList(*_LuiTNode) = .empty,
+    // build side
+    b_label: []const u8 = "",
+    b_expanded: bool = false,
+    b_leaf: bool = false,
+    b_children: std.ArrayList(*_LuiTNode) = .empty,
+    seen: u32 = 0,
+};
+const _LuiTree = struct {
+    handler: _ui.Tree.Model.Handler = undefined,
+    model: ?*_ui.Tree.Model = null,
+    tree: ?*_ui.Tree = null,
+    host: ?*_ui.Box = null,
+    byKey: std.StringHashMap(*_LuiTNode) = undefined,
+    root: _LuiTNode = .{ .key = undefined, .label = undefined },
+    stack: [32]*_LuiTNode = undefined,
+    depth: usize = 0,
+    gen: u32 = 0,
+    scap: [128]u8 align(8) = undefined, scap_len: usize = 0, thunk_sel: ?*const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
+    acap: [128]u8 align(8) = undefined, acap_len: usize = 0, thunk_act: ?*const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
+    ecap: [128]u8 align(8) = undefined, ecap_len: usize = 0, thunk_exp: ?*const fn (*const anyopaque, []const u8, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
+    send_fn: ?*const fn (*anyopaque, *const anyopaque, usize) void = null,
+    send_ptr: ?*anyopaque = null,
+    in_set: bool = false,
+};
+var _lui_cur_tree: ?*_LuiTree = null;
+fn _lui_tnode_of(_p: ?*anyopaque, _t: *_LuiTree) *_LuiTNode {
+    return if (_p) |p| @ptrCast(@alignCast(p)) else &_t.root;
+}
+fn _lui_tree_num_children(_h: *_ui.Tree.Model.Handler, _m: *_ui.Tree.Model, _parent: ?*anyopaque) callconv(.c) c_int {
+    _ = _m;
+    const _t: *_LuiTree = @fieldParentPtr("handler", _h);
+    return @intCast(_lui_tnode_of(_parent, _t).children.items.len);
+}
+fn _lui_tree_child(_h: *_ui.Tree.Model.Handler, _m: *_ui.Tree.Model, _parent: ?*anyopaque, _i: c_int) callconv(.c) ?*anyopaque {
+    _ = _m;
+    const _t: *_LuiTree = @fieldParentPtr("handler", _h);
+    const _n = _lui_tnode_of(_parent, _t);
+    const _k: usize = @intCast(@max(_i, 0));
+    if (_k >= _n.children.items.len) return null;
+    return @ptrCast(_n.children.items[_k]);
+}
+fn _lui_tree_text(_h: *_ui.Tree.Model.Handler, _m: *_ui.Tree.Model, _node: ?*anyopaque) callconv(.c) [*:0]const u8 {
+    _ = _m;
+    const _t: *_LuiTree = @fieldParentPtr("handler", _h);
+    return _lui_tnode_of(_node, _t).label.ptr;
+}
+fn _lui_tree_has_children(_h: *_ui.Tree.Model.Handler, _m: *_ui.Tree.Model, _node: ?*anyopaque) callconv(.c) c_int {
+    _ = _m;
+    const _t: *_LuiTree = @fieldParentPtr("handler", _h);
+    return @intFromBool(!_lui_tnode_of(_node, _t).leaf);
+}
+fn _lui_tree_sel_cb(_tr: *_ui.Tree, _tp: ?*_LuiTree) anyerror!void {
+    const _t = _tp orelse return;
+    if (_t.in_set) return;
+    const _sel = _ui.Tree.Selection(_tr) orelse return;
+    const _n = _lui_tnode_of(_sel, _t);
+    if (_t.thunk_sel) |f| f(@ptrCast(&_t.scap), _n.key, _t.send_fn.?, _t.send_ptr.?);
+}
+fn _lui_tree_act_cb(_tr: *_ui.Tree, _node: ?*anyopaque, _tp: ?*_LuiTree) anyerror!void {
+    _ = _tr;
+    const _t = _tp orelse return;
+    const _n = _lui_tnode_of(_node orelse return, _t);
+    if (_t.thunk_act) |f| f(@ptrCast(&_t.acap), _n.key, _t.send_fn.?, _t.send_ptr.?);
+}
+fn _lui_tree_exp_cb(_tr: *_ui.Tree, _node: ?*anyopaque, _open: bool, _tp: ?*_LuiTree) anyerror!void {
+    _ = _tr;
+    const _t = _tp orelse return;
+    if (_t.in_set) return;
+    const _n = _lui_tnode_of(_node orelse return, _t);
+    if (_t.thunk_exp) |f| f(@ptrCast(&_t.ecap), _n.key, _open, _t.send_fn.?, _t.send_ptr.?);
+}
+fn _lui_tnode_free(_t: *_LuiTree, _n: *_LuiTNode) void {
+    for (_n.children.items) |_c| _lui_tnode_free(_t, _c);
+    _n.children.deinit(_allocator);
+    _n.b_children.deinit(_allocator);
+    _ = _t.byKey.remove(_n.key);
+    _allocator.free(_n.key);
+    _allocator.free(_n.label);
+    _allocator.destroy(_n);
+}
+fn _lui_tree_free(_t: *_LuiTree) void {
+    for (_t.root.children.items) |_c| _lui_tnode_free(_t, _c);
+    _t.root.children.deinit(_allocator);
+    _t.root.b_children.deinit(_allocator);
+    _t.byKey.deinit();
+    if (_t.model) |_m| _ui.Tree.Model.Free(_m);
+    _allocator.destroy(_t);
+}
+fn _lui_begin_tree(_id: []const u8, _scap: *const anyopaque, _scap_len: usize, _tsel: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _acap: *const anyopaque, _acap_len: usize, _tact: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _ecap: *const anyopaque, _ecap_len: usize, _texp: *const fn (*const anyopaque, []const u8, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    if (_scap_len > 128 or _acap_len > 128 or _ecap_len > 128) return;
+    const _r = _lui_child(.tree, _id);
+    if (_r.fresh) {
+        const _host = _ui.Box.New(.Vertical) catch return;
+        _host.SetPadded(false);
+        const _t = _allocator.create(_LuiTree) catch return;
+        _t.* = .{};
+        _t.byKey = std.StringHashMap(*_LuiTNode).init(_allocator);
+        _t.handler = .{ .NumChildren = _lui_tree_num_children, .Child = _lui_tree_child, .Text = _lui_tree_text, .HasChildren = _lui_tree_has_children };
+        _t.model = _ui.Tree.Model.New(&_t.handler) catch null;
+        if (_t.model) |_m| {
+            const _tr = _ui.Tree.New(_m) catch null;
+            if (_tr) |_w| {
+                _ui.Tree.OnSelectionChanged(_w, _LuiTree, anyerror, _lui_tree_sel_cb, _t);
+                _ui.Tree.OnNodeActivated(_w, _LuiTree, anyerror, _lui_tree_act_cb, _t);
+                _ui.Tree.OnNodeExpanded(_w, _LuiTree, anyerror, _lui_tree_exp_cb, _t);
+                _ui.Box.Append(_host, _w.as_control(), .stretch);
+            }
+            _t.tree = _tr;
+        }
+        _t.host = _host;
+        _r.n.tree = _t;
+        _r.n.box = _host;
+        _r.n.ctrl = _host.as_control();
+        _lui_attach(_r.n, true);
+    }
+    const _t = _r.n.tree orelse return;
+    _t.gen +%= 1;
+    _t.depth = 0;
+    _t.stack[0] = &_t.root;
+    _t.root.b_children.clearRetainingCapacity();
+    _lui_cur_tree = _t;
+    const _s: [*]const u8 = @ptrCast(_scap); @memcpy(_t.scap[0.._scap_len], _s[0.._scap_len]); _t.scap_len = _scap_len; _t.thunk_sel = _tsel;
+    const _a: [*]const u8 = @ptrCast(_acap); @memcpy(_t.acap[0.._acap_len], _a[0.._acap_len]); _t.acap_len = _acap_len; _t.thunk_act = _tact;
+    const _e: [*]const u8 = @ptrCast(_ecap); @memcpy(_t.ecap[0.._ecap_len], _e[0.._ecap_len]); _t.ecap_len = _ecap_len; _t.thunk_exp = _texp;
+    _t.send_fn = _send_fn;
+    _t.send_ptr = _send_ptr;
+}
+// the build side: find-or-create the record for `key` and hang it under the current parent
+fn _lui_tree_emit(_key: []const u8, _label: []const u8, _expanded: bool, _leaf: bool) ?*_LuiTNode {
+    const _t = _lui_cur_tree orelse return null;
+    const _parent = _t.stack[_t.depth];
+    var _n: *_LuiTNode = undefined;
+    if (_t.byKey.get(_key)) |_have| {
+        _n = _have;
+    } else {
+        _n = _allocator.create(_LuiTNode) catch return null;
+        _n.* = .{ .key = _allocator.dupeZ(u8, _key) catch return null, .label = _allocator.dupeZ(u8, _label) catch return null, .leaf = _leaf };
+        _t.byKey.put(_n.key, _n) catch return null;
+    }
+    _n.b_label = _label;
+    _n.b_expanded = _expanded;
+    _n.b_leaf = _leaf;
+    _n.b_children.clearRetainingCapacity();
+    _n.seen = _t.gen;
+    _parent.b_children.append(_allocator, _n) catch return null;
+    return _n;
+}
+fn _lui_tree_node(_key: []const u8, _label: []const u8, _expanded: bool) void {
+    const _t = _lui_cur_tree orelse return;
+    const _n = _lui_tree_emit(_key, _label, _expanded, false) orelse return;
+    if (_t.depth + 1 >= _t.stack.len) return;
+    _t.depth += 1;
+    _t.stack[_t.depth] = _n;
+}
+fn _lui_tree_leaf(_key: []const u8, _label: []const u8) void {
+    _ = _lui_tree_emit(_key, _label, false, true);
+}
+fn _lui_tree_pop() void {
+    const _t = _lui_cur_tree orelse return;
+    if (_t.depth > 0) _t.depth -= 1;
+}
+// diff one parent's children: retained `children` vs freshly built `b_children`
+fn _lui_tree_diff(_t: *_LuiTree, _p: *_LuiTNode) void {
+    const _m = _t.model orelse return;
+    const _pp: ?*anyopaque = if (_p == &_t.root) null else @ptrCast(_p);
+    // 1. delete retained children the build did not revisit (or that moved to another parent)
+    var _i: usize = 0;
+    while (_i < _p.children.items.len) {
+        const _c = _p.children.items[_i];
+        var _keep = _c.seen == _t.gen;
+        if (_keep) {
+            _keep = false;
+            for (_p.b_children.items) |_bc| { if (_bc == _c) { _keep = true; break; } }
+        }
+        if (!_keep) {
+            _ = _p.children.orderedRemove(_i);
+            _ui.Tree.Model.NodeDeleted(_m, _pp, @intCast(_i));
+            if (_c.seen != _t.gen) _lui_tnode_free(_t, _c) else _c.parent = null;
+            continue;
+        }
+        _i += 1;
+    }
+    // 2. walk the built order; insert what is new at its index, move what drifted
+    _i = 0;
+    while (_i < _p.b_children.items.len) : (_i += 1) {
+        const _bc = _p.b_children.items[_i];
+        var _at: ?usize = null;
+        for (_p.children.items, 0..) |_c, _k| { if (_c == _bc) { _at = _k; break; } }
+        if (_at) |_k| {
+            if (_k != _i) {
+                _ = _p.children.orderedRemove(_k);
+                _ui.Tree.Model.NodeDeleted(_m, _pp, @intCast(_k));
+                _p.children.insert(_allocator, _i, _bc) catch return;
+                _ui.Tree.Model.NodeInserted(_m, _pp, @intCast(_i));
+            }
+        } else {
+            _bc.parent = _p;
+            _p.children.insert(_allocator, _i, _bc) catch return;
+            _ui.Tree.Model.NodeInserted(_m, _pp, @intCast(_i));
+        }
+    }
+    // 3. labels, then recurse, then expansion (children must exist before expanding)
+    for (_p.children.items) |_c| {
+        if (!std.mem.eql(u8, _c.label, _c.b_label)) {
+            const _nl = _allocator.dupeZ(u8, _c.b_label) catch continue;
+            _allocator.free(_c.label);
+            _c.label = _nl;
+            _ui.Tree.Model.NodeChanged(_m, @ptrCast(_c));
+        }
+        if (_c.leaf != _c.b_leaf) { _c.leaf = _c.b_leaf; _ui.Tree.Model.NodeChanged(_m, @ptrCast(_c)); }
+        _lui_tree_diff(_t, _c);
+        if (!_c.leaf and _c.expanded != _c.b_expanded) {
+            _c.expanded = _c.b_expanded;
+            if (_t.tree) |_w| { _t.in_set = true; _w.SetExpanded(@ptrCast(_c), _c.expanded); _t.in_set = false; }
+        }
+    }
+}
+fn _lui_end_tree() void {
+    const _t = _lui_cur_tree orelse return;
+    _lui_cur_tree = null;
+    _t.depth = 0;
+    _lui_tree_diff(_t, &_t.root);
+}
 fn _lui_min_size(_id: []const u8, _w: i64, _h: i64) void {
     const _n = _lui_keyed.get(_id) orelse return;
     const _c = _n.ctrl orelse return;
@@ -2535,8 +2819,11 @@ const _gui_lui_backend = _GuiBackend{
     .endTableFn         = _lui_end_table,
     .tableSelectedRowFn  = _lui_table_selected_row,
     .tableActivatedRowFn = _lui_table_activated_row,
-    .treeNodeFn         = _lui_noop_bool,
-    .treePopFn          = _lui_noop_void,
+    .beginTreeFn        = _lui_begin_tree,
+    .treeNodeFn         = _lui_tree_node,
+    .treeLeafFn         = _lui_tree_leaf,
+    .treePopFn          = _lui_tree_pop,
+    .endTreeFn          = _lui_end_tree,
     .setColorFn         = _lui_set_color,
     .setColorsDarkFn    = _lui_noop_void,
     .setStyleFloatFn    = _lui_set_style_float,

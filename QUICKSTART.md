@@ -3109,8 +3109,8 @@ file (e.g. `myapp_gui_libui_ng/`, `myapp_gui_tui/`, `myapp_gui/`) and invokes
 - Retained-mode internally: Zebra's immediate-mode API is translated to a widget
   tree on frame 0 and updated on subsequent events. Widget order must be stable.
 - `sameLine()`, `spacing()`, `indent()`, `textColored()`'s colour and the style
-  setters are cosmetic no-ops (use `beginHBox` for horizontal layout); `treeNode()`
-  is a no-op (no tree widget yet). Tables work (§30 table).
+  setters are cosmetic no-ops (use `beginHBox` for horizontal layout). Tables and
+  trees work (§30 table).
 - Low-level draw calls (`ll.*`) are no-ops.
 
 **TUI backend notes:**
@@ -3259,6 +3259,7 @@ message, and the body becomes `view`.
 | `g.spacing()`                              | void     | Cosmetic, TUI only; a no-op on libui-ng.   |
 | `g.indent()` / `g.unindent()`             | void     | Cosmetic, TUI only; a no-op on libui-ng.   |
 | `g.beginPanel(id)` / `g.endPanel(id)`     | void     | Titled group box (libui `uiGroup`; an indented heading on the TUI). The one panel form since 2026-09-22: the callback `g.panel`, `g.window` and `g.childWindow` are removed. |
+| `g.beginTree(id, onSelect, onActivate, onExpand)` … `g.endTree()` | void | A native single-column tree (2026-09-22; libui `uiTree`: SysTreeView32 / GtkTreeView / NSOutlineView / BOutlineListView). Between them `g.treeNode(key, label, expanded)` opens a node whose children follow until `g.treePop()`, `g.treeLeaf(key, label)` is a childless node. The view emits the whole tree each render; the section diffs by key. The model drives expansion: pass its `expanded`, and `onExpand: def(key: str, open: bool): Msg` is where a click reports so the model decides. `onSelect`/`onActivate: def(key: str): Msg` on selection / double-click. Keys are the app's stable names (paths). `examples/tree_smoke.zbr` |
 | `g.area(id, w, h, draw, on)`               | void     | A drawing surface (2026-09-22; libui `uiArea` -- Direct2D / Cairo / CoreGraphics). `draw: def(c: Gui)` paints with `c.line/rect/fillRect/circle/fillCircle/drawText` and `c.canvasWidth()/canvasHeight()`; it runs at paint time and captures what it needs from the model (`capture` block), and the area repaints when those captured values change. `on: def(x: float, y: float, button: int): Msg` on a mouse press. Colours are `0xRRGGBB`. Stub prints the verbs; TUI shows a placeholder. `examples/area_smoke.zbr` |
 | `g.beginForm(id)` / `g.endForm(id)`       | void     | A form (2026-09-22): labels left, controls right, aligned (libui `uiForm`). Each child widget's own label is its row label -- `g.field("Host", ...)` inside a form is a `Host` row. A plain vbox on the other backends. `examples/form_smoke.zbr` |
 | `g.beginTabs(id, stretch)` / `g.endTabs()` | void    | Tab control (libui-ng `uiTab`); pages go between `g.beginTabPage(id, label)` / `g.endTabPage()`. TUI backend: no-op |
@@ -3322,6 +3323,26 @@ g.beginForm("settings")
     g.toggle("Use TLS", m.tls, def(b: bool): Msg = Msg.set_tls(b))
 g.endForm("settings")
 ```
+
+### Trees (libui-ng; an indented list on the TUI)
+
+The one native tree every OS has is a single text column with expanders, selection and
+activation -- Win32's `SysTreeView32` has no columns, so that is the subset. The view
+emits the whole tree each render and the model holds what is open:
+
+```zebra
+g.beginTree("files", def(k: str): Msg = Msg.select(k), def(k: str): Msg = Msg.open(k), def(k: str, o: bool): Msg = Msg.expand(Toggle(key: k, open: o)))
+g.treeNode("src", "src/", m.open.contains("src"))
+g.treeLeaf("src/main.zbr", "main.zbr")
+g.treePop()
+g.treeLeaf("README.md", "README.md")
+g.endTree()
+```
+
+A click on an expander does not open the node; it sends `onExpand(key, open)`, `update`
+puts the key in (or out of) the model, and the next render's `expanded` opens it -- so
+"Open all" is a message like any other. Keys must be stable across renders (a path is
+the natural key). Not yet: icons, columns, drag-and-drop, editing, the tui's keyboard.
 
 ### Drawing (libui-ng; a placeholder on the TUI)
 

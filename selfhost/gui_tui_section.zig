@@ -38,8 +38,11 @@ const _GuiBackend = struct {
     endTableFn:         *const fn () void,
     tableSelectedRowFn:  *const fn (id: []const u8) i64,
     tableActivatedRowFn: *const fn (id: []const u8) i64,
-    treeNodeFn:         *const fn (label: []const u8) bool,
-    treePopFn:          *const fn () void,
+    beginTreeFn:   *const fn (id: []const u8, scap: *const anyopaque, scap_len: usize, tsel: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, acap: *const anyopaque, acap_len: usize, tact: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, ecap: *const anyopaque, ecap_len: usize, texp: *const fn (*const anyopaque, []const u8, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    treeNodeFn:    *const fn (key: []const u8, label: []const u8, expanded: bool) void,
+    treeLeafFn:    *const fn (key: []const u8, label: []const u8) void,
+    treePopFn:     *const fn () void,
+    endTreeFn:     *const fn () void,
     setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
     setColorsDarkFn:    *const fn () void,
     setStyleFloatFn:    *const fn (name: []const u8, value: f32) void,
@@ -238,8 +241,53 @@ const GuiContext = struct {
     // the last call (-1: none). libui-ng backend only; tui returns -1.
     pub fn tableSelectedRow(self: GuiContext, id: []const u8) i64 { return self._b.tableSelectedRowFn(id); }
     pub fn tableActivatedRow(self: GuiContext, id: []const u8) i64 { return self._b.tableActivatedRowFn(id); }
-    pub fn treeNode(self: GuiContext, label: []const u8) bool { return self._b.treeNodeFn(label); }
+    // A tree (libui uiTree: SysTreeView32 / GtkTreeView / NSOutlineView -- one text column,
+    // the subset every OS has natively). The view emits the whole tree each render --
+    // `treeNode(key, label, expanded)` opens a node, its children follow, `treePop` closes
+    // it, `treeLeaf(key, label)` is a childless node -- and the section diffs it against
+    // the last render by key. The model drives expansion: pass the model's `expanded`, and
+    // `onExpand(key, open)` is where a click reports so the model can decide.
+    // `onSelect(key)` on selection, `onActivate(key)` on a double-click / Enter.
+    pub fn beginTree(self: GuiContext, id: []const u8, onSelect: anytype, onActivate: anytype, onExpand: anytype) void {
+        const onSelectbare = comptime (_zbr_is_fnlike(@TypeOf(onSelect)) and @typeInfo(@TypeOf(onSelect)) != .pointer);
+        const OnselectOn = if (onSelectbare) *const @TypeOf(onSelect) else @TypeOf(onSelect);
+        const onSelectpayload: OnselectOn = if (onSelectbare) &onSelect else onSelect;
+        const OnselectThunk = struct {
+            fn call(cap: *const anyopaque, key: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const OnselectOn = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(OnselectOn)) f.*(key) else blk: { var c = f.*; break :blk c.call(key); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        const onActivatebare = comptime (_zbr_is_fnlike(@TypeOf(onActivate)) and @typeInfo(@TypeOf(onActivate)) != .pointer);
+        const OnactivateOn = if (onActivatebare) *const @TypeOf(onActivate) else @TypeOf(onActivate);
+        const onActivatepayload: OnactivateOn = if (onActivatebare) &onActivate else onActivate;
+        const OnactivateThunk = struct {
+            fn call(cap: *const anyopaque, key: []const u8, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const OnactivateOn = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(OnactivateOn)) f.*(key) else blk: { var c = f.*; break :blk c.call(key); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        const onExpandbare = comptime (_zbr_is_fnlike(@TypeOf(onExpand)) and @typeInfo(@TypeOf(onExpand)) != .pointer);
+        const OnexpandOn = if (onExpandbare) *const @TypeOf(onExpand) else @TypeOf(onExpand);
+        const onExpandpayload: OnexpandOn = if (onExpandbare) &onExpand else onExpand;
+        const OnexpandThunk = struct {
+            fn call(cap: *const anyopaque, key: []const u8, open: bool, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const OnexpandOn = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(OnexpandOn)) f.*(key, open) else blk: { var c = f.*; break :blk c.call(key, open); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.beginTreeFn(id, @ptrCast(&onSelectpayload), @sizeOf(OnselectOn), OnselectThunk.call, @ptrCast(&onActivatepayload), @sizeOf(OnactivateOn), OnactivateThunk.call, @ptrCast(&onExpandpayload), @sizeOf(OnexpandOn), OnexpandThunk.call, f, self._send_ptr.?);
+    }
+    pub fn treeNode(self: GuiContext, key: []const u8, label: []const u8, expanded: bool) void { self._b.treeNodeFn(key, label, expanded); }
+    pub fn treeLeaf(self: GuiContext, key: []const u8, label: []const u8) void { self._b.treeLeafFn(key, label); }
     pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
+    pub fn endTree(self: GuiContext) void { self._b.endTreeFn(); }
     pub fn setColor(self: GuiContext, role: []const u8, r: f64, g: f64, b: f64, a: f64) void {
         self._b.setColorFn(role, @floatCast(r), @floatCast(g), @floatCast(b), @floatCast(a));
     }
@@ -894,8 +942,32 @@ fn _tui_table_headers_row() void {}
 fn _tui_table_next_row() void { _tui_current_row += 1; }
 fn _tui_table_next_column() void {}
 fn _tui_end_table() void {}
-fn _tui_tree_node(label: []const u8) bool { _tui_begin_panel(label); return true; }
-fn _tui_tree_pop() void { _tui_end_panel(); }
+// a tree in the tui: an indented list, `v`/`>` on nodes; a collapsed node hides its
+// subtree (the view still emits it); no clicks yet
+var _tui_tree_hidden: usize = 0;   // depth below a collapsed node
+fn _tui_begin_tree(id: []const u8, scap: *const anyopaque, scap_len: usize, tsel: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, acap: *const anyopaque, acap_len: usize, tact: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, ecap: *const anyopaque, ecap_len: usize, texp: *const fn (*const anyopaque, []const u8, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+    _ = id; _ = scap; _ = scap_len; _ = tsel; _ = acap; _ = acap_len; _ = tact; _ = ecap; _ = ecap_len; _ = texp; _ = send_fn; _ = send_ptr;
+    _tui_tree_hidden = 0;
+}
+fn _tui_tree_node(key: []const u8, label: []const u8, expanded: bool) void {
+    _ = key;
+    if (_tui_tree_hidden > 0) { _tui_tree_hidden += 1; return; }
+    var _b: [256]u8 = undefined;
+    _tui_text(std.fmt.bufPrint(&_b, "{s} {s}", .{ if (expanded) "v" else ">", label }) catch label);
+    _tui_indent();
+    if (!expanded) _tui_tree_hidden = 1;
+}
+fn _tui_tree_leaf(key: []const u8, label: []const u8) void {
+    _ = key;
+    if (_tui_tree_hidden > 0) return;
+    var _b: [256]u8 = undefined;
+    _tui_text(std.fmt.bufPrint(&_b, "  {s}", .{label}) catch label);
+}
+fn _tui_tree_pop() void {
+    if (_tui_tree_hidden > 0) { _tui_tree_hidden -= 1; if (_tui_tree_hidden > 0) return; }
+    _tui_unindent();
+}
+fn _tui_end_tree() void { _tui_tree_hidden = 0; }
 fn _tui_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void { _ = role; _ = r; _ = g; _ = b; _ = a; }
 fn _tui_set_colors_dark() void {}
 fn _tui_set_style_float(name: []const u8, value: f32) void { _ = name; _ = value; }
@@ -999,8 +1071,11 @@ const _gui_tui_backend = _GuiBackend{
     .endTableFn         = _tui_end_table,
     .tableSelectedRowFn  = _tui_table_row_q,
     .tableActivatedRowFn = _tui_table_row_q,
+    .beginTreeFn        = _tui_begin_tree,
     .treeNodeFn         = _tui_tree_node,
+    .treeLeafFn         = _tui_tree_leaf,
     .treePopFn          = _tui_tree_pop,
+    .endTreeFn          = _tui_end_tree,
     .setColorFn         = _tui_set_color,
     .setColorsDarkFn    = _tui_set_colors_dark,
     .setStyleFloatFn    = _tui_set_style_float,

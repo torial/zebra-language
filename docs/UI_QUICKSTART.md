@@ -110,6 +110,7 @@ column fills available width in its parent HBox.
 | `g.slider(label, value, min, max, on)` | `on: def(v: float): Msg` as it moves. The model drives it; range set at creation. (Message form since 2026-09-22.) |
 | `g.inputMultiline(label, text, on)` | Multi-line entry; `on: def(s: str): Msg` on every change. Fills its box; size with `minSize`. |
 | `g.combobox(label, items, sel, on)` / `g.spinbox(label, value, min, max, on)` | `on: def(i: int): Msg`. The model drives both. |
+| `g.beginTree(id, onSelect, onActivate, onExpand)` … `endTree` | `uiTree`, native single-column tree; `treeNode(key, label, expanded)` / `treeLeaf(key, label)` / `treePop`. Model-driven expansion. QUICKSTART §30 "Trees". |
 | `g.area(id, w, h, draw, on)`     | `uiArea`: `draw: def(c: Gui)` paints with `c.line/rect/fillRect/circle/fillCircle/drawText`; `on(x, y, button)` on a press. QUICKSTART §30 "Drawing". |
 | `g.comboboxEditable(label, items, text, on)` | `uiEditableCombobox`; `on: def(s: str): Msg` on pick or keystroke. |
 | `g.radio(label, items, sel, on)`  | One radio button per item (`uiRadioButtons`); `on: def(i: int): Msg`. The model drives the selection. |

@@ -1,0 +1,72 @@
+# tree_smoke.zbr -- g.beginTree / treeNode / treeLeaf / treePop / endTree (2026-09-22):
+# a native single-column tree (libui uiTree: SysTreeView32 / GtkTreeView /
+# NSOutlineView). The view emits the whole tree each render; the model holds the
+# set of open folders and the selection. A click reports through onExpand and the
+# MODEL decides; "Open all" / "Close all" prove the model side without a click.
+struct Model
+    var open: List(str)
+    var selected: str
+    var activated: str
+
+union Msg
+    select: str
+    activate: str
+    expand: Toggle
+    open_all
+    close_all
+
+struct Toggle
+    var key: str
+    var open: bool
+
+def init(): Model
+    var open: List(str) = ["src"]
+    return Model(open: open, selected: "", activated: "")
+
+def isOpen(m: Model, key: str): bool
+    for k in m.open
+        if k == key
+            return true
+    return false
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.select as k
+            return m except selected = k
+        on Msg.activate as k
+            return m except activated = k
+        on Msg.expand as t
+            var out: List(str) = []
+            for k in m.open
+                if k != t.key
+                    out.append(k)
+            if t.open
+                out.append(t.key)
+            return m except open = out
+        on Msg.open_all
+            var all: List(str) = ["src", "src/gui", "docs"]
+            return m except open = all
+        on Msg.close_all
+            var none: List(str) = []
+            return m except open = none
+
+def view(g: Gui, m: Model)
+    g.beginTree("files", def(k: str): Msg = Msg.select(k), def(k: str): Msg = Msg.activate(k), def(k: str, o: bool): Msg = Msg.expand(Toggle(key: k, open: o)))
+    g.treeNode("src", "src/", isOpen(m, "src"))
+    g.treeLeaf("src/main.zbr", "main.zbr")
+    g.treeLeaf("src/Parser.zbr", "Parser.zbr")
+    g.treeNode("src/gui", "gui/", isOpen(m, "src/gui"))
+    g.treeLeaf("src/gui/tree.zbr", "tree.zbr")
+    g.treePop()
+    g.treePop()
+    g.treeNode("docs", "docs/", isOpen(m, "docs"))
+    g.treeLeaf("docs/README.md", "README.md")
+    g.treePop()
+    g.treeLeaf("build.zbr", "build.zbr")
+    g.endTree()
+    g.text("selected: " + m.selected + "  opened: " + m.activated)
+    g.button("Open all", Msg.open_all)
+    g.button("Close all", Msg.close_all)
+
+def main()
+    Gui.run("tree smoke", 320, 360, init, update, view)

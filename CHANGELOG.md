@@ -23,6 +23,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **`g.beginTree` … `g.endTree` -- a native tree (2026-09-22).** `treeNode(key, label,
+  expanded)` / `treeLeaf(key, label)` / `treePop()`, three message closures (select, activate,
+  expand). On libui's new `uiTree` (torial fork): SysTreeView32 on Windows, GtkTreeView over a
+  hierarchical model on GTK, NSOutlineView on macOS, BOutlineListView on Haiku -- one text
+  column, the subset every OS has natively. The view emits the tree each render; the section
+  diffs by key and the model drives expansion. GTK verified end to end under Xvfb (open all,
+  click-collapse through the model, close all, double-click activate); Windows compiled, the
+  click witness is a person; macOS and Haiku written blind. The imgui-era `treeNode(label)`
+  bool / `treePop` no-ops are gone. `examples/tree_smoke.zbr`.
 - **`g.area(id, w, h, draw, on)` (2026-09-22).** A drawing surface on libui's `uiArea`
   (Direct2D / Cairo / CoreGraphics, one API): `draw: def(c: Gui)` paints with `line`, `rect`,
   `fillRect`, `circle`, `fillCircle`, `drawText`, `canvasWidth/Height`; it runs at paint time,
