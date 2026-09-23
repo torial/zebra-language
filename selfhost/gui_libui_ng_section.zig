@@ -1810,6 +1810,8 @@ fn _lui_checkbox(_label: []const u8, _value: bool) bool {
 // A labelled widget is ONE node: an unpadded vbox holding the label and the control.
 fn _lui_labelled(_n: *_LuiNode, _label: []const u8, _c: *_ui.Control, _stretch_inner: bool) void {
     var _lb: [256]u8 = undefined;
+    // `##id` is a key, not a caption (UI_QUICKSTART): bare control, empty form row label.
+    if (std.mem.startsWith(u8, _label, "##")) { _n.ctrl = _c; _n.flabel_len = 0; return; }
     if (_lui_top().kind == .form) {
         const _k = @min(_label.len, _n.flabel.len);
         @memcpy(_n.flabel[0.._k], _label[0.._k]);
@@ -1929,7 +1931,7 @@ fn _lui_combobox(_label: []const u8, _items: []const []const u8, _sel: i64, _cap
         _r.n.sval = _want;
         _ui.Combobox.OnSelected(_cmb, _LuiNode, anyerror, _lui_cmb_cb, _r.n);
         _r.n.cmb = _cmb;
-        _r.n.ctrl = _cmb.as_control();
+        _lui_labelled(_r.n, _label, _cmb.as_control(), false);
         _lui_attach(_r.n, false);
     } else if (_r.n.sval != _want) {
         if (_r.n.cmb) |_c| _c.SetSelected(_want);
@@ -1956,7 +1958,7 @@ fn _lui_radio(_label: []const u8, _items: []const []const u8, _sel: i64, _cap: *
         _r.n.sval = _want;
         _ui.RadioButtons.OnSelected(_cmb, _LuiNode, anyerror, _lui_rad_cb, _r.n);
         _r.n.rad = _cmb;
-        _r.n.ctrl = _cmb.as_control();
+        _lui_labelled(_r.n, _label, _cmb.as_control(), false);
         _lui_attach(_r.n, false);
     } else if (_r.n.sval != _want) {
         if (_r.n.rad) |_c| _c.SetSelected(_want);
@@ -1979,7 +1981,7 @@ fn _lui_spinbox(_label: []const u8, _value: i64, _min: i64, _max: i64, _cap: *co
         _r.n.sval = _want;
         _ui.Spinbox.OnChanged(_spn, _LuiNode, anyerror, _lui_spn_cb, _r.n);
         _r.n.spn = _spn;
-        _r.n.ctrl = _spn.as_control();
+        _lui_labelled(_r.n, _label, _spn.as_control(), false);
         _lui_attach(_r.n, false);
     } else if (_r.n.sval != _want) {
         if (_r.n.spn) |_s| _s.SetValue(_want);
@@ -2001,7 +2003,7 @@ fn _lui_progressbar(_label: []const u8, _value: f64) void {
         _pb.SetValue(_clamped);
         _r.n.pb = _pb;
         _r.n.sval = _clamped;
-        _r.n.ctrl = _pb.as_control();
+        _lui_labelled(_r.n, _label, _pb.as_control(), false);
         _lui_attach(_r.n, false);
     } else if (_r.n.sval != _clamped) {
         if (_r.n.pb) |_pb| _pb.SetValue(_clamped);

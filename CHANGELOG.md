@@ -23,6 +23,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **libui: `spinbox`, `combobox`, `radio` and `progressBar` show their label; `##id` labels
+  are hidden (2026-09-23).** The four builders set the control bare, so `g.spinbox("Port", ...)`
+  had no caption anywhere and no row label inside a `beginForm` -- seen the first time the
+  form example was driven on GTK. They go through the same labelled path as `field` and
+  `slider` now (caption above; the form's row label under `beginForm`), and a label starting
+  `##` -- a key, per UI_QUICKSTART -- draws nothing on any of them. Also in the fork
+  (zig-libui-ng): the GTK tree no longer reports a selection nobody made when the view first
+  takes focus. All seven of tonight's controls were driven end to end on GTK under Xvfb
+  (wiki assets/controls_gtk_witness_2026-09-23.png); the Windows click witness is still a person.
 - **The stub backend compiles every `CodeEditor` program again (2026-09-23).** Its
   `render` still called the four-argument `inputMultiline` the §6c cut replaced with the
   message form (`examples/editor_min.zbr`, in the examples baseline, had not compiled on
