@@ -1,0 +1,7 @@
+# coverage_probe_dep.zbr -- the dep of the coverage probe: a second module must appear
+# in the JSON with its own denominator, attached through the entry prologue's sweep.
+def double(n: int): int                                      # cov:none
+    return n * 2                                             # cov:hit
+
+def never_called(): int                                      # cov:none
+    return 99                                                # cov:miss

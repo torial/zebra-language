@@ -4328,6 +4328,30 @@ non-static `test_*` method inside a class is not one either). `--only` takes a
 comma-separated list of printed labels (`Calc.test_b`) or bare names (`test_b`)
 and composes with `--tag`. Both exist for the IDE's tests pane.
 
+### Coverage (2026-09-23)
+
+```bash
+zebra test --coverage file.zbr        # run the tests, then write zebra-coverage.json
+zebra --coverage prog.zbr             # the same for a program's own run
+ZEBRA_COVERAGE_OUT=out.json zebra --coverage prog.zbr
+```
+
+Line coverage from the compiler's own instrumentation: with `--coverage` every statement
+bumps a counter beside the `// zbr:` source-map marker codegen already emits, and the
+program writes the counts on exit -- including `sys.exit`, and including every module it
+`use`s. Nothing to install, every platform. The file is one map per source file, keyed
+by line, value the count; the key set is the instrumented set, so a line absent from
+the map is not a statement:
+
+```json
+{"version": 1, "files": {"helper.zbr": {"lines": {"3": 3, "6": 0}},
+                         "main.zbr": {"lines": {"4": 1, "5": 0, "7": 1}}}}
+```
+
+Statement coverage, not branch coverage: an arm's first statement is what tells you the
+arm ran. The IDE reads this file for its Coverage pane and line colouring. Each run
+overwrites the file (no merging across `--only` runs yet).
+
 ### Filtering tests with `@tag`
 
 Apply one or more string tags to a test function:

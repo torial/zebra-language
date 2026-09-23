@@ -1,0 +1,25 @@
+# coverage_probe.zbr -- the oracle for tools/coverage_check.sh lives in these comments:
+# `# cov:hit` = this line must appear in zebra-coverage.json with a count > 0,
+# `# cov:miss` = must appear with count 0 (instrumented, never ran),
+# `# cov:none` = must NOT appear (not a statement -- a def line, a comment, a blank).
+# Derived from the source text, never from the compiler: two lookups broken in
+# compensating ways agree with each other perfectly (the debug-map lesson).
+use coverage_probe_dep exposing double, never_called       # cov:none
+
+def pick(n: int): str                                        # cov:none
+    if n > 10                                                # cov:hit
+        return "big"                                         # cov:miss
+    else                                                     # cov:none
+        return "small"                                       # cov:hit
+
+def main()                                                   # cov:none
+    var total: int = 0                                       # cov:hit
+    var i: int = 0                                           # cov:hit
+    while i < 3                                              # cov:hit
+        total = total + double(i)                            # cov:hit
+        i = i + 1                                            # cov:hit
+    print(pick(total))                                       # cov:hit
+    if total > 1000                                          # cov:hit
+        print("never")                                       # cov:miss
+    print("done")                                            # cov:hit
+    sys.exit(0)                                              # cov:hit

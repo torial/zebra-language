@@ -930,6 +930,8 @@ def generateModule(m: Module, file: str): str
 
 def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_mt: ModuleTypes, strip_contracts: bool, tc_result: TcResult?, library_mode: bool): str
     var w = Writer()
+    _cov_lines_s = ""
+    _cov_max = 0
     var cn = StrSet()
     # Pre-populate class_names, union_names, enum_names for forward references.
     for decl in m.decls
@@ -1218,6 +1220,24 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 g.genExpr(mv.init_expr!)
                 w.emit(";\n")
     w.emit("}\n")
+    if _coverage
+        # This module's coverage record. Order-independent at top level, so it can
+        # sit after the statements that index it. `counts` is indexed by SOURCE LINE.
+        w.emit("var _zbr_cov_counts = [_]u32{0} ** ")
+        w.emit((_cov_max + 1).toString())
+        w.emit(";\n")
+        w.emit("const _zbr_cov_lines = [_]u32{")
+        var first: bool = true
+        for ls in _cov_lines_s.split(" ")
+            if ls != ""
+                if not first
+                    w.emit(", ")
+                w.emit(ls)
+                first = false
+        w.emit("};\n")
+        w.emit("pub var _zbr_covf: _ZbrCovFile = .{ .path = \"")
+        w.emit(fwdSlashes(file))
+        w.emit("\", .lines = &_zbr_cov_lines, .counts = &_zbr_cov_counts };\n")
     return w.output()
 
 # ── Entry point thunk ─────────────────────────────────────────────────────────
@@ -1278,6 +1298,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
     sb.append("    _initModuleVars();\n")
     if not library_mode
         sb.append("    defer _arena.deinit();\n")
+    sb.append(covPrologue("    "))    # after the arena defer: the flush allocates (see the test main)
     if main_throws
         sb.append("    ")
         sb.append(mod_prefix)
@@ -1714,6 +1735,10 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     sb.append("    _allocator = _prog_alloc();\n")
     sb.append("    _initModuleVars();\n")
     sb.append("    defer _arena.deinit();\n")
+    # AFTER the arena defer: defers run in reverse, and the flush allocates its JSON
+    # from the arena -- registered first it ran last, on a freed arena (a segfault at
+    # exit that the first IDE witness found; the probe's free main had the other order).
+    sb.append(covPrologue("    "))
     sb.append("    var _test_pass: usize = 0;\n")
     sb.append("    var _test_fail: usize = 0;\n")
     var ti: int = 0
@@ -1760,7 +1785,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
         sb.append("    }\n")
         ti = ti + 1
     sb.append("    std.debug.print(\"\\n{d} passed, {d} failed\\n\", .{_test_pass, _test_fail});\n")
-    sb.append("    if (_test_fail > 0) std.process.exit(1);\n")
+    sb.append("    if (_test_fail > 0) _zbr_exit(1);\n")
     sb.append("}\n")
     return sb.build()
 
@@ -1922,6 +1947,48 @@ var _entry_deps: str = ""          # TRANSITIVE deps, for the entry point's init
 
 def setRuntimeModule(v: bool)
     _runtime_module = v
+
+# `--coverage` (2026-09-23): genStmt bumps `_zbr_covf.counts[line]` beside the `// zbr:`
+# marker it already emits, and every module ends with its own `_zbr_covf` (path, the
+# sorted instrumented lines -- the DENOMINATOR -- and the counters). The entry prologue
+# attaches each module's record to the runtime's list and the runtime writes
+# zebra-coverage.json on exit (`_zbr_cov_flush`, also on sys.exit through `_zbr_exit`).
+# Space-fenced string of the CURRENT module's instrumented lines (" 12 13 "), reset per
+# module; a module-global container would need deferred init for no benefit.
+var _coverage: bool = false
+var _cov_lines_s: str = ""
+var _cov_max: int = 0
+
+def setCoverage(v: bool)
+    _coverage = v
+
+def coverageOn(): bool
+    return _coverage
+
+def covNoteLine(ln: int)
+    var key: str = " " + ln.toString() + " "
+    if _cov_lines_s.contains(key)
+        return
+    if _cov_lines_s == ""
+        _cov_lines_s = key
+    else
+        _cov_lines_s = _cov_lines_s + ln.toString() + " "
+    if ln > _cov_max
+        _cov_max = ln
+
+# The entry prologue's coverage lines (both synthesized mains and the free-main
+# injection use this): attach this module and every transitive dep, flush on return.
+def covPrologue(indent: str): str
+    if not _coverage
+        return ""
+    var sb: StringBuilder = StringBuilder()
+    sb.append(indent + "_zbr_cov_attach(&_zbr_covf);\n")
+    if _runtime_module
+        for cov_dep in _entry_deps.split(" ")
+            if cov_dep != ""
+                sb.append(indent + "_zbr_cov_attach(&@import(\"" + cov_dep + ".zig\")._zbr_covf);\n")
+    sb.append(indent + "defer _zbr_cov_flush();\n")
+    return sb.build()
 
 def runtimeModule(): bool
     return _runtime_module
@@ -5962,6 +6029,11 @@ struct Generator
                 # _allocator/_io and all deps are live, before any user code runs.
                 ei.writeIndent()
                 ei.w.emit("_initModuleVars();\n")
+                if _coverage
+                    for cov_line in covPrologue("").split("\n")
+                        if cov_line != ""
+                            ei.writeIndent()
+                            ei.w.emit(cov_line + "\n")
                 # `zebra build --list-targets`: arm before any user statement, so
                 # _build_run() prints the target list instead of invoking the compiler.
                 if _list_targets_mode
@@ -7058,6 +7130,12 @@ struct Generator
                 w.emit(":")
                 w.emit(_ln.toString())
                 w.emit("\n")
+                if _coverage
+                    covNoteLine(_ln)
+                    writeIndent()
+                    w.emit("_zbr_covf.counts[")
+                    w.emit(_ln.toString())
+                    w.emit("] += 1;\n")
         branch s
             on Stmt.var_ as n
                 genLocalVar(n)
@@ -18437,12 +18515,14 @@ struct Generator
             #
             # The @as(i64, ...) is load-bearing: @bitCast will not take a comptime_int, so
             # a literal argument must be given a runtime type first.
-            w.emit("std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, ")
+            # `_zbr_exit` (2026-09-23) flushes coverage first: a `defer` does not run
+            # across std.process.exit. Same truncation as before, inside the helper.
+            w.emit("_zbr_exit(@as(i64, ")
             if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
-            w.emit(")))))")
+            w.emit("))")
             return
         if mname == "memStats"
             # §28i: sys.memStats() → MemStats{ .arenaBytes = arena footprint }.

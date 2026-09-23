@@ -486,6 +486,11 @@ run_fast "lsp-smoke"     "passed"   python tools/lsp_server_smoke.py
 # ONE file open. Found by zebra-ide's rename_workspace_test, 2026-09-08.
 run_fast "lsp-workspace" "passed"   python tools/lsp_workspace_smoke.py
 run_fast "debug-map"     "passed"   bash tools/debug_map_check.sh
+# The coverage-map gate (2026-09-23): `--coverage` is our own instrumentation and nothing
+# else reads zebra-coverage.json. The oracle is the probe's own `# cov:` labels, never the
+# compiler; the probe ends in sys.exit and carries a dep module, so a skipped flush or an
+# unattached dep record goes red.
+run_fast "coverage-map"  "passed"   bash tools/coverage_check.sh
 
 # THE ONLY GATE THAT BUILDS WITH --release. Every other gate here is Debug, which is
 # how BUG-228 survived 19 green gates: `--release` switched backend but never passed

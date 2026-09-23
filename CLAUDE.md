@@ -215,10 +215,10 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 15 <!-- doc-gen: 15 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 29 <!-- doc-gen: 29 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 31 <!-- doc-gen: 31 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 39 <!-- doc-gen: 39 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 50 <!-- doc-gen: 50 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--fast` | 30 <!-- doc-gen: 30 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 32 <!-- doc-gen: 32 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 40 <!-- doc-gen: 40 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 51 <!-- doc-gen: 51 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -1030,6 +1030,37 @@ bash tools/debug_map_check.sh   # THE DEBUG SOURCE-MAP GATE, registered as `debu
                                 #   CANNOT SEE: whether a marker points at the RIGHT zig
                                 #   line, or anything about the lldb-dap conversation -- the
                                 #   session half (spawn, TCP, threads) is NOT yet ported.
+bash tools/coverage_check.sh    # THE COVERAGE-MAP GATE, registered as `coverage-map`
+                                #   (FAST tier, ~10s, 2026-09-23). `zebra --coverage` (and
+                                #   `zebra test --coverage`) is OUR OWN instrumentation:
+                                #   genStmt bumps `_zbr_covf.counts[line]` beside the
+                                #   `// zbr:` marker it already emits, every module ends
+                                #   with its record (path, the sorted instrumented lines --
+                                #   the DENOMINATOR, which is the half hit-counters get
+                                #   wrong -- and the counters), the entry prologue attaches
+                                #   them and the runtime writes zebra-coverage.json on exit
+                                #   ($ZEBRA_COVERAGE_OUT to redirect). `sys.exit` goes
+                                #   through `_zbr_exit`, which flushes first: a `defer` does
+                                #   not run across std.process.exit. No LLVM profiling, no
+                                #   kcov, nothing to install -- the same source-map
+                                #   discipline debug-map gates, and cross-platform for free.
+                                #   THE ORACLE IS THE SOURCE TEXT: tools/fixtures/
+                                #   coverage_probe.zbr labels lines `# cov:hit` / `# cov:miss`
+                                #   / `# cov:none` and the gate derives the expected map from
+                                #   those, never from the compiler (the debug-map lesson).
+                                #   The probe ends in sys.exit and `use`s a dep module with
+                                #   a never-called function, so a flush skipped on the exit
+                                #   path or a dep record never attached both go red. Refuses
+                                #   under 10 labelled lines or on unparseable JSON. Red-checked
+                                #   by relabelling one line. THE FIRST IDE WITNESS FOUND THE
+                                #   DEFER ORDER: the synthesized mains registered the flush
+                                #   defer BEFORE `defer _arena.deinit()`, so it ran last, on a
+                                #   freed arena -- a segfault at exit the probe's free main
+                                #   could not see (its defers are in the other order). CANNOT
+                                #   SEE: the IDE's reading of the file (zebra-ide's check.sh),
+                                #   branch coverage (the instrument is the statement), GUI
+                                #   closures run at paint time (counted; the flush must
+                                #   outlive the loop).
 python tools/lsp_server_smoke.py   # THE LSP PROTOCOL GATE, registered as `lsp-smoke`
                                 #   (FAST tier, ~2s). Drives `zebra lsp` through a real
                                 #   JSON-RPC conversation over stdio -- Content-Length
@@ -2034,7 +2065,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 97 scripts | <!-- doc-gen: 97 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 98 scripts | <!-- doc-gen: 98 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 40 tracked documents <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

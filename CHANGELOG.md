@@ -23,6 +23,17 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **`--coverage`: line coverage from the compiler's own instrumentation (2026-09-23).**
+  `zebra --coverage prog.zbr` and `zebra test --coverage file.zbr` write
+  `zebra-coverage.json` on exit (`$ZEBRA_COVERAGE_OUT` redirects): one map per source
+  file, line -> count, whose key set is the instrumented set -- the denominator, which is
+  the half a hit-counter alone gets wrong. genStmt bumps `_zbr_covf.counts[line]` beside
+  the `// zbr:` marker it already emits; every module ends with its record; the entry
+  prologue attaches them, transitively; `sys.exit` now goes through `_zbr_exit`, which
+  flushes first (a `defer` does not run across `std.process.exit` -- the probe ends in
+  `sys.exit` for that reason). Nothing to install, every platform. Statement coverage,
+  not branch. Gate `coverage-map` (FAST): the oracle is the probe's own `# cov:` labels.
+  QUICKSTART §33 "Coverage". The IDE's pane and line colouring read this file.
 - **Editable text cells and button cells in tables (2026-09-23).** `g.tableSetupEditColumn(name,
   on)` -- cells are `g.text` as before, committing an edit sends `on(row, text)` and the next
   render shows what the model holds (a declined edit snaps back); `g.tableSetupButtonColumn(name,

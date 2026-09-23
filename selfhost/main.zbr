@@ -41,7 +41,7 @@ use Parser exposing PNode, PUse, PModule, PClass
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse, addNativeLibUse, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse, addNativeLibUse, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -935,6 +935,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --shared <lib.zbr>                 build a shared library (.so/.dll/.dylib) next to the source;", to_stdout)
     usageLine("                                           `@export(\"sym\") class` factories are its symbols (QUICKSTART §44)", to_stdout)
     usageLine("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks", to_stdout)
+    usageLine("  zebra --coverage <source.zbr>            line coverage -> zebra-coverage.json on exit (also: zebra test --coverage)", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
     usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: tui or libui_ng", to_stdout)
     usageLine("  zebra --keep-temp <source.zbr>           keep the scratch build (kept anyway on failure)", to_stdout)
@@ -3873,7 +3874,7 @@ def main()
     # 2026-09-01): with unknown flags now refused, --TURBO becomes a NAMED ERROR
     # rather than either being ignored or silently starting to work -- the user sees
     # the problem instead of getting a build they did not ask for.
-    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --warn-inference-guess --warn-non-exhaustive -c -h"
+    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --warn-inference-guess --warn-non-exhaustive -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -4262,6 +4263,11 @@ def main()
     if runtime_module and mode_node
         runtime_module = false
     setRuntimeModule(runtime_module)
+    # `--coverage` (2026-09-23): line coverage from our own instrumentation -- see
+    # CodeGen.setCoverage. Works with the runtime-module shape (the default) and the
+    # single-file/inline shapes alike (the record is per module, attached from main).
+    if args.contains("--coverage")
+        setCoverage(true)
     # Preamble resolution (BUG: cwd-dependent File.read).  Prefer the repo-relative
     # path so every gate (all run from the repo root) is byte-identical; fall back to
     # a copy installed alongside the exe so `zebra.exe` works when invoked from any

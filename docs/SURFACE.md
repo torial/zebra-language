@@ -14,7 +14,7 @@ named in the tool's header; what it cannot see is listed there too.
 
 `cue init` `cue toString` `cue equals` `cue hash` `cue compare` `cue iter` `cue next`
 
-## Command forms (30)
+## Command forms (31)
 
 - `zebra <source.zbr>`
 - `zebra repl`
@@ -34,6 +34,7 @@ named in the tool's header; what it cannot see is listed there too.
 - `zebra --emit-zig --output-dir DIR`
 - `zebra --shared <lib.zbr>`
 - `zebra --turbo <source.zbr>`
+- `zebra --coverage <source.zbr>`
 - `zebra --warn-non-exhaustive <source.zbr>`
 - `zebra --gui-backend=BACKEND <source.zbr>`
 - `zebra --keep-temp <source.zbr>`
@@ -47,9 +48,9 @@ named in the tool's header; what it cannot see is listed there too.
 - `zebra fmt --print <file.zbr>`
 - `zebra up`
 
-## Flags (22)
+## Flags (23)
 
-`--build-file` `--check` `--check-full` `--dump-map` `--dump-transform` `--emit-zig` `--gui-backend` `--keep-temp` `--list` `--list-targets` `--only` `--output-dir` `--print` `--scaffold-only` `--shared` `--tag` `--to` `--turbo` `--version` `--warn-non-exhaustive` `-c` `-h`
+`--build-file` `--check` `--check-full` `--coverage` `--dump-map` `--dump-transform` `--emit-zig` `--gui-backend` `--keep-temp` `--list` `--list-targets` `--only` `--output-dir` `--print` `--scaffold-only` `--shared` `--tag` `--to` `--turbo` `--version` `--warn-non-exhaustive` `-c` `-h`
 
 ## Generic constructors (7)
 

@@ -4470,6 +4470,55 @@ pub fn _profile_start(name: []const u8) void {
     _profile_name_stack.append(std.heap.page_allocator, name) catch @panic("OOM");
     _profile_time_stack.append(std.heap.page_allocator, std.Io.Timestamp.now(_io, .awake).nanoseconds) catch @panic("OOM");
 }
+// ── line coverage (2026-09-23) ──────────────────────────────────────────────────
+// Each module compiled with `--coverage` ends with a `_zbr_covf` record: its path, the
+// sorted instrumented source lines (the denominator) and a counter per source line;
+// genStmt bumps the counter beside the `// zbr:` marker. The entry prologue attaches
+// every module's record here and `_zbr_cov_flush` writes zebra-coverage.json on exit
+// (a defer in main; `sys.exit` goes through `_zbr_exit` so the defer is not skipped).
+// Path: $ZEBRA_COVERAGE_OUT, else zebra-coverage.json in the cwd. One map per file,
+// keyed by line, value the count -- the key set IS the instrumented set, so a consumer
+// needs no second list and a line absent from the map is not code.
+pub const _ZbrCovFile = struct { path: []const u8, lines: []const u32, counts: []u32, next: ?*_ZbrCovFile = null, attached: bool = false };
+pub var _zbr_cov_head: ?*_ZbrCovFile = null;
+pub fn _zbr_cov_attach(f: *_ZbrCovFile) void {
+    if (f.attached) return;
+    f.attached = true;
+    f.next = _zbr_cov_head;
+    _zbr_cov_head = f;
+}
+pub fn _zbr_cov_flush() void {
+    var f = _zbr_cov_head orelse return;
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(_allocator);
+    out.appendSlice(_allocator, "{\"version\": 1, \"files\": {") catch return;
+    var first_file = true;
+    while (true) {
+        if (!first_file) out.appendSlice(_allocator, ", ") catch return;
+        first_file = false;
+        const head = std.fmt.allocPrint(_allocator, "\"{s}\": {{\"lines\": {{", .{f.path}) catch return;
+        out.appendSlice(_allocator, head) catch return;
+        for (f.lines, 0..) |ln, i| {
+            if (i > 0) out.appendSlice(_allocator, ", ") catch return;
+            const c: u32 = if (ln < f.counts.len) f.counts[ln] else 0;
+            const cell = std.fmt.allocPrint(_allocator, "\"{d}\": {d}", .{ ln, c }) catch return;
+            out.appendSlice(_allocator, cell) catch return;
+        }
+        out.appendSlice(_allocator, "}}") catch return;
+        f = f.next orelse break;
+    }
+    out.appendSlice(_allocator, "}}\n") catch return;
+    const path: []const u8 = _sys_getenv("ZEBRA_COVERAGE_OUT") orelse "zebra-coverage.json";
+    const _f = std.Io.Dir.cwd().createFile(_io, path, .{}) catch return;
+    defer _f.close(_io);
+    _f.writeStreamingAll(_io, out.items) catch {};
+}
+// sys.exit: flush coverage first (a defer does not run across process.exit), then the
+// C-style truncation BUG-326 chose: -1 -> 255, 256 -> 0.
+pub fn _zbr_exit(code: i64) noreturn {
+    _zbr_cov_flush();
+    std.process.exit(@truncate(@as(u64, @bitCast(code))));
+}
 pub fn _profile_end() void {
     const start_ns = _profile_time_stack.pop() orelse return;
     const elapsed_ns = std.Io.Timestamp.now(_io, .awake).nanoseconds - start_ns;
