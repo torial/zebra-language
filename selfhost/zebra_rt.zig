@@ -3588,6 +3588,12 @@ pub const GuiContext = struct {
     pub fn menuSeparator(self: GuiContext) void { _ = self; std.debug.print("[gui] menuSeparator\n", .{}); }
     pub fn menuQuit(self: GuiContext) void { _ = self; std.debug.print("[gui] menuQuit\n", .{}); }
     pub fn endMenu(self: GuiContext) void { _ = self; }
+    pub fn beginToolbar(self: GuiContext) void { _ = self; std.debug.print("[gui] toolbar\n", .{}); }
+    pub fn tool(self: GuiContext, label: []const u8, msg: anytype) void { _ = self; _ = msg; std.debug.print("[gui] tool: {s}\n", .{label}); }
+    pub fn toolIcon(self: GuiContext, label: []const u8, icon: []const u8, tip: []const u8, msg: anytype) void { _ = self; _ = msg; _ = tip; std.debug.print("[gui] tool: {s} [{s}]\n", .{ label, icon }); }
+    pub fn toolSeparator(self: GuiContext) void { _ = self; std.debug.print("[gui] toolSeparator\n", .{}); }
+    pub fn toolEnabled(self: GuiContext, enabled: bool) void { _ = self; _ = enabled; }
+    pub fn endToolbar(self: GuiContext) void { _ = self; }
     pub fn beginPanel(self: GuiContext, label: []const u8) void { self._b.beginPanelFn(label); }
     pub fn beginForm(self: GuiContext, id: []const u8) void { self._b.beginFormFn(id); }
     pub fn endForm(self: GuiContext, id: []const u8) void { _ = id; self._b.endFormFn(); }

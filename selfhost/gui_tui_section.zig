@@ -105,6 +105,12 @@ const _GuiBackend = struct {
     menuSeparatorFn: *const fn () void,
     menuQuitFn:    *const fn () void,
     endMenuFn:     *const fn () void,
+    // toolbar (2026-09-23): a native strip under the menubar; items send a Msg, like menu items
+    beginToolbarFn: *const fn () void,
+    toolFn:        *const fn (label: []const u8, icon: []const u8, tip: []const u8, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    toolSeparatorFn: *const fn () void,
+    toolEnabledFn: *const fn (enabled: bool) void,
+    endToolbarFn:  *const fn () void,
     takeKeyFn:     *const fn () i64,
     progressBarFn: *const fn (label: []const u8, value: f64) void,
     comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
@@ -540,6 +546,24 @@ const GuiContext = struct {
     pub fn menuSeparator(self: GuiContext) void { self._b.menuSeparatorFn(); }
     pub fn menuQuit(self: GuiContext) void { self._b.menuQuitFn(); }
     pub fn endMenu(self: GuiContext) void { self._b.endMenuFn(); }
+    // ── toolbar (2026-09-23): declared every render like the menus, but REBUILT when the
+    // set changes (libui-ng's uiToolbarClear), so it may appear or change after the first
+    // render. tool(label, msg); toolIcon(label, icon, tip, msg) with a built-in or
+    // registered icon name; toolEnabled(bool) applies to the next item and resets to true.
+    pub fn beginToolbar(self: GuiContext) void { self._b.beginToolbarFn(); }
+    pub fn tool(self: GuiContext, label: []const u8, msg: anytype) void {
+        const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
+        const _v: _T = msg;
+        if (self._send_fn) |f| self._b.toolFn(label, "", "", @ptrCast(&_v), @sizeOf(_T), f, self._send_ptr.?);
+    }
+    pub fn toolIcon(self: GuiContext, label: []const u8, icon: []const u8, tip: []const u8, msg: anytype) void {
+        const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
+        const _v: _T = msg;
+        if (self._send_fn) |f| self._b.toolFn(label, icon, tip, @ptrCast(&_v), @sizeOf(_T), f, self._send_ptr.?);
+    }
+    pub fn toolSeparator(self: GuiContext) void { self._b.toolSeparatorFn(); }
+    pub fn toolEnabled(self: GuiContext, enabled: bool) void { self._b.toolEnabledFn(enabled); }
+    pub fn endToolbar(self: GuiContext) void { self._b.endToolbarFn(); }
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
@@ -947,6 +971,19 @@ fn _tui_menu_item(label: []const u8, msg: *const anyopaque, len: usize, send_fn:
 fn _tui_menu_separator() void {}
 fn _tui_menu_quit() void { if (_tui_button("Quit")) _tui_quit = true; }
 fn _tui_end_menu() void { _tui_unindent(); }
+// toolbar (2026-09-23): no native strip in a terminal; items render as buttons in a row
+var _tui_tool_enabled_next: bool = true;
+fn _tui_begin_toolbar() void { _tui_text("toolbar"); _tui_indent(); }
+fn _tui_tool(label: []const u8, icon: []const u8, tip: []const u8, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+    _ = icon; _ = tip;
+    const _en = _tui_tool_enabled_next;
+    _tui_tool_enabled_next = true;
+    if (!_en) { _tui_text(label); return; }
+    _tui_action(label, msg, len, send_fn, send_ptr);
+}
+fn _tui_tool_separator() void {}
+fn _tui_tool_enabled(enabled: bool) void { _tui_tool_enabled_next = enabled; }
+fn _tui_end_toolbar() void { _tui_unindent(); }
 fn _tui_button(label: []const u8) bool {
     const _row = _tui_current_row;
     _tui_current_row += 1;
@@ -1237,6 +1274,11 @@ const _gui_tui_backend = _GuiBackend{
     .menuSeparatorFn = _tui_menu_separator,
     .menuQuitFn     = _tui_menu_quit,
     .endMenuFn      = _tui_end_menu,
+    .beginToolbarFn = _tui_begin_toolbar,
+    .toolFn         = _tui_tool,
+    .toolSeparatorFn = _tui_tool_separator,
+    .toolEnabledFn  = _tui_tool_enabled,
+    .endToolbarFn   = _tui_end_toolbar,
     .takeKeyFn      = _tui_take_key,
     .progressBarFn = _tui_progressbar,
     .comboboxFn    = _tui_combobox,

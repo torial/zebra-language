@@ -43,6 +43,19 @@ confirmed via `tools/bootstrap_check.sh`.
   the cell value when `SetCellValue` returns and the message is handled later from the queue,
   so the runtime now owns the text before it crosses. Witnessed on GTK (edit, refused empty
   edit, remove). `examples/table_edit_smoke.zbr`; libui-section.
+- **Toolbars -- `g.beginToolbar` / `tool` / `toolIcon` / `toolSeparator` / `toolEnabled` /
+  `endToolbar` (2026-09-23).** A native strip under the menubar on every platform of the
+  fork: `uiToolbar` in zig-libui-ng (GtkToolbar with icon+label items; ToolbarWindow32 laid
+  out by the window across the top of its client area, clicks via NM_CLICK and tips via
+  TBN_GETINFOTIP; NSToolbar in the title bar, written blind -- macOS is the fork's second
+  tier). An item sends its Msg like a menu item; `toolIcon` takes a built-in or registered
+  icon name and a tooltip; `toolEnabled(bool)` applies to the next item. Unlike the menubar
+  the set is not frozen at the first render: the section keeps the built list, and a render
+  with the same labels/icons/tips refreshes Msg bytes and pushes enabled changes in place,
+  anything else clears and re-appends (`uiToolbarClear`). Witnessed on GTK: registered and
+  built-in icons, tooltip, Stop enabled only while running, a separator + Clear item
+  appearing after the first click and leaving after Clear. Stub prints, TUI a row of
+  buttons. `examples/toolbar_smoke.zbr`; libui-section.
 - **`Gui.registerIcon(name, w, h, rgba)` -- the program's own tree icons (2026-09-23).**
   Straight-alpha RGBA bytes in a `str` (any size; `StringBuilder.appendChar` builds one, or
   read a raw file), premultiplied by the runtime for libui's `uiImage`; the name then works in

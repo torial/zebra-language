@@ -105,6 +105,12 @@ const _GuiBackend = struct {
     menuSeparatorFn: *const fn () void,
     menuQuitFn:    *const fn () void,
     endMenuFn:     *const fn () void,
+    // toolbar (2026-09-23): a native strip under the menubar; items send a Msg, like menu items
+    beginToolbarFn: *const fn () void,
+    toolFn:        *const fn (label: []const u8, icon: []const u8, tip: []const u8, msg: *const anyopaque, len: usize, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    toolSeparatorFn: *const fn () void,
+    toolEnabledFn: *const fn (enabled: bool) void,
+    endToolbarFn:  *const fn () void,
     takeKeyFn:     *const fn () i64,
     progressBarFn: *const fn (label: []const u8, value: f64) void,
     comboboxFn:    *const fn (label: []const u8, items: []const []const u8, selected: i64, cap: *const anyopaque, cap_len: usize, thunk: *const fn (*const anyopaque, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
@@ -546,6 +552,24 @@ const GuiContext = struct {
     pub fn menuSeparator(self: GuiContext) void { self._b.menuSeparatorFn(); }
     pub fn menuQuit(self: GuiContext) void { self._b.menuQuitFn(); }
     pub fn endMenu(self: GuiContext) void { self._b.endMenuFn(); }
+    // ── toolbar (2026-09-23): declared every render like the menus, but REBUILT when the
+    // set changes (libui-ng's uiToolbarClear), so it may appear or change after the first
+    // render. tool(label, msg); toolIcon(label, icon, tip, msg) with a built-in or
+    // registered icon name; toolEnabled(bool) applies to the next item and resets to true.
+    pub fn beginToolbar(self: GuiContext) void { self._b.beginToolbarFn(); }
+    pub fn tool(self: GuiContext, label: []const u8, msg: anytype) void {
+        const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
+        const _v: _T = msg;
+        if (self._send_fn) |f| self._b.toolFn(label, "", "", @ptrCast(&_v), @sizeOf(_T), f, self._send_ptr.?);
+    }
+    pub fn toolIcon(self: GuiContext, label: []const u8, icon: []const u8, tip: []const u8, msg: anytype) void {
+        const _T = switch (@TypeOf(msg)) { comptime_int => i64, comptime_float => f64, else => @TypeOf(msg) };
+        const _v: _T = msg;
+        if (self._send_fn) |f| self._b.toolFn(label, icon, tip, @ptrCast(&_v), @sizeOf(_T), f, self._send_ptr.?);
+    }
+    pub fn toolSeparator(self: GuiContext) void { self._b.toolSeparatorFn(); }
+    pub fn toolEnabled(self: GuiContext, enabled: bool) void { self._b.toolEnabledFn(enabled); }
+    pub fn endToolbar(self: GuiContext) void { self._b.endToolbarFn(); }
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
@@ -1669,6 +1693,7 @@ fn _lui_endframe() void {
         _lui_menus_frozen = true;
         _ui.Window.OnClosing(_w, bool, anyerror, _lui_on_close, &_lui_quit);
         if (comptime @hasDecl(_ui.Window, "OnKey")) _ui.Window.OnKey(_w, anyopaque, _lui_on_key, null);
+        if (_lui_toolbar) |_t| { _w.SetToolbar(_t); _lui_toolbar_attached = true; }
         if (_lui_root_box) |_vb| _w.SetChild(_vb.as_control());
         _w.SetMargined(true);
         _w.as_control().Show();
@@ -1762,6 +1787,90 @@ fn _lui_menu_quit() void {
     _ = _lui_menu_slot(_m, .quit, "");
 }
 fn _lui_end_menu() void { _lui_cur_menu = null; }
+// ── toolbar (2026-09-23) ──
+// A uiToolbar the window owns, under the menubar. Unlike the menubar it can be REBUILT:
+// every render declares the item set into `_lui_tools_cur`; endToolbar compares it with
+// what is built and either updates in place (same labels/icons/tips: refresh the Msg
+// bytes, push enabled changes) or clears and re-appends. Created on the first endToolbar
+// and attached when the window is created (or at once if the window already exists).
+const _LuiTool = struct { sep: bool = false, label: [128]u8 = undefined, label_len: usize = 0, icon: u8 = 0, tip: [128]u8 = undefined, tip_len: usize = 0, enabled: bool = true, msg: [64]u8 align(16) = undefined, msg_len: usize = 0, send_fn: ?*const fn (*anyopaque, *const anyopaque, usize) void = null, send_ptr: ?*anyopaque = null };
+var _lui_toolbar: ?*_ui.Toolbar = null;
+var _lui_toolbar_attached: bool = false;
+var _lui_tools: std.ArrayList(_LuiTool) = .empty;      // built
+var _lui_tools_cur: std.ArrayList(_LuiTool) = .empty;  // this render
+var _lui_tool_enabled_next: bool = true;
+var _lui_tool_seen: bool = false;   // a beginToolbar happened this frame
+fn _lui_tool_same_shape(_a: *const _LuiTool, _b: *const _LuiTool) bool {
+    return _a.sep == _b.sep and _a.icon == _b.icon and std.mem.eql(u8, _a.label[0.._a.label_len], _b.label[0.._b.label_len]) and std.mem.eql(u8, _a.tip[0.._a.tip_len], _b.tip[0.._b.tip_len]);
+}
+fn _lui_tool_cb(_t: *_ui.Toolbar, _index: c_int, _p: ?*anyopaque) anyerror!void {
+    _ = _t; _ = _p;
+    if (_index < 0) return;
+    const _i: usize = @intCast(_index);
+    if (_i >= _lui_tools.items.len) return;
+    const _r = &_lui_tools.items[_i];
+    if (_r.sep or !_r.enabled) return;
+    if (_r.send_fn) |f| f(_r.send_ptr.?, @ptrCast(&_r.msg), _r.msg_len);
+}
+fn _lui_begin_toolbar() void {
+    _lui_tools_cur.clearRetainingCapacity();
+    _lui_tool_enabled_next = true;
+    _lui_tool_seen = true;
+}
+fn _lui_tool(_label: []const u8, _icon: []const u8, _tip: []const u8, _msg: *const anyopaque, _len: usize, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    var _r: _LuiTool = .{};
+    _r.label_len = @min(_label.len, 127);
+    @memcpy(_r.label[0.._r.label_len], _label[0.._r.label_len]);
+    _r.tip_len = @min(_tip.len, 127);
+    @memcpy(_r.tip[0.._r.tip_len], _tip[0.._r.tip_len]);
+    _r.icon = _lui_icon_index(_icon);
+    _r.enabled = _lui_tool_enabled_next;
+    _lui_tool_enabled_next = true;
+    if (_len <= 64) {
+        const _src: [*]const u8 = @ptrCast(_msg);
+        @memcpy(_r.msg[0.._len], _src[0.._len]);
+        _r.msg_len = _len;
+    }
+    _r.send_fn = _send_fn;
+    _r.send_ptr = _send_ptr;
+    _lui_tools_cur.append(_allocator, _r) catch {};
+}
+fn _lui_tool_separator() void {
+    _lui_tools_cur.append(_allocator, .{ .sep = true }) catch {};
+}
+fn _lui_tool_enabled(_enabled: bool) void { _lui_tool_enabled_next = _enabled; }
+fn _lui_toolbar_rebuild(_t: *_ui.Toolbar) void {
+    _t.Clear();
+    var _lb: [256]u8 = undefined;
+    var _tb: [256]u8 = undefined;
+    for (_lui_tools_cur.items) |_r| {
+        if (_r.sep) { _ = _t.AppendSeparator(); continue; }
+        const _tipz: ?[*:0]const u8 = if (_r.tip_len > 0) _lui_z(&_tb, _r.tip[0.._r.tip_len]).ptr else null;
+        const _idx = _t.AppendItem(_lui_z(&_lb, _r.label[0.._r.label_len]), _lui_icon_image(_r.icon), _tipz);
+        if (!_r.enabled) _t.SetItemEnabled(_idx, false);
+    }
+}
+fn _lui_end_toolbar() void {
+    const _t = _lui_toolbar orelse blk: {
+        const _nt = _ui.Toolbar.New() catch return;
+        _ui.Toolbar.OnClicked(_nt, anyopaque, anyerror, _lui_tool_cb, null);
+        _lui_toolbar = _nt;
+        break :blk _nt;
+    };
+    if (!_lui_toolbar_attached) { if (_lui_window) |_w| { _w.SetToolbar(_t); _lui_toolbar_attached = true; } }
+    var _same = _lui_tools.items.len == _lui_tools_cur.items.len;
+    if (_same) { for (_lui_tools.items, _lui_tools_cur.items) |*_a, *_b| { if (!_lui_tool_same_shape(_a, _b)) { _same = false; break; } } }
+    if (_same) {
+        for (_lui_tools.items, _lui_tools_cur.items, 0..) |*_a, *_b, _i| {
+            if (_a.enabled != _b.enabled) _t.SetItemEnabled(@intCast(_i), _b.enabled);
+            _a.* = _b.*;
+        }
+        return;
+    }
+    _lui_toolbar_rebuild(_t);
+    _lui_tools.clearRetainingCapacity();
+    _lui_tools.appendSlice(_allocator, _lui_tools_cur.items) catch {};
+}
 // ── message-carrying widgets (§6b) ──
 fn _lui_action_cb(_btn: *_ui.Button, _m: ?*_LuiNode) anyerror!void {
     _ = _btn;
@@ -3286,6 +3395,11 @@ const _gui_lui_backend = _GuiBackend{
     .menuSeparatorFn = _lui_menu_separator,
     .menuQuitFn     = _lui_menu_quit,
     .endMenuFn      = _lui_end_menu,
+    .beginToolbarFn = _lui_begin_toolbar,
+    .toolFn         = _lui_tool,
+    .toolSeparatorFn = _lui_tool_separator,
+    .toolEnabledFn  = _lui_tool_enabled,
+    .endToolbarFn   = _lui_end_toolbar,
     .takeKeyFn      = _lui_take_key,
     .progressBarFn = _lui_progressbar,
     .comboboxFn    = _lui_combobox,

@@ -1,0 +1,60 @@
+# toolbar_smoke.zbr -- g.beginToolbar / tool / toolIcon / toolSeparator / toolEnabled /
+# endToolbar (2026-09-23): a native strip under the menubar (GtkToolbar, ToolbarWindow32,
+# NSToolbar in the title bar). Declared every render like the menus, but the set may CHANGE:
+# here the Stop item is enabled only while "running", and a Clear item appears after the
+# first click. An item sends its Msg; toolIcon names a built-in or registered icon.
+# Stub prints the items; gui-scaffold + libui-section compile it.
+struct Model
+    var running: bool
+    var log: str
+    var clicks: int
+
+union Msg
+    build
+    run
+    stop
+    clear
+
+def init(): Model
+    return Model(running: false, log: "idle", clicks: 0)
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.build
+            return m except log = "built", clicks = m.clicks + 1
+        on Msg.run
+            return m except running = true, log = "running", clicks = m.clicks + 1
+        on Msg.stop
+            return m except running = false, log = "stopped", clicks = m.clicks + 1
+        on Msg.clear
+            return m except log = "", clicks = 0
+
+# a 12x12 filled square
+def square(r: int, g: int, b: int): str
+    var sb = StringBuilder()
+    var i: int = 0
+    while i < 144
+        sb.appendChar(r)
+        sb.appendChar(g)
+        sb.appendChar(b)
+        sb.appendChar(255)
+        i = i + 1
+    return sb.build()
+
+def view(g: Gui, m: Model)
+    g.beginToolbar()
+    g.toolIcon("Build", "hammer", "Compile the project", Msg.build)
+    g.toolIcon("Run", "go", "Run the tests", Msg.run)
+    g.toolEnabled(m.running)
+    g.tool("Stop", Msg.stop)
+    if m.clicks > 0
+        g.toolSeparator()
+        g.toolIcon("Clear", "warn", "Clear the log", Msg.clear)
+    g.endToolbar()
+    g.text("state: " + m.log)
+    g.text("clicks: " + m.clicks.toString())
+
+def main()
+    Gui.registerIcon("hammer", 12, 12, square(0x60, 0x60, 0xC0))
+    Gui.registerIcon("go", 12, 12, square(0x2E, 0xB8, 0x4E))
+    Gui.run("toolbar", 420, 160, init, update, view)

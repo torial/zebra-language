@@ -57,6 +57,7 @@ const _hash_sha256 = _zbr_rt._hash_sha256;
 const _arg_parse = _zbr_rt._arg_parse;
 const _zbr_print = _zbr_rt._zbr_print;
 const _term_print = _zbr_rt._term_print;
+const _zbr_exit = _zbr_rt._zbr_exit;
 const _zbr_lines = _zbr_rt._zbr_lines;
 const _sys_setenv = _zbr_rt._sys_setenv;
 const _sys_getenv = _zbr_rt._sys_getenv;
@@ -318,7 +319,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:176
         if (self.cycle_is_error) {
 // zbr:selfhost/main.zbr:177
-            std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+            _zbr_exit(@as(i64, 1));
         }
     }
 
@@ -485,7 +486,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:278
             std.debug.print("{s}\n", .{resolver.allErrorMessages()});
 // zbr:selfhost/main.zbr:279
-            std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+            _zbr_exit(@as(i64, 1));
         }
 // zbr:selfhost/main.zbr:280
         std.debug.print("{s}\n", .{"  resolved OK"});
@@ -540,7 +541,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:311
                     std.debug.print("{s}\n", .{tc_ctx.errorMessages()});
 // zbr:selfhost/main.zbr:312
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                    _zbr_exit(@as(i64, 1));
                 }
 // zbr:selfhost/main.zbr:313
                 if (tc_ctx.hasWarnings()) {
@@ -2770,7 +2771,7 @@ pub fn _zbr_fn_runTestList(path: []const u8, tag_filter: ?[]const u8) void {
 // zbr:selfhost/main.zbr:1566
             std.debug.print("{s}\n", .{_str_concat(_str_concat(_str_concat("zebra test --list: ", path, _zbr_rt._allocator), ": ", _zbr_rt._allocator), _zbr_error_msg(), _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:1567
-            std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+            _zbr_exit(@as(i64, 1));
         }
         unreachable;
     }
@@ -4865,7 +4866,7 @@ pub fn _zbr_fn_runTypes(path: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:2586
         std.debug.print("{s}\n", .{resolver.allErrorMessages()});
 // zbr:selfhost/main.zbr:2587
-        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+        _zbr_exit(@as(i64, 1));
     }
 // zbr:selfhost/main.zbr:2588
     if (pm_node == .module_) {
@@ -5212,7 +5213,7 @@ pub fn _zbr_fn_runUp(check_only: bool, want: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:2813
         std.debug.print("{s}\n", .{"  `zebra up` manages the layout install.sh / install.ps1 create; for a source build, git pull and zig build."});
 // zbr:selfhost/main.zbr:2814
-        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 2)))));
+        _zbr_exit(@as(i64, 2));
     }
 // zbr:selfhost/main.zbr:2815
     const os_: []const u8 = _zbr_fn_upOs();
@@ -5444,24 +5445,24 @@ pub fn _zbr_fn_runFmt(path: []const u8, check_only: bool, print_only: bool) anye
 // zbr:selfhost/main.zbr:2924
             std.debug.print("{s}\n", .{_str_concat(_str_concat("fmt: ", path, _zbr_rt._allocator), " would be reformatted", _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:2925
-            std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+            _zbr_exit(@as(i64, 1));
         }
 // zbr:selfhost/main.zbr:2926
-        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+        _zbr_exit(@as(i64, 0));
     }
 // zbr:selfhost/main.zbr:2927
     if (print_only) {
 // zbr:selfhost/main.zbr:2928
         _zbr_print("{s}\n", .{formatted});
 // zbr:selfhost/main.zbr:2929
-        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+        _zbr_exit(@as(i64, 0));
     }
 // zbr:selfhost/main.zbr:2930
     if (std.mem.eql(u8, original, formatted)) {
 // zbr:selfhost/main.zbr:2931
         std.debug.print("{s}\n", .{_str_concat(_str_concat("fmt: ", path, _zbr_rt._allocator), " already formatted", _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:2932
-        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+        _zbr_exit(@as(i64, 0));
     }
 // zbr:selfhost/main.zbr:2933
     (blk_fw: {
@@ -6962,14 +6963,14 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:3847
                 _zbr_fn_emitUsage(false);
 // zbr:selfhost/main.zbr:3848
-                std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 2)))));
+                _zbr_exit(@as(i64, 2));
             }
 // zbr:selfhost/main.zbr:3852
             if (args.contains("--version")) {
 // zbr:selfhost/main.zbr:3855
                 _zbr_print("{s}\n", .{_zbr_fn_versionBanner()});
 // zbr:selfhost/main.zbr:3856
-                std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                _zbr_exit(@as(i64, 0));
             }
 // zbr:selfhost/main.zbr:3858
             const cpu_flag: []const u8 = args.option("--cpu", "");
@@ -6982,12 +6983,12 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:3865
                         (_zbr_fn_runTypecheckMerge(merge_file) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:3866
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                        _zbr_exit(@as(i64, 0));
                     } else {
 // zbr:selfhost/main.zbr:3868
                         std.debug.print("{s}\n", .{"usage: zebra typecheck-merge <file.zbr>"});
 // zbr:selfhost/main.zbr:3869
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                        _zbr_exit(@as(i64, 1));
                     }
                 }
             }
@@ -7000,12 +7001,12 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:3878
                         (_zbr_fn_runTypes(types_file) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:3879
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                        _zbr_exit(@as(i64, 0));
                     } else {
 // zbr:selfhost/main.zbr:3881
                         std.debug.print("{s}\n", .{"usage: zebra types <file.zbr>"});
 // zbr:selfhost/main.zbr:3882
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                        _zbr_exit(@as(i64, 1));
                     }
                 }
             }
@@ -7020,12 +7021,12 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:3891
                         (_zbr_fn_runDiagnostics(diag_file, diag_out) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:3892
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                        _zbr_exit(@as(i64, 0));
                     } else {
 // zbr:selfhost/main.zbr:3894
                         std.debug.print("{s}\n", .{"usage: zebra diagnostics <file.zbr> [--out <file.json>]"});
 // zbr:selfhost/main.zbr:3895
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                        _zbr_exit(@as(i64, 1));
                     }
                 }
             }
@@ -7036,7 +7037,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:3902
                     _zbr_fn_runLsp();
 // zbr:selfhost/main.zbr:3903
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                    _zbr_exit(@as(i64, 0));
                 }
             }
 // zbr:selfhost/main.zbr:3910
@@ -7052,12 +7053,12 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:3915
                         (_zbr_fn_runFmt(fmt_file, fmt_check, fmt_print) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:3916
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                        _zbr_exit(@as(i64, 0));
                     } else {
 // zbr:selfhost/main.zbr:3918
                         std.debug.print("{s}\n", .{"usage: zebra fmt [--check|--print] <file.zbr>"});
 // zbr:selfhost/main.zbr:3919
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                        _zbr_exit(@as(i64, 1));
                     }
                 }
             }
@@ -7072,7 +7073,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:3928
                     (_zbr_fn_runUp(up_check, up_to) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:3929
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                    _zbr_exit(@as(i64, 0));
                 }
             }
 // zbr:selfhost/main.zbr:3935
@@ -7086,15 +7087,15 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:3939
                         if (had_issues) {
 // zbr:selfhost/main.zbr:3940
-                            std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                            _zbr_exit(@as(i64, 1));
                         }
 // zbr:selfhost/main.zbr:3941
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                        _zbr_exit(@as(i64, 0));
                     } else {
 // zbr:selfhost/main.zbr:3943
                         std.debug.print("{s}\n", .{"usage: zebra check <file.zbr>"});
 // zbr:selfhost/main.zbr:3944
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                        _zbr_exit(@as(i64, 1));
                     }
                 }
             }
@@ -7103,7 +7104,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:3951
                 if (std.mem.eql(u8, repl_pos, "repl")) {
 // zbr:selfhost/main.zbr:3955
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, _zbr_fn_replRun())))));
+                    _zbr_exit(@as(i64, _zbr_fn_replRun()));
                 }
             }
 // zbr:selfhost/main.zbr:3960
@@ -7156,15 +7157,15 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:3989
                             std.debug.print("{s}\n", .{"usage: zebra debug --dump-map <source.zbr|generated.zig>"});
 // zbr:selfhost/main.zbr:3990
-                            std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                            _zbr_exit(@as(i64, 1));
                         }
 // zbr:selfhost/main.zbr:3991
                         if (args.contains("--dump-transform")) {
 // zbr:selfhost/main.zbr:3992
-                            std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, _zbr_fn_dbgDumpTransform(dm_target, args.contains("--from-lldb")))))));
+                            _zbr_exit(@as(i64, _zbr_fn_dbgDumpTransform(dm_target, args.contains("--from-lldb"))));
                         }
 // zbr:selfhost/main.zbr:3993
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, _zbr_fn_dbgDumpMap(dm_target))))));
+                        _zbr_exit(@as(i64, _zbr_fn_dbgDumpMap(dm_target)));
                     }
 // zbr:selfhost/main.zbr:3995
                     var dbg_file: ?[]const u8 = null;
@@ -7192,12 +7193,12 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4006
                     if (dbg_file) |debug_file| {
 // zbr:selfhost/main.zbr:4011
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, _zbr_fn_dbgRunSession(debug_file, cpu_flag))))));
+                        _zbr_exit(@as(i64, _zbr_fn_dbgRunSession(debug_file, cpu_flag)));
                     } else {
 // zbr:selfhost/main.zbr:4013
                         std.debug.print("{s}\n", .{"usage: zebra debug <file.zbr>"});
 // zbr:selfhost/main.zbr:4014
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                        _zbr_exit(@as(i64, 1));
                     }
                 }
             }
@@ -7224,7 +7225,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4041
                         std.debug.print("{s}\n", .{"  create build.zbr here, or pass --build-file=PATH"});
 // zbr:selfhost/main.zbr:4042
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                        _zbr_exit(@as(i64, 1));
                     }
 // zbr:selfhost/main.zbr:4048
                     _sys_setenv("ZEBRA_COMPILER", _sys_self_exe());
@@ -7333,10 +7334,10 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4118
                 if (help_mode) {
 // zbr:selfhost/main.zbr:4119
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                    _zbr_exit(@as(i64, 0));
                 }
 // zbr:selfhost/main.zbr:4120
-                std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                _zbr_exit(@as(i64, 1));
             }
 // zbr:selfhost/main.zbr:4122
             const path: []const u8 = src_path.?;
@@ -7345,14 +7346,14 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4127
                 std.debug.print("{s}\n", .{_str_concat(_str_concat("zebra: source file not found: '", path, _zbr_rt._allocator), "'", _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:4128
-                std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                _zbr_exit(@as(i64, 1));
             }
 // zbr:selfhost/main.zbr:4131
             if (run_test_list) {
 // zbr:selfhost/main.zbr:4132
                 _zbr_fn_runTestList(path, run_tag_filter);
 // zbr:selfhost/main.zbr:4133
-                std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                _zbr_exit(@as(i64, 0));
             }
 // zbr:selfhost/main.zbr:4137
             const mode_c: bool = args.contains("-c");
@@ -7404,7 +7405,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4211
                 std.debug.print("{s}\n", .{_str_concat(_str_concat("zebra: --gui-backend=", gui_backend, _zbr_rt._allocator), " is not a backend; tui and libui_ng are, and stub (or no flag) is the test backend. glfw was retired with the bootstrap, 2026-09-15", _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:4212
-                std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 2)))));
+                _zbr_exit(@as(i64, 2));
             }
 // zbr:selfhost/main.zbr:4213
             _zbr_fn_setGuiBackend(gui_backend);
@@ -7442,7 +7443,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4252
                     std.debug.print("{s}\n", .{_str_concat(_str_concat(_str_concat(_str_concat("zebra: ", sec_file, _zbr_rt._allocator), " not found next to the preamble (", _zbr_rt._allocator), gui_sec_path, _zbr_rt._allocator), ")", _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:4253
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                    _zbr_exit(@as(i64, 1));
                 }
 // zbr:selfhost/main.zbr:4254
                 _zbr_fn_setGuiSection((std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, gui_sec_path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error")));
@@ -7461,7 +7462,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4278
                     std.debug.print("{s}\n", .{_str_concat(_str_concat("zebra: --output-dir ", output_dir, _zbr_rt._allocator), " does not exist and could not be created — check the path and permissions", _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:4280
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                    _zbr_exit(@as(i64, 1));
                 }
             }
 // zbr:selfhost/main.zbr:4284
@@ -7498,7 +7499,7 @@ pub fn main(_zinit: std.process.Init) void {
                         std.debug.print("{s}\n", .{_str_concat(itry_site, ": error: throws call needs '?' (auto error-propagation was removed; add '?', or pass --allow-implicit-try)", _zbr_rt._allocator)});
                     }
 // zbr:selfhost/main.zbr:4311
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                    _zbr_exit(@as(i64, 1));
                 }
             }
 // zbr:selfhost/main.zbr:4319
@@ -7535,7 +7536,7 @@ pub fn main(_zinit: std.process.Init) void {
                     std.debug.print("{s}\n", .{_str_concat(_str_concat("note: ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{em_deps}) catch @panic("OOM")), _zbr_rt._allocator), " dependency module(s) were compiled with the root, and `--emit-zig` prints only the root -- use `--output-dir DIR` to get every .zig this program needs", _zbr_rt._allocator)});
                 }
 // zbr:selfhost/main.zbr:4340
-                std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                _zbr_exit(@as(i64, 0));
             }
 // zbr:selfhost/main.zbr:4342
             if (mode_shared) {
@@ -7611,12 +7612,12 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4376
                 if ((sr.exit_code != 0)) {
 // zbr:selfhost/main.zbr:4377
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                    _zbr_exit(@as(i64, 1));
                 }
 // zbr:selfhost/main.zbr:4378
                 std.debug.print("{s}\n", .{_str_concat("wrote ", sh_out, _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:4379
-                std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                _zbr_exit(@as(i64, 0));
             }
 // zbr:selfhost/main.zbr:4381
             if (mode_node) {
@@ -7691,12 +7692,12 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4419
                     if ((nr.exit_code != 0)) {
 // zbr:selfhost/main.zbr:4420
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                        _zbr_exit(@as(i64, 1));
                     }
 // zbr:selfhost/main.zbr:4421
                     std.debug.print("{s}\n", .{_str_concat(_str_concat("wrote ", na_stem, _zbr_rt._allocator), ".node", _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:4422
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                    _zbr_exit(@as(i64, 0));
                 } else {
 // zbr:selfhost/main.zbr:4424
                     std.debug.print("{s}\n", .{"zebra: could not find the Node.js N-API headers."});
@@ -7705,7 +7706,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4426
                     std.debug.print("{s}\n", .{"  Or set ZEBRA_NODE_INCLUDE=<path-to>/include/node (and, on Windows, ZEBRA_NODE_LIB=<path-to>/node.lib)"});
 // zbr:selfhost/main.zbr:4427
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                    _zbr_exit(@as(i64, 1));
                 }
             }
 // zbr:selfhost/main.zbr:4430
@@ -7713,7 +7714,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4438
             if ((mode_c and (!check_full))) {
 // zbr:selfhost/main.zbr:4439
-                std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                _zbr_exit(@as(i64, 0));
             }
 // zbr:selfhost/main.zbr:4445
             if (gui_selfhost) {
@@ -7722,10 +7723,10 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4447
                 if ((grc != 0)) {
 // zbr:selfhost/main.zbr:4448
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                    _zbr_exit(@as(i64, 1));
                 }
 // zbr:selfhost/main.zbr:4449
-                std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                _zbr_exit(@as(i64, 0));
             }
 // zbr:selfhost/main.zbr:4481
             if (((((((!release) and (@as(i64, @intCast(mc.c_sources.items.len)) == 0)) and (@as(i64, @intCast(mc.lib_sources.items.len)) == 0)) and (!mc.uses_sqlite)) and (!_zbr_fn_emittedExtern())) and (!_zbr_fn_emittedDynLib()))) {
@@ -7773,7 +7774,7 @@ pub fn main(_zinit: std.process.Init) void {
                             std.debug.print("{s}", .{_zbr_fn_remapZigErrors(fr.stderr, zig_path)});
                         }
 // zbr:selfhost/main.zbr:4503
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                        _zbr_exit(@as(i64, 0));
                     }
 // zbr:selfhost/main.zbr:4509
                     var rargv = std.ArrayList([]const u8).empty;
@@ -7806,10 +7807,10 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4547
                     if ((rc != 0)) {
 // zbr:selfhost/main.zbr:4548
-                        std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                        _zbr_exit(@as(i64, 1));
                     }
 // zbr:selfhost/main.zbr:4549
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+                    _zbr_exit(@as(i64, 0));
                 }
             }
 // zbr:selfhost/main.zbr:4551
@@ -7927,7 +7928,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4644
                 _zbr_fn_deleteScratch(_str_concat(zig_path, ".run.pdb", _zbr_rt._allocator));
 // zbr:selfhost/main.zbr:4645
-                std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                _zbr_exit(@as(i64, 1));
             }
 // zbr:selfhost/main.zbr:4646
             if ((!mode_c)) {
@@ -7957,18 +7958,18 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4664
                 if ((rc2 != 0)) {
 // zbr:selfhost/main.zbr:4665
-                    std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+                    _zbr_exit(@as(i64, 1));
                 }
             }
 // zbr:selfhost/main.zbr:4666
-            std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 0)))));
+            _zbr_exit(@as(i64, 0));
             break :_try_blk;
         }
         if (_try_err != null) {
 // zbr:selfhost/main.zbr:4669
             std.debug.print("{s}\n", .{_zbr_error_msg()});
 // zbr:selfhost/main.zbr:4670
-            std.process.exit(@truncate(@as(u64, @bitCast(@as(i64, 1)))));
+            _zbr_exit(@as(i64, 1));
         }
     }
 }
