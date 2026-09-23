@@ -23,6 +23,20 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **Tooltips, the clipboard and tree icons (2026-09-23).** `g.tooltip(text)` names the widget
+  emitted just before it; `Gui.clipboardText()` / `Gui.setClipboardText(s)` read and write the
+  system clipboard as plain text (statics: there is no widget to hang them on; stub/TUI keep a
+  process-local string); `g.treeNodeIcon` / `g.treeLeafIcon` take an icon name from a built-in
+  set (`folder`, `file`, `dot`, `warn` -- painted, since the runtime has no image decoder yet).
+  In the fork (zig-libui-ng): `uiControlSetTooltip`, `uiClipboardText` / `uiClipboardSetText`,
+  and an `Icon` slot on `uiTreeModelHandler` (Windows image list, GTK pixbuf column, macOS
+  view-based cells -- blind), on all four backends; the Windows C backend now cross-compiles from
+  the container (`zig build -Dtarget=x86_64-windows-gnu`), so only macOS is unverified. All
+  three driven on GTK under Xvfb: tooltips appear on hover, Copy/Paste cross the X clipboard,
+  the icons render. `examples/tooltip_clipboard_smoke.zbr`; `libui-section` 16/16. One thing
+  the witness caught before shipping: `g.tooltip` targeted the most recently CREATED node,
+  so after frame 1 every tooltip in a view landed on one label; it targets the most recently
+  visited node now.
 - **libui: `spinbox`, `combobox`, `radio` and `progressBar` show their label; `##id` labels
   are hidden (2026-09-23).** The four builders set the control bare, so `g.spinbox("Port", ...)`
   had no caption anywhere and no row label inside a `beginForm` -- seen the first time the

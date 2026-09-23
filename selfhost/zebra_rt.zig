@@ -3433,6 +3433,11 @@ pub const _GuiBackend = struct {
     beginTreeFn:   *const fn (id: []const u8) void,
     treeNodeFn:    *const fn (key: []const u8, label: []const u8, expanded: bool) void,
     treeLeafFn:    *const fn (key: []const u8, label: []const u8) void,
+    treeNodeIconFn: *const fn (key: []const u8, label: []const u8, expanded: bool, icon: []const u8) void,
+    treeLeafIconFn: *const fn (key: []const u8, label: []const u8, icon: []const u8) void,
+    tooltipFn:     *const fn (text: []const u8) void,
+    clipboardTextFn:    *const fn () []const u8,
+    setClipboardTextFn: *const fn (text: []const u8) void,
     treePopFn:     *const fn () void,
     endTreeFn:     *const fn () void,
     setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
@@ -3539,6 +3544,11 @@ pub const GuiContext = struct {
     pub fn beginTree(self: GuiContext, id: []const u8, onSelect: anytype, onActivate: anytype, onExpand: anytype) void { _ = onSelect; _ = onActivate; _ = onExpand; self._b.beginTreeFn(id); }
     pub fn treeNode(self: GuiContext, key: []const u8, label: []const u8, expanded: bool) void { self._b.treeNodeFn(key, label, expanded); }
     pub fn treeLeaf(self: GuiContext, key: []const u8, label: []const u8) void { self._b.treeLeafFn(key, label); }
+    // 2026-09-23: a node with an icon from the built-in set ("folder", "file", "dot", "warn";
+    // any other name draws none), a tooltip on the widget emitted just before, and the clipboard.
+    pub fn treeNodeIcon(self: GuiContext, key: []const u8, label: []const u8, expanded: bool, icon: []const u8) void { self._b.treeNodeIconFn(key, label, expanded, icon); }
+    pub fn treeLeafIcon(self: GuiContext, key: []const u8, label: []const u8, icon: []const u8) void { self._b.treeLeafIconFn(key, label, icon); }
+    pub fn tooltip(self: GuiContext, tip: []const u8) void { self._b.tooltipFn(tip); }
     pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
     pub fn endTree(self: GuiContext) void { self._b.endTreeFn(); }
     pub fn setColor(self: GuiContext, role: []const u8, r: f64, g: f64, b: f64, a: f64) void {
@@ -3811,6 +3821,17 @@ var _stub_tree_depth: usize = 0;
 pub fn _stub_begin_tree(id: []const u8) void { std.debug.print("[gui] beginTree: {s}\n", .{id}); _stub_tree_depth = 0; }
 pub fn _stub_tree_node(key: []const u8, label: []const u8, expanded: bool) void { std.debug.print("[gui] tree d={d} {s} {s} ({s})\n", .{ _stub_tree_depth, if (expanded) "v" else ">", label, key }); _stub_tree_depth += 1; }
 pub fn _stub_tree_leaf(key: []const u8, label: []const u8) void { std.debug.print("[gui] tree d={d} - {s} ({s})\n", .{ _stub_tree_depth, label, key }); }
+pub fn _stub_tree_node_icon(key: []const u8, label: []const u8, expanded: bool, icon: []const u8) void { std.debug.print("[gui] tree d={d} {s} {s} ({s}) [{s}]\n", .{ _stub_tree_depth, if (expanded) "v" else ">", label, key, icon }); _stub_tree_depth += 1; }
+pub fn _stub_tree_leaf_icon(key: []const u8, label: []const u8, icon: []const u8) void { std.debug.print("[gui] tree d={d} - {s} ({s}) [{s}]\n", .{ _stub_tree_depth, label, key, icon }); }
+pub fn _stub_tooltip(text: []const u8) void { std.debug.print("[gui] tooltip: {s}\n", .{text}); }
+// The stub's clipboard is a process-local string, so a copy-then-paste program prints the
+// same text it copied. Every backend's clipboardTextFn hands back bytes the caller owns for
+// the frame; the stub's live until the next set.
+pub var _stub_clip: []const u8 = "";
+pub fn _stub_clipboard_text() []const u8 { return _stub_clip; }
+pub fn _stub_set_clipboard_text(text: []const u8) void { _stub_clip = _allocator.dupe(u8, text) catch ""; std.debug.print("[gui] clipboard: {s}\n", .{text}); }
+pub fn _gui_clipboard_text() []const u8 { return _gui_active_backend.clipboardTextFn(); }
+pub fn _gui_set_clipboard_text(text: []const u8) void { _gui_active_backend.setClipboardTextFn(text); }
 pub fn _stub_tree_pop() void { if (_stub_tree_depth > 0) _stub_tree_depth -= 1; }
 pub fn _stub_end_tree() void {}
 pub fn _stub_set_color(role: []const u8, r: f32, g: f32, b: f32, a: f32) void { _ = role; _ = r; _ = g; _ = b; _ = a; }
@@ -3889,6 +3910,11 @@ pub const _gui_stub_backend = _GuiBackend{
     .beginTreeFn        = _stub_begin_tree,
     .treeNodeFn         = _stub_tree_node,
     .treeLeafFn         = _stub_tree_leaf,
+    .treeNodeIconFn     = _stub_tree_node_icon,
+    .treeLeafIconFn     = _stub_tree_leaf_icon,
+    .tooltipFn          = _stub_tooltip,
+    .clipboardTextFn    = _stub_clipboard_text,
+    .setClipboardTextFn = _stub_set_clipboard_text,
     .treePopFn          = _stub_tree_pop,
     .endTreeFn          = _stub_end_tree,
     .setColorFn         = _stub_set_color,

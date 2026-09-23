@@ -31,5 +31,6 @@ tears_combat_test
 tears_of_the_tuon
 tears_playthrough
 tears_village_demo
+tooltip_clipboard_smoke
 tree_smoke
 widget_smoke

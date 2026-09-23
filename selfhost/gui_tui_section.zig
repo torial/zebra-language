@@ -41,6 +41,11 @@ const _GuiBackend = struct {
     beginTreeFn:   *const fn (id: []const u8, scap: *const anyopaque, scap_len: usize, tsel: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, acap: *const anyopaque, acap_len: usize, tact: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, ecap: *const anyopaque, ecap_len: usize, texp: *const fn (*const anyopaque, []const u8, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     treeNodeFn:    *const fn (key: []const u8, label: []const u8, expanded: bool) void,
     treeLeafFn:    *const fn (key: []const u8, label: []const u8) void,
+    treeNodeIconFn: *const fn (key: []const u8, label: []const u8, expanded: bool, icon: []const u8) void,
+    treeLeafIconFn: *const fn (key: []const u8, label: []const u8, icon: []const u8) void,
+    tooltipFn:     *const fn (text: []const u8) void,
+    clipboardTextFn:    *const fn () []const u8,
+    setClipboardTextFn: *const fn (text: []const u8) void,
     treePopFn:     *const fn () void,
     endTreeFn:     *const fn () void,
     setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
@@ -286,6 +291,11 @@ const GuiContext = struct {
     }
     pub fn treeNode(self: GuiContext, key: []const u8, label: []const u8, expanded: bool) void { self._b.treeNodeFn(key, label, expanded); }
     pub fn treeLeaf(self: GuiContext, key: []const u8, label: []const u8) void { self._b.treeLeafFn(key, label); }
+    // 2026-09-23: a node with an icon from the built-in set ("folder", "file", "dot", "warn";
+    // any other name draws none), a tooltip on the widget emitted just before, and the clipboard.
+    pub fn treeNodeIcon(self: GuiContext, key: []const u8, label: []const u8, expanded: bool, icon: []const u8) void { self._b.treeNodeIconFn(key, label, expanded, icon); }
+    pub fn treeLeafIcon(self: GuiContext, key: []const u8, label: []const u8, icon: []const u8) void { self._b.treeLeafIconFn(key, label, icon); }
+    pub fn tooltip(self: GuiContext, tip: []const u8) void { self._b.tooltipFn(tip); }
     pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
     pub fn endTree(self: GuiContext) void { self._b.endTreeFn(); }
     pub fn setColor(self: GuiContext, role: []const u8, r: f64, g: f64, b: f64, a: f64) void {
@@ -601,6 +611,8 @@ fn _ScopeWrap(comptime MapT: type) type {
         }
     };
 }
+fn _gui_clipboard_text() []const u8 { return _gui_active_backend.clipboardTextFn(); }
+fn _gui_set_clipboard_text(text: []const u8) void { _gui_active_backend.setClipboardTextFn(text); }
 fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, _mvu_update: anytype, _mvu_view: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
@@ -957,6 +969,13 @@ fn _tui_tree_node(key: []const u8, label: []const u8, expanded: bool) void {
     _tui_indent();
     if (!expanded) _tui_tree_hidden = 1;
 }
+// 2026-09-23: icons have no cells here; tooltips nowhere to hover; the clipboard is process-local.
+fn _tui_tree_node_icon(key: []const u8, label: []const u8, expanded: bool, icon: []const u8) void { _ = icon; _tui_tree_node(key, label, expanded); }
+fn _tui_tree_leaf_icon(key: []const u8, label: []const u8, icon: []const u8) void { _ = icon; _tui_tree_leaf(key, label); }
+fn _tui_tooltip(text: []const u8) void { _ = text; }
+var _tui_clip: []const u8 = "";
+fn _tui_clipboard_text() []const u8 { return _tui_clip; }
+fn _tui_set_clipboard_text(text: []const u8) void { _tui_clip = _allocator.dupe(u8, text) catch ""; }
 fn _tui_tree_leaf(key: []const u8, label: []const u8) void {
     _ = key;
     if (_tui_tree_hidden > 0) return;
@@ -1074,6 +1093,11 @@ const _gui_tui_backend = _GuiBackend{
     .beginTreeFn        = _tui_begin_tree,
     .treeNodeFn         = _tui_tree_node,
     .treeLeafFn         = _tui_tree_leaf,
+    .treeNodeIconFn     = _tui_tree_node_icon,
+    .treeLeafIconFn     = _tui_tree_leaf_icon,
+    .tooltipFn          = _tui_tooltip,
+    .clipboardTextFn    = _tui_clipboard_text,
+    .setClipboardTextFn = _tui_set_clipboard_text,
     .treePopFn          = _tui_tree_pop,
     .endTreeFn          = _tui_end_tree,
     .setColorFn         = _tui_set_color,

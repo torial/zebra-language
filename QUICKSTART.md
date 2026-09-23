@@ -3260,6 +3260,9 @@ message, and the body becomes `view`.
 | `g.indent()` / `g.unindent()`             | void     | Cosmetic, TUI only; a no-op on libui-ng.   |
 | `g.beginPanel(id)` / `g.endPanel(id)`     | void     | Titled group box (libui `uiGroup`; an indented heading on the TUI). The one panel form since 2026-09-22: the callback `g.panel`, `g.window` and `g.childWindow` are removed. |
 | `g.beginTree(id, onSelect, onActivate, onExpand)` … `g.endTree()` | void | A native single-column tree (2026-09-22; libui `uiTree`: SysTreeView32 / GtkTreeView / NSOutlineView / BOutlineListView). Between them `g.treeNode(key, label, expanded)` opens a node whose children follow until `g.treePop()`, `g.treeLeaf(key, label)` is a childless node. The view emits the whole tree each render; the section diffs by key. The model drives expansion: pass its `expanded`, and `onExpand: def(key: str, open: bool): Msg` is where a click reports so the model decides. `onSelect`/`onActivate: def(key: str): Msg` on selection / double-click. Keys are the app's stable names (paths). `examples/tree_smoke.zbr` |
+| `g.treeNodeIcon(key, label, expanded, icon)` / `g.treeLeafIcon(key, label, icon)` | void | `treeNode`/`treeLeaf` with an icon from the built-in set -- `"folder"`, `"file"`, `"dot"`, `"warn"`; any other name draws none (2026-09-23). Stub prints `[icon]`; TUI ignores it. |
+| `g.tooltip(text)`                          | void     | The tooltip for the widget emitted just before it, on any backend that has hover (2026-09-23; libui: a per-control tooltip on Windows, `gtk_widget_set_tooltip_text`, NSView toolTip). Stub prints it; TUI ignores it. `examples/tooltip_clipboard_smoke.zbr` |
+| `Gui.clipboardText(): str` / `Gui.setClipboardText(s)` | str / void | The system clipboard's plain text, read and written (2026-09-23). Statics on `Gui` because there is no widget to hang them on; call them from `update`. Stub and TUI keep a process-local string, so a copy-then-paste program behaves the same everywhere. |
 | `g.area(id, w, h, draw, on)`               | void     | A drawing surface (2026-09-22; libui `uiArea` -- Direct2D / Cairo / CoreGraphics). `draw: def(c: Gui)` paints with `c.line/rect/fillRect/circle/fillCircle/drawText` and `c.canvasWidth()/canvasHeight()`; it runs at paint time and captures what it needs from the model (`capture` block), and the area repaints when those captured values change. `on: def(x: float, y: float, button: int): Msg` on a mouse press. Colours are `0xRRGGBB`. Stub prints the verbs; TUI shows a placeholder. `examples/area_smoke.zbr` |
 | `g.beginForm(id)` / `g.endForm(id)`       | void     | A form (2026-09-22): labels left, controls right, aligned (libui `uiForm`). Each child widget's own label is its row label -- `g.field("Host", ...)` inside a form is a `Host` row. A plain vbox on the other backends. `examples/form_smoke.zbr` |
 | `g.beginTabs(id, stretch)` / `g.endTabs()` | void    | Tab control (libui-ng `uiTab`); pages go between `g.beginTabPage(id, label)` / `g.endTabPage()`. TUI backend: no-op |
@@ -3342,7 +3345,30 @@ g.endTree()
 A click on an expander does not open the node; it sends `onExpand(key, open)`, `update`
 puts the key in (or out of) the model, and the next render's `expanded` opens it -- so
 "Open all" is a message like any other. Keys must be stable across renders (a path is
-the natural key). Not yet: icons, columns, drag-and-drop, editing, the tui's keyboard.
+the natural key). `g.treeNodeIcon(key, label, expanded, icon)` / `g.treeLeafIcon(key, label,
+icon)` take an icon name from the built-in set (`folder`, `file`, `dot`, `warn`); the set is
+named rather than loaded because the runtime has no image decoder yet. Not yet: columns,
+drag-and-drop, editing, the tui's keyboard.
+
+### Tooltips and the clipboard (2026-09-23)
+
+`g.tooltip(text)` names the widget emitted just before it -- a button, a field, a tree --
+and shows on hover where the backend has a pointer (libui on all three desktops). The
+clipboard is two statics, `Gui.clipboardText(): str` and `Gui.setClipboardText(s)`,
+because there is no widget to hang them on; call them from `update` when a message asks:
+
+```zebra
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.copy
+            Gui.setClipboardText(m.text)
+            return m
+        on Msg.paste
+            return m except pasted = Gui.clipboardText()
+```
+
+Plain text only. The stub and the TUI keep a process-local string, so the program above
+prints the same on every backend. `examples/tooltip_clipboard_smoke.zbr`.
 
 ### Drawing (libui-ng; a placeholder on the TUI)
 

@@ -19637,6 +19637,17 @@ struct Generator
                 # anything but six arguments before this is reached.
                 w.emit("@compileError(\"Gui.run takes (title, width, height, init, update, view)\")")
             return
+        if mname == "clipboardText"
+            w.emit("_gui_clipboard_text()")
+            return
+        if mname == "setClipboardText"
+            w.emit("_gui_set_clipboard_text(")
+            if args.len >= 1
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit(")")
+            return
         if mname == "setColor"
             w.emit("_gui_active_backend.setColorFn(")
             if args.len >= 1

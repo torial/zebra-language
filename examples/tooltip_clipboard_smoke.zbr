@@ -1,0 +1,55 @@
+# tooltip_clipboard_smoke.zbr -- g.tooltip, Gui.clipboardText / setClipboardText, and tree
+# icons (2026-09-23). A tooltip names the widget emitted just before it; the clipboard is a
+# Gui static because there is no widget to hang it on; treeNodeIcon/treeLeafIcon take a
+# name from the built-in set (folder, file, dot, warn -- anything else draws none). "Copy"
+# puts the field's text on the system clipboard, "Paste" reads it back into the model, so
+# on a real desktop the round trip crosses the OS. Stub prints the verbs and keeps a
+# process-local clipboard; gui-scaffold + libui-section compile it.
+struct Model
+    var text: str
+    var pasted: str
+    var picked: str
+
+union Msg
+    set_text: str
+    copy
+    paste
+    pick: str
+
+def init(): Model
+    return Model(text: "hello from zebra", pasted: "", picked: "")
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.set_text as s
+            return m except text = s
+        on Msg.copy
+            Gui.setClipboardText(m.text)
+            return m
+        on Msg.paste
+            return m except pasted = Gui.clipboardText()
+        on Msg.pick as k
+            return m except picked = k
+
+def view(g: Gui, m: Model)
+    g.field("Text", m.text, def(s: str): Msg = Msg.set_text(s))
+    g.tooltip("What Copy puts on the clipboard")
+    using g.hbox("##row", false)
+        g.button("Copy", Msg.copy)
+        g.tooltip("Copy the text above to the system clipboard")
+        g.button("Paste", Msg.paste)
+        g.tooltip("Read the system clipboard into the line below")
+    g.text("pasted: " + m.pasted)
+    g.beginTree("files", def(k: str): Msg = Msg.pick(k), def(k: str): Msg = Msg.pick(k), def(k: str, o: bool): Msg = Msg.pick(if(o, k, k)))
+    g.treeNodeIcon("src", "src/", true, "folder")
+    g.treeLeafIcon("src/main.zbr", "main.zbr", "file")
+    g.treeLeafIcon("src/todo", "unsaved", "warn")
+    g.treePop()
+    g.treeLeafIcon("build", "build", "dot")
+    g.treeLeaf("plain", "no icon")
+    g.endTree()
+    g.tooltip("Icons come from the built-in set")
+    g.text("picked: " + m.picked)
+
+def main()
+    Gui.run("tooltips, clipboard, icons", 340, 360, init, update, view)

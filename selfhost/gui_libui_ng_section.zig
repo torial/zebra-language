@@ -41,6 +41,11 @@ const _GuiBackend = struct {
     beginTreeFn:   *const fn (id: []const u8, scap: *const anyopaque, scap_len: usize, tsel: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, acap: *const anyopaque, acap_len: usize, tact: *const fn (*const anyopaque, []const u8, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, ecap: *const anyopaque, ecap_len: usize, texp: *const fn (*const anyopaque, []const u8, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     treeNodeFn:    *const fn (key: []const u8, label: []const u8, expanded: bool) void,
     treeLeafFn:    *const fn (key: []const u8, label: []const u8) void,
+    treeNodeIconFn: *const fn (key: []const u8, label: []const u8, expanded: bool, icon: []const u8) void,
+    treeLeafIconFn: *const fn (key: []const u8, label: []const u8, icon: []const u8) void,
+    tooltipFn:     *const fn (text: []const u8) void,
+    clipboardTextFn:    *const fn () []const u8,
+    setClipboardTextFn: *const fn (text: []const u8) void,
     treePopFn:     *const fn () void,
     endTreeFn:     *const fn () void,
     setColorFn:         *const fn (role: []const u8, r: f32, g: f32, b: f32, a: f32) void,
@@ -286,6 +291,11 @@ const GuiContext = struct {
     }
     pub fn treeNode(self: GuiContext, key: []const u8, label: []const u8, expanded: bool) void { self._b.treeNodeFn(key, label, expanded); }
     pub fn treeLeaf(self: GuiContext, key: []const u8, label: []const u8) void { self._b.treeLeafFn(key, label); }
+    // 2026-09-23: a node with an icon from the built-in set ("folder", "file", "dot", "warn";
+    // any other name draws none), a tooltip on the widget emitted just before, and the clipboard.
+    pub fn treeNodeIcon(self: GuiContext, key: []const u8, label: []const u8, expanded: bool, icon: []const u8) void { self._b.treeNodeIconFn(key, label, expanded, icon); }
+    pub fn treeLeafIcon(self: GuiContext, key: []const u8, label: []const u8, icon: []const u8) void { self._b.treeLeafIconFn(key, label, icon); }
+    pub fn tooltip(self: GuiContext, tip: []const u8) void { self._b.tooltipFn(tip); }
     pub fn treePop(self: GuiContext) void { self._b.treePopFn(); }
     pub fn endTree(self: GuiContext) void { self._b.endTreeFn(); }
     pub fn setColor(self: GuiContext, role: []const u8, r: f64, g: f64, b: f64, a: f64) void {
@@ -607,6 +617,8 @@ fn _ScopeWrap(comptime MapT: type) type {
         }
     };
 }
+fn _gui_clipboard_text() []const u8 { return _gui_active_backend.clipboardTextFn(); }
+fn _gui_set_clipboard_text(text: []const u8) void { _gui_active_backend.setClipboardTextFn(text); }
 fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, _mvu_update: anytype, _mvu_view: anytype) void {
     _gui_active_backend.initFn(title, width, height) catch @panic("gui init failed");
     defer _gui_active_backend.deinitFn();
@@ -1172,6 +1184,9 @@ const _LuiNode = struct {
     children: std.ArrayList(*_LuiNode) = .empty,
     seen: u32 = 0,
     stretch: bool = false,
+    inner: ?*_ui.Control = null,    // the widget itself when ctrl is a label+widget box (tooltips go here)
+    tip: [128]u8 = undefined,
+    tip_len: usize = 0,
     // per-kind state; the bridge (§2) reads these in the frame an event caused
     clicked: bool = false,
     checked: bool = false,
@@ -1272,6 +1287,10 @@ const _LuiGet = struct { n: *_LuiNode, fresh: bool };
 // The match. Keyed: the retained sibling with that kind and key, moved to this
 // position if it drifted (a closed tab shifts its neighbours). Positional: whatever
 // sits at this position if it is the same kind and not already claimed this frame.
+// The node most recently VISITED this frame (matched or fresh): g.tooltip's target. It was
+// the most recently ATTACHED node at first, which after frame 1 is whatever was created
+// last -- every tooltip in the view then landed on one label, cycling per frame.
+var _lui_last: ?*_LuiNode = null;
 fn _lui_child(_kind: _LuiKind, _key: []const u8) _LuiGet {
     const _p = _lui_top();
     const _i = _lui_cursor[_lui_depth - 1];
@@ -1283,6 +1302,7 @@ fn _lui_child(_kind: _LuiKind, _key: []const u8) _LuiGet {
             if (_c.kind == _kind and _c.seen != _lui_frame_n and std.mem.eql(u8, _c.key, _key)) {
                 if (_j != _i) _lui_move(_p, _j, _i);
                 _c.seen = _lui_frame_n;
+                _lui_last = _c;
                 return .{ .n = _c, .fresh = false };
             }
         }
@@ -1290,6 +1310,7 @@ fn _lui_child(_kind: _LuiKind, _key: []const u8) _LuiGet {
         const _c = _p.children.items[_i];
         if (_c.kind == _kind and _c.key.len == 0 and _c.seen != _lui_frame_n) {
             _c.seen = _lui_frame_n;
+            _lui_last = _c;
             return .{ .n = _c, .fresh = false };
         }
     }
@@ -1300,6 +1321,7 @@ fn _lui_child(_kind: _LuiKind, _key: []const u8) _LuiGet {
         _lui_keyed.put(_n.key, _n) catch {};
     }
     _p.children.insert(_allocator, @min(_i, _p.children.items.len), _n) catch unreachable;
+    _lui_last = _n;
     return .{ .n = _n, .fresh = true };
 }
 // A fresh node has just made its control: put it into the parent at its position.
@@ -1811,6 +1833,7 @@ fn _lui_checkbox(_label: []const u8, _value: bool) bool {
 fn _lui_labelled(_n: *_LuiNode, _label: []const u8, _c: *_ui.Control, _stretch_inner: bool) void {
     var _lb: [256]u8 = undefined;
     // `##id` is a key, not a caption (UI_QUICKSTART): bare control, empty form row label.
+    _n.inner = _c;
     if (std.mem.startsWith(u8, _label, "##")) { _n.ctrl = _c; _n.flabel_len = 0; return; }
     if (_lui_top().kind == .form) {
         const _k = @min(_label.len, _n.flabel.len);
@@ -2248,6 +2271,8 @@ const _LuiTNode = struct {
     b_leaf: bool = false,
     b_children: std.ArrayList(*_LuiTNode) = .empty,
     seen: u32 = 0,
+    icon: u8 = 0,      // index into _lui_icons; 0 = none
+    b_icon: u8 = 0,
 };
 const _LuiTree = struct {
     handler: _ui.Tree.Model.Handler = undefined,
@@ -2287,6 +2312,11 @@ fn _lui_tree_text(_h: *_ui.Tree.Model.Handler, _m: *_ui.Tree.Model, _node: ?*any
     _ = _m;
     const _t: *_LuiTree = @fieldParentPtr("handler", _h);
     return _lui_tnode_of(_node, _t).label.ptr;
+}
+fn _lui_tree_icon(_h: *_ui.Tree.Model.Handler, _m: *_ui.Tree.Model, _node: ?*anyopaque) callconv(.c) ?*_ui.Image {
+    _ = _m;
+    const _t: *_LuiTree = @fieldParentPtr("handler", _h);
+    return _lui_icon_image(_lui_tnode_of(_node, _t).icon);
 }
 fn _lui_tree_has_children(_h: *_ui.Tree.Model.Handler, _m: *_ui.Tree.Model, _node: ?*anyopaque) callconv(.c) c_int {
     _ = _m;
@@ -2339,7 +2369,7 @@ fn _lui_begin_tree(_id: []const u8, _scap: *const anyopaque, _scap_len: usize, _
         const _t = _allocator.create(_LuiTree) catch return;
         _t.* = .{};
         _t.byKey = std.StringHashMap(*_LuiTNode).init(_allocator);
-        _t.handler = .{ .NumChildren = _lui_tree_num_children, .Child = _lui_tree_child, .Text = _lui_tree_text, .HasChildren = _lui_tree_has_children };
+        _t.handler = .{ .NumChildren = _lui_tree_num_children, .Child = _lui_tree_child, .Text = _lui_tree_text, .HasChildren = _lui_tree_has_children, .Icon = _lui_tree_icon };
         _t.model = _ui.Tree.Model.New(&_t.handler) catch null;
         if (_t.model) |_m| {
             const _tr = _ui.Tree.New(_m) catch null;
@@ -2348,6 +2378,7 @@ fn _lui_begin_tree(_id: []const u8, _scap: *const anyopaque, _scap_len: usize, _
                 _ui.Tree.OnNodeActivated(_w, _LuiTree, anyerror, _lui_tree_act_cb, _t);
                 _ui.Tree.OnNodeExpanded(_w, _LuiTree, anyerror, _lui_tree_exp_cb, _t);
                 _ui.Box.Append(_host, _w.as_control(), .stretch);
+                _r.n.inner = _w.as_control();   // tooltips go on the tree itself, not its host box
             }
             _t.tree = _tr;
         }
@@ -2370,7 +2401,7 @@ fn _lui_begin_tree(_id: []const u8, _scap: *const anyopaque, _scap_len: usize, _
     _t.send_ptr = _send_ptr;
 }
 // the build side: find-or-create the record for `key` and hang it under the current parent
-fn _lui_tree_emit(_key: []const u8, _label: []const u8, _expanded: bool, _leaf: bool) ?*_LuiTNode {
+fn _lui_tree_emit(_key: []const u8, _label: []const u8, _expanded: bool, _leaf: bool, _icon: u8) ?*_LuiTNode {
     const _t = _lui_cur_tree orelse return null;
     const _parent = _t.stack[_t.depth];
     var _n: *_LuiTNode = undefined;
@@ -2378,26 +2409,115 @@ fn _lui_tree_emit(_key: []const u8, _label: []const u8, _expanded: bool, _leaf: 
         _n = _have;
     } else {
         _n = _allocator.create(_LuiTNode) catch return null;
-        _n.* = .{ .key = _allocator.dupeZ(u8, _key) catch return null, .label = _allocator.dupeZ(u8, _label) catch return null, .leaf = _leaf };
+        _n.* = .{ .key = _allocator.dupeZ(u8, _key) catch return null, .label = _allocator.dupeZ(u8, _label) catch return null, .leaf = _leaf, .icon = _icon };
         _t.byKey.put(_n.key, _n) catch return null;
     }
     _n.b_label = _label;
     _n.b_expanded = _expanded;
     _n.b_leaf = _leaf;
+    _n.b_icon = _icon;
     _n.b_children.clearRetainingCapacity();
     _n.seen = _t.gen;
     _parent.b_children.append(_allocator, _n) catch return null;
     return _n;
 }
-fn _lui_tree_node(_key: []const u8, _label: []const u8, _expanded: bool) void {
+fn _lui_tree_node_icon(_key: []const u8, _label: []const u8, _expanded: bool, _icon: []const u8) void {
     const _t = _lui_cur_tree orelse return;
-    const _n = _lui_tree_emit(_key, _label, _expanded, false) orelse return;
+    const _n = _lui_tree_emit(_key, _label, _expanded, false, _lui_icon_index(_icon)) orelse return;
     if (_t.depth + 1 >= _t.stack.len) return;
     _t.depth += 1;
     _t.stack[_t.depth] = _n;
 }
-fn _lui_tree_leaf(_key: []const u8, _label: []const u8) void {
-    _ = _lui_tree_emit(_key, _label, false, true);
+fn _lui_tree_leaf_icon(_key: []const u8, _label: []const u8, _icon: []const u8) void {
+    _ = _lui_tree_emit(_key, _label, false, true, _lui_icon_index(_icon));
+}
+fn _lui_tree_node(_key: []const u8, _label: []const u8, _expanded: bool) void { _lui_tree_node_icon(_key, _label, _expanded, ""); }
+fn _lui_tree_leaf(_key: []const u8, _label: []const u8) void { _lui_tree_leaf_icon(_key, _label, ""); }
+// ─── the built-in icon set (2026-09-23): 16x16 premultiplied RGBA, painted once ──────
+// "folder" (a tab and a body), "file" (a page with a folded corner), "dot" (a disc),
+// "warn" (a triangle). Named rather than loaded because the runtime has no image decoder
+// yet; a Gui.loadImage(path) would slot in beside this table.
+const _lui_icon_names = [_][]const u8{ "", "folder", "file", "dot", "warn" };
+var _lui_icons: [_lui_icon_names.len]?*_ui.Image = .{null} ** _lui_icon_names.len;
+fn _lui_icon_index(_name: []const u8) u8 {
+    for (_lui_icon_names, 0..) |_n, _i| { if (_i > 0 and std.mem.eql(u8, _n, _name)) return @intCast(_i); }
+    return 0;
+}
+fn _lui_icon_px(_buf: *[16 * 16 * 4]u8, _x: usize, _y: usize, _r: u8, _g: u8, _b: u8, _a: u8) void {
+    if (_x >= 16 or _y >= 16) return;
+    const _o = (_y * 16 + _x) * 4;
+    // premultiply
+    _buf[_o] = @intCast((@as(u32, _r) * _a) / 255);
+    _buf[_o + 1] = @intCast((@as(u32, _g) * _a) / 255);
+    _buf[_o + 2] = @intCast((@as(u32, _b) * _a) / 255);
+    _buf[_o + 3] = _a;
+}
+fn _lui_icon_rect(_buf: *[16 * 16 * 4]u8, _x0: usize, _y0: usize, _x1: usize, _y1: usize, _r: u8, _g: u8, _b: u8) void {
+    var _y = _y0;
+    while (_y < _y1) : (_y += 1) { var _x = _x0; while (_x < _x1) : (_x += 1) _lui_icon_px(_buf, _x, _y, _r, _g, _b, 255); }
+}
+fn _lui_icon_image(_idx: u8) ?*_ui.Image {
+    if (_idx == 0 or _idx >= _lui_icon_names.len) return null;
+    if (_lui_icons[_idx]) |_im| return _im;
+    var _buf: [16 * 16 * 4]u8 = .{0} ** (16 * 16 * 4);
+    switch (_idx) {
+        1 => { // folder: tab + body, warm yellow with a darker outline
+            _lui_icon_rect(&_buf, 1, 3, 7, 5, 0xC9, 0x9A, 0x2E);
+            _lui_icon_rect(&_buf, 1, 5, 15, 14, 0xC9, 0x9A, 0x2E);
+            _lui_icon_rect(&_buf, 2, 6, 14, 13, 0xF2, 0xC4, 0x5A);
+        },
+        2 => { // file: white page, grey outline, folded corner
+            _lui_icon_rect(&_buf, 3, 1, 13, 15, 0x77, 0x77, 0x77);
+            _lui_icon_rect(&_buf, 4, 2, 12, 14, 0xFC, 0xFC, 0xFC);
+            var _i: usize = 0;
+            while (_i < 4) : (_i += 1) { _lui_icon_rect(&_buf, 9 + _i, 1, 13, 2 + _i, 0x77, 0x77, 0x77); _lui_icon_rect(&_buf, 9, 2 + _i, 13, 3 + _i, 0xE0, 0xE0, 0xE0); }
+            _lui_icon_rect(&_buf, 6, 7, 11, 8, 0xAA, 0xAA, 0xAA);
+            _lui_icon_rect(&_buf, 6, 10, 11, 11, 0xAA, 0xAA, 0xAA);
+        },
+        3 => { // dot: a blue disc
+            var _y: usize = 0;
+            while (_y < 16) : (_y += 1) { var _x: usize = 0; while (_x < 16) : (_x += 1) {
+                const _dx: i32 = @as(i32, @intCast(_x)) * 2 - 15; const _dy: i32 = @as(i32, @intCast(_y)) * 2 - 15;
+                if (_dx * _dx + _dy * _dy <= 11 * 11) _lui_icon_px(&_buf, _x, _y, 0x2A, 0x6E, 0xBB, 255);
+            } }
+        },
+        4 => { // warn: an amber triangle with a dark bang
+            var _y: usize = 2;
+            while (_y < 15) : (_y += 1) { const _half = ((_y - 2) * 7) / 12; var _x: usize = 8 - _half; while (_x <= 8 + _half and _x < 16) : (_x += 1) _lui_icon_px(&_buf, _x, _y, 0xE8, 0xA3, 0x17, 255); }
+            _lui_icon_rect(&_buf, 7, 6, 9, 11, 0x33, 0x22, 0x00);
+            _lui_icon_rect(&_buf, 7, 12, 9, 14, 0x33, 0x22, 0x00);
+        },
+        else => {},
+    }
+    const _im = _ui.Image.New(16, 16) catch return null;
+    _ui.Image.Append(_im, @ptrCast(&_buf), 16, 16, 16 * 4);
+    _lui_icons[_idx] = _im;
+    return _im;
+}
+// ─── tooltip on the most recently emitted widget; clipboard (2026-09-23) ─────────────
+fn _lui_tooltip(_text: []const u8) void {
+    const _n = _lui_last orelse return;
+    const _k = @min(_text.len, _n.tip.len);
+    if (_n.tip_len == _k and std.mem.eql(u8, _n.tip[0.._k], _text[0.._k])) return;
+    @memcpy(_n.tip[0.._k], _text[0.._k]);
+    _n.tip_len = _k;
+    var _zb: [256]u8 = undefined;
+    var _c = _n.inner orelse _n.ctrl orelse return;
+    if (_n.table) |_t| { if (_t.table) |_tb| _c = _tb.as_control(); }   // the table, not its host box
+    _ui.Control.SetTooltip(_c, _lui_z(&_zb, _text[0.._k]));
+}
+var _lui_clip_buf: []const u8 = "";
+fn _lui_clipboard_text() []const u8 {
+    if (_lui_clip_buf.len > 0) { _allocator.free(_lui_clip_buf); _lui_clip_buf = ""; }
+    const _p = _ui.Clipboard.Text() orelse return "";
+    defer _ui.FreeText(_p);
+    _lui_clip_buf = _allocator.dupe(u8, std.mem.span(_p)) catch "";
+    return _lui_clip_buf;
+}
+fn _lui_set_clipboard_text(_text: []const u8) void {
+    const _z = _allocator.dupeZ(u8, _text) catch return;
+    defer _allocator.free(_z);
+    _ui.Clipboard.SetText(_z);
 }
 fn _lui_tree_pop() void {
     const _t = _lui_cur_tree orelse return;
@@ -2452,6 +2572,7 @@ fn _lui_tree_diff(_t: *_LuiTree, _p: *_LuiTNode) void {
             _ui.Tree.Model.NodeChanged(_m, @ptrCast(_c));
         }
         if (_c.leaf != _c.b_leaf) { _c.leaf = _c.b_leaf; _ui.Tree.Model.NodeChanged(_m, @ptrCast(_c)); }
+        if (_c.icon != _c.b_icon) { _c.icon = _c.b_icon; _ui.Tree.Model.NodeChanged(_m, @ptrCast(_c)); }
         _lui_tree_diff(_t, _c);
         if (!_c.leaf and _c.expanded != _c.b_expanded) {
             _c.expanded = _c.b_expanded;
@@ -2824,6 +2945,11 @@ const _gui_lui_backend = _GuiBackend{
     .beginTreeFn        = _lui_begin_tree,
     .treeNodeFn         = _lui_tree_node,
     .treeLeafFn         = _lui_tree_leaf,
+    .treeNodeIconFn     = _lui_tree_node_icon,
+    .treeLeafIconFn     = _lui_tree_leaf_icon,
+    .tooltipFn          = _lui_tooltip,
+    .clipboardTextFn    = _lui_clipboard_text,
+    .setClipboardTextFn = _lui_set_clipboard_text,
     .treePopFn          = _lui_tree_pop,
     .endTreeFn          = _lui_end_tree,
     .setColorFn         = _lui_set_color,
