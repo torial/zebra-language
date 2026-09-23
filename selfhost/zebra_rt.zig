@@ -3699,17 +3699,45 @@ pub fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anyty
     }
 }
 // ─── CodeEditor widget — text buffer stub (no native editor) ─────────────────
-pub const _CodeEditor = struct { text: []const u8, read_only: bool };
+// The whole CodeEditor surface, so a program that compiles on tui/libui compiles
+// here too (2026-09-23: examples/editor_events_smoke.zbr found `hotkey` missing --
+// the stub had the ten methods of 2026-08 and none of the language/event ones).
+pub const _CodeEditor = struct { text: []const u8, read_only: bool, lang: []const u8 = "zebra" };
 pub fn _code_editor_new() *_CodeEditor {
     const _ed = _allocator.create(_CodeEditor) catch @panic("OOM");
     _ed.* = .{ .text = "", .read_only = false };
     return _ed;
 }
+pub fn _code_editor_new_lang(name: []const u8) *_CodeEditor { const _ed = _code_editor_new(); _ed.lang = _stub_lang_norm(name); return _ed; }
+pub fn _code_editor_new_for_file(path: []const u8) *_CodeEditor {
+    const _ed = _code_editor_new();
+    var i = path.len;
+    while (i > 0) : (i -= 1) { if (path[i - 1] == '.') { _ed.lang = _stub_lang_norm(path[i..]); break; } if (path[i - 1] == '/' or path[i - 1] == '\\') break; }
+    return _ed;
+}
+// Same name normalisation as the tui and libui backends, so getLanguage() agrees.
+pub fn _stub_lang_norm(n: []const u8) []const u8 {
+    if (std.mem.eql(u8, n, "zebra") or std.mem.eql(u8, n, "zbr")) return "zebra";
+    if (std.mem.eql(u8, n, "c") or std.mem.eql(u8, n, "h") or std.mem.eql(u8, n, "cpp") or std.mem.eql(u8, n, "cxx") or std.mem.eql(u8, n, "cc") or std.mem.eql(u8, n, "hpp")) return "c";
+    if (std.mem.eql(u8, n, "zig") or std.mem.eql(u8, n, "zon")) return "zig";
+    return "text";
+}
+pub fn _code_editor_set_language(_ed: *_CodeEditor, name: []const u8) void { _ed.lang = _stub_lang_norm(name); }
+pub fn _code_editor_get_language(_ed: *_CodeEditor) []const u8 { return _ed.lang; }
+pub fn _code_editor_restyle(_ed: *_CodeEditor) void { _ = _ed; }
+pub fn _code_editor_take_modified(_ed: *_CodeEditor) bool { _ = _ed; return false; }
+pub fn _code_editor_take_char_added(_ed: *_CodeEditor) i64 { _ = _ed; return 0; }
+pub fn _code_editor_take_margin_click(_ed: *_CodeEditor) i64 { _ = _ed; return -1; }
+pub fn _code_editor_hotkey(_ed: *_CodeEditor, vk: i64, mods: i64) void { _ = _ed; _ = vk; _ = mods; }
+pub fn _code_editor_take_key(_ed: *_CodeEditor) i64 { _ = _ed; return 0; }
 pub fn _code_editor_set_text(_ed: *_CodeEditor, text: []const u8) void { _ed.text = text; }
 pub fn _code_editor_get_text(_ed: *_CodeEditor) []const u8 { return _ed.text; }
 pub fn _code_editor_set_readonly(_ed: *_CodeEditor, v: bool) void { _ed.read_only = v; }
 pub fn _code_editor_render(_ed: *_CodeEditor, _g: GuiContext, id: []const u8, w: f64, h: f64) void {
-    const _r = _g.inputMultiline(id, _ed.text, w, h);
+    // Through the backend table, not the message-form `GuiContext.inputMultiline`
+    // (which takes a closure since the §6c cut and passes 0x0): the stub's
+    // editor is a text buffer, so the width/height still reach the print.
+    const _r = _g._b.inputMultilineFn(id, _ed.text, w, h);
     if (!_ed.read_only) { _ed.text = _r; }
 }
 pub fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ = _ed; _ = _m; }

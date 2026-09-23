@@ -23,6 +23,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **The stub backend compiles every `CodeEditor` program again (2026-09-23).** Its
+  `render` still called the four-argument `inputMultiline` the §6c cut replaced with the
+  message form (`examples/editor_min.zbr`, in the examples baseline, had not compiled on
+  the default backend since), and it lacked `forZebra`/`forC`/`forZig`/`forFile`,
+  `setLanguage`/`getLanguage`, `restyle`, `hotkey`, `takeKey`, `takeModified`,
+  `takeCharAdded` and `takeMarginClick` altogether -- `examples/editor_events_smoke.zbr`
+  was libui-only by accident. The stub now carries the tui section's whole surface (no-op
+  events, the same language-name normalisation). Found by the book's chapter rewrite
+  running its editor example on the stub.
 - **`g.beginTree` … `g.endTree` -- a native tree (2026-09-22).** `treeNode(key, label,
   expanded)` / `treeLeaf(key, label)` / `treePop()`, three message closures (select, activate,
   expand). On libui's new `uiTree` (torial fork): SysTreeView32 on Windows, GtkTreeView over a
