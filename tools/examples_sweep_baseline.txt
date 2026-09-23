@@ -1,4 +1,5 @@
 area_smoke
+canvas_smoke
 combobox_editable_smoke
 constructal
 counter

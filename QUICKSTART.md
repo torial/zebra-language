@@ -3264,6 +3264,7 @@ message, and the body becomes `view`.
 | `g.tooltip(text)`                          | void     | The tooltip for the widget emitted just before it, on any backend that has hover (2026-09-23; libui: a per-control tooltip on Windows, `gtk_widget_set_tooltip_text`, NSView toolTip). Stub prints it; TUI ignores it. `examples/tooltip_clipboard_smoke.zbr` |
 | `Gui.clipboardText(): str` / `Gui.setClipboardText(s)` | str / void | The system clipboard's plain text, read and written (2026-09-23). Statics on `Gui` because there is no widget to hang them on; call them from `update`. Stub and TUI keep a process-local string, so a copy-then-paste program behaves the same everywhere. |
 | `g.area(id, w, h, draw, on)`               | void     | A drawing surface (2026-09-22; libui `uiArea` -- Direct2D / Cairo / CoreGraphics). `draw: def(c: Gui)` paints with `c.line/rect/fillRect/circle/fillCircle/drawText` and `c.canvasWidth()/canvasHeight()`; it runs at paint time and captures what it needs from the model (`capture` block), and the area repaints when those captured values change. `on: def(x: float, y: float, button: int): Msg` on a mouse press. Colours are `0xRRGGBB`. Stub prints the verbs; TUI shows a placeholder. `examples/area_smoke.zbr` |
+| `g.canvas(id, w, h, draw, onMouse, onKey)` | void  | The area with the whole mouse and the keyboard (2026-09-23). `onMouse: def(ev: int, x: float, y: float, b: int): Msg` -- ev 1 press (b = button), 2 release, 3 move (b = held buttons as a bitmask; 0 while hovering), 4 enter, 5 leave (x, y = -1). `onKey: def(vk: int, mods: int, down: bool): Msg` -- vk in `hotkey`'s vocabulary (letters uppercase ASCII, digits, F-keys 0x70.., arrows 0x25..0x28, Enter 0x0D, Esc 0x1B), mods 1 Ctrl 2 Shift 4 Alt; keys reach the canvas once it has focus (a click gives it). Every event is a message, so `update` sees every move. `examples/canvas_smoke.zbr` |
 | `g.beginForm(id)` / `g.endForm(id)`       | void     | A form (2026-09-22): labels left, controls right, aligned (libui `uiForm`). Each child widget's own label is its row label -- `g.field("Host", ...)` inside a form is a `Host` row. A plain vbox on the other backends. `examples/form_smoke.zbr` |
 | `g.beginTabs(id, stretch)` / `g.endTabs()` | void    | Tab control (libui-ng `uiTab`); pages go between `g.beginTabPage(id, label)` / `g.endTabPage()`. TUI backend: no-op |
 | `g.tabSelected(id)` / `g.selectTab(id, i)` | int / void | Selected page index in emission order (-1 with no pages) / select from the model. TUI backend: -1 / no-op |
@@ -3392,8 +3393,16 @@ g.area("board", 240, 240, def(c: Gui)
 The verbs: `line(x1, y1, x2, y2, color, thickness)`, `rect(x, y, w, h, color, thickness)`,
 `fillRect(x, y, w, h, color)`, `circle(cx, cy, r, color, thickness)`, `fillCircle(cx, cy, r,
 color)`, `drawText(x, y, s, color, size)` (size 0 = the control font), `canvasWidth()`,
-`canvasHeight()`. Outside a draw closure they do nothing. Not yet: drag and move events,
-keys, images, gradients, transforms -- libui has them all; bind when something needs one.
+`canvasHeight()`. Outside a draw closure they do nothing.
+
+`g.canvas(id, w, h, draw, onMouse, onKey)` is the same surface with the rest of the input:
+`onMouse(ev, x, y, b)` gets 1 press, 2 release, 3 move (`b` = held buttons, so a drag is a
+move with `b != 0`), 4 enter, 5 leave; `onKey(vk, mods, down)` gets keys in `hotkey`'s
+vocabulary once the canvas has focus. A draggable dot is `press near it -> dragging = true`,
+`move while dragging -> x, y`, `release -> false` -- three arms of one `update`, and the
+colour while dragging is the draw closure reading the captured flag
+(`examples/canvas_smoke.zbr`). Not yet: images, gradients, transforms -- libui has them;
+bind when something needs one.
 
 ### File dialogs (libui-ng only; stub/TUI return nil)
 

@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased (after 0.9.0)
 
+- **`g.canvas(id, w, h, draw, onMouse, onKey)` -- the area with the whole mouse and the
+  keyboard (2026-09-23).** `onMouse(ev, x, y, b)` delivers 1 press, 2 release, 3 move (`b` =
+  held buttons, so a drag is a move with `b != 0`), 4 enter, 5 leave; `onKey(vk, mods, down)`
+  delivers keys in `hotkey`'s VK vocabulary once the canvas has focus. `g.area` is unchanged
+  (press only). libui's `uiAreaHandler` already carried every one of these; the section had
+  bound the press alone. Stub draws once and prints `[gui] canvas:`; TUI a placeholder;
+  witnessed on GTK (drag a dot, arrow keys). `examples/canvas_smoke.zbr`; libui-section.
 - **Tabs on the stub backend, and a gate for the class (2026-09-23).** `g.beginTabs` /
   `beginTabPage` / `endTabPage` / `endTabs` had no stub implementation, so a program with a
   tab strip failed INSIDE ZIG under the default backend while both native sections had them

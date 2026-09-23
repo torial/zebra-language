@@ -1,0 +1,76 @@
+# canvas_smoke.zbr -- g.canvas: the area with the whole mouse and the keyboard (2026-09-23).
+# `onMouse(ev, x, y, b)`: 1 press, 2 release, 3 move (b = held buttons), 4 enter, 5 leave.
+# `onKey(vk, mods, down)`: hotkey's vocabulary. A dot that drags with the mouse and steps
+# with the arrow keys; the status line is view reading the model. Stub draws once and prints
+# the verbs; gui-scaffold + libui-section compile it.
+struct Model
+    var x: float
+    var y: float
+    var dragging: bool
+    var last: str
+
+struct Ev
+    var ev: int
+    var x: float
+    var y: float
+    var b: int
+
+struct Key
+    var vk: int
+    var mods: int
+    var down: bool
+
+union Msg
+    mouse: Ev
+    key: Key
+
+def init(): Model
+    return Model(x: 60.0, y: 60.0, dragging: false, last: "nothing yet")
+
+def near(m: Model, x: float, y: float): bool
+    var dx: float = x - m.x
+    var dy: float = y - m.y
+    return dx * dx + dy * dy < 400.0
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.mouse as e
+            if e.ev == 1 and near(m, e.x, e.y)
+                return m except dragging = true, last = "press"
+            if e.ev == 2
+                return m except dragging = false, last = "release"
+            if e.ev == 3 and m.dragging
+                return m except x = e.x, y = e.y, last = "drag"
+            if e.ev == 3
+                return m except last = "move"
+            if e.ev == 4
+                return m except last = "enter"
+            if e.ev == 5
+                return m except last = "leave"
+            return m
+        on Msg.key as k
+            if not k.down
+                return m
+            if k.vk == 0x25
+                return m except x = m.x - 10.0, last = "left"
+            if k.vk == 0x27
+                return m except x = m.x + 10.0, last = "right"
+            if k.vk == 0x26
+                return m except y = m.y - 10.0, last = "up"
+            if k.vk == 0x28
+                return m except y = m.y + 10.0, last = "down"
+            return m except last = "key " + k.vk.toString()
+
+def view(g: Gui, m: Model)
+    g.canvas("dot", 240, 160, def(c: Gui)
+        capture
+            var px: float = m.x
+            var py: float = m.y
+            var drag: bool = m.dragging
+        c.fillRect(0.0, 0.0, c.canvasWidth(), c.canvasHeight(), 0xF4F4F4)
+        c.fillCircle(px, py, 20.0, if(drag, 0xE05020, 0x2060C0))
+    , def(ev: int, x: float, y: float, b: int): Msg = Msg.mouse(Ev(ev: ev, x: x, y: y, b: b)), def(vk: int, mods: int, down: bool): Msg = Msg.key(Key(vk: vk, mods: mods, down: down)))
+    g.text("last: " + m.last + "  at " + m.x.toString() + "," + m.y.toString())
+
+def main()
+    Gui.run("canvas", 260, 220, init, update, view)

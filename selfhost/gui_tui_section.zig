@@ -77,6 +77,7 @@ const _GuiBackend = struct {
     tabSelectedFn: *const fn (id: []const u8) i64,
     selectTabFn:   *const fn (id: []const u8, index: i64) void,
     areaFn:         *const fn (id: []const u8, w: i64, h: i64, dcap: *const anyopaque, dcap_len: usize, tdraw: *const fn (*const anyopaque, GuiContext) void, cap: *const anyopaque, cap_len: usize, tclick: *const fn (*const anyopaque, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    canvasFn:       *const fn (id: []const u8, w: i64, h: i64, dcap: *const anyopaque, dcap_len: usize, tdraw: *const fn (*const anyopaque, GuiContext) void, mcap: *const anyopaque, mcap_len: usize, tmouse: *const fn (*const anyopaque, i64, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, kcap: *const anyopaque, kcap_len: usize, tkey: *const fn (*const anyopaque, i64, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     canvasWidthFn:  *const fn () f64,
     canvasHeightFn: *const fn () f64,
     lineFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, color: i64, thickness: f64) void,
@@ -360,6 +361,45 @@ const GuiContext = struct {
             }
         };
         if (self._send_fn) |f| self._b.areaFn(id, w, h, @ptrCast(&dpayload), @sizeOf(Dr), DThunk.call, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // A canvas (2026-09-23): an area that also reports the rest of the mouse and the keyboard.
+    // `onMouse: def(ev: int, x: float, y: float, b: int): Msg` -- ev 1 press (b = button),
+    // 2 release (b = button), 3 move (b = held-buttons bitmask, 0 when hovering), 4 enter,
+    // 5 leave. `onKey: def(vk: int, mods: int, down: bool): Msg` -- vk in hotkey's vocabulary
+    // (letters uppercase ASCII, F-keys 0x70.., arrows 0x25..0x28), mods 1 Ctrl 2 Shift 4 Alt.
+    pub fn canvas(self: GuiContext, id: []const u8, w: i64, h: i64, draw: anytype, onMouse: anytype, onKey: anytype) void {
+        const dbare = comptime (_zbr_is_fnlike(@TypeOf(draw)) and @typeInfo(@TypeOf(draw)) != .pointer);
+        const Dr = if (dbare) *const @TypeOf(draw) else @TypeOf(draw);
+        const dpayload: Dr = if (dbare) &draw else draw;
+        const DThunk = struct {
+            fn call(cap: *const anyopaque, g: GuiContext) void {
+                const f: *const Dr = @ptrCast(@alignCast(cap));
+                if (comptime _zbr_is_fnlike(Dr)) f.*(g) else { var c = f.*; c.call(g); }
+            }
+        };
+        const mbare = comptime (_zbr_is_fnlike(@TypeOf(onMouse)) and @typeInfo(@TypeOf(onMouse)) != .pointer);
+        const Mo = if (mbare) *const @TypeOf(onMouse) else @TypeOf(onMouse);
+        const mpayload: Mo = if (mbare) &onMouse else onMouse;
+        const MThunk = struct {
+            fn call(cap: *const anyopaque, ev: i64, x: f64, y: f64, b: i64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const Mo = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(Mo)) f.*(ev, x, y, b) else blk: { var c = f.*; break :blk c.call(ev, x, y, b); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        const kbare = comptime (_zbr_is_fnlike(@TypeOf(onKey)) and @typeInfo(@TypeOf(onKey)) != .pointer);
+        const Ke = if (kbare) *const @TypeOf(onKey) else @TypeOf(onKey);
+        const kpayload: Ke = if (kbare) &onKey else onKey;
+        const KThunk = struct {
+            fn call(cap: *const anyopaque, vk: i64, mods: i64, down: bool, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const Ke = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(Ke)) f.*(vk, mods, down) else blk: { var c = f.*; break :blk c.call(vk, mods, down); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.canvasFn(id, w, h, @ptrCast(&dpayload), @sizeOf(Dr), DThunk.call, @ptrCast(&mpayload), @sizeOf(Mo), MThunk.call, @ptrCast(&kpayload), @sizeOf(Ke), KThunk.call, f, self._send_ptr.?);
     }
     // ── drawing, valid inside an area's draw closure (no-ops elsewhere) ──
     // colours are 0xRRGGBB ints; coordinates are floats in the area's own pixels.
@@ -1021,6 +1061,11 @@ fn _tui_area(id: []const u8, w: i64, h: i64, dcap: *const anyopaque, dcap_len: u
     var _b: [256]u8 = undefined;
     _tui_text(std.fmt.bufPrint(&_b, "[area {s} {d}x{d}]", .{ id, w, h }) catch id);
 }
+fn _tui_canvas(id: []const u8, w: i64, h: i64, dcap: *const anyopaque, dcap_len: usize, tdraw: *const fn (*const anyopaque, GuiContext) void, mcap: *const anyopaque, mcap_len: usize, tmouse: *const fn (*const anyopaque, i64, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, kcap: *const anyopaque, kcap_len: usize, tkey: *const fn (*const anyopaque, i64, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+    _ = dcap; _ = dcap_len; _ = tdraw; _ = mcap; _ = mcap_len; _ = tmouse; _ = kcap; _ = kcap_len; _ = tkey; _ = send_fn; _ = send_ptr;
+    var _b: [256]u8 = undefined;
+    _tui_text(std.fmt.bufPrint(&_b, "[canvas {s} {d}x{d}]", .{ id, w, h }) catch id);
+}
 fn _tui_canvas_w() f64 { return 0; }
 fn _tui_canvas_h() f64 { return 0; }
 fn _tui_line(x1: f64, y1: f64, x2: f64, y2: f64, color: i64, t: f64) void { _ = x1; _ = y1; _ = x2; _ = y2; _ = color; _ = t; }
@@ -1130,6 +1175,7 @@ const _gui_tui_backend = _GuiBackend{
     .selectTabFn    = _tui_select_tab,
     .minSizeFn      = _tui_min_size,
     .areaFn         = _tui_area,
+    .canvasFn       = _tui_canvas,
     .canvasWidthFn  = _tui_canvas_w,
     .canvasHeightFn = _tui_canvas_h,
     .lineFn         = _tui_line,

@@ -114,6 +114,7 @@ column fills available width in its parent HBox.
 | `g.tooltip(text)` | Tooltip for the widget emitted just before it (2026-09-23). |
 | `Gui.clipboardText()` / `Gui.setClipboardText(s)` | The system clipboard, plain text; statics, called from `update`. |
 | `g.area(id, w, h, draw, on)`     | `uiArea`: `draw: def(c: Gui)` paints with `c.line/rect/fillRect/circle/fillCircle/drawText`; `on(x, y, button)` on a press. QUICKSTART §30 "Drawing". |
+| `g.canvas(id, w, h, draw, onMouse, onKey)` | The same `uiArea` with press/release/move/enter/leave (`onMouse(ev, x, y, b)`) and keys (`onKey(vk, mods, down)`, hotkey's VK vocabulary). QUICKSTART §30 "Drawing". |
 | `g.comboboxEditable(label, items, text, on)` | `uiEditableCombobox`; `on: def(s: str): Msg` on pick or keystroke. |
 | `g.radio(label, items, sel, on)`  | One radio button per item (`uiRadioButtons`); `on: def(i: int): Msg`. The model drives the selection. |
 | `g.separator()`                  | Horizontal separator rule.                                     |

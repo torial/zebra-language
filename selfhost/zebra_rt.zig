@@ -3599,6 +3599,13 @@ pub const GuiContext = struct {
         self._b.areaFn(id, w, h);
         if (comptime _zbr_is_fnlike(@TypeOf(draw))) draw(self) else { var _c = draw; _c.call(self); }
     }
+    // A canvas (2026-09-23): an area that also gets mouse move/release/enter/leave and keys
+    // (`onMouse: def(ev, x, y, b): Msg`, `onKey: def(vk, mods, down): Msg`). The stub draws once.
+    pub fn canvas(self: GuiContext, id: []const u8, w: i64, h: i64, draw: anytype, onMouse: anytype, onKey: anytype) void {
+        _ = onMouse; _ = onKey;
+        std.debug.print("[gui] canvas: {s} {d}x{d}\n", .{ id, w, h });
+        if (comptime _zbr_is_fnlike(@TypeOf(draw))) draw(self) else { var _c = draw; _c.call(self); }
+    }
     // ── drawing, valid inside an area's draw closure (no-ops elsewhere) ──
     // colours are 0xRRGGBB ints; coordinates are floats in the area's own pixels.
     pub fn canvasWidth(self: GuiContext) f64 { return self._b.canvasWidthFn(); }

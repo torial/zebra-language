@@ -77,6 +77,7 @@ const _GuiBackend = struct {
     tabSelectedFn: *const fn (id: []const u8) i64,
     selectTabFn:   *const fn (id: []const u8, index: i64) void,
     areaFn:         *const fn (id: []const u8, w: i64, h: i64, dcap: *const anyopaque, dcap_len: usize, tdraw: *const fn (*const anyopaque, GuiContext) void, cap: *const anyopaque, cap_len: usize, tclick: *const fn (*const anyopaque, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
+    canvasFn:       *const fn (id: []const u8, w: i64, h: i64, dcap: *const anyopaque, dcap_len: usize, tdraw: *const fn (*const anyopaque, GuiContext) void, mcap: *const anyopaque, mcap_len: usize, tmouse: *const fn (*const anyopaque, i64, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, kcap: *const anyopaque, kcap_len: usize, tkey: *const fn (*const anyopaque, i64, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void,
     canvasWidthFn:  *const fn () f64,
     canvasHeightFn: *const fn () f64,
     lineFn:         *const fn (x1: f64, y1: f64, x2: f64, y2: f64, color: i64, thickness: f64) void,
@@ -366,6 +367,45 @@ const GuiContext = struct {
             }
         };
         if (self._send_fn) |f| self._b.areaFn(id, w, h, @ptrCast(&dpayload), @sizeOf(Dr), DThunk.call, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
+    }
+    // A canvas (2026-09-23): an area that also reports the rest of the mouse and the keyboard.
+    // `onMouse: def(ev: int, x: float, y: float, b: int): Msg` -- ev 1 press (b = button),
+    // 2 release (b = button), 3 move (b = held-buttons bitmask, 0 when hovering), 4 enter,
+    // 5 leave. `onKey: def(vk: int, mods: int, down: bool): Msg` -- vk in hotkey's vocabulary
+    // (letters uppercase ASCII, F-keys 0x70.., arrows 0x25..0x28), mods 1 Ctrl 2 Shift 4 Alt.
+    pub fn canvas(self: GuiContext, id: []const u8, w: i64, h: i64, draw: anytype, onMouse: anytype, onKey: anytype) void {
+        const dbare = comptime (_zbr_is_fnlike(@TypeOf(draw)) and @typeInfo(@TypeOf(draw)) != .pointer);
+        const Dr = if (dbare) *const @TypeOf(draw) else @TypeOf(draw);
+        const dpayload: Dr = if (dbare) &draw else draw;
+        const DThunk = struct {
+            fn call(cap: *const anyopaque, g: GuiContext) void {
+                const f: *const Dr = @ptrCast(@alignCast(cap));
+                if (comptime _zbr_is_fnlike(Dr)) f.*(g) else { var c = f.*; c.call(g); }
+            }
+        };
+        const mbare = comptime (_zbr_is_fnlike(@TypeOf(onMouse)) and @typeInfo(@TypeOf(onMouse)) != .pointer);
+        const Mo = if (mbare) *const @TypeOf(onMouse) else @TypeOf(onMouse);
+        const mpayload: Mo = if (mbare) &onMouse else onMouse;
+        const MThunk = struct {
+            fn call(cap: *const anyopaque, ev: i64, x: f64, y: f64, b: i64, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const Mo = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(Mo)) f.*(ev, x, y, b) else blk: { var c = f.*; break :blk c.call(ev, x, y, b); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        const kbare = comptime (_zbr_is_fnlike(@TypeOf(onKey)) and @typeInfo(@TypeOf(onKey)) != .pointer);
+        const Ke = if (kbare) *const @TypeOf(onKey) else @TypeOf(onKey);
+        const kpayload: Ke = if (kbare) &onKey else onKey;
+        const KThunk = struct {
+            fn call(cap: *const anyopaque, vk: i64, mods: i64, down: bool, send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, send_ptr: *anyopaque) void {
+                const f: *const Ke = @ptrCast(@alignCast(cap));
+                const msg = if (comptime _zbr_is_fnlike(Ke)) f.*(vk, mods, down) else blk: { var c = f.*; break :blk c.call(vk, mods, down); };
+                const _v: @TypeOf(msg) = msg;
+                send_fn(send_ptr, @ptrCast(&_v), @sizeOf(@TypeOf(_v)));
+            }
+        };
+        if (self._send_fn) |f| self._b.canvasFn(id, w, h, @ptrCast(&dpayload), @sizeOf(Dr), DThunk.call, @ptrCast(&mpayload), @sizeOf(Mo), MThunk.call, @ptrCast(&kpayload), @sizeOf(Ke), KThunk.call, f, self._send_ptr.?);
     }
     // ── drawing, valid inside an area's draw closure (no-ops elsewhere) ──
     // colours are 0xRRGGBB ints; coordinates are floats in the area's own pixels.
@@ -1212,6 +1252,11 @@ const _LuiNode = struct {
     dcap_len: usize = 0,
     thunk_draw: ?*const fn (*const anyopaque, GuiContext) void = null,
     thunk_click: ?*const fn (*const anyopaque, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
+    // a canvas (2026-09-23): the mouse closure lives in `cap`, the key closure here
+    thunk_mouse: ?*const fn (*const anyopaque, i64, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
+    kcap: [128]u8 align(8) = undefined,
+    kcap_len: usize = 0,
+    thunk_key: ?*const fn (*const anyopaque, i64, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void = null,
     spn: ?*_ui.Spinbox = null,
     pb: ?*_ui.ProgressBar = null,
     grp: ?*_ui.Group = null,
@@ -2142,12 +2187,57 @@ fn _lui_area_draw(_h: *_ui.Area.Handler, _a: *_ui.Area, _p: *_ui.Draw.Params) ca
 fn _lui_area_mouse(_h: *_ui.Area.Handler, _a: *_ui.Area, _e: *_ui.Area.MouseEvent) callconv(.c) void {
     _ = _a;
     const _n: *_LuiNode = @fieldParentPtr("ah", _h);
+    if (_n.thunk_mouse) |t| {
+        // a canvas: 1 press, 2 release, 3 move (b = held buttons as a bitmask)
+        if (_e.Down != 0) t(@ptrCast(&_n.cap), 1, _e.X, _e.Y, @intCast(_e.Down), _n.send_fn.?, _n.send_ptr.?)
+        else if (_e.Up != 0) t(@ptrCast(&_n.cap), 2, _e.X, _e.Y, @intCast(_e.Up), _n.send_fn.?, _n.send_ptr.?)
+        else t(@ptrCast(&_n.cap), 3, _e.X, _e.Y, @intCast(_e.Held1To64 & 0xffff), _n.send_fn.?, _n.send_ptr.?);
+        return;
+    }
     if (_e.Down == 0) return;
     if (_n.thunk_click) |t| t(@ptrCast(&_n.cap), _e.X, _e.Y, @intCast(_e.Down), _n.send_fn.?, _n.send_ptr.?);
 }
-fn _lui_area_crossed(_h: *_ui.Area.Handler, _a: *_ui.Area, _left: c_int) callconv(.c) void { _ = _h; _ = _a; _ = _left; }
+fn _lui_area_crossed(_h: *_ui.Area.Handler, _a: *_ui.Area, _left: c_int) callconv(.c) void {
+    _ = _a;
+    const _n: *_LuiNode = @fieldParentPtr("ah", _h);
+    // a canvas: 4 enter, 5 leave (no position on this event; -1)
+    if (_n.thunk_mouse) |t| t(@ptrCast(&_n.cap), if (_left != 0) 5 else 4, -1, -1, 0, _n.send_fn.?, _n.send_ptr.?);
+}
 fn _lui_area_drag(_h: *_ui.Area.Handler, _a: *_ui.Area) callconv(.c) void { _ = _h; _ = _a; }
-fn _lui_area_key(_h: *_ui.Area.Handler, _a: *_ui.Area, _e: *_ui.Area.KeyEvent) callconv(.c) c_int { _ = _h; _ = _a; _ = _e; return 0; }
+// libui's key event -> hotkey's VK vocabulary (letters uppercase ASCII, digits, F1..F12 at
+// 0x70.., the navigation keys' VK_ codes). Anything unmapped is 0 and NOT delivered.
+fn _lui_key_vk(_e: *const _ui.Area.KeyEvent) i64 {
+    if (_e.Key != 0) {
+        const c = _e.Key;
+        if (c >= 'a' and c <= 'z') return @as(i64, c) - 32;
+        if (c == '\n' or c == '\r') return 0x0D;
+        if (c == '\t') return 0x09;
+        if (c == 8 or c == 127) return 0x08;
+        if (c == ' ') return 0x20;
+        return @as(i64, c);
+    }
+    return switch (@intFromEnum(_e.ExtKey)) {
+        1 => 0x1B, 2 => 0x2D, 3 => 0x2E, 4 => 0x24, 5 => 0x23, 6 => 0x21, 7 => 0x22,
+        8 => 0x26, 9 => 0x28, 10 => 0x25, 11 => 0x27,
+        12...23 => |f| 0x70 + (@as(i64, f) - 12),
+        24...33 => |n| '0' + (@as(i64, n) - 24),
+        34 => '.', 35 => 0x0D, 36 => '+', 37 => '-', 38 => '*', 39 => '/',
+        else => 0,
+    };
+}
+fn _lui_area_key(_h: *_ui.Area.Handler, _a: *_ui.Area, _e: *_ui.Area.KeyEvent) callconv(.c) c_int {
+    _ = _a;
+    const _n: *_LuiNode = @fieldParentPtr("ah", _h);
+    const t = _n.thunk_key orelse return 0;
+    const vk = _lui_key_vk(_e);
+    if (vk == 0) return 0;
+    var mods: i64 = 0;
+    if (_e.Modifiers.Ctrl) mods |= 1;
+    if (_e.Modifiers.Shift) mods |= 2;
+    if (_e.Modifiers.Alt) mods |= 4;
+    t(@ptrCast(&_n.kcap), vk, mods, _e.Up == 0, _n.send_fn.?, _n.send_ptr.?);
+    return 1;
+}
 fn _lui_area(_id: []const u8, _w: i64, _h: i64, _dcap: *const anyopaque, _dcap_len: usize, _tdraw: *const fn (*const anyopaque, GuiContext) void, _cap: *const anyopaque, _cap_len: usize, _tclick: *const fn (*const anyopaque, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
     if (_dcap_len > 512 or _cap_len > 128) return;
     const _r = _lui_child(.area, _id);
@@ -2172,6 +2262,36 @@ fn _lui_area(_id: []const u8, _w: i64, _h: i64, _dcap: *const anyopaque, _dcap_l
     @memcpy(_r.n.cap[0.._cap_len], _src[0.._cap_len]);
     _r.n.cap_len = _cap_len;
     _r.n.thunk_click = _tclick;
+    _r.n.send_fn = _send_fn;
+    _r.n.send_ptr = _send_ptr;
+}
+fn _lui_canvas(_id: []const u8, _w: i64, _h: i64, _dcap: *const anyopaque, _dcap_len: usize, _tdraw: *const fn (*const anyopaque, GuiContext) void, _mcap: *const anyopaque, _mcap_len: usize, _tmouse: *const fn (*const anyopaque, i64, f64, f64, i64, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _kcap: *const anyopaque, _kcap_len: usize, _tkey: *const fn (*const anyopaque, i64, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
+    if (_dcap_len > 512 or _mcap_len > 128 or _kcap_len > 128) return;
+    const _r = _lui_child(.area, _id);
+    const _dsrc: [*]const u8 = @ptrCast(_dcap);
+    if (_r.fresh) {
+        _r.n.ah = .{ .Draw = _lui_area_draw, .MouseEvent = _lui_area_mouse, .MouseCrossed = _lui_area_crossed, .DragBroken = _lui_area_drag, .KeyEvent = _lui_area_key };
+        const _a = _ui.Area.Handler.New(&_r.n.ah, .Area) catch return;
+        _r.n.area = _a;
+        _r.n.ctrl = _a.as_control();
+        _ui.Control.SetMinSize(_r.n.ctrl.?, @intCast(@max(_w, 0)), @intCast(@max(_h, 0)));
+        _lui_attach(_r.n, true);
+        @memcpy(_r.n.dcap[0.._dcap_len], _dsrc[0.._dcap_len]);
+        _r.n.dcap_len = _dcap_len;
+    } else if (_r.n.dcap_len != _dcap_len or !std.mem.eql(u8, _r.n.dcap[0.._dcap_len], _dsrc[0.._dcap_len])) {
+        @memcpy(_r.n.dcap[0.._dcap_len], _dsrc[0.._dcap_len]);
+        _r.n.dcap_len = _dcap_len;
+        if (_r.n.area) |_a| _ui.Area.QueueRedrawAll(_a);
+    }
+    _r.n.thunk_draw = _tdraw;
+    const _msrc: [*]const u8 = @ptrCast(_mcap);
+    @memcpy(_r.n.cap[0.._mcap_len], _msrc[0.._mcap_len]);
+    _r.n.cap_len = _mcap_len;
+    _r.n.thunk_mouse = _tmouse;
+    const _ksrc: [*]const u8 = @ptrCast(_kcap);
+    @memcpy(_r.n.kcap[0.._kcap_len], _ksrc[0.._kcap_len]);
+    _r.n.kcap_len = _kcap_len;
+    _r.n.thunk_key = _tkey;
     _r.n.send_fn = _send_fn;
     _r.n.send_ptr = _send_ptr;
 }
@@ -2983,6 +3103,7 @@ const _gui_lui_backend = _GuiBackend{
     .selectTabFn    = _lui_select_tab,
     .minSizeFn      = _lui_min_size,
     .areaFn         = _lui_area,
+    .canvasFn       = _lui_canvas,
     .canvasWidthFn  = _lui_canvas_w,
     .canvasHeightFn = _lui_canvas_h,
     .lineFn         = _lui_line,
