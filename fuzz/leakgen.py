@@ -85,17 +85,35 @@ def emit(src, tag):
     return ('emitted', '', d)
 
 
+# BUG-302's shape, the same predicate tools/zig_build_lib.sh carries: zig failing to read
+# ITS OWN standard library is the environment, not our emit. The first --daily after
+# 2026-09-23's changes scored one as a NEW LEAK ("unable to load 'atan.zig': Unexpected")
+# and failed the tier -- this gate never went through the shared library, so it had the
+# bug the library was written to close. Retried like the sweeps; a persistent one is
+# reported as INFRA, never as a leak.
+INFRA_RE = re.compile(r"unable to load .*: (Unexpected|AccessDenied|SharingViolation|Busy)")
+INFRA_RETRIES = 3
+infra_retries = 0
+
+
 def zig_check(d):
-    try:
-        p = subprocess.run([ZIG, 'build-exe', 'p.zig', '-fno-emit-bin', '-lc'],
-                           cwd=str(d), capture_output=True, text=True, timeout=TIMEOUT_ZIG)
-    except subprocess.TimeoutExpired:
-        return (False, 'zig TIMEOUT')
-    if p.returncode == 0:
-        return (True, '')
-    # first `error:` line is the one that matters; note-lines follow it
-    lines = [l for l in (p.stderr or '').splitlines() if ' error: ' in l]
-    return (False, lines[0] if lines else (p.stderr or '')[-300:])
+    global infra_retries
+    for attempt in range(INFRA_RETRIES):
+        try:
+            p = subprocess.run([ZIG, 'build-exe', 'p.zig', '-fno-emit-bin', '-lc'],
+                               cwd=str(d), capture_output=True, text=True, timeout=TIMEOUT_ZIG)
+        except subprocess.TimeoutExpired:
+            return (False, 'zig TIMEOUT')
+        if p.returncode == 0:
+            return (True, '')
+        err = p.stderr or ''
+        if INFRA_RE.search(err):
+            infra_retries += 1
+            continue
+        # first `error:` line is the one that matters; note-lines follow it
+        lines = [l for l in err.splitlines() if ' error: ' in l]
+        return (False, lines[0] if lines else err[-300:])
+    return (False, 'INFRA: ' + (INFRA_RE.search(p.stderr or '').group(0)))
 
 
 def signature(msg):
@@ -218,7 +236,7 @@ def main():
         seeds, n = (args.seed,), args.n
     counts, leaks, crashes, rejects, total = run_batch(seeds, n)
     print(f'[leakgen] {total} programs: ok={counts["ok"]} reject={counts["reject"]} '
-          f'LEAK={counts["LEAK"]} crash={counts["crash"]}')
+          f'LEAK={counts["LEAK"]} crash={counts["crash"]} infra-retries={infra_retries}')
     if rejects:
         print(f'[rejects] {len(rejects)} signature(s) -- the selfhost refused a gen.py program '
               f'(generator or over-refusal; NOT gated):')

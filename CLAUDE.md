@@ -605,6 +605,14 @@ python fuzz/leakgen.py --gate   # THE "ZEBRA ACCEPTS, ZIG REJECTS" FUZZER, regis
                                 #   job), anything gen.py does not generate (its caps list
                                 #   is the coverage -- grow it with every bug class), and a
                                 #   crash of the built program (never run).
+                                #   IT NOW RETRIES BUG-302 (2026-09-23): the first --daily
+                                #   after the tooltip/clipboard/icons batch scored zig
+                                #   failing to read ITS OWN std ("unable to load 'atan.zig':
+                                #   Unexpected") as a NEW LEAK and failed the tier. The gate
+                                #   never went through tools/zig_build_lib.sh, so it had the
+                                #   bug that library closed; it carries the same predicate
+                                #   now, retries three times, reports `infra-retries=N`
+                                #   every run, and a persistent one is INFRA, not a leak.
                                 #   (`lint_interp_escape.py`, the INTERP-ESCAPE GATE, sat here
                                 #   2026-07-27 .. 2026-09-15: it flagged `${` plus `\"` in one
                                 #   string because the BOOTSTRAP double-escaped that shape

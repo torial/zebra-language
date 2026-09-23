@@ -1857,6 +1857,7 @@ fn _lui_slider(_label: []const u8, _value: f64, _min: f64, _max: f64, _cap: *con
     const _want: c_int = if (_raw < 0) 0 else if (_raw > 1000) 1000 else _raw;
     if (_r.fresh) {
         const _sld = _ui.Slider.New(0, 1000) catch return;
+        _sld.SetHasToolTip(false);   // libui's value bubble would show the 0..1000 scale, not the app's range (seen 2026-09-23: "835" over volume=83.5)
         _sld.SetValue(_want);
         _r.n.sval = _want; _r.n.smin = _min; _r.n.smax = _max;
         _ui.Slider.OnChanged(_sld, _LuiNode, anyerror, _lui_slider_cb, _r.n);
