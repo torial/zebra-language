@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-437. Next new bug: BUG-438.**
+**Last bug number generated: BUG-438. Next new bug: BUG-439.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,26 @@
 > measured in.
 
 ---
+
+### BUG-438: a mutator called on a container FIELD of a struct local does not make the local `var` — OPEN (found 2026-09-24)
+
+```zebra
+struct Holder
+    var row: List(int)
+def main()
+    var h: Holder = Holder(row: [1])
+    h.row.add(2)          # error: expected type '*T', found '*const T'
+```
+
+`h` is never assigned, so mutation analysis emits it `const`; `h.row.append(...)` then
+takes `&h.row` through a const struct and Zig refuses. A method call on a field of a local
+is a mutation of the local when the method mutates its receiver (the same rule that
+already keeps `xs.add(v)` on a plain List local a `var`), and the scan does not descend
+into the member chain for it. Found writing test/nested_container_ref_test.zbr (the
+fixture uses a class Holder, whose instance is a pointer, to route around it). Workaround:
+touch the local (`h = h`) or use a class. The fix is in the mutation scan
+(`scanMutationsInExpr` / the field-chain receiver case); fixture to be
+test/bug438_struct_field_mutator_test.zbr.
 
 ### BUG-432: a `+` sign flag in a format spec is silently dropped — OPEN (found 2026-09-17, dogfood)
 

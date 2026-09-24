@@ -1,7 +1,8 @@
-# BUG-314: `.at()` on a List(List(T)) hands back a COPY of the inner list, so
-# `.add()` on it was silently lost by the parent (and on a for-in element it was a
-# leaked Zig "expected '*T', found '*const T'"). All three shapes are refused with
-# the idioms that work; the passing shapes are in bug314_nested_list_idioms_test.
+# BUG-314: `.at()` on a List(List(T)) handed back a COPY of the inner list, so `.add()` on
+# it was silently lost by the parent. From 2026-09-10 the three shapes below were REFUSED;
+# since 2026-09-24 the inner container is heap-boxed and every one of them lands (the
+# file keeps its name so the ledger's history reads; it is a smoke_run now, no longer a
+# smoke_tc_fail). The full contract is test/nested_container_ref_test.zbr.
 def main()
     var parent: List(List(float)) = List(List(float))()
     parent.add(List(float)())
@@ -10,4 +11,4 @@ def main()
     parent.at(0).add(2.0)
     for row in parent
         row.add(3.0)
-    print(parent.count())
+    print(parent.count(), parent.at(0).count())

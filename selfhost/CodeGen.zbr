@@ -3459,6 +3459,58 @@ struct Generator
     def argIdentInCpp(e: Expr): bool
         if e is Expr.ident as ei
             return caller_ptr_params.contains_(ei.name)
+        # 2026-09-24: an expression that yields a BOXED inner container (`parent.at(0)`,
+        # `m.fetch(k)`, `m.get(k)!`) is a pointer already, the same three-case logic.
+        return exprYieldsBox(e)
+
+    # NESTED CONTAINERS (2026-09-24): does this expression evaluate to a heap box -- the
+    # pointer a List(List(T)) / HashMap(K, List(V)) holds -- rather than a container value?
+    # `.at()` / `.fetch()` on such a parent, `.get(k)!` on such a map, or a local the
+    # generator recorded as bound from one (caller_ptr_params carries those too).
+    def exprYieldsBox(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        branch e
+            on Expr.ident as bi
+                return caller_ptr_params.contains_(bi.name)
+            on Expr.to_non_nil as nn
+                return exprYieldsOptBox(nn.expr)
+            on Expr.call as bc
+                if bc.callee is Expr.member as bm
+                    if bm.member == "at" or bm.member == "fetch"
+                        var brt: Type_ = inferExpr(bm.object, .infer_ctx!)
+                        branch brt
+                            on Type_.list_ as ble
+                                return bm.member == "at" and isBoxedElemType(ble)
+                            on Type_.hashmap_ as bhm
+                                return bm.member == "fetch" and isBoxedElemType(bhm.val_t)
+                            else
+                                return false
+                return false
+            else
+                return false
+
+    # Emit `e` where a container VALUE is wanted (a return, an assignment into a value
+    # slot): a box, or an optional box, is unboxed; anything else is itself. The copy is
+    # the language's existing shape for by-value returns and stores.
+    def genValueOf(e: Expr)
+        if exprYieldsBox(e) or exprYieldsOptBox(e)
+            w.emit("_zbr_unboxed(")
+            genExpr(e)
+            w.emit(")")
+        else
+            genExpr(e)
+
+    # `m.get(k)` on a map whose values are boxed: an optional box.
+    def exprYieldsOptBox(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        if e is Expr.call as gc
+            if gc.callee is Expr.member as gm
+                if gm.member == "get"
+                    var grt: Type_ = inferExpr(gm.object, .infer_ctx!)
+                    if grt is Type_.hashmap_ as ghm
+                        return isBoxedElemType(ghm.val_t)
         return false
 
     def withEnsureCtx(armed: bool, uses_result: bool): Generator
@@ -4011,13 +4063,13 @@ struct Generator
                 w.emit("_zbr_HashMap(")
                 genType(gtr.args.at(0))
                 w.emit(", ")
-                genType(gtr.args.at(1))
+                genElemType(gtr.args.at(1))
                 w.emit(")")
                 return
             if key_str
                 w.emit("std.StringHashMap(")
                 if gtr.args.len >= 2
-                    genType(gtr.args.at(1))
+                    genElemType(gtr.args.at(1))
                 else
                     w.emit("anytype")
                 w.emit(")")
@@ -4028,7 +4080,7 @@ struct Generator
                 w.emit("std.HashMap(")
                 genType(gtr.args.at(0))
                 w.emit(", ")
-                genType(gtr.args.at(1))
+                genElemType(gtr.args.at(1))
                 w.emit(", _zbr_CueCtx(")
                 genType(gtr.args.at(0))
                 w.emit("), std.hash_map.default_max_load_percentage)")
@@ -4038,14 +4090,17 @@ struct Generator
                 while ai < gtr.args.len
                     if ai > 0
                         w.emit(", ")
-                    genType(gtr.args.at(ai))
+                    if ai == 1
+                        genElemType(gtr.args.at(ai))
+                    else
+                        genType(gtr.args.at(ai))
                     ai += 1
                 w.emit(")")
             return
         if gtr.name == "List"
             w.emit("std.ArrayList(")
             if gtr.args.len >= 1
-                genType(gtr.args.at(0))
+                genElemType(gtr.args.at(0))
             else
                 w.emit("[]const u8")
             w.emit(")")
@@ -5500,16 +5555,27 @@ struct Generator
                 var lz: str = genFieldZigType(le)
                 if lz == ""
                     return ""
+                if isBoxedElemType(le)
+                    lz = "*" + lz
                 return "std.ArrayList(" + lz + ")"
             on Type_.optional as oi
                 var oz: str = genFieldZigType(oi)
                 if oz == ""
                     return ""
                 return "?" + oz
+            on Type_.set_ as se
+                if isString(se)
+                    return "std.StringHashMap(void)"
+                var sz: str = genFieldZigType(se)
+                if sz == ""
+                    return ""
+                return "std.AutoHashMap(" + sz + ", void)"
             on Type_.hashmap_ as hm
                 var vz: str = genFieldZigType(hm.val_t)
                 if vz == ""
                     return ""
+                if isBoxedElemType(hm.val_t)
+                    vz = "*" + vz
                 if isString(hm.key_t)
                     return "std.StringHashMap(" + vz + ")"
                 var kz: str = genFieldZigType(hm.key_t)
@@ -7178,7 +7244,11 @@ struct Generator
                 var hoisted = false
                 if e is Expr.call as ec
                     if ec.callee is Expr.member as mem
-                        hoisted = hoistCallOnTemp(mem.object, mem.member, ec.args)
+                        # 2026-09-24: a builtin container receiver (`parent.at(0).add(x)`,
+                        # now a boxed inner list) dispatches through codegen's own forms;
+                        # hoisting it to `_mc_N` loses that (the BUG-337 rule, statement form).
+                        if not isBuiltinTypedRecv(mem.object)
+                            hoisted = hoistCallOnTemp(mem.object, mem.member, ec.args)
                 if not hoisted
                     writeIndent()
                     # BUG-006: zig"stmt;" already ends with ";"; skip the extra one.
@@ -7667,9 +7737,15 @@ struct Generator
                             genType(n.type_!)
                             w.emit(".empty; ")
                             var lli = 0
+                            var box230 = gtll.args.len > 0 and isBoxedElemTypeRef(gtll.args.at(0))
                             while lli < ll_init.elems.len
                                 w.emit(lname230 + ".append(_allocator, ")
-                                genExpr(ll_init.elems.at(lli))
+                                if box230
+                                    w.emit("_zbr_boxed(")
+                                    genExpr(ll_init.elems.at(lli))
+                                    w.emit(")")
+                                else
+                                    genExpr(ll_init.elems.at(lli))
                                 w.emit(") catch @panic(\"OOM\"); ")
                                 lli += 1
                             w.emit("break :" + lbl230 + " " + lname230 + "; };\n")
@@ -7734,7 +7810,16 @@ struct Generator
                             skip_type_ann = true
                 else
                     pass
-        if n.type_ != nil and not skip_type_ann
+        var box_local = false
+        if n.init_expr != nil
+            if exprYieldsBox(n.init_expr!)
+                # 2026-09-24: `var row: List(int) = parent.at(0)` binds the parent's BOX --
+                # a pointer; the annotation would name the value type. Zig infers.
+                box_local = true
+                caller_ptr_params.add(n.name)
+        if box_local
+            pass
+        else if n.type_ != nil and not skip_type_ann
             w.emit(": ")
             genType(n.type_!)
         else if n.init_expr != nil
@@ -8066,7 +8151,7 @@ struct Generator
                         if id.name == "List"
                             w.emit("std.ArrayList(")
                             if inner.args.len > 0
-                                genTypeFromExpr(inner.args.at(0).value)
+                                genElemTypeFromExpr(inner.args.at(0).value)
                             else
                                 w.emit("anytype")
                             w.emit(").empty")
@@ -8076,69 +8161,52 @@ struct Generator
                             if key_str
                                 w.emit("std.StringHashMap(")
                                 if inner.args.len >= 2
-                                    genTypeFromExpr(inner.args.at(1).value)
+                                    genElemTypeFromExpr(inner.args.at(1).value)
                                 else
                                     w.emit("anytype")
                             else
                                 w.emit("std.AutoHashMap(")
                                 var fi = true
+                                var iai = 0
                                 for ta in inner.args
                                     if not fi
                                         w.emit(", ")
                                     fi = false
-                                    genTypeFromExpr(ta.value)
+                                    if iai == 1
+                                        genElemTypeFromExpr(ta.value)
+                                    else
+                                        genTypeFromExpr(ta.value)
+                                    iai += 1
                             w.emit(").init(_allocator)")
                             return
                 on Expr.ident as id
                     if id.name == "StrSet"
                         emitStrSetInit()                        # BUG-281 B
                         return
-                    # Bare List() or HashMap() — use type_hint from variable declaration
+                    # Bare List() or HashMap() — use type_hint from variable declaration.
+                    # The whole type comes from genType (2026-09-24: one emitter, so a nested
+                    # container element is a pointer here exactly as in an annotation).
                     if id.name == "List"
-                        w.emit("std.ArrayList(")
+                        var lh_done = false
                         if type_hint != nil
-                            branch type_hint!
-                                on TypeRef.generic as gtr
-                                    if gtr.args.len > 0
-                                        genType(gtr.args.at(0))
-                                    else
-                                        w.emit("anytype")
-                                else
-                                    w.emit("anytype")
-                        else
-                            w.emit("anytype")
-                        w.emit(").empty")
+                            if type_hint! is TypeRef.generic as lgtr
+                                if lgtr.args.len > 0
+                                    genType(type_hint!)
+                                    lh_done = true
+                        if not lh_done
+                            w.emit("std.ArrayList(anytype)")
+                        w.emit(".empty")
                         return
                     if id.name == "HashMap"
+                        var hh_done = false
                         if type_hint != nil
-                            branch type_hint!
-                                on TypeRef.generic as gtr
-                                    var key_is_str = gtr.args.len > 0 and isStringTypeRef(gtr.args.at(0))
-                                    if gtr.args.len == 2 and cueHashKeyName(gtr.args.at(0)) != ""
-                                        # cue-hash key: the annotation already names the
-                                        # right map type (std.HashMap + _zbr_CueCtx).
-                                        genType(type_hint!)
-                                        w.emit(".init(_allocator)")
-                                        return
-                                    if key_is_str
-                                        w.emit("std.StringHashMap(")
-                                        if gtr.args.len >= 2
-                                            genType(gtr.args.at(1))
-                                        else
-                                            w.emit("anytype")
-                                    else
-                                        w.emit("std.AutoHashMap(")
-                                        var fi = true
-                                        for ta in gtr.args
-                                            if not fi
-                                                w.emit(", ")
-                                            fi = false
-                                            genType(ta)
-                                else
-                                    w.emit("std.AutoHashMap(anytype, anytype")
-                        else
-                            w.emit("std.AutoHashMap(anytype, anytype")
-                        w.emit(").init(_allocator)")
+                            if type_hint! is TypeRef.generic as hgtr
+                                if hgtr.args.len > 0
+                                    genType(type_hint!)
+                                    hh_done = true
+                        if not hh_done
+                            w.emit("std.AutoHashMap(anytype, anytype)")
+                        w.emit(".init(_allocator)")
                         return
                     if id.name == "Set"
                         # §28f: bare `Set()` — element type from the `var s: Set(T) =`
@@ -8176,6 +8244,103 @@ struct Generator
             return id.name == "str"
         return false
 
+    # NESTED CONTAINERS ARE HEAP-BOXED (2026-09-24, BUG-314's other half, Sean's
+    # 2026-09-12 decision): the element of a List, or the value of a HashMap, that is
+    # itself a List / HashMap / Set is emitted as a POINTER (`*std.ArrayList(T)`), so
+    # `.at(i)` / `.get(k)` hand back the parent's own inner container and a mutation
+    # through it is seen by the parent. Every element-position type emission goes
+    # through these; the value is boxed at the store (`_zbr_boxed` in the runtime).
+    def isBoxedElemTypeRef(tr: TypeRef): bool
+        branch tr
+            on TypeRef.generic as g
+                return g.name == "List" or g.name == "HashMap" or g.name == "Set"
+            on TypeRef.named as n
+                var al = findTypeAlias(n.name)
+                if al != nil
+                    return isBoxedElemTypeRef(al!.base)
+                return false
+            else
+                return false
+
+    def isBoxedElemTypeExpr(e: Expr): bool
+        if e is Expr.call as c
+            if c.callee is Expr.ident as id
+                return id.name == "List" or id.name == "HashMap" or id.name == "Set"
+        return false
+
+    def isBoxedElemType(t: Type_): bool
+        branch t
+            on Type_.list_
+                return true
+            on Type_.hashmap_
+                return true
+            on Type_.set_
+                return true
+            else
+                return false
+
+    def genElemType(tr: TypeRef)
+        if isBoxedElemTypeRef(tr)
+            w.emit("*")
+        genType(tr)
+
+    def genElemTypeFromExpr(e: Expr)
+        if isBoxedElemTypeExpr(e)
+            w.emit("*")
+        genTypeFromExpr(e)
+
+    # Does a value STORED into this receiver (List elem / HashMap value) need boxing?
+    # Asks the checker's type of the receiver; unknown means no (and zig then names the
+    # mismatch, which leakgen would show).
+    def storedElemBoxed(recv: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var rt: Type_ = inferExpr(recv, .infer_ctx!)
+        branch rt
+            on Type_.list_ as le
+                return isBoxedElemType(le)
+            on Type_.hashmap_ as hm
+                return isBoxedElemType(hm.val_t)
+            else
+                return false
+
+    # The slot's element type, when the checker knows the receiver.
+    def storedElemType(recv: Expr): Type_?
+        if .infer_ctx == nil
+            return nil
+        var rt: Type_ = inferExpr(recv, .infer_ctx!)
+        branch rt
+            on Type_.list_ as le
+                return le
+            on Type_.hashmap_ as hm
+                return hm.val_t
+            else
+                return nil
+
+    # Emit a value in store position: boxed when the slot holds a container. A BARE
+    # `List()` / `HashMap()` / `Set()` in that position takes its type from the slot
+    # (`ms.add(HashMap())` on a `List(HashMap(str, int))`), the way a `var m: HashMap(..)
+    # = HashMap()` takes it from the annotation.
+    def genStoredValue(recv: Expr, v: Expr)
+        if storedElemBoxed(recv)
+            w.emit("_zbr_boxed(")
+            var bare_done = false
+            if v is Expr.call as vc
+                if vc.args.len == 0
+                    if vc.callee is Expr.ident as vid
+                        if vid.name == "List" or vid.name == "HashMap" or vid.name == "Set"
+                            if storedElemType(recv) as et
+                                var ez: str = genFieldZigType(et)
+                                if ez != ""
+                                    w.emit(ez)
+                                    w.emit(if(vid.name == "List", ".empty", ".init(_allocator)"))
+                                    bare_done = true
+            if not bare_done
+                genExpr(v)
+            w.emit(")")
+        else
+            genExpr(v)
+
     def genTypeFromExpr(e: Expr)
         branch e
             on Expr.ident as id
@@ -8209,7 +8374,7 @@ struct Generator
                         if id.name == "List"
                             w.emit("std.ArrayList(")
                             if c.args.len > 0
-                                genTypeFromExpr(c.args.at(0).value)
+                                genElemTypeFromExpr(c.args.at(0).value)
                             w.emit(")")
                             return
                         if id.name == "HashMap"
@@ -8217,17 +8382,22 @@ struct Generator
                             if ks
                                 w.emit("std.StringHashMap(")
                                 if c.args.len >= 2
-                                    genTypeFromExpr(c.args.at(1).value)
+                                    genElemTypeFromExpr(c.args.at(1).value)
                                 else
                                     w.emit("anytype")
                             else
                                 w.emit("std.AutoHashMap(")
                                 var fi = true
+                                var cai = 0
                                 for ta in c.args
                                     if not fi
                                         w.emit(", ")
                                     fi = false
-                                    genTypeFromExpr(ta.value)
+                                    if cai == 1
+                                        genElemTypeFromExpr(ta.value)
+                                    else
+                                        genTypeFromExpr(ta.value)
+                                    cai += 1
                             w.emit(")")
                             return
                         if id.name == "Set"
@@ -8477,6 +8647,10 @@ struct Generator
             w.emit("_intern(")
             genExpr(a.value)
             w.emit(")")
+        else if a.op == AssignOp.assign and not exprYieldsBox(a.target)
+            # 2026-09-24: a box assigned into a value slot is copied out (a box local
+            # assigned from another box stays a pointer)
+            genValueOf(a.value)
         else
             genExpr(a.value)
         w.emit(";\n")
@@ -8491,7 +8665,7 @@ struct Generator
                     w.emit(".put(")
                     genExpr(ix.index)
                     w.emit(", ")
-                    genExpr(value)
+                    genStoredValue(ix.object, value)
                     w.emit(") catch @panic(\"OOM\");\n")
                     return true
         return false
@@ -8742,47 +8916,34 @@ struct Generator
         return nil
 
     def genCallWithTypeHint(e: Expr, hint: TypeRef)
+        # 2026-09-24: a boxed inner container reaching a VALUE slot (a struct field, a
+        # by-value parameter, a return) is copied out of its box.
+        if exprYieldsBox(e) or exprYieldsOptBox(e)
+            genValueOf(e)
+            return
         if e is Expr.call as c
             if c.args.len == 0
                 if c.callee is Expr.ident as id
+                    # 2026-09-24: the whole type from genType (nested elements are pointers)
                     if id.name == "List"
-                        w.emit("std.ArrayList(")
-                        branch hint
-                            on TypeRef.generic as gtr
-                                if gtr.args.len > 0
-                                    genType(gtr.args.at(0))
-                                else
-                                    w.emit("anytype")
-                            else
-                                w.emit("anytype")
-                        w.emit(").empty")
+                        var lh_done = false
+                        if hint is TypeRef.generic as lgtr
+                            if lgtr.args.len > 0
+                                genType(hint)
+                                lh_done = true
+                        if not lh_done
+                            w.emit("std.ArrayList(anytype)")
+                        w.emit(".empty")
                         return
                     if id.name == "HashMap"
-                        branch hint
-                            on TypeRef.generic as gtr
-                                var key_is_str = gtr.args.len > 0 and isStringTypeRef(gtr.args.at(0))
-                                if gtr.args.len == 2 and isGenericParamRef(gtr.args.at(0))
-                                    w.emit("_zbr_HashMap(")     # BUG-418
-                                    genType(gtr.args.at(0))
-                                    w.emit(", ")
-                                    genType(gtr.args.at(1))
-                                else if key_is_str
-                                    w.emit("std.StringHashMap(")
-                                    if gtr.args.len >= 2
-                                        genType(gtr.args.at(1))
-                                    else
-                                        w.emit("anytype")
-                                else
-                                    w.emit("std.AutoHashMap(")
-                                    var fi = true
-                                    for ta in gtr.args
-                                        if not fi
-                                            w.emit(", ")
-                                        fi = false
-                                        genType(ta)
-                            else
-                                w.emit("std.AutoHashMap(anytype, anytype")
-                        w.emit(").init(_allocator)")
+                        var hh_done = false
+                        if hint is TypeRef.generic as hgtr
+                            if hgtr.args.len > 0
+                                genType(hint)
+                                hh_done = true
+                        if not hh_done
+                            w.emit("std.AutoHashMap(anytype, anytype)")
+                        w.emit(".init(_allocator)")
                         return
                     if id.name == "StrSet"
                         emitStrSetInit()                        # BUG-281 B
@@ -8873,7 +9034,9 @@ struct Generator
         if ensure_armed_active and ensure_uses_result and r.value != nil
             writeIndent()
             w.emit("{ _result = ")
-            if method_return_type != nil
+            if exprYieldsBox(r.value!) or exprYieldsOptBox(r.value!)
+                genValueOf(r.value!)
+            else if method_return_type != nil
                 genCallWithTypeHint(r.value!, method_return_type!)
             else
                 genExpr(r.value!)
@@ -8964,7 +9127,10 @@ struct Generator
         writeIndent()
         if r.value != nil
             w.emit("return ")
-            if method_return_type != nil
+            if exprYieldsBox(r.value!) or exprYieldsOptBox(r.value!)
+                # 2026-09-24: a boxed inner container returned by VALUE is copied out
+                genValueOf(r.value!)
+            else if method_return_type != nil
                 genCallWithTypeHint(r.value!, method_return_type!)
             else
                 genExpr(r.value!)
@@ -9187,6 +9353,9 @@ struct Generator
         if si.is_capture != nil
             # `if x is Union.Variant as r` or `if x as r` — capture form
             # si.cond is ^Expr; auto-deref passes Expr value to genIsCaptureThen
+            # 2026-09-24: `if m.get(k) as row` on boxed values binds the box (a pointer)
+            if exprYieldsOptBox(si.cond)
+                caller_ptr_params.add(si.is_capture!)
             genIsCaptureThen(si.cond, si.is_capture!, si.then_stmts)
             writeIndent()
             w.emit("}")
@@ -9251,6 +9420,19 @@ struct Generator
             if not active_loop_vars.contains_(fv352)
                 active_loop_vars.add(fv352)
                 pushed352.add(fv352)
+        # 2026-09-24: an element of a List(List(T)) (or the value of a HashMap(K, List(V)))
+        # is the parent's BOX -- a pointer -- so the loop variable is one too.
+        if .infer_ctx != nil
+            var fit: Type_ = inferExpr(fi.iter, .infer_ctx!)
+            branch fit
+                on Type_.list_ as fle
+                    if fi.vars.len == 1 and isBoxedElemType(fle)
+                        caller_ptr_params.add(fi.vars.at(0))
+                on Type_.hashmap_ as fhm
+                    if fi.vars.len == 2 and isBoxedElemType(fhm.val_t)
+                        caller_ptr_params.add(fi.vars.at(1))
+                else
+                    pass
         .genForInBody(fi)
         for pv352 in pushed352
             active_loop_vars.removeOne(pv352)
@@ -12400,15 +12582,25 @@ struct Generator
                                 elem_zig = "*" + typeZigName(et_snm)
                             else
                                 elem_zig = typeZigName(et_snm)
+                        else if isBoxedElemType(et)
+                            # a literal of containers: the elements are boxed (2026-09-24)
+                            var nz: str = genFieldZigType(et)
+                            elem_zig = if(nz == "", "[]const u8", "*" + nz)
                         else
                             elem_zig = zigTypeForListElem(et)
                     w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + ").empty; ")
                 else
                     w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + ").empty; ")
                 var li = 0
+                var ll_boxed = elem_zig.startsWith("*std.")
                 while li < ll.elems.len
                     w.emit(ll_var + ".append(_allocator, ")
-                    genExpr(ll.elems.at(li))
+                    if ll_boxed
+                        w.emit("_zbr_boxed(")
+                        genExpr(ll.elems.at(li))
+                        w.emit(")")
+                    else
+                        genExpr(ll.elems.at(li))
                     w.emit(") catch @panic(\"OOM\"); ")
                     li += 1
                 w.emit("break :" + ll_label + " " + ll_var + "; })")
@@ -15112,6 +15304,8 @@ struct Generator
                                 w.emit("_intern(")
                                 genExpr(a.value)
                                 w.emit(")")
+                            else if ai == 1
+                                genStoredValue(m.object, a.value)
                             else
                                 genExpr(a.value)
                             ai += 1
@@ -15274,7 +15468,7 @@ struct Generator
                                         var t_sp: Span = Span(0, 0, 0, 0)
                                         t_iface_done = genInterfaceArgCoercion(args.at(0).value, TypeRef.named(NamedTypeRef(t_sp, t_en)))
                                 if not t_iface_done
-                                    genExpr(args.at(0).value)
+                                    genStoredValue(m.object, args.at(0).value)
                         w.emit(") catch @panic(\"OOM\")")
                         return
                     if mname == "count"
@@ -16074,6 +16268,10 @@ struct Generator
                         w.emit("_intern(")
                         genExpr(args.at(0).value)
                         w.emit(")")
+                    else if storedElemBoxed(m.object)
+                        w.emit("_zbr_boxed(")
+                        genExpr(args.at(0).value)
+                        w.emit(")")
                     else
                         # BUG-388: `shapes.add(Circle(1.0))` on a List(Shape) -- an
                         # interface-typed element takes the fat pointer for a concrete
@@ -16348,6 +16546,8 @@ struct Generator
                             w.emit("_intern(")
                             genExpr(a.value)
                             w.emit(")")
+                        else if ai == 1
+                            genStoredValue(m.object, a.value)
                         else
                             genExpr(a.value)
                         ai += 1
@@ -16381,7 +16581,7 @@ struct Generator
                     genExpr(args.at(1).value)
                     w.emit(")")
                 else
-                    genExpr(args.at(1).value)
+                    genStoredValue(m.object, args.at(1).value)
             w.emit(")")
             return
         if mname == "get" and not isNamespaceReceiver(m)
@@ -16441,6 +16641,8 @@ struct Generator
                     w.emit("_intern(")
                     genExpr(a.value)
                     w.emit(")")
+                else if pai == 1
+                    genStoredValue(m.object, a.value)
                 else
                     genExpr(a.value)
                 pai += 1
@@ -20140,7 +20342,7 @@ struct Generator
         if name == "List"
             w.emit("std.ArrayList(")
             if type_args.len > 0
-                genTypeFromExpr(type_args.at(0).value)
+                genElemTypeFromExpr(type_args.at(0).value)
             else
                 w.emit("anytype")
             w.emit(").empty")
@@ -20150,17 +20352,22 @@ struct Generator
             if key_is_str
                 w.emit("std.StringHashMap(")
                 if type_args.len >= 2
-                    genTypeFromExpr(type_args.at(1).value)
+                    genElemTypeFromExpr(type_args.at(1).value)
                 else
                     w.emit("anytype")
             else
                 w.emit("std.AutoHashMap(")
                 var fi = true
+                var tai = 0
                 for ta in type_args
                     if not fi
                         w.emit(", ")
                     fi = false
-                    genTypeFromExpr(ta.value)
+                    if tai == 1
+                        genElemTypeFromExpr(ta.value)
+                    else
+                        genTypeFromExpr(ta.value)
+                    tai += 1
             w.emit(").init(_allocator)")
             return
         if name == "Set"

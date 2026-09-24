@@ -1040,6 +1040,15 @@ for the map.
 
 ## DECIDED 2026-09-12 — nested containers get REFERENCE semantics (BUG-314's other half)
 
+**BUILT 2026-09-24.** Inner containers are boxed at the type (pointer elements) and at the
+store (`_zbr_boxed`); `.at()`/`.get()`/`.fetch()`, for-in elements and `as` bindings alias
+the parent; the refusal is removed, the probe asserts the new meaning, and
+test/nested_container_ref_test.zbr is the contract. The residue worth knowing: a local
+STORED into a parent is copied at that moment (the local stays a value), so
+`grid.add(local); local.add(x)` does not reach `grid` -- an outlier against Python for that
+one shape, stated in QUICKSTART; making every container a reference type is the larger
+change and was not taken.
+
 Sean's call: inner containers (`List(List(T))`, `HashMap(K, List(V))`, and the rest) are
 **heap-boxed**, so `parent.at(i)` hands back a reference and a mutation through it is seen
 by the parent -- the Python/C#/Go answer. Today's behaviour is the strictly-safe refusal

@@ -990,12 +990,23 @@ items.reserve(100000)                # pre-size the backing store; count() uncha
                                      # Worth it when the final size is known and large -- growth by
                                      # doubling briefly holds old+new, which was a 3.5 GB list going OOM.
 
-# NESTED containers are VALUES: `.at()` on a List(List(T)) hands back a COPY, so
-# mutating it would not reach the parent -- and the compiler refuses that (BUG-314):
+# NESTED containers have REFERENCE semantics (2026-09-24): the inner List / HashMap /
+# Set a List or HashMap holds is heap-boxed, so `.at(i)` / `.get(k)` / `.fetch(k)` hand
+# back the parent's own inner container and a mutation through it is seen by the parent
+# -- the Python / C# / Go answer. A for-in element and an `if m.get(k) as row` binding
+# alias the same way, and passing one to a `def f(xs: List(int))` that mutates it lands.
+#   var grid: List(List(int)) = List(List(int))()
+#   grid.add(List(int)())
+#   grid.at(0).add(1)                # the parent sees it
 #   var row = grid.at(0)
-#   row.add(1)                       # error: 'row' is a copy of the inner list ...
-# Build the inner list first and `.add()` it, or `.set(i, updated)` it back. Reads
-# through the copy (`grid.at(0).count()`, `for row in grid: for x in row`) are fine.
+#   row.add(2)                       # so does this: row IS grid's first list
+#   for r in grid
+#       r.add(3)                     # and this
+# ONE thing to know: what the parent holds is a box made when the value is STORED.
+# `grid.add(local)` copies `local`'s contents into the box at that moment; a later
+# `local.add(x)` does not reach the parent (the local is a value, the box is not).
+# Take the alias from the parent (`grid.at(i)`) when you want to keep mutating.
+# Storing a box you already hold (`grid.add(other.at(0))`) shares it, not copies it.
 
 # HashMap — construct with HashMap(K,V)() or a dict literal `{k: v, ...}`:
 var m = HashMap(str, int)()

@@ -43,6 +43,22 @@ confirmed via `tools/bootstrap_check.sh`.
   the cell value when `SetCellValue` returns and the message is handled later from the queue,
   so the runtime now owns the text before it crosses. Witnessed on GTK (edit, refused empty
   edit, remove). `examples/table_edit_smoke.zbr`; libui-section.
+- **Nested containers have REFERENCE semantics (2026-09-24; BUG-314's other half, Sean's
+  2026-09-12 decision).** The inner List / HashMap / Set a List or HashMap holds is
+  heap-boxed -- emitted as a pointer element (`std.ArrayList(*std.ArrayList(i64))`) and
+  boxed at every store (`add`, `set`, `put`, a literal element; `_zbr_boxed` in the
+  runtime) -- so `.at(i)`, `.get(k)`, `.fetch(k)`, a for-in element and an `if m.get(k)
+  as row` binding all hand back the parent's own inner container, and a mutation through
+  any of them is seen by the parent: the Python / C# / Go answer. Passing one to a
+  `def f(xs: List(int))` that mutates it lands too (the arg is already a pointer, the
+  BUG-097 three-case logic sees it). A bare `HashMap()` / `List()` stored into a typed
+  slot takes the slot's type. The 2026-09-10 refusal is gone; its fixture is a passing
+  program and the boundary probe asserts the new meaning; test/nested_container_ref_test
+  is the contract (13 shapes, expectations written before the first run). The one
+  semantics to know, stated in QUICKSTART: what the parent holds is a box made when the
+  value is STORED -- `grid.add(local)` copies `local`'s contents, so a later `local.add`
+  does not reach the parent; the alias is what `grid.at(i)` returns, and storing a box
+  you already hold shares it.
 - **Toolbars -- `g.beginToolbar` / `tool` / `toolIcon` / `toolSeparator` / `toolEnabled` /
   `endToolbar` (2026-09-23).** A native strip under the menubar on every platform of the
   fork: `uiToolbar` in zig-libui-ng (GtkToolbar with icon+label items; ToolbarWindow32 laid

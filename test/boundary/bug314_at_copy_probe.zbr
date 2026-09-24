@@ -1,12 +1,11 @@
-# @boundary rejects is a copy of the inner list fetched with .at()
+# @boundary runs
 #
-# BUG-314, resolved 2026-09-10 the STRICTLY-SAFE way: `.at()` on a List(List(T)) still
-# hands back a COPY (the language's containers stay value-typed; the reference-semantics
-# option -- boxing inner containers so `.at()` aliases the parent's slot -- is filed for
-# Sean under BUG-314's closing note), but mutating that copy is now REFUSED at -c with the
-# two idioms that do work, instead of being silently lost. This probe was the
-# @boundary-pending pin of the silent loss; it FAILED the day the refusal landed, which
-# was its purpose, and now asserts the refusal.
+# BUG-314, both halves. 2026-09-10: `.at()` on a List(List(T)) handed back a COPY and a
+# mutation through it was REFUSED at -c (this probe asserted the refusal). 2026-09-12,
+# Sean's decision: inner containers get REFERENCE semantics. 2026-09-24, built: the inner
+# container is heap-boxed, `.at()` hands back the parent's own box, and the mutation is
+# seen by the parent -- the Python / C# / Go answer. The expectation below was written
+# from that decision, not from the compiler.
 
 def main()
     var parent: List(List(float)) = List(List(float))()

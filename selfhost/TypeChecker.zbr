@@ -3476,8 +3476,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.unknown_
                         on Type_.list_ as list_elem
                             var lmname: str = mem.member
-                            # BUG-314: mutating a COPY of a nested container is silently lost.
-                            if isContainerMutator(lmname)
+                            # BUG-314: mutating a COPY of a nested container was silently lost
+                            # and so REFUSED here (2026-09-10). Since 2026-09-24 the inner
+                            # container is heap-boxed and `.at()` aliases it, so the mutation
+                            # lands; the refusal is off (copy_locals bookkeeping kept, unused).
+                            if false and isContainerMutator(lmname)
                                 var cpn: str = copyReceiverName(mem.object, ctx)
                                 if cpn != ""
                                     var cp_what: str = "'" + cpn + "' is a copy of the inner list fetched with .at()"
@@ -3649,9 +3652,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             checkGenericConstraints(ctx, gcname, targ_names, gid.span)
                             return Type_.named(gcname)
                         if gcname == "HashMap" and gc.args.len == 2
-                            if gc.args.at(0).value is Expr.ident as kn
-                                if gc.args.at(1).value is Expr.ident as vn
-                                    return Type_.hashmap_(HashMapType_(typeFromName(kn.name), typeFromName(vn.name)))
+                            # a nested value type (`HashMap(str, List(int))()`) goes through
+                            # typeArgToType like List's does (2026-09-24; it was ident-only)
+                            return Type_.hashmap_(HashMapType_(typeArgToType(gc.args.at(0).value), typeArgToType(gc.args.at(1).value)))
                         if gcname == "List" and gc.args.len == 1
                             # Element may be a bare name OR a nested generic
                             # (List(HashMap(K,V)) etc.) — typeArgToType handles both.

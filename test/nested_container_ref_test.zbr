@@ -1,0 +1,103 @@
+# Nested containers have REFERENCE semantics (BUG-314's other half, decided 2026-09-12,
+# built 2026-09-24): the inner container a List or HashMap holds is heap-boxed, so
+# `.at(i)` / `.get(k)` hand back the parent's own inner container and a mutation
+# through it is seen by the parent -- the Python / C# / Go answer. What a parent holds
+# is a box made when the value is STORED (`.add(row)` copies row's contents into the
+# box at that moment); the alias is what `.at()` returns.
+def bump(xs: List(int))
+    xs.add(9)
+
+# returning an inner list by VALUE copies it out (a return is not an alias)
+def firstRow(g: List(List(int))): List(int)
+    return g.at(0)
+
+class Holder
+    var row: List(int)
+    cue init(row: List(int))
+        .row = row
+
+def total(rows: List(List(int))): int
+    var t: int = 0
+    for r in rows
+        for x in r
+            t += x
+    return t
+
+def main()
+    var parent: List(List(int)) = List(List(int))()
+    parent.add(List(int)())
+    parent.add([10, 20])
+    # 1. the .at() chain mutates the parent's inner list
+    parent.at(0).add(1)
+    parent.at(0).add(2)
+    print(parent.at(0).count())          # 2
+    # 2. a local bound from .at() aliases it, both ways
+    var r = parent.at(0)
+    r.add(3)
+    print(parent.at(0).count())          # 3
+    parent.at(0).add(4)
+    print(r.count())                     # 4
+    # 3. a for-in element aliases too
+    for row in parent
+        row.add(100)
+    print(parent.at(0).count(), parent.at(1).count())   # 5 3
+    # 4. passing an inner list to a function that mutates it
+    bump(parent.at(1))
+    print(parent.at(1).at(2), parent.at(1).count())     # 100 4
+    # 5. a typed local from .at()
+    var second: List(int) = parent.at(1)
+    second.add(5)
+    print(parent.at(1).count())          # 5
+    # 6. .set() still replaces; the old alias keeps the old box
+    var fresh: List(int) = [7, 8, 9]
+    parent.set(0, fresh)
+    print(parent.at(0).count(), r.count())   # 3 5
+    # 7. storing copies the CONTENTS at that moment; the local is not the box
+    fresh.add(10)
+    print(parent.at(0).count(), fresh.count())   # 3 4
+    # 8. the whole thing through a function taking the nested type
+    print(total(parent))                 # 24 + 10+20+100+9+5 = 168
+    # 9. HashMap(str, List(int)): get(k) aliases
+    var m: HashMap(str, List(int)) = HashMap()
+    m.put("a", [1])
+    if m.get("a") as ra
+        ra.add(2)
+    print(m.get("a")!.count())           # 2
+    m.get("a")!.add(3)
+    print(m.fetch("a").count())          # 3
+    # 10. List(HashMap(str, int)): at(i).put lands
+    var ms: List(HashMap(str, int)) = List(HashMap(str, int))()
+    ms.add(HashMap())
+    ms.at(0).put("k", 1)
+    ms.at(0).put("j", 2)
+    print(ms.at(0).count())              # 2
+    # 11. three levels
+    var deep: List(List(List(int))) = List(List(List(int)))()
+    deep.add(List(List(int))())
+    deep.at(0).add([1])
+    deep.at(0).at(0).add(2)
+    print(deep.at(0).at(0).count())      # 2
+    # 12. printing a nested list shows the contents, not an address
+    print(parent.at(0))                  # [7, 8, 9]
+    # 13. a loop element and an `as` binding passed on to a mutating function
+    for row2 in parent
+        bump(row2)
+    print(parent.at(0).count(), parent.at(1).count())   # 4 6
+    if m.get("a") as ra2
+        bump(ra2)
+    print(m.fetch("a").count())          # 4
+    # 14. the functional trio on an inner list; a by-value return copies out
+    print(parent.at(1).map(def(x) = x * 2).count())      # 6
+    var copy: List(int) = firstRow(parent)
+    copy.add(99)
+    print(parent.at(0).count(), copy.count())             # 4 5
+    # 15. an inner list into a VALUE slot (a class field via the ctor) copies out...
+    var h: Holder = Holder(parent.at(0))
+    h.row.add(1)
+    print(parent.at(0).count(), h.row.count())            # 4 5
+    # ...but storing a box you already hold into ANOTHER parent shares it
+    var hs: HashMap(str, List(int)) = HashMap()
+    hs["z"] = parent.at(0)
+    hs.get("z")!.add(1)
+    print(parent.at(0).count(), hs.fetch("z").count())    # 5 5
+    print("nested-ref: OK")

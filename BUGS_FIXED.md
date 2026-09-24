@@ -321,6 +321,11 @@ classes, which is a codegen change across every nested-container site. Post-0.9.
 is the same copy and is NOT yet refused. Fixtures bug314_nested_copy_mutation_fail (three
 shapes) + bug314_nested_list_idioms_test (the positive half).
 
+**2026-09-24: the other half is BUILT** -- inner containers are heap-boxed and every
+shape above (and the HashMap `as row` limit) now mutates the parent. The `_fail` fixture is
+a passing smoke_run; test/nested_container_ref_test.zbr is the contract. CHANGELOG has the
+semantics and the one residue (a stored local is copied at the store).
+
 ### BUG-423: `xs.join(",")` only worked on a `List(str)` — FIXED 2026-09-10
 
 `[1, 2].join(",")` was Zig's "expected '[]const str', found '[]i64'". `_zbr_list_join` in

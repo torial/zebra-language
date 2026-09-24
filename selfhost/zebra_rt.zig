@@ -95,6 +95,43 @@ pub fn _initIo(io: std.Io) void {
 /// (selfhost/main.zbr versionBanner) and .github/workflows/release.yml refuses a tag
 /// that does not spell it (tag = v<_zbr_version>_zig<zig major.minor>). Bump here.
 pub const _zbr_version: []const u8 = "0.9.0-rc2";
+/// NESTED CONTAINERS ARE HEAP-BOXED (2026-09-24, BUG-314's other half): a List's element
+/// or a HashMap's value that is itself a List / HashMap / Set is stored as a pointer, so
+/// `.at(i)` / `.get(k)` alias the parent's slot. Codegen wraps the value at every STORE
+/// site (`add`, `set`, `put`, a literal element) in _zbr_boxed: a container VALUE is
+/// copied into a fresh heap box, an existing box (a pointer -- what `.at()` returned)
+/// passes through, so `parent.add(other.at(0))` shares rather than copies.
+pub fn _zbr_boxed(v: anytype) _ZbrBoxOf(@TypeOf(v)) {
+    const T = @TypeOf(v);
+    if (comptime @typeInfo(T) == .pointer) return v;
+    const p = _allocator.create(T) catch @panic("OOM");
+    p.* = v;
+    return p;
+}
+fn _ZbrBoxOf(comptime T: type) type {
+    return if (@typeInfo(T) == .pointer) T else *T;
+}
+/// The value behind a box, for a site that wants the container itself (a by-value
+/// parameter, a `.contains()` comparison); a value passes through.
+pub fn _zbr_unboxed(v: anytype) _ZbrUnboxOf(@TypeOf(v)) {
+    const T = @TypeOf(v);
+    if (comptime @typeInfo(T) == .pointer and @typeInfo(T).pointer.size == .one) return v.*;
+    if (comptime @typeInfo(T) == .optional) {
+        const C = @typeInfo(T).optional.child;
+        if (comptime @typeInfo(C) == .pointer and @typeInfo(C).pointer.size == .one) {
+            return if (v) |p| p.* else null;
+        }
+    }
+    return v;
+}
+fn _ZbrUnboxOf(comptime T: type) type {
+    if (@typeInfo(T) == .pointer and @typeInfo(T).pointer.size == .one) return @typeInfo(T).pointer.child;
+    if (@typeInfo(T) == .optional) {
+        const C = @typeInfo(T).optional.child;
+        if (@typeInfo(C) == .pointer and @typeInfo(C).pointer.size == .one) return ?@typeInfo(C).pointer.child;
+    }
+    return T;
+}
 // sys.sleep(ms): Zig 0.16 removed std.Thread.sleep; sleeping now goes through the
 // Io interface.  Cancellation is benign here (we only sleep to pace/poll), so swallow it.
 pub fn _sysSleep(ms: i64) void {
@@ -566,29 +603,30 @@ pub fn _zebra_sort_by(comptime T: type, comptime cmp: anytype, items: []T) void 
     };
     std.mem.sort(T, items, {}, _I.less);
 }
-pub fn _zebra_list_any(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
-    for (list.items) |item| { if (pred(item)) return true; }
+// `list: anytype` (2026-09-24): a boxed inner list (`*ArrayList`) reaches these too; `.items` derefs.
+pub fn _zebra_list_any(comptime T: type, pred: anytype, list: anytype) bool {
+    for (list.items) |item| { if (pred(@as(T, item))) return true; }
     return false;
 }
-pub fn _zebra_list_all(comptime T: type, pred: anytype, list: std.ArrayList(T)) bool {
-    for (list.items) |item| { if (!pred(item)) return false; }
+pub fn _zebra_list_all(comptime T: type, pred: anytype, list: anytype) bool {
+    for (list.items) |item| { if (!pred(@as(T, item))) return false; }
     return true;
 }
-pub fn _zebra_list_find(comptime T: type, pred: anytype, list: std.ArrayList(T)) ?T {
+pub fn _zebra_list_find(comptime T: type, pred: anytype, list: anytype) ?T {
     for (list.items) |item| { if (pred(item)) return item; }
     return null;
 }
-pub fn _zebra_list_map(comptime T: type, pred: anytype, list: std.ArrayList(T)) std.ArrayList(@TypeOf(pred(@as(T, undefined)))) {
+pub fn _zebra_list_map(comptime T: type, pred: anytype, list: anytype) std.ArrayList(@TypeOf(pred(@as(T, undefined)))) {
     var out: std.ArrayList(@TypeOf(pred(@as(T, undefined)))) = .empty;
     for (list.items) |item| out.append(_allocator, pred(item)) catch @panic("OOM");
     return out;
 }
-pub fn _zebra_list_filter(comptime T: type, pred: anytype, list: std.ArrayList(T)) std.ArrayList(T) {
+pub fn _zebra_list_filter(comptime T: type, pred: anytype, list: anytype) std.ArrayList(T) {
     var out: std.ArrayList(T) = .empty;
     for (list.items) |item| { if (pred(item)) out.append(_allocator, item) catch @panic("OOM"); }
     return out;
 }
-pub fn _zebra_list_reduce(comptime T: type, init_val: anytype, f: anytype, list: std.ArrayList(T)) @TypeOf(f(init_val, @as(T, undefined))) {
+pub fn _zebra_list_reduce(comptime T: type, init_val: anytype, f: anytype, list: anytype) @TypeOf(f(init_val, @as(T, undefined))) {
     // Accumulator type = the fold function's result type (concrete, since it
     // combines with the runtime element T), so a `comptime_int` init like `0`
     // coerces to it instead of leaving the return type comptime-only.
