@@ -1,0 +1,20 @@
+# A generic class WITHOUT a `cue init` (2026-09-24): the synthesized init returned the
+# struct by VALUE while every instantiation site expected a pointer, so `Stack(int)()`
+# never compiled ("expected '*T', found 'T'") -- and field defaults were lost to
+# `undefined`. It is the non-generic synthesized init now: a heap instance, `.{}`, the
+# field initialisers with the field's declared type as the hint.
+class Stack(T)
+    var items: List(T) = List(T)()
+    var label: str = "stack"
+    def push(x: T)
+        .items.add(x)
+    def size(): int
+        return .items.count()
+def main()
+    var s: Stack(int) = Stack(int)()
+    s.push(1)
+    s.push(2)
+    var t = Stack(str)()
+    t.push("a")
+    print(s.size(), t.size(), s.label)
+    print("gen-init: OK")

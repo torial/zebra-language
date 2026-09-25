@@ -245,6 +245,7 @@ class ClassTypes
     # BUG-409: true iff a `struct` (a value type); with is_class this separates the
     # user's own types from mixins/unions/pseudo-classes for the unknown-method refusal.
     var is_struct: bool
+    var method_deprecated: HashMap(str, str)
 
     cue init(name: str)
         .name = internString(name)
@@ -258,6 +259,17 @@ class ClassTypes
         ctor_params = List(Type_)()
         fn_param_lists = HashMap()
         fn_bodies = HashMap()
+        method_deprecated = HashMap()
+
+    # `@deprecated("msg")` on a method / free fn (2026-09-24): the warning tier's first
+    # warning. "" when the name carries none.
+    def setDeprecated(method_name: str, msg: str)
+        .method_deprecated.put(internString(method_name), internString(msg))
+
+    def deprecatedMsg(method_name: str): str
+        if .method_deprecated.contains(method_name)
+            return .method_deprecated.fetch(method_name)
+        return ""
 
     def setField(field_name: str, t: Type_)
         .field_types.put(internString(field_name), t)
@@ -590,6 +602,12 @@ class ModuleTypes
         var c: ClassTypes = .classes.fetch(class_name)
         return c.methodReturn(method_name)
 
+    def deprecatedMsg(class_name: str, method_name: str): str
+        if not .classes.contains(class_name)
+            return ""
+        var c: ClassTypes = .classes.fetch(class_name)
+        return c.deprecatedMsg(method_name)
+
     # BUG-142: full declared Param list (with defaults) for a method / free fn.
     def fnParamList(class_name: str, method_name: str): List(Param)?
         if not .classes.contains(class_name)
@@ -914,6 +932,8 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     mt.addPrivateMemberKey(ct.name, m.name)
                 if m.mods.is_cue
                     mt.addCue(ct.name, m.name)
+                if m.deprecated != ""
+                    ct.setDeprecated(m.name, m.deprecated)
                 if m.return_type != nil
                     ct.setMethodReturn(m.name, typeFromRef(m.return_type!))
                 else
@@ -1113,6 +1133,8 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
             on Decl.method as topfn
                 # Top-level def: register under "" sentinel so bare calls inside
                 # class methods can resolve the return type via methodReturnAny.
+                if topfn.deprecated != ""
+                    module_fns.setDeprecated(topfn.name, topfn.deprecated)
                 if iterElemRef(topfn.return_type) as gen_elem_ref
                     # A generator: the call yields the generated iterator class.
                     var gen_cls: str = generatorClassName(topfn.name)
@@ -1453,10 +1475,46 @@ class InferCtx
         return sb.build()
 
     def addWarn(file: str, line: int, col: int, message: str)
+        # the same two rules as addErr: a quiet re-inference adds nothing, and an EXACT
+        # duplicate (the print-argument double visit, BUG-319) is not information
+        if quiet_errors
+            return
+        for _dup in warnings
+            if _dup.line == line and _dup.col == col and _dup.file == file and _dup.message == message
+                return
         warnings.add(Diagnostic(file, line, col, message))
+
+    # The `@deprecated` message on a method / free fn in this module or a dep, "" if none.
+    def deprecatedAny(class_name: str, method_name: str): str
+        var dm: str = .module_types.deprecatedMsg(class_name, method_name)
+        if dm != ""
+            return dm
+        dm = .dep_types.deprecatedMsg(class_name, method_name)
+        if dm != ""
+            return dm
+        var bare: str = stripModulePrefix(class_name)
+        if bare != class_name
+            dm = .module_types.deprecatedMsg(bare, method_name)
+            if dm != ""
+                return dm
+            return .dep_types.deprecatedMsg(bare, method_name)
+        return ""
+
+    # Warn at a call site that resolved to a deprecated method / free fn (2026-09-24).
+    def noteDeprecated(class_name: str, method_name: str, line: int, col: int)
+        var dm: str = .deprecatedAny(class_name, method_name)
+        if dm == ""
+            return
+        var what: str = "'" + method_name + "'"
+        if class_name != ""
+            what = "'" + stripModulePrefix(class_name) + "." + method_name + "'"
+        .addWarn(.file, line, col, what + " is deprecated: " + dm)
 
     def hasWarnings(): bool
         return warnings.len > 0
+
+    def warningCount(): int
+        return warnings.len
 
     def warningMessages(): str
         var sb: StringBuilder = StringBuilder()
@@ -2865,9 +2923,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     if ctx.current_class != ""
                         var mr: Type_? = ctx.methodReturnAny(ctx.current_class, cname)
                         if mr as mr_v
+                            ctx.noteDeprecated(ctx.current_class, cname, id.span.line, id.span.col)
                             return mr_v
                     var mf: Type_? = ctx.methodReturnAny("", cname)
                     if mf as mf_v
+                        ctx.noteDeprecated("", cname, id.span.line, id.span.col)
                         return mf_v
                     return Type_.unresolved
                 on Expr.member as mem
@@ -2894,6 +2954,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # the program failed in Zig with an unrelated-looking mismatch.
                         if ctx.hasClassAny(bname)
                             if ctx.methodReturnAny(bname, mem.member) as user_static_ret
+                                ctx.noteDeprecated(bname, mem.member, mem.span.line, mem.span.col)
                                 return user_static_ret
                         # The frame-callback `Gui.run(title, w, h, frame)` retired 2026-09-21
                         # (CHANGELOG): its only reason to exist was the value-returning
@@ -3155,6 +3216,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                     return Type_.unknown_
                             var rt: Type_? = ctx.methodReturnAny(tn, mem.member)
                             if rt as rt_v
+                                ctx.noteDeprecated(tn, mem.member, mem.span.line, mem.span.col)
                                 # A generic interface method returning one of its own type
                                 # parameters (`def convert(x: A): B`): the argument is not
                                 # carried in Type_.named, so the result is unknown_ rather
@@ -4973,11 +5035,39 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
 # a `^Expr` FIELD does too (`cm.object` emits `cm.object.*` right below). So the gap
 # is narrow and specific to this position; this wrapper takes the pointer as a
 # PARAMETER, where the deref is applied reliably.
+# The warning tier's deprecation check at a call site (2026-09-24): the callee resolved
+# the way checkArgCount resolves it -- a bare name in the current class then the module,
+# a member on a named type or on a class name (a static) -- and `@deprecated` noted.
+def checkDeprecatedCall(c: ExprCall, ctx: InferCtx)
+    branch c.callee
+        on Expr.ident as cid
+            if ctx.hasClassAny(cid.name)
+                return
+            if ctx.current_class != "" and ctx.methodReturnAny(ctx.current_class, cid.name) != nil
+                ctx.noteDeprecated(ctx.current_class, cid.name, cid.span.line, cid.span.col)
+            else
+                ctx.noteDeprecated("", cid.name, cid.span.line, cid.span.col)
+        on Expr.member as mem
+            if mem.object is Expr.ident as oid
+                if ctx.hasClassAny(oid.name) and not ctx.hasLocal(oid.name)
+                    ctx.noteDeprecated(oid.name, mem.member, mem.span.line, mem.span.col)
+                    return
+            var recv: Type_ = inferExpr(mem.object, ctx)
+            if recv is Type_.ref_to as rrt
+                recv = rrt
+            if recv is Type_.optional as rot
+                recv = rot
+            if recv is Type_.named as tn
+                ctx.noteDeprecated(tn, mem.member, mem.span.line, mem.span.col)
+        else
+            pass
+
 def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
     branch e
         on Expr.call as c
             checkArgCount(c, file, line, ctx)
             checkCallExpr(c, file, line, ctx)  # audit #3: arg-type check reaches nested calls
+            checkDeprecatedCall(c, ctx)
             if c.callee is Expr.member as cm
                 checkCallsInExpr(cm.object, file, line, ctx)
             for a in c.args
@@ -6058,6 +6148,16 @@ def checkDeclShapes(m: Module, file: str, ctx: InferCtx)
                 if mem is Decl.method as dm
                     if dm.name == "init"
                         ctx.addErr(file, dm.span.line, dm.span.col, "the constructor is written `cue init(...)`, not `def init` (a `def init` collides with the generated one)")
+            # Two instantiations of ONE generic interface (`implements Conv(int), Conv(str)`)
+            # cannot both be satisfied: a class has one method of a name, so the second
+            # view would carry the first's signature (2026-09-24). Refused by name.
+            var seen_gen_bases: List(str) = List(str)()
+            for ir0 in c.ifaces
+                if ir0 is TypeRef.generic as irg0
+                    if seen_gen_bases.contains(irg0.name)
+                        ctx.addErr(file, c.span.line, c.span.col, "'" + c.name + "' implements '" + irg0.name + "' twice with different type arguments: one method of a name cannot satisfy two instantiations -- keep one, or split the class")
+                    else
+                        seen_gen_bases.add(irg0.name)
             for ir in c.ifaces
                 if ir is TypeRef.named as irn
                     if mixin_names.contains(irn.name)

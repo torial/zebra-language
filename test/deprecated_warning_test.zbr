@@ -1,0 +1,37 @@
+# The warning tier (2026-09-24): `@deprecated("msg")` on a def or a method warns at every
+# call site -- `file:line:col: warning: 'name' is deprecated: msg` -- and the program still
+# builds and runs. `--warnings-as-errors` turns any warning into a failed compile (the
+# cli-surface gate holds that leg). This file is a smoke_run: it must RUN.
+use deprecated_warning_dep exposing farewell, farewell2, Tally
+
+@deprecated("use greet2")
+def greet(name: str): str
+    return "hi " + name
+
+def greet2(name: str): str
+    return "hello " + name
+
+class Counter
+    var n: int = 0
+    @deprecated("use bump")
+    def inc()
+        .n = .n + 1
+    def bump()
+        .n = .n + 1
+    @deprecated
+    static def make(): Counter
+        return Counter()
+
+def main()
+    print(greet("a"))
+    print(greet2("b"))
+    var c: Counter = Counter.make()
+    c.inc()
+    c.bump()
+    print(c.n)
+    print(farewell("d"), farewell2("e"))
+    var t: Tally = Tally()
+    t.add1()
+    t.up()
+    print(t.n)
+    print("deprecated: OK")

@@ -5,6 +5,7 @@ const std     = @import("std");
 const builtin = @import("builtin");
 const _zbr_rt = @import("zebra_rt.zig");
 pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
+const _zbr_boxed = _zbr_rt._zbr_boxed;
 const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
@@ -159,13 +160,13 @@ const _reflect_UnionInfo_field_types: []const []const u8 = &.{"str", "str", "int
 pub const _zbr_ty_DeadCodeChecker = struct {
     _type_tag: u64 = _ttag_DeadCodeChecker,
     union_infos: std.StringHashMap(*_zbr_ty_UnionInfo) = undefined,
-    match_sites: std.StringHashMap(std.ArrayList([]const u8)) = undefined,
+    match_sites: std.StringHashMap(*std.ArrayList([]const u8)) = undefined,
     match_key_list: std.ArrayList([]const u8) = undefined,
     constructed_set: std.StringHashMap(bool) = undefined,
     constructed_key_list: std.ArrayList([]const u8) = undefined,
     module_fns: std.StringHashMap([]const u8) = undefined,
     module_fn_key_list: std.ArrayList([]const u8) = undefined,
-    fn_edges: std.StringHashMap(std.ArrayList([]const u8)) = undefined,
+    fn_edges: std.StringHashMap(*std.ArrayList([]const u8)) = undefined,
     root_set: std.StringHashMap(bool) = undefined,
     root_key_list: std.ArrayList([]const u8) = undefined,
     reachable_set: std.StringHashMap(bool) = undefined,
@@ -178,7 +179,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:78
             _self.union_infos = std.StringHashMap(*_zbr_ty_UnionInfo).init(_zbr_rt._allocator);
 // zbr:selfhost/Checker.zbr:79
-            _self.match_sites = std.StringHashMap(std.ArrayList([]const u8)).init(_zbr_rt._allocator);
+            _self.match_sites = std.StringHashMap(*std.ArrayList([]const u8)).init(_zbr_rt._allocator);
 // zbr:selfhost/Checker.zbr:80
             _self.match_key_list = std.ArrayList([]const u8).empty;
 // zbr:selfhost/Checker.zbr:81
@@ -190,7 +191,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:84
             _self.module_fn_key_list = std.ArrayList([]const u8).empty;
 // zbr:selfhost/Checker.zbr:85
-            _self.fn_edges = std.StringHashMap(std.ArrayList([]const u8)).init(_zbr_rt._allocator);
+            _self.fn_edges = std.StringHashMap(*std.ArrayList([]const u8)).init(_zbr_rt._allocator);
 // zbr:selfhost/Checker.zbr:86
             _self.root_set = std.StringHashMap(bool).init(_zbr_rt._allocator);
 // zbr:selfhost/Checker.zbr:87
@@ -219,12 +220,12 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:98
         if ((!self.match_sites.contains(key))) {
 // zbr:selfhost/Checker.zbr:99
-            self.match_sites.put(_intern(key), std.ArrayList([]const u8).empty) catch @panic("OOM");
+            self.match_sites.put(_intern(key), _zbr_boxed(std.ArrayList([]const u8).empty)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:100
             self.match_key_list.append(_zbr_rt._allocator, _intern(key)) catch @panic("OOM");
         }
 // zbr:selfhost/Checker.zbr:101
-        var sites: std.ArrayList([]const u8) = (self.match_sites.get(key).?);
+        var sites = (self.match_sites.get(key).?);
 // zbr:selfhost/Checker.zbr:102
         sites.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat(file, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{line}) catch @panic("OOM")), _zbr_rt._allocator))) catch @panic("OOM");
     }
@@ -260,7 +261,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:117
             self.module_fn_key_list.append(_zbr_rt._allocator, _intern(key)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:118
-            self.fn_edges.put(_intern(key), std.ArrayList([]const u8).empty) catch @panic("OOM");
+            self.fn_edges.put(_intern(key), _zbr_boxed(std.ArrayList([]const u8).empty)) catch @panic("OOM");
         }
     }
 
@@ -292,7 +293,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:134
             if (self.fn_edges.contains(self.current_fn_key)) {
 // zbr:selfhost/Checker.zbr:135
-                var edges: std.ArrayList([]const u8) = (self.fn_edges.get(self.current_fn_key).?);
+                var edges = (self.fn_edges.get(self.current_fn_key).?);
 // zbr:selfhost/Checker.zbr:136
                 edges.append(_zbr_rt._allocator, _intern(to_key)) catch @panic("OOM");
             }
@@ -1266,7 +1267,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:566
                 if (self.fn_edges.contains(key)) {
 // zbr:selfhost/Checker.zbr:567
-                    const edges: std.ArrayList([]const u8) = (self.fn_edges.get(key).?);
+                    const edges = (self.fn_edges.get(key).?);
 // zbr:selfhost/Checker.zbr:568
                     var ei: i64 = 0;
 // zbr:selfhost/Checker.zbr:569
@@ -1367,7 +1368,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:615
                 dead_sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("  ", BLD, _zbr_rt._allocator), "[", _zbr_rt._allocator), uname, _zbr_rt._allocator), "]", _zbr_rt._allocator), RST, _zbr_rt._allocator), "  ", _zbr_rt._allocator), YLW, _zbr_rt._allocator), vname, _zbr_rt._allocator), RST, _zbr_rt._allocator), "\n", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:616
-                const sites: std.ArrayList([]const u8) = (self.match_sites.get(key).?);
+                const sites = (self.match_sites.get(key).?);
 // zbr:selfhost/Checker.zbr:617
                 var si: i64 = 0;
 // zbr:selfhost/Checker.zbr:618

@@ -475,6 +475,22 @@ chk "a GUI scaffold's build.zig forwards run-step args (BUG-429)" \
     "$(grep -q 'run_step.addArgs(args)' "${GA_BZ:-/dev/null}" 2>/dev/null && echo 0 || echo 1)" \
     "exit=$RC build.zig=[$GA_BZ] stderr=[$(echo "$ERR" | tail -1)]"
 
+# ---- the warning tier (2026-09-24): a warning is a line, not a failure; -Werror flips it --
+# `@deprecated("...")` is the first warning that fires on ordinary code. Three legs, both
+# directions: the warning IS printed and the build still succeeds; --warnings-as-errors
+# makes the same file fail AND says why; a file with no warnings passes under the flag.
+printf '@deprecated("use g2")\ndef g(): int\n    return 1\ndef main()\n    print(g())\n' > "$W/deprec.zbr"
+run -c deprec.zbr
+chk "a deprecation WARNS (\`file:line:col: warning:\`) and \`-c\` still exits 0" \
+    "$([ "$RC" = 0 ] && case "$ERR" in *": warning: 'g' is deprecated: use g2"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | grep -m1 warning)]"
+run -c --warnings-as-errors deprec.zbr
+chk "\`--warnings-as-errors\` turns that warning into a FAILED compile that names the flag" \
+    "$([ "$RC" != 0 ] && case "$ERR" in *"--warnings-as-errors"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | tail -1)]"
+run -c --warnings-as-errors hello.zbr
+chk "\`--warnings-as-errors\` on a clean file still exits 0" "$([ "$RC" = 0 ] && echo 0 || echo 1)" "exit=$RC"
+
 echo
 printf '  %s passed, %s pinned (known-broken), %s FAILED\n' "$pass" "$xfail" "$fail"
 if [ "$fail" -eq 0 ]; then

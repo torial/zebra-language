@@ -138,12 +138,14 @@ DECISIONS 2026-09-15 (Sean, on the 2026-09-14 read above and the surface measure
   generic class type as a parameter or annotation was emitted as the VALUE type, so
   `def show(b: Box(int))` refused its own instances ("expected type 'T', found '*T'").
   Both fixed: the coercion reads the vtable off the value (`@TypeOf(v.*)._vtable_I`)
-  and `Box(int)` is a pointer like every class. STILL LEFT: an interface extending a
-  generic one; two instantiations of one generic interface by one generic class (the
-  in-struct vtable is keyed on the interface's base name). Paper cut seen while
-  probing: `items = List(T)()` inside a generic class body is "undefined name: 'T'"
-  (the idiom is `items = List()`); the resolver does not know the class's type
-  parameters as names.
+  and `Box(int)` is a pointer like every class. STILL LEFT (CLOSED 2026-09-24): an interface extending a
+  generic one -- built (`interface Ranked(T) implements Comparable(T)`, plain and generic
+  sub-interfaces, classes and generic classes through the chain); two instantiations of
+  one generic interface by one class -- REFUSED by name (one method of a name cannot
+  satisfy two); the `items = List(T)()` paper cut was the field-initialiser shape of a
+  generic class with no `cue init`, whose synthesized init returned a value and never
+  compiled -- fixed. test/generic_iface_super_test, generic_class_default_init_test,
+  fail_fixtures/generic_iface_twice_test.
 
 ORDERING CHANGE among existing items: the **warning tier** (below) moves from "several
 items need it" to "the freeze needs it" (item 4). The **trip test** stays where its own
@@ -279,7 +281,12 @@ one refinement: the *list of applicable transforms* should stay queryable even w
 
 ## A WARNING TIER, which several of these items need (Sean, 2026-08-26)
 
-Zebra has no warnings today: everything is an error or silence. The complexity budget wants
+**BUILT 2026-09-24.** Warnings print as `file:line:col: warning:`, reach `zebra
+diagnostics`/the LSP, never fail a build alone; `--warnings-as-errors` fails on any. The
+first warning that fires on ordinary code is `@deprecated("msg")` on a def / method /
+static (in-module and across `use`); the older `--warn-non-exhaustive` and the
+function-used-as-a-value warning ride the same tier. A cost diagnostic or a transform
+notice is now one `ctx.addWarn` away. (Was:) Zebra has no warnings today: everything is an error or silence. The complexity budget wants
 to be a warning class with `--warnings-as-errors` for those who want the tighter contract.
 So do cost diagnostics, transformation notices, and any future advisory. **Building the tier
 once unblocks all of them**; adding each as a bespoke flag does not.
@@ -798,11 +805,14 @@ fail at the parser (BUG-172 follow-on). See `fuzz/README.md` + `FINDINGS.md`.
 
 ## Open Bugs (not tied to an open milestone slot)
 
-- **Selfhost `_initIo` propagation gap** — selfhost-emitted dep modules get a simple
-  `_initIo` (local `_io` only); bootstrap-emitted ones propagate to transitive deps.
-  Harmless now (`Ast`/`CgHelpers`/`TypeChecker` don't call `_io` ops directly); would
-  silently use undefined `_io` if a transitive dep gains file I/O. Fix: emit a
-  propagating `_initIo` in `generateModuleWith`. **Track for 1.0 pre-flight.**
+- **Selfhost `_initIo` propagation gap** — CLOSED, and had been since BUG-221's fix:
+  the entry thunk walks `_entry_deps` (the TRANSITIVE list) for `_initModuleVars` on the
+  runtime-module path and for `_initAllocator`/`_initIo` on the inline path, and
+  `runtime_module_check`'s BUG-221 leg runs a depth-2 dep that touches a file. Re-checked
+  2026-09-24 (1.0 pre-flight): a three-module chain whose leaf does `File.read` runs on
+  the default, `--no-runtime-module` and `--single-file` shapes. (Was:) selfhost-emitted
+  dep modules get a simple `_initIo` (local `_io` only); would silently use undefined
+  `_io` if a transitive dep gains file I/O.
 - **BUG-180** — bootstrap ctor-default fill (see Compiler hardening). Bootstrap-only.
 - **BUG-026** — `instance_method_return_types` gaps for exposed-type method chains.
   Not manifesting (`scanMutationsInExpr` conservatively marks cross-module calls

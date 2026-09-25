@@ -382,7 +382,9 @@ struct PMethod
     var line: int
     var col: int
     var is_cue: bool       # declared with `cue`, not `def` (2026-09-16): a method the compiler calls
-    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool, type_params: List(str), is_pure: bool = false, is_node_export: bool = false, line: int = 0, col: int = 0, is_extern: bool = false, is_cue: bool = false)
+    var deprecated: str    # `@deprecated("use X")` (2026-09-24): "" when not; the warning tier's first warning
+    cue init(name: str, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: List(PParam), return_type: str, stmts: List(PNode), is_profile: bool, is_once: bool, tags: List(str), is_export: bool, type_params: List(str), is_pure: bool = false, is_node_export: bool = false, line: int = 0, col: int = 0, is_extern: bool = false, is_cue: bool = false, deprecated: str = "")
+        .deprecated = deprecated
         .name = name
         .is_static = is_static
         .is_private = is_private
@@ -1423,6 +1425,7 @@ class Parser
         var pending_derive_hash: bool = false
         var pending_tags: List(str) = List(str)()
         var pending_export_sym: str? = nil
+        var pending_deprecated: str = ""
         var saw_directive: bool = true
         while saw_directive
             saw_directive = false
@@ -1481,6 +1484,8 @@ class Parser
                                         sys.errln("warning: unknown @derive trait '" + trait_name + "'; ignored")
                             .expectText(")")?
                         .skipEol()
+                    else if dtext == "@deprecated"
+                        pending_deprecated = .parseDeprecatedArg()?
                     else if dtext == "@export"
                         var export_raw: str = ""
                         if .textIs("(")
@@ -1528,11 +1533,11 @@ class Parser
                 .advance()
                 if not .textIs("def")
                     raise .errorAt("`extern` may only precede `def` — extern declarations name a foreign FUNCTION")
-                return .parseMethodDecl(true, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export, true)?
-            return .parseMethodDecl(true, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export)?
+                return .parseMethodDecl(true, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export, true, false, pending_deprecated)?
+            return .parseMethodDecl(true, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export, false, false, pending_deprecated)?
         else if .textIs("export")
             .advance()
-            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, true, pending_pure, pending_node_export)?
+            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, true, pending_pure, pending_node_export, false, false, pending_deprecated)?
         # BUG-258: `extern def f(...)` declares a foreign symbol. Only `def` may
         # follow — `extern var` / `extern class` are out of scope, and out of
         # scope has to mean REFUSED. A silently-dropped modifier is exactly how
@@ -1542,9 +1547,9 @@ class Parser
             .advance()
             if not .textIs("def")
                 raise .errorAt("`extern` may only precede `def` — extern declarations name a foreign FUNCTION")
-            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export, true)?
+            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export, true, false, pending_deprecated)?
         else if .textIs("def")
-            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export)?
+            return .parseMethodDecl(false, false, false, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export, false, false, pending_deprecated)?
         else if .textIs("var")
             return .parseVarStmt(false)?
         else if .textIs("const")
@@ -1952,10 +1957,13 @@ class Parser
         var pending_pure: bool = false
         var pending_node_export: bool = false
         var pending_tags: List(str) = List(str)()
+        var pending_deprecated: str = ""
         while .peek().kind == TokenKind.at_id
             const dtext = .peek().text
             .advance()
-            if dtext == "@profile"
+            if dtext == "@deprecated"
+                pending_deprecated = .parseDeprecatedArg()?
+            else if dtext == "@profile"
                 .skipEol()
                 pending_profile = true
             else if dtext == "@once"
@@ -1985,8 +1993,14 @@ class Parser
             else
                 .skipEol()
                 sys.errln("warning: unknown member @-directive '" + dtext + "'; ignored")
+        # `@directive` then `static def` (2026-09-24): the directive names the member,
+        # so it may come first; `static` alone still opens a block or prefixes one decl.
+        var is_static_here: bool = is_static
+        if .textIs("static") and (pending_deprecated != "" or pending_profile or pending_once or pending_pure or pending_node_export or pending_tags.len > 0)
+            .advance()
+            is_static_here = true
         if .textIs("def")
-            return .parseMethodDecl(is_static, pending_private, pending_public, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export)?
+            return .parseMethodDecl(is_static_here, pending_private, pending_public, pending_profile, pending_once, pending_tags, false, pending_pure, pending_node_export, false, false, pending_deprecated)?
         else if .textIs("var")
             return .parseDeclField(false, is_static, pending_private, pending_public)?
         else if .textIs("const")
@@ -2076,7 +2090,22 @@ class Parser
             stmts = .parseBlock()?
         return PNode.init_(PInit(params, stmts))
 
-    def parseMethodDecl(is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: List(str), is_export: bool, is_pure: bool = false, is_node_export: bool = false, is_extern: bool = false, is_cue: bool = false): PNode throws
+    # `@deprecated("use X instead")` -- the message is optional (`@deprecated` alone reads
+    # as "deprecated"); the warning tier's first warning (2026-09-24).
+    def parseDeprecatedArg(): str throws
+        var msg: str = "deprecated"
+        if .textIs("(")
+            .advance()
+            if not .textIs(")")
+                const raw: str = .peek().text
+                .advance()
+                if raw.len >= 2
+                    msg = raw.substring(1, raw.len - 1)
+            .expectText(")")?
+        .skipEol()
+        return msg
+
+    def parseMethodDecl(is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: List(str), is_export: bool, is_pure: bool = false, is_node_export: bool = false, is_extern: bool = false, is_cue: bool = false, deprecated: str = ""): PNode throws
         const line = .peek().line
         const col = .peek().col
         if is_cue
@@ -2245,7 +2274,7 @@ class Parser
                         ext_str_where = "parameter `" + sp.name + "`"
             if ext_str != ""
                 raise .errorAt("`" + ext_str + "` is not a C-ABI type in an `extern` signature (" + ext_str_where + " of `" + name + "`): Zebra's `" + ext_str + "` is a slice (pointer + length) and C has no such type. Write `^byte` for a C `char*`, then `zig\"std.mem.span(...)\"` to read it back as a str.")
-        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export, _dl, _dc, is_extern, is_cue))
+        return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export, _dl, _dc, is_extern, is_cue, deprecated))
 
     # -- Block and statements --------------------------------------------------
 

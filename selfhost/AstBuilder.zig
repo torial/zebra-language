@@ -1104,7 +1104,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:530
         mods.is_cue = m.is_cue;
 // zbr:selfhost/AstBuilder.zbr:531
-        return _zbr_ty_Decl{ .method = blk_box_17: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Decl, "method")) = _zbr_ty_DeclMethod.init(_zbr_fn_nameSpan(m.line, m.col, m.name), mods, m.name, m.type_params, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_17 _bp; } };
+        return _zbr_ty_Decl{ .method = blk_box_17: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Decl, "method")) = _zbr_ty_DeclMethod.init(_zbr_fn_nameSpan(m.line, m.col, m.name), mods, m.name, m.type_params, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags, m.deprecated); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_17 _bp; } };
     }
 
     // zbr:selfhost/AstBuilder.zbr:535

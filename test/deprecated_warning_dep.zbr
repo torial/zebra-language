@@ -1,0 +1,16 @@
+# the dep half of deprecated_warning_test: a deprecated free fn and class method across
+# the module boundary (the warning tier, 2026-09-24)
+@deprecated("use farewell2")
+def farewell(name: str): str
+    return "bye " + name
+
+def farewell2(name: str): str
+    return "goodbye " + name
+
+class Tally
+    var n: int = 0
+    @deprecated("use up")
+    def add1()
+        .n = .n + 1
+    def up()
+        .n = .n + 1

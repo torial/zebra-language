@@ -309,8 +309,10 @@ struct DeclMethod
     var require_: List(Expr)
     var ensure_: List(Expr)
     var tags: List(str)
+    var deprecated: str     # `@deprecated("msg")`, "" when not (2026-09-24)
 
-    cue init(span: Span, mods: Modifiers, name: str, type_params: List(str), params: List(Param), return_type: TypeRef?, stmts: List(Stmt)?, is_test: bool, throws_: bool, require_: List(Expr), ensure_: List(Expr), tags: List(str))
+    cue init(span: Span, mods: Modifiers, name: str, type_params: List(str), params: List(Param), return_type: TypeRef?, stmts: List(Stmt)?, is_test: bool, throws_: bool, require_: List(Expr), ensure_: List(Expr), tags: List(str), deprecated: str = "")
+        .deprecated = deprecated
         .span = span
         .mods = mods
         .name = name

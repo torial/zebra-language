@@ -528,7 +528,7 @@ class ASTBuilder
         # never set by anything.
         mods.is_extern = m.is_extern
         mods.is_cue = m.is_cue
-        return Decl.method(DeclMethod(nameSpan(m.line, m.col, m.name), mods, m.name, m.type_params, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags))
+        return Decl.method(DeclMethod(nameSpan(m.line, m.col, m.name), mods, m.name, m.type_params, params, ret_type, stmts_list, false, m.throws_, req_exprs, ens_exprs, m.tags, m.deprecated))
 
     # ── Init (cue init) ───────────────────────────────────────────────────────
 

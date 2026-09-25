@@ -61,10 +61,15 @@ not a reason to promise less.
 
 ## 4. How something leaves — deprecation by migration
 
-Zebra has no warning tier today (everything is an error or silence), and a surface that
-can never warn can only ever break. So the **warning tier is a prerequisite of 1.0**, not
-an item beside it. With it, a removal takes three steps across at least two minor
-releases:
+Zebra had no warning tier until 2026-09-24 (everything was an error or silence), and a
+surface that can never warn can only ever break. So the **warning tier is a prerequisite
+of 1.0**, not an item beside it. **It exists now:** a warning prints as
+`file:line:col: warning: ...`, reaches `zebra diagnostics` and the LSP with severity
+`warning`, never fails a build on its own, and `--warnings-as-errors` fails the compile on
+any of them (the `cli-surface` gate holds both directions). Its first warning is the one
+this section needs: `@deprecated("use X")` on a `def` or a method warns at every call
+site, in the module and across `use`. With it, a removal takes three steps across at
+least two minor releases:
 
 1. **Announce** (release N): the construct still works; the compiler emits a warning
    naming the release it stops in and the rewrite. `--warnings-as-errors` turns it red

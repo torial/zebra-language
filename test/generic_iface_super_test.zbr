@@ -1,0 +1,51 @@
+# An interface implementing a GENERIC interface (2026-09-24, the generic-interface pass's
+# last leftover): `Ranked(T) implements Comparable(T)` and a plain `Sortable implements
+# Comparable(Score)` -- the sub-interface's vtable carries `__as_Comparable` typed by the
+# instantiation, its forwarding methods have T substituted, and a class or a generic
+# class implementing the sub-interface gets the parent's vtable through the closure.
+interface Sortable implements Comparable(Score)
+    def label(): str
+interface Comparable(T)
+    def compareTo(other: T): int
+interface Ranked(T) implements Comparable(T)
+    def rank(): int
+struct Score
+    var v: int
+class Card implements Ranked(Score)
+    var s: Score
+    cue init(v: int)
+        .s = Score(v: v)
+    def compareTo(other: Score): int
+        return .s.v - other.v
+    def rank(): int
+        return .s.v * 10
+class Deck(T) implements Ranked(T)
+    var top: T
+    cue init(t: T)
+        .top = t
+    def compareTo(other: T): int
+        return 0
+    def rank(): int
+        return 7
+class Tag implements Sortable
+    var s: Score
+    cue init(v: int)
+        .s = Score(v: v)
+    def compareTo(other: Score): int
+        return .s.v - other.v
+    def label(): str
+        return "tag " + .s.v.toString()
+
+def main()
+    var t: Tag = Tag(9)
+    var srt: Sortable = t
+    print(srt.compareTo(Score(v: 4)), srt.label())
+    var c: Card = Card(3)
+    var r: Ranked(Score) = c
+    print(r.compareTo(Score(v: 1)), r.rank())
+    var cmp: Comparable(Score) = c
+    print(cmp.compareTo(Score(v: 5)))
+    var d: Deck(int) = Deck(int)(1)
+    var rd: Ranked(int) = d
+    print(rd.rank(), rd.compareTo(2))
+    print("iface-super: OK")

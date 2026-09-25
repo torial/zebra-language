@@ -43,6 +43,32 @@ confirmed via `tools/bootstrap_check.sh`.
   the cell value when `SetCellValue` returns and the message is handled later from the queue,
   so the runtime now owns the text before it crosses. Witnessed on GTK (edit, refused empty
   edit, remove). `examples/table_edit_smoke.zbr`; libui-section.
+- **Generic interfaces, the leftovers (2026-09-24).** An interface may implement a
+  GENERIC one -- `interface Sortable implements Comparable(Score)`, `interface Ranked(T)
+  implements Comparable(T)` -- and a class or a generic class implementing the
+  sub-interface gets the parent's vtable through the closure (the sub-interface's
+  `__as_Comparable` is typed by the instantiation and its forwarding methods have T
+  substituted; the parents of a parent are enqueued with the args substituted). A class
+  implementing one generic interface TWICE with different arguments is refused by name
+  (one method of a name cannot satisfy two instantiations). And a generic class with no
+  `cue init` never compiled: its synthesized init returned the struct by value and left
+  the fields `undefined` -- it is the non-generic synthesized init now (a heap instance,
+  `.{}`, the field initialisers with the field's type as the hint). Three fixtures. The
+  `items = List(T)()` paper cut from the 09-16 note no longer reproduces in a `cue init`
+  or a method body; it was this field-initialiser shape.
+- **The warning tier, and `@deprecated` (2026-09-24).** A warning is a diagnostic that
+  does not fail the build: `file:line:col: warning: ...` on stderr, severity `warning`
+  in `zebra diagnostics` and the LSP, exit 0 -- and `--warnings-as-errors` makes any
+  warning a failed compile that names the flag. The first warning that fires on ordinary
+  code: `@deprecated("use X instead")` on a `def`, a method or a `static def` (the
+  directive may now precede `static`) warns at every call site -- a bare call, a member
+  call, a static call, a print argument, an init -- in the module and across `use`, with
+  the message. The two warnings that already existed (`--warn-non-exhaustive`, a
+  function used as a value) ride the same tier; a quiet re-inference adds none, and an
+  exact duplicate is dropped the way errors are (BUG-319). This is the mechanism the
+  stability policy's "announce, then remove" schedule needs (docs/design/
+  stability_policy.md §4). test/deprecated_warning_test (+ _dep); three `cli-surface`
+  legs (warns and exits 0; -Werror fails naming the flag; -Werror on a clean file passes).
 - **Nested containers have REFERENCE semantics (2026-09-24; BUG-314's other half, Sean's
   2026-09-12 decision).** The inner List / HashMap / Set a List or HashMap holds is
   heap-boxed -- emitted as a pointer element (`std.ArrayList(*std.ArrayList(i64))`) and

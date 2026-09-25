@@ -83,6 +83,7 @@ class MultiCompiler
     var test_mode: bool        # true when invoked as `zebra test <file.zbr>`
     var tag_filter: str?       # --tag X: only run tests matching this tag
     var warn_non_exhaustive: bool  # --warn-non-exhaustive: warn branch...else missing variants
+    var warnings_as_errors: bool   # --warnings-as-errors: a warning fails the compile (2026-09-24)
     var uses_sqlite: bool      # true when root generated code calls Sqlite.open/query
     var module_path: str       # --module-path DIR: extra search dir for `use` deps
     var type_scanned: List(str)  # deps scanned for types only (not emitted)
@@ -116,6 +117,7 @@ class MultiCompiler
         .test_mode = false
         .tag_filter = nil
         .warn_non_exhaustive = false
+        .warnings_as_errors = false
         .uses_sqlite = false
         .module_path = ""
         .type_scanned = List(str)()
@@ -312,6 +314,12 @@ class MultiCompiler
                     sys.exit(1)
                 if tc_ctx.hasWarnings()
                     sys.errln(tc_ctx.warningMessages())
+                    # the warning tier (2026-09-24): every warning prints as
+                    # `file:line:col: warning: ...`; --warnings-as-errors makes any of them
+                    # a failed compile, which is how a deprecation becomes a contract.
+                    if warnings_as_errors
+                        sys.errln("error: " + tc_ctx.warningCount().toString() + " warning(s) with --warnings-as-errors")
+                        sys.exit(1)
 
                 # Step 5: Generate Zig
                 var zig_src: str = ""
@@ -937,6 +945,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks", to_stdout)
     usageLine("  zebra --coverage <source.zbr>            line coverage -> zebra-coverage.json on exit (also: zebra test --coverage)", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
+    usageLine("  zebra --warnings-as-errors <source.zbr> fail the compile on any warning (a deprecation, a function used as a value)", to_stdout)
     usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: tui or libui_ng", to_stdout)
     usageLine("  zebra --keep-temp <source.zbr>           keep the scratch build (kept anyway on failure)", to_stdout)
     usageLine("  zebra --gui-backend=X --scaffold-only <f>  write the GUI project beside the emit; do not build or run it", to_stdout)
@@ -1236,7 +1245,7 @@ def defaultPreamblePath(): str
         pp = pre_exe_dir + "/stdlib_preamble.zig"
     return pp
 
-def tcCheckSide(src: str, path: str, diags: List(str))
+def tcCheckSide(src: str, path: str, diags: List(str), with_warnings: bool = false)
     var pm_node = Parser.Parser.parse(src, path)?
     var resolver = Resolver.Resolver(path, src)
     resolver.resolve(pm_node)?
@@ -1257,6 +1266,12 @@ def tcCheckSide(src: str, path: str, diags: List(str))
             for line in tc_ctx.errorMessages().split("\n")
                 if line.trimLeft() != ""
                     diags.add(line)
+        # warnings reach `zebra diagnostics` and the LSP the same way (2026-09-24); the
+        # merge checker, which counts these lines as errors, asks for errors only
+        if with_warnings and tc_ctx.hasWarnings()
+            for wline in tc_ctx.warningMessages().split("\n")
+                if wline.trimLeft() != ""
+                    diags.add(wline)
 catch |e|
     diags.add("error: " + e.message)
 
@@ -1346,7 +1361,7 @@ def parseDiagLine(s: str): LspDiag?
 # Run the front-end on a source buffer and return structured diagnostics.
 def collectLspDiags(src: str, path: str): List(LspDiag)
     var raw: List(str) = List(str)()
-    tcCheckSide(src, path, raw)
+    tcCheckSide(src, path, raw, true)
     var diags: List(LspDiag) = List(LspDiag)()
     for entry in raw
         for ln in entry.split("\n")
@@ -3069,8 +3084,8 @@ def relativePath(from_dir: str, target: str): str
 # first Windows run of the override (the doc said it worked; nothing had run it).
 def luiBuildZon(proj: str): str
     var dep: str = """        .zig_libui_ng = .{
-            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#787c9a289123ef6b02f68287d5ab156e1b0f0989",
-            .hash = "bindings_libui_ng-0.1.0-p2CY9QehawCgztZV09id4BRCb65HQCZ-dRwhE7Jtocel",
+            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#93c7f54b2051d17b9f69d203ff3cd4500e60d285",
+            .hash = "bindings_libui_ng-0.1.0-p2CY9VwQQgApSplQXciuuEWGImM_PPrHwvCG9f_SXioP",
         },
 """
     if sys.getenv("ZEBRA_LIBUI_PATH") as lp
@@ -3874,7 +3889,7 @@ def main()
     # 2026-09-01): with unknown flags now refused, --TURBO becomes a NAMED ERROR
     # rather than either being ignored or silently starting to work -- the user sees
     # the problem instead of getting a build they did not ask for.
-    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --warn-inference-guess --warn-non-exhaustive -c -h"
+    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -4232,6 +4247,7 @@ def main()
     # --warn-non-exhaustive.  --no-warn-non-exhaustive is kept as an accepted no-op.
     # The hard exhaustiveness ERROR (no else + missing variant) is unaffected.
     var warn_ne              = args.contains("--warn-non-exhaustive")
+    var werror               = args.contains("--warnings-as-errors")
     var gui_backend: str     = args.option("--gui-backend", "")
     # --gui-backend=tui|libui_ng are emitted+scaffolded by this compiler; no flag is the
     # stub backend (prints to stderr, for tests), and `--gui-backend=stub` is the same
@@ -4328,6 +4344,7 @@ def main()
     mc.test_mode = run_test_mode
     mc.tag_filter = run_tag_filter
     mc.warn_non_exhaustive = warn_ne
+    mc.warnings_as_errors = werror
     mc.module_path = module_path
     mc.node_addon = mode_node
     mc.compileDep(path, true)?

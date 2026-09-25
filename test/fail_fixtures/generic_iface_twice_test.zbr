@@ -1,0 +1,11 @@
+# A class implementing one generic interface TWICE with different arguments is refused
+# by name (2026-09-24): a class has one method of a name, so the second view would carry
+# the first's signature.
+interface Conv(T)
+    def conv(): T
+class Both implements Conv(int), Conv(str)
+    def conv(): int
+        return 1
+def main()
+    var b: Both = Both()
+    print(b.conv())

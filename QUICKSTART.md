@@ -723,7 +723,7 @@ class Foo
 - `static` members are accessed cross-module as `Module.ClassName.member` (note the two
   dots of qualification).
 
-### Method modifiers (`@once`, `@profile`, `@tag`)
+### Method modifiers (`@once`, `@profile`, `@tag`, `@deprecated`)
 
 Prefix a `def` declaration with an `@modifier` to alter its behaviour:
 
@@ -750,6 +750,14 @@ class Config
   and `defer Profile.end(...)`.  Requires the `Profile` module (stdlib).
 - **`@tag("label", ...)`** — attaches one or more string tags to a test method for
   use with `zebra test --tag <label>`.  See §33 for full details.
+- **`@deprecated("use X instead")`** (2026-09-24) — on a `def`, a method or a
+  `static def` (the directive may precede `static`): every call site gets a WARNING,
+  `file:line:col: warning: 'Counter.inc' is deprecated: use X instead`, in the module
+  and across `use`. The message is optional. A warning never fails a build on its own;
+  `zebra --warnings-as-errors` makes any warning a failed compile. Warnings reach
+  `zebra diagnostics` and the LSP with severity `warning`. This is the mechanism the
+  1.0 stability policy's "announce, then remove" schedule runs on
+  (docs/design/stability_policy.md §4).
 
 > **Note (0.13 sweep):** `def name: T` (no parens at decl) is being removed
 > from the grammar — see BUG-112.  Always use `def name(): T`.  Callers

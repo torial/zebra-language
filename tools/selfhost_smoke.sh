@@ -756,6 +756,14 @@ smoke_tc_fail test/fail_fixtures/branch_unused_binding_test.zbr \
 smoke_run test/branch_binding_forms_test.zbr "branch binding forms: ok"
 smoke_tc_fail test/fail_fixtures/generic_interface_arity_test.zbr \
     "interface 'Comparable' takes 1 type argument(s)"
+# The generic-interface leftovers (2026-09-24): an interface implementing a GENERIC one
+# (plain and generic sub-interfaces, a generic class through the chain); two
+# instantiations of one generic interface refused by name; a generic class with no
+# `cue init` (its synthesized init returned a value and never compiled).
+smoke_run test/generic_iface_super_test.zbr "iface-super: OK"
+smoke_tc_fail test/fail_fixtures/generic_iface_twice_test.zbr \
+    "implements 'Conv' twice with different type arguments"
+smoke_run test/generic_class_default_init_test.zbr "gen-init: OK"
 smoke_run test/bug427_param_shadows_fn_test.zbr "bug427: ok"
 
 # SIMD §32, the 1.0 slice (2026-09-18): comparison masks (boolxN), select/any/all/count,
@@ -1965,6 +1973,8 @@ smoke_run test/bug314_nested_copy_mutation_fail.zbr "1 3"
 smoke_run test/bug314_nested_list_idioms_test.zbr "24"
 # nested containers are heap-boxed: .at()/.get() alias the parent (2026-09-24, BUG-314 other half)
 smoke_run test/nested_container_ref_test.zbr "nested-ref: OK"
+# the warning tier: @deprecated warns at every call shape, in-module and across `use`, and the program runs (2026-09-24)
+smoke_run test/deprecated_warning_test.zbr "deprecated: OK"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_location: assert failed at"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_message: custom message here"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"

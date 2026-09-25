@@ -4767,15 +4767,41 @@ struct Generator
                 else
                     pass
         if not has_init
+            # 2026-09-24: the same synthesized init a non-generic class gets -- a HEAP
+            # instance (a class is a pointer; this returned `@This()` by value and every
+            # `Stack(int)()` was "expected '*T', found 'T'"), `.{}` so field defaults
+            # apply (it was `undefined`), then the field initialisers with the field's
+            # declared type as the hint (BUG-418's rule, so `List(T)()` is `List(T)`).
             ig.writeIndent()
-            ig.w.emit("pub fn init() @This() {\n")
+            ig.w.emit("pub fn init() *@This() {\n")
             var dig = ig.indented()
             dig.writeIndent()
-            dig.w.emit("var self: @This() = undefined;\n")
+            dig.w.emit("const self = _allocator.create(@This()) catch @panic(\"OOM\");\n")
+            dig.writeIndent()
+            dig.w.emit("self.* = .{};\n")
             dig.writeIndent()
             dig.w.emit("self._type_tag = _ttag_")
             dig.w.emit(n.name)
             dig.w.emit(";\n")
+            for gfdecl in n.members
+                if gfdecl is Decl.var_ as gfld
+                    if not gfld.mods.is_static and gfld.init_expr != nil
+                        dig.writeIndent()
+                        dig.w.emit("self.")
+                        dig.emitName(gfld.name)
+                        dig.w.emit(" = ")
+                        if gfld.type_ != nil and isBareCollectionCtor(gfld.init_expr!)
+                            dig.genCallWithTypeHint(gfld.init_expr!, gfld.type_!)
+                        else
+                            dig.genExpr(gfld.init_expr!)
+                        dig.w.emit(";\n")
+            for godecl in n.members
+                if godecl is Decl.method as gomth
+                    if gomth.mods.is_once
+                        dig.writeIndent()
+                        dig.w.emit("self._once_")
+                        dig.w.emit(gomth.name)
+                        dig.w.emit("_val = null;\n")
             dig.writeIndent()
             dig.w.emit("return self;\n")
             ig.writeIndent()
@@ -5103,27 +5129,27 @@ struct Generator
         var vt_seen = StrSet()
         var vt_work = List(TypeRef)()
         for vtr in ifc.ifaces
-            vt_work.add(vtr)
+            vt_work.add(substTypeRef(vtr, ifc.type_params, ir.args))
         var vti = 0
         while vti < vt_work.len
             var vt_tr = vt_work.at(vti)
             vti = vti + 1
-            if vt_tr is TypeRef.named as vnt
-                if not vt_seen.contains_(vnt.name)
-                    vt_seen.add(vnt.name)
-                    # Separate emits: vnt.name comes via List.at()+branch-bind, whose
-                    # str-ness the selfhost does not track for `${}` interpolation.
+            # a generic super (2026-09-24): the field is keyed by the BASE name, the
+            # vtable const by the instantiation's suffix -- both as genClass emits them
+            if ifaceRef(vt_tr) as vt_ir
+                if not vt_seen.contains_(vt_ir.base)
+                    vt_seen.add(vt_ir.base)
                     w.emit(" .__as_")
-                    w.emit(vnt.name)
+                    w.emit(vt_ir.base)
                     w.emit(" = &_vtable_")
                     w.emit(class_name)
                     w.emit("_")
-                    w.emit(vnt.name)
+                    w.emit(vt_ir.vt)
                     w.emit(",")
-                    var vsd = findInterfaceDecl(vnt.name)
+                    var vsd = findInterfaceDecl(vt_ir.base)
                     if vsd as vsdecl
                         for vst in vsdecl.ifaces
-                            vt_work.add(vst)
+                            vt_work.add(substTypeRef(vst, vsdecl.type_params, vt_ir.args))
         w.emit(" };\n")
 
     # Interface shims + vtable emitted INSIDE a generic class's struct body, so each
@@ -5179,7 +5205,7 @@ struct Generator
         var vt_seen = StrSet()
         var vt_work = List(TypeRef)()
         for tr in ifc.ifaces
-            vt_work.add(tr)
+            vt_work.add(substTypeRef(tr, ifc.type_params, ir.args))
         var vti = 0
         while vti < vt_work.len
             var vt_tr = vt_work.at(vti)
@@ -5195,7 +5221,7 @@ struct Generator
                     var vsd = findInterfaceDecl(vt_ir2.base)
                     if vsd as vsdecl
                         for vst in vsdecl.ifaces
-                            vt_work.add(vst)
+                            vt_work.add(substTypeRef(vst, vsdecl.type_params, vt_ir2.args))
         w.emit(" };\n")
 
     # ── genClass ──────────────────────────────────────────────────────────────
@@ -5329,7 +5355,7 @@ struct Generator
                     if ifc as ifc_decl
                         genIfaceVtable(n.name, ifc_decl, vt_ir)
                         for _super_tr in ifc_decl.ifaces
-                            _vt_work.add(_super_tr)
+                            _vt_work.add(substTypeRef(_super_tr, ifc_decl.type_params, vt_ir.args))
         w.emit("const _ttag_")
         w.emit(n.name)
         w.emit(": u64 = _zbr_hash(\"")
@@ -6569,7 +6595,12 @@ struct Generator
         # Collect the transitive super-interface names once (inline BFS into a
         # locally-constructed List, which the selfhost tracks), reused for the
         # `__as_<Super>` vtable fields here and the forwarding methods below.
+        # A super may be a GENERIC instantiation (`interface Sortable implements
+        # Comparable(Score)`, 2026-09-24): the ref carries the base, the Zig type text and
+        # the args, the `__as_` field is keyed by the BASE name (the class side keys the
+        # same way), and a parent's own parents are enqueued with the args substituted.
         var if_supers = List(str)()
+        var if_super_refs = List(TypeRef)()
         var if_seen = StrSet()
         var if_work = List(TypeRef)()
         for itr in ifc.ifaces
@@ -6578,14 +6609,15 @@ struct Generator
         while ifw < if_work.len
             var if_tr = if_work.at(ifw)
             ifw = ifw + 1
-            if if_tr is TypeRef.named as ifnt
-                if not if_seen.contains_(ifnt.name)
-                    if_seen.add(ifnt.name)
-                    if_supers.add(ifnt.name)
-                    var if_sd = findInterfaceDecl(ifnt.name)
+            if ifaceRef(if_tr) as if_ir
+                if not if_seen.contains_(if_ir.base)
+                    if_seen.add(if_ir.base)
+                    if_supers.add(if_ir.base)
+                    if_super_refs.add(if_tr)
+                    var if_sd = findInterfaceDecl(if_ir.base)
                     if if_sd as if_sdecl
                         for if_st in if_sdecl.ifaces
-                            if_work.add(if_st)
+                            if_work.add(substTypeRef(if_st, if_sdecl.type_params, if_ir.args))
         # Super-interface re-projection pointers: one `__as_<Super>` per (transitive)
         # implemented interface, enabling O(1) interface→interface upcasts.
         # Use separate emits (not string interpolation): `sname` comes from a
@@ -6594,12 +6626,13 @@ struct Generator
         var ifi = 0
         while ifi < if_supers.len
             var sname = if_supers.at(ifi)
+            var sref = if_super_refs.at(ifi)
             ifi = ifi + 1
             vtig.writeIndent()
             w.emit("__as_")
             w.emit(sname)
             w.emit(": *const ")
-            w.emit(sname)
+            genType(sref)
             w.emit(".VTable,\n")
         ig.writeIndent()
         w.emit("};\n")
@@ -6648,6 +6681,10 @@ struct Generator
         var fwi = 0
         while fwi < if_supers.len
             var sname = if_supers.at(fwi)
+            var sref2 = if_super_refs.at(fwi)
+            var sargs = List(TypeRef)()
+            if ifaceRef(sref2) as sref2_ir
+                sargs = sref2_ir.args
             fwi = fwi + 1
             var sdopt = findInterfaceDecl(sname)
             if sdopt as s
@@ -6669,14 +6706,14 @@ struct Generator
                                 w.emit(zigSafeName(p.name))
                                 w.emit(": ")
                                 if p.type_ != nil
-                                    genType(p.type_!)
+                                    genType(substTypeRef(p.type_!, s.type_params, sargs))
                                 else
                                     w.emit("anytype")
                             w.emit(") ")
                             if smth.throws_
                                 w.emit("anyerror!")
                             if smth.return_type != nil
-                                genType(smth.return_type!)
+                                genType(substTypeRef(smth.return_type!, s.type_params, sargs))
                             else
                                 w.emit("void")
                             w.emit(" {\n")
