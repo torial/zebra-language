@@ -1059,6 +1059,18 @@ STORED into a parent is copied at that moment (the local stays a value), so
 one shape, stated in QUICKSTART; making every container a reference type is the larger
 change and was not taken.
 
+**DECIDED 2026-09-25 (Sean): the residue is to be RESOLVED, not documented.** `grid.add(row);
+row.add(x)` must reach `grid` -- top-level containers as references from birth, the Python
+answer. Plan not yet written (Sean deferred it to a fresh session). What the plan has to
+answer, from the 09-24 build: (1) where the box is made -- at the ctor (`List(int)()` yields a
+box; every local of container type is a pointer) rather than at the store; (2) what
+`_zbr_boxed`/`_zbr_unboxed` become once nothing is ever a value (most of both go away, but the
+by-value struct field and the FFI boundary keep an unbox); (3) copies must become explicit
+(`.clone()`) and the mutation scan that decides `var` vs `const` changes meaning for pointer
+locals; (4) BUG-438 (field-chain mutation on a struct local) is in the same code and should
+fall with it; (5) the round-trip and output_sweep are the witnesses, since the compiler's own
+source uses every shape. Sized as the largest single codegen change left before 1.0.
+
 Sean's call: inner containers (`List(List(T))`, `HashMap(K, List(V))`, and the rest) are
 **heap-boxed**, so `parent.at(i)` hands back a reference and a mutation through it is seen
 by the parent -- the Python/C#/Go answer. Today's behaviour is the strictly-safe refusal
