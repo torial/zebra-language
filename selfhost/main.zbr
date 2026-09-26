@@ -3093,8 +3093,8 @@ def relativePath(from_dir: str, target: str): str
 # first Windows run of the override (the doc said it worked; nothing had run it).
 def luiBuildZon(proj: str): str
     var dep: str = """        .zig_libui_ng = .{
-            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#3e0276415fc1089ab99f85d2c5e8028faad11c1e",
-            .hash = "bindings_libui_ng-0.1.0-p2CY9VOAbgAvD7eZ66wQvCfqvYELbQM8yXhWB9lAP9cM",
+            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#b405e2b93766d36cf36206584059fd33b9e7ce7c",
+            .hash = "bindings_libui_ng-0.1.0-p2CY9UmDbgCL610cVUEBBrJ1DgU8qncM6jPBxDUg6DDE",
         },
 """
     if sys.getenv("ZEBRA_LIBUI_PATH") as lp
@@ -3182,7 +3182,7 @@ def copyGuiDeps(zig_path: str, srcDir: str)
                 File.copy(from, srcDir + "/" + name)
                 todo.add(from)
 
-def compileGuiProject(zig_path: str, mode_run: bool, backend: str, scaffold_only: bool, prog_args: List(str)): int
+def compileGuiProject(zig_path: str, mode_run: bool, backend: str, scaffold_only: bool, prog_args: List(str), release: bool = false): int
     var suffix: str = "_gui_tui"
     if backend == "libui_ng"
         suffix = "_gui_libui_ng"
@@ -3216,6 +3216,11 @@ def compileGuiProject(zig_path: str, mode_run: bool, backend: str, scaffold_only
     argv.add(proj + "/build.zig")
     argv.add("--cache-dir")
     argv.add(proj + "/.zig-cache")
+    # BUG-451: the scaffold's build.zig reads standardOptimizeOption, and nothing passed it
+    # one, so `--release` GUI programs shipped Debug -- BUG-228's shape, in the one path
+    # release_mode_check did not build. Same mode the non-GUI --release path uses.
+    if release
+        argv.add("-Doptimize=ReleaseFast")
     if mode_run
         argv.add("run")
         # BUG-429 (2026-09-17): the GUI run path dropped the `--` program arguments and
@@ -4511,7 +4516,7 @@ def main()
     # with the backend's dependency, then build/run it. Replaces the old
     # delegate-to-bootstrap path.
     if gui_selfhost
-        var grc: int = compileGuiProject(zig_path, not mode_c, gui_backend, scaffold_only, prog_args)
+        var grc: int = compileGuiProject(zig_path, not mode_c, gui_backend, scaffold_only, prog_args, release)
         if grc != 0
             sys.exit(1)
         sys.exit(0)

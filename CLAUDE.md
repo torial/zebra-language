@@ -783,6 +783,14 @@ bash tools/release_mode_check.sh   # THE ONLY GATE THAT BUILDS WITH `--release` 
                                 #   first version could not find the binaries and printed
                                 #   "all checks pass" with its only real assertion never
                                 #   having run.
+                                #   A GUI LEG SINCE 2026-09-26 (BUG-451): GUI programs are
+                                #   built by `zig build` in a scaffold, not `zig build-exe`,
+                                #   and that path passed no -Doptimize -- so every
+                                #   `--release --gui-backend=...` app was Debug, BUG-228
+                                #   again in the one path this gate did not build. It builds
+                                #   examples/counter.zbr on tui with and without the flag
+                                #   and compares, the same self-calibrating way. Red first
+                                #   (2034 KB vs 2034 KB), then 832 KB vs 2034 KB.
                                 #   Runs a full LLVM build → FULL tier, not QUICK.
 bash tools/contract_mode_check.sh  # THE CONTRACT-STRIPPING CONTRACT (FULL tier, ~55s):
                                 #   the ONLY gate that passes `--turbo`, and the only one

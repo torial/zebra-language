@@ -134,3 +134,4 @@
 439	`--check-full` ran the program -- a CLI property; PINNED BY GATE check-mode leg 1b (no .zbr can express "must not run")
 442	libui_ng builds failed for strangers (stale pin) -- tooling; PINNED BY GATES libui-pin (FAST) + libui-pin-build (DAILY)
 443	REPL multi-line def body -- CLI property; PINNED BY GATE cli-surface (two-line body must print 58)
+451	--release ignored for GUI builds -- a build-flag property; PINNED BY GATE release-mode GUI leg (tui app with vs without --release)

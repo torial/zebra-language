@@ -34,6 +34,14 @@ confirmed via `tools/bootstrap_check.sh`.
 - **`xs.contains(x)` works on a List / HashMap / Set parameter the function also mutates
   (BUG-452).** It failed inside Zig; the runtime's membership test did not dereference the
   pointer such a parameter becomes.
+- **`--release` now reaches GUI builds (BUG-451).** `zebra --release --gui-backend=...`
+  shipped a Debug binary: the scaffolded `zig build` was never given an optimize mode. The
+  tui counter goes from 2034 KB to 832 KB.
+- **libui_ng on Linux: a program with a code editor no longer dies at startup.** The pinned
+  zig-libui-ng is now b405e2b9, whose GTK Scintilla notify handler has the exact C type the
+  signal marshaller calls it through; with the old one, Zig's UBSan function-type check
+  trapped on the first editor notification ("Illegal instruction") in every Debug and
+  ReleaseSafe build. Found by zebra-ide's new CI, which launches the IDE under Xvfb.
 
 ## Release 0.9.0-rc3 — 2026-09-25 (everything since rc2)
 

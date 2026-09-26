@@ -6,6 +6,22 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-451: `--release` is ignored for GUI programs — they always build Debug — FIXED 2026-09-26
+
+`compileGuiProject` (selfhost/main.zbr) runs `zig build --build-file ... [run]` and never
+passes `-Doptimize`, while the scaffold's build.zig reads `standardOptimizeOption`. So
+`zebra --release --gui-backend=libui_ng app.zbr` ships a Debug binary -- the BUG-228 shape
+again, in the one path that gate does not build. **Fix direction:** thread `release` into
+`compileGuiProject` and add `-Doptimize=ReleaseFast`; extend `release_mode_check.sh` with a
+tui leg (size comparison, as its existing leg does).
+
+**Fixed:** `compileGuiProject` takes `release` and adds `-Doptimize=ReleaseFast` (the mode
+the non-GUI `--release` path uses). `release_mode_check.sh` gained the tui leg the fix
+direction asked for: counter.zbr built with and without `--release`, sizes compared.
+Watched red on the unfixed compiler (2034 KB vs 2034 KB), then green (832 KB vs 2034 KB).
+
+---
+
 ### BUG-452: `.contains` on a List / HashMap / Set PARAMETER the function also mutates failed inside Zig — FIXED 2026-09-26
 
 ```zebra

@@ -177,6 +177,37 @@ else
 fi
 rm -rf "$_idx_dir"
 
+# ── BUG-451: a GUI program's --release must reach ITS build too ──────────────────────────
+# GUI programs do not go through `zig build-exe`: they are scaffolded into a small zig
+# project and built with `zig build`, whose build.zig reads standardOptimizeOption. Nothing
+# passed it one, so every `--release --gui-backend=...` binary was Debug -- the BUG-228
+# shape again, in the one path this gate did not build. Same self-calibrating comparison as
+# leg 2: two builds of one program, one with the flag. tui backend (no native toolkit).
+# `-c --check-full` builds without launching the app (BUG-439).
+_gui_dir="$(mktemp -d)"
+_gui_build() {   # $1 = subdir, $2.. = extra flags; prints the app's size, or nothing
+    mkdir -p "$_gui_dir/$1"
+    (cd "$_gui_dir/$1" && timeout 900 "$ZEBRA" -c --check-full "${@:2}" --gui-backend=tui \
+        --output-dir . "$REPO/examples/counter.zbr" >build.log 2>&1)
+    local app
+    for app in "$_gui_dir/$1/counter_gui_tui/zig-out/bin/app.exe" "$_gui_dir/$1/counter_gui_tui/zig-out/bin/app"; do
+        [[ -f "$app" ]] && { stat -c %s "$app"; return; }
+    done
+}
+g_dbg="$(_gui_build dbg)"
+g_rel="$(_gui_build rel --release)"
+if [[ -z "$g_dbg" || -z "$g_rel" ]]; then
+    say FAIL "GUI (tui) build produced no app (debug='$g_dbg' release='$g_rel') -- the GUI size check could not run, so this gate knows NOTHING about GUI --release"
+    tail -5 "$_gui_dir/rel/build.log" 2>/dev/null | sed 's/^/        /'
+    fail=$((fail + 1))
+elif [[ $(( g_rel * 100 / g_dbg )) -gt 75 ]]; then
+    say FAIL "GUI release app is $((g_rel/1024)) KB vs $((g_dbg/1024)) KB without --release -- the optimize flag does not reach the GUI build (BUG-451)"
+    fail=$((fail + 1))
+else
+    say ok "GUI (tui) release app $((g_rel/1024)) KB vs $((g_dbg/1024)) KB -- --release reaches the GUI build"
+fi
+rm -rf "$_gui_dir"
+
 
 echo
 if [[ $fail -eq 0 ]]; then
