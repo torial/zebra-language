@@ -26,6 +26,44 @@ var CUE_NAMES: str = "|init|toString|equals|hash|compare|iter|next|"
 
 # -- Parse tree node types -----------------------------------------------------
 
+# BUG-450. Module lookup asked the FILESYSTEM whether `Helper.zbr` exists, and Windows (and
+# default macOS) answers yes for `helper.zbr` -- so `use Helper` compiled on Windows and was
+# "module not found" on Linux. Code written on one OS shipped broken for the others, and
+# nothing on the author's machine said so (the book's CI found it).
+#
+# Lives in Parser because main.zbr and Checker.zbr both import it by name (`exposing`);
+# in Resolver, `Resolver.x` resolves to that module's CLASS `Resolver`, not the module.
+#
+# A module file counts as present only if its directory lists that EXACT name. Every place
+# that turns a `use` into a path goes through this, so the compiler, the checker and the
+# LSP cannot disagree about which file a `use` names. Only the last path component is
+# compared; `use a.B` still resolves its directory the filesystem's way.
+def fileExistsExact(path: str): bool
+    if not File.exists(path)
+        return false
+    return caseOnlyMatch(path) == ""
+
+# The real spelling of `path`'s file when it differs from the request ONLY by case, else "".
+def caseOnlyMatch(path: str): str
+    var dir: str = "."
+    var base: str = path
+    var cut: int = path.lastIndexOf("/")
+    if cut >= 0
+        base = path.substring(cut + 1, path.len)
+        dir = path.substring(0, cut)
+        if dir == ""
+            dir = "/"
+    if not Dir.exists(dir)
+        return ""
+    var want: str = base.lower()
+    var found: str = ""
+    for name in File.listDir(dir)
+        if name == base
+            return ""
+        if name.lower() == want
+            found = name
+    return found
+
 union PNode
     # Top level
     module_: ^PModule

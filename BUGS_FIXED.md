@@ -6,6 +6,49 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-450: `use Helper` resolves to `helper.zbr` on Windows and fails everywhere else — FIXED 2026-09-25
+
+Module lookup asks the FILESYSTEM whether `Helper.zbr` exists, and Windows (and default
+macOS) answers yes for `helper.zbr`. So on Windows
+
+```zebra
+use Helper exposing greet      # the file on disk is helper.zbr
+def main()
+    print(greet())
+```
+
+compiles and prints `hi`, while Linux refuses it: "`use Helper`: module not found -- no
+Helper.zbr". A Windows developer can ship code that fails to build on every Linux and macOS
+machine, and nothing on their own machine says so.
+
+**Found by a CI run, not a person:** the book's new example check (installs the latest
+release on Linux) reported one regression against a baseline taken on Windows -- a
+deliberately-wrong `use Build` example had "passed" locally by resolving to the book's own
+neighbouring `build.zbr`.
+
+**Fix direction:** after the filesystem says a module file exists, compare the directory
+entry's exact name with the requested one, and refuse on a case-only mismatch naming the real
+file ("no `Helper.zbr` -- did you mean `use helper`? module names are case-sensitive"). Same
+lesson doc_lint learned when it moved from `.exists()` to `git ls-files` (it had been blind to
+every case-wrong path). **Control when fixing:** exact case still resolves; a wrong case is
+refused on Windows WITH the suggestion; a truly missing module keeps its current message.
+
+**Fixed:** every place that turns a `use` into a path (main.zbr's dependency walk, its
+C / prebuilt-library / Zig-source lookups, submodule resolution, the LSP's disk resolution,
+and Checker's dep loader -- nine sites) now asks `fileExistsExact`, which accepts a file only
+if its directory lists that EXACT name. When the only file present differs by case, the
+refusal names it: "`use Bug450_helper`: module not found -- module names are case-sensitive,
+and the file here is bug450_helper.zbr; did you mean `use bug450_helper`?" The same message
+on every OS, so a Windows author sees what a Linux user would. The helpers live in
+`selfhost/Parser.zbr` because both importers already `use Parser exposing ...`; placed in
+Resolver, `Resolver.fileExistsExact` resolved to that module's CLASS `Resolver`.
+Only the last path component is compared -- a directory spelled with the wrong case still
+resolves the filesystem's way (`use a.B` with a directory `A/`), recorded as the remaining
+half rather than fixed. Fixtures: `test/bug450_use_case_ok_test.zbr` (exact case resolves),
+`test/bug450_use_case_fail.zbr` (wrong case refused with the suggestion).
+
+---
+
 ### BUG-443: the REPL submitted a `def` after its FIRST body line, so a multi-line body could not be entered — FIXED 2026-09-25
 
 `def f(): int` + `    var t = n * 2` was submitted the moment it had one indented line;

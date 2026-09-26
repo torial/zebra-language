@@ -1,0 +1,5 @@
+# BUG-450: the module the two bug450_* fixtures import. Its file name is all lower case on
+# purpose -- bug450_use_case_fail.zbr imports it as `Bug450_helper` and must be refused on
+# EVERY platform, not only on case-sensitive ones.
+def greet(): str
+    return "bug450: OK"

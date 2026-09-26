@@ -37,7 +37,7 @@
 
 # File, Arg, sys, Shell are built-in stdlib globals — no `use` needed.
 
-use Parser exposing PNode, PUse, PModule, PClass
+use Parser exposing PNode, PUse, PModule, PClass, fileExistsExact, caseOnlyMatch
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
@@ -437,7 +437,7 @@ class MultiCompiler
         var dep_path: str = dep_name + ".zbr"
         if src_dir != ""
             dep_path = src_dir + "/" + dep_name + ".zbr"
-        if File.exists(dep_path)
+        if fileExistsExact(dep_path)
             .recordImportEdge(dep_path, parent_path)
             .compileDep(dep_path, false)?
             return
@@ -449,14 +449,14 @@ class MultiCompiler
         # It is NOT emitted: the host build provides the dep's .zig module.
         if module_path != ""
             var mp_path: str = module_path + "/" + dep_name + ".zbr"
-            if File.exists(mp_path)
+            if fileExistsExact(mp_path)
                 .scanDepForTypes(mp_path)?
                 return
         # Native C dep: collect path and optional -I dir; zig handles compilation.
         var c_path: str = dep_name + ".c"
         if src_dir != ""
             c_path = src_dir + "/" + dep_name + ".c"
-        if File.exists(c_path)
+        if fileExistsExact(c_path)
             c_sources.add(c_path)
             var h_path: str = dep_name + ".h"
             if src_dir != ""
@@ -514,7 +514,7 @@ class MultiCompiler
                 lib_path = src_dir + "/" + lib_name
             if not File.exists(lib_path) and module_path != ""
                 lib_path = module_path + "/" + lib_name
-            if File.exists(lib_path)
+            if fileExistsExact(lib_path)
                 lib_sources.add(lib_path)
                 addNativeLibUse(u.path)
                 return
@@ -540,7 +540,7 @@ class MultiCompiler
         var zig_dep_path: str = dep_name + ".zig"
         if src_dir != ""
             zig_dep_path = src_dir + "/" + dep_name + ".zig"
-        if File.exists(zig_dep_path)
+        if fileExistsExact(zig_dep_path)
             var zs_seen: bool = false
             var zsi: int = 0
             while zsi < zig_sources.len
@@ -559,6 +559,12 @@ class MultiCompiler
             looked = "in the current directory"
         if module_path != ""
             looked = looked + " or on --module-path " + module_path
+        # BUG-450: a file that matches in everything but case is not this module -- but it
+        # is almost certainly what was meant, so say so rather than leave "not found".
+        var near: str = caseOnlyMatch(dep_path)
+        if near != ""
+            var near_stem: str = near.substring(0, near.len - 4)
+            raise "`use " + u.path + "`: module not found -- module names are case-sensitive, and the file here is " + near + "; did you mean `use " + near_stem + "`?"
         # Worded "module not found" so tools/doc_example_check.py files a doc fragment
         # whose `use` target is not beside it as an ARTIFACT, not a broken example.
         raise "`use " + u.path + "`: module not found -- no " + dep_name + ".zbr (or .c / .lib / .a / .so / .dylib / .zig) " + looked
@@ -597,11 +603,11 @@ class MultiCompiler
                             var sub_adj: str = sub_name + ".zbr"
                             if sub_dir != ""
                                 sub_adj = sub_dir + "/" + sub_name + ".zbr"
-                            if File.exists(sub_adj)
+                            if fileExistsExact(sub_adj)
                                 .scanDepForTypes(sub_adj)?
                             else if module_path != ""
                                 var sub_mp: str = module_path + "/" + sub_name + ".zbr"
-                                if File.exists(sub_mp)
+                                if fileExistsExact(sub_mp)
                                     .scanDepForTypes(sub_mp)?
                         else
                             pass
@@ -1782,7 +1788,7 @@ def lspWorkspaceDocs(docs: HashMap(str, str), uri: str): HashMap(str, str)
     for n in lspUseNames(text)
         var rel: str = n.replace(".", "/") + ".zbr"
         var mp: str = dir + "/" + rel
-        if File.exists(mp)
+        if fileExistsExact(mp)
             var mu: str = lspSpellLike(uri, lspPathToUri(mp))
             if ws.get(mu) == nil
                 ws.set(mu, File.read(mp))

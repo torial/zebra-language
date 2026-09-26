@@ -1,0 +1,5 @@
+# BUG-450, the passing direction: the exact spelling of a module's file name resolves.
+use bug450_helper exposing greet
+
+def main()
+    print(greet())

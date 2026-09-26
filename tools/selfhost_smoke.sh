@@ -1965,6 +1965,10 @@ smoke_run test/bug440_intern_thread_race_test.zbr "bug440: OK"
 # the passing shapes compile, and a false postcondition still fires.
 smoke_run test/bug441_ensure_method_return_test.zbr "bug441: OK"
 smoke_run_fail test/bug441_ensure_method_fires_fail.zbr "ensure failed in 'bump'"
+# BUG-450: a `use` whose name differs from the file only by case resolved on Windows and
+# failed on Linux. Exact case resolves; a wrong case is refused everywhere, naming the file.
+smoke_run test/bug450_use_case_ok_test.zbr "bug450: OK"
+smoke_tc_fail test/bug450_use_case_fail.zbr "module names are case-sensitive, and the file here is bug450_helper.zbr"
 smoke_tc_fail test/bug411_indent_error_fail.zbr "bug411_indent_error_fail.zbr:6:7: error: indentation is 6 space(s)"
 smoke_run test/bug412_str_plus_eq_test.zbr "abc x|y|"
 smoke_run test/bug413_414_float_div_print_test.zbr "0.3333333333333333"

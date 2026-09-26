@@ -23,7 +23,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
-(nothing yet)
+- **`use` is case-sensitive on every OS (BUG-450).** `use Helper` resolved to `helper.zbr` on
+  Windows and default macOS and failed on Linux, so code could build for its author and for
+  nobody else. The file's name must now match exactly; a case-only mismatch is refused
+  everywhere with the real name ("module names are case-sensitive, and the file here is
+  helper.zbr; did you mean `use helper`?").
 
 ## Release 0.9.0-rc3 — 2026-09-25 (everything since rc2)
 

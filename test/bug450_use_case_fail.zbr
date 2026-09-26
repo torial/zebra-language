@@ -1,0 +1,8 @@
+# BUG-450: `use Bug450_helper` when the file is bug450_helper.zbr. On Windows (and default
+# macOS) the filesystem answered "exists" for the wrong case, so this COMPILED there while
+# Linux said "module not found" -- code written on Windows shipped broken elsewhere. It must
+# be refused everywhere, naming the real file.
+use Bug450_helper exposing greet
+
+def main()
+    print(greet())

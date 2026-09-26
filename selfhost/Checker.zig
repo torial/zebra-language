@@ -81,6 +81,8 @@ const Parser = @import("Parser.zig");
 const _zbr_ty_PNode = Parser._zbr_ty_PNode;
 const _zbr_ty_PUse = Parser._zbr_ty_PUse;
 const _zbr_ty_PModule = Parser._zbr_ty_PModule;
+const _zbr_fn_fileExistsExact = Parser._zbr_fn_fileExistsExact;
+const _zbr_fn_caseOnlyMatch = Parser._zbr_fn_caseOnlyMatch;
 const _zbr_ty_Resolver = @import("Resolver.zig")._zbr_ty_Resolver;
 const AstBuilder = @import("AstBuilder.zig");
 const _zbr_ty_ASTBuilder = AstBuilder._zbr_ty_ASTBuilder;
@@ -1592,7 +1594,7 @@ pub fn _zbr_fn_checkerLoadDeps(path: []const u8, visited: *std.ArrayList([]const
                     dep_path = _str_concat(_str_concat(_str_concat(src_dir, "/", _zbr_rt._allocator), dep_name, _zbr_rt._allocator), ".zbr", _zbr_rt._allocator);
                 }
 // zbr:selfhost/Checker.zbr:730
-                if ((blk_fex: { std.Io.Dir.cwd().access(_zbr_rt._io, dep_path, .{}) catch break :blk_fex false; break :blk_fex true; })) {
+                if (_zbr_fn_fileExistsExact(dep_path)) {
 // zbr:selfhost/Checker.zbr:731
                     (try _zbr_fn_checkerLoadDeps(dep_path, visited, modules));
                 }
