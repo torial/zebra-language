@@ -206,6 +206,28 @@ def main()
 Zig: "incompatible types: 'comptime_float' and 'i64'". Mixed float-literal / int arithmetic
 needs either a front-end refusal (`a.toFloat()`) or a coercion in codegen.
 
+
+**Much wider than filed (measured 2026-09-26, with RUNTIME values).** Mixed int/float
+arithmetic on runtime values fails inside Zig for almost every operator, and the front end
+accepts all of it:
+
+| expression (runtime `f: float`, `a: int`) | today |
+|---|---|
+| `f + a`, `a * f`, `f - a`, `f % a`, `f < a`, `h += a` | Zig: "incompatible types: 'f64' and 'i64'" |
+| `2.0 * a`, `a + 2.5` (float literal with int) | Zig: "'comptime_float' and 'i64'" |
+| `f / a`, `a / f` | works -- division alone has a promoting path |
+| `f32 + int` | Zig: "'f32' and 'i64'" |
+| `f32 + float`, `byte + int` | works (Zig widens same-kind operands itself) |
+| `uint64 + int` | Zig: "expected type 'u64', found 'i64'" |
+
+**Why this sat unseen:** a small test with CONSTANT operands passes, because Zig coerces a
+comptime-known integer into a float. `var a: int = 3` then `f + a` compiles; the same
+expression over a parameter or a computed value does not. The first probe written for
+this entry fell into exactly that and reported "works". Probe with `sys.args().len` or a
+parameter.
+
+**Policy question for Sean, asked 2026-09-26:** allow mixed int/float arithmetic, result
+the wider type. Answer pending for `int64 + float32` and for signed + unsigned.
 ---
 
 ### BUG-444: assigning through a captured variable inside a `sys.go` body fails inside Zig — OPEN (found 2026-09-25)
