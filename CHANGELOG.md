@@ -28,9 +28,13 @@ confirmed via `tools/bootstrap_check.sh`.
   nobody else. The file's name must now match exactly; a case-only mismatch is refused
   everywhere with the real name ("module names are case-sensitive, and the file here is
   helper.zbr; did you mean `use helper`?").
-- **`@derive(Hash)` on a struct holding a float is refused by name (BUG-447)** instead of
-  failing inside Zig with "unable to hash type f64". It reaches floats in `List`s, tuples
-  and same-module structs one level down.
+- **BREAKING: `@derive(Hash)` on a struct holding a float is refused by name (BUG-447)**,
+  including when `.hash()` is never called. Before, Zig analysed the derived `hash` lazily:
+  such a struct compiled as long as nothing hashed it, and failed inside Zig ("unable to
+  hash type f64") the moment it became a map key. It reaches floats in `List`s, tuples and
+  same-module structs one level down. To migrate: drop `Hash` from the derive list, or
+  store the value as an int (e.g. cents). Swept: no file in test/, examples/, the book or
+  zebra-ide is affected.
 - **`xs.contains(x)` works on a List / HashMap / Set parameter the function also mutates
   (BUG-452).** It failed inside Zig; the runtime's membership test did not dereference the
   pointer such a parameter becomes.

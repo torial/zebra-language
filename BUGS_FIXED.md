@@ -61,8 +61,15 @@ hash, and equal keys hash equal).
 
 **Not covered, recorded rather than chased:** a float behind a type ALIAS
 (`type Money = float`), an untyped field initialised by a float EXPRESSION (only a float
-literal is caught), and a float field on a struct from another module. Each still reaches
-Zig's "unable to hash type f64".
+literal is caught), a float field on a struct from another module, and a CLASS-typed
+field whose class holds a float (`.Deep` follows the pointer). Each still reaches Zig's
+"unable to hash type f64" -- and only if something calls `.hash()`.
+
+**This is a breaking change, and the first write-up said otherwise.** Zig analyses the
+derived `pub fn hash` LAZILY, so a `@derive(Debug, Eq, Hash)` struct with a float field
+compiled and ran as long as nothing hashed it -- the BUG-269 probe trap. Those programs
+are now refused. Swept on the day: no .zbr in test/ or examples/, no book example (validator
+against this compiler: 498 pass, no regressions) and nothing in zebra-ide is affected.
 
 **Why the message no longer suggests `cue hash`:** writing it by hand does not work for a
 float struct today -- BUG-453 (a `cue hash` whose body calls anything gets a mutable

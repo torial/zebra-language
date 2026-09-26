@@ -791,6 +791,10 @@ bash tools/release_mode_check.sh   # THE ONLY GATE THAT BUILDS WITH `--release` 
                                 #   examples/counter.zbr on tui with and without the flag
                                 #   and compares, the same self-calibrating way. Red first
                                 #   (2034 KB vs 2034 KB), then 832 KB vs 2034 KB.
+                                #   IT NEEDS THE NETWORK OR A WARM ZIG CACHE: the tui
+                                #   scaffold fetches zigzag, so an offline cold run reports
+                                #   "GUI build produced no app" -- read build.log it prints
+                                #   before calling that a regression.
                                 #   Runs a full LLVM build → FULL tier, not QUICK.
 bash tools/contract_mode_check.sh  # THE CONTRACT-STRIPPING CONTRACT (FULL tier, ~55s):
                                 #   the ONLY gate that passes `--turbo`, and the only one
