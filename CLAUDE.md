@@ -2186,7 +2186,9 @@ machine -- a deliberate two-core burn during a tier still read "CPU: 0% load"
 (`Win32_Processor.LoadPercentage` returns nothing and was printed as 0). Every "CPU 0%"
 in this file and in session reports is therefore unmeasured, including the load
 ruled-out argument in the tier-ladder section. Measured by process CPU-seconds instead:
-17% of 8 logical cores during `divergence` at JOBS=2.
+17% of 8 logical cores during `divergence` at JOBS=2. **Fixed the same day:** sysload now
+sums process CPU time over 2 s (idle read 2%; with two cores burning, 30%) and prints `?`,
+never a number, when it cannot measure.
 
 **DAILY tier 2026-09-26 (closing the BUG-450/447/452/451 + libui-pin day): 53/53 PASS in ONE
 invocation at JOBS=2 on torial, on `efd1303`.** smoke **559/559**, round-trip byte-identical,
