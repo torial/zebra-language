@@ -215,10 +215,10 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 15 <!-- doc-gen: 15 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 30 <!-- doc-gen: 30 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 32 <!-- doc-gen: 32 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 40 <!-- doc-gen: 40 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 51 <!-- doc-gen: 51 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--fast` | 31 <!-- doc-gen: 31 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 33 <!-- doc-gen: 33 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 41 <!-- doc-gen: 41 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 53 <!-- doc-gen: 53 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -482,6 +482,51 @@ bash tools/libui_section_check.sh  # THE GUI-BACKEND WITNESS WITHOUT WINDOWS (20
                                 #   it the compiler builds AND RUNS the app, and on Windows
                                 #   with the bindings fetchable the first --daily sat behind
                                 #   an open GUI window for 25 minutes.
+python tools/libui_pin_check.py   # THE LIBUI PIN GATE, registered as `libui-pin` (FAST tier,
+                                #   2026-09-25). Is the zig-libui-ng commit the compiler PINS
+                                #   usable by a stranger? Three legs: main.zbr and the generated
+                                #   main.zig pin the SAME commit (main.zig is what ships; rc2 went
+                                #   out with the two disagreeing); the commit is PUBLISHED --
+                                #   reachable from main on the public repo; and every `_ui.X` /
+                                #   `_ui.X.Y` / `_sci...` the libui section names exists there,
+                                #   a member checked inside ITS OWN container (checking anywhere
+                                #   missed `Tab.Selected` because `Combobox.Selected` exists, and
+                                #   taking the first same-named container libelled
+                                #   `Checkbox.New`). @hasDecl-guarded names are exempt.
+                                #   THE RECEIPT: on 2026-09-25 every libui_ng program -- even
+                                #   examples/counter.zbr -- failed to build for anyone without
+                                #   ZEBRA_LIBUI_PATH, 14 compile errors, while every gate was
+                                #   green. The pin had been silently reverted to July's 93c7f54b
+                                #   TWICE (c203114, b0e52c3), each time inside a large unrelated
+                                #   commit, and the section had started calling bindings that
+                                #   existed only in six UNPUSHED zig-libui-ng commits.
+                                #   `libui-section` and zebra-ide's check.sh could not see it:
+                                #   both compile the LOCAL CHECKOUT, never the pin.
+                                #   THE ORACLE IS THE PUBLIC REPO (a blobless clone cached in
+                                #   .zig-cache/libui-pin-check/, fetched every run), so
+                                #   "published" means published. Offline it REFUSES (exit 2)
+                                #   rather than passing; LIBUI_REPO=<a clone> checks against that
+                                #   instead and says so.
+                                #   VERIFIED WITH THE REAL ADVERSARY: at 93c7f54b it fails naming
+                                #   9 missing references (incl. `Box.InsertAt`, which the stranger
+                                #   build never reported -- lazy analysis skipped it); at the
+                                #   unpushed bae5809e it fails "not published"; at the pushed pin
+                                #   it passes. Runtime controls: `_ui.Window.New` must be found and
+                                #   a nonexistent name reported, or it refuses.
+                                #   CANNOT SEE: signatures, field types, anything a real build
+                                #   would -- that is `libui-pin-build` (DAILY) below.
+bash tools/libui_pin_build_check.sh  # THE STRANGER'S LIBUI BUILD, registered as
+                                #   `libui-pin-build` (DAILY tier). examples/counter.zbr scaffolded
+                                #   with ZEBRA_LIBUI_PATH UNSET, from a scratch dir OUTSIDE the
+                                #   repo (BUG-322's lesson), and built with `zig build` against the
+                                #   PINNED URL -- i.e. exactly what someone who has only installed
+                                #   Zebra gets. It sees what `libui-pin` cannot: the 2026-09-25
+                                #   stranger build also failed on a `MinWidth` field and a changed
+                                #   table-callback signature. Its control refuses a scaffold that
+                                #   points at a local checkout (`.path =`); the first version
+                                #   matched `.paths = .{...}`, present in every build.zig.zon, and
+                                #   refused a correctly pinned scaffold. ~15 min the first time a
+                                #   pin is fetched.
 bash tools/win_sema_check.sh    # THE WINDOWS COMPILE WITNESS WITHOUT WINDOWS (2026-09-07):
                                 #   emits programs and runs `zig build-exe -target
                                 #   x86_64-windows-gnu -fno-emit-bin` — full Sema of every
@@ -2065,7 +2110,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 98 scripts | <!-- doc-gen: 98 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 100 scripts | <!-- doc-gen: 100 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 40 tracked documents <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -2100,6 +2145,21 @@ fine: clearing that directory made the build produce an app, which then refused 
 console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**DAILY tier 2026-09-25 (the rc3 run-up: libui pin, BUG-439..443): 52/53 in ONE invocation at
+JOBS=2 on torial, ~3h -- ASSEMBLED with `check-mode` re-run standalone.** smoke **553/553**,
+round-trip byte-identical, `boundary` 33/0, `cli-surface` **47** (the new REPL multi-line leg),
+`libui-pin` PASS and **`libui-pin-build` PASS in a real tier** (counter.zbr built from a clean
+scaffold against the pinned public zig-libui-ng -- the build that failed with 14 errors that
+morning), `libui-section` 21/21, `output_sweep` 466 identical, `full_sweep` 0 vs 485,
+`divergence` 0 vs the N-1 anchor (3294 s), `leakgen` 100/0, `gramgen` 960/0/0, `regen-recover`,
+`node-addon`. **The one red was self-inflicted load:** `check-mode`'s timing leg saw `-c` do
+1051 ms of work against `--check-full`'s 714 ms while a reviewer was running ~800 book-example
+compiles and several multi-run repros beside the tier (smoke itself took 3142 s against a
+usual ~700). Re-run alone on an idle machine, twice: `-c` 77-78 ms vs `--check-full` 635-683 ms,
+all checks pass, including the new leg 1b. The rule this file already states -- a timing-only
+failure is a load reading until it reproduces on a quiet machine -- held, and so did the older
+one: do not run heavy work beside a tier you intend to record.
 
 **FULL tier 2026-09-22 (BUG-430 + doc-lint INCONCLUSIVE + reserve precise, bundles 110-112):
 38/38 PASS in ONE invocation at JOBS=2 on torial, ~2h20m.** smoke **544/544** (734 s), round-trip
@@ -2802,7 +2862,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **657** <!-- doc-gen: 657 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **660** <!-- doc-gen: 660 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.
@@ -2969,9 +3029,13 @@ Key idioms worth remembering up front:
   `spawnPipedIn/exitCode/readStdinAvailable/stdinClosed/writeStdout` and `--` program-arg
   passthrough; `zebra lsp` resolves the `use` graph from disk (gate `lsp-workspace`); the
   libui section hides widgets the view stops emitting and has `editor.hotkey/takeKey`.
-  The libui pin in `luiBuildZon` still points at 93c7f54b, which LACKS OnNotify/OnKey
-  and uiTabSetName; that code is `@hasDecl`-guarded so the build passes — it is waiting
-  on the pin bump (`tools/bump_libui_pin.sh` after a push), not on code. **Since
+  The libui pin in `luiBuildZon` now points at a pushed zig-libui-ng commit that has
+  every binding the section uses (2026-09-25; gate `libui-pin`). It had been silently
+  reverted to July's 93c7f54b twice, which broke every libui_ng build for anyone without
+  ZEBRA_LIBUI_PATH; only the Scintilla notify/key and `Window.OnKey` calls are
+  `@hasDecl`-guarded, the rest are not, so a stale pin FAILS TO COMPILE rather than
+  degrading. Bump it only with `tools/bump_libui_pin.sh` after a push, and never revert it
+  to make an offline machine build -- set ZEBRA_LIBUI_PATH there instead. **Since
   2026-09-17 there is ONE repo: libui-ng is a subtree of zig-libui-ng at `libui/`, a path
   dependency in its build.zig.zon** — a C change and its binding land in one commit, and
   the pin bump is one hop. To run against the unpushed checkout on Windows:

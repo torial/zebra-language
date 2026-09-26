@@ -163,10 +163,30 @@ jobs:
           fi
           sha256sum zebra-*.zip zebra-*.tar.gz > SHA256SUMS.txt
           cat SHA256SUMS.txt
+      # The body is install/RELEASE_NOTES.md with GitHub's generated changelog appended.
+      # rc2 went out with ONLY the generated "Full Changelog" link, so the page a newcomer
+      # lands on said nothing about how to install (2026-09-25).
+      #
+      # NOT marked prerelease, even for an -rc tag, and that is deliberate: install.sh,
+      # install.ps1 and `zebra up` all resolve the version through /releases/latest, which
+      # GitHub computes by EXCLUDING prereleases. With no final release yet, flagging an rc
+      # would make every installer and every existing `zebra up` find nothing. Revisit once
+      # a final 0.9.0 exists -- and change the installers to ask for prereleases explicitly
+      # before flagging anything.
+      #
+      # Checked out into `notes/`, NOT the workspace root: checkout cleans its target
+      # directory, and the root holds dist/ -- the archives downloaded above. A root
+      # checkout here would delete them before the release step publishes them.
+      - uses: actions/checkout@v5
+        with:
+          path: notes
+          sparse-checkout: install/RELEASE_NOTES.md
+          sparse-checkout-cone-mode: false
       - uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/zebra-*.zip
             dist/zebra-*.tar.gz
             dist/SHA256SUMS.txt
+          body_path: notes/install/RELEASE_NOTES.md
           generate_release_notes: true

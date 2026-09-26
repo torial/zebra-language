@@ -21,7 +21,51 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ---
 
-## Unreleased (after 0.9.0)
+## Unreleased
+
+(nothing yet)
+
+## Release 0.9.0-rc3 — 2026-09-25 (everything since rc2)
+
+rc3 is what the book (*The Zebra Programming Language*) and zebra-ide now target: rc2 lacks
+the GUI toolbars, trees, `g.scope`, hotkeys and `g.canvas` they use, and its libui_ng
+backend was about to be pinned to a stale zig-libui-ng. This section was headed
+"Unreleased (after 0.9.0)" until the tag; some entries dated after rc2 had landed in the
+"Release 0.9.0" section below instead (e.g. the 09-17 GUI entry) and are left where they
+were written.
+
+- **`--gui-backend=libui_ng` builds again for anyone who has only installed Zebra
+  (2026-09-25).** On main, every libui_ng program -- `examples/counter.zbr` included --
+  failed to compile unless `ZEBRA_LIBUI_PATH` pointed at a local zig-libui-ng checkout:
+  14 errors. The pinned zig-libui-ng commit had been silently reverted to July's
+  `93c7f54b` twice (inside `c203114` and `b0e52c3`), while the GUI section had started
+  using tree / toolbar / clipboard / tooltip bindings that existed only in unpushed
+  zig-libui-ng commits. zig-libui-ng was pushed and the pin moved to `3e02764`. Two new
+  gates keep it there: `libui-pin` (FAST) checks the pin is published, agrees between
+  `main.zbr` and the generated `main.zig`, and has every binding the section names;
+  `libui-pin-build` (DAILY) builds counter.zbr exactly as a stranger would. Neither
+  existing libui witness could see this: both compiled against the local checkout.
+- **`zebra --check-full` no longer RUNS the program (BUG-439, 2026-09-25).** On its own the
+  flag compiled and then ran it -- checking an `Http.serve` program started the server --
+  while `--help` called it a "full check". It now means exactly `-c --check-full`: the front
+  end plus Zig's analysis, then exit. Anyone who relied on it running should drop the flag.
+- **Threaded programs that store strings in objects no longer crash at random (BUG-440).**
+  The runtime's string intern pool was an unlocked global map; ThreadPool and `sys.go`
+  workers storing a `str` into a class field raced on it (8 of 10 runs of a four-worker
+  program panicked). It is locked now, and the lock compiles out under `--single-threaded`.
+- **A method with an `ensure` and a final `return` compiles (BUG-441).** It failed inside
+  Zig with "unreachable code".
+- **The REPL accepts multi-line definitions (BUG-443).** A `def` used to be submitted after
+  its first body line; it now waits for the blank line, as `:help` always said.
+- **QUICKSTART corrections:** the `Http.serve` example (the documented handler shape did not
+  build; the handler returns an `HttpResponse`), `Regex.match` (a whole-string match, not
+  "from start"), the libui frame-0 layout rule (removed 09-17), the producer/consumer sum
+  (`1..5` excludes 5), `pool.submit(lambda)` (it is `def()`), the `@derive` example (float
+  fields cannot be hashed -- BUG-447), and a note that struct auto-boxing into `^T?` is
+  BUG-299. Zig 0.16 is the required version, not 0.15.
+- **`zebra --help` lists `--release`** (surface: `+zebra --release <source.zbr>`,
+  `+--release`). The flag has always worked and is documented in QUICKSTART and gated by
+  `release-mode`; the usage text simply never mentioned it.
 
 - **`--coverage`: line coverage from the compiler's own instrumentation (2026-09-23).**
   `zebra --coverage prog.zbr` and `zebra test --coverage file.zbr` write

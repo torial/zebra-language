@@ -43,14 +43,16 @@ call C libraries via `zig"..."` escape hatches (§23).
 
 ### Installation
 
-**Requirements:** Zig 0.15.0 or newer. The recommended way to install Zig on Windows or
-Linux is [zvm](https://github.com/tristanisham/zvm) (Zig Version Manager):
+**Requirements:** Zig **0.16.0** -- the version releases are built and tested with (a
+release archive bundles it, so this matters only when building from source). The
+recommended way to install Zig on Windows or Linux is
+[zvm](https://github.com/tristanisham/zvm) (Zig Version Manager):
 
 ```bash
 # Install zvm (follow instructions at https://github.com/tristanisham/zvm)
-# Then install Zig 0.15.0 or the latest stable:
-zvm install 0.15.0
-zvm use 0.15.0
+# Then install Zig 0.16.0:
+zvm install 0.16.0
+zvm use 0.16.0
 ```
 
 **Clone and build:**
@@ -964,7 +966,7 @@ var x = items[0]                     # index (bounds-checked in every build) -- 
 var y = items.at(0)                  # method form; kept because a pipeline needs it: xs -> .at(0)
 items[1] = 42                        # in-place element update (idiomatic); items.set(1, 42) is the method form
 items.remove(0)                      # remove by index
-var found = items.any(def(x) = x > 2)  # true if any element matches predicate (NB: `has` is a keyword)
+var found = items.any(def(x) = x > 2)  # true if any element matches predicate
 ```
 
 > **Indexing is bounds-checked in every build, including `--release` (BUG-313, fixed
@@ -2239,6 +2241,10 @@ var b = Node(2, nil)
 a.next = b                            # auto-boxes: allocates *Node, copies b in
 ```
 
+> **Currently broken for a STRUCT (BUG-299, open):** assigning a struct value to a `^T?`
+> field fails to compile ("expected type '?*T', found 'T'"). A UNION value auto-boxes
+> correctly, and so does a non-optional `^T` field.
+
 ### Rules
 
 - `^T` in a field type → `*T` in Zig; `^T?` → `?*T`.
@@ -3125,8 +3131,10 @@ file (e.g. `myapp_gui_libui_ng/`, `myapp_gui_tui/`, `myapp_gui/`) and invokes
 
 **libui-ng backend notes:**
 - Native controls: Win32 on Windows, GTK3 on Linux, Cocoa on macOS.
-- Retained-mode internally: Zebra's immediate-mode API is translated to a widget
-  tree on frame 0 and updated on subsequent events. Widget order must be stable.
+- Retained-mode internally: each render's widgets are matched by key against the
+  existing native tree, so conditional layout works -- widgets can appear, disappear and
+  move between renders (the old "fixed on frame 0, order must be stable" rule was removed
+  2026-09-17).
 - `sameLine()`, `spacing()`, `indent()`, `textColored()`'s colour and the style
   setters are cosmetic no-ops (use `beginHBox` for horizontal layout). Tables and
   trees work (§30 table).
@@ -3751,7 +3759,7 @@ class Stream
 | Call                              | Returns        | Notes                              |
 |-----------------------------------|----------------|-------------------------------------|
 | `Regex.compile(pattern)`          | `Regex`        | Compile a pattern (Thompson NFA)    |
-| `re.match(s)`                     | bool           | Match from start of `s` (for "match anywhere", use `re.find(s) != ""`) |
+| `re.match(s)`                     | bool           | True only if the pattern matches ALL of `s` (for "contains a match", use `re.find(s) != ""`) |
 | `re.find(s)`                      | str            | First matching substring            |
 | `re.findAll(s)`                   | `[]str`        | All non-overlapping matches         |
 | `re.replace(s, repl)`             | str            | Replace all matches with `repl`     |
@@ -4081,7 +4089,7 @@ pool.wait()                    # blocks until all submitted tasks complete
 | Call                    | Notes                                         |
 |-------------------------|-----------------------------------------------|
 | `ThreadPool(n)`         | Create pool with `n` worker threads           |
-| `pool.submit(lambda)`   | Queue a zero-arg lambda for async execution   |
+| `pool.submit(def() ...)` | Queue a zero-parameter function for async execution |
 | `pool.wait()`           | Block until all queued tasks finish           |
 
 ### `Path` — path utilities
@@ -4099,13 +4107,19 @@ pool.wait()                    # blocks until all submitted tasks complete
 ### `Http.serve` — HTTP server
 
 ```zebra
-Http.serve(8080, def(req: HttpRequest, res: HttpResponse)
+def handle(req: HttpRequest): HttpResponse
     if req.path == "/hello"
-        res.text("Hello, Zebra!")
-    else
-        res.notFound("not found")
-)
+        return HttpResponse.ok("Hello, Zebra!")
+    return HttpResponse.notFound("not found")
+
+def main()
+    Http.serve(8080, handle)
 ```
+
+The handler takes the request and RETURNS the response: `HttpResponse.ok(body)`,
+`HttpResponse.notFound(body)`, or `HttpResponse.new(status, body)` for any other status.
+(Corrected 2026-09-25: this section showed a `def(req, res)` handler writing into `res`,
+which does not build.)
 
 ### `Progress` — terminal progress bars
 
@@ -4562,7 +4576,7 @@ while not done
         sum = sum + n
     else
         done = true
-# sum == 15
+# sum == 10  (1..5 is 1, 2, 3, 4 -- the upper bound is excluded)
 ```
 
 ### Notes
@@ -4596,7 +4610,8 @@ print(counter.load())     # 8
 
 **Notes:**
 - `ThreadPool` is a plain type (not generic); the thread count is a constructor argument.
-- `pool.submit(lambda)` accepts any zero-parameter Zebra lambda (with or without captures).
+- `pool.submit(def() ...)` accepts any zero-parameter function literal; variables it uses
+  from outside must be declared in its `capture` block, as with `sys.go`.
 - `pool.wait()` blocks until all in-flight tasks finish.
 - **Submit after `wait` is supported** — calling `submit` after `wait` returns queues more
   work; a subsequent `wait` blocks on those new tasks.  The pool is reusable.
@@ -5141,14 +5156,18 @@ extend List(str)
 ```zebra
 @derive(Debug, Eq, Hash)
 struct Point
-    var x: float
-    var y: float
+    var x: int
+    var y: int
 
 # Generated automatically — no need to write these:
-#   cue toString(): str    → "Point(x=1.0, y=2.0)"
+#   cue toString(): str    → "Point(x=1, y=2)"
 #   cue equals(other: Point): bool
 #   cue hash(): int
 ```
+
+> **`Hash` needs hashable fields.** A `float` field cannot be hashed: `@derive(Hash)` on a
+> struct with one currently gets past the front end and fails inside Zig ("unable to hash
+> type f64") -- BUG-447. Derive `Debug, Eq` only for such a struct.
 
 **What each trait generates:**
 

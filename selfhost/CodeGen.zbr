@@ -6273,7 +6273,11 @@ struct Generator
             bg.withEnsureCtx(ec.armed, ec.uses_result).genStmts(mstmts)
             # Arm the ensure check for fall-off-the-end paths (void functions
             # with no explicit return).  Idempotent when explicit returns already armed.
-            if ec.armed
+            # NOT after a body that ENDS in `return` (2026-09-25): that return has armed it
+            # already, and a statement after it is unreachable code, which zig refuses -- so
+            # a method with an `ensure` and a final `return` did not compile at all. It broke
+            # the book's main `ensure` example (ch14).
+            if ec.armed and not endsInReturn(mstmts)
                 bg.writeIndent()
                 bg.w.emit("_ensure_armed = true;\n")
             # `zebra build` declarative mode: run the registered build context at the end
@@ -6393,7 +6397,7 @@ struct Generator
                             bg.genExpr(fld.init_expr!)
                         bg.w.emit(";\n")
             bg.genStmts(istmts)
-            if ec_i1.armed
+            if ec_i1.armed and not endsInReturn(istmts)
                 ig.writeIndent()
                 ig.w.emit("_ensure_armed = true;\n")
         else
@@ -9064,6 +9068,13 @@ struct Generator
                 var rt: Type_ = inferExpr(m.object, .infer_ctx!)
                 return rt is Type_.named
         return false
+
+    # True when a body's last statement is a `return` -- control never reaches past it, so
+    # nothing may be emitted after it (zig: "unreachable code").
+    def endsInReturn(stmts: List(Stmt)): bool
+        if stmts.len == 0
+            return false
+        return stmts.at(stmts.len - 1) is Stmt.return_
 
     def genReturn(r: StmtReturn)
         # Contract `result` capture: when the current function has an ensure

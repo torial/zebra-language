@@ -292,6 +292,19 @@ chk "a REPL decl cell is accepted and then callable" \
     "$(case "$OUT$ERR" in *42*) echo 0;; *) echo 1;; esac)" \
     "exit=$RC out=[$(echo "$OUT" | tr '\n' ' ' | cut -c1-50)]"
 
+# A MULTI-LINE BODY (2026-09-25). The leg above uses a ONE-line body, which is exactly why
+# it passed while a two-line body could not be entered at all: the REPL submitted a `def`
+# the moment it had one indented line, so `var t = n * 2` went in alone and failed "can
+# reach the end of its body without a `return`" -- while `:help` promised "indent
+# continuation lines, then press Enter twice". 58 is only printable if BOTH body lines
+# made it into the definition.
+printf 'def twice_plus(n: int): int\n    var t = n * 2\n    return t + 16\n\nprint("${twice_plus(21)}")\n:quit\n' > "$W/repl_multi.txt"
+( cd "$W" && timeout 420 "$ZEBRA" repl < "$W/repl_multi.txt" >"$O" 2>"$E" )
+RC=$?; OUT=$(tr -d '\r' < "$O"); ERR=$(tr -d '\r' < "$E")
+chk "a REPL def with a multi-line body is accepted and callable" \
+    "$(case "$OUT$ERR" in *58*) echo 0;; *) echo 1;; esac)" \
+    "exit=$RC out=[$(echo "$OUT$ERR" | tr '\n' ' ' | cut -c1-80)]"
+
 # NEGATIVE DIRECTION: :clear must ACTUALLY reset, not just print that it did. Asserted by
 # the FAILURE that follows it -- if :clear were a no-op, `a` would still be defined.
 printf 'var a = 1\n:clear\nprint("${a}")\n:quit\n' > "$W/repl_clear.txt"

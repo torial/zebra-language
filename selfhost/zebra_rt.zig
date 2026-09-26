@@ -94,7 +94,7 @@ pub fn _initIo(io: std.Io) void {
 /// The compiler's version -- the ONE place it is written. `zebra --version` prints it
 /// (selfhost/main.zbr versionBanner) and .github/workflows/release.yml refuses a tag
 /// that does not spell it (tag = v<_zbr_version>_zig<zig major.minor>). Bump here.
-pub const _zbr_version: []const u8 = "0.9.0-rc2";
+pub const _zbr_version: []const u8 = "0.9.0-rc3";
 /// NESTED CONTAINERS ARE HEAP-BOXED (2026-09-24, BUG-314's other half): a List's element
 /// or a HashMap's value that is itself a List / HashMap / Set is stored as a pointer, so
 /// `.at(i)` / `.get(k)` alias the parent's slot. Codegen wraps the value at every STORE
@@ -138,7 +138,17 @@ pub fn _sysSleep(ms: i64) void {
     // `.awake` is 0.16's monotonic clock (the old CLOCK_MONOTONIC).
     std.Io.sleep(_io, std.Io.Duration.fromMilliseconds(ms), .awake) catch {};
 }
+// The intern pool is ONE global map, and interning happens on every store of a `str` into a
+// class field -- so a ThreadPool or sys.go worker doing that raced every other worker on an
+// unlocked StringHashMap: `panic: reached unreachable code` in 7 of 20 runs of the book's
+// ch14c parallel-files example, 20 of 20 with four workers, and 0 of 20 for the same
+// program storing an int (2026-09-25). `_allocator` was already mutex-wrapped; this map
+// never was. Same rule as `_TsAlloc`: the lock compiles out under `-fsingle-threaded`.
+pub var _str_pool_mutex: std.Io.Mutex = .init;
 pub fn _intern(s: []const u8) []const u8 {
+    const threaded = comptime !@import("builtin").single_threaded;
+    if (threaded) _str_pool_mutex.lockUncancelable(_io);
+    defer if (threaded) _str_pool_mutex.unlock(_io);
     if (_str_pool.get(s)) |existing| return existing;
     const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
     _str_pool.put(owned, owned) catch @panic("OOM");

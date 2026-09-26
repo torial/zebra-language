@@ -6,6 +6,81 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-443: the REPL submitted a `def` after its FIRST body line, so a multi-line body could not be entered — FIXED 2026-09-25
+
+`def f(): int` + `    var t = n * 2` was submitted the moment it had one indented line;
+the definition went in without its `return` and failed "can reach the end of its body
+without a `return`" -- while `:help` said "indent continuation lines, then press Enter
+twice". The REPL is often a newcomer's first contact with the language.
+**Fix:** a body-carrying declaration (`def`/`class`/`struct`/`interface`/`extend`) is
+submitted by the blank line, never before (`replWaitsForBlankLine`, which replaced
+`replHeaderOnly`). **Pinned by** `cli-surface`: a two-line body must print 58, which it
+cannot unless both lines reached the definition -- watched RED on the unfixed binary. The
+existing REPL leg used a ONE-line body, which is why it passed with the bug live.
+
+---
+
+### BUG-442: every `--gui-backend=libui_ng` program failed to build for anyone without ZEBRA_LIBUI_PATH — FIXED 2026-09-25
+
+`examples/counter.zbr`, scaffolded outside the repo with the variable unset: 14 compile
+errors (`ui.Tree`, `ui.Toolbar`, `ui.Clipboard`, `Control.SetMinSize`, `Tab.Selected`, ...).
+The zig-libui-ng pin in `selfhost/main.zbr` had been silently reverted to July's `93c7f54b`
+TWICE, each time inside a large unrelated commit (`c203114` 09-14, `b0e52c3` 09-24), while
+the GUI section had started using bindings that existed only in six UNPUSHED zig-libui-ng
+commits. rc2 itself shipped with `main.zbr` and the generated `main.zig` pinning different
+commits. Nothing saw any of it: `libui-section` and zebra-ide's check.sh both compile the
+LOCAL checkout, never the pin.
+**Fix:** zig-libui-ng pushed; pin -> `3e02764` via `tools/bump_libui_pin.sh`.
+**Pinned by** two gates (a tooling bug; no `.zbr` can express it): `libui-pin` (FAST) --
+the pin is published, agrees between main.zbr and main.zig, and has every binding the section
+names, checked per container; verified against the real adversary (fails at 93c7f54b naming
+9 references, fails "not published" at the unpushed bae5809e, passes at the pushed pin) --
+and `libui-pin-build` (DAILY), a real `zig build` of counter.zbr exactly as a stranger would.
+**Cause of the reverts, INFERRED not established:** both landed on exactly `93c7f54b`, whose
+package hash is the one an offline container would have cached; a revert-signature scan found
+nothing else undone in either commit. Do not revert the pin to make an offline build work.
+
+---
+
+### BUG-441: a METHOD with an `ensure` and a final `return` did not compile — FIXED 2026-09-25
+
+Codegen appended `_ensure_armed = true;` after every method body for the fall-off-the-end
+path -- unconditionally, so a body ending in `return` got a statement after it and zig
+refused it: "unreachable code". The book's main `ensure` example (ch14) was in that shape.
+**Fix:** `endsInReturn(stmts)` skips the trailing arm when the body's last statement is a
+return (which has armed it already). **Pinned by** `test/bug441_ensure_method_return_test.zbr`
+(passing shapes, incl. `result == old n + 2`) and `bug441_ensure_method_fires_fail.zbr` (a
+false postcondition must still fire -- the fix must not disable the check).
+
+---
+
+### BUG-440: the runtime's string intern pool was not thread-safe — FIXED 2026-09-25
+
+`_intern()` inserts into ONE global StringHashMap, and every store of a `str` into a class
+field goes through it, so ThreadPool / `sys.go` workers doing that raced on an unlocked map:
+`panic: reached unreachable code` in 8 of 10 runs of a four-worker repro (the allocator was
+mutex-wrapped; the pool never was). Found through the book's ch14c parallel-files example,
+which crashed 7 of 20 runs. **Fix:** `_str_pool_mutex`, the same `std.Io.Mutex` pattern as
+`_TsAlloc`, compiled out under `-fsingle-threaded`. After: 10 of 10 clean. **Pinned by**
+`test/bug440_intern_thread_race_test.zbr` -- probabilistically, which it says: on a regressed
+runtime it still passes about one run in ten.
+
+---
+
+### BUG-439: `zebra --check-full` compiled AND RAN the program — FIXED 2026-09-25
+
+Only `-c --check-full` stopped short; the bare flag fell through to the compile-and-run path.
+`--help` called it a "full check", so checking an `Http.serve` program started the server,
+and checking a script ran it. The book, an IDE README starter manifest, and a reviewer's
+validator mode had all been written trusting the help text. **Fix:** `--check-full` sets
+`mode_c`, i.e. it means exactly `-c --check-full`; `--help` now says "never runs the
+program". **Pinned by** `check-mode` leg 1b (a CLI property; no `.zbr` expresses "must not
+run"): a sentinel only running can print must be absent, with a plain run as the control
+that the leg can see output at all. Watched RED on the unfixed binary. The gate's old leg
+("accepts valid code") passed whether or not the program ran.
+
+---
+
 ### BUG-430: `zebra lsp` rename on Windows returns edits only for the opened file — the `use` graph's URIs disagree (`file://C:/…` vs `file:///C:/…`) — FIXED 2026-09-21
 
 **Fix (2026-09-21).** The server owns it: `lspSpellLike` in `selfhost/main.zbr` spells every

@@ -486,6 +486,15 @@ run_fast "lsp-smoke"     "passed"   python tools/lsp_server_smoke.py
 # ONE file open. Found by zebra-ide's rename_workspace_test, 2026-09-08.
 run_fast "lsp-workspace" "passed"   python tools/lsp_workspace_smoke.py
 run_fast "debug-map"     "passed"   bash tools/debug_map_check.sh
+# THE LIBUI PIN (2026-09-25): is the zig-libui-ng commit the compiler pins USABLE by a
+# stranger -- main.zbr and the generated main.zig agree, the commit is PUBLISHED on the
+# public repo, and every binding the libui section references exists there. On
+# 2026-09-25 every libui_ng program failed to build for anyone without ZEBRA_LIBUI_PATH
+# (the pin had been silently reverted twice, and the section used unpushed bindings)
+# while every gate passed: `libui-section` and zebra-ide's check.sh compile the LOCAL
+# checkout, never the pin. Needs network (or LIBUI_REPO=<a clone>); REFUSES, never
+# passes, when it cannot fetch.
+run_fast "libui-pin"     "PASS"     python tools/libui_pin_check.py
 # The coverage-map gate (2026-09-23): `--coverage` is our own instrumentation and nothing
 # else reads zebra-coverage.json. The oracle is the probe's own `# cov:` labels, never the
 # compiler; the probe ends in sys.exit and carries a dep module, so a skipped flush or an
@@ -616,6 +625,13 @@ run_daily "gui-scaffold-area" "startup path clean" bash tools/gui_scaffold_check
 # (C:\Projects\zig-libui-ng\src on the laptop; LIBUI_BINDINGS= elsewhere) -- it
 # refuses, not passes, without them.
 run_daily "libui-section" "examples compile" bash tools/libui_section_check.sh
+# ...and the half only a real build sees: examples/counter.zbr scaffolded with
+# ZEBRA_LIBUI_PATH unset, from outside the repo, `zig build` against the PINNED URL.
+# `libui-pin` (FAST) catches a missing declaration; this catches a changed signature or
+# field at the pin (the 2026-09-25 stranger build also failed on `MinWidth` and a
+# table-callback type, which no name lookup finds). ~15 min the first time a pin is
+# fetched, then zig's cache.
+run_daily "libui-pin-build" "PASS" bash tools/libui_pin_build_check.sh
 # PINNED: known red, BUG-297. `zebra --target node-addon` on a class STATIC-block export
 # emits a reference to the owning class that is never declared. It is REGISTERED rather
 # than excluded precisely because exclusion is what let it rot unnoticed -- and it fails

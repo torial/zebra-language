@@ -1958,6 +1958,13 @@ smoke_run test/bug407_primitive_loop_var_test.zbr "7"
 smoke_run test/bug408_show_structs_tuples_unions_test.zbr "[3, 2, 1] [\"b\", \"a\"]"
 smoke_tc_fail test/bug409_unknown_user_method_fail.zbr "'Counter' has no method 'bumpp' (methods: bump/value)"
 smoke_run_fail test/bug410_missing_return_fail.zbr "declared to return int but can reach the end of its body"
+# BUG-440: the intern pool raced under ThreadPool workers (8/10 runs panicked). A race
+# fixture fails only probabilistically on a regression -- keep its 4 workers x 64 tasks.
+smoke_run test/bug440_intern_thread_race_test.zbr "bug440: OK"
+# BUG-441: a method with `ensure` and a final `return` did not compile; both halves --
+# the passing shapes compile, and a false postcondition still fires.
+smoke_run test/bug441_ensure_method_return_test.zbr "bug441: OK"
+smoke_run_fail test/bug441_ensure_method_fires_fail.zbr "ensure failed in 'bump'"
 smoke_tc_fail test/bug411_indent_error_fail.zbr "bug411_indent_error_fail.zbr:6:7: error: indentation is 6 space(s)"
 smoke_run test/bug412_str_plus_eq_test.zbr "abc x|y|"
 smoke_run test/bug413_414_float_div_print_test.zbr "0.3333333333333333"

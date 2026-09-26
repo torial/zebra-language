@@ -937,11 +937,12 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra debug --dump-transform <file>    show what the DAP relay would forward (stdin)", to_stdout)
     usageLine("  zebra -c <source.zbr>                    FAST check: front end only (~60ms), does not run zig", to_stdout)
     usageLine("                                           -> can pass on code that `zebra run` fails to build", to_stdout)
-    usageLine("  zebra --check-full <source.zbr>           full check: front end + zig semantic analysis (slower, total)", to_stdout)
+    usageLine("  zebra --check-full <source.zbr>           full check: front end + zig analysis; never runs the program", to_stdout)
     usageLine("  zebra --emit-zig <source.zbr>            print generated Zig to stdout", to_stdout)
     usageLine("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR", to_stdout)
     usageLine("  zebra --shared <lib.zbr>                 build a shared library (.so/.dll/.dylib) next to the source;", to_stdout)
     usageLine("                                           `@export(\"sym\") class` factories are its symbols (QUICKSTART §44)", to_stdout)
+    usageLine("  zebra --release <source.zbr>             optimised build (default: debug); independent of --turbo", to_stdout)
     usageLine("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks", to_stdout)
     usageLine("  zebra --coverage <source.zbr>            line coverage -> zebra-coverage.json on exit (also: zebra test --coverage)", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
@@ -1004,10 +1005,14 @@ def replIsDeclCell(cell: str): bool
             return true
     return false
 
-# A decl header with no indented body yet can never be complete, whatever the parser says.
-def replHeaderOnly(src: str): bool
+# A declaration that carries a body is submitted by the BLANK LINE, never before -- which
+# is what `:help` promises ("indent continuation lines, then press Enter twice").
+# Until 2026-09-25 it was submitted the moment it had ONE indented line, so a two-line body
+# could not be entered at all: `var t = n * 2` went in alone and the def failed "can reach
+# the end of its body without a `return`". The only thing that knows the body is finished
+# is the person typing it, and the blank line is how they say so.
+def replWaitsForBlankLine(src: str): bool
     var t: str = src.trimLeft()
-    var isDecl: bool = false
     var hdrs: List(str) = List(str)()
     hdrs.add("def ")
     hdrs.add("class ")
@@ -1016,10 +1021,8 @@ def replHeaderOnly(src: str): bool
     hdrs.add("extend ")
     for k in hdrs
         if t.startsWith(k)
-            isDecl = true
-    if not isDecl
-        return false
-    return not src.contains("\n    ") and not src.contains("\n\t")
+            return true
+    return false
 
 # Assemble the whole session plus the new cell. Decl cells go at top level; statement cells
 # go inside `def main()` after every statement committed so far.
@@ -1134,7 +1137,7 @@ def replRun(): int
                 accum = ""
                 continue
 
-        if replHeaderOnly(accum)
+        if replWaitsForBlankLine(accum)
             continue
 
         history.add(cell)
@@ -3084,8 +3087,8 @@ def relativePath(from_dir: str, target: str): str
 # first Windows run of the override (the doc said it worked; nothing had run it).
 def luiBuildZon(proj: str): str
     var dep: str = """        .zig_libui_ng = .{
-            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#93c7f54b2051d17b9f69d203ff3cd4500e60d285",
-            .hash = "bindings_libui_ng-0.1.0-p2CY9VwQQgApSplQXciuuEWGImM_PPrHwvCG9f_SXioP",
+            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#3e0276415fc1089ab99f85d2c5e8028faad11c1e",
+            .hash = "bindings_libui_ng-0.1.0-p2CY9VOAbgAvD7eZ66wQvCfqvYELbQM8yXhWB9lAP9cM",
         },
 """
     if sys.getenv("ZEBRA_LIBUI_PATH") as lp
@@ -4206,6 +4209,13 @@ def main()
     # a boundary is circular. BUG-106's check was ported 2026-08-04; BUG-099's is BUG-252. A check whose limits are undocumented is the same
     # class of problem as a gate that cannot fail.
     var check_full           = args.contains("--check-full")
+    # A CHECK never runs the program (2026-09-25). `--check-full` alone used to fall through
+    # to the ordinary compile-AND-RUN path -- only `-c --check-full` stopped short -- so
+    # "checking" an Http.serve server started it, while `--help` called it a full check.
+    # It now means exactly `-c --check-full`: the front end plus zig's analysis, then exit.
+    # Gate: check_mode_check.sh leg 1b, a sentinel only running the program can print.
+    if check_full
+        mode_c = true
     var mode_emit            = args.contains("--emit-zig")
     var mode_shared          = args.contains("--shared")   # BUG-356 leg 1
     var release              = args.contains("--release")

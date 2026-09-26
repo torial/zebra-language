@@ -1,0 +1,38 @@
+# BUG-440: the runtime's string intern pool was not thread-safe.
+#
+# `_intern()` inserts into ONE global StringHashMap, and every store of a `str` into a
+# class field goes through it -- so ThreadPool / sys.go workers doing that raced on an
+# unlocked map: `panic: reached unreachable code`, 8 of 10 runs of exactly this program
+# before the fix, 10 of 10 clean after. The allocator was already mutex-wrapped; the pool
+# never was. Found through the book's ch14c parallel-files example.
+#
+# A race fixture can only fail PROBABILISTICALLY: on a regressed runtime this program
+# still passes about one run in ten. Four workers and 64 tasks is the shape that failed
+# most reliably; do not shrink it.
+class R
+    public var s: str = ""
+
+def main()
+    var ch: Chan(R) = Chan(R)(64)
+    var pool: ThreadPool = ThreadPool(4)
+    for i in 0..64
+        pool.submit(def()
+            capture
+                var k: str = "key-" + i.toString()
+                var ch: Chan(R) = ch
+            var r = R()
+            r.s = k
+            ch.send(r)
+        )
+    pool.wait()
+    ch.close()
+    var n = 0
+    var done = false
+    while not done
+        var r: R? = ch.recv()
+        if r as got
+            n = n + 1
+        else
+            done = true
+    assert n == 64
+    print("bug440: OK")

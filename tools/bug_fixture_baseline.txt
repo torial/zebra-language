@@ -131,3 +131,6 @@
 325	`--emit-zig` wrote DEPENDENCY `.zig` files into the source directory, 
 348	`zebra debug` could never find the bootstrap on Linux — `.exe` suffix 
 349	the DAP relay lost every session to `MissingContentLength` — a fresh `
+439	`--check-full` ran the program -- a CLI property; PINNED BY GATE check-mode leg 1b (no .zbr can express "must not run")
+442	libui_ng builds failed for strangers (stale pin) -- tooling; PINNED BY GATES libui-pin (FAST) + libui-pin-build (DAILY)
+443	REPL multi-line def body -- CLI property; PINNED BY GATE cli-surface (two-line body must print 58)

@@ -50,6 +50,21 @@ else fail "-c rejected valid code"; fi
 if "$ZEBRA" --check-full "$OUT/ok.zbr" >/dev/null 2>&1; then pass "--check-full accepts valid code"
 else fail "--check-full rejected valid code"; fi
 
+# ── 1b. a CHECK must not RUN the program (2026-09-25) ────────────────────────
+# `--check-full` on its own used to compile AND RUN the program: a hello world printed,
+# an Http.serve server started listening. Only `-c --check-full` stopped short. `--help`
+# called it a "full check", so a user checking a server started it, and one checking a
+# script that deletes files ran it. Leg 1 could not see this -- "accepts valid code"
+# passes whether or not the program ran. The sentinel below is printed only by RUNNING
+# the program, so its absence is the property; its presence under a plain run (the
+# control) proves the program does print it and that this leg can see output at all.
+printf 'def main()\n    print("CHECK-MUST-NOT-RUN-ME")\n' > "$OUT/runs.zbr"
+if "$ZEBRA" "$OUT/runs.zbr" 2>&1 | grep -q CHECK-MUST-NOT-RUN-ME; then
+    if "$ZEBRA" --check-full "$OUT/runs.zbr" 2>&1 | grep -q CHECK-MUST-NOT-RUN-ME; then
+        fail "--check-full RAN the program (a check must not execute it)"
+    else pass "--check-full checks without running the program"; fi
+else fail "control: a plain run did not print the sentinel -- this leg cannot see output"; fi
+
 # ── 2. a front-end error is caught by BOTH ───────────────────────────────────
 printf 'def main()\n    var s: str = "x" + 1\n    print(s)\n' > "$OUT/bad.zbr"
 if "$ZEBRA" -c "$OUT/bad.zbr" >/dev/null 2>&1; then fail "-c accepted a type error"

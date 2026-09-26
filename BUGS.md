@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-438. Next new bug: BUG-439.**
+**Last bug number generated: BUG-449. Next new bug: BUG-450.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,83 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-449: `HttpRequest` cannot be constructed from Zebra — OPEN (found 2026-09-25)
+
+`var r = HttpRequest()` -> "undefined name: 'HttpRequest'". A clean refusal, but it means a
+router written as `def route(req: HttpRequest): HttpResponse` (the book's Project 2) cannot be
+unit-tested without starting a server. A limitation, not a leak.
+
+---
+
+### BUG-448: an untyped local from `s.split(...).at(i)` is mistyped; `.toInt()` on it fails inside Zig — OPEN (found 2026-09-25)
+
+```zebra
+def main()
+    var p = "/a/b/42"
+    var idText = p.split("/").at(3)
+    print(idText.toInt() + 1)
+```
+Zig: "expected float type, found 'str'" (codegen emits `@intFromFloat`). Annotating the local
+`: str` avoids it; the book's Project 2 carries that annotation with a comment for this reason.
+The leakgen class: the front end accepts, Zig refuses code the user never wrote.
+
+---
+
+### BUG-447: `@derive(Hash)` on a struct with a `float` field fails inside Zig — OPEN (found 2026-09-25)
+
+`@derive(Hash) struct P` with `var x: float`, then `P(x: 1.5).hash()` -> Zig: "unable to hash
+type f64". It should be refused in the front end with the reason (floats are not hashable) or
+hash the bit pattern. QUICKSTART §43's example used float fields; it now uses `int` and says so.
+
+---
+
+### BUG-446: a free generic function over `List(T)` passes the front end and fails inside Zig — OPEN (found 2026-09-25)
+
+```zebra
+def total(items: List(T)): int
+    return items.len
+```
+Zig: "use of undeclared identifier 'T'". Either support free generic functions or refuse them
+in the front end naming the supported form (a generic class). Found in the book's ch13
+"common mistakes" section, which was left unrewritten for this reason.
+
+---
+
+### BUG-445: `(2.0 * intVar) / intVar2` passes the front end and fails inside Zig — OPEN (found 2026-09-25)
+
+```zebra
+def main()
+    var a: int = 3
+    var b: int = 2
+    var r = (2.0 * a) / b
+    print(r)
+```
+Zig: "incompatible types: 'comptime_float' and 'i64'". Mixed float-literal / int arithmetic
+needs either a front-end refusal (`a.toFloat()`) or a coercion in codegen.
+
+---
+
+### BUG-444: assigning through a captured variable inside a `sys.go` body fails inside Zig — OPEN (found 2026-09-25)
+
+```zebra
+class C
+    var n: int = 0
+def main()
+    var c = C()
+    var done = Atomic(bool)(false)
+    sys.go(def()
+        capture
+            var c: C = c
+            var done: Atomic(bool) = done
+        c.n = 5
+        done.store(true)
+    )
+```
+Zig: "expected type '*T', found 'T'" -- the thunk's call takes `self: *@This()`, which the spawn
+code does not pass. Reading captures works; assigning through one does not.
 
 ---
 

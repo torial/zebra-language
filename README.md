@@ -65,7 +65,10 @@ versions. Building from source is below; how a release is cut is in
   no network.
 - **Windows and Linux** are the tested platforms: Windows is where the gates run day
   to day; Linux has built and passed the full smoke since 2026-09-06
-  ([docs/LINUX_BUILD.md](docs/LINUX_BUILD.md)). macOS is untested.
+  ([docs/LINUX_BUILD.md](docs/LINUX_BUILD.md)). macOS: the release smoke has run green on
+  `macos-latest` since rc2, so the compiler and CLI are built and exercised there; the
+  libui_ng GUI backend's macOS half is written against Cocoa without a Mac and is
+  unverified.
 
 ## Building
 

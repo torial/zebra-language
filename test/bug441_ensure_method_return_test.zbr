@@ -1,0 +1,31 @@
+# BUG-441: a METHOD with an `ensure` and a final `return` did not compile.
+#
+# After the body, codegen appended `_ensure_armed = true;` for the fall-off-the-end path
+# -- unconditionally, so a body ending in `return` put a statement after it, and zig
+# refused it ("unreachable code"). The return had armed the check already. It broke the
+# book's main `ensure` example (ch14) and every method a reader wrote in that shape.
+#
+# The fix must not disable the check. Its other half is bug441_ensure_method_fires_fail.zbr:
+# the same method shape with a FALSE postcondition, registered to require the ensure to fire.
+# Here the passing shapes must compile and return the right values.
+class Counter
+    var n: int = 0
+
+    def bump(): int
+        ensure
+            n > 0
+        n = n + 1
+        return n
+
+    def bumpTwice(): int
+        ensure
+            result == old n + 2
+        n = n + 2
+        return n
+
+def main()
+    var c = Counter()
+    assert c.bump() == 1
+    assert c.bump() == 2
+    assert c.bumpTwice() == 4
+    print("bug441: OK")

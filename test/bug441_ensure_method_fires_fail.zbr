@@ -1,0 +1,14 @@
+# BUG-441, the other direction: the fix stops codegen emitting an arm AFTER a final
+# `return`; it must not stop the ensure from being checked. This method's postcondition is
+# false, so the run must die with "ensure failed in 'bump'".
+class Counter
+    var n: int = 0
+
+    def bump(): int
+        ensure
+            n > 5
+        n = n + 1
+        return n
+
+def main()
+    print(Counter().bump())
