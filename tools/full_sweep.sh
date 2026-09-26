@@ -59,6 +59,9 @@ else
   OUT="${TMPDIR:-/tmp}/zebra_full_sweep"
 fi
 rm -rf "$OUT"; mkdir -p "$OUT"
+# zig verdict cache (tools/zig_build_lib.sh): every lookup logged per run; the counts ride
+# on the terminal line, because a cache silently serving answers is how a gate stops looking.
+export ZBR_VCACHE_LOG="$OUT/vcache.txt"
 
 check_one() {
   local rel="$1"; local name; name=$(basename "$rel" .zbr)
@@ -245,12 +248,12 @@ if [ "$GATE" = 1 ]; then
     # a `?` on the board is a question someone asks; a fabricated 0 is one nobody asks.
     _undecl="$(printf '%s' "$_dig" | grep -oE 'declared NOWHERE:[[:space:]]+[0-9]+' | grep -oE '[0-9]+$')"
     _nowpass="$(printf '%s' "$_dig" | grep -oE 'produced NO evidence:[[:space:]]+[0-9]+' | grep -oE '[0-9]+$')"
-    echo "✓ full-sweep gate PASS — 0 regressions vs baseline ($(wc -l < "$BASELINE") tests); positive set $POSN/$POSN pass; evidence ${_undecl:-?} undeclared, ${_nowpass:-?} negative(s)-now-passing"
+    echo "✓ full-sweep gate PASS — 0 regressions vs baseline ($(wc -l < "$BASELINE") tests); positive set $POSN/$POSN pass; evidence ${_undecl:-?} undeclared, ${_nowpass:-?} negative(s)-now-passing; $(zbr_vcache_summary "$ZBR_VCACHE_LOG")"
   else
     # NAME THE MISSING LEG rather than reprinting the test/ sweep's sentence. An
     # operator reading two identical PASS lines would reasonably assume both corpora
     # got both assertions.
-    echo "✓ full-sweep gate PASS — 0 regressions vs baseline ($(wc -l < "$BASELINE") examples); RELATIVE leg only (the positive set is a test/ set)"
+    echo "✓ full-sweep gate PASS — 0 regressions vs baseline ($(wc -l < "$BASELINE") examples); RELATIVE leg only (the positive set is a test/ set); $(zbr_vcache_summary "$ZBR_VCACHE_LOG")"
   fi
   exit 0
 fi

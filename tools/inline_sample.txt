@@ -1,0 +1,30 @@
+# The compile_check-inline SAMPLE (2026-09-26, Sean: "a proof of concept, not exhaustive").
+#
+# What the inline gate guards is ONE property: that a program emitted with the runtime
+# PASTED IN (`--no-runtime-module`; also the shape --single-file and node-addon take)
+# still compiles. The shape differs from the default only in where zebra_rt lives, so it
+# breaks per RUNTIME AREA, not per program: a runtime declaration that is `pub` in the
+# module shape but collides, or is missing a qualifier, when inlined. One program that
+# pulls in each area is therefore as good a witness as 400 -- each line below is the
+# area it is here to touch. The full corpus is still one flag away:
+#   JOBS=3 bash tools/compile_check.sh --no-runtime-module          (all ~400)
+#
+# compile_check REFUSES if a name here is not in the positive set, so a renamed or
+# retired test cannot shrink the sample silently. One name per line; `#` to the end is
+# the reason and is required.
+stdlib_str_test            # str methods, the intern pool, allocPrint paths
+string_format_test         # interpolation and format specs
+list_functional_test       # List + the functional trio (map/filter/reduce)
+hashmap_kv_test            # HashMap, _zbr_AutoMap
+set_advanced_test          # Set
+closure_factory_test       # closures: the thunk pool and captured structs
+catch_inline_test          # errors: raise/try/catch, _error_ctx
+chan_thread_test           # Chan(T), sys.go, the thread-safe allocator
+atomic_test                # Atomic
+json_test                  # Json / JsonValue
+regex_test                 # Regex (the Thompson NFA)
+generic_class_iface_test   # generics + interfaces (fat pointers)
+datetime_inzone_test       # DateTime and the IANA time-zone tables (the largest block)
+stdlib_file_test           # File / Dir IO
+contract_invariant         # contracts: require/ensure/invariant, _check_invariant
+simd_test                  # SIMD vectors and masks

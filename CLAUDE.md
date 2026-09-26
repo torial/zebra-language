@@ -215,10 +215,10 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 15 <!-- doc-gen: 15 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 31 <!-- doc-gen: 31 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 33 <!-- doc-gen: 33 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 41 <!-- doc-gen: 41 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 53 <!-- doc-gen: 53 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--fast` | 32 <!-- doc-gen: 32 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 34 <!-- doc-gen: 34 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 42 <!-- doc-gen: 42 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 54 <!-- doc-gen: 54 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -964,6 +964,9 @@ JOBS=3 bash tools/compile_check.sh --no-runtime-module  # gate label: `compile_c
                                 #   otherwise go unwatched — and it stays live via the opt-out
                                 #   and as the fallback for --single-file / node-addon / every
                                 #   --gui-backend. 217/0/1, identical to the default. FULL tier.
+                                #   A 16-program SAMPLE in the tier since 2026-09-26
+                                #   (tools/inline_sample.txt, one per runtime area); drop
+                                #   --sample for the whole positive set.
 bash tools/stream_check.sh      # THE STREAM-SEPARATION GATE, registered as `stream-sep`
                                 #   (BUG-318, FAST tier, ~10s) --
                                 #   the only gate that can tell STDOUT from STDERR, and the
@@ -2066,6 +2069,46 @@ a stub `zig` emitting the verbatim error, failing once then succeeding. Four leg
 retry masks breakage and triples runtime. It sources the SHIPPED predicate, so it cannot
 pass against logic the gates do not have.
 
+### The daily is CACHED where the answer cannot have changed (2026-09-26)
+
+The daily was 110 minutes and ~85% of it was zig compiling what we emit: `divergence` 38
+min, `output_sweep` 18, `full_sweep` 16, `compile_check-inline` 12, smoke 9. The machine was
+~17% busy at JOBS=2 (measured by process CPU time -- sysload's figure was broken), but more
+parallelism was declined (Sean: other sessions share the machine). So the work is REUSED,
+not spread:
+
+- **The zig VERDICT cache**, inside `zbr_zig_build` (tools/zig_build_lib.sh), so
+  `full_sweep`, `compile_check` and `divergence` share it. zig's answer to
+  `build-exe -fno-emit-bin` is a pure function of the files beside the root, the flags and
+  `zig version`, so it is stored under a hash of exactly those
+  (`.zig-cache/zbr-verdicts/`). A compiler change alters the emit of a few files; the rest
+  are lookups. `divergence`'s N-1 anchor side never changes at all, and its current side
+  is byte-identical to what `full_sweep` just checked -- the "stop redoing work" fix falls
+  out of the same cache. Never cached: an INFRA failure (BUG-302) or a timeout. A cached
+  failure restores zig's stderr, so the evidence gates keep is unchanged. Hit/miss counts
+  ride on each gate's terminal line; `ZBR_VCACHE=0` turns it off. Gate: `verdict-cache`
+  (below). Measured: a cached compile_check subset 62 s -> 31 s; divergence 148 -> 84.
+- **The OUTPUT cache**, inside `output_sweep` (gate runs only; `--update-baseline` always
+  runs the 3 samples). Keyed on the same hash of an `--output-dir` emit plus the flags plus
+  the compiler's own filtered MESSAGES while emitting -- a warning is part of what the
+  gate captures and can change without the emit changing (BUG-432's are). The key's
+  assumption, that the run path builds exactly the `--output-dir` emit, is RE-CHECKED ON
+  EVERY MISS: the program runs with `--keep-temp` and its temp emit must match byte for
+  byte, or the result is not stored and `emit-mismatch` is counted on the line.
+  `ZBR_OCACHE=0` turns it off. Measured: 13 cached files 55 s -> 28 s (a hit ~1.1 s against
+  ~3 s to build and run; ~14 s per invocation is the gate's own bookkeeping).
+- **`compile_check-inline` is a SAMPLE** (`--sample tools/inline_sample.txt`, 16 programs,
+  one per runtime area; Sean: a proof of concept, not exhaustive). The inline shape breaks
+  per runtime area, not per program. The sample REFUSES a name outside the positive set
+  and the gate's line says "SAMPLE of N". 12 min -> ~40 s.
+
+`bash tools/verdict_cache_check.sh` -- registered `verdict-cache` (FAST tier) -- attacks the
+verdict cache with a stub zig, sourcing the SHIPPED library: a changed dep, a new zig
+version, an infra error and a timeout must each reach zig; a cached genuine failure must
+come back with its stderr; the off switch must work. Watched red against the two bugs a
+cache like this ships with (a key that ignores deps: legs 2-3; caching infra/timeouts:
+legs 5-6). CANNOT SEE: the output cache's key (that one is checked in-line, per miss).
+
 Why this matters: a green round-trip means the compiler is *self-consistent*, NOT that
 what it emits is *correct*. The independent witness (`zig`, which has no idea what Zebra
 intended) is the only gate that checks correctness of arbitrary emitted programs. A real
@@ -2122,7 +2165,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 100 scripts | <!-- doc-gen: 100 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 101 scripts | <!-- doc-gen: 101 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 40 tracked documents <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

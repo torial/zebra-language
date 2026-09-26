@@ -388,6 +388,10 @@ run_fast "check-mode"     "all checks pass" bash tools/check_mode_check.sh
 # the library, the value must stop appearing) so a pass cannot be incidental.
 run_fast "ffi-lib"        "checks pass"     bash tools/ffi_lib_check.sh
 run_fast "bug302-control" "all legs pass"  bash tools/bug302_infra_retry_check.sh
+# The zig VERDICT CACHE in zig_build_lib.sh answers for full_sweep / compile_check /
+# divergence from memory when the emitted files are unchanged. A cache fails by LYING, so
+# this attacks it with a stub zig: a changed dep, a new zig and an infra error must MISS.
+run_fast "verdict-cache" "all 8 legs pass"  bash tools/verdict_cache_check.sh
 # The walker-drift gate. A function searching the Expr tree for a name is only correct
 # if it descends into every variant that HOLDS expressions; miss one and it silently
 # answers "not used" for a whole construct, which surfaces as a Zig error in code the
@@ -532,7 +536,11 @@ run_full "dynlib-roundtrip" "PASS" bash tools/dynlib_roundtrip_check.sh
 # the DEFAULT, so this is the mode that would otherwise go unwatched — and it is
 # still live: --no-runtime-module selects it, and the GUI and node-addon paths
 # fall back to it.
-run_full "compile_check-inline" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh --no-runtime-module
+# A SAMPLE since 2026-09-26 (Sean: a proof of concept, not exhaustive): the inline shape
+# breaks per RUNTIME AREA, so tools/inline_sample.txt names one program per area. It was
+# the whole positive set (~400 files, ~12 min). The full run is one flag away -- drop
+# --sample -- and the gate's line says SAMPLE so nobody reads it as the whole set.
+run_full "compile_check-inline" "0 FAILED" env JOBS="$JOBS" bash tools/compile_check.sh --no-runtime-module --sample tools/inline_sample.txt
 # THE BEHAVIOUR GATE, and the only heavy one that RUNS anything. Every other gate in
 # this tier asks "does the emitted Zig compile?", so valid Zig producing the WRONG
 # OUTPUT is invisible to all of them at any corpus size — BUG-226 is the receipt.

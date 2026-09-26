@@ -59,6 +59,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
+# shellcheck source=tools/zig_build_lib.sh
+. "$REPO/tools/zig_build_lib.sh"      # zbr_verdict_key: the output cache keys on the same hash
 
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
 BASELINE="$REPO/tools/output_baseline.txt"
@@ -194,6 +196,63 @@ run_one() { # $1 = test/foo.zbr ; echoes program output, or a classification tok
     printf '%s' "$raw" | grep -vE '^wrote |^compiling:|^ *parsing\.\.\.|^ *parsed OK|^ *resolved OK'
 }
 
+# ── THE OUTPUT CACHE (2026-09-26; gate runs only) ────────────────────────────────────────
+# A gate run executes each baselined program once to see whether it still prints what it
+# printed. When the program zig would build is BYTE-IDENTICAL to one already run -- same
+# emitted files (runtime included), same zig, same flags -- and the compiler said the same
+# things while emitting it, the compiler cannot have changed what it prints, so the stored
+# output is the answer. That is the only claim this gate makes ("behaves as it did when
+# the baseline was taken"), and it was 18 of the daily's 110 minutes.
+#
+#   * KEY = the verdict-cache hash of an `--output-dir` emit of the file (every emitted
+#     file, zig version) + MODE_FLAGS + the compiler's own filtered messages while emitting
+#     (a WARNING is part of what this gate captures, and a compiler change can alter one
+#     without touching the emit -- BUG-432's are exactly that).
+#   * THE KEY'S ASSUMPTION IS CHECKED ON EVERY MISS: the program is run with --keep-temp
+#     and its run-path emit (TEMP) must match the --output-dir emit byte for byte, or the
+#     result is NOT stored and `emit-mismatch` is counted on the gate's line. (They were
+#     identical on 2026-09-26; CLAUDE.md calls the two emit branches different code.)
+#   * never used by --update-baseline (the 3-sample nondeterminism test must RUN), a
+#     timeout is never stored, ZBR_OCACHE=0 turns it off, and hit / miss / mismatch counts
+#     ride on the terminal line, zeros included.
+OCACHE_DIR="$REPO/.zig-cache/zbr-outputs"
+oc_hit=0; oc_miss=0; oc_mismatch=0
+cached_run_one() {  # $1 = test/foo.zbr ; same contract as run_one
+    local zbr="$1" od name key msgs tmp_t f ok
+    if [ "$UPDATE" = 1 ] || [ "${ZBR_OCACHE:-1}" = 0 ]; then run_one "$zbr"; return; fi
+    name=$(basename "$zbr" .zbr)
+    od="$OUT/oc-$name"; rm -rf "$od"; mkdir -p "$od"
+    msgs=$(timeout 60 "$ZEBRA" $MODE_FLAGS --emit-zig "$zbr" --output-dir "$od" </dev/null 2>&1 \
+             | grep -vE '^wrote |^compiling:|^ *parsing\.\.\.|^ *parsed OK|^ *resolved OK') \
+      || true
+    key=""
+    if [ -s "$od/$name.zig" ]; then
+        key=$(zbr_verdict_key "$od/$name.zig") || key=""
+        [ -n "$key" ] && key=$(printf 'zbr-output v1\n%s\nflags %s\n%s\n' "$key" "$MODE_FLAGS" "$msgs" | sha256sum | cut -c1-64)
+    fi
+    if [ -n "$key" ] && [ -f "$OCACHE_DIR/${key:0:2}/$key" ]; then
+        oc_hit=$((oc_hit+1)); cat "$OCACHE_DIR/${key:0:2}/$key"; rm -rf "$od"; return
+    fi
+    oc_miss=$((oc_miss+1))
+    # the run itself, with --keep-temp so the emit it BUILT can be compared with the key's
+    local out
+    out=$(MODE_FLAGS="$MODE_FLAGS --keep-temp" run_one "$zbr")
+    printf '%s' "$out"
+    tmp_t="${TMP:-${TEMP:-/tmp}}"; command -v cygpath >/dev/null 2>&1 && tmp_t="$(cygpath -u "$tmp_t")"
+    ok=1
+    [ -n "$key" ] || ok=0
+    if [ "$ok" = 1 ]; then
+        for f in "$od"/*.zig; do cmp -s "$f" "$tmp_t/${f##*/}" || { ok=0; break; }; done
+        [ "$ok" = 1 ] || oc_mismatch=$((oc_mismatch+1))
+    fi
+    rm -f "$tmp_t/$name.zig.fast.exe" "$tmp_t/$name.zig.run.exe" "$tmp_t/$name.zig.fast.pdb" "$tmp_t/$name.zig.run.pdb" 2>/dev/null
+    if [ "$ok" = 1 ] && [ "$out" != "<<TIMEOUT>>" ]; then
+        mkdir -p "$OCACHE_DIR/${key:0:2}"
+        printf '%s' "$out" > "$OCACHE_DIR/${key:0:2}/$key.tmp.$$" && mv -f "$OCACHE_DIR/${key:0:2}/$key.tmp.$$" "$OCACHE_DIR/${key:0:2}/$key"
+    fi
+    rm -rf "$od"
+}
+
 # EXCLUDE BY CAUSE, not only by observation.
 #
 # Sampling cannot establish determinism for a program whose output depends on the world
@@ -300,7 +359,9 @@ for name in "${NAMES[@]}"; do
         continue
     fi
 
-    out1=$(run_one "$zbr" | norm)
+    # $(...) is a subshell, so the counters are carried out through a file.
+    out1=$(cached_run_one "$zbr"; echo "$oc_hit $oc_miss $oc_mismatch" > "$OUT/oc_counts") ; out1=$(printf '%s' "$out1" | norm)
+    read -r oc_hit oc_miss oc_mismatch < "$OUT/oc_counts"
 
     # A file that never terminates is excluded rather than baselined AS a timeout.
     # Recording "<<TIMEOUT>>" would assert only that it still hangs, cost TIMEOUT_SECS on
@@ -470,7 +531,7 @@ if [ "$GATE" = 1 ]; then
 
     if [ -z "$changed" ] && [ -z "$vanished" ]; then
         echo "✓ output-sweep gate PASS — $n_ok files, behaviour identical to baseline" \
-             "($n_skipped skipped as nondeterministic)"
+             "($n_skipped skipped as nondeterministic); output-cache: $oc_hit hit / $oc_miss miss / $oc_mismatch emit-mismatch$([ "${ZBR_OCACHE:-1}" = 0 ] && echo ' (off)')"
         exit 0
     fi
     if [ -n "$vanished" ]; then

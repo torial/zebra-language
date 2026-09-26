@@ -14,6 +14,8 @@
 #   bash tools/compile_check.sh --single-file   # emit each test with --single-file, then check
 #   bash tools/compile_check.sh --no-runtime-module # emit with the INLINE runtime, then check
 #   bash tools/compile_check.sh --only hashmap   # only tests whose name contains 'hashmap'
+#   bash tools/compile_check.sh --sample tools/inline_sample.txt  # only the NAMED tests;
+#                                                # refuses a name outside the positive set
 #   JOBS=8 bash tools/compile_check.sh           # override parallelism (default 4)
 #
 # --single-file mode: appends --single-file to the emit, so it checks the namespaced
@@ -87,12 +89,13 @@ if [ "${1:-}" = "--worker" ]; then
 fi
 
 # ── Main: parse flags, build worklist, fan out ──────────────────────────────────
-MODE=selfhost; ONLY=""; SF=0; RM=0
+MODE=selfhost; ONLY=""; SF=0; RM=0; SAMPLE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --single-file) SF=1; shift;;
     --no-runtime-module) RM=1; shift;;
     --only)        ONLY="${2:-}"; shift 2;;
+    --sample)      SAMPLE="${2:-}"; shift 2;;
     *) shift;;
   esac
 done
@@ -105,17 +108,36 @@ mkdir -p "$OUT"
 # without this the BUG-302 retry count would report every retry since the temp dir was
 # created -- a number that only ever grows and is wrong from the second run onward.
 rm -f "$OUT/retries.txt"
+export ZBR_VCACHE_LOG="$OUT/vcache.txt"; rm -f "$ZBR_VCACHE_LOG"   # zig verdict cache, per run
 
 # The derivation moved to tools/positive_set.sh so full_sweep can assert the identical
 # property over the same set. Two copies of "what counts as a positive test" would
 # drift silently the first time a registration helper is added.
 tests=$(bash "$REPO/tools/positive_set.sh") || exit 2
 
-# Build the filtered worklist (apply SKIP / --only up front).
+# --sample FILE: only the named tests (one per line, `# reason` required). A name that is
+# not in the positive set REFUSES the run: a renamed or retired test would otherwise
+# shrink the sample silently, and a sample of 0 checks nothing while printing green.
+SAMPLE_NAMES=""; SAMPLE_N=0
+if [ -n "$SAMPLE" ]; then
+  [ -f "$SAMPLE" ] || { echo "compile-check: REFUSING -- no sample file at $SAMPLE" >&2; exit 2; }
+  while IFS= read -r line; do
+    case "$line" in ''|'#'*) continue;; esac
+    nm="${line%%#*}"; nm="${nm//[[:space:]]/}"
+    case "$line" in *'#'*) ;; *) echo "compile-check: REFUSING -- sample entry '$nm' has no '# reason'" >&2; exit 2;; esac
+    printf '%s\n' "$tests" | grep -q "/$nm\.zbr\$" \
+      || { echo "compile-check: REFUSING -- sample names '$nm', which is not in the positive set" >&2; exit 2; }
+    SAMPLE_NAMES="$SAMPLE_NAMES $nm "; SAMPLE_N=$((SAMPLE_N + 1))
+  done < "$SAMPLE"
+  [ "$SAMPLE_N" -gt 0 ] || { echo "compile-check: REFUSING -- the sample is empty" >&2; exit 2; }
+fi
+
+# Build the filtered worklist (apply SKIP / --only / --sample up front).
 worklist=""; skip=0
 for f in $tests; do
   name=$(basename "$f" .zbr)
   if [ -n "$ONLY" ]; then case "$name" in *"$ONLY"*) ;; *) continue;; esac; fi
+  if [ -n "$SAMPLE" ]; then case "$SAMPLE_NAMES" in *" $name "*) ;; *) continue;; esac; fi
   case "$SKIP" in *" $name "*) skip=$((skip+1)); continue;; esac
   worklist="$worklist$f"$'\n'
 done
@@ -158,7 +180,7 @@ _infra_note=""
 if [ "$_cretries" != "0" ] || [ "$infra" != "0" ]; then
   _infra_note=", zig-infra ${_cretries} retried/${infra} persistent"
 fi
-echo "compile-check: $pass passed, $fail FAILED ($cfail compile, $emitfail emit), $skip skipped${_infra_note} (jobs=$JOBS${ONLY:+, only=$ONLY}${MODE:+, mode=$MODE}$([ "$SF" = 1 ] && echo ", single-file"))"
+echo "compile-check: $pass passed, $fail FAILED ($cfail compile, $emitfail emit), $skip skipped${_infra_note}, $(zbr_vcache_summary "$ZBR_VCACHE_LOG") (jobs=$JOBS${ONLY:+, only=$ONLY}${SAMPLE:+, SAMPLE of $SAMPLE_N from ${SAMPLE##*/} -- not the whole positive set}${MODE:+, mode=$MODE}$([ "$SF" = 1 ] && echo ", single-file"))"
 [ -n "$failed" ] && echo "FAILED (emitted, but zig refused):$failed"
 emitfailed=$(printf '%s
 ' "$results" | awk '/^EMITFAIL /{printf " %s", $2}')

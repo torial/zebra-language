@@ -167,6 +167,7 @@ JOBS="${JOBS:-4}"; mkdir -p "$OUT"
 # without this the BUG-302 retry count would report every retry since the temp dir was
 # created -- a number that only ever grows and is wrong from the second run onward.
 rm -f "$OUT/retries.txt"
+export ZBR_VCACHE_LOG="$OUT/vcache.txt"; rm -f "$ZBR_VCACHE_LOG"   # zig verdict cache, per run
 
 # --classify: score an existing --results file WITHOUT re-enumerating the corpus.
 # Enumeration plus the per-file skip loop costs ~2 minutes here (490 files, and every
@@ -344,7 +345,7 @@ echo "· agree-fail (both fail — genuinely-broken test or both lag): $agree_fa
 if [ "$GATE" = 1 ]; then
   echo
   if [ "$nsg" -eq 0 ]; then
-    echo "✓ divergence gate PASS — 0 regressions vs the N-1 anchor [$N1_INFO]"
+    echo "✓ divergence gate PASS — 0 regressions vs the N-1 anchor [$N1_INFO]; $(zbr_vcache_summary "$ZBR_VCACHE_LOG")"
   else
     echo "✗ divergence gate FAIL — $nsg REGRESSION(s) vs the N-1 anchor [$N1_INFO]:"
     echo "   $self_gap"
