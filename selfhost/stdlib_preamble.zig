@@ -423,6 +423,13 @@ pub fn _zebra_assert_at(val: bool, msg: []const u8) anyerror!void {
 pub fn _zebra_in(item: anytype, container: anytype) bool {
     const C = @TypeOf(container);
     const I = @TypeOf(item);
+    // BUG-452: a List/HashMap/Set PARAMETER that the function also mutates arrives as a
+    // pointer (`*std.ArrayList(..)`); without this it fell through to the string branch
+    // below and failed inside Zig. A pointer to a struct is always a container here --
+    // a string is a slice, never a single-item pointer to a struct.
+    if (comptime @typeInfo(C) == .pointer and @typeInfo(C).pointer.size == .one and
+        @typeInfo(@typeInfo(C).pointer.child) == .@"struct")
+        return _zebra_in(item, container.*);
     // Tuple/anonymous struct (from @[...] array literal) — inline iterate.
     if (comptime @typeInfo(C) == .@"struct" and @typeInfo(C).@"struct".is_tuple) {
         inline for (container) |elem| {

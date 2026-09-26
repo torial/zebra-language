@@ -1,0 +1,22 @@
+# BUG-447 control: the float refusal must not touch hashable structs -- int/str fields,
+# a nested int-only struct, a List(int).
+struct Cell
+    var row: int
+    var col: int
+
+@derive(Eq, Hash)
+struct Key
+    var name: str
+    var at: Cell
+    var tags: List(int)
+
+def main()
+    var tags = List(int)()
+    tags.add(7)
+    var a = Key(name: "k", at: Cell(row: 1, col: 2), tags: tags)
+    var b = Key(name: "k", at: Cell(row: 1, col: 2), tags: tags)
+    var c = Key(name: "k", at: Cell(row: 9, col: 2), tags: tags)
+    if a.hash() == b.hash() and a.hash() != c.hash()
+        print("bug447: OK")
+    else
+        print("bug447: WRONG")

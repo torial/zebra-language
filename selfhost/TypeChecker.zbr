@@ -6058,6 +6058,73 @@ def methodListHint(ct: ClassTypes): str
 # method the compiler called (print, interpolation) while looking like an ordinary def;
 # eql was @derive(Eq)'s name for the == hook. Both are `cue` now, and a `def` spelling is
 # refused with the rewrite, so the protocol has one spelling.
+# BUG-447. `@derive(Hash)` emits `std.hash.autoHashStrat(.., .Deep)` per field, and Zig
+# refuses to hash a float ("unable to hash type f64") -- a diagnostic about code the user
+# never wrote. Refused here instead, naming the field. Hashing the bit pattern was the
+# other option and is wrong: `-0.0 == 0.0` but their bits differ, and NaN != NaN, so a
+# derived hash would disagree with ==. Reaches through List/Dict/tuple/nilable and into
+# same-module structs (whose floats Zig would hit the same way under .Deep).
+def isFloatTypeName(n: str): bool
+    return n == "float" or n == "float32" or n == "float64" or n == "f16" or n == "f32" or n == "f64"
+
+def hashFloatPath(tr: TypeRef, structs: HashMap(str, DeclStruct), seen: List(str)): str
+    branch tr
+        on TypeRef.named as nt
+            if isFloatTypeName(nt.name)
+                return nt.name
+            if structs.contains(nt.name) and not seen.contains(nt.name)
+                seen.add(nt.name)
+                var inner: DeclStruct = structs.fetch(nt.name)
+                for mem in inner.members
+                    if mem is Decl.var_ as f
+                        if f.mods.is_static
+                            continue
+                        var ft: TypeRef? = f.type_
+                        if ft != nil
+                            var p: str = hashFloatPath(ft!, structs, seen)
+                            if p != ""
+                                return nt.name + "." + f.name + ": " + p
+            return ""
+        on TypeRef.generic as gt
+            for a in gt.args
+                var pa: str = hashFloatPath(a, structs, seen)
+                if pa != ""
+                    return gt.name + "(" + pa + ")"
+            return ""
+        on TypeRef.tuple as tt
+            for e in tt.elems
+                var pe: str = hashFloatPath(e, structs, seen)
+                if pe != ""
+                    return pe
+            return ""
+        on TypeRef.nilable as inner_n
+            return hashFloatPath(inner_n, structs, seen)
+        else
+            return ""
+
+def checkDeriveHashFields(sd: DeclStruct, structs: HashMap(str, DeclStruct), file: str, ctx: InferCtx)
+    for mem in sd.members
+        if mem is Decl.method as dm
+            if dm.mods.is_cue and dm.name == "hash"
+                return                                      # a hand-written hash wins
+    for mem2 in sd.members
+        if mem2 is Decl.var_ as f
+            if f.mods.is_static
+                continue
+            var why: str = ""
+            var ft: TypeRef? = f.type_
+            if ft != nil
+                var seen: List(str) = List(str)()
+                seen.add(sd.name)
+                why = hashFloatPath(ft!, structs, seen)
+            else if f.init_expr != nil
+                if f.init_expr! is Expr.float_lit
+                    why = "float"
+            if why != "" and not why.contains(":")
+                why = f.name + ": " + why                   # the direct case reads `value: float`
+            if why != ""
+                ctx.addErr(file, f.span.line, f.span.col, "@derive(Hash) on '" + sd.name + "': field '" + f.name + "' holds a float (" + why + "), and floats are not hashable -- -0.0 == 0.0 but their bits differ, and NaN != NaN, so a hash would disagree with ==; store it as an int instead (e.g. cents)")
+
 def checkCueShapes(tname: str, members: List(Decl), derive_eq: bool, next_types: List(str), file: str, ctx: InferCtx)
     var has_equals: bool = derive_eq
     var hash_decl: DeclMethod? = nil
@@ -6139,9 +6206,15 @@ def checkDeclShapes(m: Module, file: str, ctx: InferCtx)
                 if mem1s is Decl.method as dm1s
                     if dm1s.mods.is_cue and dm1s.name == "next"
                         next_types.add(s1.name)
+    var hash_structs: HashMap(str, DeclStruct) = HashMap()
+    for dh in m.decls
+        if dh is Decl.struct_ as sdh
+            hash_structs.put(sdh.name, sdh)
     for d in m.decls
         if d is Decl.struct_ as sd
             checkCueShapes(sd.name, sd.members, sd.mods.is_derive_eq, next_types, file, ctx)
+            if sd.mods.is_derive_hash
+                checkDeriveHashFields(sd, hash_structs, file, ctx)
         if d is Decl.class_ as c
             checkCueShapes(c.name, c.members, false, next_types, file, ctx)
             for mem in c.members

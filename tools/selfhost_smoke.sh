@@ -1969,6 +1969,13 @@ smoke_run_fail test/bug441_ensure_method_fires_fail.zbr "ensure failed in 'bump'
 # failed on Linux. Exact case resolves; a wrong case is refused everywhere, naming the file.
 smoke_run test/bug450_use_case_ok_test.zbr "bug450: OK"
 smoke_tc_fail test/bug450_use_case_fail.zbr "module names are case-sensitive, and the file here is bug450_helper.zbr"
+# BUG-447: @derive(Hash) over a float -- refused in the front end, directly and one struct
+# down; hashable shapes (int/str/nested int/List(int)) still hash, equal keys equal.
+smoke_tc_fail test/bug447_derive_hash_float_fail.zbr "field 'value' holds a float (value: float), and floats are not hashable"
+smoke_tc_fail test/bug447_derive_hash_nested_float_fail.zbr "field 'at' holds a float (Point.x: float)"
+smoke_run test/bug447_derive_hash_ok_test.zbr "bug447: OK"
+# BUG-452: .contains on a container PARAMETER passed by pointer (List, HashMap, Set).
+smoke_run test/bug452_list_param_contains_test.zbr "bug452: OK"
 smoke_tc_fail test/bug411_indent_error_fail.zbr "bug411_indent_error_fail.zbr:6:7: error: indentation is 6 space(s)"
 smoke_run test/bug412_str_plus_eq_test.zbr "abc x|y|"
 smoke_run test/bug413_414_float_div_print_test.zbr "0.3333333333333333"

@@ -1,0 +1,35 @@
+# BUG-452: `.contains` on a List / HashMap / Set PARAMETER that the function also mutates
+# (so it is passed by pointer) failed inside Zig -- the runtime's membership test fell
+# through to its string branch. Both answers are checked, for all three containers.
+def addIfMissing(xs: List(str), w: str): bool
+    if not xs.contains(w)
+        xs.add(w)
+        return true
+    return false
+
+def countIfNew(m: HashMap(str, int), k: str): bool
+    if m.contains(k)
+        return false
+    m.set(k, 1)
+    return true
+
+def markIfNew(s: Set(int), n: int): bool
+    if s.contains(n)
+        return false
+    s.add(n)
+    return true
+
+def main()
+    var xs = List(str)()
+    var m = HashMap(str, int)()
+    var s = Set(int)()
+    var a = addIfMissing(xs, "a")
+    var b = addIfMissing(xs, "a")
+    var c = countIfNew(m, "k")
+    var d = countIfNew(m, "k")
+    var e = markIfNew(s, 3)
+    var f = markIfNew(s, 3)
+    if a and not b and c and not d and e and not f and xs.len == 1
+        print("bug452: OK")
+    else
+        print("bug452: WRONG")

@@ -1,0 +1,10 @@
+# BUG-447: @derive(Hash) on a struct holding a float must be refused in the front end,
+# naming the field -- not left for Zig to reject as "unable to hash type f64".
+@derive(Eq, Hash)
+struct Reading
+    var label: str
+    var value: float
+
+def main()
+    var r = Reading(label: "t", value: 1.5)
+    print(r.hash())

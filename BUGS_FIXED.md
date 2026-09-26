@@ -6,6 +6,55 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-452: `.contains` on a List / HashMap / Set PARAMETER the function also mutates failed inside Zig — FIXED 2026-09-26
+
+```zebra
+def addIfMissing(xs: List(str), w: str): bool
+    if not xs.contains(w)
+        xs.add(w)
+        return true
+    return false
+```
+Zig: "expected type '[]const u8', found '*array_list.Aligned([]const u8,null)'". A parameter
+the function mutates is passed by pointer, and the runtime's membership test `_zebra_in`
+handled a container by value only, so a pointer fell through to its STRING branch. Found
+when BUG-447's own walker (a `seen: List(str)` parameter) would not compile. **Fixed** in
+`_zebra_in` (stdlib_preamble.zig): a single-item pointer to a struct is dereferenced first
+-- a string is a slice, never such a pointer, so nothing that worked changes. Fixture
+`test/bug452_list_param_contains_test.zbr` (List, HashMap and Set, both answers each);
+red against the unfixed preamble with the message above.
+
+---
+
+### BUG-447: `@derive(Hash)` on a struct with a `float` field fails inside Zig — FIXED 2026-09-26
+
+`@derive(Hash) struct P` with `var x: float`, then `P(x: 1.5).hash()` -> Zig: "unable to hash
+type f64". It should be refused in the front end with the reason (floats are not hashable) or
+hash the bit pattern. QUICKSTART §43's example used float fields; it now uses `int` and says so.
+
+**Fixed:** refused in the front end (`checkDeriveHashFields`, TypeChecker), naming the
+field: "@derive(Hash) on 'Reading': field 'value' holds a float (value: float), and floats
+are not hashable -- -0.0 == 0.0 but their bits differ, and NaN != NaN, so a hash would
+disagree with ==; store it as an int instead (e.g. cents)". Hashing the bit pattern was
+the alternative and was rejected for exactly that reason. It reaches through `List`/`Dict`
+arguments, tuples, `?`, and same-module structs (a float one struct down fails in Zig the
+same way under `.Deep`), and skips a struct whose author wrote `cue hash`. Fixtures:
+`bug447_derive_hash_float_fail`, `bug447_derive_hash_nested_float_fail` (refused, with the
+path `Point.x: float`), `bug447_derive_hash_ok_test` (int/str/nested-int/List(int) still
+hash, and equal keys hash equal).
+
+**Not covered, recorded rather than chased:** a float behind a type ALIAS
+(`type Money = float`), an untyped field initialised by a float EXPRESSION (only a float
+literal is caught), and a float field on a struct from another module. Each still reaches
+Zig's "unable to hash type f64".
+
+**Why the message no longer suggests `cue hash`:** writing it by hand does not work for a
+float struct today -- BUG-453 (a `cue hash` whose body calls anything gets a mutable
+receiver, so it fails from a `const` local AND inside the HashMap context) and BUG-454
+(`HashMap(K, V)()` ignores the cue entirely). A refusal must not point at a fix that fails.
+
+---
+
 ### BUG-450: `use Helper` resolves to `helper.zbr` on Windows and fails everywhere else — FIXED 2026-09-25
 
 Module lookup asks the FILESYSTEM whether `Helper.zbr` exists, and Windows (and default

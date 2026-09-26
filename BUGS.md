@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-450. Next new bug: BUG-451.**
+**Last bug number generated: BUG-456. Next new bug: BUG-457.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,6 +46,124 @@
 
 ---
 
+### BUG-456: a bare `on variant as x` arm is a variant to codegen and not to the checker — OPEN (found 2026-09-26)
+
+```zebra
+union Ty
+    leaf: int
+    opt: ^Ty
+
+def depth(t: Ty): int
+    branch t
+        on leaf as n
+            return n
+        on opt as inner
+            return 1 + depth(inner)
+```
+The checker says "branch on 'Ty' does not cover variant 'opt'" -- it does not read `on opt`
+as the variant -- yet codegen DOES emit `.opt => |inner|`, without the `^T` dereference
+the qualified form gets. Add an `else` arm and the front end passes; Zig then refuses it:
+"unreachable else prong" when the bare arms covered every variant, or, with a variant
+left for the `else` (add `none_` above), "expected type 'Ty', found '*Ty'" at the
+recursive call -- `inner` is a pointer. Found
+writing BUG-447's walker, which compiled only after its arms were spelled `on TypeRef.x`.
+The qualified form (`on Ty.opt as inner`) is right everywhere. **Fix direction:** one
+reading, decided in the front end -- either accept the bare name as the variant (and
+dereference), or refuse it naming `on Ty.opt`.
+
+---
+
+### BUG-455: a struct method named `count`, `get`, `at`, `len`… that mutates `self` fails from a local — OPEN (found 2026-09-26)
+
+```zebra
+struct Counter
+    var n: int
+    def count(): int
+        .n += 1
+        return .n
+
+def main()
+    var c = Counter(n: 0)
+    print(c.count())
+```
+Zig: "expected type '*T', found '*const T'". Whether a local is emitted `var` is decided
+from the METHOD NAME (`isReadOnlyMethod`, CgHelpers.zbr -- a list of ~70 names from the
+builtin types: `count`, `get`, `at`, `len`, `contains`, `toString`, `hash`, `sum`…), so a
+user method with one of those names is assumed not to mutate, while the method itself
+takes `*Owner`. **Fix direction:** when the receiver's type is a user struct, use the
+method's own receiver decision (the same one `genMethod` makes), not its name.
+
+---
+
+### BUG-454: `HashMap(K, V)()` ignores the key's `cue hash` / `cue equals` — wrong output — OPEN (found 2026-09-26)
+
+```zebra
+struct Tag
+    var id: int
+    var hits: int
+    cue hash(): int
+        return .id
+    cue equals(o: Tag): bool
+        return .id == o.id
+
+def main()
+    var m = HashMap(Tag, str)()
+    m.set(Tag(id: 1, hits: 5), "first")
+    m.set(Tag(id: 1, hits: 9), "second")
+    print(m.len)        # prints 2; the cues say these are one key -> 1
+```
+Silent wrong output: the constructor emits `std.AutoHashMap`, which hashes every field's
+bytes and never calls the cues. The same happens with an annotation
+(`var n: HashMap(Tag, str) = HashMap(Tag, str)()`), because the constructor is emitted
+either way. Only the genType path (`var t: HashMap(Money, int) = HashMap()`, as
+`cue_protocol_test` writes it, or a field type) routes through `_zbr_CueCtx`. The Set
+constructor and `genFieldZigType` have the same gap. **Fix direction:** the constructor
+sites (CodeGen ~8209 / ~8430 and the Set pair) and `genFieldZigType` consult
+`isHashCueType` like `genType` does. **Caveat:** `@derive(Hash)` WITHOUT `Eq` has no
+`equals`, so routing it through `_zbr_CueCtx` would break a case that works today (the
+genType path already has that bug) -- `_zbr_CueCtx.eql` should fall back to
+`std.meta.eql` when there is no `equals`. **Control:** the program above must print 1,
+and an `@derive(Hash)`-only key must still work.
+
+---
+
+### BUG-453: a struct method whose body calls anything gets a mutable receiver — a `cue hash` then fails from a local and as a HashMap key — OPEN (found 2026-09-26)
+
+```zebra
+struct Money
+    var amount: float
+    cue hash(): int
+        return (.amount * 100.0).toInt()
+    cue equals(o: Money): bool
+        return .amount == o.amount
+
+def main()
+    var m = Money(amount: 2.5)
+    print(m.hash())     # Zig: expected type '*Money', found '*const Money'
+```
+`methodMutatesSelf` (CgHelpers.zbr) treats ANY call in the body as possibly mutating
+`self` (BUG-421 exempted `Math.*`), so `hash` is emitted `self: *Money`; the caller's
+local is `const` because `hash` is on the read-only NAME list (BUG-455's mechanism), and
+`_zbr_CueCtx` calls `k.hash()` on a by-value key, which cannot give a `*Money` either. So a
+hand-written `cue hash` with any call in it is unusable as a HashMap key. **Fix
+direction:** a call whose receiver is an rvalue (`(a * b).toInt()`, a literal, a cast)
+cannot reach `self` -- exempt it the way BUG-421 exempted `Math.*`; and the cues that are
+read-only by contract (`hash`, `equals`, `toString`, `compare`) should get `*const`, with
+an assignment to a field in one refused by name.
+
+---
+
+### BUG-451: `--release` is ignored for GUI programs — they always build Debug — OPEN (found 2026-09-26)
+
+`compileGuiProject` (selfhost/main.zbr) runs `zig build --build-file ... [run]` and never
+passes `-Doptimize`, while the scaffold's build.zig reads `standardOptimizeOption`. So
+`zebra --release --gui-backend=libui_ng app.zbr` ships a Debug binary -- the BUG-228 shape
+again, in the one path that gate does not build. **Fix direction:** thread `release` into
+`compileGuiProject` and add `-Doptimize=ReleaseFast`; extend `release_mode_check.sh` with a
+tui leg (size comparison, as its existing leg does).
+
+---
+
 ### BUG-449: `HttpRequest` cannot be constructed from Zebra — OPEN (found 2026-09-25)
 
 `var r = HttpRequest()` -> "undefined name: 'HttpRequest'". A clean refusal, but it means a
@@ -68,14 +186,6 @@ The leakgen class: the front end accepts, Zig refuses code the user never wrote.
 
 ---
 
-### BUG-447: `@derive(Hash)` on a struct with a `float` field fails inside Zig — OPEN (found 2026-09-25)
-
-`@derive(Hash) struct P` with `var x: float`, then `P(x: 1.5).hash()` -> Zig: "unable to hash
-type f64". It should be refused in the front end with the reason (floats are not hashable) or
-hash the bit pattern. QUICKSTART §43's example used float fields; it now uses `int` and says so.
-
----
-
 ### BUG-446: a free generic function over `List(T)` passes the front end and fails inside Zig — OPEN (found 2026-09-25)
 
 ```zebra
@@ -85,6 +195,13 @@ def total(items: List(T)): int
 Zig: "use of undeclared identifier 'T'". Either support free generic functions or refuse them
 in the front end naming the supported form (a generic class). Found in the book's ch13
 "common mistakes" section, which was left unrewritten for this reason.
+
+**Wider than filed (2026-09-26):** the front end validates NO type name. `def f(x: Foo)`,
+`def f(xs: List(Foo))` and `var x: Foo = nil`, with `Foo` declared nowhere, all pass `-c`
+and fail inside Zig. So the fix is not a generic-function rule but a known-types check --
+and it needs a complete oracle (this module's types, every `use`d module's, the stdlib
+object types, generic parameters in scope, `zig"..."`/`.zig`-module types) before it can
+refuse anything, or it will refuse working programs. Not straightforward for that reason.
 
 ---
 

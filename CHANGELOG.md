@@ -28,6 +28,12 @@ confirmed via `tools/bootstrap_check.sh`.
   nobody else. The file's name must now match exactly; a case-only mismatch is refused
   everywhere with the real name ("module names are case-sensitive, and the file here is
   helper.zbr; did you mean `use helper`?").
+- **`@derive(Hash)` on a struct holding a float is refused by name (BUG-447)** instead of
+  failing inside Zig with "unable to hash type f64". It reaches floats in `List`s, tuples
+  and same-module structs one level down.
+- **`xs.contains(x)` works on a List / HashMap / Set parameter the function also mutates
+  (BUG-452).** It failed inside Zig; the runtime's membership test did not dereference the
+  pointer such a parameter becomes.
 
 ## Release 0.9.0-rc3 — 2026-09-25 (everything since rc2)
 

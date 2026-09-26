@@ -1,0 +1,13 @@
+# BUG-447: the float may sit one struct down; Zig's .Deep hash reaches it all the same.
+struct Point
+    var x: float
+    var y: float
+
+@derive(Eq, Hash)
+struct Pin
+    var id: int
+    var at: Point
+
+def main()
+    var p = Pin(id: 1, at: Point(x: 0.5, y: 2.5))
+    print(p.hash())

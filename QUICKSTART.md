@@ -5165,9 +5165,10 @@ struct Point
 #   cue hash(): int
 ```
 
-> **`Hash` needs hashable fields.** A `float` field cannot be hashed: `@derive(Hash)` on a
-> struct with one currently gets past the front end and fails inside Zig ("unable to hash
-> type f64") -- BUG-447. Derive `Debug, Eq` only for such a struct.
+> **`Hash` needs hashable fields.** A `float` field cannot be hashed (`-0.0 == 0.0` but
+> their bits differ, and `NaN != NaN`), so `@derive(Hash)` on a struct holding one -- directly,
+> in a `List`, or one struct down -- is refused, naming the field. Store the value as an
+> `int` (e.g. cents), or derive `Debug, Eq` only.
 
 **What each trait generates:**
 
@@ -5175,7 +5176,7 @@ struct Point
 |-------|---------------|----------|
 | `Debug` | `cue toString(): str` | `"TypeName(field1=val1, field2=val2)"` format |
 | `Eq` | `cue equals(other: Self): bool` | Field-by-field equality; `==` / `!=` route through it |
-| `Hash` | `cue hash(): int` | FNV-1a over all fields; makes the struct a `HashMap` / `Set` key |
+| `Hash` | `cue hash(): int` | Wyhash over all fields (deep); makes the struct a `HashMap` / `Set` key |
 
 **Usage:**
 
