@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-449. Next new bug: BUG-450.**
+**Last bug number generated: BUG-450. Next new bug: BUG-451.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,35 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-450: `use Helper` resolves to `helper.zbr` on Windows and fails everywhere else — OPEN (found 2026-09-25)
+
+Module lookup asks the FILESYSTEM whether `Helper.zbr` exists, and Windows (and default
+macOS) answers yes for `helper.zbr`. So on Windows
+
+```zebra
+use Helper exposing greet      # the file on disk is helper.zbr
+def main()
+    print(greet())
+```
+
+compiles and prints `hi`, while Linux refuses it: "`use Helper`: module not found -- no
+Helper.zbr". A Windows developer can ship code that fails to build on every Linux and macOS
+machine, and nothing on their own machine says so.
+
+**Found by a CI run, not a person:** the book's new example check (installs the latest
+release on Linux) reported one regression against a baseline taken on Windows -- a
+deliberately-wrong `use Build` example had "passed" locally by resolving to the book's own
+neighbouring `build.zbr`.
+
+**Fix direction:** after the filesystem says a module file exists, compare the directory
+entry's exact name with the requested one, and refuse on a case-only mismatch naming the real
+file ("no `Helper.zbr` -- did you mean `use helper`? module names are case-sensitive"). Same
+lesson doc_lint learned when it moved from `.exists()` to `git ls-files` (it had been blind to
+every case-wrong path). **Control when fixing:** exact case still resolves; a wrong case is
+refused on Windows WITH the suggestion; a truly missing module keeps its current message.
 
 ---
 
