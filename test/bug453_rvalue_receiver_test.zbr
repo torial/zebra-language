@@ -1,0 +1,18 @@
+# BUG-453 (partial): a struct method whose only calls are on RVALUES -- `(.a * 100.0).toInt()`
+# -- keeps a const receiver, so it can be called on a local that is never reassigned and
+# used as a cue. Before: `self: *Money`, and Zig refused the call from a const local.
+struct Money
+    var amount: float
+    cue hash(): int
+        return (.amount * 100.0).toInt()
+    cue equals(o: Money): bool
+        return .amount == o.amount
+    def cents(): int
+        return (.amount * 100.0).toInt()
+
+def main()
+    var m = Money(amount: 2.5)
+    if m.hash() == 250 and m.cents() == 250
+        print("bug453: OK")
+    else
+        print("bug453: WRONG")

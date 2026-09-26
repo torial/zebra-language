@@ -591,7 +591,19 @@ pub fn _zebra_sort_natural(comptime T: type, items: []T) void {
 // A key type with `cue hash` is hashed through its cue (and compared through `cue equals`).
 pub fn _zbr_HashMap(comptime K: type, comptime V: type) type {
     if (K == []const u8) return std.StringHashMap(V);
-    if (comptime _zbr_has_cue(K, "hash")) return std.HashMap(K, V, _zbr_CueCtx(K), std.hash_map.default_max_load_percentage);
+    return _zbr_AutoMap(K, V);
+}
+// BUG-454: the ONE place that decides how a non-str key is hashed. Every HashMap/Set the
+// compiler emits -- annotation, constructor, field, literal -- names this, so they are
+// all the same type and all agree. A key type with BOTH `cue hash` and `cue equals`
+// (hand-written or @derive(Hash, Eq)) is looked up by content through them; anything
+// else hashes by value (AutoHashMap). Before, only an annotated `var m: HashMap(K, V)`
+// used the cues and `HashMap(K, V)()` ignored them: two keys the cues call equal became
+// two entries. `hash` alone is not enough -- with no `equals` there is nothing to agree
+// with it, and @derive(Hash)-only structs keep today's by-value behaviour.
+pub fn _zbr_AutoMap(comptime K: type, comptime V: type) type {
+    if (comptime _zbr_has_cue(K, "hash") and _zbr_has_cue(K, "equals"))
+        return std.HashMap(K, V, _zbr_CueCtx(K), std.hash_map.default_max_load_percentage);
     return std.AutoHashMap(K, V);
 }
 // BUG-422: `xs.sortBy(def(p) = p.dist())` -- a ONE-argument KEY function (Python's

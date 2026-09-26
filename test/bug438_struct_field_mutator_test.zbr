@@ -1,0 +1,29 @@
+# BUG-438: a mutating call on a container FIELD of a struct local (`h.row.add(2)`) mutates
+# the local -- it must be emitted `var`. Before: Zig "expected type '*T', found '*const T'".
+# Control: a CLASS local stays const (its fields are behind a pointer), and a struct local
+# that only READS a field stays const too -- either marked `var` would be Zig's
+# "local variable is never mutated".
+struct Holder
+    var row: List(int)
+
+struct Outer
+    var inner: Holder
+
+class Box
+    var row: List(int)
+    cue init()
+        .row = List(int)()
+
+def main()
+    var h: Holder = Holder(row: [1])
+    h.row.add(2)
+    var o: Outer = Outer(inner: Holder(row: [5]))
+    o.inner.row.add(6)
+    var b = Box()
+    b.row.add(3)
+    var r: Holder = Holder(row: [9])
+    var n = r.row.len
+    if h.row.len == 2 and o.inner.row.len == 2 and b.row.len == 1 and n == 1
+        print("bug438: OK")
+    else
+        print("bug438: WRONG")

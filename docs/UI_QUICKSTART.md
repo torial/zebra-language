@@ -165,7 +165,7 @@ def view(g: Gui, m: Model)
 
 Every editor created by the libui-ng backend gets a line-number margin, a
 monospace font, caret-line highlight, a 4-space tab and a dark palette, and its
-text is syntax-highlighted as Zebra on `setText`.
+text is syntax-highlighted -- as Zebra unless told otherwise (below).
 
 **No Scintilla lexer is involved, and that is forced rather than chosen.** The
 vendored Scintilla is version 5, which moved every lexer out of the core into
@@ -181,15 +181,19 @@ Zebra tokenizer rather than another language's lexer wearing Zebra's keyword
 list, so "Zebra syntax highlighting" is an accurate description of it. The
 keyword set was taken from the compiler's keyword table (`selfhost/Token.zbr`).
 
-Two limits, stated rather than discovered:
+How it behaves (checked against `gui_libui_ng_section.zig`, 2026-09-26):
 
-- **It styles on `setText`, not as you type.** There is no incremental re-lex and
-  none is pretended; a buffer the user has edited keeps the styling it was given.
-  Wiring `SCN_STYLENEEDED` is the fix if that ever matters.
-- **It applies to every editor, including a read-only output pane.** `forZebra()`
-  and `CodeEditor()` both reach the same constructor, so an editor holding build
-  output is styled as though it were Zebra source. Distinguishing them means
-  giving the two factories different lowerings in both compilers.
+- **It restyles as you type.** Every frame, the editor asks Scintilla for its
+  end-styled watermark (`SCI_GETENDSTYLED`), which Scintilla moves back to the edit
+  position on every insert or delete; when it is short of the end, the whole buffer is
+  re-tokenized and styled in one `SCI_SETSTYLINGEX` call. Whole-buffer, not
+  incremental, so block comments and multi-line strings stay right.
+- **The language is per editor.** `CodeEditor()` and `CodeEditor.forZebra()` style as
+  Zebra; `CodeEditor.forC()`, `CodeEditor.forZig()` and `CodeEditor.forFile(path)` (by
+  extension -- `.zbr`, `.c`/`.h`/`.cpp`..., `.zig`/`.zon`; anything else is plain) pick
+  another; `ed.setLanguage(name)` switches it later. An output pane should be
+  `setLanguage("text")`, which styles nothing -- otherwise build output is coloured as
+  though it were Zebra.
 
 `examples/scintilla_editor.zbr` is a working editor built on this:
 
@@ -266,8 +270,9 @@ def update(m: Model, msg: Msg): Model
 - **No colour**: `textColored` renders without colour.
 - **Widths are hints**: `beginVBox` fills its share of the parent HBox; give a
   pane a floor with `g.minSize(id, w, h)` (a minimum, never a fixed size).
-- **No syntax highlighting**: `CodeEditor.forZebra()` does not yet wire Scintilla
-  lexer in the libui-ng backend. Plain editing works.
+- **Highlighting is our own tokenizer, not a Scintilla lexer** (Lexilla is not
+  vendored): Zebra, C and Zig only, whole-buffer restyle per edit. See "Syntax
+  highlighting" above.
 
 ---
 

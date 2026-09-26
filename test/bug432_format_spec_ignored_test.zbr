@@ -1,0 +1,9 @@
+# BUG-432: a format-spec part the formatter cannot honour is IGNORED (the program still
+# builds and prints) and WARNED about at compile time -- `+` used to vanish silently.
+def main()
+    var d = 65.0
+    var n = 1234567
+    print("[${d:+.1f}]")
+    print("[${n:,}]")
+    print("[${d:.2f}]")
+    print("bug432: OK")

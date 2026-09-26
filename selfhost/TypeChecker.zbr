@@ -2159,6 +2159,190 @@ def isNumeric(t: Type_): bool
         else
             return false
 
+# ── BUG-445: mixed numeric arithmetic (Sean's rule, 2026-09-26) ─────────────────────
+# One operation, two numeric types: the result is the WIDER type, and codegen converts
+# the other operand to it. Every operator but `/` used to fail inside Zig on runtime
+# values ("incompatible types: 'f64' and 'i64'") while the front end accepted it.
+#   float with int         -> the float's type (float32 stays float32: whoever chose
+#                             float32 chose that precision -- Java and C# do the same)
+#   float32 with float     -> float
+#   int with int, same sign -> the wider
+#   signed with unsigned   -> a SIGNED type wide enough for both (byte + int8 -> int16,
+#                             uint32 + int -> int); REFUSED when the unsigned side is 64
+#                             bits or wider, since no signed type holds all of it
+#                             (see mixedSignRefusal)
+# A float literal beside an int is a float; an int literal takes the other side's type.
+# Returns unknown_ when either side is not a known numeric, or when there is nothing to
+# convert (both literals) -- callers then leave the expression as it was.
+def numKind(t: Type_): int                          # 0 none, 1 signed, 2 unsigned, 3 float
+    branch t
+        on Type_.int_
+            return 1
+        on Type_.int_n as _
+            return 1
+        on Type_.uint_
+            return 2
+        on Type_.uint_n as _
+            return 2
+        on Type_.float_
+            return 3
+        on Type_.float_n as _
+            return 3
+        else
+            return 0
+
+def numWidth(t: Type_): int
+    branch t
+        on Type_.int_n as w
+            return w
+        on Type_.uint_n as w2
+            return w2
+        on Type_.float_n as w3
+            return w3
+        else
+            return 64
+
+def numericJoin(lt: Type_, rt: Type_, l_lit: bool, r_lit: bool): Type_
+    var lk: int = numKind(lt)
+    var rk: int = numKind(rt)
+    if lk == 0 or rk == 0
+        return Type_.unknown_
+    if l_lit and r_lit
+        # Two constants (`1 + 2.0`): Zig folds them itself, so nothing converts -- but the
+        # RESULT is still a float if either is, or an enclosing comparison would treat
+        # `1 + 2.0` as an int (it did: `(1 + 2.0) > 2.9` emitted @floatFromInt of a float).
+        if lk == 3 or rk == 3
+            return Type_.float_
+        return Type_.unknown_
+    if l_lit
+        if lk == 3 and rk != 3
+            return Type_.float_
+        return rt
+    if r_lit
+        if rk == 3 and lk != 3
+            return Type_.float_
+        return lt
+    if lk == 3 and rk == 3
+        if numWidth(lt) >= numWidth(rt)
+            return lt
+        return rt
+    if lk == 3
+        return lt
+    if rk == 3
+        return rt
+    if lk == rk
+        if numWidth(lt) >= numWidth(rt)
+            return lt
+        return rt
+    # signed with unsigned: a signed type that holds the unsigned side too
+    var sw: int = numWidth(lt)
+    var uw: int = numWidth(rt)
+    if lk == 2
+        sw = numWidth(rt)
+        uw = numWidth(lt)
+    if uw >= 64
+        return Type_.unknown_                       # refused; see mixedSignRefusal
+    var need: int = uw * 2
+    if sw > need
+        need = sw
+    if need == 64
+        return Type_.int_
+    return Type_.int_n(need)
+
+# The refusal half of the rule: "" when the mix is fine.
+def mixedSignRefusal(lt: Type_, rt: Type_): str
+    var lk: int = numKind(lt)
+    var rk: int = numKind(rt)
+    if not ((lk == 1 and rk == 2) or (lk == 2 and rk == 1))
+        return ""
+    var ut: Type_ = rt
+    var st: Type_ = lt
+    if lk == 2
+        ut = lt
+        st = rt
+    if numWidth(ut) < 64
+        return ""
+    return "cannot mix '" + numTypeName(ut) + "' and '" + numTypeName(st) + "' in arithmetic: no signed type holds every " + numTypeName(ut) + " value -- convert one side first (`.toInt()` on the " + numTypeName(ut) + ", checked)"
+
+# The Zebra spelling of a numeric type, for diagnostics (typeTag prints `?` for sized ones).
+def numTypeName(t: Type_): str
+    branch t
+        on Type_.int_
+            return "int"
+        on Type_.uint_
+            return "uint"
+        on Type_.float_
+            return "float"
+        on Type_.int_n as w
+            return "int" + w.toString()
+        on Type_.uint_n as w2
+            if w2 == 8
+                return "byte"
+            return "uint" + w2.toString()
+        on Type_.float_n as w3
+            return "float" + w3.toString()
+        else
+            return typeTag(t)
+
+# BUG-432: the parts of an interpolation format spec that are IGNORED, "" when none.
+# Walks the spec exactly as CodeGen.zigFmtSpec does ([fill]align, sign, #, 0, width,
+# grouping, .precision, type) and names what that parser skips or cannot express, so
+# `${d:+.1f}` still prints (Sean, 2026-09-26: ignore, don't break) but no longer prints
+# a different number than asked for SILENTLY.
+def fmtSpecIgnored(spec: str): str
+    var why: List(str) = List(str)()
+    var i: int = 0
+    var n: int = spec.len
+    if n >= 2 and (spec[1] == c'<' or spec[1] == c'>' or spec[1] == c'^') and not (spec[0] == c'<' or spec[0] == c'>' or spec[0] == c'^')
+        i = 2
+    else if n >= 1 and (spec[0] == c'<' or spec[0] == c'>' or spec[0] == c'^')
+        i = 1
+    if i < n and (spec[i] == c'+' or spec[i] == c'-' or spec[i] == c' ')
+        if spec[i] == c'+'
+            why.add("the sign `+`")
+        else if spec[i] == c' '
+            why.add("the space sign flag")
+        else
+            why.add("the sign `-`")
+        i = i + 1
+    if i < n and spec[i] == c'#'
+        why.add("the `#` alternate form")
+        i = i + 1
+    while i < n and spec[i] >= c'0' and spec[i] <= c'9'
+        i = i + 1
+    if i < n and (spec[i] == c'_' or spec[i] == c',')
+        why.add("digit grouping `" + spec[i..i+1] + "`")
+        i = i + 1
+    if i < n and spec[i] == c'.'
+        i = i + 1
+        while i < n and spec[i] >= c'0' and spec[i] <= c'9'
+            i = i + 1
+    if i < n
+        var t: str = spec[i..i+1]
+        if t == "%"
+            why.add("the `%` percent type (the value prints as a plain number, not x100)")
+        else if not (t == "s" or t == "c" or t == "u" or t == "d" or t == "i" or t == "n" or t == "f" or t == "g" or t == "G" or t == "e" or t == "E" or t == "x" or t == "X" or t == "o" or t == "b")
+            why.add("the unknown type `" + t + "` (printed as a number)")
+        i = i + 1
+    if i < n
+        why.add("the trailing `" + spec[i..n] + "`")
+    if why.len == 0
+        return ""
+    return why.join(", ")
+
+# A numeric constant: a literal, a negated one, or arithmetic made only of them
+# (`(1 + 2)`, `1 + 2.0`). Zig folds these at comptime, so they adapt to the other
+# operand's type exactly like a bare literal and must never be converted.
+def isNumLit(e: Expr): bool
+    if e is Expr.int_lit or e is Expr.float_lit
+        return true
+    if e is Expr.unary as u
+        return isNumLit(u.operand)
+    if e is Expr.binary as b
+        if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div or b.op == BinaryOp.mod
+            return isNumLit(b.left) and isNumLit(b.right)
+    return false
+
 # BUG-218 support: binary expressions are built with a ZERO span — AstBuilder uses
 # `zspan()` for 95 of its node kinds, binary among them — so `b.span.line` is 0 and a
 # diagnostic anchored to it would carry no source location at all, which is most of
@@ -3816,6 +4000,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.named(simdMaskName(simd_tn))
                 if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div
                     return Type_.named(simd_tn)
+            # BUG-445: mixed numeric arithmetic takes the wider type (numericJoin).
+            if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div or b.op == BinaryOp.mod
+                if isNumeric(lt) and isNumeric(rt)
+                    var msr: str = mixedSignRefusal(lt, rt)
+                    if isNumLit(b.left) or isNumLit(b.right)
+                        msr = ""                        # a literal adapts to the other side
+                    if msr != ""
+                        ctx.addErr(ctx.file, anchorLine(b.left, b.span.line), anchorCol(b.left, b.span.col), msr)
+                        return lt
+                    var nj: Type_ = numericJoin(lt, rt, isNumLit(b.left), isNumLit(b.right))
+                    if not (nj is Type_.unknown_)
+                        return nj
             branch b.op
                 on BinaryOp.add
                     # String concatenation: if either side is a string, result is string.
@@ -4492,6 +4688,20 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                     ctx.addErr(ctx.file, anchorLine(sasn.target, sasn.span.line), anchorCol(sasn.target, sasn.span.col),
                                "compound assignment requires numeric type, got '"
                                + typeTag(lhs_t) + "'")
+                else if isNumeric(lhs_t)
+                    # BUG-445: `x op= v` stores the joined type back into x, so it must
+                    # not be WIDER than x's own kind: an int cannot take a float result.
+                    var crt: Type_ = inferExpr(sasn.value, ctx)
+                    if isNumeric(crt)
+                        var cmsr: str = mixedSignRefusal(lhs_t, crt)
+                        if isNumLit(sasn.value)
+                            cmsr = ""
+                        if cmsr != ""
+                            ctx.addErr(ctx.file, anchorLine(sasn.target, sasn.span.line), anchorCol(sasn.target, sasn.span.col), cmsr)
+                        else if numKind(lhs_t) != 3 and numKind(crt) == 3
+                            ctx.addErr(ctx.file, anchorLine(sasn.target, sasn.span.line), anchorCol(sasn.target, sasn.span.col),
+                                       "compound assignment would store a float into '" + numTypeName(lhs_t)
+                                       + "': the result of int with float is a float -- convert the value (`.toInt()`), or make the variable a float")
         on Stmt.var_ as dv
             # Bind local name to declared type, or to init_expr's inferred type
             # when the declaration omits the type annotation.
@@ -5112,9 +5322,23 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
             # never registers its boxed variants, so `^Expr` payloads emit as raw
             # pointers and Zig rejects them. That silent dependency cost six attempted
             # spellings before the exposing list turned out to be the difference.
+            var last_fe: Expr? = nil
             for part in si.parts
                 if part is StringPart.expr_ as se
                     checkCallsInExpr(se, file, line, ctx)
+                    last_fe = se
+                # BUG-432: a spec part the formatter cannot honour is ignored, and SAID.
+                # Anchored on the expression it formats: the interpolation node itself
+                # carries no span, and 0:0 is a coordinate, not "unknown".
+                if part is StringPart.format as fsp
+                    var fig: str = fmtSpecIgnored(fsp)
+                    if fig != ""
+                        var fln: int = line
+                        var fcl: int = 0
+                        if last_fe != nil
+                            fln = anchorLine(last_fe!, line)
+                            fcl = anchorCol(last_fe!, 0)
+                        ctx.addWarn(file, fln, fcl, "format spec `" + fsp + "`: " + fig + " is not supported and was ignored")
         else
             pass
 
@@ -5621,6 +5845,23 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 var sb_tname: str = ""
                 if sb_subj is Type_.named as tn
                     sb_tname = tn
+                # BUG-456: a BARE arm name (`on opt as x`) that is a variant of the union
+                # being branched on. Codegen read it as the variant -- without the `^T`
+                # dereference the qualified form gets -- while this checker did not, so
+                # the two disagreed about what the program meant. One reading, here.
+                if sb_tname != "" and ctx.module_types.hasUnion(sb_tname)
+                    var bare_vars: List(str) = ctx.module_types.variantNamesForUnion(sb_tname)
+                    for bc0 in sb.cases
+                        for bv0 in bc0.values
+                            if bv0 is Expr.ident as bvi
+                                if bare_vars.contains(bvi.name)
+                                    var bln: int = bvi.span.line
+                                    var bcl: int = bvi.span.col
+                                    if bln == 0
+                                        bln = bc0.span.line
+                                        bcl = bc0.span.col
+                                    ctx.addErr(file, bln, bcl,
+                                               "write the variant as `on " + sb_tname + "." + bvi.name + "`: a bare `" + bvi.name + "` in a branch on '" + sb_tname + "' is not read as the variant")
                 # Union exhaustiveness error: no else, not all variants covered.
                 if sb.else_ == nil and sb_tname != "" and ctx.module_types.hasUnion(sb_tname)
                     var sb_vars: List(str) = ctx.module_types.variantNamesForUnion(sb_tname)

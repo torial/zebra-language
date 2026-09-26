@@ -1,0 +1,46 @@
+# BUG-454: `HashMap(K, V)()` ignored the key's `cue hash` / `cue equals` -- silent WRONG
+# OUTPUT: two keys the cues call equal became two entries. Every construction path must
+# agree: the constructor, an annotated local, a Set, and a class field (whose declared
+# type and constructed value must be the SAME Zig type).
+struct Tag
+    var id: int
+    var hits: int
+    cue hash(): int
+        return .id
+    cue equals(o: Tag): bool
+        return .id == o.id
+
+@derive(Hash)
+struct Plain
+    var a: int
+
+class Index
+    var byTag: HashMap(Tag, str)
+    cue init()
+        .byTag = HashMap(Tag, str)()
+
+def main()
+    var a = Tag(id: 1, hits: 5)
+    var b = Tag(id: 1, hits: 9)
+    var m = HashMap(Tag, str)()
+    m.set(a, "first")
+    m.set(b, "second")
+    var n: HashMap(Tag, str) = HashMap(Tag, str)()
+    n.set(a, "first")
+    n.set(b, "second")
+    var s = Set(Tag)()
+    s.add(a)
+    s.add(b)
+    var ix = Index()
+    ix.byTag.set(a, "x")
+    ix.byTag.set(b, "y")
+    # control: @derive(Hash) alone (no equals) keeps by-value hashing, and still builds
+    var p = HashMap(Plain, int)()
+    p.set(Plain(a: 1), 1)
+    p.set(Plain(a: 1), 2)
+    p.set(Plain(a: 2), 3)
+    print("m=${m.len} n=${n.len} s=${s.len} ix=${ix.byTag.len} p=${p.len} got=${m.get(b)}")
+    if m.len == 1 and n.len == 1 and s.len == 1 and ix.byTag.len == 1 and p.len == 2
+        print("bug454: OK")
+    else
+        print("bug454: WRONG")

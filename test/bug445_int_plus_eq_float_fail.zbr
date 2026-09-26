@@ -1,0 +1,8 @@
+# BUG-445: `i += f` would store int-with-float (a float) back into an int -- refused.
+def f(g: float, a: int): int
+    var i = a
+    i += g
+    return i
+
+def main()
+    print(f(1.5, 3))

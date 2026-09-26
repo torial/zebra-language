@@ -1,0 +1,18 @@
+# BUG-456: a bare `on opt as inner` in a branch on a union was a variant to codegen (with
+# no `^T` dereference) and not to the checker. Refused, naming `on Ty.opt`.
+union Ty
+    leaf: int
+    opt: ^Ty
+    none_
+
+def depth(t: Ty): int
+    branch t
+        on Ty.leaf as n
+            return n
+        on opt as inner
+            return 1 + depth(inner)
+        else
+            return 0
+
+def main()
+    print(depth(Ty.opt(Ty.leaf(7))))

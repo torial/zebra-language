@@ -1,0 +1,39 @@
+# BUG-445: mixed numeric arithmetic on RUNTIME values takes the wider type (Sean's rule,
+# 2026-09-26). Every value arrives as a parameter, never a constant: a comptime-known
+# int is coerced by Zig on its own, which is how the bug hid (only `/` worked before).
+def floats(f: float, a: int): bool
+    var ok = true
+    ok = ok and f + a == 4.5
+    ok = ok and a * f == 4.5
+    ok = ok and f - a == -1.5
+    ok = ok and (f + 6.0) % a == 1.5
+    ok = ok and f < a and a > f and f != a
+    ok = ok and f / a == 0.5
+    ok = ok and 2.0 * a == 6.0 and a + 2.5 == 5.5
+    ok = ok and (2.0 * a) / 2 == 3.0
+    # constants made only of literals adapt like a literal (the daily's bug253 shape)
+    ok = ok and (1 + 2.0) > 2.9 and (1 + 2) > 2.5 and (1 + 2.0) * a == 9.0 and -2.5 < a
+    var h = f
+    h += a
+    h *= a
+    ok = ok and h == 13.5
+    return ok
+
+def narrow(f: float32, a: int): bool
+    var s = f + a                   # float32 with int -> float32
+    var d = f / a
+    var g: float32 = s
+    return g == 4.5 and d == 0.5
+
+def ints(u: uint32, s: int8, b: byte, t: int8, w: uint16, big: int): bool
+    var ok = true
+    ok = ok and u + s == 3999999995     # uint32 with int8 -> int
+    ok = ok and b + t == 150            # byte with int8 -> int16
+    ok = ok and w - big == -10          # uint16 with int -> int
+    return ok
+
+def main()
+    if floats(1.5, 3) and narrow(1.5, 3) and ints(4000000000, -5, 250, -100, 10, 20)
+        print("bug445: OK")
+    else
+        print("bug445: WRONG")

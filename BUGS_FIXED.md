@@ -6,6 +6,270 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-445: `(2.0 * intVar) / intVar2` passes the front end and fails inside Zig — FIXED 2026-09-26
+
+```zebra
+def main()
+    var a: int = 3
+    var b: int = 2
+    var r = (2.0 * a) / b
+    print(r)
+```
+Zig: "incompatible types: 'comptime_float' and 'i64'". Mixed float-literal / int arithmetic
+needs either a front-end refusal (`a.toFloat()`) or a coercion in codegen.
+
+
+**Much wider than filed (measured 2026-09-26, with RUNTIME values).** Mixed int/float
+arithmetic on runtime values fails inside Zig for almost every operator, and the front end
+accepts all of it:
+
+| expression (runtime `f: float`, `a: int`) | today |
+|---|---|
+| `f + a`, `a * f`, `f - a`, `f % a`, `f < a`, `h += a` | Zig: "incompatible types: 'f64' and 'i64'" |
+| `2.0 * a`, `a + 2.5` (float literal with int) | Zig: "'comptime_float' and 'i64'" |
+| `f / a`, `a / f` | works -- division alone has a promoting path |
+| `f32 + int` | Zig: "'f32' and 'i64'" |
+| `f32 + float`, `byte + int` | works (Zig widens same-kind operands itself) |
+| `uint64 + int` | Zig: "expected type 'u64', found 'i64'" |
+
+**Why this sat unseen:** a small test with CONSTANT operands passes, because Zig coerces a
+comptime-known integer into a float. `var a: int = 3` then `f + a` compiles; the same
+expression over a parameter or a computed value does not. The first probe written for
+this entry fell into exactly that and reported "works". Probe with `sys.args().len` or a
+parameter.
+
+**Policy question for Sean, asked 2026-09-26:** allow mixed int/float arithmetic, result
+the wider type. Answer pending for `int64 + float32` and for signed + unsigned.
+
+**Fixed** by Sean's rule (2026-09-26): mixed numeric arithmetic takes the wider type.
+`numericJoin` (TypeChecker) is the one statement of it -- float with int -> the float's
+type (float32 stays float32); float32 with float -> float; same-sign ints -> the wider;
+signed with a narrower unsigned -> a signed type wide enough for both (byte + int8 ->
+int16, uint32 + int -> int); an int literal adapts. The checker types the result by it and
+REFUSES signed with a 64-bit-or-wider unsigned ("cannot mix 'uint64' and 'int' in
+arithmetic ... `.toInt()` on the uint64, checked") and `int op= float`. Codegen converts
+the other operand to the joined type for `+ - * % == != < <= > >=` (`mixedNumericTarget`,
+`emitAsNum`), compound `f op= n`, and `/` (a float32 division now stays float32 rather
+than always f64). Operands the checker cannot type are left as they were, so an
+inference gap cannot create a new failure. Found on the way: `u.toInt()` on an UNSIGNED
+receiver emitted `@intFromFloat` -- the very conversion the refusal names did not compile;
+an integer receiver now converts with a checked `@intCast` (traps if it does not fit).
+Fixtures: `bug445_mixed_numeric_test` (every value a parameter, so no constant folding can
+hide a failure -- red on HEAD with "incompatible types: 'f64' and 'i64'"),
+`bug445_uint64_mix_fail`, `bug445_int_plus_eq_float_fail`.
+
+**The first daily on this fix went red, and the corpus caught what the fixture had not:**
+`(1 + 2.0) > 2.9` in bug253_frontend_diagnostics_test stopped compiling (all five red gates
+were that one file). Two literals joined to "unknown", so the old rule typed `1 + 2.0` as an
+int and the comparison wrapped it in @floatFromInt. Now a constant built only of literals
+(`1 + 2.0`, `(1 + 2)`, `-2.5`) counts as a literal -- it adapts, never converts -- and two
+literals give float if either is. Those shapes are in the fixture now.
+
+---
+
+### BUG-432: a `+` sign flag in a format spec is silently dropped — FIXED 2026-09-26
+
+`"${d:+.1f}"` prints `65.0`, not `+65.0` -- the spec grammar in QUICKSTART §17 is
+`[fill][align][width][.prec][type]` with no sign field, and an unknown character in the spec
+is ignored rather than refused. Either support `+` (C's `%+.1f`, the oracle
+`kolakoski_kol.c` prints with it) or refuse the spec with a diagnostic; silently printing a
+different number than asked is the worst of the three. Workaround in `kolakoski_kol.zbr`:
+a hand-built sign string.
+
+**Fixed** as Sean asked (2026-09-26): ignored, and SAID. `fmtSpecIgnored` (TypeChecker)
+walks a spec the way CodeGen.zigFmtSpec does and names every part it skips -- a sign
+(`+`, `-`, space), `#`, digit grouping (`,` `_`), the `%` type (Python's x100), an unknown
+type letter, trailing text -- as a compile-time WARNING at the formatted expression:
+"format spec `+.1f`: the sign `+` is not supported and was ignored". The program still
+builds and prints (`--warnings-as-errors` makes it fatal). Fixture
+`bug432_format_spec_ignored_test` (smoke_warn pins the 6:15 position; smoke_run the output).
+Supporting `+` for real is left for later -- nothing here prevents it.
+
+---
+
+### BUG-438: a mutator called on a container FIELD of a struct local does not make the local `var` — FIXED 2026-09-26
+
+```zebra
+struct Holder
+    var row: List(int)
+def main()
+    var h: Holder = Holder(row: [1])
+    h.row.add(2)          # error: expected type '*T', found '*const T'
+```
+
+`h` is never assigned, so mutation analysis emits it `const`; `h.row.append(...)` then
+takes `&h.row` through a const struct and Zig refuses. A method call on a field of a local
+is a mutation of the local when the method mutates its receiver (the same rule that
+already keeps `xs.add(v)` on a plain List local a `var`), and the scan does not descend
+into the member chain for it. Found writing test/nested_container_ref_test.zbr (the
+fixture uses a class Holder, whose instance is a pointer, to route around it). Workaround:
+touch the local (`h = h`) or use a class. The fix is in the mutation scan
+(`scanMutationsInExpr` / the field-chain receiver case); fixture to be
+test/bug438_struct_field_mutator_test.zbr.
+
+**Fixed** in the mutation scan (CgHelpers.scanMutationsInExpr): a mutating call whose
+receiver is a member chain rooted at a local holding a value STRUCT (`h.row.add(2)`,
+`o.inner.row.add(6)`) marks the local `var`. Only structs: a class local's fields are
+behind a pointer, and marking it `var` would be Zig's "never mutated". Fixture
+`bug438_struct_field_mutator_test`, with two controls that must stay `const` (a class
+local, and a struct local that only reads a field).
+
+---
+
+### BUG-454: `HashMap(K, V)()` ignores the key's `cue hash` / `cue equals` — wrong output — FIXED 2026-09-26
+
+```zebra
+struct Tag
+    var id: int
+    var hits: int
+    cue hash(): int
+        return .id
+    cue equals(o: Tag): bool
+        return .id == o.id
+
+def main()
+    var m = HashMap(Tag, str)()
+    m.set(Tag(id: 1, hits: 5), "first")
+    m.set(Tag(id: 1, hits: 9), "second")
+    print(m.len)        # prints 2; the cues say these are one key -> 1
+```
+Silent wrong output: the constructor emits `std.AutoHashMap`, which hashes every field's
+bytes and never calls the cues. The same happens with an annotation
+(`var n: HashMap(Tag, str) = HashMap(Tag, str)()`), because the constructor is emitted
+either way. Only the genType path (`var t: HashMap(Money, int) = HashMap()`, as
+`cue_protocol_test` writes it, or a field type) routes through `_zbr_CueCtx`. The Set
+constructor and `genFieldZigType` have the same gap. **Fix direction:** the constructor
+sites (CodeGen ~8209 / ~8430 and the Set pair) and `genFieldZigType` consult
+`isHashCueType` like `genType` does. **Caveat:** `@derive(Hash)` WITHOUT `Eq` has no
+`equals`, so routing it through `_zbr_CueCtx` would break a case that works today (the
+genType path already has that bug) -- `_zbr_CueCtx.eql` should fall back to
+`std.meta.eql` when there is no `equals`. **Control:** the program above must print 1,
+and an `@derive(Hash)`-only key must still work.
+
+**Fixed** at the root: every non-str HashMap/Set the compiler emits -- annotation,
+constructor, field type, literal -- now names ONE comptime selector, `_zbr_AutoMap(K, V)`
+in the preamble, which uses `_zbr_CueCtx` when the key has BOTH `cue hash` and
+`cue equals` and `std.AutoHashMap` otherwise. Twelve emit sites went from
+`std.AutoHashMap(` to it, and genType's separate cue branches were removed, so no two
+paths can disagree -- that disagreement was also a latent Zig error: an
+`@derive(Hash)`-only key (no `equals`) was routed to `_zbr_CueCtx` on the annotation path.
+It keeps by-value hashing now. Fixture `bug454_hashmap_ctor_cues_test`: the repro above
+through the constructor, an annotated local, a Set and a class field (declared type and
+constructed value must be the same Zig type) -- all 1 entry; the @derive(Hash)-only
+control keeps 2.
+
+---
+
+### BUG-456: a bare `on variant as x` arm is a variant to codegen and not to the checker — FIXED 2026-09-26
+
+```zebra
+union Ty
+    leaf: int
+    opt: ^Ty
+
+def depth(t: Ty): int
+    branch t
+        on leaf as n
+            return n
+        on opt as inner
+            return 1 + depth(inner)
+```
+The checker says "branch on 'Ty' does not cover variant 'opt'" -- it does not read `on opt`
+as the variant -- yet codegen DOES emit `.opt => |inner|`, without the `^T` dereference
+the qualified form gets. Add an `else` arm and the front end passes; Zig then refuses it:
+"unreachable else prong" when the bare arms covered every variant, or, with a variant
+left for the `else` (add `none_` above), "expected type 'Ty', found '*Ty'" at the
+recursive call -- `inner` is a pointer. Found
+writing BUG-447's walker, which compiled only after its arms were spelled `on TypeRef.x`.
+The qualified form (`on Ty.opt as inner`) is right everywhere. **Fix direction:** one
+reading, decided in the front end -- either accept the bare name as the variant (and
+dereference), or refuse it naming `on Ty.opt`.
+
+**Fixed** in the front end: a bare arm name that is a variant of the union being branched
+on is refused -- "write the variant as `on Ty.opt`: a bare `opt` in a branch on 'Ty' is not
+read as the variant" -- at the arm. Swept first: no .zbr in the compiler, test/, examples/,
+the book or zebra-ide used the bare form. Fixture `bug456_bare_variant_arm_fail`.
+
+---
+
+### BUG-333: `docs/UI_QUICKSTART.md` contradicts itself on CodeEditor syntax highlighting — FIXED 2026-09-26
+
+**Where.** The "CodeEditor (Scintilla)" section documents, at length and correctly, that every
+libui-ng editor IS syntax-highlighted as Zebra on `setText` via direct `SCI_STARTSTYLING/SETSTYLING`
+from `_ce_style_zebra` in `selfhost/gui_libui_ng_section.zig` (no Lexilla; styles once, not
+as-you-type; applies to every editor incl. read-only output panes). The "Limitations (MVP)"
+list, a few screens below in the same file, still says: *"No syntax highlighting:
+`CodeEditor.forZebra()` does not yet wire Scintilla lexer in the libui-ng backend. Plain editing
+works."* One of the two is stale; the code says the Limitations line is.
+
+**Why it matters.** A reader who lands on Limitations (the section people read when
+something looks wrong) is told highlighting does not exist, and will either file a
+duplicate of the true limits (one-shot styling; output pane styled as Zebra) or conclude the
+working styler is a bug. Sean reports an Opus session noticed this earlier and it persisted —
+a doc contradiction has no gate: `doc_lint` checks citations exist, not that two sections
+agree.
+
+**Fix.** Replace the Limitations bullet with the two real limits stated in the CodeEditor
+section (styles on `setText` only; every editor styled as Zebra, including output panes), or
+delete it and point at that section. While there: the Platform paragraph says Windows only —
+keep, still true.
+
+**Filed by** Fable 5.1 while planning the Zebra IDE (wiki: `concept_zebra-lightweight-ide`).
+No workaround in code; this is a documentation defect.
+
+**Fixed** (docs only). Both passages were stale, not one: the editor has restyled as you
+type since the SCI_GETENDSTYLED poll landed, and the language is per editor (`forC()`,
+`forZig()`, `forFile(path)`, `setLanguage(name)`; `setLanguage("text")` for an output
+pane). The CodeEditor section now says what the code does, checked against
+gui_libui_ng_section.zig, and the Limitations bullet points to it.
+
+---
+
+### BUG-328: `.toFloat()` on an un-annotated local rejects `i64`, but the identical value passes once explicitly typed `: int` — FIXED 2026-09-26
+
+**Minor, but real and reproducible; workaround is one word.** From `C:/Projects/tinylm`'s
+`zebra_train/verify_ln.zbr` (LayerNorm gradient check, written and compiling earlier this
+project), re-run today against a freshly-rebuilt `zebra.exe`:
+
+```
+var d = v.len
+mu = mu / d.toFloat()
+
+verify_ln.zbr:20: error: no field or member function named 'toFloat' in 'i64'
+```
+
+Same value, only the declaration changed, compiles and runs correctly:
+
+```
+var d: int = v.len
+mu = mu / d.toFloat()          # now fine
+```
+
+`.len` itself is read fine either way (`while i < d` etc. never complained) — only the
+`.toFloat()` call distinguishes the two. `TypeChecker.zig:4059` returns `.float` for any
+`toFloat` call regardless of receiver, so the type checker accepts both forms; CodeGen must
+be inferring a bare `i64` for the un-annotated `.len`-sourced local that its `toFloat`
+codegen switch (`CodeGen.zig:6959`/`10267`) doesn't have a case for, while the explicitly
+annotated `int` local takes a different, handled path.
+
+**Not filed as blocking** — this project's own calling code now carries the one-word
+annotation as the workaround (`# BUG-328: needs explicit ': int', .len alone infers a type
+.toFloat() rejects` — add that comment at the call site per this file's own filing
+practice item 1). Reproduced on `zebra.exe` only; not separately checked against
+`zebra-bootstrap.exe`, which is hanging on unrelated large-file input today (see the
+`zebra_train/model.zbr` note in `C:/Projects/tinylm`'s own session log — not reproduced
+minimally enough to file here on its own).
+
+**Control when fixing:** an un-annotated local assigned from any `.len` (or other
+builtin-`i64`-returning accessor) must resolve `.toFloat()` the same way an explicitly
+`: int`-annotated one does; add a regression pinning both forms so a future CodeGen
+refactor can't silently reintroduce just one of the two paths.
+
+**Found already fixed 2026-09-26** -- the original program (tinylm's verify_ln.zbr) builds
+and runs with the annotation removed. Pinned by `bug328_len_tofloat_test` in its shape.
+
+---
+
 ### BUG-451: `--release` is ignored for GUI programs — they always build Debug — FIXED 2026-09-26
 
 `compileGuiProject` (selfhost/main.zbr) runs `zig build --build-file ... [run]` and never

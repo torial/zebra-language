@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
 use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering
-use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString
+use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString, numericJoin, numKind, numWidth, isNumLit
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -4073,19 +4073,11 @@ struct Generator
                 else
                     w.emit("anytype")
                 w.emit(")")
-            else if gtr.args.len == 2 and cueHashKeyName(gtr.args.at(0)) != ""
-                # A key type with `cue hash` + `cue equals` (or @derive(Hash, Eq)) is
-                # looked up by CONTENT through those cues, not by AutoHashMap's bytes-
-                # or-address hashing (2026-09-16). _zbr_CueCtx is in the preamble.
-                w.emit("std.HashMap(")
-                genType(gtr.args.at(0))
-                w.emit(", ")
-                genElemType(gtr.args.at(1))
-                w.emit(", _zbr_CueCtx(")
-                genType(gtr.args.at(0))
-                w.emit("), std.hash_map.default_max_load_percentage)")
             else
-                w.emit("std.AutoHashMap(")
+                # BUG-454: every non-str key goes through ONE comptime selector, so the
+                # annotation, the constructor and a field type cannot disagree about
+                # whether a key with `cue hash` + `cue equals` is looked up by content.
+                w.emit("_zbr_AutoMap(")
                 var ai = 0
                 while ai < gtr.args.len
                     if ai > 0
@@ -4119,14 +4111,8 @@ struct Generator
             var set_key_str = gtr.args.len >= 1 and isStringTypeRef(gtr.args.at(0))
             if set_key_str
                 w.emit("std.StringHashMap(void)")
-            else if gtr.args.len >= 1 and cueHashKeyName(gtr.args.at(0)) != ""
-                w.emit("std.HashMap(")
-                genType(gtr.args.at(0))
-                w.emit(", void, _zbr_CueCtx(")
-                genType(gtr.args.at(0))
-                w.emit("), std.hash_map.default_max_load_percentage)")
             else
-                w.emit("std.AutoHashMap(")
+                w.emit("_zbr_AutoMap(")
                 if gtr.args.len >= 1
                     genType(gtr.args.at(0))
                 else
@@ -5595,7 +5581,7 @@ struct Generator
                 var sz: str = genFieldZigType(se)
                 if sz == ""
                     return ""
-                return "std.AutoHashMap(" + sz + ", void)"
+                return "_zbr_AutoMap(" + sz + ", void)"
             on Type_.hashmap_ as hm
                 var vz: str = genFieldZigType(hm.val_t)
                 if vz == ""
@@ -5607,7 +5593,7 @@ struct Generator
                 var kz: str = genFieldZigType(hm.key_t)
                 if kz == ""
                     return ""
-                return "std.AutoHashMap(" + kz + ", " + vz + ")"
+                return "_zbr_AutoMap(" + kz + ", " + vz + ")"
             on Type_.named as n
                 if class_names.contains_(n)
                     return "*" + typeZigName(n)
@@ -8206,7 +8192,7 @@ struct Generator
                                 else
                                     w.emit("anytype")
                             else
-                                w.emit("std.AutoHashMap(")
+                                w.emit("_zbr_AutoMap(")
                                 var fi = true
                                 var iai = 0
                                 for ta in inner.args
@@ -8263,7 +8249,7 @@ struct Generator
                                     if set_key_str
                                         w.emit("std.StringHashMap(void)")
                                     else
-                                        w.emit("std.AutoHashMap(")
+                                        w.emit("_zbr_AutoMap(")
                                         if gtr.args.len > 0
                                             genType(gtr.args.at(0))
                                         else
@@ -8427,7 +8413,7 @@ struct Generator
                                 else
                                     w.emit("anytype")
                             else
-                                w.emit("std.AutoHashMap(")
+                                w.emit("_zbr_AutoMap(")
                                 var fi = true
                                 var cai = 0
                                 for ta in c.args
@@ -8447,7 +8433,7 @@ struct Generator
                             if set_ks
                                 w.emit("std.StringHashMap(void)")
                             else
-                                w.emit("std.AutoHashMap(")
+                                w.emit("_zbr_AutoMap(")
                                 if c.args.len > 0
                                     genTypeFromExpr(c.args.at(0).value)
                                 else
@@ -8692,6 +8678,10 @@ struct Generator
             # 2026-09-24: a box assigned into a value slot is copied out (a box local
             # assigned from another box stays a pointer)
             genValueOf(a.value)
+        else if (a.op == AssignOp.plus_eq or a.op == AssignOp.minus_eq or a.op == AssignOp.star_eq or a.op == AssignOp.slash_eq) and .infer_ctx != nil and numKind(inferExpr(a.target, .infer_ctx!)) == 3
+            # BUG-445: `f += n` with an int (or narrower float) value converts the value
+            # to f's own type. The checker refuses the other direction (int += float).
+            emitAsNum(a.value, inferExpr(a.target, .infer_ctx!))
         else
             genExpr(a.value)
         w.emit(";\n")
@@ -10980,6 +10970,10 @@ struct Generator
     # an operand of unknown type is emitted bare (what happened before, so no new
     # failure can come from an inference gap).
     def emitAsF64(e: Expr)
+        emitAsFloat(e, "f64")
+
+    # BUG-445: the same for a float32 division (`float32 / int` stays float32).
+    def emitAsFloat(e: Expr, tn: str)
         var is_int_val: bool = false
         var known: bool = false
         if e is Expr.int_lit or e is Expr.float_lit
@@ -11009,13 +11003,62 @@ struct Generator
             genExpr(e)
             return
         if is_int_val
-            w.emit("@as(f64, @floatFromInt(")
+            w.emit("@as(" + tn + ", @floatFromInt(")
             genExpr(e)
             w.emit("))")
         else
-            w.emit("@as(f64, ")
+            w.emit("@as(" + tn + ", ")
             genExpr(e)
             w.emit(")")
+
+    # ── BUG-445: mixed numeric arithmetic ────────────────────────────────────────
+    # The Zig spelling of a numeric Type_ (numKind != 0).
+    def zigNumName(t: Type_): str
+        var k: int = numKind(t)
+        var w_: int = numWidth(t)
+        if k == 3
+            return "f" + w_.toString()
+        if k == 2
+            return "u" + w_.toString()
+        return "i" + w_.toString()
+
+    # The joined type of a binary's operands when they need converting, else unknown_.
+    # Same kind and width -> nothing to do; an int literal needs nothing (Zig coerces
+    # it); anything the checker could not type is left alone.
+    def mixedNumericTarget(l: Expr, r: Expr): Type_
+        if .infer_ctx == nil
+            return Type_.unknown_
+        var lt: Type_ = inferExpr(l, .infer_ctx!)
+        var rt: Type_ = inferExpr(r, .infer_ctx!)
+        var j: Type_ = numericJoin(lt, rt, isNumLit(l), isNumLit(r))
+        if j is Type_.unknown_
+            return Type_.unknown_
+        var jn: str = zigNumName(j)
+        var l_ok: bool = isNumLit(l) or zigNumName(lt) == jn
+        var r_ok: bool = isNumLit(r) or zigNumName(rt) == jn
+        # a float literal beside an int: the literal is fine, the int side converts
+        if l_ok and r_ok
+            return Type_.unknown_
+        return j
+
+    # One operand, converted to `target` (a numeric Type_).
+    def emitAsNum(e: Expr, target: Type_)
+        var tn: str = zigNumName(target)
+        if isNumLit(e) or .infer_ctx == nil
+            genExpr(e)
+            return
+        var st: Type_ = inferExpr(e, .infer_ctx!)
+        if numKind(st) == 0 or zigNumName(st) == tn
+            genExpr(e)
+            return
+        if numKind(target) == 3 and numKind(st) != 3
+            w.emit("@as(" + tn + ", @floatFromInt(")
+            genExpr(e)
+            w.emit("))")
+            return
+        w.emit("@as(" + tn + ", ")
+        genExpr(e)
+        w.emit(")")
 
     # BUG-414: the expression is a float by inference or by literal shape (not an
     # int, not unknown) -- the only case `@as(f64, ...)` is both safe and useful.
@@ -12684,7 +12727,7 @@ struct Generator
                             sl_elem_zig = sl_snm
                     else
                         sl_elem_zig = zigTypeForListElem(sl_elem_t)
-                    w.emit("std.AutoHashMap(" + sl_elem_zig + ", void)")
+                    w.emit("_zbr_AutoMap(" + sl_elem_zig + ", void)")
                 w.emit(".init(_allocator); ")
                 var sli = 0
                 while sli < sl.elems.len
@@ -12744,7 +12787,7 @@ struct Generator
                             dk_zig = dks
                     else
                         dk_zig = zigTypeForListElem(dk_t)
-                    w.emit("std.AutoHashMap(" + dk_zig + ", " + dv_zig + ")")
+                    w.emit("_zbr_AutoMap(" + dk_zig + ", " + dv_zig + ")")
                 w.emit(".init(_allocator); ")
                 for en in dl.entries
                     w.emit(dl_var + ".put(")
@@ -13212,6 +13255,39 @@ struct Generator
                 genExpr(b.right)
                 w.emit(", _allocator)")
                 return
+        # BUG-445: operands of two different numeric types -- float with int, float32
+        # with float, signed with a narrower unsigned -- are converted to the joined type
+        # (numericJoin) before the operator. `/` is handled below with the same target.
+        if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.mod or b.op == BinaryOp.eq or b.op == BinaryOp.ne or b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge
+            var mnt: Type_ = mixedNumericTarget(b.left, b.right)
+            if not (mnt is Type_.unknown_)
+                if b.op == BinaryOp.mod
+                    w.emit("@rem(")
+                    emitAsNum(b.left, mnt)
+                    w.emit(", ")
+                    emitAsNum(b.right, mnt)
+                    w.emit(")")
+                    return
+                if b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge
+                    var mcf: str = "_zebra_gt"
+                    if b.op == BinaryOp.lt
+                        mcf = "_zebra_lt"
+                    if b.op == BinaryOp.le
+                        mcf = "_zebra_le"
+                    if b.op == BinaryOp.ge
+                        mcf = "_zebra_ge"
+                    w.emit(mcf + "(")
+                    emitAsNum(b.left, mnt)
+                    w.emit(", ")
+                    emitAsNum(b.right, mnt)
+                    w.emit(")")
+                    return
+                w.emit("(")
+                emitAsNum(b.left, mnt)
+                w.emit(" " + binaryOpStr(b.op) + " ")
+                emitAsNum(b.right, mnt)
+                w.emit(")")
+                return
         if b.op == BinaryOp.mod
             # BUG-236: @rem, NOT @mod.  `/` emits @divTrunc (truncate toward zero),
             # and @mod floors (sign of the DIVISOR), so the two operators were
@@ -13275,10 +13351,17 @@ struct Generator
                 # are cast, which a runtime f64 does not mind and a comptime
                 # literal (int or float) needs. Also keeps `1.0 / 3.0` from being
                 # folded to an exact comptime_float and printed to 34 digits.
+                # BUG-445: the division's type is the operands' join, so a float32
+                # division (float32 with float32, an int, or a literal) stays float32.
+                var dtn: str = "f64"
+                if .infer_ctx != nil
+                    var dj: Type_ = numericJoin(inferExpr(b.left, .infer_ctx!), inferExpr(b.right, .infer_ctx!), isNumLit(b.left), isNumLit(b.right))
+                    if numKind(dj) == 3 and numWidth(dj) == 32
+                        dtn = "f32"
                 w.emit("(")
-                emitAsF64(b.left)
+                emitAsFloat(b.left, dtn)
                 w.emit(" / ")
-                emitAsF64(b.right)
+                emitAsFloat(b.right, dtn)
                 w.emit(")")
             else
                 w.emit("@divTrunc(")
@@ -16867,6 +16950,13 @@ struct Generator
                 w.emit("(std.fmt.parseInt(i64, ")
                 genExpr(m.object)
                 w.emit(", 10) catch 0)")
+            else if .infer_ctx != nil and (numKind(inferExpr(m.object, .infer_ctx!)) == 1 or numKind(inferExpr(m.object, .infer_ctx!)) == 2)
+                # BUG-445: an INTEGER receiver (uint64, int32, byte...) converts with a
+                # checked @intCast -- it was emitted as @intFromFloat, so the conversion
+                # the mixed-sign refusal points at did not compile. Out of range traps.
+                w.emit("@as(i64, @intCast(")
+                genExpr(m.object)
+                w.emit("))")
             else
                 w.emit("@as(i64, @intFromFloat(")
                 genExpr(m.object)
@@ -20404,7 +20494,7 @@ struct Generator
                 else
                     w.emit("anytype")
             else
-                w.emit("std.AutoHashMap(")
+                w.emit("_zbr_AutoMap(")
                 var fi = true
                 var tai = 0
                 for ta in type_args
@@ -20424,7 +20514,7 @@ struct Generator
             if set_key_str
                 w.emit("std.StringHashMap(void)")
             else
-                w.emit("std.AutoHashMap(")
+                w.emit("_zbr_AutoMap(")
                 if type_args.len > 0
                     genTypeFromExpr(type_args.at(0).value)
                 else

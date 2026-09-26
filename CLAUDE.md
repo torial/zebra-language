@@ -2173,6 +2173,21 @@ all checks pass, including the new leg 1b. The rule this file already states -- 
 failure is a load reading until it reproduces on a quiet machine -- held, and so did the older
 one: do not run heavy work beside a tier you intend to record.
 
+**DAILY tier 2026-09-26, second run (the rc4 bug batch: BUG-445/432/438/454/456, 453 half,
+333, 328): 53/53 PASS in ONE invocation at JOBS=2, 92 min of gate time.** smoke **569/569**,
+round-trip byte-identical, `compile_check-inline` 401/0, `output_sweep`, `full_sweep`,
+`examples_sweep` and `divergence` 0 regressions, `boundary` 33/0, `cli-surface` 47. The
+first daily on this batch was **48/53 and every red was ONE file** --
+`bug253_frontend_diagnostics_test`'s `(1 + 2.0) > 2.9`, a literal-only constant the new
+BUG-445 join typed as an int. `output_sweep` said the other 465 programs printed exactly
+what they had, which is the evidence the mixed-numeric and HashMap rewrites changed no
+other behaviour. **Instrument note:** `tools/sysload.sh`'s CPU figure is BROKEN on this
+machine -- a deliberate two-core burn during a tier still read "CPU: 0% load"
+(`Win32_Processor.LoadPercentage` returns nothing and was printed as 0). Every "CPU 0%"
+in this file and in session reports is therefore unmeasured, including the load
+ruled-out argument in the tier-ladder section. Measured by process CPU-seconds instead:
+17% of 8 logical cores during `divergence` at JOBS=2.
+
 **DAILY tier 2026-09-26 (closing the BUG-450/447/452/451 + libui-pin day): 53/53 PASS in ONE
 invocation at JOBS=2 on torial, on `efd1303`.** smoke **559/559**, round-trip byte-identical,
 `boundary` 33/0, `cli-surface` 47/47, `release-mode` all checks including the new GUI leg,
@@ -2885,7 +2900,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **667** <!-- doc-gen: 667 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **676** <!-- doc-gen: 676 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

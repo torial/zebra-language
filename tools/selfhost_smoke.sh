@@ -1976,6 +1976,25 @@ smoke_tc_fail test/bug447_derive_hash_nested_float_fail.zbr "field 'at' holds a 
 smoke_run test/bug447_derive_hash_ok_test.zbr "bug447: OK"
 # BUG-452: .contains on a container PARAMETER passed by pointer (List, HashMap, Set).
 smoke_run test/bug452_list_param_contains_test.zbr "bug452: OK"
+# BUG-445: mixed numeric arithmetic on runtime values takes the wider type; signed with a
+# 64-bit unsigned, and int += float, are refused by name.
+smoke_run test/bug445_mixed_numeric_test.zbr "bug445: OK"
+smoke_tc_fail test/bug445_uint64_mix_fail.zbr "cannot mix 'uint64' and 'int' in arithmetic"
+smoke_tc_fail test/bug445_int_plus_eq_float_fail.zbr "compound assignment would store a float into 'int'"
+# BUG-432: an unsupported format-spec part is ignored (still builds and prints) and warned.
+smoke_warn test/bug432_format_spec_ignored_test.zbr "bug432_format_spec_ignored_test.zbr:6:15: warning: format spec \`+.1f\`: the sign \`+\` is not supported and was ignored"
+smoke_run test/bug432_format_spec_ignored_test.zbr "bug432: OK"
+# BUG-328: .toFloat() on an unannotated `.len` local (found already fixed; pinned).
+smoke_run test/bug328_len_tofloat_test.zbr "bug328: OK"
+# BUG-453 (partial): a method call on an rvalue does not force a mutable receiver.
+smoke_run test/bug453_rvalue_receiver_test.zbr "bug453: OK"
+# BUG-438: a mutator on a field of a STRUCT local makes the local var (class/read stay const).
+smoke_run test/bug438_struct_field_mutator_test.zbr "bug438: OK"
+# BUG-454: HashMap/Set built by constructor, annotation, Set and class field all use the
+# key's cue hash/equals (one comptime selector); @derive(Hash)-only keys stay by-value.
+smoke_run test/bug454_hashmap_ctor_cues_test.zbr "bug454: OK"
+# BUG-456: a bare `on opt as x` in a branch on a union is refused, naming `on Ty.opt`.
+smoke_tc_fail test/bug456_bare_variant_arm_fail.zbr "bug456_bare_variant_arm_fail.zbr:12:9: error: write the variant as \`on Ty.opt\`"
 smoke_tc_fail test/bug411_indent_error_fail.zbr "bug411_indent_error_fail.zbr:6:7: error: indentation is 6 space(s)"
 smoke_run test/bug412_str_plus_eq_test.zbr "abc x|y|"
 smoke_run test/bug413_414_float_div_print_test.zbr "0.3333333333333333"

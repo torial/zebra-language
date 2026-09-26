@@ -325,6 +325,21 @@ Optionals: `T?` → `?T` in Zig.  `nil` → `null`.
 Float suffix literals: `1.5_f32`, `2.5_f64`, `0.5f32`, `3.0f64` emit
 `@as(fNN, val)` directly.
 
+**Mixed numeric arithmetic takes the wider type** (`+ - * / %` and comparisons):
+
+| operands | result |
+|---|---|
+| `float` with `int` (or a float literal with an int) | `float` |
+| `float32` with any int | `float32` -- the float's width wins (ints above 2^24 lose exactness) |
+| `float32` with `float` | `float` |
+| two ints of the same signedness | the wider (`int32` with `int` -> `int`) |
+| signed with a narrower unsigned | a signed type wide enough for both (`byte` with `int8` -> `int16`, `uint32` with `int` -> `int`) |
+| signed with `uint` / `uint64` / wider unsigned | **refused**: no signed type holds every value -- convert first (`u.toInt()`, which traps if it does not fit) |
+
+An int literal adapts to the other side (`u + 1` on a `uint64` is fine). `int / int` is
+still integer division. A compound assignment stores the result back, so `f += n` (float
+with int) is fine and `n += f` is refused -- the result would be a float.
+
 ### §3.1 Operator precedence (highest → lowest)
 
 | Level | Operators | Notes |
@@ -1414,7 +1429,9 @@ var result = sb.build()              # str (drains the builder)
   octal, `b` binary, `f` float, `e`/`E` scientific, `c` char-or-byte (below), `s`
   string.  Examples: `${n:08x}` → `000000ff`, `${v:.2f}` → `3.14`,
   `${s:>20}` right-aligns in a 20-char field, `${s:-<15}` left-aligns with
-  `-` fill.
+  `-` fill.  A part the formatter does not support -- a sign (`+`), `#`, digit
+  grouping (`,` `_`), the `%` type, an unknown type letter -- is **ignored with a
+  compile-time warning** naming it (`${d:+.1f}` prints `65.0` and says so).
 - To include a literal `${` in a string, escape the dollar sign: `"\${"`.
 
 ### String method reference

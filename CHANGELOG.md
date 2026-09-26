@@ -23,6 +23,32 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Mixed numeric arithmetic works, and takes the wider type (BUG-445).** `f + n`, `n * f`,
+  `f - n`, `f % n`, `f < n`, `f += n`, `2.0 * n` on RUNTIME values all failed inside Zig
+  ("incompatible types: 'f64' and 'i64'") -- only `/` worked -- while the front end accepted
+  them; small tests with constant operands hid it. The rule: float with int -> the float's
+  type (float32 stays float32); float32 with float -> float; same-sign ints -> the wider;
+  signed with a narrower unsigned -> a signed type wide enough for both. **Refused:** signed
+  with a 64-bit-or-wider unsigned (convert with `.toInt()`, checked), and `n += f` into an
+  int. A float32 division now stays float32 (it was always f64). QUICKSTART §3.
+- **`.toInt()` on an unsigned or sized int converts** (checked; traps if it does not fit).
+  It emitted a float-to-int conversion and did not compile.
+- **`HashMap(K, V)()` and `Set(K)()` use the key's `cue hash` / `cue equals` (BUG-454)** --
+  only an annotated local did, so two keys the cues call equal became two entries. Every
+  construction path now goes through one runtime selector; a key with `hash` but no
+  `equals` (e.g. `@derive(Hash)` alone) hashes by value everywhere.
+- **An unsupported format-spec part is ignored WITH A WARNING (BUG-432):** `${d:+.1f}`,
+  `${n:,}`, `%`, an unknown type letter. It used to be dropped silently.
+- **`h.row.add(x)` on a field of a struct local compiles (BUG-438)** -- the local is now
+  emitted mutable.
+- **A struct method whose calls are on temporaries keeps a const receiver (BUG-453,
+  partly)**, so `cue hash(): int` / `return (.amount * 100.0).toInt()` is callable on a
+  local and usable as a map key.
+- **A bare `on opt as x` in a branch on a union is refused, naming `on Ty.opt` (BUG-456).**
+  Codegen read it as the variant without the `^T` dereference; the checker did not.
+- UI_QUICKSTART's CodeEditor section describes the editor as it is: restyled as you type,
+  language per editor (BUG-333).
+
 - **`use` is case-sensitive on every OS (BUG-450).** `use Helper` resolved to `helper.zbr` on
   Windows and default macOS and failed on Linux, so code could build for its author and for
   nobody else. The file's name must now match exactly; a case-only mismatch is refused

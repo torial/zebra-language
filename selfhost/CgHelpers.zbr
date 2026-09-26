@@ -1643,6 +1643,24 @@ def scanMutationsInExpr(expr: Expr, out: StrSet, ic: InferCtx?)
                 if m.object is Expr.ident as id
                     if receiverNeedsVar(m.object, m.member, ic)
                         out.add(id.name)
+                # BUG-438: `h.row.add(2)` mutates the local `h` when `h` holds a value
+                # STRUCT -- the field lives inside it. (A class is a pointer, so its
+                # fields are mutable through a const local; marking it `var` would be
+                # Zig's "never mutated" error instead.)
+                if m.object is Expr.member as fm
+                    if ic as ic2
+                        var root: Expr = fm.object
+                        var depth: int = 0
+                        while depth < 8
+                            if root is Expr.member as rm
+                                root = rm.object
+                                depth += 1
+                            else
+                                depth = 8
+                        if root is Expr.ident as rid
+                            if isStructValueType(inferExpr(root, ic2), ic2)
+                                if receiverNeedsVar(m.object, m.member, ic)
+                                    out.add(rid.name)
             for arg in c.args
                 scanMutationsInExpr(arg.value, out, ic)
         on Expr.binary as b
@@ -1771,6 +1789,32 @@ def scanMutations(stmts: List(Stmt), ic: InferCtx?): StrSet
 def isThisReturn(e: Expr): bool
     branch e
         on Expr.this_
+            return true
+        else
+            return false
+
+# BUG-438: a type that is a value STRUCT of this module (a local holding one owns its
+# fields, so a mutating call on a field mutates the local).
+def isStructValueType(t: Type_, ic: InferCtx): bool
+    if t is Type_.named as n
+        if ic.module_types.classOf(n) as ct
+            return ct.is_struct
+    return false
+
+# BUG-453: an expression whose value is a fresh temporary -- arithmetic, a negation, a
+# literal. A method called on one cannot reach `self`. Deliberately NOT a member or a
+# call: `.items.clear()` mutates self through a field, and a call may return self.
+def isRvalueReceiver(e: Expr): bool
+    branch e
+        on Expr.binary
+            return true
+        on Expr.unary
+            return true
+        on Expr.int_lit
+            return true
+        on Expr.float_lit
+            return true
+        on Expr.string_lit
             return true
         else
             return false
@@ -1914,6 +1958,20 @@ def exprHasSelfCall(e: Expr): bool
                                 return true
                             ai += 1
                         return false
+                # BUG-453: a method called on an RVALUE -- `(.amount * 100.0).toInt()`, a
+                # literal, a negation -- runs on a temporary, which cannot be `self`. So
+                # `cue hash(): int` / `return (.a * 100.0).toInt()` no longer forces a
+                # mutable receiver (which then failed from a const local). Only the
+                # receiver expression and the arguments are scanned.
+                if isRvalueReceiver(cm.object)
+                    if exprHasSelfCall(cm.object)
+                        return true
+                    var ri = 0
+                    while ri < c.args.len
+                        if exprHasSelfCall(c.args.at(ri).value)
+                            return true
+                        ri += 1
+                    return false
             return true
         on Expr.opt_chain as x
             if x.has_args

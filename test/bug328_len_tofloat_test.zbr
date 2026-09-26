@@ -1,0 +1,20 @@
+# BUG-328: `.toFloat()` on an UN-annotated local initialised from `.len` failed inside Zig
+# ("no field or member function named 'toFloat' in 'i64'"); `var d: int = v.len` worked.
+# The shape of tinylm's verify_ln.zbr, where it was found. Found already fixed 2026-09-26.
+def mean(v: List(float)): float
+    var d = v.len
+    var mu = 0.0
+    for x in v
+        mu = mu + x
+    mu = mu / d.toFloat()
+    return mu
+
+def main()
+    var v = List(float)()
+    v.add(1.0)
+    v.add(2.0)
+    v.add(6.0)
+    if mean(v) == 3.0
+        print("bug328: OK")
+    else
+        print("bug328: WRONG")
