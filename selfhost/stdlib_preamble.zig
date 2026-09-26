@@ -94,7 +94,7 @@ pub fn _initIo(io: std.Io) void {
 /// The compiler's version -- the ONE place it is written. `zebra --version` prints it
 /// (selfhost/main.zbr versionBanner) and .github/workflows/release.yml refuses a tag
 /// that does not spell it (tag = v<_zbr_version>_zig<zig major.minor>). Bump here.
-pub const _zbr_version: []const u8 = "0.9.0-rc3";
+pub const _zbr_version: []const u8 = "0.9.0-rc4";
 /// NESTED CONTAINERS ARE HEAP-BOXED (2026-09-24, BUG-314's other half): a List's element
 /// or a HashMap's value that is itself a List / HashMap / Set is stored as a pointer, so
 /// `.at(i)` / `.get(k)` alias the parent's slot. Codegen wraps the value at every STORE

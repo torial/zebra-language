@@ -23,6 +23,18 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+(nothing yet)
+
+## Release 0.9.0-rc4 — 2026-09-26 (everything since rc3)
+
+rc4 exists mainly for Linux: with rc3, every `--gui-backend=libui_ng` program that has a code
+editor -- zebra-ide included -- aborted at startup ("Illegal instruction" in Scintilla's GTK
+signal marshaller). The pinned zig-libui-ng is now b405e2b9. Alongside it, the bugs a
+newcomer is likeliest to hit: arithmetic mixing ints and floats (BUG-445), `HashMap(K, V)()`
+ignoring a key's `cue hash`/`cue equals` (BUG-454, wrong output), and `use` resolving a
+module whose case differs from the file on Windows only (BUG-450). One **breaking** change:
+`@derive(Hash)` on a struct holding a float is refused (BUG-447).
+
 - **Mixed numeric arithmetic works, and takes the wider type (BUG-445).** `f + n`, `n * f`,
   `f - n`, `f % n`, `f < n`, `f += n`, `2.0 * n` on RUNTIME values all failed inside Zig
   ("incompatible types: 'f64' and 'i64'") -- only `/` worked -- while the front end accepted
