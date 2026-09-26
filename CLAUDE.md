@@ -2173,6 +2173,17 @@ all checks pass, including the new leg 1b. The rule this file already states -- 
 failure is a load reading until it reproduces on a quiet machine -- held, and so did the older
 one: do not run heavy work beside a tier you intend to record.
 
+**DAILY tier 2026-09-26 (closing the BUG-450/447/452/451 + libui-pin day): 53/53 PASS in ONE
+invocation at JOBS=2 on torial, on `efd1303`.** smoke **559/559**, round-trip byte-identical,
+`boundary` 33/0, `cli-surface` 47/47, `release-mode` all checks including the new GUI leg,
+`compile_check-inline` 395/0, `output_sweep` 466 identical, `full_sweep` 0 regressions vs 485,
+`examples_sweep` 0 regressions, `divergence` 0 regressions vs the N-1 anchor (2282 s),
+`gramgen` 0/0, `leakgen` 100/0, every `gui-scaffold-*`, `libui-section` 21/21 and
+`libui-pin-build` against the new pin b405e2b9, `node-addon`. The two sweeps are the
+witnesses that mattered for BUG-450: `use` became case-sensitive on the case-INSENSITIVE
+filesystem every gate here runs on, and no corpus file or example turned out to depend on
+the old answer.
+
 **FULL tier 2026-09-22 (BUG-430 + doc-lint INCONCLUSIVE + reserve precise, bundles 110-112):
 38/38 PASS in ONE invocation at JOBS=2 on torial, ~2h20m.** smoke **544/544** (734 s), round-trip
 byte-identical, `boundary` 33/0, `lsp-workspace` **8/8** (the new drive-path leg, red at 7/8
