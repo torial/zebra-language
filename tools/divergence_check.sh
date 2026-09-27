@@ -57,6 +57,15 @@ _keep_emit_err() {   # $1 = wdir, $2 = name
 # NOTE THE INVERTED EPISTEMICS, because the tokens below were renamed for it: a gap used
 # to mean "the selfhost lags a reference implementation"; it now means "this compiler LOST
 # something it used to do."
+# Resolved ONCE per run, by the driver, and handed to the workers (2026-09-26). Every
+# worker is `bash "$0" --worker FILE`, which re-runs this preamble, and the two
+# n1_reference.sh calls below cost ~1.1 s together -- per FILE, ~590 files, twice per
+# file's worth of real work once the verdict cache made the zig checks free. The anchor
+# cannot change mid-run; asking again answered nothing new. (A worker started by hand,
+# without the driver's export, still resolves it itself.)
+if [ -n "${DIV_BOOT:-}" ] && [ -n "${DIV_N1_INFO:-}" ]; then
+  BOOT="$DIV_BOOT"
+else
 BOOT="$(bash "$REPO/tools/n1_reference.sh")"
 if [ -z "$BOOT" ] || [ ! -x "$BOOT" ]; then
     echo "divergence: REFUSING -- no N-1 reference compiler available." >&2
@@ -64,6 +73,13 @@ if [ -z "$BOOT" ] || [ ! -x "$BOOT" ]; then
     exit 2
 fi
 N1_INFO="$(bash "$REPO/tools/n1_reference.sh" --info)"
+export DIV_BOOT="$BOOT" DIV_N1_INFO="$N1_INFO"
+fi
+# The refusal applies to the handed-down path too: a stale export must not pass.
+if [ -z "$BOOT" ] || [ ! -x "$BOOT" ]; then
+    echo "divergence: REFUSING -- no N-1 reference compiler available ($BOOT)." >&2
+    exit 2
+fi
 # DIV_SELF_OVERRIDE is the matching test hook for the subject side; see
 # n1_reference.sh. Together they let the gate be watched going RED.
 SELF="${DIV_SELF_OVERRIDE:-$REPO/zig-out/bin/zebra.exe}"
@@ -73,7 +89,7 @@ export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 #   EMITFAIL | NOMAIN | CPASS | CFAIL
 emit_and_check() { # $1=compiler $2=mode(boot|self) $3=absfile $4=workdir
   local zebra="$1" mode="$2" f="$3" wdir="$4"
-  local name; name=$(basename "$f" .zbr)
+  local name; name="${f##*/}"; name="${name%.zbr}"   # no process: see the driver loop
   local main="$wdir/$name.zig"
   rm -rf "$wdir"; mkdir -p "$wdir"
   # BOTH compilers are invoked IDENTICALLY, with --output-dir. The old code had a
@@ -110,7 +126,7 @@ emit_and_check() { # $1=compiler $2=mode(boot|self) $3=absfile $4=workdir
 }
 
 if [ "${1:-}" = "--worker" ]; then
-  f="$2"; name=$(basename "$f" .zbr)
+  f="$2"; name="${f##*/}"; name="${name%.zbr}"
   # Multi-module (has a local `use`) was SKIPPED from the bootstrap days until 2026-09-16:
   # the bootstrap could not materialize deps via stdout. Both sides emit with
   # --output-dir now, which writes the root AND every dep beside it, so these files are
@@ -196,7 +212,9 @@ MUST_REJECT="$(bash "$REPO/tools/must_reject_set.sh")" || {
 }
 
 for f in $files; do
-  name=$(basename "$f" .zbr)
+  # parameter expansion, not `basename`: a process per corpus file was ~20 s of this
+  # gate's fixed cost on Windows (2026-09-26), paid even by --only runs matching nothing.
+  name="${f##*/}"; name="${name%.zbr}"
   [ -n "$ONLY" ] && { case "$name" in *"$ONLY"*) ;; *) continue;; esac; }
   # Resume: a name already recorded is not re-run. Anchored on the field separator so
   # `bug28` cannot match `bug283`.

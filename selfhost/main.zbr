@@ -950,6 +950,11 @@ def emitUsage(to_stdout: bool)
     usageLine("                                           `@export(\"sym\") class` factories are its symbols (QUICKSTART §44)", to_stdout)
     usageLine("  zebra --release <source.zbr>             optimised build (default: debug); independent of --turbo", to_stdout)
     usageLine("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks", to_stdout)
+    usageLine("  zebra --cpu=CPU <source.zbr>             target CPU for zig: native, x86_64+avx2, ... (SIMD, QUICKSTART §32)", to_stdout)
+    usageLine("  zebra --single-threaded <source.zbr>     no threads: the allocator drops its mutex; spawning a thread fails to compile", to_stdout)
+    usageLine("  zebra --module-path DIR <source.zbr>     also look in DIR for `use`d modules and prebuilt libraries", to_stdout)
+    usageLine("  zebra --target node-addon <source.zbr>   build a Node.js native addon (.node + .js + .d.ts, QUICKSTART §45)", to_stdout)
+    usageLine("  zebra --allow-implicit-try <source.zbr>  accept a throws call without `?` (the pre-0.9 form; a migration bridge)", to_stdout)
     usageLine("  zebra --coverage <source.zbr>            line coverage -> zebra-coverage.json on exit (also: zebra test --coverage)", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
     usageLine("  zebra --warnings-as-errors <source.zbr> fail the compile on any warning (a deprecation, a function used as a value)", to_stdout)
@@ -960,6 +965,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra typecheck-merge <file.zbr>         type-check both sides of a conflict", to_stdout)
     usageLine("  zebra check <file.zbr>                   dead code detection (arms, phantoms, unreachable fns)", to_stdout)
     usageLine("  zebra types <file.zbr>                   print inferred types at each var declaration", to_stdout)
+    usageLine("  zebra diagnostics <file.zbr> [--out F]   front-end diagnostics as JSON, to stdout or to F", to_stdout)
     usageLine("  zebra fmt <file.zbr>                     normalize formatting in-place (tabs→spaces, trim whitespace)", to_stdout)
     usageLine("  zebra fmt --check <file.zbr>             exit 1 if file would be reformatted", to_stdout)
     usageLine("  zebra fmt --print <file.zbr>             print normalized output to stdout", to_stdout)
@@ -3948,6 +3954,15 @@ def main()
     # -- diagnostics subcommand (LSP seam) ---------------------------------
     # `zebra diagnostics <file.zbr>` — emit front-end diagnostics as JSON.
 
+    # 2026-09-26: `--out` belongs to `zebra diagnostics` alone; anywhere else it was accepted
+    # (it is in known_flags) and ignored, which reads as "it wrote my output somewhere".
+    if args.option("--out", "") != ""
+        var out_is_diag: bool = false
+        if args.positional(0) as od_pos
+            out_is_diag = od_pos == "diagnostics"
+        if not out_is_diag
+            sys.errln("zebra: --out only applies to `zebra diagnostics <file.zbr> --out F`; for generated files use --output-dir DIR")
+            sys.exit(2)
     if args.positional(0) as diag_pos
         if diag_pos == "diagnostics"
             if args.positional(1) as diag_file
@@ -4286,6 +4301,11 @@ def main()
     # --target node-addon: compile to a Node.js native addon (.node + .js + .d.ts)
     var target_opt: str      = args.option("--target", "")
     var mode_node            = target_opt == "node-addon" or target_opt == "node_addon"
+    # 2026-09-26: any other value was IGNORED -- `--target x86_64-linux` built for the host
+    # and said nothing, so someone asking for a cross-compile shipped the wrong binary.
+    if target_opt != "" and not mode_node
+        sys.errln("zebra: unknown --target '" + target_opt + "': the only target is `node-addon` (a Node.js native addon). Cross-compiling is not supported; build on the target OS.")
+        sys.exit(2)
     # node-addon emits N-API glue at file scope and is built by a separate driver that
     # would also have to learn to place zebra_rt.zig, so it FALLS BACK to the inline
     # runtime silently. (GUI backends used to as well; see below.)

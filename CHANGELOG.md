@@ -23,7 +23,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
-(nothing yet)
+- **`--help` lists every flag the compiler accepts.** Six were wired and documented in
+  QUICKSTART but missing from the usage text: `--cpu`, `--single-threaded`,
+  `--module-path`, `--target node-addon`, `--allow-implicit-try`, and the
+  `zebra diagnostics <file> [--out F]` subcommand.
+- **`--target` other than `node-addon` is refused**, naming what exists. `--target
+  x86_64-linux` used to build for the host and say nothing -- a cross-compile that silently
+  was not one. Cross-compiling is not supported.
+- **`--out` outside `zebra diagnostics` is refused** (it was accepted and ignored); build
+  output goes to `--output-dir`.
 
 ## Release 0.9.0-rc4 — 2026-09-26 (everything since rc3)
 

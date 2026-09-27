@@ -54,7 +54,7 @@ zebra_for() { # $1 = mode (only "selfhost" since 2026-09-15; --bootstrap retired
 # ── Worker: check a single test, print one result token (PASS|FAIL|SKIP <name>) ──
 if [ "${1:-}" = "--worker" ]; then
   mode="$2"; rel="$3"
-  name=$(basename "$rel" .zbr)
+  name="${rel##*/}"; name="${name%.zbr}"   # no process per file
   zebra=$(zebra_for "$mode")
   # CC_SINGLE_FILE / CC_INLINE_RT are exported by the main process. Runtime-module
   # emission is the DEFAULT as of 2026-07-28, so the interesting second mode is the
@@ -135,7 +135,7 @@ fi
 # Build the filtered worklist (apply SKIP / --only / --sample up front).
 worklist=""; skip=0
 for f in $tests; do
-  name=$(basename "$f" .zbr)
+  name="${f##*/}"; name="${name%.zbr}"   # no process per file
   if [ -n "$ONLY" ]; then case "$name" in *"$ONLY"*) ;; *) continue;; esac; fi
   if [ -n "$SAMPLE" ]; then case "$SAMPLE_NAMES" in *" $name "*) ;; *) continue;; esac; fi
   case "$SKIP" in *" $name "*) skip=$((skip+1)); continue;; esac

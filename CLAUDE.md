@@ -1211,7 +1211,7 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 46 assertions, 0 pins (2026-09-24: three warning-tier legs -- a deprecation warns and `-c` exits 0, `--warnings-as-errors` fails naming the flag, and passes on a clean file; 2026-09-15: `--zig-backend` and
+                                #   past `repl` starting. 51 assertions, 0 pins (2026-09-26: `--target` other than node-addon and `--out` outside `zebra diagnostics` are refused -- both were accepted and IGNORED -- and --help must list the six flags it had omitted; 2026-09-24: three warning-tier legs -- a deprecation warns and `-c` exits 0, `--warnings-as-errors` fails naming the flag, and passes on a clean file; 2026-09-15: `--zig-backend` and
                                 #   `--gui-backend=glfw` refused by name, retired with the bootstrap;
                                 #   `b.requires("^99.0")` refused through the real `zebra build`; 2026-09-14: `zebra up`
                                 #   refuses by name, OFFLINE, outside an install layout; 2026-09-10: BUG-317/324/325
@@ -2104,20 +2104,24 @@ not spread:
 
 **MEASURED IN A REAL TIER, 2026-09-26, two dailies back to back at JOBS=2, 54/54 both:**
 
-| gate | before (clean daily that morning) | cold cache | warm cache |
-|---|---|---|---|
-| `divergence` | 2282 s | 1657 s | 1117 s (1178 hits / 0 misses) |
-| `output_sweep` | 1053 s | 1054 s | 495 s (466 / 0) |
-| `full_sweep` | 973 s | 763 s | 414 s (538 / 0) |
-| `compile_check-inline` | 695 s | 19 s | 21 s (sample, 16 / 0) |
-| **all gates** | **110 min** | **84 min** | **58 min** |
+| gate | before (clean daily that morning) | cold cache | warm cache | + per-file overhead fix |
+|---|---|---|---|---|
+| `divergence` | 2282 s | 1657 s | 1117 s (1178 hits / 0 misses) | **456 s** |
+| `output_sweep` | 1053 s | 1054 s | 495 s (466 / 0) | 479 s |
+| `full_sweep` | 973 s | 763 s | 414 s (538 / 0) | **250 s** |
+| `compile_check-inline` | 695 s | 19 s | 21 s (sample, 16 / 0) | 8 s |
+| **all gates** | **110 min** | **84 min** | **58 min** | **42 min** |
 
 The warm column is a day on which nothing changed any emitted file -- the best case. A
 compiler change that alters the emit of many files moves those files back to the cold
 column. What is left is the floor: emitting every file (~0.2 s each, twice in
 divergence), the gates' own bookkeeping (~14 s per output_sweep invocation) and smoke
-(~7 min, uncached). Divergence's 1117 s at 100% hits is the next thing to look at: its
-per-file worker cost is well above two emits and two keys, and why is not yet measured.
+(~7 min, uncached). **Divergence at 100% hits was then MEASURED and fixed** (last column):
+every per-file worker re-ran the script preamble, which called `n1_reference.sh` twice
+(~1.1 s per file, ~590 files) -- the driver now resolves the anchor once and exports it --
+and four gates spawned a `basename` process per corpus file (~20 s of divergence's 25 s
+fixed cost on Windows, paid even by an `--only` run matching nothing); they use parameter
+expansion now. A 33-file warm run: 84 s -> 59 s -> 33 s.
 No emit-mismatch occurred: the cold run stored all 466 outputs, which it only does when
 the run path's emit matched the key's byte for byte, and the warm run hit all 466.
 

@@ -220,7 +220,7 @@ oc_hit=0; oc_miss=0; oc_mismatch=0
 cached_run_one() {  # $1 = test/foo.zbr ; same contract as run_one
     local zbr="$1" od name key msgs tmp_t f ok
     if [ "$UPDATE" = 1 ] || [ "${ZBR_OCACHE:-1}" = 0 ]; then run_one "$zbr"; return; fi
-    name=$(basename "$zbr" .zbr)
+    name="${zbr##*/}"; name="${name%.zbr}"   # no process per file
     od="$OUT/oc-$name"; rm -rf "$od"; mkdir -p "$od"
     msgs=$(timeout 60 "$ZEBRA" $MODE_FLAGS --emit-zig "$zbr" --output-dir "$od" </dev/null 2>&1 \
              | grep -vE '^wrote |^compiling:|^ *parsing\.\.\.|^ *parsed OK|^ *resolved OK') \

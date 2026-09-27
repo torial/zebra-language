@@ -476,6 +476,31 @@ run --TURBO hello.zbr
 chk "a case-wrong flag is refused rather than silently ignored" \
     "$([ "$RC" != 0 ] && echo 0 || echo 1)" "exit=$RC"
 
+# 2026-09-26: a KNOWN flag given a value it cannot honour was accepted and ignored -- the
+# same hazard as BUG-323 one level down. `--target x86_64-linux` built for the HOST (a
+# cross-compile that silently was not one), and `--out` outside `zebra diagnostics` did
+# nothing. Both refuse, naming the flag; the valid forms still work.
+run --target x86_64-linux hello.zbr
+chk "\`--target\` other than node-addon is refused, naming what exists" \
+    "$([ "$RC" != 0 ] && case "$ERR" in *node-addon*) true;; *) false;; esac && echo 0 || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+run --out zz.json hello.zbr
+chk "\`--out\` outside \`zebra diagnostics\` is refused" \
+    "$([ "$RC" != 0 ] && case "$ERR" in *diagnostics*) true;; *) false;; esac && echo 0 || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+run diagnostics hello.zbr --out zz_diag.json
+chk "...while \`zebra diagnostics F --out J\` still writes J" \
+    "$([ "$RC" = 0 ] && [ -f "$W/zz_diag.json" ] && echo 0 || echo 1)" "exit=$RC"
+# Every flag the compiler accepts is SHOWN by --help (six were accepted, documented in
+# QUICKSTART, and absent from the usage text until 2026-09-26).
+run --help
+_missing=""
+for _f in --cpu --single-threaded --module-path --target --allow-implicit-try diagnostics; do
+    case "$OUT" in *"$_f"*) ;; *) _missing="$_missing $_f";; esac
+done
+chk "--help lists --cpu, --single-threaded, --module-path, --target, --allow-implicit-try, diagnostics" \
+    "$([ -z "$_missing" ] && echo 0 || echo 1)" "missing:$_missing"
+
 # ---- BUG-429: a GUI run forwards `--` program arguments --------------------------
 # zebra-ide opened with no files: the GUI run path (`zig build ... run`) dropped the
 # arguments the non-GUI run paths forward, and the generated build.zig had no

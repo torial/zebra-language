@@ -64,7 +64,7 @@ rm -rf "$OUT"; mkdir -p "$OUT"
 export ZBR_VCACHE_LOG="$OUT/vcache.txt"
 
 check_one() {
-  local rel="$1"; local name; name=$(basename "$rel" .zbr)
+  local rel="$1"; local name; name="${rel##*/}"; name="${name%.zbr}"   # no process per file
   local wdir="$OUT/w-$name"; rm -rf "$wdir"; mkdir -p "$wdir"
   # BUG-302's LESSON, APPLIED ONE LAYER UP. The zig-failure path keeps its `build.err`;
   # this one sent the COMPILER's stderr to /dev/null and then announced EMITFAIL --
