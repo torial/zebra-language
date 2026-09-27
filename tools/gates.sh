@@ -233,11 +233,20 @@ _run() {
         fi
         return
     fi
+    # CACHE COUNTS ON THE BOARD (2026-09-26). A gate answering from the verdict or output
+    # cache prints its hit/miss counts at the END of its line -- past the 58 characters the
+    # board shows, and a passing gate's full log is not kept. So a tier reported green with
+    # no sign that most of its answers came from memory. Pull the counts out and put them
+    # INSIDE the visible width: `[cache 480h/12m]` (plus `/3x` for emit-mismatches).
+    shown="${last:0:58}"
+    cnote="$(echo "$out" | grep -aoE '(zig-verdict|output)-cache: [0-9]+ hit / [0-9]+ miss( / [0-9]+ emit-mismatch)?' | tail -1 \
+             | sed -E 's#.*cache: ([0-9]+) hit / ([0-9]+) miss( / ([0-9]+) emit-mismatch)?#\1h/\2m/\4x#; s#/x$##')"
+    [[ -n "$cnote" ]] && shown="${last:0:43} [cache $cnote]"
     if [[ $ok -eq 1 ]]; then
-        printf '\033[32mPASS\033[0m  %-58s %ss\n' "${last:0:58}" "$t1"
+        printf '\033[32mPASS\033[0m  %-58s %ss\n' "${shown:0:58}" "$t1"
         PASSED=$((PASSED + 1))
     else
-        printf '\033[31mFAIL\033[0m  %-58s %ss\n' "${last:0:58}" "$t1"
+        printf '\033[31mFAIL\033[0m  %-58s %ss\n' "${shown:0:58}" "$t1"
         FAILED+=("$label")
         # THE FAILING LINES FIRST, then the tail. `tail -12` alone reliably HIDES the
         # answer for any gate whose output is long: smoke prints 335 PASS lines, so a
