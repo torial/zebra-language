@@ -33,6 +33,8 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
+# Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26): use it when the .exe is absent.
+[ -x "$ZEBRA" ] || [ ! -x "${ZEBRA%.exe}" ] || ZEBRA="${ZEBRA%.exe}"
 FIXTURE="test/bug329_print_sourcemap_test.zbr"
 W="$(mktemp -d "${TMPDIR:-/tmp}/zbr_dbgmap.XXXXXX")"
 trap 'rm -rf "$W"' EXIT

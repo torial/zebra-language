@@ -63,6 +63,8 @@ export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 . "$REPO/tools/zig_build_lib.sh"      # zbr_verdict_key: the output cache keys on the same hash
 
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
+# Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26): use it when the .exe is absent.
+[ -x "$ZEBRA" ] || [ ! -x "${ZEBRA%.exe}" ] || ZEBRA="${ZEBRA%.exe}"
 BASELINE="$REPO/tools/output_baseline.txt"
 EXCLUSIONS="$REPO/tools/output_baseline_excluded.txt"
 CANDIDATES="$REPO/tools/full_sweep_baseline.txt"   # the emit+compile-clean set

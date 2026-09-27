@@ -27,6 +27,9 @@ import sys
 
 REPO = pathlib.Path(r"C:\Projects\zebra-language")
 ZEBRA = REPO / "zig-out" / "bin" / "zebra.exe"
+# Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26).
+if not ZEBRA.exists() and ZEBRA.with_suffix("").exists():
+    ZEBRA = ZEBRA.with_suffix("")
 BASE = REPO / "tools" / "full_sweep_baseline.txt"
 SMOKE = REPO / "tools" / "selfhost_smoke.sh"
 

@@ -154,6 +154,12 @@ def _git_bash():
             tried.append('%s: %s' % (cand, e))
             continue
         got = (r.stdout or '').strip()
+        # The WSL hazard exists only when WE run on Windows. On a real Linux host (CI's
+        # ubuntu job, 2026-09-26) `GNU/Linux` IS the right shell, and refusing it failed
+        # keyword-coverage on every Linux run.
+        if os.name != 'nt' and r.returncode == 0:
+            _BASH = cand
+            return _BASH
         if got.lower().startswith('msys') or 'mingw' in got.lower():
             _BASH = cand
             return _BASH

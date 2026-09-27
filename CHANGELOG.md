@@ -23,6 +23,16 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A struct method named like a builtin (`count`, `get`, `at`...) that mutates `self` works
+  from a local (BUG-455)** -- the caller follows the method's own receiver, not its name.
+- **A cue that calls a field method works as a HashMap/Set key, with `<` and in `sort()`
+  (BUG-453)** -- the runtime called cues on by-value operands.
+- **`s.split(...)` and `s.lines()` are typed `List(str)` (BUG-448)**, so an untyped
+  `var t = s.split("/").at(3)` then `t.toInt()` compiles.
+- **`--single-threaded` refuses a thread start in Zebra's words, at your line** (ThreadPool,
+  sys.go, Http/Ws/Tcp.serve), instead of a Zig @compileError from inside std/Thread.zig.
+- The N-1 regression anchor is now the 0.9.0-rc4 commit (`n1-anchor-2026-09-27`), so
+  `divergence` protects everything rc4 compiled.
 - **`--help` lists every flag the compiler accepts.** Six were wired and documented in
   QUICKSTART but missing from the usage text: `--cpu`, `--single-threaded`,
   `--module-path`, `--target node-addon`, `--allow-implicit-try`, and the

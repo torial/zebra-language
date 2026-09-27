@@ -36,6 +36,9 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 ZEBRA = REPO / "zig-out" / "bin" / "zebra.exe"
+# Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26).
+if not ZEBRA.exists() and ZEBRA.with_suffix("").exists():
+    ZEBRA = ZEBRA.with_suffix("")
 
 # (label, receiver-var, call-source, note). Receivers are declared once below.
 # Only str-RETURNING operations belong here; predicates and int-returning queries

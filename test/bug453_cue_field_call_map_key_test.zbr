@@ -1,0 +1,32 @@
+# BUG-453 (second half): a `cue hash` whose body calls a FIELD method (`.amount.toInt()`)
+# takes a mutable receiver. It must still be callable on a local (BUG-455's table) and
+# work as a HashMap / Set key -- the runtime's map context held the key by value, which a
+# mutable-receiver cue cannot bind to. Same for `cue compare` in sorting and `<`.
+struct Money
+    var amount: float
+    var note: str
+    cue hash(): int
+        return .amount.toInt()
+    cue equals(o: Money): bool
+        return .amount.toInt() == o.amount.toInt()
+    cue compare(o: Money): int
+        return .amount.toInt() - o.amount.toInt()
+
+def main()
+    var a = Money(amount: 2.0, note: "a")
+    var b = Money(amount: 2.0, note: "b")
+    var c = Money(amount: 5.0, note: "c")
+    var m = HashMap(Money, str)()
+    m.set(a, "x")
+    m.set(b, "y")
+    var s = Set(Money)()
+    s.add(a)
+    s.add(c)
+    var xs = List(Money)()
+    xs.add(c)
+    xs.add(a)
+    xs.sort()
+    if a.hash() == 2 and m.len == 1 and s.len == 2 and a < c and xs.at(0).note == "a"
+        print("bug453: OK")
+    else
+        print("bug453: WRONG")

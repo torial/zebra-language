@@ -31,6 +31,8 @@ cd "$REPO"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
+# Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26): use it when the .exe is absent.
+[ -x "$ZEBRA" ] || [ ! -x "${ZEBRA%.exe}" ] || ZEBRA="${ZEBRA%.exe}"
 FAIL=0
 pass() { printf '  \033[32mok\033[0m    %s\n' "$1"; }
 fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL+1)); }

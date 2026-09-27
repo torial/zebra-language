@@ -32,6 +32,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
+# Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26): use it when the .exe is absent.
+[ -x "$ZEBRA" ] || [ ! -x "${ZEBRA%.exe}" ] || ZEBRA="${ZEBRA%.exe}"
 
 WORK="${TMP:-/tmp}"
 command -v cygpath >/dev/null 2>&1 && WORK="$(cygpath -u "${TMP:-/tmp}")"

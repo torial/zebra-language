@@ -6,6 +6,104 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-455: a struct method named `count`, `get`, `at`, `len`… that mutates `self` fails from a local — FIXED 2026-09-27
+
+```zebra
+struct Counter
+    var n: int
+    def count(): int
+        .n += 1
+        return .n
+
+def main()
+    var c = Counter(n: 0)
+    print(c.count())
+```
+Zig: "expected type '*T', found '*const T'". Whether a local is emitted `var` is decided
+from the METHOD NAME (`isReadOnlyMethod`, CgHelpers.zbr -- a list of ~70 names from the
+builtin types: `count`, `get`, `at`, `len`, `contains`, `toString`, `hash`, `sum`…), so a
+user method with one of those names is assumed not to mutate, while the method itself
+takes `*Owner`. **Fix direction:** when the receiver's type is a user struct, use the
+method's own receiver decision (the same one `genMethod` makes), not its name.
+
+**Fixed.** The caller's `var`/`const` now follows the method's OWN receiver for a struct of
+this module: `structReceiverTable` (CodeGen) computes every struct method's receiver from the
+declarations exactly as `genMethod` decides it -- `*const` when @pure, or when no invariant
+check is injected and the body does not mutate self -- and hands it to
+`CgHelpers.receiverNeedsVar` before the name list is consulted. Built from the declarations
+at the start of each module, never as a side effect of emitting (BUG-294's lesson); a
+module-level string, not a container (BUG-264). Structs of other modules keep the name-based
+answer. The mutation scan also reads `if`/`while`/`branch` HEADERS now (`if a.count() == 2`
+was invisible) -- but not a `for` iterable: `for k, v in m.entries()` read as a mutation of a
+map parameter by the name list, which a smoke fixture (bug195) caught at once. Fixture
+`bug455_struct_method_named_like_builtin_test`, with controls that must stay const (a
+non-mutating same-named method, a class).
+
+---
+
+### BUG-453: a struct method whose body calls anything gets a mutable receiver — a `cue hash` then fails from a local and as a HashMap key — FIXED 2026-09-27
+
+```zebra
+struct Money
+    var amount: float
+    cue hash(): int
+        return (.amount * 100.0).toInt()
+    cue equals(o: Money): bool
+        return .amount == o.amount
+
+def main()
+    var m = Money(amount: 2.5)
+    print(m.hash())     # Zig: expected type '*Money', found '*const Money'
+```
+`methodMutatesSelf` (CgHelpers.zbr) treats ANY call in the body as possibly mutating
+`self` (BUG-421 exempted `Math.*`), so `hash` is emitted `self: *Money`; the caller's
+local is `const` because `hash` is on the read-only NAME list (BUG-455's mechanism), and
+`_zbr_CueCtx` calls `k.hash()` on a by-value key, which cannot give a `*Money` either. So a
+hand-written `cue hash` with any call in it is unusable as a HashMap key. **Fix
+direction:** a call whose receiver is an rvalue (`(a * b).toInt()`, a literal, a cast)
+cannot reach `self` -- exempt it the way BUG-421 exempted `Math.*`; and the cues that are
+read-only by contract (`hash`, `equals`, `toString`, `compare`) should get `*const`, with
+an assignment to a field in one refused by name.
+
+**Half fixed 2026-09-26.** A method call on an RVALUE (`(.amount * 100.0).toInt()`, a
+literal, a negation) no longer forces a mutable receiver (`isRvalueReceiver`,
+CgHelpers.exprHasSelfCall), so the example above now works; fixture
+`bug453_rvalue_receiver_test`. **Still open:** a cue body that calls a field or sibling
+method (`return .amount.toInt()`) still gets `*Owner`, and a by-value key in
+`_zbr_CueCtx` cannot call it. The fix direction above (read-only cues get `*const`) stands.
+
+**Fixed (second half, 2026-09-27).** A cue that calls a field method (`.amount.toInt()`) still
+takes `*T` -- that is honest -- but it now works everywhere a cue is called: on a local
+(BUG-455's receiver table makes the local `var`) and in the runtime, where `_zbr_CueCtx.hash/
+eql`, `_zebra_lt/le/gt/ge` and the natural sort held the operand BY VALUE. Each now calls
+through a local copy (`var c = k; _ = &c;`), which binds `*T` and `*const T` alike. Fixture
+`bug453_cue_field_call_map_key_test`: the cue on a local, as a HashMap and Set key, via `<`
+and via `sort()`. The fix direction written above (force read-only cues to `*const`) was not
+needed and would have broken a cue calling a mutating sibling.
+
+---
+
+### BUG-448: an untyped local from `s.split(...).at(i)` is mistyped; `.toInt()` on it fails inside Zig — FIXED 2026-09-27
+
+```zebra
+def main()
+    var p = "/a/b/42"
+    var idText = p.split("/").at(3)
+    print(idText.toInt() + 1)
+```
+Zig: "expected float type, found 'str'" (codegen emits `@intFromFloat`). Annotating the local
+`: str` avoids it; the book's Project 2 carries that annotation with a comment for this reason.
+The leakgen class: the front end accepts, Zig refuses code the user never wrote.
+
+**Fixed.** `split` and `lines` are typed `List(str)` in `stringMethodReturn`, like `tokenize`
+-- they materialise the same `std.ArrayList([]const u8)`; the note that left them unknown_
+"until Phase 18 generics" predated generics. Typing them sent `s.split(..).at(i)` down the
+typed-List dispatch, which emitted `.items` on the LAZY iterator; that dispatch now emits its
+receiver through `genListRecv` (BUG-336's collect-if-lazy), all 27 sites. Fixture
+`bug448_split_at_toint_test`.
+
+---
+
 ### BUG-445: `(2.0 * intVar) / intVar2` passes the front end and fails inside Zig — FIXED 2026-09-26
 
 ```zebra

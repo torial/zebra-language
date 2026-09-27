@@ -81,6 +81,9 @@ def block_key(doc_name, body):
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 ZEBRA = REPO / "zig-out" / "bin" / "zebra.exe"
+# Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26).
+if not ZEBRA.exists() and ZEBRA.with_suffix("").exists():
+    ZEBRA = ZEBRA.with_suffix("")
 BASELINE = REPO / "tools" / "doc_example_baseline.txt"
 # SHORT path on purpose: the first version wrote to a ~100-char scratch path and every
 # error message was truncated to just the path -- it reported 119 failures and could not

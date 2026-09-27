@@ -53,6 +53,7 @@ OUT="$(mktemp -d -t kwident-XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 
 COMPILER="${1:-./zig-out/bin/zebra.exe}"
+[ -x "$COMPILER" ] || [ ! -x "${COMPILER%.exe}" ] || COMPILER="${COMPILER%.exe}"   # Linux: `zebra`
 [[ -x "$COMPILER" ]] || { echo "keyword-ident: REFUSING — no compiler at $COMPILER" >&2; exit 2; }
 
 # The words the fixture actually uses. Kept in step with the fixture, not with Zig.

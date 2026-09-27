@@ -1,0 +1,13 @@
+# BUG-448: an untyped local from `s.split(...).at(i)` (or `.lines()`) was untyped, and
+# `.toInt()` on it emitted a float conversion ("expected float type, found 'str'").
+# split/lines are typed List(str) now, like tokenize.
+def main()
+    var p = "/a/b/42"
+    var idText = p.split("/").at(3)
+    var parts = p.split("/")
+    var last = parts.at(parts.len - 1)
+    var n = "7\n8".lines().at(1)
+    if idText.toInt() + 1 == 43 and last.toInt() == 42 and n.toInt() == 8
+        print("bug448: OK")
+    else
+        print("bug448: WRONG")

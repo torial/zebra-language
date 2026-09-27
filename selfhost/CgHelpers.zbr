@@ -1621,9 +1621,28 @@ def unwrapForMutation(t: Type_): Type_
 # Should a method-call receiver ident be marked `var`? When we have an InferCtx
 # we consult the receiver's inferred type (type-driven); otherwise we fall back
 # to the name-based over-approximation (isReadOnlyMethod).
+# BUG-455: this module's STRUCT method receivers, as CodeGen.genMethod decides them --
+# " Struct.method+ " takes *Struct (mutable), " Struct.method- " takes *const Struct.
+# Set by CodeGen at the start of each module, from the declarations alone (never as a
+# side effect of emitting them -- BUG-294's lesson), and consulted BEFORE the name list
+# below: a user struct method named `count`/`get`/`at` that mutates self was taken for a
+# read-only builtin, the caller's local was emitted const, and Zig refused the call. A
+# module-level STRING, not a StrSet: a module-scope container broke the round-trip once
+# (BUG-264). Structs of other modules are not in it and keep the name-based answer.
+var _struct_recv: str = ""
+
+def setStructReceivers(table: str)
+    _struct_recv = table
+
 def receiverNeedsVar(obj: Expr, method: str, ic: InferCtx?): bool
     if ic as ic_v
         var rt: Type_ = unwrapForMutation(inferExpr(obj, ic_v))
+        if rt is Type_.named as rn
+            var rkey: str = " " + rn + "." + method
+            if _struct_recv.contains(rkey + "+ ")
+                return true
+            if _struct_recv.contains(rkey + "- ")
+                return false
         # Fully-immutable value receiver → never `var`, regardless of method name.
         if isImmutableValueType(rt)
             return false
@@ -1719,21 +1738,31 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet, ic: InferCtx?)
                             out.add(id.name)
                     else
                         pass
+            # The HEADER expressions are scanned too (2026-09-26): `if a.hash() == 2`
+            # mutates `a` when `hash` takes a mutable receiver (BUG-453/455), and a call in
+            # a condition was invisible here -- only the bodies were walked.
             on Stmt.if_ as si
+                scanMutationsInExpr(si.cond, out, ic)
                 scanMutationsInto(si.then_stmts, out, ic)
                 for ei in si.else_ifs
+                    scanMutationsInExpr(ei.cond, out, ic)
                     scanMutationsInto(ei.stmts, out, ic)
                 if si.else_stmts as se
                     scanMutationsInto(se, out, ic)
             on Stmt.while_ as w
+                scanMutationsInExpr(w.cond, out, ic)
                 scanMutationsInto(w.stmts, out, ic)
             on Stmt.for_in as f
+                # NOT the iterable: `for k, v in m.entries()` reads m, and the name list
+                # (no `entries` on it) marked a map PARAMETER mutated, turning it into a
+                # pointer its callers did not pass (bug195_map_param_test, 2026-09-26).
                 scanMutationsInto(f.stmts, out, ic)
                 if f.else_ as fe
                     scanMutationsInto(fe, out, ic)
             on Stmt.for_num as fnum
                 scanMutationsInto(fnum.stmts, out, ic)
             on Stmt.branch_ as b
+                scanMutationsInExpr(b.expr, out, ic)
                 for c in b.cases
                     scanMutationsInto(c.stmts, out, ic)
                 if b.else_ as be

@@ -1727,8 +1727,11 @@ def isString(t: Type_): bool
 # BUG-071: return type of a method call whose receiver is `str`. Grounded in
 # src/CodeGen.zig::genStringMethod (6373-6600). nil → method is not a known
 # string stdlib method; caller falls through to Type_.unknown_.
-# chars/split/lines return generics (List(char)/List(str)); Phase 18 generics
-# will infer them properly — returning unknown_ here is intentional.
+# split/lines are typed List(str) since 2026-09-26 (BUG-448): they materialise the same
+# std.ArrayList([]const u8) tokenize does, and leaving them unknown_ let an untyped
+# `var t = s.split("/").at(3)` fall to codegen's guesses -- `.toInt()` on it emitted
+# @intFromFloat. `chars` is still unknown_ here (its element type is the codepoint/byte
+# question of 28e).
 # BUG-369: the member tables for the two builtin receivers a program touches most.
 # Until 2026-09-09 an unknown method on a `str` or a `List` passed the front end
 # (`-c` said OK) and failed inside zig with a diagnostic about generated code. These
@@ -1867,7 +1870,7 @@ def stringMethodReturn(name: str): Type_?
         return Type_.uint_n(8)
     if name == "join" or name == "toString"
         return Type_.string_
-    if name == "tokenize"
+    if name == "tokenize" or name == "split" or name == "lines"
         return Type_.list_(Type_.string_)
     if name == "encodeBase64"
         return Type_.string_

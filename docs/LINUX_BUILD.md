@@ -37,8 +37,11 @@ leg 3, pre-existing) — it is the one `zig build test` step that fails.
    one-line `thread N panic: msg` header (output_sweep normalises it), exit 1, no
    trace. `ZEBRA_PANIC_TRACE=1` restores the full trace for compiler debugging.
 3. **Gate scripts hardcoded `zebra.exe`.** `selfhost_smoke.sh`, `compile_check.sh`,
-   `bootstrap_check.sh` now fall back to the suffix-less binary. The other ~30 tools
-   scripts still say `.exe`; they run on Windows only until someone needs them.
+   `bootstrap_check.sh` now fall back to the suffix-less binary. On 2026-09-26 the QUICK
+   tier started running on Linux in CI (`quick-linux` in gates-quick.yml), and its first run
+   named the rest: every gate tool that set `ZEBRA=.../zebra.exe` (13 shell, 4 Python) now
+   falls back to `zebra` when the `.exe` is absent, and zbr_vocab.py accepts a GNU/Linux
+   bash when it is itself running on Linux (its WSL guard only matters on Windows).
 
 ## Not done
 

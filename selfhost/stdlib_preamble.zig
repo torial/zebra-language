@@ -331,38 +331,46 @@ pub inline fn _zbr_has_cue(comptime T: type, comptime name: []const u8) bool {
         else => false,
     };
 }
+// BUG-453: a cue whose body calls a field method (`return .amount.toInt()`) takes `*T`,
+// and every helper here holds its operand BY VALUE, which a `*T` method cannot bind to.
+// So each cue call goes through a local copy; `_ = &c` stops Zig calling the local
+// never-mutated when the cue takes `*const T` instead. Same for classes (a copied pointer).
 pub fn _zbr_CueCtx(comptime K: type) type {
     return struct {
         pub fn hash(_: @This(), k: K) u64 {
-            const h = k.hash();
+            var kc = k;
+            _ = &kc;
+            const h = kc.hash();
             return switch (@typeInfo(@TypeOf(h))) {
                 .int => |i| if (i.signedness == .signed) @as(u64, @bitCast(@as(i64, h))) else @as(u64, h),
                 else => @as(u64, h),
             };
         }
         pub fn eql(_: @This(), a: K, b: K) bool {
-            return a.equals(b);
+            var ac = a;
+            _ = &ac;
+            return ac.equals(b);
         }
     };
 }
 pub fn _zebra_lt(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.lessThan(u8, a, b);
-    if (comptime _zbr_has_cue(@TypeOf(a), "compare")) return a.compare(b) < 0;
+    if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) < 0; }
     return a < b;
 }
 pub fn _zebra_le(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .gt;
-    if (comptime _zbr_has_cue(@TypeOf(a), "compare")) return a.compare(b) <= 0;
+    if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) <= 0; }
     return a <= b;
 }
 pub fn _zebra_gt(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) == .gt;
-    if (comptime _zbr_has_cue(@TypeOf(a), "compare")) return a.compare(b) > 0;
+    if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) > 0; }
     return a > b;
 }
 pub fn _zebra_ge(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .lt;
-    if (comptime _zbr_has_cue(@TypeOf(a), "compare")) return a.compare(b) >= 0;
+    if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) >= 0; }
     return a >= b;
 }
 pub fn _zebra_eq(a: anytype, b: anytype) bool {
@@ -580,7 +588,7 @@ pub fn _zebra_sort_natural(comptime T: type, items: []T) void {
     const _I = struct {
         fn less(_: void, a: T, b: T) bool {
             if (comptime T == []const u8) return std.mem.lessThan(u8, a, b);
-            if (comptime _zbr_has_cue(T, "compare")) return a.compare(b) < 0;
+            if (comptime _zbr_has_cue(T, "compare")) { var ac = a; _ = &ac; return ac.compare(b) < 0; }
             return a < b;
         }
     };

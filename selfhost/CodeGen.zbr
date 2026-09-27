@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
-use CgHelpers exposing hexLitZig, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
+use CgHelpers exposing hexLitZig, setStructReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString, numericJoin, numKind, numWidth, isNumLit
 
@@ -928,6 +928,32 @@ def returnedCaptureLambda(stmts: List(Stmt)): ExprLambda?
 def generateModule(m: Module, file: str): str
     return generateModuleWith(m, file, List(str)(), ModuleTypes(), false, nil, false)
 
+# BUG-455: every struct method's receiver, decided EXACTLY as genMethod decides it (keep the
+# two in step): `*const` when @pure, or when no invariant check will be injected and the
+# body does not mutate self (methodMutatesSelf); otherwise `*`. Static methods have no
+# receiver. Encoded for CgHelpers.receiverNeedsVar -- see _struct_recv there.
+def structReceiverTable(decls: List(Decl), strip_contracts: bool): str
+    var sb: StringBuilder = StringBuilder()
+    sb.append(" ")
+    for d in decls
+        if d is Decl.struct_ as sd
+            for mem in sd.members
+                if mem is Decl.method as md
+                    if md.mods.is_static
+                        continue
+                    var use_const: bool = md.mods.is_pure
+                    var will_inject_invariant: bool = not md.mods.is_private and sd.invariants.len > 0 and not strip_contracts
+                    if not use_const and not will_inject_invariant
+                        if md.stmts as mb
+                            if not methodMutatesSelf(mb)
+                                use_const = true
+                    sb.append(sd.name + "." + md.name)
+                    if use_const
+                        sb.append("- ")
+                    else
+                        sb.append("+ ")
+    return sb.build()
+
 def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_mt: ModuleTypes, strip_contracts: bool, tc_result: TcResult?, library_mode: bool): str
     var w = Writer()
     _cov_lines_s = ""
@@ -955,6 +981,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     if tc_result as tcr
         g = g.withTcResult(tcr)
     g.library_mode = library_mode
+    setStructReceivers(structReceiverTable(m.decls, strip_contracts))   # BUG-455
     # BUG-294: register THIS module's `^T` / `^T?` fields BEFORE any decl is emitted.
     #
     # These two sets drive the auto-deref decision for a field read (`obj.field` where
@@ -2946,6 +2973,18 @@ def recordImplicitTry(site: str)
 
 def implicitTrySites(): List(str)
     return _implicit_try_sites
+
+# `--single-threaded` (2026-09-26): every call that STARTS A THREAD, as "file:line  what".
+# Recorded at the emit site (like _implicit_try_sites) so main.zbr can refuse the build in
+# Zebra's words; without it the user got Zig's "Cannot spawn thread when building in
+# single-threaded mode" from inside std/Thread.zig -- a line in a file they never wrote.
+var _thread_spawn_sites: List(str) = List(str)()
+
+def recordThreadSpawn(site: str)
+    _thread_spawn_sites.add(site)
+
+def threadSpawnSites(): List(str)
+    return _thread_spawn_sites
 
 # §28a step 1 (selfhost measure): a type-dispatch site that guessed the emit
 # because inference could not PROVE the operand/receiver type.  Three sites, each
@@ -14582,6 +14621,7 @@ struct Generator
                 w.emit("_csv_writer_init()")
                 return
             if id.name == "ThreadPool"
+                recordThreadSpawn(source_file + ":" + w.cur_line.toString() + "  ThreadPool")
                 w.emit("_thread_pool_create(")
                 if c.args.len > 0
                     genExpr(c.args.at(0).value)
@@ -15565,7 +15605,7 @@ struct Generator
                         # mmap for 8.78 GB and the heuristic overcommit refused it in an
                         # 8 GB container that had 7.4 GB free. Precise cuts it to the
                         # arena's own 1.5x; reserve(3.9e9) then succeeds.
-                        genExpr(m.object)
+                        genListRecv(m.object)
                         w.emit(".ensureTotalCapacityPrecise(_allocator, @as(usize, @intCast(")
                         if args.len > 0
                             genExpr(args.at(0).value)
@@ -15577,7 +15617,7 @@ struct Generator
                     # `xs.append(v)` fell through to the StringBuilder path and zig refused the
                     # `appendSlice` (found 2026-09-22 writing table_check_smoke).
                     if mname == "add" or mname == "append"
-                        genExpr(m.object)
+                        genListRecv(m.object)
                         w.emit(".append(_allocator, ")
                         if args.len > 0
                             if item_is_ref
@@ -15604,13 +15644,13 @@ struct Generator
                         return
                     if mname == "count"
                         w.emit("@as(i64, @intCast(")
-                        genExpr(m.object)
+                        genListRecv(m.object)
                         w.emit(".items.len))")
                         return
                     if mname == "at"
                         # BUG-313: checked (second .at branch).
                         w.emit("_zbr_at(")
-                        genExpr(m.object)
+                        genListRecv(m.object)
                         w.emit(".items, ")
                         if args.len > 0
                             genExpr(args.at(0).value)
@@ -15620,14 +15660,14 @@ struct Generator
                         return
                     if mname == "remove"
                         w.emit("_ = ")
-                        genExpr(m.object)
+                        genListRecv(m.object)
                         w.emit(".orderedRemove(@intCast(")
                         if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit("))")
                         return
                     if mname == "clear"
-                        genExpr(m.object)
+                        genListRecv(m.object)
                         w.emit(".clearRetainingCapacity()")
                         return
                     if mname == "reverse"
@@ -15635,7 +15675,7 @@ struct Generator
                         var rv_uid = w.nextUid()
                         var rv_tmp = "_rv_" + rv_uid.toString()
                         w.emit("(blk_" + rv_tmp + ": { const " + rv_tmp + " = ")
-                        genExpr(m.object)
+                        genListRecv(m.object)
                         w.emit(".items; std.mem.reverse(std.meta.Child(@TypeOf(" + rv_tmp + ")), " + rv_tmp + "); break :blk_" + rv_tmp + " {}; })")
                         return
                     if mname == "sort"
@@ -15643,89 +15683,89 @@ struct Generator
                         # sortBy); bare sort() is the natural ascending sort.
                         if args.len > 0
                             w.emit("_zebra_sort_by(std.meta.Child(@TypeOf(")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(".items)), ")
                             genExpr(args.at(0).value)
                             w.emit(", ")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(".items)")
                         else
                             w.emit("_zebra_sort_natural(std.meta.Child(@TypeOf(")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(".items)), ")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(".items)")
                         return
                     if mname == "sortBy"
                         if args.len > 0
                             w.emit("_zebra_sort_by(std.meta.Child(@TypeOf(")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(".items)), ")
                             genExpr(args.at(0).value)
                             w.emit(", ")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(".items)")
                         return
                     if mname == "any"
                         if args.len > 0
                             w.emit("_zebra_list_any(std.meta.Child(@TypeOf(")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(".items)), ")
                             genExpr(args.at(0).value)
                             w.emit(", ")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(")")
                         return
                     if mname == "all"
                         if args.len > 0
                             w.emit("_zebra_list_all(std.meta.Child(@TypeOf(")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(".items)), ")
                             genExpr(args.at(0).value)
                             w.emit(", ")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(")")
                         return
                     if mname == "find"
                         if args.len > 0
                             w.emit("_zebra_list_find(std.meta.Child(@TypeOf(")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(".items)), ")
                             genExpr(args.at(0).value)
                             w.emit(", ")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(")")
                         return
                     if mname == "map"
                         if args.len > 0
                             w.emit("_zebra_list_map(std.meta.Child(@TypeOf(")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(".items)), ")
                             genExpr(args.at(0).value)
                             w.emit(", ")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(")")
                         return
                     if mname == "filter"
                         if args.len > 0
                             w.emit("_zebra_list_filter(std.meta.Child(@TypeOf(")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(".items)), ")
                             genExpr(args.at(0).value)
                             w.emit(", ")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(")")
                         return
                     if mname == "reduce"
                         if args.len > 1
                             w.emit("_zebra_list_reduce(std.meta.Child(@TypeOf(")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(".items)), ")
                             genExpr(args.at(0).value)
                             w.emit(", ")
                             genExpr(args.at(1).value)
                             w.emit(", ")
-                            genExpr(m.object)
+                            genListRecv(m.object)
                             w.emit(")")
                         return
                     if mname == "join"
@@ -15736,7 +15776,7 @@ struct Generator
                         else
                             w.emit("\"\"")
                         w.emit(", ")
-                        genExpr(m.object)
+                        genListRecv(m.object)
                         w.emit(".items)")
                         return
                     if mname == "contains"
@@ -15744,7 +15784,7 @@ struct Generator
                         if args.len > 0
                             genExpr(args.at(0).value)
                         w.emit(", ")
-                        genExpr(m.object)
+                        genListRecv(m.object)
                         w.emit(")")
                         return
                 on Type_.string_
@@ -18955,6 +18995,7 @@ struct Generator
             w.emit(")")
             return
         if mname == "go"
+            recordThreadSpawn(source_file + ":" + w.cur_line.toString() + "  sys.go")
             w.emit("_sys_go(")
             if args.len > 0
                 genExpr(args.at(0).value)
@@ -19231,6 +19272,7 @@ struct Generator
             w.emit(")")
             return
         if mname == "serve"
+            recordThreadSpawn(source_file + ":" + w.cur_line.toString() + "  Http.serve")
             w.emit("_http_serve(")
             if args.len > 0
                 genExpr(args.at(0).value)
@@ -19322,6 +19364,7 @@ struct Generator
             w.emit(")")
             return
         if mname == "serve"
+            recordThreadSpawn(source_file + ":" + w.cur_line.toString() + "  Ws.serve")
             w.emit("_ws_serve(")
             if args.len > 0
                 genExpr(args.at(0).value)
@@ -19944,6 +19987,7 @@ struct Generator
             w.emit(")")
             return
         if mname == "serve"
+            recordThreadSpawn(source_file + ":" + w.cur_line.toString() + "  Tcp.serve")
             w.emit("_tcp_serve(")
             if args.len > 0
                 genExpr(args.at(0).value)
@@ -20468,6 +20512,7 @@ struct Generator
             w.emit(")")
             return
         if name == "ThreadPool"
+            recordThreadSpawn(source_file + ":" + w.cur_line.toString() + "  ThreadPool")
             w.emit("_thread_pool_create(")
             if val_args.len > 0
                 genExpr(val_args.at(0).value)

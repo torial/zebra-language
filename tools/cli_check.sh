@@ -43,6 +43,8 @@ set -u
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
+# Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26): use it when the .exe is absent.
+[ -x "$ZEBRA" ] || [ ! -x "${ZEBRA%.exe}" ] || ZEBRA="${ZEBRA%.exe}"
 # PER-RUN SCRATCH, and this is not hygiene -- it is a correctness fix. The path used to
 # be fixed, so two concurrent runs wrote the SAME .out/.err and read each other's
 # results. Observed 2026-09-01: a second invocation while one was in flight produced
@@ -497,6 +499,17 @@ chk "\`--out\` outside \`zebra diagnostics\` is refused" \
 run diagnostics hello.zbr --out zz_diag.json
 chk "...while \`zebra diagnostics F --out J\` still writes J" \
     "$([ "$RC" = 0 ] && [ -f "$W/zz_diag.json" ] && echo 0 || echo 1)" "exit=$RC"
+# `--single-threaded` promises no threads (2026-09-26). A call that starts one is refused
+# in Zebra's words at the USER's line -- it used to be Zig's @compileError from inside
+# std/Thread.zig. Control: a threadless program still builds and runs with the flag.
+printf 'def main()\n    var p = ThreadPool(2)\n    p.wait()\n    print("x")\n' > "$W/zz_st.zbr"
+run --single-threaded -c zz_st.zbr
+chk "\`--single-threaded\` refuses a thread start at the user's line (zz_st.zbr:2)" \
+    "$([ "$RC" != 0 ] && case "$ERR" in *"zz_st.zbr:2"*"starts a thread"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+run --single-threaded hello.zbr
+chk "...and a program with no threads still builds and runs under it" \
+    "$([ "$RC" = 0 ] && echo 0 || echo 1)" "exit=$RC"
 # Every flag the compiler accepts is SHOWN by --help (six were accepted, documented in
 # QUICKSTART, and absent from the usage text until 2026-09-26).
 run --help

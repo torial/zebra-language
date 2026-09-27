@@ -61,6 +61,8 @@ cd "$REPO"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
+# Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26): use it when the .exe is absent.
+[ -x "$ZEBRA" ] || [ ! -x "${ZEBRA%.exe}" ] || ZEBRA="${ZEBRA%.exe}"
 DIR="$REPO/test/boundary"
 
 ONLY=""

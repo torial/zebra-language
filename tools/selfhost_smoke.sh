@@ -1993,6 +1993,12 @@ smoke_run test/bug438_struct_field_mutator_test.zbr "bug438: OK"
 # BUG-454: HashMap/Set built by constructor, annotation, Set and class field all use the
 # key's cue hash/equals (one comptime selector); @derive(Hash)-only keys stay by-value.
 smoke_run test/bug454_hashmap_ctor_cues_test.zbr "bug454: OK"
+# BUG-455: a user struct method named like a read-only builtin that mutates self.
+smoke_run test/bug455_struct_method_named_like_builtin_test.zbr "bug455: OK"
+# BUG-453 (rest): a cue that calls a field method -- on a local, as a map/set key, sorting.
+smoke_run test/bug453_cue_field_call_map_key_test.zbr "bug453: OK"
+# BUG-448: split/lines are List(str); `.at(i).toInt()` on an untyped local.
+smoke_run test/bug448_split_at_toint_test.zbr "bug448: OK"
 # BUG-456: a bare `on opt as x` in a branch on a union is refused, naming `on Ty.opt`.
 smoke_tc_fail test/bug456_bare_variant_arm_fail.zbr "bug456_bare_variant_arm_fail.zbr:12:9: error: write the variant as \`on Ty.opt\`"
 smoke_tc_fail test/bug411_indent_error_fail.zbr "bug411_indent_error_fail.zbr:6:7: error: indentation is 6 space(s)"

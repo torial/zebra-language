@@ -61,6 +61,9 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 SMOKE = REPO / "tools" / "selfhost_smoke.sh"
 BASELINE = REPO / "tools" / "diag_column_baseline.txt"
 ZEBRA = REPO / "zig-out" / "bin" / "zebra.exe"
+# Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26).
+if not ZEBRA.exists() and ZEBRA.with_suffix("").exists():
+    ZEBRA = ZEBRA.with_suffix("")
 
 # Fewer than this means the registration regex stopped matching -- blame the extractor,
 # never the compiler under test.

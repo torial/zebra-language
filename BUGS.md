@@ -46,81 +46,11 @@
 
 ---
 
-### BUG-455: a struct method named `count`, `get`, `at`, `len`… that mutates `self` fails from a local — OPEN (found 2026-09-26)
-
-```zebra
-struct Counter
-    var n: int
-    def count(): int
-        .n += 1
-        return .n
-
-def main()
-    var c = Counter(n: 0)
-    print(c.count())
-```
-Zig: "expected type '*T', found '*const T'". Whether a local is emitted `var` is decided
-from the METHOD NAME (`isReadOnlyMethod`, CgHelpers.zbr -- a list of ~70 names from the
-builtin types: `count`, `get`, `at`, `len`, `contains`, `toString`, `hash`, `sum`…), so a
-user method with one of those names is assumed not to mutate, while the method itself
-takes `*Owner`. **Fix direction:** when the receiver's type is a user struct, use the
-method's own receiver decision (the same one `genMethod` makes), not its name.
-
----
-
-### BUG-453: a struct method whose body calls anything gets a mutable receiver — a `cue hash` then fails from a local and as a HashMap key — OPEN (found 2026-09-26)
-
-```zebra
-struct Money
-    var amount: float
-    cue hash(): int
-        return (.amount * 100.0).toInt()
-    cue equals(o: Money): bool
-        return .amount == o.amount
-
-def main()
-    var m = Money(amount: 2.5)
-    print(m.hash())     # Zig: expected type '*Money', found '*const Money'
-```
-`methodMutatesSelf` (CgHelpers.zbr) treats ANY call in the body as possibly mutating
-`self` (BUG-421 exempted `Math.*`), so `hash` is emitted `self: *Money`; the caller's
-local is `const` because `hash` is on the read-only NAME list (BUG-455's mechanism), and
-`_zbr_CueCtx` calls `k.hash()` on a by-value key, which cannot give a `*Money` either. So a
-hand-written `cue hash` with any call in it is unusable as a HashMap key. **Fix
-direction:** a call whose receiver is an rvalue (`(a * b).toInt()`, a literal, a cast)
-cannot reach `self` -- exempt it the way BUG-421 exempted `Math.*`; and the cues that are
-read-only by contract (`hash`, `equals`, `toString`, `compare`) should get `*const`, with
-an assignment to a field in one refused by name.
-
-<!-- bug-open-ok: the rvalue-receiver half is fixed (2026-09-26); the read-only-cue half is open -->
-**Half fixed 2026-09-26.** A method call on an RVALUE (`(.amount * 100.0).toInt()`, a
-literal, a negation) no longer forces a mutable receiver (`isRvalueReceiver`,
-CgHelpers.exprHasSelfCall), so the example above now works; fixture
-`bug453_rvalue_receiver_test`. **Still open:** a cue body that calls a field or sibling
-method (`return .amount.toInt()`) still gets `*Owner`, and a by-value key in
-`_zbr_CueCtx` cannot call it. The fix direction above (read-only cues get `*const`) stands.
-
----
-
 ### BUG-449: `HttpRequest` cannot be constructed from Zebra — OPEN (found 2026-09-25)
 
 `var r = HttpRequest()` -> "undefined name: 'HttpRequest'". A clean refusal, but it means a
 router written as `def route(req: HttpRequest): HttpResponse` (the book's Project 2) cannot be
 unit-tested without starting a server. A limitation, not a leak.
-
----
-
-### BUG-448: an untyped local from `s.split(...).at(i)` is mistyped; `.toInt()` on it fails inside Zig — OPEN (found 2026-09-25)
-
-```zebra
-def main()
-    var p = "/a/b/42"
-    var idText = p.split("/").at(3)
-    print(idText.toInt() + 1)
-```
-Zig: "expected float type, found 'str'" (codegen emits `@intFromFloat`). Annotating the local
-`: str` avoids it; the book's Project 2 carries that annotation with a comment for this reason.
-The leakgen class: the front end accepts, Zig refuses code the user never wrote.
 
 ---
 

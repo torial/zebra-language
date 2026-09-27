@@ -1,0 +1,35 @@
+# BUG-455: a struct method NAMED like a read-only builtin (`count`, `get`, `at`) that
+# mutates self was taken for the builtin: the caller's local was emitted const and Zig
+# refused the call ("expected type '*T', found '*const T'"). The caller now follows the
+# method's own receiver. Controls: a same-named method that does NOT mutate keeps a const
+# local (a needless `var` is Zig's "never mutated"), and a class is unaffected.
+struct Counter
+    var n: int
+    def count(): int
+        .n += 1
+        return .n
+    def get(): int
+        return .n
+
+struct Reader
+    var n: int
+    def count(): int
+        return .n + 100
+
+class Box
+    var n: int = 0
+    def count(): int
+        .n += 1
+        return .n
+
+def main()
+    var c = Counter(n: 0)
+    var a = c.count()
+    var b = c.count()
+    var r = Reader(n: 1)
+    var x = Box()
+    x.count()
+    if a == 1 and b == 2 and c.get() == 2 and r.count() == 101 and x.count() == 2
+        print("bug455: OK")
+    else
+        print("bug455: WRONG")
