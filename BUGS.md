@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-465. Next new bug: BUG-466.**
+**Last bug number generated: BUG-469. Next new bug: BUG-470.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,65 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-466: `f()?` inside `main()` reaches Zig ("expected type 'void', found 'anyerror'") — OPEN (found 2026-09-27)
+
+```zebra
+def f(): int throws
+    raise "x"
+
+def main()
+    print(f()?)
+```
+In any other function `?` quietly makes the function throwing (`def g(): int` with `f()?` in
+it works). `main` cannot throw today, so the emit is a type error inside Zig. Either let
+`main` propagate (emit `!void`; an uncaught error exits non-zero with its message -- Rust's
+`main() -> Result`) or refuse `?` in `main` naming the method-level `catch`. Found writing a
+Lisp interpreter in Zebra (free time; fieldnotes on the wiki shelf).
+
+---
+
+### BUG-467: method-level `catch` does not catch a bare call to a void `throws` function — OPEN (found 2026-09-27)
+
+```zebra
+def f() throws
+    raise "boom"
+
+def main()
+    f()                      # zig: error union is ignored
+catch |e|
+    print("caught: ${e.message}")
+```
+The QUICKSTART form works when the call's value is bound (`var r = f()` with `f(): int
+throws` prints `caught: boom`); a statement call to a VOID throwing function is not routed
+to the catch. Same in a non-main function. Same session as BUG-466.
+
+---
+
+### BUG-468: a `--release` binary dies SILENTLY on stack overflow — OPEN, a proposal (found 2026-09-27)
+
+A Debug build prints `Stack overflow (no address available)` and exits 1; the same program
+built with `--release` (ReleaseFast) prints nothing and exits with the raw OS status (127
+under Git Bash). ReleaseFast turns off Zig's crash handler. Proposal: the emitted root sets
+`pub const std_options: std.Options = .{ .enable_segfault_handler = true };` so a shipped
+binary still says what killed it (UNGIT "nothing withheld"); cost is the handler install at
+startup. Sean's call, since `--release` = ReleaseFast was his direction (2026-07-30).
+Repro: a recursive interpreter 10,000 frames deep (the Lisp above).
+
+---
+
+### BUG-469: `Timer()` (not `Timer.start()`) reaches Zig as an undeclared identifier — OPEN (found 2026-09-27)
+
+```zebra
+var t = Timer()           # zig: use of undeclared identifier 'Timer'
+print(t.elapsedMs())      # not refused either -- the receiver was never typed
+```
+BUG-446 accepts `Timer` as a TYPE name (it is one); calling it as a constructor is not
+handled or refused, and because `t` is then untyped, `timerMethodKnown` never sees the
+misspelled method. Refuse with "a Timer is made with `Timer.start()`" -- and check the other
+runtime object types for the same bare-constructor gap.
 
 ---
 
