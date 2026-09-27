@@ -18,11 +18,72 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # LINUX (added 2026-09-26, Sean's go-ahead). The note on the Windows job below said a
+  # Linux run would be "an untested configuration reporting on an untested
+  # configuration" -- true when it was written, and no longer: every release ships a
+  # Linux build, and the two platform bugs of 2026-09-26 were BOTH found on Linux by
+  # accident (BUG-450, `use` resolving case-insensitively on Windows only; the GTK
+  # Scintilla startup crash). This job is the place those are meant to be found instead.
+  # Separate from the Windows job so a red here names its platform.
+  quick-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Cache Zig
+        id: cache-zig-linux
+        uses: actions/cache@v4
+        with:
+          path: zig-toolchain
+          key: zig-0.16.0-x86_64-linux
+
+      - name: Download Zig 0.16.0 (checksum-pinned, as in release.yml)
+        if: steps.cache-zig-linux.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          url=https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
+          want=70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
+          curl -fsSL "$url" -o zig.tar.xz
+          got=$(sha256sum zig.tar.xz | cut -d' ' -f1)
+          [ "$got" = "$want" ] || { echo "::error::Zig checksum mismatch: got $got want $want"; exit 1; }
+          tar xf zig.tar.xz
+          mv zig-x86_64-linux-0.16.0 zig-toolchain
+
+      - name: Put Zig on PATH and prove it runs
+        run: |
+          set -euo pipefail
+          echo "$GITHUB_WORKSPACE/zig-toolchain" >> "$GITHUB_PATH"
+          v="$("$GITHUB_WORKSPACE/zig-toolchain/zig" version)"
+          echo "zig version: $v"
+          [ "$v" = "0.16.0" ] || { echo "::error::expected zig 0.16.0, got '$v'"; exit 1; }
+
+      - name: Build
+        run: zig build
+
+      - name: Doctor (tree trustworthy?)
+        run: bash tools/doctor.sh
+
+      - name: Gates (QUICK tier)
+        env:
+          GATES_LOG_DIR: ${{ github.workspace }}/gate-logs
+          CLI_CHECK_TMO: "300"
+        run: bash tools/gates.sh
+
+      - name: Keep failing gates' full output
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gate-logs-${{ github.job }}-${{ github.run_id }}
+          path: gate-logs/
+          if-no-files-found: ignore
+
   quick:
-    # Windows is the ONLY tested platform for this project (see the 0.9-beta
-    # checklist, section F). Running the gates on ubuntu would not be a cheaper
-    # version of this job -- it would be an untested configuration reporting on
-    # an untested configuration.
+    # Windows was the only tested platform until 2026-09-26 (see quick-linux above).
     runs-on: windows-latest
     timeout-minutes: 45
 
