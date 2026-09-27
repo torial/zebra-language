@@ -4766,6 +4766,11 @@ pub fn _zbr_list_join(sep: []const u8, items: anytype) []const u8 {
     }
     return out.items;
 }
+fn _zbr_show_float(sb: *std.ArrayList(u8), x: anytype) !void {
+    try _zbr_show_fmt(sb, "{d}", .{x});
+    if (std.math.isFinite(x) and @floor(x) == x) try sb.appendSlice(_allocator, ".0");
+}
+
 pub fn _zbr_show(x: anytype) []const u8 {
     var sb: std.ArrayList(u8) = .empty;
     _zbr_show_into(&sb, x, false) catch return "?";
@@ -4798,7 +4803,13 @@ fn _zbr_show_into(sb: *std.ArrayList(u8), x: anytype, quote_str: bool) !void {
         .@"enum" => try sb.appendSlice(_allocator, @tagName(x)),
         .bool => try sb.appendSlice(_allocator, if (x) "true" else "false"),
         .int, .comptime_int => try _zbr_show_fmt(sb, "{d}", .{x}),
-        .float, .comptime_float => try _zbr_show_fmt(sb, "{d}", .{x}),
+        // A whole float prints WITH `.0` (Sean, 2026-09-27): a value whose type is float
+        // must not print like an int. Non-whole values keep `{d}`'s shortest round-trip
+        // form; nan/inf are left alone. A comptime_float (a folded `1.0 / 3.0`) is
+        // taken as f64 first, or `{d}` prints its exact 34-digit expansion (BUG-414);
+        // an f32 stays f32, since widening shows its binary error (`0.1` -> 0.100000001...).
+        .float => try _zbr_show_float(sb, x),
+        .comptime_float => try _zbr_show_float(sb, @as(f64, x)),
         .pointer => |p| {
             if (p.size == .one) {
                 const C = p.child;

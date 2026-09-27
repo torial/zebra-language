@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Output change: a whole float prints with `.0`** -- `print(6.0)` is `6.0`, not `6`
+  (Sean's decision, measured first: 10 of 466 corpus programs print differently -- the
+  pre-decision measurement's 7 plus three reached through `.toString()` -- and every changed
+  line is a whole float gaining `.0`). Applies to `print`, `${...}`, `.toString()`, containers,
+  `@derive(Debug)` and `raise` details; non-whole floats, nan/inf and explicit format specs
+  (`${x:.2}`) are unchanged. `test/boundary/float_whole_print_probe` was written from the
+  rule before the change.
 - **BREAKING-ish: a type name declared nowhere is refused in the front end (BUG-446).**
   `def f(x: Foo)`, `List(Foo)`, `var x: Foo` with `Foo` in no module, no `use`d module and
   no type parameter in scope used to pass `-c` and fail inside Zig ("use of undeclared

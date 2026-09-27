@@ -1,0 +1,31 @@
+# @boundary runs
+#
+# A whole-valued float prints WITH `.0` (Sean's decision 2026-09-27, measured in
+# docs/archive/FINDINGS.md): a value whose type is float must not print like an int.
+# Non-whole values keep the shortest round-trip form; nan/inf are unchanged; an explicit
+# format spec (`:.2`) is the user's choice and wins. The expectation below was written
+# from that rule, BEFORE the compiler was changed.
+
+struct P
+    var q: float
+
+def main()
+    print(6.0)
+    print(2.5)
+    print(-3.0)
+    print(0.1)
+    var x: float = 3
+    print(x)
+    print("v=${6.0} w=${2.5}")
+    print([1.0, 2.5])
+    print((6.0).toString())
+    print(Math.sqrt(16.0))
+    var h: float32 = 2
+    print(h)
+    print(1e20)
+    print("${6.0:.2}")
+    print(1 + 2.0)
+    print(7 / 2)
+    var o: float? = 4.0
+    print(o)
+    print(P(q: 5.0))

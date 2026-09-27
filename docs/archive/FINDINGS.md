@@ -1000,7 +1000,10 @@ for the map.
 | [NEXT_STEPS_to_1.0.md](../NEXT_STEPS_to_1.0.md) | what is next, before the freeze? |
 | [NEXT_STEPS_post_1.0.md](../NEXT_STEPS_post_1.0.md) | deliberately deferred past 1.0 |
 
-### Printing a whole float: `6` or `6.0`? — impact MEASURED 2026-09-27, decision open (Sean)
+### Printing a whole float: `6` or `6.0`? — impact MEASURED 2026-09-27, DECIDED `6.0` (Sean, same day)
+
+**Decision:** `6.0`, landed 2026-09-27 before rc5 -- the probe `test/boundary/float_whole_print_probe`
+was written from the rule first; see CHANGELOG. The measurement below is what it was decided on.
 
 Today `print(6.0)` prints `6`: floats go through Zig's `{d}`, the shortest round-trip
 form, which drops `.0`. Python, Rust (`{:?}`), Java, Kotlin and C# print `6.0`; Go and

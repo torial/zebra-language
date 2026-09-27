@@ -4673,7 +4673,7 @@ struct Generator
                 if .isStrFieldType(fld.type_)
                     fmt_str = fmt_str + "{s}"
                 else if .isFloatFieldType(fld.type_)
-                    fmt_str = fmt_str + "{d}"
+                    fmt_str = fmt_str + "{s}"                 # through _zbr_show: `6.0`
                 else
                     fmt_str = fmt_str + "{}"
                 field_count = field_count + 1
@@ -4690,8 +4690,13 @@ struct Generator
                 if not first_arg
                     w.emit(", ")
                 first_arg = false
+                var dv_float = .isFloatFieldType(fld.type_) and not .isStrFieldType(fld.type_)
+                if dv_float
+                    w.emit("_zbr_show(")
                 w.emit("self.")
                 emitName(fld.name)                          # BUG-281 A
+                if dv_float
+                    w.emit(")")
         w.emit("}) catch @panic(\"OOM\");\n")
         writeIndent()
         w.emit("}\n")
@@ -10995,20 +11000,15 @@ struct Generator
             if parg is Expr.ident as pid
                 if isNilNarrowed(pid.name)
                     needs_unwrap = false
+            # Floats print through _zbr_show too (2026-09-27: whole floats show `6.0`), and
+            # _zbr_show takes a comptime_float as f64 -- which is where BUG-414's guard
+            # lives now (a folded `1.0 / 3.0` printed its exact 34-digit expansion).
             var show_wrap: bool = .printFmtSpec(parg) == "{show}"
-            # BUG-414: a comptime float expression (`1.0 / 3.0`, `0.1 + 0.2`) printed
-            # its EXACT decimal expansion -- 34 digits -- because Zig folded it to a
-            # comptime_float. Force f64 so `{d}` prints the shortest round-trip form.
-            var f64_wrap: bool = (not show_wrap) and .printFmtSpec(parg) == "{d}" and isFloatTyped(parg)
             if show_wrap
                 w.emit("_zbr_show(")
-            if f64_wrap
-                w.emit("@as(f64, ")
             genExpr(parg)
             if needs_unwrap and not show_wrap
                 w.emit(".?")
-            if f64_wrap
-                w.emit(")")
             if show_wrap
                 w.emit(")")
             ai2 += 1
@@ -11194,7 +11194,7 @@ struct Generator
                 on Type_.bool_
                     return "{}"
                 on Type_.float_
-                    return "{d}"
+                    return "{show}"             # whole floats print `6.0` (2026-09-27)
                 on Type_.char_
                     return "{u}"
                 on Type_.int_n as _
@@ -11202,7 +11202,7 @@ struct Generator
                 on Type_.uint_n as _
                     return "{}"
                 on Type_.float_n as _
-                    return "{d}"
+                    return "{show}"
                 else
                     return "{any}"
         if .infer_ctx != nil
@@ -11226,7 +11226,7 @@ struct Generator
                 on Type_.bool_
                     return "{}"
                 on Type_.float_
-                    return "{d}"
+                    return "{show}"             # whole floats print `6.0` (2026-09-27)
                 on Type_.char_
                     return "{u}"
                 on Type_.int_n as _
@@ -11234,7 +11234,7 @@ struct Generator
                 on Type_.uint_n as _
                     return "{}"
                 on Type_.float_n as _
-                    return "{d}"
+                    return "{show}"
                 on Type_.unknown_
                     pass  # fall through to heuristic when type is undetermined
                 on Type_.context_dependent
@@ -11308,11 +11308,14 @@ struct Generator
                     pass
             if is_prim
                 var fmt: str = "{}"
+                var det_float = false
                 branch det_t
                     on Type_.float_
-                        fmt = "{d}"
+                        fmt = "{s}"
+                        det_float = true
                     on Type_.float_n as _
-                        fmt = "{d}"
+                        fmt = "{s}"
+                        det_float = true
                     on Type_.char_
                         fmt = "{u}"
                     else
@@ -11322,7 +11325,11 @@ struct Generator
                 w.emit(": []const u8 = std.fmt.allocPrint(_allocator, \"")
                 w.emit(fmt)
                 w.emit("\", .{")
+                if det_float
+                    w.emit("_zbr_show(")
                 genExpr(det)
+                if det_float
+                    w.emit(")")
                 w.emit("}) catch @panic(\"OOM\");\n")
                 writeIndent()
                 w.emit("  const _rdet_ptr_")
@@ -17002,14 +17009,23 @@ struct Generator
                 # Char receivers (u21 codepoints from chars() loop) need codepoint encode.
                 # Int/other receivers need decimal string via allocPrint.
                 var is_char_recv = false
+                var is_float_recv = false
                 if .infer_ctx != nil
                     var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                     branch recv_t
                         on Type_.char_
                             is_char_recv = true
+                        on Type_.float_
+                            is_float_recv = true
+                        on Type_.float_n as _
+                            is_float_recv = true
                         else
                             pass
-                if is_char_recv
+                if is_float_recv
+                    w.emit("_zbr_show(")                # `6.0`, the same text print shows
+                    genExpr(m.object)
+                    w.emit(")")
+                else if is_char_recv
                     w.emit("(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(")
                     genExpr(m.object)
                     w.emit("), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic(\"OOM\"); })")

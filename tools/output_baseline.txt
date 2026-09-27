@@ -30,6 +30,14 @@ true
 false
 false
 true
+=== arena_concurrency_hazard_test sha1=f0f4c90bbeca ===
+Segmentation fault at address <ADDR>
+???:?:?: <ADDR> in ??? (arena_concurrency_hazard_test.zig.fast.exe)
+???:?:?: <ADDR> in ??? (???)
+???:?:?: <ADDR> in ??? (???)
+???:?:?: <ADDR> in ??? (???)
+???:?:?: <ADDR> in ??? (???)
+???:?:?: <ADDR> in ??? (???)
 === arena_scope_test sha1=5008d5d284cf ===
 allocate Arena() scope OK
 === arg_count_ok_test sha1=5517f5b514c4 ===
@@ -151,8 +159,8 @@ BUG-121 <<- outside arena: OK
 bug123: OK
 === bug124_boxed_nilable_ctor_test sha1=a698d33f83bf ===
 bug124: OK
-=== bug168_crossmod_prim_return_test sha1=97642600109c ===
-hi zebra!|pre-hi x|hi ahi b|42|5
+=== bug168_crossmod_prim_return_test sha1=971fcf7f9c22 ===
+hi zebra!|pre-hi x|hi ahi b|42|5.0
 bug168: OK
 === bug172_list_char_test sha1=1e91a24fdc6b ===
 bug172: OK
@@ -505,15 +513,15 @@ sb=ok
 === bug374_nil_arm_ternary_test sha1=7b5a56ba5a1f ===
 1 2 yes 1.5
 c is nil
-=== bug375_numeric_conversion_division_test sha1=2a72fe838805 ===
+=== bug375_numeric_conversion_division_test sha1=4ab40ee24454 ===
 f=1.5
 q=1.5
-t=7 s=3|7
+t=7 s=3|7.0
 h=true
 idiv=1
-=== bug379_optional_unwrap_forms_test sha1=ed401e9d19a9 ===
+=== bug379_optional_unwrap_forms_test sha1=6a9433e6f77d ===
 n=2
-2 7 2 1 1
+2 7 2 1 1.0
 === bug381_container_property_ok_test sha1=155f4f0388f6 ===
 3 3 3 1 9 1
 === bug385_dollar_escape_test sha1=877154ecf609 ===
@@ -527,14 +535,14 @@ ok
 === bug387_lines_semantics_test sha1=7301256839f8 ===
 2 3 [a||c] 0 1 2
 2
-=== bug388_iface_param_direct_test sha1=300a4b738635 ===
-12
-9
-3
-held 12 got 4
-1
-16
-total=13
+=== bug388_iface_param_direct_test sha1=26de28220b1c ===
+12.0
+9.0
+3.0
+held 12.0 got 4.0
+1.0
+16.0
+total=13.0
 === bug389_395_shapes_ok_test sha1=a9d8b32c0913 ===
 6 yes !
 === bug392_stdlib_str_returns_test sha1=851b169462cd ===
@@ -565,12 +573,12 @@ green [1, 2] ["a", "b"] {a: 1} {3} nil x [[1], [2, 3]]
 1
 a 1
 7
-=== bug408_show_structs_tuples_unions_test sha1=a94281430fbc ===
+=== bug408_show_structs_tuples_unions_test sha1=f742f86ad8f3 ===
 Pt(3) [Pt(1), Pt(2)]
 Raw{y: 1, name: "n"}
 P{x: 1, q: 2.5} [P{x: 1, q: 2.5}, P{x: 3, q: 2.5}]
 (1, "a") (1, "a")
-circle(2) dot
+circle(2.0) dot
 [3, 2, 1] ["b", "a"]
 === bug412_str_plus_eq_test sha1=cf1c53883eed ===
 abc x|y|
@@ -595,12 +603,12 @@ hello  world
 1 nil ["a", "b"]
 nil
 seven nil [7]
-=== bug420_423_newcomer_numbers_test sha1=9694947c1253 ===
-1000
+=== bug420_423_newcomer_numbers_test sha1=5e025d3f5c78 ===
+1000.0
 0.005
 true
 1.4142135623730951
-5
+5.0
 al+bo+cy
 3,2,1
 1.5 | 2.5
@@ -851,11 +859,11 @@ true
 false
 === file_rename_test sha1=f30ac3912636 ===
 file_rename OK
-=== float_suffix_test sha1=c64dfa219e69 ===
+=== float_suffix_test sha1=4348444d1bf5 ===
 1.5
 2.5
 0.5
-3
+3.0
 === fn_ref_test sha1=86db991de7f9 ===
 fn_ref_test: all OK
 === fn_type_annotation_test sha1=5cd26b8ef565 ===
@@ -915,11 +923,11 @@ fuzz_f3: OK
 f=2.5
 xs=[7]
 fuzz_f4: OK
-=== fuzz_f6_unused_capture_test sha1=5a2f147a8a52 ===
+=== fuzz_f6_unused_capture_test sha1=8059a034b5f9 ===
 main hit
 helper hit
 no self here
-n=20 poke=3 lvl=3
+n=20 poke=3 lvl=3.0
 fuzz_f6: OK
 === fuzz_f7_precedence_test sha1=9526df5573f1 ===
 a=-3 b=12 c=14
@@ -1040,10 +1048,10 @@ bool
 ref
 ref
 hostKind: OK
-=== if_is_capture_test sha1=a33813481b11 ===
+=== if_is_capture_test sha1=152a17f04f0e ===
 3.14
 is rect
-10
+10.0
 true
 false
 7
@@ -1193,15 +1201,15 @@ All log tests passed.
 loop-continue-break: OK
 === loopvar_types_test sha1=c7846db0867d ===
 loopvar_types: OK
-=== lowlevel_smoke_test sha1=7dfed2f1b037 ===
+=== lowlevel_smoke_test sha1=89303224f356 ===
 [gui] text: inside group
 [gui] sameLine
 [gui] text: after sameLine
-[gui] text: win pos: 0 0
-[gui] text: win size: 800 600
-[gui] text: cursor: 0 0
-[gui] text: mouse: 0 0
-[gui] text: pos.0=0 pos.1=0
+[gui] text: win pos: 0.0 0.0
+[gui] text: win size: 800.0 600.0
+[gui] text: cursor: 0.0 0.0
+[gui] text: mouse: 0.0 0.0
+[gui] text: pos.0=0.0 pos.1=0.0
 === marker_struct_test sha1=4c0e64204354 ===
 marker: OK
 === math_test sha1=dc1eff91daca ===

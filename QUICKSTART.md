@@ -382,6 +382,12 @@ Suffixes set the literal's type: `_u` is `uint`, `_u32` is `uint32`, and a bare 
 `3.14`, `1.0`, and scientific notation — `1e3`, `2.5e-3`, `6.02e+23` — are floats
 (BUG-420). `7 / 2` is `3`; make either operand a float (`7.0 / 2`) for `3.5`.
 
+**A whole float prints with `.0`** (2026-09-27): `print(6.0)`, `"${x}"`, `x.toString()`,
+a float in a list or struct, and `@derive(Debug)` all show `6.0`, so a float never prints
+like an int -- `print(1 + 2.0)` is `3.0`. Other values print in the shortest form that reads
+back as the same number (`2.5`, `0.1`, `1.0 / 3.0` is `0.3333333333333333`); `nan` and `inf`
+print as they are. An explicit format spec wins: `"${x:.2}"` is `6.00`.
+
 ### §3.1c Compound assignment
 
 All twelve, on any type the underlying operator accepts:
