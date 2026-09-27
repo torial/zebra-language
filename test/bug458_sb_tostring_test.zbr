@@ -1,0 +1,21 @@
+# BUG-458: `sb.toString()` is on StringBuilder's accepted-method list (the front end
+# admits it) but had no codegen arm, so it fell through to the generic printer and
+# `print(sb.toString())` showed `.{ .items = { 111, 107 }, .capacity = 131 }`. It is
+# build() -- non-consuming, the builder keeps its contents.
+class Named
+    var name: str = "n"
+    cue toString(): str
+        return "Named(" + .name + ")"
+
+def main()
+    var sb = StringBuilder()
+    sb.append("ok")
+    print(sb.toString())
+    var sb2: StringBuilder = StringBuilder()
+    sb2.append("a")
+    var s = sb2.toString()
+    sb2.append("b")
+    print(s + " " + sb2.toString())
+    var nm = Named()
+    print(nm.toString())
+    print("bug458: OK")

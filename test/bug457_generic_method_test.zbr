@@ -1,0 +1,28 @@
+# BUG-457: a generic METHOD -- `def identity(T)(x: T)` inside a class -- called with its
+# type argument. Before the fix both shapes reached Zig verbatim: the static call as
+# `Utils.identity(int)(42)` ("use of undeclared identifier 'int'"), the instance call
+# with `comptime T` emitted BEFORE `self`, so Zig did not treat it as a method.
+class Utils
+    static
+        def identity(T)(value: T): T
+            return value
+        def firstOf(T)(a: T, b: T, c: T): T
+            return a
+
+class Box
+    var n: int = 5
+    def wrap(T)(v: T): T
+        return v
+    def plus(T)(v: T): int
+        return .n + 1
+
+def main()
+    var x = Utils.identity(int)(42)
+    print(x)
+    print(Utils.identity(str)("hello"))
+    print(Utils.firstOf(int)(1, 2, 3))
+    var b = Box()
+    print(b.wrap(int)(7))
+    print(b.wrap(str)("boxed"))
+    print(b.plus(float)(1.5))
+    print("bug457: OK")

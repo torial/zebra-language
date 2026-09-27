@@ -1,0 +1,31 @@
+# BUG-446 positive control: every way a type name can legitimately be in scope must
+# still be accepted -- a class, an enum, a type parameter of a generic function and of a
+# generic class, a nested generic, a sized int, a runtime object type.
+class Box(T)
+    var item: T
+    cue init(item: T)
+        .item = item
+    def get(): T
+        return .item
+
+enum Color
+    red
+    green
+
+def firstItem(T)(items: List(T)): T
+    return items.at(0)
+
+def main()
+    var b: Box(int) = Box(int)(3)
+    var c: Color = Color.green
+    var m: HashMap(str, List(int)) = HashMap(str, List(int))()
+    var small: int(8) = 7
+    var sb: StringBuilder = StringBuilder()
+    sb.append("ok")
+    m.set("a", [1, 2])
+    print(b.get())
+    print(c == Color.green)
+    print(firstItem(int)([9, 8]))
+    print(small)
+    print(sb.toString())
+    print("bug446: OK")

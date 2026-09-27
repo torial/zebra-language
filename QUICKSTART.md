@@ -1858,6 +1858,28 @@ var top = s.pop()
   (2026-09-16): `SortedList(Plain)()` is refused unless `Plain implements Comparable(Plain)`,
   and a primitive argument is refused by name.
 
+### Generic functions and methods
+
+A function or method takes its type parameters in a first parameter list, and the caller
+passes the type explicitly -- there is no inference from the arguments:
+
+```zebra
+def firstItem(T)(items: List(T)): T
+    return items.at(0)
+
+class Utils
+    static
+        def identity(T)(value: T): T
+            return value
+
+print(firstItem(int)([9, 8]))          # 9
+print(Utils.identity(str)("hi"))       # hi
+```
+
+An instance method is the same (`b.wrap(int)(7)`). A type name used without being
+declared -- `def total(items: List(T)): int` with no `(T)` -- is refused as
+`unknown type 'T'`, with this spelling as the hint (BUG-446).
+
 ### Generic interfaces
 
 An interface can take type parameters (2026-09-16); the implementing class passes the

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-456. Next new bug: BUG-457.**
+**Last bug number generated: BUG-458. Next new bug: BUG-459.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -51,25 +51,6 @@
 `var r = HttpRequest()` -> "undefined name: 'HttpRequest'". A clean refusal, but it means a
 router written as `def route(req: HttpRequest): HttpResponse` (the book's Project 2) cannot be
 unit-tested without starting a server. A limitation, not a leak.
-
----
-
-### BUG-446: a free generic function over `List(T)` passes the front end and fails inside Zig — OPEN (found 2026-09-25)
-
-```zebra
-def total(items: List(T)): int
-    return items.len
-```
-Zig: "use of undeclared identifier 'T'". Either support free generic functions or refuse them
-in the front end naming the supported form (a generic class). Found in the book's ch13
-"common mistakes" section, which was left unrewritten for this reason.
-
-**Wider than filed (2026-09-26):** the front end validates NO type name. `def f(x: Foo)`,
-`def f(xs: List(Foo))` and `var x: Foo = nil`, with `Foo` declared nowhere, all pass `-c`
-and fail inside Zig. So the fix is not a generic-function rule but a known-types check --
-and it needs a complete oracle (this module's types, every `use`d module's, the stdlib
-object types, generic parameters in scope, `zig"..."`/`.zig`-module types) before it can
-refuse anything, or it will refuse working programs. Not straightforward for that reason.
 
 ---
 

@@ -23,6 +23,16 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **BREAKING-ish: a type name declared nowhere is refused in the front end (BUG-446).**
+  `def f(x: Foo)`, `List(Foo)`, `var x: Foo` with `Foo` in no module, no `use`d module and
+  no type parameter in scope used to pass `-c` and fail inside Zig ("use of undeclared
+  identifier"); now it is `unknown type 'Foo'` at your line, with a near-miss hint, and for
+  a single capital letter the generic-function spelling (`def f(T)(x: T)`, called
+  `f(int)(x)`). Runtime and `zig"..."` types are still accepted.
+- **Generic methods work (BUG-457):** `Utils.identity(int)(42)` on a static generic method
+  and `b.wrap(int)(7)` on an instance one, the way a top-level `identity(int)(42)` already did.
+- **`sb.toString()` returns the text (BUG-458)**, the same as `sb.build()`; it printed the
+  builder's internal struct.
 - **A struct method named like a builtin (`count`, `get`, `at`...) that mutates `self` works
   from a local (BUG-455)** -- the caller follows the method's own receiver, not its name.
 - **A cue that calls a field method works as a HashMap/Set key, with `<` and in `sort()`

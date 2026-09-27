@@ -2143,6 +2143,14 @@ def rtScanNames(rt_text: str)
 # `_zbr_rt._allocator` — a Zig parse error blamed on the user, or a silent
 # overwrite of the runtime's global on assignment). Returns " " when there is no
 # preamble to read (a bare `-c` outside the repo), which reserves nothing.
+# BUG-446: every PUBLIC runtime name (pub fn / pub const / pub var), space-fenced -- the
+# checker's oracle for stdlib type names, derived from the preamble rather than listed.
+def rtPublicNames(preamble_path: str): str
+    if not File.exists(preamble_path)
+        return ""
+    rtScanNames(rtRuntimeText(File.read(preamble_path)))
+    return " " + _rt_alias_names + " " + _rt_mut_names + " "
+
 def rtReservedNames(preamble_path: str): str
     if not File.exists(preamble_path)
         return " "
@@ -6001,19 +6009,8 @@ struct Generator
             w.emit("pub fn ")
         w.emit(fn_name)
         w.emit("(")
-        # Generic function type params: def identity(T)(x: T): T → pub fn identity(comptime T: type, x: T) T
-        var gfn_tp_count: int = m.type_params.len
-        if gfn_tp_count > 0
-            var gfn_tpi: int = 0
-            while gfn_tpi < gfn_tp_count
-                if gfn_tpi > 0
-                    w.emit(", ")
-                w.emit("comptime ")
-                w.emit(m.type_params.at(gfn_tpi))
-                w.emit(": type")
-                gfn_tpi += 1
-            if has_self or m.params.len > 0
-                w.emit(", ")
+        # BUG-457: `self` goes BEFORE the comptime type params -- Zig treats a fn as a
+        # method only when self is its first parameter (`b.wrap(i64, 7)`).
         if has_self
             # `@pure` forces `*const`; otherwise auto-detect: a method that does not
             # mutate self gets `*const Owner` so it is callable on by-value/const/rvalue
@@ -6037,6 +6034,19 @@ struct Generator
                 else
                     w.emit("self: *")
                 emitTypeName(owner)                         # BUG-281 B
+            if m.type_params.len > 0 or m.params.len > 0
+                w.emit(", ")
+        # Generic function type params: def identity(T)(x: T): T → pub fn identity(comptime T: type, x: T) T
+        var gfn_tp_count: int = m.type_params.len
+        if gfn_tp_count > 0
+            var gfn_tpi: int = 0
+            while gfn_tpi < gfn_tp_count
+                if gfn_tpi > 0
+                    w.emit(", ")
+                w.emit("comptime ")
+                w.emit(m.type_params.at(gfn_tpi))
+                w.emit(": type")
+                gfn_tpi += 1
             if m.params.len > 0
                 w.emit(", ")
         genParamList(m.params, m.stmts)
@@ -14356,6 +14366,36 @@ struct Generator
                         genExpr(va.value)
                     w.emit(")")
                     return
+            # BUG-457: the same shape through a class -- `Utils.identity(int)(42)` ->
+            # `_zbr_ty_Utils.identity(i64, 42)`. Keyed "Class.method" by the checker.
+            # An INSTANCE receiver (`b.wrap(int)(7)`) keys by its inferred class.
+            if gf_inner.callee is Expr.member as gf_mem
+                var gf_cls: str = ""
+                if gf_mem.object is Expr.ident as gf_cid
+                    if .module_types.hasClass(gf_cid.name) or .dep_types.hasClass(gf_cid.name)
+                        gf_cls = gf_cid.name
+                if gf_cls == "" and .infer_ctx != nil
+                    var gf_rt: Type_ = inferExpr(gf_mem.object, .infer_ctx!)
+                    if gf_rt is Type_.named as gf_rn
+                        gf_cls = gf_rn
+                if gf_cls != ""
+                    var gf_key = gf_cls + "." + gf_mem.member
+                    if .module_types.hasGenericFn(gf_key) or .dep_types.hasGenericFn(gf_key)
+                        genExpr(gf_inner.callee)
+                        w.emit("(")
+                        var gm_first = true
+                        for ta in gf_inner.args
+                            if not gm_first
+                                w.emit(", ")
+                            gm_first = false
+                            genTypeArg(ta.value)
+                        for va in c.args
+                            if not gm_first
+                                w.emit(", ")
+                            gm_first = false
+                            genExpr(va.value)
+                        w.emit(")")
+                        return
         # Closure vars: capture-lambda struct instances use .call()
         if c.callee is Expr.ident as cid
             if closure_vars.contains_(cid.name)
@@ -15374,7 +15414,7 @@ struct Generator
                             w.emit("0")
                         w.emit("))) catch @panic(\"OOM\")")
                         return
-                    if mname == "build"
+                    if mname == "build" or mname == "toString"   # BUG-458: toString is build()
                         # BUG-351 (Sean, 2026-09-12): build() is NON-consuming -- the builder keeps
                         # its contents, like C#/Java toString() and Go String(); only Zig's
                         # toOwnedSlice consumes. Copy the bytes out instead of moving them.

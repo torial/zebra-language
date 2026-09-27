@@ -1,0 +1,9 @@
+# BUG-446: a type name that is declared nowhere -- not in this module, not in a `use`d
+# one, not as a type parameter in scope -- is refused by the front end, in Zebra's words,
+# instead of reaching Zig as "use of undeclared identifier". A single capital letter gets
+# the generic-function hint, since that is what a writer of `def f(x: T)` meant.
+def firstItem(items: List(T)): T
+    return items.at(0)
+
+def main()
+    print(firstItem([1, 2, 3]))

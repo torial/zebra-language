@@ -41,7 +41,7 @@ use Parser exposing PNode, PUse, PModule, PClass, fileExistsExact, caseOnlyMatch
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, threadSpawnSites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, addNativeCUse, addNativeLibUse, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, threadSpawnSites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -308,6 +308,7 @@ class MultiCompiler
                 if warn_non_exhaustive
                     tc_ctx.enableWarnNonExhaustive()
                 tc_ctx.withReservedRuntimeNames(rtReservedNames(.preamble_path))   # BUG-359
+                tc_ctx.withRuntimePublicNames(rtPublicNames(.preamble_path))       # BUG-446
                 var tc_result: TcResult = checkModule(module, zbr_path, tc_ctx)
                 if tc_ctx.hasErrors()
                     sys.errln(tc_ctx.errorMessages())
@@ -1275,6 +1276,7 @@ def tcCheckSide(src: str, path: str, diags: List(str), with_warnings: bool = fal
         tc_ctx.withSource(src)
         tc_ctx.enableStrict()
         tc_ctx.withReservedRuntimeNames(rtReservedNames(defaultPreamblePath()))   # BUG-359
+        tc_ctx.withRuntimePublicNames(rtPublicNames(defaultPreamblePath()))       # BUG-446
         checkModule(module, path, tc_ctx)
         if tc_ctx.hasErrors()
             for line in tc_ctx.errorMessages().split("\n")

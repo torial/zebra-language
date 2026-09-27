@@ -6,6 +6,91 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-457: a generic METHOD called with its type argument fails inside Zig — FIXED 2026-09-27
+
+```zebra
+class Utils
+    static
+        def identity(T)(value: T): T
+            return value
+
+def main()
+    print(Utils.identity(int)(42))
+```
+Zig: "use of undeclared identifier 'int'". The curried-call lowering
+(`identity(int)(42)` -> `identity(i64, 42)`) matched only a bare-ident callee, so the
+member form reached Zig verbatim. The instance form (`b.wrap(int)(7)`) had a second
+defect: `comptime T` was emitted BEFORE `self`, so Zig did not treat the fn as a method
+("no member function named 'wrap'"). Found while fixing the book's ch13 "Generic
+Methods" section for BUG-446.
+
+**Fixed.** The checker registers a generic method as `Class.method`; codegen lowers a
+curried call whose callee is `Class.m` or `obj.m` (class inferred) the same way as a
+top-level generic call, and `inferExpr` types it (a return spelled as the type parameter
+takes the type argument). `self` is now emitted first. Fixture
+`test/bug457_generic_method_test.zbr` (static and instance, three type arguments).
+
+---
+
+### BUG-458: `sb.toString()` prints the builder's struct, not its text — FIXED 2026-09-27
+
+```zebra
+var sb = StringBuilder()
+sb.append("ok")
+print(sb.toString())      # .{ .items = { 111, 107 }, .capacity = 131 }
+```
+`toString` is on `stringBuilderMethodKnown`, so the front end admits it, but the typed
+StringBuilder dispatch had no arm for it and it fell through to the generic printer.
+Found by BUG-446's positive-control fixture.
+
+**Fixed.** `toString` is `build()` (non-consuming, BUG-351) in the typed arm only -- the
+untyped name-based arm is left alone, since there a lowercase receiver may be any class
+with its own `toString` cue. Fixture `test/bug458_sb_tostring_test.zbr` (untyped and
+annotated builders, and a user class's `toString` cue beside them).
+
+---
+
+### BUG-446: a free generic function over `List(T)` passes the front end and fails inside Zig — FIXED 2026-09-27
+
+```zebra
+def total(items: List(T)): int
+    return items.len
+```
+Zig: "use of undeclared identifier 'T'". Either support free generic functions or refuse them
+in the front end naming the supported form (a generic class). Found in the book's ch13
+"common mistakes" section, which was left unrewritten for this reason.
+
+**Wider than filed (2026-09-26):** the front end validates NO type name. `def f(x: Foo)`,
+`def f(xs: List(Foo))` and `var x: Foo = nil`, with `Foo` declared nowhere, all pass `-c`
+and fail inside Zig. So the fix is not a generic-function rule but a known-types check --
+and it needs a complete oracle (this module's types, every `use`d module's, the stdlib
+object types, generic parameters in scope, `zig"..."`/`.zig`-module types) before it can
+refuse anything, or it will refuse working programs. Not straightforward for that reason.
+
+**Fixed.** The front end now checks every type name a declaration spells -- parameters,
+returns, `var` annotations, fields, `sig`s, union payloads, generic arguments at any depth
+-- against a derived oracle: this module's declarations, every `use`d module's
+(`hasClassAny`/`hasEnumAny`/unions/aliases), the type parameters in scope (a class's, a
+generic function's `def f(T)(...)`, a method's), `typeFromName`'s builtins, Zig
+primitives and SIMD names, the runtime object types codegen names itself, and the
+runtime's PUBLIC names read from the preamble (`rtPublicNames`, so a `zig"..."` or
+`.zig`-module type is not refused). A miss is an error in Zebra's words:
+``unknown type 'T': not declared here, in a `use`d module, or as a type parameter in
+scope``, with a near-miss hint (`str` for `Str`) or, for a single capital letter, the
+generic-function spelling (`def f(T)(x: T)`, called `f(int)(x)`). `int(8)`'s argument is a
+width and is not checked. The check is skipped when the preamble cannot be read, rather
+than refusing on an empty oracle.
+
+Swept before landing: 1,657 files (compiler, tests, examples, zebra-ide, the book's
+extracted examples) -- 11 refusals, all in book examples and all genuine (a type never
+declared in the snippet, or `T` undeclared). Fixtures: `test/bug446_unknown_type_fail.zbr`
+(refused with the hint, position pinned) and `test/bug446_type_names_ok_test.zbr` (the
+positive control: class, enum, generic class and function parameters, nested generics,
+`int(8)`, a runtime object type).
+
+---
+
+
 ### BUG-455: a struct method named `count`, `get`, `at`, `len`… that mutates `self` fails from a local — FIXED 2026-09-27
 
 ```zebra

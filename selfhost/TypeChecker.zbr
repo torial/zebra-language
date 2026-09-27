@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
+use Ast exposing Span, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
 use AstWalk exposing collectOldNodes, mightUseName, stmtsContainYield, stmtContainsYield, stmtNeedsLowering
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
@@ -934,6 +934,11 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     mt.addCue(ct.name, m.name)
                 if m.deprecated != ""
                     ct.setDeprecated(m.name, m.deprecated)
+                # BUG-457: a generic METHOD (`def identity(T)(x: T)`) is keyed
+                # "Class.method", so `Utils.identity(int)(42)` lowers the way a
+                # top-level `identity(int)(42)` does rather than reaching Zig verbatim.
+                if m.type_params.len > 0
+                    mt.addGenericFn(ct.name + "." + m.name)
                 if m.return_type != nil
                     ct.setMethodReturn(m.name, typeFromRef(m.return_type!))
                 else
@@ -1316,6 +1321,7 @@ class InferCtx
     # error blamed on the user), and an ASSIGNMENT to one would silently overwrite
     # the runtime's allocator. Set by main from the loaded preamble; " " = unset.
     var reserved_rt: str
+    var rt_public: str
     # BUG-354: the names bound as PARAMETERS of the function being checked (a Zebra param
     # emits as a Zig `const`, so assigning to one is a Zig error the user never wrote).
     # Space-delimited with leading/trailing spaces, like reserved_rt; reset per function.
@@ -1343,6 +1349,7 @@ class InferCtx
         .source = ""
         .self_type_override = nil
         .reserved_rt = " "
+        .rt_public = ""
         .params_here = " "
         .copy_locals = " "
 
@@ -1368,6 +1375,16 @@ class InferCtx
 
     def withReservedRuntimeNames(names: str)
         .reserved_rt = names
+
+    # BUG-446: the runtime's PUBLIC names (every `pub fn` / `pub const` in the preamble) --
+    # the stdlib types a program may name (HttpResponse, DateTime, ...) are among them,
+    # because codegen passes an unrecognised type name through to Zig verbatim and the
+    # runtime is where it resolves. Derived from the preamble, never hand-listed.
+    def withRuntimePublicNames(names: str)
+        .rt_public = names
+
+    def isRuntimePublicName(name: str): bool
+        return (" " + name + " ") in .rt_public
 
     def isReservedRuntimeName(name: str): bool
         return (" " + name + " ") in .reserved_rt
@@ -3887,6 +3904,29 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         return Type_.int_
                     return Type_.unresolved
                 on Expr.call as gc
+                    # BUG-457: a generic static method, `Utils.identity(int)(42)`. The
+                    # declared return type if it names a real type; a return spelled as a
+                    # type PARAMETER (not a known class) takes the one type argument.
+                    if gc.callee is Expr.member as gmm
+                        var gm_cls: str = ""
+                        if gmm.object is Expr.ident as gmc
+                            if ctx.hasClassAny(gmc.name)
+                                gm_cls = gmc.name
+                        if gm_cls == ""
+                            var gm_ot: Type_ = inferExpr(gmm.object, ctx)
+                            if gm_ot is Type_.named as gm_on
+                                gm_cls = gm_on
+                        if gm_cls != ""
+                            var gm_key = gm_cls + "." + gmm.member
+                            if ctx.module_types.hasGenericFn(gm_key) or ctx.dep_types.hasGenericFn(gm_key)
+                                if ctx.methodReturnAny(gm_cls, gmm.member) as gm_rt
+                                    if gm_rt is Type_.named as gm_rn
+                                        if not ctx.hasClassAny(gm_rn) and gc.args.len == 1
+                                            if gc.args.at(0).value is Expr.ident as gm_targ
+                                                return typeFromName(gm_targ.name)
+                                        return Type_.unresolved
+                                    return gm_rt
+                                return Type_.unresolved
                     # Generic constructor: Box(int)(args) — outer callee is Box(int) type-application.
                     # Also handles HashMap(K,V)() and List(T)() zero-arg ctors.
                     if gc.callee is Expr.ident as gid
@@ -6369,6 +6409,248 @@ def checkDeriveHashFields(sd: DeclStruct, structs: HashMap(str, DeclStruct), fil
             if why != ""
                 ctx.addErr(file, f.span.line, f.span.col, "@derive(Hash) on '" + sd.name + "': field '" + f.name + "' holds a float (" + why + "), and floats are not hashable -- -0.0 == 0.0 but their bits differ, and NaN != NaN, so a hash would disagree with ==; store it as an int instead (e.g. cents)")
 
+# ── BUG-446: a type NAME nobody declared ─────────────────────────────────────────────
+# `def f(x: Foo)`, `var x: Foo`, `def f(xs: List(T))` with `Foo`/`T` declared nowhere
+# passed the front end and failed inside Zig ("use of undeclared identifier"). A type name
+# is known when it is: a generic parameter in scope; a primitive or builtin the checker
+# maps (typeFromName); a Zig primitive spelling (i32, u8, f64, usize...); a SIMD vector
+# name; declared in THIS module (any kind -- class, struct, union, enum, interface, mixin,
+# sig, type alias); a type of a `use`d module; qualified (`mod.T`, resolved elsewhere); or
+# one of the runtime's public names (the stdlib types, derived from the preamble).
+def isZigPrimTypeName(n: str): bool
+    if n == "usize" or n == "isize" or n == "bool" or n == "void" or n == "anyerror" or n == "type" or n == "noreturn" or n == "anyopaque"
+        return true
+    if n == "f16" or n == "f32" or n == "f64" or n == "f80" or n == "f128" or n == "c_int" or n == "c_uint" or n == "c_long" or n == "c_char"
+        return true
+    if n.len >= 2 and (n[0] == c'i' or n[0] == c'u')
+        var k: int = 1
+        while k < n.len
+            if n[k] < c'0' or n[k] > c'9'
+                return false
+            k += 1
+        return true
+    return false
+
+# The runtime objects codegen names ITSELF (CodeGen.genType's special cases and
+# CgHelpers.isBuiltinTypeName) rather than passing through to a runtime public name --
+# the first corpus sweep flagged `ThreadPool` and `Random` because they are neither in the
+# preamble's pub names nor in typeFromName. Keep in step with genType's `n.name ==` arms.
+def isBuiltinObjectTypeName(n: str): bool
+    return n == "CodeEditor" or n == "StringBuilder" or n == "CsvWriter" or n == "CsvTable" or n == "SysProcess" or n == "Timer" or n == "Random" or n == "DynLib" or n == "ThreadPool" or n == "WsConn" or n == "Build" or n == "BuildTarget" or n == "Allocator" or n == "Regex" or n == "StrSet" or n == "TcpConn" or n == "UdpSocket" or n == "SqliteDb" or n == "SqliteRow" or n == "HttpRequest" or n == "Gui" or n == "JsonValue" or n == "byte" or n == "usize" or n == "int128" or n == "uint128"
+
+def knownGenericName(n: str): bool
+    return n == "List" or n == "HashMap" or n == "Set" or n == "Chan" or n == "Iter" or n == "Atomic"
+
+def typeNameKnown(n: str, scope: List(str), declared: List(str), ctx: InferCtx): bool
+    if scope.contains(n) or declared.contains(n)
+        return true
+    if n.contains(".")
+        return true
+    if not (typeFromName(n) is Type_.named)
+        return true
+    if isZigPrimTypeName(n) or isSimdTypeName(n) or knownGenericName(n) or isBuiltinObjectTypeName(n)
+        return true
+    if ctx.hasClassAny(n) or ctx.hasEnumAny(n) or ctx.module_types.hasUnion(n) or ctx.dep_types.hasUnion(n)
+        return true
+    if ctx.module_types.isTypeAlias(n) or ctx.dep_types.isTypeAlias(n)
+        return true
+    return ctx.isRuntimePublicName(n)
+
+def checkTypeRefNames(tr: TypeRef, scope: List(str), declared: List(str), file: str, ctx: InferCtx, fsp: Span)
+    branch tr
+        on TypeRef.named as nt
+            if not typeNameKnown(nt.name, scope, declared, ctx)
+                var nsp: Span = nt.span
+                if nsp.line == 0
+                    nsp = fsp
+                ctx.addErr(file, nsp.line, nsp.col, "unknown type '" + nt.name + "': not declared here, in a `use`d module, or as a type parameter in scope" + typeNameHint(nt.name, declared))
+        on TypeRef.generic as gt
+            if not typeNameKnown(gt.name, scope, declared, ctx)
+                var gsp: Span = gt.span
+                if gsp.line == 0
+                    gsp = fsp
+                ctx.addErr(file, gsp.line, gsp.col, "unknown type '" + gt.name + "': not declared here, in a `use`d module, or as a type parameter in scope" + typeNameHint(gt.name, declared))
+            # `int(8)` / `uint(16)`: the argument is a bit WIDTH, not a type name.
+            if not (gt.name == "int" or gt.name == "uint" or gt.name == "float")
+                for ga in gt.args
+                    checkTypeRefNames(ga, scope, declared, file, ctx, fsp)
+        on TypeRef.nilable as ni
+            checkTypeRefNames(ni, scope, declared, file, ctx, fsp)
+        on TypeRef.ref_to as ri
+            checkTypeRefNames(ri, scope, declared, file, ctx, fsp)
+        on TypeRef.stream as si
+            checkTypeRefNames(si, scope, declared, file, ctx, fsp)
+        on TypeRef.error_union as ei
+            checkTypeRefNames(ei, scope, declared, file, ctx, fsp)
+        on TypeRef.tuple as tt
+            for te in tt.elems
+                checkTypeRefNames(te, scope, declared, file, ctx, fsp)
+        on TypeRef.fn_type as ft
+            for fp in ft.params
+                checkTypeRefNames(fp, scope, declared, file, ctx, fsp)
+            checkTypeRefNames(ft.ret, scope, declared, file, ctx, fsp)
+        else
+            pass
+
+# A near miss among the names this module declares, compared without case -- or, for a
+# name shaped like a type parameter (one capital letter), how to declare one, since the
+# free-generic form `def f(xs: List(T))` is exactly how BUG-446 was reached.
+def typeNameHint(n: str, declared: List(str)): str
+    var low: str = n.lower()
+    for d in declared
+        if d.lower() == low and d != n
+            return " -- did you mean '" + d + "'?"
+    if n.len == 1 and n[0] >= c'A' and n[0] <= c'Z'
+        return " -- to make it a type parameter, declare it: `def f(" + n + ")(x: " + n + ")`, called `f(int)(x)`; or on a class, `class Box(" + n + ")`"
+    return ""
+
+def checkParamTypes(ps: List(Param), scope: List(str), declared: List(str), file: str, ctx: InferCtx, fsp: Span)
+    for p in ps
+        if p.type_ as pt
+            var psp: Span = p.span
+            if psp.line == 0
+                psp = fsp                           # a Param carries no span of its own
+            checkTypeRefNames(pt, scope, declared, file, ctx, psp)
+
+def checkStmtTypeNames(stmts: List(Stmt), scope: List(str), declared: List(str), file: str, ctx: InferCtx)
+    for s in stmts
+        branch s
+            on Stmt.var_ as dv
+                if dv.type_ as vt
+                    checkTypeRefNames(vt, scope, declared, file, ctx, dv.span)
+            on Stmt.if_ as si
+                checkStmtTypeNames(si.then_stmts, scope, declared, file, ctx)
+                for ei in si.else_ifs
+                    checkStmtTypeNames(ei.stmts, scope, declared, file, ctx)
+                if si.else_stmts as se
+                    checkStmtTypeNames(se, scope, declared, file, ctx)
+            on Stmt.while_ as w
+                checkStmtTypeNames(w.stmts, scope, declared, file, ctx)
+            on Stmt.for_in as f
+                checkStmtTypeNames(f.stmts, scope, declared, file, ctx)
+            on Stmt.for_num as fnum
+                checkStmtTypeNames(fnum.stmts, scope, declared, file, ctx)
+            on Stmt.branch_ as b
+                for c in b.cases
+                    checkStmtTypeNames(c.stmts, scope, declared, file, ctx)
+                if b.else_ as be
+                    checkStmtTypeNames(be, scope, declared, file, ctx)
+            on Stmt.try_catch as tc
+                checkStmtTypeNames(tc.stmts, scope, declared, file, ctx)
+                for cl in tc.clauses
+                    checkStmtTypeNames(cl.stmts, scope, declared, file, ctx)
+            on Stmt.with_ as w2
+                checkStmtTypeNames(w2.stmts, scope, declared, file, ctx)
+            on Stmt.in_scope as isc
+                checkStmtTypeNames(isc.stmts, scope, declared, file, ctx)
+            on Stmt.allocate_ as al
+                checkStmtTypeNames(al.stmts, scope, declared, file, ctx)
+            else
+                pass
+
+def checkMemberTypeNames(members: List(Decl), scope: List(str), declared: List(str), file: str, ctx: InferCtx)
+    for mem in members
+        branch mem
+            on Decl.var_ as fv
+                if fv.type_ as ft
+                    checkTypeRefNames(ft, scope, declared, file, ctx, fv.span)
+            on Decl.method as md
+                var mscope: List(str) = List(str)()
+                for s0 in scope
+                    mscope.add(s0)
+                for tp in md.type_params
+                    mscope.add(tp)
+                checkParamTypes(md.params, mscope, declared, file, ctx, md.span)
+                if md.return_type as rt
+                    checkTypeRefNames(rt, mscope, declared, file, ctx, md.span)
+                if md.stmts as body
+                    checkStmtTypeNames(body, mscope, declared, file, ctx)
+            on Decl.init as ini
+                checkParamTypes(ini.params, scope, declared, file, ctx, ini.span)
+                if ini.stmts as ib
+                    checkStmtTypeNames(ib, scope, declared, file, ctx)
+            else
+                pass
+
+def declaredTypeNames(decls: List(Decl), out: List(str))
+    for d in decls
+        branch d
+            on Decl.class_ as c
+                out.add(c.name)
+            on Decl.struct_ as s
+                out.add(s.name)
+            on Decl.union_ as u
+                out.add(u.name)
+            on Decl.enum_ as e
+                out.add(e.name)
+            on Decl.interface_ as i
+                out.add(i.name)
+            on Decl.mixin_ as mx
+                out.add(mx.name)
+            on Decl.sig_ as sg
+                out.add(sg.name)
+            on Decl.type_alias_ as ta
+                out.add(ta.name)
+            on Decl.namespace_ as ns
+                out.add(ns.name)
+                declaredTypeNames(ns.decls, out)
+            else
+                pass
+
+def checkTypeNames(decls: List(Decl), file: str, ctx: InferCtx)
+    # Without the runtime's names (a caller that never supplied them -- the LSP, a unit
+    # harness) every stdlib type would read as unknown. No oracle, no verdict: skip.
+    if ctx.rt_public == ""
+        return
+    var declared: List(str) = List(str)()
+    declaredTypeNames(decls, declared)
+    checkDeclListTypeNames(decls, declared, file, ctx)
+
+def checkDeclListTypeNames(decls: List(Decl), declared: List(str), file: str, ctx: InferCtx)
+    var none: List(str) = List(str)()
+    for d in decls
+        branch d
+            on Decl.class_ as c
+                var cscope: List(str) = List(str)()
+                for tp in c.type_params
+                    cscope.add(tp.name)
+                checkMemberTypeNames(c.members, cscope, declared, file, ctx)
+            on Decl.struct_ as s
+                checkMemberTypeNames(s.members, none, declared, file, ctx)
+            on Decl.interface_ as i
+                var iscope: List(str) = List(str)()
+                for tp in i.type_params
+                    iscope.add(tp.name)
+                checkMemberTypeNames(i.members, iscope, declared, file, ctx)
+            on Decl.mixin_ as mx
+                checkMemberTypeNames(mx.members, none, declared, file, ctx)
+            on Decl.extend_ as ex
+                checkMemberTypeNames(ex.members, none, declared, file, ctx)
+            on Decl.namespace_ as ns
+                checkDeclListTypeNames(ns.decls, declared, file, ctx)
+            on Decl.union_ as u
+                for v in u.variants
+                    if v.payload as vp
+                        checkTypeRefNames(vp, none, declared, file, ctx, v.span)
+            on Decl.sig_ as sg
+                checkParamTypes(sg.params, none, declared, file, ctx, sg.span)
+                if sg.return_type as sr
+                    checkTypeRefNames(sr, none, declared, file, ctx, sg.span)
+            on Decl.method as md
+                var fscope: List(str) = List(str)()
+                for tp in md.type_params
+                    fscope.add(tp)
+                checkParamTypes(md.params, fscope, declared, file, ctx, md.span)
+                if md.return_type as rt
+                    checkTypeRefNames(rt, fscope, declared, file, ctx, md.span)
+                if md.stmts as body
+                    checkStmtTypeNames(body, fscope, declared, file, ctx)
+            on Decl.var_ as gv
+                if gv.type_ as gt
+                    checkTypeRefNames(gt, none, declared, file, ctx, gv.span)
+            else
+                pass
+
 def checkCueShapes(tname: str, members: List(Decl), derive_eq: bool, next_types: List(str), file: str, ctx: InferCtx)
     var has_equals: bool = derive_eq
     var hash_decl: DeclMethod? = nil
@@ -6450,6 +6732,7 @@ def checkDeclShapes(m: Module, file: str, ctx: InferCtx)
                 if mem1s is Decl.method as dm1s
                     if dm1s.mods.is_cue and dm1s.name == "next"
                         next_types.add(s1.name)
+    checkTypeNames(m.decls, file, ctx)                  # BUG-446
     var hash_structs: HashMap(str, DeclStruct) = HashMap()
     for dh in m.decls
         if dh is Decl.struct_ as sdh

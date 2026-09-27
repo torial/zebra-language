@@ -198,7 +198,15 @@ if [[ $REGEN -eq 1 ]]; then
                 rm -rf "$tmpd"
                 fail "the bootstrap emitted no source for $m despite rc=0 — refusing to write a truncated selfhost/$m.zig"
             fi
-            tr -d '\r' < "$tmp" > "selfhost/$m.zig"
+            # THE WRITE IS CHECKED (2026-09-27). A transient Windows lock made this redirect
+            # fail with "Permission denied", the OLD file stayed in place, and the header check
+            # above passed on the temp copy -- so the run printed "rebuild: OK" and every gate
+            # after it measured a compiler without the edit. A module that was not written
+            # was not regenerated, and that is a failure.
+            if ! tr -d '\r' < "$tmp" > "selfhost/$m.zig"; then
+                rm -rf "$tmpd"
+                fail "could not WRITE selfhost/$m.zig (locked by another process?) -- it was NOT regenerated; rerun when the lock clears"
+            fi
             rm -rf "$tmpd"
             echo "  selfhost/$m.zig  ($(wc -l < "selfhost/$m.zig") lines)"
         done

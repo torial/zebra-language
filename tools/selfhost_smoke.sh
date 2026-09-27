@@ -1999,6 +1999,14 @@ smoke_run test/bug455_struct_method_named_like_builtin_test.zbr "bug455: OK"
 smoke_run test/bug453_cue_field_call_map_key_test.zbr "bug453: OK"
 # BUG-448: split/lines are List(str); `.at(i).toInt()` on an untyped local.
 smoke_run test/bug448_split_at_toint_test.zbr "bug448: OK"
+# BUG-457: a generic METHOD, static and instance, called with its type argument.
+smoke_run test/bug457_generic_method_test.zbr "bug457: OK"
+# BUG-458: sb.toString() is build(), not the generic struct printer.
+smoke_run test/bug458_sb_tostring_test.zbr "bug458: OK"
+# BUG-446: a type name declared nowhere is refused in the front end, with the
+# generic-function hint for a single capital letter; every legitimate spelling still passes.
+smoke_run test/bug446_type_names_ok_test.zbr "bug446: OK"
+smoke_tc_fail test/bug446_unknown_type_fail.zbr "bug446_unknown_type_fail.zbr:5:4: error: unknown type 'T': not declared here"
 # BUG-456: a bare `on opt as x` in a branch on a union is refused, naming `on Ty.opt`.
 smoke_tc_fail test/bug456_bare_variant_arm_fail.zbr "bug456_bare_variant_arm_fail.zbr:12:9: error: write the variant as \`on Ty.opt\`"
 smoke_tc_fail test/bug411_indent_error_fail.zbr "bug411_indent_error_fail.zbr:6:7: error: indentation is 6 space(s)"
