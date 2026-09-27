@@ -2233,6 +2233,20 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-09-27 (closing the overnight: BUG-446/457/458/459/460/461/462/463, check-mode
+min-of-3): 54/54 PASS in ONE invocation at JOBS=2 on torial, 54 min, on `d01939d`.** smoke
+**581/581**, round-trip byte-identical, `boundary` 33/0, `cli-surface` 54, `ffi-lib` 4/4 (the new
+leg 3), `output_sweep` 466 identical, `full_sweep` / `examples_sweep` / `divergence` 0 regressions,
+`regen-recover`, `gramgen` 0/0, `leakgen` 100/0, `libui-section` 21/21, `libui-pin-build`,
+`node-addon`. **The result was PREDICTED before the run and the prediction held:** no baselined
+output contains a StringBuilder struct dump (BUG-458), the one baselined generic program
+(`generic_fn_test`) was re-run first and identical (BUG-462), and the 1,663-file sweeps found
+no refusal from BUG-446 or BUG-461 in any repo corpus -- so any red naming a file would have been
+a finding, not a correction. The caches mostly MISSED (output 1 hit / 465, full_sweep 208 / 339):
+the day's codegen changes moved most emits, so this is close to the cold figure -- and still 54
+min against the 84 measured cold on 09-26. CI the same morning: both runners green on `d01939d`,
+Linux QUICK green since `9c1625e` (BUG-459 was its one red).
+
 **DAILY tier 2026-09-25 (the rc3 run-up: libui pin, BUG-439..443): 52/53 in ONE invocation at
 JOBS=2 on torial, ~3h -- ASSEMBLED with `check-mode` re-run standalone.** smoke **553/553**,
 round-trip byte-identical, `boundary` 33/0, `cli-surface` **47** (the new REPL multi-line leg),
