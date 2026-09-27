@@ -31,6 +31,14 @@ confirmed via `tools/bootstrap_check.sh`.
   `f(int)(x)`). Runtime and `zig"..."` types are still accepted.
 - **Generic methods work (BUG-457):** `Utils.identity(int)(42)` on a static generic method
   and `b.wrap(int)(7)` on an instance one, the way a top-level `identity(int)(42)` already did.
+- **A generic function or method called without its type argument is refused** (BUG-460),
+  showing the explicit form -- it failed inside Zig as "expected 2 arguments".
+- **A generic call has its declared return type (BUG-462)**: `count(str)(xs)` returning `int`
+  was typed `str`.
+- **`total([])` into a `List(int)` parameter compiles (BUG-463)** -- an empty `[]` takes the
+  parameter's type instead of defaulting to `List(str)`.
+- **`use foo` finds `libfoo.a` / `libfoo.so` / `libfoo.dylib` (BUG-459)**, the Unix
+  spelling -- on Linux a prebuilt library built by zig or any C toolchain was missed.
 - **`sb.toString()` returns the text (BUG-458)**, the same as `sb.build()`; it printed the
   builder's internal struct.
 - **A struct method named like a builtin (`count`, `get`, `at`...) that mutates `self` works

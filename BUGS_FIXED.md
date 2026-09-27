@@ -6,6 +6,83 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-459: `use foo` misses a Unix-named library (`libfoo.a` / `.so` / `.dylib`) — FIXED 2026-09-27
+
+On Linux `zig build-lib foo.zig` writes `libfoo.a`, and so does every C toolchain; the
+compiler looked only for `foo.lib` / `foo.a` / `foo.so` / `foo.dylib`. So `use foo` missed
+the library, fell through to importing `foo.zig`, and the extern was undefined at link
+("undefined symbol: zebra_lib_answer"). Found by `ffi-lib` on the first Linux CI run --
+the only red on that board once the harness was fixed.
+
+**Fixed.** Each extension is tried as `foo.<ext>` then `libfoo.<ext>` (`.lib` has no `lib`
+form), so Windows is unchanged; the "module not found" message names both spellings.
+Pinned by `tools/ffi_lib_check.sh` leg 3, which places the library under whichever spelling
+leg 1 did NOT use, so every platform proves both. Red against rc4 ("module not found"),
+green after.
+
+---
+
+### BUG-460: a generic function called without its type argument fails inside Zig — FIXED 2026-09-27
+
+```zebra
+def identity(T)(value: T): T
+    return value
+
+def main()
+    print(identity(42))      # Zig: expected 2 argument(s), found 1
+```
+The arity check counted value parameters only, so a direct call to a generic function
+"matched". The book's ch13 taught this form as "the type argument is inferred".
+
+**Fixed.** `checkArgCount` refuses a direct call to a generic function or method:
+`` `identity` is generic: pass its type argument(s) first, `identity(int)(...)` -- Zebra does
+not infer them from the arguments``. Sound because `checkCallsInExpr` never walks the inner
+call of the curried form `identity(int)(42)`. Fixture
+`test/bug460_generic_call_no_type_arg_fail.zbr`.
+
+---
+
+### BUG-462: a generic call is typed as its type ARGUMENT, whatever the function returns — FIXED 2026-09-27
+
+```zebra
+def count(T)(items: List(T)): int
+    return items.count()
+
+def main()
+    print(count(str)(["a"]))   # Zig: invalid format string 's' for type 'i64'
+```
+`inferExpr` returned `typeFromName(type_arg)` for every curried generic call -- right only
+when the function returns exactly `T`.
+
+**Fixed.** `genericCallReturn` takes the declared return type and substitutes the one type
+argument for a type PARAMETER (a named type that is no class or enum of the program), bare,
+optional or as a List element; anything else is returned as declared, and what it cannot
+substitute is unresolved rather than guessed. The same helper types generic methods
+(BUG-457). Fixture `test/bug462_generic_return_type_test.zbr`.
+
+---
+
+### BUG-463: an empty `[]` passed to a `List(X)` parameter is typed `List(str)` — FIXED 2026-09-27
+
+```zebra
+def total(xs: List(int)): int
+    return xs.count()
+
+def main()
+    print(total([]))   # Zig: expected ArrayList(i64), found ArrayList([]const u8)
+```
+With no element to infer from, the literal fell back to `[]const u8`. A `List(str)`
+parameter hid it (the fallback happens to be right), which is how the first probe of this
+bug passed.
+
+**Fixed.** An empty untyped `[]` in argument position takes the parameter's type:
+`genCallWithTypeHint` (functions), the user-method fast path, and the curried generic call,
+where `T` is not in scope at the call site and a bare `.empty` lets Zig's result type decide.
+A bare `print([])` still prints `[]`. Fixture `test/bug463_empty_list_arg_test.zbr`
+(function, method with a `List(float)` parameter, generic function).
+
+---
+
 ### BUG-457: a generic METHOD called with its type argument fails inside Zig — FIXED 2026-09-27
 
 ```zebra

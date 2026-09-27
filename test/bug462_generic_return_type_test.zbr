@@ -1,0 +1,31 @@
+# BUG-462: the type of a curried generic call is the function's DECLARED return type with
+# the type parameter substituted. It used to be the type argument itself, whatever the
+# function returned, so `count(str)(xs)` -- an int -- was printed with `{s}` and failed in
+# Zig. Covers a concrete return, T, T?, List(T), and the method form.
+def count(T)(items: List(T)): int
+    return items.count()
+
+def first(T)(items: List(T)): T?
+    if items.count() == 0
+        return nil
+    return items.at(0)
+
+def twice(T)(x: T): List(T)
+    return [x, x]
+
+def same(T)(x: T): T
+    return x
+
+class Tools
+    static
+        def size(T)(items: List(T)): int
+            return items.count()
+
+def main()
+    print(count(str)(["a", "b", "c"]))
+    print(same(str)("s") + "!")
+    if first(str)(["x"]) as f
+        print(f)
+    print(twice(int)(4).count())
+    print(Tools.size(float)([1.5]))
+    print("bug462: OK")

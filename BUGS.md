@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-458. Next new bug: BUG-459.**
+**Last bug number generated: BUG-463. Next new bug: BUG-464.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,28 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-461: a local re-declared, or shadowed by a loop/`as` capture, passes the front end and fails in Zig — OPEN (found 2026-09-27)
+
+```zebra
+def main()
+    var n = 5
+    for n in [1, 2]          # Zig: capture 'n' shadows local constant from outer scope
+        print(n)
+    var o: int? = 3
+    if o as n                # same
+        print(n)
+    var n = 6                # Zig: redeclaration of local constant 'n'
+```
+All three pass `zebra -c`. Zig forbids shadowing entirely, so either the front end refuses a
+name already bound in an ENCLOSING scope (naming both lines), or codegen renames the inner
+binding. Found while testing the book's ch13 generic-function example (`if first_num as n`
+with a local `n`). **Not straightforward:** the refusal needs scope-accurate tracking --
+sequential sibling scopes (`for i in a` then `for i in b`) are legal in Zig and must stay
+legal, and `ctx.hasLocal` is not known to distinguish them. Sweep the corpus with any
+candidate rule before landing it.
 
 ---
 

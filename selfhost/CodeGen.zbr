@@ -9001,6 +9001,12 @@ struct Generator
         if exprYieldsBox(e) or exprYieldsOptBox(e)
             genValueOf(e)
             return
+        # BUG-463: an empty `[]` passed to a `List(X)` parameter takes the PARAMETER's
+        # element type. With no elements there is nothing to infer from, and the literal
+        # used to fall back to `std.ArrayList([]const u8)` -- a Zig type error at every
+        # `total([])` whose parameter is not `List(str)`.
+        if emitEmptyListForParam(e, hint)
+            return
         if e is Expr.call as c
             if c.args.len == 0
                 if c.callee is Expr.ident as id
@@ -14363,7 +14369,10 @@ struct Generator
                         if not gf_first
                             w.emit(", ")
                         gf_first = false
-                        genExpr(va.value)
+                        if isEmptyUntypedListLit(va.value)
+                            w.emit(".empty")            # BUG-463: the param's own ArrayList
+                        else
+                            genExpr(va.value)
                     w.emit(")")
                     return
             # BUG-457: the same shape through a class -- `Utils.identity(int)(42)` ->
@@ -14393,7 +14402,10 @@ struct Generator
                             if not gm_first
                                 w.emit(", ")
                             gm_first = false
-                            genExpr(va.value)
+                            if isEmptyUntypedListLit(va.value)
+                                w.emit(".empty")        # BUG-463
+                            else
+                                genExpr(va.value)
                         w.emit(")")
                         return
         # Closure vars: capture-lambda struct instances use .call()
@@ -16353,6 +16365,8 @@ struct Generator
                                         genExpr(args.at(um_ai).value)
                                         w.emit(".*")                    # Case 2: ptr→value
                                         um_emitted = true
+                                    else if ump_p.type_ != nil
+                                        um_emitted = emitEmptyListForParam(args.at(um_ai).value, ump_p.type_!)   # BUG-463
                         if not um_emitted
                             genExpr(args.at(um_ai).value)
                         um_ai = um_ai + 1
@@ -18235,6 +18249,24 @@ struct Generator
         w.emit("(")
         genArgList(args)
         w.emit(")")
+
+    # BUG-463: `[]` with no elements and no element type -- its type can only come from
+    # where it is going.
+    def isEmptyUntypedListLit(e: Expr): bool
+        if e is Expr.list_lit as el
+            return el.elems.len == 0 and el.elem_type == nil
+        return false
+
+    # BUG-463: emit an empty untyped `[]` as the `List(X)` parameter it is passed to.
+    # True when it handled `e`.
+    def emitEmptyListForParam(e: Expr, hint: TypeRef): bool
+        if isEmptyUntypedListLit(e)
+            if hint is TypeRef.generic as el_gtr
+                if el_gtr.name == "List" and el_gtr.args.len == 1
+                    genType(hint)
+                    w.emit(".empty")
+                    return true
+        return false
 
     def genArgList(args: List(Arg))
         var first = true

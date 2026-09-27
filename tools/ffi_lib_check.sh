@@ -26,6 +26,7 @@
 #
 # pins: BUG-266 this IS the regression test — the subject is a library built here, so
 # pins: BUG-266 there is no test/*.zbr for bug_fixture_check's file scan to find.
+# pins: BUG-459 leg 3 -- the library under the other platform spelling (libzzlib.a / zzlib.a) must link.
 set -u
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -102,4 +103,23 @@ if printf '%s\n' "$got2" | grep -qx "$EXPECT"; then
     fail "leg 2 — printed $EXPECT with the library REMOVED; leg 1 proves nothing"
 fi
 
-echo "ffi-lib: 3/3 checks pass (link=$EXPECT, no stray @import, negative control red)"
+# ── Leg 3: the OTHER naming convention (BUG-459) ──────────────────────────────
+# On Linux `zig build-lib` writes `libzzlib.a`; on Windows `zzlib.lib`. The compiler looked
+# only for `<name>.<ext>`, so on Linux `use zzlib` missed the library, imported zzlib.zig
+# instead, and the extern was undefined at link -- found by this gate's first Linux CI run.
+# Here the library is placed under whichever spelling leg 1 did NOT use, in a directory with
+# no zzlib.zig beside it, so each platform proves both spellings resolve and link.
+L3="$WORK/leg3"; mkdir -p "$L3"
+cp "$WORK/zzprog.zbr" "$L3/"
+case "$(basename "$LIB")" in
+    lib*) cp "$LIB" "$L3/zzlib.a"; L3NAME="zzlib.a" ;;
+    *)    cp "$LIB" "$L3/libzzlib.a"; L3NAME="libzzlib.a" ;;
+esac
+got3="$("$ZEBRA" "$L3/zzprog.zbr" 2>&1 | tr -d '\r')"
+if ! printf '%s\n' "$got3" | grep -qx "$EXPECT"; then
+    echo "FAIL: leg 3 — the library as $L3NAME did not link (BUG-459)" >&2
+    printf '%s\n' "$got3" | grep -v '^compiling:\|^ *parsing\|^ *parsed\|^ *resolved\|^wrote ' | tail -6 >&2
+    exit 1
+fi
+
+echo "ffi-lib: 4/4 checks pass (link=$EXPECT, no stray @import, negative control red, $L3NAME resolves)"

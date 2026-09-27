@@ -507,9 +507,22 @@ class MultiCompiler
         lib_exts.add("a")
         lib_exts.add("so")
         lib_exts.add("dylib")
+        # BUG-459: on Linux and macOS a library is conventionally `libfoo.a` /
+        # `libfoo.so` / `libfoo.dylib` -- it is what `zig build-lib foo.zig` writes there,
+        # and what every C toolchain produces. Only `foo.a` was looked for, so `use foo`
+        # missed the library, fell through to importing `foo.zig`, and the extern stayed
+        # undefined at link time (found by tools/ffi_lib_check.sh on the first Linux CI).
+        # The bare name is tried first at each extension, so Windows is unchanged.
+        var lib_names: List(str) = List(str)()
         var lx: int = 0
         while lx < lib_exts.len
-            var lib_name: str = dep_name + "." + lib_exts.at(lx)
+            lib_names.add(dep_name + "." + lib_exts.at(lx))
+            if lib_exts.at(lx) != "lib"
+                lib_names.add("lib" + dep_name + "." + lib_exts.at(lx))
+            lx = lx + 1
+        var ln: int = 0
+        while ln < lib_names.len
+            var lib_name: str = lib_names.at(ln)
             var lib_path: str = lib_name
             if src_dir != ""
                 lib_path = src_dir + "/" + lib_name
@@ -519,7 +532,7 @@ class MultiCompiler
                 lib_sources.add(lib_path)
                 addNativeLibUse(u.path)
                 return
-            lx = lx + 1
+            ln = ln + 1
         # BUG-262: a native `.zig` dep, and it is LAST on purpose.
         #
         # It differs from the `.c` case in HOW zig consumes it: a `.c` is passed to
@@ -568,7 +581,7 @@ class MultiCompiler
             raise "`use " + u.path + "`: module not found -- module names are case-sensitive, and the file here is " + near + "; did you mean `use " + near_stem + "`?"
         # Worded "module not found" so tools/doc_example_check.py files a doc fragment
         # whose `use` target is not beside it as an ARTIFACT, not a broken example.
-        raise "`use " + u.path + "`: module not found -- no " + dep_name + ".zbr (or .c / .lib / .a / .so / .dylib / .zig) " + looked
+        raise "`use " + u.path + "`: module not found -- no " + dep_name + ".zbr (or .c / .lib / .a / .so / .dylib, lib" + dep_name + ".a/.so/.dylib, .zig) " + looked
 
     def alreadyTypeScanned(p: str): bool
         var i: int = 0

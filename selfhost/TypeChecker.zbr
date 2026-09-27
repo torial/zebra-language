@@ -3920,12 +3920,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             var gm_key = gm_cls + "." + gmm.member
                             if ctx.module_types.hasGenericFn(gm_key) or ctx.dep_types.hasGenericFn(gm_key)
                                 if ctx.methodReturnAny(gm_cls, gmm.member) as gm_rt
-                                    if gm_rt is Type_.named as gm_rn
-                                        if not ctx.hasClassAny(gm_rn) and gc.args.len == 1
-                                            if gc.args.at(0).value is Expr.ident as gm_targ
-                                                return typeFromName(gm_targ.name)
-                                        return Type_.unresolved
-                                    return gm_rt
+                                    return genericCallReturn(gm_rt, gc.args, ctx)
                                 return Type_.unresolved
                     # Generic constructor: Box(int)(args) — outer callee is Box(int) type-application.
                     # Also handles HashMap(K,V)() and List(T)() zero-arg ctors.
@@ -3956,11 +3951,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # function's declared return type with the type param substituted.
                         # Simple single-type-param case: return typeFromName(type_arg).
                         if ctx.module_types.hasGenericFn(gcname) or ctx.dep_types.hasGenericFn(gcname)
-                            if gc.args.len == 1
-                                if gc.args.at(0).value is Expr.ident as targ
-                                    var subst_t: Type_ = typeFromName(targ.name)
-                                    if subst_t is not Type_.named
-                                        return subst_t
+                            if ctx.methodReturnAny("", gcname) as gf_rt
+                                return genericCallReturn(gf_rt, gc.args, ctx)   # BUG-462
                     return Type_.unresolved
                 else
                     return Type_.unresolved
@@ -5206,6 +5198,39 @@ def paramTypeFromTag(tag: str): Type_?
 # method); builtins, stdlib, closures-in-locals, and unresolved receivers are all
 # skipped (fnParamListAny returns nil → no diagnostic). Counts required params as
 # those without a default, so defaulted-param calls are not flagged.
+# BUG-462: the type of a curried generic call `f(T1)(...)` / `C.m(T1)(...)`. The declared
+# return type, with a type PARAMETER (a named type that is no class of the program)
+# replaced by the one type argument -- bare, optional or a List element. It used to be
+# `typeFromName(type_arg)` whatever the function returned, so `describe(str)(xs)` returning
+# `int` was typed `str` and printed with `{s}`. Anything it cannot substitute is
+# unresolved, never a guess.
+def genericCallReturn(rt: Type_, targs: List(Arg), ctx: InferCtx): Type_
+    var sub: Type_ = Type_.unresolved
+    if targs.len == 1
+        if targs.at(0).value is Expr.ident as ta
+            sub = typeFromName(ta.name)
+            if sub is Type_.named and not ctx.hasClassAny(ta.name) and not ctx.hasEnumAny(ta.name)
+                sub = Type_.unresolved
+    if rt is Type_.named as rn
+        if ctx.hasClassAny(rn) or ctx.hasEnumAny(rn)
+            return rt
+        return sub
+    if rt is Type_.optional as ro
+        if ro is Type_.named as ron
+            if not (ctx.hasClassAny(ron) or ctx.hasEnumAny(ron))
+                if sub is Type_.unresolved
+                    return sub
+                return Type_.optional(sub)
+        return rt
+    if rt is Type_.list_ as rl
+        if rl is Type_.named as rln
+            if not (ctx.hasClassAny(rln) or ctx.hasEnumAny(rln))
+                if sub is Type_.unresolved
+                    return sub
+                return Type_.list_(sub)
+        return rt
+    return rt
+
 def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
     # Named args reorder positional slots — skip (parity with checkCallExpr).
     for arg in call.args
@@ -5227,7 +5252,26 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
             # A class name used as a call is a constructor — different arity rules.
             if ctx.hasClassAny(cid.name)
                 return
+            # BUG-460: a generic function called without its type argument. The curried
+            # form's inner call `f(int)` is never walked here (checkCallsInExpr does not
+            # descend into a call's callee), so reaching this is the direct call.
+            if (ctx.module_types.hasGenericFn(cid.name) or ctx.dep_types.hasGenericFn(cid.name)) and not ctx.hasLocal(cid.name)
+                ctx.addErr(file, cline, ccol, "`" + cid.name + "` is generic: pass its type argument(s) first, `" + cid.name + "(int)(...)` -- Zebra does not infer them from the arguments")
+                return
         on Expr.member as mem
+            var gm_cls: str = ""
+            if mem.object is Expr.ident as gm_oid
+                if ctx.hasClassAny(gm_oid.name) and not ctx.hasLocal(gm_oid.name)
+                    gm_cls = gm_oid.name
+            if gm_cls == ""
+                var gm_rt: Type_ = inferExpr(mem.object, ctx)
+                if gm_rt is Type_.named as gm_rn
+                    gm_cls = gm_rn
+            if gm_cls != ""
+                var gm_key: str = gm_cls + "." + mem.member
+                if ctx.module_types.hasGenericFn(gm_key) or ctx.dep_types.hasGenericFn(gm_key)
+                    ctx.addErr(file, mem.span.line, mem.span.col, "`" + mem.member + "` is a generic method: pass its type argument(s) first, `." + mem.member + "(int)(...)` -- Zebra does not infer them from the arguments")
+                    return
             var recv: Type_ = inferExpr(mem.object, ctx)
             if recv is Type_.ref_to as rrt
                 recv = rrt

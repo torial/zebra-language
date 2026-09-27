@@ -2007,6 +2007,12 @@ smoke_run test/bug458_sb_tostring_test.zbr "bug458: OK"
 # generic-function hint for a single capital letter; every legitimate spelling still passes.
 smoke_run test/bug446_type_names_ok_test.zbr "bug446: OK"
 smoke_tc_fail test/bug446_unknown_type_fail.zbr "bug446_unknown_type_fail.zbr:5:4: error: unknown type 'T': not declared here"
+# BUG-460: a generic function called without its type argument is refused in Zebra's words.
+smoke_tc_fail test/bug460_generic_call_no_type_arg_fail.zbr "bug460_generic_call_no_type_arg_fail.zbr:8:11: error: \`identity\` is generic: pass its type argument(s) first"
+# BUG-462: a generic call's type is its declared return with T substituted.
+smoke_run test/bug462_generic_return_type_test.zbr "bug462: OK"
+# BUG-463: an empty `[]` passed to a List(X) parameter takes the parameter's type.
+smoke_run test/bug463_empty_list_arg_test.zbr "bug463: OK"
 # BUG-456: a bare `on opt as x` in a branch on a union is refused, naming `on Ty.opt`.
 smoke_tc_fail test/bug456_bare_variant_arm_fail.zbr "bug456_bare_variant_arm_fail.zbr:12:9: error: write the variant as \`on Ty.opt\`"
 smoke_tc_fail test/bug411_indent_error_fail.zbr "bug411_indent_error_fail.zbr:6:7: error: indentation is 6 space(s)"

@@ -1,0 +1,27 @@
+# BUG-463: an empty `[]` passed straight to a `List(X)` parameter. With no element to infer
+# from it fell back to List(str), so `total([])` into a `List(int)` parameter failed in Zig
+# ("expected ArrayList(i64), found ArrayList(str)"). It now takes the parameter's type --
+# a function, a method, and a generic function (whose T is not in scope at the call).
+def total(xs: List(int)): int
+    var t = 0
+    for x in xs
+        t += x
+    return t
+
+def first(T)(items: List(T)): T?
+    if items.count() == 0
+        return nil
+    return items.at(0)
+
+class Bag
+    def size(xs: List(float)): int
+        return xs.count()
+
+def main()
+    print(total([]))
+    print(total([1, 2]))
+    print(first(int)([]))
+    var b = Bag()
+    print(b.size([]))
+    print([])
+    print("bug463: OK")

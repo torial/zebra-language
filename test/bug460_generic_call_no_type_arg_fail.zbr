@@ -1,0 +1,8 @@
+# BUG-460: a generic function called WITHOUT its type argument. Zig reported it as
+# "expected 2 argument(s), found 1" -- about a `comptime T` the user never wrote. The
+# front end now refuses it and shows the explicit form (a method gets the same refusal).
+def identity(T)(value: T): T
+    return value
+
+def main()
+    print(identity(42))
