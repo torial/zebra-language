@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-463. Next new bug: BUG-464.**
+**Last bug number generated: BUG-465. Next new bug: BUG-466.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,34 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-464: `List()` with no type argument as a FIELD default reaches Zig — OPEN (found 2026-09-27)
+
+```zebra
+class D
+    var xs: List(int) = List()     # zig: use of undeclared identifier 'List'
+```
+Passes `-c`; the emitted field default is the bare Zebra spelling. The annotation already
+says `List(int)`, so the fix is to emit the annotated type's `.empty` (as
+`genCallWithTypeHint` does for a `List()` argument), or to refuse naming `List(int)()`.
+Found running the book's ch10 `10_computed.zbr` under rc4 and rc5 (it fails under both).
+
+---
+
+### BUG-465: a method named without `()` in an expression reaches Zig — OPEN (found 2026-09-27)
+
+```zebra
+class D
+    def s(): int
+        return 4
+    def a(): float
+        return s / 2              # meant s() -- zig: "unused function parameter"
+```
+Passes `-c`; the full compile fails with a Zig message about something else entirely. A
+bare method name used as a VALUE (not passed where a `sig` is expected) should be refused
+naming the call form, `s()`. Same book example as BUG-464 (`return sum / numbers.count()`).
 
 ---
 
