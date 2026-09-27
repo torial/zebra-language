@@ -241,7 +241,8 @@ _run() {
     shown="${last:0:58}"
     cnote="$(echo "$out" | grep -aoE '(zig-verdict|output)-cache: [0-9]+ hit / [0-9]+ miss( / [0-9]+ emit-mismatch)?' | tail -1 \
              | sed -E 's#.*cache: ([0-9]+) hit / ([0-9]+) miss( / ([0-9]+) emit-mismatch)?#\1h/\2m/\4x#; s#/x$##')"
-    [[ -n "$cnote" ]] && shown="${last:0:43} [cache $cnote]"
+    # The prefix shrinks to fit the note, so the note itself is never the part cut off.
+    [[ -n "$cnote" ]] && shown="${last:0:$((58 - ${#cnote} - 9))} [cache $cnote]"
     if [[ $ok -eq 1 ]]; then
         printf '\033[32mPASS\033[0m  %-58s %ss\n' "${shown:0:58}" "$t1"
         PASSED=$((PASSED + 1))

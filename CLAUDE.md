@@ -2102,6 +2102,25 @@ not spread:
   per runtime area, not per program. The sample REFUSES a name outside the positive set
   and the gate's line says "SAMPLE of N". 12 min -> ~40 s.
 
+**MEASURED IN A REAL TIER, 2026-09-26, two dailies back to back at JOBS=2, 54/54 both:**
+
+| gate | before (clean daily that morning) | cold cache | warm cache |
+|---|---|---|---|
+| `divergence` | 2282 s | 1657 s | 1117 s (1178 hits / 0 misses) |
+| `output_sweep` | 1053 s | 1054 s | 495 s (466 / 0) |
+| `full_sweep` | 973 s | 763 s | 414 s (538 / 0) |
+| `compile_check-inline` | 695 s | 19 s | 21 s (sample, 16 / 0) |
+| **all gates** | **110 min** | **84 min** | **58 min** |
+
+The warm column is a day on which nothing changed any emitted file -- the best case. A
+compiler change that alters the emit of many files moves those files back to the cold
+column. What is left is the floor: emitting every file (~0.2 s each, twice in
+divergence), the gates' own bookkeeping (~14 s per output_sweep invocation) and smoke
+(~7 min, uncached). Divergence's 1117 s at 100% hits is the next thing to look at: its
+per-file worker cost is well above two emits and two keys, and why is not yet measured.
+No emit-mismatch occurred: the cold run stored all 466 outputs, which it only does when
+the run path's emit matched the key's byte for byte, and the warm run hit all 466.
+
 `bash tools/verdict_cache_check.sh` -- registered `verdict-cache` (FAST tier) -- attacks the
 verdict cache with a stub zig, sourcing the SHIPPED library: a changed dep, a new zig
 version, an infra error and a timeout must each reach zig; a cached genuine failure must
