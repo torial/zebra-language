@@ -2233,6 +2233,15 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-09-27, second run (whole floats print `6.0`, `15cdbda`, the run rc5 was cut
+on): 54/54 PASS in ONE invocation at JOBS=2, 57 min.** smoke 581/581, `boundary` **34**/0 (the new
+`float_whole_print_probe`, written from the rule and watched red first), `output_sweep` 467
+identical against the baseline re-recorded for exactly the 10 intended programs, `full_sweep` and
+`divergence` 0 regressions, `leakgen` 100/0 with floats now formatted through `_zbr_show`.
+`arena_concurrency_hazard_test` rejoined the baseline on that re-record (its samples agreed) and
+was a cache HIT here, so it was not re-sampled -- if it flakes, it names itself. rc5
+(`v0.9.0-rc5_zig0.16`) released from `4723c25` after QUICK 34/34 on the version bump.
+
 **DAILY tier 2026-09-27 (closing the overnight: BUG-446/457/458/459/460/461/462/463, check-mode
 min-of-3): 54/54 PASS in ONE invocation at JOBS=2 on torial, 54 min, on `d01939d`.** smoke
 **581/581**, round-trip byte-identical, `boundary` 33/0, `cli-surface` 54, `ffi-lib` 4/4 (the new
