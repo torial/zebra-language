@@ -954,7 +954,6 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --single-threaded <source.zbr>     no threads: the allocator drops its mutex; spawning a thread fails to compile", to_stdout)
     usageLine("  zebra --module-path DIR <source.zbr>     also look in DIR for `use`d modules and prebuilt libraries", to_stdout)
     usageLine("  zebra --target node-addon <source.zbr>   build a Node.js native addon (.node + .js + .d.ts, QUICKSTART §45)", to_stdout)
-    usageLine("  zebra --allow-implicit-try <source.zbr>  accept a throws call without `?` (the pre-0.9 form; a migration bridge)", to_stdout)
     usageLine("  zebra --coverage <source.zbr>            line coverage -> zebra-coverage.json on exit (also: zebra test --coverage)", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
     usageLine("  zebra --warnings-as-errors <source.zbr> fail the compile on any warning (a deprecation, a function used as a value)", to_stdout)
@@ -3909,7 +3908,13 @@ def main()
     # 2026-09-01): with unknown flags now refused, --TURBO becomes a NAMED ERROR
     # rather than either being ignored or silently starting to work -- the user sees
     # the problem instead of getting a build they did not ask for.
-    var known_flags: str = "--allow-implicit-try --build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
+    # RETIRED FLAGS are refused BY NAME with the way forward, not as "unrecognized" --
+    # the person typing one is migrating, and the generic refusal would not tell them to
+    # what. (2026-09-26: --allow-implicit-try, the one-release hatch §28b promised.)
+    if args.contains("--allow-implicit-try")
+        sys.errln("zebra: --allow-implicit-try was removed (0.9.0-rc5): a throws call must be marked with `?`. Compile without the flag and every unmarked call is named with its line.")
+        sys.exit(2)
+    var known_flags: str = "--build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -4392,16 +4397,15 @@ def main()
     # BUG-295 (b): after the whole graph is known, name the shared STATEFUL modules.
     mc.reportSharedStatefulModules()
 
-    # §28b step 5 (the flip): reject implicit error propagation (a throws call
-    # the user did not mark with `?`) unless --allow-implicit-try.  compileDep
-    # accumulated every auto-`try` site across deps + root; a valid `try` was
-    # still emitted, so this is a clean driver rejection.
-    if not args.contains("--allow-implicit-try")
-        var itry_sites: List(str) = implicitTrySites()
-        if itry_sites.len > 0
-            for itry_site in itry_sites
-                sys.errln(itry_site + ": error: throws call needs '?' (auto error-propagation was removed; add '?', or pass --allow-implicit-try)")
-            sys.exit(1)
+    # §28b step 5 (the flip): reject implicit error propagation (a throws call the user
+    # did not mark with `?`). compileDep accumulated every auto-`try` site across deps +
+    # root; a valid `try` was still emitted, so this is a clean driver rejection. The
+    # --allow-implicit-try hatch was retired 2026-09-26 (refused by name above).
+    var itry_sites: List(str) = implicitTrySites()
+    if itry_sites.len > 0
+        for itry_site in itry_sites
+            sys.errln(itry_site + ": error: throws call needs '?' (auto error-propagation was removed; add '?')")
+        sys.exit(1)
 
     # §28a step 1 (selfhost measure): --warn-inference-guess reports every
     # type-dispatch site that guessed the emit without a proven type (numeric

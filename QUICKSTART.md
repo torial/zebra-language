@@ -1208,8 +1208,8 @@ var r = someObj.method()?            # propagates if method throws
   (2026-07-15) the legacy auto-propagation is a **compile error**: an omitted
   `?` on a throws call is rejected with `throws call needs '?'` in both
   compilers. Use explicit `?` everywhere — same-file, cross-module, and calls on
-  local variables alike. Migration hatch for un-updated external code:
-  `--allow-implicit-try` (accepts the old implicit form for one release).
+  local variables alike. (The one-release migration flag, `--allow-implicit-try`, was
+  removed in 0.9.0-rc5; the compiler names every unmarked call with its line.)
 - **Migration note**: The `try expr` prefix form was removed in 0.15.
   Replace every `try f()` with `f()?`; the semantics are identical.
 - `raise "msg"` creates an error string; `raise "msg", obj` attaches a
@@ -2654,7 +2654,7 @@ fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are 
 | Substring test       | `"needle" in str`              | preferred over `.contains`               |
 | Optional chain       | `obj?.field`                   | propagates nil                           |
 | Error propagation    | `expr?`                        | explicit in cross-module / local-var calls |
-| Error propagation    | `expr?`                        | explicit everywhere (implicit auto-try is a compile error; `--allow-implicit-try` bridges old code) |
+| Error propagation    | `expr?`                        | explicit everywhere (implicit auto-try is a compile error) |
 | Struct update copy   | `this except field = val`      | `this` (no dot) = the whole value        |
 | Class downcast       | `if x is Dog as d`             | requires `x: Dog?`; binds `d: Dog`        |
 | Int-to-float         | `x.toFloat()`                  | explicit conversion (to `float`/f64)     |

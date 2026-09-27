@@ -8,7 +8,7 @@
 # the repo that legitimately contains an implicit-try site, and the maxdepth-1
 # check_explicit_try / check_inference_guess / corpus scanners must not see it.
 #
-# The migration hatch is `--allow-implicit-try` (accepts this file, exit 0).
+# The migration hatch `--allow-implicit-try` was retired 2026-09-26; nothing accepts this.
 
 class Foo
     def helper(): int throws

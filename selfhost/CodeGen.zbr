@@ -2935,7 +2935,7 @@ def tryChain(e: Expr): CallChain?
 
 # §28b step 5 (the flip): implicit error propagation (a throws call the user did
 # not mark with `?`) is now an error.  Every auto-`try` site is collected here
-# during codegen; main.zbr rejects the compile unless --allow-implicit-try.  A
+# during codegen; main.zbr rejects the compile (the hatch flag retired 2026-09-26).  A
 # valid `try` is still emitted, so this is a clean driver rejection, not a broken
 # Zig compile.  File-scope (like boss_director's registry) so it accumulates
 # across every module generated in one process (deps + root).

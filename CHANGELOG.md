@@ -30,6 +30,10 @@ confirmed via `tools/bootstrap_check.sh`.
 - **`--target` other than `node-addon` is refused**, naming what exists. `--target
   x86_64-linux` used to build for the host and say nothing -- a cross-compile that silently
   was not one. Cross-compiling is not supported.
+- **BREAKING (as promised): `--allow-implicit-try` is removed.** It was the one-release
+  migration hatch for the pre-0.9 implicit error propagation (a throws call without `?`).
+  The flag is refused by name with the way forward; compiling without it names every
+  unmarked call with its line. Nothing in this repo, the book or zebra-ide used it.
 - **`--out` outside `zebra diagnostics` is refused** (it was accepted and ignored); build
   output goes to `--output-dir`.
 

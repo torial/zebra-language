@@ -14,7 +14,7 @@ named in the tool's header; what it cannot see is listed there too.
 
 `cue init` `cue toString` `cue equals` `cue hash` `cue compare` `cue iter` `cue next`
 
-## Command forms (39)
+## Command forms (38)
 
 - `zebra <source.zbr>`
 - `zebra repl`
@@ -39,7 +39,6 @@ named in the tool's header; what it cannot see is listed there too.
 - `zebra --single-threaded <source.zbr>`
 - `zebra --module-path DIR <source.zbr>`
 - `zebra --target`
-- `zebra --allow-implicit-try <source.zbr>`
 - `zebra --coverage <source.zbr>`
 - `zebra --warn-non-exhaustive <source.zbr>`
 - `zebra --warnings-as-errors <source.zbr>`
@@ -56,9 +55,9 @@ named in the tool's header; what it cannot see is listed there too.
 - `zebra fmt --print <file.zbr>`
 - `zebra up`
 
-## Flags (31)
+## Flags (30)
 
-`--allow-implicit-try` `--build-file` `--check` `--check-full` `--coverage` `--cpu` `--dump-map` `--dump-transform` `--emit-zig` `--gui-backend` `--keep-temp` `--list` `--list-targets` `--module-path` `--only` `--out` `--output-dir` `--print` `--release` `--scaffold-only` `--shared` `--single-threaded` `--tag` `--target` `--to` `--turbo` `--version` `--warn-non-exhaustive` `--warnings-as-errors` `-c` `-h`
+`--build-file` `--check` `--check-full` `--coverage` `--cpu` `--dump-map` `--dump-transform` `--emit-zig` `--gui-backend` `--keep-temp` `--list` `--list-targets` `--module-path` `--only` `--out` `--output-dir` `--print` `--release` `--scaffold-only` `--shared` `--single-threaded` `--tag` `--target` `--to` `--turbo` `--version` `--warn-non-exhaustive` `--warnings-as-errors` `-c` `-h`
 
 ## Generic constructors (7)
 

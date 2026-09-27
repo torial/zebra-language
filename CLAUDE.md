@@ -1211,7 +1211,7 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 51 assertions, 0 pins (2026-09-26: `--target` other than node-addon and `--out` outside `zebra diagnostics` are refused -- both were accepted and IGNORED -- and --help must list the six flags it had omitted; 2026-09-24: three warning-tier legs -- a deprecation warns and `-c` exits 0, `--warnings-as-errors` fails naming the flag, and passes on a clean file; 2026-09-15: `--zig-backend` and
+                                #   past `repl` starting. 52 assertions, 0 pins (2026-09-26: `--allow-implicit-try` retired and refused BY NAME; `--target` other than node-addon and `--out` outside `zebra diagnostics` are refused -- both were accepted and IGNORED -- and --help must list the six flags it had omitted; 2026-09-24: three warning-tier legs -- a deprecation warns and `-c` exits 0, `--warnings-as-errors` fails naming the flag, and passes on a clean file; 2026-09-15: `--zig-backend` and
                                 #   `--gui-backend=glfw` refused by name, retired with the bootstrap;
                                 #   `b.requires("^99.0")` refused through the real `zebra build`; 2026-09-14: `zebra up`
                                 #   refuses by name, OFFLINE, outside an install layout; 2026-09-10: BUG-317/324/325

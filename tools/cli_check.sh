@@ -169,6 +169,12 @@ chk "\`zebra up\` outside an installed layout REFUSES by name, before any downlo
 # BUG-323 unknown-flag refusal must name it, and nothing may be compiled. The two
 # delegated `glfw` backend went with it and is refused by name, not as an unknown flag,
 # because `--gui-backend` itself is still a flag (`stub` is the default, said explicitly).
+# `--allow-implicit-try` RETIRED 2026-09-26 (the one-release hatch §28b promised): refused
+# BY NAME with the way forward, and nothing compiled.
+run --allow-implicit-try hello.zbr
+chk "\`--allow-implicit-try\` is refused by name, saying to add \`?\`" \
+    "$([ "$RC" != 0 ] && case "$ERR" in *"--allow-implicit-try was removed"*"?"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
 run --zig-backend hello.zbr
 chk "\`--zig-backend\` is refused by name (retired with the bootstrap), nothing compiled" \
     "$([ "$RC" != 0 ] && case "$ERR" in *"unrecognized flag: --zig-backend"*) echo 0;; *) echo 1;; esac || echo 1)" \
@@ -495,10 +501,10 @@ chk "...while \`zebra diagnostics F --out J\` still writes J" \
 # QUICKSTART, and absent from the usage text until 2026-09-26).
 run --help
 _missing=""
-for _f in --cpu --single-threaded --module-path --target --allow-implicit-try diagnostics; do
+for _f in --cpu --single-threaded --module-path --target diagnostics; do
     case "$OUT" in *"$_f"*) ;; *) _missing="$_missing $_f";; esac
 done
-chk "--help lists --cpu, --single-threaded, --module-path, --target, --allow-implicit-try, diagnostics" \
+chk "--help lists --cpu, --single-threaded, --module-path, --target, diagnostics" \
     "$([ -z "$_missing" ] && echo 0 || echo 1)" "missing:$_missing"
 
 # ---- BUG-429: a GUI run forwards `--` program arguments --------------------------
