@@ -23,6 +23,20 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+(nothing yet)
+
+## Release 0.9.0-rc5 — 2026-09-27 (everything since rc4)
+
+rc5 is a front-end release: programs that used to pass `zebra -c` and then fail inside Zig
+with a message about code you never wrote are now refused in Zebra's words, at your line --
+an undeclared type name (BUG-446), a generic called without its type argument (BUG-460), a
+name reused inside the scope that declares it (BUG-461). None of the three refuses a program
+that could have compiled; each was swept across ~1,660 files first. Generics work where they
+did not (generic methods, BUG-457; the declared return type, BUG-462; an empty `[]`
+argument, BUG-463), `use foo` finds a Unix-named `libfoo.a` (BUG-459, found by the new Linux
+CI), and `--allow-implicit-try` is gone as promised. One **output change**: a whole float
+prints `6.0` (was `6`).
+
 - **Output change: a whole float prints with `.0`** -- `print(6.0)` is `6.0`, not `6`
   (Sean's decision, measured first: 10 of 466 corpus programs print differently -- the
   pre-decision measurement's 7 plus three reached through `.toString()` -- and every changed
