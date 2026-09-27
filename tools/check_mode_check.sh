@@ -129,12 +129,26 @@ fi
 # a full check?", and that is a comparison, not a number. So measure three things in
 # THIS run: process startup (`--help`, compiles nothing), `-c`, and `--check-full`.
 # Subtracting startup leaves the work each mode really does, on this machine, today.
-t0=$(date +%s%N); "$ZEBRA" --help            >/dev/null 2>&1; t1=$(date +%s%N)
-base=$(( (t1 - t0) / 1000000 ))
-t0=$(date +%s%N); "$ZEBRA" -c "$OUT/ok.zbr"  >/dev/null 2>&1; t1=$(date +%s%N)
-ms=$(( (t1 - t0) / 1000000 ))
-t0=$(date +%s%N); "$ZEBRA" --check-full "$OUT/ok.zbr" >/dev/null 2>&1; t1=$(date +%s%N)
-full=$(( (t1 - t0) / 1000000 ))
+#
+# MIN OF THREE, AFTER A WARM-UP (2026-09-27). One sample each was not enough on a cold
+# CI runner: the FIRST process pays for loading the binary from disk, and that first
+# process was `--help` -- startup read 1062 ms, --check-full "0 ms above" it, and the
+# leg refused on the Windows runner while passing locally at 99 ms. The minimum of
+# repeated runs is the least-contended reading of each, which is what the comparison
+# wants; it cannot manufacture a gap between -c and --check-full that is not there.
+min_ms() {
+    local best="" i t0 t1 d
+    for i in 1 2 3; do
+        t0=$(date +%s%N); "$ZEBRA" "$@" >/dev/null 2>&1; t1=$(date +%s%N)
+        d=$(( (t1 - t0) / 1000000 ))
+        if [ -z "$best" ] || [ "$d" -lt "$best" ]; then best=$d; fi
+    done
+    echo "$best"
+}
+"$ZEBRA" --help >/dev/null 2>&1          # warm-up: pay the cold load once, outside the samples
+base=$(min_ms --help)
+ms=$(min_ms -c "$OUT/ok.zbr")
+full=$(min_ms --check-full "$OUT/ok.zbr")
 
 work_c=$(( ms - base ));   [ "$work_c" -lt 0 ] && work_c=0
 work_f=$(( full - base )); [ "$work_f" -lt 0 ] && work_f=0

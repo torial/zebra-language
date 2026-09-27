@@ -6695,6 +6695,132 @@ def checkDeclListTypeNames(decls: List(Decl), declared: List(str), file: str, ct
             else
                 pass
 
+# ── BUG-461: a name reused in the same or an enclosing scope ─────────────────────
+# Zig forbids shadowing outright -- a loop variable, an `as` capture or a `var` whose
+# name is already bound in the same or an enclosing block is a Zig compile error
+# ("capture 'n' shadows local constant", "redeclaration of local constant"). Zebra
+# emitted it as written, so the program passed `-c` and failed inside Zig. This walks
+# each function body with a real scope STACK -- the checker's own `scope` map is flat
+# per function and cannot tell `for i in a` then `for i in b` (sibling scopes, legal)
+# from a nested reuse (illegal). Lambda bodies are not entered: they lower to a
+# separate Zig function whose locals are its own.
+def shadowDeclare(name: str, line: int, col: int, names: List(str), lines: List(int), file: str, ctx: InferCtx)
+    if name == "" or name == "_"
+        return
+    var i: int = 0
+    while i < names.len
+        if names.at(i) == name
+            var at_where: str = "on line " + lines.at(i).toString()
+            if lines.at(i) == 0
+                at_where = "as a parameter"
+            ctx.addErr(file, line, col, "`" + name + "` is already declared " + at_where + " -- a name cannot be reused inside the scope that declares it; rename one of them")
+            return
+        i += 1
+    names.add(name)
+    lines.add(line)
+
+def shadowPop(names: List(str), lines: List(int), mark: int)
+    while names.len > mark
+        names.remove(names.len - 1)
+        lines.remove(lines.len - 1)
+
+def shadowStmts(stmts: List(Stmt), names: List(str), lines: List(int), file: str, ctx: InferCtx)
+    var mark: int = names.len
+    for st in stmts
+        branch st
+            on Stmt.var_ as sv
+                shadowDeclare(sv.name, sv.span.line, sv.span.col, names, lines, file, ctx)
+            on Stmt.destruct as sd
+                for dn in sd.names
+                    shadowDeclare(dn, sd.span.line, sd.span.col, names, lines, file, ctx)
+            on Stmt.if_ as si
+                var m_if: int = names.len
+                if si.is_capture as icap
+                    shadowDeclare(icap, si.span.line, si.span.col, names, lines, file, ctx)
+                shadowStmts(si.then_stmts, names, lines, file, ctx)
+                shadowPop(names, lines, m_if)
+                for ei in si.else_ifs
+                    var m_ei: int = names.len
+                    if ei.is_capture as ecap
+                        shadowDeclare(ecap, ei.span.line, ei.span.col, names, lines, file, ctx)
+                    shadowStmts(ei.stmts, names, lines, file, ctx)
+                    shadowPop(names, lines, m_ei)
+                if si.else_stmts as ies
+                    shadowStmts(ies, names, lines, file, ctx)
+            on Stmt.while_ as sw
+                shadowStmts(sw.stmts, names, lines, file, ctx)
+            on Stmt.for_in as sfi
+                var m_fi: int = names.len
+                for fv in sfi.vars
+                    shadowDeclare(fv, sfi.span.line, sfi.span.col, names, lines, file, ctx)
+                shadowStmts(sfi.stmts, names, lines, file, ctx)
+                shadowPop(names, lines, m_fi)
+                if sfi.else_ as fie
+                    shadowStmts(fie, names, lines, file, ctx)
+            on Stmt.for_num as sfn
+                var m_fn: int = names.len
+                shadowDeclare(sfn.var_, sfn.span.line, sfn.span.col, names, lines, file, ctx)
+                shadowStmts(sfn.stmts, names, lines, file, ctx)
+                shadowPop(names, lines, m_fn)
+                if sfn.else_ as fne
+                    shadowStmts(fne, names, lines, file, ctx)
+            on Stmt.branch_ as sbr
+                for arm in sbr.cases
+                    var m_arm: int = names.len
+                    if arm.binding as ab
+                        shadowDeclare(ab, arm.span.line, arm.span.col, names, lines, file, ctx)
+                    shadowStmts(arm.stmts, names, lines, file, ctx)
+                    shadowPop(names, lines, m_arm)
+                if sbr.else_ as bre
+                    shadowStmts(bre, names, lines, file, ctx)
+            on Stmt.with_ as swi
+                shadowStmts(swi.stmts, names, lines, file, ctx)
+            on Stmt.in_scope as sis
+                shadowStmts(sis.stmts, names, lines, file, ctx)
+            on Stmt.try_catch as stc
+                shadowStmts(stc.stmts, names, lines, file, ctx)
+                for cc in stc.clauses
+                    var m_cc: int = names.len
+                    if cc.binding as cb
+                        shadowDeclare(cb, cc.span.line, cc.span.col, names, lines, file, ctx)
+                    shadowStmts(cc.stmts, names, lines, file, ctx)
+                    shadowPop(names, lines, m_cc)
+            on Stmt.allocate_ as sal
+                shadowStmts(sal.stmts, names, lines, file, ctx)
+            else
+                pass
+    shadowPop(names, lines, mark)
+
+def shadowFn(params: List(Param), body: List(Stmt)?, file: str, ctx: InferCtx)
+    if body == nil
+        return
+    var names: List(str) = List(str)()
+    var lines: List(int) = List(int)()
+    for p in params
+        names.add(p.name)
+        lines.add(0)
+    shadowStmts(body!, names, lines, file, ctx)
+
+def checkShadowing(decls: List(Decl), file: str, ctx: InferCtx)
+    for d in decls
+        branch d
+            on Decl.method as md
+                shadowFn(md.params, md.stmts, file, ctx)
+            on Decl.class_ as c
+                checkShadowing(c.members, file, ctx)
+            on Decl.struct_ as s
+                checkShadowing(s.members, file, ctx)
+            on Decl.mixin_ as mx
+                checkShadowing(mx.members, file, ctx)
+            on Decl.extend_ as ex
+                checkShadowing(ex.members, file, ctx)
+            on Decl.namespace_ as ns
+                checkShadowing(ns.decls, file, ctx)
+            on Decl.init as ini
+                shadowFn(ini.params, ini.stmts, file, ctx)
+            else
+                pass
+
 def checkCueShapes(tname: str, members: List(Decl), derive_eq: bool, next_types: List(str), file: str, ctx: InferCtx)
     var has_equals: bool = derive_eq
     var hash_decl: DeclMethod? = nil
@@ -6777,6 +6903,7 @@ def checkDeclShapes(m: Module, file: str, ctx: InferCtx)
                     if dm1s.mods.is_cue and dm1s.name == "next"
                         next_types.add(s1.name)
     checkTypeNames(m.decls, file, ctx)                  # BUG-446
+    checkShadowing(m.decls, file, ctx)                  # BUG-461
     var hash_structs: HashMap(str, DeclStruct) = HashMap()
     for dh in m.decls
         if dh is Decl.struct_ as sdh

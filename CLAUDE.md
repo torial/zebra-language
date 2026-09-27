@@ -1777,6 +1777,11 @@ bash tools/check_mode_check.sh     # THE CHECK-MODE CONTRACT GATE: `-c` is front
                                 #   Carries a built-in failure when no asymmetry witness
                                 #   survives, which is why gate_selfcheck lists it as
                                 #   self-falsifying. QUICK tier.
+                                #   ITS TIMING LEG TAKES THE MIN OF THREE, after a warm-up
+                                #   (2026-09-27): single samples refused on the Windows CI
+                                #   runner, where the FIRST process (`--help`) paid the cold
+                                #   load -- startup 1062 ms, --check-full "0 ms above" it.
+                                #   Red-checked by making the `-c` sample run --check-full.
 python tools/bug_fixture_check.py --gate  # THE REGRESSION-FIXTURE GATE (A1): SQLite's "a
                                 #   regression test for every reported bug", as a lint rather
                                 #   than a habit. Fails only on NEW debt — the existing
@@ -2972,7 +2977,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **686** <!-- doc-gen: 686 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **688** <!-- doc-gen: 688 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

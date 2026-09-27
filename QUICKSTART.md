@@ -1193,10 +1193,10 @@ catch |e|
     print("Error: ${e.message}")
 
 # Inline postfix catch — fallback value on error:
-var r = divide(10, 0) catch 0
+var safe = divide(10, 0) catch 0
 
 # Explicit propagation with `?`:
-var r = someObj.method()?            # propagates if method throws
+var got = someObj.method()?          # propagates if method throws
 
 # `try expr` prefix was removed in 0.15 — use `expr?` instead:
 # OLD: var r = try divide(10, 2)
@@ -4968,7 +4968,7 @@ Zebra ships with a bundled SQLite amalgamation (`sqlite3.c`). The compiler injec
 
 ```zebra
 var db: SqliteDb? = Sqlite.open("myapp.db")   # nil on failure
-var db: SqliteDb? = Sqlite.open(":memory:")    # in-memory database
+var mem: SqliteDb? = Sqlite.open(":memory:")   # in-memory database
 ```
 
 `Sqlite.open` returns `SqliteDb?` — always check for nil before use.

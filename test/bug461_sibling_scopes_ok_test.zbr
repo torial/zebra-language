@@ -1,0 +1,39 @@
+# BUG-461 positive control: a name may be reused in SIBLING scopes -- only an enclosing
+# or the same scope conflicts. Every shape here compiled before the refusal existed and
+# must keep compiling (and running).
+union Shape
+    circle: int
+    square: int
+
+def area(s: Shape): int
+    branch s
+        on Shape.circle as v
+            return v * 3
+        on Shape.square as v
+            return v * v
+
+def main()
+    var total = 0
+    for i in [1, 2]
+        total += i
+    for i in [3, 4]
+        total += i
+    var o: int? = 7
+    if o as v
+        total += v
+    else
+        var v = 0
+        total += v
+    var p: int? = nil
+    if p as v
+        total += v
+    print(total)
+    print(area(Shape.circle(2)) + area(Shape.square(3)))
+    for k in 0 : 2
+        var inner = k
+        total += inner
+    for k in 0 : 2
+        var inner = k * 2
+        total += inner
+    print(total)
+    print("bug461: OK")

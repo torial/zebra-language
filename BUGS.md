@@ -46,28 +46,6 @@
 
 ---
 
-### BUG-461: a local re-declared, or shadowed by a loop/`as` capture, passes the front end and fails in Zig — OPEN (found 2026-09-27)
-
-```zebra
-def main()
-    var n = 5
-    for n in [1, 2]          # Zig: capture 'n' shadows local constant from outer scope
-        print(n)
-    var o: int? = 3
-    if o as n                # same
-        print(n)
-    var n = 6                # Zig: redeclaration of local constant 'n'
-```
-All three pass `zebra -c`. Zig forbids shadowing entirely, so either the front end refuses a
-name already bound in an ENCLOSING scope (naming both lines), or codegen renames the inner
-binding. Found while testing the book's ch13 generic-function example (`if first_num as n`
-with a local `n`). **Not straightforward:** the refusal needs scope-accurate tracking --
-sequential sibling scopes (`for i in a` then `for i in b`) are legal in Zig and must stay
-legal, and `ctx.hasLocal` is not known to distinguish them. Sweep the corpus with any
-candidate rule before landing it.
-
----
-
 ### BUG-449: `HttpRequest` cannot be constructed from Zebra — OPEN (found 2026-09-25)
 
 `var r = HttpRequest()` -> "undefined name: 'HttpRequest'". A clean refusal, but it means a

@@ -999,3 +999,37 @@ for the map.
 | [NEXT_STEPS_to_0.9.md](../NEXT_STEPS_to_0.9.md) | what is next, before public release? |
 | [NEXT_STEPS_to_1.0.md](../NEXT_STEPS_to_1.0.md) | what is next, before the freeze? |
 | [NEXT_STEPS_post_1.0.md](../NEXT_STEPS_post_1.0.md) | deliberately deferred past 1.0 |
+
+### Printing a whole float: `6` or `6.0`? — impact MEASURED 2026-09-27, decision open (Sean)
+
+Today `print(6.0)` prints `6`: floats go through Zig's `{d}`, the shortest round-trip
+form, which drops `.0`. Python, Rust (`{:?}`), Java, Kotlin and C# print `6.0`; Go and
+JavaScript print `6`. The question is whether a float should LOOK like a float.
+
+**Measured, not argued.** A throwaway worktree at `d2d857f` routed every float that
+`print` / `${...}` / `_zbr_show` formats through `_zbr_show`, whose float arm appended
+`.0` to a whole, finite value (`|x| < 1e15`), and `output_sweep --gate` was run against
+the unchanged baseline:
+
+- **7 of 466** baselined programs change, **14 output lines**, and every changed line is
+  a whole float gaining `.0` -- no other difference, no crash, no missing record.
+  (`bug168_crossmod_prim_return`, `bug379_optional_unwrap_forms`,
+  `bug388_iface_param_direct`, `bug408_show_structs_tuples_unions` -- `circle(2.0)` in a
+  union's show --, `bug420_423_newcomer_numbers` -- `1000.0`, `5.0` --,
+  `float_suffix_test`, `fuzz_f6_unused_capture` -- `lvl=3.0`.)
+- It is a LOWER BOUND for the corpus: format paths that hardcode `{d}` were not rerouted
+  (a `@derive(Debug)` toString's float field, the preamble's own formatting, GUI stubs).
+- The book was not measured: its checker validates compilation, not printed output, so
+  any `# Output: 6` comment beside a float would need a read.
+
+So the change is cheap in the corpus -- the cost is almost entirely a decision, not a
+migration. Pre-1.0 is the window for it; after 1.0 it is an output-format promise
+(docs/SURFACE.md does not cover formatting, so nothing would flag it).
+
+**Recommendation (mine, not a decision):** `6.0`. A value whose type is float should not
+print indistinguishably from an int -- the BUG-445 numeric-join work made `int + float`
+quietly produce floats, and `print(total)` showing `5` where the type is float hides
+exactly that. The shortest-round-trip rule stays for non-whole values (`0.1`, `2.5`).
+If adopted: one `_zbr_show` arm plus routing `printFmtSpec`'s two float arms through it
+(the patch used here, ~12 lines), the 7 baselines re-recorded, and a boundary probe
+written from the intent before the change lands.

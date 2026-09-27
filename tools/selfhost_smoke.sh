@@ -2013,6 +2013,10 @@ smoke_tc_fail test/bug460_generic_call_no_type_arg_fail.zbr "bug460_generic_call
 smoke_run test/bug462_generic_return_type_test.zbr "bug462: OK"
 # BUG-463: an empty `[]` passed to a List(X) parameter takes the parameter's type.
 smoke_run test/bug463_empty_list_arg_test.zbr "bug463: OK"
+# BUG-461: a name reused inside the scope that declares it is refused (Zig forbids
+# shadowing); sibling scopes may reuse a name.
+smoke_tc_fail test/bug461_shadowing_fail.zbr "bug461_shadowing_fail.zbr:7:5: error: \`n\` is already declared as a parameter"
+smoke_run test/bug461_sibling_scopes_ok_test.zbr "bug461: OK"
 # BUG-456: a bare `on opt as x` in a branch on a union is refused, naming `on Ty.opt`.
 smoke_tc_fail test/bug456_bare_variant_arm_fail.zbr "bug456_bare_variant_arm_fail.zbr:12:9: error: write the variant as \`on Ty.opt\`"
 smoke_tc_fail test/bug411_indent_error_fail.zbr "bug411_indent_error_fail.zbr:6:7: error: indentation is 6 space(s)"

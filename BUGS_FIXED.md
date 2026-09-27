@@ -6,6 +6,42 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-461: a local re-declared, or shadowed by a loop/`as` capture, passes the front end and fails in Zig — FIXED 2026-09-27
+
+```zebra
+def main()
+    var n = 5
+    for n in [1, 2]          # Zig: capture 'n' shadows local constant from outer scope
+        print(n)
+    var o: int? = 3
+    if o as n                # same
+        print(n)
+    var n = 6                # Zig: redeclaration of local constant 'n'
+```
+All three pass `zebra -c`. Zig forbids shadowing entirely, so either the front end refuses a
+name already bound in an ENCLOSING scope (naming both lines), or codegen renames the inner
+binding. Found while testing the book's ch13 generic-function example (`if first_num as n`
+with a local `n`). **Not straightforward:** the refusal needs scope-accurate tracking --
+sequential sibling scopes (`for i in a` then `for i in b`) are legal in Zig and must stay
+legal, and `ctx.hasLocal` is not known to distinguish them. Sweep the corpus with any
+candidate rule before landing it.
+
+**Fixed (same night).** `checkShadowing` (TypeChecker) walks each function body with a
+real scope STACK -- parameters, `var`, loop variables, `if`/`else if` captures, branch
+`as` bindings, catch bindings and destructuring -- and refuses a name already bound in the
+same or an enclosing scope: `` `n` is already declared on line 12 -- a name cannot be reused
+inside the scope that declares it; rename one of them``. Sibling scopes pop, so sequential
+`for i` loops, reused arm bindings and an `if`/`else` pair each declaring `v` stay legal.
+Lambda bodies are not entered (they lower to their own Zig function).
+
+Swept before landing: 1,663 files (compiler, tests, examples, zebra-ide, the book) -- ZERO
+refusals, with the sweep's own pipeline shown to catch the fail fixture. Nothing in any
+corpus relied on shadowing, which is what Zig's rule predicts: none of it could have compiled.
+Fixtures `test/bug461_shadowing_fail.zbr` (a param reused by a loop, a local reused by a
+capture) and `test/bug461_sibling_scopes_ok_test.zbr` (the legal reuses, run and checked).
+
+---
+
 ### BUG-459: `use foo` misses a Unix-named library (`libfoo.a` / `.so` / `.dylib`) — FIXED 2026-09-27
 
 On Linux `zig build-lib foo.zig` writes `libfoo.a`, and so does every C toolchain; the

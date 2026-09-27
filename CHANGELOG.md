@@ -31,6 +31,10 @@ confirmed via `tools/bootstrap_check.sh`.
   `f(int)(x)`). Runtime and `zig"..."` types are still accepted.
 - **Generic methods work (BUG-457):** `Utils.identity(int)(42)` on a static generic method
   and `b.wrap(int)(7)` on an instance one, the way a top-level `identity(int)(42)` already did.
+- **A name reused inside the scope that declares it is refused (BUG-461)** -- a loop
+  variable, `as` capture or `var` reusing an enclosing local or parameter failed inside Zig
+  ("shadows local constant"); now it names the first declaration's line. Sibling scopes
+  may still reuse a name.
 - **A generic function or method called without its type argument is refused** (BUG-460),
   showing the explicit form -- it failed inside Zig as "expected 2 arguments".
 - **A generic call has its declared return type (BUG-462)**: `count(str)(xs)` returning `int`

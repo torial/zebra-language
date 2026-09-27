@@ -1,0 +1,16 @@
+# BUG-461: a name bound again inside the scope that declares it. Zig forbids shadowing
+# outright, so each of these passed `-c` and failed inside Zig ("capture 'n' shadows local
+# constant", "redeclaration of local constant"). The front end refuses them now, naming
+# the line of the first declaration.
+def count(n: int): int
+    var total = 0
+    for n in [1, 2]
+        total += n
+    return total
+
+def main()
+    var n = 5
+    var o: int? = 3
+    if o as n
+        print(n)
+    print(count(n))
