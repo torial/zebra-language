@@ -1330,14 +1330,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
         sb.append("    ")
         sb.append(mod_prefix)
         sb.append(main_class)
-        sb.append(".main() catch |_err| {\n")
-        sb.append("        if (_err == error.ZebraError) {\n")
-        sb.append("            std.debug.print(\"Error: {s}\\n\", .{_zbr_error_msg()});\n")
-        sb.append("        } else {\n")
-        sb.append("            std.debug.print(\"Error: {}\\n\", .{_err});\n")
-        sb.append("        }\n")
-        sb.append("        std.process.exit(1);\n")
-        sb.append("    };\n")
+        sb.append(".main() catch |_err| _zbr_uncaught(_err);\n")   # BUG-466: one uncaught path
     else
         sb.append("    ")
         sb.append(mod_prefix)
@@ -2335,10 +2328,10 @@ def rtErrorMsgHelper(): str
     return sb.build()
 
 def generateFull(m: Module, file: str, preamble_path: str, strip_contracts: bool, library_mode: bool): str throws
-    return generateFullWith(m, file, preamble_path, List(str)(), ModuleTypes(), strip_contracts, library_mode)
+    return generateFullWith(m, file, preamble_path, List(str)(), ModuleTypes(), strip_contracts, library_mode)?
 
 def generateFullWith(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, strip_contracts: bool, library_mode: bool): str throws
-    return generateFullWithDeps(m, file, preamble_path, extra_class_names, deps_mt, List(str)(), strip_contracts, nil, library_mode)
+    return generateFullWithDeps(m, file, preamble_path, extra_class_names, deps_mt, List(str)(), strip_contracts, nil, library_mode)?
 
 def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, all_dep_modules: List(str), strip_contracts: bool, tc_result: TcResult?, library_mode: bool): str throws
     require
@@ -2790,7 +2783,7 @@ def generateSingleFileDepStruct(m: Module, file: str, mod_name: str, extra_class
 
 # Generate a dependency file (no entry point thunk, preamble + imports + declarations).
 def generateDep(m: Module, file: str, preamble_path: str, strip_contracts: bool): str throws
-    return generateDepWith(m, file, preamble_path, List(str)(), ModuleTypes(), strip_contracts)
+    return generateDepWith(m, file, preamble_path, List(str)(), ModuleTypes(), strip_contracts)?
 
 def generateDepWith(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, strip_contracts: bool): str throws
     require
@@ -4380,6 +4373,17 @@ struct Generator
 
     # ── genFieldDecl ──────────────────────────────────────────────────────────
 
+    # BUG-464 / BUG-418: a field's initialiser. A bare `List()` / `HashMap()` / `Set()` takes
+    # the field's DECLARED type -- on its own it has no element type and reached Zig as
+    # "use of undeclared identifier 'List'". BUG-418 fixed this at three of the seven sites
+    # that emit a field initialiser and the other four kept the bug, so every site now
+    # calls this one function.
+    def genFieldInitExpr(fexpr: Expr, tr: TypeRef?)
+        if tr != nil and isBareCollectionCtor(fexpr)
+            genCallWithTypeHint(fexpr, tr!)
+        else
+            genExpr(fexpr)
+
     def genFieldDecl(n: DeclVar)
         writeIndent()
         # Shared (static) fields become `pub var name: type = default;` inside the struct.
@@ -4443,7 +4447,7 @@ struct Generator
                             pass
             w.emit(" = ")
             if n.init_expr != nil
-                genExpr(n.init_expr!)
+                genFieldInitExpr(n.init_expr!, n.type_)      # BUG-464
             else
                 w.emit("undefined")
             w.emit(";\n")
@@ -4463,7 +4467,7 @@ struct Generator
             w.emit(" = undefined")   # BUG-339: assigned in the constructor
         else if n.init_expr != nil
             w.emit(" = ")
-            genExpr(n.init_expr!)
+            genFieldInitExpr(n.init_expr!, n.type_)          # BUG-464
         else
             # No user default → `= undefined` so a synthetic init (`self.* = .{}`, for a
             # class with no `cue init`) compiles; Zig otherwise requires every field in
@@ -4829,10 +4833,7 @@ struct Generator
                         dig.w.emit("self.")
                         dig.emitName(gfld.name)
                         dig.w.emit(" = ")
-                        if gfld.type_ != nil and isBareCollectionCtor(gfld.init_expr!)
-                            dig.genCallWithTypeHint(gfld.init_expr!, gfld.type_!)
-                        else
-                            dig.genExpr(gfld.init_expr!)
+                        dig.genFieldInitExpr(gfld.init_expr!, gfld.type_)
                         dig.w.emit(";\n")
             for godecl in n.members
                 if godecl is Decl.method as gomth
@@ -5342,7 +5343,7 @@ struct Generator
                             dig.w.emit("self.")
                             dig.emitName(fld.name)          # BUG-280
                             dig.w.emit(" = ")
-                            dig.genExpr(fld.init_expr!)
+                            dig.genFieldInitExpr(fld.init_expr!, fld.type_)   # BUG-464
                             dig.w.emit(";\n")
             # Initialize @once cache fields to null (not present in AST; emitted by genMethod).
             for odecl in n.members
@@ -6167,6 +6168,12 @@ struct Generator
                         if cov_line != ""
                             ei.writeIndent()
                             ei.w.emit(cov_line + "\n")
+                # BUG-466: an error reaching the end of a throwing `main` prints its message
+                # and exits 1. Registered AFTER the arena/coverage defers so it runs FIRST
+                # (defers are LIFO) -- the message may live in the arena.
+                if auto_throws and not .library_mode
+                    ei.writeIndent()
+                    ei.w.emit("errdefer |_zbr_e| _zbr_uncaught(_zbr_e);\n")
                 # `zebra build --list-targets`: arm before any user statement, so
                 # _build_run() prints the target list instead of invoking the compiler.
                 if _list_targets_mode
@@ -6380,7 +6387,7 @@ struct Generator
                                 ig.w.emit("_self.")
                                 ig.emitName(dfld.name)
                                 ig.w.emit(" = ")
-                                ig.genExpr(dfld.init_expr!)
+                                ig.genFieldInitExpr(dfld.init_expr!, dfld.type_)   # BUG-464
                                 ig.w.emit(";\n")
             # Initialize @once cache fields to null (synthetic; not in owner_members).
             for odecl in owner_members
@@ -6432,10 +6439,7 @@ struct Generator
                         # BUG-418: a bare `HashMap()` / `List()` default takes the field's
                         # declared type (the same hint the assignment path uses), so a
                         # generic class's `HashMap(K, V)` field is not `StringHashMap(anytype)`.
-                        if fld.type_ != nil and isBareCollectionCtor(fld.init_expr!)
-                            bg.genCallWithTypeHint(fld.init_expr!, fld.type_!)
-                        else
-                            bg.genExpr(fld.init_expr!)
+                        bg.genFieldInitExpr(fld.init_expr!, fld.type_)
                         bg.w.emit(";\n")
             bg.genStmts(istmts)
             if ec_i1.armed and not endsInReturn(istmts)
@@ -6455,10 +6459,7 @@ struct Generator
                         # BUG-418: a bare `HashMap()` / `List()` default takes the field's
                         # declared type (the same hint the assignment path uses), so a
                         # generic class's `HashMap(K, V)` field is not `StringHashMap(anytype)`.
-                        if fld.type_ != nil and isBareCollectionCtor(fld.init_expr!)
-                            ig.genCallWithTypeHint(fld.init_expr!, fld.type_!)
-                        else
-                            ig.genExpr(fld.init_expr!)
+                        ig.genFieldInitExpr(fld.init_expr!, fld.type_)
                         ig.w.emit(";\n")
             if ec_i2.armed
                 ig.writeIndent()
@@ -7962,16 +7963,7 @@ struct Generator
                     genArgList(chain2.args)
             w.emit(")")
         else if n.init_expr != nil
-            genExpr(n.init_expr!)
-            # Inside a try block: if init is a direct throws call, redirect the error.
-            if try_block_label != nil and not in_try_expr
-                var init_is_throws = false
-                if n.init_expr! is Expr.call as ic
-                    if ic.callee is Expr.ident as iid
-                        if isTopLevelMethodThrows(iid.name)
-                            init_is_throws = true
-                if init_is_throws
-                    emitTryBlockCatch()
+            genExpr(n.init_expr!)       # a throwing call routes its own error (BUG-467, genCall)
         else
             w.emit("undefined")
         w.emit(";\n")
@@ -8077,7 +8069,9 @@ struct Generator
         for decl in module_decls
             if decl is Decl.method as m
                 if m.name == name
-                    return m.throws_
+                    # The same rule genMethod uses for the `anyerror!` in the signature, so a
+                    # function that throws by inference is a throwing callee (BUG-467).
+                    return m.throws_ or (m.stmts != nil and bodyHasRaise(m.stmts!))
         return false
 
     def isStringBuilderCtor(e: Expr): bool
@@ -9229,6 +9223,11 @@ struct Generator
             if exprYieldsBox(r.value!) or exprYieldsOptBox(r.value!)
                 # 2026-09-24: a boxed inner container returned by VALUE is copied out
                 genValueOf(r.value!)
+            else if method_return_type != nil and returnWidensToFloat(r.value!, method_return_type!)
+                # BUG-471: an int expression returned from a `float` function widens, as
+                # it already did in a `var x: float = ...` init and a float argument
+                # (BUG-445's rule). It reached Zig as "expected type 'f64', found 'i64'".
+                emitAsNum(r.value!, typeFromRef(method_return_type!))
             else if method_return_type != nil
                 genCallWithTypeHint(r.value!, method_return_type!)
             else
@@ -9236,6 +9235,16 @@ struct Generator
             w.emit(";\n")
         else
             w.emit("return;\n")
+
+    # BUG-471: the declared return type is a float and the value is an int by inference.
+    def returnWidensToFloat(e: Expr, tr: TypeRef): bool
+        if .infer_ctx == nil or isNumLit(e)
+            return false
+        var want: Type_ = typeFromRef(tr)
+        if numKind(want) != 3
+            return false
+        var got: Type_ = inferExpr(e, .infer_ctx!)
+        return numKind(got) != 0 and numKind(got) != 3
 
     # BUG-027 fix: takes object by value so a ^Expr caller auto-derefs at call site.
     # Emits `var _mc_N = obj_call; _mc_N.method(args);` and returns true.
@@ -13471,6 +13480,17 @@ struct Generator
                             in_use_zebra_in = true
                 else
                     pass
+            # BUG-470: any OTHER right operand -- a call (`x in names()`), a member
+            # (`x in v.keys()`) -- was never type-checked here and fell to the substring
+            # path, so a List on the right reached Zig as "expected type 'str', found
+            # ArrayList". Ask inference for every shape the arms above did not settle.
+            if not in_use_zebra_in and .infer_ctx != nil
+                var in_rt: Type_ = inferExpr(b.right, .infer_ctx!)
+                if in_rt is Type_.list_ or in_rt is Type_.hashmap_ or in_rt is Type_.set_
+                    in_use_zebra_in = true
+                if in_rt is Type_.named as in_nm
+                    if in_nm == "List" or in_nm == "HashMap"
+                        in_use_zebra_in = true
             if in_use_zebra_in
                 w.emit("_zebra_in(")
                 genExpr(b.left)
@@ -14839,6 +14859,18 @@ struct Generator
                     emitTryBlockCatch()
                 return
         # Regular call: callee(args)
+        # BUG-467: a call to a THROWING free function of this module. Inside a `try` block
+        # or a method-level `catch` its error is routed to the catch; anywhere else an
+        # unmarked call is recorded so the driver refuses it in Zebra's words (§28b). Until
+        # now only the `var r = f()` form did the first and nothing did the second, so a
+        # bare `f()` reached Zig as "error union is ignored" -- and a statement call to a
+        # value-returning throwing function compiled as `_ = f();`, SWALLOWING the error.
+        var reg_throws = false
+        if c.callee is Expr.ident as rt_id
+            reg_throws = isTopLevelMethodThrows(rt_id.name)
+        if reg_throws and try_block_label == nil and not in_try_expr
+            recordImplicitTry(source_file + ":" + w.cur_line.toString())
+            w.emit("try ")
         genExpr(c.callee)
         w.emit("(")
         var reg_params: List(Param)? = nil
@@ -14848,6 +14880,8 @@ struct Generator
             reg_body = lookupFnBody(reg_id.name)
         genArgListFull(c.args, reg_params, reg_body)
         w.emit(")")
+        if reg_throws and try_block_label != nil and not in_try_expr
+            emitTryBlockCatch()
 
     # Returns true if `e` is `catch_var.details` — used to detect e.details.toString() pattern.
     def isDetailsMemberOnCatchVar(e: Expr, cv: str): bool

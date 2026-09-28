@@ -6,6 +6,171 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-471: an int expression returned from a `float` function reaches Zig — FIXED 2026-09-28
+
+```zebra
+def average(a: int, b: int): float
+    return a / b              # zig: expected type 'f64', found 'i64'
+```
+BUG-445's rule widens int to float where it is safe, and a `float`-typed `var` init and a
+`float` argument already did; `return` did not (only an int LITERAL worked, by Zig's own
+coercion). Found fixing the book's ch10 `average()` for BUG-465 -- that example had failed
+under every release. **Fixed:** `genReturn` widens through `emitAsNum` when the declared
+return type is a float and the value is an int by inference. Fixture
+`bug471_return_int_as_float_test` (literal, quotient, a parameter, float32, a method); red
+on rc4.
+
+---
+
+### BUG-470: `x in <a call returning a List>` is compiled as a SUBSTRING test — FIXED 2026-09-28
+
+```zebra
+def names(): List(str)
+    return ["a", "b"]
+
+def main()
+    print("a" in names())      # zig: expected type 'str', found 'array_list.Aligned(str,null)'
+```
+`in` chose membership only for a list/array LITERAL or an IDENTIFIER whose type was known;
+any other right operand -- a call, `v.keys()` -- fell to the substring path. Found writing
+the BUG-331 demonstration (`"zzz" in v.keys()`). **Fixed:** every right operand the arms do
+not settle is typed by inference, and a `list_` / `hashmap_` / `set_` (or a named List /
+HashMap) goes to `_zebra_in`; a `str` is still a substring test. Fixture
+`bug470_in_call_result_test` (a call, `v.keys()`, a miss, and a string substring).
+
+---
+
+### BUG-466: `f()?` inside `main()` reaches Zig ("expected type 'void', found 'anyerror'") — FIXED 2026-09-28
+
+```zebra
+def f(): int throws
+    raise "x"
+
+def main()
+    print(f()?)
+```
+In any other function `?` quietly makes the function throwing (`def g(): int` with `f()?` in
+it works). `main` cannot throw today, so the emit is a type error inside Zig. Either let
+`main` propagate (emit `!void`; an uncaught error exits non-zero with its message -- Rust's
+`main() -> Result`) or refuse `?` in `main` naming the method-level `catch`. Found writing a
+Lisp interpreter in Zebra (free time; fieldnotes on the wiki shelf).
+
+**Fixed 2026-09-28 (Sean: "let it propagate").** Two halves. `bodyHasRaise` did not look
+inside a `print` argument, a `branch` scrutinee, a destructuring init, an `assert`, an
+`allocate` body or a `yield` -- so a `?` there made the function throw at the use site and
+not in its signature (the `main` repro, and any function with its only `?` in one of those
+positions). And an error that DID reach the end of `main` printed Zig's `error: ZebraError`
+plus a stack trace into generated code. Now a throwing `main` registers
+`errdefer |e| _zbr_uncaught(e)` after its arena/coverage defers (so it runs first, while the
+message is still alive): `Error: boom` on stderr, exit 1, through `_zbr_exit` so --coverage
+still flushes. The class-`main` wrapper uses the same helper (it had its own copy, exiting
+without the flush). Fixtures `bug466_main_propagates_test` (smoke_run_fail "Error: boom")
+and `bug466_raise_positions_test` (each position propagates to a catch); both red on rc4.
+
+---
+
+### BUG-467: method-level `catch` does not catch a bare call to a void `throws` function — FIXED 2026-09-28
+
+```zebra
+def f() throws
+    raise "boom"
+
+def main()
+    f()                      # zig: error union is ignored
+catch |e|
+    print("caught: ${e.message}")
+```
+The QUICKSTART form works when the call's value is bound (`var r = f()` with `f(): int
+throws` prints `caught: boom`); a statement call to a VOID throwing function is not routed
+to the catch. Same in a non-main function. Same session as BUG-466.
+
+**Fixed 2026-09-28 -- and it was wider than filed.** Only `var r = f()` routed a throwing
+FREE function's error to an enclosing method-level `catch`; a bare statement call, or one
+inside `print(...)`, did not. Worse, an UNMARKED call to a throwing free function outside
+any catch was never recorded for §28b's refusal at all (only methods were): it reached Zig
+as "error union is ignored", and a statement call to a VALUE-returning one compiled as
+`_ = f();`, silently SWALLOWING the error. The regular call path now owns the decision: in
+a catch/try scope it attaches the catch; elsewhere an unmarked call is refused ("throws
+call needs '?'"). "Throws" means what the signature means -- declared, or inferred from a
+`raise`/`?` (`isTopLevelMethodThrows` read the declaration only). The `var`-init special
+case is gone (it would now double the catch).
+
+Swept before landing with the emitting compiler (the refusal is the driver's, so `-c`
+cannot see it): 1,186 files, 11 refusals -- 9 were three `return generateX(...)` lines in
+the compiler's OWN CodeGen.zbr (legal Zig -- a returned error union does propagate -- but
+§28b refuses the same unmarked form for methods, so they gained `?`), 1 the existing
+negative fixture `implicit_try_rejected_test`, 1 a book troubleshooting example that
+demonstrates this exact error on purpose. Fixtures
+`bug467_method_catch_bare_call_test` (bare, in print, bound, inferred-throws) and
+`bug467_unmarked_call_fail`; both red on rc4.
+
+---
+
+### BUG-469: `Timer()` (not `Timer.start()`) reaches Zig as an undeclared identifier — FIXED 2026-09-28
+
+```zebra
+var t = Timer()           # zig: use of undeclared identifier 'Timer'
+print(t.elapsedMs())      # not refused either -- the receiver was never typed
+```
+BUG-446 accepts `Timer` as a TYPE name (it is one); calling it as a constructor is not
+handled or refused, and because `t` is then untyped, `timerMethodKnown` never sees the
+misspelled method. Refuse with "a Timer is made with `Timer.start()`" -- and check the other
+runtime object types for the same bare-constructor gap.
+
+**Fixed 2026-09-28, for eleven types, not one.** Every name in `isBuiltinObjectTypeName` was
+compiled as `var x = Name()`: Timer, Random, DynLib, Regex, DateTime, SqliteDb, SqliteRow,
+WsConn, Gui, Build and Allocator passed `-c` and failed in Zig ("undeclared identifier" or
+"type 'type' not a function"); CodeEditor, StringBuilder, CsvWriter, ThreadPool and
+HttpResponse DO construct; the rest were already refused. Each of the eleven is now refused
+in the front end naming its documented factory (`Timer.start()`, `Random.new(seed)`,
+`DynLib.open(path)`, `Regex.compile(p)`, `DateTime.now()`, `Sqlite.open(path)`) or where a
+value comes from when nothing builds one (Gui, Build, WsConn, SqliteRow, Allocator).
+`runtimeFactoryHint` in TypeChecker is the table. Fixture `bug469_runtime_ctor_fail`.
+
+---
+
+### BUG-464: `List()` with no type argument as a FIELD default reaches Zig — FIXED 2026-09-28
+
+```zebra
+class D
+    var xs: List(int) = List()     # zig: use of undeclared identifier 'List'
+```
+Passes `-c`; the emitted field default is the bare Zebra spelling. The annotation already
+says `List(int)`, so the fix is to emit the annotated type's `.empty` (as
+`genCallWithTypeHint` does for a `List()` argument), or to refuse naming `List(int)()`.
+Found running the book's ch10 `10_computed.zbr` under rc4 and rc5 (it fails under both).
+
+**Fixed 2026-09-28.** BUG-418 had routed a bare `List()` / `HashMap()` field default through
+the field's declared type at THREE of the SEVEN sites that emit a field initialiser; a
+class with no `cue init` (its synthetic init), a struct field default, a deferred class
+default and a static field kept the bare spelling. Every site now calls one helper,
+`genFieldInitExpr`, so an eighth cannot drift. Fixture
+`bug464_field_bare_collection_ctor_test` (class, HashMap, struct, class with `cue init`).
+
+---
+
+### BUG-465: a method named without `()` in an expression reaches Zig — FIXED 2026-09-28
+
+```zebra
+class D
+    def s(): int
+        return 4
+    def a(): float
+        return s / 2              # meant s() -- zig: "unused function parameter"
+```
+Passes `-c`; the full compile fails with a Zig message about something else entirely. A
+bare method name used as a VALUE (not passed where a `sig` is expected) should be refused
+naming the call form, `s()`. Same book example as BUG-464 (`return sum / numbers.count()`).
+
+**Fixed 2026-09-28, narrowly.** A function value is legitimate where one belongs -- bound to
+a var, passed to a `sig`, compared with `==` -- so only an OPERAND of arithmetic, bitwise or
+ordering operators is checked: a name that is a function of this module (or a method of the
+current class) and not a local is refused, "`s` is a function -- to use its result, call
+it: `s()`". Fixtures `bug465_bare_fn_operand_fail` and `bug465_fn_values_ok_test` (the
+positive control: a fn bound to a var, passed to a sig, and a call in arithmetic).
+
+---
+
 ### BUG-468: a `--release` binary dies SILENTLY on stack overflow — FIXED 2026-09-27
 
 A Debug build prints `Stack overflow (no address available)` and exits 1; the same program

@@ -1,0 +1,10 @@
+# BUG-465: a method named without `()` as an arithmetic operand is a function VALUE -- it
+# passed -c and failed inside Zig with "unused function parameter". Refused, naming `s()`.
+class D
+    def s(): int
+        return 4
+    def a(): float
+        return s / 2
+
+def main()
+    print(D().a())

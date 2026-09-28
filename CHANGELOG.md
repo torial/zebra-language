@@ -23,6 +23,24 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **An error that reaches the end of `main` prints its message and exits 1 (BUG-466)** --
+  `Error: boom`, not Zig's `error: ZebraError` plus a stack trace; and a `?` inside a
+  `print(...)`, a `branch` scrutinee, a destructuring or an `assert` now makes its function
+  throwing (it reached Zig as a type error).
+- **A method-level `catch` catches a throwing free function's error in every position
+  (BUG-467)**, not only `var r = f()`. **BREAKING-ish:** an UNMARKED call to a throwing free
+  function is now refused ("throws call needs '?'") as §28b already did for methods -- it
+  reached Zig as "error union is ignored", or compiled as `_ = f();` and swallowed the error.
+- **`Timer()`, `Random()`, `Regex()`, `DateTime()`, `DynLib()`, `SqliteDb()` and five more
+  runtime types are refused as constructors, naming their factory (BUG-469)** -- they
+  reached Zig as "undeclared identifier".
+- **`var xs: List(int) = List()` works as a field default everywhere (BUG-464).**
+- **A function named without `()` as an arithmetic operand is refused (BUG-465)**, naming
+  the call form.
+- **An int expression returned from a `float` function widens (BUG-471)**, as a `float`
+  `var` init and argument already did.
+- **`x in names()` / `x in v.keys()` is list membership (BUG-470)**; it was compiled as a
+  substring test and reached Zig as a type error.
 - **A `--release` program that crashes says so (BUG-468).** ReleaseFast had turned Zig's crash
   handler off, so a stack overflow or segfault in a shipped binary died silently; it now
   prints `Stack overflow` (or the fault) like a debug build. Measured cost: ~1% on a

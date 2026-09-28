@@ -1,0 +1,25 @@
+# BUG-464: `var xs: List(int) = List()` as a FIELD default -- a bare collection constructor
+# takes the field's declared type. Reached Zig as "use of undeclared identifier 'List'":
+# BUG-418 had fixed three of the seven sites that emit a field initialiser, and a class with
+# no `cue init`, a struct, and a deferred class default were among the other four.
+class D
+    var xs: List(int) = List()
+    var m: HashMap(str, int) = HashMap()
+
+struct S
+    var ys: List(str) = List()
+
+class E
+    var zs: List(float) = List()
+    cue init()
+        .zs.add(1.5)
+
+def main()
+    var d = D()
+    d.xs.add(1)
+    d.m.set("a", 2)
+    var s = S()
+    s.ys.add("q")
+    var e = E()
+    print(d.xs.count() + d.m.count() + s.ys.count() + e.zs.count())
+    print("bug464: OK")

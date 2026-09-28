@@ -1,0 +1,28 @@
+# BUG-471: an int expression returned from a `float` function widens -- as a `float`-typed
+# `var` init and a `float` argument already did (BUG-445's rule). It reached Zig as
+# "expected type 'f64', found 'i64'"; only an int LITERAL return worked. Found fixing the
+# book's ch10 `average()`, which returns `sum() / numbers.count()`.
+def lit(): float
+    return 3
+
+def quotient(a: int, b: int): float
+    return a / b
+
+def widen(a: int): float
+    return a
+
+def narrow(a: int): float32
+    return a + 1
+
+class Stats
+    var total: int = 10
+    def half(): float
+        return .total / 4
+
+def main()
+    print(lit())
+    print(quotient(7, 2))
+    print(widen(4))
+    print(narrow(1))
+    print(Stats().half())
+    print("bug471: OK")

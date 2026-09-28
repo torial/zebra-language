@@ -5231,6 +5231,37 @@ def genericCallReturn(rt: Type_, targs: List(Arg), ctx: InferCtx): Type_
         return rt
     return rt
 
+# BUG-469: runtime object types whose bare `Name()` reached Zig ("use of undeclared
+# identifier", "type 'type' not a function"). MEASURED, not listed from memory: every name
+# in isBuiltinObjectTypeName was compiled as `var x = Name()`; these eleven passed `-c` and
+# failed inside Zig (CodeEditor, StringBuilder, CsvWriter, ThreadPool and HttpResponse do
+# construct; the rest were already refused as undefined names). The hint is the factory
+# QUICKSTART documents, or where a value of the type comes from when nothing builds one.
+def runtimeFactoryHint(name: str): str
+    if name == "Timer"
+        return "start one with `Timer.start()`"
+    if name == "Random"
+        return "make a seeded stream with `Random.new(seed)`, or call `Random.randInt(lo, hi)` directly"
+    if name == "DynLib"
+        return "load a library with `DynLib.open(path)`"
+    if name == "Regex"
+        return "compile a pattern with `Regex.compile(pattern)`"
+    if name == "DateTime"
+        return "get one from `DateTime.now()`"
+    if name == "SqliteDb"
+        return "open one with `Sqlite.open(path)` (it returns `SqliteDb?`)"
+    if name == "SqliteRow"
+        return "rows come from a query on a `SqliteDb`"
+    if name == "WsConn"
+        return "a connection comes from `Ws.connect(url)` or is handed to a `Ws.serve` handler"
+    if name == "Gui"
+        return "`Gui.run` hands your view a `Gui` -- it is not constructed"
+    if name == "Build"
+        return "`zebra build` hands your build program a `Build` -- it is not constructed"
+    if name == "Allocator"
+        return "an allocator comes from `allocate Arena()` (or another named wrapper) -- it is not constructed"
+    return ""
+
 def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
     # Named args reorder positional slots — skip (parity with checkCallExpr).
     for arg in call.args
@@ -5252,6 +5283,12 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
             # A class name used as a call is a constructor — different arity rules.
             if ctx.hasClassAny(cid.name)
                 return
+            # BUG-469: a runtime object type called like a constructor it does not have.
+            if not ctx.hasLocal(cid.name)
+                var rf_hint: str = runtimeFactoryHint(cid.name)
+                if rf_hint != ""
+                    ctx.addErr(file, cline, ccol, "`" + cid.name + "()` is not a constructor -- " + rf_hint)
+                    return
             # BUG-460: a generic function called without its type argument. The curried
             # form's inner call `f(int)` is never walked here (checkCallsInExpr does not
             # descend into a call's callee), so reaching this is the direct call.
@@ -5359,6 +5396,26 @@ def checkDeprecatedCall(c: ExprCall, ctx: InferCtx)
         else
             pass
 
+# BUG-465: a function or method named WITHOUT `()` as an operand of arithmetic, bitwise or
+# ordering -- `return s / 2` where `s` is a method -- is a function VALUE, which no such
+# operator accepts; it passed -c and failed inside Zig with an unrelated message. A function
+# value is still fine where one belongs (passed to a `sig`, bound to a var, compared with
+# `==`), so only these operators are checked.
+def bareFnOperandOp(op: BinaryOp): bool
+    return op == BinaryOp.add or op == BinaryOp.sub or op == BinaryOp.mul or op == BinaryOp.div or op == BinaryOp.int_div or op == BinaryOp.mod or op == BinaryOp.pow or op == BinaryOp.bit_and or op == BinaryOp.bit_or or op == BinaryOp.bit_xor or op == BinaryOp.shl or op == BinaryOp.shr or op == BinaryOp.lt or op == BinaryOp.le or op == BinaryOp.gt or op == BinaryOp.ge
+
+def checkBareFnOperand(e: Expr, file: str, ctx: InferCtx)
+    if e is Expr.ident as bid
+        if ctx.hasLocal(bid.name)
+            return
+        var is_fn = false
+        if ctx.current_class != "" and ctx.fnParamListAny(ctx.current_class, bid.name) != nil
+            is_fn = true
+        if ctx.fnParamListAny("", bid.name) != nil
+            is_fn = true
+        if is_fn
+            ctx.addErr(file, bid.span.line, bid.span.col, "`" + bid.name + "` is a function -- to use its result, call it: `" + bid.name + "()`")
+
 def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
     branch e
         on Expr.call as c
@@ -5377,6 +5434,9 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
         on Expr.binary as b
             checkCallsInExpr(b.left, file, line, ctx)
             checkCallsInExpr(b.right, file, line, ctx)
+            if bareFnOperandOp(b.op)
+                checkBareFnOperand(b.left, file, ctx)
+                checkBareFnOperand(b.right, file, ctx)
         on Expr.unary as u
             checkCallsInExpr(u.operand, file, line, ctx)
         on Expr.to_non_nil as t

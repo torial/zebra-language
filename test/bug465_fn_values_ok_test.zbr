@@ -1,0 +1,24 @@
+# BUG-465 positive control: a function used as a VALUE where one belongs is still fine --
+# bound to a variable, passed where a `sig` is expected -- and a LOCAL that shares a
+# function's name is an ordinary number in arithmetic.
+sig IntPred(n: int): bool
+
+def isEven(n: int): bool
+    return n % 2 == 0
+
+def count(xs: List(int), p: IntPred): int
+    var c = 0
+    for x in xs
+        if p(x)
+            c += 1
+    return c
+
+def total(): int
+    return 10
+
+def main()
+    var pred: IntPred = isEven
+    print(count([1, 2, 3, 4], pred))
+    print(count([2, 4, 6], isEven))
+    print(total() / 2)
+    print("bug465: OK")

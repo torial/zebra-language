@@ -1,0 +1,12 @@
+# BUG-467: an UNMARKED call to a throwing free function, outside any try/catch, is refused
+# in Zebra's words (§28b: a throws call is marked with `?`). It reached Zig as "error union
+# is ignored" -- and a statement call to a VALUE-returning throwing function compiled as
+# `_ = f();`, silently swallowing the error.
+def f() throws
+    raise "x"
+
+def g() throws
+    f()
+
+def main()
+    g()?

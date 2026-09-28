@@ -1,0 +1,7 @@
+# BUG-469: `Timer()` -- a runtime object type called like a constructor it does not have --
+# reached Zig as "use of undeclared identifier 'Timer'", and because `t` was then untyped
+# the misspelled `t.elapsedMs()` was never refused either. Ten more runtime types had the
+# same gap (measured; see runtimeFactoryHint). The refusal names the documented factory.
+def main()
+    var t = Timer()
+    print(t.elapsed())

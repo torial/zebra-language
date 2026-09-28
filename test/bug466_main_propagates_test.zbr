@@ -1,0 +1,12 @@
+# BUG-466: an error that reaches the end of `main` (a `?` with no catch above it) ends the
+# program like an uncaught exception: its MESSAGE on stderr, exit status 1. `print(f()?)`
+# used to reach Zig as "expected type 'void', found 'anyerror'" -- the `?` inside a print
+# argument did not make `main` throwing -- and a propagated error printed Zig's
+# `error: ZebraError` plus a stack trace into generated code instead of the message.
+def f(): int throws
+    raise "boom"
+
+def main()
+    print("before")
+    print(f()?)
+    print("never printed")

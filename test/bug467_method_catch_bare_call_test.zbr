@@ -1,0 +1,40 @@
+# BUG-467: a call to a THROWING free function inside a method-level `catch` (or a try
+# block) routes its error to the catch in every position. Only `var r = f()` did; a bare
+# statement call reached Zig as "error union is ignored", and so did one inside a print.
+def fails() throws
+    raise "void boom"
+
+def failsWithValue(): int throws
+    raise "value boom"
+
+def byInference(): int
+    var n = failsWithValue()?      # throws by inference, not by declaration
+    return n
+
+def bareCall()
+    fails()
+catch |e|
+    print("caught: ${e.message}")
+
+def inPrint()
+    print(failsWithValue())
+catch |e|
+    print("caught: ${e.message}")
+
+def boundCall()
+    var r = failsWithValue()
+    print(r)
+catch |e|
+    print("caught: ${e.message}")
+
+def inferred()
+    print(byInference())
+catch |e|
+    print("caught: ${e.message}")
+
+def main()
+    bareCall()
+    inPrint()
+    boundCall()
+    inferred()
+    print("bug467: OK")

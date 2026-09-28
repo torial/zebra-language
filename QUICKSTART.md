@@ -1222,7 +1222,13 @@ var got = someObj.method()?          # propagates if method throws
   `_Stringable` details object.
 - `catch` clauses appear after the method body at the same indent as `def`;
   they wrap the entire body.  Multiple `catch` clauses are allowed; each has an
-  optional `|binding|` and typed variant `|e: ErrorType|`.
+  optional `|binding|` and typed variant `|e: ErrorType|`. Inside the body a throwing
+  call needs no `?` -- its error goes to the catch wherever the call sits (a bare
+  statement, a `var` init, a `print` argument; BUG-467).
+- **An error that reaches the end of `main` ends the program** like an uncaught
+  exception: `Error: <message>` on stderr, exit status 1 (2026-09-28, BUG-466). So
+  `print(load(path)?)` in `main` is a complete program; add a method-level `catch` to
+  `main` to handle the error yourself instead.
 
 ---
 

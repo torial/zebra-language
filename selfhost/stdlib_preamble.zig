@@ -4596,6 +4596,19 @@ pub fn _zbr_cov_flush() void {
 }
 // sys.exit: flush coverage first (a defer does not run across process.exit), then the
 // C-style truncation BUG-326 chose: -1 -> 255, 256 -> 0.
+/// BUG-466: an error that propagates out of `main` (a `?` with no catch above it) ends the
+/// program the way an uncaught exception does -- its message on stderr, exit status 1 --
+/// instead of Zig's `error: ZebraError` plus a stack trace into generated code. Called from
+/// an `errdefer` in a throwing free `main`, and from the class-`main` wrapper; exits through
+/// `_zbr_exit` so a --coverage run still writes its file.
+pub fn _zbr_uncaught(e: anyerror) noreturn {
+    if (e == error.ZebraError and _error_ctx.message.len > 0) {
+        std.debug.print("Error: {s}\n", .{_error_ctx.message});
+    } else {
+        std.debug.print("Error: {s}\n", .{@errorName(e)});
+    }
+    _zbr_exit(1);
+}
 pub fn _zbr_exit(code: i64) noreturn {
     _zbr_cov_flush();
     std.process.exit(@truncate(@as(u64, @bitCast(code))));

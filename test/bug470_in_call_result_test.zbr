@@ -1,0 +1,14 @@
+# BUG-470: `x in <a call or member returning a List>` was never type-checked for the
+# container path and fell to the SUBSTRING path, reaching Zig as "expected type 'str',
+# found ArrayList". Membership now works for any right operand inference types as a
+# container; a string on the right is still a substring test.
+def names(): List(str)
+    return ["a", "b"]
+
+def main()
+    print("a" in names())
+    print("z" in names())
+    if Json.parse("{\"k\": 1}") as v
+        print("k" in v.keys())
+    print("ell" in "hello")
+    print("bug470: OK")

@@ -1,0 +1,69 @@
+# BUG-466: a `?` makes its function throwing wherever it sits -- a print argument, a
+# branch scrutinee, a destructuring init, an assert condition. Each helper below has its
+# only `?` in one of those positions; each must propagate to the caller's catch.
+union Shape
+    dot
+    box: int
+
+def mayFail(ok: bool): int throws
+    if not ok
+        raise "failed"
+    return 1
+
+def shapeOf(ok: bool): Shape throws
+    if not ok
+        raise "no shape"
+    return Shape.box(3)
+
+def pair(ok: bool): (int, int) throws
+    if not ok
+        raise "no pair"
+    return (1, 2)
+
+def inPrint(ok: bool)
+    print(mayFail(ok)?)
+
+def inBranch(ok: bool): int
+    branch shapeOf(ok)?
+        on Shape.box as n
+            return n
+        on Shape.dot
+            return 0
+
+def inDestruct(ok: bool): int
+    var (a, b) = pair(ok)?
+    return a + b
+
+def inAssert(ok: bool)
+    assert mayFail(ok)? == 1
+
+def failPrint()
+    inPrint(false)?
+catch |e|
+    print("caught: ${e.message}")
+
+def failBranch()
+    print(inBranch(false)?)
+catch |e|
+    print("caught: ${e.message}")
+
+def failDestruct()
+    print(inDestruct(false)?)
+catch |e|
+    print("caught: ${e.message}")
+
+def failAssert()
+    inAssert(false)?
+catch |e|
+    print("caught: ${e.message}")
+
+def main()
+    inPrint(true)?
+    print(inBranch(true)?)
+    print(inDestruct(true)?)
+    inAssert(true)?
+    failPrint()
+    failBranch()
+    failDestruct()
+    failAssert()
+    print("bug466: OK")

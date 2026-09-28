@@ -2017,6 +2017,27 @@ smoke_run test/bug463_empty_list_arg_test.zbr "bug463: OK"
 # shadowing); sibling scopes may reuse a name.
 smoke_tc_fail test/bug461_shadowing_fail.zbr "bug461_shadowing_fail.zbr:7:5: error: \`n\` is already declared as a parameter"
 smoke_run test/bug461_sibling_scopes_ok_test.zbr "bug461: OK"
+# BUG-466: an error reaching the end of main prints its message and exits 1; a `?` in a
+# print argument, branch scrutinee, destructure or assert makes its function throwing.
+smoke_run_fail test/bug466_main_propagates_test.zbr "Error: boom"
+smoke_run test/bug466_raise_positions_test.zbr "bug466: OK"
+# BUG-467: a throwing free function's error reaches a method-level catch in every position;
+# an unmarked call outside one is refused in Zebra's words.
+smoke_run test/bug467_method_catch_bare_call_test.zbr "bug467: OK"
+smoke_tc_fail test/bug467_unmarked_call_fail.zbr "bug467_unmarked_call_fail.zbr:9: error: throws call needs '?'"
+# BUG-469: a runtime object type called like a constructor it does not have is refused,
+# naming its factory.
+smoke_tc_fail test/bug469_runtime_ctor_fail.zbr "bug469_runtime_ctor_fail.zbr:6:13: error: \`Timer()\` is not a constructor -- start one with \`Timer.start()\`"
+# BUG-464: a bare List()/HashMap() field default takes the field's declared type, at every site.
+smoke_run test/bug464_field_bare_collection_ctor_test.zbr "bug464: OK"
+# BUG-465: a function named without () as an arithmetic operand is refused; function values
+# where they belong still work.
+smoke_tc_fail test/bug465_bare_fn_operand_fail.zbr "bug465_bare_fn_operand_fail.zbr:7:16: error: \`s\` is a function -- to use its result, call it: \`s()\`"
+smoke_run test/bug465_fn_values_ok_test.zbr "bug465: OK"
+# BUG-470: `x in <call or member returning a List>` is membership, not a substring test.
+smoke_run test/bug470_in_call_result_test.zbr "bug470: OK"
+# BUG-471: an int expression returned from a float function widens.
+smoke_run test/bug471_return_int_as_float_test.zbr "bug471: OK"
 # BUG-456: a bare `on opt as x` in a branch on a union is refused, naming `on Ty.opt`.
 smoke_tc_fail test/bug456_bare_variant_arm_fail.zbr "bug456_bare_variant_arm_fail.zbr:12:9: error: write the variant as \`on Ty.opt\`"
 smoke_tc_fail test/bug411_indent_error_fail.zbr "bug411_indent_error_fail.zbr:6:7: error: indentation is 6 space(s)"
