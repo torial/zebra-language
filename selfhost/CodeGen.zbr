@@ -2970,6 +2970,14 @@ def tryChain(e: Expr): CallChain?
 # across every module generated in one process (deps + root).
 var _implicit_try_sites: List(str) = List(str)()
 
+# BUG-312: memo for "does argument #i of callee K reach a mutation, transitively?", keyed
+# "file:K#i" -> 0 in progress, 1 no, 2 yes. The scan and paramNeedsAddrOfTx are mutually
+# recursive; unmemoised, the compiler's own source (thousands of functions, wide call
+# graphs) re-derived the same answers exponentially and the regeneration died with OOM.
+# "in progress" answers NO, which is the fixed point for a cycle (a call chain that loops
+# back adds no mutation site the rest of the chain does not already have).
+var _addr_tx_memo: HashMap(str, int) = HashMap(str, int)()
+
 def recordImplicitTry(site: str)
     _implicit_try_sites.add(site)
 
@@ -7036,13 +7044,22 @@ struct Generator
                             var av = c.args.at(pi).value
                             if av is Expr.ident as aid
                                 # BUG-312: the TRANSITIVE question, as genArgListNamed asks it.
+                                # Memoised per (file, callee, argument index) -- see _addr_tx_memo.
                                 # This scan decides whether the caller's local is `var`; the
                                 # argument emission decides whether it passes `&x`. With the
                                 # scan asking only about the callee's own body, a container
                                 # mutated one call further down (`mlpFwd(out)` -> `matvec` ->
                                 # `out.set`) got `&h` passed from a `const h` -- "expected
                                 # '*T', found '*const T'".
-                                if paramNeedsAddrOfTx(p, body)
+                                var tx_key: str = source_file + ":" + key + "#" + pli.toString()
+                                var tx_need: bool = false
+                                if _addr_tx_memo.contains(tx_key)
+                                    tx_need = _addr_tx_memo.fetch(tx_key) == 2
+                                else
+                                    _addr_tx_memo.set(tx_key, 0)
+                                    tx_need = paramNeedsAddrOfTx(p, body)
+                                    _addr_tx_memo.set(tx_key, if(tx_need, 2, 1))
+                                if tx_need
                                     out.add(aid.name)
                             pi += 1
                             pli += 1
