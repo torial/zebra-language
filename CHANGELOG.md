@@ -37,6 +37,10 @@ confirmed via `tools/bootstrap_check.sh`.
 - **`var xs: List(int) = List()` works as a field default everywhere (BUG-464).**
 - **A function named without `()` as an arithmetic operand is refused (BUG-465)**, naming
   the call form.
+- **A thread body can assign through a captured variable (BUG-444)** -- in `sys.go` and in
+  `ThreadPool.submit`; both reached Zig (the pool form died inside the runtime).
+- **`raise "msg", details` refuses details that cannot render (BUG-474)** -- a class with no
+  `cue toString`, or an enum, reached Zig; the error names the fix.
 - **A tuple of generic containers works (BUG-311)** -- `(List(float), List(float))` as a return
   type reached Zig as "undeclared identifier 'List'".
 - **A struct value into a `^S` / `^S?` slot is boxed (BUG-299)** -- as a constructor or

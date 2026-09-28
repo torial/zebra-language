@@ -4802,6 +4802,18 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 walkExpr(sra.message!, ctx)
             if sra.details != nil
                 walkExpr(sra.details!, ctx)
+                # BUG-474: `raise "msg", details` renders details through `toString`. A
+                # named type without one -- a class or struct with no `cue toString`, an
+                # enum -- passed -c and failed inside Zig ("no member function named
+                # 'toString'", "undeclared identifier 'anyopaque'"). The retired bootstrap
+                # refused it by name; this was the last gap of the BUG-253 parity umbrella.
+                var rd_t: Type_ = inferExpr(sra.details!, ctx)
+                if rd_t is Type_.named as rd_n
+                    if not ctx.hasCueAny(rd_n, "toString")
+                        if ctx.hasEnumAny(rd_n)
+                            ctx.addErr(ctx.file, sra.span.line, sra.span.col, "raise details must have a `toString`: the enum '" + rd_n + "' has none -- pass it as a str, `\"\${value}\"`")
+                        else
+                            ctx.addErr(ctx.file, sra.span.line, sra.span.col, "raise details must have a `toString`: '" + rd_n + "' has none -- add `cue toString(): str` to it, or pass a str or number")
         on Stmt.try_catch as stc
             walkStmts(stc.stmts, ctx)
             for cc in stc.clauses

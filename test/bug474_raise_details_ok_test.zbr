@@ -1,0 +1,40 @@
+# BUG-474 positive control: details that CAN render -- a class with `cue toString`, a
+# number, a str (an enum interpolated into one) -- still raise and reach the catch.
+class Info
+    var code: int = 3
+    cue toString(): str
+        return "Info(" + .code.toString() + ")"
+
+enum Lvl
+    low
+    high
+
+def withObj() throws
+    raise "obj", Info()
+
+def withNum() throws
+    raise "num", 42
+
+def withEnumText() throws
+    raise "enum", "${Lvl.high}"
+
+def a()
+    withObj()
+catch |e|
+    print("${e.message}: ${e.details}")
+
+def b()
+    withNum()
+catch |e|
+    print("${e.message}: ${e.details}")
+
+def c()
+    withEnumText()
+catch |e|
+    print("${e.message}: ${e.details}")
+
+def main()
+    a()
+    b()
+    c()
+    print("bug474: OK")

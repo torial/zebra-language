@@ -1440,8 +1440,22 @@ pub fn _sys_go(f: anytype) void {
     const _t = if (comptime @typeInfo(T) == .@"fn")
         std.Thread.spawn(.{}, f, .{}) catch @panic("sys.go: thread spawn failed")
     else
-        std.Thread.spawn(.{}, T.call, .{f}) catch @panic("sys.go: thread spawn failed");
+        std.Thread.spawn(.{}, _ZbrGoRun(T).run, .{f}) catch @panic("sys.go: thread spawn failed");
     _t.detach();
+}
+/// BUG-444: a capture thunk's `call` takes `self: *@This()` when its body assigns through a
+/// capture (`c.n = 5`), and spawning `T.call` passed the thunk BY VALUE -- "expected type
+/// '*T', found 'T'". The thunk is copied into the new thread's own stack frame here and
+/// called there, which fits every receiver form (`@This()`, `*const`, `*`) with no
+/// allocation, and gives the thread a copy that no arena rewind in the spawner can free.
+fn _ZbrGoRun(comptime T: type) type {
+    return struct {
+        fn run(v: T) void {
+            var local = v;
+            _ = &local;
+            local.call();
+        }
+    };
 }
 
 // ── Build system ──────────────────────────────────────────────────────────────

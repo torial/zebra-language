@@ -1,0 +1,12 @@
+# BUG-474: `raise "msg", details` renders the details through `toString`. A class with no
+# `cue toString` passed -c and failed inside Zig ("no field or member function named
+# 'toString'"); an enum failed with "undeclared identifier 'anyopaque'". The retired
+# bootstrap refused this by name; it was the last gap of the BUG-253 parity umbrella.
+class Info
+    var code: int = 3
+
+def f() throws
+    raise "bad", Info()
+
+def main()
+    f()?

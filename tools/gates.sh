@@ -62,9 +62,8 @@
 # 2026-08-19: fuzz/gramgen.py, tools/node_addon_test.sh, tools/gui_scaffold_check.sh.
 # They are still excluded from FULL, so "gates green" keeps its precise meaning — but
 # they now have a NAMED cadence instead of a paragraph asking someone to remember.
-# NOT included: escape_hatches_check (red on a page_allocator review owned elsewhere)
-# and compile_check --bootstrap (219/19/20 is its documented NORMAL state and it has
-# no baseline, so it cannot be gated without inventing one).
+# NOT included: compile_check --bootstrap (retired with the bootstrap, 2026-09-16).
+# escape_hatches_check was listed here while red; it is registered (static) since 2026-09-28.
 #
 # Record a green --daily run in CLAUDE.md's sweep table; the tier prints the line.
 
@@ -481,6 +480,11 @@ run_static "fn-twins"       "0 drift"  python tools/lint_fn_twins.py
 # the DEFAULT backend); `_gui_set_clipboard_text` had been the same shape a day earlier.
 run_static "gui-surface"    "all checks pass" python tools/gui_surface_drift.py
 run_static "root-clean"     "0 compiled" bash tools/root_clean_check.sh
+# escape-hatches (2026-09-28): no NEW `std.heap.page_allocator` use in the runtime without a
+# reviewed baseline bump -- each one is state that outlives the program arena. It sat outside
+# every tier while red on a review owned elsewhere (BUG-279 leg 3); that review moved the
+# baseline to 77 and it is green. Reads the preamble only. Red-checked by adding one use.
+run_static "escape-hatches" "OK"         bash tools/escape_hatches_check.sh
 # (`decl-exhaustive` sat here 2026-08-26 .. 2026-09-16, BUG-103's pin: no `else => {}`
 # in the bootstrap's Ast.Decl switches. Oracle and subject were both src/*.zig; gone with
 # it, sunset Step 3. The selfhost's `branch` over Decl is checked by lint_fallthrough and

@@ -2046,6 +2046,11 @@ smoke_run test/bug299_struct_into_boxed_slot_test.zbr "bug299: OK"
 smoke_run test/bug472_destructure_unused_mutated_test.zbr "bug472: OK"
 # BUG-473: a tag test / branch on a pointer bound from a ^U? field goes through the value.
 smoke_run test/bug473_boxed_union_tag_test.zbr "bug473: OK"
+# BUG-474: raise details must be able to render (a toString cue, a number or a str).
+smoke_tc_fail test/bug474_raise_details_fail.zbr "bug474_raise_details_fail.zbr:9:5: error: raise details must have a \`toString\`"
+smoke_run test/bug474_raise_details_ok_test.zbr "bug474: OK"
+# BUG-444: a thread body assigning through a capture -- sys.go and ThreadPool.submit.
+smoke_run test/bug444_thread_capture_assign_test.zbr "bug444: OK"
 # BUG-456: a bare `on opt as x` in a branch on a union is refused, naming `on Ty.opt`.
 smoke_tc_fail test/bug456_bare_variant_arm_fail.zbr "bug456_bare_variant_arm_fail.zbr:12:9: error: write the variant as \`on Ty.opt\`"
 smoke_tc_fail test/bug411_indent_error_fail.zbr "bug411_indent_error_fail.zbr:6:7: error: indentation is 6 space(s)"

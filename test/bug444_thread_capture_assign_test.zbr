@@ -1,0 +1,43 @@
+# BUG-444: a thread body that ASSIGNS through a captured variable. sys.go spawned the
+# capture thunk's `call` with the thunk BY VALUE while `call` took `self: *@This()` --
+# "expected type '*T', found 'T'"; the runtime now copies the thunk into the new thread's
+# own stack and calls it there. `ThreadPool.submit` failed differently: `var pool =
+# ThreadPool(4)` (the documented form) was never recognised as a pool, so the capturing
+# lambda was routed through the closure-via-sig thunk pool and died inside the runtime.
+class Tally
+    var n: int = 0
+
+def main()
+    var t = Tally()
+    var done = Atomic(bool)(false)
+    sys.go(def()
+        capture
+            var t: Tally = t
+            var done: Atomic(bool) = done
+        t.n = 5
+        done.store(true)
+    )
+    while not done.load()
+        sys.sleep(1)
+    print(t.n)
+    var hits = Atomic(int)(0)
+    var pool = ThreadPool(2)
+    var i = 0
+    while i < 4
+        pool.submit(def()
+            capture
+                var hits: Atomic(int) = hits
+            hits.add(1)
+        )
+        i += 1
+    pool.wait()
+    print(hits.load())
+    var box = Tally()
+    pool.submit(def()
+        capture
+            var box: Tally = box
+        box.n = 42
+    )
+    pool.wait()
+    print(box.n)
+    print("bug444: OK")

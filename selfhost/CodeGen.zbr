@@ -7728,6 +7728,15 @@ struct Generator
                 atomic_locals.add(n.name)
             if gctor == "ThreadPool"
                 thread_pool_locals.add(n.name)
+            # BUG-444: the DOCUMENTED form is a plain call, `ThreadPool(4)` -- not the curried
+            # generic shape the helper above recognises -- so `var pool = ThreadPool(4)` was
+            # never registered, `pool.submit(capturing lambda)` lost its struct-consumer
+            # exemption, and the lambda was routed through the closure-via-sig thunk pool
+            # ("no member 'call' in '*const fn () void'" inside the runtime).
+            if n.init_expr! is Expr.call as tp_c
+                if tp_c.callee is Expr.ident as tp_id
+                    if tp_id.name == "ThreadPool"
+                        thread_pool_locals.add(n.name)
         # §28b: inferred `var e = map.entries()` → List((K, V)) tuple-list local,
         # so `for k, v in e` destructures and str elements print as strings.
         if n.init_expr != nil
