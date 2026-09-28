@@ -6,6 +6,58 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-312: a `List(List(T))` parameter loses pointer/mutable codegen when a SHARED helper is called on it from two different wrapper functions — FIXED 2026-09-28
+
+**Found from outside the project**, same porting session as BUG-311. A `List(List(float))` parameter (e.g. a weight matrix) correctly becomes `*std.ArrayList(...)` (mutable, by pointer) when the function that receives it calls `.set()` on its rows directly, or calls exactly one shared helper on it from exactly one place. It becomes `std.ArrayList(...)` (**by value, no pointer**) — silently, with no diagnostic until the *caller* fails to type-check — when a shared helper function taking that same `List(List(T))` type is invoked on the SAME underlying variable from **two different outer functions**.
+
+```zebra
+def matvec(M: List(List(float)), v: List(float), out: List(float))
+    # ... reads M via .at(), never .set() on M itself ...
+
+def matTvec(M: List(List(float)), v: List(float), out: List(float))
+    # ... also only reads M ...
+
+def mlpFwd(x: List(float), W1: List(List(float)), ..., out: List(float))
+    matvec(W1, x, out)             # (A) matvec called with W1, from mlpFwd
+
+def mlpBwd(dout: List(float), W1: List(List(float)), ..., dx: List(float))
+    matTvec(W1, dout, dx)          # (B) matTvec called with W1, from mlpBwd - DIFFERENT caller
+
+def main
+    var W1: List(List(float)) = [[1.0, 0.5], [0.5, 1.0]]
+    mlpFwd(x, W1, ...)             # first
+    mlpBwd(dout, W1, ...)          # second, same W1 -> compile error at THIS call
+```
+
+Fails with `error: expected type '*T', found '*const T'` at the **second** call site (`mlpBwd(..., W1, ...)`), not at either function's definition. Emitting Zig and inspecting the generated signature shows why: `mlpBwd`'s own `W1` parameter compiles to `std.ArrayList(std.ArrayList(f64))` (by value) instead of a pointer, even though `mlpBwd` passes it straight through to `matTvec` with no different usage from `mlpFwd`'s `matvec` call. Confirmed on **both compilers** (bootstrap's more detailed diagnostic is what made the actual generated signature visible; selfhost gives the same error with less detail).
+
+**Isolated what does NOT trigger it**, each independently confirmed correct:
+- A single `List(List(T))` parameter, direct `.set()` mutation, one caller — fine.
+- Two or more `List(List(T))` parameters in the same function, all directly mutated — fine.
+- One read-only + one mutated `List(List(T))` parameter in the same function — fine.
+- A shared helper (`matvec`) called on a matrix from **only one** outer function, while a **different** outer function inlines its own direct operations on the same matrix instead of calling a shared helper — fine (this is the workaround below).
+- Removing only the two `matTvec` calls from `mlpBwd` (leaving `mlpFwd`'s `matvec` call on the same `W1` untouched) makes the whole program compile and run correctly.
+
+So the trigger is specifically: the same `List(List(T))`-typed *argument* reaching the same *shared helper function* through two different call chains — not the argument's mutability, not the parameter count, not read-vs-write.
+
+**Severity:** High for this use case (hand-rolled numeric code with weight matrices used in both a forward and a backward pass is exactly this shape) — but narrow enough to work around: inline the matrix operation directly into each caller instead of factoring it into a shared helper, whenever the same matrix argument would otherwise reach that helper from more than one place. No workaround needed for helpers only ever called from one site.
+
+**Control when fixing:** the three-function repro above (`matvec`/`matTvec`/`mlpFwd`/`mlpBwd`) must compile and run on both compilers, printing a numeric result rather than erroring at the second call site.
+
+**Fixed 2026-09-28 -- the two analyses asked different questions.** Whether the caller's
+local is `var` comes from `addAddrOfMutationsInExpr`, which asked `paramNeedsAddrOf` -- does
+the callee's OWN body mutate the parameter. Whether the argument is passed as `&x` comes
+from `paramNeedsAddrOfTx` -- one call further. So a container written two calls down
+(`mlpFwd(out)` -> `matvec` -> `out.set`) was passed `&h` from a `const h`. The "two call
+chains" trigger the reporter isolated is exactly one of the chains being a wrapper. The
+scan now asks the transitive question too, which makes the pair mutually recursive and
+FULLY transitive (a three-level chain is in the fixture); a depth bound of 8 keeps a
+recursive function finite (also in the fixture). Fixture
+`bug312_transitive_container_mutation_test` (the MLP forward/backward pass with correct
+numbers, a three-level chain, a self-recursive fill); red on rc4.
+
+---
+
 ### BUG-444: assigning through a captured variable inside a `sys.go` body fails inside Zig — FIXED 2026-09-28
 
 ```zebra

@@ -1,0 +1,67 @@
+# BUG-312: a container argument mutated through a CHAIN of calls. The analysis choosing
+# `var` for the caller's local looked only at the callee's own body, while the one choosing
+# `&x` for the argument looked one level further -- so `mlpFwd(x, W1, h)`, whose `out` is
+# written two calls down, passed `&h` from a `const h`: "expected '*T', found '*const T'".
+# Found by an outside user porting an MLP (forward + backward pass sharing the weights).
+def matvec(M: List(List(float)), v: List(float), out: List(float))
+    var i = 0
+    while i < M.count()
+        var row = M.at(i)
+        var s = 0.0
+        var j = 0
+        while j < row.count()
+            s = s + row.at(j) * v.at(j)
+            j += 1
+        out.set(i, s)
+        i += 1
+
+def matTvec(M: List(List(float)), v: List(float), out: List(float))
+    var j = 0
+    while j < out.count()
+        var s = 0.0
+        var i = 0
+        while i < M.count()
+            s = s + M.at(i).at(j) * v.at(i)
+            i += 1
+        out.set(j, s)
+        j += 1
+
+def mlpFwd(x: List(float), W1: List(List(float)), out: List(float))
+    matvec(W1, x, out)
+
+def mlpBwd(dout: List(float), W1: List(List(float)), dx: List(float))
+    matTvec(W1, dout, dx)
+
+# three levels: only the innermost writes
+def level3(xs: List(int))
+    xs.add(3)
+
+def level2(xs: List(int))
+    level3(xs)
+
+def level1(xs: List(int))
+    level2(xs)
+
+# self-recursive: the analysis must terminate
+def fill(xs: List(int), n: int)
+    if n <= 0
+        return
+    xs.add(n)
+    fill(xs, n - 1)
+
+def main()
+    var W1: List(List(float)) = [[1.0, 0.5], [0.5, 1.0]]
+    var x: List(float) = [1.0, 2.0]
+    var h: List(float) = [0.0, 0.0]
+    mlpFwd(x, W1, h)
+    var dx: List(float) = [0.0, 0.0]
+    mlpBwd(h, W1, dx)
+    print(h)
+    print(dx)
+    var deep = List(int)()
+    level1(deep)
+    print(deep)
+    var rec = List(int)()
+    fill(rec, 3)
+    print(rec)
+    print("bug312: OK")

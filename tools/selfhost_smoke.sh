@@ -2051,6 +2051,8 @@ smoke_tc_fail test/bug474_raise_details_fail.zbr "bug474_raise_details_fail.zbr:
 smoke_run test/bug474_raise_details_ok_test.zbr "bug474: OK"
 # BUG-444: a thread body assigning through a capture -- sys.go and ThreadPool.submit.
 smoke_run test/bug444_thread_capture_assign_test.zbr "bug444: OK"
+# BUG-312: a container mutated through a call chain -- the caller's local is var.
+smoke_run test/bug312_transitive_container_mutation_test.zbr "bug312: OK"
 # BUG-456: a bare `on opt as x` in a branch on a union is refused, naming `on Ty.opt`.
 smoke_tc_fail test/bug456_bare_variant_arm_fail.zbr "bug456_bare_variant_arm_fail.zbr:12:9: error: write the variant as \`on Ty.opt\`"
 smoke_tc_fail test/bug411_indent_error_fail.zbr "bug411_indent_error_fail.zbr:6:7: error: indentation is 6 space(s)"

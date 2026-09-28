@@ -37,6 +37,9 @@ confirmed via `tools/bootstrap_check.sh`.
 - **`var xs: List(int) = List()` works as a field default everywhere (BUG-464).**
 - **A function named without `()` as an arithmetic operand is refused (BUG-465)**, naming
   the call form.
+- **A container mutated through a chain of calls works (BUG-312)** -- a weight matrix or
+  output list passed through a wrapper to a function that writes it reached Zig as
+  "expected '*T', found '*const T'".
 - **A thread body can assign through a captured variable (BUG-444)** -- in `sys.go` and in
   `ThreadPool.submit`; both reached Zig (the pool form died inside the runtime).
 - **`raise "msg", details` refuses details that cannot render (BUG-474)** -- a class with no

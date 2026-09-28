@@ -3293,6 +3293,7 @@ struct Generator
     var chan_locals          : StrSet   # local/param names with type Chan(T)
     var atomic_locals       : StrSet   # local/param names with type Atomic(T)
     var thread_pool_locals  : StrSet   # local/param names with type ThreadPool(n)
+    var addr_tx_depth       : int      # BUG-312: recursion depth of paramNeedsAddrOfTx
     var ptr_field_bindings   : StrSet   # "bindingName.fieldName" where field is ^T (non-optional)
     var opt_ptr_field_bindings: StrSet  # "bindingName.fieldName" where field is ^T? (optional)
     var for_loop_deref       : StrSet   # "loopVar.field" needing .* in for-loop body (e.g. DictEntry)
@@ -3418,6 +3419,7 @@ struct Generator
         .chan_locals           = StrSet()
         .atomic_locals        = StrSet()
         .thread_pool_locals   = StrSet()
+        .addr_tx_depth        = 0
         .ptr_field_bindings    = StrSet()
         .opt_ptr_field_bindings = StrSet()
         .for_loop_deref        = StrSet()
@@ -7033,7 +7035,14 @@ struct Generator
                             var p = psl.at(pli)
                             var av = c.args.at(pi).value
                             if av is Expr.ident as aid
-                                if paramNeedsAddrOf(p, body)
+                                # BUG-312: the TRANSITIVE question, as genArgListNamed asks it.
+                                # This scan decides whether the caller's local is `var`; the
+                                # argument emission decides whether it passes `&x`. With the
+                                # scan asking only about the callee's own body, a container
+                                # mutated one call further down (`mlpFwd(out)` -> `matvec` ->
+                                # `out.set`) got `&h` passed from a `const h` -- "expected
+                                # '*T', found '*const T'".
+                                if paramNeedsAddrOfTx(p, body)
                                     out.add(aid.name)
                             pi += 1
                             pli += 1
@@ -7088,9 +7097,16 @@ struct Generator
             return false
         if not isContainerTypeRef(p.type_!)
             return false
+        # BUG-312: the scan below now calls back into this function, which makes the pair
+        # FULLY transitive -- and unbounded on a recursive function. Past a depth that no
+        # real call chain reaches, answer with the direct check (the pre-BUG-312 answer).
+        if .addr_tx_depth >= 8
+            return false
         if body as b
+            .addr_tx_depth += 1
             var fwd: StrSet = StrSet()
             addAddrOfMutationsInStmts(b, fwd)
+            .addr_tx_depth -= 1
             return fwd.contains_(p.name)
         return false
 
