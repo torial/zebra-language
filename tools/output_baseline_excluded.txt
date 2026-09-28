@@ -5,14 +5,14 @@
 # transient in the run summary rather than dropped in silence.
 # Regenerated on every re-baseline, so it cannot silently rot.
 bug193_listdir_test	(filesystem enumeration: counts files that change as the repo does)
-bug397_398_400_stdlib_test	< [ERR   1790531581] logged
+bug397_398_400_stdlib_test	< [ERR   1790571004] logged
 dir_walk_test	(filesystem enumeration: counts files that change as the repo does)
 http_echo_test	(network: contacts a remote host — outcome not ours to control)
 http_serve_test	(network: contacts a remote host — outcome not ours to control)
 http_test	(network: contacts a remote host — outcome not ours to control)
 https_test	(network: contacts a remote host — outcome not ours to control)
-log_json_test	< {"ts":1790532183,"level":"info","msg":"hello world"}
-profile_test	< outer;inner 2
+log_json_test	< {"ts":1790571899,"level":"info","msg":"hello world"}
+profile_test	< outer 46
 query_string_test	(network: contacts a remote host — outcome not ours to control)
 server_test	(network: contacts a remote host — outcome not ours to control)
 tcp_advanced_test	(network: contacts a remote host — outcome not ours to control)

@@ -2242,6 +2242,19 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-09-27, third run (BUG-468, crash handler kept on in `--release`): 52/54 in ONE
+invocation, 102 min -- BOTH REDS RESOLVED, NEITHER A DEFECT IN THE CHANGE.** smoke 581/581,
+`release-mode` with its new stack-overflow legs, `full_sweep` / `divergence` 0 regressions,
+`leakgen`, every GUI scaffold, `libui-pin-build`. (1) `regen-recover` FAILED on 12 modules because
+the tier ran on an UNCOMMITTED tree: the gate builds a compiler from the COMMITTED `.zig` and the
+working copies had gained the new header line. Re-run after the commit (`a165e61`): PASS,
+byte-for-byte. Run the daily on a committed tree when a change touches every emit. (2)
+`output_sweep` failed on `arena_concurrency_hazard_test` -- the crasher the previous re-record had
+re-admitted on three lucky samples -- on a short fault address (`0x0`, under the 6-digit rule) and a
+varying `???` frame count. Both are VOLATILE FIELDS of a segfault report, so `norm()` now
+normalises them (the thread-ID precedent); re-recorded: that file alone changed, kept as a
+transient (disagreed once, then unanimous on re-test); gate PASS, 467 identical.
+
 **DAILY tier 2026-09-27, second run (whole floats print `6.0`, `15cdbda`, the run rc5 was cut
 on): 54/54 PASS in ONE invocation at JOBS=2, 57 min.** smoke 581/581, `boundary` **34**/0 (the new
 `float_whole_print_probe`, written from the rule and watched red first), `output_sweep` 467
