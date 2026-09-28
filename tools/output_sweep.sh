@@ -309,11 +309,22 @@ norm() { # collapse what varies between runs on the same machine
     # fix: arena_concurrency_hazard_test stays excluded on its own merits, because the
     # NUMBER of panicking threads varies run to run (1, 1, 4 — measured), and that is real
     # nondeterminism rather than a volatile field.
+    #
+    # A SEGFAULT REPORT has two more volatile fields (2026-09-27): the fault ADDRESS -- which
+    # can be short (`0x0`) and so escapes the 6-digit rule below, kept deliberately so small
+    # hex DATA is untouched -- and the NUMBER of unsymbolised `???` frames the trace prints,
+    # which varies with timing (6 in one run, 3 in the next, same binary).
+    # arena_concurrency_hazard_test was re-admitted to the baseline on three agreeing
+    # samples and then failed the next daily on exactly these two fields. Normalising them is
+    # the thread-ID fix again; if the file still varies after this (the panicking-thread
+    # COUNT did, 1/1/4, on 08-17), the sampler will exclude it on that real difference.
     sed -E 's#[A-Za-z]:[\\/][^ ")]*#<PATH>#g
+            s#(Segmentation fault at address )0x[0-9a-fA-F]+#\1<ADDR>#g
             s#0x[0-9a-fA-F]{6,}#<ADDR>#g
             s#thread [0-9]+ panic#thread <TID> panic#g
             s#[0-9]+\.[0-9]+ *(ms|us|µs|ns)\b#<TIME> \1#g
-            s#[0-9]+ *(ms|us|µs|ns)\b#<TIME> \1#g'
+            s#[0-9]+ *(ms|us|µs|ns)\b#<TIME> \1#g' \
+      | awk '/^\?\?\?:\?:\?: <ADDR> in / { if ($0 == prev) next } { prev = $0; print }'
 }
 
 mapfile -t NAMES < <(grep -vE '^\s*(#|$)' "$CANDIDATES" | sort -u)

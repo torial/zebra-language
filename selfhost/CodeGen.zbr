@@ -2224,6 +2224,7 @@ def rtAliasHeader(src: str): str
     sb.append("const builtin = @import(\"builtin\");\n")
     sb.append("const _zbr_rt = @import(\"zebra_rt.zig\");\n")
     sb.append("pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);\n")
+    sb.append("pub const std_options = _zbr_rt.std_options;\n")   # BUG-468: crash handler in --release
     for nm in _rt_alias_names.split(" ")
         if nm != "" and used.contains(nm)
             sb.append("const ")

@@ -795,6 +795,15 @@ bash tools/release_mode_check.sh   # THE ONLY GATE THAT BUILDS WITH `--release` 
                                 #   scaffold fetches zigzag, so an offline cold run reports
                                 #   "GUI build produced no app" -- read build.log it prints
                                 #   before calling that a regression.
+                                #   A STACK-OVERFLOW LEG SINCE 2026-09-27 (BUG-468): a
+                                #   --release program that recurses too deep must PRINT
+                                #   "Stack overflow" in both runtime shapes (ReleaseFast
+                                #   turns Zig's crash handler off; the runtime turns it back
+                                #   on), with a no-crash control. Red-checked by switching
+                                #   the handler off in the preamble -- NOT against an older
+                                #   compiler alone: the preamble is read from disk, so an old
+                                #   binary run in this repo inherits the new handler in the
+                                #   inline shape.
                                 #   Runs a full LLVM build → FULL tier, not QUICK.
 bash tools/contract_mode_check.sh  # THE CONTRACT-STRIPPING CONTRACT (FULL tier, ~55s):
                                 #   the ONLY gate that passes `--turbo`, and the only one

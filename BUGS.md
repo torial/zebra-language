@@ -80,18 +80,6 @@ to the catch. Same in a non-main function. Same session as BUG-466.
 
 ---
 
-### BUG-468: a `--release` binary dies SILENTLY on stack overflow — OPEN, a proposal (found 2026-09-27)
-
-A Debug build prints `Stack overflow (no address available)` and exits 1; the same program
-built with `--release` (ReleaseFast) prints nothing and exits with the raw OS status (127
-under Git Bash). ReleaseFast turns off Zig's crash handler. Proposal: the emitted root sets
-`pub const std_options: std.Options = .{ .enable_segfault_handler = true };` so a shipped
-binary still says what killed it (UNGIT "nothing withheld"); cost is the handler install at
-startup. Sean's call, since `--release` = ReleaseFast was his direction (2026-07-30).
-Repro: a recursive interpreter 10,000 frames deep (the Lisp above).
-
----
-
 ### BUG-469: `Timer()` (not `Timer.start()`) reaches Zig as an undeclared identifier — OPEN (found 2026-09-27)
 
 ```zebra

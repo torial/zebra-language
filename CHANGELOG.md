@@ -23,7 +23,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
-(nothing yet)
+- **A `--release` program that crashes says so (BUG-468).** ReleaseFast had turned Zig's crash
+  handler off, so a stack overflow or segfault in a shipped binary died silently; it now
+  prints `Stack overflow` (or the fault) like a debug build. Measured cost: ~1% on a
+  CPU-bound interpreter (within noise), startup unchanged, +2 KB of binary.
 
 ## Release 0.9.0-rc5 — 2026-09-27 (everything since rc4)
 

@@ -4922,6 +4922,16 @@ pub var _environ: std.process.Environ = .empty;
 // are kept here and consulted first by `_sys_getenv` — same observable semantics
 // on every platform (set, then get, sees the value).
 var _env_overrides: std.StringHashMapUnmanaged([]const u8) = .empty;
+// BUG-468: keep Zig's crash handler in every build mode. `--release` is ReleaseFast, which
+// turns it off, so a shipped binary that overflowed its stack (or hit a segfault) died
+// SILENTLY -- no message, a raw OS status -- while the Debug build of the same program said
+// "Stack overflow". Measured 2026-09-27 on a CPU-bound interpreter, ReleaseFast, 20
+// interleaved runs: minimum +1.0% (medians swing +-6% on noise alone), process startup
+// unchanged, +2 KB of binary. The handler is registered once at startup and runs only on
+// a crash, so there is no per-instruction cost to find. The inline shape reads this from
+// the root file directly; the module shape re-exports it from the root (CodeGen).
+pub const std_options: std.Options = .{ .enable_segfault_handler = true };
+
 // Zebra's panic handler for emitted programs (root decl `pub const panic` is emitted
 // by codegen). Prints the same one-line header Zig prints ("thread N panic: msg") and
 // exits 1 — WITHOUT the Zig stack trace, whose frames point at the emitted .zig and

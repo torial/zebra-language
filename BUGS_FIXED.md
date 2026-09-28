@@ -6,6 +6,49 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-468: a `--release` binary dies SILENTLY on stack overflow — FIXED 2026-09-27
+
+A Debug build prints `Stack overflow (no address available)` and exits 1; the same program
+built with `--release` (ReleaseFast) prints nothing and exits with the raw OS status (127
+under Git Bash). ReleaseFast turns off Zig's crash handler. Proposal: the emitted root sets
+`pub const std_options: std.Options = .{ .enable_segfault_handler = true };` so a shipped
+binary still says what killed it (UNGIT "nothing withheld"); cost is the handler install at
+startup. Sean's call, since `--release` = ReleaseFast was his direction (2026-07-30).
+Repro: a recursive interpreter 10,000 frames deep (the Lisp above).
+
+**Fixed (Sean: "if it is minimal, say 5-10%, proceed").** Measured first, on the Lisp
+interpreter (CPU-bound, deep call chains), ReleaseFast, the two binaries identical but for
+the one declaration, runs interleaved: minimums **+0.7% and +1.0%** across two batches
+(medians swung -6.1% and +3.7% -- noise; the sign flipped); process startup (hello-world, 40
+interleaved runs) **median +1.0%, minimum -0.3%**; binary **+2 KB** (866,816 -> 868,864). The
+handler is registered once at startup and runs only on a crash, so there is no
+per-instruction cost to find -- which is what the numbers show.
+
+The preamble declares `pub const std_options: std.Options = .{ .enable_segfault_handler =
+true };` (the inline shape reads it from its root file) and the module-shape root re-exports
+it (`pub const std_options = _zbr_rt.std_options;`). A crashing `--release` program now prints
+`Stack overflow (no address available)` then `aborting due to recursive panic` (the handler
+runs on the exhausted stack; untidy, honest) and exits with a crash status.
+
+**Where "10,000" came from:** nowhere in the compiler. The limit is the executable's stack
+RESERVE -- 16 MiB, Zig's default, read from the PE header -- divided by the stack each call
+uses. For the tree-walking interpreter that is ~3.5 KB per interpreted call, so it overflows
+at **~4,710** (bisected; 10,000 was only the first depth tried). Raising it is a link flag
+(`zig build-exe --stack <bytes>`), not exposed by `zebra` today.
+
+**Found on the way, fixed with it:** `build.zig` read the preamble with a **256 KiB** limit;
+the handler's comment took the file to 262,321 bytes and the build died with StreamTooLong
+reported as "selfhost/stdlib_preamble.zig **missing**" -- which read like zig-cache
+corruption. The limit is 8 MiB now (napi_preamble too) and the panic names the real error.
+The next preamble edit by anyone would have hit it.
+
+Gate: `release_mode_check` legs for both shapes plus a no-crash control. Red-checked by
+switching the handler off in the preamble (both legs FAIL) and against rc4 (module shape
+FAILs; the inline leg PASSES there, because the compiler reads the preamble from disk and
+rc4 run from this repo picks up the new one -- so rc4 is not a clean adversary for that leg).
+
+---
+
 ### BUG-461: a local re-declared, or shadowed by a loop/`as` capture, passes the front end and fails in Zig — FIXED 2026-09-27
 
 ```zebra

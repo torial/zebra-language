@@ -25,7 +25,11 @@ pub fn build(b: *std.Build) void {
     // compiler is gone (docs/design/bootstrap_sunset.md), and the reading stays so
     // the marker/CRLF invariants below keep being enforced by the build itself.
 
-    const raw_preamble = b.build_root.handle.readFileAlloc(b.graph.io, "selfhost/stdlib_preamble.zig", b.allocator, std.Io.Limit.limited(256 * 1024)) catch @panic("selfhost/stdlib_preamble.zig missing");
+    // 2026-09-27: the limit was 256 KiB and the preamble reached 262,321 bytes -- the read
+    // failed with StreamTooLong and was reported as "missing", which sent the first
+    // diagnosis to the zig cache. Keep the cap far above the file, and say what failed.
+    const raw_preamble = b.build_root.handle.readFileAlloc(b.graph.io, "selfhost/stdlib_preamble.zig", b.allocator, std.Io.Limit.limited(8 * 1024 * 1024)) catch |e|
+        std.debug.panic("cannot read selfhost/stdlib_preamble.zig: {s} (StreamTooLong = larger than build.zig's 8 MiB read limit)", .{@errorName(e)});
     // Strip the file header (HOW-TO comment + allocator setup) — CodeGen emits those dynamically.
     // The static helpers start at the STDLIB_PREAMBLE_HELPERS_START marker.
     // Markers are matched WITHOUT their line ending, and the end index skips to the next
@@ -48,7 +52,8 @@ pub fn build(b: *std.Build) void {
     // N-API preamble (--target node-addon only).  Kept in a separate file so its
     // node_api.h @cImport never compiles into the compiler itself — embedded as a
     // string and only emitted into generated addons.  Phase 1.
-    const raw_napi = b.build_root.handle.readFileAlloc(b.graph.io, "selfhost/napi_preamble.zig", b.allocator, std.Io.Limit.limited(64 * 1024)) catch @panic("selfhost/napi_preamble.zig missing");
+    const raw_napi = b.build_root.handle.readFileAlloc(b.graph.io, "selfhost/napi_preamble.zig", b.allocator, std.Io.Limit.limited(8 * 1024 * 1024)) catch |e|
+        std.debug.panic("cannot read selfhost/napi_preamble.zig: {s} (StreamTooLong = larger than build.zig's 8 MiB read limit)", .{@errorName(e)});
     const napi_start_marker = "// === NAPI_PREAMBLE_HELPERS_START ===";
     const napi_end_marker   = "// === NAPI_PREAMBLE_HELPERS_END ===";
     const napi_start_raw = std.mem.indexOf(u8, raw_napi, napi_start_marker) orelse @panic("NAPI_PREAMBLE_HELPERS_START marker missing from selfhost/napi_preamble.zig");

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # release_mode_check.sh — THE ONLY GATE THAT BUILDS WITH `--release`.
+# pins: BUG-468 the stack-overflow legs -- a --release program must print "Stack overflow" in both runtime shapes.
 #
 # WHY THIS EXISTS
 # ---------------
@@ -178,6 +179,54 @@ else
     fail=$((fail + 1))
 fi
 rm -rf "$_idx_dir"
+
+# ── BUG-468: a --release binary must SAY it overflowed its stack ─────────────────────────
+# ReleaseFast turns Zig's crash handler off, so a shipped program that recursed too deep
+# died SILENTLY -- no message, a raw OS status -- while its Debug build printed "Stack
+# overflow". The runtime now sets `std_options.enable_segfault_handler = true` (measured
+# ~1% on a CPU-bound interpreter, +2 KB). Both runtime shapes, because they get the option
+# from different places: the inline shape from the preamble in its root file, the module
+# shape from a re-export in the root. Classified on the TEXT; the `start` sentinel proves
+# the program ran (a build failure prints neither). Red-checked against rc4: silent.
+_so_dir="$(mktemp -d)"
+cat > "$_so_dir/deep.zbr" <<'ZBR'
+def down(n: int): int
+    if n < 1
+        return 0
+    var pad = [n, n + 1, n + 2, n + 3]
+    return down(n - 1) + pad.count() - 4
+
+def main()
+    print("start")
+    print(down(100000000))
+ZBR
+for _so_shape in "" "--single-file"; do
+    _so_out="$("$ZEBRA" --release $_so_shape "$_so_dir/deep.zbr" 2>&1)"
+    if printf '%s' "$_so_out" | grep -q "^start" && printf '%s' "$_so_out" | grep -q "Stack overflow"; then
+        say ok "stack overflow reported in --release ${_so_shape:-(module shape)}"
+    else
+        say FAIL "stack overflow NOT reported in --release ${_so_shape:-(module shape)} -- a shipped binary dies silently (BUG-468)"
+        printf '%s\n' "$_so_out" | tail -3 | sed 's/^/      /'
+        fail=$((fail + 1))
+    fi
+done
+# CONTROL: the handler must not disturb a program that does not crash.
+cat > "$_so_dir/shallow.zbr" <<'ZBR'
+def down(n: int): int
+    if n < 1
+        return 0
+    return down(n - 1) + 1
+
+def main()
+    print("depth ok: ${down(1000)}")
+ZBR
+if "$ZEBRA" --release "$_so_dir/shallow.zbr" 2>&1 | grep -q "depth ok: 1000"; then
+    say ok "shallow recursion unaffected in --release"
+else
+    say FAIL "a NON-crashing --release program misbehaved with the crash handler installed"
+    fail=$((fail + 1))
+fi
+rm -rf "$_so_dir"
 
 # ── BUG-451: a GUI program's --release must reach ITS build too ──────────────────────────
 # GUI programs do not go through `zig build-exe`: they are scaffolded into a small zig
