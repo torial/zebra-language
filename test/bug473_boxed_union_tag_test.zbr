@@ -1,0 +1,24 @@
+# BUG-473: a `^U?` field unwrapped with `if x.f as u` binds a POINTER; a tag test on it
+# (`u is U.box`) and a `branch u` reached Zig as "incompatible types: '*Shape' and
+# '@EnumLiteral()'". Both go through the value now. Reachable only once BUG-299 let a union
+# value be assigned into such a field.
+union Shape
+    dot
+    box: int
+
+struct SBox
+    var s: ^Shape?
+
+def main()
+    var sb = SBox(s: nil)
+    sb.s = Shape.box(9)
+    if sb.s as sh
+        if sh is Shape.box as n
+            print(n)
+        print(sh is Shape.dot)
+        branch sh
+            on Shape.box as m
+                print(m + 1)
+            on Shape.dot
+                print("dot")
+    print("bug473: OK")

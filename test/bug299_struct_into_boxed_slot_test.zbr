@@ -1,0 +1,36 @@
+# BUG-299: a struct VALUE into a `^S` / `^S?` slot is boxed -- as a constructor argument (the
+# filed shape), a function argument, and an assignment to another value's field. Each
+# reached Zig as "expected type '?*Pair', found 'Pair'". The box is a COPY: changing the
+# original afterwards does not change what was stored.
+struct Pair
+    var a: int
+    var b: int
+
+struct PairBox
+    var opt_pair: ^Pair?
+    cue init(opt_pair: ^Pair?)
+        .opt_pair = opt_pair
+
+struct Firm
+    var p: ^Pair
+    cue init(p: ^Pair)
+        .p = p
+
+def sum(p: ^Pair?): int
+    if p as q
+        return q.a + q.b
+    return 0
+
+def main()
+    var v = Pair(a: 3, b: 4)
+    var box = PairBox(v)
+    print(sum(box.opt_pair))
+    print(sum(v))
+    var firm = Firm(v)
+    print(firm.p.a)
+    var holder = PairBox(nil)
+    holder.opt_pair = Pair(a: 10, b: 20)
+    v.a = 100
+    print(sum(holder.opt_pair))
+    print(sum(box.opt_pair))
+    print("bug299: OK")

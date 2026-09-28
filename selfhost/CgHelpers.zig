@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const _zbr_rt = @import("zebra_rt.zig");
 pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 pub const std_options = _zbr_rt.std_options;
+const _zbr_val = _zbr_rt._zbr_val;
 const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
@@ -183,7 +184,7 @@ const _reflect_ThunkList_field_types: []const []const u8 = &.{"List(ClosureThunk
 // zbr:selfhost/CgHelpers.zbr:130
 pub fn _zbr_fn_assignOpStr(op: _zbr_ty_AssignOp) []const u8 {
 // zbr:selfhost/CgHelpers.zbr:131
-    switch (op) {
+    switch (_zbr_val(op)) {
         .assign => {
 // zbr:selfhost/CgHelpers.zbr:132
             return "=";
@@ -281,7 +282,7 @@ pub fn _zbr_fn_hexLitZig(text: []const u8) []const u8 {
 // zbr:selfhost/CgHelpers.zbr:177
 pub fn _zbr_fn_binaryOpStr(op: _zbr_ty_BinaryOp) []const u8 {
 // zbr:selfhost/CgHelpers.zbr:178
-    switch (op) {
+    switch (_zbr_val(op)) {
         .add => {
 // zbr:selfhost/CgHelpers.zbr:179
             return "+";
@@ -364,7 +365,7 @@ pub fn _zbr_fn_binaryOpStr(op: _zbr_ty_BinaryOp) []const u8 {
 // zbr:selfhost/CgHelpers.zbr:205
 pub fn _zbr_fn_typeRefStr(tr: _zbr_ty_TypeRef) []const u8 {
 // zbr:selfhost/CgHelpers.zbr:206
-    switch (tr) {
+    switch (_zbr_val(tr)) {
         .named => |n| {
 // zbr:selfhost/CgHelpers.zbr:208
             return n.name;
@@ -457,7 +458,7 @@ pub fn _zbr_fn_typeRefStr(tr: _zbr_ty_TypeRef) []const u8 {
 // zbr:selfhost/CgHelpers.zbr:268
 pub fn _zbr_fn_exprHasTry(expr: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:269
-    switch (expr) {
+    switch (_zbr_val(expr)) {
         .try_ => {
 // zbr:selfhost/CgHelpers.zbr:271
             return true;
@@ -560,7 +561,7 @@ pub fn _zbr_fn_exprHasTry(expr: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:310
             for (si.parts.items) |part| {
 // zbr:selfhost/CgHelpers.zbr:311
-                if (part == .expr_) {
+                if (_zbr_val(part) == .expr_) {
                     const e_ptr = part.expr_;
                     const e = e_ptr.*;
 // zbr:selfhost/CgHelpers.zbr:312
@@ -719,7 +720,7 @@ pub fn _zbr_fn_bodyHasRaise(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/CgHelpers.zbr:412
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:413
-        switch (s) {
+        switch (_zbr_val(s)) {
             .raise_ => {
 // zbr:selfhost/CgHelpers.zbr:415
                 return true;
@@ -940,7 +941,7 @@ pub fn _zbr_fn_bodyHasAssert(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/CgHelpers.zbr:506
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:507
-        switch (s) {
+        switch (_zbr_val(s)) {
             .assert_ => {
 // zbr:selfhost/CgHelpers.zbr:509
                 return true;
@@ -1049,7 +1050,7 @@ pub fn _zbr_fn_bodyNeedsErrVar(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/CgHelpers.zbr:558
 pub fn _zbr_fn_nilNarrowVar(cond: _zbr_ty_Expr, for_then: bool) ?[]const u8 {
 // zbr:selfhost/CgHelpers.zbr:559
-    switch (cond) {
+    switch (_zbr_val(cond)) {
         .binary => |_ptr_b| {
             const b = _ptr_b.*;
 // zbr:selfhost/CgHelpers.zbr:561
@@ -1067,10 +1068,10 @@ pub fn _zbr_fn_nilNarrowVar(cond: _zbr_ty_Expr, for_then: bool) ?[]const u8 {
                 }
             }
 // zbr:selfhost/CgHelpers.zbr:568
-            if (b.left.* == .ident) {
+            if (_zbr_val(b.left.*) == .ident) {
                 const id = b.left.*.ident;
 // zbr:selfhost/CgHelpers.zbr:569
-                switch (b.right.*) {
+                switch (_zbr_val(b.right.*)) {
                     .nil_ => {
 // zbr:selfhost/CgHelpers.zbr:571
                         return id.name;
@@ -1081,10 +1082,10 @@ pub fn _zbr_fn_nilNarrowVar(cond: _zbr_ty_Expr, for_then: bool) ?[]const u8 {
                 }
             }
 // zbr:selfhost/CgHelpers.zbr:575
-            switch (b.left.*) {
+            switch (_zbr_val(b.left.*)) {
                 .nil_ => {
 // zbr:selfhost/CgHelpers.zbr:577
-                    if (b.right.* == .ident) {
+                    if (_zbr_val(b.right.*) == .ident) {
                         const id = b.right.*.ident;
 // zbr:selfhost/CgHelpers.zbr:578
                         return id.name;
@@ -1107,7 +1108,7 @@ pub fn _zbr_fn_nilNarrowVar(cond: _zbr_ty_Expr, for_then: bool) ?[]const u8 {
 // zbr:selfhost/CgHelpers.zbr:607
 pub fn _zbr_fn_nameUsedInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:608
-    switch (expr) {
+    switch (_zbr_val(expr)) {
         .ident => |id| {
 // zbr:selfhost/CgHelpers.zbr:610
             return std.mem.eql(u8, id.name, name);
@@ -1286,7 +1287,7 @@ pub fn _zbr_fn_nameUsedInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:679
             for (si.parts.items) |part| {
 // zbr:selfhost/CgHelpers.zbr:680
-                if (part == .expr_) {
+                if (_zbr_val(part) == .expr_) {
                     const e_ptr = part.expr_;
                     const e = e_ptr.*;
 // zbr:selfhost/CgHelpers.zbr:681
@@ -1391,7 +1392,7 @@ pub fn _zbr_fn_nameUsedInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
                 }
             }
 // zbr:selfhost/CgHelpers.zbr:731
-            switch (lam.body_) {
+            switch (_zbr_val(lam.body_)) {
                 .expr_ => |ex| {
 // zbr:selfhost/CgHelpers.zbr:733
                     return _zbr_fn_nameUsedInExpr(name, ex);
@@ -1476,7 +1477,7 @@ pub fn _zbr_fn_isZigPrimitiveName(name: []const u8) bool {
 // zbr:selfhost/CgHelpers.zbr:808
             while (_zebra_lt(di, @as(i64, @intCast(name.len)))) {
 // zbr:selfhost/CgHelpers.zbr:809
-                switch (_zbr_at(name, di)) {
+                switch (_zbr_val(_zbr_at(name, di))) {
                     '0'...'9' => {
                         // pass
                     },
@@ -1565,7 +1566,7 @@ pub fn _zbr_fn_zigSafeName(name: []const u8) []const u8 {
 // zbr:selfhost/CgHelpers.zbr:863
 pub fn _zbr_fn_nameEscapesInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:864
-    switch (expr) {
+    switch (_zbr_val(expr)) {
         .ident => |id| {
 // zbr:selfhost/CgHelpers.zbr:866
             return std.mem.eql(u8, id.name, name);
@@ -1605,7 +1606,7 @@ pub fn _zbr_fn_nameEscapesInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:882
             var callee_is_name: bool = false;
 // zbr:selfhost/CgHelpers.zbr:883
-            if (c.callee == .ident) {
+            if (_zbr_val(c.callee) == .ident) {
                 const cal_id = c.callee.ident;
 // zbr:selfhost/CgHelpers.zbr:884
                 callee_is_name = std.mem.eql(u8, cal_id.name, name);
@@ -1660,7 +1661,7 @@ pub fn _zbr_fn_nameEscapesInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:903
             for (si.parts.items) |part| {
 // zbr:selfhost/CgHelpers.zbr:904
-                if (part == .expr_) {
+                if (_zbr_val(part) == .expr_) {
                     const e_ptr = part.expr_;
                     const e = e_ptr.*;
 // zbr:selfhost/CgHelpers.zbr:905
@@ -1914,7 +1915,7 @@ pub fn _zbr_fn_nameEscapes(name: []const u8, stmts: std.ArrayList(_zbr_ty_Stmt))
 // zbr:selfhost/CgHelpers.zbr:1039
 pub fn _zbr_fn_nameEscapesStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
 // zbr:selfhost/CgHelpers.zbr:1040
-    switch (stmt) {
+    switch (_zbr_val(stmt)) {
         .var_ => |_ptr_n| {
             const n = _ptr_n.*;
 // zbr:selfhost/CgHelpers.zbr:1042
@@ -2198,7 +2199,7 @@ pub fn _zbr_fn_nameEscapesStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
 // zbr:selfhost/CgHelpers.zbr:1162
 pub fn _zbr_fn_nameUsedInStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
 // zbr:selfhost/CgHelpers.zbr:1163
-    switch (stmt) {
+    switch (_zbr_val(stmt)) {
         .var_ => |_ptr_n| {
             const n = _ptr_n.*;
 // zbr:selfhost/CgHelpers.zbr:1165
@@ -2436,7 +2437,7 @@ pub fn _zbr_fn_nameUsedInStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
 // zbr:selfhost/CgHelpers.zbr:1269
 pub fn _zbr_fn_collectAllIdents(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet) void {
 // zbr:selfhost/CgHelpers.zbr:1270
-    switch (expr) {
+    switch (_zbr_val(expr)) {
         .ident => |id| {
 // zbr:selfhost/CgHelpers.zbr:1272
             out.add(id.name);
@@ -2539,7 +2540,7 @@ pub fn _zbr_fn_collectAllIdents(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet) void {
 // zbr:selfhost/CgHelpers.zbr:1312
             for (si.parts.items) |part| {
 // zbr:selfhost/CgHelpers.zbr:1313
-                if (part == .expr_) {
+                if (_zbr_val(part) == .expr_) {
                     const e_ptr = part.expr_;
                     const e = e_ptr.*;
 // zbr:selfhost/CgHelpers.zbr:1314
@@ -2574,7 +2575,7 @@ pub fn _zbr_fn_seedEscapedFromReturns(stmts: std.ArrayList(_zbr_ty_Stmt), out: *
 // zbr:selfhost/CgHelpers.zbr:1329
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:1330
-        switch (s) {
+        switch (_zbr_val(s)) {
             .return_ => |_ptr_r| {
                 const r = _ptr_r.*;
 // zbr:selfhost/CgHelpers.zbr:1332
@@ -2660,7 +2661,7 @@ pub fn _zbr_fn_propagateEscapesOnce(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_z
 // zbr:selfhost/CgHelpers.zbr:1370
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:1371
-        switch (s) {
+        switch (_zbr_val(s)) {
             .var_ => |_ptr_n| {
                 const n = _ptr_n.*;
 // zbr:selfhost/CgHelpers.zbr:1373
@@ -2682,11 +2683,11 @@ pub fn _zbr_fn_propagateEscapesOnce(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_z
             .assign => |_ptr_a| {
                 const a = _ptr_a.*;
 // zbr:selfhost/CgHelpers.zbr:1380
-                if (a.target.* == .member) {
+                if (_zbr_val(a.target.*) == .member) {
                     const m_ptr = a.target.*.member;
                     const m = m_ptr.*;
 // zbr:selfhost/CgHelpers.zbr:1381
-                    if (m.object.* == .ident) {
+                    if (_zbr_val(m.object.*) == .ident) {
                         const id = m.object.*.ident;
 // zbr:selfhost/CgHelpers.zbr:1382
                         if (out.contains_(id.name)) {
@@ -3048,7 +3049,7 @@ pub fn _zbr_fn_isMutatingMethod(name: []const u8) bool {
 // zbr:selfhost/CgHelpers.zbr:1573
 pub fn _zbr_fn_isImmutableValueType(t: _zbr_ty_Type_) bool {
 // zbr:selfhost/CgHelpers.zbr:1574
-    switch (t) {
+    switch (_zbr_val(t)) {
         .int_ => {
 // zbr:selfhost/CgHelpers.zbr:1575
             return true;
@@ -3099,7 +3100,7 @@ pub fn _zbr_fn_isImmutableValueType(t: _zbr_ty_Type_) bool {
 // zbr:selfhost/CgHelpers.zbr:1595
 pub fn _zbr_fn_isByValueHandleType(t: _zbr_ty_Type_) bool {
 // zbr:selfhost/CgHelpers.zbr:1596
-    switch (t) {
+    switch (_zbr_val(t)) {
         .json_value => {
 // zbr:selfhost/CgHelpers.zbr:1597
             return true;
@@ -3158,7 +3159,7 @@ pub fn _zbr_fn_isByValueHandleType(t: _zbr_ty_Type_) bool {
 // zbr:selfhost/CgHelpers.zbr:1632
 pub fn _zbr_fn_unwrapForMutation(t: _zbr_ty_Type_) _zbr_ty_Type_ {
 // zbr:selfhost/CgHelpers.zbr:1633
-    switch (t) {
+    switch (_zbr_val(t)) {
         .optional => |_ptr_inner| {
             const inner = _ptr_inner.*;
 // zbr:selfhost/CgHelpers.zbr:1635
@@ -3190,7 +3191,7 @@ pub fn _zbr_fn_receiverNeedsVar(obj: _zbr_ty_Expr, method: []const u8, ic: ?*_zb
 // zbr:selfhost/CgHelpers.zbr:1660
         const rt: _zbr_ty_Type_ = _zbr_fn_unwrapForMutation(_zbr_fn_inferExpr(obj, ic_v));
 // zbr:selfhost/CgHelpers.zbr:1661
-        if (rt == .named) {
+        if (_zbr_val(rt) == .named) {
             const rn = rt.named;
 // zbr:selfhost/CgHelpers.zbr:1662
             const rkey: []const u8 = _str_concat(_str_concat(_str_concat(" ", rn, _zbr_rt._allocator), ".", _zbr_rt._allocator), method, _zbr_rt._allocator);
@@ -3225,15 +3226,15 @@ pub fn _zbr_fn_receiverNeedsVar(obj: _zbr_ty_Expr, method: []const u8, ic: ?*_zb
 // zbr:selfhost/CgHelpers.zbr:1679
 pub fn _zbr_fn_scanMutationsInExpr(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet, ic: ?*_zbr_ty_InferCtx) void {
 // zbr:selfhost/CgHelpers.zbr:1680
-    switch (expr) {
+    switch (_zbr_val(expr)) {
         .call => |_ptr_c| {
             const c = _ptr_c.*;
 // zbr:selfhost/CgHelpers.zbr:1682
-            if (c.callee == .member) {
+            if (_zbr_val(c.callee) == .member) {
                 const m_ptr = c.callee.member;
                 const m = m_ptr.*;
 // zbr:selfhost/CgHelpers.zbr:1683
-                if (m.object.* == .ident) {
+                if (_zbr_val(m.object.*) == .ident) {
                     const id = m.object.*.ident;
 // zbr:selfhost/CgHelpers.zbr:1684
                     if (_zbr_fn_receiverNeedsVar(m.object.*, m.member, ic)) {
@@ -3242,7 +3243,7 @@ pub fn _zbr_fn_scanMutationsInExpr(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet, ic:
                     }
                 }
 // zbr:selfhost/CgHelpers.zbr:1690
-                if (m.object.* == .member) {
+                if (_zbr_val(m.object.*) == .member) {
                     const fm_ptr = m.object.*.member;
                     const fm = fm_ptr.*;
 // zbr:selfhost/CgHelpers.zbr:1691
@@ -3254,7 +3255,7 @@ pub fn _zbr_fn_scanMutationsInExpr(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet, ic:
 // zbr:selfhost/CgHelpers.zbr:1694
                         while (_zebra_lt(depth, 8)) {
 // zbr:selfhost/CgHelpers.zbr:1695
-                            if (root == .member) {
+                            if (_zbr_val(root) == .member) {
                                 const rm_ptr = root.member;
                                 const rm = rm_ptr.*;
 // zbr:selfhost/CgHelpers.zbr:1696
@@ -3267,7 +3268,7 @@ pub fn _zbr_fn_scanMutationsInExpr(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet, ic:
                             }
                         }
 // zbr:selfhost/CgHelpers.zbr:1700
-                        if (root == .ident) {
+                        if (_zbr_val(root) == .ident) {
                             const rid = root.ident;
 // zbr:selfhost/CgHelpers.zbr:1701
                             if (_zbr_fn_isStructValueType(_zbr_fn_inferExpr(root, ic2), ic2)) {
@@ -3360,7 +3361,7 @@ pub fn _zbr_fn_scanMutationsInExpr(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet, ic:
 // zbr:selfhost/CgHelpers.zbr:1735
             for (si.parts.items) |part| {
 // zbr:selfhost/CgHelpers.zbr:1736
-                if (part == .expr_) {
+                if (_zbr_val(part) == .expr_) {
                     const e_ptr = part.expr_;
                     const e = e_ptr.*;
 // zbr:selfhost/CgHelpers.zbr:1737
@@ -3387,11 +3388,11 @@ pub fn _zbr_fn_scanMutationsInto(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_
 // zbr:selfhost/CgHelpers.zbr:1747
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:1748
-        switch (s) {
+        switch (_zbr_val(s)) {
             .assign => |_ptr_a| {
                 const a = _ptr_a.*;
 // zbr:selfhost/CgHelpers.zbr:1750
-                switch (a.target.*) {
+                switch (_zbr_val(a.target.*)) {
                     .ident => |id| {
 // zbr:selfhost/CgHelpers.zbr:1752
                         out.add(id.name);
@@ -3399,7 +3400,7 @@ pub fn _zbr_fn_scanMutationsInto(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_
                     .member => |_ptr_m| {
                         const m = _ptr_m.*;
 // zbr:selfhost/CgHelpers.zbr:1754
-                        if (m.object.* == .ident) {
+                        if (_zbr_val(m.object.*) == .ident) {
                             const id = m.object.*.ident;
 // zbr:selfhost/CgHelpers.zbr:1755
                             out.add(id.name);
@@ -3408,7 +3409,7 @@ pub fn _zbr_fn_scanMutationsInto(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_
                     .index => |_ptr_ix| {
                         const ix = _ptr_ix.*;
 // zbr:selfhost/CgHelpers.zbr:1758
-                        if (ix.object.* == .ident) {
+                        if (_zbr_val(ix.object.*) == .ident) {
                             const id = ix.object.*.ident;
 // zbr:selfhost/CgHelpers.zbr:1759
                             out.add(id.name);
@@ -3499,7 +3500,7 @@ pub fn _zbr_fn_scanMutationsInto(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_
             .with_ => |_ptr_w| {
                 const w = _ptr_w.*;
 // zbr:selfhost/CgHelpers.zbr:1800
-                if (w.target.* == .ident) {
+                if (_zbr_val(w.target.*) == .ident) {
                     const id = w.target.*.ident;
 // zbr:selfhost/CgHelpers.zbr:1801
                     out.add(id.name);
@@ -3515,17 +3516,17 @@ pub fn _zbr_fn_scanMutationsInto(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_
             .copy_out => |_ptr_co| {
                 const co = _ptr_co.*;
 // zbr:selfhost/CgHelpers.zbr:1806
-                if (co.target == .ident) {
+                if (_zbr_val(co.target) == .ident) {
                     const id = co.target.ident;
 // zbr:selfhost/CgHelpers.zbr:1807
                     out.add(id.name);
                 } else {
 // zbr:selfhost/CgHelpers.zbr:1808
-                    if (co.target == .member) {
+                    if (_zbr_val(co.target) == .member) {
                         const m_ptr = co.target.member;
                         const m = m_ptr.*;
 // zbr:selfhost/CgHelpers.zbr:1809
-                        if (m.object.* == .ident) {
+                        if (_zbr_val(m.object.*) == .ident) {
                             const id = m.object.*.ident;
 // zbr:selfhost/CgHelpers.zbr:1810
                             out.add(id.name);
@@ -3585,7 +3586,7 @@ pub fn _zbr_fn_scanMutations(stmts: std.ArrayList(_zbr_ty_Stmt), ic: ?*_zbr_ty_I
 // zbr:selfhost/CgHelpers.zbr:1839
 pub fn _zbr_fn_isThisReturn(e: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:1840
-    switch (e) {
+    switch (_zbr_val(e)) {
         .this_ => {
 // zbr:selfhost/CgHelpers.zbr:1842
             return true;
@@ -3600,7 +3601,7 @@ pub fn _zbr_fn_isThisReturn(e: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:1848
 pub fn _zbr_fn_isStructValueType(t: _zbr_ty_Type_, ic: *_zbr_ty_InferCtx) bool {
 // zbr:selfhost/CgHelpers.zbr:1849
-    if (t == .named) {
+    if (_zbr_val(t) == .named) {
         const n = t.named;
 // zbr:selfhost/CgHelpers.zbr:1850
         if (ic.module_types.classOf(n)) |ct| {
@@ -3615,7 +3616,7 @@ pub fn _zbr_fn_isStructValueType(t: _zbr_ty_Type_, ic: *_zbr_ty_InferCtx) bool {
 // zbr:selfhost/CgHelpers.zbr:1857
 pub fn _zbr_fn_isRvalueReceiver(e: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:1858
-    switch (e) {
+    switch (_zbr_val(e)) {
         .binary => {
 // zbr:selfhost/CgHelpers.zbr:1860
             return true;
@@ -3660,7 +3661,7 @@ pub fn _zbr_fn_methodMutatesSelf(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/CgHelpers.zbr:1878
 pub fn _zbr_fn_stmtMutatesSelf(s: _zbr_ty_Stmt) bool {
 // zbr:selfhost/CgHelpers.zbr:1879
-    switch (s) {
+    switch (_zbr_val(s)) {
         .assign => {
 // zbr:selfhost/CgHelpers.zbr:1881
             return true;
@@ -3936,15 +3937,15 @@ pub fn _zbr_fn_stmtMutatesSelf(s: _zbr_ty_Stmt) bool {
 // zbr:selfhost/CgHelpers.zbr:1995
 pub fn _zbr_fn_exprHasSelfCall(e: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:1996
-    switch (e) {
+    switch (_zbr_val(e)) {
         .call => |_ptr_c| {
             const c = _ptr_c.*;
 // zbr:selfhost/CgHelpers.zbr:2002
-            if (c.callee == .member) {
+            if (_zbr_val(c.callee) == .member) {
                 const cm_ptr = c.callee.member;
                 const cm = cm_ptr.*;
 // zbr:selfhost/CgHelpers.zbr:2003
-                if (cm.object.* == .ident) {
+                if (_zbr_val(cm.object.*) == .ident) {
                     const ci = cm.object.*.ident;
 // zbr:selfhost/CgHelpers.zbr:2004
                     if (std.mem.eql(u8, ci.name, "Math")) {
@@ -4197,7 +4198,7 @@ pub fn _zbr_fn_exprHasSelfCall(e: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:2106
             for (si.parts.items) |part| {
 // zbr:selfhost/CgHelpers.zbr:2107
-                if (part == .expr_) {
+                if (_zbr_val(part) == .expr_) {
                     const pe_ptr = part.expr_;
                     const pe = pe_ptr.*;
 // zbr:selfhost/CgHelpers.zbr:2108
@@ -4213,7 +4214,7 @@ pub fn _zbr_fn_exprHasSelfCall(e: _zbr_ty_Expr) bool {
         .lambda => |_ptr_lam| {
             const lam = _ptr_lam.*;
 // zbr:selfhost/CgHelpers.zbr:2112
-            switch (lam.body_) {
+            switch (_zbr_val(lam.body_)) {
                 .expr_ => |le| {
 // zbr:selfhost/CgHelpers.zbr:2114
                     return _zbr_fn_exprHasSelfCall(le);
@@ -4234,7 +4235,7 @@ pub fn _zbr_fn_exprHasSelfCall(e: _zbr_ty_Expr) bool {
 // zbr:selfhost/CgHelpers.zbr:2131
 pub fn _zbr_fn_isContainerTypeRef(tr: _zbr_ty_TypeRef) bool {
 // zbr:selfhost/CgHelpers.zbr:2132
-    switch (tr) {
+    switch (_zbr_val(tr)) {
         .generic => |g| {
 // zbr:selfhost/CgHelpers.zbr:2136
             return ((std.mem.eql(u8, g.name, "List") or std.mem.eql(u8, g.name, "HashMap")) or std.mem.eql(u8, g.name, "Set"));

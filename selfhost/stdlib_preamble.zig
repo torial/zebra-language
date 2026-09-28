@@ -101,6 +101,22 @@ pub const _zbr_version: []const u8 = "0.9.0-rc5";
 /// site (`add`, `set`, `put`, a literal element) in _zbr_boxed: a container VALUE is
 /// copied into a fresh heap box, an existing box (a pointer -- what `.at()` returned)
 /// passes through, so `parent.add(other.at(0))` shares rather than copies.
+/// BUG-473: the VALUE behind a single pointer, or the value itself. A `^U?` field unwrapped
+/// with `if x.f as u` binds a `*U`; Zig auto-dereferences a pointer for FIELD access, so the
+/// payload read worked, but a tag comparison (`u == .box`) and a `switch (u)` did not
+/// ("incompatible types: '*Shape' and '@EnumLiteral()'"). Every union tag test and every
+/// `branch` goes through this; for a non-pointer it is the identity and inlines away.
+pub fn _ZbrValOf(comptime T: type) type {
+    return switch (@typeInfo(T)) {
+        .pointer => |pi| if (pi.size == .one) pi.child else T,
+        else => T,
+    };
+}
+pub inline fn _zbr_val(v: anytype) _ZbrValOf(@TypeOf(v)) {
+    const ti = @typeInfo(@TypeOf(v));
+    if (comptime ti == .pointer and ti.pointer.size == .one) return v.*;
+    return v;
+}
 pub fn _zbr_boxed(v: anytype) _ZbrBoxOf(@TypeOf(v)) {
     const T = @TypeOf(v);
     if (comptime @typeInfo(T) == .pointer) return v;

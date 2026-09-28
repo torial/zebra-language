@@ -1,0 +1,18 @@
+# BUG-472: tuple destructuring. A name nobody reads got no discard ("unused local constant"),
+# and a name the block assigns was still `const` ("cannot assign to constant") -- and, as a
+# `var`, a tuple of LITERALS is comptime_int in Zig, so it needs its inferred type.
+def pair(): (int, float)
+    return (3, 1.5)
+
+def main()
+    var (a, unused) = (1, 2)
+    print(a)
+    var (x, y) = (1, 2)
+    x += 10
+    print(x + y)
+    var (n, f) = pair()
+    n += 1
+    f = f * 2
+    print(n)
+    print(f)
+    print("bug472: OK")

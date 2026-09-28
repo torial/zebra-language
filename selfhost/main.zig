@@ -8,6 +8,7 @@ pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 pub const std_options = _zbr_rt.std_options;
 const _prog_alloc = _zbr_rt._prog_alloc;
 const _zbr_version = _zbr_rt._zbr_version;
+const _zbr_val = _zbr_rt._zbr_val;
 const _sysSleep = _zbr_rt._sysSleep;
 const _intern = _zbr_rt._intern;
 const _zbr_norm_path = _zbr_rt._zbr_norm_path;
@@ -499,13 +500,13 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:282
         std.debug.print("{s}\n", .{"  resolved OK"});
 // zbr:selfhost/main.zbr:285
-        switch (pm_node) {
+        switch (_zbr_val(pm_node)) {
             .module_ => |_ptr_pm| {
                 const pm = _ptr_pm.*;
 // zbr:selfhost/main.zbr:287
                 for (pm.decls.items) |decl| {
 // zbr:selfhost/main.zbr:288
-                    switch (decl) {
+                    switch (_zbr_val(decl)) {
                         .use_ => |_ptr_u| {
                             const u = _ptr_u.*;
 // zbr:selfhost/main.zbr:290
@@ -705,7 +706,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:424
                 for (module.decls.items) |mdecl| {
 // zbr:selfhost/main.zbr:425
-                    if ((mdecl == .var_)) {
+                    if ((_zbr_val(mdecl) == .var_)) {
 // zbr:selfhost/main.zbr:426
                         if ((!self.hasListed(self.stateful_mods, self.moduleNameOf(zbr_path)))) {
 // zbr:selfhost/main.zbr:427
@@ -953,13 +954,13 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:607
         const pm_node = (try Parser._zbr_ty_Parser.parse(src, zbr_path));
 // zbr:selfhost/main.zbr:608
-        switch (pm_node) {
+        switch (_zbr_val(pm_node)) {
             .module_ => |_ptr_pm| {
                 const pm = _ptr_pm.*;
 // zbr:selfhost/main.zbr:612
                 for (pm.decls.items) |decl| {
 // zbr:selfhost/main.zbr:613
-                    switch (decl) {
+                    switch (_zbr_val(decl)) {
                         .use_ => |_ptr_sub_use| {
                             const sub_use = _ptr_sub_use.*;
 // zbr:selfhost/main.zbr:615
@@ -998,7 +999,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:634
                 for (pm.decls.items) |decl2| {
 // zbr:selfhost/main.zbr:635
-                    if (decl2 == .class_) {
+                    if (_zbr_val(decl2) == .class_) {
                         const cls2_ptr = decl2.class_;
                         const cls2 = cls2_ptr.*;
 // zbr:selfhost/main.zbr:636
@@ -1274,7 +1275,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:810
         while (_zebra_lt(i, @as(i64, @intCast(root_members.items.len)))) {
 // zbr:selfhost/main.zbr:811
-            if (_zbr_at(root_members.items, i) == .method_) {
+            if (_zbr_val(_zbr_at(root_members.items, i)) == .method_) {
                 const rm_ptr = _zbr_at(root_members.items, i).method_;
                 const rm = rm_ptr.*;
 // zbr:selfhost/main.zbr:812
@@ -1397,7 +1398,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:859
             const ppm_node = (try Parser._zbr_ty_Parser.parse(psrc, ppath));
 // zbr:selfhost/main.zbr:860
-            if (ppm_node == .module_) {
+            if (_zbr_val(ppm_node) == .module_) {
                 const ppm_ptr = ppm_node.module_;
                 const ppm = ppm_ptr.*;
 // zbr:selfhost/main.zbr:861
@@ -1415,7 +1416,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:867
             const rdecl = _zbr_at(pm.decls.items, ri);
 // zbr:selfhost/main.zbr:868
-            switch (rdecl) {
+            switch (_zbr_val(rdecl)) {
                 .class_ => |_ptr_rcls| {
                     const rcls = _ptr_rcls.*;
 // zbr:selfhost/main.zbr:872
@@ -1435,7 +1436,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:879
                             const pdecl = _zbr_at(partial_pm.decls.items, pdi);
 // zbr:selfhost/main.zbr:880
-                            if (pdecl == .class_) {
+                            if (_zbr_val(pdecl) == .class_) {
                                 const pcls_ptr = pdecl.class_;
                                 const pcls = pcls_ptr.*;
 // zbr:selfhost/main.zbr:881
@@ -1451,7 +1452,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:886
                                         var keep: bool = true;
 // zbr:selfhost/main.zbr:887
-                                        if (pmem == .method_) {
+                                        if (_zbr_val(pmem) == .method_) {
                                             const pmth_ptr = pmem.method_;
                                             const pmth = pmth_ptr.*;
 // zbr:selfhost/main.zbr:888
@@ -1525,7 +1526,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:917
                 const pdecl = _zbr_at(partial_pm.decls.items, pdi);
 // zbr:selfhost/main.zbr:918
-                switch (pdecl) {
+                switch (_zbr_val(pdecl)) {
                     .class_ => {
                         // pass
                     },
@@ -2163,7 +2164,7 @@ pub fn _zbr_fn_tcCheckSide(src: []const u8, path: []const u8, diags: *std.ArrayL
                 return;
             }
 // zbr:selfhost/main.zbr:1285
-            if (pm_node == .module_) {
+            if (_zbr_val(pm_node) == .module_) {
                 const pm_ptr = pm_node.module_;
                 const pm = pm_ptr.*;
 // zbr:selfhost/main.zbr:1286
@@ -2673,7 +2674,7 @@ pub fn _zbr_fn_lspMemberSymbols(members: std.ArrayList(_zbr_ty_Decl)) []const u8
 // zbr:selfhost/main.zbr:1539
         var msym: []const u8 = "";
 // zbr:selfhost/main.zbr:1540
-        switch (m) {
+        switch (_zbr_val(m)) {
             .method => |_ptr_dm| {
                 const dm = _ptr_dm.*;
 // zbr:selfhost/main.zbr:1542
@@ -2720,7 +2721,7 @@ pub fn _zbr_fn_lspCollectDocSymbols(text: []const u8, path: []const u8) []const 
 // zbr:selfhost/main.zbr:1560
             const pm_node = (Parser._zbr_ty_Parser.parse(text, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:1561
-            if (pm_node == .module_) {
+            if (_zbr_val(pm_node) == .module_) {
                 const pm_ptr = pm_node.module_;
                 const pm = pm_ptr.*;
 // zbr:selfhost/main.zbr:1562
@@ -2734,7 +2735,7 @@ pub fn _zbr_fn_lspCollectDocSymbols(text: []const u8, path: []const u8) []const 
 // zbr:selfhost/main.zbr:1566
                     var sym: []const u8 = "";
 // zbr:selfhost/main.zbr:1567
-                    switch (decl) {
+                    switch (_zbr_val(decl)) {
                         .class_ => |_ptr_c| {
                             const c = _ptr_c.*;
 // zbr:selfhost/main.zbr:1569
@@ -2818,7 +2819,7 @@ pub fn _zbr_fn_runTestList(path: []const u8, tag_filter: ?[]const u8) void {
 // zbr:selfhost/main.zbr:1603
             const pm_node = (Parser._zbr_ty_Parser.parse(text, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:1604
-            if (pm_node == .module_) {
+            if (_zbr_val(pm_node) == .module_) {
                 const pm_ptr = pm_node.module_;
                 const pm = pm_ptr.*;
 // zbr:selfhost/main.zbr:1605
@@ -3443,7 +3444,7 @@ pub fn _zbr_fn_lspMemberInfos(members: std.ArrayList(_zbr_ty_Decl)) std.ArrayLis
 // zbr:selfhost/main.zbr:1915
     for (members.items) |m| {
 // zbr:selfhost/main.zbr:1916
-        switch (m) {
+        switch (_zbr_val(m)) {
             .method => |_ptr_dm| {
                 const dm = _ptr_dm.*;
 // zbr:selfhost/main.zbr:1918
@@ -3475,7 +3476,7 @@ pub fn _zbr_fn_lspBuildDeclIndex(text: []const u8, path: []const u8) std.ArrayLi
 // zbr:selfhost/main.zbr:1929
             const pm_node = (Parser._zbr_ty_Parser.parse(text, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:1930
-            if (pm_node == .module_) {
+            if (_zbr_val(pm_node) == .module_) {
                 const pm_ptr = pm_node.module_;
                 const pm = pm_ptr.*;
 // zbr:selfhost/main.zbr:1931
@@ -3483,7 +3484,7 @@ pub fn _zbr_fn_lspBuildDeclIndex(text: []const u8, path: []const u8) std.ArrayLi
 // zbr:selfhost/main.zbr:1932
                 for (module.decls.items) |decl| {
 // zbr:selfhost/main.zbr:1933
-                    switch (decl) {
+                    switch (_zbr_val(decl)) {
                         .class_ => |_ptr_c| {
                             const c = _ptr_c.*;
 // zbr:selfhost/main.zbr:1935
@@ -3982,7 +3983,7 @@ pub fn _zbr_fn_lspTypeMembers(text: []const u8, path: []const u8, typename: []co
 // zbr:selfhost/main.zbr:2163
             const pm_node = (Parser._zbr_ty_Parser.parse(text, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:2164
-            if (pm_node == .module_) {
+            if (_zbr_val(pm_node) == .module_) {
                 const pm_ptr = pm_node.module_;
                 const pm = pm_ptr.*;
 // zbr:selfhost/main.zbr:2165
@@ -3990,7 +3991,7 @@ pub fn _zbr_fn_lspTypeMembers(text: []const u8, path: []const u8, typename: []co
 // zbr:selfhost/main.zbr:2166
                 for (module.decls.items) |decl| {
 // zbr:selfhost/main.zbr:2167
-                    switch (decl) {
+                    switch (_zbr_val(decl)) {
                         .class_ => |_ptr_c| {
                             const c = _ptr_c.*;
 // zbr:selfhost/main.zbr:2169
@@ -4900,7 +4901,7 @@ pub fn _zbr_fn_dumpMethodVars(owner: []const u8, meth_name: []const u8, stmts: s
 // zbr:selfhost/main.zbr:2617
     for (stmts.items) |s| {
 // zbr:selfhost/main.zbr:2618
-        if (s == .var_) {
+        if (_zbr_val(s) == .var_) {
             const dv_ptr = s.var_;
             const dv = dv_ptr.*;
 // zbr:selfhost/main.zbr:2619
@@ -4934,7 +4935,7 @@ pub fn _zbr_fn_runTypes(path: []const u8) anyerror!void {
         _zbr_exit(@as(i64, 1));
     }
 // zbr:selfhost/main.zbr:2632
-    if (pm_node == .module_) {
+    if (_zbr_val(pm_node) == .module_) {
         const pm_ptr = pm_node.module_;
         const pm = pm_ptr.*;
 // zbr:selfhost/main.zbr:2633
@@ -4948,7 +4949,7 @@ pub fn _zbr_fn_runTypes(path: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:2638
         for (module.decls.items) |decl| {
 // zbr:selfhost/main.zbr:2639
-            switch (decl) {
+            switch (_zbr_val(decl)) {
                 .method => |_ptr_dm| {
                     const dm = _ptr_dm.*;
 // zbr:selfhost/main.zbr:2641
@@ -4962,7 +4963,7 @@ pub fn _zbr_fn_runTypes(path: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:2644
                     for (dc.members.items) |mem| {
 // zbr:selfhost/main.zbr:2645
-                        if (mem == .method) {
+                        if (_zbr_val(mem) == .method) {
                             const dm_ptr = mem.method;
                             const dm = dm_ptr.*;
 // zbr:selfhost/main.zbr:2646
@@ -4978,7 +4979,7 @@ pub fn _zbr_fn_runTypes(path: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:2649
                     for (ds.members.items) |mem| {
 // zbr:selfhost/main.zbr:2650
-                        if (mem == .method) {
+                        if (_zbr_val(mem) == .method) {
                             const dm_ptr = mem.method;
                             const dm = dm_ptr.*;
 // zbr:selfhost/main.zbr:2651
@@ -5923,7 +5924,7 @@ pub fn _zbr_fn_dbgAllDigits(s: []const u8) bool {
 // zbr:selfhost/main.zbr:3292
         const c: u21 = _zbr_at(s, i);
 // zbr:selfhost/main.zbr:3293
-        switch (c) {
+        switch (_zbr_val(c)) {
             '0'...'9' => {
 // zbr:selfhost/main.zbr:3295
                 i = (i + 1);
@@ -6090,7 +6091,7 @@ pub fn _zbr_fn_dbgJsonStr(v: []const u8) []const u8 {
 // zbr:selfhost/main.zbr:3386
         const c: u21 = _zbr_at(v, i);
 // zbr:selfhost/main.zbr:3387
-        switch (c) {
+        switch (_zbr_val(c)) {
             '"' => {
 // zbr:selfhost/main.zbr:3389
                 out = _str_concat(out, "\\\"", _zbr_rt._allocator);

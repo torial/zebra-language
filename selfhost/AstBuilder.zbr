@@ -1504,32 +1504,17 @@ class ASTBuilder
             return TypeRef.alias_applied(AliasAppliedTypeRef(zspan(), alias_name, alias_args))
 
         # Tuple type: "(T1,T2,...)" → TypeRef.tuple(TupleTypeRef([T1, T2, ...]))
-        if s.startsWith("(")
-            # Strip surrounding parens and split by "," (simple top-level split)
-            var inner_parts: List(str) = List(str)()
-            for p in s.split(",")
-                inner_parts.add(p)
+        # BUG-311: strip exactly the OUTER parentheses and split at TOP-LEVEL commas. The old
+        # decoder split on every comma and then cut each piece at its first "(" / ")", so
+        # `(List(float),List(float))` became a bare `List` and an unbalanced `List(float`
+        # (which then defaulted to a list of str) -- reaching Zig as "undeclared identifier
+        # 'List'". Any generic element type in a tuple was affected.
+        if s.startsWith("(") and s.endsWith(")")
             var elems: List(TypeRef) = List(TypeRef)()
-            # First element has leading "(", last has trailing ")"
-            var i: int = 0
-            while i < inner_parts.len
-                var part: str = inner_parts.at(i)
-                # Strip leading "(" from first, trailing ")" from last
-                if part.startsWith("(")
-                    var stripped: List(str) = List(str)()
-                    for sp in part.split("(")
-                        stripped.add(sp)
-                    if stripped.len > 1
-                        part = stripped.at(1)
-                if part.endsWith(")")
-                    var stripped: List(str) = List(str)()
-                    for sp in part.split(")")
-                        stripped.add(sp)
-                    if stripped.len > 0
-                        part = stripped.at(0)
-                if part != ""
-                    elems.add(.parseTypeRefRequired(part))
-                i = i + 1
+            for part in .splitTopLevelArgs(s.substring(1, s.len - 1))
+                var pt: str = part.trim()
+                if pt != ""
+                    elems.add(.parseTypeRefRequired(pt))
             return TypeRef.tuple(TupleTypeRef(zspan(), elems))
 
         # Ref prefix: "^Type" → ref_to(inner)

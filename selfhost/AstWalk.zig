@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const _zbr_rt = @import("zebra_rt.zig");
 pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 pub const std_options = _zbr_rt.std_options;
+const _zbr_val = _zbr_rt._zbr_val;
 const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
 const _zebra_le = _zbr_rt._zebra_le;
@@ -22,7 +23,7 @@ const _zbr_ty_Stmt = Ast._zbr_ty_Stmt;
 // zbr:selfhost/AstWalk.zbr:64
 pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: *std.ArrayList(_zbr_ty_ExprOld)) void {
 // zbr:selfhost/AstWalk.zbr:65
-    switch (expr) {
+    switch (_zbr_val(expr)) {
         .old_ => |_ptr_o| {
             const o = _ptr_o.*;
 // zbr:selfhost/AstWalk.zbr:67
@@ -152,7 +153,7 @@ pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: *std.ArrayList(_zbr_
 // zbr:selfhost/AstWalk.zbr:117
             for (si.parts.items) |part| {
 // zbr:selfhost/AstWalk.zbr:118
-                if (part == .expr_) {
+                if (_zbr_val(part) == .expr_) {
                     const ex_ptr = part.expr_;
                     const ex = ex_ptr.*;
 // zbr:selfhost/AstWalk.zbr:119
@@ -211,7 +212,7 @@ pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: *std.ArrayList(_zbr_
         .lambda => |_ptr_lam| {
             const lam = _ptr_lam.*;
 // zbr:selfhost/AstWalk.zbr:140
-            if (lam.body_ == .expr_) {
+            if (_zbr_val(lam.body_) == .expr_) {
                 const lbe = lam.body_.expr_;
 // zbr:selfhost/AstWalk.zbr:141
                 _zbr_fn_collectOldNodesInto(lbe, out);
@@ -313,7 +314,7 @@ pub fn _zbr_fn_zigLitMentionsWord(code: []const u8, name: []const u8) bool {
 // zbr:selfhost/AstWalk.zbr:199
 pub fn _zbr_fn_mightUseNameInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 // zbr:selfhost/AstWalk.zbr:200
-    switch (expr) {
+    switch (_zbr_val(expr)) {
         .ident => |id| {
 // zbr:selfhost/AstWalk.zbr:202
             return std.mem.eql(u8, id.name, name);
@@ -397,7 +398,7 @@ pub fn _zbr_fn_mightUseNameInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 // zbr:selfhost/AstWalk.zbr:233
             for (si.parts.items) |part| {
 // zbr:selfhost/AstWalk.zbr:234
-                if (part == .expr_) {
+                if (_zbr_val(part) == .expr_) {
                     const e_ptr = part.expr_;
                     const e = e_ptr.*;
 // zbr:selfhost/AstWalk.zbr:235
@@ -618,7 +619,7 @@ pub fn _zbr_fn_mightUseNameInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
                 }
             }
 // zbr:selfhost/AstWalk.zbr:333
-            switch (lam.body_) {
+            switch (_zbr_val(lam.body_)) {
                 .expr_ => |lex| {
 // zbr:selfhost/AstWalk.zbr:335
                     return _zbr_fn_mightUseNameInExpr(name, lex);
@@ -688,7 +689,7 @@ pub fn _zbr_fn_mightUseName(name: []const u8, stmts: std.ArrayList(_zbr_ty_Stmt)
 // zbr:selfhost/AstWalk.zbr:385
 pub fn _zbr_fn_mightUseNameStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
 // zbr:selfhost/AstWalk.zbr:386
-    switch (stmt) {
+    switch (_zbr_val(stmt)) {
         .var_ => |_ptr_n| {
             const n = _ptr_n.*;
 // zbr:selfhost/AstWalk.zbr:388
@@ -986,7 +987,7 @@ pub fn _zbr_fn_stmtsContainYield(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/AstWalk.zbr:518
 pub fn _zbr_fn_stmtContainsYield(s: _zbr_ty_Stmt) bool {
 // zbr:selfhost/AstWalk.zbr:519
-    switch (s) {
+    switch (_zbr_val(s)) {
         .yield_ => {
 // zbr:selfhost/AstWalk.zbr:521
             return true;
@@ -1135,7 +1136,7 @@ pub fn _zbr_fn_stmtsHaveEscape(stmts: std.ArrayList(_zbr_ty_Stmt), loop_exits_co
 // zbr:selfhost/AstWalk.zbr:586
 pub fn _zbr_fn_stmtHasEscape(s: _zbr_ty_Stmt, loop_exits_count: bool) bool {
 // zbr:selfhost/AstWalk.zbr:587
-    switch (s) {
+    switch (_zbr_val(s)) {
         .return_ => {
 // zbr:selfhost/AstWalk.zbr:589
             return true;

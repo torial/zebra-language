@@ -7,6 +7,7 @@ const _zbr_rt = @import("zebra_rt.zig");
 pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 pub const std_options = _zbr_rt.std_options;
 const _prog_alloc = _zbr_rt._prog_alloc;
+const _zbr_val = _zbr_rt._zbr_val;
 const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
@@ -167,7 +168,7 @@ pub const _zbr_ty_Resolver = struct {
     // zbr:selfhost/Resolver.zbr:123
     pub fn bindPass1(self: *_zbr_ty_Resolver, root: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:124
-        if (root == .module_) {
+        if (_zbr_val(root) == .module_) {
             const m_ptr = root.module_;
             const m = m_ptr.*;
 // zbr:selfhost/Resolver.zbr:125
@@ -181,7 +182,7 @@ pub const _zbr_ty_Resolver = struct {
     // zbr:selfhost/Resolver.zbr:127
     pub fn bindTopDecl(self: *_zbr_ty_Resolver, decl: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:128
-        switch (decl) {
+        switch (_zbr_val(decl)) {
             .class_ => |_ptr_c| {
                 const c = _ptr_c.*;
 // zbr:selfhost/Resolver.zbr:130
@@ -266,7 +267,7 @@ pub const _zbr_ty_Resolver = struct {
     // zbr:selfhost/Resolver.zbr:172
     pub fn resolvePass2(self: *_zbr_ty_Resolver, root: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:173
-        if (root == .module_) {
+        if (_zbr_val(root) == .module_) {
             const m_ptr = root.module_;
             const m = m_ptr.*;
 // zbr:selfhost/Resolver.zbr:174
@@ -280,7 +281,7 @@ pub const _zbr_ty_Resolver = struct {
     // zbr:selfhost/Resolver.zbr:176
     pub fn resolveTopDecl(self: *_zbr_ty_Resolver, decl: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:177
-        switch (decl) {
+        switch (_zbr_val(decl)) {
             .class_ => |_ptr_c| {
                 const c = _ptr_c.*;
 // zbr:selfhost/Resolver.zbr:179
@@ -301,7 +302,7 @@ pub const _zbr_ty_Resolver = struct {
 // zbr:selfhost/Resolver.zbr:186
                 for (ns.decls.items) |ns_d| {
 // zbr:selfhost/Resolver.zbr:187
-                    switch (ns_d) {
+                    switch (_zbr_val(ns_d)) {
                         .method_ => |_ptr_nm| {
                             const nm = _ptr_nm.*;
 // zbr:selfhost/Resolver.zbr:189
@@ -312,7 +313,7 @@ pub const _zbr_ty_Resolver = struct {
 // zbr:selfhost/Resolver.zbr:191
                             for (inner_ns.decls.items) |inner_d| {
 // zbr:selfhost/Resolver.zbr:192
-                                if (inner_d == .method_) {
+                                if (_zbr_val(inner_d) == .method_) {
                                     const im_ptr = inner_d.method_;
                                     const im = im_ptr.*;
 // zbr:selfhost/Resolver.zbr:193
@@ -368,7 +369,7 @@ pub const _zbr_ty_Resolver = struct {
     // zbr:selfhost/Resolver.zbr:222
     pub fn collectMember(self: *_zbr_ty_Resolver, member: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:223
-        switch (member) {
+        switch (_zbr_val(member)) {
             .method_ => |_ptr_m| {
                 const m = _ptr_m.*;
 // zbr:selfhost/Resolver.zbr:225
@@ -392,7 +393,7 @@ pub const _zbr_ty_Resolver = struct {
     // zbr:selfhost/Resolver.zbr:233
     pub fn resolveMember(self: *_zbr_ty_Resolver, member: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:234
-        switch (member) {
+        switch (_zbr_val(member)) {
             .method_ => |_ptr_m| {
                 const m = _ptr_m.*;
 // zbr:selfhost/Resolver.zbr:236
@@ -436,7 +437,7 @@ pub const _zbr_ty_Resolver = struct {
     // zbr:selfhost/Resolver.zbr:256
     pub fn resolveStmt(self: *_zbr_ty_Resolver, stmt: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:257
-        switch (stmt) {
+        switch (_zbr_val(stmt)) {
             .stmt_var => |_ptr_v| {
                 const v = _ptr_v.*;
 // zbr:selfhost/Resolver.zbr:260
@@ -624,7 +625,7 @@ pub const _zbr_ty_Resolver = struct {
     // zbr:selfhost/Resolver.zbr:338
     pub fn resolveExpr(self: *_zbr_ty_Resolver, expr: _zbr_ty_PNode) anyerror!void {
 // zbr:selfhost/Resolver.zbr:339
-        switch (expr) {
+        switch (_zbr_val(expr)) {
             .expr_id => |_ptr_id| {
                 const id = _ptr_id.*;
 // zbr:selfhost/Resolver.zbr:341
@@ -666,7 +667,7 @@ pub const _zbr_ty_Resolver = struct {
 // zbr:selfhost/Resolver.zbr:358
                 for (c.callee.items) |ce| {
 // zbr:selfhost/Resolver.zbr:359
-                    if (ce == .expr_id) {
+                    if (_zbr_val(ce) == .expr_id) {
                         const cid_ptr = ce.expr_id;
                         const cid = cid_ptr.*;
 // zbr:selfhost/Resolver.zbr:360
@@ -683,7 +684,7 @@ pub const _zbr_ty_Resolver = struct {
 // zbr:selfhost/Resolver.zbr:364
                     if (generic_ctor) {
 // zbr:selfhost/Resolver.zbr:365
-                        if (e == .expr_id) {
+                        if (_zbr_val(e) == .expr_id) {
                             const aid_ptr = e.expr_id;
                             const aid = aid_ptr.*;
 // zbr:selfhost/Resolver.zbr:366

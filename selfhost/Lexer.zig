@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const _zbr_rt = @import("zebra_rt.zig");
 pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 pub const std_options = _zbr_rt.std_options;
+const _zbr_val = _zbr_rt._zbr_val;
 const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
@@ -21,7 +22,7 @@ pub const CharPred = *const fn(u21) bool;
 // zbr:selfhost/Lexer.zbr:21
 pub fn _zbr_fn_isDigit(c: u21) bool {
 // zbr:selfhost/Lexer.zbr:22
-    switch (c) {
+    switch (_zbr_val(c)) {
         '0'...'9' => {
 // zbr:selfhost/Lexer.zbr:24
             return true;
@@ -42,7 +43,7 @@ pub fn _zbr_fn_isDigitOrUnder(c: u21) bool {
 // zbr:selfhost/Lexer.zbr:31
 pub fn _zbr_fn_isHexDigit(c: u21) bool {
 // zbr:selfhost/Lexer.zbr:32
-    switch (c) {
+    switch (_zbr_val(c)) {
         '0'...'9' => {
 // zbr:selfhost/Lexer.zbr:34
             return true;
@@ -65,7 +66,7 @@ pub fn _zbr_fn_isHexDigit(c: u21) bool {
 // zbr:selfhost/Lexer.zbr:42
 pub fn _zbr_fn_isAlpha(c: u21) bool {
 // zbr:selfhost/Lexer.zbr:43
-    switch (c) {
+    switch (_zbr_val(c)) {
         'a'...'z' => {
 // zbr:selfhost/Lexer.zbr:45
             return true;
@@ -587,7 +588,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:341
         if (_zebra_gt(@as(i64, @intCast(self.out.items.len)), 0)) {
 // zbr:selfhost/Lexer.zbr:342
-            switch (_zbr_at(self.out.items, (@as(i64, @intCast(self.out.items.len)) - 1)).kind) {
+            switch (_zbr_val(_zbr_at(self.out.items, (@as(i64, @intCast(self.out.items.len)) - 1)).kind)) {
                 .dot => {
 // zbr:selfhost/Lexer.zbr:344
                     prevDot = true;
@@ -615,7 +616,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:354
             self.emit(resolvedKw, word, ln, cl);
 // zbr:selfhost/Lexer.zbr:355
-            switch (resolvedKw) {
+            switch (_zbr_val(resolvedKw)) {
                 .kw_ensure => {
 // zbr:selfhost/Lexer.zbr:357
                     self.afterEnsureEol = true;
@@ -1571,7 +1572,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:860
                 const lastKind = _zbr_at(self.out.items, (@as(i64, @intCast(self.out.items.len)) - 1)).kind;
 // zbr:selfhost/Lexer.zbr:861
-                switch (lastKind) {
+                switch (_zbr_val(lastKind)) {
                     .kw_def => {
 // zbr:selfhost/Lexer.zbr:863
                         self.inLambdaParams = true;
@@ -1647,7 +1648,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:896
         const cl: i64 = self.col();
 // zbr:selfhost/Lexer.zbr:897
-        switch (c) {
+        switch (_zbr_val(c)) {
             '0'...'9' => {
 // zbr:selfhost/Lexer.zbr:899
                 (try self.scanNumericLiteral(ln, cl));
@@ -1696,7 +1697,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:922
                 const lk = self.classifyLine();
 // zbr:selfhost/Lexer.zbr:923
-                switch (lk) {
+                switch (_zbr_val(lk)) {
                     .empty => {
 // zbr:selfhost/Lexer.zbr:925
                         const ln: i64 = self.line;

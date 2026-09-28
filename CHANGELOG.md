@@ -37,6 +37,12 @@ confirmed via `tools/bootstrap_check.sh`.
 - **`var xs: List(int) = List()` works as a field default everywhere (BUG-464).**
 - **A function named without `()` as an arithmetic operand is refused (BUG-465)**, naming
   the call form.
+- **A tuple of generic containers works (BUG-311)** -- `(List(float), List(float))` as a return
+  type reached Zig as "undeclared identifier 'List'".
+- **A struct value into a `^S` / `^S?` slot is boxed (BUG-299)** -- as a constructor or
+  function argument, or assigned into another value's field; and a tag test / `branch` on
+  the unwrapped pointer works (BUG-473).
+- **Tuple destructuring: an unused name is fine, and a name you assign is mutable (BUG-472).**
 - **An int expression returned from a `float` function widens (BUG-471)**, as a `float`
   `var` init and argument already did.
 - **`x in names()` / `x in v.keys()` is list membership (BUG-470)**; it was compiled as a

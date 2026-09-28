@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const _zbr_rt = @import("zebra_rt.zig");
 pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 pub const std_options = _zbr_rt.std_options;
+const _zbr_val = _zbr_rt._zbr_val;
 const _zbr_boxed = _zbr_rt._zbr_boxed;
 const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
@@ -1473,7 +1474,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn refuseTrailingColon(self: *_zbr_ty_Parser) anyerror!void {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:940
-        if ((self.textIs(":") and (self.peekAt(1).kind == .eol))) {
+        if ((self.textIs(":") and (_zbr_val(self.peekAt(1).kind) == .eol))) {
 // zbr:selfhost/Parser.zbr:941
             { _zbr_rt._error_ctx = .{ .message = self.errorAt("a block header ends at the end of the line with no colon -- indent the body on the next line; `header: stmt` is the one-line form (QUICKSTART §1.5)") }; return error.ZebraError; }
         }
@@ -1543,7 +1544,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isEol(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:974
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .eol => {
 // zbr:selfhost/Parser.zbr:976
                 return true;
@@ -1559,7 +1560,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isIndent(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:981
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .indent => {
 // zbr:selfhost/Parser.zbr:983
                 return true;
@@ -1575,7 +1576,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isDedent(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:988
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .dedent => {
 // zbr:selfhost/Parser.zbr:990
                 return true;
@@ -1591,7 +1592,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isEof(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:995
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .eof => {
 // zbr:selfhost/Parser.zbr:997
                 return true;
@@ -1607,7 +1608,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isRecoveryStarter(self: *_zbr_ty_Parser, kind: Token._zbr_ty_TokenKind) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1004
-        switch (kind) {
+        switch (_zbr_val(kind)) {
             .kw_use => {
 // zbr:selfhost/Parser.zbr:1006
                 return true;
@@ -1735,7 +1736,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isId(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1068
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .id => {
 // zbr:selfhost/Parser.zbr:1070
                 return true;
@@ -1751,7 +1752,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isSizedTypeName(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1075
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .int_size => {
 // zbr:selfhost/Parser.zbr:1077
                 return true;
@@ -1775,7 +1776,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isTypeKeyword(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1087
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .kw_int => {
 // zbr:selfhost/Parser.zbr:1089
                 return true;
@@ -1807,7 +1808,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isOpenCall(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1102
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .open_call => {
 // zbr:selfhost/Parser.zbr:1104
                 return true;
@@ -1823,7 +1824,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isOpenCallAt(self: *_zbr_ty_Parser, offset: i64) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1109
-        switch (self.peekAt(offset).kind) {
+        switch (_zbr_val(self.peekAt(offset).kind)) {
             .open_call => {
 // zbr:selfhost/Parser.zbr:1111
                 return true;
@@ -1839,7 +1840,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isIntLit(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1116
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .integer_lit => {
 // zbr:selfhost/Parser.zbr:1118
                 return true;
@@ -1867,7 +1868,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isFloatLit(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1135
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .float_lit => {
 // zbr:selfhost/Parser.zbr:1137
                 return true;
@@ -1883,7 +1884,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isAtLbracket(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1142
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .at_lbracket => {
 // zbr:selfhost/Parser.zbr:1144
                 return true;
@@ -1899,7 +1900,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isStringSingle(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1149
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .string_single => {
 // zbr:selfhost/Parser.zbr:1151
                 return true;
@@ -1915,7 +1916,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isStringDouble(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1156
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .string_double => {
 // zbr:selfhost/Parser.zbr:1158
                 return true;
@@ -1931,7 +1932,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isCharLit(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1163
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .char_lit_single => {
 // zbr:selfhost/Parser.zbr:1165
                 return true;
@@ -1951,7 +1952,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isZigLit(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1172
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .zig_single => {
 // zbr:selfhost/Parser.zbr:1174
                 return true;
@@ -1971,7 +1972,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isRawString(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1181
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .string_raw_single => {
 // zbr:selfhost/Parser.zbr:1183
                 return true;
@@ -1991,7 +1992,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isDocString(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1190
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .doc_string_line => {
 // zbr:selfhost/Parser.zbr:1192
                 return true;
@@ -2007,7 +2008,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isStringStart(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1197
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .string_start_single => {
 // zbr:selfhost/Parser.zbr:1199
                 return true;
@@ -2027,7 +2028,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isStringPart(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1206
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .string_part_single => {
 // zbr:selfhost/Parser.zbr:1208
                 return true;
@@ -2047,7 +2048,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isStringStop(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1215
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .string_stop_single => {
 // zbr:selfhost/Parser.zbr:1217
                 return true;
@@ -2067,7 +2068,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isRcurlySpecial(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1224
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .rcurly_special => {
 // zbr:selfhost/Parser.zbr:1226
                 return true;
@@ -2083,7 +2084,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isKwOld(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1231
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .kw_old => {
 // zbr:selfhost/Parser.zbr:1233
                 return true;
@@ -2099,7 +2100,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isKwResult(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1238
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .kw_result => {
 // zbr:selfhost/Parser.zbr:1240
                 return true;
@@ -2115,7 +2116,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn isStringPartFormat(self: *_zbr_ty_Parser) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1245
-        switch (self.peek().kind) {
+        switch (_zbr_val(self.peek().kind)) {
             .string_part_format => {
 // zbr:selfhost/Parser.zbr:1247
                 return true;
@@ -2544,7 +2545,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1469
             saw_directive = false;
 // zbr:selfhost/Parser.zbr:1470
-            switch (self.peek().kind) {
+            switch (_zbr_val(self.peek().kind)) {
                 .at_id => {
 // zbr:selfhost/Parser.zbr:1472
                     const dtext: []const u8 = self.peek().text;
@@ -2993,7 +2994,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1664
         var ifaces = std.ArrayList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1669
-        if (((self.textIs("extends") or self.textIs("inherits")) or (self.textIs(":") and (self.peekAt(1).kind == .id)))) {
+        if (((self.textIs("extends") or self.textIs("inherits")) or (self.textIs(":") and (_zbr_val(self.peekAt(1).kind) == .id)))) {
 // zbr:selfhost/Parser.zbr:1670
             { _zbr_rt._error_ctx = .{ .message = self.errorAt("Zebra has no class inheritance: share behaviour with a mixin (`class Dog adds Barking`) and get polymorphism from an interface (`class Dog implements Animal`) -- QUICKSTART §5, §16, §17") }; return error.ZebraError; }
         }
@@ -3081,7 +3082,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1712
                     const pd = (try self.parseMemberDecl(false));
 // zbr:selfhost/Parser.zbr:1713
-                    if (pd == .invariant_decl) {
+                    if (_zbr_val(pd) == .invariant_decl) {
                         const inv_exprs = pd.invariant_decl;
 // zbr:selfhost/Parser.zbr:1714
                         const inv_list: std.ArrayList(_zbr_ty_PNode) = inv_exprs;
@@ -3216,7 +3217,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1777
                 const pd = (try self.parseMemberDecl(false));
 // zbr:selfhost/Parser.zbr:1778
-                if (pd == .invariant_decl) {
+                if (_zbr_val(pd) == .invariant_decl) {
                     const inv_exprs = pd.invariant_decl;
 // zbr:selfhost/Parser.zbr:1779
                     const inv_list: std.ArrayList(_zbr_ty_PNode) = inv_exprs;
@@ -4179,7 +4180,7 @@ pub const _zbr_ty_Parser = struct {
                     (try self.expectText("|"));
                 } else {
 // zbr:selfhost/Parser.zbr:2239
-                    if ((self.peek().kind == .id)) {
+                    if ((_zbr_val(self.peek().kind) == .id)) {
 // zbr:selfhost/Parser.zbr:2242
                         { _zbr_rt._error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("the catch binding goes between pipes: `catch |", self.peek().text, _zbr_rt._allocator), "|`", _zbr_rt._allocator)) }; return error.ZebraError; }
                     }
@@ -4311,12 +4312,12 @@ pub const _zbr_ty_Parser = struct {
     pub fn parseStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2339
-        if ((self.textIs("try") and ((self.peekAt(1).kind == .eol) or std.mem.eql(u8, self.peekAt(1).text, ":")))) {
+        if ((self.textIs("try") and ((_zbr_val(self.peekAt(1).kind) == .eol) or std.mem.eql(u8, self.peekAt(1).text, ":")))) {
 // zbr:selfhost/Parser.zbr:2340
             { _zbr_rt._error_ctx = .{ .message = self.errorAt("there is no `try` block in Zebra: propagate with `expr?`, take a fallback inline with `expr catch value`, or add a method-level `catch |e|` clause after the body (QUICKSTART §12)") }; return error.ZebraError; }
         }
 // zbr:selfhost/Parser.zbr:2341
-        if ((self.textIs("catch") and ((self.peekAt(1).kind == .eol) or (self.peekAt(1).kind == .id)))) {
+        if ((self.textIs("catch") and ((_zbr_val(self.peekAt(1).kind) == .eol) or (_zbr_val(self.peekAt(1).kind) == .id)))) {
 // zbr:selfhost/Parser.zbr:2342
             { _zbr_rt._error_ctx = .{ .message = self.errorAt("a `catch` clause belongs after the method body, at the same indent as `def`, as `catch |e|`; there is no statement-level catch (QUICKSTART §12)") }; return error.ZebraError; }
         }
@@ -4673,7 +4674,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2506
         for (stmts.items) |s| {
 // zbr:selfhost/Parser.zbr:2507
-            switch (s) {
+            switch (_zbr_val(s)) {
                 .stmt_expr => |_ptr_inner| {
                     const inner = _ptr_inner.*;
 // zbr:selfhost/Parser.zbr:2509
@@ -6725,7 +6726,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3565
                                                                                             const nk = self.peekAt(1).kind;
 // zbr:selfhost/Parser.zbr:3566
-                                                                                            if (((((nk == .string_double) or (nk == .string_single)) or (nk == .string_start_double)) or (nk == .string_start_single))) {
+                                                                                            if (((((_zbr_val(nk) == .string_double) or (_zbr_val(nk) == .string_single)) or (_zbr_val(nk) == .string_start_double)) or (_zbr_val(nk) == .string_start_single))) {
 // zbr:selfhost/Parser.zbr:3567
                                                                                                 { _zbr_rt._error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat(_str_concat("no `", name, _zbr_rt._allocator), "\"...\"` prefix: every Zebra string interpolates -- write \"n=$", _zbr_rt._allocator), "{x}\" (QUICKSTART §1.5)", _zbr_rt._allocator)) }; return error.ZebraError; }
                                                                                             }

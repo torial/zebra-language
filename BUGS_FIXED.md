@@ -6,6 +6,156 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-472: tuple destructuring -- an unused name, and an assigned one, reach Zig — FIXED 2026-09-28
+
+```zebra
+var (a, b) = (1, 2)
+print(a)                   # zig: unused local constant   (b)
+var (x, y) = (1, 2)
+x += 10                    # zig: cannot assign to constant
+```
+A destructured name got neither the `_ = name;` discard a plain unused local gets, nor the
+mutation analysis that makes a local `var`. Found while testing BUG-311. **Fixed:** the
+statement loop discards a destructured name nobody reads; `genDestruct` emits `var` for a
+name the block assigns, annotated with the tuple element's inferred type (a tuple of
+LITERALS is comptime_int / comptime_float in Zig, which a runtime `var` cannot hold).
+Fixture `bug472_destructure_unused_mutated_test`; red on rc4.
+
+---
+
+### BUG-473: a tag test or `branch` on a pointer bound from a `^U?` field reaches Zig — FIXED 2026-09-28
+
+```zebra
+if sb.s as sh              # sb.s: ^Shape?  -> sh is a *Shape
+    if sh is Shape.box as n    # zig: incompatible types: '*Shape' and '@EnumLiteral()'
+```
+Zig auto-dereferences a pointer for FIELD access, so the payload read (`sh.box`) worked;
+the tag comparison and `switch (sh)` did not. Reachable only once BUG-299 let a union value
+be assigned into such a field. **Fixed:** every union tag test (the `if ... is` statement,
+the `is` expression, a branch arm guard) and every `branch` compares `_zbr_val(x)` -- a
+runtime inline that dereferences a single pointer and is the identity otherwise, so it costs
+nothing on a value. No arm captures by pointer (`|*n|` is never emitted), so going through
+the value changes no binding. Fixture `bug473_boxed_union_tag_test`.
+
+---
+
+### BUG-311: a TUPLE containing a generic container type emits a bare, unparameterized `List` in selfhost codegen — bootstrap is unaffected — FIXED 2026-09-28
+
+**Found from outside the project** (an external user porting a numeric microbenchmark from Python, not a fuzz/gate run) — a tuple return type whose elements are `List(T)` compiles clean through parsing and resolution, then emits Zig that doesn't type-check, on the selfhost compiler only.
+
+```zebra
+def two(): (List(float), List(float))
+    var a: List(float) = [1.0, 2.0]
+    var b: List(float) = [3.0, 4.0]
+    return (a, b)
+
+def main
+    var r = two()
+    print(r.0.at(0))
+    print(r.1.at(0))
+```
+
+| compiler | result |
+|---|---|
+| selfhost (`zebra.exe`) | parses OK, resolves OK, then: `error: use of undeclared identifier 'List'` — pointing at the EMITTED Zig, not the source: `pub fn two() struct { List, std.ArrayList([]const u8) } { ... }`. The tuple's second slot is emitted as `std.ArrayList([]const u8)` (a string-list shape) regardless of the source declaring `List(float)` twice — both slots are wrong, and they're wrong in *different* ways. |
+| bootstrap (`zebra-bootstrap.exe`) | compiles and runs, prints `1` then `3` — correct. |
+
+**Why this is a codegen bug, not a rejected-at-the-front-door unsupported form.** The front end fully accepts the tuple-of-`List` type (`parsed OK`, `resolved OK`) — the failure only surfaces in the generated Zig, which means whatever emits tuple element types is falling back to a bare `List` (and, in the second slot, to a string-list default) instead of carrying the element's type argument through. A single `List(T)` return works fine (confirmed separately); it's specifically the tuple-of-generics packaging that loses the parameter.
+
+**Severity:** Medium — tuples are the documented idiom for multi-value returns (`test/tuple_test.zbr`), and returning two related collections (e.g. paired forward-pass outputs, or any function structured like NumPy/PyTorch code returning `(values, indices)`) is an ordinary shape to want, not an edge case. The workaround is straightforward and was used to complete the porting task that surfaced this: pass pre-allocated `List` output parameters instead of returning them in a tuple.
+
+**Control when fixing:** the probe above must compile and print `1` / `3` on selfhost, matching bootstrap's existing correct output. Worth checking as a fix-time regression net: a tuple of two *different* generic element types (e.g. `(List(int), List(str))`), since the observed failure emitted two different wrong shapes for the two slots rather than the same wrong shape twice.
+
+**Fixed 2026-09-28.** Not codegen after all: `AstBuilder`'s tuple-type decoder split the
+type string on EVERY comma and then cut each piece at its first `(` / `)`, so an element
+with its own parentheses was mangled -- `List(float)` first became a bare `List`, last an
+unbalanced `List(float` defaulting to List(str). It now strips exactly the outer pair and
+splits with the existing bracket-aware `splitTopLevelArgs`. Every generic element type in
+a tuple was affected, including nested tuples and HashMaps. Fixture
+`bug311_tuple_generic_elems_test`; red on rc4 (where the mis-typed tuple failed in the
+front end).
+
+---
+
+### BUG-299: a value-typed STRUCT is not auto-boxed into a `^Struct?` field, though a UNION is — FIXED 2026-09-28
+
+Assigning a struct VALUE to a `^T?` (nilable heap-indirection) field fails on BOTH
+compilers, while the identical shape with a UNION payload works. Found while writing
+BUG-124's regression pin, which needed a value-typed payload and started with both.
+
+```zebra
+struct Pair
+    var a: int
+    var b: int
+    cue init(x: int, y: int)
+        a = x
+        b = y
+
+struct PairBox
+    var opt_pair: ^Pair?
+    cue init(opt_pair: ^Pair?)
+        .opt_pair = opt_pair
+
+def makePairBox(x: int, y: int): PairBox
+    var p = Pair(x, y)
+    return PairBox(p)          # <- the struct value is never boxed
+```
+
+| compiler | line | message |
+|---|---|---|
+| selfhost | 15 (`return PairBox(p)`) | `error: expected type '?*T', found 'T'` |
+| bootstrap | 11 (`.opt_pair = opt_pair`) | `error: expected type 'Pair', found '?*Pair'` |
+
+**THE CONTROL IS WHAT MAKES THIS A BUG RATHER THAN AN UNSUPPORTED FORM.** The same
+construction with a union payload — `union Val` in a `^Val?` field, constructed from a
+value — compiles and runs on both compilers today; that is
+`test/bug124_boxed_nilable_ctor_test.zbr`, which passes. So `^T?` auto-boxing exists and
+works; it is the STRUCT payload that misses it.
+
+The two compilers fail at DIFFERENT sites, which is worth noting before assuming one root
+cause: the selfhost rejects the constructor ARGUMENT (the value never becomes a pointer),
+while the bootstrap accepts the argument and rejects the FIELD ASSIGNMENT inside `init`
+(it has a `?*Pair` where the field wants a `Pair`). They may be one gap seen from two
+sides or two gaps; nothing here has established which.
+
+The bootstrap additionally reports `local variable is never mutated` at the `cue init`
+line for this probe. Recorded because it appeared, not because it is known to be part of
+this defect.
+
+- **Severity:** Medium — `^T?` is the documented idiom for an optional heap field, and a
+  struct is the type most likely to want one. The workaround is a union or a class.
+- **Control when fixing:** the probe above must compile and print, on BOTH compilers, and
+  `test/bug124_boxed_nilable_ctor_test.zbr` (the union control) must keep passing. Add the
+  struct half back to that fixture, where it was deliberately removed with a note.
+
+**REPRODUCED VERBATIM 2026-08-30.** The entry's own repro, run unmodified:
+
+```
+zz_bug299.zbr:15: error: expected type '?*T', found 'T'
+```
+
+Both compilers exit 1. **Confirmed real and open** — the only one of the three unverified
+entries reviewed that day which reproduces exactly as written.
+
+**But it is a LOUD failure, not a silent one.** The program is refused at compile time; no
+wrong answer is produced. **Reclassified: not a silent-wrong-answer bug** — it is a
+correct program the compiler will not accept, which is a real 0.9 defect of a different
+and less urgent kind.
+
+**Fixed 2026-09-28, and wider than filed.** Three shapes failed, not one: a struct value as
+a constructor argument into `^S?` (filed), as a plain function argument, and assigned into
+ANOTHER value's `^S` field (`holder.p = v` from `main` -- the BUG-170 box looked the field
+up on the CURRENT class only). And the union case the entry calls working worked only via
+the constructor: `sb.s = Shape.box(9)` failed the same way. Now `genCallWithTypeHint` boxes
+a struct/union VALUE headed for a `^S` / `^S?` slot through the runtime's `_zbr_boxed`
+(every typed argument and constructor argument passes there), and `getAssignFieldType`
+resolves `obj.field` through the object's inferred type. The box is a copy -- the fixture
+asserts that changing the original afterwards does not change what was stored. Fixture
+`bug299_struct_into_boxed_slot_test`; red on rc4. Making the union assignment work
+immediately exposed BUG-473.
+
+---
+
 ### BUG-471: an int expression returned from a `float` function reaches Zig — FIXED 2026-09-28
 
 ```zebra

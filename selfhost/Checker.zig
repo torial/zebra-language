@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const _zbr_rt = @import("zebra_rt.zig");
 pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 pub const std_options = _zbr_rt.std_options;
+const _zbr_val = _zbr_rt._zbr_val;
 const _zbr_boxed = _zbr_rt._zbr_boxed;
 const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
@@ -340,7 +341,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
     // zbr:selfhost/Checker.zbr:155
     pub fn collectDecl(self: *_zbr_ty_DeadCodeChecker, decl: _zbr_ty_Decl, file: []const u8) void {
 // zbr:selfhost/Checker.zbr:156
-        switch (decl) {
+        switch (_zbr_val(decl)) {
             .union_ => |_ptr_u| {
                 const u = _ptr_u.*;
 // zbr:selfhost/Checker.zbr:158
@@ -424,7 +425,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
     // zbr:selfhost/Checker.zbr:194
     pub fn walkTopDecl(self: *_zbr_ty_DeadCodeChecker, decl: _zbr_ty_Decl, file: []const u8) void {
 // zbr:selfhost/Checker.zbr:195
-        switch (decl) {
+        switch (_zbr_val(decl)) {
             .class_ => |_ptr_c| {
                 const c = _ptr_c.*;
 // zbr:selfhost/Checker.zbr:197
@@ -494,7 +495,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:225
         while (_zebra_lt(i, @as(i64, @intCast(members.items.len)))) {
 // zbr:selfhost/Checker.zbr:226
-            switch (_zbr_at(members.items, i)) {
+            switch (_zbr_val(_zbr_at(members.items, i))) {
                 .method => |_ptr_m| {
                     const m = _ptr_m.*;
 // zbr:selfhost/Checker.zbr:228
@@ -546,7 +547,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
     // zbr:selfhost/Checker.zbr:247
     pub fn walkStmt(self: *_zbr_ty_DeadCodeChecker, stmt: _zbr_ty_Stmt, file: []const u8) void {
 // zbr:selfhost/Checker.zbr:248
-        switch (stmt) {
+        switch (_zbr_val(stmt)) {
             .if_ => |_ptr_si| {
                 const si = _ptr_si.*;
 // zbr:selfhost/Checker.zbr:250
@@ -799,13 +800,13 @@ pub const _zbr_ty_DeadCodeChecker = struct {
     // zbr:selfhost/Checker.zbr:359
     pub fn walkExpr(self: *_zbr_ty_DeadCodeChecker, expr: _zbr_ty_Expr, file: []const u8, in_match: bool) void {
 // zbr:selfhost/Checker.zbr:360
-        switch (expr) {
+        switch (_zbr_val(expr)) {
             .member => |_ptr_em| {
                 const em = _ptr_em.*;
 // zbr:selfhost/Checker.zbr:362
                 const mem_name: []const u8 = em.member;
 // zbr:selfhost/Checker.zbr:363
-                if (em.object.* == .ident) {
+                if (_zbr_val(em.object.*) == .ident) {
                     const eid = em.object.*.ident;
 // zbr:selfhost/Checker.zbr:364
                     const obj: []const u8 = eid.name;
@@ -830,11 +831,11 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:374
                 var is_union_ctor: bool = false;
 // zbr:selfhost/Checker.zbr:375
-                if (ec.callee == .member) {
+                if (_zbr_val(ec.callee) == .member) {
                     const cm_ptr = ec.callee.member;
                     const cm = cm_ptr.*;
 // zbr:selfhost/Checker.zbr:376
-                    if (cm.object.* == .ident) {
+                    if (_zbr_val(cm.object.*) == .ident) {
                         const cid = cm.object.*.ident;
 // zbr:selfhost/Checker.zbr:377
                         if (self.isKnownUnion(cid.name)) {
@@ -856,7 +857,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:384
                 if ((!is_union_ctor)) {
 // zbr:selfhost/Checker.zbr:387
-                    if (ec.callee == .member) {
+                    if (_zbr_val(ec.callee) == .member) {
                         const cal_m_ptr = ec.callee.member;
                         const cal_m = cal_m_ptr.*;
 // zbr:selfhost/Checker.zbr:388
@@ -864,7 +865,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
                     }
                 }
 // zbr:selfhost/Checker.zbr:391
-                if (ec.callee == .ident) {
+                if (_zbr_val(ec.callee) == .ident) {
                     const cfn = ec.callee.ident;
 // zbr:selfhost/Checker.zbr:392
                     self.trackFnCall(cfn.name);
@@ -876,11 +877,11 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:397
                     const aarg: _zbr_ty_Arg = _zbr_at(ec.args.items, ai);
 // zbr:selfhost/Checker.zbr:398
-                    switch (aarg.value) {
+                    switch (_zbr_val(aarg.value)) {
                         .member => |_ptr_avm| {
                             const avm = _ptr_avm.*;
 // zbr:selfhost/Checker.zbr:400
-                            if (avm.object.* == .ident) {
+                            if (_zbr_val(avm.object.*) == .ident) {
                                 const avid = avm.object.*.ident;
 // zbr:selfhost/Checker.zbr:401
                                 if (self.isKnownUnion(avid.name)) {
@@ -901,11 +902,11 @@ pub const _zbr_ty_DeadCodeChecker = struct {
                         .call => |_ptr_avc| {
                             const avc = _ptr_avc.*;
 // zbr:selfhost/Checker.zbr:409
-                            if (avc.callee == .member) {
+                            if (_zbr_val(avc.callee) == .member) {
                                 const avcm_ptr = avc.callee.member;
                                 const avcm = avcm_ptr.*;
 // zbr:selfhost/Checker.zbr:410
-                                if (avcm.object.* == .ident) {
+                                if (_zbr_val(avcm.object.*) == .ident) {
                                     const avci = avcm.object.*.ident;
 // zbr:selfhost/Checker.zbr:411
                                     if (self.isKnownUnion(avci.name)) {
@@ -921,7 +922,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
                                 }
                             }
 // zbr:selfhost/Checker.zbr:416
-                            if (avc.callee == .ident) {
+                            if (_zbr_val(avc.callee) == .ident) {
                                 const avcfn = avc.callee.ident;
 // zbr:selfhost/Checker.zbr:417
                                 self.trackFnCall(avcfn.name);
@@ -1051,7 +1052,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
                     ci = (ci + 1);
                 }
 // zbr:selfhost/Checker.zbr:469
-                switch (el.body_) {
+                switch (_zbr_val(el.body_)) {
                     .expr_ => |le| {
 // zbr:selfhost/Checker.zbr:471
                         self.walkExpr(le, file, false);
@@ -1119,7 +1120,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:497
                     const part: _zbr_ty_StringPart = _zbr_at(esi.parts.items, spi);
 // zbr:selfhost/Checker.zbr:498
-                    if (part == .expr_) {
+                    if (_zbr_val(part) == .expr_) {
                         const pe_ptr = part.expr_;
                         const pe = pe_ptr.*;
 // zbr:selfhost/Checker.zbr:499
@@ -1169,11 +1170,11 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:519
                     const exf: _zbr_ty_ExceptField = _zbr_at(eex.fields.items, exi);
 // zbr:selfhost/Checker.zbr:520
-                    switch (exf.value) {
+                    switch (_zbr_val(exf.value)) {
                         .member => |_ptr_efvm| {
                             const efvm = _ptr_efvm.*;
 // zbr:selfhost/Checker.zbr:522
-                            if (efvm.object.* == .ident) {
+                            if (_zbr_val(efvm.object.*) == .ident) {
                                 const efvid = efvm.object.*.ident;
 // zbr:selfhost/Checker.zbr:523
                                 if (self.isKnownUnion(efvid.name)) {
@@ -1188,11 +1189,11 @@ pub const _zbr_ty_DeadCodeChecker = struct {
                         .call => |_ptr_efvc| {
                             const efvc = _ptr_efvc.*;
 // zbr:selfhost/Checker.zbr:528
-                            if (efvc.callee == .member) {
+                            if (_zbr_val(efvc.callee) == .member) {
                                 const efvcm_ptr = efvc.callee.member;
                                 const efvcm = efvcm_ptr.*;
 // zbr:selfhost/Checker.zbr:529
-                                if (efvcm.object.* == .ident) {
+                                if (_zbr_val(efvcm.object.*) == .ident) {
                                     const efvci = efvcm.object.*.ident;
 // zbr:selfhost/Checker.zbr:530
                                     if (self.isKnownUnion(efvci.name)) {
@@ -1572,7 +1573,7 @@ pub fn _zbr_fn_checkerLoadDeps(path: []const u8, visited: *std.ArrayList([]const
         { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat(_str_concat("resolver errors in ", path, _zbr_rt._allocator), ":\n", _zbr_rt._allocator), resolver.allErrorMessages(), _zbr_rt._allocator) }; return error.ZebraError; }
     }
 // zbr:selfhost/Checker.zbr:720
-    if (pm_node == .module_) {
+    if (_zbr_val(pm_node) == .module_) {
         const pm_ptr = pm_node.module_;
         const pm = pm_ptr.*;
 // zbr:selfhost/Checker.zbr:722
@@ -1580,7 +1581,7 @@ pub fn _zbr_fn_checkerLoadDeps(path: []const u8, visited: *std.ArrayList([]const
 // zbr:selfhost/Checker.zbr:723
         while (_zebra_lt(di, @as(i64, @intCast(pm.decls.items.len)))) {
 // zbr:selfhost/Checker.zbr:724
-            if (_zbr_at(pm.decls.items, di) == .use_) {
+            if (_zbr_val(_zbr_at(pm.decls.items, di)) == .use_) {
                 const u_ptr = _zbr_at(pm.decls.items, di).use_;
                 const u = u_ptr.*;
 // zbr:selfhost/Checker.zbr:725

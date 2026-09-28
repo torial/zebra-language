@@ -7227,6 +7227,15 @@ struct Generator
         # discard would only be a harmless redundant read.  Mirrors src/CodeGen.zig.
         for s in stmts
             genStmt(s)
+            # BUG-472: a destructured name nobody reads gets the discard a plain local gets
+            # (`var (a, b) = pair()` using only `a` reached Zig as "unused local constant").
+            if s is Stmt.destruct as dsd
+                for dn in dsd.names
+                    if dn != "_" and not ms.contains_(dn) and not mightUseName(dn, stmts)
+                        writeIndent()
+                        w.emit("_ = ")
+                        emitName(dn)
+                        w.emit(";\n")
             if s is Stmt.var_ as n
                 # Skip locals whose declared type is a constrained alias: the
                 # inline contract check uses the local (invisible to
@@ -8773,6 +8782,15 @@ struct Generator
                 return false
 
     def getAssignFieldType(a: StmtAssign): TypeRef?
+        # BUG-299: `b.p = v` where `b` is a value of another struct/class -- its declared
+        # field type is the authority (the lookup below is the CURRENT owner's, by name, so
+        # an assignment from `main` found nothing and the value was never boxed).
+        if a.target is Expr.member as at_m
+            if not (at_m.object is Expr.this_) and .infer_ctx != nil
+                var at_ot: Type_ = inferExpr(at_m.object, .infer_ctx!)
+                if at_ot is Type_.named as at_cn
+                    if lookupTypeFieldType(at_cn, at_m.member) as at_ft
+                        return at_ft
         # If target is a member expression (self.field), extract field name and look up type
         var fname = getMemberFieldName(a.target)
         if fname != nil
@@ -8995,7 +9013,57 @@ struct Generator
                                 return fld.type_
         return nil
 
+    # BUG-299: a field's declared TypeRef on a struct OR class of this module.
+    def lookupTypeFieldType(type_name: str, field_name: str): TypeRef?
+        for decl in module_decls
+            if decl is Decl.struct_ as s
+                if s.name == type_name
+                    for mem in s.members
+                        if mem is Decl.var_ as fld
+                            if fld.name == field_name
+                                return fld.type_
+            if decl is Decl.class_ as cl
+                if cl.name == type_name
+                    for mem in cl.members
+                        if mem is Decl.var_ as fld2
+                            if fld2.name == field_name
+                                return fld2.type_
+        return nil
+
+    # BUG-299: the struct/union name `S` when `tr` is `^S` or `^S?` for a VALUE type of this
+    # module -- a slot that holds a heap pointer, into which a value must be boxed.
+    def boxTargetName(tr: TypeRef): str?
+        if tr is TypeRef.ref_to as bt_inner
+            var bt_name: str = ""
+            if bt_inner is TypeRef.named as bt_n
+                bt_name = bt_n.name
+            else if bt_inner is TypeRef.nilable as bt_nil
+                if bt_nil is TypeRef.named as bt_n2
+                    bt_name = bt_n2.name
+            if bt_name != "" and (struct_names.contains_(bt_name) or .module_types.hasUnion(bt_name))
+                return bt_name
+        return nil
+
+    # BUG-299: `e` is a VALUE of struct/union `name` (not nil, not already a pointer).
+    def isBoxableValueOf(e: Expr, name: str): bool
+        if e is Expr.nil_ or rhsIsAlreadyRef(e) or .infer_ctx == nil
+            return false
+        var vt: Type_ = inferExpr(e, .infer_ctx!)
+        if vt is Type_.named as vn
+            return vn == name
+        return false
+
     def genCallWithTypeHint(e: Expr, hint: TypeRef)
+        # BUG-299: a struct VALUE passed where a `^S` / `^S?` parameter expects a pointer is
+        # boxed, as a value assigned into a `^S` field already was (BUG-170). It reached Zig
+        # as "expected type '?*Pair', found 'Pair'" -- for a function argument AND for a
+        # constructor argument, the shape BUG-299 was filed on.
+        if boxTargetName(hint) as bx_name
+            if isBoxableValueOf(e, bx_name)
+                w.emit("_zbr_boxed(")
+                genExpr(e)
+                w.emit(")")
+                return
         # 2026-09-24: a boxed inner container reaching a VALUE slot (a struct field, a
         # by-value parameter, a return) is copied out of its box.
         if exprYieldsBox(e) or exprYieldsOptBox(e)
@@ -9339,9 +9407,10 @@ struct Generator
                     if is_opt
                         genExpr(tc.expr)
                         w.emit(" != null and ")
+                    w.emit("_zbr_val(")                       # BUG-473
                     genExpr(tc.expr)
                     w.emit(deref)
-                    w.emit(" == .")
+                    w.emit(") == .")
                     w.emit(variant)
                     w.emit(") {\n")
                     var ig = indented()
@@ -10669,9 +10738,9 @@ struct Generator
                     if v0 is Expr.member as m
                         tag_name = m.member
                     if tag_name.len > 0
-                        w.emit(" and ")
+                        w.emit(" and _zbr_val(")                 # BUG-473
                         w.emit(bv)
-                        w.emit(" == .")
+                        w.emit(") == .")
                         w.emit(tag_name)
                 w.emit(") {\n")
                 var ig = indented()
@@ -10820,9 +10889,9 @@ struct Generator
             if cas.binding != nil
                 has_binding = true
         writeIndent()
-        w.emit("switch (")
+        w.emit("switch (_zbr_val(")                              # BUG-473
         genExpr(b.expr)
-        w.emit(") {\n")
+        w.emit(")) {\n")
         var ig = indented()
         for cas in b.cases
             # BUG-137: a branch-case binding (`on V as r`) shadows any same-named
@@ -12243,8 +12312,23 @@ struct Generator
         var i = 0
         while i < d.names.len
             writeIndent()
-            w.emit("const ")
+            # BUG-472: a destructured name the block later ASSIGNS is a `var` -- it was
+            # always `const`, so `a += 10` reached Zig as "cannot assign to constant".
+            var ds_is_var: bool = mut_set != nil and mut_set!.contains_(d.names.at(i))
+            if ds_is_var
+                w.emit("var ")
+            else
+                w.emit("const ")
             w.emit(d.names.at(i))
+            # A `var` from a tuple of literals is comptime_int / comptime_float in Zig, which a
+            # runtime `var` cannot hold -- annotate it with the element's inferred type.
+            if ds_is_var and not d.is_struct and .infer_ctx != nil
+                var ds_t: Type_ = inferExpr(d.init_expr, .infer_ctx!)
+                if ds_t is Type_.tuple_ as ds_tt
+                    if ds_tt.at(i) as ds_et
+                        var ds_ann: str = tcTypeAnnotation(ds_et)
+                        if ds_ann != ""
+                            w.emit(": " + ds_ann)
             w.emit(" = ")
             w.emit(tmp)
             if d.is_struct
@@ -12919,9 +13003,9 @@ struct Generator
             on Expr.type_check as tc2
                 if tc2.variant_name != nil
                     # Union variant check: expr == .variant
-                    w.emit("(")
+                    w.emit("(_zbr_val(")                         # BUG-473
                     genExpr(tc2.expr)
-                    w.emit(" == .")
+                    w.emit(") == .")
                     w.emit(tc2.variant_name!)
                     w.emit(")")
                 else

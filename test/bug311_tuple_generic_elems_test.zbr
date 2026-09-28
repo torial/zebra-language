@@ -1,0 +1,24 @@
+# BUG-311: a TUPLE whose element types are generic containers. The tuple-type decoder split
+# on EVERY comma and cut each piece at its first "(" / ")", so `(List(float), List(float))`
+# became a bare `List` and a `List(float` that defaulted to List(str) -- "use of undeclared
+# identifier 'List'" in Zig. Found by an outside user porting a Python benchmark.
+def two(): (List(float), List(float))
+    var a: List(float) = [1.0, 2.0]
+    var b: List(float) = [3.0, 4.0]
+    return (a, b)
+
+def mixed(): ((int, str), List(int), HashMap(str, float))
+    var m = HashMap(str, float)()
+    m.set("k", 2.5)
+    return ((7, "seven"), [1, 2, 3], m)
+
+def main()
+    var r = two()
+    print(r.0.at(0))
+    print(r.1.at(1))
+    var x = mixed()
+    var inner = x.0
+    print(inner.1)
+    print(x.1.count())
+    print(x.2.get("k"))
+    print("bug311: OK")
