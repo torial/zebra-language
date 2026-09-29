@@ -2252,6 +2252,17 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-09-28, second run (BUG-331's JSON read surface + BUG-475): 55/55 PASS in ONE
+invocation at JOBS=2 on `ef9705f`, ~2h.** smoke 612/612 (in the QUICK before it),
+`output_sweep` **466 identical** -- the six migrated JSON fixtures print exactly what they did --
+`full_sweep` / `examples_sweep` / `divergence` 0 regressions, `regen-recover` PASS, `leakgen`
+100/0 with 80 of its 100 programs now generating `tryList` / `?.tryInt`, every GUI scaffold,
+`node-addon`. Landed in THREE commits because the compiler's own LSP code used the old getters:
+step 1 added the reads (so N-1 knew them), step 2 migrated and removed getX/at, step 3 deleted
+the runtime helpers once no committed compiler called them. Step 2's QUICK went red once on
+round-trip -- `lld-link: failed to write zebra-selfhost.exe: Permission denied`, no process of
+this tree holding it -- and passed standalone, byte-identical; a lock, recorded as such.
+
 **DAILY tier 2026-09-28 (the Monday batch: BUG-464..474, 299, 311, 312, 444, the new
 `escape-hatches` gate): 54/55 in ONE invocation on `eefb0db` -- the one red was
 `arena_concurrency_hazard_test` AGAIN, now with a DIFFERENT crash ("reached unreachable
