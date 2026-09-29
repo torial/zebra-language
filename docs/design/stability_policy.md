@@ -1,9 +1,10 @@
 <!-- doc-status: design -->
 # The 1.0 stability promise — what is frozen, what is not, and how things leave
 
-**Status:** DRAFT for Sean's red pen (Fable 5.1, 2026-09-14). Nothing here is in force
-until it is adopted; the instrument half (`docs/SURFACE.md`, gate `surface-freeze`) is
-already live and is what this policy would be a policy *about*.
+**Status:** ADOPTED 2026-09-29 (Sean: "all other things approved", with one correction --
+the VS Code extension in §6). Drafted by Fable 5.1, 2026-09-14. The instrument half
+(`docs/SURFACE.md`, gate `surface-freeze`) was already live; this is the policy *about* it.
+It binds from 1.0; until then the pre-1.0 rule in §4 applies.
 **Context:** NEXT_STEPS_to_1.0 §15 says 1.0 "locks the API surface with a stability
 promise" and, until 2026-09-14, no document said what the surface was or what "locked"
 committed anyone to. PRINCIPLES.md already fixes the mechanism for removals ("a
@@ -81,6 +82,13 @@ least two minor releases:
 3. **Remove** (release N+1 or later): the construct is refused with the same diagnostic
    the warning carried, now as an error, still naming the rewriter.
 
+**Before 1.0 there is no warning period.** A 0.x release may remove a construct outright
+when nobody outside the project depends on it -- the precedent is rc6, which removed the
+lenient JSON getters (`getStr`/`getInt`/..., BUG-331) with no deprecation release at Sean's
+call ("no one uses this language yet except us"). The CHANGELOG still marks such a change
+**breaking**, and the refusal still names the replacement. The three steps above start
+binding at 1.0.
+
 Additions need only step 0: a `SURFACE.md` diff and a `CHANGELOG.md` line. An addition
 cannot break a 1.x program — except by taking a keyword, which is why new keywords are
 the one addition that follows the removal schedule (they remove a name from the user's
@@ -100,7 +108,11 @@ does not satisfy it.
 
 - No package manager. `use` resolves paths; third-party code is a checkout or a
   `BuildTarget.linkLib`. A package story is 1.x work and will not change `use`.
-- No editor support beyond the LSP and zebra-ide. A TextMate/tree-sitter grammar is a
+- Editor support is three things, and no more is promised: `zebra lsp` (any LSP client
+  can drive it), the **VS Code extension** in `editors/vscode/` -- a thin client over
+  `zebra lsp` (diagnostics, hover, go-to-definition, completion, signature help, outline,
+  formatting) plus a TextMate grammar for highlighting, installed from the repo rather than
+  the Marketplace -- and zebra-ide. A tree-sitter grammar or another editor's plugin is a
   small adoption item and welcome, but not promised.
 - No portability across Zig versions (§3), no evented I/O runtime (servers are
   thread-per-connection; C10k is post-1.0, see §28j's xsync note), no runtime CPU

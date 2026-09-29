@@ -55,7 +55,8 @@ PROMISE, which §15 says is the open act.
    say `zebra = "^1.0"` and have the compiler refuse with a clear line when it does not
    satisfy it. Costs a day; without it a project cannot state what it was tested against.
 4. **A deprecation POLICY, which makes the warning tier a PREREQUISITE of the freeze rather
-   than a nice-to-have beside it.** DRAFTED 2026-09-14: `docs/design/stability_policy.md` (status
+   than a nice-to-have beside it.** ADOPTED 2026-09-29 (Sean; VS Code extension added to
+   its editor line). DRAFTED 2026-09-14: `docs/design/stability_policy.md` (status
    DRAFT, Sean's red pen) -- the promise, the frozen set, the not-frozen set, the
    warn/rewrite/remove schedule, versions, non-goals. PRINCIPLES.md already says "deprecation by migration,
    not by dialect", but the only mechanism the compiler has is error-or-silence. A 1.0
@@ -92,8 +93,8 @@ PROMISE, which §15 says is the open act.
    0.9", or (c) it is deleted. The number that drives it is printed every daily run.
 8. **Say what 1.0 does NOT include**, so absence reads as a decision: no package manager
    (`use` resolves paths; third-party code is `BuildTarget.linkLib` or a checkout), no
-   editor extensions beyond the LSP and zebra-ide (a TextMate/tree-sitter grammar is a
-   two-hour adoption item worth doing anyway), no Zig-version portability (a release is
+   editor support beyond the LSP, the VS Code extension (`editors/vscode/`, which already
+   carries a TextMate grammar) and zebra-ide, no Zig-version portability (a release is
    pinned to the Zig it bundles, which is the right answer and should be stated).
 
 DECISIONS 2026-09-15 (Sean, on the 2026-09-14 read above and the surface measurement):
