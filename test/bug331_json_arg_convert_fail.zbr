@@ -1,0 +1,7 @@
+# BUG-331: `j["k"]?` converts in a var, an assignment or a return -- not in an argument.
+def twice(n: int): int
+    return n * 2
+
+def main()
+    var j = Json.parse("{\"a\": 1}")!
+    print(twice(j["a"]?))

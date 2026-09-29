@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
 use CgHelpers exposing hexLitZig, setStructReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering
-use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, isString, numericJoin, numKind, numWidth, isNumLit
+use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -3308,6 +3308,8 @@ struct Generator
     var for_loop_vars        : StrSet   # active for-loop variable names (suppress stale branch deref)
     var for_else_label       : str?     # while-based for-else label; nil → plain break; set per-loop
     var in_try_expr          : bool     # suppress auto-try when already inside Expr.try_
+    var json_want_mode       : str      # BUG-331: conversion for the armed `j[...]?` ("" = JsonValue)
+    var json_want_at         : str      # BUG-331: "line:col" of the index node it applies to
     var self_name            : str      # "self" for methods, "_self" for init
     var capture_fields       : StrSet   # captured var names → emit self.name in genIdent
     # BUG-233: lambda params RENAMED because they shadow an enclosing param/local. Zig
@@ -3434,6 +3436,8 @@ struct Generator
         .for_loop_vars         = StrSet()
         .for_else_label        = nil
         .in_try_expr           = false
+        .json_want_mode        = ""
+        .json_want_at          = ""
         .self_name             = "self"
         .capture_fields        = StrSet()
         .lp_renamed            = StrSet()          # BUG-233
@@ -7437,6 +7441,8 @@ struct Generator
     # ── genLocalVar ───────────────────────────────────────────────────────────
 
     def genLocalVar(n: DeclVar)
+        if n.type_ != nil and n.init_expr != nil
+            armJsonWant(n.init_expr!, typeFromRef(n.type_!))
         # `var _ = expr` is the discard idiom (QUICKSTART): Zig rejects a `const`/`var`
         # binding literally named `_`, so emit the bare discard assignment `_ = expr;`.
         if n.name == "_"
@@ -8556,7 +8562,32 @@ struct Generator
                     return vid.name == "List" or vid.name == "HashMap" or vid.name == "StrSet"
         return false
 
+    # BUG-331: `var n: int = j["k"]?` -- the slot names the type, so the OUTERMOST JSON
+    # index under the `?` emits the converting lookup (_json_idx_int). Keyed on the index
+    # node's position so a JSON index elsewhere in the statement (an assignment target,
+    # an argument) can never pick it up. The checker (checkJsonInto) refuses every slot
+    # that is not armed here, with the same two predicates.
+    def armJsonWant(value: Expr, target: Type_)
+        json_want_mode = ""
+        json_want_at = ""
+        if .infer_ctx == nil
+            return
+        if not jsonIdxTry(value, .infer_ctx!)
+            return
+        branch value
+            on Expr.try_ as t
+                branch t.expr
+                    on Expr.index as ix
+                        json_want_mode = jsonWantMode(target)
+                        json_want_at = ix.span.line.toString() + ":" + ix.span.col.toString()
+                    else
+                        pass
+            else
+                pass
+
     def genAssign(a: StmtAssign)
+        if a.op == AssignOp.assign and .infer_ctx != nil
+            armJsonWant(a.value, inferExpr(a.target, .infer_ctx!))
         # BUG-079: auto-hoist method chain on struct temporary in assignment RHS.
         # BUG-185: but NOT when the receiver is a string — string methods emit a
         # by-value special form, so `_mc_N.concat(…)` would be invalid Zig; genExpr
@@ -9232,6 +9263,8 @@ struct Generator
         return stmts.at(stmts.len - 1) is Stmt.return_
 
     def genReturn(r: StmtReturn)
+        if r.value != nil and method_return_type != nil
+            armJsonWant(r.value!, typeFromRef(method_return_type!))
         # Contract `result` capture: when the current function has an ensure
         # referencing `result`, capture the value and arm the flag before returning.
         if ensure_armed_active and ensure_uses_result and r.value != nil
@@ -12644,6 +12677,22 @@ struct Generator
             on Expr.call as c
                 genCall(c)
             on Expr.index as ix
+                # BUG-331: a JSON index. `?` wraps the outermost call; a chain's inner
+                # links pass their error union in, unwrapped by the runtime.
+                if .infer_ctx != nil
+                    if inferExpr(ix.object, .infer_ctx!) is Type_.json_value
+                        var jfn: str = "_json_idx"
+                        if json_want_at != "" and json_want_at == ix.span.line.toString() + ":" + ix.span.col.toString()
+                            if json_want_mode != ""
+                                jfn = "_json_idx_" + json_want_mode
+                            json_want_mode = ""
+                            json_want_at = ""
+                        w.emit(jfn + "(")
+                        genExpr(ix.object)
+                        w.emit(", ")
+                        genExpr(ix.index)
+                        w.emit(")")
+                        return
                 var idx_obj_nm = getMemberFieldName(ix.object)
                 var is_hm_idx = false
                 var is_list_idx = false
@@ -15511,6 +15560,14 @@ struct Generator
                     # read-only get methods
                     var jget_fn = ""
                     if mname == "at": jget_fn = "_json_at"
+                    else if mname == "has": jget_fn = "_json_has"            # BUG-331
+                    else if mname == "get": jget_fn = "_json_get_opt"
+                    else if mname == "tryStr": jget_fn = "_json_try_str"
+                    else if mname == "tryInt": jget_fn = "_json_try_int"
+                    else if mname == "tryFloat": jget_fn = "_json_try_float"
+                    else if mname == "tryBool": jget_fn = "_json_try_bool"
+                    else if mname == "tryObj": jget_fn = "_json_try_obj"
+                    else if mname == "tryList": jget_fn = "_json_try_list"
                     else if mname == "getStr": jget_fn = "_json_get_str"
                     else if mname == "getInt": jget_fn = "_json_get_int"
                     else if mname == "getFloat": jget_fn = "_json_get_float"

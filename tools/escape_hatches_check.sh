@@ -61,7 +61,10 @@ cd "$REPO"
 #   went 9 -> 13 with no new long-lived allocation (_profile_entries and its name/time
 #   stacks, as before). This gate counts mentions, so the number rises with the API, not
 #   with the memory model. If it moves again, re-cluster before bumping.
-EXPECTED_PREAMBLE=77
+# 2026-09-28: 77→78 -- BUG-331's _json_fail: a JSON read's error MESSAGE must survive
+#   an `allocate` scope's rewind (the read fails inside the scope, the catch is outside).
+#   Four other new mentions were moved to _allocator instead: they only build its text.
+EXPECTED_PREAMBLE=78
 
 # (A second leg counted src/*.zig, the Zig-implemented bootstrap, at 7. Retired with
 #  it 2026-09-16 -- bootstrap_sunset.md Step 3. The selfhost's own emitted literals

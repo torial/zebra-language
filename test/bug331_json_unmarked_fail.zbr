@@ -1,0 +1,5 @@
+# BUG-331: a JSON read by key can fail, so it carries `?` like any other failing call.
+def main()
+    var j = Json.parse("{\"a\": 1}")!
+    var a = j["a"]
+    print(a.isNull())

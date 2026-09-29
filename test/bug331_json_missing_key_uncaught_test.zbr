@@ -1,0 +1,6 @@
+# BUG-331: a required read of a missing key, uncaught, ends the program with the
+# key named and the keys that DO exist -- not a stack trace, and not a silent 0.
+def main()
+    var j = Json.parse("{\"a\": 1}")!
+    var b: int = j["b"]?
+    print(b)

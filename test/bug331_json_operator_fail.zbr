@@ -1,0 +1,7 @@
+# BUG-331: a JsonValue is not a number; an operator on one would reach Zig.
+def main()
+    var j = Json.parse("{\"a\": 1}")!
+    var b: int = j["a"]? + 1
+    var t: int = 0
+    t += j["a"]?
+    print(b + t)

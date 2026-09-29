@@ -2041,6 +2041,178 @@ pub fn _json_arr_bool(v: *JsonValue, val: bool) void {
     if (v.* != .array) return;
     v.array.append(.{ .bool = val }) catch {};
 }
+// BUG-331: the JSON READ surface. Two forms, and nothing in between:
+//   j["k"]?         REQUIRED. Throws naming the key when it is missing or the value will
+//                   not convert to the type the slot expects (`var n: int = j["k"]?`).
+//   j.get/has/tryX  OPTIONAL. nil (false for has) when missing or the wrong type.
+// No getter answers a missing key with "" or 0: a default that reads as a value is the
+// lenient-getter design this replaces. Conversions: int takes a whole-valued number
+// (30 and 30.0 -- JSON has one number type), float any number, str only a string, bool
+// only true/false. A string is never parsed as a number.
+fn _json_kind(v: JsonValue) []const u8 {
+    return switch (v) {
+        .null => "null",
+        .bool => "bool",
+        .integer, .float, .number_string => "number",
+        .string => "string",
+        .array => "an array",
+        .object => "an object",
+    };
+}
+// The MESSAGE outlives the program arena on purpose: a read that fails inside an
+// `allocate` scope is caught outside it, after that scope's arena has been rewound. The
+// pieces it is built from (_json_where/_json_found/_json_key_list) are consumed by this
+// allocPrint immediately, so they use the program allocator.
+fn _json_fail(comptime fmt: []const u8, args: anytype) anyerror {
+    _error_ctx = .{ .message = std.fmt.allocPrint(std.heap.page_allocator, fmt, args) catch "JSON read failed" };
+    return error.ZebraError;
+}
+fn _json_key_is_str(comptime K: type) bool {
+    return switch (@typeInfo(K)) { .pointer => true, else => false };
+}
+// "key 'age'" / "index 3" -- how a message names the place that failed.
+fn _json_where(key: anytype) []const u8 {
+    if (comptime _json_key_is_str(@TypeOf(key))) {
+        const k: []const u8 = key;
+        return std.fmt.allocPrint(_allocator, "key '{s}'", .{k}) catch "key";
+    }
+    const i: i64 = @intCast(key);
+    return std.fmt.allocPrint(_allocator, "index {d}", .{i}) catch "index";
+}
+// What was actually there, for a type-mismatch message: the value for a scalar (a long
+// string is cut at 40 bytes), the kind for a container.
+fn _json_found(v: JsonValue) []const u8 {
+    const pa = _allocator;
+    return switch (v) {
+        .null => "null",
+        .bool => |b| if (b) "bool true" else "bool false",
+        .integer => |n| std.fmt.allocPrint(pa, "number {d}", .{n}) catch "a number",
+        .float => |f| std.fmt.allocPrint(pa, "number {d}", .{f}) catch "a number",
+        .number_string => |s| std.fmt.allocPrint(pa, "number {s}", .{s}) catch "a number",
+        .string => |s| if (s.len <= 40)
+            (std.fmt.allocPrint(pa, "string \"{s}\"", .{s}) catch "a string")
+        else
+            (std.fmt.allocPrint(pa, "string \"{s}...\"", .{s[0..40]}) catch "a string"),
+        .array => "an array",
+        .object => "an object",
+    };
+}
+// The keys an object DOES have, for a not-found message (first 8).
+fn _json_key_list(o: std.json.ObjectMap) []const u8 {
+    if (o.count() == 0) return " (the object is empty)";
+    var buf: std.ArrayList(u8) = .empty;
+    const pa = _allocator;
+    buf.appendSlice(pa, " (keys: ") catch return "";
+    var it = o.iterator();
+    var n: usize = 0;
+    while (it.next()) |e| : (n += 1) {
+        if (n == 8) { buf.appendSlice(pa, ", ...") catch {}; break; }
+        if (n > 0) buf.appendSlice(pa, ", ") catch {};
+        buf.appendSlice(pa, e.key_ptr.*) catch {};
+    }
+    buf.appendSlice(pa, ")") catch {};
+    return buf.items;
+}
+// A chain `j["a"]["b"]?` carries ONE `?`: the inner lookup reaches the outer one as an
+// error union, unwrapped here, so its failure propagates through the same `try`.
+fn _json_unwrap(recv: anytype) anyerror!JsonValue {
+    if (@typeInfo(@TypeOf(recv)) == .error_union) return try recv;
+    return recv;
+}
+pub fn _json_lookup(v: JsonValue, key: anytype) ?JsonValue {
+    if (comptime _json_key_is_str(@TypeOf(key))) {
+        const k: []const u8 = key;
+        return switch (v) { .object => |o| o.get(k), else => null };
+    }
+    const i: i64 = @intCast(key);
+    return switch (v) {
+        .array => |a| if (i >= 0 and i < @as(i64, @intCast(a.items.len))) a.items[@intCast(i)] else null,
+        else => null,
+    };
+}
+pub fn _json_idx(recv: anytype, key: anytype) anyerror!JsonValue {
+    const v = try _json_unwrap(recv);
+    if (_json_lookup(v, key)) |it| return it;
+    if (comptime _json_key_is_str(@TypeOf(key))) {
+        const k: []const u8 = key;
+        return switch (v) {
+            .object => |o| _json_fail("JSON key '{s}' not found{s}", .{ k, _json_key_list(o) }),
+            else => _json_fail("JSON key '{s}': the value is {s}, not an object", .{ k, _json_kind(v) }),
+        };
+    }
+    const i: i64 = @intCast(key);
+    return switch (v) {
+        .array => |a| _json_fail("JSON index {d} out of range (the array has {d} element(s))", .{ i, a.items.len }),
+        else => _json_fail("JSON index {d}: the value is {s}, not an array", .{ i, _json_kind(v) }),
+    };
+}
+pub fn _json_as_int(v: JsonValue) ?i64 {
+    return switch (v) {
+        .integer => |n| n,
+        .float => |f| if (@floor(f) == f and f >= -9.2233720368547758e18 and f < 9.2233720368547758e18) @as(i64, @intFromFloat(f)) else null,
+        .number_string => |s| std.fmt.parseInt(i64, s, 10) catch null,
+        else => null,
+    };
+}
+pub fn _json_as_float(v: JsonValue) ?f64 {
+    return switch (v) {
+        .integer => |n| @floatFromInt(n),
+        .float => |f| f,
+        .number_string => |s| std.fmt.parseFloat(f64, s) catch null,
+        else => null,
+    };
+}
+pub fn _json_as_str(v: JsonValue) ?[]const u8 {
+    return switch (v) { .string => |s| s, else => null };
+}
+pub fn _json_as_bool(v: JsonValue) ?bool {
+    return switch (v) { .bool => |b| b, else => null };
+}
+pub fn _json_as_obj(v: JsonValue) ?JsonValue {
+    return switch (v) { .object => v, else => null };
+}
+// A REAL List(JsonValue) (BUG-337), copied into the program allocator.
+pub fn _json_as_list(v: JsonValue) ?std.ArrayList(JsonValue) {
+    switch (v) {
+        .array => |a| {
+            var out: std.ArrayList(JsonValue) = .empty;
+            out.appendSlice(_allocator, a.items) catch @panic("OOM");
+            return out;
+        },
+        else => return null,
+    }
+}
+fn _json_mismatch(key: anytype, comptime want: []const u8, got: JsonValue) anyerror {
+    return _json_fail("JSON {s}: expected " ++ want ++ ", found {s}", .{ _json_where(key), _json_found(got) });
+}
+pub fn _json_idx_int(recv: anytype, key: anytype) anyerror!i64 {
+    const it = try _json_idx(recv, key);
+    return _json_as_int(it) orelse return _json_mismatch(key, "int", it);
+}
+pub fn _json_idx_float(recv: anytype, key: anytype) anyerror!f64 {
+    const it = try _json_idx(recv, key);
+    return _json_as_float(it) orelse return _json_mismatch(key, "float", it);
+}
+pub fn _json_idx_str(recv: anytype, key: anytype) anyerror![]const u8 {
+    const it = try _json_idx(recv, key);
+    return _json_as_str(it) orelse return _json_mismatch(key, "str", it);
+}
+pub fn _json_idx_bool(recv: anytype, key: anytype) anyerror!bool {
+    const it = try _json_idx(recv, key);
+    return _json_as_bool(it) orelse return _json_mismatch(key, "bool", it);
+}
+pub fn _json_idx_list(recv: anytype, key: anytype) anyerror!std.ArrayList(JsonValue) {
+    const it = try _json_idx(recv, key);
+    return _json_as_list(it) orelse return _json_mismatch(key, "a list (JSON array)", it);
+}
+pub fn _json_has(v: JsonValue, key: anytype) bool { return _json_lookup(v, key) != null; }
+pub fn _json_get_opt(v: JsonValue, key: anytype) ?JsonValue { return _json_lookup(v, key); }
+pub fn _json_try_int(v: JsonValue, key: anytype) ?i64 { return _json_as_int(_json_lookup(v, key) orelse return null); }
+pub fn _json_try_float(v: JsonValue, key: anytype) ?f64 { return _json_as_float(_json_lookup(v, key) orelse return null); }
+pub fn _json_try_str(v: JsonValue, key: anytype) ?[]const u8 { return _json_as_str(_json_lookup(v, key) orelse return null); }
+pub fn _json_try_bool(v: JsonValue, key: anytype) ?bool { return _json_as_bool(_json_lookup(v, key) orelse return null); }
+pub fn _json_try_obj(v: JsonValue, key: anytype) ?JsonValue { return _json_as_obj(_json_lookup(v, key) orelse return null); }
+pub fn _json_try_list(v: JsonValue, key: anytype) ?std.ArrayList(JsonValue) { return _json_as_list(_json_lookup(v, key) orelse return null); }
 pub const HttpResponse = struct { status: u16, text: []const u8, headers: []const [2][]const u8 = &.{} };
 pub fn _http_request(method: std.http.Method, url: []const u8, payload: ?[]const u8) ?HttpResponse {
     var _hc = std.http.Client{ .allocator = _allocator, .io = _io };

@@ -3751,9 +3751,48 @@ var present  = args.contains("--dry-run")    # bool
 | `Json.parseStrict(T, src)`           | `?T`          | Strict parse to `@reflectable class T`  |
 | `Json.stringify(v)`                  | `str`         | Serialise a JsonValue                   |
 | `Json.object()` / `Json.array()`     | `JsonValue`   | Empty object/array constructors         |
-| `v.getStr/getInt/getFloat/getBool(k)` | typed       | Typed field access on a JsonValue       |
+| `v[k]?`                              | the slot's type | REQUIRED read; throws if `k` is missing or will not convert (below) |
+| `v.has(k)`                           | `bool`        | Is `k` present? (true for a stored JSON `null`) |
+| `v.get(k)`                           | `JsonValue?`  | The value at `k` whatever its type; `nil` if absent |
+| `v.tryStr/tryInt/tryFloat/tryBool(k)` | `T?`         | `nil` if absent OR not that type        |
+| `v.tryObj(k)` / `v.tryList(k)`       | `JsonValue?` / `List(JsonValue)?` | `nil` if absent or not an object / array |
 | `v.keys()`                          | `List(str)`   | Object keys, in insertion order          |
-| `v.at(k)`                           | `JsonValue`   | Value at `k` WHATEVER its type; JSON null if absent |
+| `v.isNull()` / `isObject()` / `isArray()` | `bool`  | What kind of value `v` is               |
+
+`k` is a `str` (an object member) or an `int` (an array element).
+
+**Two ways to read, and nothing in between** (BUG-331, 2026-09-28). A key the program
+REQUIRES is read with `v[k]?`; one that MAY be absent with `get`/`tryX`. No read answers a
+missing key with `""` or `0` -- a default that looks like a value is the design this
+replaced (`getStr`/`getInt`/... are gone).
+
+```zebra
+var j = Json.parse(src)!
+var name: str = j["name"]?                     # throws: JSON key 'name' not found (keys: ...)
+var age: int = j["user"]["age"]?               # one `?` covers the chain
+var tags: List(JsonValue) = j["tags"]?
+var first: str = j["tags"][0]?                 # an int indexes an array
+var nick = j.tryStr("nickname") orelse "Bob"   # optional, with the default in view
+if j.get("args") as args                       # optional, bound
+    print(args.keys().len)
+```
+
+- **`v[k]?` converts to the type the slot names** -- an annotated `var`, an assignment to a
+  typed variable, or a `return`. Lookup and conversion are one step, so the one `?` covers
+  both failures. With no annotation (`var sub = j["args"]?`) it stays a `JsonValue`.
+- **Conversions:** `int` takes a whole-valued number (`30` and `30.0` -- JSON has one number
+  type; `30.5` is an error, never truncated); `float` any number; `str` only a string;
+  `bool` only `true`/`false`; `List(JsonValue)` only an array. A string is never parsed
+  as a number. The `tryX` reads use the same rules and answer `nil` where `v[k]?` throws.
+- **The error names the place and what was there:** `JSON key 'age': expected int, found
+  string "thirty"`, `JSON key 'nick': expected int, found null`, `JSON index 5 out of range
+  (the array has 3 element(s))`.
+- **Refused at compile time:** `v[k]` without `?`; an operator on a `JsonValue`
+  (`j["n"]? + 1` -- read it into a typed variable first); `v[k]?` as a call argument that
+  wants a primitive (bind it first); a `JsonValue` into an `int`/`str`/... slot.
+- **Missing vs `null`:** `has(k)` is true for a stored `null` and false for an absent key;
+  `get(k)` is `nil` when absent and a value whose `isNull()` is true when the JSON said
+  `null`. No third "missing" value exists.
 
 ### `Hash` — hashing
 

@@ -2053,6 +2053,17 @@ smoke_run test/bug474_raise_details_ok_test.zbr "bug474: OK"
 smoke_run test/bug444_thread_capture_assign_test.zbr "bug444: OK"
 # BUG-312: a container mutated through a call chain -- the caller's local is var.
 smoke_run test/bug312_transitive_container_mutation_test.zbr "bug312: OK"
+# BUG-331: the JSON read surface -- `j["k"]?` (required: converts, throws naming the key)
+# and has/get/tryX (optional: nil). The refusals keep every other shape out of Zig.
+smoke_run test/bug331_json_read_test.zbr "bug331: OK"
+smoke_run_fail test/bug331_json_missing_key_uncaught_test.zbr "Error: JSON key 'b' not found (keys: a)"
+smoke_tc_fail test/bug331_json_unmarked_fail.zbr "bug331_json_unmarked_fail.zbr:4:13: error: reading a JSON value by key can fail"
+smoke_tc_fail test/bug331_json_operator_fail.zbr "bug331_json_operator_fail.zbr:4:18: error: an operator on a JsonValue"
+smoke_tc_fail test/bug331_json_operator_fail.zbr "bug331_json_operator_fail.zbr:6:5: error: a compound assignment on a JsonValue"
+smoke_tc_fail test/bug331_json_arg_convert_fail.zbr "bug331_json_arg_convert_fail.zbr:7:17: error: a JSON index converts to int only in a var, an assignment or a return"
+smoke_tc_fail test/bug331_json_mismatch_fail.zbr "bug331_json_mismatch_fail.zbr:4:20: error: type mismatch: expected int, found JsonValue"
+smoke_tc_fail test/bug331_json_target_fail.zbr "bug331_json_target_fail.zbr:4:19: error: a JSON value converts to int, float, str, bool, List(JsonValue) or JsonValue -- not byte"
+smoke_tc_fail test/bug331_json_key_type_fail.zbr "bug331_json_key_type_fail.zbr:4:18: error: a JSON key is a str (an object member) or an int (an array element), not float"
 # BUG-456: a bare `on opt as x` in a branch on a union is refused, naming `on Ty.opt`.
 smoke_tc_fail test/bug456_bare_variant_arm_fail.zbr "bug456_bare_variant_arm_fail.zbr:12:9: error: write the variant as \`on Ty.opt\`"
 smoke_tc_fail test/bug411_indent_error_fail.zbr "bug411_indent_error_fail.zbr:6:7: error: indentation is 6 space(s)"

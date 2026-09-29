@@ -1,0 +1,116 @@
+# BUG-331: the JSON read surface. Two forms and nothing in between:
+#   j["k"]?        REQUIRED -- converts to the type the slot names (var / assignment /
+#                  return) and throws, naming the key, when the key is missing or the
+#                  value will not convert.
+#   has/get/tryX   OPTIONAL -- nil (false for has) when missing or the wrong type.
+# Every expectation below was written from the design before the first run.
+
+def src(): str
+    return "{\"name\": \"Ada\", \"age\": 36, \"n\": 30.0, \"ratio\": 1, \"pi\": 3.5, \"ok\": true, \"nick\": null, \"tags\": [\"a\", \"b\", \"c\"], \"args\": {\"x\": 7, \"deep\": {\"y\": \"why\"}}, \"s\": \"thirty\"}"
+
+# A `return` is a converting slot.
+def ageOf(j: JsonValue): int
+    return j["age"]?
+
+# Each failure, caught, answers with its message.
+def missingKey(j: JsonValue): str
+    var v: int = j["zzz"]?
+    return "no error: " + v.toString()
+catch |e|
+    return e.message
+
+def wrongType(j: JsonValue): str
+    var v: int = j["s"]?
+    return "no error: " + v.toString()
+catch |e|
+    return e.message
+
+def fractional(j: JsonValue): str
+    var v: int = j["pi"]?
+    return "no error: " + v.toString()
+catch |e|
+    return e.message
+
+def nullInt(j: JsonValue): str
+    var v: int = j["nick"]?
+    return "no error: " + v.toString()
+catch |e|
+    return e.message
+
+def outOfRange(j: JsonValue): str
+    var v: str = j["tags"][5]?
+    return "no error: " + v
+catch |e|
+    return e.message
+
+def notObject(j: JsonValue): str
+    var v: int = j["tags"]["x"]?
+    return "no error: " + v.toString()
+catch |e|
+    return e.message
+
+def main()
+    var j = Json.parse(src())!
+
+    # required reads, converted by the annotation
+    var name: str = j["name"]?
+    assert name == "Ada"
+    var age: int = j["age"]?
+    assert age == 36
+    var n: int = j["n"]?                  # 30.0 is a whole number
+    assert n == 30
+    var r: float = j["ratio"]?            # an int widens to float
+    assert r == 1.0
+    var ok: bool = j["ok"]?
+    assert ok
+    var tags: List(JsonValue) = j["tags"]?
+    assert tags.len == 3
+    var t1: str = j["tags"][1]?           # one `?` covers the chain
+    assert t1 == "b"
+    var y: str = j["args"]["deep"]["y"]?
+    assert y == "why"
+    var args = j["args"]?                 # no annotation: stays a JsonValue
+    var x: int = args["x"]?
+    assert x == 7
+    var reassigned: int = 0
+    reassigned = j["age"]?                # an assignment converts too
+    assert reassigned == 36
+    assert ageOf(j)? == 36
+
+    # optional reads
+    assert j.has("nick")                  # present -- its value is null
+    assert not j.has("zzz")
+    assert j.get("zzz") == nil
+    if j.get("nick") as nk
+        assert nk.isNull()
+    else
+        assert false
+    assert (j.tryStr("zzz") orelse "Bob") == "Bob"
+    assert (j.tryStr("name") orelse "Bob") == "Ada"
+    assert j.tryInt("s") == nil           # wrong type
+    assert j.tryInt("pi") == nil          # not a whole number
+    assert (j.tryInt("n") orelse 0) == 30
+    assert (j.tryFloat("age") orelse 0.0) == 36.0
+    assert j.tryBool("ok") orelse false
+    assert j.tryObj("name") == nil
+    if j.tryObj("args") as ao
+        assert (ao.tryInt("x") orelse 0) == 7
+    else
+        assert false
+    if j.tryList("tags") as tl
+        assert tl.len == 3
+    else
+        assert false
+    var tv = j["tags"]?
+    assert (tv.tryStr(0) orelse "") == "a"
+    assert tv.get(9) == nil
+    assert not tv.has(3)
+
+    # the failures, by message
+    assert missingKey(j) == "JSON key 'zzz' not found (keys: name, age, n, ratio, pi, ok, nick, tags, ...)"
+    assert wrongType(j) == "JSON key 's': expected int, found string \"thirty\""
+    assert fractional(j) == "JSON key 'pi': expected int, found number 3.5"
+    assert nullInt(j) == "JSON key 'nick': expected int, found null"
+    assert outOfRange(j) == "JSON index 5 out of range (the array has 3 element(s))"
+    assert notObject(j) == "JSON key 'x': the value is an array, not an object"
+    print("bug331: OK")

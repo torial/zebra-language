@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing Span, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
+use Ast exposing Span, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprIndex, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
 use AstWalk exposing collectOldNodes, mightUseName, stmtsContainYield, stmtContainsYield, stmtNeedsLowering
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
@@ -1797,7 +1797,7 @@ def setMethodKnown(name: str): bool
     return name == "add" or name == "remove" or name == "contains" or name == "count" or name == "len" or name == "items" or name == "clear" or name == "toString"
 
 def jsonMethodKnown(name: str): bool
-    return name == "at" or name == "keys" or name == "values" or name == "entries" or name == "getStr" or name == "getInt" or name == "getFloat" or name == "getBool" or name == "getList" or name == "getObj" or name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify" or name == "toString" or name == "put" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "append" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
+    return name == "has" or name == "get" or name == "tryStr" or name == "tryInt" or name == "tryFloat" or name == "tryBool" or name == "tryObj" or name == "tryList" or name == "at" or name == "keys" or name == "values" or name == "entries" or name == "getStr" or name == "getInt" or name == "getFloat" or name == "getBool" or name == "getList" or name == "getObj" or name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify" or name == "toString" or name == "put" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "append" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
 
 # ── The runtime OBJECT receivers (2026-09-15, Sean: "resolving in general also gives us
 # better -c coverage") ─────────────────────────────────────────────────────────────────
@@ -3798,6 +3798,23 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             # getters cannot do this job.
                             if jmname == "keys"
                                 return Type_.list_(Type_.string_)
+                            # BUG-331: the OPTIONAL half of the read surface -- nil when the key
+                            # is missing or the value is not that type (the REQUIRED half is
+                            # `j["k"]?`, typed in the index arm).
+                            if jmname == "has"
+                                return Type_.bool_
+                            if jmname == "get" or jmname == "tryObj"
+                                return Type_.optional(Type_.json_value)
+                            if jmname == "tryStr"
+                                return Type_.optional(Type_.string_)
+                            if jmname == "tryInt"
+                                return Type_.optional(Type_.int_)
+                            if jmname == "tryFloat"
+                                return Type_.optional(Type_.float_)
+                            if jmname == "tryBool"
+                                return Type_.optional(Type_.bool_)
+                            if jmname == "tryList"
+                                return Type_.optional(Type_.list_(Type_.json_value))
                             if jmname == "at"
                                 return Type_.json_value
                             if jmname == "getStr"
@@ -3827,7 +3844,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.string_
                             if not jsonMethodKnown(jmname)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'JsonValue' has no method '" + jmname + "' (at/keys/values/entries, getStr/getInt/getFloat/getBool/getList/getObj, isNull/isObject/isArray, put*/append*, stringify)")
+                                           "'JsonValue' has no method '" + jmname + "' (has/get/tryStr/tryInt/tryFloat/tryBool/tryObj/tryList, keys/values/entries, at, getStr/getInt/getFloat/getBool/getList/getObj, isNull/isObject/isArray, put*/append*, stringify)")
                                 return Type_.unknown_
                         on Type_.hashmap_ as hmt
                             var hmname: str = mem.member
@@ -4241,6 +4258,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.uint_n(8)
                 on Type_.list_ as list_elem
                     return list_elem
+                # BUG-331: `j["k"]` / `j[i]` is a JsonValue; it becomes an int/str/...
+                # only in a slot that names the type (jsonWantMode), in one throwing step.
+                on Type_.json_value
+                    return Type_.json_value
                 else
                     return Type_.unresolved
         on Expr.slice as esl
@@ -5135,6 +5156,9 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
     if e_line > 0
         d_line = e_line
         d_col = exprSpanCol(e)
+    if expected != nil
+        if checkJsonInto(expected!, e, file, d_line, d_col, false, ctx)
+            return expected!
     var inferred: Type_ = inferExpr(e, ctx)
     if expected == nil
         return inferred
@@ -5428,6 +5452,128 @@ def checkBareFnOperand(e: Expr, file: str, ctx: InferCtx)
         if is_fn
             ctx.addErr(file, bid.span.line, bid.span.col, "`" + bid.name + "` is a function -- to use its result, call it: `" + bid.name + "()`")
 
+# ── BUG-331: the JSON read surface ────────────────────────────────────────────
+# `j["k"]?` is the REQUIRED read: it throws (naming the key) when the key is missing or
+# the value will not convert. It converts only where the slot names the type -- an
+# annotated `var`, an assignment to a typed variable, a `return` -- and the lookup and the
+# conversion are ONE runtime call, so the single `?` covers both failures. Everywhere
+# else it is a JsonValue. The optional reads are has/get/tryX. CodeGen asks the same two
+# questions below (jsonWantMode, jsonIdxTry), so the checker and the emitter cannot
+# disagree about which slots convert.
+
+# Which conversion `j["k"]?` performs in a slot of type t ("" = none).
+def jsonWantMode(t: Type_): str
+    branch t
+        on Type_.int_
+            return "int"
+        on Type_.float_
+            return "float"
+        on Type_.string_
+            return "str"
+        on Type_.bool_
+            return "bool"
+        on Type_.list_ as le
+            if le is Type_.json_value
+                return "list"
+            return ""
+        else
+            return ""
+
+# `j[...]?` -- a JSON index directly under `?`, the only form that may convert.
+def jsonIdxTry(e: Expr, ctx: InferCtx): bool
+    branch e
+        on Expr.try_ as t
+            branch t.expr
+                on Expr.index as ix
+                    return inferExpr(ix.object, ctx) is Type_.json_value
+                else
+                    return false
+        else
+            return false
+
+# The type as a user writes it (typeTag is an internal short form: "flt", "?").
+def jsonTypeName(t: Type_): str
+    branch t
+        on Type_.json_value
+            return "JsonValue"
+        on Type_.list_ as le
+            return "List(" + jsonTypeName(le) + ")"
+        on Type_.named as nm
+            return nm
+        on Type_.optional as ot
+            return jsonTypeName(ot) + "?"
+        else
+            return numTypeName(t)
+
+def jsonHint(): str
+    return "read a typed value with j[\"k\"]? (throws if missing) or j.tryInt(\"k\") / tryStr / tryFloat / tryBool (nil if missing)"
+
+# A JSON key is a str (object member) or an int (array element).
+def checkJsonKey(k: Expr, file: str, line: int, col: int, ctx: InferCtx)
+    var kt: Type_ = inferExpr(k, ctx)
+    branch kt
+        on Type_.string_
+            pass
+        on Type_.int_
+            pass
+        on Type_.unknown_
+            pass
+        on Type_.unresolved
+            pass
+        on Type_.context_dependent
+            pass
+        else
+            ctx.addErr(file, line, col, "a JSON key is a str (an object member) or an int (an array element), not " + jsonTypeName(kt))
+
+# One `?` covers a whole chain `j["a"]["b"]?`: walk it without asking each link for its own.
+def checkJsonIndexChain(ix: ExprIndex, file: str, line: int, ctx: InferCtx)
+    checkJsonKey(ix.index, file, ix.span.line, ix.span.col, ctx)
+    checkCallsInExpr(ix.index, file, line, ctx)
+    var inner_json: bool = false
+    branch ix.object
+        on Expr.index as inner
+            if inferExpr(inner.object, ctx) is Type_.json_value
+                inner_json = true
+                checkJsonIndexChain(inner, file, line, ctx)
+        else
+            pass
+    if not inner_json
+        checkCallsInExpr(ix.object, file, line, ctx)
+
+# A value flowing into a slot of type `target`. Returns true when it was a JSON case
+# (reported or accepted), so the caller skips its own primitive check.
+# `convert_ok`: the slot is one CodeGen converts at (var / assignment / return).
+def checkJsonInto(target: Type_, e: Expr, file: str, line: int, col: int, convert_ok: bool, ctx: InferCtx): bool
+    if jsonIdxTry(e, ctx)
+        branch target
+            on Type_.json_value
+                return true
+            on Type_.unknown_
+                return true
+            on Type_.unresolved
+                return true
+            else
+                pass
+        var mode: str = jsonWantMode(target)
+        if mode == ""
+            ctx.addErr(file, line, col, "a JSON value converts to int, float, str, bool, List(JsonValue) or JsonValue -- not " + jsonTypeName(target))
+            return true
+        if not convert_ok
+            ctx.addErr(file, line, col, "a JSON index converts to " + jsonTypeName(target) + " only in a var, an assignment or a return -- bind it first: var v: " + jsonTypeName(target) + " = j[\"k\"]?")
+        return true
+    if jsonWantMode(target) != ""
+        var jt: Type_ = inferExpr(e, ctx)
+        var found: str = ""
+        if jt is Type_.json_value
+            found = "JsonValue"
+        else if jt is Type_.optional as jo
+            if jo is Type_.json_value
+                found = "JsonValue?"
+        if found != ""
+            ctx.addErr(file, line, col, "type mismatch: expected " + jsonTypeName(target) + ", found " + found + " -- " + jsonHint())
+            return true
+    return false
+
 def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
     branch e
         on Expr.call as c
@@ -5436,16 +5582,30 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
             checkDeprecatedCall(c, ctx)
             if c.callee is Expr.member as cm
                 checkCallsInExpr(cm.object, file, line, ctx)
+                # BUG-331: the optional JSON reads take exactly one key.
+                if cm.member == "has" or cm.member == "get" or cm.member == "tryStr" or cm.member == "tryInt" or cm.member == "tryFloat" or cm.member == "tryBool" or cm.member == "tryObj" or cm.member == "tryList"
+                    if inferExpr(cm.object, ctx) is Type_.json_value
+                        if c.args.len != 1
+                            ctx.addErr(file, cm.span.line, cm.span.col, "JsonValue." + cm.member + " takes one key (a str, or an int for an array element)")
+                        else
+                            checkJsonKey(c.args.at(0).value, file, cm.span.line, cm.span.col, ctx)
             for a in c.args
                 checkCallsInExpr(a.value, file, line, ctx)
         on Expr.member as m
             checkCallsInExpr(m.object, file, line, ctx)
         on Expr.index as ix
+            # BUG-331: a JSON read can fail, so it is marked like any other failing call.
+            if inferExpr(ix.object, ctx) is Type_.json_value
+                ctx.addErr(file, ix.span.line, ix.span.col, "reading a JSON value by key can fail (the key is missing, or the value is the wrong type) -- mark it with '?': j[\"k\"]?  For a key that may be absent use j.get(\"k\") or j.tryInt(\"k\") / tryStr / ...")
             checkCallsInExpr(ix.object, file, line, ctx)
             checkCallsInExpr(ix.index, file, line, ctx)
         on Expr.binary as b
             checkCallsInExpr(b.left, file, line, ctx)
             checkCallsInExpr(b.right, file, line, ctx)
+            # BUG-331: a JsonValue is not a number or a string; the operator would
+            # reach Zig. Say which typed read to use.
+            if inferExpr(b.left, ctx) is Type_.json_value or inferExpr(b.right, ctx) is Type_.json_value
+                ctx.addErr(file, b.span.line, b.span.col, "an operator on a JsonValue -- " + jsonHint() + ", then operate on that")
             if bareFnOperandOp(b.op)
                 checkBareFnOperand(b.left, file, ctx)
                 checkBareFnOperand(b.right, file, ctx)
@@ -5454,7 +5614,16 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
         on Expr.to_non_nil as t
             checkCallsInExpr(t.expr, file, line, ctx)
         on Expr.try_ as tr
-            checkCallsInExpr(tr.expr, file, line, ctx)
+            var tr_json: bool = false
+            branch tr.expr
+                on Expr.index as tix
+                    if inferExpr(tix.object, ctx) is Type_.json_value
+                        tr_json = true
+                        checkJsonIndexChain(tix, file, line, ctx)
+                else
+                    pass
+            if not tr_json
+                checkCallsInExpr(tr.expr, file, line, ctx)
         on Expr.cast as cst
             checkCallsInExpr(cst.expr, file, line, ctx)
         # BUG-232.  Everything below was falling into the `else: pass` arm, so a call
@@ -5708,6 +5877,9 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
                             ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "'" + bcid.name + "()' needs its type argument here: `" + bcid.name + "(int)()`, or annotate the binding (`var " + dv.name + ": " + bcid.name + "(int) = " + bcid.name + "()`)")
         return
     var declared: Type_ = typeFromRef(dv.type_!)  # safe: nil returned above
+    if dv.init_expr != nil
+        if checkJsonInto(declared, dv.init_expr!, file, varDiagLine(dv), varDiagCol(dv), true, ctx)
+            return
     if declared is Type_.named as dec_class
         # Type aliases are transparent — skip the conformance check; codegen resolves to base.
         if ctx.isTypeAlias(dec_class)
@@ -5907,7 +6079,8 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                     ctx.addErr(file, sr.span.line, sr.span.col, "a generator finishes with a bare `return`; it produces values with `yield`")
                 if ctx.current_return_type as ret_type
                     if sr.value != nil
-                        checkExpr(sr.value!, ret_type, file, sr.span.line, sr.span.col, ctx)
+                        if not checkJsonInto(ret_type, sr.value!, file, sr.span.line, sr.span.col, true, ctx)
+                            checkExpr(sr.value!, ret_type, file, sr.span.line, sr.span.col, ctx)
                 # Arg counts + types over the whole return expression (audit #3).
                 if sr.value != nil
                     checkCallsInExpr(sr.value!, file, sr.span.line, ctx)
@@ -5919,6 +6092,11 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                     ctx.addErr(file, syl.span.line, syl.span.col, "`yield` belongs in a generator: a top-level `def` whose return type is `Iter(T)`")
             on Stmt.assign as sasn
                 checkCallsInExpr(sasn.value, file, sasn.span.line, ctx)  # audit #3
+                # BUG-331: `x = j["k"]?` converts to x's type; `x += j["k"]?` is arithmetic.
+                if sasn.op == AssignOp.assign
+                    checkJsonInto(inferExpr(sasn.target, ctx), sasn.value, file, sasn.span.line, sasn.span.col, true, ctx)
+                else if jsonIdxTry(sasn.value, ctx) or inferExpr(sasn.value, ctx) is Type_.json_value
+                    ctx.addErr(file, sasn.span.line, sasn.span.col, "a compound assignment on a JsonValue -- " + jsonHint() + ", then operate on that")
                 # BUG-354: a parameter is a Zig `const`; `p = ...` leaked "cannot assign to
                 # constant" against code the user never wrote. Refuse it in Zebra, naming
                 # the idiom. A local that SHADOWS the param (`var p = ...` in the body)

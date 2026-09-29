@@ -1,0 +1,5 @@
+# BUG-331: a JSON key is a str (object member) or an int (array element).
+def main()
+    var j = Json.parse("{\"a\": 1}")!
+    var a: int = j[1.5]?
+    print(a)

@@ -1,0 +1,5 @@
+# BUG-331: a JsonValue is not an int; the typed read has to say so.
+def main()
+    var j = Json.parse("{\"a\": 1}")!
+    var a: int = j.get("a")!
+    print(a)

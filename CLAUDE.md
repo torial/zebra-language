@@ -1867,7 +1867,7 @@ bash tools/escape_hatches_check.sh # THE ESCAPE-HATCH GATE, registered as `escap
                                 #   (STATIC tier, 2026-09-28). Every `std.heap.page_allocator`
                                 #   use in the runtime is state that must outlive the program
                                 #   arena (intern pool, JSON output, HTTP buffers); a NEW one
-                                #   needs a reviewed baseline bump (77 today). It lived in no
+                                #   needs a reviewed baseline bump (78 today). It lived in no
                                 #   tier for weeks because it was RED on a review owned
                                 #   elsewhere (BUG-279 leg 3); the review moved the baseline
                                 #   and it went green unnoticed -- a red gate kept out of the
@@ -3049,7 +3049,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **706** <!-- doc-gen: 706 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **714** <!-- doc-gen: 714 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

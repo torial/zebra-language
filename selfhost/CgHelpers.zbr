@@ -1464,6 +1464,8 @@ def isReadOnlyMethod(name: str): bool
         return true
     if name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify"
         return true
+    if name == "has" or name == "tryStr" or name == "tryInt" or name == "tryFloat" or name == "tryBool" or name == "tryObj" or name == "tryList"
+        return true
     if name == "split" or name == "trim" or name == "upper" or name == "lower"
         return true
     if name == "lines"

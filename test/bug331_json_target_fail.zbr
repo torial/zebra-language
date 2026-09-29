@@ -1,0 +1,5 @@
+# BUG-331: `j["k"]?` converts to int, float, str, bool, List(JsonValue) or JsonValue.
+def main()
+    var j = Json.parse("{\"a\": 1}")!
+    var b: byte = j["a"]?
+    print(b)

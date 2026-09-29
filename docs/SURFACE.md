@@ -81,9 +81,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `add` `clear` `contains` `count` `items` `len` `remove` `toString`
 
-### JsonValue (23)
+### JsonValue (31)
 
-`append` `appendBool` `appendFloat` `appendInt` `at` `entries` `getBool` `getFloat` `getInt` `getList` `getObj` `getStr` `isArray` `isNull` `isObject` `keys` `put` `putBool` `putFloat` `putInt` `stringify` `toString` `values`
+`append` `appendBool` `appendFloat` `appendInt` `at` `entries` `get` `getBool` `getFloat` `getInt` `getList` `getObj` `getStr` `has` `isArray` `isNull` `isObject` `keys` `put` `putBool` `putFloat` `putInt` `stringify` `toString` `tryBool` `tryFloat` `tryInt` `tryList` `tryObj` `tryStr` `values`
 
 ### Regex (7)
 
