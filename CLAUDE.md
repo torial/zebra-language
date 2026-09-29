@@ -2252,6 +2252,23 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-09-28 (the Monday batch: BUG-464..474, 299, 311, 312, 444, the new
+`escape-hatches` gate): 54/55 in ONE invocation on `eefb0db` -- the one red was
+`arena_concurrency_hazard_test` AGAIN, now with a DIFFERENT crash ("reached unreachable
+code" where the baseline held a segfault).** smoke 599/599, `full_sweep` / `examples_sweep` /
+`divergence` 0 regressions, `regen-recover` PASS, `leakgen` 100/0, every GUI scaffold,
+`libui-pin-build`, `node-addon`. That file is a HAZARD DEMO -- an `allocate` scope beside live
+pool workers, a documented data race that "crashes ~77% of runs" with a varying message --
+and the output sampler had re-admitted it on three agreeing samples at two re-baselines.
+Normalising volatile fields (2026-09-27) could not help: the crash KIND varies. So
+`output_sweep`'s `capability_reason` gained a THIRD cause-based modality beside network and
+filesystem enumeration -- an `allocate` scope in a file that also starts threads -- derived
+from content, matching that one file and nothing else in `test/` (the safe-path
+`thread_alloc_stress_test` stays measured). Earlier the same day a local commit
+(`5a6d101`) held a BUG-312 analysis that was exponential on the compiler's own source (the
+full regen died `panic: OOM`); it was never pushed, and `eefb0db` memoised it after
+`regen_recover --install --from 18d8c9d` -- do not use `5a6d101` as a regen base.
+
 **DAILY tier 2026-09-27, third run (BUG-468, crash handler kept on in `--release`): 52/54 in ONE
 invocation, 102 min -- BOTH REDS RESOLVED, NEITHER A DEFECT IN THE CHANGE.** smoke 581/581,
 `release-mode` with its new stack-overflow legs, `full_sweep` / `divergence` 0 regressions,

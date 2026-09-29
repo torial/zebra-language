@@ -282,6 +282,22 @@ capability_reason() { # $1 = path to .zbr; echoes a reason, or nothing
         # therefore external state, exactly like a remote host.
         *"Dir.walk("*|*"Dir.list("*|*listDir*|*"Dir.entries("*)
             printf '(filesystem enumeration: counts files that change as the repo does)' ;;
+        *)
+            # THIRD MODALITY (2026-09-28): an `allocate` scope running while ThreadPool /
+            # sys.go workers are live is a documented DATA RACE (docs/concurrency_allocation
+            # _design.md -- the scope swaps and rewinds the global allocator under the
+            # workers), so its output is nondeterministic BY CONSTRUCTION. Sampling cannot
+            # classify it: arena_concurrency_hazard_test agreed on three samples at two
+            # re-baselines and then failed the next gate with a DIFFERENT crash each time
+            # (segfault, then "reached unreachable code"). Derived from the content like the
+            # two above; on 2026-09-28 it matches that one file and nothing else in test/.
+            case "$body" in
+                *"allocate "*)
+                    case "$body" in
+                        *ThreadPool*|*"sys.go("*)
+                            printf '(allocate scope beside live threads: a documented data race, nondeterministic by construction)' ;;
+                    esac ;;
+            esac ;;
     esac
 }
 

@@ -30,10 +30,6 @@ true
 false
 false
 true
-=== arena_concurrency_hazard_test sha1=bfa0c5364dde ===
-Segmentation fault at address <ADDR>
-???:?:?: <ADDR> in ??? (arena_concurrency_hazard_test.zig.fast.exe)
-???:?:?: <ADDR> in ??? (???)
 === arena_scope_test sha1=5008d5d284cf ===
 allocate Arena() scope OK
 === arg_count_ok_test sha1=5517f5b514c4 ===
