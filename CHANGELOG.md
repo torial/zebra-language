@@ -23,6 +23,19 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+(nothing yet)
+
+## Release 0.9.0-rc6 — 2026-09-29 (everything since rc5)
+
+rc6 has **three breaking changes**, each replacing a silent failure with a refusal or a
+message: the JSON getters that answered a missing key with `""` / `0` are gone (read a
+required field with `j["k"]?`, an optional one with `tryStr` / `tryInt` / ... `orelse`); an
+unmarked call to a throwing function is refused ("throws call needs '?'") instead of
+swallowing the error; and `Timer()`-style constructor calls on runtime types are refused,
+naming the factory. Everything else is a program that used to fail inside Zig now working,
+or being refused at your line -- and an error that reaches the end of `main` now prints its
+message and exits 1.
+
 - **JSON reads, redesigned (BUG-331; breaking).** A required field is read with `j["k"]?`,
   which converts to the type the variable names (`var age: int = j["age"]?`) and throws
   naming the key when it is missing or will not convert; `j["a"]["b"]?` and `j["xs"][0]?`
