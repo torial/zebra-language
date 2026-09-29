@@ -23,7 +23,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
-(nothing yet)
+- **`if x orelse d as n` binds** (Sean, 2026-09-29) -- "take x or a default, and name it".
+  It was refused ("requires an optional type"). It always binds, so an `else` on it is dead
+  code and warns. Found on the way: `a orelse b` with an OPTIONAL fallback (`b: T?`, or
+  `orelse nil`) was typed as a plain `T`, so it could not be bound either and an
+  unannotated `var x = a orelse b` reached Zig with the wrong type; it is `T?` now.
 
 ## Release 0.9.0-rc6 — 2026-09-29 (everything since rc5)
 

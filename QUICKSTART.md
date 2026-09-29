@@ -1149,6 +1149,10 @@ if x != nil
 if y as n
     print("y is ${n}")                # n is non-optional int
 
+# With a fallback it always binds -- "take y or a default, and name it":
+if y orelse 0 as n
+    print("n is ${n}")                # an `else` here would never run (warned)
+
 # Combined with type check (LHS must be optional):
 var maybeUser: User? = lookup()
 if maybeUser is User as u            # binds u: User (non-optional)

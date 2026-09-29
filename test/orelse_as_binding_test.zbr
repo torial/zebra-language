@@ -1,0 +1,32 @@
+# `if x orelse d as n` (Sean, 2026-09-29): the fallback means the binding always happens.
+# Allowed because "take x or a default, and name it" is a natural way to write it; an
+# `else` on it can never run, and the compiler warns (bug-free, but dead code).
+def nick(n: int): str?
+    if n > 0
+        return "Al"
+    return nil
+
+def main()
+    var got: List(str) = List(str)()
+    if nick(0) orelse "Bob" as a
+        got.add(a)
+    if nick(1) orelse "Bob" as b
+        got.add(b)
+    var j = Json.parse("{\"name\": \"Ada\"}")!
+    if j.tryStr("nickname") orelse "Bob" as c
+        got.add(c)
+    if j.tryStr("name") orelse "Bob" as d
+        got.add(d)
+    # an optional fallback keeps the ordinary optional-unwrap meaning
+    var none: str? = nil
+    if nick(0) orelse none as e
+        got.add(e)
+    else
+        got.add("none")
+    # a non-optional fallback: this `else` can never run -- compiles, with a warning
+    if nick(0) orelse "Bob" as f
+        got.add(f)
+    else
+        got.add("never")
+    assert got.join(",") == "Bob,Al,Bob,Ada,none,Bob"
+    print("orelse_as: OK")

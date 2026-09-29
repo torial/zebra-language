@@ -3949,10 +3949,23 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return inner
         on Expr.orelse_ as eo
             # `expr orelse fallback` — result takes the non-optional inner type
-            # when it exists; otherwise the expression's type.
+            # when it exists; otherwise the expression's type. UNLESS the fallback is
+            # itself optional (`a orelse b` with `b: T?`, or `orelse nil`): then the
+            # result can still be nil and stays `T?` (2026-09-29; it was typed `T`, so
+            # `if a orelse b as n` was refused and `var x = a orelse b` was annotated
+            # with the plain type -- both reaching Zig as a type error).
             var lt_o: Type_ = inferExpr(eo.expr, ctx)
+            var fb_opt: bool = false
+            branch eo.fallback
+                on Expr.nil_
+                    fb_opt = true
+                else
+                    if inferExpr(eo.fallback, ctx) is Type_.optional
+                        fb_opt = true
             branch lt_o
                 on Type_.optional as opt_o
+                    if fb_opt
+                        return lt_o
                     return opt_o
                 else
                     return lt_o
@@ -4506,6 +4519,19 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                     var unwrapped: bool = false
                     if cond_t is Type_.optional as inner
                         cap_t = inner
+                        unwrapped = true
+                    # `if x orelse d as n` (Sean, 2026-09-29): the fallback makes the value
+                    # non-optional, so the binding always happens -- allowed, because
+                    # "take x or a default, and name it" is a natural way to write it.
+                    # An `else` on it can never run, and the warning says so.
+                    var is_orelse: bool = false
+                    branch si.cond
+                        on Expr.orelse_
+                            is_orelse = true
+                        else
+                            pass
+                    if not unwrapped and is_orelse
+                        cap_t = cond_t
                         unwrapped = true
                     # Nothing to unwrap. Silence here bound `n` to
                     # context_dependent and let the program through, so the
@@ -6039,6 +6065,16 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 ctx.bind(dv.name, bt)
             on Stmt.if_ as si
                 checkCallsInExpr(si.cond, file, si.span.line, ctx)  # BUG-142
+                # `if x orelse d as n` always binds (walkStmt allows it), so an `else` on it
+                # is dead code. Said here: this pass's warnings are the ones collected.
+                if si.is_capture as oe_cap
+                    if si.else_stmts != nil or si.else_ifs.len > 0
+                        branch si.cond
+                            on Expr.orelse_
+                                if not (inferExpr(si.cond, ctx) is Type_.optional)
+                                    ctx.addWarn(file, exprSpanLine(si.cond), exprSpanCol(si.cond), "this `else` never runs: `... orelse ...` always has a value, so `if ... as " + oe_cap + "` always binds")
+                            else
+                                pass
                 # BUG-379: this pass must see the same narrowing walkStmts applies
                 # (`if x != nil` makes x a plain T in the then-branch), or the new
                 # optional-into-plain check fires on `describe(x)` inside the guard

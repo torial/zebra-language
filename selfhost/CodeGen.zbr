@@ -9578,8 +9578,23 @@ struct Generator
                     ig.genStmts(stmts)
             else
                 # Option B: `if x as n` -- optional unwrap
+                # `if x orelse d as n`: the value is not optional; _zbr_some makes it one
+                # so Zig's capture form applies (always taken; an `else` still compiles).
+                var oe_plain: bool = false
+                if .infer_ctx != nil
+                    branch cond_expr
+                        on Expr.orelse_
+                            oe_plain = true
+                            if inferExpr(cond_expr, .infer_ctx!) is Type_.optional
+                                oe_plain = false
+                        else
+                            pass
                 w.emit("if (")
+                if oe_plain
+                    w.emit("_zbr_some(")
                 genExpr(cond_expr)
+                if oe_plain
+                    w.emit(")")
                 w.emit(") |")
                 var ig2 = indented()
                 # BUG-181: bind the unwrapped capture's type so method dispatch inside the

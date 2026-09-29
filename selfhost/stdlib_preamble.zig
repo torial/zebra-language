@@ -191,6 +191,9 @@ pub const _Stringable = struct {
         return self.toString_fn(self.ptr);
     }
 };
+// `if x orelse d as n`: a non-optional value presented as an optional, so the capture
+// form binds it (always). Evaluated once; the type is the value's own.
+pub inline fn _zbr_some(v: anytype) ?@TypeOf(v) { return v; }
 pub const _ZebraErrorCtx = struct { message: []const u8 = "", details: ?_Stringable = null };
 pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
 // Shifts. A BARE `a << b` DOES NOT COMPILE in Zig: the shift amount must coerce to
