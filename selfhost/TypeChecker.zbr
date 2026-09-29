@@ -1797,7 +1797,7 @@ def setMethodKnown(name: str): bool
     return name == "add" or name == "remove" or name == "contains" or name == "count" or name == "len" or name == "items" or name == "clear" or name == "toString"
 
 def jsonMethodKnown(name: str): bool
-    return name == "has" or name == "get" or name == "tryStr" or name == "tryInt" or name == "tryFloat" or name == "tryBool" or name == "tryObj" or name == "tryList" or name == "at" or name == "keys" or name == "values" or name == "entries" or name == "getStr" or name == "getInt" or name == "getFloat" or name == "getBool" or name == "getList" or name == "getObj" or name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify" or name == "toString" or name == "put" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "append" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
+    return name == "has" or name == "get" or name == "tryStr" or name == "tryInt" or name == "tryFloat" or name == "tryBool" or name == "tryObj" or name == "tryList" or name == "keys" or name == "values" or name == "entries" or name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify" or name == "toString" or name == "put" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "append" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
 
 # ── The runtime OBJECT receivers (2026-09-15, Sean: "resolving in general also gives us
 # better -c coverage") ─────────────────────────────────────────────────────────────────
@@ -3790,50 +3790,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.void_
                         on Type_.json_value
                             var jmname: str = mem.member
-                            # keys()/at(): the pair that lets code COPY an object whose
-                            # shape it does not know -- keys enumerates, at fetches the
-                            # value WHATEVER its type, so a field can be forwarded without
-                            # the forwarder knowing what kind of thing it is. Added for the
-                            # `zebra debug` DAP relay; see BUG-331 for why the typed
-                            # getters cannot do this job.
-                            if jmname == "keys"
-                                return Type_.list_(Type_.string_)
-                            # BUG-331: the OPTIONAL half of the read surface -- nil when the key
-                            # is missing or the value is not that type (the REQUIRED half is
-                            # `j["k"]?`, typed in the index arm).
-                            if jmname == "has"
-                                return Type_.bool_
-                            if jmname == "get" or jmname == "tryObj"
-                                return Type_.optional(Type_.json_value)
-                            if jmname == "tryStr"
-                                return Type_.optional(Type_.string_)
-                            if jmname == "tryInt"
-                                return Type_.optional(Type_.int_)
-                            if jmname == "tryFloat"
-                                return Type_.optional(Type_.float_)
-                            if jmname == "tryBool"
-                                return Type_.optional(Type_.bool_)
-                            if jmname == "tryList"
-                                return Type_.optional(Type_.list_(Type_.json_value))
-                            if jmname == "at"
-                                return Type_.json_value
-                            if jmname == "getStr"
-                                return Type_.string_
-                            # getObj returns a nested json object (a Value), NOT a
-                            # string — it was grouped with getStr, so `var o = j.getObj(…)`
-                            # got annotated `[]const u8` and collided with the Value the
-                            # accessor returns (divergence audit: json_test). Bootstrap
-                            # returns .json_value (src/TypeChecker.zig:4178).
-                            if jmname == "getObj"
-                                return Type_.json_value
-                            if jmname == "getInt"
-                                return Type_.int_
-                            if jmname == "getFloat"
-                                return Type_.float_
-                            if jmname == "getBool"
-                                return Type_.bool_
-                            if jmname == "getList"
-                                return Type_.list_(Type_.json_value)
+                            # keys() + get(k): the pair that lets code COPY an object whose
+                            # shape it does not know (the `zebra debug` DAP relay). The
+                            # typed reads are has/get/tryX (optional) and `j["k"]?`
+                            # (required, in the index arm) -- BUG-331.
+                            if jsonReadReturn(jmname) as jrt
+                                return jrt
                             if jmname == "put" or jmname == "putInt" or jmname == "putFloat" or jmname == "putBool"
                                 return Type_.void_
                             if jmname == "append" or jmname == "appendInt" or jmname == "appendFloat" or jmname == "appendBool"
@@ -3844,7 +3806,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.string_
                             if not jsonMethodKnown(jmname)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'JsonValue' has no method '" + jmname + "' (has/get/tryStr/tryInt/tryFloat/tryBool/tryObj/tryList, keys/values/entries, at, getStr/getInt/getFloat/getBool/getList/getObj, isNull/isObject/isArray, put*/append*, stringify)")
+                                           "'JsonValue' has no method '" + jmname + "' (read with j[\"k\"]? or has/get/tryStr/tryInt/tryFloat/tryBool/tryObj/tryList; also keys, isNull/isObject/isArray, put*/append*, stringify)")
                                 return Type_.unknown_
                         on Type_.hashmap_ as hmt
                             var hmname: str = mem.member
@@ -4292,6 +4254,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 inner_t = ot
             # Look up member/method return type on inner_t.
             var mem_t: Type_ = Type_.unknown_
+            # BUG-331: `j.tryObj("a")?.tryInt("b")` -- a JsonValue read through `?.`.
+            if inner_t is Type_.json_value and oc.has_args
+                if jsonReadReturn(oc.member) as jrr
+                    mem_t = jrr
             if inner_t is Type_.named as tn
                 if oc.has_args
                     var mr: Type_? = ctx.methodReturnAny(tn, oc.member)
@@ -5461,6 +5427,29 @@ def checkBareFnOperand(e: Expr, file: str, ctx: InferCtx)
 # questions below (jsonWantMode, jsonIdxTry), so the checker and the emitter cannot
 # disagree about which slots convert.
 
+# The result type of a JsonValue READ method (nil: not one). Shared by the member-call
+# arm and the `?.` arm, so `j.tryObj("a")?.tryInt("b")` types exactly like the plain call.
+def jsonReadReturn(m: str): Type_?
+    if m == "has" or m == "isNull" or m == "isObject" or m == "isArray"
+        return Type_.bool_
+    if m == "get" or m == "tryObj"
+        return Type_.optional(Type_.json_value)
+    if m == "tryStr"
+        return Type_.optional(Type_.string_)
+    if m == "tryInt"
+        return Type_.optional(Type_.int_)
+    if m == "tryFloat"
+        return Type_.optional(Type_.float_)
+    if m == "tryBool"
+        return Type_.optional(Type_.bool_)
+    if m == "tryList"
+        return Type_.optional(Type_.list_(Type_.json_value))
+    if m == "keys"
+        return Type_.list_(Type_.string_)
+    if m == "stringify"
+        return Type_.string_
+    return nil
+
 # Which conversion `j["k"]?` performs in a slot of type t ("" = none).
 def jsonWantMode(t: Type_): str
     branch t
@@ -5574,6 +5563,10 @@ def checkJsonInto(target: Type_, e: Expr, file: str, line: int, col: int, conver
             return true
     return false
 
+# expr-walker: exhaustive
+# expr-walker-ok: lambda its body is STATEMENTS; checkStmts walks it on its own
+# expr-walker-ok: ident a leaf here -- this walker checks CALLS, not name uses
+# expr-walker-ok: zig_lit raw Zig text; nothing in it is a Zebra call
 def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
     branch e
         on Expr.call as c
@@ -5644,6 +5637,74 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
         # leaf variants (int_lit, ident, this_, nil_, ...) are correctly absent: they
         # hold no sub-expression. `lambda` is also deliberately absent -- its body is
         # STATEMENTS, which checkStmts already walks on its own.
+        #
+        # BUG-475 (2026-09-28): the fifteen arms below were DELETED by 721168c -- the
+        # commit whose message says "BUG-232 is now fixed for all 16 container kinds" --
+        # in the same hunk that added the interpolation arm. For two months a call inside
+        # a list literal, a ternary, an orelse... was not arity-checked, and an unmarked
+        # JSON read inside one (`a orelse j["k"]`) was not refused. Restored, and the
+        # walker is opted into lint_expr_walkers above so a deletion goes red.
+        on Expr.list_lit as ll
+            for el in ll.elems
+                checkCallsInExpr(el, file, line, ctx)
+        on Expr.set_lit as sl
+            for el in sl.elems
+                checkCallsInExpr(el, file, line, ctx)
+        on Expr.array_lit as al
+            for el in al.elems
+                checkCallsInExpr(el, file, line, ctx)
+        on Expr.tuple_lit as tl
+            for el in tl.elems
+                checkCallsInExpr(el, file, line, ctx)
+        on Expr.dict_lit as dl
+            for en in dl.entries
+                checkCallsInExpr(en.key, file, line, ctx)
+                checkCallsInExpr(en.value, file, line, ctx)
+        on Expr.if_expr as ife
+            checkCallsInExpr(ife.cond, file, line, ctx)
+            checkCallsInExpr(ife.then_expr, file, line, ctx)
+            checkCallsInExpr(ife.else_expr, file, line, ctx)
+        on Expr.orelse_ as oe
+            checkCallsInExpr(oe.expr, file, line, ctx)
+            checkCallsInExpr(oe.fallback, file, line, ctx)
+        on Expr.catch_ as ce
+            checkCallsInExpr(ce.expr, file, line, ctx)
+            checkCallsInExpr(ce.fallback, file, line, ctx)
+        on Expr.slice as sx
+            # start/stop_ are `^Expr?`: `s[..n]` and `s[n..]` omit one end.
+            checkCallsInExpr(sx.object, file, line, ctx)
+            if sx.start != nil
+                checkCallsInExpr(sx.start!, file, line, ctx)
+            if sx.stop_ != nil
+                checkCallsInExpr(sx.stop_!, file, line, ctx)
+        on Expr.opt_chain as oc
+            checkCallsInExpr(oc.base, file, line, ctx)
+            for a in oc.args
+                checkCallsInExpr(a.value, file, line, ctx)
+            # BUG-331: `x?.tryInt(k)` on a JsonValue takes one str/int key, as the plain call does.
+            if oc.has_args and jsonReadReturn(oc.member) != nil
+                var ocb: Type_ = inferExpr(oc.base, ctx)
+                if ocb is Type_.optional as ocbi
+                    ocb = ocbi
+                if ocb is Type_.json_value
+                    if oc.member != "keys" and oc.member != "stringify" and oc.member != "isNull" and oc.member != "isObject" and oc.member != "isArray"
+                        if oc.args.len != 1
+                            ctx.addErr(file, oc.span.line, oc.span.col, "JsonValue." + oc.member + " takes one key (a str, or an int for an array element)")
+                        else
+                            checkJsonKey(oc.args.at(0).value, file, oc.span.line, oc.span.col, ctx)
+        on Expr.chained_cmp as cc
+            for op in cc.operands
+                checkCallsInExpr(op, file, line, ctx)
+        on Expr.except_ as ex
+            checkCallsInExpr(ex.base, file, line, ctx)
+            for f in ex.fields
+                checkCallsInExpr(f.value, file, line, ctx)
+        on Expr.type_check as tc
+            checkCallsInExpr(tc.expr, file, line, ctx)
+        on Expr.is_nil as isn
+            checkCallsInExpr(isn.expr, file, line, ctx)
+        on Expr.old_ as ol
+            checkCallsInExpr(ol.operand, file, line, ctx)
         on Expr.string_interp as si
             # Requires `StringPart` in this module's `use Ast exposing ...` list --
             # see BUG-237. Without it the union is still REFERENCEABLE, but codegen

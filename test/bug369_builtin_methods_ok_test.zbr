@@ -63,9 +63,9 @@ def main()
     st.clear()
     assert st.len == 0
     if Json.parse("{\"k\": \"v\", \"n\": 2, \"xs\": [1, 2], \"o\": {\"f\": 1.5, \"b\": true}}") as j
-        assert j.getStr("k") == "v" and j.getInt("n") == 2
-        assert j.getList("xs").len == 2 and j.getObj("o").getFloat("f") > 1.0 and j.getObj("o").getBool("b")
-        assert j.isObject() and not j.isNull() and j.at("xs").isArray()
+        assert (j.tryStr("k") orelse "") == "v" and (j.tryInt("n") orelse 0) == 2
+        assert (j.tryList("xs") orelse List(JsonValue)()).len == 2 and (j.tryObj("o")?.tryFloat("f") orelse 0.0) > 1.0 and (j.tryObj("o")?.tryBool("b") orelse false)
+        assert j.isObject() and not j.isNull() and j.has("xs") and (j.get("xs")?.isArray() orelse false)
         var jk: List(str) = j.keys()
         assert jk.len == 4
     var jb = Json.object()

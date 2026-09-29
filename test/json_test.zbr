@@ -5,27 +5,35 @@ def main()
     assert data != nil, "parse returned nil"
 
     var d = data!
-    assert d.getStr("name") == "Alice", "getStr name"
-    assert d.getInt("age") == 30, "getInt age"
-    assert d.getFloat("score") > 9.4, "getFloat score"
-    assert d.getBool("active") == true, "getBool active"
+    var name: str = d["name"]?
+    var age: int = d["age"]?
+    var score: float = d["score"]?
+    var active: bool = d["active"]?
+    assert name == "Alice", "required str"
+    assert age == 30, "required int"
+    assert score > 9.4, "required float"
+    assert active == true, "required bool"
 
-    # --- Missing key returns zero-value ---
-    assert d.getStr("missing") == "", "missing str key"
-    assert d.getInt("missing") == 0, "missing int key"
-    assert d.getBool("missing") == false, "missing bool key"
+    # --- A missing key is nil, never a zero value (BUG-331) ---
+    assert d.tryStr("missing") == nil, "missing str key"
+    assert d.tryInt("missing") == nil, "missing int key"
+    assert d.tryBool("missing") == nil, "missing bool key"
+    assert not d.has("missing"), "has on a missing key"
+    assert (d.tryStr("missing") orelse "dflt") == "dflt", "optional read with a default"
 
     # --- Nested object ---
     var nested = '{"user": {"id": 42, "tag": "admin"}}'
     var nd = Json.parse(nested)!
-    var user = nd.getObj("user")
-    assert user.getInt("id") == 42, "nested getInt"
-    assert user.getStr("tag") == "admin", "nested getStr"
+    var user = nd["user"]?
+    var uid: int = user["id"]?
+    var utag: str = nd["user"]["tag"]?
+    assert uid == 42, "nested int"
+    assert utag == "admin", "nested str through one chain"
 
     # --- Array iteration ---
     var arr_json = '{"tags": ["alpha", "beta", "gamma"]}'
     var ad = Json.parse(arr_json)!
-    var tags = ad.getList("tags")
+    var tags: List(JsonValue) = ad["tags"]?
     var count: int = 0
     for tag in tags
         if tag.isNull()

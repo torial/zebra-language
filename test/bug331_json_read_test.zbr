@@ -101,10 +101,23 @@ def main()
         assert tl.len == 3
     else
         assert false
+    # `?.` over a JsonValue? routes through the same reads, nil in, nil out
+    assert (j.tryObj("args")?.tryObj("deep")?.tryStr("y") orelse "") == "why"
+    assert (j.tryObj("nope")?.tryInt("x") orelse -1) == -1
+    var seen: int = 0
+    for tg in j.tryObj("args")?.tryList("x") orelse List(JsonValue)()
+        seen = seen + 1                   # "x" is a number, not a list: nil, so no loop
+    assert seen == 0
     var tv = j["tags"]?
     assert (tv.tryStr(0) orelse "") == "a"
     assert tv.get(9) == nil
     assert not tv.has(3)
+
+    # The ledger's control: `{"a": {}}` and `{}` are distinguishable -- the lenient
+    # getObj answered an empty object for both.
+    assert Json.parse("{\"a\": {}}")!.has("a")
+    assert not Json.parse("{}")!.has("a")
+    assert Json.parse("{}")!.tryObj("a") == nil
 
     # the failures, by message
     assert missingKey(j) == "JSON key 'zzz' not found (keys: name, age, n, ratio, pi, ok, nick, tags, ...)"

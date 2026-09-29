@@ -5590,16 +5590,16 @@ struct Generator
             w.emit(nm)
             w.emit(" = ")
             if kd == "int"
-                w.emit("_json_get_int(")
+                w.emit("_json_try_int(")
             else if kd == "float"
-                w.emit("_json_get_float(")
+                w.emit("_json_try_float(")
             else if kd == "bool"
-                w.emit("_json_get_bool(")
+                w.emit("_json_try_bool(")
             else
-                w.emit("_json_get_str(")
+                w.emit("_json_try_str(")
             w.emit("_v, \"")
             w.emit(nm)
-            w.emit("\");\n")
+            w.emit("\") orelse return null;\n")
             j = j + 1
         w.emit("    return _r;\n")
         w.emit("}\n\n")
@@ -8218,8 +8218,8 @@ struct Generator
             return true
         if t is Type_.char_
             return true
-        # A json Value's methods (getObj/getStr/…) are also helper-dispatched
-        # (`_json_get_obj(recv, key)`), not `*self` methods, so a chain on one must reach
+        # A json Value's methods (tryObj/tryStr/…) are also helper-dispatched
+        # (`_json_try_obj(recv, key)`), not `*self` methods, so a chain on one must reach
         # genMemberCall's json_value arm rather than being materialized + emitted raw.
         if t is Type_.json_value
             return true
@@ -8561,6 +8561,19 @@ struct Generator
                 if vc.callee is Expr.ident as vid
                     return vid.name == "List" or vid.name == "HashMap" or vid.name == "StrSet"
         return false
+
+    # BUG-331: the runtime function behind each key-taking JsonValue read ("" = not one).
+    # Shared by the plain member call and `?.`, so the two cannot drift.
+    def jsonKeyFn(m: str): str
+        if m == "has": return "_json_has"
+        if m == "get": return "_json_get_opt"
+        if m == "tryStr": return "_json_try_str"
+        if m == "tryInt": return "_json_try_int"
+        if m == "tryFloat": return "_json_try_float"
+        if m == "tryBool": return "_json_try_bool"
+        if m == "tryObj": return "_json_try_obj"
+        if m == "tryList": return "_json_try_list"
+        return ""
 
     # BUG-331: `var n: int = j["k"]?` -- the slot names the type, so the OUTERMOST JSON
     # index under the `?` emits the converting lookup (_json_idx_int). Keyed on the index
@@ -13231,6 +13244,38 @@ struct Generator
                 # Method: (if (base) |_oc_val_N| _oc_blk_N: { var _oc_N = _oc_val_N; break :_oc_blk_N _oc_N.method(args); } else null)
                 var oc_uid = w.nextUid()
                 var oc_u = oc_uid.toString()
+                # BUG-331: a JsonValue's reads are runtime functions, not Zig methods --
+                # `j.tryObj("a")?.tryInt("b")` emitted `.tryInt(` on a std.json.Value.
+                var oc_json_fn: str = ""
+                if oc.has_args and .infer_ctx != nil
+                    var ocb_t: Type_ = inferExpr(oc.base, .infer_ctx!)
+                    if ocb_t is Type_.optional as ocb_in
+                        ocb_t = ocb_in
+                    if ocb_t is Type_.json_value
+                        oc_json_fn = jsonKeyFn(oc.member)
+                        if oc.member == "keys": oc_json_fn = "_json_keys"
+                        else if oc.member == "isNull": oc_json_fn = "_json_is_null"
+                        else if oc.member == "isObject": oc_json_fn = "_json_is_object"
+                        else if oc.member == "isArray": oc_json_fn = "_json_is_array"
+                        else if oc.member == "stringify": oc_json_fn = "_json_stringify"
+                # get/tryX take the optional receiver themselves (runtime _json_recv).
+                if oc_json_fn.startsWith("_json_try_") or oc_json_fn == "_json_get_opt"
+                    w.emit(oc_json_fn + "(")
+                    genExpr(oc.base)
+                    for oca2 in oc.args
+                        w.emit(", ")
+                        genExpr(oca2.value)
+                    w.emit(")")
+                    return
+                if oc_json_fn != ""
+                    w.emit("(if (")
+                    genExpr(oc.base)
+                    w.emit(") |_oc_" + oc_u + "| " + oc_json_fn + "(_oc_" + oc_u)
+                    for oca in oc.args
+                        w.emit(", ")
+                        genExpr(oca.value)
+                    w.emit(") else null)")
+                    return
                 w.emit("(if (")
                 genExpr(oc.base)
                 if oc.has_args
@@ -15557,23 +15602,8 @@ struct Generator
                         w.emit(")")
                         return
                 on Type_.json_value
-                    # read-only get methods
-                    var jget_fn = ""
-                    if mname == "at": jget_fn = "_json_at"
-                    else if mname == "has": jget_fn = "_json_has"            # BUG-331
-                    else if mname == "get": jget_fn = "_json_get_opt"
-                    else if mname == "tryStr": jget_fn = "_json_try_str"
-                    else if mname == "tryInt": jget_fn = "_json_try_int"
-                    else if mname == "tryFloat": jget_fn = "_json_try_float"
-                    else if mname == "tryBool": jget_fn = "_json_try_bool"
-                    else if mname == "tryObj": jget_fn = "_json_try_obj"
-                    else if mname == "tryList": jget_fn = "_json_try_list"
-                    else if mname == "getStr": jget_fn = "_json_get_str"
-                    else if mname == "getInt": jget_fn = "_json_get_int"
-                    else if mname == "getFloat": jget_fn = "_json_get_float"
-                    else if mname == "getBool": jget_fn = "_json_get_bool"
-                    else if mname == "getObj": jget_fn = "_json_get_obj"
-                    else if mname == "getList": jget_fn = "_json_get_list_l"   # BUG-337: a real List
+                    # read-only key-taking reads
+                    var jget_fn = jsonKeyFn(mname)                          # BUG-331
                     if jget_fn != ""
                         w.emit(jget_fn)
                         w.emit("(")

@@ -1456,12 +1456,10 @@ def isReadOnlyMethod(name: str): bool
         return true
     if name == "chars" or name == "concat"
         return true
-    # JSON queries read a JsonValue; only put*/arr* mutate. Without this, a local
+    # JSON reads (has/get/tryX, isNull...) read a JsonValue; only put*/arr* mutate. Without this, a local
     # bound in a CLASS METHOD (where the receiver's type is not always inferable)
     # fell to the conservative branch and was emitted `var` -- and Zig's "local
     # variable is never mutated" leaked through (BUG-335, 2026-09-07).
-    if name == "getObj" or name == "getStr" or name == "getInt" or name == "getFloat" or name == "getBool" or name == "getList"
-        return true
     if name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify"
         return true
     if name == "has" or name == "tryStr" or name == "tryInt" or name == "tryFloat" or name == "tryBool" or name == "tryObj" or name == "tryList"

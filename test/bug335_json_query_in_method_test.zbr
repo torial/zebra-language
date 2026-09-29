@@ -1,5 +1,5 @@
 # BUG-335: JSON query results bound to locals inside a CLASS METHOD were emitted as
-# `var` (the receiver type was not inferable there, so getObj/getInt fell to the
+# `var` (the receiver type was not inferable there, so the JSON reads fell to the
 # conservative "not read-only" branch), and Zig's "local variable is never mutated"
 # leaked through. Free functions were fine, which is why nothing caught it until
 # zebra-ide's LSP client (2026-09-07). Control: this must compile and print n=1.
@@ -16,15 +16,13 @@ class Box
     cue init()
         .out = List(Diag)()
     def scan(j: JsonValue)
-        var params = j.getObj("params")
-        for d in params.getList("xs")
-            var rng = d.getObj("range")
-            var s = rng.getObj("start")
-            var e = rng.getObj("end")
-            var sev: int = 1
-            if not d.at("severity").isNull()
-                sev = d.getInt("severity")
-            .out.add(Diag(s.getInt("line"), e.getInt("line") + sev))
+        var params = j.tryObj("params") orelse Json.object()
+        for d in params.tryList("xs") orelse List(JsonValue)()
+            var rng = d.tryObj("range") orelse Json.object()
+            var s = rng.tryObj("start") orelse Json.object()
+            var e = rng.tryObj("end") orelse Json.object()
+            var sev: int = d.tryInt("severity") orelse 1
+            .out.add(Diag(s.tryInt("line") orelse 0, (e.tryInt("line") orelse 0) + sev))
 
 def main()
     var j = Json.parse("{\"params\":{\"xs\":[{\"range\":{\"start\":{\"line\":1},\"end\":{\"line\":2}}}]}}")!

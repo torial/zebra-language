@@ -297,7 +297,7 @@ class Gen:
             # generating it would only produce rejects -- the smoke fixture pins it.)
             if self.vars_of(env, 'str'):
                 choices += ['splitat']      # BUG-336: `s.split(sep).at(i)` / `.len`
-            choices += ['jsonlist']         # BUG-337 getList().len/.at + BUG-338 List(JsonValue)()
+            choices += ['jsonlist']         # BUG-337 List(JsonValue) .len/.at + BUG-338 List(JsonValue)() + BUG-331 reads
         if indent < self.caps['depth']:
             choices += ['if', 'while']
             if opt_in_scope:
@@ -315,11 +315,16 @@ class Gen:
         if k == 'jsonlist':
             j = self.fresh('j'); n = self.fresh('jn'); xs = self.fresh('jxs')
             env[n] = 'int'
+            # BUG-331: the optional JSON reads (tryList/tryInt/has/`?.`); the required
+            # `j["k"]?` makes its function throwing, which the generator does not model.
+            tl = self.fresh('jtl')
             return [f'{ind}var {xs}: List(JsonValue) = List(JsonValue)()',
                     f'{ind}var {n}: int = 0',
-                    f'{ind}if Json.parse("{{\\"xs\\": [1, 2, 3]}}") as {j}',
-                    f'{ind}    {n} = {j}.getList("xs").len + {xs}.len',
-                    f'{ind}    {xs}.add({j}.getList("xs").at(0))']
+                    f'{ind}if Json.parse("{{\\"xs\\": [1, 2, 3], \\"o\\": {{\\"k\\": 4}}}}") as {j}',
+                    f'{ind}    var {tl} = {j}.tryList("xs") orelse List(JsonValue)()',
+                    f'{ind}    {n} = {tl}.len + {xs}.len + ({j}.tryObj("o")?.tryInt("k") orelse 0)',
+                    f'{ind}    if {j}.has("xs")',
+                    f'{ind}        {xs}.add({tl}.at(0))']
         if k == 'splitat':
             s_ = self.pick(self.vars_of(env, 'str'))
             name = self.fresh('sp')

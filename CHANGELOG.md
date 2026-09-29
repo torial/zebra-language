@@ -23,6 +23,19 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **JSON reads, redesigned (BUG-331; breaking).** A required field is read with `j["k"]?`,
+  which converts to the type the variable names (`var age: int = j["age"]?`) and throws
+  naming the key when it is missing or will not convert; `j["a"]["b"]?` and `j["xs"][0]?`
+  chain under one `?`. An optional field is read with `has` / `get` / `tryStr` / `tryInt` /
+  `tryFloat` / `tryBool` / `tryObj` / `tryList`, which answer `nil` -- `j.tryStr("nick")
+  orelse "Bob"`. **Removed:** `getStr`, `getInt`, `getFloat`, `getBool`, `getObj`, `getList`
+  and `at`, which answered a missing key with `""` / `0` / an empty object. Refused at
+  compile time: `j["k"]` without `?`, an operator on a `JsonValue`, a JSON index converting
+  in a call argument. `?.` now works over a `JsonValue?` (`j.tryObj("a")?.tryInt("b")`).
+- **Fixed (BUG-475):** calls inside list/set/tuple/dict literals, ternaries, `orelse`,
+  `catch`, slices, `?.` chains and chained comparisons are arity- and type-checked again --
+  the checks were lost in July.
+
 - **An error that reaches the end of `main` prints its message and exits 1 (BUG-466)** --
   `Error: boom`, not Zig's `error: ZebraError` plus a stack trace; and a `?` inside a
   `print(...)`, a `branch` scrutinee, a destructuring or an `assert` now makes its function

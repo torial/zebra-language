@@ -1,0 +1,16 @@
+# BUG-475: the checker walks INTO containers. 721168c deleted fifteen arms of
+# checkCallsInExpr, so a call inside a literal, a ternary or an orelse was not
+# arity-checked and an unmarked JSON read inside one reached Zig. Each line below must
+# be refused on its own line.
+def add(a: int, b: int): int
+    return a + b
+
+def main()
+    var xs: List(int) = [add(1), 2]
+    var t: int = if(true, add(1), 3)
+    var o: int? = nil
+    var u: int = o orelse add(1)
+    var j = Json.parse("{}")!
+    var w = j.tryObj("x") orelse j["y"]
+    print(xs.len + t + u)
+    print(w.isNull())

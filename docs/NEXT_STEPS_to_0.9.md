@@ -186,6 +186,9 @@ one new stdlib primitive, shape undetermined", not "one primitive". Settle it on
 first: a preamble edit costs the full `zig build` -> regen -> `zig build` order, and a
 wrong primitive costs it twice. The cheap question that decides it: can `seq`/`type`/
 `command` and the untouched breakpoint fields be reconstructed from typed getters alone?
+*(Settled: `keys()` plus a whatever-its-type accessor landed 2026-09-04 and the relay was
+ported; on 2026-09-28 BUG-331 replaced the fabricating getters with `j["k"]?` / `get` /
+`tryX`, so the relay now tells an absent `source` from an empty one.)*
 
 **REMAINING BEYOND THAT:** `--zig-backend` and the `stub` GUI backend, which are policy
 rather than code.

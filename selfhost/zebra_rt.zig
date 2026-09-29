@@ -2206,13 +2206,17 @@ pub fn _json_idx_list(recv: anytype, key: anytype) anyerror!std.ArrayList(JsonVa
     return _json_as_list(it) orelse return _json_mismatch(key, "a list (JSON array)", it);
 }
 pub fn _json_has(v: JsonValue, key: anytype) bool { return _json_lookup(v, key) != null; }
-pub fn _json_get_opt(v: JsonValue, key: anytype) ?JsonValue { return _json_lookup(v, key); }
-pub fn _json_try_int(v: JsonValue, key: anytype) ?i64 { return _json_as_int(_json_lookup(v, key) orelse return null); }
-pub fn _json_try_float(v: JsonValue, key: anytype) ?f64 { return _json_as_float(_json_lookup(v, key) orelse return null); }
-pub fn _json_try_str(v: JsonValue, key: anytype) ?[]const u8 { return _json_as_str(_json_lookup(v, key) orelse return null); }
-pub fn _json_try_bool(v: JsonValue, key: anytype) ?bool { return _json_as_bool(_json_lookup(v, key) orelse return null); }
-pub fn _json_try_obj(v: JsonValue, key: anytype) ?JsonValue { return _json_as_obj(_json_lookup(v, key) orelse return null); }
-pub fn _json_try_list(v: JsonValue, key: anytype) ?std.ArrayList(JsonValue) { return _json_as_list(_json_lookup(v, key) orelse return null); }
+// The optional reads take a JsonValue OR a JsonValue? receiver: `j.tryObj("a")?.tryInt("b")`
+// lowers to one call, nil in, nil out. (An `if (x) |v| f(v) else null` wrapper defeats
+// Zig's peer typing once `.items` or `orelse` is taken on the result.)
+fn _json_recv(v: anytype) ?JsonValue { return v; }
+pub fn _json_get_opt(v: anytype, key: anytype) ?JsonValue { return _json_lookup(_json_recv(v) orelse return null, key); }
+pub fn _json_try_int(v: anytype, key: anytype) ?i64 { return _json_as_int(_json_get_opt(v, key) orelse return null); }
+pub fn _json_try_float(v: anytype, key: anytype) ?f64 { return _json_as_float(_json_get_opt(v, key) orelse return null); }
+pub fn _json_try_str(v: anytype, key: anytype) ?[]const u8 { return _json_as_str(_json_get_opt(v, key) orelse return null); }
+pub fn _json_try_bool(v: anytype, key: anytype) ?bool { return _json_as_bool(_json_get_opt(v, key) orelse return null); }
+pub fn _json_try_obj(v: anytype, key: anytype) ?JsonValue { return _json_as_obj(_json_get_opt(v, key) orelse return null); }
+pub fn _json_try_list(v: anytype, key: anytype) ?std.ArrayList(JsonValue) { return _json_as_list(_json_get_opt(v, key) orelse return null); }
 pub const HttpResponse = struct { status: u16, text: []const u8, headers: []const [2][]const u8 = &.{} };
 pub fn _http_request(method: std.http.Method, url: []const u8, payload: ?[]const u8) ?HttpResponse {
     var _hc = std.http.Client{ .allocator = _allocator, .io = _io };

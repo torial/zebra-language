@@ -23,7 +23,7 @@ def main()
     # Json.parse(src) — untyped form still works
     var raw = Json.parse("{\"key\":\"val\"}")
     if raw as rv
-        var s: str = rv.getStr("key")
+        var s: str = rv.tryStr("key") orelse ""
         print(s)
 
     print("done")

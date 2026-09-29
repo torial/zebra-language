@@ -6,6 +6,100 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-331: every `JsonValue` getter fabricates a default on miss, so "absent" and "empty" are indistinguishable — FIXED 2026-09-28
+
+**Status:** FIXED 2026-09-28 (the lenient getters are REMOVED, not kept beside the new reads). Filed 2026-09-04 while scoping the `zebra debug` DAP relay.
+
+The shipped runtime's JSON getters return a plausible EMPTY VALUE when the key is missing
+or holds the wrong type, rather than signalling absence:
+
+| getter | on a missing key |
+|---|---|
+| `_json_get_obj` | `.{ .object = ObjectMap.empty }` -- an empty object |
+| `_json_get_list` | `&[_]JsonValue{}` -- an empty array |
+| `_json_get_str` / `_int` / `_float` / `_bool` | the type's zero value |
+
+So a caller cannot tell `{"args": {}}` from `{}`. This is conventional for lenient JSON
+APIs and would be a shrug on its own; what makes it a defect here is that it is the exact
+shape this repo has already ruled against twice in the same runtime -- BUG-309 and BUG-310,
+"fabricating catches in the shipped runtime" -- and it is the H3 hazard `hazard_lint`
+enforces for our TOOLS ("a constant sentinel on a path feeding a comparison always biases
+toward 'nothing changed'") applied to the stdlib instead.
+
+**The concrete consumer, which is why this is filed now rather than noted.** The `zebra
+debug` DAP relay must decide whether a message HAS an `arguments.source.path` before
+rewriting a coordinate. The Zig original branches on `orelse return orig` -- absent means
+"pass this message through untouched". A Zebra port using these getters cannot express
+that: an absent `source` and an empty `source` both arrive as an empty object, and the
+relay would rewrite a message it should have forwarded verbatim.
+
+**Fix direction.** Add optional-returning getters (`getStrOpt`/`getObjOpt`/... returning
+`str?`/`JsonValue?`), or a `has(key)` predicate, rather than changing the existing
+getters' behaviour -- corpus code may depend on the lenient forms, and silently changing
+what they return is a worse failure than the one being fixed. UNGIT "nothing fabricated":
+unknown, empty and missing each get their own spelling.
+
+**Related, and NOT yet settled:** the relay also needs to re-emit sibling fields it does
+not rewrite, preserving values whose TYPE it does not know. Neither a key list nor typed
+getters expresses that. Whether Zebra needs a generic value accessor plus per-value
+`stringify`, or something else, is an open design question -- see the `zebra debug` notes
+in NEXT_STEPS. Do not treat "add one primitive" as the scoped answer; it is not yet known
+to be one.
+
+**Control when fixing.** A fixture that parses `{"a": {}}` and `{}` and asserts the two
+are distinguishable. Watch it fail first: against today's runtime both report an empty
+object, so a test that merely reads a present key passes for the wrong reason.
+
+**Resolution (2026-09-28, Sean's design).** Two reads and nothing in between:
+
+- `j["k"]?` -- REQUIRED. Converts to the type the slot names (an annotated `var`, an
+  assignment to a typed variable, a `return`) in ONE runtime call, so the single `?` covers
+  both failures; throws naming the key (`JSON key 'age': expected int, found string
+  "thirty"`, `JSON key 'b' not found (keys: a)`). Unannotated it is a `JsonValue`; a chain
+  `j["a"]["b"]?` carries one `?`; an int indexes an array. int takes a whole-valued number
+  (30 and 30.0), float any number, str only a string; a string is never parsed.
+- `has(k)` / `get(k)` / `tryStr|tryInt|tryFloat|tryBool|tryObj|tryList(k)` -- OPTIONAL,
+  `nil` when absent or the wrong type, and they compose with `?.` and `orelse`.
+- `getStr/getInt/getFloat/getBool/getObj/getList` and `at` are GONE, with no deprecation
+  window (Sean: nobody else uses the language yet). No third "missing" value was added:
+  `get(k)` is nil when absent and a JSON-null value when the JSON said null.
+
+Refused in Zebra's words rather than reaching Zig: `j["k"]` without `?`, an operator or a
+compound assignment on a JsonValue, a JSON index converting in an ARGUMENT (bind it first),
+a conversion to any other type, a JsonValue into an int/str/... slot, a key that is not a
+str or int. Fixtures: `test/bug331_json_read_test.zbr` (every read and every failure message
+asserted, written before the first run and red-checked), `bug331_json_*_fail.zbr` (six
+refusals), `bug331_json_missing_key_uncaught_test.zbr` (the message at the top of main).
+
+The DAP relay the entry was filed for now reads `root.tryObj("arguments")` and
+`fr.tryObj("source")`, so an absent object and an empty one are finally different: absent
+passes the message through untouched. Migrated: the compiler's LSP loop and DAP relay, six
+corpus fixtures, fuzz/gen.py, zebra-ide, and two book examples.
+
+Found on the way: BUG-475 (the checker's container arms deleted in July), and `?.` over a
+JsonValue emitted the method name as a Zig member -- `j.tryObj("a")?.tryInt("b")` now
+routes through the same runtime reads as the plain call.
+
+### BUG-475: the checker's expression walker lost fifteen container arms in July -- calls in literals, ternaries, `orelse` went unchecked — FIXED 2026-09-28
+
+**Found while fixing BUG-331**, by reading a comment that disagreed with the code under it.
+`checkCallsInExpr` (TypeChecker) carried BUG-232's explanation of why it must descend into
+every container -- list/set/array/tuple/dict literals, ternaries, `orelse`, `catch`, slices,
+optional chains, chained comparisons, `except`, `is`, `old()` -- followed by exactly ONE of
+those arms. `git log -S` found the deletion: 721168c, the commit whose message reads
+"BUG-232 is now fixed for all 16 container kinds", removed the fifteen arms in the same hunk
+that added the interpolation arm. Its verification exercised interpolation only.
+
+Measured before the fix, on one file: `add(1)` against `def add(a, b)` is refused as a
+statement and passes `-c` silently inside `[add(1), 2]`, `if(true, add(1), 3)` and
+`o orelse add(1)`. So arity and argument-type checking, and BUG-331's new refusals (an
+unmarked `a orelse j["k"]` reached Zig), were blind inside every container for two months.
+
+Fix: the arms are restored, and `checkCallsInExpr` is opted into `lint_expr_walkers`
+(`# expr-walker: exhaustive`, with reasoned waivers for lambda/ident/zig_lit) -- so the
+next deletion of an arm is a red gate rather than a comment nobody reads. Fixture:
+`test/bug475_container_calls_checked_fail.zbr`.
+
 ### BUG-312: a `List(List(T))` parameter loses pointer/mutable codegen when a SHARED helper is called on it from two different wrapper functions — FIXED 2026-09-28
 
 **Found from outside the project**, same porting session as BUG-311. A `List(List(float))` parameter (e.g. a weight matrix) correctly becomes `*std.ArrayList(...)` (mutable, by pointer) when the function that receives it calls `.set()` on its rows directly, or calls exactly one shared helper on it from exactly one place. It becomes `std.ArrayList(...)` (**by value, no pointer**) — silently, with no diagnostic until the *caller* fails to type-check — when a shared helper function taking that same `List(List(T))` type is invoked on the SAME underlying variable from **two different outer functions**.

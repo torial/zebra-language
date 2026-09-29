@@ -3775,6 +3775,7 @@ var first: str = j["tags"][0]?                 # an int indexes an array
 var nick = j.tryStr("nickname") orelse "Bob"   # optional, with the default in view
 if j.get("args") as args                       # optional, bound
     print(args.keys().len)
+var x = j.tryObj("args")?.tryInt("x") orelse 0 # optional through a chain: nil in, nil out
 ```
 
 - **`v[k]?` converts to the type the slot names** -- an annotated `var`, an assignment to a
