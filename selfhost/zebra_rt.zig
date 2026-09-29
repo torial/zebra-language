@@ -1935,17 +1935,8 @@ pub fn _json_parse(src: []const u8) ?JsonValue {
     // parseFromSliceLeaky uses allocator directly (no arena), intentionally leaked.
     return std.json.parseFromSliceLeaky(JsonValue, std.heap.page_allocator, src, .{}) catch return null;
 }
-// Object key iteration, and a value accessor that does NOT fabricate.
-//
-// Every other getter here is TYPED and lenient: _json_get_obj answers with an empty
-// object for a missing key, _json_get_str with "". That is fine for reading a known
-// shape and useless for COPYING an unknown one, which is what a protocol relay does --
-// it must re-emit fields it does not understand, byte for byte, without knowing their
-// type. See BUG-331.
-//
-// _json_at returns JSON null for a missing key, which is honest only because the caller
-// is expected to have got the key from _json_keys in the first place. It is not a
-// substitute for a presence test: a stored null and a missing key look identical here.
+// Object key iteration: with _json_get_opt (`get`), what lets a protocol relay COPY
+// fields it does not understand, whatever their type.
 pub fn _json_keys(v: JsonValue) std.ArrayList([]const u8) {
     var _r: std.ArrayList([]const u8) = .empty;
     switch (v) {
@@ -1957,55 +1948,11 @@ pub fn _json_keys(v: JsonValue) std.ArrayList([]const u8) {
     }
     return _r;
 }
-pub fn _json_at(v: JsonValue, key: []const u8) JsonValue {
-    switch (v) {
-        .object => |o| if (o.get(key)) |it| return it,
-        else => {},
-    }
-    return .null;
-}
 pub fn _json_stringify(v: JsonValue) []const u8 {
     return std.json.Stringify.valueAlloc(std.heap.page_allocator, v, .{}) catch "{}";
 }
 pub fn _json_object() JsonValue { return .{ .object = std.json.ObjectMap.empty }; }
 pub fn _json_array() JsonValue  { return .{ .array = std.json.Array.init(std.heap.page_allocator) }; }
-pub fn _json_get_str(v: JsonValue, key: []const u8) []const u8 {
-    switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .string => |s| return s, else => {} }, else => {} }
-    return "";
-}
-pub fn _json_get_int(v: JsonValue, key: []const u8) i64 {
-    switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .integer => |n| return n, else => {} }, else => {} }
-    return 0;
-}
-pub fn _json_get_float(v: JsonValue, key: []const u8) f64 {
-    switch (v) { .object => |o| if (o.get(key)) |it| switch (it) {
-        .float => |f| return f, .integer => |n| return @floatFromInt(n), else => {} }, else => {} }
-    return 0.0;
-}
-pub fn _json_get_bool(v: JsonValue, key: []const u8) bool {
-    switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .bool => |b| return b, else => {} }, else => {} }
-    return false;
-}
-pub fn _json_get_obj(v: JsonValue, key: []const u8) JsonValue {
-    switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .object => return it, else => {} }, else => {} }
-    return .{ .object = std.json.ObjectMap.empty };
-}
-// BUG-337: a REAL List(JsonValue), not a slice, so `.len` / `.at()` / `for` all take the
-// ordinary List paths (a slice made codegen special-case every one of them, and the ones
-// it forgot leaked "no member named 'items'"). Copied into the program allocator: an
-// ArrayList over the parser's memory would realloc through the wrong allocator on append.
-pub fn _json_get_list(v: JsonValue, key: []const u8) []JsonValue {
-    switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .array => |a| return a.items, else => {} }, else => {} }
-    return &[_]JsonValue{};
-}
-// (`_json_get_list` above is the pre-BUG-337 slice form, kept so the N-1 regen authority's
-// emit still links against this runtime during the transition; codegen emits the `_l`
-// form. Remove the slice form after the next n1-anchor.)
-pub fn _json_get_list_l(v: JsonValue, key: []const u8) std.ArrayList(JsonValue) {
-    var out: std.ArrayList(JsonValue) = .empty;
-    switch (v) { .object => |o| if (o.get(key)) |it| switch (it) { .array => |a| out.appendSlice(_allocator, a.items) catch @panic("OOM"), else => {} }, else => {} }
-    return out;
-}
 pub fn _json_is_null(v: JsonValue) bool   { return v == .null; }
 pub fn _json_is_object(v: JsonValue) bool  { return switch (v) { .object => true, else => false }; }
 pub fn _json_is_array(v: JsonValue) bool   { return switch (v) { .array  => true, else => false }; }
