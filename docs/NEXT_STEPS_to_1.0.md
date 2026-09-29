@@ -658,6 +658,22 @@ builds; proven end-to-end — the self-made 2.3MB compiler compiles a program th
 divergences fixed, gated by `tools/selfcompile_check.sh`. The §28a-step-4 CONSTRAINT below (main.zbr
 can't be in the both-compilers-reject probe) is now LIFTED. See BUGS.md BUG-181.
 
+**RE-MEASURED 2026-09-29 (step 4 started; Sean: "proceed").** `tools/measure_selfhost_guess.sh`
+(now emit-only, ~10x faster -- guesses are recorded while emitting): **55 unique sites across
+787 files** (add 37 / len_count 7 / list_dispatch 11), down from 140 on 07-16. By root cause:
+- **A. untyped functional-trio lambda params** (`xs.reduce(0, def(acc, x) = acc + x)`,
+  `.map(def(x) = x + 10)`) -- ~7: derive the params from the receiver's element type.
+- **B. captured variables inside closures** (`return x + k` where `k` is captured) -- ~15:
+  the capture's type is known at the capture site and lost in the body.
+- **C. stdlib returns the checker does not type** -- Hash.* / Random bytes / hmac / Arg
+  results (`.len` on them, 7), `Reflect.fields/types` (List(str), 6), `Dir.walk`, a caught
+  error's message, a module-global container -- ~17.
+- **D. member / call results on user types** (`p.x + p.y`, `f() + 1`, `seed() + n`,
+  `m["k"] += 3`, `Math.abs(a - b) + ...`) -- ~14.
+- **E. two sites with no line** (`old`/contract synthesis).
+`selfhost/main.zbr` and `pipeline_test.zbr` still time out at 60 s in the measure and are
+not counted.
+
 **Step 3 (the flip) — only once the selfhost standalone count is ~0.** Error + `--allow-inference-guess`
 hatch + promote the measure to an enforcing gate. Follow the §28b template (commit 0a591ce):
 module-global sites list, driver-level reject in `main.zbr` (NOT `@compileError` — malforms

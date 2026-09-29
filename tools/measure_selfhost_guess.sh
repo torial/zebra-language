@@ -41,7 +41,9 @@ echo "measuring ${#FILES[@]} corpus files (per-file timeout ${TIMEOUT}s) ..." >&
 i=0
 for f in "${FILES[@]}"; do
     [[ -e "$f" ]] || continue
-    timeout "$TIMEOUT" "$ZEB" --warn-inference-guess --output-dir "$TMP" "$f" >/dev/null 2>>"$WARN"
+    # --emit-zig: guesses are recorded while EMITTING; building and running each program
+    # (the old invocation) cost ~10x and measured nothing more.
+    timeout "$TIMEOUT" "$ZEB" --warn-inference-guess --emit-zig --output-dir "$TMP" "$f" >/dev/null 2>>"$WARN"
     [[ $? -eq 124 ]] && echo "$f" >> "$SKIPPED"
     i=$((i+1))
     (( i % 50 == 0 )) && echo "  ...$i/${#FILES[@]}" >&2
