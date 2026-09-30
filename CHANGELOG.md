@@ -23,6 +23,17 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Inference or error (§28a, the flip).** A `+`, `.len` or List-shaped method call whose
+  operand/receiver type cannot be inferred is now a compile error located at that
+  expression and naming what to annotate; it used to GUESS (numeric `+`, a string-shaped
+  `.len`, List routing by method name). Measured at 0 across the repo corpus, the
+  compiler's own source, zebra-ide and the GameEngine (146 files, witnessed with a control
+  per kind); the book's 7 sites are fragments naming code defined elsewhere.
+  `--allow-inference-guess` is a one-release migration hatch (it warns, naming each site).
+- **Early-exit narrowing now works for `var` locals (BUG-505, found by Fable).** The
+  rebinding check scanned the whole block, so the `var` declaring a local counted as a
+  rebinding and only parameters narrowed; it scans only the statements after the guard now.
+
 - **Nil narrowing follows `and` chains and early exits (Sean, 2026-09-30).** In
   `if a != nil and b != nil`, every conjunct is non-nil in the then-branch. After
   `if a == nil` (or `a == nil or b == nil`) whose body always leaves -- `return`, `raise`,

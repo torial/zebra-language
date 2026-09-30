@@ -41,7 +41,7 @@ use Parser exposing PNode, PUse, PModule, PClass, fileExistsExact, caseOnlyMatch
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, threadSpawnSites, inferenceGuessSites, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -976,6 +976,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --coverage <source.zbr>            line coverage -> zebra-coverage.json on exit (also: zebra test --coverage)", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
     usageLine("  zebra --warnings-as-errors <source.zbr> fail the compile on any warning (a deprecation, a function used as a value)", to_stdout)
+    usageLine("  zebra --allow-inference-guess <f.zbr>    one-release migration aid: guess a type that cannot be inferred (warns) instead of refusing", to_stdout)
     usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: tui or libui_ng", to_stdout)
     usageLine("  zebra --keep-temp <source.zbr>           keep the scratch build (kept anyway on failure)", to_stdout)
     usageLine("  zebra --gui-backend=X --scaffold-only <f>  write the GUI project beside the emit; do not build or run it", to_stdout)
@@ -3948,7 +3949,7 @@ def main()
     if args.contains("--allow-implicit-try")
         sys.errln("zebra: --allow-implicit-try was removed (0.9.0-rc5): a throws call must be marked with `?`. Compile without the flag and every unmarked call is named with its line.")
         sys.exit(2)
-    var known_flags: str = "--build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
+    var known_flags: str = "--build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -4441,16 +4442,30 @@ def main()
             sys.errln(itry_site + ": error: throws call needs '?' (auto error-propagation was removed; add '?')")
         sys.exit(1)
 
-    # §28a step 1 (selfhost measure): --warn-inference-guess reports every
-    # type-dispatch site that guessed the emit without a proven type (numeric
-    # add / len fallback / name-based List routing).  Measure mode — reports to
-    # stderr, no exit.  compileDep accumulated the sites across deps + root.
-    # The flip (guess → compile error, gated by --allow-inference-guess) follows
-    # the §28b template above.
+    # §28a: a type-dispatch site whose operand/receiver type could not be inferred
+    # (numeric `+` vs string join, `.len`, a List-shaped method on an unknown receiver)
+    # used to GUESS the emit. --warn-inference-guess reports every site (the measure
+    # tools' format); without the hatch each one is a compile error naming what to
+    # annotate (the flip, 2026-09-30, after the corpus, the book and zebra-ide reached 0).
+    # compileDep accumulated the sites across deps + root; a dep compiled twice records
+    # twice, so the refusal de-duplicates.
+    var ig_sites: List(str) = inferenceGuessSites()
     if args.contains("--warn-inference-guess")
-        var ig_sites: List(str) = inferenceGuessSites()
         for ig_site in ig_sites
             sys.errln("INFER_GUESS: " + ig_site)
+    if ig_sites.len > 0
+        var ig_seen = List(str)()
+        for ig_msg in inferenceGuessMessages()
+            if not ig_seen.contains(ig_msg)
+                ig_seen.add(ig_msg)
+        if args.contains("--allow-inference-guess")
+            sys.errln("warning: " + ig_seen.len.toString() + " type(s) could not be inferred and were GUESSED (--allow-inference-guess); this flag is a one-release migration aid -- annotate them:")
+            for ig_w in ig_seen
+                sys.errln("  " + ig_w.replace(": error: ", ": "))
+        else
+            for ig_e in ig_seen
+                sys.errln(ig_e)
+            sys.exit(1)
 
     if mode_emit
         # --emit-zig: print(root file's Zig source to stdout)

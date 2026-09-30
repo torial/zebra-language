@@ -1354,143 +1354,161 @@ pub fn _zbr_fn_nameReassignedIn(name: []const u8, stmts: std.ArrayList(_zbr_ty_S
     return false;
 }
 
-// zbr:selfhost/AstWalk.zbr:691
+// zbr:selfhost/AstWalk.zbr:695
+pub fn _zbr_fn_nameReassignedAfter(name: []const u8, stmts: std.ArrayList(_zbr_ty_Stmt), guard_idx: i64) bool {
+// zbr:selfhost/AstWalk.zbr:696
+    var k: i64 = (guard_idx + 1);
+// zbr:selfhost/AstWalk.zbr:697
+    while (_zebra_lt(k, @as(i64, @intCast(stmts.items.len)))) {
+// zbr:selfhost/AstWalk.zbr:698
+        if (_zbr_fn_stmtRebinds(name, _zbr_at(stmts.items, k))) {
+// zbr:selfhost/AstWalk.zbr:699
+            return true;
+        }
+// zbr:selfhost/AstWalk.zbr:700
+        k += 1;
+    }
+// zbr:selfhost/AstWalk.zbr:701
+    return false;
+}
+
+// zbr:selfhost/AstWalk.zbr:703
 pub fn _zbr_fn_stmtRebinds(name: []const u8, st: _zbr_ty_Stmt) bool {
-// zbr:selfhost/AstWalk.zbr:692
+// zbr:selfhost/AstWalk.zbr:704
     switch (_zbr_val(st)) {
         .assign => |_ptr_a| {
             const a = _ptr_a.*;
-// zbr:selfhost/AstWalk.zbr:694
+// zbr:selfhost/AstWalk.zbr:706
             if (_zbr_val(a.target.*) == .ident) {
                 const aid = a.target.*.ident;
-// zbr:selfhost/AstWalk.zbr:695
+// zbr:selfhost/AstWalk.zbr:707
                 return std.mem.eql(u8, aid.name, name);
             }
         },
         .copy_out => |_ptr_co| {
             const co = _ptr_co.*;
-// zbr:selfhost/AstWalk.zbr:697
+// zbr:selfhost/AstWalk.zbr:709
             if (co.deep) {
-// zbr:selfhost/AstWalk.zbr:698
+// zbr:selfhost/AstWalk.zbr:710
                 if (_zbr_val(co.target) == .ident) {
                     const cid = co.target.ident;
-// zbr:selfhost/AstWalk.zbr:699
+// zbr:selfhost/AstWalk.zbr:711
                     return std.mem.eql(u8, cid.name, name);
                 }
             }
         },
         .var_ => |_ptr_dv| {
             const dv = _ptr_dv.*;
-// zbr:selfhost/AstWalk.zbr:701
+// zbr:selfhost/AstWalk.zbr:713
             return std.mem.eql(u8, dv.name, name);
         },
         .destruct => |_ptr_dd| {
             const dd = _ptr_dd.*;
-// zbr:selfhost/AstWalk.zbr:703
+// zbr:selfhost/AstWalk.zbr:715
             for (dd.names.items) |dn| {
-// zbr:selfhost/AstWalk.zbr:704
+// zbr:selfhost/AstWalk.zbr:716
                 if (std.mem.eql(u8, dn, name)) {
-// zbr:selfhost/AstWalk.zbr:705
+// zbr:selfhost/AstWalk.zbr:717
                     return true;
                 }
             }
         },
         .if_ => |_ptr_si| {
             const si = _ptr_si.*;
-// zbr:selfhost/AstWalk.zbr:707
+// zbr:selfhost/AstWalk.zbr:719
             if (_zbr_fn_nameReassignedIn(name, si.then_stmts)) {
-// zbr:selfhost/AstWalk.zbr:708
+// zbr:selfhost/AstWalk.zbr:720
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:709
+// zbr:selfhost/AstWalk.zbr:721
             for (si.else_ifs.items) |ei| {
-// zbr:selfhost/AstWalk.zbr:710
+// zbr:selfhost/AstWalk.zbr:722
                 if (_zbr_fn_nameReassignedIn(name, ei.stmts)) {
-// zbr:selfhost/AstWalk.zbr:711
+// zbr:selfhost/AstWalk.zbr:723
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:712
+// zbr:selfhost/AstWalk.zbr:724
             if (si.else_stmts) |se| {
-// zbr:selfhost/AstWalk.zbr:713
+// zbr:selfhost/AstWalk.zbr:725
                 return _zbr_fn_nameReassignedIn(name, se);
             }
         },
         .while_ => |_ptr_w| {
             const w = _ptr_w.*;
-// zbr:selfhost/AstWalk.zbr:715
+// zbr:selfhost/AstWalk.zbr:727
             return _zbr_fn_nameReassignedIn(name, w.stmts);
         },
         .for_in => |_ptr_f| {
             const f = _ptr_f.*;
-// zbr:selfhost/AstWalk.zbr:717
+// zbr:selfhost/AstWalk.zbr:729
             if (_zbr_fn_nameReassignedIn(name, f.stmts)) {
-// zbr:selfhost/AstWalk.zbr:718
+// zbr:selfhost/AstWalk.zbr:730
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:719
+// zbr:selfhost/AstWalk.zbr:731
             if (f.else_) |fe| {
-// zbr:selfhost/AstWalk.zbr:720
+// zbr:selfhost/AstWalk.zbr:732
                 return _zbr_fn_nameReassignedIn(name, fe);
             }
         },
         .for_num => |_ptr_fnum| {
             const fnum = _ptr_fnum.*;
-// zbr:selfhost/AstWalk.zbr:722
+// zbr:selfhost/AstWalk.zbr:734
             return _zbr_fn_nameReassignedIn(name, fnum.stmts);
         },
         .branch_ => |_ptr_b| {
             const b = _ptr_b.*;
-// zbr:selfhost/AstWalk.zbr:724
+// zbr:selfhost/AstWalk.zbr:736
             for (b.cases.items) |c| {
-// zbr:selfhost/AstWalk.zbr:725
+// zbr:selfhost/AstWalk.zbr:737
                 if (_zbr_fn_nameReassignedIn(name, c.stmts)) {
-// zbr:selfhost/AstWalk.zbr:726
+// zbr:selfhost/AstWalk.zbr:738
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:727
+// zbr:selfhost/AstWalk.zbr:739
             if (b.else_) |be| {
-// zbr:selfhost/AstWalk.zbr:728
+// zbr:selfhost/AstWalk.zbr:740
                 return _zbr_fn_nameReassignedIn(name, be);
             }
         },
         .try_catch => |_ptr_tc| {
             const tc = _ptr_tc.*;
-// zbr:selfhost/AstWalk.zbr:730
+// zbr:selfhost/AstWalk.zbr:742
             if (_zbr_fn_nameReassignedIn(name, tc.stmts)) {
-// zbr:selfhost/AstWalk.zbr:731
+// zbr:selfhost/AstWalk.zbr:743
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:732
+// zbr:selfhost/AstWalk.zbr:744
             for (tc.clauses.items) |cc| {
-// zbr:selfhost/AstWalk.zbr:733
+// zbr:selfhost/AstWalk.zbr:745
                 if (_zbr_fn_nameReassignedIn(name, cc.stmts)) {
-// zbr:selfhost/AstWalk.zbr:734
+// zbr:selfhost/AstWalk.zbr:746
                     return true;
                 }
             }
         },
         .with_ => |_ptr_sw| {
             const sw = _ptr_sw.*;
-// zbr:selfhost/AstWalk.zbr:736
+// zbr:selfhost/AstWalk.zbr:748
             return _zbr_fn_nameReassignedIn(name, sw.stmts);
         },
         .in_scope => |_ptr_sn| {
             const sn = _ptr_sn.*;
-// zbr:selfhost/AstWalk.zbr:738
+// zbr:selfhost/AstWalk.zbr:750
             return _zbr_fn_nameReassignedIn(name, sn.stmts);
         },
         .allocate_ => |_ptr_sa| {
             const sa = _ptr_sa.*;
-// zbr:selfhost/AstWalk.zbr:740
+// zbr:selfhost/AstWalk.zbr:752
             return _zbr_fn_nameReassignedIn(name, sa.stmts);
         },
         else => {
             // pass
         },
     }
-// zbr:selfhost/AstWalk.zbr:743
+// zbr:selfhost/AstWalk.zbr:755
     return false;
 }
 

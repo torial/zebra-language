@@ -1,0 +1,37 @@
+# BUG-505 (Fable, GameEngine): after `if x == nil: return`, a `var` LOCAL initialised from
+# an optional is narrowed for the rest of the block, as a parameter already was. The
+# rebinding check used to scan the whole block, so the `var` that declared the local
+# counted as a rebinding. Repros A (a local from an optional field) and B (from a method
+# returning `str?`), verbatim in shape.
+class Holder
+    var text: str?
+    cue init(t: str?)
+        .text = t
+    def half(): float
+        var healthText = .text
+        if healthText == nil
+            return 0.0
+        return (healthText.tryFloat() orelse 0.0) / 2.0
+
+class Box
+    var value: str?
+    cue init(v: str?)
+        .value = v
+    def get(): str?
+        return .value
+
+class User
+    var box: Box
+    cue init(b: Box)
+        .box = b
+    def half(): float
+        var text = .box.get()
+        if text == nil
+            return 0.0
+        return (text.tryFloat() orelse 0.0) / 2.0
+
+def main()
+    assert Holder("37.4").half() == 18.7
+    assert User(Box("37.4")).half() == 18.7
+    assert Holder(nil).half() == 0.0
+    print("bug505: OK")

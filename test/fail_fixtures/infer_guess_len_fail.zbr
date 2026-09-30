@@ -1,0 +1,5 @@
+# §28a: `.len` on a value whose type cannot be inferred is refused, naming it.
+# Permanent control: a zig"..." expression has no Zebra type.
+def main()
+    var xs = zig"_zbr_rt"
+    print(xs.len)

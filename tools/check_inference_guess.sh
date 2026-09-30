@@ -19,9 +19,13 @@
 # forced whenever the compiler binary is newer than the stamp (a rebuild can
 # flip a previously-clean file). `--full` forces a complete scan (pre-release/CI).
 #
-# The language-level flip (a guess becomes a Zebra-level "cannot infer type of
-# X; annotate" compile error) is the remaining piece; see
-# NEXT_STEPS §28a. Until it lands, this gate protects the repo.
+# THE FLIP LANDED 2026-09-30: a guess is now a compile error ("cannot infer the type
+# of X ...; annotate it"), so every tier that compiles the corpus (smoke, full_sweep,
+# the round-trip over the compiler's own source) enforces this already, and the
+# fixtures test/fail_fixtures/infer_guess_*_fail.zbr prove the refusal fires. This
+# script is kept as a MEASURE of what `--allow-inference-guess` would let through;
+# it passes that hatch so a guess is reported rather than aborting the compile.
+# It is deliberately not registered in a tier.
 #
 # Usage: bash tools/check_inference_guess.sh [--full]   (run from repo root)
 set -u
@@ -58,7 +62,7 @@ fi
 
 for f in "${FILES[@]}"; do
     [[ -e "$f" ]] || continue
-    "$BOOT" --warn-inference-guess --emit-zig "$f" >/dev/null 2>>"$WARN" || true
+    "$BOOT" --warn-inference-guess --allow-inference-guess --emit-zig "$f" >/dev/null 2>>"$WARN" || true
 done
 
 N="$(grep -c '^INFER_GUESS' "$WARN" || true)"

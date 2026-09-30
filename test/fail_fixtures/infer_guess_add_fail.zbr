@@ -1,0 +1,6 @@
+# §28a: a value whose type cannot be inferred used with `+` is refused, naming it.
+# The control is PERMANENT: a zig"..." expression has no Zebra type, so this can never
+# become an inference gap someone closes.
+def main()
+    var x = zig"@as(i64, 5)"
+    print(x + 1)

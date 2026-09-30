@@ -256,6 +256,14 @@ var opt: int? = nil            # optional int, initially nil
   don't control this (for locals).
 - Type annotations use `: Type` (colon) syntax, not `as Type`.  `as` is reserved
   for binding clauses (`if x as n`, `branch on V as r`, `if x is T as r`) — see §11, §13, §21.
+- **Inference or error (§28a, 2026-09-30).** Where the meaning of an operation depends on
+  a type the compiler could not infer -- `+` (join strings or add numbers?), `.len`, a
+  List-shaped method such as `.add` -- it refuses rather than guessing:
+  "f.zbr:6:11: error: cannot infer the type of x, an operand of + ... annotate it".
+  Annotate the variable (`var x: int = ...`) and the error goes away. In practice this is
+  rare -- the standard library, your classes and closures are all typed -- and the usual
+  cause is a value from a `zig"..."` expression. `--allow-inference-guess` restores the
+  old guess, with a warning, for ONE release while code is migrated.
 
 ### §2.1 Module-level `var` / `const`
 

@@ -638,6 +638,33 @@ smoke_run() {
     fi
 }
 
+# smoke_run_flag <zbr> <flag> <expected> -- smoke_run with one compiler flag. The file
+# comes FIRST so registration_check's `^smoke\w* test/...` pattern sees it. Not in
+# positive_set.sh on purpose: a program that needs a flag to compile is not a positive
+# for the flagless sweeps (the §28a hatch fixture fails without its flag by design).
+smoke_run_flag() {
+    local zbr="$1"
+    local flag="$2"
+    local expected="$3"
+    local label
+    label="$(basename "$zbr" .zbr)_run"
+    local got
+    if got=$("$ZEBRA" "$flag" "$zbr" 2>&1); then
+        if echo "$got" | grep -qF -- "$expected"; then
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $label (expected '$expected' in output)" >&2
+            echo "    got: $got" >&2
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "  FAIL: $label (non-zero exit with $flag)" >&2
+        echo "$got" >&2
+        FAIL=$((FAIL + 1))
+    fi
+}
+
 # smoke_run_bounded <zbr> <expected> [secs] — smoke_run with a HARD wall-clock ceiling.
 #
 # WHY THIS EXISTS: no other helper here has a timeout, so a fixture that fails to
@@ -2105,6 +2132,19 @@ smoke_run test/bug489_stdlib_shadow_test.zbr "bug489: OK"
 smoke_run test/nil_narrow_chain_exit_test.zbr "nil_narrow: OK"
 # BUG-503: `List(int?)()` / `HashMap(str, str?)()` construct collections of optionals.
 smoke_run test/bug503_list_optional_ctor_test.zbr "bug503: OK"
+# BUG-505: early-exit narrowing of a `var` local (Fable's repros A and B).
+smoke_run test/bug505_local_early_exit_narrow_test.zbr "bug505: OK"
+# §28a flip: a type that cannot be inferred is refused at `+`, `.len` and a List-shaped
+# method, located at the expression and naming what to annotate. The controls are
+# zig"..." values, which have no Zebra type -- they can never become a closed gap.
+smoke_tc_fail test/fail_fixtures/infer_guess_add_fail.zbr "infer_guess_add_fail.zbr:6:11: error: cannot infer the type of \`x\`, an operand of \`+\`"
+smoke_tc_fail test/fail_fixtures/infer_guess_len_fail.zbr "infer_guess_len_fail.zbr:5:11: error: cannot infer the type of \`xs\`, so \`.len\` cannot be resolved"
+smoke_tc_fail test/fail_fixtures/infer_guess_list_fail.zbr "infer_guess_list_fail.zbr:5:5: error: cannot infer the type of \`xs\`, so \`.add()\` cannot be resolved"
+# ...and --allow-inference-guess (one release) guesses as before, with a warning.
+smoke_run_flag test/infer_guess_hatch_test.zbr --allow-inference-guess "infer_hatch: 6"
+# ...and WITHOUT the hatch the same file is refused (this also declares it must-reject,
+# so divergence does not score the intended refusal as a regression vs the N-1 anchor).
+smoke_tc_fail test/infer_guess_hatch_test.zbr "infer_guess_hatch_test.zbr:6:27: error: cannot infer the type of \`x\`"
 # A module var initializer is resolved and type-checked like any expression (it was neither).
 smoke_tc_fail test/fail_fixtures/module_var_undefined_name_fail.zbr "module_var_undefined_name_fail.zbr:3:9: error: undefined name: 'undefinedThing'"
 smoke_tc_fail test/fail_fixtures/module_var_optional_operand_fail.zbr "module_var_optional_operand_fail.zbr:4:9: error: 'x' may be nil here"

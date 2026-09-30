@@ -6,6 +6,56 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-505: nil narrowing after an early exit covers a PARAMETER but not a `var` local initialised from an optional -- and for a dep-class method result the checker narrows while the emitted Zig does not -- FIXED 2026-09-30
+- **Severity:** Medium (the documented shape `if a == nil: return` then use `a` works for parameters; every real use in the GameEngine port is a local -- `var x = inst.getAttribute(k)` -- and those either refuse or fail in Zig, so the `!` workarounds stay)
+- **Repro A** (`zebra b_narrow.zbr`) -- local from an optional FIELD, refused by the checker:
+  ```zebra
+  class Holder
+      var text: str?
+      cue init(t: str?)
+          .text = t
+      def half(): float
+          var healthText = .text
+          if healthText == nil
+              return 0.0
+          return (healthText.tryFloat() orelse 0.0) / 2.0     # ← b_narrow.zbr:9: error: expected type 'str', found '?str'
+  def main()
+      print(Holder("37.4").half().toString())
+  ```
+- **Repro B** (`zebra b_narrow2.zbr`) -- local from a same-module METHOD returning `str?`, refused the same way:
+  ```zebra
+  class Box
+      var value: str?
+      cue init(v: str?)
+          .value = v
+      def get(): str?
+          return .value
+  class User
+      var box: Box
+      cue init(b: Box)
+          .box = b
+      def half(): float
+          var text = .box.get()
+          if text == nil
+              return 0.0
+          return (text.tryFloat() orelse 0.0) / 2.0            # ← b_narrow2.zbr:15: expected type 'str', found '?str'
+  def main()
+      print(User(Box("37.4")).half().toString())
+  ```
+- **Repro C** -- local from a DEP-CLASS method returning `str?` (GameEngine `game/mm/player_client.zbr` `updateHealthBar`: `var healthText = .character.getAttribute("Health")`, then `if healthText == nil  return`, then `healthText.tryFloat()`): the checker ACCEPTS it and Zig fails with `expected type '[]const u8', found '?[]const u8'` -- narrowed for the check, not for the emit.
+- **Control that works** (`zebra b_narrow3.zbr`) -- the same guard on a parameter prints 18.7:
+  ```zebra
+  def half(text: str?): float
+      if text == nil
+          return 0.0
+      return (text.tryFloat() orelse 0.0) / 2.0
+  def main()
+      print(half("37.4").toString())
+  ```
+- **Expected:** the early-exit narrowing applies to any name whose declared or inferred type is `T?`, and the emit unwraps wherever the checker narrowed.
+- **Workaround left in the calling code:** the `!` after the guard (`player_client.zbr`, `shop_server.zbr` ×2, `statistics_menu.zbr`), each with a note.
+- **Fixed 2026-09-30.** One cause for all three repros: the early-exit rebinding check scanned the WHOLE enclosing block, so the `var` that declared a local counted as a rebinding of it and only parameters ever narrowed. It now scans only the statements after the guard (`AstWalk.nameReassignedAfter`), in the checker's two walks and in codegen alike. Repro C's "checked but not emitted" was the same miss seen through a dep method whose result the checker did not type as optional (so nothing was refused), while codegen declined to narrow. Repros A and B print 18.7; `test/bug505_local_early_exit_narrow_test.zbr` pins repros A and B, and `test/nil_narrow_chain_exit_test.zbr` carries all three shapes (a local from an optional field, from a same-module method, from a dep-class method -- `test/nil_narrow_lib.zbr`) plus a rebinding BEFORE the guard, which must not block it.
+
 ### BUG-503: `List(int?)()` emitted `std.ArrayList((try int))` -- the nilable suffix in a constructor's type argument was read as postfix `?` -- FIXED 2026-09-30
 - **Severity:** Medium (a list of optionals could not be constructed in expression form; the front end accepted it and zig refused `use of undeclared identifier 'int'` -- a leak)
 - **Found by:** the nil-narrowing fixture (2026-09-30); the N-1 anchor fails identically, so it predates the day's work.

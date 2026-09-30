@@ -3,6 +3,46 @@
 # leaves, the guarded names are non-nil for the rest of the block. A name REBOUND later
 # in the block -- in a nested loop, a branch arm -- is not narrowed: the last two
 # functions are the adversaries (a wrong narrowing emits `a.?` on a nil).
+# The LOCAL shapes (Holder, local_then_guard) are Fable's report: the first version
+# scanned the whole block for a rebinding, so the `var` declaring a local counted as
+# one and only parameters ever narrowed.
+use nil_narrow_lib exposing Character
+
+class Box
+    var v: str? = "18.7"
+    def get(): str?
+        return .v
+
+class Holder
+    var box: Box
+    var text: str? = "2.5"
+    var ch: Character
+    cue init()
+        .box = Box()
+        .ch = Character()
+    def viaCall(): float
+        var t = .box.get()
+        if t == nil
+            return 0.0
+        return t.tryFloat() orelse 0.0
+    def viaField(): float
+        var h = .text
+        if h == nil
+            return 0.0
+        return h.tryFloat() orelse 0.0
+    def viaDep(): float
+        var hp = .ch.getAttribute("Health")
+        if hp == nil
+            return 0.0
+        return hp.tryFloat() orelse 0.0
+
+# A rebinding BEFORE the guard does not undo it; only one after does.
+def local_then_guard(): int
+    var s: str? = nil
+    s = "abcd"
+    if s == nil
+        return -1
+    return s.len
 def pick(a: str?, b: str?): str
     if a != nil and b != nil
         return a + "/" + b
@@ -73,4 +113,9 @@ def main()
     assert reset_in_loop(7) == "reset ok"
     assert reset_in_branch(7, 1) == "reset ok"
     assert reset_in_branch(7, 2) == "kept"
+    var hd = Holder()
+    assert hd.viaCall() == 18.7
+    assert hd.viaField() == 2.5
+    assert hd.viaDep() == 18.7
+    assert local_then_guard() == 4
     print("nil_narrow: OK")

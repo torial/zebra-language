@@ -1,0 +1,8 @@
+# Helper for nil_narrow_chain_exit_test: a DEP class whose method returns `str?`
+# (Fable's GameEngine shape: `.character.getAttribute("Health")`).
+class Character
+    var health: str? = "18.7"
+    def getAttribute(name: str): str?
+        if name == "Health"
+            return .health
+        return nil

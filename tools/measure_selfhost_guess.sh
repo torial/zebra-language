@@ -21,6 +21,9 @@
 # Per-file timeout: selfhost/main.zbr and pipeline_test.zbr currently do NOT self-compile
 # (pre-existing; see BUG-181) — the timeout skips them rather than hanging the sweep.
 #
+# Since the flip (2026-09-30) a guess is a compile error, so the measure passes
+# --allow-inference-guess: it counts what the hatch would let through.
+#
 # Usage: bash tools/measure_selfhost_guess.sh [--per-file-timeout SECONDS]  (from repo root)
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -43,7 +46,7 @@ for f in "${FILES[@]}"; do
     [[ -e "$f" ]] || continue
     # --emit-zig: guesses are recorded while EMITTING; building and running each program
     # (the old invocation) cost ~10x and measured nothing more.
-    timeout "$TIMEOUT" "$ZEB" --warn-inference-guess --emit-zig --output-dir "$TMP" "$f" >/dev/null 2>>"$WARN"
+    timeout "$TIMEOUT" "$ZEB" --warn-inference-guess --allow-inference-guess --emit-zig --output-dir "$TMP" "$f" >/dev/null 2>>"$WARN"
     [[ $? -eq 124 ]] && echo "$f" >> "$SKIPPED"
     i=$((i+1))
     (( i % 50 == 0 )) && echo "  ...$i/${#FILES[@]}" >&2

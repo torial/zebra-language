@@ -24,8 +24,8 @@
 
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
 use CgHelpers exposing hexLitZig, setStructReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
-use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn
-use TypeChecker exposing isBuiltinObjectTypeName, ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
+use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -3084,12 +3084,48 @@ def threadSpawnSites(): List(str)
 # rejects unless --allow-inference-guess.  File-scope so it accumulates across
 # every module generated in one process (deps + root).
 var _inference_guess_sites: List(str) = List(str)()
+# §28a step 3 (the flip, 2026-09-30): the refusal text for each site, located at the
+# EXPRESSION that could not be typed (its own line:col, not the statement's), and
+# naming what to annotate. Parallel to _inference_guess_sites, whose `kind: file:line`
+# shape the measure tools parse.
+var _inference_guess_msgs: List(str) = List(str)()
 
-def recordInferenceGuess(site: str)
+def recordInferenceGuess(site: str, msg: str)
     _inference_guess_sites.add(site)
+    _inference_guess_msgs.add(msg)
 
 def inferenceGuessSites(): List(str)
     return _inference_guess_sites
+
+def inferenceGuessMessages(): List(str)
+    return _inference_guess_msgs
+
+# How a refusal names the expression the reader has to annotate: a name when it has
+# one (`x`, `obj.field`), otherwise a description of its shape.
+def guessSubject(e: Expr): str
+    if e is Expr.ident as gid
+        return "`" + gid.name + "`"
+    if e is Expr.member as gm
+        if gm.object is Expr.ident as gmo
+            return "`" + gmo.name + "." + gm.member + "`"
+        return "`..." + "." + gm.member + "`"
+    if e is Expr.call as gc
+        if gc.callee is Expr.ident as gci
+            return "the result of `" + gci.name + "(...)`"
+        if gc.callee is Expr.member as gcm
+            return "the result of `." + gcm.member + "(...)`"
+    return "this expression"
+
+# `file:line:col` of an expression, falling back to the emitting statement's line when
+# the expression carries no span.
+def guessWhere(file: str, e: Expr, stmt_line: int): str
+    var gl: int = exprSpanLine(e)
+    var gc: int = exprSpanCol(e)
+    if gl <= 0
+        return file + ":" + stmt_line.toString()
+    if gc <= 0
+        return file + ":" + gl.toString()
+    return file + ":" + gl.toString() + ":" + gc.toString()
 
 # Single-file emission mode (--single-file).  Mirror of src/CodeGen.zig
 # `CodeGen.single_file`.  File-scope (like the flags above) so every generate*
@@ -7502,10 +7538,12 @@ struct Generator
         # emits dead `var X = …` stubs (and unused lambda vars).  A `_ = X;` no-op
         # satisfies Zig.  Conservative (mutated OR used => no discard); a stray
         # discard would only be a harmless redundant read.  Mirrors src/CodeGen.zig.
+        var ee_idx: int = -1
         for s in stmts
+            ee_idx += 1
             genStmt(s)
             for ee_nm in earlyExitNilNames(s)
-                if not nameReassignedIn(ee_nm, stmts)
+                if not nameReassignedAfter(ee_nm, stmts, ee_idx)
                     var ee_fresh = StrSet()
                     if nil_narrowed as ee_cur
                         var ee_prevs: List(str) = ee_cur.items()
@@ -13028,7 +13066,8 @@ struct Generator
                         # (Step-2 tightening from the Phase-1 `not isStringBoth`, which
                         # over-flagged StrSet.len and similar.)  Emit is unchanged.
                         if typeIsUnknown(m.object)
-                            recordInferenceGuess("len_count: " + source_file + ":" + w.cur_line.toString())
+                            recordInferenceGuess("len_count: " + source_file + ":" + w.cur_line.toString(),
+                                guessWhere(source_file, m.object, w.cur_line) + ": error: cannot infer the type of " + guessSubject(m.object) + ", so `.len` cannot be resolved -- annotate it (`var x: List(int) = ...`, `x: str`)")
                         w.emit("@as(i64, @intCast(")
                         genExpr(m.object)
                         w.emit(".len))")
@@ -14008,7 +14047,11 @@ struct Generator
             # numeric over string-concat — the F7/BUG-168 defect.  Matches the
             # bootstrap's `!(lt.isNumeric() and rt.isNumeric())` guard (CodeGen.zig).
             if not (.isPrimType(b.left) and .isPrimType(b.right))
-                recordInferenceGuess("add: " + source_file + ":" + w.cur_line.toString())
+                var ig_e: Expr = b.right
+                if not .isPrimType(b.left)
+                    ig_e = b.left
+                recordInferenceGuess("add: " + source_file + ":" + w.cur_line.toString(),
+                    guessWhere(source_file, ig_e, w.cur_line) + ": error: cannot infer the type of " + guessSubject(ig_e) + ", an operand of `+` -- `+` joins strings and adds numbers, so the type must be known; annotate it (`var x: int = ...`) or convert it (`.toString()`, `.toInt()`)")
         if b.op == BinaryOp.mul
             # str * int → string repetition (mirror src/CodeGen.zig .mul); else numeric `*`
             # falls through to the generic binary emit at the bottom.
@@ -16934,7 +16977,8 @@ struct Generator
         # receiver).  Count only when the receiver is genuinely unknown, so a
         # proven-but-arm-less type (e.g. StringBuilder) is not miscounted.
         if isListShapedMethodName(mname) and typeIsUnknown(m.object)
-            recordInferenceGuess("list_dispatch: " + source_file + ":" + w.cur_line.toString())
+            recordInferenceGuess("list_dispatch: " + source_file + ":" + w.cur_line.toString(),
+                guessWhere(source_file, m.object, w.cur_line) + ": error: cannot infer the type of " + guessSubject(m.object) + ", so `." + mname + "()` cannot be resolved (it is not assumed to be a List) -- annotate it (`var x: List(T) = ...`)")
         # StringBuilder
         if mname == "append"
             # Guard: File.append is a static file op handled later — don't let the

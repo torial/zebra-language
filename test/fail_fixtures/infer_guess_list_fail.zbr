@@ -1,0 +1,5 @@
+# §28a: a List-shaped method on a value whose type cannot be inferred is refused rather
+# than routed to List by its name. Permanent control: a zig"..." expression has no type.
+def main()
+    var xs = zig"_zbr_rt"
+    xs.add(1)

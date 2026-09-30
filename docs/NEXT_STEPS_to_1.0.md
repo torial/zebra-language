@@ -533,7 +533,26 @@ open act is the *freeze* + a final CHANGELOG pass.
 the 0.1 → 1.0 surface (CHANGELOG.md exists as of 2026-05-26; re-verify it covers
 everything since).
 
-## §28a — inference-or-error rule (step 4 open) [ADOPTED — Sean 2026-07-03]
+## §28a — inference-or-error rule ✅ FLIPPED 2026-09-30 [ADOPTED — Sean 2026-07-03]
+
+**THE FLIP LANDED 2026-09-30.** A guess at any of the three sites (`add`, `len_count`,
+`list_dispatch`) is a compile error, located at the EXPRESSION that could not be typed and
+naming what to annotate (`guessWhere` / `guessSubject` in CodeGen.zbr; the driver refusal
+beside §28b's in main.zbr, de-duplicated because a dep compiled twice records twice; `-c`
+and `--check-full` both refuse). `--allow-inference-guess` is the one-release hatch; it
+warns, naming each site. Measured at 0 on the day, re-measured after the day's inference
+changes: the repo corpus (814 files), the compiler's own source (proved by the round-trip,
+which now compiles it under the refusal), zebra-ide (28), the GameEngine (146, measured by
+Fable with the three controls fired first); the book's 7 are fragments naming code defined
+in another file. Fixtures: `test/fail_fixtures/infer_guess_{add,len,list}_fail.zbr` (each
+watched pass-through with the refusal mutated out) + `test/infer_guess_hatch_test.zbr`;
+the controls are `zig"..."` values, which have no Zebra type, so they never become a gap
+someone closes. `check_inference_guess.sh` / `measure_selfhost_guess.sh` stay as MEASURES
+(they pass the hatch), NOT a tier gate: once a guess is an error, every tier that compiles
+the corpus enforces it. **Retire the hatch in the release after rc6** (§28b's precedent:
+refuse the flag by name, pointing at the annotation).
+
+The history below is how it got there.
 
 No typed-dispatch site may guess: if inference is empty, emit a diagnostic, not a
 guessed emit. Steps 1–3 done (instrumentation → closed every corpus inference gap →

@@ -22,6 +22,7 @@ bug489_stdlib_shadow_lib  # helper module (the shim class) for bug489_stdlib_sha
 bug489_stdlib_shadow_mid  # helper module imported by bug489_stdlib_shadow_test; has no main()
 bug490_iface_lib  # helper module (the interfaces) for bug490_crossmod_iface_test; has no main()
 bug490_iface_impl  # helper module (the implementing classes) for bug490_crossmod_iface_test; has no main()
+nil_narrow_lib  # helper module (a dep class returning str?) for nil_narrow_chain_exit_test; has no main()
 bug346_lib  # helper module imported by bug346_imported_call_method_test; has no main()
 bug450_helper  # helper module imported by bug450_use_case_ok_test and bug450_use_case_fail; has no main()
 crossmod_expose_lib  # helper module imported by other tests; has no main()

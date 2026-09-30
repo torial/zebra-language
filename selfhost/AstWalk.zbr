@@ -688,6 +688,18 @@ def nameReassignedIn(name: str, stmts: List(Stmt)): bool
             return true
     return false
 
+# The early-exit form: only the statements AFTER the guard at `guard_idx` can undo it.
+# The ones before it -- above all the `var name = ...` that declared the local -- are
+# not rebindings of the narrowed value (found by Fable, 2026-09-30: scanning the whole
+# list made every `var` local count as rebound, so only parameters ever narrowed).
+def nameReassignedAfter(name: str, stmts: List(Stmt), guard_idx: int): bool
+    var k: int = guard_idx + 1
+    while k < stmts.len
+        if stmtRebinds(name, stmts.at(k))
+            return true
+        k += 1
+    return false
+
 def stmtRebinds(name: str, st: Stmt): bool
     branch st
         on Stmt.assign as a

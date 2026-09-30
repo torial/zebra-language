@@ -1,0 +1,6 @@
+# §28a: `--allow-inference-guess` (the one-release migration hatch) builds and runs a
+# program whose type cannot be inferred, guessing as before -- with a warning naming it.
+# Permanent: a zig"..." expression has no Zebra type.
+def main()
+    var x = zig"@as(i64, 5)"
+    print("infer_hatch: ${x + 1}")
