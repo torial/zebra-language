@@ -24,7 +24,7 @@
 #
 # Keep it that way — a dependency added here can re-create the cycle from a distance.
 
-use Ast exposing Expr, ExprOld, Arg, DictEntry, StringPart, LambdaBody, Stmt
+use Ast exposing Expr, ExprOld, Arg, DictEntry, StringPart, LambdaBody, Stmt, BinaryOp
 
 # ── collectOldNodes ───────────────────────────────────────────────────────────
 # TWO functions on purpose, and the split is forced by a compiler bug rather than
@@ -616,3 +616,128 @@ def stmtHasEscape(s: Stmt, loop_exits_count: bool): bool
             return false
         else
             return false
+
+
+# -- Nil narrowing shapes (Sean, 2026-09-30) ------------------------------------------
+# Shared by the checker's two walks and by codegen, so the three agree on what is known.
+
+# `a != nil` and every conjunct of `a != nil and b != nil and ...`: each is non-nil in
+# the then-branch. (The book teaches the and-chain; it failed inside Zig before.)
+def nilCheckedNames(cond: Expr): List(str)
+    var out = List(str)()
+    collectNilChecked(cond, out)
+    return out
+
+def collectNilChecked(e: Expr, out: List(str))
+    if e is Expr.binary as b
+        if b.op == BinaryOp.and_
+            collectNilChecked(b.left, out)
+            collectNilChecked(b.right, out)
+            return
+        if b.op == BinaryOp.ne
+            if b.right is Expr.nil_
+                if b.left is Expr.ident as lid
+                    out.add(lid.name)
+            else if b.left is Expr.nil_
+                if b.right is Expr.ident as rid
+                    out.add(rid.name)
+
+# `a == nil` and every disjunct of `a == nil or b == nil or ...`: after an `if` on this
+# whose body always leaves, each name is non-nil.
+def collectNilGuarded(e: Expr, out: List(str))
+    if e is Expr.binary as b
+        if b.op == BinaryOp.or_
+            collectNilGuarded(b.left, out)
+            collectNilGuarded(b.right, out)
+            return
+        if b.op == BinaryOp.eq
+            if b.right is Expr.nil_
+                if b.left is Expr.ident as lid
+                    out.add(lid.name)
+            else if b.left is Expr.nil_
+                if b.right is Expr.ident as rid
+                    out.add(rid.name)
+
+# A block that cannot fall through: it ENDS in return, raise, break or continue.
+def stmtsAlwaysExit(ss: List(Stmt)): bool
+    if ss.len == 0
+        return false
+    var last: Stmt = ss.at(ss.len - 1)
+    return last is Stmt.return_ or last is Stmt.raise_ or last is Stmt.break_ or last is Stmt.continue_
+
+# EARLY EXIT: `if a == nil` (or an or-chain of them) with no else, no capture, and a
+# body that always leaves -- the names it guards are non-nil for the REST of the list.
+def earlyExitNilNames(s: Stmt): List(str)
+    var out = List(str)()
+    if s is Stmt.if_ as si
+        if si.else_ifs.len == 0 and si.else_stmts == nil and si.is_capture == nil
+            if stmtsAlwaysExit(si.then_stmts)
+                collectNilGuarded(si.cond, out)
+    return out
+
+# Is `name` REBOUND anywhere in these statements (nested blocks included)? A narrowing
+# does not survive one. Rebinding: `name = ...`, `name <<- ...`, a destructuring or a
+# `var` that (re)declares the name (a shadowing redeclaration is not the narrowed
+# variable). Every block-bearing statement is descended, catch clauses included -- a
+# missed rebinding here means codegen emits `name.?` on a nil (a trap in Debug, UB in
+# --release), so this walker must be COMPLETE, not merely common-case. A write THROUGH
+# the name (`name.x = ...`, `name[i] = ...`) does not rebind it.
+def nameReassignedIn(name: str, stmts: List(Stmt)): bool
+    for st in stmts
+        if stmtRebinds(name, st)
+            return true
+    return false
+
+def stmtRebinds(name: str, st: Stmt): bool
+    branch st
+        on Stmt.assign as a
+            if a.target is Expr.ident as aid
+                return aid.name == name
+        on Stmt.copy_out as co
+            if co.deep
+                if co.target is Expr.ident as cid
+                    return cid.name == name
+        on Stmt.var_ as dv
+            return dv.name == name
+        on Stmt.destruct as dd
+            for dn in dd.names
+                if dn == name
+                    return true
+        on Stmt.if_ as si
+            if nameReassignedIn(name, si.then_stmts)
+                return true
+            for ei in si.else_ifs
+                if nameReassignedIn(name, ei.stmts)
+                    return true
+            if si.else_stmts as se
+                return nameReassignedIn(name, se)
+        on Stmt.while_ as w
+            return nameReassignedIn(name, w.stmts)
+        on Stmt.for_in as f
+            if nameReassignedIn(name, f.stmts)
+                return true
+            if f.else_ as fe
+                return nameReassignedIn(name, fe)
+        on Stmt.for_num as fnum
+            return nameReassignedIn(name, fnum.stmts)
+        on Stmt.branch_ as b
+            for c in b.cases
+                if nameReassignedIn(name, c.stmts)
+                    return true
+            if b.else_ as be
+                return nameReassignedIn(name, be)
+        on Stmt.try_catch as tc
+            if nameReassignedIn(name, tc.stmts)
+                return true
+            for cc in tc.clauses
+                if nameReassignedIn(name, cc.stmts)
+                    return true
+        on Stmt.with_ as sw
+            return nameReassignedIn(name, sw.stmts)
+        on Stmt.in_scope as sn
+            return nameReassignedIn(name, sn.stmts)
+        on Stmt.allocate_ as sa
+            return nameReassignedIn(name, sa.stmts)
+        else
+            pass
+    return false

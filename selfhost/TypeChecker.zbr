@@ -12,7 +12,7 @@
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
 use Ast exposing Span, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprIndex, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
-use AstWalk exposing collectOldNodes, mightUseName, stmtsContainYield, stmtContainsYield, stmtNeedsLowering
+use AstWalk exposing collectOldNodes, mightUseName, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -802,6 +802,10 @@ def typeArgToType(e: Expr): Type_
                 if gid.name == "Set" and gc.args.len == 1
                     return Type_.set_(typeArgToType(gc.args.at(0).value))
             return Type_.unknown_
+        on Expr.try_ as opt_arg
+            # BUG-503: `List(int?)` -- in a constructor expression the parser reads the
+            # nilable suffix as postfix `?`; as a TYPE argument it can only mean optional.
+            return Type_.optional(typeArgToType(opt_arg.expr))
         else
             return Type_.unknown_
 
@@ -2619,21 +2623,6 @@ def exprSpanCol(e: Expr): int
 # Only definitively-known scalars qualify.  Everything else — `unknown_`, a named
 # class (which may define its own concat), `char_`, containers — is left alone, so
 # an inference gap can never manufacture a compile error out of valid code.
-# #3 / BUG-188: does `cond` nil-check a plain identifier (`x != nil` / `nil != x`)?
-# Returns the identifier name, else nil.  Deliberately mirrors CodeGen's
-# `nilCheckedIdent` EXACTLY (plain idents only, not fields) — the two must agree
-# about what counts as narrowed, and matching scope is how that is kept true.
-def nilCheckedName(cond: Expr): str?
-    if cond is Expr.binary as nb
-        if nb.op == BinaryOp.ne
-            if nb.right is Expr.nil_
-                if nb.left is Expr.ident as nlid
-                    return nlid.name
-            if nb.left is Expr.nil_
-                if nb.right is Expr.ident as nrid
-                    return nrid.name
-    return nil
-
 # BUG-253. True iff `t` is a type that is DEFINITELY wrong as an operand of `-`, `*`, `/`.
 #
 # Deliberately the mirror image of isConcatMistake, and deliberately narrow for the same
@@ -4652,8 +4641,24 @@ def copyReceiverName(recv: Expr, ctx: InferCtx): str
     return ""
 
 def walkStmts(stmts: List(Stmt), ctx: InferCtx)
+    # EARLY-EXIT NARROWING (Sean, 2026-09-30): after `if a == nil` whose body always
+    # leaves, `a` is its non-optional type for the rest of this list -- unless the list
+    # reassigns it. Restored at the end (the scope is flat).
+    var ee_names = List(str)()
+    var ee_saved = List(Type_)()
     for s in stmts
         walkStmt(s, ctx)
+        for ee_nm in earlyExitNilNames(s)
+            if ctx.hasLocal(ee_nm) and not nameReassignedIn(ee_nm, stmts)
+                var ee_t: Type_ = ctx.localType(ee_nm)
+                if ee_t is Type_.optional as ee_inner
+                    ee_names.add(ee_nm)
+                    ee_saved.add(ee_t)
+                    ctx.bind(ee_nm, ee_inner)
+    var eei: int = ee_names.len - 1
+    while eei >= 0
+        ctx.bind(ee_names.at(eei), ee_saved.at(eei))
+        eei -= 1
 
 def walkStmt(s: Stmt, ctx: InferCtx)
     branch s
@@ -4717,20 +4722,21 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             # Save/restore rather than a scoped bind, because InferCtx.scope is flat:
             # the else branch and everything after the `if` must still see the
             # ORIGINAL optional type.
-            var narrowed_nm: str? = nilCheckedName(si.cond)
-            var had_narrow: bool = false
-            var saved_t: Type_ = Type_.unknown_
-            if narrowed_nm as nnm
-                if ctx.hasLocal(nnm)
-                    var cur_t: Type_ = ctx.localType(nnm)
+            # (2026-09-30) every conjunct of `a != nil and b != nil and ...` narrows.
+            var nr_names = List(str)()
+            var nr_saved = List(Type_)()
+            for nr_nm in nilCheckedNames(si.cond)
+                if ctx.hasLocal(nr_nm) and not nameReassignedIn(nr_nm, si.then_stmts)
+                    var cur_t: Type_ = ctx.localType(nr_nm)
                     if cur_t is Type_.optional as narrow_inner
-                        saved_t = cur_t
-                        had_narrow = true
-                        ctx.bind(nnm, narrow_inner)
+                        nr_names.add(nr_nm)
+                        nr_saved.add(cur_t)
+                        ctx.bind(nr_nm, narrow_inner)
             walkStmts(si.then_stmts, ctx)
-            if had_narrow
-                if narrowed_nm as nnm2
-                    ctx.bind(nnm2, saved_t)
+            var nri: int = nr_names.len - 1
+            while nri >= 0
+                ctx.bind(nr_names.at(nri), nr_saved.at(nri))
+                nri -= 1
             for ei in si.else_ifs
                 walkExpr(ei.cond, ctx)
                 if ei.is_capture as ei_cap_name
@@ -6214,7 +6220,27 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + typeTag(declared) + ", found " + typeTag(inferred))
 
 def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
+    # Early-exit narrowing, as walkStmts applies it (the two walks must agree on what
+    # is known, or the optional-operand refusal fires on a guarded use).
+    var ee_names = List(str)()
+    var ee_saved = List(Type_)()
     for s in stmts
+        checkStmt1(s, stmts, file, ctx)
+        for ee_nm in earlyExitNilNames(s)
+            if ctx.hasLocal(ee_nm) and not nameReassignedIn(ee_nm, stmts)
+                var ee_t: Type_ = ctx.localType(ee_nm)
+                if ee_t is Type_.optional as ee_inner
+                    ee_names.add(ee_nm)
+                    ee_saved.add(ee_t)
+                    ctx.bind(ee_nm, ee_inner)
+    var eei: int = ee_names.len - 1
+    while eei >= 0
+        ctx.bind(ee_names.at(eei), ee_saved.at(eei))
+        eei -= 1
+
+# One statement of checkStmts (its former loop body; `stmts` is the enclosing list).
+def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
+    if true
         branch s
             on Stmt.var_ as dv
                 if iterElemRef(dv.type_) != nil
@@ -6286,16 +6312,15 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                 # (test/nil_narrow_tc_test.zbr). Same save/restore shape; a capture
                 # (`if x as v`) binds v to the payload for the then-branch and
                 # restores whatever v named before.
-                var c_narrow_nm: str? = nilCheckedName(si.cond)
-                var c_had_narrow: bool = false
-                var c_saved_t: Type_ = Type_.unknown_
-                if c_narrow_nm as cnn
-                    if ctx.hasLocal(cnn)
-                        var c_cur_t: Type_ = ctx.localType(cnn)
+                var c_nr_names = List(str)()
+                var c_nr_saved = List(Type_)()
+                for c_nr_nm in nilCheckedNames(si.cond)
+                    if ctx.hasLocal(c_nr_nm) and not nameReassignedIn(c_nr_nm, si.then_stmts)
+                        var c_cur_t: Type_ = ctx.localType(c_nr_nm)
                         if c_cur_t is Type_.optional as c_inner
-                            c_saved_t = c_cur_t
-                            c_had_narrow = true
-                            ctx.bind(cnn, c_inner)
+                            c_nr_names.add(c_nr_nm)
+                            c_nr_saved.add(c_cur_t)
+                            ctx.bind(c_nr_nm, c_inner)
                 var c_cap_had: bool = false
                 var c_cap_saved: Type_ = Type_.unknown_
                 if si.is_capture as c_cap_name
@@ -6311,9 +6336,10 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
                         c_cap_saved = ctx.localType(c_cap_name)
                     ctx.bind(c_cap_name, c_cap_t)
                 checkStmts(si.then_stmts, file, ctx)
-                if c_had_narrow
-                    if c_narrow_nm as cnn2
-                        ctx.bind(cnn2, c_saved_t)
+                var c_nri: int = c_nr_names.len - 1
+                while c_nri >= 0
+                    ctx.bind(c_nr_names.at(c_nri), c_nr_saved.at(c_nri))
+                    c_nri -= 1
                 if si.is_capture as c_cap_name2
                     if c_cap_had
                         ctx.bind(c_cap_name2, c_cap_saved)

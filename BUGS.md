@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-501. Next new bug: BUG-502.**
+**Last bug number generated: BUG-504. Next new bug: BUG-505.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,6 +46,22 @@
 
 ---
 
+### BUG-504: an optional-operand refusal on the RIGHT operand of a chained `+` reports the LEFT operand's column -- OPEN (found 2026-09-30)
+- **Severity:** Low (the message names the right variable; the caret and the column point at the wrong one)
+- **Repro:** `def pick(a: str?, b: str?): str` with `return a + "/" + b` -- both refusals are reported at the column of `a` (`8:16`), including "'b' may be nil here".
+- **Found by:** writing the nil-narrowing fixture (2026-09-30), before the fix made the refusal go away for that shape.
+- **Fix direction:** the operand check should anchor on the operand expression's own span (`exprCol`), not the binary node's.
+
+---
+
+### BUG-502: every dependency's classes are visible to every module of the program, transitively -- a bare class name a file never imported can resolve -- OPEN (found 2026-09-30)
+- **Severity:** Low today (an invisible bare name is refused by the front end unless it ALSO means something else, which is how BUG-489 surfaced), but it is the root of a class of "which meaning wins" bugs.
+- **Where:** `main.zbr` accumulates `dep_class_names` across EVERY module the build compiles and hands the whole list to `generateModuleWith` for each module, which registers each as a class. So a module sees classes from modules it never `use`d. BUG-489 fixed the one observable case (a name that is also a stdlib type) by filtering; the list itself is still program-wide.
+- **Found by:** BUG-489's root-causing (2026-09-30).
+- **Fix direction:** the per-module registration should be the module's own classes, its `exposing` names, and (for dotted `m.C` paths) the classes of the modules it `use`s directly -- not the program-wide union. Check whether the GameEngine bare-names any type it only reaches transitively before tightening: the front end currently accepts some such names, and tightening turns them into refusals.
+
+---
+
 ### BUG-501: a container stored in a container is aliased on some paths and copied on others -- writes are silently lost, with no refusal -- OPEN (found 2026-09-30)
 - **Severity:** High (silent data loss -- and possibly corruption, see the correction -- in ordinary code: a `HashMap(str, HashMap(str, int))` or `HashMap(str, List(int))` drops writes depending on HOW the inner container was reached, and nothing in Zebra or Zig says so)
 - **Found by:** Fable (GameEngine port), measured again on `fd6ed7e` with both container kinds:
@@ -76,59 +92,32 @@
   accident above. It would have stopped working the first time that scope started empty. Now a
   class (engine findings ledger F18: "a map inside a container or across a def boundary is
   wrapped in a class", pending the decision).
+- **SCOPE CORRECTION, 2026-09-30 (measured on the batch-1 tree) -- this is not about nesting.**
+  The root is lower: a Zig container (`std.ArrayList`, `StringHashMap`) is a struct holding a
+  POINTER to its buffer plus its own length/capacity, and Zebra copies that struct by value at
+  every assignment. The copy shares the buffer but not the length, so it is neither a copy nor
+  an alias -- the next append on either side can overwrite the other's elements. Nesting is one
+  way to reach it. Three more rows, no container-in-container anywhere:
+
+  | shape | result |
+  |---|---|
+  | `var b = a` (List with one element), `b.add(20)`, `a.add(30)` | `b[1]` reads **30** -- `a`'s append overwrote `b`'s element |
+  | `def all(): List(int)` returning `.items`; caller `got.add(2)`, then `bag.items.add(3)` | `got[1]` reads **3** |
+  | a struct with a List field copied (`var r2 = r1`), both then appended to | `r2.xs[1]` reads `r1`'s value |
+  | `this except xs = ...` on such a struct | the same half-copy: `r3` (len 3) appends into the buffer `r1` (len 2) still owns |
+
+  The field-return row is the common one: a class that hands out its list is ordinary code.
+  Params are unaffected (a container parameter is passed by pointer -- `fill(c)` mutates `c`).
+- **Decision (Sean, 2026-09-30): SHARED semantics** -- given for nested containers, before the
+  root above was measured. Applied honestly it means containers are REFERENCES everywhere
+  (`var b = a` aliases, as in Python/Cobra), i.e. a container value is a pointer to a heap
+  container in the emitted Zig. That is a change to what assignment means for every container,
+  every struct holding one, and `except` -- multi-day, witnessed by the heavy gates, and larger
+  than the nested-only fix that was approved. Held for Sean's confirmation of the wider scope;
+  the alternative is an interim refusal wherever a container is copied out of a live location.
 - **Where it comes from:** the 2026-09-24 container work boxes an inner container and COPIES it out when it reaches a VALUE slot (`genValueOf`, `_zbr_unboxed`) -- deliberately, so a copy-out is the documented rule in some positions. What is not decided anywhere is the rule itself: whether a container nested in a container is a REFERENCE (what `get as` and, for maps, a returned value already do) or a VALUE (what `set(k, local)` does). The two kinds disagree on the return path, which means the current behaviour is not one rule applied twice.
 - **Decision needed (Sean):** reference semantics for nested containers everywhere (the least surprising for Python/Cobra readers, and what the engine assumed), or value semantics everywhere with the aliasing paths made copies -- and in either case a refusal or a warning where a write would be lost. Until then the engine wraps inner maps in a class (`workspace.TagList`, `shop_util.Inventory`), which is a reference.
 - **Also:** the statement-form compile error in row 4 is a leak on its own (a call-result receiver that is a boxed container passed as `*const`).
-
-### BUG-490: a class that `implements` an interface from ANOTHER module does not coerce to that interface at a cross-module call site -- OPEN (found 2026-09-29)
-- **Severity:** Medium (interfaces are the documented way to pass behaviour across modules; this makes them single-module)
-- **Where seen:** GameEngine, `zbra/framework.zbr` declared `interface ComponentCtor` (one method `construct(obj: Instance)`) and `def registerComponent(name: str, ctor: ComponentCtor)`; `game/mm/voting_menu.zbr` declared `class VotingMenuCtor implements ComponentCtor`; `game/mm/voting_test.zbr` (a third module) called `fw.registerComponent("VotingMenu", VotingMenuCtor(...))` → Zig: `expected type 'framework.ComponentCtor', found '*voting_menu._zbr_ty_VotingMenuCtor'`. The front end accepted the call; the interface-value construction that a same-module call would have emitted was not inserted.
-- **Together with BUG-476** (a `sig` cannot be imported, so a closure handed to a sig-typed parameter across modules is not thunked either) this leaves exactly one cross-module callback shape that works: a bare module-level `def` passed as a function pointer. The GameEngine's Framework shim now uses that, with module-level variables for the state the Lua kept as upvalues.
-- **Minimal repro (two modules, `zebra two.zbr --module-path .`)** -- the interface cannot be *implemented* from another module at all, not just coerced from a third:
-  ```zebra
-  # sigmod.zbr
-  interface Handler
-      def call()
-  class Emitter
-      var handlers: List(Handler)
-      cue init()
-          .handlers = List(Handler)()
-      def connect(h: Handler)
-          .handlers.add(h)
-      def fire()
-          for h in .handlers
-              h.call()
-  # hmod.zbr
-  use sigmod exposing Handler, Emitter
-  class Greeter implements Handler
-      var label: str
-      cue init(label: str)
-          .label = label
-      def call()
-          print("greet " + .label)
-  def attach(em: Emitter, label: str)
-      em.connect(Greeter(label))          # ← expected type 'sigmod.Handler', found '*hmod._zbr_ty_Greeter'
-  # two.zbr
-  use sigmod exposing Emitter
-  use hmod exposing attach
-  def main()
-      var em = Emitter()
-      attach(em, "two-module")
-      em.fire()
-  ```
-  Zig also reports `hmod.zig:36: use of undeclared identifier 'Handler'` at the emitted `Handler.check(@This());` -- the `implements` check is emitted against the bare name, which is not imported into the Zig module. The same program with all three parts in one file prints `greet same-module`.
-- **Fix direction:** resolve the parameter's interface type through the callee module's exported interface table and emit the same coercion the in-module path emits; qualify the `implements` check with the interface's module.
-
----
-
-### BUG-489: a class named like a stdlib type in a module on `--module-path` wins for FIELD types but not for constructors -- `var rng: Random` emits `*_zbr_ty_Random`, `.rng = Random.new(seed)` emits `_Random.init` -- OPEN (found 2026-09-29)
-- **Severity:** Medium (the program compiles in the front end and fails in Zig with "use of undeclared identifier '_zbr_ty_Random'"; which resolution wins depends on what else is on the module path, so the same source can build in one project and not another)
-- **Where seen:** `C:/Projects/GameEngine/game/mm/voting_server.zbr` compiled with `--module-path C:/Projects/GameEngine/zbra`, where `zbra/math.zbr` declares its own `class Random` (a Roblox-API shim). The file does NOT `use math`. Its `var rng: Random` field emitted as a pointer to the math class; its `Random.new(seed)` emitted as the stdlib stream. The near-identical `game/tuon/tuon_combat.zbr` (also a `Random` field, also on the same module path) emitted `_Random` for both -- the difference between the two files was not isolated tonight.
-- **Expected:** one resolution per name in a given file; a type from a module the file did not `use` should not be visible at all, and if the stdlib name is shadowed on purpose the field and the constructor must agree.
-- **Workaround left in the calling code:** the stream is a local in the constructor instead of a field.
-- **Note for the GameEngine:** `zbra/math.zbr`'s `class Random` shadows the stdlib `Random` for every script on that module path; the shim predates the stdlib type and should probably be renamed.
-
----
 
 ### BUG-449: `HttpRequest` cannot be constructed from Zebra — OPEN (found 2026-09-25)
 

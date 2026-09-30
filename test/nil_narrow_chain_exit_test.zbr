@@ -1,0 +1,76 @@
+# Nil narrowing (2026-09-30): every conjunct of `a != nil and b != nil` narrows in the
+# then-branch, and after `if a == nil` (or `a == nil or b == nil`) whose body always
+# leaves, the guarded names are non-nil for the rest of the block. A name REBOUND later
+# in the block -- in a nested loop, a branch arm -- is not narrowed: the last two
+# functions are the adversaries (a wrong narrowing emits `a.?` on a nil).
+def pick(a: str?, b: str?): str
+    if a != nil and b != nil
+        return a + "/" + b
+    return "none"
+
+def early(a: int?): int
+    if a == nil
+        return -1
+    return a + 1
+
+def early_or(a: int?, b: int?): int
+    if a == nil or b == nil
+        return 0
+    return a * b
+
+def early_raise(a: str?): int throws
+    if a == nil
+        raise "missing"
+    return a.len
+
+def in_loop(xs: List(int?)): int
+    var total = 0
+    for x in xs
+        if x == nil
+            continue
+        total += x
+    return total
+
+def reset_in_loop(x: int?): str
+    var a: int? = x
+    if a == nil
+        return "nil"
+    var n = 0
+    while n < 2
+        n += 1
+        if n == 2
+            a = nil
+    if a == nil
+        return "reset ok"
+    return "not reset"
+
+def reset_in_branch(x: int?, k: int): str
+    var a: int? = x
+    if a == nil
+        return "nil"
+    branch k
+        on 1
+            a = nil
+        else
+            pass
+    if a == nil
+        return "reset ok"
+    return "kept"
+
+def main()
+    assert pick("x", "y") == "x/y"
+    assert pick("x", nil) == "none"
+    assert early(4) == 5
+    assert early(nil) == -1
+    assert early_or(3, 4) == 12
+    assert early_or(3, nil) == 0
+    assert early_raise("abc")? == 3
+    var xs = List(int?)()
+    xs.add(1)
+    xs.add(nil)
+    xs.add(5)
+    assert in_loop(xs) == 6
+    assert reset_in_loop(7) == "reset ok"
+    assert reset_in_branch(7, 1) == "reset ok"
+    assert reset_in_branch(7, 2) == "kept"
+    print("nil_narrow: OK")

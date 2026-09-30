@@ -24,8 +24,8 @@
 
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
 use CgHelpers exposing hexLitZig, setStructReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
-use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering
-use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
+use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn
+use TypeChecker exposing isBuiltinObjectTypeName, ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -1019,14 +1019,33 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
             if generatorElemRef(gm) != nil
                 cn.add("_zbr_gen_" + gm.name)
     # Add cross-module class names from dependencies
+    # BUG-489: the list holds EVERY dep's classes, transitive ones included. A dep class
+    # that shares its name with a stdlib type (`class Random` in a Roblox-API shim) takes
+    # the bare name only where this module can SEE it -- declared here or exposed by one
+    # of this module's `use`s. Elsewhere the bare name keeps its stdlib meaning, so the
+    # field type and the constructor agree (they had split: `*_zbr_ty_Random` for one,
+    # `_Random` for the other). A qualified `m.Random` still resolves the class, through
+    # `dep_only_classes`. Other names are unaffected: an invisible one fails in the front
+    # end anyway, and the dotted paths rely on it.
+    var bug489_exposed = StrSet()
+    for bug489_d in m.decls
+        if bug489_d is Decl.use_ as bug489_u
+            for bug489_en in bug489_u.exposed
+                bug489_exposed.add(bug489_en)
+    var dep_only = StrSet()
     var i: int = 0
     while i < extra_class_names.len
-        cn.add(extra_class_names.at(i))
+        var ecn: str = extra_class_names.at(i)
+        if cn.contains_(ecn) or bug489_exposed.contains_(ecn) or not (isStdlibNs(ecn) or isBuiltinTypeName(ecn) or isBuiltinObjectTypeName(ecn))
+            cn.add(ecn)
+        else
+            dep_only.add(ecn)
         i = i + 1
     # Phase 16c: wire ModuleTypes. module_types built from this module's AST;
     # deps_mt received from caller (MultiCompiler accumulates across deps).
     var g = Generator(w, 0, "", false, false, false, false, nil, "", file, cn,
                       buildModuleTypes(m), deps_mt, m.decls)
+    g.dep_only_classes = dep_only                                        # BUG-489
     if strip_contracts
         g = g.withStripContracts()
     if tc_result as tcr
@@ -3372,6 +3391,7 @@ struct Generator
     var capture_self         : str      # BUG-487: a capture closure's receiver ("self" at top level)
     var in_lambda_body       : bool     # BUG-494: a `return` here is the lambda's, not an init's
     var emitted_uses         : StrSet   # BUG-498: modules whose import binding is already emitted
+    var dep_only_classes     : StrSet   # BUG-489: dep classes named like a stdlib type, NOT visible bare here
     var lam_hint             : List(Type_)  # §28a A: types for the NEXT lambda's untyped params
     var capture_fields       : StrSet   # captured var names → emit self.name in genIdent
     # BUG-233: lambda params RENAMED because they shadow an enclosing param/local. Zig
@@ -3500,6 +3520,7 @@ struct Generator
         .capture_self          = "self"
         .in_lambda_body        = false
         .emitted_uses          = StrSet()
+        .dep_only_classes      = StrSet()
         .lam_hint              = List(Type_)()
         .capture_fields        = StrSet()
         .lp_renamed            = StrSet()          # BUG-233
@@ -4071,7 +4092,7 @@ struct Generator
                     # Dotted cross-module type: Module.ClassName
                     # If ClassName is a class, emit *Module.ClassName
                     var class_part = extractAfterDot(n.name)
-                    if class_names.contains_(class_part)
+                    if class_names.contains_(class_part) or .dep_only_classes.contains_(class_part)   # BUG-489
                         w.emit("*")
                     emitTypeName(n.name)                    # BUG-280 → BUG-281 B
                     return
@@ -4120,7 +4141,7 @@ struct Generator
                                 handled = true
                             else if "." in n.name
                                 var class_part = extractAfterDot(n.name)
-                                if class_names.contains_(class_part)
+                                if class_names.contains_(class_part) or .dep_only_classes.contains_(class_part)   # BUG-489
                                     w.emit(prefix)
                                     emitTypeName(n.name)    # BUG-281 B
                                     handled = true
@@ -4131,7 +4152,7 @@ struct Generator
                             handled = true
                         else if "." in n.name
                             var class_part = extractAfterDot(n.name)
-                            if class_names.contains_(class_part)
+                            if class_names.contains_(class_part) or .dep_only_classes.contains_(class_part)   # BUG-489
                                 w.emit(prefix)
                                 emitTypeName(n.name)        # BUG-281 B
                                 handled = true
@@ -4476,7 +4497,7 @@ struct Generator
                     # BUG-281 B: an exposed TYPE is emitted by its defining module under
                     # the `_zbr_ty_` prefix, for the same reason and with the same
                     # both-halves rule as the `_zbr_fn_` case above.
-                    else if isUserTypeName(ename) and not isSigName(ename)   # BUG-476: a sig is unprefixed
+                    else if isUserTypeName(ename) and not isSigName(ename) and not isIfaceName(ename)   # BUG-476 / BUG-490: sigs and interfaces are unprefixed
                         uname = zbrTypeSymbol(ename)
                     w.emit("const ")
                     w.emit(uname)
@@ -5211,6 +5232,22 @@ struct Generator
             if ifaceCoercionClass(arg, pir.name) as cn
                 genFatPtr(arg, cn, pir)
                 return true
+        # BUG-490: an interface declared in ANOTHER module has no vtable constant here;
+        # it builds one itself (`.from(obj)` resolves in the parameter's type). Only for a
+        # value the checker types as a concrete class -- an interface value passes as is.
+        var dep_iface: str = ""
+        if param_type is TypeRef.named as dpn
+            dep_iface = dpn.name
+        if dep_iface != "" and findInterfaceDecl(dep_iface) == nil and isIfaceName(dep_iface) and .infer_ctx != nil
+            var dat: Type_ = inferExpr(arg, .infer_ctx!)
+            if dat is Type_.ref_to as dar
+                dat = dar
+            if dat is Type_.named as dcn
+                if not isIfaceName(dcn)
+                    w.emit(".from(")
+                    genExpr(arg)
+                    w.emit(")")
+                    return true
         return false
 
     def concreteClassOf(e: Expr): str?
@@ -6817,6 +6854,74 @@ struct Generator
             w.emit(".VTable,\n")
         ig.writeIndent()
         w.emit("};\n")
+        # BUG-490: the interface builds its OWN vtable for any implementing type, so a
+        # module that did not declare the interface -- the class's module, or a third
+        # module calling across both -- converts with the decl literal `.from(obj)` and
+        # needs to know nothing about the method list. The adapters are generated from
+        # the members above; a super-interface's table comes from ITS vtablePtr. Static
+        # through a container const, so the pointer outlives the call.
+        ig.writeIndent()
+        w.emit("pub fn vtablePtr(comptime _T: type) *const VTable {\n")
+        vtig.writeIndent()
+        w.emit("const _S = struct {\n")
+        var vpg = vtig.indented()
+        vpg.writeIndent()
+        w.emit("const vt: VTable = .{\n")
+        var vpm = vpg.indented()
+        for vmem in ifc.members
+            if vmem is Decl.method as vmth
+                vpm.writeIndent()
+                w.emit(".")
+                w.emit(vmth.name)
+                w.emit(" = struct { fn f(_zbr_ptr: *anyopaque")
+                for vp in vmth.params
+                    w.emit(", ")
+                    w.emit(zigSafeName(vp.name))
+                    w.emit(": ")
+                    if vp.type_ != nil
+                        genType(vp.type_!)
+                    else
+                        w.emit("anytype")
+                w.emit(") ")
+                if vmth.throws_
+                    w.emit("anyerror!")
+                if vmth.return_type != nil
+                    genType(vmth.return_type!)
+                else
+                    w.emit("void")
+                w.emit(" { const _zbr_s: *_T = @ptrCast(@alignCast(_zbr_ptr)); return _zbr_s.")
+                w.emit(vmth.name)
+                w.emit("(")
+                var vpi = 0
+                for vp2 in vmth.params
+                    if vpi > 0
+                        w.emit(", ")
+                    w.emit(zigSafeName(vp2.name))
+                    vpi = vpi + 1
+                w.emit("); } }.f,\n")
+        var vsi = 0
+        while vsi < if_supers.len
+            vpm.writeIndent()
+            w.emit(".__as_")
+            w.emit(if_supers.at(vsi))
+            w.emit(" = ")
+            genType(if_super_refs.at(vsi))
+            w.emit(".vtablePtr(_T),\n")
+            vsi = vsi + 1
+        vpg.writeIndent()
+        w.emit("};\n")
+        vtig.writeIndent()
+        w.emit("};\n")
+        vtig.writeIndent()
+        w.emit("return &_S.vt;\n")
+        ig.writeIndent()
+        w.emit("}\n")
+        ig.writeIndent()
+        w.emit("pub fn from(obj: anytype) @This() {\n")
+        vtig.writeIndent()
+        w.emit("return .{ .ptr = @ptrCast(obj), .vtable = vtablePtr(@typeInfo(@TypeOf(obj)).pointer.child) };\n")
+        ig.writeIndent()
+        w.emit("}\n")
 
         # ── forwarding methods ───────────────────────────────────────────
         for mem in ifc.members
@@ -7301,10 +7406,10 @@ struct Generator
             var head_z: str = zigSafeName(head)
             if import_aliases.contains_(head) and not unwrapped_imports.contains_(head)
                 head_z = modAliasSymbol(head)               # BUG-483
-            if isSigName(tail)
+            if isSigName(tail) or isIfaceName(tail)          # BUG-490: an interface is unprefixed
                 return head_z + "." + zigSafeName(tail)
             return head_z + "." + zbrTypeSymbol(tail)
-        if isUserTypeName(name) and not isSigName(name)     # BUG-476: a sig is unprefixed
+        if isUserTypeName(name) and not isSigName(name) and not isIfaceName(name)     # BUG-476 / BUG-490
             return zbrTypeSymbol(name)
         return zigSafeName(name)
 
@@ -7385,6 +7490,13 @@ struct Generator
         # declared `var`, otherwise `&items` is `*const ArrayList`.
         addAddrOfMutationsInStmts(stmts, ms)
         mut_set = ms
+        # EARLY-EXIT NARROWING (Sean, 2026-09-30): after `if a == nil` whose body always
+        # leaves, `a` emits `a.?` for the rest of this block (unless the block reassigns
+        # it). Set on this generator and restored below -- a copy would drop the state the
+        # following statements set.
+        var saved_nn: StrSet? = nil_narrowed
+        var ee_names = List(str)()
+        var ee_saveds = List(Type_)()
         # Auto-discard a local that is never read anywhere in the block and never
         # mutated.  Zig hard-errors on unused locals; translated code routinely
         # emits dead `var X = …` stubs (and unused lambda vars).  A `_ = X;` no-op
@@ -7392,6 +7504,22 @@ struct Generator
         # discard would only be a harmless redundant read.  Mirrors src/CodeGen.zig.
         for s in stmts
             genStmt(s)
+            for ee_nm in earlyExitNilNames(s)
+                if not nameReassignedIn(ee_nm, stmts)
+                    var ee_fresh = StrSet()
+                    if nil_narrowed as ee_cur
+                        var ee_prevs: List(str) = ee_cur.items()
+                        for ee_prev in ee_prevs
+                            ee_fresh.add(ee_prev)
+                    ee_fresh.add(ee_nm)
+                    nil_narrowed = ee_fresh
+                    if .infer_ctx != nil
+                        if .infer_ctx!.hasLocal(ee_nm)
+                            var ee_t: Type_ = .infer_ctx!.localType(ee_nm)
+                            if ee_t is Type_.optional as ee_inner
+                                .infer_ctx!.bind(ee_nm, ee_inner)
+                                ee_names.add(ee_nm)
+                                ee_saveds.add(ee_t)
             # BUG-472: a destructured name nobody reads gets the discard a plain local gets
             # (`var (a, b) = pair()` using only `a` reached Zig as "unused local constant").
             if s is Stmt.destruct as dsd
@@ -7413,6 +7541,11 @@ struct Generator
                                 w.emit("_ = ")
                                 emitName(n.name)
                                 w.emit(";\n")
+        nil_narrowed = saved_nn
+        var eei: int = ee_names.len - 1
+        while eei >= 0
+            .infer_ctx!.bind(ee_names.at(eei), ee_saveds.at(eei))
+            eei -= 1
         mut_set = saved_ms
 
     # True when genLocalVar will emit an inline constraint-check block for a
@@ -8626,6 +8759,11 @@ struct Generator
                     genType(TypeRef.named(NamedTypeRef(sp338, id.name)))
                     return
                 w.emit(zigPrimitive(id.name))
+            on Expr.try_ as opt_arg
+                # BUG-503: `List(int?)()` -- the nilable suffix parses as postfix `?`, and
+                # as a type argument it can only mean optional (it emitted `(try int)`).
+                w.emit("?")
+                genTypeFromExpr(opt_arg.expr)
             on Expr.tuple_lit as tl
                 # Tuple type annotation in expression position: `(int, str)` → `struct { i64, []const u8 }`
                 w.emit("struct { ")
@@ -9331,6 +9469,14 @@ struct Generator
                 return lt is Type_.unknown_ or lt is Type_.unresolved
         return true
 
+    # BUG-490: an interface of this module or of a used one (declared unprefixed).
+    def isIfaceName(name: str): bool
+        var nm: str = name
+        var dot: int = nm.lastIndexOf(".")
+        if dot >= 0
+            nm = nm[dot + 1 .. nm.len]
+        return findInterfaceDecl(nm) != nil or .dep_types.isInterface(nm)
+
     def isSigTypeRef(tr: TypeRef): bool
         if tr is TypeRef.fn_type
             return true
@@ -9891,25 +10037,28 @@ struct Generator
             # The reassignment guard makes it safe: a narrowed var is never an
             # assignment target, so no `x.? = …` can arise.
             var then_g = ig
-            var nn_id: str? = nilCheckedIdent(si.cond)
             # §28a: the emit narrows `x` to `x.?`; inference must see the same T, or
-            # `x + 1` in the block is a guess. Restored after the block.
-            var nn_restore: bool = false
-            var nn_saved: Type_ = Type_.unknown_
-            if nn_id != nil
-                var nn_assigned = StrSet()
-                collectAssignedIdents(si.then_stmts, nn_assigned)
-                if not nn_assigned.contains_(nn_id!)
-                    then_g = ig.withNilNarrowed(nn_id!)
+            # `x + 1` in the block is a guess. Restored after the block. Every conjunct of
+            # `a != nil and b != nil` narrows (2026-09-30).
+            var nn_names = List(str)()
+            var nn_saveds = List(Type_)()
+            var nn_assigned = StrSet()
+            collectAssignedIdents(si.then_stmts, nn_assigned)
+            for nn_nm in nilCheckedNames(si.cond)
+                if not nn_assigned.contains_(nn_nm) and not nameReassignedIn(nn_nm, si.then_stmts)
+                    then_g = then_g.withNilNarrowed(nn_nm)
                     if .infer_ctx != nil
-                        if .infer_ctx!.hasLocal(nn_id!)
-                            nn_saved = .infer_ctx!.localType(nn_id!)
+                        if .infer_ctx!.hasLocal(nn_nm)
+                            var nn_saved: Type_ = .infer_ctx!.localType(nn_nm)
                             if nn_saved is Type_.optional as nn_inner
-                                .infer_ctx!.bind(nn_id!, nn_inner)
-                                nn_restore = true
+                                .infer_ctx!.bind(nn_nm, nn_inner)
+                                nn_names.add(nn_nm)
+                                nn_saveds.add(nn_saved)
             then_g.genStmts(si.then_stmts)
-            if nn_restore
-                .infer_ctx!.bind(nn_id!, nn_saved)
+            var nni: int = nn_names.len - 1
+            while nni >= 0
+                .infer_ctx!.bind(nn_names.at(nni), nn_saveds.at(nni))
+                nni -= 1
             writeIndent()
             w.emit("}")
         for ei in si.else_ifs
@@ -13669,19 +13818,6 @@ struct Generator
         var g = this except
             nil_narrowed = fresh
         return g
-
-    # If `cond` is a nil-check of a plain identifier (`x != nil` / `nil != x`),
-    # return that identifier's name, else nil.  Used to narrow the then-block.
-    def nilCheckedIdent(cond: Expr): str?
-        if cond is Expr.binary as b
-            if b.op == BinaryOp.ne
-                if b.right is Expr.nil_
-                    if b.left is Expr.ident as lid
-                        return lid.name
-                if b.left is Expr.nil_
-                    if b.right is Expr.ident as rid
-                        return rid.name
-        return nil
 
     def genIdent(id: ExprIdent)
         # BUG-400: the catch binding used as a VALUE (`"${e}"`, `print(e)`, `log(e)`)
@@ -17575,7 +17711,7 @@ struct Generator
             if id.name == "Crypto"
                 genCryptoCall(mname, args)
                 return
-            if id.name == "Random"
+            if id.name == "Random" and not class_names.contains_("Random")   # BUG-489
                 genRandomCall(mname, args)
                 return
             if id.name == "Terminal"
@@ -17587,7 +17723,7 @@ struct Generator
             if id.name == "Csv"
                 genCsvCall(mname, args)
                 return
-            if id.name == "Timer"
+            if id.name == "Timer" and not class_names.contains_("Timer")     # BUG-489
                 genTimerCall(mname, args)
                 return
             if id.name == "Progress"

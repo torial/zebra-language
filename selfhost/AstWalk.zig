@@ -7,6 +7,7 @@ const _zbr_rt = @import("zebra_rt.zig");
 pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 pub const std_options = _zbr_rt.std_options;
 const _zbr_val = _zbr_rt._zbr_val;
+const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
 const _zebra_le = _zbr_rt._zebra_le;
@@ -20,6 +21,7 @@ const _zbr_ty_DictEntry = _zbr_mod_Ast._zbr_ty_DictEntry;
 const _zbr_ty_StringPart = _zbr_mod_Ast._zbr_ty_StringPart;
 const _zbr_ty_LambdaBody = _zbr_mod_Ast._zbr_ty_LambdaBody;
 const _zbr_ty_Stmt = _zbr_mod_Ast._zbr_ty_Stmt;
+const _zbr_ty_BinaryOp = _zbr_mod_Ast._zbr_ty_BinaryOp;
 // zbr:selfhost/AstWalk.zbr:64
 pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: *std.ArrayList(_zbr_ty_ExprOld)) void {
 // zbr:selfhost/AstWalk.zbr:65
@@ -1212,6 +1214,284 @@ pub fn _zbr_fn_stmtHasEscape(s: _zbr_ty_Stmt, loop_exits_count: bool) bool {
             return false;
         },
     }
+}
+
+// zbr:selfhost/AstWalk.zbr:626
+pub fn _zbr_fn_nilCheckedNames(cond: _zbr_ty_Expr) std.ArrayList([]const u8) {
+// zbr:selfhost/AstWalk.zbr:627
+    var out = std.ArrayList([]const u8).empty;
+// zbr:selfhost/AstWalk.zbr:628
+    _zbr_fn_collectNilChecked(cond, &out);
+// zbr:selfhost/AstWalk.zbr:629
+    return out;
+}
+
+// zbr:selfhost/AstWalk.zbr:631
+pub fn _zbr_fn_collectNilChecked(e: _zbr_ty_Expr, out: *std.ArrayList([]const u8)) void {
+// zbr:selfhost/AstWalk.zbr:632
+    if (_zbr_val(e) == .binary) {
+        const b_ptr = e.binary;
+        const b = b_ptr.*;
+// zbr:selfhost/AstWalk.zbr:633
+        if ((b.op == _zbr_ty_BinaryOp.and_)) {
+// zbr:selfhost/AstWalk.zbr:634
+            _zbr_fn_collectNilChecked(b.left.*, out);
+// zbr:selfhost/AstWalk.zbr:635
+            _zbr_fn_collectNilChecked(b.right.*, out);
+// zbr:selfhost/AstWalk.zbr:636
+            return;
+        }
+// zbr:selfhost/AstWalk.zbr:637
+        if ((b.op == _zbr_ty_BinaryOp.ne)) {
+// zbr:selfhost/AstWalk.zbr:638
+            if ((_zbr_val(b.right.*) == .nil_)) {
+// zbr:selfhost/AstWalk.zbr:639
+                if (_zbr_val(b.left.*) == .ident) {
+                    const lid = b.left.*.ident;
+// zbr:selfhost/AstWalk.zbr:640
+                    out.append(_zbr_rt._allocator, _intern(lid.name)) catch @panic("OOM");
+                }
+            } else {
+// zbr:selfhost/AstWalk.zbr:641
+                if ((_zbr_val(b.left.*) == .nil_)) {
+// zbr:selfhost/AstWalk.zbr:642
+                    if (_zbr_val(b.right.*) == .ident) {
+                        const rid = b.right.*.ident;
+// zbr:selfhost/AstWalk.zbr:643
+                        out.append(_zbr_rt._allocator, _intern(rid.name)) catch @panic("OOM");
+                    }
+                }
+            }
+        }
+    }
+}
+
+// zbr:selfhost/AstWalk.zbr:647
+pub fn _zbr_fn_collectNilGuarded(e: _zbr_ty_Expr, out: *std.ArrayList([]const u8)) void {
+// zbr:selfhost/AstWalk.zbr:648
+    if (_zbr_val(e) == .binary) {
+        const b_ptr = e.binary;
+        const b = b_ptr.*;
+// zbr:selfhost/AstWalk.zbr:649
+        if ((b.op == _zbr_ty_BinaryOp.or_)) {
+// zbr:selfhost/AstWalk.zbr:650
+            _zbr_fn_collectNilGuarded(b.left.*, out);
+// zbr:selfhost/AstWalk.zbr:651
+            _zbr_fn_collectNilGuarded(b.right.*, out);
+// zbr:selfhost/AstWalk.zbr:652
+            return;
+        }
+// zbr:selfhost/AstWalk.zbr:653
+        if ((b.op == _zbr_ty_BinaryOp.eq)) {
+// zbr:selfhost/AstWalk.zbr:654
+            if ((_zbr_val(b.right.*) == .nil_)) {
+// zbr:selfhost/AstWalk.zbr:655
+                if (_zbr_val(b.left.*) == .ident) {
+                    const lid = b.left.*.ident;
+// zbr:selfhost/AstWalk.zbr:656
+                    out.append(_zbr_rt._allocator, _intern(lid.name)) catch @panic("OOM");
+                }
+            } else {
+// zbr:selfhost/AstWalk.zbr:657
+                if ((_zbr_val(b.left.*) == .nil_)) {
+// zbr:selfhost/AstWalk.zbr:658
+                    if (_zbr_val(b.right.*) == .ident) {
+                        const rid = b.right.*.ident;
+// zbr:selfhost/AstWalk.zbr:659
+                        out.append(_zbr_rt._allocator, _intern(rid.name)) catch @panic("OOM");
+                    }
+                }
+            }
+        }
+    }
+}
+
+// zbr:selfhost/AstWalk.zbr:662
+pub fn _zbr_fn_stmtsAlwaysExit(ss: std.ArrayList(_zbr_ty_Stmt)) bool {
+// zbr:selfhost/AstWalk.zbr:663
+    if ((@as(i64, @intCast(ss.items.len)) == 0)) {
+// zbr:selfhost/AstWalk.zbr:664
+        return false;
+    }
+// zbr:selfhost/AstWalk.zbr:665
+    const last: _zbr_ty_Stmt = _zbr_at(ss.items, (@as(i64, @intCast(ss.items.len)) - 1));
+// zbr:selfhost/AstWalk.zbr:666
+    return ((((_zbr_val(last) == .return_) or (_zbr_val(last) == .raise_)) or (_zbr_val(last) == .break_)) or (_zbr_val(last) == .continue_));
+}
+
+// zbr:selfhost/AstWalk.zbr:670
+pub fn _zbr_fn_earlyExitNilNames(s: _zbr_ty_Stmt) std.ArrayList([]const u8) {
+// zbr:selfhost/AstWalk.zbr:671
+    var out = std.ArrayList([]const u8).empty;
+// zbr:selfhost/AstWalk.zbr:672
+    if (_zbr_val(s) == .if_) {
+        const si_ptr = s.if_;
+        const si = si_ptr.*;
+// zbr:selfhost/AstWalk.zbr:673
+        if ((((@as(i64, @intCast(si.else_ifs.items.len)) == 0) and (si.else_stmts == null)) and (si.is_capture == null))) {
+// zbr:selfhost/AstWalk.zbr:674
+            if (_zbr_fn_stmtsAlwaysExit(si.then_stmts)) {
+// zbr:selfhost/AstWalk.zbr:675
+                _zbr_fn_collectNilGuarded(si.cond.*, &out);
+            }
+        }
+    }
+// zbr:selfhost/AstWalk.zbr:676
+    return out;
+}
+
+// zbr:selfhost/AstWalk.zbr:685
+pub fn _zbr_fn_nameReassignedIn(name: []const u8, stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+// zbr:selfhost/AstWalk.zbr:686
+    for (stmts.items) |st| {
+// zbr:selfhost/AstWalk.zbr:687
+        if (_zbr_fn_stmtRebinds(name, st)) {
+// zbr:selfhost/AstWalk.zbr:688
+            return true;
+        }
+    }
+// zbr:selfhost/AstWalk.zbr:689
+    return false;
+}
+
+// zbr:selfhost/AstWalk.zbr:691
+pub fn _zbr_fn_stmtRebinds(name: []const u8, st: _zbr_ty_Stmt) bool {
+// zbr:selfhost/AstWalk.zbr:692
+    switch (_zbr_val(st)) {
+        .assign => |_ptr_a| {
+            const a = _ptr_a.*;
+// zbr:selfhost/AstWalk.zbr:694
+            if (_zbr_val(a.target.*) == .ident) {
+                const aid = a.target.*.ident;
+// zbr:selfhost/AstWalk.zbr:695
+                return std.mem.eql(u8, aid.name, name);
+            }
+        },
+        .copy_out => |_ptr_co| {
+            const co = _ptr_co.*;
+// zbr:selfhost/AstWalk.zbr:697
+            if (co.deep) {
+// zbr:selfhost/AstWalk.zbr:698
+                if (_zbr_val(co.target) == .ident) {
+                    const cid = co.target.ident;
+// zbr:selfhost/AstWalk.zbr:699
+                    return std.mem.eql(u8, cid.name, name);
+                }
+            }
+        },
+        .var_ => |_ptr_dv| {
+            const dv = _ptr_dv.*;
+// zbr:selfhost/AstWalk.zbr:701
+            return std.mem.eql(u8, dv.name, name);
+        },
+        .destruct => |_ptr_dd| {
+            const dd = _ptr_dd.*;
+// zbr:selfhost/AstWalk.zbr:703
+            for (dd.names.items) |dn| {
+// zbr:selfhost/AstWalk.zbr:704
+                if (std.mem.eql(u8, dn, name)) {
+// zbr:selfhost/AstWalk.zbr:705
+                    return true;
+                }
+            }
+        },
+        .if_ => |_ptr_si| {
+            const si = _ptr_si.*;
+// zbr:selfhost/AstWalk.zbr:707
+            if (_zbr_fn_nameReassignedIn(name, si.then_stmts)) {
+// zbr:selfhost/AstWalk.zbr:708
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:709
+            for (si.else_ifs.items) |ei| {
+// zbr:selfhost/AstWalk.zbr:710
+                if (_zbr_fn_nameReassignedIn(name, ei.stmts)) {
+// zbr:selfhost/AstWalk.zbr:711
+                    return true;
+                }
+            }
+// zbr:selfhost/AstWalk.zbr:712
+            if (si.else_stmts) |se| {
+// zbr:selfhost/AstWalk.zbr:713
+                return _zbr_fn_nameReassignedIn(name, se);
+            }
+        },
+        .while_ => |_ptr_w| {
+            const w = _ptr_w.*;
+// zbr:selfhost/AstWalk.zbr:715
+            return _zbr_fn_nameReassignedIn(name, w.stmts);
+        },
+        .for_in => |_ptr_f| {
+            const f = _ptr_f.*;
+// zbr:selfhost/AstWalk.zbr:717
+            if (_zbr_fn_nameReassignedIn(name, f.stmts)) {
+// zbr:selfhost/AstWalk.zbr:718
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:719
+            if (f.else_) |fe| {
+// zbr:selfhost/AstWalk.zbr:720
+                return _zbr_fn_nameReassignedIn(name, fe);
+            }
+        },
+        .for_num => |_ptr_fnum| {
+            const fnum = _ptr_fnum.*;
+// zbr:selfhost/AstWalk.zbr:722
+            return _zbr_fn_nameReassignedIn(name, fnum.stmts);
+        },
+        .branch_ => |_ptr_b| {
+            const b = _ptr_b.*;
+// zbr:selfhost/AstWalk.zbr:724
+            for (b.cases.items) |c| {
+// zbr:selfhost/AstWalk.zbr:725
+                if (_zbr_fn_nameReassignedIn(name, c.stmts)) {
+// zbr:selfhost/AstWalk.zbr:726
+                    return true;
+                }
+            }
+// zbr:selfhost/AstWalk.zbr:727
+            if (b.else_) |be| {
+// zbr:selfhost/AstWalk.zbr:728
+                return _zbr_fn_nameReassignedIn(name, be);
+            }
+        },
+        .try_catch => |_ptr_tc| {
+            const tc = _ptr_tc.*;
+// zbr:selfhost/AstWalk.zbr:730
+            if (_zbr_fn_nameReassignedIn(name, tc.stmts)) {
+// zbr:selfhost/AstWalk.zbr:731
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:732
+            for (tc.clauses.items) |cc| {
+// zbr:selfhost/AstWalk.zbr:733
+                if (_zbr_fn_nameReassignedIn(name, cc.stmts)) {
+// zbr:selfhost/AstWalk.zbr:734
+                    return true;
+                }
+            }
+        },
+        .with_ => |_ptr_sw| {
+            const sw = _ptr_sw.*;
+// zbr:selfhost/AstWalk.zbr:736
+            return _zbr_fn_nameReassignedIn(name, sw.stmts);
+        },
+        .in_scope => |_ptr_sn| {
+            const sn = _ptr_sn.*;
+// zbr:selfhost/AstWalk.zbr:738
+            return _zbr_fn_nameReassignedIn(name, sn.stmts);
+        },
+        .allocate_ => |_ptr_sa| {
+            const sa = _ptr_sa.*;
+// zbr:selfhost/AstWalk.zbr:740
+            return _zbr_fn_nameReassignedIn(name, sa.stmts);
+        },
+        else => {
+            // pass
+        },
+    }
+// zbr:selfhost/AstWalk.zbr:743
+    return false;
 }
 
 var _module_vars_inited: bool = false;

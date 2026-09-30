@@ -1138,15 +1138,27 @@ if x != nil
 if x != nil
     print(x!)
 
+# Both names narrow in an `and` chain, and an early exit narrows the rest of the block:
+def area(w: int?, h: int?): int
+    if w == nil or h == nil
+        return 0
+    return w * h                      # w and h are int here
+
 # An optional cannot be an operand: `x + 1` with `x: int?` is refused ("'x' may be nil
 # here") -- narrow it (above), unwrap it (`x!`), or default it (`x orelse 0`).
 #
-# Auto-narrowing scope (2026-07-16): applies when the condition is a plain
-# `<local> != nil` and the local is NOT reassigned in the block. It narrows the
-# whole then-block. NOT (yet) narrowed — use explicit `x!` for these:
-#   - `and`-chains: `if x != nil and x.ok` (narrow only via `x!` in the 2nd operand)
+# Auto-narrowing scope: applies to a LOCAL (or parameter) that is NOT rebound in the
+# narrowed region -- a `x = ...` anywhere in it, even in a nested loop, branch arm or
+# catch clause, turns narrowing off for that name.
+#   - `if x != nil`: the whole then-block.
+#   - `if x != nil and y != nil` (2026-09-30): every conjunct, in the then-block.
+#   - EARLY EXIT (2026-09-30): after `if x == nil` (or `x == nil or y == nil`) with no
+#     else, whose body always leaves (ends in `return`, `raise`, `break` or `continue`),
+#     the names are non-optional for the REST of the enclosing block.
+# NOT narrowed -- use explicit `x!` for these:
+#   - inside the condition itself: `if x != nil and x.ok` (write `x!.ok`)
 #   - the `== nil` else-branch; non-local receivers (`if obj.field != nil`)
-#   - a block that reassigns `x` (narrowing is skipped, since `x` may become nil)
+# A narrowed name is not optional, so comparing it with nil again is refused.
 
 # Optional-unwrap binding form (also non-optional inside):
 if y as n

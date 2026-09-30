@@ -1,0 +1,17 @@
+# BUG-503: `List(int?)()` -- the nilable suffix in a constructor type argument is optional,
+# not postfix `?` (it emitted `std.ArrayList((try int))`). HashMap values too.
+def main()
+    var xs = List(int?)()
+    xs.add(1)
+    xs.add(nil)
+    var seen = 0
+    for x in xs
+        if x != nil
+            seen += x
+    assert xs.len == 2
+    assert seen == 1
+    var m = HashMap(str, str?)()
+    m.set("a", nil)
+    m.set("b", "x")
+    assert m.len == 2
+    print("bug503: OK")

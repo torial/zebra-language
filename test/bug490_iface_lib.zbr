@@ -1,0 +1,22 @@
+# BUG-490 fixture (the interface side): interfaces declared here, implemented in
+# bug490_iface_impl.zbr, used across both from bug490_crossmod_iface_test.zbr.
+interface Ctor
+    def construct(n: int): int
+
+interface Handler
+    def call(): int
+
+def register(name: str, c: Ctor): int
+    return c.construct(name.len)
+
+class Emitter
+    var handlers: List(Handler)
+    cue init()
+        .handlers = List(Handler)()
+    def connect(h: Handler)
+        .handlers.add(h)
+    def fire(): int
+        var total = 0
+        for h in .handlers
+            total += h.call()
+        return total

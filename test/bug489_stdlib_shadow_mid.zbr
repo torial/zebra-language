@@ -1,0 +1,11 @@
+# BUG-489 fixture (a direct user of the shim): exposing `Random` makes the CLASS the
+# meaning of the bare name here -- the field type and the constructor both.
+use bug489_stdlib_shadow_lib exposing Random
+
+class Holder
+    var r: Random
+    cue init(s: int)
+        .r = Random(s)
+
+def shimValue(): int
+    return Holder(3).r.next() + Random(4).next()

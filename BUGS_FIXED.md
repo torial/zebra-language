@@ -6,6 +6,59 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-503: `List(int?)()` emitted `std.ArrayList((try int))` -- the nilable suffix in a constructor's type argument was read as postfix `?` -- FIXED 2026-09-30
+- **Severity:** Medium (a list of optionals could not be constructed in expression form; the front end accepted it and zig refused `use of undeclared identifier 'int'` -- a leak)
+- **Found by:** the nil-narrowing fixture (2026-09-30); the N-1 anchor fails identically, so it predates the day's work.
+- **Fixed 2026-09-30.** In a constructor expression the parser hands type arguments over as expressions, so `int?` arrives as `Expr.try_`. As a TYPE argument it can only mean optional: `genTypeFromExpr` emits `?T` and the checker's `typeArgToType` answers `Type_.optional`, so `xs.add(nil)` and a `for x in xs` over it type correctly. Fixture: `test/bug503_list_optional_ctor_test.zbr` (`List(int?)`, `HashMap(str, str?)`); the nil-narrowing fixture uses the shape too.
+
+### BUG-490: a class that `implements` an interface from ANOTHER module does not coerce to that interface at a cross-module call site -- FIXED 2026-09-30
+- **Severity:** Medium (interfaces are the documented way to pass behaviour across modules; this makes them single-module)
+- **Where seen:** GameEngine, `zbra/framework.zbr` declared `interface ComponentCtor` (one method `construct(obj: Instance)`) and `def registerComponent(name: str, ctor: ComponentCtor)`; `game/mm/voting_menu.zbr` declared `class VotingMenuCtor implements ComponentCtor`; `game/mm/voting_test.zbr` (a third module) called `fw.registerComponent("VotingMenu", VotingMenuCtor(...))` → Zig: `expected type 'framework.ComponentCtor', found '*voting_menu._zbr_ty_VotingMenuCtor'`. The front end accepted the call; the interface-value construction that a same-module call would have emitted was not inserted.
+- **Together with BUG-476** (a `sig` cannot be imported, so a closure handed to a sig-typed parameter across modules is not thunked either) this leaves exactly one cross-module callback shape that works: a bare module-level `def` passed as a function pointer. The GameEngine's Framework shim now uses that, with module-level variables for the state the Lua kept as upvalues.
+- **Minimal repro (two modules, `zebra two.zbr --module-path .`)** -- the interface cannot be *implemented* from another module at all, not just coerced from a third:
+  ```zebra
+  # sigmod.zbr
+  interface Handler
+      def call()
+  class Emitter
+      var handlers: List(Handler)
+      cue init()
+          .handlers = List(Handler)()
+      def connect(h: Handler)
+          .handlers.add(h)
+      def fire()
+          for h in .handlers
+              h.call()
+  # hmod.zbr
+  use sigmod exposing Handler, Emitter
+  class Greeter implements Handler
+      var label: str
+      cue init(label: str)
+          .label = label
+      def call()
+          print("greet " + .label)
+  def attach(em: Emitter, label: str)
+      em.connect(Greeter(label))          # ← expected type 'sigmod.Handler', found '*hmod._zbr_ty_Greeter'
+  # two.zbr
+  use sigmod exposing Emitter
+  use hmod exposing attach
+  def main()
+      var em = Emitter()
+      attach(em, "two-module")
+      em.fire()
+  ```
+  Zig also reports `hmod.zig:36: use of undeclared identifier 'Handler'` at the emitted `Handler.check(@This());` -- the `implements` check is emitted against the bare name, which is not imported into the Zig module. The same program with all three parts in one file prints `greet same-module`.
+- **Fix direction:** resolve the parameter's interface type through the callee module's exported interface table and emit the same coercion the in-module path emits; qualify the `implements` check with the interface's module.
+- **Fixed 2026-09-30.** An interface builds its OWN vtable for any implementing type (`vtablePtr(comptime T)`, adapters generated from its members, a super-interface's table from ITS vtablePtr, static through a container const) and exposes `from(obj)`, so a module that did not declare the interface converts with the decl literal `.from(obj)` at the parameter; `genInterfaceArgCoercion` emits it for a concrete class argument whose parameter is a dep interface. Interfaces are declared unprefixed, so exposing aliases and dotted type names now leave them unprefixed too -- which also fixes the `implements` check emitted against the bare name. Fixture: `test/bug490_crossmod_iface_test.zbr` (+ `_lib`, `_impl`) -- the three-module shape and the interface-in-a-List shape from the report.
+
+### BUG-489: a class named like a stdlib type in a module on `--module-path` wins for FIELD types but not for constructors -- `var rng: Random` emits `*_zbr_ty_Random`, `.rng = Random.new(seed)` emits `_Random.init` -- FIXED 2026-09-30
+- **Severity:** Medium (the program compiles in the front end and fails in Zig with "use of undeclared identifier '_zbr_ty_Random'"; which resolution wins depends on what else is on the module path, so the same source can build in one project and not another)
+- **Where seen:** `C:/Projects/GameEngine/game/mm/voting_server.zbr` compiled with `--module-path C:/Projects/GameEngine/zbra`, where `zbra/math.zbr` declares its own `class Random` (a Roblox-API shim). The file does NOT `use math`. Its `var rng: Random` field emitted as a pointer to the math class; its `Random.new(seed)` emitted as the stdlib stream. The near-identical `game/tuon/tuon_combat.zbr` (also a `Random` field, also on the same module path) emitted `_Random` for both -- the difference between the two files was not isolated tonight.
+- **Expected:** one resolution per name in a given file; a type from a module the file did not `use` should not be visible at all, and if the stdlib name is shadowed on purpose the field and the constructor must agree.
+- **Workaround left in the calling code:** the stream is a local in the constructor instead of a field.
+- **Note for the GameEngine:** `zbra/math.zbr`'s `class Random` shadows the stdlib `Random` for every script on that module path; the shim predates the stdlib type and should probably be renamed.
+- **Fixed 2026-09-30.** A dep class that shares its name with a stdlib type takes the BARE name only in a module that declares it or exposes it through one of its own `use`s (`generateModuleWith` filters the program-wide dep class list); elsewhere both the field type and the constructor mean the stdlib type. A qualified `m.Random` still reaches the class (`dep_only_classes`, consulted by the dotted type paths), and a VISIBLE user `Random`/`Timer` now wins over the stdlib namespace on the constructor side too, as `Math` already did -- one rule for both paths. The general leak (every dep class is visible to every module, transitively) is filed as BUG-502. Fixture: `test/bug489_stdlib_shadow_test.zbr` (+ `_lib`, `_mid`): the transitive case, the exposed case (the positive control), and the qualified case.
+
 ### BUG-478: an instance method that never uses `this` is emitted with an unused `self` parameter -- Zig refuses it -- FIXED 2026-09-30
 - **Severity:** Medium (any pure helper written as an instance method fails to build; the GameEngine's `game/scripts/curve_util.zbr` `exptValueInSeconds` did)
 - **Repro:** compile

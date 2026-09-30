@@ -1,0 +1,26 @@
+# BUG-489: a class named like a stdlib type, in a module this file does not EXPOSE it
+# from (reached transitively through _mid, and used plainly -- qualified only), is not the
+# bare name here: `var rng: Random` and `Random.new(seed)` both mean the stdlib stream. Before, the field took the dep class (`*_zbr_ty_Random`, undeclared
+# in this module) while the constructor took the stdlib -- one name, two meanings.
+use bug489_stdlib_shadow_mid exposing shimValue
+use bug489_stdlib_shadow_lib
+
+class Game
+    var rng: Random
+    cue init(seed: int)
+        .rng = Random.new(seed)
+    def roll(): int
+        return .rng.nextInt(1, 6)
+
+# Qualified, the shim class is reachable through a direct `use` whatever the bare name means.
+def qualified(): int
+    var q: bug489_stdlib_shadow_lib.Random = bug489_stdlib_shadow_lib.Random(5)
+    return q.next()
+
+def main()
+    var g = Game(42)
+    var r = g.roll()
+    assert r >= 1 and r <= 6
+    assert shimValue() == 7
+    assert qualified() == 5
+    print("bug489: OK")

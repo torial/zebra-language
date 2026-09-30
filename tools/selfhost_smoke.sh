@@ -2097,6 +2097,14 @@ smoke_run test/bug488_captured_class_add_test.zbr "bug488: OK"
 smoke_tc_fail test/fail_fixtures/bug480_bare_throws_method_fail.zbr "throws call needs '?'"
 # BUG-497: a method named `self` is refused.
 smoke_tc_fail test/fail_fixtures/bug497_method_named_self_fail.zbr "bug497_method_named_self_fail.zbr:3:8: error: a method cannot be named 'self'"
+# BUG-490: a class implementing another module's interface converts to it across modules.
+smoke_run test/bug490_crossmod_iface_test.zbr "bug490: OK"
+# BUG-489: a stdlib-named class reached only transitively does not shadow the stdlib type.
+smoke_run test/bug489_stdlib_shadow_test.zbr "bug489: OK"
+# Nil narrowing: `a != nil and b != nil`, early exit after `if a == nil`, and rebinding adversaries.
+smoke_run test/nil_narrow_chain_exit_test.zbr "nil_narrow: OK"
+# BUG-503: `List(int?)()` / `HashMap(str, str?)()` construct collections of optionals.
+smoke_run test/bug503_list_optional_ctor_test.zbr "bug503: OK"
 # A module var initializer is resolved and type-checked like any expression (it was neither).
 smoke_tc_fail test/fail_fixtures/module_var_undefined_name_fail.zbr "module_var_undefined_name_fail.zbr:3:9: error: undefined name: 'undefinedThing'"
 smoke_tc_fail test/fail_fixtures/module_var_optional_operand_fail.zbr "module_var_optional_operand_fail.zbr:4:9: error: 'x' may be nil here"

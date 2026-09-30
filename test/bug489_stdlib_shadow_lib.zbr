@@ -1,0 +1,7 @@
+# BUG-489 fixture (the shim): a user class named like the stdlib `Random`.
+class Random
+    var seed: int = 0
+    cue init(s: int)
+        .seed = s
+    def next(): int
+        return .seed

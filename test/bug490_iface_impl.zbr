@@ -1,0 +1,18 @@
+# BUG-490 fixture (the implementing side): classes implementing ANOTHER module's
+# interfaces, and a call that converts one to the interface in this module.
+use bug490_iface_lib exposing Ctor, Handler, Emitter
+
+class Doubler implements Ctor
+    var k: int = 2
+    def construct(n: int): int
+        return n * .k
+
+class Greeter implements Handler
+    var label: str
+    cue init(label: str)
+        .label = label
+    def call(): int
+        return .label.len
+
+def attach(em: Emitter, label: str)
+    em.connect(Greeter(label))

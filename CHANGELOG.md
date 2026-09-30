@@ -23,6 +23,21 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Nil narrowing follows `and` chains and early exits (Sean, 2026-09-30).** In
+  `if a != nil and b != nil`, every conjunct is non-nil in the then-branch. After
+  `if a == nil` (or `a == nil or b == nil`) whose body always leaves -- `return`, `raise`,
+  `break`, `continue` -- the guarded names are non-nil for the rest of the block. A name
+  rebound anywhere later in the block (a nested loop, a branch arm, a catch clause) is not
+  narrowed. The checker and codegen share one definition (`AstWalk.nameReassignedIn`).
+- **Interfaces work across modules (BUG-490).** A class implementing an interface declared
+  in another module converts to it at any call site (the interface builds its own vtable,
+  `.from(obj)`), and the `implements` check resolves the interface through its module.
+- **A stdlib-named class does not leak into modules that did not expose it (BUG-489).**
+  A dependency's `class Random` is the bare name `Random` only where it is declared or
+  exposed; elsewhere `Random` is the stdlib type for both field types and `Random.new`.
+  `m.Random` still reaches the class.
+- **`List(int?)()` constructs a list of optionals (BUG-503)** -- it emitted `(try int)`.
+
 - **A `sig` is a fat pointer, and any callable converts into one (BUG-491, 492, 493;
   found porting the GameEngine).** A `sig` (and `def(P): R`) was a bare function pointer,
   so a capturing closure reached one only through a static pool of 64 trampolines per

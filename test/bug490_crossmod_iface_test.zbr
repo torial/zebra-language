@@ -1,0 +1,14 @@
+# BUG-490: a class implementing an interface from ANOTHER module converts to it at a
+# call site in a third module (and in its own), and the `implements` check resolves the
+# interface through its module. Before: "expected type 'Ctor', found '*_zbr_ty_Doubler'"
+# and "use of undeclared identifier 'Handler'" in the emitted Zig.
+use bug490_iface_lib exposing register, Emitter
+use bug490_iface_impl exposing Doubler, attach
+
+def main()
+    assert register("abc", Doubler()) == 6
+    var em = Emitter()
+    attach(em, "two")
+    attach(em, "modules")
+    assert em.fire() == 10
+    print("bug490: OK")
