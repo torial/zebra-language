@@ -6729,6 +6729,13 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
             if ctx.current_class == ""
                 if dv.init_expr != nil
                     checkCallsInExpr(dv.init_expr!, file, dv.span.line, ctx)
+                    # BUG-500: an UNTYPED module var's initializer was never inferred with
+                    # a reporting context (checkVarDecl returns early for it, and
+                    # populateModuleTypes' pass uses a throwaway one), so the refusals that
+                    # live in inferExpr -- `"x".toUpper()`, an unknown method -- never fired
+                    # and the name reached Zig. A typed one is inferred by checkVarDecl.
+                    if dv.type_ == nil
+                        var mv_seen: Type_ = inferExpr(dv.init_expr!, ctx)
         else
             pass
 

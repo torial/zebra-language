@@ -1,0 +1,6 @@
+# BUG-500: an UNTYPED module var initializer is inferred with a reporting context, so an
+# unknown method is refused here rather than inside Zig (found by Fable, 2026-09-30).
+var greeting = "hello".toUpper()
+
+def main()
+    print(greeting)

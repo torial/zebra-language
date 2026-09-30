@@ -6,6 +6,12 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-500: an unknown method in an UNTYPED module-var initializer is not refused -- `var g = "hello".toUpper()` reaches Zig -- FIXED 2026-09-30
+- **Severity:** Low (a Zig error naming emitted code, `@TypeOf("hello".toUpper())`)
+- **Found by:** Fable, checking ef8256d's new module-var refusals: an unknown NAME was caught (the resolver), an unknown METHOD was not.
+- **Cause:** the method refusals live in `inferExpr`, which reports into the context it is given. A local `var` is inferred with the checking context; an untyped module var never was -- `checkVarDecl` returns early without an annotation, and `populateModuleTypes`' typing pass uses a throwaway context.
+- **Fixed 2026-09-30.** The module-var arm of `checkDecl` infers an untyped initializer with the checking context (a typed one is already inferred by `checkVarDecl`, so nothing reports twice). Fixture: `test/fail_fixtures/bug500_module_var_unknown_method_fail.zbr`.
+
 ### BUG-499: a method whose ONLY use of `this` is a capture initialiser is emitted with `_ = self;` -- Zig: "pointless discard of function parameter" -- FIXED 2026-09-30
 - **Severity:** Low (a clear Zig error; the workaround is `var me = this` on its own line)
 - **Repro:** a class method whose whole body is `em.connect(def(): void` / `capture` / `var me: Counter = this` / `me.bump()` → emitted `_ = self;` followed by `.{ .me = self }` → `error: pointless discard of function parameter`.

@@ -2088,6 +2088,7 @@ smoke_run test/bug499_capture_this_only_test.zbr "bug499: OK"
 # A module var initializer is resolved and type-checked like any expression (it was neither).
 smoke_tc_fail test/fail_fixtures/module_var_undefined_name_fail.zbr "module_var_undefined_name_fail.zbr:3:9: error: undefined name: 'undefinedThing'"
 smoke_tc_fail test/fail_fixtures/module_var_optional_operand_fail.zbr "module_var_optional_operand_fail.zbr:4:9: error: 'x' may be nil here"
+smoke_tc_fail test/fail_fixtures/bug500_module_var_unknown_method_fail.zbr "bug500_module_var_unknown_method_fail.zbr:3:24: error: 'str' has no method 'toUpper'"
 # A JSON VALUE converts too: `var s: str = elem?` and `elem.tryStr()` (Sean, 2026-09-29).
 smoke_run test/json_value_conversion_test.zbr "json_value_conversion: OK"
 # `if x orelse d as n` binds always (Sean, 2026-09-29); a dead `else` on it warns.

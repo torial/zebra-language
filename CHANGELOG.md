@@ -61,7 +61,8 @@ confirmed via `tools/bootstrap_check.sh`.
   checker, which now also types such vars for every reference to them (§28a).
 - **A module-level `var` initializer is resolved and type-checked** like any other
   expression. Neither happened: `var q = undefinedThing + 2` passed `-c` and failed
-  inside Zig, as did an operator on an optional at top level.
+  inside Zig, as did an operator on an optional at top level, and (BUG-500) an unknown
+  method such as `var g = "x".toUpper()`.
 - **A class `invariant` is inferred in the class's scope** (`size == items.count()` was a
   §28a guess).
 - **A method whose only use of `this` is a capture initialiser compiles (BUG-499).**
