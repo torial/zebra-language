@@ -1,0 +1,13 @@
+# BUG-480: a bare statement call of a throwing METHOD from a non-throwing caller is
+# refused in Zebra, not left to Zig ("error union is ignored").
+class Loader
+    var n: int = 0
+    def load() throws
+        if .n < 0
+            raise "neg"
+        .n = .n + 1
+
+def main()
+    var l = Loader()
+    l.load()
+    print(l.n)

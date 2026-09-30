@@ -68,8 +68,13 @@ pub var _allocator: std.mem.Allocator = _prog_alloc();
 // String intern pool — backed by page_allocator so interned strings survive arena_scope rewinds.
 // Initialized eagerly so main modules (which never receive an _initAllocator call) can use _intern.
 pub var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
+// BUG-485: a host that embeds Zebra (`--library-mode`) installs its allocator here, and a
+// library `main()` must not replace it on entry -- the host later frees Zebra-allocated
+// memory with its own allocator ("Invalid free"). The prologue checks this flag.
+pub var _host_alloc_set: bool = false;
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+    _host_alloc_set = true;
 }
 // BUG-356: a shared library (`zebra --shared`) has no main() to hand it an Io, so `_io`
 // stayed `undefined` and the first File/print/sleep inside the library faulted. The
@@ -2949,6 +2954,23 @@ pub fn _ZbrFn(comptime F: type) type {
             }.e };
         }
     };
+}
+
+// BUG-479: `==` between strings where either side is `str?`. Nil never equals a value
+// and nil equals nil (Python's answer); `std.mem.eql` on an optional did not compile.
+pub fn _zbr_str_opt_eq(a: anytype, b: anytype) bool {
+    const A = @TypeOf(a);
+    const B = @TypeOf(b);
+    if (@typeInfo(A) == .optional) {
+        if (a) |av| return _zbr_str_opt_eq(av, b);
+        if (@typeInfo(B) == .optional) return b == null;
+        return false;
+    }
+    if (@typeInfo(B) == .optional) {
+        if (b) |bv| return std.mem.eql(u8, a, bv);
+        return false;
+    }
+    return std.mem.eql(u8, a, b);
 }
 
 // Calling a callable VALUE -- a local, parameter or field holding a sig, a closure or a

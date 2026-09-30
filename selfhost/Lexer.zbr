@@ -298,7 +298,7 @@ class Lexer
                 var kind = TokenKind.string_raw_single()
                 if q == c'"'
                     kind = TokenKind.string_raw_double()
-                scanSimpleString(q, start, kind, ln, cl)?
+                scanSimpleString(q, start, kind, ln, cl, true)?
                 return
 
         # ns'  ns"  no-substitution strings
@@ -308,7 +308,7 @@ class Lexer
                 var kind = TokenKind.string_nosub_single()
                 if q == c'"'
                     kind = TokenKind.string_nosub_double()
-                scanSimpleString(q, start, kind, ln, cl)?
+                scanSimpleString(q, start, kind, ln, cl, false)?
                 return
 
         # zig'  zig"  backend literals
@@ -318,7 +318,7 @@ class Lexer
                 var kind = TokenKind.zig_single()
                 if q == c'"'
                     kind = TokenKind.zig_double()
-                scanSimpleString(q, start, kind, ln, cl)?
+                scanSimpleString(q, start, kind, ln, cl, false)?
                 return
 
         # Sized type names: int8, uint16, float32, etc.
@@ -407,11 +407,14 @@ class Lexer
 
     # -- Simple strings (raw, nosub, zig) ------------------------------------
 
-    def scanSimpleString(q: char, start: int, kind: TokenKind, ln: int, cl: int) throws
+    # BUG-481: in a RAW string a backslash is literal and never consumes the quote after
+    # it, so `r"C:\dir\"` closes where it looks like it does (QUICKSTART: "the closing
+    # quote terminates the string"). zig"..." and ns"..." keep the escape rule.
+    def scanSimpleString(q: char, start: int, kind: TokenKind, ln: int, cl: int, raw: bool) throws
         pos = pos + 1
         while pos < src.len
             var c = src[pos]
-            if c == c'\\'
+            if c == c'\\' and not raw
                 pos = pos + 2
                 continue
             if c == q

@@ -1,0 +1,8 @@
+# BUG-497: a method named `self` is refused (it is the receiver's name in the emit).
+class E
+    def self(): E
+        return this
+
+def main()
+    var e = E()
+    print(e.self() == e)

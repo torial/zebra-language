@@ -1,0 +1,29 @@
+# BUG-478: a method whose parameter SHADOWS a field of the same name, and which never uses
+# `this`, discards its `self` (Zig refused the unused parameter).
+# BUG-479: `str? == str` compares as Python does -- nil never equals a value.
+# BUG-481: a raw string may END in a backslash.
+
+class CurveUtil
+    var threshold: float = 0.01
+    def expt(threshold: float, start: float): float
+        return threshold / start
+
+class S
+    var val: str?
+    cue init(d: str?)
+        .val = d
+
+def main()
+    assert CurveUtil().expt(1.0, 4.0) == 0.25
+    var s = S("Normal")
+    var n = S(nil)
+    assert s.val == "Normal"
+    assert not (s.val == "Other")
+    assert s.val != "Other"
+    assert not (n.val == "Normal")
+    assert n.val != "Normal"
+    assert "Normal" == s.val
+    var dir = r"C:\dir\"
+    assert dir.len == 7
+    assert r"ab\".len == 3
+    print("bug478_479_481: OK")

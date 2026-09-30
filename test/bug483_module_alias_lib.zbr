@@ -1,0 +1,9 @@
+# helper for bug483_module_alias_shadow_test: a module whose name a local and a
+# parameter reuse, with a top-level def called module-qualified.
+class Noise
+    var level: int = 0
+    cue init(level: int)
+        .level = level
+
+def loud(n: int): int
+    return n * 10

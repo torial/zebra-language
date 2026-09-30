@@ -1,0 +1,23 @@
+# BUG-484: under a method-level `catch`, a throwing method of a class from ANOTHER module
+# routes its error to the catch, as a same-module one does.
+use bug484_crossmod_throws_lib exposing Loader
+
+class App
+    var loader: Loader
+    var err: str
+    cue init()
+        .loader = Loader()
+        .err = ""
+    def start()
+        .loader.load()
+        .loader.fail()
+        .err = "not reached"
+    catch |e|
+        .err = e.message
+
+def main()
+    var a = App()
+    a.start()
+    assert a.loader.n == 1
+    assert a.err == "boom", a.err
+    print("bug484: OK")

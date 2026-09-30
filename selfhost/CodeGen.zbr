@@ -799,10 +799,18 @@ def stmtMentionsThis(s: Stmt): bool
             pass
     return false
 
-def bodyUsesAnyField(stmts: List(Stmt), members: List(Decl)): bool
+# BUG-478: a field SHADOWED by a parameter of the same name is not a use of `self` -- a
+# bare `threshold` there is the parameter. (`.threshold` is still `this`, which
+# bodyMentionsThis sees.) The pure helper `def expt(threshold: float, ...)` on a class
+# with a `threshold` field kept its `self` undiscarded and Zig refused the parameter.
+def bodyUsesAnyField(stmts: List(Stmt), members: List(Decl), params: List(Param)): bool
     for d in members
         if d is Decl.var_ as fld
-            if nameUsedInStmts(fld.name, stmts)
+            var shadowed: bool = false
+            for sp in params
+                if sp.name == fld.name
+                    shadowed = true
+            if not shadowed and nameUsedInStmts(fld.name, stmts)
                 return true
     return false
 
@@ -1361,7 +1369,10 @@ def generateEntryPoint(m: Module, library_mode: bool): str
     sb.append("    _io = _zinit.io;\n")
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _environ = _zinit.minimal.environ;\n")
-    sb.append("    _allocator = _prog_alloc();\n")
+    if library_mode
+        sb.append("    if (!_host_alloc_set) _allocator = _prog_alloc();\n")   # BUG-485
+    else
+        sb.append("    _allocator = _prog_alloc();\n")
     sb.append("    _initModuleVars();\n")
     if not library_mode
         sb.append("    defer _arena.deinit();\n")
@@ -1677,6 +1688,13 @@ class GenLower
 
 def zbrTypeSymbol(name: str): str
     return "_zbr_ty_" + name
+
+# BUG-483: a `use`d module's import binding is a file-scope declaration, and Zig forbids
+# any local or parameter from shadowing one -- `use noise` then `var noise = Noise()` was
+# "local shadows declaration of 'noise'". The binding takes the reserved prefix, like
+# `_zbr_ty_` / `_zbr_fn_` / `_zbr_mv_`, and every reference to the module goes through here.
+def modAliasSymbol(name: str): str
+    return "_zbr_mod_" + name
 
 # `zebra test --only a,b,Cls.test_c`: run ONLY the named tests. Exact match on the
 # printed label (`test_x` / `Cls.test_x`) or on the bare method name, comma-separated.
@@ -3353,6 +3371,7 @@ struct Generator
     var self_name            : str      # "self" for methods, "_self" for init
     var capture_self         : str      # BUG-487: a capture closure's receiver ("self" at top level)
     var in_lambda_body       : bool     # BUG-494: a `return` here is the lambda's, not an init's
+    var emitted_uses         : StrSet   # BUG-498: modules whose import binding is already emitted
     var lam_hint             : List(Type_)  # §28a A: types for the NEXT lambda's untyped params
     var capture_fields       : StrSet   # captured var names → emit self.name in genIdent
     # BUG-233: lambda params RENAMED because they shadow an enclosing param/local. Zig
@@ -3480,6 +3499,7 @@ struct Generator
         .self_name             = "self"
         .capture_self          = "self"
         .in_lambda_body        = false
+        .emitted_uses          = StrSet()
         .lam_hint              = List(Type_)()
         .capture_fields        = StrSet()
         .lp_renamed            = StrSet()          # BUG-233
@@ -4366,7 +4386,7 @@ struct Generator
             # C source + matching header: the symbols come from the header, so
             # Zebra code calls them as `alias.some_fn(...)`.
             w.emit("const ")
-            w.emit(alias)
+            w.emit(modAliasSymbol(alias))                   # BUG-483
             w.emit(" = @cImport(@cInclude(\"")
             w.emit(alias)
             w.emit(".h\"));\n")
@@ -4412,11 +4432,16 @@ struct Generator
             # binding (`const Lexer = …._zbr_ty_Lexer;`) would compile here and then
             # disagree with every reference genIdentRaw emits.  A module alias that is
             # NOT a class is a namespace, not a type, and stays bare.
+            # BUG-498: a second `use` of the same module (one plain, one `exposing`)
+            # emitted the binding twice -- Zig: "duplicate struct member name".
+            if .emitted_uses.contains_(alias)
+                return
+            .emitted_uses.add(alias)
             w.emit("const ")
             if has_same_named_class
                 w.emit(zbrTypeSymbol(alias))                # BUG-281 B
             else
-                w.emit(alias)
+                w.emit(modAliasSymbol(alias))               # BUG-483
             w.emit(" = ")
             w.emit(imp)
             if has_same_named_class
@@ -4426,11 +4451,13 @@ struct Generator
             w.emit(";\n")
         else
             # `use Mod exposing Name1, Name2` — import module, then alias each exposed name
-            w.emit("const ")
-            w.emit(alias)
-            w.emit(" = ")
-            w.emit(imp)
-            w.emit(";\n")
+            if not .emitted_uses.contains_(alias)           # BUG-498
+                .emitted_uses.add(alias)
+                w.emit("const ")
+                w.emit(modAliasSymbol(alias))               # BUG-483
+                w.emit(" = ")
+                w.emit(imp)
+                w.emit(";\n")
             var i: int = 0
             while i < n.exposed.len
                 var ename: str = n.exposed.at(i)
@@ -4454,7 +4481,7 @@ struct Generator
                     w.emit("const ")
                     w.emit(uname)
                     w.emit(" = ")
-                    w.emit(alias)
+                    w.emit(modAliasSymbol(alias))           # BUG-483
                     w.emit(".")
                     w.emit(uname)
                     w.emit(";\n")
@@ -6214,7 +6241,10 @@ struct Generator
                 ei.writeIndent()
                 ei.w.emit("_environ = _zinit.minimal.environ;\n")
                 ei.writeIndent()
-                ei.w.emit("_allocator = _prog_alloc();\n")
+                if .library_mode
+                    ei.w.emit("if (!_host_alloc_set) _allocator = _prog_alloc();\n")   # BUG-485
+                else
+                    ei.w.emit("_allocator = _prog_alloc();\n")
                 if not .library_mode
                     ei.writeIndent()
                     ei.w.emit("defer _arena.deinit();\n")
@@ -6395,7 +6425,7 @@ struct Generator
                 for en_e in m.ensure_
                     if exprMentionsThis(en_e)
                         contract_uses_this = true
-            if has_self and not bodyMentionsThis(mstmts) and not contract_uses_this and not bodyUsesAnyField(mstmts, owner_members) and not bodyUsesAnyMethod(mstmts, owner_members) and (owner_invariants.len == 0 or strip_contracts)
+            if has_self and not bodyMentionsThis(mstmts) and not contract_uses_this and not bodyUsesAnyField(mstmts, owner_members, m.params) and not bodyUsesAnyMethod(mstmts, owner_members) and (owner_invariants.len == 0 or strip_contracts)
                 bg.line("_ = self;")
             # BUG-296: a parameter used ONLY inside require/ensure was discarded and
             # then read by the emitted contract -- "pointless discard of function
@@ -7268,9 +7298,12 @@ struct Generator
             # identifier, and a namespace may be named for a Zig keyword.
             # BUG-476: a `sig` is declared unprefixed (`pub const Cb = _ZbrFn(...)`),
             # so `m.Cb` names it as it is.
+            var head_z: str = zigSafeName(head)
+            if import_aliases.contains_(head) and not unwrapped_imports.contains_(head)
+                head_z = modAliasSymbol(head)               # BUG-483
             if isSigName(tail)
-                return zigSafeName(head) + "." + zigSafeName(tail)
-            return zigSafeName(head) + "." + zbrTypeSymbol(tail)
+                return head_z + "." + zigSafeName(tail)
+            return head_z + "." + zbrTypeSymbol(tail)
         if isUserTypeName(name) and not isSigName(name)     # BUG-476: a sig is unprefixed
             return zbrTypeSymbol(name)
         return zigSafeName(name)
@@ -8108,7 +8141,7 @@ struct Generator
                         w.emit(": " + lv_ann)
         w.emit(" = ")
         if mc_recv.len > 0
-            if mc_throws and current_method_throws and try_block_label == nil and not in_try_expr
+            if mc_throws and try_block_label == nil and not in_try_expr
                 recordImplicitTry(source_file + ":" + w.cur_line.toString())
                 w.emit("try ")
             w.emit("${mc_recv}.${mc_field}(")
@@ -9179,7 +9212,22 @@ struct Generator
 
     # Look up if a same-module class method throws (pre-populated at module init).
     def isClassMethodThrows(class_name: str, method_name: str): bool
-        return throws_methods.contains_(makeDottedKey(class_name, method_name))
+        if throws_methods.contains_(makeDottedKey(class_name, method_name))
+            return true
+        # BUG-484: a class from ANOTHER module -- the same rule its own module's genMethod
+        # uses for `anyerror!` (declared `throws`, or a `raise` in the body), read from the
+        # dep's type table. Without it a throws call on a field of a dep class inside a
+        # method-level `catch` was emitted bare ("error union is ignored").
+        var cn: str = class_name
+        var dot: int = cn.lastIndexOf(".")
+        if dot >= 0
+            cn = cn[dot + 1 .. cn.len]
+        if .dep_types.classOf(cn) as dct
+            if dct.methodThrows(method_name)
+                return true
+            if dct.fnBody(method_name) as dbody
+                return bodyHasRaise(dbody)
+        return false
 
     def lookupFieldType(field_name: str): TypeRef?
         for d in owner_members
@@ -9621,7 +9669,7 @@ struct Generator
                                 hoist_discard = true
                 if hoist_discard
                     w.emit("_ = ")
-                if stmt_is_throws and current_method_throws and try_block_label == nil and not in_try_expr
+                if stmt_is_throws and try_block_label == nil and not in_try_expr
                     recordImplicitTry(source_file + ":" + w.cur_line.toString())
                     w.emit("try ")
                 w.emit("${mc}.${method_name}(")
@@ -12257,6 +12305,12 @@ struct Generator
                 return false
             if (lk == "bool" or lk == "char") and op != "==" and op != "!="
                 return false
+            # BUG-479: an OPTIONAL side takes the plain assert, whose comparison is the
+            # nil-aware `_zbr_str_opt_eq` -- this capture form compared `?[]const u8` with
+            # `==` inside the runtime and did not compile.
+            if .infer_ctx != nil
+                if inferExpr(bin.left, .infer_ctx!) is Type_.optional or inferExpr(bin.right, .infer_ctx!) is Type_.optional
+                    return false
             var loc: str = fwdSlashes(source_file) + ":" + a.span.line.toString()
             writeIndent()
             w.emit("{\n")
@@ -13683,7 +13737,7 @@ struct Generator
         # live prefixed symbol `alias._zbr_mv_name` (no `const` binding was emitted).
         # Same shadow guard: a local/param of the same name keeps its bare name.
         if .exposed_module_vars.contains(id.name) and not isLocalOrParamName(id.name)
-            w.emit(.exposed_module_vars.fetch(id.name))
+            w.emit(modAliasSymbol(.exposed_module_vars.fetch(id.name)))   # BUG-483
             w.emit("._zbr_mv_")
             w.emit(id.name)
             return
@@ -13710,9 +13764,14 @@ struct Generator
             # carries the prefix and this must match.  Found by the round-trip, which
             # is the only witness that compiles the selfhost's own cross-module code.
             if import_aliases.contains_(id.name) and not unwrapped_imports.contains_(id.name)
-                emitName(id.name)
+                w.emit(modAliasSymbol(id.name))             # BUG-483
                 return
             w.emit(zbrTypeSymbol(id.name))
+            return
+        # BUG-483: a module namespace (`noise.Noise()`, `m.f()`), unless a local or
+        # parameter of that name is in scope -- then the name is the local.
+        if import_aliases.contains_(id.name) and not unwrapped_imports.contains_(id.name) and not isLocalOrParamName(id.name)
+            w.emit(modAliasSymbol(id.name))
             return
         emitName(id.name)
 
@@ -14027,6 +14086,18 @@ struct Generator
             if not either_nil and (.isStringBoth(b.left, "bin_eq_l") or .isStringBoth(b.right, "bin_eq_r"))
                 if b.op == BinaryOp.ne
                     w.emit("!")
+                # BUG-479: a `str?` side compares as Python does -- nil never equals a
+                # value, nil equals nil. `std.mem.eql` on the optional did not compile.
+                var opt_side: bool = false
+                if .infer_ctx != nil
+                    opt_side = inferExpr(b.left, .infer_ctx!) is Type_.optional or inferExpr(b.right, .infer_ctx!) is Type_.optional
+                if opt_side
+                    w.emit("_zbr_str_opt_eq(")
+                    genExpr(b.left)
+                    w.emit(", ")
+                    genExpr(b.right)
+                    w.emit(")")
+                    return
                 w.emit("std.mem.eql(u8, ")
                 genExpr(b.left)
                 w.emit(", ")
@@ -14719,7 +14790,7 @@ struct Generator
                 if unwrapped_imports.contains_(cm_obj!)
                     emitTypeName(cm_mem!)                   # BUG-281 B
                 else
-                    w.emit(cm_obj!)                         # import alias, not a type
+                    w.emit(modRef(cm_obj!))                 # import alias, not a type (BUG-483)
                     w.emit(".")
                     w.emit(zbrTypeSymbol(cm_mem!))          # BUG-281 B
                 w.emit(".init(")
@@ -14842,7 +14913,7 @@ struct Generator
             if .dep_types.hasUnion(xmu_union)
                 var xmu_key = makeDottedKey(xmu_union, xmu_variant)
                 var xmu_boxed = boxed_variants.contains_(xmu_key)
-                w.emit(xmu_mod)
+                w.emit(modRef(xmu_mod))                 # BUG-483
                 w.emit(".")
                 w.emit(zbrTypeSymbol(xmu_union))            # BUG-281 B
                 w.emit("{ .")
@@ -14854,7 +14925,7 @@ struct Generator
                         var xmu_box_lbl: str = "blk_box_" + xmu_box_uid.toString()
                         w.emit(xmu_box_lbl)
                         w.emit(": { const _bv: std.meta.Child(@FieldType(")
-                        w.emit(xmu_mod)
+                        w.emit(modRef(xmu_mod))                 # BUG-483
                         w.emit(".")
                         w.emit(zbrTypeSymbol(xmu_union))    # BUG-281 B
                         w.emit(", \"")
@@ -15084,7 +15155,7 @@ struct Generator
         if c.callee is Expr.ident as id
             if in_method and owner != "" and isOwnerMethod(id.name)
                 var callee_throws = isOwnerMethodThrows(id.name)
-                if callee_throws and current_method_throws and try_block_label == nil and not in_try_expr
+                if callee_throws and try_block_label == nil and not in_try_expr
                     recordImplicitTry(source_file + ":" + w.cur_line.toString())
                     w.emit("try ")
                 if isOwnerSharedMethod(id.name)
@@ -15140,8 +15211,35 @@ struct Generator
                     return true
         return false
 
+    # BUG-483: how a module name is spelled when the emitter writes it directly -- the
+    # prefixed import binding for a `use`d module, the name itself otherwise.
+    def modRef(name: str): str
+        if import_aliases.contains_(name) and not unwrapped_imports.contains_(name)
+            return modAliasSymbol(name)
+        return name
+
     def genMemberCall(m: ExprMember, args: List(Arg))
         var mname = m.member
+        # A module-qualified call to a top-level `def` of a used module, `dm.two()`: the
+        # function is declared `_zbr_fn_two` there, and the call emitted the bare name
+        # ("root source file struct 'dm' has no member named 'two'") -- found beside
+        # BUG-498, broken since BUG-220 prefixed the declaration.
+        if m.object is Expr.ident as mod_id
+            if import_aliases.contains_(mod_id.name) and not unwrapped_imports.contains_(mod_id.name) and not isLocalOrParamName(mod_id.name)
+                if .dep_types.classOf("") as dep_fns
+                    if dep_fns.fnParamList(mname) as dep_ps
+                        var dep_throws: bool = false
+                        if dep_fns.fnBody(mname) as dep_body0
+                            dep_throws = dep_fns.methodThrows(mname) or bodyHasRaise(dep_body0)
+                        if dep_throws and try_block_label == nil and not in_try_expr
+                            recordImplicitTry(source_file + ":" + w.cur_line.toString())
+                            w.emit("try ")
+                        w.emit(modAliasSymbol(mod_id.name) + "." + zbrFnSymbol(mname, false) + "(")
+                        genArgListFull(args, dep_ps, dep_fns.fnBody(mname))
+                        w.emit(")")
+                        if dep_throws and try_block_label != nil and not in_try_expr
+                            emitTryBlockCatch()
+                        return
         # `obj.cb(x)` where `cb` is a FIELD of sig type (not a method): invoke the value.
         if .infer_ctx != nil
             var fc_rt: Type_ = inferExpr(m.object, .infer_ctx!)
@@ -16611,7 +16709,7 @@ struct Generator
                     genCallOnTemp(m, mname, args)
                     return
                 if .infer_ctx!.methodReturnAny(um_cname, mname) != nil and not um_is_call_temp
-                    if isClassMethodThrows(um_cname, mname) and current_method_throws and try_block_label == nil and not in_try_expr
+                    if isClassMethodThrows(um_cname, mname) and try_block_label == nil and not in_try_expr
                         recordImplicitTry(source_file + ":" + w.cur_line.toString())
                         w.emit("try ")
                     genExpr(m.object)
@@ -17947,7 +18045,12 @@ struct Generator
                 if recv_t is Type_.named as recv_cn
                     if isClassMethodThrows(recv_cn, mname)
                         chain_throws = true
-            var need_try: bool = chain_throws and current_method_throws and try_block_label == nil and not in_try_expr
+            # BUG-480: an unmarked throwing call is recorded (the driver refuses it in
+            # Zebra's words) whatever the CALLER is -- a non-throwing caller let it
+            # through to Zig as "error union is ignored".
+            var need_try: bool = chain_throws and try_block_label == nil and not in_try_expr
+            if need_try
+                recordImplicitTry(source_file + ":" + w.cur_line.toString())
             w.emit("(" + mc_lbl + ": { var _mc_" + mc_uid.toString() + " = ")
             genExpr(m.object)
             if need_try
@@ -17971,7 +18074,7 @@ struct Generator
                         callee_throws2 = true
             else
                 pass
-        if callee_throws2 and current_method_throws and try_block_label == nil and not in_try_expr
+        if callee_throws2 and try_block_label == nil and not in_try_expr
             recordImplicitTry(source_file + ":" + w.cur_line.toString())
             w.emit("try ")
         genExpr(m.object)

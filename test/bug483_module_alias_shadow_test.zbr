@@ -1,0 +1,17 @@
+# BUG-483: a local or parameter named like a `use`d module no longer collides with the
+# import binding (now `_zbr_mod_<name>`). BUG-498: a second `use` of the same module is
+# fine. And a module-QUALIFIED call to a top-level def, `m.f()`, reaches the prefixed
+# declaration (it never had).
+use bug483_module_alias_lib exposing Noise
+use bug483_module_alias_lib
+
+def level(bug483_module_alias_lib: Noise): int
+    return bug483_module_alias_lib.level
+
+def main()
+    var n = bug483_module_alias_lib.Noise(3)
+    assert level(n) == 3
+    assert bug483_module_alias_lib.loud(4) == 40
+    var noise = Noise(7)
+    assert noise.level == 7
+    print("bug483: OK")

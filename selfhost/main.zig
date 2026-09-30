@@ -65,84 +65,84 @@ const _sys_setenv = _zbr_rt._sys_setenv;
 const _sys_getenv = _zbr_rt._sys_getenv;
 const _sys_self_exe = _zbr_rt._sys_self_exe;
 
-const Parser = @import("Parser.zig");
-const _zbr_ty_PNode = Parser._zbr_ty_PNode;
-const _zbr_ty_PUse = Parser._zbr_ty_PUse;
-const _zbr_ty_PModule = Parser._zbr_ty_PModule;
-const _zbr_ty_PClass = Parser._zbr_ty_PClass;
-const _zbr_fn_fileExistsExact = Parser._zbr_fn_fileExistsExact;
-const _zbr_fn_caseOnlyMatch = Parser._zbr_fn_caseOnlyMatch;
+const _zbr_mod_Parser = @import("Parser.zig");
+const _zbr_ty_PNode = _zbr_mod_Parser._zbr_ty_PNode;
+const _zbr_ty_PUse = _zbr_mod_Parser._zbr_ty_PUse;
+const _zbr_ty_PModule = _zbr_mod_Parser._zbr_ty_PModule;
+const _zbr_ty_PClass = _zbr_mod_Parser._zbr_ty_PClass;
+const _zbr_fn_fileExistsExact = _zbr_mod_Parser._zbr_fn_fileExistsExact;
+const _zbr_fn_caseOnlyMatch = _zbr_mod_Parser._zbr_fn_caseOnlyMatch;
 const _zbr_ty_Resolver = @import("Resolver.zig")._zbr_ty_Resolver;
-const AstBuilder = @import("AstBuilder.zig");
-const _zbr_ty_ASTBuilder = AstBuilder._zbr_ty_ASTBuilder;
-const Ast = @import("Ast.zig");
-const _zbr_ty_Module = Ast._zbr_ty_Module;
-const _zbr_ty_Decl = Ast._zbr_ty_Decl;
-const _zbr_ty_DeclMethod = Ast._zbr_ty_DeclMethod;
-const _zbr_ty_DeclClass = Ast._zbr_ty_DeclClass;
-const _zbr_ty_DeclStruct = Ast._zbr_ty_DeclStruct;
-const _zbr_ty_DeclVar = Ast._zbr_ty_DeclVar;
-const _zbr_ty_Stmt = Ast._zbr_ty_Stmt;
-const _zbr_ty_Param = Ast._zbr_ty_Param;
-const _zbr_ty_TypeRef = Ast._zbr_ty_TypeRef;
-const _zbr_ty_Span = Ast._zbr_ty_Span;
-const _zbr_ty_DeclInterface = Ast._zbr_ty_DeclInterface;
-const _zbr_ty_DeclEnum = Ast._zbr_ty_DeclEnum;
-const _zbr_ty_DeclUnion = Ast._zbr_ty_DeclUnion;
-const _zbr_ty_DeclSig = Ast._zbr_ty_DeclSig;
-const _zbr_ty_DeclNamespace = Ast._zbr_ty_DeclNamespace;
-const _zbr_ty_DeclInit = Ast._zbr_ty_DeclInit;
-const CodeGen = @import("CodeGen.zig");
-const _zbr_fn_generateModule = CodeGen._zbr_fn_generateModule;
-const _zbr_fn_generateFull = CodeGen._zbr_fn_generateFull;
-const _zbr_fn_generateFullWith = CodeGen._zbr_fn_generateFullWith;
-const _zbr_fn_generateFullWithDeps = CodeGen._zbr_fn_generateFullWithDeps;
-const _zbr_fn_generateFullWithDepsTest = CodeGen._zbr_fn_generateFullWithDepsTest;
-const _zbr_fn_generateEntryPoint = CodeGen._zbr_fn_generateEntryPoint;
-const _zbr_fn_generateTestEntryPoint = CodeGen._zbr_fn_generateTestEntryPoint;
-const _zbr_fn_generateDep = CodeGen._zbr_fn_generateDep;
-const _zbr_fn_generateDepWith = CodeGen._zbr_fn_generateDepWith;
-const _zbr_fn_generateNodeAddon = CodeGen._zbr_fn_generateNodeAddon;
-const _zbr_fn_generateNodeDts = CodeGen._zbr_fn_generateNodeDts;
-const _zbr_fn_implicitTrySites = CodeGen._zbr_fn_implicitTrySites;
-const _zbr_fn_threadSpawnSites = CodeGen._zbr_fn_threadSpawnSites;
-const _zbr_fn_inferenceGuessSites = CodeGen._zbr_fn_inferenceGuessSites;
-const _zbr_fn_setSingleFile = CodeGen._zbr_fn_setSingleFile;
-const _zbr_fn_singleFile = CodeGen._zbr_fn_singleFile;
-const _zbr_fn_generateSingleFileCombined = CodeGen._zbr_fn_generateSingleFileCombined;
-const _zbr_fn_generateSingleFileDepStruct = CodeGen._zbr_fn_generateSingleFileDepStruct;
-const _zbr_fn_setBuildMode = CodeGen._zbr_fn_setBuildMode;
-const _zbr_fn_setListTargetsMode = CodeGen._zbr_fn_setListTargetsMode;
-const _zbr_fn_setGuiBackend = CodeGen._zbr_fn_setGuiBackend;
-const _zbr_fn_setGuiSection = CodeGen._zbr_fn_setGuiSection;
-const _zbr_fn_setRuntimeModule = CodeGen._zbr_fn_setRuntimeModule;
-const _zbr_fn_runtimeModule = CodeGen._zbr_fn_runtimeModule;
-const _zbr_fn_rtRuntimeText = CodeGen._zbr_fn_rtRuntimeText;
-const _zbr_fn_rtPublicNames = CodeGen._zbr_fn_rtPublicNames;
-const _zbr_fn_addNativeCUse = CodeGen._zbr_fn_addNativeCUse;
-const _zbr_fn_addNativeLibUse = CodeGen._zbr_fn_addNativeLibUse;
-const _zbr_fn_emittedExtern = CodeGen._zbr_fn_emittedExtern;
-const _zbr_fn_emittedDynLib = CodeGen._zbr_fn_emittedDynLib;
-const _zbr_fn_rtReservedNames = CodeGen._zbr_fn_rtReservedNames;
-const _zbr_fn_setTestOnly = CodeGen._zbr_fn_setTestOnly;
-const _zbr_fn_listTestEntries = CodeGen._zbr_fn_listTestEntries;
-const _zbr_fn_setCoverage = CodeGen._zbr_fn_setCoverage;
-const CgHelpers = @import("CgHelpers.zig");
-const _zbr_fn_typeRefStr = CgHelpers._zbr_fn_typeRefStr;
-const TypeChecker = @import("TypeChecker.zig");
-const _zbr_ty_ModuleTypes = TypeChecker._zbr_ty_ModuleTypes;
-const _zbr_fn_populateModuleTypes = TypeChecker._zbr_fn_populateModuleTypes;
-const _zbr_fn_buildModuleTypes = TypeChecker._zbr_fn_buildModuleTypes;
-const _zbr_ty_InferCtx = TypeChecker._zbr_ty_InferCtx;
-const _zbr_ty_Diagnostic = TypeChecker._zbr_ty_Diagnostic;
-const _zbr_fn_checkModule = TypeChecker._zbr_fn_checkModule;
-const _zbr_ty_TcResult = TypeChecker._zbr_ty_TcResult;
-const _zbr_fn_walkStmts = TypeChecker._zbr_fn_walkStmts;
-const _zbr_fn_inferExpr = TypeChecker._zbr_fn_inferExpr;
-const _zbr_fn_typeTag = TypeChecker._zbr_fn_typeTag;
-const _zbr_fn_typeFromRef = TypeChecker._zbr_fn_typeFromRef;
-const Checker = @import("Checker.zig");
-const _zbr_fn_runCheck = Checker._zbr_fn_runCheck;
+const _zbr_mod_AstBuilder = @import("AstBuilder.zig");
+const _zbr_ty_ASTBuilder = _zbr_mod_AstBuilder._zbr_ty_ASTBuilder;
+const _zbr_mod_Ast = @import("Ast.zig");
+const _zbr_ty_Module = _zbr_mod_Ast._zbr_ty_Module;
+const _zbr_ty_Decl = _zbr_mod_Ast._zbr_ty_Decl;
+const _zbr_ty_DeclMethod = _zbr_mod_Ast._zbr_ty_DeclMethod;
+const _zbr_ty_DeclClass = _zbr_mod_Ast._zbr_ty_DeclClass;
+const _zbr_ty_DeclStruct = _zbr_mod_Ast._zbr_ty_DeclStruct;
+const _zbr_ty_DeclVar = _zbr_mod_Ast._zbr_ty_DeclVar;
+const _zbr_ty_Stmt = _zbr_mod_Ast._zbr_ty_Stmt;
+const _zbr_ty_Param = _zbr_mod_Ast._zbr_ty_Param;
+const _zbr_ty_TypeRef = _zbr_mod_Ast._zbr_ty_TypeRef;
+const _zbr_ty_Span = _zbr_mod_Ast._zbr_ty_Span;
+const _zbr_ty_DeclInterface = _zbr_mod_Ast._zbr_ty_DeclInterface;
+const _zbr_ty_DeclEnum = _zbr_mod_Ast._zbr_ty_DeclEnum;
+const _zbr_ty_DeclUnion = _zbr_mod_Ast._zbr_ty_DeclUnion;
+const _zbr_ty_DeclSig = _zbr_mod_Ast._zbr_ty_DeclSig;
+const _zbr_ty_DeclNamespace = _zbr_mod_Ast._zbr_ty_DeclNamespace;
+const _zbr_ty_DeclInit = _zbr_mod_Ast._zbr_ty_DeclInit;
+const _zbr_mod_CodeGen = @import("CodeGen.zig");
+const _zbr_fn_generateModule = _zbr_mod_CodeGen._zbr_fn_generateModule;
+const _zbr_fn_generateFull = _zbr_mod_CodeGen._zbr_fn_generateFull;
+const _zbr_fn_generateFullWith = _zbr_mod_CodeGen._zbr_fn_generateFullWith;
+const _zbr_fn_generateFullWithDeps = _zbr_mod_CodeGen._zbr_fn_generateFullWithDeps;
+const _zbr_fn_generateFullWithDepsTest = _zbr_mod_CodeGen._zbr_fn_generateFullWithDepsTest;
+const _zbr_fn_generateEntryPoint = _zbr_mod_CodeGen._zbr_fn_generateEntryPoint;
+const _zbr_fn_generateTestEntryPoint = _zbr_mod_CodeGen._zbr_fn_generateTestEntryPoint;
+const _zbr_fn_generateDep = _zbr_mod_CodeGen._zbr_fn_generateDep;
+const _zbr_fn_generateDepWith = _zbr_mod_CodeGen._zbr_fn_generateDepWith;
+const _zbr_fn_generateNodeAddon = _zbr_mod_CodeGen._zbr_fn_generateNodeAddon;
+const _zbr_fn_generateNodeDts = _zbr_mod_CodeGen._zbr_fn_generateNodeDts;
+const _zbr_fn_implicitTrySites = _zbr_mod_CodeGen._zbr_fn_implicitTrySites;
+const _zbr_fn_threadSpawnSites = _zbr_mod_CodeGen._zbr_fn_threadSpawnSites;
+const _zbr_fn_inferenceGuessSites = _zbr_mod_CodeGen._zbr_fn_inferenceGuessSites;
+const _zbr_fn_setSingleFile = _zbr_mod_CodeGen._zbr_fn_setSingleFile;
+const _zbr_fn_singleFile = _zbr_mod_CodeGen._zbr_fn_singleFile;
+const _zbr_fn_generateSingleFileCombined = _zbr_mod_CodeGen._zbr_fn_generateSingleFileCombined;
+const _zbr_fn_generateSingleFileDepStruct = _zbr_mod_CodeGen._zbr_fn_generateSingleFileDepStruct;
+const _zbr_fn_setBuildMode = _zbr_mod_CodeGen._zbr_fn_setBuildMode;
+const _zbr_fn_setListTargetsMode = _zbr_mod_CodeGen._zbr_fn_setListTargetsMode;
+const _zbr_fn_setGuiBackend = _zbr_mod_CodeGen._zbr_fn_setGuiBackend;
+const _zbr_fn_setGuiSection = _zbr_mod_CodeGen._zbr_fn_setGuiSection;
+const _zbr_fn_setRuntimeModule = _zbr_mod_CodeGen._zbr_fn_setRuntimeModule;
+const _zbr_fn_runtimeModule = _zbr_mod_CodeGen._zbr_fn_runtimeModule;
+const _zbr_fn_rtRuntimeText = _zbr_mod_CodeGen._zbr_fn_rtRuntimeText;
+const _zbr_fn_rtPublicNames = _zbr_mod_CodeGen._zbr_fn_rtPublicNames;
+const _zbr_fn_addNativeCUse = _zbr_mod_CodeGen._zbr_fn_addNativeCUse;
+const _zbr_fn_addNativeLibUse = _zbr_mod_CodeGen._zbr_fn_addNativeLibUse;
+const _zbr_fn_emittedExtern = _zbr_mod_CodeGen._zbr_fn_emittedExtern;
+const _zbr_fn_emittedDynLib = _zbr_mod_CodeGen._zbr_fn_emittedDynLib;
+const _zbr_fn_rtReservedNames = _zbr_mod_CodeGen._zbr_fn_rtReservedNames;
+const _zbr_fn_setTestOnly = _zbr_mod_CodeGen._zbr_fn_setTestOnly;
+const _zbr_fn_listTestEntries = _zbr_mod_CodeGen._zbr_fn_listTestEntries;
+const _zbr_fn_setCoverage = _zbr_mod_CodeGen._zbr_fn_setCoverage;
+const _zbr_mod_CgHelpers = @import("CgHelpers.zig");
+const _zbr_fn_typeRefStr = _zbr_mod_CgHelpers._zbr_fn_typeRefStr;
+const _zbr_mod_TypeChecker = @import("TypeChecker.zig");
+const _zbr_ty_ModuleTypes = _zbr_mod_TypeChecker._zbr_ty_ModuleTypes;
+const _zbr_fn_populateModuleTypes = _zbr_mod_TypeChecker._zbr_fn_populateModuleTypes;
+const _zbr_fn_buildModuleTypes = _zbr_mod_TypeChecker._zbr_fn_buildModuleTypes;
+const _zbr_ty_InferCtx = _zbr_mod_TypeChecker._zbr_ty_InferCtx;
+const _zbr_ty_Diagnostic = _zbr_mod_TypeChecker._zbr_ty_Diagnostic;
+const _zbr_fn_checkModule = _zbr_mod_TypeChecker._zbr_fn_checkModule;
+const _zbr_ty_TcResult = _zbr_mod_TypeChecker._zbr_ty_TcResult;
+const _zbr_fn_walkStmts = _zbr_mod_TypeChecker._zbr_fn_walkStmts;
+const _zbr_fn_inferExpr = _zbr_mod_TypeChecker._zbr_fn_inferExpr;
+const _zbr_fn_typeTag = _zbr_mod_TypeChecker._zbr_fn_typeTag;
+const _zbr_fn_typeFromRef = _zbr_mod_TypeChecker._zbr_fn_typeFromRef;
+const _zbr_mod_Checker = @import("Checker.zig");
+const _zbr_fn_runCheck = _zbr_mod_Checker._zbr_fn_runCheck;
 pub const _zbr_ty_MultiCompiler = struct {
     _type_tag: u64 = _ttag_MultiCompiler,
     visited: std.ArrayList([]const u8) = undefined,
@@ -485,7 +485,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:277
         std.debug.print("{s}\n", .{"  parsing..."});
 // zbr:selfhost/main.zbr:278
-        const pm_node = (try Parser._zbr_ty_Parser.parse(src, zbr_path));
+        const pm_node = (try _zbr_mod_Parser._zbr_ty_Parser.parse(src, zbr_path));
 // zbr:selfhost/main.zbr:279
         std.debug.print("{s}\n", .{"  parsed OK"});
 // zbr:selfhost/main.zbr:282
@@ -954,7 +954,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:611
         const src: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, zbr_path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error"));
 // zbr:selfhost/main.zbr:612
-        const pm_node = (try Parser._zbr_ty_Parser.parse(src, zbr_path));
+        const pm_node = (try _zbr_mod_Parser._zbr_ty_Parser.parse(src, zbr_path));
 // zbr:selfhost/main.zbr:613
         switch (_zbr_val(pm_node)) {
             .module_ => |_ptr_pm| {
@@ -1398,7 +1398,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:863
             const psrc: []const u8 = psrc_raw;
 // zbr:selfhost/main.zbr:864
-            const ppm_node = (try Parser._zbr_ty_Parser.parse(psrc, ppath));
+            const ppm_node = (try _zbr_mod_Parser._zbr_ty_Parser.parse(psrc, ppath));
 // zbr:selfhost/main.zbr:865
             if (_zbr_val(ppm_node) == .module_) {
                 const ppm_ptr = ppm_node.module_;
@@ -2144,7 +2144,7 @@ pub fn _zbr_fn_tcCheckSide(src: []const u8, path: []const u8, diags: *std.ArrayL
         _ = &_try_err;
         _try_blk: {
 // zbr:selfhost/main.zbr:1282
-            const pm_node = (Parser._zbr_ty_Parser.parse(src, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
+            const pm_node = (_zbr_mod_Parser._zbr_ty_Parser.parse(src, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:1283
             var resolver = _zbr_ty_Resolver.init(path, src);
 // zbr:selfhost/main.zbr:1284
@@ -2763,7 +2763,7 @@ pub fn _zbr_fn_lspCollectDocSymbols(text: []const u8, path: []const u8) []const 
         _ = &_try_err;
         _try_blk: {
 // zbr:selfhost/main.zbr:1590
-            const pm_node = (Parser._zbr_ty_Parser.parse(text, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
+            const pm_node = (_zbr_mod_Parser._zbr_ty_Parser.parse(text, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:1591
             if (_zbr_val(pm_node) == .module_) {
                 const pm_ptr = pm_node.module_;
@@ -2861,7 +2861,7 @@ pub fn _zbr_fn_runTestList(path: []const u8, tag_filter: ?[]const u8) void {
 // zbr:selfhost/main.zbr:1632
             const text: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error"));
 // zbr:selfhost/main.zbr:1633
-            const pm_node = (Parser._zbr_ty_Parser.parse(text, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
+            const pm_node = (_zbr_mod_Parser._zbr_ty_Parser.parse(text, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:1634
             if (_zbr_val(pm_node) == .module_) {
                 const pm_ptr = pm_node.module_;
@@ -3518,7 +3518,7 @@ pub fn _zbr_fn_lspBuildDeclIndex(text: []const u8, path: []const u8) std.ArrayLi
 // zbr:selfhost/main.zbr:1958
             var out = std.ArrayList(_zbr_ty_LspDeclInfo).empty;
 // zbr:selfhost/main.zbr:1959
-            const pm_node = (Parser._zbr_ty_Parser.parse(text, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
+            const pm_node = (_zbr_mod_Parser._zbr_ty_Parser.parse(text, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:1960
             if (_zbr_val(pm_node) == .module_) {
                 const pm_ptr = pm_node.module_;
@@ -4025,7 +4025,7 @@ pub fn _zbr_fn_lspTypeMembers(text: []const u8, path: []const u8, typename: []co
 // zbr:selfhost/main.zbr:2192
             var out = std.ArrayList(_zbr_ty_LspDeclInfo).empty;
 // zbr:selfhost/main.zbr:2193
-            const pm_node = (Parser._zbr_ty_Parser.parse(text, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
+            const pm_node = (_zbr_mod_Parser._zbr_ty_Parser.parse(text, path) catch |_tc_e| { _try_err = _tc_e; break :_try_blk; });
 // zbr:selfhost/main.zbr:2194
             if (_zbr_val(pm_node) == .module_) {
                 const pm_ptr = pm_node.module_;
@@ -4938,7 +4938,7 @@ pub fn _zbr_fn_runTypes(path: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:2641
     const src: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error"));
 // zbr:selfhost/main.zbr:2642
-    const pm_node = (try Parser._zbr_ty_Parser.parse(src, path));
+    const pm_node = (try _zbr_mod_Parser._zbr_ty_Parser.parse(src, path));
 // zbr:selfhost/main.zbr:2643
     var resolver = _zbr_ty_Resolver.init(path, src);
 // zbr:selfhost/main.zbr:2644

@@ -1,0 +1,9 @@
+# helper for bug484_crossmod_throws_catch_test
+class Loader
+    var n: int = 0
+    def load() throws
+        if .n < 0
+            raise "neg"
+        .n = .n + 1
+    def fail() throws
+        raise "boom"

@@ -1,0 +1,44 @@
+# BUG-488: `registry.add(...)` on a captured CLASS inside a capture closure calls the
+# class's method (it was emitted as a List append). Fixed by the §28a capture typing.
+class Menu
+    var id: int
+    cue init(id: int)
+        .id = id
+
+class MenuRegistry
+    var n: int = 0
+    def add(m: Menu)
+        .n += m.id
+
+sig Cb()
+
+class Emitter
+    var hs: List(Cb)
+    cue init()
+        .hs = List(Cb)()
+    def connect(h: Cb)
+        .hs.add(h)
+    def fire()
+        for h in .hs
+            h()
+
+class Test
+    var registry: MenuRegistry
+    cue init()
+        .registry = MenuRegistry()
+    def wire(em: Emitter)
+        var registry = .registry
+        em.connect(def(): void
+            capture
+                var registry: MenuRegistry = registry
+            registry.add(Menu(3))
+        )
+
+def main()
+    var t = Test()
+    var e = Emitter()
+    t.wire(e)
+    e.fire()
+    e.fire()
+    assert t.registry.n == 6
+    print("bug488: OK")

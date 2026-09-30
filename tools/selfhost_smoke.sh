@@ -2085,6 +2085,18 @@ smoke_run test/sig_borrowed_closure_test.zbr "sig_borrowed_closure: OK"
 smoke_run test/bug496_module_runtime_init_test.zbr "bug496: OK"
 # BUG-499: a capture initialiser is a use of `this`.
 smoke_run test/bug499_capture_this_only_test.zbr "bug499: OK"
+# BUG-478 (a field shadowed by a param is not a use of self), BUG-479 (str? == str), BUG-481 (raw string ending in \).
+smoke_run test/bug478_479_481_self_optstr_raw_test.zbr "bug478_479_481: OK"
+# BUG-483 (a local/param named like a used module), BUG-498 (duplicate use), and a module-qualified call `m.f()`.
+smoke_run test/bug483_module_alias_shadow_test.zbr "bug483: OK"
+# BUG-484: a cross-module throws method under a method-level catch.
+smoke_run test/bug484_crossmod_throws_catch_test.zbr "bug484: OK"
+# BUG-488: `.add` on a captured class inside a closure is the class's method.
+smoke_run test/bug488_captured_class_add_test.zbr "bug488: OK"
+# BUG-480: a bare throwing method call from a non-throwing caller is refused.
+smoke_tc_fail test/fail_fixtures/bug480_bare_throws_method_fail.zbr "throws call needs '?'"
+# BUG-497: a method named `self` is refused.
+smoke_tc_fail test/fail_fixtures/bug497_method_named_self_fail.zbr "bug497_method_named_self_fail.zbr:3:8: error: a method cannot be named 'self'"
 # A module var initializer is resolved and type-checked like any expression (it was neither).
 smoke_tc_fail test/fail_fixtures/module_var_undefined_name_fail.zbr "module_var_undefined_name_fail.zbr:3:9: error: undefined name: 'undefinedThing'"
 smoke_tc_fail test/fail_fixtures/module_var_optional_operand_fail.zbr "module_var_optional_operand_fail.zbr:4:9: error: 'x' may be nil here"

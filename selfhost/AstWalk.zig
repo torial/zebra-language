@@ -12,14 +12,14 @@ const _zebra_lt = _zbr_rt._zebra_lt;
 const _zebra_le = _zbr_rt._zebra_le;
 const _zebra_ge = _zbr_rt._zebra_ge;
 
-const Ast = @import("Ast.zig");
-const _zbr_ty_Expr = Ast._zbr_ty_Expr;
-const _zbr_ty_ExprOld = Ast._zbr_ty_ExprOld;
-const _zbr_ty_Arg = Ast._zbr_ty_Arg;
-const _zbr_ty_DictEntry = Ast._zbr_ty_DictEntry;
-const _zbr_ty_StringPart = Ast._zbr_ty_StringPart;
-const _zbr_ty_LambdaBody = Ast._zbr_ty_LambdaBody;
-const _zbr_ty_Stmt = Ast._zbr_ty_Stmt;
+const _zbr_mod_Ast = @import("Ast.zig");
+const _zbr_ty_Expr = _zbr_mod_Ast._zbr_ty_Expr;
+const _zbr_ty_ExprOld = _zbr_mod_Ast._zbr_ty_ExprOld;
+const _zbr_ty_Arg = _zbr_mod_Ast._zbr_ty_Arg;
+const _zbr_ty_DictEntry = _zbr_mod_Ast._zbr_ty_DictEntry;
+const _zbr_ty_StringPart = _zbr_mod_Ast._zbr_ty_StringPart;
+const _zbr_ty_LambdaBody = _zbr_mod_Ast._zbr_ty_LambdaBody;
+const _zbr_ty_Stmt = _zbr_mod_Ast._zbr_ty_Stmt;
 // zbr:selfhost/AstWalk.zbr:64
 pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: *std.ArrayList(_zbr_ty_ExprOld)) void {
 // zbr:selfhost/AstWalk.zbr:65

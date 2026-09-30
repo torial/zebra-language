@@ -246,6 +246,9 @@ class ClassTypes
     # user's own types from mixins/unions/pseudo-classes for the unknown-method refusal.
     var is_struct: bool
     var method_deprecated: HashMap(str, str)
+    # BUG-484: a method DECLARED `throws`, so a caller in another module knows its call
+    # needs routing (the body alone misses a throws method that only propagates `?`).
+    var throws_names: HashMap(str, bool)
 
     cue init(name: str)
         .name = internString(name)
@@ -260,6 +263,13 @@ class ClassTypes
         fn_param_lists = HashMap()
         fn_bodies = HashMap()
         method_deprecated = HashMap()
+        throws_names = HashMap()
+
+    def setMethodThrows(method_name: str)
+        .throws_names.put(internString(method_name), true)
+
+    def methodThrows(method_name: str): bool
+        return .throws_names.contains(method_name)
 
     # `@deprecated("msg")` on a method / free fn (2026-09-24): the warning tier's first
     # warning. "" when the name carries none.
@@ -975,6 +985,8 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     ct.setMethodParamTypes(m.name, ptypes_pipe)
                 # Full Param list (incl. default exprs) for cross-module default-fill (§27b).
                 ct.setFnParamList(m.name, m.params)
+                if m.throws_
+                    ct.setMethodThrows(m.name)                  # BUG-484
                 # BUG-293: the body travels with the declaration (see fn_bodies).
                 if m.stmts as m_body
                     ct.setFnBody(m.name, m_body)
@@ -1183,6 +1195,8 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     module_fns.setMethodParamTypes(topfn.name, tl_ptypes)
                 # Full Param list (incl. defaults) for cross-module default-fill (§27b).
                 module_fns.setFnParamList(topfn.name, topfn.params)
+                if topfn.throws_
+                    module_fns.setMethodThrows(topfn.name)          # a qualified `mod.f()` call
                 # BUG-293: same route for a top-level `def` -- this is the one the
                 # cross-module container out-param case actually travels.
                 if topfn.stmts as topfn_body
@@ -6128,6 +6142,14 @@ def varDiagCol(dv: DeclVar): int
             return exprSpanCol(dv.init_expr!)
     return dv.span.col
 
+# BUG-497: every method's receiver is the parameter `self` in the generated code, and a
+# method NAMED `self` is a declaration of the same name in the same struct -- Zig refused
+# it as "function parameter shadows declaration of 'self'", naming emitted code.
+def checkSelfNamedMethod(d: Decl, file: str, ctx: InferCtx)
+    if d is Decl.method as sm
+        if sm.name == "self"
+            ctx.addErr(file, sm.span.line, sm.span.col, "a method cannot be named 'self' -- it is the receiver's name in the generated code; rename it (e.g. `me`)")
+
 def checkReservedField(dv: DeclVar, file: str, ctx: InferCtx)
     if ctx.isReservedRuntimeName(dv.name)
         ctx.addErr(file, dv.span.line, dv.span.col, "'" + dv.name + "' is reserved by the Zebra runtime (a zebra_rt.zig global); rename it")
@@ -6707,12 +6729,14 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
             var saved_class: str = ctx.current_class
             ctx.current_class = dc.name
             for m in dc.members
+                checkSelfNamedMethod(m, file, ctx)
                 checkDecl(m, file, ctx, tc_result)
             ctx.current_class = saved_class
         on Decl.struct_ as ds
             # BUG-359: struct FIELDS collide the same way class fields do (below);
             # nothing else in this pass looks inside a struct.
             for sm in ds.members
+                checkSelfNamedMethod(sm, file, ctx)
                 if sm is Decl.var_ as sdv
                     checkReservedField(sdv, file, ctx)
         on Decl.var_ as dv

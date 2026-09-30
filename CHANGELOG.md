@@ -55,6 +55,19 @@ confirmed via `tools/bootstrap_check.sh`.
   `Builder().then("d")` did not fill `then`'s defaults.
 - **A bare `return` in `cue init` returns the instance (BUG-494)**, and **a list mutated
   only by `set()` is `const` (BUG-495)**. Both reached Zig as type errors.
+- **Embedding: a `--library-mode` program keeps the host's allocator (BUG-485).** Its
+  `main()` replaced the allocator a host installed with `_initAllocator`, so the host's
+  first free of Zebra memory was "Invalid free". New gate `library-mode`.
+- **A local or parameter may share a used module's name (BUG-483):** the import binding
+  is `_zbr_mod_<name>` in the emitted Zig. With it, **a module-qualified call to a
+  top-level def (`m.f()`) works** -- it never had -- and **a module may be `use`d twice**
+  (plain and `exposing`, BUG-498).
+- **`str? == str` compares (BUG-479):** nil never equals a value, nil equals nil.
+- **Cross-module throwing calls under a method-level `catch` are routed (BUG-484)**, and a
+  bare throwing METHOD call from a non-throwing caller is refused in Zebra (BUG-480).
+- **Smaller:** a raw string may end in a backslash (BUG-481); a pure helper method whose
+  parameter shadows a field compiles (BUG-478); a method named `self` is refused with the
+  fix named (BUG-497).
 - **A module-level `var` can have a runtime initializer (BUG-496):** `var s = "X".lower()`,
   `var b = a * 3`, `var xs = [1, 2]`, interpolation and pipelines at top level all reached
   Zig as "unable to resolve comptime value". They run in `_initModuleVars()`, typed by the

@@ -17,14 +17,14 @@ const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
 const _zbr_print = _zbr_rt._zbr_print;
 
-const Parser = @import("Parser.zig");
-const _zbr_ty_PNode = Parser._zbr_ty_PNode;
-const _zbr_ty_PParam = Parser._zbr_ty_PParam;
-const _zbr_ty_POptChain = Parser._zbr_ty_POptChain;
-const _zbr_ty_PIfExpr = Parser._zbr_ty_PIfExpr;
-const CgHelpers = @import("CgHelpers.zig");
-const _zbr_fn_isStdlibNs = CgHelpers._zbr_fn_isStdlibNs;
-const _zbr_fn_isBuiltinTypeName = CgHelpers._zbr_fn_isBuiltinTypeName;
+const _zbr_mod_Parser = @import("Parser.zig");
+const _zbr_ty_PNode = _zbr_mod_Parser._zbr_ty_PNode;
+const _zbr_ty_PParam = _zbr_mod_Parser._zbr_ty_PParam;
+const _zbr_ty_POptChain = _zbr_mod_Parser._zbr_ty_POptChain;
+const _zbr_ty_PIfExpr = _zbr_mod_Parser._zbr_ty_PIfExpr;
+const _zbr_mod_CgHelpers = @import("CgHelpers.zig");
+const _zbr_fn_isStdlibNs = _zbr_mod_CgHelpers._zbr_fn_isStdlibNs;
+const _zbr_fn_isBuiltinTypeName = _zbr_mod_CgHelpers._zbr_fn_isBuiltinTypeName;
 pub const _zbr_ty_ResolveError = struct {
     message: []const u8 = undefined,
     pub fn init(message: []const u8) _zbr_ty_ResolveError {

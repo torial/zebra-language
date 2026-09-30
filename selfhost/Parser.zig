@@ -17,8 +17,8 @@ const _zebra_ge = _zbr_rt._zebra_ge;
 const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
 
-const Token = @import("Token.zig");
-const _zbr_ty_TokenKind = Token._zbr_ty_TokenKind;
+const _zbr_mod_Token = @import("Token.zig");
+const _zbr_ty_TokenKind = _zbr_mod_Token._zbr_ty_TokenKind;
 const _zbr_ty_Lexer = @import("Lexer.zig")._zbr_ty_Lexer;
 pub var _zbr_mv_CUE_NAMES: []const u8 = "|init|toString|equals|hash|compare|iter|next|";
 // zbr:selfhost/Parser.zbr:41
@@ -1331,14 +1331,14 @@ pub const _zbr_ty_PExprId = struct {
 
 pub const _zbr_ty_Parser = struct {
     _type_tag: u64 = _ttag_Parser,
-    tokens: std.ArrayList(*Token._zbr_ty_Token) = undefined,
+    tokens: std.ArrayList(*_zbr_mod_Token._zbr_ty_Token) = undefined,
     pos: i64 = undefined,
     file_name: []const u8 = undefined,
     parse_errors: std.ArrayList([]const u8) = undefined,
     collected_decls: std.ArrayList(_zbr_ty_PNode) = undefined,
     source: []const u8 = undefined,
     expr_depth: i64 = undefined,
-    pub fn init(tokens: std.ArrayList(*Token._zbr_ty_Token), file_name: []const u8, source: []const u8) *_zbr_ty_Parser {
+    pub fn init(tokens: std.ArrayList(*_zbr_mod_Token._zbr_ty_Token), file_name: []const u8, source: []const u8) *_zbr_ty_Parser {
         const _self = _zbr_rt._allocator.create(_zbr_ty_Parser) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Parser");
 // zbr:selfhost/Parser.zbr:850
@@ -1360,7 +1360,7 @@ pub const _zbr_ty_Parser = struct {
     }
 
     // zbr:selfhost/Parser.zbr:871
-    pub fn peek(self: *_zbr_ty_Parser) *Token._zbr_ty_Token {
+    pub fn peek(self: *_zbr_ty_Parser) *_zbr_mod_Token._zbr_ty_Token {
         defer self._check_invariant();
         if (!(_zebra_gt(@as(i64, @intCast(self.tokens.items.len)), 0))) std.debug.panic("require failed in 'peek'\n", .{});
 // zbr:selfhost/Parser.zbr:878
@@ -1373,7 +1373,7 @@ pub const _zbr_ty_Parser = struct {
     }
 
     // zbr:selfhost/Parser.zbr:882
-    pub fn peekAt(self: *_zbr_ty_Parser, offset: i64) *Token._zbr_ty_Token {
+    pub fn peekAt(self: *_zbr_ty_Parser, offset: i64) *_zbr_mod_Token._zbr_ty_Token {
         defer self._check_invariant();
         if (!(_zebra_gt(@as(i64, @intCast(self.tokens.items.len)), 0))) std.debug.panic("require failed in 'peekAt'\n", .{});
         if (!(_zebra_ge((self.pos + offset), 0))) std.debug.panic("require failed in 'peekAt'\n", .{});
@@ -1605,7 +1605,7 @@ pub const _zbr_ty_Parser = struct {
     }
 
     // zbr:selfhost/Parser.zbr:1003
-    pub fn isRecoveryStarter(self: *_zbr_ty_Parser, kind: Token._zbr_ty_TokenKind) bool {
+    pub fn isRecoveryStarter(self: *_zbr_ty_Parser, kind: _zbr_mod_Token._zbr_ty_TokenKind) bool {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1004
         switch (_zbr_val(kind)) {
@@ -7122,7 +7122,7 @@ pub const _zbr_ty_Parser = struct {
     }
 
     // zbr:selfhost/Parser.zbr:3762
-    pub fn lexWithFile(src: []const u8, file_name: []const u8) anyerror!std.ArrayList(*Token._zbr_ty_Token) {
+    pub fn lexWithFile(src: []const u8, file_name: []const u8) anyerror!std.ArrayList(*_zbr_mod_Token._zbr_ty_Token) {
 // zbr:selfhost/Parser.zbr:3762
         {
             var _try_err: ?anyerror = null;

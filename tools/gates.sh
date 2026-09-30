@@ -518,6 +518,9 @@ run_fast "libui-pin"     "PASS"     python tools/libui_pin_check.py
 # compiler; the probe ends in sys.exit and carries a dep module, so a skipped flush or an
 # unattached dep record goes red.
 run_fast "coverage-map"  "passed"   bash tools/coverage_check.sh
+# BUG-485: a host that embeds a --library-mode program keeps its allocator across the
+# library's main(). A Zig host is the attacker; the old prologue is the negative control.
+run_fast "library-mode"  "PASS"     bash tools/library_mode_check.sh
 
 # THE ONLY GATE THAT BUILDS WITH --release. Every other gate here is Debug, which is
 # how BUG-228 survived 19 green gates: `--release` switched backend but never passed
