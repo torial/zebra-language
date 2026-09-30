@@ -4533,7 +4533,7 @@ pub fn _zbr_fn_runLsp() void {
     _sys_go((struct {
         evCh: *_Chan([]const u8),
         eof: *_Atomic(bool),
-     pub fn call(self: @This()) void {
+     pub fn call(_zbr_cself4: @This()) void {
 // zbr:selfhost/main.zbr:2437
         while (true) {
 // zbr:selfhost/main.zbr:2438
@@ -4541,13 +4541,13 @@ pub fn _zbr_fn_runLsp() void {
 // zbr:selfhost/main.zbr:2439
             if ((rm == null)) {
 // zbr:selfhost/main.zbr:2440
-                self.eof.store(true);
+                _zbr_cself4.eof.store(true);
 // zbr:selfhost/main.zbr:2441
-                self.evCh.close();
+                _zbr_cself4.evCh.close();
                 break;
             }
 // zbr:selfhost/main.zbr:2443
-            self.evCh.send(rm.?);
+            _zbr_cself4.evCh.send(rm.?);
         }
      } }{ .evCh = evCh, .eof = eof, }));
 // zbr:selfhost/main.zbr:2445
@@ -5714,7 +5714,7 @@ pub fn _zbr_fn_copyGuiDeps(zig_path: []const u8, srcDir: []const u8) void {
 // zbr:selfhost/main.zbr:3160
         const text: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, cur, _zbr_rt._allocator, .unlimited) catch @panic("File.read error"));
 // zbr:selfhost/main.zbr:3161
-        const parts: std.ArrayList([]const u8) = blk092_5: { var _ll_5: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_5 = std.mem.splitSequence(u8, text, "@import(\""); while (_split_iter_5.next()) |_se_5| { _ll_5.append(_zbr_rt._allocator, _se_5) catch @panic("OOM"); } break :blk092_5 _ll_5; };
+        const parts: std.ArrayList([]const u8) = blk092_6: { var _ll_6: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_6 = std.mem.splitSequence(u8, text, "@import(\""); while (_split_iter_6.next()) |_se_6| { _ll_6.append(_zbr_rt._allocator, _se_6) catch @panic("OOM"); } break :blk092_6 _ll_6; };
 // zbr:selfhost/main.zbr:3162
         var first: bool = true;
 // zbr:selfhost/main.zbr:3163

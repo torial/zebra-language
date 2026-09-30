@@ -28,8 +28,9 @@ confirmed via `tools/bootstrap_check.sh`.
   made inside another closure.
 - **Inference (§28a):** `Hash.*`, `Random.*`, `Reflect.*`, `Dir.*` and `args.usage()`
   results are typed, and a closure's captured variables carry their declared types -- so
-  `.len`, `+` and `.at()` on them are no longer codegen guesses. Guess sites across the
-  corpus: 55 -> 27.
+  `.len`, `+` and `.at()` on them are no longer codegen guesses; so does an untyped
+  `reduce`/`map`/`filter` lambda's parameter (`def(acc, x) = acc + x` takes the list's
+  element type and the initial value's type). Guess sites across the corpus: 55 -> 21.
 - **A JSON value converts, not only a keyed read** (Sean, 2026-09-29): `var s: str = elem?`
   (the value becomes the slot's type, or throws: `JSON value: expected int, found string
   "alpha"`) and `elem.tryStr()` / `tryInt()` / ... with no key (nil if it is not that type).

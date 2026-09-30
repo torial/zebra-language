@@ -3312,6 +3312,7 @@ struct Generator
     var json_want_at         : str      # BUG-331: "line:col" of the index node it applies to
     var self_name            : str      # "self" for methods, "_self" for init
     var capture_self         : str      # BUG-487: a capture closure's receiver ("self" at top level)
+    var lam_hint             : List(Type_)  # §28a A: types for the NEXT lambda's untyped params
     var capture_fields       : StrSet   # captured var names → emit self.name in genIdent
     # BUG-233: lambda params RENAMED because they shadow an enclosing param/local. Zig
     # forbids the shadowing that Zebra (and Python) allow, so codegen has to rename -- but
@@ -3441,6 +3442,7 @@ struct Generator
         .json_want_at          = ""
         .self_name             = "self"
         .capture_self          = "self"
+        .lam_hint              = List(Type_)()
         .capture_fields        = StrSet()
         .lp_renamed            = StrSet()          # BUG-233
         .lp_prefix             = ""
@@ -3646,6 +3648,24 @@ struct Generator
         if tr is TypeRef.named as n
             return ("|" + n.name + "|") in generic_type_params
         return false
+
+    # §28a group A (2026-09-29): `xs.reduce(0, def(acc, x) = acc + x)` -- the lambda's
+    # params are untyped, but the call says what they are: `x` is the receiver's element,
+    # `acc` the initial value's type. Emit the argument with those as hints; genLambdaEx
+    # binds an UNTYPED param to its hint (a declared type always wins).
+    def genTrioLambdaArg(arg: Expr, recv: Expr, init_val: Expr?)
+        var hints: List(Type_) = List(Type_)()
+        if .infer_ctx != nil
+            var rt: Type_ = inferExpr(recv, .infer_ctx!)
+            var elem: Type_ = Type_.unknown_
+            if rt is Type_.list_ as rel
+                elem = rel
+            if init_val != nil
+                hints.add(inferExpr(init_val!, .infer_ctx!))
+            hints.add(elem)
+        lam_hint = hints
+        genExpr(arg)
+        lam_hint = List(Type_)()
 
     def withCaptureSelf(name: str): Generator
         var g = this except
@@ -16136,7 +16156,7 @@ struct Generator
                             w.emit("_zebra_list_map(std.meta.Child(@TypeOf(")
                             genListRecv(m.object)
                             w.emit(".items)), ")
-                            genExpr(args.at(0).value)
+                            genTrioLambdaArg(args.at(0).value, m.object, nil)
                             w.emit(", ")
                             genListRecv(m.object)
                             w.emit(")")
@@ -16146,7 +16166,7 @@ struct Generator
                             w.emit("_zebra_list_filter(std.meta.Child(@TypeOf(")
                             genListRecv(m.object)
                             w.emit(".items)), ")
-                            genExpr(args.at(0).value)
+                            genTrioLambdaArg(args.at(0).value, m.object, nil)
                             w.emit(", ")
                             genListRecv(m.object)
                             w.emit(")")
@@ -16158,7 +16178,7 @@ struct Generator
                             w.emit(".items)), ")
                             genExpr(args.at(0).value)
                             w.emit(", ")
-                            genExpr(args.at(1).value)
+                            genTrioLambdaArg(args.at(1).value, m.object, args.at(0).value)
                             w.emit(", ")
                             genListRecv(m.object)
                             w.emit(")")
@@ -17031,7 +17051,7 @@ struct Generator
                 w.emit("_zebra_list_map(std.meta.Child(@TypeOf(")
                 genExpr(m.object)
                 w.emit(".items)), ")
-                genExpr(args.at(0).value)
+                genTrioLambdaArg(args.at(0).value, m.object, nil)
                 w.emit(", ")
                 genExpr(m.object)
                 w.emit(")")
@@ -17041,7 +17061,7 @@ struct Generator
                 w.emit("_zebra_list_filter(std.meta.Child(@TypeOf(")
                 genExpr(m.object)
                 w.emit(".items)), ")
-                genExpr(args.at(0).value)
+                genTrioLambdaArg(args.at(0).value, m.object, nil)
                 w.emit(", ")
                 genExpr(m.object)
                 w.emit(")")
@@ -17053,7 +17073,7 @@ struct Generator
                 w.emit(".items)), ")
                 genExpr(args.at(0).value)
                 w.emit(", ")
-                genExpr(args.at(1).value)
+                genTrioLambdaArg(args.at(1).value, m.object, args.at(0).value)
                 w.emit(", ")
                 genExpr(m.object)
                 w.emit(")")
@@ -18988,11 +19008,17 @@ struct Generator
             lam_ctx.withDepTypes(.dep_types)
             if lam.return_type != nil
                 lam_ctx.withReturnType(typeFromRef(lam.return_type!))
+            var lp_hints: List(Type_) = lam_hint
+            lam_hint = List(Type_)()                 # consumed: a nested lambda gets none
+            var lp_i: int = 0
             for lp in lam.params
                 if lp.type_ != nil
                     lam_ctx.bind(lp.name, typeFromRef(lp.type_!))
+                else if lp_i < lp_hints.len
+                    lam_ctx.bind(lp.name, lp_hints.at(lp_i))       # §28a group A
                 else
                     lam_ctx.bind(lp.name, Type_.unknown_)
+                lp_i = lp_i + 1
             # §28a group B (2026-09-29): a captured variable DECLARES its type
             # (`var k: int = k`), and the body used it untyped -- `x + k` was a guess.
             for cvb in lam.captures
