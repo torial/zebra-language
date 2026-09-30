@@ -830,6 +830,11 @@ def typeFromRef(tr: TypeRef): Type_
                 return Type_.chan_(typeFromRef(g.args.at(0)))
             if gname == "Set" and g.args.len == 1
                 return Type_.set_(typeFromRef(g.args.at(0)))
+            # §28a: runtime generics typed by name, carrying T in the name, so their
+            # method results are typed (Atomic(int).add -> int; ObjectPool(T).take -> T?).
+            if (gname == "Atomic" or gname == "ObjectPool") and g.args.len == 1
+                if g.args.at(0) is TypeRef.named as ga_n
+                    return Type_.named(gname + "(" + ga_n.name + ")")
             # A generic interface instantiation is the interface for typing purposes:
             # its method set is registered under the base name. (A method returning
             # one of the interface's type parameters is typed unknown_ at the call --
@@ -1124,6 +1129,15 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 mt.addClass(mct)
             on Decl.type_alias_ as ta
                 mt.addTypeAlias(ta.name)
+            on Decl.sig_ as sgd
+                # §28a: a `sig` value is callable; `f(1)` on one returns the sig's type.
+                # Registered like `$Arg` (a pseudo-class the member tables already search).
+                var sgct: ClassTypes = ClassTypes("$sig:" + sgd.name)
+                if sgd.return_type as sgr
+                    sgct.setMethodReturn("call", typeFromRef(sgr))
+                else
+                    sgct.setMethodReturn("call", Type_.void_)
+                mt.addClass(sgct)
             on Decl.enum_ as de
                 for mem in de.members
                     mt.addEnumMember(de.name, mem.name)
@@ -1230,6 +1244,27 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # Register methods from the leaf namespace.
                 var ns_leaf: ClassTypes = mt.classOf(ns_cur)!
                 addClassMembers(mt, ns_leaf, ns_decl.decls)
+                # §28a (2026-09-29): classes and structs DECLARED inside a namespace were
+                # never registered, so `Shapes.Point(...)` and a field read inside
+                # `namespace opaque`'s class were untyped (codegen guessed). Registered
+                # under their own name -- how codegen and the checker look them up --
+                # unless a top-level type already holds it.
+                for ns_td in ns_decl.decls
+                    branch ns_td
+                        on Decl.class_ as ns_c
+                            if mt.classOf(ns_c.name) == nil
+                                var ns_cct = ClassTypes(ns_c.name)
+                                ns_cct.is_class = true
+                                addClassMembers(mt, ns_cct, ns_c.members)
+                                mt.addClass(ns_cct)
+                        on Decl.struct_ as ns_s
+                            if mt.classOf(ns_s.name) == nil
+                                var ns_sct = ClassTypes(ns_s.name)
+                                ns_sct.is_struct = true
+                                addClassMembers(mt, ns_sct, ns_s.members)
+                                mt.addClass(ns_sct)
+                        else
+                            pass
                 # Handle directly nested namespace decls (nested syntax).
                 for ns_d2 in ns_decl.decls
                     if ns_d2 is Decl.namespace_ as inner_ns
@@ -1551,6 +1586,13 @@ class InferCtx
 
     def bind(name: str, t: Type_)
         scope.put(name, t)
+
+    # §28a: a closure body sees the enclosing locals it IMPLICITLY captures (no
+    # `capture` line), so its context starts from the enclosing scope; its params and
+    # declared captures are bound afterwards and win.
+    def inheritLocals(outer: InferCtx)
+        for ik, iv in outer.scope
+            scope.put(ik, iv)
 
     def unbind(name: str)
         # Workaround: selfhost mis-emits HashMap.remove: orderedRemove. Until
@@ -3090,6 +3132,16 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 return Type_.unknown_
             return Type_.unresolved
         on Expr.call as c
+            # §28a: `ObjectPool(Bullet)(n)` -- a pool of T, typed `ObjectPool(T)` so
+            # `pool.take()` is a T? (it was untyped, and every use downstream guessed).
+            branch c.callee
+                on Expr.call as pool_c
+                    if pool_c.callee is Expr.ident as pool_id
+                        if (pool_id.name == "ObjectPool" or pool_id.name == "Atomic") and pool_c.args.len == 1
+                            if pool_c.args.at(0).value is Expr.ident as pool_t
+                                return Type_.named(pool_id.name + "(" + pool_t.name + ")")
+                else
+                    pass
             # Constructor or class name used: callee: `Foo(args)` → named("Foo").
             branch c.callee
                 on Expr.ident as id
@@ -3108,6 +3160,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     # typeFromName("StrSet") returns Type_.str_set, so the branch returns.
                     if cname == "CsvWriter"
                         return Type_.named(cname)
+                    # BUG-287's rule, in inference too: inside a class, a bare `Widget()`
+                    # naming one of ITS methods is that method, even where a class
+                    # `Widget` exists (codegen already dispatched it so; the type did not).
+                    if ctx.current_class != "" and not ctx.hasLocal(cname)
+                        if ctx.methodReturnAny(ctx.current_class, cname) as sib_rt
+                            return sib_rt
+                    # §28a: calling a local held as a `sig` value (`for f in handlers: f(1)`).
+                    if ctx.hasLocal(cname)
+                        var sig_lt: Type_ = ctx.localType(cname)
+                        if sig_lt is Type_.named as sig_nm
+                            if ctx.methodReturnAny("$sig:" + sig_nm, "call") as sig_rt
+                                return sig_rt
                     if ctx.hasClassAny(cname)
                         return Type_.named(cname)
                     # Primitive-name ctors like `int(x)` cast to that primitive.
@@ -3152,6 +3216,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # (divergence audit: derive_test).
                         if mem.member == "init" and ctx.hasClassAny(bname)
                             return Type_.named(bname)
+                        # §28a: `Resolver.Resolver(...)` / `Shapes.Point(...)` -- a class
+                        # constructed through its MODULE or NAMESPACE name: `bname` is not a
+                        # local, and has no static member of that name (then it is a call).
+                        if not ctx.hasLocal(bname) and ctx.hasClassAny(mem.member)
+                            if ctx.methodReturnAny(bname, mem.member) == nil
+                                return Type_.named(mem.member)
                         # BUG-395: a USER class named like a builtin module (`class Crypto`,
                         # `class Path` -- `class Math` has corpus precedent) must win over
                         # the builtin tables below, whose catch-all arms (`Path.* -> str`,
@@ -3193,6 +3263,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # (_hash_*, _random_*) and the Dir/Reflect emit, not assumed. A user
                         # class of the same name was handled above (BUG-395).
                         if not ctx.hasClassAny(bname)
+                            if bname == "Math" and c.args.len > 0
+                                if mem.member == "abs" or mem.member == "min" or mem.member == "max"
+                                    var ma_t: Type_ = inferExpr(c.args.at(0).value, ctx)
+                                    if isNumeric(ma_t)
+                                        return ma_t
                             if bname == "Hash"
                                 if mem.member == "crc32" or mem.member == "fnv64" or mem.member == "xxHash64"
                                     return Type_.int_
@@ -3429,6 +3504,22 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                        "'float' has no method '" + mem.member + "' (toInt/toFloat32/toString; abs, floor, ceil, round, sqrt are Math.* functions)")
                             return Type_.unknown_
                         on Type_.named as tn
+                            # §28a: the ObjectPool(T) runtime API (_ObjectPool in the preamble).
+                            if tn.startsWith("Atomic(") and tn.endsWith(")")
+                                var at_t: Type_ = typeFromName(tn.substring(7, tn.len - 1))
+                                if mem.member == "load" or mem.member == "add" or mem.member == "sub" or mem.member == "swap"
+                                    return at_t
+                                if mem.member == "store"
+                                    return Type_.void_
+                                if mem.member == "cas"
+                                    return Type_.bool_
+                            if tn.startsWith("ObjectPool(") and tn.endsWith(")")
+                                if mem.member == "take"
+                                    return Type_.optional(Type_.named(tn.substring(11, tn.len - 1)))
+                                if mem.member == "give"
+                                    return Type_.void_
+                                if mem.member == "inUse"
+                                    return Type_.int_
                             if isSimdTypeName(tn)
                                 if not simdMethodKnown(mem.member) or not simdMethodFits(tn, mem.member)
                                     ctx.addErr(ctx.file, mem.span.line, mem.span.col,
@@ -3980,6 +4071,16 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return opt
                 else
                     return inner
+        on Expr.lambda as elam
+            # §28a: a lambda with a declared return type is a callable of that type,
+            # so `var inner = def(): int ...` then `inner() + 10` is typed.
+            if elam.return_type != nil
+                return Type_.fn_type_(elam.return_type!)
+            return Type_.unknown_
+        on Expr.old_ as eold
+            # `old x` in an ensure is a snapshot of x taken at entry: x's type
+            # (§28a, 2026-09-29 -- `result == old n + 2` was a codegen guess).
+            return inferExpr(eold.operand, ctx)
         on Expr.orelse_ as eo
             # `expr orelse fallback` — result takes the non-optional inner type
             # when it exists; otherwise the expression's type. UNLESS the fallback is
@@ -4266,6 +4367,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.uint_n(8)
                 on Type_.list_ as list_elem
                     return list_elem
+                # §28a: `m["k"]` on a HashMap is its value type (`m["k"] += 3` guessed).
+                on Type_.hashmap_ as idx_hm
+                    return idx_hm.val_t
                 # BUG-331: `j["k"]` / `j[i]` is a JsonValue; it becomes an int/str/...
                 # only in a slot that names the type (jsonWantMode), in one throwing step.
                 on Type_.json_value
@@ -5195,7 +5299,7 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
         if ctx.isTypeAlias(exp_class)
             return inferred
         if inferred is Type_.named as inf_class
-            if exp_class != inf_class
+            if not sameClassName(exp_class, inf_class)
                 if not ctx.classConformsToAny(inf_class, exp_class)
                     ctx.addErr(file, d_line, d_col, "type mismatch: expected " + exp_class + ", got " + inf_class + " (which does not implement " + exp_class + ")")
         return inferred
@@ -5552,6 +5656,13 @@ def jsonTypeName(t: Type_): str
         else
             return numTypeName(t)
 
+# One class, two spellings: `mod.Chain` (an annotation through the module or namespace)
+# and `Chain` (what `mod.Chain(...)` infers). Not a mismatch.
+def sameClassName(a: str, b: str): bool
+    if a == b
+        return true
+    return a.endsWith("." + b) or b.endsWith("." + a)
+
 def jsonArityMsg(m: str): str
     if m == "has" or m == "get"
         return "JsonValue." + m + " takes one key (a str, or an int for an array element)"
@@ -5660,6 +5771,24 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
         on Expr.binary as b
             checkCallsInExpr(b.left, file, line, ctx)
             checkCallsInExpr(b.right, file, line, ctx)
+            # An arithmetic or ordering operator on an OPTIONAL value reached Zig as
+            # "invalid operands to binary expression: 'optional'" (found 2026-09-29 in
+            # the book: `var a = s.tryInt()` ... `return a + b`). Refused, naming the
+            # three ways to get a plain value. Inside `if x != nil` the checker has
+            # already narrowed x, so the guarded form is not refused.
+            if bareFnOperandOp(b.op)
+                var ob_l: Type_ = inferExpr(b.left, ctx)
+                var ob_r: Type_ = inferExpr(b.right, ctx)
+                var ob_side: Expr? = nil
+                if ob_l is Type_.optional
+                    ob_side = b.left
+                else if ob_r is Type_.optional
+                    ob_side = b.right
+                if ob_side as obs
+                    var ob_nm: str = "the value"
+                    if obs is Expr.ident as obs_id
+                        ob_nm = "'" + obs_id.name + "'"
+                    ctx.addErr(file, b.span.line, b.span.col, ob_nm + " may be nil here, so it cannot be used with this operator -- check it first (if x != nil ...), unwrap it (x!), or give a default (x orelse 0)")
             # BUG-331: a JsonValue is not a number or a string; the operator would
             # reach Zig. Say which typed read to use.
             if inferExpr(b.left, ctx) is Type_.json_value or inferExpr(b.right, ctx) is Type_.json_value
@@ -6014,7 +6143,7 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
         if dv.init_expr != nil
             var cv_inferred: Type_ = inferExpr(dv.init_expr!, ctx)
             if cv_inferred is Type_.named as inf_class
-                if dec_class != inf_class
+                if not sameClassName(dec_class, inf_class)
                     if not ctx.classConformsToAny(inf_class, dec_class)
                         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + dec_class + ", found " + inf_class + " (which does not implement " + dec_class + ")")
         return

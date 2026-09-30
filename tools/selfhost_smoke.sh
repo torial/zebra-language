@@ -2064,6 +2064,8 @@ smoke_tc_fail test/bug331_json_arg_convert_fail.zbr "bug331_json_arg_convert_fai
 smoke_tc_fail test/bug331_json_mismatch_fail.zbr "bug331_json_mismatch_fail.zbr:4:20: error: type mismatch: expected int, found JsonValue"
 smoke_tc_fail test/bug331_json_target_fail.zbr "bug331_json_target_fail.zbr:4:19: error: a JSON value converts to int, float, str, bool, List(JsonValue) or JsonValue -- not byte"
 smoke_tc_fail test/bug331_json_key_type_fail.zbr "bug331_json_key_type_fail.zbr:4:18: error: a JSON key is a str (an object member) or an int (an array element), not float"
+# An operator on an OPTIONAL value is refused, naming the three ways to a plain value.
+smoke_tc_fail test/optional_operand_fail.zbr "optional_operand_fail.zbr:6:18: error: 'x' may be nil here, so it cannot be used with this operator"
 # BUG-487: a capture closure inside a method (or inside another closure) names its receiver
 # uniquely instead of shadowing the method's `self`.
 smoke_run test/bug487_method_capture_closure_test.zbr "bug487: OK"

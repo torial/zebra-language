@@ -30,7 +30,16 @@ confirmed via `tools/bootstrap_check.sh`.
   results are typed, and a closure's captured variables carry their declared types -- so
   `.len`, `+` and `.at()` on them are no longer codegen guesses; so does an untyped
   `reduce`/`map`/`filter` lambda's parameter (`def(acc, x) = acc + x` takes the list's
-  element type and the initial value's type). Guess sites across the corpus: 55 -> 21.
+  element type and the initial value's type), namespaced classes, `ObjectPool(T)` /
+  `Atomic(T)`, `sig`-typed and lambda locals, `old x`, a sibling method named like a
+  class, `if p as q` on `^T?`, `m["k"]` on a HashMap, a closure's implicit captures, and a
+  module that closes an import cycle. Guess sites across the corpus: **55 -> 0**
+  (zebra-ide: 0).
+- **An arithmetic or ordering operator on an optional value is refused** -- `x + 1` with
+  `x: int?` reached Zig as "invalid operands to binary expression: 'optional'"; the message
+  now names the three fixes (`if x != nil`, `x!`, `x orelse 0`). Swept across the corpus,
+  examples, zebra-ide and the book (1,638 files): three refusals, all in the book, and all
+  three already failed inside Zig.
 - **A JSON value converts, not only a keyed read** (Sean, 2026-09-29): `var s: str = elem?`
   (the value becomes the slot's type, or throws: `JSON value: expected int, found string
   "alpha"`) and `elem.tryStr()` / `tryInt()` / ... with no key (nil if it is not that type).

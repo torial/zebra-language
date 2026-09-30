@@ -686,6 +686,26 @@ name, a function from a module in an import cycle, `m["k"] += 3` on a HashMap, a
 IMPLICIT captures (no declared type, 3), two module-scope receivers (BUG-306), a caught
 error's message (2), and two synthesized sites with no line (`old`).
 
+**2026-09-30: THE CORPUS IS AT 0** (all 787 files, now including `selfhost/main.zbr`, which
+emits in 10 s once the measure is emit-only; `selfhost/pipeline_test.zbr` is stale -- it
+calls `generateEntryPoint` with one argument -- and registered nowhere). zebra-ide: 0. Closed
+since 21: `old x` typed; `sig` values registered (`$sig:Name`) and callable; a sibling
+method named like a class wins; implicit captures (a closure's context inherits the
+enclosing locals); a closure body's own locals bound before emit (walkStmts); lambda
+expressions with a declared return type; `Math.abs/min/max`; `m["k"]` on a HashMap;
+`Module.Class(...)` / `Namespace.Class(...)`; classes and structs declared inside a
+namespace registered (they were not, anywhere); `if p as q` on `^T?`; `ObjectPool(T)` and
+`Atomic(T)` typed with their runtime APIs; a module that closes an import cycle is scanned
+for types. **The BOOK is the remaining corpus: 36 -> 23**, and it is the one that matters
+before the flip, since it is code written the way a reader writes it: synthesized pipeline
+code with no source line (5 files), appendix-c line-0 sites (4), field reads in the ch16
+project, the ch17-18 multi-module project, a user class named `Math` with a static `add`
+(routed by NAME as if it were `List.add`), and one partial-class file measured standalone
+(an artifact). Found on the way, and not an inference gap: arithmetic on an optional was
+not refused at all (now it is), and the book teaches two narrowings Zebra does not do --
+`if x != nil and y != nil` (QUICKSTART says "not (yet)") and early exit
+(`if a == nil: raise`, then `a` is used) -- both examples fail inside Zig today.
+
 **Step 3 (the flip) — only once the selfhost standalone count is ~0.** Error + `--allow-inference-guess`
 hatch + promote the measure to an enforcing gate. Follow the §28b template (commit 0a591ce):
 module-global sites list, driver-level reject in `main.zbr` (NOT `@compileError` — malforms

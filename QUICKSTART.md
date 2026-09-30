@@ -1138,6 +1138,9 @@ if x != nil
 if x != nil
     print(x!)
 
+# An optional cannot be an operand: `x + 1` with `x: int?` is refused ("'x' may be nil
+# here") -- narrow it (above), unwrap it (`x!`), or default it (`x orelse 0`).
+#
 # Auto-narrowing scope (2026-07-16): applies when the condition is a plain
 # `<local> != nil` and the local is NOT reassigned in the block. It narrows the
 # whole then-block. NOT (yet) narrowed — use explicit `x!` for these:

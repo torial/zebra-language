@@ -1,0 +1,7 @@
+# An arithmetic or ordering operator on an OPTIONAL value is refused in Zebra's words
+# (it reached Zig as "invalid operands to binary expression: 'optional'"). The
+# guarded form (`if x != nil`) is narrowed and accepted -- see nil_narrow tests.
+def main()
+    var x = "10".tryInt()
+    var y: int = x + 1
+    print(y)

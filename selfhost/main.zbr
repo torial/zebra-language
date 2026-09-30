@@ -259,6 +259,11 @@ class MultiCompiler
         var cyc: int = .inProgressIndex(zbr_path)
         if cyc >= 0
             .reportImportCycle(cyc, zbr_path)
+            # §28a (2026-09-29): the module that closes the cycle is still in progress,
+            # so its types had not reached dep_types, and the importer's uses of it
+            # (`seed() + n` on an exposed `seed`) were typed by guess. Scan it for its
+            # TYPES only -- the same extraction a --module-path dep gets.
+            .scanDepForTypes(zbr_path)?
             return
         if .alreadyVisited(zbr_path)
             return

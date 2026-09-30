@@ -9641,6 +9641,11 @@ struct Generator
                 # method mutates its receiver.)
                 if ig2.infer_ctx != nil
                     var _nt_b = inferExpr(cond_expr, ig2.infer_ctx!)
+                    # §28a: `^T?` is ref_to(optional(T)); strip the box first, as the
+                    # checker's walkStmt does, or the binding kept the optional and
+                    # `q.a + q.b` was a guess.
+                    if _nt_b is Type_.ref_to as _nt_rt
+                        _nt_b = _nt_rt
                     branch _nt_b
                         on Type_.optional as _nt_inner
                             ig2.infer_ctx!.bind(cap, _nt_inner)
@@ -9687,12 +9692,24 @@ struct Generator
             # assignment target, so no `x.? = …` can arise.
             var then_g = ig
             var nn_id: str? = nilCheckedIdent(si.cond)
+            # §28a: the emit narrows `x` to `x.?`; inference must see the same T, or
+            # `x + 1` in the block is a guess. Restored after the block.
+            var nn_restore: bool = false
+            var nn_saved: Type_ = Type_.unknown_
             if nn_id != nil
                 var nn_assigned = StrSet()
                 collectAssignedIdents(si.then_stmts, nn_assigned)
                 if not nn_assigned.contains_(nn_id!)
                     then_g = ig.withNilNarrowed(nn_id!)
+                    if .infer_ctx != nil
+                        if .infer_ctx!.hasLocal(nn_id!)
+                            nn_saved = .infer_ctx!.localType(nn_id!)
+                            if nn_saved is Type_.optional as nn_inner
+                                .infer_ctx!.bind(nn_id!, nn_inner)
+                                nn_restore = true
             then_g.genStmts(si.then_stmts)
+            if nn_restore
+                .infer_ctx!.bind(nn_id!, nn_saved)
             writeIndent()
             w.emit("}")
         for ei in si.else_ifs
@@ -19006,6 +19023,8 @@ struct Generator
                 cf.add(cv.name)
             var lam_ctx = InferCtx(.module_types, owner)
             lam_ctx.withDepTypes(.dep_types)
+            if .infer_ctx != nil
+                lam_ctx.inheritLocals(.infer_ctx!)      # §28a: implicit captures
             if lam.return_type != nil
                 lam_ctx.withReturnType(typeFromRef(lam.return_type!))
             var lp_hints: List(Type_) = lam_hint
@@ -19024,6 +19043,13 @@ struct Generator
             for cvb in lam.captures
                 if cvb.type_ != nil
                     lam_ctx.bind(cvb.name, typeFromRef(cvb.type_!))
+            # §28a: bind the body's own locals before emitting it, as a method does
+            # (walkStmts) -- a loop over a list declared inside the closure was a guess.
+            branch lam.body_
+                on LambdaBody.stmts as lbs
+                    walkStmts(lbs, lam_ctx)
+                else
+                    pass
             var lg = asMethod().withCaptureFields(cf).withInferCtx(lam_ctx).withLambdaParamRenames(lp_names, lp_pfx).withCaptureSelf(cself)
             # Return type
             if lam.return_type != nil
