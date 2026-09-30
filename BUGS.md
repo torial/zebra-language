@@ -47,17 +47,29 @@
 ---
 
 ### BUG-501: a container stored in a container is aliased on some paths and copied on others -- writes are silently lost, with no refusal -- OPEN (found 2026-09-30)
-- **Severity:** High (silent data loss in ordinary code: a `HashMap(str, HashMap(str, int))` or `HashMap(str, List(int))` drops writes depending on HOW the inner container was reached, and nothing in Zebra or Zig says so)
+- **Severity:** High (silent data loss -- and possibly corruption, see the correction -- in ordinary code: a `HashMap(str, HashMap(str, int))` or `HashMap(str, List(int))` drops writes depending on HOW the inner container was reached, and nothing in Zebra or Zig says so)
 - **Found by:** Fable (GameEngine port), measured again on `fd6ed7e` with both container kinds:
 
   | shape | HashMap inner | List inner |
   |---|---|---|
   | `if outer.get(k) as x` then mutate `x` | ALIASED (write seen) | ALIASED |
   | `outer.set(k, local)` then mutate `local` | COPY (write lost) | COPY (lost) |
-  | returned from a `def` (`return m` from `get as`), mutated through a temp | ALIASED | COPY (lost) |
+  | returned from a `def` (`return m` from `get as`), mutated through a temp | SHALLOW COPY -- see below | COPY (lost) |
   | the same, mutated as a statement `f(outer, k).set(...)` | Zig: `expected type '*T', found '*const T'` | -- |
 
   Repro: `test/`-shaped program in the filer's notes (two maps, two lists, the four shapes; prints `map: get-as=5 set-then-mutate=0 returned=9` / `list: a=1 ... b=0`).
+- **CORRECTION, same day -- the "returned" row is worse than a copy.** The first measurement read
+  it as ALIASED (the write was seen); Fable's shape read 0. Both functions emit
+  `return _zbr_unboxed(m);`, a by-value copy of a Zig `StringHashMap`, whose struct holds a
+  POINTER to its storage. When the inner map already had storage, the copy's write landed in the
+  SHARED buffer and the original's lookup happened to find it (while its own count was not
+  updated); when the inner map was empty, the copy allocated fresh storage and the write was lost.
+  So the outcome depends on the map's allocation state, and a copy that half-shares storage can
+  CORRUPT the original (a count that disagrees with the buffer, a grow that frees storage the
+  original still points at). Any fix must make these copies either real (deep) or not copies.
+  Fable's repro, verbatim (prints 0; with the inner map pre-populated the same code prints the
+  write): a `def inner(outer, k)` returning the `get as`-bound map, then `var m1 = inner(outer, "a")`
+  / `m1.set("x", 5)` / read back through `outer.get("a")`.
 - **Where it comes from:** the 2026-09-24 container work boxes an inner container and COPIES it out when it reaches a VALUE slot (`genValueOf`, `_zbr_unboxed`) -- deliberately, so a copy-out is the documented rule in some positions. What is not decided anywhere is the rule itself: whether a container nested in a container is a REFERENCE (what `get as` and, for maps, a returned value already do) or a VALUE (what `set(k, local)` does). The two kinds disagree on the return path, which means the current behaviour is not one rule applied twice.
 - **Decision needed (Sean):** reference semantics for nested containers everywhere (the least surprising for Python/Cobra readers, and what the engine assumed), or value semantics everywhere with the aliasing paths made copies -- and in either case a refusal or a warning where a write would be lost. Until then the engine wraps inner maps in a class (`workspace.TagList`, `shop_util.Inventory`), which is a reference.
 - **Also:** the statement-form compile error in row 4 is a leak on its own (a call-result receiver that is a boxed container passed as `*const`).
