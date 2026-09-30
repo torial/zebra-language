@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-495. Next new bug: BUG-496.**
+**Last bug number generated: BUG-496. Next new bug: BUG-497.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,25 @@
 > measured in.
 
 ---
+
+### BUG-496: a module-level `var` whose initializer is a runtime call is emitted as a comptime constant -- Zig: "unable to resolve comptime value" -- OPEN (found 2026-09-30)
+- **Severity:** Medium (the book shows this shape at top level in its pipelines chapter, and `zebra -c` passes it -- only a full build fails)
+- **Repro** (`zebra m.zbr`):
+  ```zebra
+  var text = "HELLO WORLD"
+  var first_word = (text
+      -> .lower()
+      -> .split(" ")
+      -> .at(0))
+  var length = first_word.len
+
+  def main()
+      print(length)
+  ```
+  → `m.zig:15:203: error: unable to resolve comptime value`. The same three lines inside `main` print `5`.
+- **Cause:** `isDeferredModuleVar` (CodeGen) moves a module global into `_initModuleVars()` only when it is ANNOTATED with a container type (HashMap/Set/Atomic, BUG-153) or a named class whose init is a call (BUG-157). Every other module-level initializer is emitted as a container-level `var x = <expr>;`, which Zig evaluates at comptime -- fine for a literal, impossible for `text.lower()` (it allocates through the runtime allocator).
+- **Fix direction:** defer any module var whose initializer is not comptime-evaluable (any call, method call, pipeline, interpolation, or reference to another deferred var), declaring it with the checker's inferred type (`tcTypeAnnotation`) when it has no annotation; where no type can be inferred, refuse in Zebra naming the annotation to add, rather than reaching Zig.
+- **Found by:** the §28a book measure (its line-0 guesses were these initializers being inferred in a context that does not know the other module vars).
 
 ### BUG-491: a capture closure RETURNED FROM A FACTORY cannot be passed to a `sig`-typed parameter -- the thunk that an inline closure gets is not emitted -- OPEN (found 2026-09-29)
 - **Severity:** High (QUICKSTART §19.1 promises "closures with a `capture` block are passed around as values of any `sig` type whose signature matches"; it is only true for a closure written literally at the call site. §19.2's closure factories -- the documented way to build a stateful callback -- produce values that no `sig` slot accepts.)
