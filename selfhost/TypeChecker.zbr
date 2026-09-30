@@ -1005,6 +1005,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
         arg_ct.setMethodReturn("option", Type_.string_)
         arg_ct.setMethodReturn("contains", Type_.bool_)
         arg_ct.setMethodReturn("optionInt", Type_.int_)
+        arg_ct.setMethodReturn("usage", Type_.string_)       # §28a: `args.usage().len` guessed
         mt.addClass(arg_ct)
     # Pass 1: register classes, structs, mixins, unions, top-level defs.
     for decl in m.decls
@@ -3186,6 +3187,38 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # a field initialiser types the instance and its `next*` dispatch.
                         if bname == "Random" and mem.member == "new"
                             return Type_.named("Random")
+                        # §28a step 4 (2026-09-29): namespaces whose results the checker did
+                        # not type, so `.len` / `+` / `.at()` on them were codegen GUESSES
+                        # (measure_selfhost_guess.sh). Types read off the runtime signatures
+                        # (_hash_*, _random_*) and the Dir/Reflect emit, not assumed. A user
+                        # class of the same name was handled above (BUG-395).
+                        if not ctx.hasClassAny(bname)
+                            if bname == "Hash"
+                                if mem.member == "crc32" or mem.member == "fnv64" or mem.member == "xxHash64"
+                                    return Type_.int_
+                                return Type_.string_
+                            if bname == "Random"
+                                if mem.member == "randInt"
+                                    return Type_.int_
+                                if mem.member == "randFloat" or mem.member == "gaussian"
+                                    return Type_.float_
+                                if mem.member == "randBool"
+                                    return Type_.bool_
+                                if mem.member == "bytes" or mem.member == "weighted"
+                                    return Type_.string_
+                                if mem.member == "seed" or mem.member == "shuffle"
+                                    return Type_.void_
+                            if bname == "Reflect"
+                                if mem.member == "className" or mem.member == "hostKind"
+                                    return Type_.string_
+                                if mem.member == "fieldNames" or mem.member == "fieldTypes"
+                                    return Type_.list_(Type_.string_)
+                            if bname == "Dir"
+                                if mem.member == "exists"
+                                    return Type_.bool_
+                                if mem.member == "list" or mem.member == "walk"
+                                    return Type_.list_(Type_.string_)
+                                return Type_.void_
                         # CodeEditor.forZebra() (and any future static factory) →
                         # code_editor. The bare CodeEditor() ctor already infers via
                         # typeFromName above. Mirrors bootstrap TypeChecker:3523.

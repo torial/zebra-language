@@ -673,6 +673,12 @@ can't be in the both-compilers-reject probe) is now LIFTED. See BUGS.md BUG-181.
 - **E. two sites with no line** (`old`/contract synthesis).
 `selfhost/main.zbr` and `pipeline_test.zbr` still time out at 60 s in the measure and are
 not counted.
+**Progress 2026-09-29: 55 -> 27.** Group C done (Hash/Random/Reflect/Dir statics and
+`args.usage()` typed from the runtime signatures -- len_count 7 -> 0) and group B's declared
+captures done (a closure's inference context binds each `capture` var's declared type).
+Left: A (untyped trio lambda params, 7), D (user-type members/calls, ~11), IMPLICIT captures
+(no declared type, 3), two module-scope receivers (BUG-306), a caught error's message (2),
+E (2 with no line).
 
 **Step 3 (the flip) — only once the selfhost standalone count is ~0.** Error + `--allow-inference-guess`
 hatch + promote the measure to an enforcing gate. Follow the §28b template (commit 0a591ce):

@@ -3311,6 +3311,7 @@ struct Generator
     var json_want_mode       : str      # BUG-331: conversion for the armed `j[...]?` ("" = JsonValue)
     var json_want_at         : str      # BUG-331: "line:col" of the index node it applies to
     var self_name            : str      # "self" for methods, "_self" for init
+    var capture_self         : str      # BUG-487: a capture closure's receiver ("self" at top level)
     var capture_fields       : StrSet   # captured var names → emit self.name in genIdent
     # BUG-233: lambda params RENAMED because they shadow an enclosing param/local. Zig
     # forbids the shadowing that Zebra (and Python) allow, so codegen has to rename -- but
@@ -3439,6 +3440,7 @@ struct Generator
         .json_want_mode        = ""
         .json_want_at          = ""
         .self_name             = "self"
+        .capture_self          = "self"
         .capture_fields        = StrSet()
         .lp_renamed            = StrSet()          # BUG-233
         .lp_prefix             = ""
@@ -3644,6 +3646,11 @@ struct Generator
         if tr is TypeRef.named as n
             return ("|" + n.name + "|") in generic_type_params
         return false
+
+    def withCaptureSelf(name: str): Generator
+        var g = this except
+            capture_self = name
+        return g
 
     def withSelfName(name: str): Generator
         var g = this except
@@ -13456,7 +13463,7 @@ struct Generator
         # BUG-281 C: the capture field is DECLARED through emitName (genLambdaEx), so a
         # bare read here would disagree with its own declaration inside one struct.
         if capture_fields.contains_(id.name)
-            w.emit("self.")
+            w.emit(capture_self + ".")              # BUG-487
             emitName(id.name)
             return
         # BUG-281 F: a bare field read inside a method. Distinct path from `.field`
@@ -18918,13 +18925,19 @@ struct Generator
                     else
                         pass
             # call method
+            # BUG-487: inside a METHOD (or another closure) the enclosing function already
+            # has a `self`, and Zig refuses a parameter that shadows it -- so the receiver
+            # gets a unique name there. A top-level closure keeps `self` (no emit churn).
+            var cself: str = "self"
+            if in_method
+                cself = "_zbr_cself" + w.nextUid().toString()
             w.emit(" " + rtPub() + "fn call(")
             var first = true
             if has_capture
                 if any_cap_mutated
-                    w.emit("self: *@This()")
+                    w.emit(cself + ": *@This()")
                 else
-                    w.emit("self: @This()")
+                    w.emit(cself + ": @This()")
                 first = false
             # BUG-233: Zebra allows a lambda parameter to shadow an enclosing parameter or
             # local (so does Python, which it draws from); ZIG FORBIDS IT --
@@ -18980,7 +18993,12 @@ struct Generator
                     lam_ctx.bind(lp.name, typeFromRef(lp.type_!))
                 else
                     lam_ctx.bind(lp.name, Type_.unknown_)
-            var lg = asMethod().withCaptureFields(cf).withInferCtx(lam_ctx).withLambdaParamRenames(lp_names, lp_pfx)
+            # §28a group B (2026-09-29): a captured variable DECLARES its type
+            # (`var k: int = k`), and the body used it untyped -- `x + k` was a guess.
+            for cvb in lam.captures
+                if cvb.type_ != nil
+                    lam_ctx.bind(cvb.name, typeFromRef(cvb.type_!))
+            var lg = asMethod().withCaptureFields(cf).withInferCtx(lam_ctx).withLambdaParamRenames(lp_names, lp_pfx).withCaptureSelf(cself)
             # Return type
             if lam.return_type != nil
                 genType(lam.return_type!)

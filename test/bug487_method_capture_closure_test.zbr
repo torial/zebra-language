@@ -1,0 +1,58 @@
+# BUG-487 (found by Fable porting the GameEngine): a `capture` closure written inside a
+# METHOD was emitted with a receiver named `self`, shadowing the method's own `self`, and
+# Zig refused it. It now gets a unique name there; a top-level closure is unchanged.
+sig Cb()
+
+class Emitter
+    var handlers: List(Cb)
+    cue init()
+        .handlers = List(Cb)()
+    def connect(h: Cb)
+        .handlers.add(h)
+    def fire()
+        for h in .handlers
+            h()
+
+class Counter
+    var n: int
+    cue init()
+        .n = 0
+    def bump()
+        .n = .n + 1
+    def attach(em: Emitter)
+        var me = this
+        em.connect(def()
+            capture
+                var me: Counter = me
+            me.bump()
+        )
+    # a mutated capture, and a closure made inside a closure, both inside a method
+    def attachTwice(em: Emitter)
+        var me = this
+        var times: int = 2
+        em.connect(def()
+            capture
+                var me: Counter = me
+                var times: int = times
+            while times > 0
+                me.bump()
+                times = times - 1
+            var inner = def(): int
+                capture
+                    var me: Counter = me
+                return me.n
+            me.n = inner() + 10
+        )
+
+def main()
+    var em = Emitter()
+    var c = Counter()
+    c.attach(em)
+    em.fire()
+    assert c.n == 1
+    var em2 = Emitter()
+    var d = Counter()
+    d.attachTwice(em2)
+    em2.fire()
+    assert d.n == 12
+    print("bug487: OK")

@@ -6,6 +6,54 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-487: a `capture` closure written inside a METHOD is emitted with a `self` that shadows the method's `self` -- Zig refuses — FIXED 2026-09-29
+- **Severity:** High for anything object-shaped (every "connect a handler from inside a class" in the monster_mayhem port: 8 sites across four files stopped building)
+- **Repro** (`zebra b487.zbr`):
+  ```zebra
+  sig Cb()
+  class Emitter
+      var handlers: List(Cb)
+      cue init()
+          .handlers = List(Cb)()
+      def connect(h: Cb)
+          .handlers.add(h)
+      def fire()
+          for h in .handlers
+              h()
+  class Counter
+      var n: int
+      cue init()
+          .n = 0
+      def bump()
+          .n = .n + 1
+      def attach(em: Emitter)
+          var me = this
+          em.connect(def()
+              capture
+                  var me: Counter = me
+              me.bump()          # ← b487.zbr:22: error: function parameter 'self' shadows function parameter from outer scope
+          )
+  def main()
+      var em = Emitter()
+      var c = Counter()
+      c.attach(em)
+      em.fire()
+      print(c.n)
+  ```
+  Emitted: `pub fn attach(self: *_zbr_ty_Counter, …) { … (struct { … pub fn call(self: @This()) void { … } }) … }` -- the closure struct's `call` names its receiver `self` inside a function whose parameter is already `self`, and Zig forbids the shadow. The identical closure in a free `def` (no outer `self`) builds; every §19 example is in `main`, which is why the docs never hit it.
+- **Workaround left in the calling code:** module-level closure FACTORIES (`def clickHandler(vm, option, button): def(): void` returning the capture closure) called from the method -- `C:/Projects/GameEngine/game/mm/voting_menu.zbr`, `voting_server.zbr`, `zbra/framework.zbr`, `zbra/maid.zbr`.
+- **Fix direction:** name the closure receiver something reserved (`_zbr_self`) -- the same discipline as the other emitted names.
+
+**Resolution (2026-09-29).** `genLambdaEx` names the closure's `call` receiver
+`_zbr_cself<N>` (unique per closure) whenever the closure is emitted inside a method --
+which includes inside another closure, the nested case that shadowed the same way -- and
+captured names read through that receiver (`Generator.capture_self`). A top-level closure
+keeps `self`, so its emit is unchanged. Fixture `test/bug487_method_capture_closure_test.zbr`
+(the repro, a mutated capture, and a closure made inside a closure, all inside methods):
+red on the N-1 anchor with the reported message, green now. Same commit: the closure's
+inference context now binds each captured variable's DECLARED type (§28a group B), so
+`x + k` in a closure body is no longer a codegen guess.
+
 ### BUG-331: every `JsonValue` getter fabricates a default on miss, so "absent" and "empty" are indistinguishable — FIXED 2026-09-28
 
 **Status:** FIXED 2026-09-28 (the lenient getters are REMOVED, not kept beside the new reads). Filed 2026-09-04 while scoping the `zebra debug` DAP relay.

@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A `capture` closure inside a method compiles (BUG-487, found porting the GameEngine).**
+  Its receiver was named `self` and shadowed the method's; Zig refused it. Also a closure
+  made inside another closure.
+- **Inference (§28a):** `Hash.*`, `Random.*`, `Reflect.*`, `Dir.*` and `args.usage()`
+  results are typed, and a closure's captured variables carry their declared types -- so
+  `.len`, `+` and `.at()` on them are no longer codegen guesses. Guess sites across the
+  corpus: 55 -> 27.
 - **A JSON value converts, not only a keyed read** (Sean, 2026-09-29): `var s: str = elem?`
   (the value becomes the slot's type, or throws: `JSON value: expected int, found string
   "alpha"`) and `elem.tryStr()` / `tryInt()` / ... with no key (nil if it is not that type).
