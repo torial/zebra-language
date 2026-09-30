@@ -5494,15 +5494,14 @@ def jsonWantMode(t: Type_): str
         else
             return ""
 
-# `j[...]?` -- a JSON index directly under `?`, the only form that may convert.
+# `j[...]?` or `v?` -- a JSON-typed expression directly under `?`: the only form that
+# converts. `?` on JSON means "this becomes the slot's type, or throws" -- for a keyed read
+# the lookup can fail too; for a value (a list element, a get() result) only the
+# conversion can (2026-09-29, Sean).
 def jsonIdxTry(e: Expr, ctx: InferCtx): bool
     branch e
         on Expr.try_ as t
-            branch t.expr
-                on Expr.index as ix
-                    return inferExpr(ix.object, ctx) is Type_.json_value
-                else
-                    return false
+            return inferExpr(t.expr, ctx) is Type_.json_value
         else
             return false
 
@@ -5519,6 +5518,11 @@ def jsonTypeName(t: Type_): str
             return jsonTypeName(ot) + "?"
         else
             return numTypeName(t)
+
+def jsonArityMsg(m: str): str
+    if m == "has" or m == "get"
+        return "JsonValue." + m + " takes one key (a str, or an int for an array element)"
+    return "JsonValue." + m + " takes one key, or none to read the value itself"
 
 def jsonHint(): str
     return "read a typed value with j[\"k\"]? (throws if missing) or j.tryInt(\"k\") / tryStr / tryFloat / tryBool (nil if missing)"
@@ -5604,9 +5608,11 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                 # BUG-331: the optional JSON reads take exactly one key.
                 if cm.member == "has" or cm.member == "get" or cm.member == "tryStr" or cm.member == "tryInt" or cm.member == "tryFloat" or cm.member == "tryBool" or cm.member == "tryObj" or cm.member == "tryList"
                     if inferExpr(cm.object, ctx) is Type_.json_value
-                        if c.args.len != 1
-                            ctx.addErr(file, cm.span.line, cm.span.col, "JsonValue." + cm.member + " takes one key (a str, or an int for an array element)")
-                        else
+                        # tryX() with no key reads the value itself; has/get need a key.
+                        var cm_keyless_ok: bool = cm.member != "has" and cm.member != "get"
+                        if c.args.len > 1 or (c.args.len == 0 and not cm_keyless_ok)
+                            ctx.addErr(file, cm.span.line, cm.span.col, jsonArityMsg(cm.member))
+                        else if c.args.len == 1
                             checkJsonKey(c.args.at(0).value, file, cm.span.line, cm.span.col, ctx)
             for a in c.args
                 checkCallsInExpr(a.value, file, line, ctx)
@@ -5714,9 +5720,10 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                     ocb = ocbi
                 if ocb is Type_.json_value
                     if oc.member != "keys" and oc.member != "stringify" and oc.member != "isNull" and oc.member != "isObject" and oc.member != "isArray"
-                        if oc.args.len != 1
-                            ctx.addErr(file, oc.span.line, oc.span.col, "JsonValue." + oc.member + " takes one key (a str, or an int for an array element)")
-                        else
+                        var oc_keyless_ok: bool = oc.member != "has" and oc.member != "get"
+                        if oc.args.len > 1 or (oc.args.len == 0 and not oc_keyless_ok)
+                            ctx.addErr(file, oc.span.line, oc.span.col, jsonArityMsg(oc.member))
+                        else if oc.args.len == 1
                             checkJsonKey(oc.args.at(0).value, file, oc.span.line, oc.span.col, ctx)
         on Expr.chained_cmp as cc
             for op in cc.operands

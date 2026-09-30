@@ -23,6 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A JSON value converts, not only a keyed read** (Sean, 2026-09-29): `var s: str = elem?`
+  (the value becomes the slot's type, or throws: `JSON value: expected int, found string
+  "alpha"`) and `elem.tryStr()` / `tryInt()` / ... with no key (nil if it is not that type).
+  A list element or a `get()` result no longer needs stringifying. `v?` with no typed slot is
+  the value itself; it reached Zig as "expected error union type". Also fixed: `xs?.len` on an
+  optional List emitted `.len` on the ArrayList and failed inside Zig.
 - **`if x orelse d as n` binds** (Sean, 2026-09-29) -- "take x or a default, and name it".
   It was refused ("requires an optional type"). It always binds, so an `else` on it is dead
   code and warns. Found on the way: `a orelse b` with an OPTIONAL fallback (`b: T?`, or

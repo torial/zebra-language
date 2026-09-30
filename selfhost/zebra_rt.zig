@@ -2065,7 +2065,7 @@ fn _json_key_list(o: std.json.ObjectMap) []const u8 {
 }
 // A chain `j["a"]["b"]?` carries ONE `?`: the inner lookup reaches the outer one as an
 // error union, unwrapped here, so its failure propagates through the same `try`.
-fn _json_unwrap(recv: anytype) anyerror!JsonValue {
+pub fn _json_unwrap(recv: anytype) anyerror!JsonValue {
     if (@typeInfo(@TypeOf(recv)) == .error_union) return try recv;
     return recv;
 }
@@ -2155,6 +2155,38 @@ pub fn _json_idx_list(recv: anytype, key: anytype) anyerror!std.ArrayList(JsonVa
     const it = try _json_idx(recv, key);
     return _json_as_list(it) orelse return _json_mismatch(key, "a list (JSON array)", it);
 }
+// A JSON VALUE, not a keyed read (2026-09-29): `var s: str = elem?` converts the value
+// itself (a list element, a get() result), throwing when it will not; `elem.tryStr()`
+// answers nil instead. Same conversion rules as the keyed forms.
+fn _json_value_mismatch(comptime want: []const u8, got: JsonValue) anyerror {
+    return _json_fail("JSON value: expected " ++ want ++ ", found {s}", .{_json_found(got)});
+}
+pub fn _json_conv_int(recv: anytype) anyerror!i64 {
+    const v = try _json_unwrap(recv);
+    return _json_as_int(v) orelse return _json_value_mismatch("int", v);
+}
+pub fn _json_conv_float(recv: anytype) anyerror!f64 {
+    const v = try _json_unwrap(recv);
+    return _json_as_float(v) orelse return _json_value_mismatch("float", v);
+}
+pub fn _json_conv_str(recv: anytype) anyerror![]const u8 {
+    const v = try _json_unwrap(recv);
+    return _json_as_str(v) orelse return _json_value_mismatch("str", v);
+}
+pub fn _json_conv_bool(recv: anytype) anyerror!bool {
+    const v = try _json_unwrap(recv);
+    return _json_as_bool(v) orelse return _json_value_mismatch("bool", v);
+}
+pub fn _json_conv_list(recv: anytype) anyerror!std.ArrayList(JsonValue) {
+    const v = try _json_unwrap(recv);
+    return _json_as_list(v) orelse return _json_value_mismatch("a list (JSON array)", v);
+}
+pub fn _json_self_int(v: anytype) ?i64 { return _json_as_int(_json_recv(v) orelse return null); }
+pub fn _json_self_float(v: anytype) ?f64 { return _json_as_float(_json_recv(v) orelse return null); }
+pub fn _json_self_str(v: anytype) ?[]const u8 { return _json_as_str(_json_recv(v) orelse return null); }
+pub fn _json_self_bool(v: anytype) ?bool { return _json_as_bool(_json_recv(v) orelse return null); }
+pub fn _json_self_obj(v: anytype) ?JsonValue { return _json_as_obj(_json_recv(v) orelse return null); }
+pub fn _json_self_list(v: anytype) ?std.ArrayList(JsonValue) { return _json_as_list(_json_recv(v) orelse return null); }
 pub fn _json_has(v: JsonValue, key: anytype) bool { return _json_lookup(v, key) != null; }
 // The optional reads take a JsonValue OR a JsonValue? receiver: `j.tryObj("a")?.tryInt("b")`
 // lowers to one call, nil in, nil out. (An `if (x) |v| f(v) else null` wrapper defeats

@@ -8564,6 +8564,16 @@ struct Generator
 
     # BUG-331: the runtime function behind each key-taking JsonValue read ("" = not one).
     # Shared by the plain member call and `?.`, so the two cannot drift.
+    # tryX() with no key: the value itself (_json_self_int ...), nil if it is not that type.
+    def jsonSelfFn(m: str): str
+        if m == "tryStr": return "_json_self_str"
+        if m == "tryInt": return "_json_self_int"
+        if m == "tryFloat": return "_json_self_float"
+        if m == "tryBool": return "_json_self_bool"
+        if m == "tryObj": return "_json_self_obj"
+        if m == "tryList": return "_json_self_list"
+        return ""
+
     def jsonKeyFn(m: str): str
         if m == "has": return "_json_has"
         if m == "get": return "_json_get_opt"
@@ -8589,12 +8599,12 @@ struct Generator
             return
         branch value
             on Expr.try_ as t
+                json_want_mode = jsonWantMode(target)
                 branch t.expr
                     on Expr.index as ix
-                        json_want_mode = jsonWantMode(target)
                         json_want_at = ix.span.line.toString() + ":" + ix.span.col.toString()
                     else
-                        pass
+                        json_want_at = "?" + t.span.line.toString() + ":" + t.span.col.toString()
             else
                 pass
 
@@ -13094,6 +13104,43 @@ struct Generator
                 # astbuilder already stripped the zig"..." wrapper via stripZigQuotes.
                 emitZigLitText(zl.text)
             on Expr.try_ as tr
+                var tr_json_fn: str = ""
+                if .infer_ctx != nil
+                    var tr_is_index: bool = false
+                    var tr_is_call: bool = false
+                    branch tr.expr
+                        on Expr.index
+                            tr_is_index = true
+                        on Expr.call
+                            tr_is_call = true
+                        else
+                            pass
+                    if not tr_is_index and inferExpr(tr.expr, .infer_ctx!) is Type_.json_value
+                        var tr_key: str = "?" + tr.span.line.toString() + ":" + tr.span.col.toString()
+                        if json_want_at == tr_key and json_want_mode != ""
+                            tr_json_fn = "_json_conv_" + json_want_mode
+                        else if not tr_is_call
+                            tr_json_fn = "_json_unwrap"
+                        if json_want_at == tr_key
+                            json_want_mode = ""
+                            json_want_at = ""
+                if tr_json_fn != ""
+                    if try_block_label != nil
+                        w.emit("(")
+                        in_try_expr = true
+                        w.emit(tr_json_fn + "(")
+                        genExpr(tr.expr)
+                        w.emit(")")
+                        in_try_expr = false
+                        emitTryBlockCatch()
+                        w.emit(")")
+                    else
+                        w.emit("(try " + tr_json_fn + "(")
+                        in_try_expr = true
+                        genExpr(tr.expr)
+                        in_try_expr = false
+                        w.emit("))")
+                    return
                 if try_block_label != nil
                     # Inside try block: use catch-break pattern instead of try keyword
                     # BUG-163: self-parenthesize (catch binds looser than any operator).
@@ -13268,13 +13315,15 @@ struct Generator
                         ocb_t = ocb_in
                     if ocb_t is Type_.json_value
                         oc_json_fn = jsonKeyFn(oc.member)
+                        if oc.args.len == 0 and oc_json_fn.startsWith("_json_try_")
+                            oc_json_fn = jsonSelfFn(oc.member)
                         if oc.member == "keys": oc_json_fn = "_json_keys"
                         else if oc.member == "isNull": oc_json_fn = "_json_is_null"
                         else if oc.member == "isObject": oc_json_fn = "_json_is_object"
                         else if oc.member == "isArray": oc_json_fn = "_json_is_array"
                         else if oc.member == "stringify": oc_json_fn = "_json_stringify"
                 # get/tryX take the optional receiver themselves (runtime _json_recv).
-                if oc_json_fn.startsWith("_json_try_") or oc_json_fn == "_json_get_opt"
+                if oc_json_fn.startsWith("_json_try_") or oc_json_fn.startsWith("_json_self_") or oc_json_fn == "_json_get_opt"
                     w.emit(oc_json_fn + "(")
                     genExpr(oc.base)
                     for oca2 in oc.args
@@ -13310,7 +13359,19 @@ struct Generator
                     w.emit("); } else null)")
                 else
                     w.emit(") |_oc_" + oc_u + "| _oc_" + oc_u + ".")
-                    w.emit(oc.member)
+                    # `xs?.len` on a List: an ArrayList keeps its length in .items (it
+                    # emitted `.len`, which Zig refused -- found 2026-09-29).
+                    var oc_len_list: bool = false
+                    if oc.member == "len" and .infer_ctx != nil
+                        var ocl_t: Type_ = inferExpr(oc.base, .infer_ctx!)
+                        if ocl_t is Type_.optional as ocl_in
+                            ocl_t = ocl_in
+                        if ocl_t is Type_.list_
+                            oc_len_list = true
+                    if oc_len_list
+                        w.emit("items.len")
+                    else
+                        w.emit(oc.member)
                     w.emit(" else null)")
 
     # BUG-158: record an exposed cross-module module var (implicit-self `.put` so
@@ -15619,6 +15680,11 @@ struct Generator
                 on Type_.json_value
                     # read-only key-taking reads
                     var jget_fn = jsonKeyFn(mname)                          # BUG-331
+                    if args.len == 0 and jget_fn.startsWith("_json_try_")
+                        w.emit(jsonSelfFn(mname) + "(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
                     if jget_fn != ""
                         w.emit(jget_fn)
                         w.emit("(")

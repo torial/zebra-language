@@ -2064,6 +2064,8 @@ smoke_tc_fail test/bug331_json_arg_convert_fail.zbr "bug331_json_arg_convert_fai
 smoke_tc_fail test/bug331_json_mismatch_fail.zbr "bug331_json_mismatch_fail.zbr:4:20: error: type mismatch: expected int, found JsonValue"
 smoke_tc_fail test/bug331_json_target_fail.zbr "bug331_json_target_fail.zbr:4:19: error: a JSON value converts to int, float, str, bool, List(JsonValue) or JsonValue -- not byte"
 smoke_tc_fail test/bug331_json_key_type_fail.zbr "bug331_json_key_type_fail.zbr:4:18: error: a JSON key is a str (an object member) or an int (an array element), not float"
+# A JSON VALUE converts too: `var s: str = elem?` and `elem.tryStr()` (Sean, 2026-09-29).
+smoke_run test/json_value_conversion_test.zbr "json_value_conversion: OK"
 # `if x orelse d as n` binds always (Sean, 2026-09-29); a dead `else` on it warns.
 smoke_run test/orelse_as_binding_test.zbr "orelse_as: OK"
 smoke_run test/orelse_as_binding_test.zbr "orelse_as_binding_test.zbr:27:8: warning: this \`else\` never runs"

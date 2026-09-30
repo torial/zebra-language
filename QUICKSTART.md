@@ -3760,6 +3760,8 @@ var present  = args.contains("--dry-run")    # bool
 | `v.get(k)`                           | `JsonValue?`  | The value at `k` whatever its type; `nil` if absent |
 | `v.tryStr/tryInt/tryFloat/tryBool(k)` | `T?`         | `nil` if absent OR not that type        |
 | `v.tryObj(k)` / `v.tryList(k)`       | `JsonValue?` / `List(JsonValue)?` | `nil` if absent or not an object / array |
+| `v?` (into a typed slot)             | the slot's type | the VALUE itself converted; throws if it will not (`var s: str = elem?`) |
+| `v.tryStr()` / `tryInt()` / ... (no key) | `T?`      | the VALUE itself; `nil` if it is not that type |
 | `v.keys()`                          | `List(str)`   | Object keys, in insertion order          |
 | `v.isNull()` / `isObject()` / `isArray()` | `bool`  | What kind of value `v` is               |
 
@@ -3780,6 +3782,9 @@ var nick = j.tryStr("nickname") orelse "Bob"   # optional, with the default in v
 if j.get("args") as args                       # optional, bound
     print(args.keys().len)
 var x = j.tryObj("args")?.tryInt("x") orelse 0 # optional through a chain: nil in, nil out
+for elem in j.tryList("tags") orelse List(JsonValue)()
+    var tag: str = elem?                       # a VALUE converts the same way: str, or throw
+    var n = elem.tryInt() orelse 0             # ...or nil, with no key
 ```
 
 - **`v[k]?` converts to the type the slot names** -- an annotated `var`, an assignment to a

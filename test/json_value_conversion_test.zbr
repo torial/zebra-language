@@ -1,0 +1,59 @@
+# A JSON VALUE converts too, not only a keyed read (Sean, 2026-09-29):
+#   var s: str = v?     the value becomes the slot's type, or throws
+#   v.tryStr()          nil if it is not that type (tryInt/tryFloat/tryBool/tryObj/tryList)
+# Same conversion rules as j["k"]? / tryStr(k). Expectations written before the first run.
+
+def firstWord(j: JsonValue): str
+    for a in j.tryList("words") orelse List(JsonValue)()
+        return a?                         # a `return` converts
+    return ""
+
+def badNumber(j: JsonValue): str
+    for a in j.tryList("words") orelse List(JsonValue)()
+        var n: int = a?
+        return "no error: " + n.toString()
+    return "empty"
+catch |e|
+    return e.message
+
+def main()
+    var j = Json.parse("{\"words\": [\"alpha\", \"beta\"], \"nums\": [1, 2.0, 3.5], \"flag\": true, \"inner\": {\"k\": 1}}")!
+
+    # required: element conversion in a var, an assignment and a return
+    var joined: str = ""
+    for a in j.tryList("words") orelse List(JsonValue)()
+        var w: str = a?
+        joined = joined + w
+    assert joined == "alphabeta"
+    var total: float = 0.0
+    for n in j.tryList("nums") orelse List(JsonValue)()
+        var f: float = n?
+        total = total + f
+    assert total == 6.5
+    var flag: bool = false
+    flag = j.get("flag")!?                # a get() result, converted by assignment
+    assert flag
+    assert firstWord(j)? == "alpha"
+    assert badNumber(j) == "JSON value: expected int, found string \"alpha\""
+
+    # optional: tryX() with no key reads the value itself
+    var ints: int = 0
+    var nonints: int = 0
+    for n in j.tryList("nums") orelse List(JsonValue)()
+        if n.tryInt() as k
+            ints = ints + k
+        else
+            nonints = nonints + 1
+    assert ints == 3                      # 1 and 2.0 are whole; 3.5 is not
+    assert nonints == 1
+    assert (j.get("flag")?.tryBool() orelse false)
+    assert j.get("flag")?.tryStr() == nil
+    assert (j.get("inner")?.tryObj()?.tryInt("k") orelse 0) == 1
+    assert (j.get("words")?.tryList()?.len orelse 0) == 2
+
+    # untyped: `?` on a value with no slot type is the value itself (it used to reach Zig)
+    for a in j.tryList("words") orelse List(JsonValue)()
+        var v = a?
+        assert v.stringify() == "\"alpha\""
+        break
+    print("json_value_conversion: OK")
