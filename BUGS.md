@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-475. Next new bug: BUG-476.**
+**Last bug number generated: BUG-493. Next new bug: BUG-494.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,416 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-491: a capture closure RETURNED FROM A FACTORY cannot be passed to a `sig`-typed parameter -- the thunk that an inline closure gets is not emitted -- OPEN (found 2026-09-29)
+- **Severity:** High (QUICKSTART §19.1 promises "closures with a `capture` block are passed around as values of any `sig` type whose signature matches"; it is only true for a closure written literally at the call site. §19.2's closure factories -- the documented way to build a stateful callback -- produce values that no `sig` slot accepts.)
+- **Repro** (`zebra sigcap.zbr`):
+  ```zebra
+  sig Cb()
+  class Emitter
+      var handlers: List(Cb)
+      cue init()
+          .handlers = List(Cb)()
+      def connect(h: Cb)
+          .handlers.add(h)
+      def fire()
+          for h in .handlers
+              h()
+  def makeH(label: str): def(): void
+      return def(): void
+          capture
+              var label: str = label
+          print("factory " + label)
+  def main()
+      var em = Emitter()
+      var tag = "direct"
+      em.connect(def(): void          # inline: emitted through the _zbr_thunks_N pool -- works
+          capture
+              var tag: str = tag
+          print("inline " + tag)
+      )
+      em.connect(makeH("a"))          # ← sigcap.zbr:27: error: expected type '*const fn () void', found '_ZbrClosure_makeH'
+      em.fire()
+  ```
+  Remove the `makeH` line and the program prints `inline direct`.
+- **Why it matters in practice:** the inline form is the only one that works, and it cannot be written inside a method (BUG-487, `self` shadow), so every stateful handler in an object-shaped program ends up as a module-level "connector" free function `def connectX(target, state…)` whose body is the inline closure. The GameEngine's monster_mayhem port (`game/mm/voting_menu.zbr`, `voting_server.zbr`, `zbra/framework.zbr`, `zbra/maid.zbr`) is written that way.
+- **Fix direction:** give the factory's hoisted `_ZbrClosure_<fn>` value the same thunk-pool treatment at the sig-typed call site (it is a known closure struct with a `call` method), or -- better and also fixing BUG-492 -- make `sig` a fat pointer `{ ctx: ?*anyopaque, fn: *const fn(?*anyopaque, …) R }` so any closure struct converts without a static pool.
+
+---
+
+### BUG-492: the closure-via-`sig` thunk pool is 64 slots PER CALL SITE, never reclaimed -- the 65th connection at one site panics -- OPEN (found 2026-09-29)
+- **Severity:** Medium (a correct long-running program dies: "closure-via-sig pool exhausted (>64 live connections at one call site)". Nothing frees a slot -- not `disconnect`, not the closure going out of scope -- so it is 64 connections per site *per process lifetime*, not 64 live ones as the message says.)
+- **Where seen:** the emitted code for the inline closure in the BUG-491 repro: `var _zbr_state_2: [64]?*anyopaque`, `_zbr_next_2 += 1`, `if (_zbr_next_2 >= 64) @panic(...)`, and 64 generated `fn _zbr_thunk_2_k()` per site. In the GameEngine's VotingMenu each vote round connects two closures per option button at the same two sites, so a client that plays ~16 rounds panics.
+- **Fix direction:** same as BUG-491 -- a fat-pointer `sig` needs no pool. Short of that: recycle slots when the owning signal disconnects (hand the slot index back through the `sig` value), and make the panic message say "per process", not "live".
+
+---
+
+### BUG-493: an inline capture closure is NOT thunked when the call's receiver is itself a call -- `a.b().connect(closure)` fails, `var s = a.b(); s.connect(closure)` works -- OPEN (found 2026-09-29)
+- **Severity:** Medium (the failure is a Zig type error naming a `_zbr_fn_x__struct_NNNNN` type, with no hint that the receiver shape is the cause)
+- **Repro:** in the GameEngine, `game/mm/voting_menu.zbr` `connectEnabled`: `votingFolder.getAttributeChangedSignal("Enabled").connect(def(): void capture … )` → `expected type '*const fn () void', found 'voting_menu._zbr_fn_connectEnabled__struct_69626'`. The emitted code hoists the receiver into `var _mc_8 = …getAttributeChangedSignal("Enabled"); _mc_8.connect((struct { … }){…})` -- the method-chain rewrite runs *after* the closure-argument pass has decided (on the un-rewritten call) not to thunk. `button.mouseClick.connect(closure)` (field receiver) and `m.giveTask(closure)` (variable receiver) at the same sig type are thunked correctly.
+- **Workaround left in the calling code:** bind the receiver to a local first (three sites in `voting_menu.zbr` / `zbra/framework.zbr`, each with a BUG-493 note).
+- **Fix direction:** run the closure-argument thunk pass on the call *after* the `_mc_N` receiver hoist, or key it on the callee parameter type rather than on the receiver shape.
+
+---
+
+### BUG-490: a class that `implements` an interface from ANOTHER module does not coerce to that interface at a cross-module call site -- OPEN (found 2026-09-29)
+- **Severity:** Medium (interfaces are the documented way to pass behaviour across modules; this makes them single-module)
+- **Where seen:** GameEngine, `zbra/framework.zbr` declared `interface ComponentCtor` (one method `construct(obj: Instance)`) and `def registerComponent(name: str, ctor: ComponentCtor)`; `game/mm/voting_menu.zbr` declared `class VotingMenuCtor implements ComponentCtor`; `game/mm/voting_test.zbr` (a third module) called `fw.registerComponent("VotingMenu", VotingMenuCtor(...))` → Zig: `expected type 'framework.ComponentCtor', found '*voting_menu._zbr_ty_VotingMenuCtor'`. The front end accepted the call; the interface-value construction that a same-module call would have emitted was not inserted.
+- **Together with BUG-476** (a `sig` cannot be imported, so a closure handed to a sig-typed parameter across modules is not thunked either) this leaves exactly one cross-module callback shape that works: a bare module-level `def` passed as a function pointer. The GameEngine's Framework shim now uses that, with module-level variables for the state the Lua kept as upvalues.
+- **Minimal repro (two modules, `zebra two.zbr --module-path .`)** -- the interface cannot be *implemented* from another module at all, not just coerced from a third:
+  ```zebra
+  # sigmod.zbr
+  interface Handler
+      def call()
+  class Emitter
+      var handlers: List(Handler)
+      cue init()
+          .handlers = List(Handler)()
+      def connect(h: Handler)
+          .handlers.add(h)
+      def fire()
+          for h in .handlers
+              h.call()
+  # hmod.zbr
+  use sigmod exposing Handler, Emitter
+  class Greeter implements Handler
+      var label: str
+      cue init(label: str)
+          .label = label
+      def call()
+          print("greet " + .label)
+  def attach(em: Emitter, label: str)
+      em.connect(Greeter(label))          # ← expected type 'sigmod.Handler', found '*hmod._zbr_ty_Greeter'
+  # two.zbr
+  use sigmod exposing Emitter
+  use hmod exposing attach
+  def main()
+      var em = Emitter()
+      attach(em, "two-module")
+      em.fire()
+  ```
+  Zig also reports `hmod.zig:36: use of undeclared identifier 'Handler'` at the emitted `Handler.check(@This());` -- the `implements` check is emitted against the bare name, which is not imported into the Zig module. The same program with all three parts in one file prints `greet same-module`.
+- **Fix direction:** resolve the parameter's interface type through the callee module's exported interface table and emit the same coercion the in-module path emits; qualify the `implements` check with the interface's module.
+
+---
+
+### BUG-489: a class named like a stdlib type in a module on `--module-path` wins for FIELD types but not for constructors -- `var rng: Random` emits `*_zbr_ty_Random`, `.rng = Random.new(seed)` emits `_Random.init` -- OPEN (found 2026-09-29)
+- **Severity:** Medium (the program compiles in the front end and fails in Zig with "use of undeclared identifier '_zbr_ty_Random'"; which resolution wins depends on what else is on the module path, so the same source can build in one project and not another)
+- **Where seen:** `C:/Projects/GameEngine/game/mm/voting_server.zbr` compiled with `--module-path C:/Projects/GameEngine/zbra`, where `zbra/math.zbr` declares its own `class Random` (a Roblox-API shim). The file does NOT `use math`. Its `var rng: Random` field emitted as a pointer to the math class; its `Random.new(seed)` emitted as the stdlib stream. The near-identical `game/tuon/tuon_combat.zbr` (also a `Random` field, also on the same module path) emitted `_Random` for both -- the difference between the two files was not isolated tonight.
+- **Expected:** one resolution per name in a given file; a type from a module the file did not `use` should not be visible at all, and if the stdlib name is shadowed on purpose the field and the constructor must agree.
+- **Workaround left in the calling code:** the stream is a local in the constructor instead of a field.
+- **Note for the GameEngine:** `zbra/math.zbr`'s `class Random` shadows the stdlib `Random` for every script on that module path; the shim predates the stdlib type and should probably be renamed.
+
+---
+
+### BUG-487: a `capture` closure written inside a METHOD is emitted with a `self` that shadows the method's `self` -- Zig refuses -- OPEN (found 2026-09-29)
+- **Severity:** High for anything object-shaped (every "connect a handler from inside a class" in the monster_mayhem port: 8 sites across four files stopped building)
+- **Repro** (`zebra b487.zbr`):
+  ```zebra
+  sig Cb()
+  class Emitter
+      var handlers: List(Cb)
+      cue init()
+          .handlers = List(Cb)()
+      def connect(h: Cb)
+          .handlers.add(h)
+      def fire()
+          for h in .handlers
+              h()
+  class Counter
+      var n: int
+      cue init()
+          .n = 0
+      def bump()
+          .n = .n + 1
+      def attach(em: Emitter)
+          var me = this
+          em.connect(def()
+              capture
+                  var me: Counter = me
+              me.bump()          # ← b487.zbr:22: error: function parameter 'self' shadows function parameter from outer scope
+          )
+  def main()
+      var em = Emitter()
+      var c = Counter()
+      c.attach(em)
+      em.fire()
+      print(c.n)
+  ```
+  Emitted: `pub fn attach(self: *_zbr_ty_Counter, …) { … (struct { … pub fn call(self: @This()) void { … } }) … }` -- the closure struct's `call` names its receiver `self` inside a function whose parameter is already `self`, and Zig forbids the shadow. The identical closure in a free `def` (no outer `self`) builds; every §19 example is in `main`, which is why the docs never hit it.
+- **Workaround left in the calling code:** module-level closure FACTORIES (`def clickHandler(vm, option, button): def(): void` returning the capture closure) called from the method -- `C:/Projects/GameEngine/game/mm/voting_menu.zbr`, `voting_server.zbr`, `zbra/framework.zbr`, `zbra/maid.zbr`.
+- **Fix direction:** name the closure receiver something reserved (`_zbr_self`) -- the same discipline as the other emitted names.
+
+---
+
+### BUG-488: `obj.add(x)` on a captured CLASS inside a capture closure is emitted as a List `append` -- OPEN (found 2026-09-29)
+- **Severity:** Medium (a method named `add` on a user class silently becomes a List call when the receiver is a capture field; the error surfaces as Zig's "no field or member function named 'append'")
+- **Repro:** in the monster_mayhem port (`game/mm/voting_test.zbr` before the rename): `class MenuRegistry` with `def add(m: VotingMenu)`; a capture closure `capture var registry: MenuRegistry = registry` whose body calls `registry.add(VotingMenu(...))` emitted `registry.append(_zbr_rt._allocator, …)`. The same call outside a closure emits the method call. Renaming the method to `register` avoids it; a standalone minimal repro was not written tonight (the shape is exactly the one above with a class method named `add`).
+- **Where to look:** the closure-body codegen resolves `.add(` by NAME against the List built-ins before it consults the captured variable's declared class type.
+
+---
+
+### BUG-486: a multi-argument struct method called directly on `list.at(i)` loses every argument after the first -- OPEN (found 2026-09-29)
+- **Severity:** High (silent arity loss at emission; the front end then reports it as the USER's mistake -- "member function expected 2 argument(s), found 1" -- on a call that has two arguments)
+- **Repro** (`zebra b486.zbr`):
+  ```zebra
+  struct Box
+      var x: float
+      var w: float
+      cue init(x: float, w: float)
+          .x = x
+          .w = w
+      def contains(px: float, py: float): bool
+          return px >= .x and py >= .x and px <= .x + .w
+
+  def main()
+      var boxes = List(Box)()
+      boxes.add(Box(0.0, 10.0))
+      var b = boxes.at(0)
+      print(b.contains(5.0, 5.0))              # fine
+      print(boxes.at(0).contains(5.0, 5.0))    # ← line 15: error: member function expected 2 argument(s), found 1
+  ```
+  Emitted Zig for the failing line: `_zbr_at(boxes.items, 0).contains(5.0)` -- the second argument is gone. Binding the element first (`var b = boxes.at(0)`) emits both arguments.
+- **Same family as BUG-482** (chained calls lose defaults): the call-on-call-result path re-emits the argument list wrongly. Here the receiver is `.at(i)` on a `List(struct)`.
+- **Found by:** `zbra/guitree.zbr` `updateInput` in the GameEngine (`.hitRects.at(i).contains(mx, my)`); worked around by binding the element first.
+
+---
+
+### BUG-484: under a method-level `catch`, a throws method called on a field whose class lives in ANOTHER module is emitted bare -- Zig: "error union is ignored" -- OPEN (found 2026-09-29)
+- **Severity:** Medium (QUICKSTART §12 / BUG-467 promise "inside the body a throwing call needs no `?` -- its error goes to the catch wherever the call sits"; that holds same-module and fails cross-module, so the promise is true exactly until the code is split into modules)
+- **Repro** (two files, `zebra app.zbr`):
+  ```zebra
+  # loadermod.zbr
+  class Loader
+      var n: int = 0
+      def load() throws
+          if .n < 0
+              raise "neg"
+          .n = .n + 1
+  ```
+  ```zebra
+  # app.zbr
+  use loadermod exposing Loader
+  class App
+      var loader: Loader
+      var err: str
+      cue init()
+          .loader = Loader()
+          .err = ""
+      def start()
+          .loader.load()        # ← app.zbr:10: error: error union is ignored
+          print("started")
+      catch |e|
+          .err = e.message
+  def main()
+      var a = App()
+      a.start()
+      print(a.err)
+  ```
+  The identical program with `Loader` in the same file compiles and prints `started`. The emitted Zig shows the `_try_blk` wrapper around the body but the call itself is bare (`self.loader.load();`), so nothing routes its error to the catch.
+- **Workaround left in the calling code:** `.data.load()?` (`game/tuon/tuon_game.zbr` `start`), which does route to the catch.
+- **Fix direction:** the "is this callee throws?" lookup the try-block lowering uses does not consult imported module interfaces for a field's class; the same-module path does.
+
+---
+
+### BUG-485: `--library-mode` main() resets the SHARED runtime allocator, so a host that set one via `_initAllocator` frees Zebra memory with the wrong allocator -- OPEN (found 2026-09-29)
+- **Severity:** High for embedding (every GameEngine script; two engine crashes in one night, both "Invalid free" from the host's DebugAllocator)
+- **What the emitted prologue does** (library mode, 2026-09-28 compiler):
+  ```zig
+  pub fn main(script: *_zbr_ty_Instance, ..., _zinit: std.process.Init) void {
+      _zbr_rt._io = _zinit.io;
+      _zbr_rt._args = _zinit.minimal.args;
+      _zbr_rt._environ = _zinit.minimal.environ;
+      _zbr_rt._allocator = _prog_alloc();      // ← replaces whatever the host installed
+      _initModuleVars();
+  ```
+  `zebra_rt.zig` exposes `_initAllocator(a)` precisely so a host can own allocation; a library's `main()` then throws that away on entry. Anything the script allocates before the host regains control -- a `SoundService` command list grown by `playMusic`, GUI elements, signal handler lists -- lives in the runtime arena, and the first host `list.deinit(host_alloc)` on it is an invalid free.
+- **Expected:** in `--library-mode` the prologue should not touch `_allocator` (or should only set it when it is still the default). The host called `_initAllocator`; that call must win.
+- **Workaround:** the GameEngine's `tools/regen_zbra.py` strips the reset line from library-mode output (marked, with this bug number), and `game/main.zig` re-installs the host allocator after script dispatch as a belt-and-braces.
+
+---
+
+### BUG-483: a parameter named like a `use`d module shadows the emitted import alias -- Zig: "function parameter shadows declaration of 'sound'" -- OPEN (found 2026-09-29)
+- **Severity:** Medium (the collision is invisible in Zebra: `use sound exposing SoundService` then `def main(sound: SoundService)` is natural; twice in one night in the GameEngine -- `instance` in `zbra/workspace.zbr`, `sound` in `game/tuon/tuon_game.zbr`)
+- **Repro** (two files, `zebra user.zbr`):
+  ```zebra
+  # noise.zbr
+  class Noise
+      var level: int = 0
+  ```
+  ```zebra
+  # user.zbr
+  use noise exposing Noise
+  def main()
+      var noise = Noise()       # or a parameter named `noise`
+      print(noise.level)
+  ```
+  → the emitted `const noise = @import("noise.zig");` collides with the local: `error: local shadows declaration of 'noise'` (a parameter gives "function parameter shadows declaration").
+- **Mechanism:** codegen names the module import alias after the module (`const <module> = @import("<module>.zig")`) at file scope; Zig forbids any local or parameter from shadowing a file-scope declaration, and the user never wrote that identifier.
+- **Fix direction:** emit the alias with a reserved prefix (`_zbr_mod_noise`) -- the same discipline `_zbr_ty_` / `_zbr_fn_` / `_zbr_mv_` already apply to every other emitted file-scope name -- and qualify emitted references accordingly.
+- **Workaround left in the calling code:** parameters renamed (`inst`, `snd`).
+
+---
+
+### BUG-482: default arguments are not filled in a CHAINED method call -- `Builder().then("d")` is "expected 3 argument(s), found 1" -- OPEN (found 2026-09-29)
+- **Severity:** Medium (the fluent-builder idiom the QUICKSTART's own §4 defaults invite; every builder-style API in the GameEngine's story data hit it -- 26 call sites)
+- **Repro** (`zebra b482.zbr`):
+  ```zebra
+  class Builder
+      var parts: List(str)
+      cue init()
+          .parts = List(str)()
+      def then(action: str, name: str = "", value: str = ""): Builder
+          .parts.add(action + "/" + name + "/" + value)
+          return this
+
+  def main()
+      var b = Builder()
+      b.then("a")                         # fine: defaults filled
+      b.then("b", "x")                    # fine
+      var c = Builder().then("d").then("e", "y")   # ← line 14: error: member function expected 3 argument(s), found 1
+      print(c.parts.count())
+  ```
+  The statement-form calls on a local receiver get their defaults; the same method called on a call-expression receiver (a constructor or a previous `.then(...)`) does not. The emitted Zig shows the raw one-argument call.
+- **Workaround left in the calling code:** every chained `.then()` in `C:/Projects/GameEngine/game/tuon/tuon_story.zbr` spells all three arguments.
+- **Fix direction:** the default-fill pass keys the callee's signature off the receiver's resolved type; for a chained call the receiver is an expression whose type is the method's declared return type, which is available (the checker reports the arity, so it found the method) -- the fill just is not applied on that path.
+
+---
+
+### BUG-481: a raw string cannot END in a backslash -- `r"ab\\"` is "string literal is never closed" -- OPEN (found 2026-09-29)
+- **Severity:** Low-Medium (QUICKSTART §14 says of raw strings "backslashes are literal" and "the closing quote terminates the string"; both are false for the last character, and the natural use -- a Windows path `r"C:\\dir\\"`, an ASCII-art row ending in `\\` -- is exactly the case that fails)
+- **Repro** (`zebra b481.zbr`):
+  ```zebra
+  def main()
+      var a = r"ab\\"        # → b481.zbr:2:1: error: string literal is never closed on this line
+      print(a.len)
+  ```
+  A backslash anywhere else is fine: `r"ab\\ cd"` prints `6`.
+- **Found by:** the GameEngine's port of a 30x80 tile map whose rows end in `\\` (`game/tuon/tuon_story.zbr`); converted to ordinary strings with doubled backslashes.
+- **Fix direction:** the lexer's raw-string scanner still runs the escape rule for `\\"`; in raw mode a backslash must never consume the quote that follows it.
+
+---
+
+### BUG-480: a bare statement call of a `throws` METHOD is not refused by the checker; Zig then says `error union is ignored` -- OPEN (found 2026-09-29)
+- **Severity:** Medium (QUICKSTART §12 promises `throws call needs '?'` as a compile error "same-file, cross-module, and calls on local variables alike"; this shape slips through and dies one stage later with a Zig message)
+- **Repro** (`zebra b480.zbr`):
+  ```zebra
+  class Loader
+      var n: int = 0
+      def load() throws
+          if .n < 0
+              raise "neg"
+          .n = .n + 1
+  def main()
+      var l = Loader()
+      l.load()          # no `?`, no catch -- should be refused here
+      print(l.n)
+  ```
+  → `b480.zbr:10: error: error union is ignored` (Zig's, mapped to the call line). `zebra --emit-zig` emits it without complaint.
+- **Contrast:** a top-level `def f() throws` called bare IS refused by the front end (that is the documented behaviour). The gap is the method-on-a-local-variable receiver used as a statement.
+- **Found by:** `game/tuon/tuon_data_test.zbr` in the GameEngine (`data.load()`), fixed there with `?`.
+- **Fix direction:** the statement-level call path should run the same "callee is throws and no `?`/catch" check the expression path runs, for method receivers as well as free functions.
+
+---
+
+### BUG-478: an instance method that never uses `this` is emitted with an unused `self` parameter -- Zig refuses it -- OPEN (found 2026-09-29)
+- **Severity:** Medium (any pure helper written as an instance method fails to build; the GameEngine's `game/scripts/curve_util.zbr` `exptValueInSeconds` did)
+- **Repro:** compile
+  ```zebra
+  class CurveUtil
+      var threshold: float = 0.01
+      def expt(threshold: float, start: float, seconds: float): float
+          return 1.0 - Math.pow(threshold / start, (1.0 / 60.0) * seconds)
+  def main()
+      print(CurveUtil().expt(0.01, 1.0, 30.0))
+  ```
+  → `b478.zbr:3: error: unused function parameter` (Zig's error, mapped back to the `def` line; the emitted signature is `pub fn expt(self: *const _zbr_ty_CurveUtil, threshold: f64, ...)`). Reproduced standalone 2026-09-29.
+- **Fix direction:** emit `_ = self;` as the first statement when the body has no receiver use (codegen already knows -- it decides `*const` vs `*` from the same scan).
+- **Workaround left in the calling code:** the method is now `static def` (`game/scripts/curve_util.zbr`), which is the honest spelling for a function of its arguments only -- but a user should not have to know that to make a method compile.
+
+---
+
+### BUG-479: `optional == value` (`str? == str`) passes the checker and emits invalid Zig -- OPEN (found 2026-09-29)
+- **Severity:** Medium (a wrong program is accepted by the front end and dies in the Zig build with a message about `std.mem.eql`, not about optionals)
+- **Repro:** `game/scripts/setting_class_test.zbr` in the GameEngine, or:
+  ```zebra
+  class S
+      var defaultVal: str?
+      cue init(d: str?)
+          .defaultVal = d
+  def main()
+      var s = S("Normal")
+      assert s.defaultVal == "Normal", "stored"
+  ```
+  → `b479.zbr:8: error: expected type 'str', found '?str'` -- Zig's error from the emitted `std.mem.eql(u8, s.defaultVal, "Normal")`, mapped to the assert line. The message is readable, but it is the BUILD that refuses, not the checker: `zebra --emit-zig` emits the program without complaint. Reproduced standalone 2026-09-29.
+- **Expected:** either a front-end refusal naming the fix (`'defaultVal' is str?; compare with \`orelse\` or unwrap`) or Zebra semantics for the comparison (nil never equals a value) -- QUICKSTART §11 does not say which; the checker should say something rather than nothing.
+- **Workaround left in the calling code:** `(s.defaultVal orelse "") == "Normal"`.
+
+---
+
+### BUG-476: a `sig` type cannot be imported -- `use m exposing Cb` then `List(Cb)` is `unknown type 'Cb'` -- OPEN (found 2026-09-29)
+- **Severity:** Medium (blocks any module that shares a callback type; the GameEngine's `signal.zbr` publishes `VoidCallback`/`FloatCallback`/`IntCallback` exactly for this)
+- **Found by:** the GameEngine `tuon-port` session, regenerating `zbra/` + `game/scripts/` against the 2026-09-28 compiler. Four files failed: `zbra/remote.zbr`, `game/scripts/connection_util.zbr` (+ its test), `game/scripts/event_bridge.zbr`.
+- **Repro** (two files, `zebra user.zbr`):
+  ```zebra
+  # sigmod.zbr
+  sig Cb()
+  class Holder
+      var cbs: List(Cb)
+      cue init()
+          .cbs = List(Cb)()
+  ```
+  ```zebra
+  # user.zbr
+  use sigmod exposing Cb, Holder
+  class User
+      var cbs: List(Cb)          # <-- 4:8: error: unknown type 'Cb': not declared here, in a `use`d module, or as a type parameter in scope
+      cue init()
+          .cbs = List(Cb)()
+  def main()
+      print(User().cbs.count())
+  ```
+  `Holder` (a class from the same `use`) resolves; only the `sig` does not. Same result for `sigmod.Cb` qualified.
+- **Not a workaround:** the inline function type `List(def(): void)` does not parse (`expected '=' or indent after lambda params`), so there is no in-language spelling of "a list of that module's callback type".
+- **Workaround left in the calling code:** re-declare the `sig` locally with the same shape (`sig VoidCallback()`), which emits the identical Zig type (`*const fn() void`) and so still satisfies `signal.Signal.connect`. Comment beside each: `C:/Projects/GameEngine/zbra/remote.zbr`, `game/scripts/connection_util.zbr`, `game/scripts/event_bridge.zbr`.
+- **Where to look:** whatever `buildModuleInterface` exports per module -- `sig` declarations appear not to be in the exported symbol table, so `exposing` finds nothing to bind.
+
+---
+
+### BUG-477: a capture closure that only gets PASSED (never called locally) is bound with `var` and Zig refuses it -- OPEN (found 2026-09-29)
+- **Severity:** High for engine/GUI code (it is the canonical "connect a stateful handler to a signal" shape; four GameEngine scripts stopped compiling: `timer_test`, `orbit_follower`, `portal_tween`, `tween_demo`)
+- **Repro** (`zebra cp.zbr`):
+  ```zebra
+  sig FloatCb(v: float)
+  class Cell
+      var seconds: float = 0.0
+  class Emitter
+      var handlers: List(FloatCb)
+      cue init()
+          .handlers = List(FloatCb)()
+      def connect(h: FloatCb)
+          .handlers.add(h)
+      def fire(v: float)
+          for h in .handlers
+              h(v)
+  def main()
+      var cell = Cell()
+      var em = Emitter()
+      var on_tick = def(dt: float)
+          capture
+              var cell: ^Cell = cell
+          cell.seconds = cell.seconds + dt    # assignment THROUGH the class-typed capture
+      em.connect(on_tick)
+      em.fire(0.5)
+      print(cell.seconds)
+  ```
+  → `cp.zbr:19: error: local variable is never mutated` (Zig's, mapped back to the `var on_tick` line).
+- **Mechanism:** the mutation detector counts `cell.seconds = ...` as a mutation of the closure struct (it emits `call(self: *@This())` and binds the closure with `var`), but the sig-thunk path COPIES the closure into a heap cell (`const _zbr_val = on_tick; cell.* = _zbr_val`) and never takes `&on_tick`, so the binding is never mutated and Zig rejects `var`. QUICKSTART §19.1 already says a class-typed capture should not need `*@This()` ("mutation goes through the pointer, not the field") -- the detector disagrees with the doc.
+- **Confirmed by contrast:** the same program with the write moved into a method (`def tick(dt)` on `Cell`, closure body `cell.tick(dt)`) emits `const on_tick` and runs (`0.75`).
+- **Workaround left in the calling code:** route the field write through a method on the captured class; comment beside each in `C:/Projects/GameEngine/game/scripts/{timer_test,orbit_follower,portal_tween,tween_demo}.zbr`.
+- **Fix direction:** either (a) do not count field assignment through a class-typed (pointer) capture as closure mutation, matching §19.1, or (b) emit `var x = ...; _ = &x;` for a `var`-bound closure that is only read, which is the standard Zig spelling and covers every case.
 
 ---
 
