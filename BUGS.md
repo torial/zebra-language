@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-493. Next new bug: BUG-494.**
+**Last bug number generated: BUG-495. Next new bug: BUG-496.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -86,6 +86,42 @@
 - **Severity:** Medium (a correct long-running program dies: "closure-via-sig pool exhausted (>64 live connections at one call site)". Nothing frees a slot -- not `disconnect`, not the closure going out of scope -- so it is 64 connections per site *per process lifetime*, not 64 live ones as the message says.)
 - **Where seen:** the emitted code for the inline closure in the BUG-491 repro: `var _zbr_state_2: [64]?*anyopaque`, `_zbr_next_2 += 1`, `if (_zbr_next_2 >= 64) @panic(...)`, and 64 generated `fn _zbr_thunk_2_k()` per site. In the GameEngine's VotingMenu each vote round connects two closures per option button at the same two sites, so a client that plays ~16 rounds panics.
 - **Fix direction:** same as BUG-491 -- a fat-pointer `sig` needs no pool. Short of that: recycle slots when the owning signal disconnects (hand the slot index back through the `sig` value), and make the panic message say "per process", not "live".
+
+---
+
+### BUG-494: a bare `return` inside `cue init` is emitted as `return;` where Zig expects the instance -- OPEN (found 2026-09-29)
+- **Severity:** Medium (the Lua idiom `if not cond then return self end` at the top of a constructor is common in Roblox code; the front end accepts it and Zig says `expected type '*_zbr_ty_X', found 'void'`)
+- **Repro** (`zebra b494.zbr`):
+  ```zebra
+  class Widget
+      var built: bool
+      cue init(build: bool)
+          .built = false
+          if not build
+              return
+          .built = true
+  def main()
+      var w = Widget(false)
+      print(w.built.toString())
+  ```
+  Emitted: `pub fn init(build: bool) *_zbr_ty_Widget { ... if (!build) { return; } ... return _self; }` → `error: expected type '*_zbr_ty_Widget', found 'void'`.
+- **Expected:** `return` in a constructor returns the instance (`return _self;`), the same as falling off the end.
+- **Workaround left in the calling code:** `C:/Projects/GameEngine/game/mm/statistics_menu.zbr` moves the body after the guard into a method and calls it under `if cond`.
+
+---
+
+### BUG-495: a List built from a literal and mutated only through `set()` is bound `var` -- Zig refuses the emitted local as never mutated -- OPEN (found 2026-09-29)
+- **Severity:** Low (clear Zig error, easy to dodge, but the front end's "is this mutated" answer and Zig's disagree)
+- **Repro** (`zebra b495.zbr`):
+  ```zebra
+  def main()
+      var values = [0, 0, 0]
+      values.set(1, 7)
+      print(values.at(1).toString())
+  ```
+  Emitted: `var values = (blk: { var _ll: std.ArrayList(i64) = ...; break :blk _ll; });` then `values.items[1] = 7;` → `error: local variable is never mutated` (writing through `.items` does not mutate the ArrayList value, so Zig wants `const`).
+- **Expected:** either emit `const` for a list whose only mutations are element writes, or (simpler) emit `set()` through a method that takes `*ArrayList` so the `var` is justified. `add()` (append) already counts; `set()` does not.
+- **Workaround left in the calling code:** build the list with `add()` in a loop (`statistics_menu.zbr`, `timeToStr`).
 
 ---
 
