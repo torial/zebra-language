@@ -2839,11 +2839,12 @@ pub const TcpConn = struct { stream: std.Io.net.Stream };
 //
 // -- and note the error names the POINTEE, which is the tell.
 //
-// Zebra emits exactly that pointer shape for a lambda WITH A CAPTURE BLOCK: the capture
-// goes through a thunk table (`_zbr_thunks_N`) whose elements are `*const fn(...)`. A
-// capture-free lambda emits a closure struct and a top-level `def` emits a function value,
-// and both of those already worked -- which is why `examples/counter.zbr` was fine while
-// `examples/panel_smoke.zbr` was not.
+// Zebra emitted exactly that pointer shape for a lambda WITH A CAPTURE BLOCK until
+// 2026-09-30 (a thunk table of `*const fn(...)`; a sig is a `_ZbrFn` fat pointer now, and
+// the struct consumers take the closure struct itself). A capture-free lambda emits a
+// closure struct and a top-level `def` emits a function value, and both of those already
+// worked -- which is why `examples/counter.zbr` was fine while `examples/panel_smoke.zbr`
+// was not.
 //
 // Widened at every site rather than patched at the failing one: this predicate is a strict
 // superset of the old one, so it can only turn a compile error into a working call, never
@@ -2853,6 +2854,100 @@ inline fn _zbr_is_fnlike(comptime T: type) bool {
     if (_i == .@"fn") return true;
     if (_i == .pointer) return @typeInfo(_i.pointer.child) == .@"fn";
     return false;
+}
+
+// A `sig` value (and `def(P): R`) is a FAT POINTER: a context plus a function that
+// takes it (2026-09-30, BUG-491/492/493). It used to be a bare `*const fn`, which
+// carries no context, so a capturing closure reached a sig slot only through a static
+// pool of 64 trampolines per call site (BUG-492: the 65th connection panicked), and
+// only when the closure was written INLINE at the call (BUG-491: a factory's closure
+// was refused; BUG-493: a hoisted receiver lost the rewrite).
+//
+// `_ZbrFn(fn(P...) R)` is memoized by Zig, so two sigs with the same signature -- and a
+// sig and a `def(P): R` -- are the SAME type, exactly as two `*const fn` were.
+// `from` is the one conversion, applied where a value flows INTO a sig slot (codegen
+// emits it as the decl literal `.from(x)`, so the slot's type is the target):
+//   a sig already            -> itself
+//   a function (comptime)    -> no context; the adapter calls it directly
+//   a pointer to a function  -> the pointer is the context
+//   a closure struct (.call) -> a heap copy is the context (`_allocator`, the same
+//                               lifetime the thunk pool's copies had, with no pool)
+pub fn _ZbrFn(comptime F: type) type {
+    const I = @typeInfo(F).@"fn";
+    const R = I.return_type.?;
+    const Args = std.meta.ArgsTuple(F);
+    const P = I.params;
+    return struct {
+        const Self = @This();
+        ctx: ?*anyopaque,
+        f: *const fn (?*anyopaque, Args) R,
+        pub const call = switch (P.len) {
+            0 => struct { fn c(self: Self) R { return self.f(self.ctx, .{}); } }.c,
+            1 => struct { fn c(self: Self, a0: P[0].type.?) R { return self.f(self.ctx, .{a0}); } }.c,
+            2 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?) R { return self.f(self.ctx, .{ a0, a1 }); } }.c,
+            3 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?, a2: P[2].type.?) R { return self.f(self.ctx, .{ a0, a1, a2 }); } }.c,
+            4 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?, a2: P[2].type.?, a3: P[3].type.?) R { return self.f(self.ctx, .{ a0, a1, a2, a3 }); } }.c,
+            5 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?, a2: P[2].type.?, a3: P[3].type.?, a4: P[4].type.?) R { return self.f(self.ctx, .{ a0, a1, a2, a3, a4 }); } }.c,
+            6 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?, a2: P[2].type.?, a3: P[3].type.?, a4: P[4].type.?, a5: P[5].type.?) R { return self.f(self.ctx, .{ a0, a1, a2, a3, a4, a5 }); } }.c,
+            7 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?, a2: P[2].type.?, a3: P[3].type.?, a4: P[4].type.?, a5: P[5].type.?, a6: P[6].type.?) R { return self.f(self.ctx, .{ a0, a1, a2, a3, a4, a5, a6 }); } }.c,
+            8 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?, a2: P[2].type.?, a3: P[3].type.?, a4: P[4].type.?, a5: P[5].type.?, a6: P[6].type.?, a7: P[7].type.?) R { return self.f(self.ctx, .{ a0, a1, a2, a3, a4, a5, a6, a7 }); } }.c,
+            else => @compileError("a sig takes at most 8 parameters"),
+        };
+        pub fn from(v: anytype) Self {
+            const T = @TypeOf(v);
+            if (T == Self) return v;
+            switch (@typeInfo(T)) {
+                .@"fn" => return .{ .ctx = null, .f = struct {
+                    fn e(_: ?*anyopaque, a: Args) R {
+                        return @call(.auto, v, a);
+                    }
+                }.e },
+                .pointer => |pi| {
+                    if (@typeInfo(pi.child) != .@"fn") @compileError("not a function or closure: " ++ @typeName(T));
+                    return .{ .ctx = @ptrCast(@constCast(v)), .f = struct {
+                        fn e(ctx: ?*anyopaque, a: Args) R {
+                            const fp: T = @ptrCast(ctx.?);
+                            return @call(.auto, fp, a);
+                        }
+                    }.e };
+                },
+                .@"struct" => {
+                    if (!@hasDecl(T, "call")) @compileError("not a function or closure: " ++ @typeName(T));
+                    const by_val = @typeInfo(@TypeOf(T.call)).@"fn".params[0].type.? == T;
+                    if (@sizeOf(T) == 0) return .{ .ctx = null, .f = struct {
+                        fn e(_: ?*anyopaque, a: Args) R {
+                            var c: T = undefined;
+                            return if (by_val) @call(.auto, T.call, .{c} ++ a) else @call(.auto, T.call, .{&c} ++ a);
+                        }
+                    }.e };
+                    const p = _allocator.create(T) catch @panic("OOM");
+                    p.* = v;
+                    return .{ .ctx = @ptrCast(p), .f = struct {
+                        fn e(ctx: ?*anyopaque, a: Args) R {
+                            const c: *T = @ptrCast(@alignCast(ctx.?));
+                            return if (by_val) @call(.auto, T.call, .{c.*} ++ a) else @call(.auto, T.call, .{c} ++ a);
+                        }
+                    }.e };
+                },
+                else => @compileError("not a function or closure: " ++ @typeName(T)),
+            }
+        }
+    };
+}
+
+// Calling a callable VALUE -- a local, parameter or field holding a sig, a closure or a
+// function pointer. One emit for all three: codegen does not have to know which it holds.
+pub fn _ZbrInvokeRet(comptime T: type) type {
+    const i = @typeInfo(T);
+    if (i == .@"fn") return i.@"fn".return_type.?;
+    if (i == .pointer) return @typeInfo(i.pointer.child).@"fn".return_type.?;
+    return @typeInfo(@TypeOf(T.call)).@"fn".return_type.?;
+}
+pub inline fn _zbr_invoke(fp: anytype, args: anytype) _ZbrInvokeRet(@TypeOf(fp.*)) {
+    const T = @TypeOf(fp.*);
+    if (comptime _zbr_is_fnlike(T)) return @call(.auto, fp.*, args);
+    if (comptime @typeInfo(@TypeOf(T.call)).@"fn".params[0].type.? == T) return @call(.auto, T.call, .{fp.*} ++ args);
+    return @call(.auto, T.call, .{fp} ++ args);
 }
 
 pub fn _tcp_connect(host: []const u8, port: u16) ?TcpConn {

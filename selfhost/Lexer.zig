@@ -15,10 +15,12 @@ const _zebra_gt = _zbr_rt._zebra_gt;
 const _zebra_ge = _zbr_rt._zebra_ge;
 const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
+const _ZbrFn = _zbr_rt._ZbrFn;
+const _zbr_invoke = _zbr_rt._zbr_invoke;
 
 const Token = @import("Token.zig");
 const _zbr_ty_TokenKind = Token._zbr_ty_TokenKind;
-pub const CharPred = *const fn(u21) bool;
+pub const CharPred = _ZbrFn(fn(u21) bool);
 // zbr:selfhost/Lexer.zbr:21
 pub fn _zbr_fn_isDigit(c: u21) bool {
 // zbr:selfhost/Lexer.zbr:22
@@ -234,7 +236,7 @@ pub const _zbr_ty_Lexer = struct {
     // zbr:selfhost/Lexer.zbr:156
     pub fn scanWhile(self: *_zbr_ty_Lexer, pred: CharPred) void {
 // zbr:selfhost/Lexer.zbr:157
-        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and pred(_zbr_at(self.src, self.pos)))) {
+        while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and _zbr_invoke(&pred, .{_zbr_at(self.src, self.pos)}))) {
 // zbr:selfhost/Lexer.zbr:158
             self.pos = (self.pos + 1);
         }
@@ -473,7 +475,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:274
             const start: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:275
-            self.scanWhile(_zbr_fn_isIdentContinue);
+            self.scanWhile(.from(_zbr_fn_isIdentContinue));
 // zbr:selfhost/Lexer.zbr:276
             self.emit(_zbr_ty_TokenKind{ .at_id = {} }, self.src[@as(usize, @intCast((start - 1)))..@as(usize, @intCast(self.pos))], ln, cl);
 // zbr:selfhost/Lexer.zbr:277
@@ -488,7 +490,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:283
         const start: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:284
-        self.scanWhile(_zbr_fn_isIdentContinue);
+        self.scanWhile(.from(_zbr_fn_isIdentContinue));
 // zbr:selfhost/Lexer.zbr:285
         const word: []const u8 = self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))];
 // zbr:selfhost/Lexer.zbr:288
@@ -1014,7 +1016,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:593
             self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:594
-            self.scanWhile(_zbr_fn_isHexDigit);
+            self.scanWhile(.from(_zbr_fn_isHexDigit));
 // zbr:selfhost/Lexer.zbr:595
             if ((self.peek() == '_')) {
 // zbr:selfhost/Lexer.zbr:596
@@ -1026,14 +1028,14 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:599
                     self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:600
-                    self.scanWhile(_zbr_fn_isDigit);
+                    self.scanWhile(.from(_zbr_fn_isDigit));
 // zbr:selfhost/Lexer.zbr:601
                     self.emit(_zbr_ty_TokenKind{ .hex_lit_unsign = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
 // zbr:selfhost/Lexer.zbr:602
                     return;
                 }
 // zbr:selfhost/Lexer.zbr:603
-                self.scanWhile(_zbr_fn_isDigit);
+                self.scanWhile(.from(_zbr_fn_isDigit));
 // zbr:selfhost/Lexer.zbr:604
                 if (_zebra_gt(self.pos, (suffixStart + 1))) {
 // zbr:selfhost/Lexer.zbr:605
@@ -1050,7 +1052,7 @@ pub const _zbr_ty_Lexer = struct {
             return;
         }
 // zbr:selfhost/Lexer.zbr:611
-        self.scanWhile(_zbr_fn_isDigitOrUnder);
+        self.scanWhile(.from(_zbr_fn_isDigitOrUnder));
 // zbr:selfhost/Lexer.zbr:613
         var hasDot: bool = ((self.peek() == '.') and _zbr_fn_isDigit(self.peekAt(1)));
 // zbr:selfhost/Lexer.zbr:614
@@ -1058,7 +1060,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:615
             self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:616
-            self.scanWhile(_zbr_fn_isDigitOrUnder);
+            self.scanWhile(.from(_zbr_fn_isDigitOrUnder));
         }
 // zbr:selfhost/Lexer.zbr:620
         if (((self.peek() == 'e') or (self.peek() == 'E'))) {
@@ -1079,7 +1081,7 @@ pub const _zbr_ty_Lexer = struct {
                     self.pos = (self.pos + 1);
                 }
 // zbr:selfhost/Lexer.zbr:628
-                self.scanWhile(_zbr_fn_isDigit);
+                self.scanWhile(.from(_zbr_fn_isDigit));
 // zbr:selfhost/Lexer.zbr:629
                 hasDot = true;
             }
@@ -1135,7 +1137,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:656
             self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:657
-            self.scanWhile(_zbr_fn_isDigit);
+            self.scanWhile(.from(_zbr_fn_isDigit));
 // zbr:selfhost/Lexer.zbr:658
             self.emit(_zbr_ty_TokenKind{ .integer_lit_explicit = {} }, self.src[@as(usize, @intCast(start))..@as(usize, @intCast(self.pos))], ln, cl);
 // zbr:selfhost/Lexer.zbr:659

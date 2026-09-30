@@ -1,0 +1,25 @@
+# BUG-477: a capture closure that is only PASSED (never called locally) is const -- Zig
+# refused the var. The mutation goes through a class-typed capture.
+sig FloatCb(v: float)
+class Cell
+    var seconds: float = 0.0
+class Emitter
+    var handlers: List(FloatCb)
+    cue init()
+        .handlers = List(FloatCb)()
+    def connect(h: FloatCb)
+        .handlers.add(h)
+    def fire(v: float)
+        for h in .handlers
+            h(v)
+def main()
+    var cell = Cell()
+    var em = Emitter()
+    var on_tick = def(dt: float)
+        capture
+            var cell: ^Cell = cell
+        cell.seconds = cell.seconds + dt    # assignment THROUGH the class-typed capture
+    em.connect(on_tick)
+    em.fire(0.5)
+    assert cell.seconds == 0.5
+    print("bug477: OK")

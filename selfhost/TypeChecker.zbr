@@ -7014,6 +7014,10 @@ def typeNameKnown(n: str, scope: List(str), declared: List(str), ctx: InferCtx):
         return true
     if ctx.module_types.isTypeAlias(n) or ctx.dep_types.isTypeAlias(n)
         return true
+    # BUG-476: a `sig` is registered as the pseudo-class `$sig:Name`, so a sig from a
+    # `use`d module (`use m exposing Cb`) was an "unknown type" everywhere it was named.
+    if ctx.hasClassAny("$sig:" + n)
+        return true
     return ctx.isRuntimePublicName(n)
 
 def checkTypeRefNames(tr: TypeRef, scope: List(str), declared: List(str), file: str, ctx: InferCtx, fsp: Span)

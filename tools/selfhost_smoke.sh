@@ -2069,6 +2069,16 @@ smoke_tc_fail test/optional_operand_fail.zbr "optional_operand_fail.zbr:6:18: er
 # BUG-487: a capture closure inside a method (or inside another closure) names its receiver
 # uniquely instead of shadowing the method's `self`.
 smoke_run test/bug487_method_capture_closure_test.zbr "bug487: OK"
+# BUG-491/492/493: a sig is a fat pointer -- factory closures, hoisted receivers, 1000 connections at one site, sig fields.
+smoke_run test/sig_fat_pointer_test.zbr "sig_fat_pointer: OK"
+# BUG-476: a sig from a `use`d module (exposed and qualified) is a type.
+smoke_run test/bug476_sig_import_test.zbr "bug476: OK"
+# BUG-486 / BUG-482: a user method on a call result keeps every argument and its defaults.
+smoke_run test/bug486_call_temp_receiver_test.zbr "bug486: OK"
+# BUG-494: a bare return in cue init; BUG-495: a list mutated only by set() is const.
+smoke_run test/bug494_495_init_return_set_test.zbr "bug494_495: OK"
+# BUG-477: a closure only handed to a sig slot is const.
+smoke_run test/bug477_passed_closure_test.zbr "bug477: OK"
 # A JSON VALUE converts too: `var s: str = elem?` and `elem.tryStr()` (Sean, 2026-09-29).
 smoke_run test/json_value_conversion_test.zbr "json_value_conversion: OK"
 # `if x orelse d as n` binds always (Sean, 2026-09-29); a dead `else` on it warns.

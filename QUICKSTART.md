@@ -2085,7 +2085,10 @@ them — mutation goes through the pointer, not the field.
   variables.  The initializer runs **once**, when the closure is created.
 - Captured variables are mutable: `count += 1` in the example above works.
 - Closures with a `capture` block are passed around as values of any `sig` type whose
-  signature matches — the struct satisfies the `sig` via a `.call` method.
+  signature matches — written inline, bound to a local, or returned from a factory.
+  Converting one into a `sig` copies its state to the heap (a `sig` value is a context
+  plus a function, §20), so each conversion has its own state, and there is no limit on
+  how many exist (until 2026-09-30 a call site held at most 64, BUG-492).
 - **GUI use case**: `capture` is the idiomatic way to hold per-widget state in GUI
   callbacks without a global variable:
 
@@ -2103,7 +2106,8 @@ def view(g: Gui, model: Model)
 ### §19.3 Function-pointer types — `def(P): R`
 
 A function type may be written inline as `def(ParamTypes): ReturnType`, the
-anonymous equivalent of a named `sig`.  It emits `*const fn(P) R` in Zig and can
+anonymous equivalent of a named `sig` — the SAME type as a `sig` with that signature
+(both are the fat pointer `_ZbrFn(fn(P) R)`, §20) — and can
 appear anywhere a type is expected — a return annotation, a parameter type, or a
 variable type:
 
@@ -2180,8 +2184,15 @@ def main
 
 ### How sigs work
 
-- `sig` resolves to `pub const Name = *const fn(T1, T2, ...) R` in Zig (exported as
-  `pub` so it can be imported from other modules).
+- `sig` resolves to `pub const Name = _ZbrFn(fn(T1, T2, ...) R)` in Zig (exported as
+  `pub` so it can be imported from other modules): a **fat pointer**, a context plus a
+  function. Any named function, lambda or `capture` closure converts into one where it
+  meets a sig-typed slot — a parameter, a typed variable or field, a `List(Sig)` element,
+  a `return`. Two sigs with the same signature are the same type. At most 8 parameters.
+- **From Zig** (a `zig"..."` block or a host program): call one as `cb.call(args)` and
+  build one with the decl literal `.from(f)` (`f` a function, a function pointer, or a
+  closure struct). A sig is not a C function pointer and cannot cross an `extern`
+  boundary.
 - **Cross-module export:** `sig` types declared at module scope are importable with
   `use module exposing SigType`.  A module that consumes a callback type from another
   module does not need to redeclare it:
@@ -3303,7 +3314,8 @@ Elm's `Html.map`. `map` and `view` are top-level `def`s or lambdas; scopes nest 
 component may `g.scope` its own children, and its `update` routes the same way). A
 message the child sends is delivered to the app's `update` as `Msg.left(cm)`; the app
 does not need to know the child's variants. Three values and no closure, deliberately:
-a closure built per render is the shape that exhausted the sig pool (BUG-358).
+a closure built per render is the shape that exhausted the old per-site sig pool
+(BUG-358, and the pool itself is gone since BUG-492).
 
 Before `g.scope` a child view could call `g.send(CounterMsg.inc)` and the message was
 silently DROPPED (a size mismatch against the app's `Msg`, reported on stderr) -- there was

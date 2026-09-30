@@ -1,0 +1,133 @@
+# A `sig` is a fat pointer (2026-09-30): any callable converts into one -- a named
+# function, an inline capture closure, a closure RETURNED FROM A FACTORY (BUG-491), a
+# closure handed to a method on a hoisted receiver (BUG-493) -- with no per-site pool,
+# so the 65th connection at one call site no longer panics (BUG-492).
+
+sig Cb()
+sig Pred(n: int): bool
+sig Twice(n: int): int
+
+class Emitter
+    var handlers: List(Cb)
+    var fired: int
+    cue init()
+        .handlers = List(Cb)()
+        .fired = 0
+    def connect(h: Cb)
+        .handlers.add(h)
+    def fire()
+        for h in .handlers
+            h()
+            .fired += 1
+    def me(): Emitter
+        return this
+
+class Holder
+    var check: Pred
+    cue init(check: Pred)
+        .check = check
+    def probe(n: int): bool
+        return .check(n)
+
+var total: int = 0
+
+def bump()
+    total += 1
+
+def isEven(n: int): bool
+    return n % 2 == 0
+
+def makeAdder(k: int): def(): void
+    return def(): void
+        capture
+            var k: int = k
+        total += k
+
+def makeScaler(k: int): Twice
+    return def(n: int): int
+        capture
+            var k: int = k
+        return n * k
+
+def connectMany(em: Emitter, n: int)
+    var i = 0
+    while i < n
+        em.connect(def(): void
+            capture
+                var i: int = i
+            if i >= 0
+                total += 1
+        )
+        i += 1
+
+sig Counter(): int
+
+def viaFnType(f: def(int): int, x: int): int
+    return f(x)
+
+def applyTwice(f: Twice, x: int): int
+    return f(f(x))
+
+def main()
+    var em = Emitter()
+    em.connect(bump)                       # a named function
+    em.connect(makeAdder(100))             # BUG-491: a factory's closure
+    var tag = 7
+    em.connect(def(): void                 # an inline capture closure
+        capture
+            var tag: int = tag
+        total += tag
+    )
+    em.me().connect(makeAdder(1000))     # BUG-493: a hoisted receiver, factory arg
+    em.me().connect(def(): void          # BUG-493: a hoisted receiver, inline closure
+        capture
+            var tag: int = tag
+        total += tag * 10
+    )
+    em.fire()
+    assert total == 1178, "fire1 ${total}"     # 1 + 100 + 7 + 1000 + 70
+
+    # BUG-492: 1000 connections at ONE call site
+    var em2 = Emitter()
+    connectMany(em2, 1000)
+    total = 0
+    em2.fire()
+    assert total == 1000 and em2.fired == 1000, "many ${total} ${em2.fired}"
+
+    # a sig-typed FIELD called as a method-shaped call
+    var h = Holder(isEven)
+    assert h.probe(4) and not h.probe(5)
+    var lim = 10
+    var h2 = Holder(def(n: int): bool
+        capture
+            var lim: int = lim
+        return n < lim
+    )
+    assert h2.probe(3) and not h2.probe(30)
+
+    # an annotated local, reassigned, and a factory with a declared sig return
+    var p: Pred = isEven
+    assert p(2)
+    p = def(n: int): bool
+        capture
+            var lim: int = lim
+        return n > lim
+    assert p(11) and not p(9)
+    var tw: Twice = makeScaler(3)
+    assert applyTwice(tw, 2) == 18
+    assert applyTwice(makeScaler(5), 1) == 25
+    # a sig and a same-signature `def(int): int` are one type
+    assert viaFnType(tw, 4) == 12
+
+    # each conversion of a mutating closure copies its state: two independent counters
+    var counter = def(): int
+        capture
+            var n: int = 0
+        n += 1
+        return n
+    var c1: Counter = counter
+    var c2: Counter = counter
+    c1()
+    c1()
+    assert c1() == 3 and c2() == 1, "copies share state"
+    print("sig_fat_pointer: OK")

@@ -1,0 +1,38 @@
+# BUG-486 / BUG-482: a user method called directly on a call result -- `list.at(i).m(a, b)`,
+# `Builder().then("d")` -- is the user's method: every argument, declared defaults filled,
+# even when the method's name is one the runtime also knows (`contains`, `get`, `put`).
+
+struct Box
+    var x: float
+    var w: float
+    cue init(x: float, w: float)
+        .x = x
+        .w = w
+    def contains(px: float, py: float): bool
+        return px >= .x and py >= .x and px <= .x + .w and py <= .x + .w
+
+class Builder
+    var parts: List(str)
+    cue init()
+        .parts = List(str)()
+    def then(action: str, name: str = "", value: str = ""): Builder
+        .parts.add(action + "/" + name + "/" + value)
+        return this
+    def get(i: int, fallback: str): str
+        if i < .parts.count()
+            return .parts.at(i)
+        return fallback
+
+def main()
+    var boxes = List(Box)()
+    boxes.add(Box(0.0, 10.0))
+    assert boxes.at(0).contains(5.0, 5.0)
+    assert not boxes.at(0).contains(5.0, 50.0)          # the SECOND argument decides
+
+    var c = Builder().then("d").then("e", "y")
+    assert c.parts.count() == 2
+    assert c.parts.at(0) == "d//"
+    assert c.parts.at(1) == "e/y/"
+    assert Builder().then("a", value: "v").get(0, "none") == "a//v"
+    assert Builder().get(3, "none") == "none"
+    print("bug486: OK")

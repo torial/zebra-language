@@ -1,0 +1,28 @@
+# BUG-494: a bare `return` in `cue init` returns the instance, as falling off the end
+# does. BUG-495: a list mutated only through `set()` compiles (it was bound `var`, and
+# Zig refused a var never mutated).
+
+class Widget
+    var built: bool
+    var count: int
+    cue init(build: bool)
+        .built = false
+        .count = 0
+        if not build
+            return
+        .built = true
+        var fill = def(): void
+            return
+        fill()
+        .count = 1
+
+def main()
+    var w = Widget(false)
+    var v = Widget(true)
+    assert not w.built and w.count == 0
+    assert v.built and v.count == 1
+
+    var values = [1, 2, 3]
+    values.set(1, 7)
+    assert values.at(1) == 7
+    print("bug494_495: OK")

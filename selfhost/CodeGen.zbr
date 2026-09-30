@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
-use CgHelpers exposing hexLitZig, setStructReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, nameEscapes, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, ClosureThunk, ThunkList, isBuiltinTypeName
+use CgHelpers exposing hexLitZig, setStructReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
 
@@ -1178,9 +1178,6 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 g.genExtend(ext)
             else
                 pass
-    # ── Gap 1: emit module-level closure-thunk infrastructure for every
-    # call site that passed a capture-block lambda to a sig-typed param.
-    g.flushPendingThunks()
     # Interface RTTI: `_zbr_implements_<Iface>` membership fns (runtime `is`).
     g.emitInterfaceMembershipFns(m)
     # Emit Reflect runtime lookup functions
@@ -3312,6 +3309,7 @@ struct Generator
     var json_want_at         : str      # BUG-331: "line:col" of the index node it applies to
     var self_name            : str      # "self" for methods, "_self" for init
     var capture_self         : str      # BUG-487: a capture closure's receiver ("self" at top level)
+    var in_lambda_body       : bool     # BUG-494: a `return` here is the lambda's, not an init's
     var lam_hint             : List(Type_)  # §28a A: types for the NEXT lambda's untyped params
     var capture_fields       : StrSet   # captured var names → emit self.name in genIdent
     # BUG-233: lambda params RENAMED because they shadow an enclosing param/local. Zig
@@ -3356,13 +3354,9 @@ struct Generator
     var derive_eq_structs    : StrSet   # struct names with @derive(Eq) — route == to .equals()
     var derive_hash_structs  : StrSet   # struct names with @derive(Hash) — HashMap keys via _zbr_CueCtx
     var datetime_vars        : StrSet   # local var names holding _DateTime instances
-    # Gap 1 (sig-takes-closure): per-module list of thunk specs collected by
-    # genCall; emitted at module end by flushPendingThunks.  See cg_helpers
-    # ClosureThunk doc + bootstrap src/CodeGen.zig.
-    var pending_thunks       : ThunkList
-    # Gap 1: maps local-var name → its capture-lambda init (parallel to
-    # closure_vars).  Populated when `var x = def(...) capture {...} ...` is
-    # emitted; queried by emitCallWithClosureThunks for ident-case detection.
+    # Maps local-var name → its capture-lambda init (parallel to closure_vars).
+    # Populated when `var x = def(...) capture {...} ...` is emitted; lets a
+    # closure-shaped argument be recognised by resolveClosureLambda.
     var closure_lambdas      : HashMap(str, ExprLambda)
     # Closure factories: top-level fns that `return` a capture closure.  Their
     # anonymous closure struct is hoisted to a module-level named type
@@ -3442,6 +3436,7 @@ struct Generator
         .json_want_at          = ""
         .self_name             = "self"
         .capture_self          = "self"
+        .in_lambda_body        = false
         .lam_hint              = List(Type_)()
         .capture_fields        = StrSet()
         .lp_renamed            = StrSet()          # BUG-233
@@ -3465,7 +3460,6 @@ struct Generator
         .derive_eq_structs     = StrSet()
         .derive_hash_structs   = StrSet()
         .datetime_vars         = StrSet()
-        .pending_thunks        = ThunkList()
         .closure_lambdas       = HashMap(str, ExprLambda)()
         .closure_ret_fns       = HashMap(str, ExprLambda)()
         .closure_ret_mutates   = StrSet()
@@ -3491,6 +3485,15 @@ struct Generator
     def withMethodReturnType(tr: TypeRef): Generator
         var g = this except
             method_return_type = tr
+        return g
+
+    # A lambda body's `return` answers to the LAMBDA's return type, not the enclosing
+    # function's (a sig-returning factory's body used to convert the lambda's own
+    # `return v + 2` into a sig).
+    def withLambdaReturnType(tr: TypeRef?): Generator
+        var g = this except
+            method_return_type = tr
+            in_lambda_body = true
         return g
 
     def withCurrentClosureRet(name: str): Generator
@@ -4114,8 +4117,9 @@ struct Generator
                         w.emit("i64")
 
             on TypeRef.fn_type as ft
-                # `def(P1, P2): R` → `*const fn(P1, P2) R` (same as a named `sig`).
-                w.emit("*const fn(")
+                # `def(P1, P2): R` → `_ZbrFn(fn(P1, P2) R)` -- the SAME type as a named
+                # `sig` with that signature (Zig memoizes the generic).
+                w.emit("_ZbrFn(fn(")
                 var fk = 0
                 while fk < ft.params.len
                     if fk > 0
@@ -4124,6 +4128,7 @@ struct Generator
                     fk += 1
                 w.emit(") ")
                 genType(ft.ret)
+                w.emit(")")
 
     def genGenericType(gtr: GenericTypeRef)
         # Sized numeric types: int(N) → iN, uint(N) → uN, float(N) → fN
@@ -4401,7 +4406,7 @@ struct Generator
                     # BUG-281 B: an exposed TYPE is emitted by its defining module under
                     # the `_zbr_ty_` prefix, for the same reason and with the same
                     # both-halves rule as the `_zbr_fn_` case above.
-                    else if isUserTypeName(ename)
+                    else if isUserTypeName(ename) and not isSigName(ename)   # BUG-476: a sig is unprefixed
                         uname = zbrTypeSymbol(ename)
                     w.emit("const ")
                     w.emit(uname)
@@ -6515,11 +6520,13 @@ struct Generator
 
     # ── genSig ────────────────────────────────────────────────────────────────
 
+    # A sig is a FAT POINTER (`_ZbrFn`, the runtime): a context plus a function taking
+    # it, so a capturing closure is a sig value with no trampoline pool (BUG-491/492/493).
     def genSig(sd: DeclSig)
         writeIndent()
         w.emit("pub const ")
         w.emit(sd.name)
-        w.emit(" = *const fn(")
+        w.emit(" = _ZbrFn(fn(")
         var first = true
         for p in sd.params
             if not first
@@ -6534,7 +6541,7 @@ struct Generator
             genType(sd.return_type!)
         else
             w.emit("void")
-        w.emit(";\n")
+        w.emit(");\n")
 
     # ── genNamespace ─────────────────────────────────────────────────────────
     # namespace Foo → pub const Foo = struct { ... };
@@ -7202,8 +7209,12 @@ struct Generator
             var head: str = name.substring(0, name.len - tail.len - 1)
             # BUG-286: the head is a NAMESPACE or an import alias — a plain Zig
             # identifier, and a namespace may be named for a Zig keyword.
+            # BUG-476: a `sig` is declared unprefixed (`pub const Cb = _ZbrFn(...)`),
+            # so `m.Cb` names it as it is.
+            if isSigName(tail)
+                return zigSafeName(head) + "." + zigSafeName(tail)
             return zigSafeName(head) + "." + zbrTypeSymbol(tail)
-        if isUserTypeName(name)
+        if isUserTypeName(name) and not isSigName(name)     # BUG-476: a sig is unprefixed
             return zbrTypeSymbol(name)
         return zigSafeName(name)
 
@@ -7624,7 +7635,11 @@ struct Generator
                             collectAssignedIdents(blam_ss, blam_muts)
                             for bcv in blam.captures
                                 if blam_muts.contains_(bcv.name)
-                                    is_mut = true
+                                    # ...only when the local is CALLED; a closure that is
+                                    # only converted into a sig is copied (scanMutations
+                                    # records called names as "()name").
+                                    if mut_set == nil or mut_set!.contains_("()" + n.name)
+                                        is_mut = true
                         else
                             pass
         # Caller of a closure factory: `var c = factory()`.  Register `c` so `c()`
@@ -7637,7 +7652,7 @@ struct Generator
                         closure_vars.add(n.name)
                         if not n.is_const and closure_ret_mutates.contains_(fcid.name)
                             is_mut = true
-        if is_mut and n.init_expr != nil and not n.is_const
+        if is_mut and n.init_expr != nil and not n.is_const and n.type_ == nil
             if n.init_expr! is Expr.ident as fid
                 if isTopLevelMethod(fid.name) and not isLocalOrParamName(fid.name)   # BUG-427
                     writeIndent()
@@ -7645,7 +7660,7 @@ struct Generator
                     # BUG-220: this path writes the function's Zig name directly rather than
                     # going through genIdent, so it needs the prefix applied explicitly.
                     var zn_target: str = topLevelFnZigName(fid.name)
-                    w.emit("var " + zn_fnref + ": @TypeOf(&" + zn_target + ") = &" + zn_target + ";\n")
+                    w.emit("var " + zn_fnref + ": _ZbrFn(@TypeOf(" + zn_target + ")) = .from(" + zn_target + ");\n")
                     return
         # Interface coercion: `var x: IFace = ClassCtor()` or `var x: ^IFace = ClassCtor()`
         if n.init_expr != nil
@@ -7820,7 +7835,7 @@ struct Generator
             if .isStringBoth(n.init_expr!, "var_decl")
                 str_params.add(n.name)
         # Track capture-lambda vars for .call() dispatch at call sites
-        # AND for Gap 1 closure-to-sig thunking.
+        # AND so a closure-shaped argument converts to a sig (genArgListSigAware).
         if n.init_expr != nil
             if n.init_expr! is Expr.lambda as lam
                 if lam.captures.len > 0
@@ -8044,10 +8059,13 @@ struct Generator
                 var ch2 = tryChain(n.init_expr!)
                 if ch2 != nil
                     var chain2 = ch2!
-                    genArgList(chain2.args)
+                    genArgListForMethod(chain2.recv, mc_field, chain2.args)   # BUG-493
             w.emit(")")
         else if n.init_expr != nil
-            genExpr(n.init_expr!)       # a throwing call routes its own error (BUG-467, genCall)
+            if n.type_ != nil and isSigTypeRef(n.type_!)
+                genSigValue(n.init_expr!)
+            else
+                genExpr(n.init_expr!)       # a throwing call routes its own error (BUG-467, genCall)
         else
             w.emit("undefined")
         w.emit(";\n")
@@ -8650,7 +8668,7 @@ struct Generator
                 writeIndent()
                 genExpr(a.target)
                 w.emit(" = ${mc_recv}.${chain.method}(")
-                genArgList(chain.args)
+                genArgListForMethod(chain.recv, chain.method, chain.args)
                 w.emit(");\n")
                 return
         writeIndent()
@@ -8836,20 +8854,25 @@ struct Generator
         w.emit(" ")
         w.emit(assignOpStr(a.op))
         w.emit(" ")
-        # fn-ref reassignment: `pred = isDigit` → `pred = &isDigit`
-        # Mutable fn-ref vars have type `*const fn(P) R`; bare function
-        # names are function values, so we need `&` to take a pointer.
+        if a.op == AssignOp.assign and .infer_ctx != nil
+            if isSigType(inferExpr(a.target, .infer_ctx!))
+                genSigValue(a.value)
+                w.emit(";\n")
+                return
+        # fn-ref reassignment: `pred = isDigit` → `pred = .from(isDigit)`. A mutable
+        # fn-ref local is a sig value (`_ZbrFn`) since 2026-09-30, like every other
+        # callable slot, so the function converts rather than decaying to a pointer.
         if a.op == AssignOp.assign
             if a.value is Expr.ident as vid
                 # BUG-427: a PARAMETER or local named like a top-level def shadows it --
                 # `cue init(later: str)` with `.later = later` and a `def later(...)` in
                 # the module took the function's address instead of the parameter.
                 if isTopLevelMethod(vid.name) and not isLocalOrParamName(vid.name)
-                    # BUG-220: writes the function's Zig name directly (with `&`),
-                    # bypassing genIdent — same as the var-init fn-ref path.
-                    w.emit("&")
+                    # BUG-220: writes the function's Zig name directly, bypassing
+                    # genIdent — same as the var-init fn-ref path.
+                    w.emit(".from(")
                     w.emit(topLevelFnZigName(vid.name))
-                    w.emit(";\n")
+                    w.emit(");\n")
                     return
         if a.op == AssignOp.assign and isStringField(a.target)
             w.emit("_intern(")
@@ -9176,7 +9199,60 @@ struct Generator
             return vn == name
         return false
 
+    # Is this type a `sig` (or `def(P): R`) -- a fat pointer a value must be CONVERTED
+    # into? The checker registers every sig as the pseudo-class `$sig:Name`.
+    def isSigName(name: str): bool
+        var nm: str = name
+        var dot: int = nm.lastIndexOf(".")
+        if dot >= 0
+            nm = nm[dot + 1 .. nm.len]
+        return .module_types.hasClass("$sig:" + nm) or .dep_types.hasClass("$sig:" + nm)
+
+    def localMayBeCallable(name: str): bool
+        if .infer_ctx as lc
+            if lc.hasLocal(name)
+                var lt: Type_ = lc.localType(name)
+                if isSigType(lt)
+                    return true
+                return lt is Type_.unknown_ or lt is Type_.unresolved
+        return true
+
+    def isSigTypeRef(tr: TypeRef): bool
+        if tr is TypeRef.fn_type
+            return true
+        if tr is TypeRef.named as sn
+            return isSigName(sn.name)
+        if tr is TypeRef.nilable as so
+            return isSigTypeRef(so)
+        return false
+
+    def isSigType(t: Type_): bool
+        if t is Type_.fn_type_
+            return true
+        if t is Type_.named as tn
+            return isSigName(tn)
+        if t is Type_.optional as topt
+            return isSigType(topt)
+        return false
+
+    # A value flowing into a sig slot: `.from(v)`, a decl literal, so the SLOT's type is
+    # the target. `nil`, and a value that is already optional, pass through unchanged.
+    def genSigValue(e: Expr)
+        if e is Expr.nil_
+            genExpr(e)
+            return
+        if .infer_ctx != nil
+            if inferExpr(e, .infer_ctx!) is Type_.optional
+                genExpr(e)
+                return
+        w.emit(".from(")
+        genExpr(e)
+        w.emit(")")
+
     def genCallWithTypeHint(e: Expr, hint: TypeRef)
+        if isSigTypeRef(hint)
+            genSigValue(e)
+            return
         # BUG-299: a struct VALUE passed where a `^S` / `^S?` parameter expects a pointer is
         # boxed, as a value assigned into a `^S` field already was (BUG-170). It reached Zig
         # as "expected type '?*Pair', found 'Pair'" -- for a function argument AND for a
@@ -9313,6 +9389,16 @@ struct Generator
         return stmts.at(stmts.len - 1) is Stmt.return_
 
     def genReturn(r: StmtReturn)
+        # BUG-494: a bare `return` in `cue init` returns the instance, as falling off
+        # the end does (`return;` reached Zig, which wants the `*T`). The invariant is
+        # checked on this exit too.
+        if r.value == nil and self_name == "_self" and not in_lambda_body
+            if owner_invariants.len > 0 and not strip_contracts
+                writeIndent()
+                w.emit("_self._check_invariant();\n")
+            writeIndent()
+            w.emit("return _self;\n")
+            return
         if r.value != nil and method_return_type != nil
             armJsonWant(r.value!, typeFromRef(method_return_type!))
         # Contract `result` capture: when the current function has an ensure
@@ -9373,7 +9459,7 @@ struct Generator
                     var mc_recv = hoistCallChain(chain.recv)
                     writeIndent()
                     w.emit("return ${mc_recv}.${chain.method}(")
-                    genArgList(chain.args)
+                    genArgListForMethod(chain.recv, chain.method, chain.args)
                     w.emit(");\n")
                     return
         # Interface pointer coercion: `return ClassCtor()` when ret type is `^IFace`
@@ -9473,7 +9559,7 @@ struct Generator
                     recordImplicitTry(source_file + ":" + w.cur_line.toString())
                     w.emit("try ")
                 w.emit("${mc}.${method_name}(")
-                genArgList(call_args)
+                genArgListForMethod(obj, method_name, call_args)
                 w.emit(");\n")
                 return true
             else
@@ -9492,7 +9578,7 @@ struct Generator
             var mc = "_mc_${uid.toString()}"
             writeIndent()
             w.emit("var ${mc} = ${inner}.${chain.method}(")
-            genArgList(chain.args)
+            genArgListForMethod(chain.recv, chain.method, chain.args)
             w.emit(");\n")
             return mc
         # Base case: emit a temp for the plain expression
@@ -12734,7 +12820,7 @@ struct Generator
                 # Guarded on the object being an import alias, so an ordinary field
                 # that happens to share a name with a type is untouched.
                 if m.object is Expr.ident as xm_alias
-                    if import_aliases.contains_(xm_alias.name) and isUserTypeName(m.member)
+                    if import_aliases.contains_(xm_alias.name) and isUserTypeName(m.member) and not isSigName(m.member)   # BUG-476
                         genExpr(m.object)
                         w.emit(".")
                         w.emit(zbrTypeSymbol(m.member))
@@ -14389,14 +14475,11 @@ struct Generator
         else
             genExpr(e)
 
-    # ── Gap 1: emit a call whose args include capture-block lambdas ──────────
+    # ── closure-shaped arguments ─────────────────────────────────────────────
 
-    # Resolve the capture-block lambda backing a sig-typed call arg, if any.
-    # Returns the lambda for an inline `def(...) capture {...}` or for an
-    # ident bound to such a lambda; nil otherwise.  Mirrors the bootstrap's
-    # closureLambdaFor — used in BOTH passes of emitCallWithClosureThunks so
-    # we avoid a parallel `List(ExprLambda?)` (the optional-in-generic-arg
-    # type mis-round-trips through the selfhost parser — emits `try ExprLambda`).
+    # Resolve the capture-block lambda backing a call arg, if any: an inline
+    # `def(...) capture {...}` or an ident bound to one; nil otherwise. Used where an
+    # argument's parameter type is unknown (genArgListSigAware).
     def resolveClosureLambda(av: Expr): ExprLambda?
         if av is Expr.lambda as lam0
             if lam0.captures.len > 0
@@ -14408,313 +14491,43 @@ struct Generator
         return nil
 
     # stdlib functions that take a closure *struct* via anytype dispatch and so
-    # must never be handed a bare-fn-pointer thunk: sys.go(...) and
-    # <pool: ThreadPool>.submit(...).  Mirrors bootstrap isStdlibClosureStructConsumer.
+    # must never have a closure argument converted to a sig: sys.go(...),
+    # <pool: ThreadPool>.submit(...), and every Gui builder.
     def isStdlibClosureStructConsumer(callee: Expr): bool
-        if callee is Expr.member as m
-            if m.member == "go"
-                if getIdentName(m.object) as on1
-                    if on1 == "sys"
-                        return true
-            if m.member == "submit"
-                if getIdentName(m.object) as on2
-                    if thread_pool_locals.contains_(on2)
-                        return true
-            # BUG-358: the GUI section's builders take a closure `anytype` and either call
-            # it before returning (the old `g.panel(label, cb)`) or COPY ITS BYTES into the
-            # widget node (every `on:` since 2026-09-21, and `g.area`'s draw closure since
-            # 2026-09-22) -- the sys.go shape either way. Routing one through the
-            # closure-via-sig pool burned one of the 64 slots per CALL, and a `view()`
-            # re-runs on every render, so an MVU view died on its 65th frame ("closure-via-
-            # sig pool exhausted"). It was three named builders; it is EVERY method on a
-            # Gui receiver now, because every one of them consumes the struct.
-            # (Only with an inference context: this predicate runs before one exists for
-            # some call sites, and the three-name form never reached inferExpr there.)
-            if .infer_ctx != nil
-                var rt3: Type_ = inferExpr(m.object, .infer_ctx!)
-                if rt3 is Type_.gui_context
-                    return true
+        if callee is Expr.member as cm
+            return memberIsClosureStructConsumer(cm)
         return false
 
-    # Gap 1 gate: thunk every closure arg except those bound for a stdlib
-    # struct-consumer (sys.go / ThreadPool.submit).  Mirrors bootstrap
-    # callNeedsClosureThunks.  A closure value in Zebra user code can only be
-    # typed through a sig param, so this negative gate never un-thunks the
-    # cross-module sig case (Signal.connect) — Gap 1's reason for existing.
-    def callNeedsClosureThunks(c: ExprCall): bool
-        if .isStdlibClosureStructConsumer(c.callee)
-            return false
-        for a in c.args
-            if a.value is Expr.lambda as lam_chk
-                if lam_chk.captures.len > 0
+    # The member-call half, so genMemberCall's default path can ask it (the Gui
+    # builders reach that path: a closure handed to `g.area(...)` is a struct, not a sig).
+    def memberIsClosureStructConsumer(m: ExprMember): bool
+        if m.member == "go"
+            if getIdentName(m.object) as on1
+                if on1 == "sys"
                     return true
-            else if a.value is Expr.ident as id_chk
-                if closure_vars.contains_(id_chk.name)
+        if m.member == "submit"
+            if getIdentName(m.object) as on2
+                if thread_pool_locals.contains_(on2)
                     return true
+        # BUG-358: the GUI section's builders take a closure `anytype` and either call
+        # it before returning (the old `g.panel(label, cb)`) or COPY ITS BYTES into the
+        # widget node (every `on:` since 2026-09-21, and `g.area`'s draw closure since
+        # 2026-09-22) -- the sys.go shape either way. Routing one through the
+        # closure-via-sig pool burned one of the 64 slots per CALL, and a `view()`
+        # re-runs on every render, so an MVU view died on its 65th frame ("closure-via-
+        # sig pool exhausted"). It was three named builders; it is EVERY method on a
+        # Gui receiver now, because every one of them consumes the struct.
+        # (Only with an inference context: this predicate runs before one exists for
+        # some call sites, and the three-name form never reached inferExpr there.)
+        if .infer_ctx != nil
+            var rt3: Type_ = inferExpr(m.object, .infer_ctx!)
+            if rt3 is Type_.gui_context
+                return true
         return false
-
-    # BUG-371: is the closure handed to argument `idx` of this call BORROWED -- the callee
-    # a same-module top-level `def` whose sig parameter at that position never escapes
-    # its body (used only as `f(v)`)? Then the closure cannot outlive the call and the
-    # pool slot is released when it returns. Anything else -- a method, a cross-module
-    # or unknown callee, a parameter that is stored, passed on, returned or captured --
-    # keeps the slot for the life of the program, which is what `Signal.connect` needs.
-    def closureArgBorrowed(c: ExprCall, idx: int): bool
-        if c.callee is Expr.ident as cid
-            if not toplevel_fns.contains_(cid.name)
-                return false
-            for decl in module_decls
-                if decl is Decl.method as fm
-                    if fm.name == cid.name and not fm.mods.is_static
-                        if idx >= fm.params.len
-                            return false
-                        if fm.stmts as body
-                            return not nameEscapes(fm.params.at(idx).name, body)
-                        return false
-        return false
-
-    def emitCallWithClosureThunks(c: ExprCall)
-        # Pre-assign thunk IDs per closure arg.  Parallel list keeps the same
-        # order as c.args; entry is -1 for non-closure args.  The lambda nodes
-        # are re-resolved in the emit loop via resolveClosureLambda rather than
-        # stored in a parallel optional list.
-        var thunk_ids = List(int)()
-        var borrowed = List(bool)()
-        var arg_idx: int = 0
-        for a in c.args
-            var av = a.value
-            var tid = -1
-            if .resolveClosureLambda(av) as r
-                tid = w.nextUid()
-                pending_thunks.add(ClosureThunk(tid, r))
-            thunk_ids.add(tid)
-            borrowed.add(tid >= 0 and .closureArgBorrowed(c, arg_idx))
-            arg_idx = arg_idx + 1
-        # Wrap call in `(blk: { setup; break :blk target(thunk); })` so it stays an
-        # expression in the surrounding context (Zig 0.16 rejects bare `};`) AND
-        # yields the callee's value (BUG-370: `var r = applyAll(xs, closure)` got a
-        # void block -- "value of type 'ArrayList' ignored" from zig).
-        var blk_uid: int = w.nextUid()
-        var blk_lbl: str = "blk_cls_${blk_uid}"
-        w.emit("(" + blk_lbl + ": {\n")
-        var bg = indented()
-        var i = 0
-        for a in c.args
-            var tid = thunk_ids.at(i)
-            i = i + 1
-            if tid < 0
-                continue
-            if .resolveClosureLambda(a.value) as lam
-                var tid_s = "${tid}"
-                # BUG-131: emit the closure value ONCE into _zbr_val_N, then
-                # derive its type from that local so the create's @TypeOf and
-                # the assignment use the same type.  Re-emitting the inline
-                # (struct{...}{...}) literal twice yields two distinct anon
-                # types and a "expected main__struct_N, found _M" mismatch.
-                bg.writeIndent()
-                bg.w.emit("const _zbr_val_" + tid_s + " = ")
-                bg.genExpr(a.value)
-                bg.w.emit(";")
-                bg.w.emit("\n")
-                bg.writeIndent()
-                bg.w.emit("const _zbr_cls_" + tid_s + " = _allocator.create(@TypeOf(_zbr_val_" + tid_s + ")) catch @panic(\"OOM\");")
-                bg.w.emit("\n")
-                bg.writeIndent()
-                bg.w.emit("_zbr_cls_" + tid_s + ".* = _zbr_val_" + tid_s + ";")
-                bg.w.emit("\n")
-                # Grab the next pool slot for this connection (BUG-126).
-                bg.writeIndent()
-                bg.w.emit("if (_zbr_next_" + tid_s + " >= 64) @panic(\"closure-via-sig pool exhausted (>64 live connections at one call site)\");")
-                bg.w.emit("\n")
-                bg.writeIndent()
-                bg.w.emit("const _zbr_slot_" + tid_s + " = _zbr_next_" + tid_s + "; _zbr_next_" + tid_s + " += 1;")
-                bg.w.emit("\n")
-                bg.writeIndent()
-                bg.w.emit("_zbr_state_" + tid_s + "[_zbr_slot_" + tid_s + "] = @ptrCast(_zbr_cls_" + tid_s + ");")
-                bg.w.emit("\n")
-                bg.writeIndent()
-                bg.w.emit("_zbr_dispatch_" + tid_s + " = (struct {")
-                bg.w.emit("\n")
-                var dg = bg.indented()
-                dg.writeIndent()
-                dg.w.emit("fn dispatch(ctx: *anyopaque")
-                var ti = 0
-                for p in lam.params
-                    dg.w.emit(", ")
-                    dg.w.emit("_zbr_ta" + ti.toString())     # BUG-233: generated, never the user's name
-                    ti = ti + 1
-                    dg.w.emit(": ")
-                    if p.type_ != nil
-                        dg.genType(p.type_!)
-                    else
-                        dg.w.emit("anytype")
-                dg.w.emit(") ")
-                if lam.return_type != nil
-                    dg.genType(lam.return_type!)
-                else
-                    dg.w.emit("void")
-                dg.w.emit(" {\n")
-                var ig = dg.indented()
-                ig.writeIndent()
-                ig.w.emit("const cc: *@TypeOf(")
-                ig.genExpr(a.value)
-                ig.w.emit(") = @ptrCast(@alignCast(ctx));\n")
-                ig.writeIndent()
-                # BUG-370: a sig with a RETURN TYPE (`sig Transform(x: int): int`) needs
-                # the thunk to hand the closure's result back; `cc.call(..);` dropped it
-                # and zig refused the emit ("value of type 'i64' ignored").
-                if lam.return_type != nil
-                    ig.w.emit("return ")
-                ig.w.emit("cc.call(")
-                var pi = 0
-                for p2 in lam.params
-                    if pi > 0
-                        ig.w.emit(", ")
-                    ig.w.emit("_zbr_ta" + pi.toString())     # BUG-233: matches the declaration above
-                    pi = pi + 1
-                ig.w.emit(");\n")
-                dg.writeIndent()
-                dg.w.emit("}\n")
-                bg.writeIndent()
-                bg.w.emit("}).dispatch;\n")
-        # Emit actual call with thunk fn pointers in place of closure args. A borrowed
-        # closure's slot (BUG-371) is released after the call: LIFO is sound because
-        # calls nest, and nothing in the callee kept the pointer.
-        var any_borrowed: bool = false
-        for bw in borrowed
-            if bw
-                any_borrowed = true
-        bg.writeIndent()
-        if any_borrowed
-            bg.w.emit("const _zbr_ret_" + blk_uid.toString() + " = ")
-        else
-            bg.w.emit("break :" + blk_lbl + " ")
-        bg.genExpr(c.callee)
-        bg.w.emit("(")
-        var j = 0
-        for a2 in c.args
-            if j > 0
-                bg.w.emit(", ")
-            var tid2 = thunk_ids.at(j)
-            if tid2 >= 0
-                var tid2_s = "${tid2}"
-                bg.w.emit("_zbr_thunks_" + tid2_s + "[_zbr_slot_" + tid2_s + "]")
-            else
-                bg.genExpr(a2.value)
-            j = j + 1
-        bg.w.emit(");\n")
-        if any_borrowed
-            var j2 = 0
-            for a3 in c.args
-                if borrowed.at(j2)
-                    var tid3_s = "${thunk_ids.at(j2)}"
-                    bg.writeIndent()
-                    bg.w.emit("_zbr_state_" + tid3_s + "[_zbr_slot_" + tid3_s + "] = null; _zbr_next_" + tid3_s + " -= 1; _allocator.destroy(_zbr_cls_" + tid3_s + ");\n")
-                j2 = j2 + 1
-            bg.writeIndent()
-            bg.w.emit("break :" + blk_lbl + " _zbr_ret_" + blk_uid.toString() + ";\n")
-        writeIndent()
-        w.emit("})")
-
-    # BUG-126: per-call-site trampoline pool.  Each connection needs its own
-    # (state slot, thunk fn) pair because a bare Zig fn-pointer carries no
-    # context — so K distinct code addresses are required.  When one call site
-    # is reached more than K times in a run (e.g. K+1 scene instances of the
-    # same script connecting to the same signal), the call site panics rather
-    # than silently overwriting earlier connections (the old single-slot
-    # behaviour, which dropped all but the last).
-    def flushPendingThunks()
-        var i = 0
-        while i < pending_thunks.len
-            var t = pending_thunks.at(i)
-            var id_s = "${t.id}"
-            # State pool + shared dispatcher + monotonic slot counter.
-            w.emit("\n")
-            w.emit("var _zbr_state_" + id_s + ": [64]?*anyopaque = .{null} ** 64;")
-            w.emit("\n")
-            w.emit("var _zbr_dispatch_" + id_s + ": ?*const fn(*anyopaque")
-            for p in t.lambda.params
-                w.emit(", ")
-                w.emit(zigSafeName(p.name))
-                w.emit(": ")
-                if p.type_ != nil
-                    genType(p.type_!)
-                else
-                    w.emit("anytype")
-            w.emit(") ")
-            if t.lambda.return_type != nil
-                genType(t.lambda.return_type!)
-            else
-                w.emit("void")
-            w.emit(" = null;")
-            w.emit("\n")
-            w.emit("var _zbr_next_" + id_s + ": usize = 0;")
-            w.emit("\n")
-            # K thunk functions, each bound to a fixed slot index.
-            var slot = 0
-            while slot < 64
-                var slot_s = "${slot}"
-                w.emit("fn _zbr_thunk_" + id_s + "_" + slot_s + "(")
-                var pj = 0
-                while pj < t.lambda.params.len
-                    if pj > 0
-                        w.emit(", ")
-                    var pp = t.lambda.params.at(pj)
-                    w.emit(zigSafeName(pp.name))
-                    w.emit(": ")
-                    if pp.type_ != nil
-                        genType(pp.type_!)
-                    else
-                        w.emit("anytype")
-                    pj = pj + 1
-                w.emit(") ")
-                if t.lambda.return_type != nil
-                    genType(t.lambda.return_type!)
-                else
-                    w.emit("void")
-                w.emit(" {")
-                w.emit("\n")
-                # BUG-370: a returning sig's thunk returns the dispatch's value; a slot
-                # with no state is a bug in this pool, never a value to fabricate.
-                if t.lambda.return_type != nil
-                    w.emit("    if (_zbr_state_" + id_s + "[" + slot_s + "]) |s| return _zbr_dispatch_" + id_s + ".?(s")
-                else
-                    w.emit("    if (_zbr_state_" + id_s + "[" + slot_s + "]) |s| _zbr_dispatch_" + id_s + ".?(s")
-                for p2 in t.lambda.params
-                    w.emit(", ")
-                    w.emit(zigSafeName(p2.name))
-                w.emit(");")
-                w.emit("\n")
-                if t.lambda.return_type != nil
-                    w.emit("    @panic(\"closure-via-sig: slot " + slot_s + " has no state\");")
-                    w.emit("\n")
-                w.emit("}")
-                w.emit("\n")
-                slot = slot + 1
-            # Lookup table of the K thunk fn pointers, indexed by slot.
-            w.emit("const _zbr_thunks_" + id_s + " = [_]*const @TypeOf(_zbr_thunk_" + id_s + "_0){")
-            var slot2 = 0
-            while slot2 < 64
-                if slot2 > 0
-                    w.emit(", ")
-                w.emit("&_zbr_thunk_" + id_s + "_" + "${slot2}")
-                slot2 = slot2 + 1
-            w.emit("};")
-            w.emit("\n")
-            i = i + 1
 
     # ── genCall ───────────────────────────────────────────────────────────────
 
     def genCall(c: ExprCall)
-        # ── Gap 1: closure-via-sig thunking ───────────────────────────────────
-        # Thunk every closure arg (inline capture-block lambda OR ident bound to
-        # one) EXCEPT those passed to a stdlib closure-struct consumer (sys.go /
-        # ThreadPool.submit), which take the struct directly.  See bootstrap
-        # src/CodeGen.zig callNeedsClosureThunks.
-        if .callNeedsClosureThunks(c)
-            emitCallWithClosureThunks(c)
-            return
-
         # Generic function call: identity(int)(42) → identity(i64, 42).
         # Detected as outer call where callee is a call of a known generic fn name.
         if c.callee is Expr.call as gf_inner
@@ -14783,6 +14596,28 @@ struct Generator
                 w.emit(".call(")
                 genArgList(c.args)
                 w.emit(")")
+                return
+            # A local or parameter holding a callable value -- a sig, a closure, a
+            # function pointer: `_zbr_invoke` calls whichever it is. Only when its type
+            # is a sig or unproven: `var error = 5` beside a class `error` leaves
+            # `error()` the constructor (test/bug280_freed_words_test).
+            if isLocalOrParamName(cid.name) and localMayBeCallable(cid.name)
+                w.emit("_zbr_invoke(&")
+                genExpr(c.callee)
+                w.emit(", .{")
+                genArgList(c.args)
+                w.emit("})")
+                return
+        # A callable RESULT -- `handlers.at(0)(x)`, `fs[i](x)`: the same, when the
+        # checker types the callee as a sig (a call-shaped callee is otherwise a
+        # generic ctor, `List(int)()`, handled below).
+        if (c.callee is Expr.call or c.callee is Expr.index) and .infer_ctx != nil
+            if isSigType(inferExpr(c.callee, .infer_ctx!))
+                w.emit("_zbr_invoke(&(")
+                genExpr(c.callee)
+                w.emit("), .{")
+                genArgList(c.args)
+                w.emit("})")
                 return
         # CodeEditor bare constructor: CodeEditor() → _code_editor_new().
         # (The `.forZebra()` static factory is handled in genMemberCall.)
@@ -15188,12 +15023,12 @@ struct Generator
                     w.emit("self.")
                 emitName(id.name)                           # BUG-281 E
                 w.emit("(")
-                var first3 = true
-                for a in c.args
-                    if not first3
-                        w.emit(", ")
-                    first3 = false
-                    genExpr(a.value)
+                # a sig-typed parameter converts its argument (the compiler's own
+                # `scanWhile(isDigit)` is this shape)
+                if lookupFnParams(owner + "." + id.name) as own_ps
+                    genArgListByParams(own_ps, c.args)
+                else
+                    genArgList(c.args)
                 w.emit(")")
                 if callee_throws and try_block_label != nil and not in_try_expr
                     emitTryBlockCatch()
@@ -15234,6 +15069,21 @@ struct Generator
 
     def genMemberCall(m: ExprMember, args: List(Arg))
         var mname = m.member
+        # `obj.cb(x)` where `cb` is a FIELD of sig type (not a method): invoke the value.
+        if .infer_ctx != nil
+            var fc_rt: Type_ = inferExpr(m.object, .infer_ctx!)
+            if fc_rt is Type_.named as fc_cn
+                if .infer_ctx!.methodReturnAny(fc_cn, mname) == nil
+                    if .infer_ctx!.fieldTypeAny(fc_cn, mname) as fc_ft
+                        if isSigType(fc_ft)
+                            w.emit("_zbr_invoke(&")
+                            genExpr(m.object)
+                            w.emit(".")
+                            emitName(mname)
+                            w.emit(", .{")
+                            genArgList(args)
+                            w.emit("})")
+                            return
         # SIMD instance methods (§32): sum/dot/max_element/min_element, lane-wise min/max,
         # and select/any/all/count on a boolxN mask. These names are also legal user
         # methods and List names, so dispatch to the vector builtins ONLY when the
@@ -16070,6 +15920,10 @@ struct Generator
                                     if findInterfaceDecl(t_en) != nil
                                         var t_sp: Span = Span(0, 0, 0, 0)
                                         t_iface_done = genInterfaceArgCoercion(args.at(0).value, TypeRef.named(NamedTypeRef(t_sp, t_en)))
+                                # List(Sig).add(closure / fn): converted, like any sig slot.
+                                if not t_iface_done and isSigType(list_elem_t)
+                                    genSigValue(args.at(0).value)
+                                    t_iface_done = true
                                 if not t_iface_done
                                     genStoredValue(m.object, args.at(0).value)
                         w.emit(") catch @panic(\"OOM\")")
@@ -16680,6 +16534,9 @@ struct Generator
                 # for a call receiver, else we emit `f().method()` on a `*const` temporary
                 # → "expected *T, found *const T". Divergence: method_chain_throws_test (D4).
                 var um_is_call_temp: bool = m.object is Expr.call
+                if .infer_ctx!.methodReturnAny(um_cname, mname) != nil and um_is_call_temp
+                    genCallOnTemp(m, mname, args)
+                    return
                 if .infer_ctx!.methodReturnAny(um_cname, mname) != nil and not um_is_call_temp
                     if isClassMethodThrows(um_cname, mname) and current_method_throws and try_block_label == nil and not in_try_expr
                         recordImplicitTry(source_file + ":" + w.cur_line.toString())
@@ -16728,6 +16585,10 @@ struct Generator
                             var ump = um_params!
                             if um_ai < ump.len
                                 var ump_p = ump.at(um_ai)
+                                if ump_p.type_ != nil
+                                    if isSigTypeRef(ump_p.type_!)
+                                        genSigValue(args.at(um_ai).value)
+                                        um_emitted = true
                                 # BUG-388: interface-typed method param, concrete arg.
                                 if ump_p.type_ != nil and not um_emitted
                                     if genInterfaceArgCoercion(args.at(um_ai).value, ump_p.type_!)
@@ -17995,10 +17856,16 @@ struct Generator
                 fmt2_first = false
             w.emit(" }) catch @panic(\"OOM\"))")
             return
-        # BUG-027: expression-position chain fix — f().method(args) must materialise
-        # the temporary as a mutable var so the pointer-receiver method can take *T.
-        # (blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })
         if m.object is Expr.call
+            genCallOnTemp(m, mname, args)
+            return
+        genMemberCallDefault(m, mname, args)
+
+    # BUG-027: expression-position chain fix — f().method(args) must materialise
+    # the temporary as a mutable var so the pointer-receiver method can take *T.
+    # (blk_N: { var _mc_N = f(); break :blk_N _mc_N.method(args); })
+    def genCallOnTemp(m: ExprMember, mname: str, args: List(Arg))
+        if true
             var mc_uid: int = w.nextUid()
             var mc_lbl: str = "blk_" + mc_uid.toString()
             var chain_throws: bool = false
@@ -18014,9 +17881,10 @@ struct Generator
                 w.emit("; break :" + mc_lbl + " try _mc_" + mc_uid.toString() + "." + mname + "(")
             else
                 w.emit("; break :" + mc_lbl + " _mc_" + mc_uid.toString() + "." + mname + "(")
-            genArgList(args)
+            genArgListForMethod(m.object, mname, args)          # BUG-482/486
             w.emit("); })")
-            return
+
+    def genMemberCallDefault(m: ExprMember, mname: str, args: List(Arg))
         # Default: object.method(args)
         # Auto-try: if calling a throws method on self or same-module class, emit try prefix
         var callee_throws2 = false
@@ -18151,11 +18019,17 @@ struct Generator
                 first = false
                 # BUG-091/097: three-case addr-of/pass/deref for container params.
                 var already_emitted = false
+                if mc_params == nil and .resolveClosureLambda(a.value) != nil and not memberIsClosureStructConsumer(m)
+                    genSigValue(a.value)
+                    already_emitted = true
                 if mc_params != nil
                     var msp = mc_params!
                     if ai_p < msp.len
                         var mp = msp.at(ai_p)
-                        if paramNeedsAddrOfTx(mp, mc_body)
+                        if mp.type_ != nil and isSigTypeRef(mp.type_!)
+                            genSigValue(a.value)
+                            already_emitted = true
+                        else if paramNeedsAddrOfTx(mp, mc_body)
                             if argIdentInCpp(a.value)
                                 genExpr(a.value)        # Case 1: ptr→ptr, no &
                                 already_emitted = true
@@ -18665,6 +18539,57 @@ struct Generator
             first = false
             genExpr(a.value)
 
+    # BUG-493: a method called on a HOISTED receiver (`_mc_N.connect(closure)`) -- its
+    # arguments were emitted with no parameter types, so a closure never became the sig
+    # the parameter wants. Look the method up on the receiver's class; positional only
+    # (the hoisted paths never carried named arguments).
+    def genArgListForMethod(recv: Expr, method: str, args: List(Arg))
+        var ps: List(Param)? = nil
+        if .infer_ctx != nil
+            if inferExpr(recv, .infer_ctx!) is Type_.named as hr_cn
+                ps = lookupFnParams(hr_cn + "." + method)
+        if ps == nil
+            genArgListSigAware(recv, args)
+            return
+        # BUG-482: the full pass -- named arguments, declared defaults, `&` for a
+        # mutated container, sig conversion -- as a call on a named receiver gets.
+        var body: List(Stmt)? = nil
+        if .infer_ctx != nil
+            if inferExpr(recv, .infer_ctx!) is Type_.named as hb_cn
+                body = lookupFnBody(hb_cn + "." + method)
+        genArgListFull(args, ps, body)
+
+    def genArgListByParams(ps: List(Param), args: List(Arg))
+        var i: int = 0
+        for a in args
+            if i > 0
+                w.emit(", ")
+            var done: bool = false
+            if i < ps.len
+                if ps.at(i).type_ as pt
+                    if isSigTypeRef(pt)
+                        genSigValue(a.value)
+                        done = true
+            if not done
+                genExpr(a.value)
+            i += 1
+
+    # An argument list whose parameters are unknown (a hoisted receiver's method, a
+    # cross-module call with no param list): a closure-shaped argument is converted to
+    # the sig it must be going to -- unless the callee is one of the runtime's closure-
+    # STRUCT consumers (sys.go, ThreadPool.submit, the Gui builders).
+    def genArgListSigAware(callee: Expr, args: List(Arg))
+        var consumer: bool = .isStdlibClosureStructConsumer(callee)
+        var first = true
+        for a in args
+            if not first
+                w.emit(", ")
+            first = false
+            if not consumer and .resolveClosureLambda(a.value) != nil
+                genSigValue(a.value)
+            else
+                genExpr(a.value)
+
     def lookupFnParams(key: str): List(Param)?
         for decl in module_decls
             if decl is Decl.method as m
@@ -19050,7 +18975,7 @@ struct Generator
                     walkStmts(lbs, lam_ctx)
                 else
                     pass
-            var lg = asMethod().withCaptureFields(cf).withInferCtx(lam_ctx).withLambdaParamRenames(lp_names, lp_pfx).withCaptureSelf(cself)
+            var lg = asMethod().withCaptureFields(cf).withInferCtx(lam_ctx).withLambdaParamRenames(lp_names, lp_pfx).withCaptureSelf(cself).withLambdaReturnType(lam.return_type)
             # Return type
             if lam.return_type != nil
                 genType(lam.return_type!)
@@ -19110,7 +19035,10 @@ struct Generator
                     emitName(cv.name)                       # BUG-280
                     w.emit(" = ")
                     if cv.init_expr != nil
-                        genExpr(cv.init_expr!)
+                        if cv.type_ != nil and isSigTypeRef(cv.type_!)
+                            genSigValue(cv.init_expr!)          # a sig-typed capture
+                        else
+                            genExpr(cv.init_expr!)
                     else
                         w.emit("undefined")
                     w.emit(", ")

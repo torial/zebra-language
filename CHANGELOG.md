@@ -23,6 +23,35 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A `sig` is a fat pointer, and any callable converts into one (BUG-491, 492, 493;
+  found porting the GameEngine).** A `sig` (and `def(P): R`) was a bare function pointer,
+  so a capturing closure reached one only through a static pool of 64 trampolines per
+  call site, and only when written inline at the call. Three consequences, all gone:
+  - a closure returned from a factory could not be passed to a sig parameter (BUG-491);
+  - the 65th connection at one call site panicked, per process, with no way to free a
+    slot (BUG-492);
+  - `a.b().connect(closure)` failed where `var s = a.b(); s.connect(closure)` worked
+    (BUG-493).
+
+  A sig is now `_ZbrFn(fn(P) R)`: a context plus a function. A named function, lambda or
+  closure converts where it meets a sig-typed parameter, variable, field, capture,
+  `List(Sig)` element or `return`. Two sigs with the same signature, and a sig and
+  `def(P): R`, are still one type. The trampoline pool is deleted (~650 lines of
+  compiler removed, and 64 generated functions per closure call site).
+
+  **For Zig code:** call a sig with `cb.call(args)` and build one with `.from(f)`.
+  A sig was never usable across `extern`, and still isn't.
+- **A mutating closure that is only handed on is no longer declared `var` (BUG-477).**
+  Zig refused the local as never mutated; it is `var` only when something calls it.
+- **A `sig` can be imported (BUG-476):** `use m exposing Cb` and `m.Cb` both name the
+  type; before, the checker called it unknown and codegen misspelled it.
+- **A method called on a call result keeps its arguments (BUG-486) and defaults (BUG-482):**
+  `boxes.at(0).contains(x, y)` lost `y` to the List `contains` route, and
+  `Builder().then("d")` did not fill `then`'s defaults.
+- **A bare `return` in `cue init` returns the instance (BUG-494)**, and **a list mutated
+  only by `set()` is `const` (BUG-495)**. Both reached Zig as type errors.
+- **Calling a callable result:** `handlers.at(0)(x)` and `fs[i](x)` work when the checker
+  types the callee as a sig.
 - **A `capture` closure inside a method compiles (BUG-487, found porting the GameEngine).**
   Its receiver was named `self` and shadowed the method's; Zig refused it. Also a closure
   made inside another closure.

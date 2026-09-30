@@ -1,0 +1,12 @@
+# BUG-476: a `sig` from a `use`d module -- exposed or qualified -- names a type.
+sig Cb(n: int): int
+
+def twice(n: int): int
+    return n * 2
+
+class Holder
+    var cbs: List(Cb)
+    cue init()
+        .cbs = List(Cb)()
+    def add(c: Cb)
+        .cbs.add(c)
