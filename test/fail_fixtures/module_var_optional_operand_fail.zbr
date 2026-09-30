@@ -1,0 +1,7 @@
+# A MODULE var initializer is type-checked like any expression: an operator on an
+# optional is refused (the book's appendix-c example, which reached Zig).
+var x: int? = nil
+var r = x + 1
+
+def main()
+    print(r)

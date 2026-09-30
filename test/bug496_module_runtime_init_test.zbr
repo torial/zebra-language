@@ -1,0 +1,29 @@
+# BUG-496: module-level vars with RUNTIME initializers -- a method call, arithmetic on
+# another module var, a list literal, interpolation, a pipeline -- and one read from a
+# used module. Each reached Zig as "unable to resolve comptime value".
+use bug496_module_init_lib exposing libShout, libTotal
+
+var text = "HELLO WORLD"
+var first_word = (text
+    -> .lower()
+    -> .split(" ")
+    -> .at(0))
+var length = first_word.len
+var a = 2
+var b = a * 3
+var c = b + a
+var xs = [1, 2, 3]
+var greet = "hi ${first_word}"
+var typed: str = "ABC".lower()
+
+def main()
+    assert length == 5
+    assert b == 6 and c == 8
+    assert xs.count() == 3 and xs.at(2) == 3
+    assert greet == "hi hello"
+    assert typed == "abc"
+    assert libShout() == "LIB!"
+    assert libTotal() == 7
+    b += 1
+    assert b == 7
+    print("bug496: OK")

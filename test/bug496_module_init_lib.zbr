@@ -1,0 +1,11 @@
+# BUG-496: a module var whose initializer runs at runtime lives in _initModuleVars(),
+# typed by the checker (so references to it are not guesses). Read from ANOTHER module.
+var base = "Lib"
+var shout = base.upper() + "!"
+var sizes = [3, 4]
+
+def libShout(): str
+    return shout
+
+def libTotal(): int
+    return sizes.at(0) + sizes.at(1)

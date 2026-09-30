@@ -6,6 +6,32 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-499: a method whose ONLY use of `this` is a capture initialiser is emitted with `_ = self;` -- Zig: "pointless discard of function parameter" -- FIXED 2026-09-30
+- **Severity:** Low (a clear Zig error; the workaround is `var me = this` on its own line)
+- **Repro:** a class method whose whole body is `em.connect(def(): void` / `capture` / `var me: Counter = this` / `me.bump()` → emitted `_ = self;` followed by `.{ .me = self }` → `error: pointless discard of function parameter`.
+- **Found by:** Fable, removing the BUG-491 workarounds from the GameEngine port (`game/mm/notification.zbr` `Notifier.start`).
+- **Fixed 2026-09-30.** `exprMentionsThis`'s lambda arm now looks at the capture initialisers, which are evaluated in the method's scope. Fixture: `test/bug499_capture_this_only_test.zbr`.
+
+### BUG-496: a module-level `var` whose initializer is a runtime call is emitted as a comptime constant -- Zig: "unable to resolve comptime value" -- FIXED 2026-09-30
+- **Severity:** Medium (the book shows this shape at top level in its pipelines chapter, and `zebra -c` passes it -- only a full build fails)
+- **Repro** (`zebra m.zbr`):
+  ```zebra
+  var text = "HELLO WORLD"
+  var first_word = (text
+      -> .lower()
+      -> .split(" ")
+      -> .at(0))
+  var length = first_word.len
+
+  def main()
+      print(length)
+  ```
+  → `m.zig:15:203: error: unable to resolve comptime value`. The same three lines inside `main` print `5`.
+- **Cause:** `isDeferredModuleVar` (CodeGen) moves a module global into `_initModuleVars()` only when it is ANNOTATED with a container type (HashMap/Set/Atomic, BUG-153) or a named class whose init is a call (BUG-157). Every other module-level initializer is emitted as a container-level `var x = <expr>;`, which Zig evaluates at comptime -- fine for a literal, impossible for `text.lower()` (it allocates through the runtime allocator).
+- **Fix direction:** defer any module var whose initializer is not comptime-evaluable (any call, method call, pipeline, interpolation, or reference to another deferred var), declaring it with the checker's inferred type (`tcTypeAnnotation`) when it has no annotation; where no type can be inferred, refuse in Zebra naming the annotation to add, rather than reaching Zig.
+- **Found by:** the §28a book measure (its line-0 guesses were these initializers being inferred in a context that does not know the other module vars).
+- **Fixed 2026-09-30.** `isDeferredModuleVar` defers any module var whose initializer is not a compile-time literal (`isComptimeModuleInit`), so it is assigned in `_initModuleVars()`. An untyped one is declared with the checker's type -- `populateModuleTypes` now types non-literal initializers over the finished table in declaration order (the module-var half of BUG-306), else Zig's own `@TypeOf(init)`; the initializer is emitted with a module-level inference context, so references between module vars are no longer guesses. Fixture: `test/bug496_module_runtime_init_test.zbr` (+ `_lib`: a deferred var read through a used module's function).
+
 ### BUG-477: a capture closure that only gets PASSED (never called locally) is bound with `var` and Zig refuses it -- FIXED 2026-09-30
 - **Severity:** High for engine/GUI code (it is the canonical "connect a stateful handler to a signal" shape; four GameEngine scripts stopped compiling: `timer_test`, `orbit_follower`, `portal_tween`, `tween_demo`)
 - **Repro** (`zebra cp.zbr`):

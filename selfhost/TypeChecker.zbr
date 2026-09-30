@@ -1288,6 +1288,20 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                                 if dep is Decl.mixin_ as mx
                                     if mx.name == nr.name
                                         addClassMembers(mt, class_ct, mx.members)
+    # BUG-496 (and BUG-306's module-var half): an untyped module var whose initializer
+    # is not a literal -- `var b = a * 3`, `var s = "X".lower()`, `var xs = [1, 2]` --
+    # was registered `unknown`, so every reference to it was a guess. Typed here, over
+    # the finished table and in DECLARATION order, so `b` sees `a`'s entry.
+    var mv_ctx = InferCtx(mt, "")
+    var mv_cls: ClassTypes = mt.classOf("")!
+    for mdecl in m.decls
+        if mdecl is Decl.var_ as mv3
+            if mv3.type_ == nil and mv3.init_expr != nil
+                if mv_cls.fieldType(mv3.name) as mv3_cur
+                    if mv3_cur is Type_.unknown_
+                        var mv3_t: Type_ = inferExpr(mv3.init_expr!, mv_ctx)
+                        if not (mv3_t is Type_.unresolved)
+                            mv_cls.setField(mv3.name, mv3_t)
 
 def buildModuleTypes(m: Module): ModuleTypes
     var mt = ModuleTypes()
@@ -6708,6 +6722,13 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
             if ctx.current_class != ""
                 checkReservedField(dv, file, ctx)
             checkVarDecl(dv, file, ctx)
+            # A MODULE var's initializer is an expression like any other and gets the
+            # same checks (operators on optionals, call arity, JSON reads...). It got
+            # none: `var r = x + 1` with `x: int?` at top level reached Zig. (BUG-496
+            # made such initializers runnable, which made them worth checking.)
+            if ctx.current_class == ""
+                if dv.init_expr != nil
+                    checkCallsInExpr(dv.init_expr!, file, dv.span.line, ctx)
         else
             pass
 

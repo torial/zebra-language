@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-497. Next new bug: BUG-498.**
+**Last bug number generated: BUG-499. Next new bug: BUG-500.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,6 +46,20 @@
 
 ---
 
+### BUG-498: `use m exposing x` and `use m` in one file emit the module import twice -- Zig: "duplicate struct member name 'm'" -- OPEN (found 2026-09-30)
+- **Severity:** Low (a clear Zig error on a redundant line, easy to drop; but the front end accepts it and the message names emitted code)
+- **Repro** (`zebra m.zbr`, with `dm.zbr` holding `def two(): int` / `return 2`):
+  ```zebra
+  use dm exposing two
+  use dm
+
+  def main()
+      print(two() + dm.two())
+  ```
+  → `m.zig:12:7: error: duplicate struct member name 'dm'`. Each `use` emits its own `const dm = @import("dm.zig");`.
+- **Fix direction:** emit the import once per module (the exposing form's aliases already need it), or refuse the second `use` of a module naming the first. Either way the exposed names and `dm.x` both work from one import.
+- **Found by:** writing `test/bug476_sig_import_test.zbr`, whose first draft imported its lib both ways.
+
 ### BUG-497: a method named `self` reaches Zig as "function parameter shadows declaration of 'self'" -- OPEN (found 2026-09-30)
 - **Severity:** Low (a clear Zig error, easy to dodge by renaming, but the front end accepts the program and the message names emitted code, not the user's)
 - **Repro** (`zebra s.zbr`):
@@ -60,25 +74,6 @@
   → `s.zig: error: function parameter shadows declaration of 'self'`. Every method's receiver is emitted as a parameter named `self`, and the method itself is a declaration named `self` in the same struct.
 - **Fix direction:** either refuse `self` as a member name in Zebra (it is Zig's receiver spelling, not a Zebra keyword), or emit a method so named under a prefix at every declaration and call site, the way BUG-281 E escapes keyword-named methods.
 - **Found by:** writing `test/sig_fat_pointer_test.zbr`, whose first draft had a fluent `def self()` accessor.
-
-### BUG-496: a module-level `var` whose initializer is a runtime call is emitted as a comptime constant -- Zig: "unable to resolve comptime value" -- OPEN (found 2026-09-30)
-- **Severity:** Medium (the book shows this shape at top level in its pipelines chapter, and `zebra -c` passes it -- only a full build fails)
-- **Repro** (`zebra m.zbr`):
-  ```zebra
-  var text = "HELLO WORLD"
-  var first_word = (text
-      -> .lower()
-      -> .split(" ")
-      -> .at(0))
-  var length = first_word.len
-
-  def main()
-      print(length)
-  ```
-  → `m.zig:15:203: error: unable to resolve comptime value`. The same three lines inside `main` print `5`.
-- **Cause:** `isDeferredModuleVar` (CodeGen) moves a module global into `_initModuleVars()` only when it is ANNOTATED with a container type (HashMap/Set/Atomic, BUG-153) or a named class whose init is a call (BUG-157). Every other module-level initializer is emitted as a container-level `var x = <expr>;`, which Zig evaluates at comptime -- fine for a literal, impossible for `text.lower()` (it allocates through the runtime allocator).
-- **Fix direction:** defer any module var whose initializer is not comptime-evaluable (any call, method call, pipeline, interpolation, or reference to another deferred var), declaring it with the checker's inferred type (`tcTypeAnnotation`) when it has no annotation; where no type can be inferred, refuse in Zebra naming the annotation to add, rather than reaching Zig.
-- **Found by:** the §28a book measure (its line-0 guesses were these initializers being inferred in a context that does not know the other module vars).
 
 ### BUG-490: a class that `implements` an interface from ANOTHER module does not coerce to that interface at a cross-module call site -- OPEN (found 2026-09-29)
 - **Severity:** Medium (interfaces are the documented way to pass behaviour across modules; this makes them single-module)

@@ -1,0 +1,29 @@
+# BUG-499: a method whose ONLY use of `this` is a capture initialiser keeps `self` --
+# it was emitted `_ = self;` beside the use (Zig: "pointless discard").
+sig Tick()
+class Emitter
+    var hs: List(Tick)
+    cue init()
+        .hs = List(Tick)()
+    def connect(t: Tick)
+        .hs.add(t)
+    def fire()
+        for h in .hs
+            h()
+class Counter
+    var n: int = 0
+    def bump()
+        .n += 1
+    def attach(em: Emitter)
+        em.connect(def(): void
+            capture
+                var me: Counter = this
+            me.bump()
+        )
+def main()
+    var c = Counter()
+    var e = Emitter()
+    c.attach(e)
+    e.fire()
+    assert c.n == 1
+    print("bug499: OK")

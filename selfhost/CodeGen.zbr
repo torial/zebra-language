@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
-use CgHelpers exposing hexLitZig, setStructReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
+use CgHelpers exposing hexLitZig, setStructReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering
 use TypeChecker exposing ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
 
@@ -711,6 +711,13 @@ def exprMentionsThis(e: Expr): bool
         on Expr.lambda as lam
             # A lambda body can close over `this` (`def(x) = x + this.v`), and the
             # enclosing method still needs its `self`.
+            # BUG-499: a capture INITIALISER (`var me: Counter = this`) is evaluated in
+            # the method's scope, so it is a use of `self` -- a method whose only use
+            # of `this` was there got `_ = self;` beside it ("pointless discard").
+            for lcv in lam.captures
+                if lcv.init_expr != nil
+                    if exprMentionsThis(lcv.init_expr!)
+                        return true
             if lam.body_ is LambdaBody.expr_ as lbe
                 return exprMentionsThis(lbe)
             return false
@@ -877,7 +884,14 @@ def isDeferredContainer(nm: str): bool
 def isDeferredModuleVar(mv: DeclVar): bool
     if mv.is_const or mv.mods.is_static
         return false
-    if mv.type_ == nil or mv.init_expr == nil
+    if mv.init_expr == nil
+        return false
+    # BUG-496: an initializer that is not a compile-time literal cannot sit at
+    # container scope (Zig evaluates it at comptime: "unable to resolve comptime
+    # value"), so it runs in _initModuleVars() like the BUG-153 containers.
+    if not isComptimeModuleInit(mv.init_expr!)
+        return true
+    if mv.type_ == nil
         return false
     var t: TypeRef = mv.type_!
     if t is TypeRef.generic as gg
@@ -885,6 +899,35 @@ def isDeferredModuleVar(mv: DeclVar): bool
     if t is TypeRef.named
         return mv.init_expr! is Expr.call
     return false
+
+# A module-var initializer Zig can evaluate at container scope: a literal (an
+# interpolated string is its own variant), a negated numeric literal, nil.
+def isComptimeModuleInit(e: Expr): bool
+    branch e
+        on Expr.int_lit
+            return true
+        on Expr.float_lit
+            return true
+        on Expr.bool_lit
+            return true
+        on Expr.nil_
+            return true
+        on Expr.char_lit
+            return true
+        on Expr.string_lit
+            return true
+        on Expr.unary as un
+            if un.op == UnaryOp.neg
+                branch un.operand
+                    on Expr.int_lit
+                        return true
+                    on Expr.float_lit
+                        return true
+                    else
+                        return false
+            return false
+        else
+            return false
 
 # The first `return <capture lambda>` reachable in a statement list (recursing
 # into if/branch bodies), or nil.  A returned lambda WITHOUT a capture is a plain
@@ -1241,7 +1284,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 w.emit("    _zbr_mv_")
                 w.emit(mv.name)
                 w.emit(" = ")
-                g.genExpr(mv.init_expr!)
+                g.genModuleVarInit(mv.init_expr!)
                 w.emit(";\n")
     w.emit("}\n")
     if _coverage
@@ -4460,7 +4503,21 @@ struct Generator
             # it in _initModuleVars() (called from _initIo and the entry thunk).
             if owner == "" and isDeferredModuleVar(n)
                 w.emit(": ")
-                genType(n.type_!)
+                if n.type_ != nil
+                    genType(n.type_!)
+                else
+                    # BUG-496: untyped -- the checker's type (populateModuleTypes types
+                    # these in declaration order), else Zig's own reading of the
+                    # initializer. @TypeOf does not evaluate its operand.
+                    var dmv_ann: str = ""
+                    if .module_types.fieldType("", n.name) as dmv_t
+                        dmv_ann = tcTypeAnnotation(dmv_t)
+                    if dmv_ann != ""
+                        w.emit(dmv_ann)
+                    else
+                        w.emit("@TypeOf(")
+                        genModuleVarInit(n.init_expr!)
+                        w.emit(")")
                 w.emit(" = undefined;\n")
                 return
             # Untyped static `var` of a literal would be comptime_int/float (Zig:
@@ -9199,6 +9256,15 @@ struct Generator
             return vn == name
         return false
 
+    # BUG-496: a module var's initializer, emitted with a module-level inference context.
+    # It binds no locals, so a reference to another module var still resolves through
+    # the "" sentinel and keeps its `_zbr_mv_` spelling in genIdent.
+    def genModuleVarInit(e: Expr)
+        var mctx = InferCtx(.module_types, "")
+        mctx.withDepTypes(.dep_types)
+        var mg = withInferCtx(mctx)
+        mg.genExpr(e)
+
     # Is this type a `sig` (or `def(P): R`) -- a fat pointer a value must be CONVERTED
     # into? The checker registers every sig as the pseudo-class `$sig:Name`.
     def isSigName(name: str): bool
@@ -11860,7 +11926,12 @@ struct Generator
             emitTypeName(owner)                             # BUG-281 B
         w.emit(") void {\n")
         var ig0 = indented()
+        # §28a: the invariant is read in the class's own scope -- `size == items.count()`
+        # was a list_dispatch guess with no inference context to type `items`.
+        var inv_ctx = InferCtx(.module_types, owner)
+        inv_ctx.withDepTypes(.dep_types)
         var mg = ig0.asMethod()
+        mg = mg.withInferCtx(inv_ctx)
         for inv_expr in owner_invariants
             mg.writeIndent()
             mg.w.emit("if (!(")
@@ -15033,6 +15104,8 @@ struct Generator
                 if callee_throws and try_block_label != nil and not in_try_expr
                     emitTryBlockCatch()
                 return
+        if genBorrowedClosureCall(c)
+            return
         # Regular call: callee(args)
         # BUG-467: a call to a THROWING free function of this module. Inside a `try` block
         # or a method-level `catch` its error is routed to the catch; anywhere else an
@@ -18573,6 +18646,74 @@ struct Generator
             if not done
                 genExpr(a.value)
             i += 1
+
+    # BUG-371, restated for the fat-pointer sig (2026-09-30). A closure handed to a
+    # same-module top-level `def` whose sig parameter never ESCAPES its body (used only
+    # as `f(v)`) cannot outlive the call, so it is copied into a block-local `var` and
+    # passed as `.fromRef(&tmp)` -- no allocation. `.from` heap-copies, and a loop of
+    # such calls grew the arena by the capture size every iteration (200k calls: 1.6 MB,
+    # against 60 bytes when the old pool released a borrowed slot). Narrow on purpose:
+    # positional arguments only, every parameter supplied, a non-throwing callee, and no
+    # parameter needing `&` (the general argument pass handles all of those).
+    def genBorrowedClosureCall(c: ExprCall): bool
+        if not (c.callee is Expr.ident)
+            return false
+        var bname: str = ""
+        if c.callee is Expr.ident as bid
+            bname = bid.name
+        if not toplevel_fns.contains_(bname) or isLocalOrParamName(bname) or isTopLevelMethodThrows(bname)
+            return false
+        var bps: List(Param)? = lookupFnParams(bname)
+        var bbody: List(Stmt)? = lookupFnBody(bname)
+        if bps == nil or bbody == nil
+            return false
+        var ps: List(Param) = bps!
+        var body: List(Stmt) = bbody!
+        if c.args.len != ps.len
+            return false
+        var borrowed = List(bool)()
+        var any: bool = false
+        var i: int = 0
+        while i < ps.len
+            var p = ps.at(i)
+            var a = c.args.at(i)
+            if a.name != nil or paramNeedsAddrOfTx(p, bbody)
+                return false
+            var bw: bool = false
+            if p.type_ as pt
+                if isSigTypeRef(pt) and .resolveClosureLambda(a.value) != nil and not nameEscapes(p.name, body)
+                    bw = true
+                    any = true
+            borrowed.add(bw)
+            i += 1
+        if not any
+            return false
+        var uid: int = w.nextUid()
+        var lbl: str = "blk_sb" + uid.toString()
+        w.emit("(" + lbl + ": { ")
+        var j: int = 0
+        while j < ps.len
+            if borrowed.at(j)
+                w.emit("var _zbr_sb" + uid.toString() + "_" + j.toString() + " = ")
+                genExpr(c.args.at(j).value)
+                w.emit("; ")
+            j += 1
+        w.emit("break :" + lbl + " ")
+        genExpr(c.callee)
+        w.emit("(")
+        var k: int = 0
+        while k < ps.len
+            if k > 0
+                w.emit(", ")
+            if borrowed.at(k)
+                w.emit(".fromRef(&_zbr_sb" + uid.toString() + "_" + k.toString() + ")")
+            else if ps.at(k).type_ as kt
+                genCallWithTypeHint(c.args.at(k).value, kt)
+            else
+                genExpr(c.args.at(k).value)
+            k += 1
+        w.emit("); })")
+        return true
 
     # An argument list whose parameters are unknown (a hoisted receiver's method, a
     # cross-module call with no param list): a closure-shaped argument is converted to

@@ -1,0 +1,63 @@
+# A closure passed to a function whose sig parameter never escapes is BORROWED: it lives
+# in a caller-stack copy for the call (`.fromRef`), allocating nothing. One that the callee
+# stores is heap-copied (`.from`) and outlives the call. (BUG-371's property, kept across
+# the fat-pointer sig of 2026-09-30.)
+
+sig Step(n: int): int
+sig Tick()
+
+var kept: List(Tick) = List(Tick)()
+
+def apply(f: Step, x: int): int
+    return f(x)
+
+def twice(f: Step, x: int): int
+    return f(f(x))
+
+def keep(t: Tick)
+    kept.add(t)
+
+def main()
+    # borrowed, in a loop: no growth
+    var a = sys.memStats().arenaBytes
+    var total = 0
+    var i = 0
+    while i < 100000
+        var k = i % 5
+        total += apply(def(n: int): int
+            capture
+                var k: int = k
+            return n + k
+        , 1)
+        i += 1
+    var grew = sys.memStats().arenaBytes - a
+    assert total == 300000, "total ${total}"
+    assert grew < 4096, "borrowed closures grew the arena by ${grew} bytes"
+
+    # a MUTATING closure through the borrowed path: its state persists across the
+    # two calls inside `twice`
+    var seen = twice(def(n: int): int
+        capture
+            var calls: int = 0
+        calls += 1
+        return n * 10 + calls
+    , 1)
+    assert seen == 112, "seen ${seen}"             # (1*10+1)=11, then 11*10+2=112
+
+    # an ESCAPING parameter: stored, called after the call returned
+    var hits = 0
+    var j = 0
+    while j < 3
+        var m = j + 1
+        keep(def(): void
+            capture
+                var m: int = m
+            if m > 0
+                pass
+        )
+        j += 1
+    for t in kept
+        t()
+        hits += 1
+    assert hits == 3
+    print("sig_borrowed_closure: OK")

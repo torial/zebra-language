@@ -2932,6 +2932,22 @@ pub fn _ZbrFn(comptime F: type) type {
                 else => @compileError("not a function or closure: " ++ @typeName(T)),
             }
         }
+        // A BORROWED closure: `p` points at a caller-stack copy that outlives the call,
+        // because the callee's parameter never escapes its body (codegen proves that,
+        // nameEscapes). No allocation -- a closure passed to such a function in a loop
+        // used to grow the arena by its capture size on every call.
+        pub fn fromRef(p: anytype) Self {
+            const T = @typeInfo(@TypeOf(p)).pointer.child;
+            if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "call")) return from(p.*);
+            const by_val = @typeInfo(@TypeOf(T.call)).@"fn".params[0].type.? == T;
+            if (@sizeOf(T) == 0) return from(p.*);
+            return .{ .ctx = @ptrCast(p), .f = struct {
+                fn e(ctx: ?*anyopaque, a: Args) R {
+                    const c: *T = @ptrCast(@alignCast(ctx.?));
+                    return if (by_val) @call(.auto, T.call, .{c.*} ++ a) else @call(.auto, T.call, .{c} ++ a);
+                }
+            }.e };
+        }
     };
 }
 

@@ -1,9 +1,10 @@
 # Closure factories: a function that `return`s a stateful (capture) closure.
 #
-# A capture closure is an anonymous struct with a `call` method, which no `sig`
-# (fn pointer) can name.  The compiler hoists the closure struct to a module-level
-# named type `_ZbrClosure_<fn>`, emits that as the factory's return type, and the
-# caller's `var c = factory()` infers it (dispatching `c()` → `c.call()`).
+# A capture closure is an anonymous struct with a `call` method.  The compiler hoists
+# the closure struct to a module-level named type `_ZbrClosure_<fn>`, emits that as the
+# factory's return type (zero allocation), and the caller's `var c = factory()` infers
+# it (dispatching `c()` → `c.call()`).  Where the result meets a sig-typed slot it
+# converts to the sig (a fat pointer) like any closure -- test/sig_fat_pointer_test.
 #
 # Captures in a returned closure need EXPLICIT types (the hoisted struct lives at
 # module scope, so `@TypeOf(init)` on an enclosing-scope name would not resolve).

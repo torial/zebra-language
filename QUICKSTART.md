@@ -2103,7 +2103,7 @@ def view(g: Gui, model: Model)
     g.text("rendered")
 ```
 
-### §19.3 Function-pointer types — `def(P): R`
+### §19.3 Function types — `def(P): R`
 
 A function type may be written inline as `def(ParamTypes): ReturnType`, the
 anonymous equivalent of a named `sig` — the SAME type as a `sig` with that signature
@@ -2163,7 +2163,7 @@ result = outer(def()
 
 ## 20. `sig` — function type aliases
 
-`sig` declares a named function-pointer type.  Use it to pass functions as
+`sig` declares a named function type (a fat pointer: context + function). Use it to pass functions and closures as
 arguments or store them in variables:
 
 ```zebra

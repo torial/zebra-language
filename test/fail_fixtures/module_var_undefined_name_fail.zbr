@@ -1,0 +1,6 @@
+# A MODULE var initializer is resolved like any expression: an undefined name is refused
+# here, not in the generated Zig (it passed -c until 2026-09-30).
+var q = undefinedThing + 2
+
+def main()
+    print(q)

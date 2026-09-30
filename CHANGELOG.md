@@ -39,6 +39,11 @@ confirmed via `tools/bootstrap_check.sh`.
   `def(P): R`, are still one type. The trampoline pool is deleted (~650 lines of
   compiler removed, and 64 generated functions per closure call site).
 
+  A closure passed to a same-module function whose sig parameter never escapes its
+  body is BORROWED: it lives in a caller-stack copy for the call (`.fromRef`), allocating
+  nothing (the first cut of this change heap-copied it on every call: 1.6 MB over 200k
+  calls in a loop, against 60 bytes before; `test/sig_borrowed_closure_test.zbr`).
+
   **For Zig code:** call a sig with `cb.call(args)` and build one with `.from(f)`.
   A sig was never usable across `extern`, and still isn't.
 - **A mutating closure that is only handed on is no longer declared `var` (BUG-477).**
@@ -50,6 +55,16 @@ confirmed via `tools/bootstrap_check.sh`.
   `Builder().then("d")` did not fill `then`'s defaults.
 - **A bare `return` in `cue init` returns the instance (BUG-494)**, and **a list mutated
   only by `set()` is `const` (BUG-495)**. Both reached Zig as type errors.
+- **A module-level `var` can have a runtime initializer (BUG-496):** `var s = "X".lower()`,
+  `var b = a * 3`, `var xs = [1, 2]`, interpolation and pipelines at top level all reached
+  Zig as "unable to resolve comptime value". They run in `_initModuleVars()`, typed by the
+  checker, which now also types such vars for every reference to them (§28a).
+- **A module-level `var` initializer is resolved and type-checked** like any other
+  expression. Neither happened: `var q = undefinedThing + 2` passed `-c` and failed
+  inside Zig, as did an operator on an optional at top level.
+- **A class `invariant` is inferred in the class's scope** (`size == items.count()` was a
+  §28a guess).
+- **A method whose only use of `this` is a capture initialiser compiles (BUG-499).**
 - **Calling a callable result:** `handlers.at(0)(x)` and `fs[i](x)` work when the checker
   types the callee as a sig.
 - **A `capture` closure inside a method compiles (BUG-487, found porting the GameEngine).**

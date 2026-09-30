@@ -181,6 +181,13 @@ class Resolver
                 .enterClass(s.name, s.members, s.type_params)?
             on PNode.method_ as m
                 .enterMethod(m.params, m.stmts)?
+            on PNode.stmt_var as mv
+                # A MODULE var's initializer: only module scope is visible. It was never
+                # resolved, so `var q = undefinedThing + 2` passed `-c` and failed in Zig.
+                .class_scope = HashMap()
+                .method_scope = HashMap()
+                for mve in mv.init_expr
+                    .resolveExpr(mve)?
             on PNode.namespace_decl as ns
                 # Resolve method bodies inside the namespace (all levels).
                 for ns_d in ns.decls

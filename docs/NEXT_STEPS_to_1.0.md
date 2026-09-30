@@ -706,6 +706,20 @@ not refused at all (now it is), and the book teaches two narrowings Zebra does n
 `if x != nil and y != nil` (QUICKSTART says "not (yet)") and early exit
 (`if a == nil: raise`, then `a` is used) -- both examples fail inside Zig today.
 
+**2026-09-30: THE BOOK IS AT 7 (measured), AND NONE IS A REAL GAP.** 23 -> 10 from BUG-496 (module
+vars with runtime initializers: deferred, and typed in declaration order by
+populateModuleTypes, so references between them stop being guesses) and the ch17-18 /
+`Math` sites going with it; 10 -> 7 from the class `invariant` now being inferred in the
+class's scope. What remains (MEASURED at 7): 1 is pipelines 61e63207, the book's own ERROR example
+(`text` is prose), measured as a wrapped fragment; 6 are three ch16 fragments calling
+functions defined in another file of the project (`read_file`, `FileProcessor.get_stats`)
+and a partial class measured standalone (`Wallet.transactions`). Resolving and checking
+module-var initializers also REFUSES 11 book examples that `-c` used to pass -- every one a
+fragment naming something defined elsewhere (`compute`, `makeConfig`, `Utils`, `Colors`)
+or a deliberate error example; none ever built. **The flip is
+unblocked on the corpus side**; what it needs is the refusal + hatch + enforcing gate
+below, and a decision on whether the measure should skip files the front end refused.
+
 **Step 3 (the flip) — only once the selfhost standalone count is ~0.** Error + `--allow-inference-guess`
 hatch + promote the measure to an enforcing gate. Follow the §28b template (commit 0a591ce):
 module-global sites list, driver-level reject in `main.zbr` (NOT `@compileError` — malforms

@@ -2079,6 +2079,15 @@ smoke_run test/bug486_call_temp_receiver_test.zbr "bug486: OK"
 smoke_run test/bug494_495_init_return_set_test.zbr "bug494_495: OK"
 # BUG-477: a closure only handed to a sig slot is const.
 smoke_run test/bug477_passed_closure_test.zbr "bug477: OK"
+# BUG-371 kept: a closure passed to a non-escaping sig param is borrowed (.fromRef), no arena growth.
+smoke_run test/sig_borrowed_closure_test.zbr "sig_borrowed_closure: OK"
+# BUG-496: module-level vars with runtime initializers (method, arithmetic, list, interpolation, pipeline, cross-module).
+smoke_run test/bug496_module_runtime_init_test.zbr "bug496: OK"
+# BUG-499: a capture initialiser is a use of `this`.
+smoke_run test/bug499_capture_this_only_test.zbr "bug499: OK"
+# A module var initializer is resolved and type-checked like any expression (it was neither).
+smoke_tc_fail test/fail_fixtures/module_var_undefined_name_fail.zbr "module_var_undefined_name_fail.zbr:3:9: error: undefined name: 'undefinedThing'"
+smoke_tc_fail test/fail_fixtures/module_var_optional_operand_fail.zbr "module_var_optional_operand_fail.zbr:4:9: error: 'x' may be nil here"
 # A JSON VALUE converts too: `var s: str = elem?` and `elem.tryStr()` (Sean, 2026-09-29).
 smoke_run test/json_value_conversion_test.zbr "json_value_conversion: OK"
 # `if x orelse d as n` binds always (Sean, 2026-09-29); a dead `else` on it warns.
