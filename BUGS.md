@@ -70,6 +70,12 @@
   Fable's repro, verbatim (prints 0; with the inner map pre-populated the same code prints the
   write): a `def inner(outer, k)` returning the `get as`-bound map, then `var m1 = inner(outer, "a")`
   / `m1.set("x", 5)` / read back through `outer.get("a")`.
+- **A live instance, found by auditing for the shape (Fable, same day):** the GameEngine's
+  `PlayerData.getScope` returned an inner map by value from a `HashMap`-of-`HashMap` field, and
+  the demo's "bump Wins" wrote through the returned copy -- WORKING, by the shared-storage
+  accident above. It would have stopped working the first time that scope started empty. Now a
+  class (engine findings ledger F18: "a map inside a container or across a def boundary is
+  wrapped in a class", pending the decision).
 - **Where it comes from:** the 2026-09-24 container work boxes an inner container and COPIES it out when it reaches a VALUE slot (`genValueOf`, `_zbr_unboxed`) -- deliberately, so a copy-out is the documented rule in some positions. What is not decided anywhere is the rule itself: whether a container nested in a container is a REFERENCE (what `get as` and, for maps, a returned value already do) or a VALUE (what `set(k, local)` does). The two kinds disagree on the return path, which means the current behaviour is not one rule applied twice.
 - **Decision needed (Sean):** reference semantics for nested containers everywhere (the least surprising for Python/Cobra readers, and what the engine assumed), or value semantics everywhere with the aliasing paths made copies -- and in either case a refusal or a warning where a write would be lost. Until then the engine wraps inner maps in a class (`workspace.TagList`, `shop_util.Inventory`), which is a reference.
 - **Also:** the statement-form compile error in row 4 is a leak on its own (a call-result receiver that is a boxed container passed as `*const`).
