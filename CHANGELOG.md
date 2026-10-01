@@ -23,6 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Optional types everywhere a type goes (BUG-509).** `sig H(x: str?): str?`, a lambda's
+  `def(x: str?): str?`, a capture's `var t: str?`, and the inline `def(str?): int` fn type
+  were refused with "expected identifier, got '?'"; a `def` parameter always took them.
+- **`List(C).contains(x)` on a class element compares by identity (BUG-510)** -- it failed
+  inside zig (any pointer was taken for a string).
+
 - **`zebra lsp` answers every request a client sent before closing stdin (BUG-511).** Requests
   that arrived during a debounced diagnostics flush were dropped if stdin closed meanwhile.
 - **Containers are spelled through one runtime name (BUG-501 Phase 0).** Emitted Zig names a

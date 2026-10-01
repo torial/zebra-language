@@ -1295,10 +1295,10 @@ class Parser
                 if .textIs(",")
                     .advance()
                 else
-                    fn_params.add(.eatTypeName()?)
+                    fn_params.add(.eatTypeNameOpt()?)
             .expectText(")")?
             .expectText(":")?
-            var fn_ret: str = .eatTypeName()?
+            var fn_ret: str = .eatTypeNameOpt()?
             var sbf: StringBuilder = StringBuilder()
             sbf.append("__fnptr(")
             for fp in fn_params
@@ -1914,6 +1914,17 @@ class Parser
                 .advance()
         return PNode.union_decl(PUnionDecl(name, variants, _dl, _dc))
 
+    # BUG-509: a type name with an optional `?` suffix. Each type position used to handle
+    # the suffix itself, and the ones that did not -- `sig` parameters and return types,
+    # lambda parameters and return types, capture types, the inline `def(P): R` fn type --
+    # refused `str?` with "expected identifier, got '?'" while a `def` parameter took it.
+    def eatTypeNameOpt(): str throws
+        var tn: str = .eatTypeName()?
+        if .textIs("?")
+            .advance()
+            tn = tn + "?"
+        return tn
+
     def parseSigDecl(): PNode throws
         .expectText("sig")?
         const _dl = .peek().line
@@ -1936,7 +1947,7 @@ class Parser
                     var ptype = ""
                     if .textIs(":")
                         .advance()
-                        ptype = .eatTypeName()?
+                        ptype = .eatTypeNameOpt()?
                     var pdefault = List(PNode)()
                     if .textIs("=")
                         .advance()
@@ -1946,7 +1957,7 @@ class Parser
         var return_type = ""
         if .textIs(":")
             .advance()
-            return_type = .eatTypeName()?
+            return_type = .eatTypeNameOpt()?
         .skipEol()
         return PNode.sig_(PSig(name, params, return_type, _dl, _dc))
 
@@ -3612,7 +3623,7 @@ class Parser
         var ret_type = ""
         if .textIs(":")
             .advance()
-            ret_type = .eatTypeName()?
+            ret_type = .eatTypeNameOpt()?
         if .textIs("=")
             # Expression-body form
             .advance()
@@ -3642,7 +3653,7 @@ class Parser
         var type_name = ""
         if .textIs(":")
             .advance()
-            type_name = .eatTypeName()?
+            type_name = .eatTypeNameOpt()?
         var pdefault = List(PNode)()
         if .textIs("=")
             .advance()
@@ -3663,7 +3674,7 @@ class Parser
         var ret_type = ""
         if .textIs(":")
             .advance()
-            ret_type = .eatTypeName()?
+            ret_type = .eatTypeNameOpt()?
         return PLambda(params, ret_type, List(PCaptureVar)(), List(PNode)(), List(PNode)())
 
     def parseCaptureBlock(): List(PCaptureVar) throws
@@ -3690,7 +3701,7 @@ class Parser
             var cap_type = ""
             if .textIs(":")
                 .advance()
-                cap_type = .eatTypeName()?
+                cap_type = .eatTypeNameOpt()?
             var init_list = List(PNode)()
             if .textIs("=")
                 .advance()

@@ -451,6 +451,20 @@ pub fn _zebra_assert_at(val: bool, msg: []const u8) anyerror!void {
         return error.ZebraError;
     }
 }
+// BUG-510: is T a STRING-shaped pointer -- a byte slice or a string literal's
+// `*const [N:0]u8`? `_zebra_in` asked only "is it a pointer", so a CLASS element (`*T`)
+// was compared with `std.mem.eql(u8, ...)` and `xs.contains(node)` failed inside zig. A
+// class compares by identity (`==`), the answer `==` on two class values already gives.
+fn _zbr_is_bytes(comptime T: type) bool {
+    const ti = @typeInfo(T);
+    if (ti != .pointer) return false;
+    if (ti.pointer.child == u8) return true;
+    if (ti.pointer.size == .one) {
+        const ci = @typeInfo(ti.pointer.child);
+        if (ci == .array and ci.array.child == u8) return true;
+    }
+    return false;
+}
 /// `item in container` — membership test for List, string (substring), HashMap, or @[...] tuple.
 pub fn _zebra_in(item: anytype, container: anytype) bool {
     const C = @TypeOf(container);
@@ -465,7 +479,7 @@ pub fn _zebra_in(item: anytype, container: anytype) bool {
     // Tuple/anonymous struct (from @[...] array literal) — inline iterate.
     if (comptime @typeInfo(C) == .@"struct" and @typeInfo(C).@"struct".is_tuple) {
         inline for (container) |elem| {
-            if (comptime I == []const u8 or @typeInfo(I) == .pointer) {
+            if (comptime _zbr_is_bytes(I)) {
                 if (std.mem.eql(u8, elem, item)) return true;
             } else {
                 if (elem == item) return true;
@@ -477,7 +491,7 @@ pub fn _zebra_in(item: anytype, container: anytype) bool {
     if (comptime @typeInfo(C) == .@"struct") {
         if (comptime @hasField(C, "items")) {
             for (container.items) |elem| {
-                if (comptime I == []const u8 or @typeInfo(I) == .pointer) {
+                if (comptime _zbr_is_bytes(I)) {
                     if (std.mem.eql(u8, elem, item)) return true;
                 } else {
                     if (elem == item) return true;

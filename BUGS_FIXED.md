@@ -6,6 +6,48 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-509: an optional type is refused in a `sig` parameter list and in a closure's parameter list, though a plain `def` takes one -- FIXED 2026-10-01
+- **Severity:** Low-Medium (a Roblox remote whose argument may be nil -- `Spawn:FireServer(pad, comp and comp:GetSelectedMonster())` -- cannot be typed honestly as a sig; the GameEngine sends `""` and says so in a comment)
+- **Repro A** (`zebra optparam.zbr`), the sig:
+  ```zebra
+  sig Handler(name: str, extra: str?)          # ← optparam.zbr:1:34: error: expected identifier, got '?'
+  ```
+- **Repro B** (`zebra optparam2.zbr`), the closure, with no sig involved:
+  ```zebra
+  def show(extra: str?): str                   # a def takes it
+      return extra orelse "(nil)"
+  def main()
+      var f = def(extra: str?): str            # ← optparam2.zbr:11:27: error: expected ')', got '?'
+          return extra orelse "(nil)"
+      print(show(nil) + " " + f("x"))
+  ```
+- **Expected:** `T?` is a type wherever a type is written; a sig and a closure parameter list are the two places it is not parsed.
+- **Workaround left in the calling code:** `game/mm/mm_shared.zbr` `SpawnHandler(pad: Instance, monster: str)` with `""` for the Lua nil (`game/mm/monster_spawn.zbr` `spawn()`), noted at both sites.
+- **Fixed 2026-10-01.** A type position took the `?` suffix only where it handled it itself; `sig` parameters and return types, lambda parameters and return types, capture types and the inline `def(P): R` fn type did not. One helper, `Parser.eatTypeNameOpt`, at all eight. Fixture: `test/bug509_optional_param_positions_test.zbr` (refused on the N-1 anchor at 5:34 and 15:25).
+
+### BUG-510: `List(C).contains(x)` on a class element type emits `std.mem.eql(u8, elem, item)` and fails in Zig -- FIXED 2026-10-01
+- **Severity:** Medium (the method is accepted by the checker for any element type and refused by Zig for class pointers; a List of Instances cannot ask whether it holds one -- every engine site writes the loop by hand, and `workspace.TagList.contains` exists for exactly this reason)
+- **Repro** (`zebra contains_class.zbr`):
+  ```zebra
+  class Node
+      var name: str
+      cue init(name: str)
+          .name = name
+  def main()
+      var a = Node("a")
+      var b = Node("b")
+      var l = List(Node)()
+      l.add(a)
+      print(l.contains(a).toString() + " " + l.contains(b).toString())
+  ```
+  ```
+  zebra_rt.zig:481:41: error: expected type '[]const u8', found '*contains_class._zbr_ty_Node'
+                      if (std.mem.eql(u8, elem, item)) return true;
+  ```
+- **Expected:** `true false` -- identity comparison for class elements (the same `==` the language already gives two class values), value comparison for structs, string comparison only for `str`.
+- **Workaround left in the calling code:** `zbra/framework.zbr` `ComponentBinding.unbind` walks the list with `==` (comment names this bug).
+- **Fixed 2026-10-01.** `_zebra_in` (behind `contains` and `in`) took ANY pointer element for a string. It now asks `_zbr_is_bytes(T)` -- a byte slice or a string literal's `*const [N:0]u8` -- and compares everything else with `==`, which is identity for a class. Fixture: `test/bug510_list_contains_class_test.zbr`; red-checked by reverting only the runtime change (the N-1 binary run in this repo reads the FIXED preamble from disk, so it is not a control for a runtime fix).
+
 ### BUG-511: `zebra lsp` dropped every request still queued when the client closed stdin during a debounced diagnostics flush -- FIXED 2026-09-30
 - **Severity:** Medium (a client that sends its last requests and closes stdin -- a script, a test driver, an editor shutting down without `exit` -- got no replies to them; the server exited 0)
 - **Found by:** the `lsp-smoke` gate going red only under load (a FULL tier beside it): 2 of 3 runs, then about 1 in 15 once its own ordering bug was fixed. Instrumenting the server showed the reader had read all ten second-batch requests and reached EOF while the main loop was inside the debounced flush; the main loop then checked `eof`, found it set, and exited with the ten still in the channel.
