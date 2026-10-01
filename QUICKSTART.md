@@ -981,6 +981,10 @@ branch e
 
 ## 10. Collections
 
+`==` and `!=` on two collections (`List`, `HashMap`, `Set`) compare their CONTENTS: same
+size, and element-wise equal -- strings by content, nested collections recursively, class
+instances by identity (BUG-506).
+
 ```zebra
 # List
 var items = List(int)()              # empty list, constructor form

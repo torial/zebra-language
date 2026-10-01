@@ -36,6 +36,17 @@ ZEBRA="$REPO/zig-out/bin/zebra.exe"
 # Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26): use it when the .exe is absent.
 [ -x "$ZEBRA" ] || [ ! -x "${ZEBRA%.exe}" ] || ZEBRA="${ZEBRA%.exe}"
 
+# A PRIVATE temp dir for every compile this gate runs (BUG-513). A plain `zebra x.zbr`
+# writes `<TEMP>/x.zig` and the shared `<TEMP>/zebra_rt.zig`, so any other zebra running on
+# the machine at the same time -- another tier, another session's regen -- could rewrite
+# them mid-build. That is the shape of this gate's two non-reproducing reds (2026-09-18,
+# 2026-10-01, the second while an engine regen ran beside it); CLAUDE.md said a second one
+# should make the path unique before anything else.
+_PRIV="$(mktemp -d)"
+trap 'rm -rf "$_PRIV"' EXIT
+if command -v cygpath >/dev/null 2>&1; then export TMP="$(cygpath -w "$_PRIV")"; else export TMP="$_PRIV"; fi
+export TEMP="$TMP"
+export TMPDIR="$_PRIV"
 WORK="${TMP:-/tmp}"
 command -v cygpath >/dev/null 2>&1 && WORK="$(cygpath -u "${TMP:-/tmp}")"
 WORK="$WORK/zbr-relcheck"

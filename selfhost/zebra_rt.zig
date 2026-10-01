@@ -465,6 +465,52 @@ fn _zbr_is_bytes(comptime T: type) bool {
     }
     return false;
 }
+// BUG-506: `==` on two containers is STRUCTURAL (docs/design/container_reference_semantics.md
+// §6.1, decided 2026-09-30): same length, and element-wise equal -- by content for strings,
+// recursively for nested containers, by identity for class instances, `==` otherwise.
+// Written against `_zbr_is_container` rather than the value type, so it survives the flip
+// to reference semantics (a container reached through a pointer is dereferenced first).
+fn _zbr_is_container(comptime T: type) bool {
+    return @typeInfo(T) == .@"struct" and
+        ((@hasField(T, "items") and @hasField(T, "capacity")) or
+        (@hasDecl(T, "KV") and @hasDecl(T, "Entry") and @hasDecl(T, "getOrPut")));
+}
+fn _zbr_cont_ptr(comptime T: type) bool {
+    return @typeInfo(T) == .pointer and @typeInfo(T).pointer.size == .one and
+        _zbr_is_container(@typeInfo(T).pointer.child);
+}
+pub fn _zbr_val_eql(x: anytype, y: anytype) bool {
+    const T = @TypeOf(x);
+    if (comptime T == void) return true;
+    if (comptime _zbr_is_bytes(T)) return std.mem.eql(u8, x, y);
+    if (comptime _zbr_is_container(T) or _zbr_cont_ptr(T)) return _zbr_cont_eql(x, y);
+    if (comptime @typeInfo(T) == .optional) {
+        if (x == null and y == null) return true;
+        if (x == null or y == null) return false;
+        return _zbr_val_eql(x.?, y.?);
+    }
+    if (comptime @typeInfo(T) == .@"struct") return std.meta.eql(x, y);
+    return x == y;
+}
+pub fn _zbr_cont_eql(a: anytype, b: anytype) bool {
+    if (comptime _zbr_cont_ptr(@TypeOf(a))) return _zbr_cont_eql(a.*, b);
+    if (comptime _zbr_cont_ptr(@TypeOf(b))) return _zbr_cont_eql(a, b.*);
+    const A = @TypeOf(a);
+    if (comptime @hasField(A, "items")) {
+        if (a.items.len != b.items.len) return false;
+        for (a.items, b.items) |x, y| {
+            if (!_zbr_val_eql(x, y)) return false;
+        }
+        return true;
+    }
+    if (a.count() != b.count()) return false;
+    var it = a.iterator();
+    while (it.next()) |e| {
+        const other = b.get(e.key_ptr.*) orelse return false;
+        if (!_zbr_val_eql(e.value_ptr.*, other)) return false;
+    }
+    return true;
+}
 /// `item in container` — membership test for List, string (substring), HashMap, or @[...] tuple.
 pub fn _zebra_in(item: anytype, container: anytype) bool {
     const C = @TypeOf(container);

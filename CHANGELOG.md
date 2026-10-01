@@ -23,6 +23,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`==` / `!=` on two collections compare contents (BUG-506)** -- List, HashMap and Set;
+  strings by content, nested collections recursively, class instances by identity. It was
+  accepted and then refused inside zig.
+
 - **`cue init` bodies are checked like method bodies (BUG-512)** -- they were not checked at
   all, in classes or structs. A constructor may now get a Zebra error naming a real problem.
 - **A mutated `if x as v` binding on a `^T?` writes through** (BUG-507 follow-up); a read-only

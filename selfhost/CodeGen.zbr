@@ -12516,6 +12516,9 @@ struct Generator
             if .infer_ctx != nil
                 if inferExpr(bin.left, .infer_ctx!) is Type_.optional or inferExpr(bin.right, .infer_ctx!) is Type_.optional
                     return false
+                # BUG-506: containers compare structurally -- the plain assert path does that.
+                if isBoxedElemType(inferExpr(bin.left, .infer_ctx!)) or isBoxedElemType(inferExpr(bin.right, .infer_ctx!))
+                    return false
             var loc: str = fwdSlashes(source_file) + ":" + a.span.line.toString()
             writeIndent()
             w.emit("{\n")
@@ -14280,6 +14283,19 @@ struct Generator
                         either_nil = true
                     else
                         pass
+            # BUG-506: two containers compare STRUCTURALLY (it reached zig as `==` on an
+            # ArrayList and was refused there). Both sides must be containers; an optional
+            # container against nil is the nil branch above.
+            if not either_nil and .infer_ctx != nil
+                if isBoxedElemType(inferExpr(b.left, .infer_ctx!)) and isBoxedElemType(inferExpr(b.right, .infer_ctx!))
+                    if b.op == BinaryOp.ne
+                        w.emit("!")
+                    w.emit("_zbr_cont_eql(")
+                    genExpr(b.left)
+                    w.emit(", ")
+                    genExpr(b.right)
+                    w.emit(")")
+                    return
             if not either_nil and (.isStringBoth(b.left, "bin_eq_l") or .isStringBoth(b.right, "bin_eq_r"))
                 if b.op == BinaryOp.ne
                     w.emit("!")

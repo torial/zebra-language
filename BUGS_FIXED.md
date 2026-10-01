@@ -6,6 +6,13 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-506: `==` on two containers is accepted by the front end and refused by zig -- FIXED 2026-10-01
+- **Severity:** Medium (a leak: the user gets a Zig diagnostic about code they never wrote)
+- **Repro:** `var a = List(int)(); a.add(1); var b = List(int)(); b.add(1); print(a == b)` -> `error: operator == not allowed for type 'array_list.Aligned(i64,null)'`.
+- **Found by:** designing BUG-501's fix (2026-09-30).
+- **Fix direction:** decided with BUG-501 -- `docs/design/container_reference_semantics.md` §6.1 (structural `==`, recommended; or a front-end refusal). Until then the honest stopgap is a refusal in the checker naming the container type.
+- **Fixed 2026-10-01.** Structural, as decided in `docs/design/container_reference_semantics.md` §6.1: `==` / `!=` between two List / HashMap / Set values emit `_zbr_cont_eql` -- same size, element-wise `_zbr_val_eql` (strings by content, nested containers recursively, class instances by identity, structs by `std.meta.eql`, `==` otherwise); a map compares key by key. Written against "is a container" rather than the value type, so it survives the flip to references (a container reached through a pointer is dereferenced first). The capturing `assert a == b` form falls back to the plain assert for containers. Fixture: `test/bug506_container_eq_test.zbr` (refused inside zig on the N-1 anchor).
+
 ### BUG-512: a `cue init` body was never type-checked -- in a class OR a struct -- FIXED 2026-10-01
 - **Severity:** High (every statement-level refusal was skipped inside constructors; `.n = x + 1` with `x: int?` reached the §28a guess refusal at codegen -- "cannot infer the type of x", wrong -- or, before §28a, zig)
 - **Found by:** an advisor pass on BUG-508's fix asking whether "exactly as a class does" covered `cue init`: a probe showed the class path did not either -- `checkDecl` had arms for methods, classes, structs and vars, none for `Decl.init`.

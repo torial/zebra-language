@@ -1,0 +1,61 @@
+# BUG-506: `==` / `!=` on two containers is STRUCTURAL (docs/design/
+# container_reference_semantics.md §6.1): same length, element-wise equal -- strings by
+# content, nested containers recursively, class instances by identity. It passed the front
+# end and zig refused `==` on an ArrayList.
+class Node
+    var n: int
+    cue init(n: int)
+        .n = n
+
+def main()
+    var a = List(int)()
+    a.add(1)
+    a.add(2)
+    var b = List(int)()
+    b.add(1)
+    b.add(2)
+    assert a == b
+    b.add(3)
+    assert a != b
+    assert not (a == b)
+
+    var s1 = List(str)()
+    s1.add("x" + "y")
+    var s2 = List(str)()
+    s2.add("xy")
+    assert s1 == s2
+
+    var n1 = List(List(int))()
+    n1.add(List(int)())
+    n1.at(0).add(5)
+    var n2 = List(List(int))()
+    n2.add(List(int)())
+    n2.at(0).add(5)
+    assert n1 == n2
+    n2.at(0).add(6)
+    assert n1 != n2
+
+    var h1 = HashMap(str, int)()
+    h1.set("k", 1)
+    var h2 = HashMap(str, int)()
+    h2.set("k", 1)
+    assert h1 == h2
+    h2.set("k", 2)
+    assert h1 != h2
+
+    var t1 = Set(int)()
+    t1.add(3)
+    var t2 = Set(int)()
+    t2.add(3)
+    assert t1 == t2
+
+    var x = Node(1)
+    var c1 = List(Node)()
+    c1.add(x)
+    var c2 = List(Node)()
+    c2.add(x)
+    assert c1 == c2
+    var c3 = List(Node)()
+    c3.add(Node(1))
+    assert c1 != c3                   # same field values, a different object
+    print("bug506: OK")

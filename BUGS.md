@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-512. Next new bug: BUG-513.**
+**Last bug number generated: BUG-513. Next new bug: BUG-514.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,11 +46,11 @@
 
 ---
 
-### BUG-506: `==` on two containers is accepted by the front end and refused by zig -- OPEN (found 2026-09-30)
-- **Severity:** Medium (a leak: the user gets a Zig diagnostic about code they never wrote)
-- **Repro:** `var a = List(int)(); a.add(1); var b = List(int)(); b.add(1); print(a == b)` -> `error: operator == not allowed for type 'array_list.Aligned(i64,null)'`.
-- **Found by:** designing BUG-501's fix (2026-09-30).
-- **Fix direction:** decided with BUG-501 -- `docs/design/container_reference_semantics.md` §6.1 (structural `==`, recommended; or a front-end refusal). Until then the honest stopgap is a refusal in the checker naming the container type.
+### BUG-513: a plain `zebra x.zbr` builds in the SHARED system temp dir -- concurrent compiles can clobber each other's `x.zig` and `zebra_rt.zig` -- OPEN (found 2026-10-01)
+- **Severity:** Medium (two editor saves, two terminals, a gate beside another session's run: one compile can rewrite the other's runtime file mid-build; the symptom is a failure that does not reproduce)
+- **Where:** temp-mode compiles (no `--output-dir`) write `<TEMP>/<stem>.zig`, `<TEMP>/zebra_rt.zig` and `<TEMP>/<stem>.zig.run.exe`; every concurrent invocation on the machine shares those names. Two programs with the same stem (`main.zbr` in two projects) collide on everything.
+- **Found by:** `release-mode`'s second non-reproducing red (2026-10-01, the first on 2026-09-18), during a FULL tier that ran beside another session's engine regen. The gate now gives its compiles a private `TMP`/`TEMP` (and passes); the compiler does not protect anyone else.
+- **Fix direction:** a per-invocation scratch directory under TEMP (`zebra-<pid>-<n>/`), removed after a clean run as today, kept under `--keep-temp` and printed. `release_mode_check.sh` finds its executables by the shared names, so it moves to the new layout in the same change.
 
 ---
 
