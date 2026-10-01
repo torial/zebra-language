@@ -1,7 +1,7 @@
 <!-- doc-status: design -->
 # Containers are references — BUG-501's fix
 
-**Status:** DESIGN; §6 decided 2026-09-30; step 2 (the intent probe) done, step 3 next. Direction decided by Sean, 2026-09-30 ("go with (a), start
+**Status:** DESIGN; §6 decided 2026-09-30; steps 2 (intent probe) and 3 (the measure, §5.1) done; Phase 0 next. Direction decided by Sean, 2026-09-30 ("go with (a), start
 the design note for 501"): containers get **shared (reference) semantics everywhere**.
 Drafted by Opus 5.5 the same day. Nothing below is built; the decisions marked
 **OPEN** are Sean's.
@@ -121,6 +121,49 @@ copies a struct and mutates the copy as an idiom (`var then_g = ig`, `this excep
 leaves the original's alone; after the flip it changes both. The round-trip would catch a
 resulting miscompile but not point at it -- only the measure over `selfhost/` does, so it
 runs, and its `selfhost/` sites are read by hand, before Phase 1.
+
+### 5.1 Measured, 2026-09-30 (step 3 done)
+
+`--warn-container-copy` on `228aa45`, each run gated on the control
+(`tools/fixtures/container_copy_control.zbr`, every kind exactly once):
+
+| kind | repo (818 files) | GameEngine (146, Fable) |
+|---|---|---|
+| bind_alias / bind_field / bind_call | 17 / 5 / 279 | 100 / 26 / 523 |
+| return_alias / return_field / return_call | 65 / 3 / 13 | 209 / 27 / 5 |
+| store | 13 | 61 |
+| ctor_arg | 49 | 0 |
+| struct_copy | 74 | 0 |
+| except | 132 | 0 |
+| **total** | **650** | **951** |
+
+**The compiler's own source, read by hand.** Its exposure is one idiom: `Generator` is a
+STRUCT, and its builders (`var g = this except ...; return g`, 26 sites) and child
+generators (`var then_g = ig`, 9) copy it -- after the flip the copies share its eight
+container fields. Every one was checked for a mutation THROUGH a copy:
+`owner_members`, `owner_invariants`, `lam_hint` are only ever REASSIGNED wholesale (a
+rebind, not a mutation, so sharing changes nothing); `exposed_module_vars` and
+`ext_method_ret` are filled once on the root generator in the module pre-pass;
+`closure_lambdas` / `closure_ret_fns` are name-keyed registries whose companion name set
+(`closure_vars`, a `StrSet`) is a CLASS and so already shared by every copy today -- the flip
+makes the map agree with the set it is consulted through. The other struct copies (AST
+nodes in `returnedCaptureLambda`, `PModule` in main.zbr, `AstBuilder`'s `struct_pat`) are
+returned or stored once and never mutated through the copy. **No compiler site depends on a
+copy staying separate.** (The measure only became able to see this on the day it was written:
+struct method bodies were not checked at all -- BUG-508 -- so its first run saw none of the
+`Generator` sites.)
+
+**The GameEngine, read by Fable** (site list: `container_copy_sites_228aa45.txt` in the GameEngine repo's `docs/` -- another repository):
+336 of 951 are `var comps = .components.get(id)` then mutate -- the shape shared semantics
+makes correct by definition; no caller writes through a returned field (the F18 audit); the
+rebuild-then-assign sites replace a field wholesale. The wrapper classes (`TagList`,
+`Inventory`, `Scope`) are classes, so they appear nowhere -- they are the sites that STOP
+needing a wrapper.
+
+**What this does not cover:** a container COPIED today and then mutated on the assumption that
+the original is unaffected, where the copy happens inside a larger expression (the measure sees
+statements, not nested stores), and `*_call` sites, which over-report. `output_sweep`'s 466
+programs are the witness for those in Phase 1.
 
 ## 6. Decisions -- DECIDED (Sean, 2026-09-30: "agree with all four recommendations, proceed")
 
