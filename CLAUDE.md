@@ -387,7 +387,7 @@ a session arriving cold can tell what to *skip* rather than guessing:
 | `design` | a design/decision note | read only when touching that subsystem; may describe intent that is not built. Each carries its own `Status:` line |
 | `generated` | produced by a tool | **skip.** Edit the tool, not the file |
 
-**6 of the 40 documents are `historical` or `generated`** <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> <!-- doc-gen: 6 = for f in *.md docs/*.md docs/design/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
+**6 of the 41 documents are `historical` or `generated`** <!-- doc-gen: 41 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> <!-- doc-gen: 6 = for f in *.md docs/*.md docs/design/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
 i.e. skippable with confidence. That is the point: the surface area of this repo's
 documentation is what let one wrong claim live in four files at once, and "which of these
 is current?" was previously answerable only by reading them.
@@ -2231,12 +2231,12 @@ than "what do we know":
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
 | **our own tools are not lying** | `hazard_lint` (+ its controls) | 102 scripts | <!-- doc-gen: 102 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
-| docs' checkable claims still resolve | `doc_lint` | 40 tracked documents <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
+| docs' checkable claims still resolve | `doc_lint` | 41 tracked documents <!-- doc-gen: 41 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
 | **a word ZIG reserves and Zebra does not survives codegen** | `keyword-ident` (derived site map, no allow-list) | 6 keywords × the positions one fixture reaches |
 | **…and the list of such words is not STALE** | `zig-keywords` (oracle = zig's own tokenizer table) | 46 keywords (both compilers until 2026-09-16) |
-| **the docs' EXAMPLES actually parse** | `doc_example_check` | `live` docs only; the gate prints its own block and doc counts | <!-- doc-gen: 40 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' -->
+| **the docs' EXAMPLES actually parse** | `doc_example_check` | `live` docs only; the gate prints its own block and doc counts | <!-- doc-gen: 41 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' -->
 
 The last row is the one that keeps the rest honest; see its header for why.
 
@@ -2265,6 +2265,17 @@ fine: clearing that directory made the build produce an app, which then refused 
 console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**DAILY tier 2026-09-30 (closing the GameEngine bug day: 10914bb / 93c4f2b / d6ef2d7 -- ten
+engine bugs, cross-module interfaces, nil narrowing, the §28a flip): 56/56 PASS in ONE
+invocation at JOBS=2 on `d6ef2d7`.** smoke 644/644, round-trip byte-identical, `output_sweep`
+466 identical, `full_sweep` / `examples_sweep` / `divergence` 0 regressions, `regen-recover`,
+`gramgen` 0/0, `leakgen` 100/0, every GUI scaffold, `libui-pin-build`, `node-addon`. The flip
+was measured at 0 first -- corpus, the compiler's source, zebra-ide, and the GameEngine
+(Fable, three controls fired) -- so the tier going green is the prediction holding, not luck.
+Two of the day's three FULL tiers were 43/44 with an ASSEMBLED red: `bug-fixture` (a gate's
+`# pins:` line missing) and `divergence` scoring the hatch fixture's INTENDED flagless refusal
+as a regression until it was declared `smoke_tc_fail`.
 
 **DAILY tier 2026-09-28, second run (BUG-331's JSON read surface + BUG-475): 55/55 PASS in ONE
 invocation at JOBS=2 on `ef9705f`, ~2h.** smoke 612/612 (in the QUICK before it),

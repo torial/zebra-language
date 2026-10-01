@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-505. Next new bug: BUG-506.**
+**Last bug number generated: BUG-506. Next new bug: BUG-507.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,14 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-506: `==` on two containers is accepted by the front end and refused by zig -- OPEN (found 2026-09-30)
+- **Severity:** Medium (a leak: the user gets a Zig diagnostic about code they never wrote)
+- **Repro:** `var a = List(int)(); a.add(1); var b = List(int)(); b.add(1); print(a == b)` -> `error: operator == not allowed for type 'array_list.Aligned(i64,null)'`.
+- **Found by:** designing BUG-501's fix (2026-09-30).
+- **Fix direction:** decided with BUG-501 -- `docs/design/container_reference_semantics.md` §6.1 (structural `==`, recommended; or a front-end refusal). Until then the honest stopgap is a refusal in the checker naming the container type.
 
 ---
 

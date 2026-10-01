@@ -1,0 +1,172 @@
+<!-- doc-status: design -->
+# Containers are references — BUG-501's fix
+
+**Status:** DESIGN, not started. Direction decided by Sean, 2026-09-30 ("go with (a), start
+the design note for 501"): containers get **shared (reference) semantics everywhere**.
+Drafted by Opus 5.5 the same day. Nothing below is built; the decisions marked
+**OPEN** are Sean's.
+**Bug:** BUG-501 (`BUGS.md`) — filed by Fable for nested containers, re-scoped the same day
+when the root turned out to be lower.
+
+---
+
+## 1. The defect, measured
+
+A Zebra `List(T)` is emitted as a Zig `std.ArrayList(T)` — a **struct** holding a pointer to
+its buffer plus its own length and capacity — and Zebra copies that struct **by value**
+wherever a value is copied. The copy shares the buffer but not the length, so it is neither
+a copy nor an alias: the next append on either side can overwrite the other's elements.
+`HashMap` (`std.StringHashMap` / `_zbr_AutoMap`) and `Set` have the same shape.
+
+Measured on `93c4f2b` (2026-09-30), none of these involves nesting:
+
+| shape | result |
+|---|---|
+| `var b = a` (List of one), `b.add(20)`, `a.add(30)` | `b[1]` reads **30** |
+| `def all(): List(int)` returning `.items`; `got.add(2)`, then `bag.items.add(3)` | `got[1]` reads **3** |
+| a struct holding a List, copied, both appended to | the copy reads the original's element |
+| `r1 except xs = r1.xs`, then append to the result | appends into the buffer `r1` still owns |
+| `outer.set(k, local)`, then mutate `local` | the stored value does not see it (a real copy -- `_zbr_boxed`) |
+| `if outer.get(k) as x`, then mutate `x` | the stored value DOES see it (a real alias) |
+| a `def` returning a `get as`-bound map | shallow copy: works or loses the write depending on whether the map had storage |
+
+So today's behaviour is not one rule applied badly; it is three rules (alias, copy,
+half-copy) chosen by syntactic position. The field-return row is the common one -- a class
+that hands out its list is ordinary code -- and it corrupts silently.
+
+**What is NOT affected:** a container PARAMETER is already passed by pointer when the callee
+mutates it (`fn fill(xs: *std.ArrayList(i64))`, called `fill(&c)`), so `def fill(xs)` that
+adds is correct today. Strings are immutable slices. Classes are already references (`*T`).
+
+## 2. The rule after the change
+
+> **Primitives, `str`, structs, tuples, enums and unions are values. Classes and
+> containers (`List`, `HashMap`, `Set`) are references.**
+
+Containers join classes, which is the model Python and Cobra readers already hold, and the
+one the GameEngine (and the book) assumed. Consequences, all deliberate:
+
+- `var b = a` aliases. `b.add(x)` is visible through `a`.
+- A method returning a field returns the field. `got.add(2)` mutates `bag.items`.
+- `outer.set(k, local)` stores the same list; later mutations of `local` are visible in `outer`.
+- `get as`, a returned element, a nested container: all the same object.
+- A struct that holds a container is a value whose FIELD is a reference: copying the struct
+  shares the list (Swift's class-in-struct). `except` shares unless the field is replaced.
+- A copy is explicit: `xs.copy()` (see §6, OPEN).
+
+## 3. Representation
+
+A container value becomes a **pointer to a heap container**: `List(int)` emits as
+`*std.ArrayList(i64)`, allocated from the current allocator at construction. Zig auto-derefs
+a single pointer for field access and method calls, so the bulk of today's emit
+(`xs.items.len`, `xs.append(alloc, v)`, `for (xs.items)`) is unchanged.
+
+What changes: construction (allocate a header), field defaults (a pointer cannot default to
+`.empty`), the `&c` that today makes a parameter mutable (the value is already the pointer),
+and every runtime helper that type-switches on `std.ArrayList` (show/print, JSON, Reflect,
+node-addon, FFI marshalling) -- they must see through the pointer.
+
+**What goes away:** the nested-container boxing (`_zbr_boxed` / `_zbr_unboxed`,
+`exprYieldsBox`, `storedElemBoxed`, `isBoxedElemType*`) -- an element of type `List(T)` is
+already a pointer -- and the mutable-parameter machinery (`caller_ptr_params`, the
+`&`-at-call-site decision, BUG-097's guard). Today's footprint: `std.ArrayList(` appears 34
+times in `CodeGen.zbr` and 86 in the preamble; `std.StringHashMap(` 13 / 3; `_zbr_AutoMap(`
+12 / 2; `.empty` 29 / 58; `caller_ptr_params` 12; `exprYieldsBox` 8.
+
+**Rejected alternatives.** *Deep copy on every value copy* (value semantics) -- Sean chose
+shared; it is also the expensive direction and contradicts what `get as` already does.
+*Box only the containers that escape* (escape analysis) -- a fourth rule beside the three
+already there, and the analysis is exactly the kind of position-sensitive judgement that
+produced this bug. *An interim compile error on every container copy* -- would refuse
+ordinary read-only code (`var items = obj.items`), much of it in the compiler's own source.
+
+## 4. Isolation: one spelling first, then the flip
+
+**Phase 0 -- one name, no behaviour change.** Codegen emits `_ZbrList(T)`, `_ZbrMap(V)`,
+`_ZbrAutoMap(K, V)`, `_ZbrSet(T)` and one constructor per kind, all defined in the runtime as
+TODAY's value types. Gates: `output_sweep` byte-identical; the round-trip byte-identical in
+behaviour; and a new static lint -- **no emitted `std.ArrayList(` / `std.StringHashMap(` /
+`_zbr_AutoMap(` outside the runtime's definitions** -- watched red on a deliberately
+unconverted site. Phase 0 is shippable on its own and is the stopgap built as the endstate's
+interface: the flip then happens in a handful of definitions plus the construction, default
+and `&`/`.*` sites, which the lint has already enumerated.
+
+**Phase 1 -- the flip.** The definitions become pointers; construction allocates; defaults
+are handled per §6; the boxing and mutable-parameter machinery is deleted; runtime helpers
+deref through one `_zbr_cont(x)` helper rather than each learning the new shape.
+
+## 5. Measure first: where does a copy happen today?
+
+Before Phase 1, instrument the codegen points where a container value is copied out of a
+LIVE location -- exactly the sites whose meaning changes -- the way §28a instrumented its
+guesses (`--warn-container-copy`, recorded unconditionally, reported on request):
+
+| kind | shape |
+|---|---|
+| `bind` | `var x = <ident / member / index>` and plain assignment from one |
+| `return_field` | `return .field` / `return local` of a container held elsewhere |
+| `ctor_arg` | a container argument to a struct constructor or struct literal |
+| `store` | a container argument to `set` / `add` / `put` / an index assignment |
+| `except` | `except` on a value holding a container field |
+| `struct_copy` | `var r2 = r1` where `r1`'s type holds a container |
+| `capture` | a closure capturing a container local |
+
+Run it over the corpus, `selfhost/` (the compiler's own source), the book and the GameEngine
+(Fable runs the engine, controls first). Report counts per kind. The same flag is then the
+migration aid for users: it names every site whose meaning the flip changes.
+
+**The compiler is its own largest risk, and the round-trip will not say where.** The selfhost
+copies a struct and mutates the copy as an idiom (`var then_g = ig`, `this except ...` on the
+`Generator`). Today a List field mutated through such a copy changes the copy's length and
+leaves the original's alone; after the flip it changes both. The round-trip would catch a
+resulting miscompile but not point at it -- only the measure over `selfhost/` does, so it
+runs, and its `selfhost/` sites are read by hand, before Phase 1.
+
+## 6. Decisions -- OPEN (Sean)
+
+1. **`==` on containers.** Today it leaks: the front end accepts `a == b` on two Lists and
+   zig refuses (`operator == not allowed for type 'array_list.Aligned(i64,null)'` --
+   BUG-506, to be filed). Options: **structural** (Python; recommended -- element-wise, recursive
+   for nested containers, using each element type's own `==`), **refused** with a message,
+   or **identity** (`is`-style; surprising for Python readers and easy to misuse).
+2. **The copy API.** Recommended: `xs.copy()` -- SHALLOW (a new container, the same element
+   values; nested containers shared), Python's `list.copy()`. Is a deep copy wanted too
+   (`deepCopy()`), or is `<<-` (which already deep-copies -- QUICKSTART "`<<-` copy-out operator") enough?
+3. **A container field with no initializer.** Today it is `= undefined` -- the program reads
+   garbage if the constructor forgets it. Recommended: **auto-allocate empty** at
+   construction (the field is always a live, empty container). Alternative: refuse a
+   container field that no constructor path initialises.
+4. **`StringBuilder` in scope?** It is `std.ArrayList(u8)` underneath and has the same
+   half-copy hazard. Recommended: yes, same phase -- a builder is mutable and Python/Cobra
+   readers expect it to be an object.
+
+## 7. Risks, each with its witness
+
+| risk | witness |
+|---|---|
+| a program whose output depended on today's copy/half-copy | `output_sweep` (466 programs): every changed output is read and classified -- relied-on copy, or a corruption the change FIXED |
+| the compiler mutating through a struct copy (§5) | the measure over `selfhost/`, read by hand; then the round-trip |
+| MVU GUI models: `model except items = ...` now shares lists between old and new model | read both GUI sections for any keeping or comparing of the previous model; `gui-scaffold-*`; Sean clicking |
+| `allocate` scopes: the container HEADER now lives in the inner arena | `<<-` must allocate a new header in the parent (today it allocates a new ArrayList, so the shape exists); a probe that copies out and then uses the result after the scope |
+| `sys.go` captures and `Chan(List(T))`: what was half-copied is now shared, so races surface | `concurrency` fixtures under `output_sweep`; document that a container sent on a channel is shared |
+| runtime helpers that switch on `std.ArrayList` | Phase 0's lint lists them; `full_sweep` + `compile_check-inline` |
+| performance: one indirection + one arena allocation per container | **expected magnitude: <5%** on index-heavy loops (the header pointer is loop-invariant and hoists). Measured with `bench_ab` + `bench/index_bench.zbr`, interleaved, before and after Phase 1 |
+| the GameEngine's wrapper-class workarounds (`TagList`, `Inventory`) | Fable regenerates and runs the suite + live autoplays before the commit, as for the sig change |
+
+## 8. The intent probe -- written before any code
+
+`test/boundary/container_reference_probe.zbr` <!-- doc-lint-ok: PROPOSED probe, written in step 2 of §9 --> (+ `.expected`) states every row of §1's table
+under the NEW rule, plus the §2 consequences (struct copy shares, `except` shares, a returned
+map is the map). Its expectations are authored from this document, committed UNRUN -- the
+`boundary_check` discipline -- and it fails on today's compiler by construction. It becomes
+the acceptance test for Phase 1.
+
+## 9. Order of work
+
+1. Sean settles §6.
+2. The intent probe (§8), committed unrun.
+3. The measure (§5), run over corpus / `selfhost/` / book / engine; `selfhost/` sites read.
+4. Phase 0 (§4) -- no behaviour change, gated, shippable alone.
+5. Phase 1 -- the flip; FULL tier; Fable's engine witness; QUICKSTART §2 and the List /
+   HashMap sections rewritten to the §2 rule; CHANGELOG states it as a semantics change.
+6. BUG-501 closes with the probe green.
