@@ -23,6 +23,9 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Assigning a class to another module's interface-typed field converts it (BUG-515)** --
+  optional or not, as passing it to an interface parameter already did.
+
 - **A lambda may ignore a parameter (BUG-514)** -- an unread one is discarded, as for a `def`;
   it failed inside zig as `unused function parameter`.
 

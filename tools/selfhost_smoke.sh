@@ -2148,6 +2148,8 @@ smoke_tc_fail test/fail_fixtures/bug512_init_body_checked_fail.zbr "bug512_init_
 smoke_run test/bug506_container_eq_test.zbr "bug506: OK"
 # BUG-514: a lambda parameter the body never reads is discarded, like a def parameter.
 smoke_run test/bug514_lambda_unused_param_test.zbr "bug514: OK"
+# BUG-515: assigning a class to another module's interface-typed field converts it.
+smoke_run test/bug515_iface_field_assign_test.zbr "bug515: OK"
 # §28a flip: a type that cannot be inferred is refused at `+`, `.len` and a List-shaped
 # method, located at the expression and naming what to annotate. The controls are
 # zig"..." values, which have no Zebra type -- they can never become a closed gap.

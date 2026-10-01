@@ -1,0 +1,15 @@
+# BUG-515 fixture (the interface side): an interface and a class holding it in a field --
+# optional and not -- declared here, implemented in bug515_iface_field_impl.zbr.
+interface CharacterFactory
+    def make(name: str): str
+
+class PlayerHandlerCtor
+    var factory: CharacterFactory?
+    var fallback: CharacterFactory
+    cue init(fb: CharacterFactory)
+        .factory = nil
+        .fallback = fb
+    def build(name: str): str
+        if .factory as f
+            return f.make(name)
+        return .fallback.make(name)

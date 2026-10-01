@@ -6,6 +6,11 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-515: assigning a class value to a field typed as ANOTHER module's interface reached zig -- FIXED 2026-10-01
+- **Severity:** Medium (a leak: `expected type '?player_handler.CharacterFactory', found '*mm_world.WorldSpawner'`; the same value passed to an interface PARAMETER converted fine since BUG-490)
+- **Found by:** Fable, GameEngine `mm_world_test` on d06cf02 (`handlers.factory = spawner`); workaround was a setter taking the interface as a parameter.
+- **Fixed 2026-10-01.** BUG-388's field-assignment coercion was gated on `findInterfaceDecl` -- an interface declared in THIS module -- so a dep's interface fell through to a bare assignment. The gate now also accepts any interface name (`isIfaceName`), and `genInterfaceArgCoercion` emits BUG-490's `.from(value)`, which zig resolves through the optional too. Fixture: `test/bug515_iface_field_assign_test.zbr` (+ `_lib`, `_impl`), optional and non-optional fields; red with the gate reverted (Fable's exact error), green with it.
+
 ### BUG-514: a lambda parameter the body never reads reached zig as `unused function parameter` -- FIXED 2026-10-01
 - **Severity:** Medium (a leak; a handler that ignores one of its sig's parameters -- the common case for an event callback -- failed inside zig)
 - **Found by:** Fable, porting the GameEngine's round_loop_test on 7f4be80: two closures with three parameters each, of which one was read.

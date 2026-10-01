@@ -9064,8 +9064,11 @@ struct Generator
                                 ift_ft2 = ift_fo
                             if ift_ft2 is Type_.named as ift_fn
                                 ift_name = ift_fn
+            # BUG-515 (Fable, GameEngine): an interface declared in ANOTHER module is a
+            # target too -- genInterfaceArgCoercion emits `.from(value)` for it (BUG-490),
+            # which the parameter path already used; only this gate was module-local.
             if ift_name != ""
-                if findInterfaceDecl(ift_name) != nil
+                if findInterfaceDecl(ift_name) != nil or isIfaceName(ift_name)
                     var ift_sp: Span = Span(0, 0, 0, 0)
                     genExpr(a.target)
                     w.emit(" = ")

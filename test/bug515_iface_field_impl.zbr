@@ -1,0 +1,10 @@
+# BUG-515 fixture (the implementing side): classes implementing ANOTHER module's interface.
+use bug515_iface_field_lib exposing CharacterFactory
+
+class WorldSpawner implements CharacterFactory
+    def make(name: str): str
+        return "spawned " + name
+
+class Fallback implements CharacterFactory
+    def make(name: str): str
+        return "fallback " + name

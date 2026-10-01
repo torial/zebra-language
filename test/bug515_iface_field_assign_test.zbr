@@ -1,0 +1,16 @@
+# BUG-515 (Fable, GameEngine): ASSIGNING a class value to a field typed as another module's
+# interface -- optional or not -- converts it, as passing it to an interface parameter
+# already did (BUG-490). It reached zig as "expected '?CharacterFactory', found
+# '*WorldSpawner'".
+use bug515_iface_field_lib exposing PlayerHandlerCtor
+use bug515_iface_field_impl exposing WorldSpawner, Fallback
+
+def main()
+    var handlers = PlayerHandlerCtor(Fallback())
+    assert handlers.build("amy") == "fallback amy"
+    handlers.factory = WorldSpawner()
+    assert handlers.build("bob") == "spawned bob"
+    handlers.fallback = WorldSpawner()
+    handlers.factory = nil
+    assert handlers.build("cy") == "spawned cy"
+    print("bug515: OK")
