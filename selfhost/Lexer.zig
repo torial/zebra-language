@@ -15,6 +15,7 @@ const _zebra_gt = _zbr_rt._zebra_gt;
 const _zebra_ge = _zbr_rt._zebra_ge;
 const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
+const _ZbrList = _zbr_rt._ZbrList;
 const _ZbrFn = _zbr_rt._ZbrFn;
 const _zbr_invoke = _zbr_rt._zbr_invoke;
 
@@ -107,11 +108,11 @@ pub const _zbr_ty_Lexer = struct {
     indentDepth: i64 = undefined,
     blockDepth: i64 = undefined,
     parenDepth: i64 = undefined,
-    out: std.ArrayList(*_zbr_mod_Token._zbr_ty_Token) = undefined,
+    out: _ZbrList(*_zbr_mod_Token._zbr_ty_Token) = undefined,
     inLambdaParams: bool = undefined,
     lambdaParamDepth: i64 = undefined,
     afterLambdaParams: bool = undefined,
-    lambdaStack: std.ArrayList(i64) = undefined,
+    lambdaStack: _ZbrList(i64) = undefined,
     afterEnsureEol: bool = undefined,
     ensureBaseDepth: i64 = undefined,
     pub fn init() *_zbr_ty_Lexer {
@@ -132,7 +133,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:88
             _self.parenDepth = 0;
 // zbr:selfhost/Lexer.zbr:89
-            _self.out = std.ArrayList(*_zbr_mod_Token._zbr_ty_Token).empty;
+            _self.out = _ZbrList(*_zbr_mod_Token._zbr_ty_Token).empty;
 // zbr:selfhost/Lexer.zbr:90
             _self.inLambdaParams = false;
 // zbr:selfhost/Lexer.zbr:91
@@ -140,7 +141,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:92
             _self.afterLambdaParams = false;
 // zbr:selfhost/Lexer.zbr:93
-            _self.lambdaStack = std.ArrayList(i64).empty;
+            _self.lambdaStack = _ZbrList(i64).empty;
 // zbr:selfhost/Lexer.zbr:94
             _self.afterEnsureEol = false;
 // zbr:selfhost/Lexer.zbr:95
@@ -149,7 +150,7 @@ pub const _zbr_ty_Lexer = struct {
     }
 
     // zbr:selfhost/Lexer.zbr:97
-    pub fn tokenize(source: []const u8) anyerror!std.ArrayList(*_zbr_mod_Token._zbr_ty_Token) {
+    pub fn tokenize(source: []const u8) anyerror!_ZbrList(*_zbr_mod_Token._zbr_ty_Token) {
 // zbr:selfhost/Lexer.zbr:98
         var lex = _zbr_ty_Lexer.init();
 // zbr:selfhost/Lexer.zbr:99

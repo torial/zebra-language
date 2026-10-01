@@ -485,6 +485,9 @@ run_static "root-clean"     "0 compiled" bash tools/root_clean_check.sh
 # every tier while red on a review owned elsewhere (BUG-279 leg 3); that review moved the
 # baseline to 77 and it is green. Reads the preamble only. Red-checked by adding one use.
 run_static "escape-hatches" "OK"         bash tools/escape_hatches_check.sh
+# BUG-501 Phase 0: emitted code names a container only through _ZbrList / _ZbrMap /
+# _ZbrAutoMap, so Phase 1 changes definitions, not emit sites.
+run_static "container-spelling" "0 raw" python tools/lint_container_spelling.py
 # (`decl-exhaustive` sat here 2026-08-26 .. 2026-09-16, BUG-103's pin: no `else => {}`
 # in the bootstrap's Ast.Decl switches. Oracle and subject were both src/*.zig; gone with
 # it, sunset Step 3. The selfhost's `branch` over Decl is checked by lint_fallthrough and

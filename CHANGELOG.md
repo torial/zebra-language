@@ -23,6 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`zebra lsp` answers every request a client sent before closing stdin (BUG-511).** Requests
+  that arrived during a debounced diagnostics flush were dropped if stdin closed meanwhile.
+- **Containers are spelled through one runtime name (BUG-501 Phase 0).** Emitted Zig names a
+  List / HashMap / Set as `_ZbrList(T)` / `_ZbrMap(V)` / `_ZbrAutoMap(K, V)`; behaviour is
+  unchanged (466 programs print identically). Gate: `container-spelling`.
+
 - **Struct methods are checked like class methods (BUG-508).** Their bodies skipped every
   statement-level check -- an optional used as an operand, an unmarked throws call -- and
   failed inside zig instead. Code that compiled before may now get a Zebra error naming the

@@ -16,6 +16,7 @@ const _zebra_gt = _zbr_rt._zebra_gt;
 const _zebra_ge = _zbr_rt._zebra_ge;
 const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
+const _ZbrList = _zbr_rt._ZbrList;
 
 const _zbr_mod_Token = @import("Token.zig");
 const _zbr_ty_TokenKind = _zbr_mod_Token._zbr_ty_TokenKind;
@@ -65,7 +66,7 @@ pub fn _zbr_fn_caseOnlyMatch(path: []const u8) []const u8 {
     for ((blk_fld: {
         var _ld_dir = std.Io.Dir.cwd().openDir(_zbr_rt._io, dir, .{ .iterate = true }) catch @panic("File.listDir error");
         defer _ld_dir.close(_zbr_rt._io);
-        var _ld_list = std.ArrayList([]const u8).empty;
+        var _ld_list = _ZbrList([]const u8).empty;
         var _ld_iter = _ld_dir.iterate();
         while (_ld_iter.next(_zbr_rt._io) catch null) |_ld_entry| { _ld_list.append(_zbr_rt._allocator, _zbr_rt._allocator.dupe(u8, _ld_entry.name) catch @panic("OOM")) catch @panic("OOM"); }
         break :blk_fld _ld_list;
@@ -116,15 +117,15 @@ pub const _zbr_ty_PNode = union(enum) {
     stmt_yield: *_zbr_ty_PYield,
     stmt_try_catch: *_zbr_ty_PTryCatch,
     stmt_expr: *_zbr_ty_PNode,
-    stmt_print: std.ArrayList(_zbr_ty_PNode),
+    stmt_print: _ZbrList(_zbr_ty_PNode),
     stmt_allocate: *_zbr_ty_PAllocate,
     stmt_copy_out: *_zbr_ty_PCopyOut,
     stmt_with: *_zbr_ty_PWith,
     stmt_in: *_zbr_ty_PInScope,
     stmt_destruct: *_zbr_ty_PDestruct,
-    stmt_require: std.ArrayList(_zbr_ty_PNode),
-    stmt_ensure: std.ArrayList(_zbr_ty_PNode),
-    invariant_decl: std.ArrayList(_zbr_ty_PNode),
+    stmt_require: _ZbrList(_zbr_ty_PNode),
+    stmt_ensure: _ZbrList(_zbr_ty_PNode),
+    invariant_decl: _ZbrList(_zbr_ty_PNode),
     expr_orelse: *_zbr_ty_POrelse,
     expr_catch: *_zbr_ty_PCatch,
     expr_pipeline: *_zbr_ty_PPipeline,
@@ -165,10 +166,10 @@ pub const _zbr_ty_PNode = union(enum) {
 
 pub const _zbr_ty_PUnionDecl = struct {
     name: []const u8 = undefined,
-    variants: std.ArrayList(_zbr_ty_PUnionVariant) = undefined,
+    variants: _ZbrList(_zbr_ty_PUnionVariant) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(name: []const u8, variants: std.ArrayList(_zbr_ty_PUnionVariant), line: i64, col: i64) _zbr_ty_PUnionDecl {
+    pub fn init(name: []const u8, variants: _ZbrList(_zbr_ty_PUnionVariant), line: i64, col: i64) _zbr_ty_PUnionDecl {
         var _self: _zbr_ty_PUnionDecl = undefined;
 // zbr:selfhost/Parser.zbr:160
             _self.name = _intern(name);
@@ -205,10 +206,10 @@ pub const _zbr_ty_PUnionVariant = struct {
 
 pub const _zbr_ty_PTypeAlias = struct {
     name: []const u8 = undefined,
-    params: std.ArrayList(_zbr_ty_PParam) = undefined,
+    params: _ZbrList(_zbr_ty_PParam) = undefined,
     base_type: []const u8 = undefined,
-    constraint: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(name: []const u8, params: std.ArrayList(_zbr_ty_PParam), base_type: []const u8, constraint: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PTypeAlias {
+    constraint: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(name: []const u8, params: _ZbrList(_zbr_ty_PParam), base_type: []const u8, constraint: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PTypeAlias {
         var _self: _zbr_ty_PTypeAlias = undefined;
 // zbr:selfhost/Parser.zbr:184
             _self.name = _intern(name);
@@ -225,11 +226,11 @@ pub const _zbr_ty_PTypeAlias = struct {
 
 pub const _zbr_ty_PSig = struct {
     name: []const u8 = undefined,
-    params: std.ArrayList(_zbr_ty_PParam) = undefined,
+    params: _ZbrList(_zbr_ty_PParam) = undefined,
     return_type: []const u8 = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(name: []const u8, params: std.ArrayList(_zbr_ty_PParam), return_type: []const u8, line: i64, col: i64) _zbr_ty_PSig {
+    pub fn init(name: []const u8, params: _ZbrList(_zbr_ty_PParam), return_type: []const u8, line: i64, col: i64) _zbr_ty_PSig {
         var _self: _zbr_ty_PSig = undefined;
 // zbr:selfhost/Parser.zbr:196
             _self.name = _intern(name);
@@ -247,12 +248,12 @@ pub const _zbr_ty_PSig = struct {
 };
 
 pub const _zbr_ty_PBranch = struct {
-    subject: std.ArrayList(_zbr_ty_PNode) = undefined,
-    arms: std.ArrayList(_zbr_ty_PBranchOn) = undefined,
-    else_stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
+    subject: _ZbrList(_zbr_ty_PNode) = undefined,
+    arms: _ZbrList(_zbr_ty_PBranchOn) = undefined,
+    else_stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(subject: std.ArrayList(_zbr_ty_PNode), arms: std.ArrayList(_zbr_ty_PBranchOn), else_stmts: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PBranch {
+    pub fn init(subject: _ZbrList(_zbr_ty_PNode), arms: _ZbrList(_zbr_ty_PBranchOn), else_stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PBranch {
         var _self: _zbr_ty_PBranch = undefined;
 // zbr:selfhost/Parser.zbr:209
             _self.subject = subject;
@@ -270,14 +271,14 @@ pub const _zbr_ty_PBranch = struct {
 };
 
 pub const _zbr_ty_PBranchOn = struct {
-    patterns: std.ArrayList([]const u8) = undefined,
+    patterns: _ZbrList([]const u8) = undefined,
     binding: []const u8 = undefined,
-    filter_cond: std.ArrayList(_zbr_ty_PNode) = undefined,
-    stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
-    struct_pat_node: std.ArrayList(_zbr_ty_PNode) = undefined,
+    filter_cond: _ZbrList(_zbr_ty_PNode) = undefined,
+    stmts: _ZbrList(_zbr_ty_PNode) = undefined,
+    struct_pat_node: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(patterns: std.ArrayList([]const u8), binding: []const u8, filter_cond: std.ArrayList(_zbr_ty_PNode), stmts: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PBranchOn {
+    pub fn init(patterns: _ZbrList([]const u8), binding: []const u8, filter_cond: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PBranchOn {
         var _self: _zbr_ty_PBranchOn = undefined;
 // zbr:selfhost/Parser.zbr:224
             _self.patterns = patterns;
@@ -288,7 +289,7 @@ pub const _zbr_ty_PBranchOn = struct {
 // zbr:selfhost/Parser.zbr:227
             _self.stmts = stmts;
 // zbr:selfhost/Parser.zbr:228
-            _self.struct_pat_node = std.ArrayList(_zbr_ty_PNode).empty;
+            _self.struct_pat_node = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:229
             _self.line = line;
 // zbr:selfhost/Parser.zbr:230
@@ -299,8 +300,8 @@ pub const _zbr_ty_PBranchOn = struct {
 };
 
 pub const _zbr_ty_PTupleLit = struct {
-    elems: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(elems: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PTupleLit {
+    elems: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(elems: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PTupleLit {
         var _self: _zbr_ty_PTupleLit = undefined;
 // zbr:selfhost/Parser.zbr:235
             _self.elems = elems;
@@ -310,8 +311,8 @@ pub const _zbr_ty_PTupleLit = struct {
 };
 
 pub const _zbr_ty_PArrayLit = struct {
-    elems: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(elems: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PArrayLit {
+    elems: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(elems: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PArrayLit {
         var _self: _zbr_ty_PArrayLit = undefined;
 // zbr:selfhost/Parser.zbr:240
             _self.elems = elems;
@@ -321,9 +322,9 @@ pub const _zbr_ty_PArrayLit = struct {
 };
 
 pub const _zbr_ty_PDictLit = struct {
-    keys: std.ArrayList(_zbr_ty_PNode) = undefined,
-    values: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(keys: std.ArrayList(_zbr_ty_PNode), values: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PDictLit {
+    keys: _ZbrList(_zbr_ty_PNode) = undefined,
+    values: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(keys: _ZbrList(_zbr_ty_PNode), values: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PDictLit {
         var _self: _zbr_ty_PDictLit = undefined;
 // zbr:selfhost/Parser.zbr:247
             _self.keys = keys;
@@ -335,9 +336,9 @@ pub const _zbr_ty_PDictLit = struct {
 };
 
 pub const _zbr_ty_PExcept = struct {
-    base: std.ArrayList(_zbr_ty_PNode) = undefined,
-    fields: std.ArrayList(_zbr_ty_PExceptField) = undefined,
-    pub fn init(base: std.ArrayList(_zbr_ty_PNode), fields: std.ArrayList(_zbr_ty_PExceptField)) _zbr_ty_PExcept {
+    base: _ZbrList(_zbr_ty_PNode) = undefined,
+    fields: _ZbrList(_zbr_ty_PExceptField) = undefined,
+    pub fn init(base: _ZbrList(_zbr_ty_PNode), fields: _ZbrList(_zbr_ty_PExceptField)) _zbr_ty_PExcept {
         var _self: _zbr_ty_PExcept = undefined;
 // zbr:selfhost/Parser.zbr:254
             _self.base = base;
@@ -350,8 +351,8 @@ pub const _zbr_ty_PExcept = struct {
 
 pub const _zbr_ty_PExceptField = struct {
     name: []const u8 = undefined,
-    value: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(name: []const u8, value: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PExceptField {
+    value: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(name: []const u8, value: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PExceptField {
         var _self: _zbr_ty_PExceptField = undefined;
 // zbr:selfhost/Parser.zbr:261
             _self.name = _intern(name);
@@ -363,8 +364,8 @@ pub const _zbr_ty_PExceptField = struct {
 };
 
 pub const _zbr_ty_PStringInterp = struct {
-    parts: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(parts: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PStringInterp {
+    parts: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(parts: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PStringInterp {
         var _self: _zbr_ty_PStringInterp = undefined;
 // zbr:selfhost/Parser.zbr:267
             _self.parts = parts;
@@ -374,12 +375,12 @@ pub const _zbr_ty_PStringInterp = struct {
 };
 
 pub const _zbr_ty_PLambda = struct {
-    params: std.ArrayList(_zbr_ty_PParam) = undefined,
+    params: _ZbrList(_zbr_ty_PParam) = undefined,
     return_type: []const u8 = undefined,
-    captures: std.ArrayList(_zbr_ty_PCaptureVar) = undefined,
-    body_expr: std.ArrayList(_zbr_ty_PNode) = undefined,
-    body_stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(params: std.ArrayList(_zbr_ty_PParam), return_type: []const u8, captures: std.ArrayList(_zbr_ty_PCaptureVar), body_expr: std.ArrayList(_zbr_ty_PNode), body_stmts: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PLambda {
+    captures: _ZbrList(_zbr_ty_PCaptureVar) = undefined,
+    body_expr: _ZbrList(_zbr_ty_PNode) = undefined,
+    body_stmts: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(params: _ZbrList(_zbr_ty_PParam), return_type: []const u8, captures: _ZbrList(_zbr_ty_PCaptureVar), body_expr: _ZbrList(_zbr_ty_PNode), body_stmts: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PLambda {
         var _self: _zbr_ty_PLambda = undefined;
 // zbr:selfhost/Parser.zbr:276
             _self.params = params;
@@ -399,9 +400,9 @@ pub const _zbr_ty_PLambda = struct {
 pub const _zbr_ty_PCaptureVar = struct {
     name: []const u8 = undefined,
     type_name: []const u8 = undefined,
-    init_expr: std.ArrayList(_zbr_ty_PNode) = undefined,
+    init_expr: _ZbrList(_zbr_ty_PNode) = undefined,
     is_const: bool = undefined,
-    pub fn init(name: []const u8, type_name: []const u8, init_expr: std.ArrayList(_zbr_ty_PNode), is_const: bool) _zbr_ty_PCaptureVar {
+    pub fn init(name: []const u8, type_name: []const u8, init_expr: _ZbrList(_zbr_ty_PNode), is_const: bool) _zbr_ty_PCaptureVar {
         var _self: _zbr_ty_PCaptureVar = undefined;
 // zbr:selfhost/Parser.zbr:288
             _self.name = _intern(name);
@@ -418,8 +419,8 @@ pub const _zbr_ty_PCaptureVar = struct {
 
 pub const _zbr_ty_PUse = struct {
     path: []const u8 = undefined,
-    exposed: std.ArrayList([]const u8) = undefined,
-    pub fn init(path: []const u8, exposed: std.ArrayList([]const u8)) _zbr_ty_PUse {
+    exposed: _ZbrList([]const u8) = undefined,
+    pub fn init(path: []const u8, exposed: _ZbrList([]const u8)) _zbr_ty_PUse {
         var _self: _zbr_ty_PUse = undefined;
 // zbr:selfhost/Parser.zbr:297
             _self.path = _intern(path);
@@ -431,8 +432,8 @@ pub const _zbr_ty_PUse = struct {
 };
 
 pub const _zbr_ty_PModule = struct {
-    decls: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(decls: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PModule {
+    decls: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(decls: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PModule {
         var _self: _zbr_ty_PModule = undefined;
 // zbr:selfhost/Parser.zbr:303
             _self.decls = decls;
@@ -443,10 +444,10 @@ pub const _zbr_ty_PModule = struct {
 
 pub const _zbr_ty_PNamespace = struct {
     name: []const u8 = undefined,
-    decls: std.ArrayList(_zbr_ty_PNode) = undefined,
+    decls: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(name: []const u8, decls: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PNamespace {
+    pub fn init(name: []const u8, decls: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PNamespace {
         var _self: _zbr_ty_PNamespace = undefined;
 // zbr:selfhost/Parser.zbr:311
             _self.name = _intern(name);
@@ -464,8 +465,8 @@ pub const _zbr_ty_PNamespace = struct {
 pub const _zbr_ty_PParam = struct {
     name: []const u8 = undefined,
     type_name: []const u8 = undefined,
-    default_expr: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(name: []const u8, type_name: []const u8, default_expr: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PParam {
+    default_expr: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(name: []const u8, type_name: []const u8, default_expr: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PParam {
         var _self: _zbr_ty_PParam = undefined;
 // zbr:selfhost/Parser.zbr:321
             _self.name = _intern(name);
@@ -480,11 +481,11 @@ pub const _zbr_ty_PParam = struct {
 
 pub const _zbr_ty_PClass = struct {
     name: []const u8 = undefined,
-    type_params: std.ArrayList([]const u8) = undefined,
-    ifaces: std.ArrayList([]const u8) = undefined,
-    mixins: std.ArrayList([]const u8) = undefined,
-    members: std.ArrayList(_zbr_ty_PNode) = undefined,
-    invs: std.ArrayList(_zbr_ty_PNode) = undefined,
+    type_params: _ZbrList([]const u8) = undefined,
+    ifaces: _ZbrList([]const u8) = undefined,
+    mixins: _ZbrList([]const u8) = undefined,
+    members: _ZbrList(_zbr_ty_PNode) = undefined,
+    invs: _ZbrList(_zbr_ty_PNode) = undefined,
     is_reflectable: bool = undefined,
     is_derive_debug: bool = undefined,
     is_derive_eq: bool = undefined,
@@ -492,7 +493,7 @@ pub const _zbr_ty_PClass = struct {
     export_sym: ?[]const u8 = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(name: []const u8, type_params: std.ArrayList([]const u8), ifaces: std.ArrayList([]const u8), mixins: std.ArrayList([]const u8), members: std.ArrayList(_zbr_ty_PNode), invs: std.ArrayList(_zbr_ty_PNode), is_reflectable: bool, is_derive_debug: bool, is_derive_eq: bool, is_derive_hash: bool, export_sym: ?[]const u8, line: i64, col: i64) _zbr_ty_PClass {
+    pub fn init(name: []const u8, type_params: _ZbrList([]const u8), ifaces: _ZbrList([]const u8), mixins: _ZbrList([]const u8), members: _ZbrList(_zbr_ty_PNode), invs: _ZbrList(_zbr_ty_PNode), is_reflectable: bool, is_derive_debug: bool, is_derive_eq: bool, is_derive_hash: bool, export_sym: ?[]const u8, line: i64, col: i64) _zbr_ty_PClass {
         var _self: _zbr_ty_PClass = undefined;
 // zbr:selfhost/Parser.zbr:340
             _self.name = _intern(name);
@@ -527,8 +528,8 @@ pub const _zbr_ty_PClass = struct {
 
 pub const _zbr_ty_PExtend = struct {
     target_name: []const u8 = undefined,
-    members: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(target_name: []const u8, members: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PExtend {
+    members: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(target_name: []const u8, members: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PExtend {
         var _self: _zbr_ty_PExtend = undefined;
 // zbr:selfhost/Parser.zbr:358
             _self.target_name = _intern(target_name);
@@ -541,12 +542,12 @@ pub const _zbr_ty_PExtend = struct {
 
 pub const _zbr_ty_PEnum = struct {
     name: []const u8 = undefined,
-    variants: std.ArrayList([]const u8) = undefined,
+    variants: _ZbrList([]const u8) = undefined,
     base: []const u8 = undefined,
-    values: std.ArrayList(*std.ArrayList(_zbr_ty_PNode)) = undefined,
+    values: _ZbrList(*_ZbrList(_zbr_ty_PNode)) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(name: []const u8, variants: std.ArrayList([]const u8), base: []const u8, values: std.ArrayList(*std.ArrayList(_zbr_ty_PNode)), line: i64, col: i64) _zbr_ty_PEnum {
+    pub fn init(name: []const u8, variants: _ZbrList([]const u8), base: []const u8, values: _ZbrList(*_ZbrList(_zbr_ty_PNode)), line: i64, col: i64) _zbr_ty_PEnum {
         var _self: _zbr_ty_PEnum = undefined;
 // zbr:selfhost/Parser.zbr:371
             _self.name = _intern(name);
@@ -572,10 +573,10 @@ pub const _zbr_ty_PField = struct {
     is_static: bool = undefined,
     is_private: bool = undefined,
     is_public: bool = undefined,
-    init_expr: std.ArrayList(_zbr_ty_PNode) = undefined,
+    init_expr: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(name: []const u8, type_name: []const u8, is_const: bool, is_static: bool, is_private: bool, is_public: bool, init_expr: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PField {
+    pub fn init(name: []const u8, type_name: []const u8, is_const: bool, is_static: bool, is_private: bool, is_public: bool, init_expr: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PField {
         var _self: _zbr_ty_PField = undefined;
 // zbr:selfhost/Parser.zbr:389
             _self.name = _intern(name);
@@ -606,14 +607,14 @@ pub const _zbr_ty_PMethod = struct {
     is_private: bool = undefined,
     is_public: bool = undefined,
     throws_: bool = undefined,
-    params: std.ArrayList(_zbr_ty_PParam) = undefined,
+    params: _ZbrList(_zbr_ty_PParam) = undefined,
     return_type: []const u8 = undefined,
-    stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
+    stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     is_profile: bool = undefined,
     is_once: bool = undefined,
-    tags: std.ArrayList([]const u8) = undefined,
+    tags: _ZbrList([]const u8) = undefined,
     is_export: bool = undefined,
-    type_params: std.ArrayList([]const u8) = undefined,
+    type_params: _ZbrList([]const u8) = undefined,
     is_pure: bool = undefined,
     is_node_export: bool = undefined,
     is_extern: bool = undefined,
@@ -621,7 +622,7 @@ pub const _zbr_ty_PMethod = struct {
     col: i64 = undefined,
     is_cue: bool = undefined,
     deprecated: []const u8 = undefined,
-    pub fn init(name: []const u8, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: std.ArrayList(_zbr_ty_PParam), return_type: []const u8, stmts: std.ArrayList(_zbr_ty_PNode), is_profile: bool, is_once: bool, tags: std.ArrayList([]const u8), is_export: bool, type_params: std.ArrayList([]const u8), is_pure: bool, is_node_export: bool, line: i64, col: i64, is_extern: bool, is_cue: bool, deprecated: []const u8) _zbr_ty_PMethod {
+    pub fn init(name: []const u8, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: _ZbrList(_zbr_ty_PParam), return_type: []const u8, stmts: _ZbrList(_zbr_ty_PNode), is_profile: bool, is_once: bool, tags: _ZbrList([]const u8), is_export: bool, type_params: _ZbrList([]const u8), is_pure: bool, is_node_export: bool, line: i64, col: i64, is_extern: bool, is_cue: bool, deprecated: []const u8) _zbr_ty_PMethod {
         var _self: _zbr_ty_PMethod = undefined;
 // zbr:selfhost/Parser.zbr:425
             _self.deprecated = _intern(deprecated);
@@ -669,9 +670,9 @@ pub const _zbr_ty_PMethod = struct {
 };
 
 pub const _zbr_ty_PInit = struct {
-    params: std.ArrayList(_zbr_ty_PParam) = undefined,
-    stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(params: std.ArrayList(_zbr_ty_PParam), stmts: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PInit {
+    params: _ZbrList(_zbr_ty_PParam) = undefined,
+    stmts: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(params: _ZbrList(_zbr_ty_PParam), stmts: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PInit {
         var _self: _zbr_ty_PInit = undefined;
 // zbr:selfhost/Parser.zbr:450
             _self.params = params;
@@ -683,10 +684,10 @@ pub const _zbr_ty_PInit = struct {
 };
 
 pub const _zbr_ty_PReturn = struct {
-    value: std.ArrayList(_zbr_ty_PNode) = undefined,
+    value: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(value: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PReturn {
+    pub fn init(value: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PReturn {
         var _self: _zbr_ty_PReturn = undefined;
 // zbr:selfhost/Parser.zbr:461
             _self.value = value;
@@ -700,13 +701,13 @@ pub const _zbr_ty_PReturn = struct {
 };
 
 pub const _zbr_ty_PIf = struct {
-    cond: std.ArrayList(_zbr_ty_PNode) = undefined,
+    cond: _ZbrList(_zbr_ty_PNode) = undefined,
     is_capture: ?[]const u8 = undefined,
-    then_stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
-    else_stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
+    then_stmts: _ZbrList(_zbr_ty_PNode) = undefined,
+    else_stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(cond: std.ArrayList(_zbr_ty_PNode), then_stmts: std.ArrayList(_zbr_ty_PNode), else_stmts: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PIf {
+    pub fn init(cond: _ZbrList(_zbr_ty_PNode), then_stmts: _ZbrList(_zbr_ty_PNode), else_stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PIf {
         var _self: _zbr_ty_PIf = undefined;
 // zbr:selfhost/Parser.zbr:473
             _self.cond = cond;
@@ -726,11 +727,11 @@ pub const _zbr_ty_PIf = struct {
 };
 
 pub const _zbr_ty_PWhile = struct {
-    cond: std.ArrayList(_zbr_ty_PNode) = undefined,
-    stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
+    cond: _ZbrList(_zbr_ty_PNode) = undefined,
+    stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(cond: std.ArrayList(_zbr_ty_PNode), stmts: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PWhile {
+    pub fn init(cond: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PWhile {
         var _self: _zbr_ty_PWhile = undefined;
 // zbr:selfhost/Parser.zbr:486
             _self.cond = cond;
@@ -746,12 +747,12 @@ pub const _zbr_ty_PWhile = struct {
 };
 
 pub const _zbr_ty_PAllocate = struct {
-    source: std.ArrayList(_zbr_ty_PNode) = undefined,
-    stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
+    source: _ZbrList(_zbr_ty_PNode) = undefined,
+    stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     is_scoped: bool = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(source: std.ArrayList(_zbr_ty_PNode), stmts: std.ArrayList(_zbr_ty_PNode), is_scoped: bool, line: i64, col: i64) _zbr_ty_PAllocate {
+    pub fn init(source: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), is_scoped: bool, line: i64, col: i64) _zbr_ty_PAllocate {
         var _self: _zbr_ty_PAllocate = undefined;
 // zbr:selfhost/Parser.zbr:498
             _self.source = source;
@@ -769,12 +770,12 @@ pub const _zbr_ty_PAllocate = struct {
 };
 
 pub const _zbr_ty_PCopyOut = struct {
-    target: std.ArrayList(_zbr_ty_PNode) = undefined,
-    value: std.ArrayList(_zbr_ty_PNode) = undefined,
+    target: _ZbrList(_zbr_ty_PNode) = undefined,
+    value: _ZbrList(_zbr_ty_PNode) = undefined,
     deep: bool = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(target: std.ArrayList(_zbr_ty_PNode), value: std.ArrayList(_zbr_ty_PNode), deep: bool, line: i64, col: i64) _zbr_ty_PCopyOut {
+    pub fn init(target: _ZbrList(_zbr_ty_PNode), value: _ZbrList(_zbr_ty_PNode), deep: bool, line: i64, col: i64) _zbr_ty_PCopyOut {
         var _self: _zbr_ty_PCopyOut = undefined;
 // zbr:selfhost/Parser.zbr:511
             _self.target = target;
@@ -792,11 +793,11 @@ pub const _zbr_ty_PCopyOut = struct {
 };
 
 pub const _zbr_ty_PWith = struct {
-    target: std.ArrayList(_zbr_ty_PNode) = undefined,
-    stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
+    target: _ZbrList(_zbr_ty_PNode) = undefined,
+    stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(target: std.ArrayList(_zbr_ty_PNode), stmts: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PWith {
+    pub fn init(target: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PWith {
         var _self: _zbr_ty_PWith = undefined;
 // zbr:selfhost/Parser.zbr:523
             _self.target = target;
@@ -812,11 +813,11 @@ pub const _zbr_ty_PWith = struct {
 };
 
 pub const _zbr_ty_PInScope = struct {
-    expr: std.ArrayList(_zbr_ty_PNode) = undefined,
-    stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
+    expr: _ZbrList(_zbr_ty_PNode) = undefined,
+    stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(expr: std.ArrayList(_zbr_ty_PNode), stmts: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PInScope {
+    pub fn init(expr: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PInScope {
         var _self: _zbr_ty_PInScope = undefined;
 // zbr:selfhost/Parser.zbr:535
             _self.expr = expr;
@@ -832,9 +833,9 @@ pub const _zbr_ty_PInScope = struct {
 };
 
 pub const _zbr_ty_POrelse = struct {
-    expr: std.ArrayList(_zbr_ty_PNode) = undefined,
-    fallback: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(expr: std.ArrayList(_zbr_ty_PNode), fallback: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_POrelse {
+    expr: _ZbrList(_zbr_ty_PNode) = undefined,
+    fallback: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(expr: _ZbrList(_zbr_ty_PNode), fallback: _ZbrList(_zbr_ty_PNode)) _zbr_ty_POrelse {
         var _self: _zbr_ty_POrelse = undefined;
 // zbr:selfhost/Parser.zbr:544
             _self.expr = expr;
@@ -846,10 +847,10 @@ pub const _zbr_ty_POrelse = struct {
 };
 
 pub const _zbr_ty_PCatch = struct {
-    expr: std.ArrayList(_zbr_ty_PNode) = undefined,
+    expr: _ZbrList(_zbr_ty_PNode) = undefined,
     binding: []const u8 = undefined,
-    fallback: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(expr: std.ArrayList(_zbr_ty_PNode), binding: []const u8, fallback: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PCatch {
+    fallback: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(expr: _ZbrList(_zbr_ty_PNode), binding: []const u8, fallback: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PCatch {
         var _self: _zbr_ty_PCatch = undefined;
 // zbr:selfhost/Parser.zbr:552
             _self.expr = expr;
@@ -863,9 +864,9 @@ pub const _zbr_ty_PCatch = struct {
 };
 
 pub const _zbr_ty_PPipeline = struct {
-    lhs: std.ArrayList(_zbr_ty_PNode) = undefined,
-    rhs: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(lhs: std.ArrayList(_zbr_ty_PNode), rhs: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PPipeline {
+    lhs: _ZbrList(_zbr_ty_PNode) = undefined,
+    rhs: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(lhs: _ZbrList(_zbr_ty_PNode), rhs: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PPipeline {
         var _self: _zbr_ty_PPipeline = undefined;
 // zbr:selfhost/Parser.zbr:560
             _self.lhs = lhs;
@@ -877,14 +878,14 @@ pub const _zbr_ty_PPipeline = struct {
 };
 
 pub const _zbr_ty_PForIn = struct {
-    var_names: std.ArrayList([]const u8) = undefined,
-    iter: std.ArrayList(_zbr_ty_PNode) = undefined,
-    filter: std.ArrayList(_zbr_ty_PNode) = undefined,
-    stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
-    else_stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
+    var_names: _ZbrList([]const u8) = undefined,
+    iter: _ZbrList(_zbr_ty_PNode) = undefined,
+    filter: _ZbrList(_zbr_ty_PNode) = undefined,
+    stmts: _ZbrList(_zbr_ty_PNode) = undefined,
+    else_stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(var_names: std.ArrayList([]const u8), iter: std.ArrayList(_zbr_ty_PNode), filter: std.ArrayList(_zbr_ty_PNode), stmts: std.ArrayList(_zbr_ty_PNode), else_stmts: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PForIn {
+    pub fn init(var_names: _ZbrList([]const u8), iter: _ZbrList(_zbr_ty_PNode), filter: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), else_stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PForIn {
         var _self: _zbr_ty_PForIn = undefined;
 // zbr:selfhost/Parser.zbr:572
             _self.var_names = var_names;
@@ -907,14 +908,14 @@ pub const _zbr_ty_PForIn = struct {
 
 pub const _zbr_ty_PForNum = struct {
     var_name: []const u8 = undefined,
-    start: std.ArrayList(_zbr_ty_PNode) = undefined,
-    stop_: std.ArrayList(_zbr_ty_PNode) = undefined,
-    step: std.ArrayList(_zbr_ty_PNode) = undefined,
-    stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
-    else_stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
+    start: _ZbrList(_zbr_ty_PNode) = undefined,
+    stop_: _ZbrList(_zbr_ty_PNode) = undefined,
+    step: _ZbrList(_zbr_ty_PNode) = undefined,
+    stmts: _ZbrList(_zbr_ty_PNode) = undefined,
+    else_stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(var_name: []const u8, start: std.ArrayList(_zbr_ty_PNode), stop_: std.ArrayList(_zbr_ty_PNode), step: std.ArrayList(_zbr_ty_PNode), stmts: std.ArrayList(_zbr_ty_PNode), else_stmts: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PForNum {
+    pub fn init(var_name: []const u8, start: _ZbrList(_zbr_ty_PNode), stop_: _ZbrList(_zbr_ty_PNode), step: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), else_stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PForNum {
         var _self: _zbr_ty_PForNum = undefined;
 // zbr:selfhost/Parser.zbr:590
             _self.var_name = _intern(var_name);
@@ -941,10 +942,10 @@ pub const _zbr_ty_PVar = struct {
     name: []const u8 = undefined,
     is_const: bool = undefined,
     type_name: []const u8 = undefined,
-    init_expr: std.ArrayList(_zbr_ty_PNode) = undefined,
+    init_expr: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(name: []const u8, is_const: bool, type_name: []const u8, init_expr: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PVar {
+    pub fn init(name: []const u8, is_const: bool, type_name: []const u8, init_expr: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PVar {
         var _self: _zbr_ty_PVar = undefined;
 // zbr:selfhost/Parser.zbr:610
             _self.name = _intern(name);
@@ -964,12 +965,12 @@ pub const _zbr_ty_PVar = struct {
 };
 
 pub const _zbr_ty_PDestruct = struct {
-    names: std.ArrayList([]const u8) = undefined,
-    init_expr: std.ArrayList(_zbr_ty_PNode) = undefined,
+    names: _ZbrList([]const u8) = undefined,
+    init_expr: _ZbrList(_zbr_ty_PNode) = undefined,
     is_struct: bool = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(names: std.ArrayList([]const u8), init_expr: std.ArrayList(_zbr_ty_PNode), is_struct: bool, line: i64, col: i64) _zbr_ty_PDestruct {
+    pub fn init(names: _ZbrList([]const u8), init_expr: _ZbrList(_zbr_ty_PNode), is_struct: bool, line: i64, col: i64) _zbr_ty_PDestruct {
         var _self: _zbr_ty_PDestruct = undefined;
 // zbr:selfhost/Parser.zbr:624
             _self.names = names;
@@ -988,11 +989,11 @@ pub const _zbr_ty_PDestruct = struct {
 
 pub const _zbr_ty_PAssign = struct {
     op: []const u8 = undefined,
-    target: std.ArrayList(_zbr_ty_PNode) = undefined,
-    value: std.ArrayList(_zbr_ty_PNode) = undefined,
+    target: _ZbrList(_zbr_ty_PNode) = undefined,
+    value: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(op: []const u8, target: std.ArrayList(_zbr_ty_PNode), value: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PAssign {
+    pub fn init(op: []const u8, target: _ZbrList(_zbr_ty_PNode), value: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PAssign {
         var _self: _zbr_ty_PAssign = undefined;
 // zbr:selfhost/Parser.zbr:637
             _self.op = _intern(op);
@@ -1010,11 +1011,11 @@ pub const _zbr_ty_PAssign = struct {
 };
 
 pub const _zbr_ty_PAssert = struct {
-    cond: std.ArrayList(_zbr_ty_PNode) = undefined,
-    message: std.ArrayList(_zbr_ty_PNode) = undefined,
+    cond: _ZbrList(_zbr_ty_PNode) = undefined,
+    message: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(cond: std.ArrayList(_zbr_ty_PNode), message: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PAssert {
+    pub fn init(cond: _ZbrList(_zbr_ty_PNode), message: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PAssert {
         var _self: _zbr_ty_PAssert = undefined;
 // zbr:selfhost/Parser.zbr:649
             _self.cond = cond;
@@ -1030,10 +1031,10 @@ pub const _zbr_ty_PAssert = struct {
 };
 
 pub const _zbr_ty_PYield = struct {
-    value: std.ArrayList(_zbr_ty_PNode) = undefined,
+    value: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(value: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PYield {
+    pub fn init(value: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PYield {
         var _self: _zbr_ty_PYield = undefined;
 // zbr:selfhost/Parser.zbr:660
             _self.value = value;
@@ -1047,10 +1048,10 @@ pub const _zbr_ty_PYield = struct {
 };
 
 pub const _zbr_ty_PRaise = struct {
-    message: std.ArrayList(_zbr_ty_PNode) = undefined,
+    message: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(message: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PRaise {
+    pub fn init(message: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PRaise {
         var _self: _zbr_ty_PRaise = undefined;
 // zbr:selfhost/Parser.zbr:669
             _self.message = message;
@@ -1064,12 +1065,12 @@ pub const _zbr_ty_PRaise = struct {
 };
 
 pub const _zbr_ty_PTryCatch = struct {
-    body_stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
+    body_stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     catch_binding: []const u8 = undefined,
-    catch_stmts: std.ArrayList(_zbr_ty_PNode) = undefined,
+    catch_stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(body_stmts: std.ArrayList(_zbr_ty_PNode), catch_binding: []const u8, catch_stmts: std.ArrayList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PTryCatch {
+    pub fn init(body_stmts: _ZbrList(_zbr_ty_PNode), catch_binding: []const u8, catch_stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PTryCatch {
         var _self: _zbr_ty_PTryCatch = undefined;
 // zbr:selfhost/Parser.zbr:680
             _self.body_stmts = body_stmts;
@@ -1087,11 +1088,11 @@ pub const _zbr_ty_PTryCatch = struct {
 };
 
 pub const _zbr_ty_PMember = struct {
-    base: std.ArrayList(_zbr_ty_PNode) = undefined,
+    base: _ZbrList(_zbr_ty_PNode) = undefined,
     member: []const u8 = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(base: std.ArrayList(_zbr_ty_PNode), member: []const u8, line: i64, col: i64) _zbr_ty_PMember {
+    pub fn init(base: _ZbrList(_zbr_ty_PNode), member: []const u8, line: i64, col: i64) _zbr_ty_PMember {
         var _self: _zbr_ty_PMember = undefined;
 // zbr:selfhost/Parser.zbr:692
             _self.base = base;
@@ -1107,9 +1108,9 @@ pub const _zbr_ty_PMember = struct {
 };
 
 pub const _zbr_ty_PCall = struct {
-    callee: std.ArrayList(_zbr_ty_PNode) = undefined,
-    args: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(callee: std.ArrayList(_zbr_ty_PNode), args: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PCall {
+    callee: _ZbrList(_zbr_ty_PNode) = undefined,
+    args: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(callee: _ZbrList(_zbr_ty_PNode), args: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PCall {
         var _self: _zbr_ty_PCall = undefined;
 // zbr:selfhost/Parser.zbr:701
             _self.callee = callee;
@@ -1122,8 +1123,8 @@ pub const _zbr_ty_PCall = struct {
 
 pub const _zbr_ty_PNamedArg = struct {
     name: []const u8 = undefined,
-    value: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(name: []const u8, value: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PNamedArg {
+    value: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(name: []const u8, value: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PNamedArg {
         var _self: _zbr_ty_PNamedArg = undefined;
 // zbr:selfhost/Parser.zbr:708
             _self.name = _intern(name);
@@ -1135,9 +1136,9 @@ pub const _zbr_ty_PNamedArg = struct {
 };
 
 pub const _zbr_ty_PIndex = struct {
-    object: std.ArrayList(_zbr_ty_PNode) = undefined,
-    index: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(object: std.ArrayList(_zbr_ty_PNode), index: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PIndex {
+    object: _ZbrList(_zbr_ty_PNode) = undefined,
+    index: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(object: _ZbrList(_zbr_ty_PNode), index: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PIndex {
         var _self: _zbr_ty_PIndex = undefined;
 // zbr:selfhost/Parser.zbr:715
             _self.object = object;
@@ -1149,10 +1150,10 @@ pub const _zbr_ty_PIndex = struct {
 };
 
 pub const _zbr_ty_PSlice = struct {
-    object: std.ArrayList(_zbr_ty_PNode) = undefined,
-    start: std.ArrayList(_zbr_ty_PNode) = undefined,
-    stop_: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(object: std.ArrayList(_zbr_ty_PNode), start: std.ArrayList(_zbr_ty_PNode), stop_: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PSlice {
+    object: _ZbrList(_zbr_ty_PNode) = undefined,
+    start: _ZbrList(_zbr_ty_PNode) = undefined,
+    stop_: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(object: _ZbrList(_zbr_ty_PNode), start: _ZbrList(_zbr_ty_PNode), stop_: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PSlice {
         var _self: _zbr_ty_PSlice = undefined;
 // zbr:selfhost/Parser.zbr:723
             _self.object = object;
@@ -1167,9 +1168,9 @@ pub const _zbr_ty_PSlice = struct {
 
 pub const _zbr_ty_PBinary = struct {
     op: []const u8 = undefined,
-    left: std.ArrayList(_zbr_ty_PNode) = undefined,
-    right: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(op: []const u8, left: std.ArrayList(_zbr_ty_PNode), right: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PBinary {
+    left: _ZbrList(_zbr_ty_PNode) = undefined,
+    right: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(op: []const u8, left: _ZbrList(_zbr_ty_PNode), right: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PBinary {
         var _self: _zbr_ty_PBinary = undefined;
 // zbr:selfhost/Parser.zbr:732
             _self.op = _intern(op);
@@ -1184,8 +1185,8 @@ pub const _zbr_ty_PBinary = struct {
 
 pub const _zbr_ty_PUnary = struct {
     op: []const u8 = undefined,
-    operand: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(op: []const u8, operand: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PUnary {
+    operand: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(op: []const u8, operand: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PUnary {
         var _self: _zbr_ty_PUnary = undefined;
 // zbr:selfhost/Parser.zbr:740
             _self.op = _intern(op);
@@ -1197,9 +1198,9 @@ pub const _zbr_ty_PUnary = struct {
 };
 
 pub const _zbr_ty_PChainedCmp = struct {
-    ops: std.ArrayList([]const u8) = undefined,
-    operands: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(ops: std.ArrayList([]const u8), operands: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PChainedCmp {
+    ops: _ZbrList([]const u8) = undefined,
+    operands: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(ops: _ZbrList([]const u8), operands: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PChainedCmp {
         var _self: _zbr_ty_PChainedCmp = undefined;
 // zbr:selfhost/Parser.zbr:747
             _self.ops = ops;
@@ -1211,11 +1212,11 @@ pub const _zbr_ty_PChainedCmp = struct {
 };
 
 pub const _zbr_ty_POptChain = struct {
-    base: std.ArrayList(_zbr_ty_PNode) = undefined,
+    base: _ZbrList(_zbr_ty_PNode) = undefined,
     member: []const u8 = undefined,
     has_args: bool = undefined,
-    args: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(base: std.ArrayList(_zbr_ty_PNode), member: []const u8, has_args: bool, args: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_POptChain {
+    args: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(base: _ZbrList(_zbr_ty_PNode), member: []const u8, has_args: bool, args: _ZbrList(_zbr_ty_PNode)) _zbr_ty_POptChain {
         var _self: _zbr_ty_POptChain = undefined;
 // zbr:selfhost/Parser.zbr:756
             _self.base = base;
@@ -1231,10 +1232,10 @@ pub const _zbr_ty_POptChain = struct {
 };
 
 pub const _zbr_ty_PIfExpr = struct {
-    cond: std.ArrayList(_zbr_ty_PNode) = undefined,
-    then_expr: std.ArrayList(_zbr_ty_PNode) = undefined,
-    else_expr: std.ArrayList(_zbr_ty_PNode) = undefined,
-    pub fn init(cond: std.ArrayList(_zbr_ty_PNode), then_expr: std.ArrayList(_zbr_ty_PNode), else_expr: std.ArrayList(_zbr_ty_PNode)) _zbr_ty_PIfExpr {
+    cond: _ZbrList(_zbr_ty_PNode) = undefined,
+    then_expr: _ZbrList(_zbr_ty_PNode) = undefined,
+    else_expr: _ZbrList(_zbr_ty_PNode) = undefined,
+    pub fn init(cond: _ZbrList(_zbr_ty_PNode), then_expr: _ZbrList(_zbr_ty_PNode), else_expr: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PIfExpr {
         var _self: _zbr_ty_PIfExpr = undefined;
 // zbr:selfhost/Parser.zbr:766
             _self.cond = cond;
@@ -1331,14 +1332,14 @@ pub const _zbr_ty_PExprId = struct {
 
 pub const _zbr_ty_Parser = struct {
     _type_tag: u64 = _ttag_Parser,
-    tokens: std.ArrayList(*_zbr_mod_Token._zbr_ty_Token) = undefined,
+    tokens: _ZbrList(*_zbr_mod_Token._zbr_ty_Token) = undefined,
     pos: i64 = undefined,
     file_name: []const u8 = undefined,
-    parse_errors: std.ArrayList([]const u8) = undefined,
-    collected_decls: std.ArrayList(_zbr_ty_PNode) = undefined,
+    parse_errors: _ZbrList([]const u8) = undefined,
+    collected_decls: _ZbrList(_zbr_ty_PNode) = undefined,
     source: []const u8 = undefined,
     expr_depth: i64 = undefined,
-    pub fn init(tokens: std.ArrayList(*_zbr_mod_Token._zbr_ty_Token), file_name: []const u8, source: []const u8) *_zbr_ty_Parser {
+    pub fn init(tokens: _ZbrList(*_zbr_mod_Token._zbr_ty_Token), file_name: []const u8, source: []const u8) *_zbr_ty_Parser {
         const _self = _zbr_rt._allocator.create(_zbr_ty_Parser) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Parser");
 // zbr:selfhost/Parser.zbr:850
@@ -1348,9 +1349,9 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:852
             _self.file_name = _intern(file_name);
 // zbr:selfhost/Parser.zbr:853
-            _self.parse_errors = std.ArrayList([]const u8).empty;
+            _self.parse_errors = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:854
-            _self.collected_decls = std.ArrayList(_zbr_ty_PNode).empty;
+            _self.collected_decls = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:855
             _self.source = _intern(source);
 // zbr:selfhost/Parser.zbr:856
@@ -1451,7 +1452,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:922
         if (_zebra_gt(@as(i64, @intCast(src_line.len)), 0)) {
 // zbr:selfhost/Parser.zbr:923
-            var caret = std.ArrayList(u8).empty;
+            var caret = _ZbrList(u8).empty;
 // zbr:selfhost/Parser.zbr:924
             var c: i64 = 1;
 // zbr:selfhost/Parser.zbr:925
@@ -2190,7 +2191,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1281
             const inner: []const u8 = (try self.eatTypeName());
 // zbr:selfhost/Parser.zbr:1282
-            var sb = std.ArrayList(u8).empty;
+            var sb = _ZbrList(u8).empty;
 // zbr:selfhost/Parser.zbr:1283
             sb.appendSlice(_zbr_rt._allocator, "^") catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1284
@@ -2205,7 +2206,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1292
             (try self.expectText("("));
 // zbr:selfhost/Parser.zbr:1293
-            var fn_params = std.ArrayList([]const u8).empty;
+            var fn_params = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1294
             while ((!self.textIs(")"))) {
 // zbr:selfhost/Parser.zbr:1295
@@ -2224,7 +2225,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1301
             const fn_ret: []const u8 = (try self.eatTypeName());
 // zbr:selfhost/Parser.zbr:1302
-            var sbf = std.ArrayList(u8).empty;
+            var sbf = _ZbrList(u8).empty;
 // zbr:selfhost/Parser.zbr:1303
             sbf.appendSlice(_zbr_rt._allocator, "__fnptr(") catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1304
@@ -2254,7 +2255,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1316
             if (is_value_args) {
 // zbr:selfhost/Parser.zbr:1318
-                var value_args = std.ArrayList([]const u8).empty;
+                var value_args = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1319
                 while ((!self.textIs(")"))) {
 // zbr:selfhost/Parser.zbr:1320
@@ -2280,7 +2281,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1329
                 (try self.expectText(")"));
 // zbr:selfhost/Parser.zbr:1330
-                var sb_a = std.ArrayList(u8).empty;
+                var sb_a = _ZbrList(u8).empty;
 // zbr:selfhost/Parser.zbr:1331
                 sb_a.appendSlice(_zbr_rt._allocator, "__alias__") catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1332
@@ -2305,7 +2306,7 @@ pub const _zbr_ty_Parser = struct {
                 return (try _zbr_rt._allocator.dupe(u8, sb_a.items));
             }
 // zbr:selfhost/Parser.zbr:1342
-            var args = std.ArrayList([]const u8).empty;
+            var args = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1343
             while ((!self.textIs(")"))) {
 // zbr:selfhost/Parser.zbr:1344
@@ -2329,7 +2330,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1352
             (try self.expectText(")"));
 // zbr:selfhost/Parser.zbr:1354
-            var sb = std.ArrayList(u8).empty;
+            var sb = _ZbrList(u8).empty;
 // zbr:selfhost/Parser.zbr:1355
             sb.appendSlice(_zbr_rt._allocator, text) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1356
@@ -2369,7 +2370,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1376
                 const rest: []const u8 = (try self.eatTypeName());
 // zbr:selfhost/Parser.zbr:1377
-                var sb = std.ArrayList(u8).empty;
+                var sb = _ZbrList(u8).empty;
 // zbr:selfhost/Parser.zbr:1378
                 sb.appendSlice(_zbr_rt._allocator, text) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1379
@@ -2397,7 +2398,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1391
                 (try self.expectText(")"));
 // zbr:selfhost/Parser.zbr:1392
-                var sb2 = std.ArrayList(u8).empty;
+                var sb2 = _ZbrList(u8).empty;
 // zbr:selfhost/Parser.zbr:1393
                 sb2.appendSlice(_zbr_rt._allocator, text) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1394
@@ -2438,7 +2439,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1414
             self.advance();
 // zbr:selfhost/Parser.zbr:1415
-            var sb = std.ArrayList(u8).empty;
+            var sb = _ZbrList(u8).empty;
 // zbr:selfhost/Parser.zbr:1416
             sb.appendSlice(_zbr_rt._allocator, "(") catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1417
@@ -2533,7 +2534,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1463
         var pending_derive_hash: bool = false;
 // zbr:selfhost/Parser.zbr:1464
-        var pending_tags = std.ArrayList([]const u8).empty;
+        var pending_tags = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1465
         var pending_export_sym: ?[]const u8 = null;
 // zbr:selfhost/Parser.zbr:1466
@@ -2874,7 +2875,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1606
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1607
-        var decls = std.ArrayList(_zbr_ty_PNode).empty;
+        var decls = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:1608
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:1609
@@ -2919,7 +2920,7 @@ pub const _zbr_ty_Parser = struct {
             path = _str_concat(path, (try self.eatId()), _zbr_rt._allocator);
         }
 // zbr:selfhost/Parser.zbr:1627
-        var exposed = std.ArrayList([]const u8).empty;
+        var exposed = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1628
         if (self.textIs("exposing")) {
 // zbr:selfhost/Parser.zbr:1629
@@ -2952,7 +2953,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1641
         var name: []const u8 = "";
 // zbr:selfhost/Parser.zbr:1642
-        var type_params = std.ArrayList([]const u8).empty;
+        var type_params = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1644
         if (self.isOpenCall()) {
 // zbr:selfhost/Parser.zbr:1645
@@ -2992,7 +2993,7 @@ pub const _zbr_ty_Parser = struct {
             name = (try self.eatId());
         }
 // zbr:selfhost/Parser.zbr:1664
-        var ifaces = std.ArrayList([]const u8).empty;
+        var ifaces = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1669
         if (((self.textIs("extends") or self.textIs("inherits")) or (self.textIs(":") and (_zbr_val(self.peekAt(1).kind) == .id)))) {
 // zbr:selfhost/Parser.zbr:1670
@@ -3013,7 +3014,7 @@ pub const _zbr_ty_Parser = struct {
             }
         }
 // zbr:selfhost/Parser.zbr:1679
-        var mixins = std.ArrayList([]const u8).empty;
+        var mixins = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1680
         if (self.textIs("adds")) {
 // zbr:selfhost/Parser.zbr:1681
@@ -3033,9 +3034,9 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1687
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1688
-        var members = std.ArrayList(_zbr_ty_PNode).empty;
+        var members = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:1689
-        var invs = std.ArrayList(_zbr_ty_PNode).empty;
+        var invs = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:1690
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:1691
@@ -3085,7 +3086,7 @@ pub const _zbr_ty_Parser = struct {
                     if (_zbr_val(pd) == .invariant_decl) {
                         const inv_exprs = pd.invariant_decl;
 // zbr:selfhost/Parser.zbr:1714
-                        const inv_list: std.ArrayList(_zbr_ty_PNode) = inv_exprs;
+                        const inv_list: _ZbrList(_zbr_ty_PNode) = inv_exprs;
 // zbr:selfhost/Parser.zbr:1715
                         for (inv_list.items) |inv_e| {
 // zbr:selfhost/Parser.zbr:1716
@@ -3139,9 +3140,9 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1740
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1741
-        var variants = std.ArrayList([]const u8).empty;
+        var variants = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1742
-        var values = std.ArrayList(*std.ArrayList(_zbr_ty_PNode)).empty;
+        var values = _ZbrList(*_ZbrList(_zbr_ty_PNode)).empty;
 // zbr:selfhost/Parser.zbr:1743
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:1744
@@ -3157,7 +3158,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1749
                 variants.append(_zbr_rt._allocator, _intern((try self.eatId()))) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1751
-                var vlist = std.ArrayList(_zbr_ty_PNode).empty;
+                var vlist = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:1752
                 if (self.textIs("=")) {
 // zbr:selfhost/Parser.zbr:1753
@@ -3199,9 +3200,9 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1768
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1769
-        var members = std.ArrayList(_zbr_ty_PNode).empty;
+        var members = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:1770
-        var invs = std.ArrayList(_zbr_ty_PNode).empty;
+        var invs = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:1771
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:1772
@@ -3220,7 +3221,7 @@ pub const _zbr_ty_Parser = struct {
                 if (_zbr_val(pd) == .invariant_decl) {
                     const inv_exprs = pd.invariant_decl;
 // zbr:selfhost/Parser.zbr:1779
-                    const inv_list: std.ArrayList(_zbr_ty_PNode) = inv_exprs;
+                    const inv_list: _ZbrList(_zbr_ty_PNode) = inv_exprs;
 // zbr:selfhost/Parser.zbr:1780
                     for (inv_list.items) |inv_e| {
 // zbr:selfhost/Parser.zbr:1781
@@ -3238,11 +3239,11 @@ pub const _zbr_ty_Parser = struct {
             }
         }
 // zbr:selfhost/Parser.zbr:1786
-        const ifaces = std.ArrayList([]const u8).empty;
+        const ifaces = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1787
-        const type_params = std.ArrayList([]const u8).empty;
+        const type_params = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1788
-        return _zbr_ty_PNode{ .struct_ = blk_box_6: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "struct_")) = _zbr_ty_PClass.init(name, type_params, ifaces, std.ArrayList([]const u8).empty, members, invs, is_reflectable, is_derive_debug, is_derive_eq, is_derive_hash, null, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_6 _bp; } };
+        return _zbr_ty_PNode{ .struct_ = blk_box_6: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "struct_")) = _zbr_ty_PClass.init(name, type_params, ifaces, _ZbrList([]const u8).empty, members, invs, is_reflectable, is_derive_debug, is_derive_eq, is_derive_hash, null, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_6 _bp; } };
     }
 
     // zbr:selfhost/Parser.zbr:1793
@@ -3275,7 +3276,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1805
         var name: []const u8 = "";
 // zbr:selfhost/Parser.zbr:1806
-        var type_params = std.ArrayList([]const u8).empty;
+        var type_params = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1809
         if (self.isOpenCall()) {
 // zbr:selfhost/Parser.zbr:1810
@@ -3301,7 +3302,7 @@ pub const _zbr_ty_Parser = struct {
             name = (try self.eatId());
         }
 // zbr:selfhost/Parser.zbr:1820
-        var ifaces = std.ArrayList([]const u8).empty;
+        var ifaces = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1821
         if (self.textIs("implements")) {
 // zbr:selfhost/Parser.zbr:1822
@@ -3319,7 +3320,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1827
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1828
-        var members = std.ArrayList(_zbr_ty_PNode).empty;
+        var members = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:1829
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:1830
@@ -3347,7 +3348,7 @@ pub const _zbr_ty_Parser = struct {
             { _zbr_rt._error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("interface '", name, _zbr_rt._allocator), "' must have a body", _zbr_rt._allocator)) }; return error.ZebraError; }
         }
 // zbr:selfhost/Parser.zbr:1842
-        return _zbr_ty_PNode{ .interface_ = blk_box_7: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "interface_")) = _zbr_ty_PClass.init(name, type_params, ifaces, std.ArrayList([]const u8).empty, members, std.ArrayList(_zbr_ty_PNode).empty, false, false, false, false, null, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_7 _bp; } };
+        return _zbr_ty_PNode{ .interface_ = blk_box_7: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "interface_")) = _zbr_ty_PClass.init(name, type_params, ifaces, _ZbrList([]const u8).empty, members, _ZbrList(_zbr_ty_PNode).empty, false, false, false, false, null, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_7 _bp; } };
     }
 
     // zbr:selfhost/Parser.zbr:1844
@@ -3364,7 +3365,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1849
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1850
-        var members = std.ArrayList(_zbr_ty_PNode).empty;
+        var members = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:1851
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:1852
@@ -3387,14 +3388,14 @@ pub const _zbr_ty_Parser = struct {
             }
         }
 // zbr:selfhost/Parser.zbr:1860
-        const empty_str_list = std.ArrayList([]const u8).empty;
+        const empty_str_list = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1861
         if ((@as(i64, @intCast(members.items.len)) == 0)) {
 // zbr:selfhost/Parser.zbr:1862
             { _zbr_rt._error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("mixin '", name, _zbr_rt._allocator), "' must have a body", _zbr_rt._allocator)) }; return error.ZebraError; }
         }
 // zbr:selfhost/Parser.zbr:1863
-        return _zbr_ty_PNode{ .mixin_ = blk_box_8: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "mixin_")) = _zbr_ty_PClass.init(name, empty_str_list, empty_str_list, empty_str_list, members, std.ArrayList(_zbr_ty_PNode).empty, false, false, false, false, null, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_8 _bp; } };
+        return _zbr_ty_PNode{ .mixin_ = blk_box_8: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "mixin_")) = _zbr_ty_PClass.init(name, empty_str_list, empty_str_list, empty_str_list, members, _ZbrList(_zbr_ty_PNode).empty, false, false, false, false, null, _dl, _dc); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_8 _bp; } };
     }
 
     // zbr:selfhost/Parser.zbr:1865
@@ -3407,7 +3408,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1868
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1869
-        var members = std.ArrayList(_zbr_ty_PNode).empty;
+        var members = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:1870
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:1871
@@ -3452,7 +3453,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1888
         self.skipEol();
 // zbr:selfhost/Parser.zbr:1889
-        var variants = std.ArrayList(_zbr_ty_PUnionVariant).empty;
+        var variants = _ZbrList(_zbr_ty_PUnionVariant).empty;
 // zbr:selfhost/Parser.zbr:1890
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:1891
@@ -3536,7 +3537,7 @@ pub const _zbr_ty_Parser = struct {
             name = (try self.eatId());
         }
 // zbr:selfhost/Parser.zbr:1929
-        var params = std.ArrayList(_zbr_ty_PParam).empty;
+        var params = _ZbrList(_zbr_ty_PParam).empty;
 // zbr:selfhost/Parser.zbr:1930
         if (has_params) {
 // zbr:selfhost/Parser.zbr:1931
@@ -3558,7 +3559,7 @@ pub const _zbr_ty_Parser = struct {
                         ptype = (try self.eatTypeName());
                     }
 // zbr:selfhost/Parser.zbr:1940
-                    var pdefault = std.ArrayList(_zbr_ty_PNode).empty;
+                    var pdefault = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:1941
                     if (self.textIs("=")) {
 // zbr:selfhost/Parser.zbr:1942
@@ -3594,7 +3595,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1954
         (try self.expectText("type"));
 // zbr:selfhost/Parser.zbr:1955
-        var params = std.ArrayList(_zbr_ty_PParam).empty;
+        var params = _ZbrList(_zbr_ty_PParam).empty;
 // zbr:selfhost/Parser.zbr:1956
         var name: []const u8 = "";
 // zbr:selfhost/Parser.zbr:1957
@@ -3617,7 +3618,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1968
                     const ptype: []const u8 = (try self.eatTypeName());
 // zbr:selfhost/Parser.zbr:1969
-                    params.append(_zbr_rt._allocator, _zbr_ty_PParam.init(pname, ptype, std.ArrayList(_zbr_ty_PNode).empty)) catch @panic("OOM");
+                    params.append(_zbr_rt._allocator, _zbr_ty_PParam.init(pname, ptype, _ZbrList(_zbr_ty_PNode).empty)) catch @panic("OOM");
                 }
             }
 // zbr:selfhost/Parser.zbr:1970
@@ -3631,7 +3632,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1974
         const base_type: []const u8 = (try self.eatTypeName());
 // zbr:selfhost/Parser.zbr:1975
-        var constraint = std.ArrayList(_zbr_ty_PNode).empty;
+        var constraint = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:1976
         if (self.textIs("where")) {
 // zbr:selfhost/Parser.zbr:1977
@@ -3674,7 +3675,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1996
         var pending_node_export: bool = false;
 // zbr:selfhost/Parser.zbr:1997
-        var pending_tags = std.ArrayList([]const u8).empty;
+        var pending_tags = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:1998
         var pending_deprecated: []const u8 = "";
 // zbr:selfhost/Parser.zbr:1999
@@ -3800,7 +3801,7 @@ pub const _zbr_ty_Parser = struct {
                             { _zbr_rt._error_ctx = .{ .message = self.errorAt(_str_concat(_str_concat("unknown cue '", cue_base, _zbr_rt._allocator), "': the cues are init, toString, equals, hash, compare, iter, next (a method the compiler calls for you; anything else is a `def`)", _zbr_rt._allocator)) }; return error.ZebraError; }
                         }
 // zbr:selfhost/Parser.zbr:2055
-                        return (try self.parseMethodDecl(is_static, pending_private, pending_public, false, false, std.ArrayList([]const u8).empty, false, false, false, false, true, ""));
+                        return (try self.parseMethodDecl(is_static, pending_private, pending_public, false, false, _ZbrList([]const u8).empty, false, false, false, false, true, ""));
                     } else {
 // zbr:selfhost/Parser.zbr:2056
                         if (self.textIs("invariant")) {
@@ -3823,7 +3824,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2062
         self.skipEol();
 // zbr:selfhost/Parser.zbr:2063
-        var expr_nodes = std.ArrayList(_zbr_ty_PNode).empty;
+        var expr_nodes = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2064
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:2065
@@ -3885,7 +3886,7 @@ pub const _zbr_ty_Parser = struct {
             }
         }
 // zbr:selfhost/Parser.zbr:2091
-        var init_expr = std.ArrayList(_zbr_ty_PNode).empty;
+        var init_expr = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2092
         if (self.textIs("=")) {
 // zbr:selfhost/Parser.zbr:2093
@@ -3919,7 +3920,7 @@ pub const _zbr_ty_Parser = struct {
             (try self.expectText("("));
         }
 // zbr:selfhost/Parser.zbr:2106
-        var params = std.ArrayList(_zbr_ty_PParam).empty;
+        var params = _ZbrList(_zbr_ty_PParam).empty;
 // zbr:selfhost/Parser.zbr:2107
         while ((!self.textIs(")"))) {
 // zbr:selfhost/Parser.zbr:2108
@@ -3946,7 +3947,7 @@ pub const _zbr_ty_Parser = struct {
                     }
                 }
 // zbr:selfhost/Parser.zbr:2119
-                var pdefault = std.ArrayList(_zbr_ty_PNode).empty;
+                var pdefault = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2120
                 if (self.textIs("=")) {
 // zbr:selfhost/Parser.zbr:2121
@@ -3963,7 +3964,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2125
         self.skipEol();
 // zbr:selfhost/Parser.zbr:2126
-        var stmts = std.ArrayList(_zbr_ty_PNode).empty;
+        var stmts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2127
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:2128
@@ -4004,7 +4005,7 @@ pub const _zbr_ty_Parser = struct {
     }
 
     // zbr:selfhost/Parser.zbr:2146
-    pub fn parseMethodDecl(self: *_zbr_ty_Parser, is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: std.ArrayList([]const u8), is_export: bool, is_pure: bool, is_node_export: bool, is_extern: bool, is_cue: bool, deprecated: []const u8) anyerror!_zbr_ty_PNode {
+    pub fn parseMethodDecl(self: *_zbr_ty_Parser, is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: _ZbrList([]const u8), is_export: bool, is_pure: bool, is_node_export: bool, is_extern: bool, is_cue: bool, deprecated: []const u8) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2147
         const line: i64 = self.peek().line;
@@ -4027,9 +4028,9 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2156
         var has_params: bool = false;
 // zbr:selfhost/Parser.zbr:2157
-        var params = std.ArrayList(_zbr_ty_PParam).empty;
+        var params = _ZbrList(_zbr_ty_PParam).empty;
 // zbr:selfhost/Parser.zbr:2158
-        var type_params = std.ArrayList([]const u8).empty;
+        var type_params = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:2159
         if (self.isOpenCall()) {
 // zbr:selfhost/Parser.zbr:2160
@@ -4078,7 +4079,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2187
                 self.pos = saved_pos;
 // zbr:selfhost/Parser.zbr:2188
-                type_params = std.ArrayList([]const u8).empty;
+                type_params = _ZbrList([]const u8).empty;
             }
 // zbr:selfhost/Parser.zbr:2190
             while ((!self.textIs(")"))) {
@@ -4106,7 +4107,7 @@ pub const _zbr_ty_Parser = struct {
                         }
                     }
 // zbr:selfhost/Parser.zbr:2202
-                    var pdefault = std.ArrayList(_zbr_ty_PNode).empty;
+                    var pdefault = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2203
                     if (self.textIs("=")) {
 // zbr:selfhost/Parser.zbr:2204
@@ -4159,7 +4160,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2227
         self.skipEol();
 // zbr:selfhost/Parser.zbr:2228
-        var stmts = std.ArrayList(_zbr_ty_PNode).empty;
+        var stmts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2229
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:2230
@@ -4190,7 +4191,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2244
                 const catch_stmts = (try self.parseBlock());
 // zbr:selfhost/Parser.zbr:2245
-                var wrapped = std.ArrayList(_zbr_ty_PNode).empty;
+                var wrapped = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2246
                 wrapped.append(_zbr_rt._allocator, _zbr_ty_PNode{ .stmt_try_catch = blk_box_15: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_try_catch")) = _zbr_ty_PTryCatch.init(stmts, catch_binding, catch_stmts, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_15 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2247
@@ -4277,7 +4278,7 @@ pub const _zbr_ty_Parser = struct {
     }
 
     // zbr:selfhost/Parser.zbr:2319
-    pub fn parseBlock(self: *_zbr_ty_Parser) anyerror!std.ArrayList(_zbr_ty_PNode) {
+    pub fn parseBlock(self: *_zbr_ty_Parser) anyerror!_ZbrList(_zbr_ty_PNode) {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2320
         if ((!self.isIndent())) {
@@ -4287,7 +4288,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2322
         self.advance();
 // zbr:selfhost/Parser.zbr:2323
-        var stmts = std.ArrayList(_zbr_ty_PNode).empty;
+        var stmts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2324
         while (((!self.isDedent()) and (!self.isEof()))) {
 // zbr:selfhost/Parser.zbr:2325
@@ -4474,7 +4475,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2401
         (try self.expectText("return"));
 // zbr:selfhost/Parser.zbr:2402
-        var value = std.ArrayList(_zbr_ty_PNode).empty;
+        var value = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2403
         if ((((!self.isEol()) and (!self.isEof())) and (!self.isDedent()))) {
 // zbr:selfhost/Parser.zbr:2404
@@ -4513,7 +4514,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2421
             const then_stmts = (try self.parseBlock());
 // zbr:selfhost/Parser.zbr:2422
-            var else_stmts = std.ArrayList(_zbr_ty_PNode).empty;
+            var else_stmts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2423
             if (self.textIs("else")) {
 // zbr:selfhost/Parser.zbr:2424
@@ -4532,7 +4533,7 @@ pub const _zbr_ty_Parser = struct {
                 }
             }
 // zbr:selfhost/Parser.zbr:2431
-            var cond_list = std.ArrayList(_zbr_ty_PNode).empty;
+            var cond_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2432
             cond_list.append(_zbr_rt._allocator, cond_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2433
@@ -4552,11 +4553,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2441
             (try self.expectText(":"));
 // zbr:selfhost/Parser.zbr:2442
-            var then_stmts = std.ArrayList(_zbr_ty_PNode).empty;
+            var then_stmts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2443
             then_stmts.append(_zbr_rt._allocator, (try self.parseStmt())) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2444
-            var else_stmts = std.ArrayList(_zbr_ty_PNode).empty;
+            var else_stmts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2445
             if (self.textIs("else")) {
 // zbr:selfhost/Parser.zbr:2446
@@ -4573,7 +4574,7 @@ pub const _zbr_ty_Parser = struct {
                 }
             }
 // zbr:selfhost/Parser.zbr:2452
-            var cond_list = std.ArrayList(_zbr_ty_PNode).empty;
+            var cond_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2453
             cond_list.append(_zbr_rt._allocator, cond_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2454
@@ -4607,27 +4608,27 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2470
             self.skipEol();
 // zbr:selfhost/Parser.zbr:2471
-            const body_stmts: std.ArrayList(_zbr_ty_PNode) = (try self.parseBlock());
+            const body_stmts: _ZbrList(_zbr_ty_PNode) = (try self.parseBlock());
 // zbr:selfhost/Parser.zbr:2472
-            var init_list = std.ArrayList(_zbr_ty_PNode).empty;
+            var init_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2473
             init_list.append(_zbr_rt._allocator, init_expr_pn) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2474
-            var filter_operand = std.ArrayList(_zbr_ty_PNode).empty;
+            var filter_operand = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2475
             filter_operand.append(_zbr_rt._allocator, filter_expr_pn) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2476
-            var if_cond_list = std.ArrayList(_zbr_ty_PNode).empty;
+            var if_cond_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2477
             if_cond_list.append(_zbr_rt._allocator, _zbr_ty_PNode{ .expr_unary = blk_box_20: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_unary")) = _zbr_ty_PUnary.init("not", filter_operand); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_20 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2478
-            var break_list = std.ArrayList(_zbr_ty_PNode).empty;
+            var break_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2479
             break_list.append(_zbr_rt._allocator, _zbr_ty_PNode{ .stmt_break = {} }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2480
-            const empty_else = std.ArrayList(_zbr_ty_PNode).empty;
+            const empty_else = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2481
-            var wrapped = std.ArrayList(_zbr_ty_PNode).empty;
+            var wrapped = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2483
             wrapped.append(_zbr_rt._allocator, _zbr_ty_PNode{ .stmt_var = blk_box_21: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_var")) = _zbr_ty_PVar.init(bind_name, false, "", init_list, line, 0); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_21 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2484
@@ -4638,7 +4639,7 @@ pub const _zbr_ty_Parser = struct {
                 wrapped.append(_zbr_rt._allocator, bs) catch @panic("OOM");
             }
 // zbr:selfhost/Parser.zbr:2487
-            var true_cond = std.ArrayList(_zbr_ty_PNode).empty;
+            var true_cond = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2490
             true_cond.append(_zbr_rt._allocator, _zbr_ty_PNode{ .expr_bool = blk_box_23: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_bool")) = _zbr_ty_PBoolLit.init(true, 0, 0); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_23 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2491
@@ -4653,7 +4654,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2495
         const stmts = (try self.parseBlock());
 // zbr:selfhost/Parser.zbr:2496
-        var cond_list = std.ArrayList(_zbr_ty_PNode).empty;
+        var cond_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2497
         cond_list.append(_zbr_rt._allocator, cond_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2498
@@ -4668,9 +4669,9 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2502
         self.skipEol();
 // zbr:selfhost/Parser.zbr:2503
-        const stmts: std.ArrayList(_zbr_ty_PNode) = (try self.parseBlock());
+        const stmts: _ZbrList(_zbr_ty_PNode) = (try self.parseBlock());
 // zbr:selfhost/Parser.zbr:2505
-        var expr_nodes = std.ArrayList(_zbr_ty_PNode).empty;
+        var expr_nodes = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2506
         for (stmts.items) |s| {
 // zbr:selfhost/Parser.zbr:2507
@@ -4711,7 +4712,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2522
         const stmts = (try self.parseBlock());
 // zbr:selfhost/Parser.zbr:2523
-        var source_list = std.ArrayList(_zbr_ty_PNode).empty;
+        var source_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2524
         source_list.append(_zbr_rt._allocator, source_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2525
@@ -4734,7 +4735,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2533
         const stmts = (try self.parseBlock());
 // zbr:selfhost/Parser.zbr:2534
-        var target_list = std.ArrayList(_zbr_ty_PNode).empty;
+        var target_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2535
         target_list.append(_zbr_rt._allocator, target_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2536
@@ -4757,7 +4758,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2544
         const stmts = (try self.parseBlock());
 // zbr:selfhost/Parser.zbr:2545
-        var expr_list = std.ArrayList(_zbr_ty_PNode).empty;
+        var expr_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2546
         expr_list.append(_zbr_rt._allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2547
@@ -4774,7 +4775,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2556
         (try self.expectText("for"));
 // zbr:selfhost/Parser.zbr:2557
-        var var_names = std.ArrayList([]const u8).empty;
+        var var_names = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:2558
         var_names.append(_zbr_rt._allocator, _intern((try self.eatId()))) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2559
@@ -4799,7 +4800,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2571
             const stop_expr = (try self.parseExpr());
 // zbr:selfhost/Parser.zbr:2572
-            var step_list = std.ArrayList(_zbr_ty_PNode).empty;
+            var step_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2574
             if ((self.textIs(":") and (!range_is_dotdot))) {
 // zbr:selfhost/Parser.zbr:2575
@@ -4812,7 +4813,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2578
             const stmts = (try self.parseBlock());
 // zbr:selfhost/Parser.zbr:2579
-            var else_stmts = std.ArrayList(_zbr_ty_PNode).empty;
+            var else_stmts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2580
             if (self.textIs("else")) {
 // zbr:selfhost/Parser.zbr:2581
@@ -4823,18 +4824,18 @@ pub const _zbr_ty_Parser = struct {
                 else_stmts = (try self.parseBlock());
             }
 // zbr:selfhost/Parser.zbr:2584
-            var start_list = std.ArrayList(_zbr_ty_PNode).empty;
+            var start_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2585
             start_list.append(_zbr_rt._allocator, start_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2586
-            var stop_list = std.ArrayList(_zbr_ty_PNode).empty;
+            var stop_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2587
             stop_list.append(_zbr_rt._allocator, stop_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2588
             return _zbr_ty_PNode{ .stmt_for_num = blk_box_29: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "stmt_for_num")) = _zbr_ty_PForNum.init(_zbr_at(var_names.items, 0), start_list, stop_list, step_list, stmts, else_stmts, line, col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_29 _bp; } };
         }
 // zbr:selfhost/Parser.zbr:2590
-        var filter_list = std.ArrayList(_zbr_ty_PNode).empty;
+        var filter_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2591
         if (self.textIs("if")) {
 // zbr:selfhost/Parser.zbr:2592
@@ -4847,7 +4848,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2595
         const stmts = (try self.parseBlock());
 // zbr:selfhost/Parser.zbr:2596
-        var else_stmts = std.ArrayList(_zbr_ty_PNode).empty;
+        var else_stmts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2597
         if (self.textIs("else")) {
 // zbr:selfhost/Parser.zbr:2598
@@ -4858,7 +4859,7 @@ pub const _zbr_ty_Parser = struct {
             else_stmts = (try self.parseBlock());
         }
 // zbr:selfhost/Parser.zbr:2601
-        var iter_list = std.ArrayList(_zbr_ty_PNode).empty;
+        var iter_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2602
         iter_list.append(_zbr_rt._allocator, start_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2603
@@ -4891,7 +4892,7 @@ pub const _zbr_ty_Parser = struct {
             (try self.expectText("("));
         }
 // zbr:selfhost/Parser.zbr:2618
-        var names = std.ArrayList([]const u8).empty;
+        var names = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:2619
         names.append(_zbr_rt._allocator, _intern((try self.eatId()))) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2620
@@ -4906,7 +4907,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2624
         (try self.expectText("="));
 // zbr:selfhost/Parser.zbr:2625
-        var init_expr = std.ArrayList(_zbr_ty_PNode).empty;
+        var init_expr = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2626
         init_expr.append(_zbr_rt._allocator, (try self.parseExpr())) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2627
@@ -4949,7 +4950,7 @@ pub const _zbr_ty_Parser = struct {
             }
         }
 // zbr:selfhost/Parser.zbr:2645
-        var init_expr = std.ArrayList(_zbr_ty_PNode).empty;
+        var init_expr = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2646
         if (self.textIs("=")) {
 // zbr:selfhost/Parser.zbr:2647
@@ -4963,13 +4964,13 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2655
                     self.advance();
 // zbr:selfhost/Parser.zbr:2656
-                    var body_expr = std.ArrayList(_zbr_ty_PNode).empty;
+                    var body_expr = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2657
                     body_expr.append(_zbr_rt._allocator, (try self.parseExpr())) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2658
                     self.skipEol();
 // zbr:selfhost/Parser.zbr:2659
-                    const lambda_node = _zbr_ty_PLambda.init(lam.params, lam.return_type, std.ArrayList(_zbr_ty_PCaptureVar).empty, body_expr, std.ArrayList(_zbr_ty_PNode).empty);
+                    const lambda_node = _zbr_ty_PLambda.init(lam.params, lam.return_type, _ZbrList(_zbr_ty_PCaptureVar).empty, body_expr, _ZbrList(_zbr_ty_PNode).empty);
 // zbr:selfhost/Parser.zbr:2660
                     init_expr.append(_zbr_rt._allocator, _zbr_ty_PNode{ .expr_lambda = lambda_node }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2661
@@ -4985,14 +4986,14 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2666
                 self.advance();
 // zbr:selfhost/Parser.zbr:2667
-                var captures = std.ArrayList(_zbr_ty_PCaptureVar).empty;
+                var captures = _ZbrList(_zbr_ty_PCaptureVar).empty;
 // zbr:selfhost/Parser.zbr:2668
                 if (self.textIs("capture")) {
 // zbr:selfhost/Parser.zbr:2669
                     captures = (try self.parseCaptureBlock());
                 }
 // zbr:selfhost/Parser.zbr:2670
-                var body_stmts = std.ArrayList(_zbr_ty_PNode).empty;
+                var body_stmts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2671
                 while (((!self.isDedent()) and (!self.isEof()))) {
 // zbr:selfhost/Parser.zbr:2672
@@ -5010,7 +5011,7 @@ pub const _zbr_ty_Parser = struct {
                     self.advance();
                 }
 // zbr:selfhost/Parser.zbr:2678
-                const lambda_node = _zbr_ty_PLambda.init(lam.params, lam.return_type, captures, std.ArrayList(_zbr_ty_PNode).empty, body_stmts);
+                const lambda_node = _zbr_ty_PLambda.init(lam.params, lam.return_type, captures, _ZbrList(_zbr_ty_PNode).empty, body_stmts);
 // zbr:selfhost/Parser.zbr:2679
                 init_expr.append(_zbr_rt._allocator, _zbr_ty_PNode{ .expr_lambda = lambda_node }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2680
@@ -5042,11 +5043,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2694
         const cond_expr = (try self.parseExpr());
 // zbr:selfhost/Parser.zbr:2695
-        var cond_list = std.ArrayList(_zbr_ty_PNode).empty;
+        var cond_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2696
         cond_list.append(_zbr_rt._allocator, cond_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2697
-        var msg_list = std.ArrayList(_zbr_ty_PNode).empty;
+        var msg_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2698
         if (self.textIs(",")) {
 // zbr:selfhost/Parser.zbr:2699
@@ -5070,7 +5071,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2712
         (try self.expectText("yield"));
 // zbr:selfhost/Parser.zbr:2713
-        var val_list = std.ArrayList(_zbr_ty_PNode).empty;
+        var val_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2714
         if (((self.isEol() or self.isEof()) or self.isDedent())) {
 // zbr:selfhost/Parser.zbr:2715
@@ -5094,7 +5095,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2723
         (try self.expectText("raise"));
 // zbr:selfhost/Parser.zbr:2724
-        var msg_list = std.ArrayList(_zbr_ty_PNode).empty;
+        var msg_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2725
         if ((((!self.isEol()) and (!self.isEof())) and (!self.isDedent()))) {
 // zbr:selfhost/Parser.zbr:2726
@@ -5127,9 +5128,9 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2738
         self.skipEol();
 // zbr:selfhost/Parser.zbr:2739
-        var arms = std.ArrayList(_zbr_ty_PBranchOn).empty;
+        var arms = _ZbrList(_zbr_ty_PBranchOn).empty;
 // zbr:selfhost/Parser.zbr:2740
-        var else_stmts = std.ArrayList(_zbr_ty_PNode).empty;
+        var else_stmts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2741
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:2742
@@ -5151,9 +5152,9 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2750
                     self.advance();
 // zbr:selfhost/Parser.zbr:2754
-                    var patterns = std.ArrayList([]const u8).empty;
+                    var patterns = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:2755
-                    var struct_pat_node = std.ArrayList(_zbr_ty_PNode).empty;
+                    var struct_pat_node = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2758
                     const first_tok: []const u8 = self.peek().text;
 // zbr:selfhost/Parser.zbr:2759
@@ -5203,7 +5204,7 @@ pub const _zbr_ty_Parser = struct {
                         }
                     }
 // zbr:selfhost/Parser.zbr:2787
-                    var filter_cond = std.ArrayList(_zbr_ty_PNode).empty;
+                    var filter_cond = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2788
                     if ((!inline_comma)) {
 // zbr:selfhost/Parser.zbr:2789
@@ -5217,7 +5218,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2792
                     self.skipEol();
 // zbr:selfhost/Parser.zbr:2793
-                    var stmts = std.ArrayList(_zbr_ty_PNode).empty;
+                    var stmts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2794
                     if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:2795
@@ -5267,7 +5268,7 @@ pub const _zbr_ty_Parser = struct {
             }
         }
 // zbr:selfhost/Parser.zbr:2816
-        var subj_list = std.ArrayList(_zbr_ty_PNode).empty;
+        var subj_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2817
         subj_list.append(_zbr_rt._allocator, subject) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2818
@@ -5278,7 +5279,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn eatBranchPattern(self: *_zbr_ty_Parser) anyerror![]const u8 {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2822
-        var sb = std.ArrayList(u8).empty;
+        var sb = _ZbrList(u8).empty;
 // zbr:selfhost/Parser.zbr:2824
         sb.appendSlice(_zbr_rt._allocator, self.peek().text) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2825
@@ -5417,11 +5418,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2887
             self.skipEol();
 // zbr:selfhost/Parser.zbr:2888
-            var tgt = std.ArrayList(_zbr_ty_PNode).empty;
+            var tgt = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2889
             tgt.append(_zbr_rt._allocator, target_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2890
-            var val = std.ArrayList(_zbr_ty_PNode).empty;
+            var val = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2891
             val.append(_zbr_rt._allocator, value_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2892
@@ -5436,11 +5437,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2896
             self.skipEol();
 // zbr:selfhost/Parser.zbr:2897
-            var tgt = std.ArrayList(_zbr_ty_PNode).empty;
+            var tgt = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2898
             tgt.append(_zbr_rt._allocator, target_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2899
-            var val = std.ArrayList(_zbr_ty_PNode).empty;
+            var val = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2900
             val.append(_zbr_rt._allocator, value_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2901
@@ -5482,11 +5483,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2932
             const rhs = (try self.parseOr());
 // zbr:selfhost/Parser.zbr:2933
-            var lhs_list = std.ArrayList(_zbr_ty_PNode).empty;
+            var lhs_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2934
             lhs_list.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2935
-            var rhs_list = std.ArrayList(_zbr_ty_PNode).empty;
+            var rhs_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2936
             rhs_list.append(_zbr_rt._allocator, rhs) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2937
@@ -5510,11 +5511,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2945
             const fallback = (try self.parseOr());
 // zbr:selfhost/Parser.zbr:2946
-            var base = std.ArrayList(_zbr_ty_PNode).empty;
+            var base = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2947
             base.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2948
-            var fb = std.ArrayList(_zbr_ty_PNode).empty;
+            var fb = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2949
             fb.append(_zbr_rt._allocator, fallback) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2950
@@ -5538,11 +5539,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2958
             const right = (try self.parseAnd());
 // zbr:selfhost/Parser.zbr:2959
-            var l = std.ArrayList(_zbr_ty_PNode).empty;
+            var l = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2960
             l.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2961
-            var r = std.ArrayList(_zbr_ty_PNode).empty;
+            var r = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2962
             r.append(_zbr_rt._allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2963
@@ -5570,11 +5571,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2973
             const right = (try self.parseNot());
 // zbr:selfhost/Parser.zbr:2974
-            var l = std.ArrayList(_zbr_ty_PNode).empty;
+            var l = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2975
             l.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2976
-            var r = std.ArrayList(_zbr_ty_PNode).empty;
+            var r = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2977
             r.append(_zbr_rt._allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2978
@@ -5594,7 +5595,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2984
             const operand = (try self.parseNot());
 // zbr:selfhost/Parser.zbr:2985
-            var ops = std.ArrayList(_zbr_ty_PNode).empty;
+            var ops = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:2986
             ops.append(_zbr_rt._allocator, operand) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:2987
@@ -5662,11 +5663,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3014
                                         const right = (try self.parseBitOr());
 // zbr:selfhost/Parser.zbr:3015
-                                        var l = std.ArrayList(_zbr_ty_PNode).empty;
+                                        var l = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3016
                                         l.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3017
-                                        var r = std.ArrayList(_zbr_ty_PNode).empty;
+                                        var r = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3018
                                         r.append(_zbr_rt._allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3019
@@ -5674,7 +5675,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3020
                                         if (negate_is) {
 // zbr:selfhost/Parser.zbr:3021
-                                            var inner = std.ArrayList(_zbr_ty_PNode).empty;
+                                            var inner = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3022
                                             inner.append(_zbr_rt._allocator, tc_node) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3023
@@ -5697,21 +5698,21 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3032
                                             const right = (try self.parseBitOr());
 // zbr:selfhost/Parser.zbr:3033
-                                            var l = std.ArrayList(_zbr_ty_PNode).empty;
+                                            var l = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3034
                                             l.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3035
-                                            var r = std.ArrayList(_zbr_ty_PNode).empty;
+                                            var r = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3036
                                             r.append(_zbr_rt._allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3038
-                                            var inner = std.ArrayList(_zbr_ty_PNode).empty;
+                                            var inner = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3039
-                                            var lc = std.ArrayList(_zbr_ty_PNode).empty;
+                                            var lc = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3040
                                             lc.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3041
-                                            var rc = std.ArrayList(_zbr_ty_PNode).empty;
+                                            var rc = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3042
                                             rc.append(_zbr_rt._allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3043
@@ -5775,9 +5776,9 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3065
                 if (!std.mem.eql(u8, next_op, "")) {
 // zbr:selfhost/Parser.zbr:3067
-                    var chain_ops = std.ArrayList([]const u8).empty;
+                    var chain_ops = _ZbrList([]const u8).empty;
 // zbr:selfhost/Parser.zbr:3068
-                    var chain_nodes = std.ArrayList(_zbr_ty_PNode).empty;
+                    var chain_nodes = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3069
                     chain_ops.append(_zbr_rt._allocator, _intern(op)) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3070
@@ -5837,11 +5838,11 @@ pub const _zbr_ty_Parser = struct {
                 }
             }
 // zbr:selfhost/Parser.zbr:3092
-            var l = std.ArrayList(_zbr_ty_PNode).empty;
+            var l = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3093
             l.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3094
-            var r = std.ArrayList(_zbr_ty_PNode).empty;
+            var r = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3095
             r.append(_zbr_rt._allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3096
@@ -5865,11 +5866,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3113
             const right = (try self.parseBitXor());
 // zbr:selfhost/Parser.zbr:3114
-            var l = std.ArrayList(_zbr_ty_PNode).empty;
+            var l = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3115
             l.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3116
-            var r = std.ArrayList(_zbr_ty_PNode).empty;
+            var r = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3117
             r.append(_zbr_rt._allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3118
@@ -5893,11 +5894,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3129
             const right = (try self.parseBitAnd());
 // zbr:selfhost/Parser.zbr:3130
-            var l = std.ArrayList(_zbr_ty_PNode).empty;
+            var l = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3131
             l.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3132
-            var r = std.ArrayList(_zbr_ty_PNode).empty;
+            var r = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3133
             r.append(_zbr_rt._allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3134
@@ -5921,11 +5922,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3142
             const right = (try self.parseShift());
 // zbr:selfhost/Parser.zbr:3143
-            var l = std.ArrayList(_zbr_ty_PNode).empty;
+            var l = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3144
             l.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3145
-            var r = std.ArrayList(_zbr_ty_PNode).empty;
+            var r = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3146
             r.append(_zbr_rt._allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3147
@@ -5949,11 +5950,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3160
             const right = (try self.parseAddSub());
 // zbr:selfhost/Parser.zbr:3161
-            var l = std.ArrayList(_zbr_ty_PNode).empty;
+            var l = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3162
             l.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3163
-            var r = std.ArrayList(_zbr_ty_PNode).empty;
+            var r = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3164
             r.append(_zbr_rt._allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3165
@@ -5977,11 +5978,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3173
             const right = (try self.parseMulDiv());
 // zbr:selfhost/Parser.zbr:3174
-            var l = std.ArrayList(_zbr_ty_PNode).empty;
+            var l = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3175
             l.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3176
-            var r = std.ArrayList(_zbr_ty_PNode).empty;
+            var r = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3177
             r.append(_zbr_rt._allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3178
@@ -6005,11 +6006,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3186
             const right = (try self.parseUnary());
 // zbr:selfhost/Parser.zbr:3187
-            var l = std.ArrayList(_zbr_ty_PNode).empty;
+            var l = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3188
             l.append(_zbr_rt._allocator, left) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3189
-            var r = std.ArrayList(_zbr_ty_PNode).empty;
+            var r = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3190
             r.append(_zbr_rt._allocator, right) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3191
@@ -6029,7 +6030,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3197
             const operand = (try self.parseUnary());
 // zbr:selfhost/Parser.zbr:3198
-            var ops = std.ArrayList(_zbr_ty_PNode).empty;
+            var ops = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3199
             ops.append(_zbr_rt._allocator, operand) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3200
@@ -6042,7 +6043,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3213
             const bnot_operand = (try self.parseUnary());
 // zbr:selfhost/Parser.zbr:3214
-            var bnot_ops = std.ArrayList(_zbr_ty_PNode).empty;
+            var bnot_ops = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3215
             bnot_ops.append(_zbr_rt._allocator, bnot_operand) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3216
@@ -6055,7 +6056,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3220
             const operand = (try self.parseUnary());
 // zbr:selfhost/Parser.zbr:3221
-            var ops = std.ArrayList(_zbr_ty_PNode).empty;
+            var ops = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3222
             ops.append(_zbr_rt._allocator, operand) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3223
@@ -6091,11 +6092,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3238
                     const args = (try self.parseCallArgs());
 // zbr:selfhost/Parser.zbr:3239
-                    var base = std.ArrayList(_zbr_ty_PNode).empty;
+                    var base = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3240
                     base.append(_zbr_rt._allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3241
-                    var callee = std.ArrayList(_zbr_ty_PNode).empty;
+                    var callee = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3242
                     callee.append(_zbr_rt._allocator, _zbr_ty_PNode{ .expr_member = blk_box_63: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_member")) = _zbr_ty_PMember.init(base, mname, mline, mcol); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_63 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3243
@@ -6114,11 +6115,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3253
                         const args = (try self.parseCallArgs());
 // zbr:selfhost/Parser.zbr:3254
-                        var base = std.ArrayList(_zbr_ty_PNode).empty;
+                        var base = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3255
                         base.append(_zbr_rt._allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3256
-                        var callee = std.ArrayList(_zbr_ty_PNode).empty;
+                        var callee = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3257
                         callee.append(_zbr_rt._allocator, _zbr_ty_PNode{ .expr_member = blk_box_65: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_member")) = _zbr_ty_PMember.init(base, "to", to_line, to_col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_65 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3258
@@ -6135,7 +6136,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3264
                             self.advance();
 // zbr:selfhost/Parser.zbr:3265
-                            var base = std.ArrayList(_zbr_ty_PNode).empty;
+                            var base = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3266
                             base.append(_zbr_rt._allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3267
@@ -6148,7 +6149,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3272
                             const field: []const u8 = (try self.eatId());
 // zbr:selfhost/Parser.zbr:3273
-                            var base = std.ArrayList(_zbr_ty_PNode).empty;
+                            var base = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3274
                             base.append(_zbr_rt._allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3275
@@ -6170,7 +6171,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3283
                         const cargs = (try self.parseCallArgs());
 // zbr:selfhost/Parser.zbr:3284
-                        var base_list = std.ArrayList(_zbr_ty_PNode).empty;
+                        var base_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3285
                         base_list.append(_zbr_rt._allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3286
@@ -6179,11 +6180,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3289
                         const field: []const u8 = (try self.eatId());
 // zbr:selfhost/Parser.zbr:3290
-                        var base_list = std.ArrayList(_zbr_ty_PNode).empty;
+                        var base_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3291
                         base_list.append(_zbr_rt._allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3292
-                        const empty_args = std.ArrayList(_zbr_ty_PNode).empty;
+                        const empty_args = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3293
                         expr = _zbr_ty_PNode{ .expr_opt_chain = blk_box_70: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_opt_chain")) = _zbr_ty_POptChain.init(base_list, field, false, empty_args); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_70 _bp; } };
                     }
@@ -6207,7 +6208,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3305
                                 self.advance();
 // zbr:selfhost/Parser.zbr:3306
-                                var fields = std.ArrayList(_zbr_ty_PExceptField).empty;
+                                var fields = _ZbrList(_zbr_ty_PExceptField).empty;
 // zbr:selfhost/Parser.zbr:3307
                                 if ((self.isEol() or self.isIndent())) {
 // zbr:selfhost/Parser.zbr:3309
@@ -6233,7 +6234,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3319
                                             self.skipEol();
 // zbr:selfhost/Parser.zbr:3320
-                                            var vlist = std.ArrayList(_zbr_ty_PNode).empty;
+                                            var vlist = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3321
                                             vlist.append(_zbr_rt._allocator, fval) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3322
@@ -6257,7 +6258,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3331
                                         const fval2 = (try self.parseExpr());
 // zbr:selfhost/Parser.zbr:3332
-                                        var vlist2 = std.ArrayList(_zbr_ty_PNode).empty;
+                                        var vlist2 = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3333
                                         vlist2.append(_zbr_rt._allocator, fval2) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3334
@@ -6273,7 +6274,7 @@ pub const _zbr_ty_Parser = struct {
                                     }
                                 }
 // zbr:selfhost/Parser.zbr:3339
-                                var base_list = std.ArrayList(_zbr_ty_PNode).empty;
+                                var base_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3340
                                 base_list.append(_zbr_rt._allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3341
@@ -6294,15 +6295,15 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3350
                                         (try self.expectText("]"));
 // zbr:selfhost/Parser.zbr:3351
-                                        var obj = std.ArrayList(_zbr_ty_PNode).empty;
+                                        var obj = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3352
                                         obj.append(_zbr_rt._allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3353
-                                        var start_list = std.ArrayList(_zbr_ty_PNode).empty;
+                                        var start_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3354
                                         start_list.append(_zbr_rt._allocator, first) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3355
-                                        var stop_list = std.ArrayList(_zbr_ty_PNode).empty;
+                                        var stop_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3356
                                         stop_list.append(_zbr_rt._allocator, stop_expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3357
@@ -6311,11 +6312,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3359
                                         (try self.expectText("]"));
 // zbr:selfhost/Parser.zbr:3360
-                                        var obj = std.ArrayList(_zbr_ty_PNode).empty;
+                                        var obj = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3361
                                         obj.append(_zbr_rt._allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3362
-                                        var idx_list = std.ArrayList(_zbr_ty_PNode).empty;
+                                        var idx_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3363
                                         idx_list.append(_zbr_rt._allocator, first) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3364
@@ -6329,7 +6330,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3368
                                         const args = (try self.parseCallArgs());
 // zbr:selfhost/Parser.zbr:3369
-                                        var callee = std.ArrayList(_zbr_ty_PNode).empty;
+                                        var callee = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3370
                                         callee.append(_zbr_rt._allocator, expr) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3371
@@ -6508,7 +6509,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3448
                                                                 self.advance();
 // zbr:selfhost/Parser.zbr:3449
-                                                                var elems = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                var elems = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3450
                                                                 if ((!self.textIs("]"))) {
 // zbr:selfhost/Parser.zbr:3451
@@ -6535,7 +6536,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3463
                                                                     self.advance();
 // zbr:selfhost/Parser.zbr:3464
-                                                                    var elems = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                    var elems = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3465
                                                                     if ((!self.textIs("]"))) {
 // zbr:selfhost/Parser.zbr:3466
@@ -6566,7 +6567,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3482
                                                                             self.advance();
 // zbr:selfhost/Parser.zbr:3483
-                                                                            return _zbr_ty_PNode{ .expr_dict_lit = blk_box_91: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_dict_lit")) = _zbr_ty_PDictLit.init(std.ArrayList(_zbr_ty_PNode).empty, std.ArrayList(_zbr_ty_PNode).empty); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_91 _bp; } };
+                                                                            return _zbr_ty_PNode{ .expr_dict_lit = blk_box_91: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_dict_lit")) = _zbr_ty_PDictLit.init(_ZbrList(_zbr_ty_PNode).empty, _ZbrList(_zbr_ty_PNode).empty); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_91 _bp; } };
                                                                         }
 // zbr:selfhost/Parser.zbr:3484
                                                                         const first_be = (try self.parseExpr());
@@ -6577,9 +6578,9 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3488
                                                                             const first_bv = (try self.parseExpr());
 // zbr:selfhost/Parser.zbr:3489
-                                                                            var dkeys = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                            var dkeys = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3490
-                                                                            var dvals = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                            var dvals = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3491
                                                                             dkeys.append(_zbr_rt._allocator, first_be) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3492
@@ -6609,7 +6610,7 @@ pub const _zbr_ty_Parser = struct {
                                                                             return _zbr_ty_PNode{ .expr_dict_lit = blk_box_92: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_dict_lit")) = _zbr_ty_PDictLit.init(dkeys, dvals); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_92 _bp; } };
                                                                         }
 // zbr:selfhost/Parser.zbr:3505
-                                                                        var elems = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                        var elems = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3506
                                                                         elems.append(_zbr_rt._allocator, first_be) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3507
@@ -6637,7 +6638,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3517
                                                                             if (self.textIs(",")) {
 // zbr:selfhost/Parser.zbr:3519
-                                                                                var elems = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                                var elems = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3520
                                                                                 elems.append(_zbr_rt._allocator, first) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3521
@@ -6670,7 +6671,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3534
                                                                                 const args = (try self.parseCallArgs());
 // zbr:selfhost/Parser.zbr:3535
-                                                                                var callee = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                                var callee = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3536
                                                                                 callee.append(_zbr_rt._allocator, _zbr_ty_PNode{ .expr_id = blk_box_95: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_id")) = _zbr_ty_PExprId.init(name, id_line, id_col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_95 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3537
@@ -6693,9 +6694,9 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3546
                                                                                         const args = (try self.parseCallArgs());
 // zbr:selfhost/Parser.zbr:3547
-                                                                                        const base = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                                        const base = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3548
-                                                                                        var callee = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                                        var callee = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3549
                                                                                         callee.append(_zbr_rt._allocator, _zbr_ty_PNode{ .expr_member = blk_box_97: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_member")) = _zbr_ty_PMember.init(base, mname, smline, smcol); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_97 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3550
@@ -6708,7 +6709,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3554
                                                                                         const field: []const u8 = (try self.eatId());
 // zbr:selfhost/Parser.zbr:3555
-                                                                                        const base = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                                        const base = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3556
                                                                                         return _zbr_ty_PNode{ .expr_member = blk_box_99: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_member")) = _zbr_ty_PMember.init(base, field, sfline, sfcol); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_99 _bp; } };
                                                                                     }
@@ -6761,19 +6762,19 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3587
                                                                                                     (try self.expectText("("));
 // zbr:selfhost/Parser.zbr:3588
-                                                                                                    var cond_nodes = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                                                    var cond_nodes = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3589
                                                                                                     cond_nodes.append(_zbr_rt._allocator, (try self.parseExpr())) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3590
                                                                                                     (try self.expectText(","));
 // zbr:selfhost/Parser.zbr:3591
-                                                                                                    var then_nodes = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                                                    var then_nodes = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3592
                                                                                                     then_nodes.append(_zbr_rt._allocator, (try self.parseExpr())) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3593
                                                                                                     (try self.expectText(","));
 // zbr:selfhost/Parser.zbr:3594
-                                                                                                    var else_nodes = std.ArrayList(_zbr_ty_PNode).empty;
+                                                                                                    var else_nodes = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3595
                                                                                                     else_nodes.append(_zbr_rt._allocator, (try self.parseExpr())) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3596
@@ -6815,7 +6816,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3604
         (try self.expectText("("));
 // zbr:selfhost/Parser.zbr:3605
-        var params = std.ArrayList(_zbr_ty_PParam).empty;
+        var params = _ZbrList(_zbr_ty_PParam).empty;
 // zbr:selfhost/Parser.zbr:3606
         if ((!self.textIs(")"))) {
 // zbr:selfhost/Parser.zbr:3607
@@ -6844,11 +6845,11 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3618
             self.advance();
 // zbr:selfhost/Parser.zbr:3619
-            var body_expr = std.ArrayList(_zbr_ty_PNode).empty;
+            var body_expr = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3620
             body_expr.append(_zbr_rt._allocator, (try self.parseExpr())) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3621
-            return _zbr_ty_PNode{ .expr_lambda = _zbr_ty_PLambda.init(params, ret_type, std.ArrayList(_zbr_ty_PCaptureVar).empty, body_expr, std.ArrayList(_zbr_ty_PNode).empty) };
+            return _zbr_ty_PNode{ .expr_lambda = _zbr_ty_PLambda.init(params, ret_type, _ZbrList(_zbr_ty_PCaptureVar).empty, body_expr, _ZbrList(_zbr_ty_PNode).empty) };
         }
 // zbr:selfhost/Parser.zbr:3623
         self.skipEol();
@@ -6860,14 +6861,14 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3626
         self.advance();
 // zbr:selfhost/Parser.zbr:3627
-        var captures = std.ArrayList(_zbr_ty_PCaptureVar).empty;
+        var captures = _ZbrList(_zbr_ty_PCaptureVar).empty;
 // zbr:selfhost/Parser.zbr:3628
         if (self.textIs("capture")) {
 // zbr:selfhost/Parser.zbr:3629
             captures = (try self.parseCaptureBlock());
         }
 // zbr:selfhost/Parser.zbr:3630
-        var body_stmts = std.ArrayList(_zbr_ty_PNode).empty;
+        var body_stmts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3631
         while (((!self.isDedent()) and (!self.isEof()))) {
 // zbr:selfhost/Parser.zbr:3632
@@ -6885,7 +6886,7 @@ pub const _zbr_ty_Parser = struct {
             self.advance();
         }
 // zbr:selfhost/Parser.zbr:3638
-        return _zbr_ty_PNode{ .expr_lambda = _zbr_ty_PLambda.init(params, ret_type, captures, std.ArrayList(_zbr_ty_PNode).empty, body_stmts) };
+        return _zbr_ty_PNode{ .expr_lambda = _zbr_ty_PLambda.init(params, ret_type, captures, _ZbrList(_zbr_ty_PNode).empty, body_stmts) };
     }
 
     // zbr:selfhost/Parser.zbr:3640
@@ -6903,7 +6904,7 @@ pub const _zbr_ty_Parser = struct {
             type_name = (try self.eatTypeName());
         }
 // zbr:selfhost/Parser.zbr:3646
-        var pdefault = std.ArrayList(_zbr_ty_PNode).empty;
+        var pdefault = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3647
         if (self.textIs("=")) {
 // zbr:selfhost/Parser.zbr:3648
@@ -6923,7 +6924,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3655
         (try self.expectText("("));
 // zbr:selfhost/Parser.zbr:3656
-        var params = std.ArrayList(_zbr_ty_PParam).empty;
+        var params = _ZbrList(_zbr_ty_PParam).empty;
 // zbr:selfhost/Parser.zbr:3657
         if ((!self.textIs(")"))) {
 // zbr:selfhost/Parser.zbr:3658
@@ -6948,11 +6949,11 @@ pub const _zbr_ty_Parser = struct {
             ret_type = (try self.eatTypeName());
         }
 // zbr:selfhost/Parser.zbr:3667
-        return _zbr_ty_PLambda.init(params, ret_type, std.ArrayList(_zbr_ty_PCaptureVar).empty, std.ArrayList(_zbr_ty_PNode).empty, std.ArrayList(_zbr_ty_PNode).empty);
+        return _zbr_ty_PLambda.init(params, ret_type, _ZbrList(_zbr_ty_PCaptureVar).empty, _ZbrList(_zbr_ty_PNode).empty, _ZbrList(_zbr_ty_PNode).empty);
     }
 
     // zbr:selfhost/Parser.zbr:3669
-    pub fn parseCaptureBlock(self: *_zbr_ty_Parser) anyerror!std.ArrayList(_zbr_ty_PCaptureVar) {
+    pub fn parseCaptureBlock(self: *_zbr_ty_Parser) anyerror!_ZbrList(_zbr_ty_PCaptureVar) {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3671
         (try self.expectText("capture"));
@@ -6966,7 +6967,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3675
         self.advance();
 // zbr:selfhost/Parser.zbr:3676
-        var caps = std.ArrayList(_zbr_ty_PCaptureVar).empty;
+        var caps = _ZbrList(_zbr_ty_PCaptureVar).empty;
 // zbr:selfhost/Parser.zbr:3677
         while (((!self.isDedent()) and (!self.isEof()))) {
 // zbr:selfhost/Parser.zbr:3678
@@ -7003,7 +7004,7 @@ pub const _zbr_ty_Parser = struct {
                 cap_type = (try self.eatTypeName());
             }
 // zbr:selfhost/Parser.zbr:3694
-            var init_list = std.ArrayList(_zbr_ty_PNode).empty;
+            var init_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3695
             if (self.textIs("=")) {
 // zbr:selfhost/Parser.zbr:3696
@@ -7032,7 +7033,7 @@ pub const _zbr_ty_Parser = struct {
     pub fn parseStringInterp(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3708
-        var parts = std.ArrayList(_zbr_ty_PNode).empty;
+        var parts = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3710
         parts.append(_zbr_rt._allocator, _zbr_ty_PNode{ .expr_str = blk_box_104: { const _bv: std.meta.Child(@FieldType(_zbr_ty_PNode, "expr_str")) = _zbr_ty_PLit.init(self.peek().text, self.peek().line, self.peek().col); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_104 _bp; } }) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3711
@@ -7073,10 +7074,10 @@ pub const _zbr_ty_Parser = struct {
     }
 
     // zbr:selfhost/Parser.zbr:3733
-    pub fn parseCallArgs(self: *_zbr_ty_Parser) anyerror!std.ArrayList(_zbr_ty_PNode) {
+    pub fn parseCallArgs(self: *_zbr_ty_Parser) anyerror!_ZbrList(_zbr_ty_PNode) {
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3734
-        var args = std.ArrayList(_zbr_ty_PNode).empty;
+        var args = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3735
         while ((!self.textIs(")"))) {
 // zbr:selfhost/Parser.zbr:3738
@@ -7090,7 +7091,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:3742
                 const val_pn = (try self.parseExpr());
 // zbr:selfhost/Parser.zbr:3743
-                var val_list = std.ArrayList(_zbr_ty_PNode).empty;
+                var val_list = _ZbrList(_zbr_ty_PNode).empty;
 // zbr:selfhost/Parser.zbr:3744
                 val_list.append(_zbr_rt._allocator, val_pn) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:3745
@@ -7122,7 +7123,7 @@ pub const _zbr_ty_Parser = struct {
     }
 
     // zbr:selfhost/Parser.zbr:3762
-    pub fn lexWithFile(src: []const u8, file_name: []const u8) anyerror!std.ArrayList(*_zbr_mod_Token._zbr_ty_Token) {
+    pub fn lexWithFile(src: []const u8, file_name: []const u8) anyerror!_ZbrList(*_zbr_mod_Token._zbr_ty_Token) {
 // zbr:selfhost/Parser.zbr:3762
         {
             var _try_err: ?anyerror = null;

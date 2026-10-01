@@ -15,6 +15,8 @@ const _zebra_gt = _zbr_rt._zebra_gt;
 const _zebra_ge = _zbr_rt._zebra_ge;
 const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
+const _ZbrList = _zbr_rt._ZbrList;
+const _ZbrMap = _zbr_rt._ZbrMap;
 const _zbr_print = _zbr_rt._zbr_print;
 
 const _zbr_mod_Ast = @import("Ast.zig");
@@ -502,7 +504,7 @@ pub fn _zbr_fn_getVariantKey(e: _zbr_ty_Expr) ?[]const u8 {
 }
 
 // zbr:selfhost/CodeGen.zbr:230
-pub fn _zbr_fn_collectAssignedIdents(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet) void {
+pub fn _zbr_fn_collectAssignedIdents(stmts: _ZbrList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet) void {
 // zbr:selfhost/CodeGen.zbr:231
     for (stmts.items) |s| {
 // zbr:selfhost/CodeGen.zbr:232
@@ -1070,7 +1072,7 @@ pub fn _zbr_fn_isEnumLikeName(name: []const u8) bool {
 }
 
 // zbr:selfhost/CodeGen.zbr:534
-pub fn _zbr_fn_declMembersHaveInit(members: std.ArrayList(_zbr_ty_Decl)) bool {
+pub fn _zbr_fn_declMembersHaveInit(members: _ZbrList(_zbr_ty_Decl)) bool {
 // zbr:selfhost/CodeGen.zbr:537
     for (members.items) |mem| {
 // zbr:selfhost/CodeGen.zbr:538
@@ -1151,7 +1153,7 @@ pub fn _zbr_fn_getMemberName(callee: _zbr_ty_Expr) ?[]const u8 {
 }
 
 // zbr:selfhost/CodeGen.zbr:572
-pub fn _zbr_fn_getXmUnionParts(callee: _zbr_ty_Expr) ?std.ArrayList([]const u8) {
+pub fn _zbr_fn_getXmUnionParts(callee: _zbr_ty_Expr) ?_ZbrList([]const u8) {
 // zbr:selfhost/CodeGen.zbr:577
     if (_zbr_val(callee) == .member) {
         const outer_m_ptr = callee.member;
@@ -1165,7 +1167,7 @@ pub fn _zbr_fn_getXmUnionParts(callee: _zbr_ty_Expr) ?std.ArrayList([]const u8) 
 // zbr:selfhost/CodeGen.zbr:581
             if (inner_mod) |im| {
 // zbr:selfhost/CodeGen.zbr:582
-                var parts = std.ArrayList([]const u8).empty;
+                var parts = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:583
                 parts.append(_zbr_rt._allocator, _intern(im)) catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:584
@@ -1637,7 +1639,7 @@ pub fn _zbr_fn_stmtMentionsThis(s: _zbr_ty_Stmt) bool {
 }
 
 // zbr:selfhost/CodeGen.zbr:806
-pub fn _zbr_fn_bodyUsesAnyField(stmts: std.ArrayList(_zbr_ty_Stmt), members: std.ArrayList(_zbr_ty_Decl), params: std.ArrayList(_zbr_ty_Param)) bool {
+pub fn _zbr_fn_bodyUsesAnyField(stmts: _ZbrList(_zbr_ty_Stmt), members: _ZbrList(_zbr_ty_Decl), params: _ZbrList(_zbr_ty_Param)) bool {
 // zbr:selfhost/CodeGen.zbr:807
     for (members.items) |d| {
 // zbr:selfhost/CodeGen.zbr:808
@@ -1666,7 +1668,7 @@ pub fn _zbr_fn_bodyUsesAnyField(stmts: std.ArrayList(_zbr_ty_Stmt), members: std
 }
 
 // zbr:selfhost/CodeGen.zbr:817
-pub fn _zbr_fn_bodyUsesAnyMethod(stmts: std.ArrayList(_zbr_ty_Stmt), members: std.ArrayList(_zbr_ty_Decl)) bool {
+pub fn _zbr_fn_bodyUsesAnyMethod(stmts: _ZbrList(_zbr_ty_Stmt), members: _ZbrList(_zbr_ty_Decl)) bool {
 // zbr:selfhost/CodeGen.zbr:818
     for (members.items) |d| {
 // zbr:selfhost/CodeGen.zbr:819
@@ -1685,7 +1687,7 @@ pub fn _zbr_fn_bodyUsesAnyMethod(stmts: std.ArrayList(_zbr_ty_Stmt), members: st
 }
 
 // zbr:selfhost/CodeGen.zbr:824
-pub fn _zbr_fn_bodyMentionsThis(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+pub fn _zbr_fn_bodyMentionsThis(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/CodeGen.zbr:825
     for (stmts.items) |s| {
 // zbr:selfhost/CodeGen.zbr:826
@@ -1871,7 +1873,7 @@ pub fn _zbr_fn_isComptimeModuleInit(e: _zbr_ty_Expr) bool {
 }
 
 // zbr:selfhost/CodeGen.zbr:943
-pub fn _zbr_fn_returnedCaptureLambda(stmts: std.ArrayList(_zbr_ty_Stmt)) ?_zbr_ty_ExprLambda {
+pub fn _zbr_fn_returnedCaptureLambda(stmts: _ZbrList(_zbr_ty_Stmt)) ?_zbr_ty_ExprLambda {
 // zbr:selfhost/CodeGen.zbr:944
     for (stmts.items) |st| {
 // zbr:selfhost/CodeGen.zbr:945
@@ -1961,13 +1963,13 @@ pub fn _zbr_fn_returnedCaptureLambda(stmts: std.ArrayList(_zbr_ty_Stmt)) ?_zbr_t
 // zbr:selfhost/CodeGen.zbr:979
 pub fn _zbr_fn_generateModule(m: _zbr_ty_Module, file: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:980
-    return _zbr_fn_generateModuleWith(m, file, std.ArrayList([]const u8).empty, _zbr_ty_ModuleTypes.init(), false, null, false);
+    return _zbr_fn_generateModuleWith(m, file, _ZbrList([]const u8).empty, _zbr_ty_ModuleTypes.init(), false, null, false);
 }
 
 // zbr:selfhost/CodeGen.zbr:986
-pub fn _zbr_fn_structReceiverTable(decls: std.ArrayList(_zbr_ty_Decl), strip_contracts: bool) []const u8 {
+pub fn _zbr_fn_structReceiverTable(decls: _ZbrList(_zbr_ty_Decl), strip_contracts: bool) []const u8 {
 // zbr:selfhost/CodeGen.zbr:987
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:988
     sb.appendSlice(_zbr_rt._allocator, " ") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:989
@@ -2020,7 +2022,7 @@ pub fn _zbr_fn_structReceiverTable(decls: std.ArrayList(_zbr_ty_Decl), strip_con
 }
 
 // zbr:selfhost/CodeGen.zbr:1008
-pub fn _zbr_fn_generateModuleWith(m: _zbr_ty_Module, file: []const u8, extra_class_names: std.ArrayList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, strip_contracts: bool, tc_result: ?*_zbr_ty_TcResult, library_mode: bool) []const u8 {
+pub fn _zbr_fn_generateModuleWith(m: _zbr_ty_Module, file: []const u8, extra_class_names: _ZbrList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, strip_contracts: bool, tc_result: ?*_zbr_ty_TcResult, library_mode: bool) []const u8 {
 // zbr:selfhost/CodeGen.zbr:1009
     var w = _zbr_ty_Writer.init();
 // zbr:selfhost/CodeGen.zbr:1010
@@ -2236,7 +2238,7 @@ pub fn _zbr_fn_generateModuleWith(m: _zbr_ty_Module, file: []const u8, extra_cla
             .namespace_ => |_ptr_tns| {
                 const tns = _ptr_tns.*;
 // zbr:selfhost/CodeGen.zbr:1174
-                const tns_parts: std.ArrayList([]const u8) = blk092_1: { var _ll_1: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_1 = std.mem.splitSequence(u8, tns.name, "."); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_zbr_rt._allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
+                const tns_parts: _ZbrList([]const u8) = blk092_1: { var _ll_1: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_1 = std.mem.splitSequence(u8, tns.name, "."); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_zbr_rt._allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
 // zbr:selfhost/CodeGen.zbr:1175
                 g.namespace_names.add(_zbr_at(tns_parts.items, 0));
 // zbr:selfhost/CodeGen.zbr:1176
@@ -2403,7 +2405,7 @@ pub fn _zbr_fn_generateModuleWith(m: _zbr_ty_Module, file: []const u8, extra_cla
 // zbr:selfhost/CodeGen.zbr:1252
     g.emitInterfaceMembershipFns(m);
 // zbr:selfhost/CodeGen.zbr:1254
-    var reflect_classes = std.ArrayList([]const u8).empty;
+    var reflect_classes = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:1255
     for (m.decls.items) |decl| {
 // zbr:selfhost/CodeGen.zbr:1256
@@ -2666,7 +2668,7 @@ pub fn _zbr_fn_generateEntryPoint(m: _zbr_ty_Module, library_mode: bool) []const
         mod_prefix = "_Mod.";
     }
 // zbr:selfhost/CodeGen.zbr:1386
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:1387
     sb.appendSlice(_zbr_rt._allocator, "pub fn main(_zinit: std.process.Init) void {\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:1388
@@ -2767,7 +2769,7 @@ pub const _zbr_mv_GT_RANGE_INIT: i64 = 11;
 pub const _zbr_ty_GenBlock = struct {
     _type_tag: u64 = _ttag_GenBlock,
     id: i64 = undefined,
-    stmts: std.ArrayList(_zbr_ty_Stmt) = undefined,
+    stmts: _ZbrList(_zbr_ty_Stmt) = undefined,
     kind: i64 = undefined,
     next_b: i64 = undefined,
     then_b: i64 = undefined,
@@ -2784,7 +2786,7 @@ pub const _zbr_ty_GenBlock = struct {
 // zbr:selfhost/CodeGen.zbr:1500
             _self.id = id;
 // zbr:selfhost/CodeGen.zbr:1501
-            _self.stmts = std.ArrayList(_zbr_ty_Stmt).empty;
+            _self.stmts = _ZbrList(_zbr_ty_Stmt).empty;
 // zbr:selfhost/CodeGen.zbr:1502
             _self.kind = _zbr_mv_GT_GOTO;
 // zbr:selfhost/CodeGen.zbr:1503
@@ -2816,14 +2818,14 @@ const _reflect_GenBlock_field_types: []const []const u8 = &.{"int", "List(Stmt)"
 
 pub const _zbr_ty_GenLower = struct {
     _type_tag: u64 = _ttag_GenLower,
-    blocks: std.ArrayList(*_zbr_ty_GenBlock) = undefined,
+    blocks: _ZbrList(*_zbr_ty_GenBlock) = undefined,
     loops: i64 = undefined,
     infer: *_zbr_ty_InferCtx = undefined,
     pub fn init(infer: *_zbr_ty_InferCtx) *_zbr_ty_GenLower {
         const _self = _zbr_rt._allocator.create(_zbr_ty_GenLower) catch @panic("OOM");
         _self._type_tag = _zbr_hash("GenLower");
 // zbr:selfhost/CodeGen.zbr:1521
-            _self.blocks = std.ArrayList(*_zbr_ty_GenBlock).empty;
+            _self.blocks = _ZbrList(*_zbr_ty_GenBlock).empty;
 // zbr:selfhost/CodeGen.zbr:1522
             _self.loops = 0;
 // zbr:selfhost/CodeGen.zbr:1523
@@ -2842,7 +2844,7 @@ pub const _zbr_ty_GenLower = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:1530
-    pub fn lowerSeq(self: *_zbr_ty_GenLower, stmts: std.ArrayList(_zbr_ty_Stmt), next: i64, brk: i64, cont: i64) i64 {
+    pub fn lowerSeq(self: *_zbr_ty_GenLower, stmts: _ZbrList(_zbr_ty_Stmt), next: i64, brk: i64, cont: i64) i64 {
 // zbr:selfhost/CodeGen.zbr:1531
         var cur: i64 = next;
 // zbr:selfhost/CodeGen.zbr:1532
@@ -3302,9 +3304,9 @@ pub fn _zbr_fn_testIncluded(mth: _zbr_ty_DeclMethod, label: []const u8, class_na
 }
 
 // zbr:selfhost/CodeGen.zbr:1762
-pub fn _zbr_fn_listTestEntries(m: _zbr_ty_Module, file_stem: []const u8, tag_filter: ?[]const u8) std.ArrayList([]const u8) {
+pub fn _zbr_fn_listTestEntries(m: _zbr_ty_Module, file_stem: []const u8, tag_filter: ?[]const u8) _ZbrList([]const u8) {
 // zbr:selfhost/CodeGen.zbr:1763
-    var out = std.ArrayList([]const u8).empty;
+    var out = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:1764
     for (m.decls.items) |decl| {
 // zbr:selfhost/CodeGen.zbr:1765
@@ -3323,7 +3325,7 @@ pub fn _zbr_fn_listTestEntries(m: _zbr_ty_Module, file_stem: []const u8, tag_fil
 // zbr:selfhost/CodeGen.zbr:1769
         var class_name: []const u8 = "";
 // zbr:selfhost/CodeGen.zbr:1770
-        var members = std.ArrayList(_zbr_ty_Decl).empty;
+        var members = _ZbrList(_zbr_ty_Decl).empty;
 // zbr:selfhost/CodeGen.zbr:1771
         if (_zbr_val(decl) == .class_) {
             const cls_ptr = decl.class_;
@@ -3369,9 +3371,9 @@ pub fn _zbr_fn_listTestEntries(m: _zbr_ty_Module, file_stem: []const u8, tag_fil
 // zbr:selfhost/CodeGen.zbr:1785
 pub fn _zbr_fn_generateTestEntryPoint(m: _zbr_ty_Module, file_stem: []const u8, tag_filter: ?[]const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:1788
-    var test_calls = std.ArrayList([]const u8).empty;
+    var test_calls = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:1789
-    var test_labels = std.ArrayList([]const u8).empty;
+    var test_labels = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:1792
     for (m.decls.items) |decl| {
 // zbr:selfhost/CodeGen.zbr:1793
@@ -3401,7 +3403,7 @@ pub fn _zbr_fn_generateTestEntryPoint(m: _zbr_ty_Module, file_stem: []const u8, 
 // zbr:selfhost/CodeGen.zbr:1806
         var class_name: []const u8 = "";
 // zbr:selfhost/CodeGen.zbr:1807
-        var members = std.ArrayList(_zbr_ty_Decl).empty;
+        var members = _ZbrList(_zbr_ty_Decl).empty;
 // zbr:selfhost/CodeGen.zbr:1808
         if (_zbr_val(decl) == .class_) {
             const cls_ptr = decl.class_;
@@ -3450,7 +3452,7 @@ pub fn _zbr_fn_generateTestEntryPoint(m: _zbr_ty_Module, file_stem: []const u8, 
         }
     }
 // zbr:selfhost/CodeGen.zbr:1827
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:1828
     sb.appendSlice(_zbr_rt._allocator, "pub fn main(_zinit: std.process.Init) void {\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:1829
@@ -3555,7 +3557,7 @@ pub fn _zbr_fn_generateTestEntryPoint(m: _zbr_ty_Module, file_stem: []const u8, 
 // zbr:selfhost/CodeGen.zbr:1896
 pub fn _zbr_fn_generateErrorMsgHelper(m: _zbr_ty_Module) []const u8 {
 // zbr:selfhost/CodeGen.zbr:1901
-    var dep_modules = std.ArrayList([]const u8).empty;
+    var dep_modules = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:1902
     for (m.decls.items) |decl| {
 // zbr:selfhost/CodeGen.zbr:1903
@@ -3571,9 +3573,9 @@ pub fn _zbr_fn_generateErrorMsgHelper(m: _zbr_ty_Module) []const u8 {
 }
 
 // zbr:selfhost/CodeGen.zbr:1907
-pub fn _zbr_fn_generateErrorMsgHelperWith(dep_modules: std.ArrayList([]const u8)) []const u8 {
+pub fn _zbr_fn_generateErrorMsgHelperWith(dep_modules: _ZbrList([]const u8)) []const u8 {
 // zbr:selfhost/CodeGen.zbr:1908
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:1909
     sb.appendSlice(_zbr_rt._allocator, "fn _zbr_error_msg() []const u8 {\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:1910
@@ -3736,7 +3738,7 @@ pub fn _zbr_fn_covPrologue(indent: []const u8) []const u8 {
         return "";
     }
 // zbr:selfhost/CodeGen.zbr:2081
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2082
     sb.appendSlice(_zbr_rt._allocator, _str_concat(indent, "_zbr_cov_attach(&_zbr_covf);\n", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:2083
@@ -4027,7 +4029,7 @@ pub fn _zbr_fn_rtReservedNames(preamble_path: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2235
 pub fn _zbr_fn_rtQualify(src: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2236
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2237
     const n: i64 = @as(i64, @intCast(src.len));
 // zbr:selfhost/CodeGen.zbr:2238
@@ -4096,7 +4098,7 @@ pub fn _zbr_fn_rtQualify(src: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2269
 pub fn _zbr_fn_rtAliasHeader(src: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2270
-    var used = std.StringHashMap(bool).init(_zbr_rt._allocator);
+    var used = _ZbrMap(bool).init(_zbr_rt._allocator);
 // zbr:selfhost/CodeGen.zbr:2271
     const n: i64 = @as(i64, @intCast(src.len));
 // zbr:selfhost/CodeGen.zbr:2272
@@ -4151,7 +4153,7 @@ pub fn _zbr_fn_rtAliasHeader(src: []const u8) []const u8 {
         }
     }
 // zbr:selfhost/CodeGen.zbr:2292
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2293
     sb.appendSlice(_zbr_rt._allocator, "const std     = @import(\"std\");\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:2294
@@ -4191,7 +4193,7 @@ pub var _zbr_mv__rt_text_cache: []const u8 = "";
 // zbr:selfhost/CodeGen.zbr:2329
 pub fn _zbr_fn_rtPubMarkSection(text: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2330
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2331
     {
         var _it_line = std.mem.splitSequence(u8, text, "\n");
@@ -4258,7 +4260,7 @@ pub fn _zbr_fn_rtPub() []const u8 {
 }
 
 // zbr:selfhost/CodeGen.zbr:2369
-pub fn _zbr_fn_rtSetDeps(dep_modules: std.ArrayList([]const u8)) void {
+pub fn _zbr_fn_rtSetDeps(dep_modules: _ZbrList([]const u8)) void {
 // zbr:selfhost/CodeGen.zbr:2370
     var s: []const u8 = " ";
 // zbr:selfhost/CodeGen.zbr:2371
@@ -4277,7 +4279,7 @@ pub fn _zbr_fn_rtSetDeps(dep_modules: std.ArrayList([]const u8)) void {
 // zbr:selfhost/CodeGen.zbr:2381
 pub fn _zbr_fn_rtAssemble(file: []const u8, preamble: []const u8, body: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2382
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2383
     sb.appendSlice(_zbr_rt._allocator, "// Generated by zebra-selfhost.\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:2384
@@ -4309,7 +4311,7 @@ pub fn _zbr_fn_rtAssemble(file: []const u8, preamble: []const u8, body: []const 
 // zbr:selfhost/CodeGen.zbr:2399
 pub fn _zbr_fn_rtErrorMsgHelper() []const u8 {
 // zbr:selfhost/CodeGen.zbr:2400
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2401
     sb.appendSlice(_zbr_rt._allocator, "fn _zbr_error_msg() []const u8 {\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:2402
@@ -4325,17 +4327,17 @@ pub fn _zbr_fn_rtErrorMsgHelper() []const u8 {
 // zbr:selfhost/CodeGen.zbr:2407
 pub fn _zbr_fn_generateFull(m: _zbr_ty_Module, file: []const u8, preamble_path: []const u8, strip_contracts: bool, library_mode: bool) anyerror![]const u8 {
 // zbr:selfhost/CodeGen.zbr:2408
-    return (try _zbr_fn_generateFullWith(m, file, preamble_path, std.ArrayList([]const u8).empty, _zbr_ty_ModuleTypes.init(), strip_contracts, library_mode));
+    return (try _zbr_fn_generateFullWith(m, file, preamble_path, _ZbrList([]const u8).empty, _zbr_ty_ModuleTypes.init(), strip_contracts, library_mode));
 }
 
 // zbr:selfhost/CodeGen.zbr:2410
-pub fn _zbr_fn_generateFullWith(m: _zbr_ty_Module, file: []const u8, preamble_path: []const u8, extra_class_names: std.ArrayList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, strip_contracts: bool, library_mode: bool) anyerror![]const u8 {
+pub fn _zbr_fn_generateFullWith(m: _zbr_ty_Module, file: []const u8, preamble_path: []const u8, extra_class_names: _ZbrList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, strip_contracts: bool, library_mode: bool) anyerror![]const u8 {
 // zbr:selfhost/CodeGen.zbr:2411
-    return (try _zbr_fn_generateFullWithDeps(m, file, preamble_path, extra_class_names, deps_mt, std.ArrayList([]const u8).empty, strip_contracts, null, library_mode));
+    return (try _zbr_fn_generateFullWithDeps(m, file, preamble_path, extra_class_names, deps_mt, _ZbrList([]const u8).empty, strip_contracts, null, library_mode));
 }
 
 // zbr:selfhost/CodeGen.zbr:2413
-pub fn _zbr_fn_generateFullWithDeps(m: _zbr_ty_Module, file: []const u8, preamble_path: []const u8, extra_class_names: std.ArrayList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, all_dep_modules: std.ArrayList([]const u8), strip_contracts: bool, tc_result: ?*_zbr_ty_TcResult, library_mode: bool) anyerror![]const u8 {
+pub fn _zbr_fn_generateFullWithDeps(m: _zbr_ty_Module, file: []const u8, preamble_path: []const u8, extra_class_names: _ZbrList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, all_dep_modules: _ZbrList([]const u8), strip_contracts: bool, tc_result: ?*_zbr_ty_TcResult, library_mode: bool) anyerror![]const u8 {
     if (!(_zebra_gt(@as(i64, @intCast(preamble_path.len)), 0))) std.debug.panic("require failed in 'generateFullWithDeps'\n", .{});
 // zbr:selfhost/CodeGen.zbr:2416
     const preamble: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, preamble_path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error"));
@@ -4367,7 +4369,7 @@ pub fn _zbr_fn_generateFullWithDeps(m: _zbr_ty_Module, file: []const u8, preambl
         }
     }
 // zbr:selfhost/CodeGen.zbr:2435
-    var body = std.ArrayList(u8).empty;
+    var body = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2438
     if (_zbr_mv__single_file) {
 // zbr:selfhost/CodeGen.zbr:2439
@@ -4500,7 +4502,7 @@ pub fn _zbr_fn_napiWrapperStr(owner: []const u8, mth: _zbr_ty_DeclMethod) []cons
 // zbr:selfhost/CodeGen.zbr:2499
     const nm: []const u8 = mth.name;
 // zbr:selfhost/CodeGen.zbr:2500
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2501
     sb.appendSlice(_zbr_rt._allocator, "fn _napi_w_") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:2502
@@ -4756,7 +4758,7 @@ pub fn _zbr_fn_napiWrapperStr(owner: []const u8, mth: _zbr_ty_DeclMethod) []cons
 // zbr:selfhost/CodeGen.zbr:2635
 pub fn _zbr_fn_napiRegisterStr(name: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2636
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2637
     sb.appendSlice(_zbr_rt._allocator, "    _ = napi.napi_create_function(env, \"") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:2638
@@ -4782,7 +4784,7 @@ pub fn _zbr_fn_napiRegisterStr(name: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2648
 pub fn _zbr_fn_napiGlueStr(m: _zbr_ty_Module) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2649
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2650
     for (m.decls.items) |d| {
 // zbr:selfhost/CodeGen.zbr:2651
@@ -4891,9 +4893,9 @@ pub fn _zbr_fn_generateNodeAddon(m: _zbr_ty_Module, file: []const u8, preamble_p
 // zbr:selfhost/CodeGen.zbr:2692
     const napi_helpers: []const u8 = _zbr_fn_napiExtractHelpers((std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, napi_preamble_path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error")));
 // zbr:selfhost/CodeGen.zbr:2693
-    const decls: []const u8 = _zbr_fn_generateModuleWith(m, file, std.ArrayList([]const u8).empty, _zbr_ty_ModuleTypes.init(), strip_contracts, null, false);
+    const decls: []const u8 = _zbr_fn_generateModuleWith(m, file, _ZbrList([]const u8).empty, _zbr_ty_ModuleTypes.init(), strip_contracts, null, false);
 // zbr:selfhost/CodeGen.zbr:2694
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2695
     sb.appendSlice(_zbr_rt._allocator, "// Generated by zebra-selfhost (node-addon).\n// Source: ") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:2696
@@ -4921,7 +4923,7 @@ pub fn _zbr_fn_generateNodeAddon(m: _zbr_ty_Module, file: []const u8, preamble_p
 // zbr:selfhost/CodeGen.zbr:2708
 pub fn _zbr_fn_generateNodeDts(m: _zbr_ty_Module, file: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2709
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2710
     sb.appendSlice(_zbr_rt._allocator, "// Auto-generated by zebra --target node-addon. Do not edit.\n// Source: ") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:2711
@@ -4966,7 +4968,7 @@ pub fn _zbr_fn_generateNodeDts(m: _zbr_ty_Module, file: []const u8) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2724
 pub fn _zbr_fn_napiDtsLine(mth: _zbr_ty_DeclMethod) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2725
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2726
     sb.appendSlice(_zbr_rt._allocator, "export declare function ") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:2727
@@ -5004,7 +5006,7 @@ pub fn _zbr_fn_napiDtsLine(mth: _zbr_ty_DeclMethod) []const u8 {
 }
 
 // zbr:selfhost/CodeGen.zbr:2743
-pub fn _zbr_fn_generateFullWithDepsTest(m: _zbr_ty_Module, file: []const u8, preamble_path: []const u8, extra_class_names: std.ArrayList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, all_dep_modules: std.ArrayList([]const u8), strip_contracts: bool, tc_result: ?*_zbr_ty_TcResult, tag_filter: ?[]const u8) anyerror![]const u8 {
+pub fn _zbr_fn_generateFullWithDepsTest(m: _zbr_ty_Module, file: []const u8, preamble_path: []const u8, extra_class_names: _ZbrList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, all_dep_modules: _ZbrList([]const u8), strip_contracts: bool, tc_result: ?*_zbr_ty_TcResult, tag_filter: ?[]const u8) anyerror![]const u8 {
     if (!(_zebra_gt(@as(i64, @intCast(preamble_path.len)), 0))) std.debug.panic("require failed in 'generateFullWithDepsTest'\n", .{});
 // zbr:selfhost/CodeGen.zbr:2746
     const preamble: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, preamble_path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error"));
@@ -5033,7 +5035,7 @@ pub fn _zbr_fn_generateFullWithDepsTest(m: _zbr_ty_Module, file: []const u8, pre
         }
     }
 // zbr:selfhost/CodeGen.zbr:2757
-    var filtered_decls = std.ArrayList(_zbr_ty_Decl).empty;
+    var filtered_decls = _ZbrList(_zbr_ty_Decl).empty;
 // zbr:selfhost/CodeGen.zbr:2758
     for (m.decls.items) |d| {
 // zbr:selfhost/CodeGen.zbr:2759
@@ -5086,7 +5088,7 @@ pub fn _zbr_fn_generateFullWithDepsTest(m: _zbr_ty_Module, file: []const u8, pre
         }
     }
 // zbr:selfhost/CodeGen.zbr:2782
-    var body = std.ArrayList(u8).empty;
+    var body = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2784
     if (_zbr_mv__single_file) {
 // zbr:selfhost/CodeGen.zbr:2785
@@ -5120,7 +5122,7 @@ pub fn _zbr_fn_generateFullWithDepsTest(m: _zbr_ty_Module, file: []const u8, pre
 }
 
 // zbr:selfhost/CodeGen.zbr:2805
-pub fn _zbr_fn_generateSingleFileCombined(m: _zbr_ty_Module, file: []const u8, preamble_path: []const u8, dep_bodies: std.ArrayList([]const u8), dep_names: std.ArrayList([]const u8), extra_class_names: std.ArrayList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, strip_contracts: bool, tc_result: ?*_zbr_ty_TcResult, library_mode: bool, is_test: bool, file_stem: []const u8, tag_filter: ?[]const u8) anyerror![]const u8 {
+pub fn _zbr_fn_generateSingleFileCombined(m: _zbr_ty_Module, file: []const u8, preamble_path: []const u8, dep_bodies: _ZbrList([]const u8), dep_names: _ZbrList([]const u8), extra_class_names: _ZbrList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, strip_contracts: bool, tc_result: ?*_zbr_ty_TcResult, library_mode: bool, is_test: bool, file_stem: []const u8, tag_filter: ?[]const u8) anyerror![]const u8 {
     if (!(_zebra_gt(@as(i64, @intCast(preamble_path.len)), 0))) std.debug.panic("require failed in 'generateSingleFileCombined'\n", .{});
 // zbr:selfhost/CodeGen.zbr:2808
     const preamble: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, preamble_path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error"));
@@ -5137,7 +5139,7 @@ pub fn _zbr_fn_generateSingleFileCombined(m: _zbr_ty_Module, file: []const u8, p
         entry = _zbr_fn_generateEntryPoint(m, library_mode);
     }
 // zbr:selfhost/CodeGen.zbr:2815
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2816
     sb.appendSlice(_zbr_rt._allocator, "// Generated by zebra-selfhost (single-file).\n") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:2817
@@ -5198,11 +5200,11 @@ pub fn _zbr_fn_generateSingleFileCombined(m: _zbr_ty_Module, file: []const u8, p
 }
 
 // zbr:selfhost/CodeGen.zbr:2851
-pub fn _zbr_fn_generateSingleFileDepStruct(m: _zbr_ty_Module, file: []const u8, mod_name: []const u8, extra_class_names: std.ArrayList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, strip_contracts: bool) []const u8 {
+pub fn _zbr_fn_generateSingleFileDepStruct(m: _zbr_ty_Module, file: []const u8, mod_name: []const u8, extra_class_names: _ZbrList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, strip_contracts: bool) []const u8 {
 // zbr:selfhost/CodeGen.zbr:2852
     const decls: []const u8 = _zbr_fn_generateModuleWith(m, file, extra_class_names, deps_mt, strip_contracts, null, false);
 // zbr:selfhost/CodeGen.zbr:2853
-    var sb = std.ArrayList(u8).empty;
+    var sb = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:2854
     sb.appendSlice(_zbr_rt._allocator, "const ") catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:2855
@@ -5220,16 +5222,16 @@ pub fn _zbr_fn_generateSingleFileDepStruct(m: _zbr_ty_Module, file: []const u8, 
 // zbr:selfhost/CodeGen.zbr:2862
 pub fn _zbr_fn_generateDep(m: _zbr_ty_Module, file: []const u8, preamble_path: []const u8, strip_contracts: bool) anyerror![]const u8 {
 // zbr:selfhost/CodeGen.zbr:2863
-    return (try _zbr_fn_generateDepWith(m, file, preamble_path, std.ArrayList([]const u8).empty, _zbr_ty_ModuleTypes.init(), strip_contracts));
+    return (try _zbr_fn_generateDepWith(m, file, preamble_path, _ZbrList([]const u8).empty, _zbr_ty_ModuleTypes.init(), strip_contracts));
 }
 
 // zbr:selfhost/CodeGen.zbr:2865
-pub fn _zbr_fn_generateDepWith(m: _zbr_ty_Module, file: []const u8, preamble_path: []const u8, extra_class_names: std.ArrayList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, strip_contracts: bool) anyerror![]const u8 {
+pub fn _zbr_fn_generateDepWith(m: _zbr_ty_Module, file: []const u8, preamble_path: []const u8, extra_class_names: _ZbrList([]const u8), deps_mt: *_zbr_ty_ModuleTypes, strip_contracts: bool) anyerror![]const u8 {
     if (!(_zebra_gt(@as(i64, @intCast(preamble_path.len)), 0))) std.debug.panic("require failed in 'generateDepWith'\n", .{});
 // zbr:selfhost/CodeGen.zbr:2868
     const preamble: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, preamble_path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error"));
 // zbr:selfhost/CodeGen.zbr:2871
-    _zbr_fn_rtSetDeps(std.ArrayList([]const u8).empty);
+    _zbr_fn_rtSetDeps(_ZbrList([]const u8).empty);
 // zbr:selfhost/CodeGen.zbr:2872
     if (_zbr_mv__runtime_module) {
 // zbr:selfhost/CodeGen.zbr:2873
@@ -5532,8 +5534,8 @@ pub fn _zbr_fn_stmtLine(s: _zbr_ty_Stmt) i64 {
 pub const _zbr_ty_CallChain = struct {
     recv: _zbr_ty_Expr = undefined,
     method: []const u8 = undefined,
-    args: std.ArrayList(_zbr_ty_Arg) = undefined,
-    pub fn init(recv: _zbr_ty_Expr, method: []const u8, args: std.ArrayList(_zbr_ty_Arg)) _zbr_ty_CallChain {
+    args: _ZbrList(_zbr_ty_Arg) = undefined,
+    pub fn init(recv: _zbr_ty_Expr, method: []const u8, args: _ZbrList(_zbr_ty_Arg)) _zbr_ty_CallChain {
         var _self: _zbr_ty_CallChain = undefined;
 // zbr:selfhost/CodeGen.zbr:3015
             _self.recv = recv;
@@ -5593,8 +5595,8 @@ pub fn _zbr_fn_tryChain(e: _zbr_ty_Expr) ?_zbr_ty_CallChain {
     return null;
 }
 
-pub var _zbr_mv__implicit_try_sites: std.ArrayList([]const u8) = undefined;
-pub var _zbr_mv__addr_tx_memo: std.StringHashMap(i64) = undefined;
+pub var _zbr_mv__implicit_try_sites: _ZbrList([]const u8) = undefined;
+pub var _zbr_mv__addr_tx_memo: _ZbrMap(i64) = undefined;
 // zbr:selfhost/CodeGen.zbr:3058
 pub fn _zbr_fn_recordImplicitTry(site: []const u8) void {
 // zbr:selfhost/CodeGen.zbr:3059
@@ -5602,12 +5604,12 @@ pub fn _zbr_fn_recordImplicitTry(site: []const u8) void {
 }
 
 // zbr:selfhost/CodeGen.zbr:3061
-pub fn _zbr_fn_implicitTrySites() std.ArrayList([]const u8) {
+pub fn _zbr_fn_implicitTrySites() _ZbrList([]const u8) {
 // zbr:selfhost/CodeGen.zbr:3062
     return _zbr_mv__implicit_try_sites;
 }
 
-pub var _zbr_mv__thread_spawn_sites: std.ArrayList([]const u8) = undefined;
+pub var _zbr_mv__thread_spawn_sites: _ZbrList([]const u8) = undefined;
 // zbr:selfhost/CodeGen.zbr:3070
 pub fn _zbr_fn_recordThreadSpawn(site: []const u8) void {
 // zbr:selfhost/CodeGen.zbr:3071
@@ -5615,13 +5617,13 @@ pub fn _zbr_fn_recordThreadSpawn(site: []const u8) void {
 }
 
 // zbr:selfhost/CodeGen.zbr:3073
-pub fn _zbr_fn_threadSpawnSites() std.ArrayList([]const u8) {
+pub fn _zbr_fn_threadSpawnSites() _ZbrList([]const u8) {
 // zbr:selfhost/CodeGen.zbr:3074
     return _zbr_mv__thread_spawn_sites;
 }
 
-pub var _zbr_mv__inference_guess_sites: std.ArrayList([]const u8) = undefined;
-pub var _zbr_mv__inference_guess_msgs: std.ArrayList([]const u8) = undefined;
+pub var _zbr_mv__inference_guess_sites: _ZbrList([]const u8) = undefined;
+pub var _zbr_mv__inference_guess_msgs: _ZbrList([]const u8) = undefined;
 // zbr:selfhost/CodeGen.zbr:3093
 pub fn _zbr_fn_recordInferenceGuess(site: []const u8, msg: []const u8) void {
 // zbr:selfhost/CodeGen.zbr:3094
@@ -5631,13 +5633,13 @@ pub fn _zbr_fn_recordInferenceGuess(site: []const u8, msg: []const u8) void {
 }
 
 // zbr:selfhost/CodeGen.zbr:3097
-pub fn _zbr_fn_inferenceGuessSites() std.ArrayList([]const u8) {
+pub fn _zbr_fn_inferenceGuessSites() _ZbrList([]const u8) {
 // zbr:selfhost/CodeGen.zbr:3098
     return _zbr_mv__inference_guess_sites;
 }
 
 // zbr:selfhost/CodeGen.zbr:3100
-pub fn _zbr_fn_inferenceGuessMessages() std.ArrayList([]const u8) {
+pub fn _zbr_fn_inferenceGuessMessages() _ZbrList([]const u8) {
 // zbr:selfhost/CodeGen.zbr:3101
     return _zbr_mv__inference_guess_msgs;
 }
@@ -5721,7 +5723,7 @@ pub fn _zbr_fn_singleFile() bool {
 pub var _zbr_mv__c_no_header_uses: *_zbr_ty_StrSet = undefined;
 pub var _zbr_mv__c_with_header_uses: *_zbr_ty_StrSet = undefined;
 // zbr:selfhost/CodeGen.zbr:3181
-pub fn _zbr_fn__hasNativeUse(xs: std.ArrayList([]const u8), path: []const u8) bool {
+pub fn _zbr_fn__hasNativeUse(xs: _ZbrList([]const u8), path: []const u8) bool {
 // zbr:selfhost/CodeGen.zbr:3182
     var i: i64 = 0;
 // zbr:selfhost/CodeGen.zbr:3183
@@ -5762,7 +5764,7 @@ pub fn _zbr_fn_isCNoHeaderUse(path: []const u8) bool {
     return _zbr_mv__c_no_header_uses.contains_(path);
 }
 
-pub var _zbr_mv__native_lib_uses: std.ArrayList([]const u8) = undefined;
+pub var _zbr_mv__native_lib_uses: _ZbrList([]const u8) = undefined;
 // zbr:selfhost/CodeGen.zbr:3211
 pub fn _zbr_fn_addNativeLibUse(path: []const u8) void {
 // zbr:selfhost/CodeGen.zbr:3212
@@ -5791,7 +5793,7 @@ pub fn _zbr_fn_emittedDynLib() bool {
 
 pub const _zbr_ty_Writer = struct {
     _type_tag: u64 = _ttag_Writer,
-    _buf: std.ArrayList(u8) = .empty,
+    _buf: _ZbrList(u8) = .empty,
     _uid: i64 = undefined,
     cur_line: i64 = undefined,
     suppress_once_field: bool = undefined,
@@ -5799,7 +5801,7 @@ pub const _zbr_ty_Writer = struct {
         const _self = _zbr_rt._allocator.create(_zbr_ty_Writer) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Writer");
 // zbr:selfhost/CodeGen.zbr:3260
-            _self._buf = std.ArrayList(u8).empty;
+            _self._buf = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:3261
             _self._uid = 0;
 // zbr:selfhost/CodeGen.zbr:3262
@@ -5846,8 +5848,8 @@ pub const _zbr_ty_IfaceRef = struct {
     base: []const u8 = undefined,
     zig: []const u8 = undefined,
     vt: []const u8 = undefined,
-    args: std.ArrayList(_zbr_ty_TypeRef) = undefined,
-    pub fn init(name: []const u8, base: []const u8, zig: []const u8, vt: []const u8, args: std.ArrayList(_zbr_ty_TypeRef)) _zbr_ty_IfaceRef {
+    args: _ZbrList(_zbr_ty_TypeRef) = undefined,
+    pub fn init(name: []const u8, base: []const u8, zig: []const u8, vt: []const u8, args: _ZbrList(_zbr_ty_TypeRef)) _zbr_ty_IfaceRef {
         var _self: _zbr_ty_IfaceRef = undefined;
 // zbr:selfhost/CodeGen.zbr:3297
             _self.name = _intern(name);
@@ -5939,7 +5941,7 @@ pub fn _zbr_fn_ifaceVtSuffix(key: []const u8) []const u8 {
 }
 
 // zbr:selfhost/CodeGen.zbr:3338
-pub fn _zbr_fn_substTypeRef(tr: _zbr_ty_TypeRef, params: std.ArrayList(_zbr_ty_TypeParam), args: std.ArrayList(_zbr_ty_TypeRef)) _zbr_ty_TypeRef {
+pub fn _zbr_fn_substTypeRef(tr: _zbr_ty_TypeRef, params: _ZbrList(_zbr_ty_TypeParam), args: _ZbrList(_zbr_ty_TypeRef)) _zbr_ty_TypeRef {
 // zbr:selfhost/CodeGen.zbr:3339
     switch (_zbr_val(tr)) {
         .named => |n| {
@@ -5975,7 +5977,7 @@ pub fn _zbr_fn_substTypeRef(tr: _zbr_ty_TypeRef, params: std.ArrayList(_zbr_ty_T
         },
         .generic => |g| {
 // zbr:selfhost/CodeGen.zbr:3354
-            var nargs = std.ArrayList(_zbr_ty_TypeRef).empty;
+            var nargs = _ZbrList(_zbr_ty_TypeRef).empty;
 // zbr:selfhost/CodeGen.zbr:3355
             for (g.args.items) |a| {
 // zbr:selfhost/CodeGen.zbr:3356
@@ -6019,17 +6021,17 @@ pub const _zbr_ty_Generator = struct {
     ref_fields: *_zbr_ty_StrSet = undefined,
     opt_ref_fields: *_zbr_ty_StrSet = undefined,
     ext_method_keys: *_zbr_ty_StrSet = undefined,
-    ext_method_ret: std.StringHashMap(_zbr_ty_TypeRef) = undefined,
+    ext_method_ret: _ZbrMap(_zbr_ty_TypeRef) = undefined,
     unwrapped_imports: *_zbr_ty_StrSet = undefined,
     namespace_names: *_zbr_ty_StrSet = undefined,
     import_aliases: *_zbr_ty_StrSet = undefined,
-    exposed_module_vars: std.StringHashMap([]const u8) = undefined,
+    exposed_module_vars: _ZbrMap([]const u8) = undefined,
     mut_set: ?*_zbr_ty_StrSet = undefined,
     ret_set: ?*_zbr_ty_StrSet = undefined,
     nil_narrowed: ?*_zbr_ty_StrSet = undefined,
     try_err_var: ?[]const u8 = undefined,
-    owner_members: std.ArrayList(_zbr_ty_Decl) = undefined,
-    owner_invariants: std.ArrayList(_zbr_ty_Expr) = undefined,
+    owner_members: _ZbrList(_zbr_ty_Decl) = undefined,
+    owner_invariants: _ZbrList(_zbr_ty_Expr) = undefined,
     param_names: ?*_zbr_ty_StrSet = undefined,
     str_params: *_zbr_ty_StrSet = undefined,
     list_tuple_locals: *_zbr_ty_StrSet = undefined,
@@ -6052,7 +6054,7 @@ pub const _zbr_ty_Generator = struct {
     in_lambda_body: bool = undefined,
     emitted_uses: *_zbr_ty_StrSet = undefined,
     dep_only_classes: *_zbr_ty_StrSet = undefined,
-    lam_hint: std.ArrayList(_zbr_ty_Type_) = undefined,
+    lam_hint: _ZbrList(_zbr_ty_Type_) = undefined,
     capture_fields: *_zbr_ty_StrSet = undefined,
     lp_renamed: *_zbr_ty_StrSet = undefined,
     lp_prefix: []const u8 = undefined,
@@ -6062,7 +6064,7 @@ pub const _zbr_ty_Generator = struct {
     infer_ctx: ?*_zbr_ty_InferCtx = undefined,
     allocate_depth: i64 = undefined,
     throws_methods: *_zbr_ty_StrSet = undefined,
-    module_decls: std.ArrayList(_zbr_ty_Decl) = undefined,
+    module_decls: _ZbrList(_zbr_ty_Decl) = undefined,
     in_ensure_emit: bool = undefined,
     strip_contracts: bool = undefined,
     ensure_armed_active: bool = undefined,
@@ -6075,11 +6077,11 @@ pub const _zbr_ty_Generator = struct {
     derive_eq_structs: *_zbr_ty_StrSet = undefined,
     derive_hash_structs: *_zbr_ty_StrSet = undefined,
     datetime_vars: *_zbr_ty_StrSet = undefined,
-    closure_lambdas: std.StringHashMap(_zbr_ty_ExprLambda) = undefined,
-    closure_ret_fns: std.StringHashMap(_zbr_ty_ExprLambda) = undefined,
+    closure_lambdas: _ZbrMap(_zbr_ty_ExprLambda) = undefined,
+    closure_ret_fns: _ZbrMap(_zbr_ty_ExprLambda) = undefined,
     closure_ret_mutates: *_zbr_ty_StrSet = undefined,
     current_closure_ret: ?[]const u8 = undefined,
-    pub fn init(w: *_zbr_ty_Writer, indent: i64, owner: []const u8, in_method: bool, is_struct_owner: bool, is_generic: bool, current_method_throws: bool, try_block_label: ?[]const u8, catch_var: []const u8, source_file: []const u8, class_names: *_zbr_ty_StrSet, module_types: *_zbr_ty_ModuleTypes, dep_types: *_zbr_ty_ModuleTypes, module_decls: std.ArrayList(_zbr_ty_Decl)) _zbr_ty_Generator {
+    pub fn init(w: *_zbr_ty_Writer, indent: i64, owner: []const u8, in_method: bool, is_struct_owner: bool, is_generic: bool, current_method_throws: bool, try_block_label: ?[]const u8, catch_var: []const u8, source_file: []const u8, class_names: *_zbr_ty_StrSet, module_types: *_zbr_ty_ModuleTypes, dep_types: *_zbr_ty_ModuleTypes, module_decls: _ZbrList(_zbr_ty_Decl)) _zbr_ty_Generator {
         var _self: _zbr_ty_Generator = undefined;
 // zbr:selfhost/CodeGen.zbr:3499
             _self.w = w;
@@ -6136,7 +6138,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:3525
             _self.ext_method_keys = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:3526
-            _self.ext_method_ret = std.StringHashMap(_zbr_ty_TypeRef).init(_zbr_rt._allocator);
+            _self.ext_method_ret = _ZbrMap(_zbr_ty_TypeRef).init(_zbr_rt._allocator);
 // zbr:selfhost/CodeGen.zbr:3527
             _self.unwrapped_imports = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:3528
@@ -6144,7 +6146,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:3529
             _self.import_aliases = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:3530
-            _self.exposed_module_vars = std.StringHashMap([]const u8).init(_zbr_rt._allocator);
+            _self.exposed_module_vars = _ZbrMap([]const u8).init(_zbr_rt._allocator);
 // zbr:selfhost/CodeGen.zbr:3532
             _self.mut_set = null;
 // zbr:selfhost/CodeGen.zbr:3533
@@ -6154,9 +6156,9 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:3535
             _self.try_err_var = null;
 // zbr:selfhost/CodeGen.zbr:3536
-            _self.owner_members = std.ArrayList(_zbr_ty_Decl).empty;
+            _self.owner_members = _ZbrList(_zbr_ty_Decl).empty;
 // zbr:selfhost/CodeGen.zbr:3537
-            _self.owner_invariants = std.ArrayList(_zbr_ty_Expr).empty;
+            _self.owner_invariants = _ZbrList(_zbr_ty_Expr).empty;
 // zbr:selfhost/CodeGen.zbr:3538
             _self.param_names = null;
 // zbr:selfhost/CodeGen.zbr:3539
@@ -6202,7 +6204,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:3559
             _self.dep_only_classes = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:3560
-            _self.lam_hint = std.ArrayList(_zbr_ty_Type_).empty;
+            _self.lam_hint = _ZbrList(_zbr_ty_Type_).empty;
 // zbr:selfhost/CodeGen.zbr:3561
             _self.capture_fields = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:3562
@@ -6248,9 +6250,9 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:3582
             _self.datetime_vars = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:3583
-            _self.closure_lambdas = std.StringHashMap(_zbr_ty_ExprLambda).init(_zbr_rt._allocator);
+            _self.closure_lambdas = _ZbrMap(_zbr_ty_ExprLambda).init(_zbr_rt._allocator);
 // zbr:selfhost/CodeGen.zbr:3584
-            _self.closure_ret_fns = std.StringHashMap(_zbr_ty_ExprLambda).init(_zbr_rt._allocator);
+            _self.closure_ret_fns = _ZbrMap(_zbr_ty_ExprLambda).init(_zbr_rt._allocator);
 // zbr:selfhost/CodeGen.zbr:3585
             _self.closure_ret_mutates = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:3586
@@ -6533,7 +6535,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:3746
-    pub fn withOwnerMembers(self: *_zbr_ty_Generator, members: std.ArrayList(_zbr_ty_Decl)) _zbr_ty_Generator {
+    pub fn withOwnerMembers(self: *_zbr_ty_Generator, members: _ZbrList(_zbr_ty_Decl)) _zbr_ty_Generator {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:3747
         const g = blk: { var _except_tmp = self.*; _except_tmp.owner_members = members; break :blk _except_tmp; };
@@ -6542,7 +6544,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:3751
-    pub fn withOwnerInvariants(self: *_zbr_ty_Generator, invs: std.ArrayList(_zbr_ty_Expr)) _zbr_ty_Generator {
+    pub fn withOwnerInvariants(self: *_zbr_ty_Generator, invs: _ZbrList(_zbr_ty_Expr)) _zbr_ty_Generator {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:3752
         const g = blk: { var _except_tmp = self.*; _except_tmp.owner_invariants = invs; break :blk _except_tmp; };
@@ -6588,7 +6590,7 @@ pub const _zbr_ty_Generator = struct {
     pub fn genTrioLambdaArg(self: *_zbr_ty_Generator, arg: _zbr_ty_Expr, recv: _zbr_ty_Expr, init_val: ?_zbr_ty_Expr) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:3780
-        var hints = std.ArrayList(_zbr_ty_Type_).empty;
+        var hints = _ZbrList(_zbr_ty_Type_).empty;
 // zbr:selfhost/CodeGen.zbr:3781
         if ((self.infer_ctx != null)) {
 // zbr:selfhost/CodeGen.zbr:3782
@@ -6615,7 +6617,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:3790
         self.genExpr(arg);
 // zbr:selfhost/CodeGen.zbr:3791
-        self.lam_hint = std.ArrayList(_zbr_ty_Type_).empty;
+        self.lam_hint = _ZbrList(_zbr_ty_Type_).empty;
     }
 
     // zbr:selfhost/CodeGen.zbr:3793
@@ -6908,7 +6910,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:3966
-    pub fn withMethodCtx(self: *_zbr_ty_Generator, ms: ?*_zbr_ty_StrSet, rs: ?*_zbr_ty_StrSet, throws_: bool, members: std.ArrayList(_zbr_ty_Decl), pnames: ?*_zbr_ty_StrSet, sparams: *_zbr_ty_StrSet, sname: []const u8) _zbr_ty_Generator {
+    pub fn withMethodCtx(self: *_zbr_ty_Generator, ms: ?*_zbr_ty_StrSet, rs: ?*_zbr_ty_StrSet, throws_: bool, members: _ZbrList(_zbr_ty_Decl), pnames: ?*_zbr_ty_StrSet, sparams: *_zbr_ty_StrSet, sname: []const u8) _zbr_ty_Generator {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:3967
         const g = blk: { var _except_tmp = self.*; _except_tmp.in_method = true; _except_tmp.current_method_throws = throws_; _except_tmp.mut_set = ms; _except_tmp.ret_set = rs; _except_tmp.owner_members = members; _except_tmp.param_names = pnames; _except_tmp.str_params = sparams; _except_tmp.self_name = sname; _except_tmp.indent = (self.indent + 1); _except_tmp.for_loop_deref = _zbr_ty_StrSet.init(); _except_tmp.for_loop_vars = _zbr_ty_StrSet.init(); _except_tmp.ptr_field_bindings = _zbr_ty_StrSet.init(); _except_tmp.opt_ptr_field_bindings = _zbr_ty_StrSet.init(); _except_tmp.list_tuple_locals = _zbr_ty_StrSet.init(); _except_tmp.list_tuple_str_pos = _zbr_ty_StrSet.init(); _except_tmp.strset_locals = _zbr_ty_StrSet.init(); _except_tmp.chan_locals = _zbr_ty_StrSet.init(); _except_tmp.atomic_locals = _zbr_ty_StrSet.init(); _except_tmp.thread_pool_locals = _zbr_ty_StrSet.init(); _except_tmp.dynlib_vars = _zbr_ty_StrSet.init(); _except_tmp.caller_ptr_params = _zbr_ty_StrSet.init(); break :blk _except_tmp; };
@@ -7075,7 +7077,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:4079
                 if (self.isSimdTypeName(n.name)) {
 // zbr:selfhost/CodeGen.zbr:4080
-                    const sparts: std.ArrayList([]const u8) = blk092_5: { var _ll_5: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_5 = std.mem.splitSequence(u8, n.name, "x"); while (_split_iter_5.next()) |_se_5| { _ll_5.append(_zbr_rt._allocator, _se_5) catch @panic("OOM"); } break :blk092_5 _ll_5; };
+                    const sparts: _ZbrList([]const u8) = blk092_5: { var _ll_5: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_5 = std.mem.splitSequence(u8, n.name, "x"); while (_split_iter_5.next()) |_se_5| { _ll_5.append(_zbr_rt._allocator, _se_5) catch @panic("OOM"); } break :blk092_5 _ll_5; };
 // zbr:selfhost/CodeGen.zbr:4081
                     self.w.emit("@Vector(");
 // zbr:selfhost/CodeGen.zbr:4082
@@ -7101,7 +7103,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:4091
                 if (std.mem.eql(u8, n.name, "StringBuilder")) {
 // zbr:selfhost/CodeGen.zbr:4092
-                    self.w.emit("std.ArrayList(u8)");
+                    self.w.emit("_ZbrList(u8)");
 // zbr:selfhost/CodeGen.zbr:4093
                     return;
                 }
@@ -7463,7 +7465,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:4276
             if (key_str) {
 // zbr:selfhost/CodeGen.zbr:4277
-                self.w.emit("std.StringHashMap(");
+                self.w.emit("_ZbrMap(");
 // zbr:selfhost/CodeGen.zbr:4278
                 if (_zebra_ge(@as(i64, @intCast(gtr.args.items.len)), 2)) {
 // zbr:selfhost/CodeGen.zbr:4279
@@ -7476,7 +7478,7 @@ pub const _zbr_ty_Generator = struct {
                 self.w.emit(")");
             } else {
 // zbr:selfhost/CodeGen.zbr:4287
-                self.w.emit("_zbr_AutoMap(");
+                self.w.emit("_ZbrAutoMap(");
 // zbr:selfhost/CodeGen.zbr:4288
                 var ai: i64 = 0;
 // zbr:selfhost/CodeGen.zbr:4289
@@ -7506,7 +7508,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:4299
         if (std.mem.eql(u8, gtr.name, "List")) {
 // zbr:selfhost/CodeGen.zbr:4300
-            self.w.emit("std.ArrayList(");
+            self.w.emit("_ZbrList(");
 // zbr:selfhost/CodeGen.zbr:4301
             if (_zebra_ge(@as(i64, @intCast(gtr.args.items.len)), 1)) {
 // zbr:selfhost/CodeGen.zbr:4302
@@ -7544,10 +7546,10 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:4319
             if (set_key_str) {
 // zbr:selfhost/CodeGen.zbr:4320
-                self.w.emit("std.StringHashMap(void)");
+                self.w.emit("_ZbrMap(void)");
             } else {
 // zbr:selfhost/CodeGen.zbr:4322
-                self.w.emit("_zbr_AutoMap(");
+                self.w.emit("_ZbrAutoMap(");
 // zbr:selfhost/CodeGen.zbr:4323
                 if (_zebra_ge(@as(i64, @intCast(gtr.args.items.len)), 1)) {
 // zbr:selfhost/CodeGen.zbr:4324
@@ -8059,7 +8061,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:4647
                 if (std.mem.eql(u8, nt.name, "StringBuilder")) {
 // zbr:selfhost/CodeGen.zbr:4648
-                    self.w.emit("std.ArrayList(u8) = .empty,\n");
+                    self.w.emit("_ZbrList(u8) = .empty,\n");
 // zbr:selfhost/CodeGen.zbr:4649
                     return;
                 }
@@ -8413,7 +8415,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:4826
-    pub fn hasCueMember(self: *_zbr_ty_Generator, members: std.ArrayList(_zbr_ty_Decl), cue_name: []const u8) bool {
+    pub fn hasCueMember(self: *_zbr_ty_Generator, members: _ZbrList(_zbr_ty_Decl), cue_name: []const u8) bool {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:4827
         for (members.items) |mem| {
@@ -8914,7 +8916,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:5055
         var gv_seen = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:5056
-        var gv_work = std.ArrayList(_zbr_ty_TypeRef).empty;
+        var gv_work = _ZbrList(_zbr_ty_TypeRef).empty;
 // zbr:selfhost/CodeGen.zbr:5057
         for (n.ifaces.items) |gtr| {
 // zbr:selfhost/CodeGen.zbr:5058
@@ -8970,7 +8972,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:5086
-    pub fn genDynLibMethod(self: *_zbr_ty_Generator, obj: _zbr_ty_Expr, method: []const u8, args: std.ArrayList(_zbr_ty_Arg)) bool {
+    pub fn genDynLibMethod(self: *_zbr_ty_Generator, obj: _zbr_ty_Expr, method: []const u8, args: _ZbrList(_zbr_ty_Arg)) bool {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:5087
         if (std.mem.eql(u8, method, "close")) {
@@ -9076,7 +9078,7 @@ pub const _zbr_ty_Generator = struct {
                     return null;
                 }
 // zbr:selfhost/CodeGen.zbr:5154
-                return _zbr_ty_IfaceRef.init(n.name, n.name, n.name, n.name, std.ArrayList(_zbr_ty_TypeRef).empty);
+                return _zbr_ty_IfaceRef.init(n.name, n.name, n.name, n.name, _ZbrList(_zbr_ty_TypeRef).empty);
             },
             .generic => |g| {
 // zbr:selfhost/CodeGen.zbr:5156
@@ -9340,7 +9342,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:5311
         var seen = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:5312
-        var work = std.ArrayList(_zbr_ty_TypeRef).empty;
+        var work = _ZbrList(_zbr_ty_TypeRef).empty;
 // zbr:selfhost/CodeGen.zbr:5313
         for (ifc.ifaces.items) |tr| {
 // zbr:selfhost/CodeGen.zbr:5314
@@ -9460,7 +9462,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:5372
         var vt_seen = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:5373
-        var vt_work = std.ArrayList(_zbr_ty_TypeRef).empty;
+        var vt_work = _ZbrList(_zbr_ty_TypeRef).empty;
 // zbr:selfhost/CodeGen.zbr:5374
         for (ifc.ifaces.items) |vtr| {
 // zbr:selfhost/CodeGen.zbr:5375
@@ -9615,7 +9617,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:5448
         var vt_seen = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:5449
-        var vt_work = std.ArrayList(_zbr_ty_TypeRef).empty;
+        var vt_work = _ZbrList(_zbr_ty_TypeRef).empty;
 // zbr:selfhost/CodeGen.zbr:5450
         for (ifc.ifaces.items) |tr| {
 // zbr:selfhost/CodeGen.zbr:5451
@@ -9913,7 +9915,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:5586
         var _vt_seen = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:5587
-        var _vt_work = std.ArrayList(_zbr_ty_TypeRef).empty;
+        var _vt_work = _ZbrList(_zbr_ty_TypeRef).empty;
 // zbr:selfhost/CodeGen.zbr:5588
         for (n.ifaces.items) |tr| {
 // zbr:selfhost/CodeGen.zbr:5589
@@ -9959,9 +9961,9 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:5606
         self.w.emit("\");\n");
 // zbr:selfhost/CodeGen.zbr:5608
-        var rf_names = std.ArrayList([]const u8).empty;
+        var rf_names = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:5609
-        var rf_types = std.ArrayList([]const u8).empty;
+        var rf_types = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:5610
         for (n.members.items) |decl| {
 // zbr:selfhost/CodeGen.zbr:5611
@@ -10159,9 +10161,9 @@ pub const _zbr_ty_Generator = struct {
     pub fn genJsonParseStrictFn(self: *_zbr_ty_Generator, n: _zbr_ty_DeclClass) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:5704
-        var f_names = std.ArrayList([]const u8).empty;
+        var f_names = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:5705
-        var f_kinds = std.ArrayList([]const u8).empty;
+        var f_kinds = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:5706
         for (n.members.items) |d| {
 // zbr:selfhost/CodeGen.zbr:5707
@@ -10419,7 +10421,7 @@ pub const _zbr_ty_Generator = struct {
                     lz = _str_concat("*", lz, _zbr_rt._allocator);
                 }
 // zbr:selfhost/CodeGen.zbr:5829
-                return _str_concat(_str_concat("std.ArrayList(", lz, _zbr_rt._allocator), ")", _zbr_rt._allocator);
+                return _str_concat(_str_concat("_ZbrList(", lz, _zbr_rt._allocator), ")", _zbr_rt._allocator);
             },
             .optional => |_ptr_oi| {
                 const oi = _ptr_oi.*;
@@ -10438,7 +10440,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:5836
                 if (_zbr_fn_isString(se)) {
 // zbr:selfhost/CodeGen.zbr:5837
-                    return "std.StringHashMap(void)";
+                    return "_ZbrMap(void)";
                 }
 // zbr:selfhost/CodeGen.zbr:5838
                 const sz: []const u8 = self.genFieldZigType(se);
@@ -10448,7 +10450,7 @@ pub const _zbr_ty_Generator = struct {
                     return "";
                 }
 // zbr:selfhost/CodeGen.zbr:5841
-                return _str_concat(_str_concat("_zbr_AutoMap(", sz, _zbr_rt._allocator), ", void)", _zbr_rt._allocator);
+                return _str_concat(_str_concat("_ZbrAutoMap(", sz, _zbr_rt._allocator), ", void)", _zbr_rt._allocator);
             },
             .hashmap_ => |hm| {
 // zbr:selfhost/CodeGen.zbr:5843
@@ -10466,7 +10468,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:5848
                 if (_zbr_fn_isString(hm.key_t)) {
 // zbr:selfhost/CodeGen.zbr:5849
-                    return _str_concat(_str_concat("std.StringHashMap(", vz, _zbr_rt._allocator), ")", _zbr_rt._allocator);
+                    return _str_concat(_str_concat("_ZbrMap(", vz, _zbr_rt._allocator), ")", _zbr_rt._allocator);
                 }
 // zbr:selfhost/CodeGen.zbr:5850
                 const kz: []const u8 = self.genFieldZigType(hm.key_t);
@@ -10476,7 +10478,7 @@ pub const _zbr_ty_Generator = struct {
                     return "";
                 }
 // zbr:selfhost/CodeGen.zbr:5853
-                return _str_concat(_str_concat(_str_concat(_str_concat("_zbr_AutoMap(", kz, _zbr_rt._allocator), ", ", _zbr_rt._allocator), vz, _zbr_rt._allocator), ")", _zbr_rt._allocator);
+                return _str_concat(_str_concat(_str_concat(_str_concat("_ZbrAutoMap(", kz, _zbr_rt._allocator), ", ", _zbr_rt._allocator), vz, _zbr_rt._allocator), ")", _zbr_rt._allocator);
             },
             .named => |n| {
 // zbr:selfhost/CodeGen.zbr:5855
@@ -10530,7 +10532,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:5876
         const gen_cls: []const u8 = _str_concat("_zbr_gen_", m.name, _zbr_rt._allocator);
 // zbr:selfhost/CodeGen.zbr:5877
-        var mstmts = std.ArrayList(_zbr_ty_Stmt).empty;
+        var mstmts = _ZbrList(_zbr_ty_Stmt).empty;
 // zbr:selfhost/CodeGen.zbr:5878
         if (m.stmts) |ms0| {
 // zbr:selfhost/CodeGen.zbr:5879
@@ -10573,9 +10575,9 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:5900
         var cf = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:5901
-        var local_names = std.ArrayList([]const u8).empty;
+        var local_names = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:5902
-        var local_ann = std.StringHashMap(_zbr_ty_TypeRef).init(_zbr_rt._allocator);
+        var local_ann = _ZbrMap(_zbr_ty_TypeRef).init(_zbr_rt._allocator);
 // zbr:selfhost/CodeGen.zbr:5903
         for (m.params.items) |pp2| {
 // zbr:selfhost/CodeGen.zbr:5904
@@ -10744,7 +10746,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:5975
         var cg = swg.indented();
 // zbr:selfhost/CodeGen.zbr:5977
-        var bg = cg.withMethodCtx(null, null, false, std.ArrayList(_zbr_ty_Decl).empty, ps, sp, "self");
+        var bg = cg.withMethodCtx(null, null, false, _ZbrList(_zbr_ty_Decl).empty, ps, sp, "self");
 // zbr:selfhost/CodeGen.zbr:5978
         bg = bg.withInferCtx(ctx);
 // zbr:selfhost/CodeGen.zbr:5979
@@ -11304,7 +11306,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:6268
         self.w.emit(") ");
 // zbr:selfhost/CodeGen.zbr:6269
-        const mstmts_pre: ?std.ArrayList(_zbr_ty_Stmt) = m.stmts;
+        const mstmts_pre: ?_ZbrList(_zbr_ty_Stmt) = m.stmts;
 // zbr:selfhost/CodeGen.zbr:6270
         var auto_throws: bool = (m.throws_ or ((mstmts_pre != null) and _zbr_fn_bodyHasRaise(mstmts_pre.?)));
 // zbr:selfhost/CodeGen.zbr:6274
@@ -12038,7 +12040,7 @@ pub const _zbr_ty_Generator = struct {
     pub fn genNamespace(self: *_zbr_ty_Generator, ns: _zbr_ty_DeclNamespace) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:6711
-        const parts: std.ArrayList([]const u8) = blk092_7: { var _ll_7: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_7 = std.mem.splitSequence(u8, ns.name, "."); while (_split_iter_7.next()) |_se_7| { _ll_7.append(_zbr_rt._allocator, _se_7) catch @panic("OOM"); } break :blk092_7 _ll_7; };
+        const parts: _ZbrList([]const u8) = blk092_7: { var _ll_7: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_7 = std.mem.splitSequence(u8, ns.name, "."); while (_split_iter_7.next()) |_se_7| { _ll_7.append(_zbr_rt._allocator, _se_7) catch @panic("OOM"); } break :blk092_7 _ll_7; };
 // zbr:selfhost/CodeGen.zbr:6712
         var depth: i64 = 0;
 // zbr:selfhost/CodeGen.zbr:6713
@@ -12271,13 +12273,13 @@ pub const _zbr_ty_Generator = struct {
             }
         }
 // zbr:selfhost/CodeGen.zbr:6856
-        var if_supers = std.ArrayList([]const u8).empty;
+        var if_supers = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:6857
-        var if_super_refs = std.ArrayList(_zbr_ty_TypeRef).empty;
+        var if_super_refs = _ZbrList(_zbr_ty_TypeRef).empty;
 // zbr:selfhost/CodeGen.zbr:6858
         var if_seen = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:6859
-        var if_work = std.ArrayList(_zbr_ty_TypeRef).empty;
+        var if_work = _ZbrList(_zbr_ty_TypeRef).empty;
 // zbr:selfhost/CodeGen.zbr:6860
         for (ifc.ifaces.items) |itr| {
 // zbr:selfhost/CodeGen.zbr:6861
@@ -12562,7 +12564,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:7006
             const sref2 = _zbr_at(if_super_refs.items, fwi);
 // zbr:selfhost/CodeGen.zbr:7007
-            var sargs = std.ArrayList(_zbr_ty_TypeRef).empty;
+            var sargs = _ZbrList(_zbr_ty_TypeRef).empty;
 // zbr:selfhost/CodeGen.zbr:7008
             if (self.ifaceRef(sref2)) |sref2_ir| {
 // zbr:selfhost/CodeGen.zbr:7009
@@ -12933,7 +12935,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:7184
-    pub fn genParamList(self: *_zbr_ty_Generator, params: std.ArrayList(_zbr_ty_Param), body: ?std.ArrayList(_zbr_ty_Stmt)) void {
+    pub fn genParamList(self: *_zbr_ty_Generator, params: _ZbrList(_zbr_ty_Param), body: ?_ZbrList(_zbr_ty_Stmt)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:7185
         var first: bool = true;
@@ -12967,7 +12969,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:7218
-    pub fn addAddrOfMutationsInStmts(self: *_zbr_ty_Generator, stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet) void {
+    pub fn addAddrOfMutationsInStmts(self: *_zbr_ty_Generator, stmts: _ZbrList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:7219
         for (stmts.items) |s| {
@@ -13176,7 +13178,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:7301
                     if ((body != null)) {
 // zbr:selfhost/CodeGen.zbr:7302
-                        const psl: std.ArrayList(_zbr_ty_Param) = ps.?;
+                        const psl: _ZbrList(_zbr_ty_Param) = ps.?;
 // zbr:selfhost/CodeGen.zbr:7303
                         var pi: i64 = 0;
 // zbr:selfhost/CodeGen.zbr:7304
@@ -13316,7 +13318,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:7376
-    pub fn paramNeedsAddrOfTx(self: *_zbr_ty_Generator, p: _zbr_ty_Param, body: ?std.ArrayList(_zbr_ty_Stmt)) bool {
+    pub fn paramNeedsAddrOfTx(self: *_zbr_ty_Generator, p: _zbr_ty_Param, body: ?_ZbrList(_zbr_ty_Stmt)) bool {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:7377
         if (_zbr_fn_paramNeedsAddrOf(p, body)) {
@@ -13483,7 +13485,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:7515
-    pub fn genStmts(self: *_zbr_ty_Generator, stmts: std.ArrayList(_zbr_ty_Stmt)) void {
+    pub fn genStmts(self: *_zbr_ty_Generator, stmts: _ZbrList(_zbr_ty_Stmt)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:7519
         const saved_ms = self.mut_set;
@@ -13496,9 +13498,9 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:7533
         const saved_nn: ?*_zbr_ty_StrSet = self.nil_narrowed;
 // zbr:selfhost/CodeGen.zbr:7534
-        var ee_names = std.ArrayList([]const u8).empty;
+        var ee_names = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:7535
-        var ee_saveds = std.ArrayList(_zbr_ty_Type_).empty;
+        var ee_saveds = _ZbrList(_zbr_ty_Type_).empty;
 // zbr:selfhost/CodeGen.zbr:7541
         var ee_idx: i64 = (-1);
 // zbr:selfhost/CodeGen.zbr:7542
@@ -13516,7 +13518,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:7548
                     if (self.nil_narrowed) |ee_cur| {
 // zbr:selfhost/CodeGen.zbr:7549
-                        const ee_prevs: std.ArrayList([]const u8) = ee_cur.items();
+                        const ee_prevs: _ZbrList([]const u8) = ee_cur.items();
 // zbr:selfhost/CodeGen.zbr:7550
                         for (ee_prevs.items) |ee_prev| {
 // zbr:selfhost/CodeGen.zbr:7551
@@ -13977,7 +13979,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:7785
                 self.emitName(n.name);
 // zbr:selfhost/CodeGen.zbr:7786
-                self.w.emit(": std.ArrayList([]const u8) = ");
+                self.w.emit(": _ZbrList([]const u8) = ");
 // zbr:selfhost/CodeGen.zbr:7787
                 self.w.emit(lbl_sl);
 // zbr:selfhost/CodeGen.zbr:7788
@@ -13985,7 +13987,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:7789
                 self.w.emit(ll_sl);
 // zbr:selfhost/CodeGen.zbr:7790
-                self.w.emit(": std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var ");
+                self.w.emit(": _ZbrList([]const u8) = _ZbrList([]const u8).empty; var ");
 // zbr:selfhost/CodeGen.zbr:7791
                 self.w.emit(si_sl);
 // zbr:selfhost/CodeGen.zbr:7792
@@ -14634,7 +14636,7 @@ pub const _zbr_ty_Generator = struct {
                     self.genType(n.type_.?);
                 }
 // zbr:selfhost/CodeGen.zbr:8120
-                self.w.emit(" = std.ArrayList(u8).empty;\n");
+                self.w.emit(" = _ZbrList(u8).empty;\n");
 // zbr:selfhost/CodeGen.zbr:8121
                 return;
             }
@@ -14967,7 +14969,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:8336
                 var alias_lookup_name: []const u8 = "";
 // zbr:selfhost/CodeGen.zbr:8337
-                var alias_value_args = std.ArrayList(_zbr_ty_Expr).empty;
+                var alias_value_args = _ZbrList(_zbr_ty_Expr).empty;
 // zbr:selfhost/CodeGen.zbr:8338
                 switch (_zbr_val(n.type_.?)) {
                     .named => |alias_tn| {
@@ -14999,7 +15001,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:8353
-    pub fn genTypeAliasConstraint(self: *_zbr_ty_Generator, alias_decl: _zbr_ty_DeclTypeAlias, alias_name: []const u8, var_name: []const u8, value_args: std.ArrayList(_zbr_ty_Expr)) void {
+    pub fn genTypeAliasConstraint(self: *_zbr_ty_Generator, alias_decl: _zbr_ty_DeclTypeAlias, alias_name: []const u8, var_name: []const u8, value_args: _ZbrList(_zbr_ty_Expr)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:8354
         if ((alias_decl.constraint == null)) {
@@ -15338,7 +15340,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:8555
-    pub fn getHashMapCtorArgs(self: *_zbr_ty_Generator, e: _zbr_ty_Expr) ?std.ArrayList([]const u8) {
+    pub fn getHashMapCtorArgs(self: *_zbr_ty_Generator, e: _zbr_ty_Expr) ?_ZbrList([]const u8) {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:8556
         if (_zbr_val(e) == .call) {
@@ -15356,7 +15358,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:8560
                         if (std.mem.eql(u8, id.name, "HashMap")) {
 // zbr:selfhost/CodeGen.zbr:8561
-                            var out = std.ArrayList([]const u8).empty;
+                            var out = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:8562
                             for (inner.args.items) |a| {
 // zbr:selfhost/CodeGen.zbr:8563
@@ -15428,7 +15430,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:8590
                         if (std.mem.eql(u8, id.name, "List")) {
 // zbr:selfhost/CodeGen.zbr:8591
-                            self.w.emit("std.ArrayList(");
+                            self.w.emit("_ZbrList(");
 // zbr:selfhost/CodeGen.zbr:8592
                             if (_zebra_gt(@as(i64, @intCast(inner.args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:8593
@@ -15449,7 +15451,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:8600
                             if (key_str) {
 // zbr:selfhost/CodeGen.zbr:8601
-                                self.w.emit("std.StringHashMap(");
+                                self.w.emit("_ZbrMap(");
 // zbr:selfhost/CodeGen.zbr:8602
                                 if (_zebra_ge(@as(i64, @intCast(inner.args.items.len)), 2)) {
 // zbr:selfhost/CodeGen.zbr:8603
@@ -15460,7 +15462,7 @@ pub const _zbr_ty_Generator = struct {
                                 }
                             } else {
 // zbr:selfhost/CodeGen.zbr:8607
-                                self.w.emit("_zbr_AutoMap(");
+                                self.w.emit("_ZbrAutoMap(");
 // zbr:selfhost/CodeGen.zbr:8608
                                 var fi: bool = true;
 // zbr:selfhost/CodeGen.zbr:8609
@@ -15522,7 +15524,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:8635
                         if ((!lh_done)) {
 // zbr:selfhost/CodeGen.zbr:8636
-                            self.w.emit("std.ArrayList(anytype)");
+                            self.w.emit("_ZbrList(anytype)");
                         }
 // zbr:selfhost/CodeGen.zbr:8637
                         self.w.emit(".empty");
@@ -15578,10 +15580,10 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:8661
                                     if (set_key_str) {
 // zbr:selfhost/CodeGen.zbr:8662
-                                        self.w.emit("std.StringHashMap(void)");
+                                        self.w.emit("_ZbrMap(void)");
                                     } else {
 // zbr:selfhost/CodeGen.zbr:8664
-                                        self.w.emit("_zbr_AutoMap(");
+                                        self.w.emit("_ZbrAutoMap(");
 // zbr:selfhost/CodeGen.zbr:8665
                                         if (_zebra_gt(@as(i64, @intCast(gtr.args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:8666
@@ -15901,7 +15903,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:8818
                         if (std.mem.eql(u8, id.name, "List")) {
 // zbr:selfhost/CodeGen.zbr:8819
-                            self.w.emit("std.ArrayList(");
+                            self.w.emit("_ZbrList(");
 // zbr:selfhost/CodeGen.zbr:8820
                             if (_zebra_gt(@as(i64, @intCast(c.args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:8821
@@ -15919,7 +15921,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:8826
                             if (ks) {
 // zbr:selfhost/CodeGen.zbr:8827
-                                self.w.emit("std.StringHashMap(");
+                                self.w.emit("_ZbrMap(");
 // zbr:selfhost/CodeGen.zbr:8828
                                 if (_zebra_ge(@as(i64, @intCast(c.args.items.len)), 2)) {
 // zbr:selfhost/CodeGen.zbr:8829
@@ -15930,7 +15932,7 @@ pub const _zbr_ty_Generator = struct {
                                 }
                             } else {
 // zbr:selfhost/CodeGen.zbr:8833
-                                self.w.emit("_zbr_AutoMap(");
+                                self.w.emit("_ZbrAutoMap(");
 // zbr:selfhost/CodeGen.zbr:8834
                                 var fi: bool = true;
 // zbr:selfhost/CodeGen.zbr:8835
@@ -15968,10 +15970,10 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:8850
                             if (set_ks) {
 // zbr:selfhost/CodeGen.zbr:8851
-                                self.w.emit("std.StringHashMap(void)");
+                                self.w.emit("_ZbrMap(void)");
                             } else {
 // zbr:selfhost/CodeGen.zbr:8853
-                                self.w.emit("_zbr_AutoMap(");
+                                self.w.emit("_ZbrAutoMap(");
 // zbr:selfhost/CodeGen.zbr:8854
                                 if (_zebra_gt(@as(i64, @intCast(c.args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:8855
@@ -17502,7 +17504,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:9585
                         if ((!lh_done)) {
 // zbr:selfhost/CodeGen.zbr:9586
-                            self.w.emit("std.ArrayList(anytype)");
+                            self.w.emit("_ZbrList(anytype)");
                         }
 // zbr:selfhost/CodeGen.zbr:9587
                         self.w.emit(".empty");
@@ -17701,7 +17703,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:9684
-    pub fn endsInReturn(self: *_zbr_ty_Generator, stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+    pub fn endsInReturn(self: *_zbr_ty_Generator, stmts: _ZbrList(_zbr_ty_Stmt)) bool {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:9685
         if ((@as(i64, @intCast(stmts.items.len)) == 0)) {
@@ -17984,7 +17986,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:9829
-    pub fn hoistCallOnTemp(self: *_zbr_ty_Generator, obj: _zbr_ty_Expr, method_name: []const u8, call_args: std.ArrayList(_zbr_ty_Arg)) bool {
+    pub fn hoistCallOnTemp(self: *_zbr_ty_Generator, obj: _zbr_ty_Expr, method_name: []const u8, call_args: _ZbrList(_zbr_ty_Arg)) bool {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:9830
         switch (_zbr_val(obj)) {
@@ -18100,7 +18102,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:9893
-    pub fn genIsCaptureThen(self: *_zbr_ty_Generator, cond_expr: _zbr_ty_Expr, cap: []const u8, stmts: std.ArrayList(_zbr_ty_Stmt)) void {
+    pub fn genIsCaptureThen(self: *_zbr_ty_Generator, cond_expr: _zbr_ty_Expr, cap: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:9897
         self.noteShadowLocal(cap);
@@ -18451,9 +18453,9 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:10090
             var then_g = ig;
 // zbr:selfhost/CodeGen.zbr:10094
-            var nn_names = std.ArrayList([]const u8).empty;
+            var nn_names = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:10095
-            var nn_saveds = std.ArrayList(_zbr_ty_Type_).empty;
+            var nn_saveds = _ZbrList(_zbr_ty_Type_).empty;
 // zbr:selfhost/CodeGen.zbr:10096
             const nn_assigned = _zbr_ty_StrSet.init();
 // zbr:selfhost/CodeGen.zbr:10097
@@ -18570,7 +18572,7 @@ pub const _zbr_ty_Generator = struct {
     pub fn genForIn(self: *_zbr_ty_Generator, fi: _zbr_ty_StmtForIn) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:10152
-        var pushed352 = std.ArrayList([]const u8).empty;
+        var pushed352 = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:10153
         for (fi.vars.items) |fv352| {
 // zbr:selfhost/CodeGen.zbr:10154
@@ -19989,7 +19991,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:10915
             const sp336: _zbr_ty_Span = _zbr_ty_Span.init(0, 0, 0, 0);
 // zbr:selfhost/CodeGen.zbr:10916
-            var targs336 = std.ArrayList(_zbr_ty_TypeRef).empty;
+            var targs336 = _ZbrList(_zbr_ty_TypeRef).empty;
 // zbr:selfhost/CodeGen.zbr:10917
             targs336.append(_zbr_rt._allocator, _zbr_ty_TypeRef{ .named = _zbr_ty_NamedTypeRef.init(sp336, "str") }) catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:10918
@@ -22514,7 +22516,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:12193
-    pub fn genRequireChecks(self: *_zbr_ty_Generator, req_list: std.ArrayList(_zbr_ty_Expr), context: []const u8) void {
+    pub fn genRequireChecks(self: *_zbr_ty_Generator, req_list: _ZbrList(_zbr_ty_Expr), context: []const u8) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:12194
         if (self.strip_contracts) {
@@ -22810,7 +22812,7 @@ pub const _zbr_ty_Generator = struct {
     pub fn collectAndEmitOldSnapshots(self: *_zbr_ty_Generator, e: _zbr_ty_Expr) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:12365
-        const _old_nodes: std.ArrayList(_zbr_ty_ExprOld) = _zbr_fn_collectOldNodes(e);
+        const _old_nodes: _ZbrList(_zbr_ty_ExprOld) = _zbr_fn_collectOldNodes(e);
 // zbr:selfhost/CodeGen.zbr:12366
         for (_old_nodes.items) |o| {
 // zbr:selfhost/CodeGen.zbr:12367
@@ -22836,7 +22838,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:12395
-    pub fn genEnsureBlock(self: *_zbr_ty_Generator, ensure_list: std.ArrayList(_zbr_ty_Expr), context: []const u8, return_type: ?_zbr_ty_TypeRef) _zbr_ty_EnsureCtx {
+    pub fn genEnsureBlock(self: *_zbr_ty_Generator, ensure_list: _ZbrList(_zbr_ty_Expr), context: []const u8, return_type: ?_zbr_ty_TypeRef) _zbr_ty_EnsureCtx {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:12396
         if ((self.strip_contracts or (@as(i64, @intCast(ensure_list.items.len)) == 0))) {
@@ -23807,7 +23809,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:12943
                 if ((_zebra_gt(@as(i64, @intCast(cl.text.len)), 1) and std.mem.startsWith(u8, cl.text, "c"))) {
 // zbr:selfhost/CodeGen.zbr:12945
-                    var parts = std.ArrayList([]const u8).empty;
+                    var parts = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:12946
                     var first_skipped: bool = false;
 // zbr:selfhost/CodeGen.zbr:12947
@@ -24553,7 +24555,7 @@ pub const _zbr_ty_Generator = struct {
                     ll_kw = "const ";
                 }
 // zbr:selfhost/CodeGen.zbr:13386
-                self.w.emit(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("(", ll_label, _zbr_rt._allocator), ": { ", _zbr_rt._allocator), ll_kw, _zbr_rt._allocator), ll_var, _zbr_rt._allocator), ": std.ArrayList(", _zbr_rt._allocator));
+                self.w.emit(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("(", ll_label, _zbr_rt._allocator), ": { ", _zbr_rt._allocator), ll_kw, _zbr_rt._allocator), ll_var, _zbr_rt._allocator), ": _ZbrList(", _zbr_rt._allocator));
 // zbr:selfhost/CodeGen.zbr:13387
                 var elem_zig: []const u8 = "[]const u8";
 // zbr:selfhost/CodeGen.zbr:13388
@@ -24561,7 +24563,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:13390
                     self.genType(ll.elem_type.?);
 // zbr:selfhost/CodeGen.zbr:13391
-                    self.w.emit(") = std.ArrayList(");
+                    self.w.emit(") = _ZbrList(");
 // zbr:selfhost/CodeGen.zbr:13392
                     self.genType(ll.elem_type.?);
 // zbr:selfhost/CodeGen.zbr:13393
@@ -24601,10 +24603,10 @@ pub const _zbr_ty_Generator = struct {
                             }
                         }
 // zbr:selfhost/CodeGen.zbr:13423
-                        self.w.emit(_str_concat(_str_concat(_str_concat(elem_zig, ") = std.ArrayList(", _zbr_rt._allocator), elem_zig, _zbr_rt._allocator), ").empty; ", _zbr_rt._allocator));
+                        self.w.emit(_str_concat(_str_concat(_str_concat(elem_zig, ") = _ZbrList(", _zbr_rt._allocator), elem_zig, _zbr_rt._allocator), ").empty; ", _zbr_rt._allocator));
                     } else {
 // zbr:selfhost/CodeGen.zbr:13425
-                        self.w.emit(_str_concat(_str_concat(_str_concat(elem_zig, ") = std.ArrayList(", _zbr_rt._allocator), elem_zig, _zbr_rt._allocator), ").empty; ", _zbr_rt._allocator));
+                        self.w.emit(_str_concat(_str_concat(_str_concat(elem_zig, ") = _ZbrList(", _zbr_rt._allocator), elem_zig, _zbr_rt._allocator), ").empty; ", _zbr_rt._allocator));
                     }
                 }
 // zbr:selfhost/CodeGen.zbr:13426
@@ -24663,7 +24665,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:13460
                 if (sl_is_str) {
 // zbr:selfhost/CodeGen.zbr:13461
-                    self.w.emit("std.StringHashMap(void)");
+                    self.w.emit("_ZbrMap(void)");
                 } else {
 // zbr:selfhost/CodeGen.zbr:13463
                     var sl_elem_zig: []const u8 = "i64";
@@ -24682,7 +24684,7 @@ pub const _zbr_ty_Generator = struct {
                         sl_elem_zig = _zbr_fn_zigTypeForListElem(sl_elem_t);
                     }
 // zbr:selfhost/CodeGen.zbr:13471
-                    self.w.emit(_str_concat(_str_concat("_zbr_AutoMap(", sl_elem_zig, _zbr_rt._allocator), ", void)", _zbr_rt._allocator));
+                    self.w.emit(_str_concat(_str_concat("_ZbrAutoMap(", sl_elem_zig, _zbr_rt._allocator), ", void)", _zbr_rt._allocator));
                 }
 // zbr:selfhost/CodeGen.zbr:13472
                 self.w.emit(".init(_allocator); ");
@@ -24767,7 +24769,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:13520
                 if (dk_is_str) {
 // zbr:selfhost/CodeGen.zbr:13521
-                    self.w.emit(_str_concat(_str_concat("std.StringHashMap(", dv_zig, _zbr_rt._allocator), ")", _zbr_rt._allocator));
+                    self.w.emit(_str_concat(_str_concat("_ZbrMap(", dv_zig, _zbr_rt._allocator), ")", _zbr_rt._allocator));
                 } else {
 // zbr:selfhost/CodeGen.zbr:13523
                     var dk_zig: []const u8 = "i64";
@@ -24786,7 +24788,7 @@ pub const _zbr_ty_Generator = struct {
                         dk_zig = _zbr_fn_zigTypeForListElem(dk_t);
                     }
 // zbr:selfhost/CodeGen.zbr:13531
-                    self.w.emit(_str_concat(_str_concat(_str_concat(_str_concat("_zbr_AutoMap(", dk_zig, _zbr_rt._allocator), ", ", _zbr_rt._allocator), dv_zig, _zbr_rt._allocator), ")", _zbr_rt._allocator));
+                    self.w.emit(_str_concat(_str_concat(_str_concat(_str_concat("_ZbrAutoMap(", dk_zig, _zbr_rt._allocator), ", ", _zbr_rt._allocator), dv_zig, _zbr_rt._allocator), ")", _zbr_rt._allocator));
                 }
 // zbr:selfhost/CodeGen.zbr:13532
                 self.w.emit(".init(_allocator); ");
@@ -25443,7 +25445,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:13863
         if (self.nil_narrowed) |nn| {
 // zbr:selfhost/CodeGen.zbr:13866
-            const prevs: std.ArrayList([]const u8) = nn.items();
+            const prevs: _ZbrList([]const u8) = nn.items();
 // zbr:selfhost/CodeGen.zbr:13867
             for (prevs.items) |prev| {
 // zbr:selfhost/CodeGen.zbr:13868
@@ -26693,7 +26695,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:14598
         const s: []const u8 = self.unescapeDollar(s0);
 // zbr:selfhost/CodeGen.zbr:14599
-        const segs: std.ArrayList([]const u8) = blk092_11: { var _ll_11: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_11 = std.mem.splitSequence(u8, s, "\\\""); while (_split_iter_11.next()) |_se_11| { _ll_11.append(_zbr_rt._allocator, _se_11) catch @panic("OOM"); } break :blk092_11 _ll_11; };
+        const segs: _ZbrList([]const u8) = blk092_11: { var _ll_11: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_11 = std.mem.splitSequence(u8, s, "\\\""); while (_split_iter_11.next()) |_se_11| { _ll_11.append(_zbr_rt._allocator, _se_11) catch @panic("OOM"); } break :blk092_11 _ll_11; };
 // zbr:selfhost/CodeGen.zbr:14600
         var out: []const u8 = "";
 // zbr:selfhost/CodeGen.zbr:14601
@@ -26718,7 +26720,7 @@ pub const _zbr_ty_Generator = struct {
     pub fn genDocStringLit(self: *_zbr_ty_Generator, text: []const u8) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:14611
-        var dq_parts = std.ArrayList([]const u8).empty;
+        var dq_parts = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:14612
         {
             var _it_dqp = std.mem.splitSequence(u8, text, "\"\"\"");
@@ -26737,7 +26739,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:14618
         if (std.mem.startsWith(u8, content, "\n")) {
 // zbr:selfhost/CodeGen.zbr:14619
-            var nl_split = std.ArrayList([]const u8).empty;
+            var nl_split = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:14620
             {
                 var _it_nsp = std.mem.splitSequence(u8, content, "\n");
@@ -26764,7 +26766,7 @@ pub const _zbr_ty_Generator = struct {
             }
         }
 // zbr:selfhost/CodeGen.zbr:14630
-        var qparts = std.ArrayList([]const u8).empty;
+        var qparts = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:14631
         {
             var _it_qp = std.mem.splitSequence(u8, content, "\"");
@@ -26787,7 +26789,7 @@ pub const _zbr_ty_Generator = struct {
             qi = (qi + 1);
         }
 // zbr:selfhost/CodeGen.zbr:14640
-        var nparts = std.ArrayList([]const u8).empty;
+        var nparts = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:14641
         {
             var _it_np = std.mem.splitSequence(u8, escaped, "\n");
@@ -26833,7 +26835,7 @@ pub const _zbr_ty_Generator = struct {
             return s;
         }
 // zbr:selfhost/CodeGen.zbr:14671
-        var out = std.ArrayList(u8).empty;
+        var out = _ZbrList(u8).empty;
 // zbr:selfhost/CodeGen.zbr:14672
         var i: i64 = 0;
 // zbr:selfhost/CodeGen.zbr:14673
@@ -26869,13 +26871,13 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:14688
         var fmt_str: []const u8 = "";
 // zbr:selfhost/CodeGen.zbr:14689
-        var cast_types = std.ArrayList([]const u8).empty;
+        var cast_types = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:14694
-        var cast_trunc = std.ArrayList(bool).empty;
+        var cast_trunc = _ZbrList(bool).empty;
 // zbr:selfhost/CodeGen.zbr:14695
-        var needs_tostring = std.ArrayList(bool).empty;
+        var needs_tostring = _ZbrList(bool).empty;
 // zbr:selfhost/CodeGen.zbr:14696
-        var show_wraps = std.ArrayList(bool).empty;
+        var show_wraps = _ZbrList(bool).empty;
 // zbr:selfhost/CodeGen.zbr:14697
         var i: i64 = 0;
 // zbr:selfhost/CodeGen.zbr:14698
@@ -27817,7 +27819,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:15194
             if ((std.mem.eql(u8, id.name, "HashMap") and (@as(i64, @intCast(c.args.items.len)) == 0))) {
 // zbr:selfhost/CodeGen.zbr:15197
-                self.w.emit("std.StringHashMap(anytype).init(_allocator)");
+                self.w.emit("_ZbrMap(anytype).init(_allocator)");
 // zbr:selfhost/CodeGen.zbr:15198
                 return;
             }
@@ -27831,7 +27833,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:15202
             if ((std.mem.eql(u8, id.name, "StringBuilder") and (@as(i64, @intCast(c.args.items.len)) == 0))) {
 // zbr:selfhost/CodeGen.zbr:15203
-                self.w.emit("std.ArrayList(u8).empty");
+                self.w.emit("_ZbrList(u8).empty");
 // zbr:selfhost/CodeGen.zbr:15204
                 return;
             }
@@ -27885,7 +27887,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:15241
                 self.w.emit(".init(");
 // zbr:selfhost/CodeGen.zbr:15249
-                const ctor_ps: ?std.ArrayList(_zbr_ty_Param) = self.lookupFnParams(_str_concat(id.name, ".init", _zbr_rt._allocator));
+                const ctor_ps: ?_ZbrList(_zbr_ty_Param) = self.lookupFnParams(_str_concat(id.name, ".init", _zbr_rt._allocator));
 // zbr:selfhost/CodeGen.zbr:15250
                 var ctor_has_named: bool = false;
 // zbr:selfhost/CodeGen.zbr:15251
@@ -27907,14 +27909,14 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:15258
                 if (ctor_needs_fill) {
 // zbr:selfhost/CodeGen.zbr:15259
-                    const ctor_body: ?std.ArrayList(_zbr_ty_Stmt) = self.lookupFnBody(_str_concat(id.name, ".init", _zbr_rt._allocator));
+                    const ctor_body: ?_ZbrList(_zbr_ty_Stmt) = self.lookupFnBody(_str_concat(id.name, ".init", _zbr_rt._allocator));
 // zbr:selfhost/CodeGen.zbr:15260
                     self.genArgListFull(c.args, ctor_ps, ctor_body);
                 } else {
 // zbr:selfhost/CodeGen.zbr:15262
                     var first2: bool = true;
 // zbr:selfhost/CodeGen.zbr:15263
-                    var box_labels = std.ArrayList([]const u8).empty;
+                    var box_labels = _ZbrList([]const u8).empty;
 // zbr:selfhost/CodeGen.zbr:15264
                     box_labels.append(_zbr_rt._allocator, _intern("_bx0")) catch @panic("OOM");
 // zbr:selfhost/CodeGen.zbr:15265
@@ -28130,9 +28132,9 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:15386
         self.w.emit("(");
 // zbr:selfhost/CodeGen.zbr:15387
-        var reg_params: ?std.ArrayList(_zbr_ty_Param) = null;
+        var reg_params: ?_ZbrList(_zbr_ty_Param) = null;
 // zbr:selfhost/CodeGen.zbr:15388
-        var reg_body: ?std.ArrayList(_zbr_ty_Stmt) = null;
+        var reg_body: ?_ZbrList(_zbr_ty_Stmt) = null;
 // zbr:selfhost/CodeGen.zbr:15389
         if (_zbr_val(c.callee) == .ident) {
             const reg_id = c.callee.ident;
@@ -28187,7 +28189,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:15413
-    pub fn genMemberCall(self: *_zbr_ty_Generator, m: _zbr_ty_ExprMember, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genMemberCall(self: *_zbr_ty_Generator, m: _zbr_ty_ExprMember, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:15414
         const mname: []const u8 = m.member;
@@ -30534,7 +30536,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:16581
                     if ((std.mem.eql(u8, mname, "repeat") and _zebra_gt(@as(i64, @intCast(args.items.len)), 0))) {
 // zbr:selfhost/CodeGen.zbr:16582
-                        self.w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ");
+                        self.w.emit("(blk_rep: { var _rep = _ZbrList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ");
 // zbr:selfhost/CodeGen.zbr:16583
                         self.genExpr(_zbr_at(args.items, 0).value);
 // zbr:selfhost/CodeGen.zbr:16584
@@ -30881,7 +30883,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:16754
                         self.genExpr(_zbr_at(args.items, 0).value);
 // zbr:selfhost/CodeGen.zbr:16755
-                        self.w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })");
+                        self.w.emit("); var _tok_list = _ZbrList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })");
 // zbr:selfhost/CodeGen.zbr:16756
                         return;
                     }
@@ -33341,7 +33343,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:17977
         if ((std.mem.eql(u8, mname, "split") and _zebra_gt(@as(i64, @intCast(args.items.len)), 0))) {
 // zbr:selfhost/CodeGen.zbr:17979
-            self.w.emit("blk_split: { var _sp = std.ArrayList([]const u8).empty; var _it = std.mem.splitSequence(u8, ");
+            self.w.emit("blk_split: { var _sp = _ZbrList([]const u8).empty; var _it = std.mem.splitSequence(u8, ");
 // zbr:selfhost/CodeGen.zbr:17980
             self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:17981
@@ -33374,7 +33376,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:17994
         if ((std.mem.eql(u8, mname, "repeat") and _zebra_gt(@as(i64, @intCast(args.items.len)), 0))) {
 // zbr:selfhost/CodeGen.zbr:17995
-            self.w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ");
+            self.w.emit("(blk_rep: { var _rep = _ZbrList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ");
 // zbr:selfhost/CodeGen.zbr:17996
             self.genExpr(_zbr_at(args.items, 0).value);
 // zbr:selfhost/CodeGen.zbr:17997
@@ -33721,7 +33723,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:18159
             self.genExpr(_zbr_at(args.items, 0).value);
 // zbr:selfhost/CodeGen.zbr:18160
-            self.w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })");
+            self.w.emit("); var _tok_list = _ZbrList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })");
 // zbr:selfhost/CodeGen.zbr:18161
             return;
         }
@@ -33867,7 +33869,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:18231
-    pub fn genCallOnTemp(self: *_zbr_ty_Generator, m: _zbr_ty_ExprMember, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genCallOnTemp(self: *_zbr_ty_Generator, m: _zbr_ty_ExprMember, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:18232
         if (true) {
@@ -33918,7 +33920,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:18256
-    pub fn genMemberCallDefault(self: *_zbr_ty_Generator, m: _zbr_ty_ExprMember, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genMemberCallDefault(self: *_zbr_ty_Generator, m: _zbr_ty_ExprMember, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:18259
         var callee_throws2: bool = false;
@@ -33961,9 +33963,9 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:18280
         self.w.emit("(");
 // zbr:selfhost/CodeGen.zbr:18284
-        var mc_params: ?std.ArrayList(_zbr_ty_Param) = null;
+        var mc_params: ?_ZbrList(_zbr_ty_Param) = null;
 // zbr:selfhost/CodeGen.zbr:18285
-        var mc_body: ?std.ArrayList(_zbr_ty_Stmt) = null;
+        var mc_body: ?_ZbrList(_zbr_ty_Stmt) = null;
 // zbr:selfhost/CodeGen.zbr:18286
         switch (_zbr_val(m.object.*)) {
             .this_ => {
@@ -34264,7 +34266,7 @@ pub const _zbr_ty_Generator = struct {
             return false;
         }
 // zbr:selfhost/CodeGen.zbr:18424
-        const parts: std.ArrayList([]const u8) = blk092_12: { var _ll_12: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_12 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_12.next()) |_se_12| { _ll_12.append(_zbr_rt._allocator, _se_12) catch @panic("OOM"); } break :blk092_12 _ll_12; };
+        const parts: _ZbrList([]const u8) = blk092_12: { var _ll_12: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_12 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_12.next()) |_se_12| { _ll_12.append(_zbr_rt._allocator, _se_12) catch @panic("OOM"); } break :blk092_12 _ll_12; };
 // zbr:selfhost/CodeGen.zbr:18425
         if ((@as(i64, @intCast(parts.items.len)) != 2)) {
 // zbr:selfhost/CodeGen.zbr:18426
@@ -34416,10 +34418,10 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:18488
-    pub fn genSimdCtor(self: *_zbr_ty_Generator, name: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genSimdCtor(self: *_zbr_ty_Generator, name: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:18490
-        const parts: std.ArrayList([]const u8) = blk092_13: { var _ll_13: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_13 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_13.next()) |_se_13| { _ll_13.append(_zbr_rt._allocator, _se_13) catch @panic("OOM"); } break :blk092_13 _ll_13; };
+        const parts: _ZbrList([]const u8) = blk092_13: { var _ll_13: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_13 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_13.next()) |_se_13| { _ll_13.append(_zbr_rt._allocator, _se_13) catch @panic("OOM"); } break :blk092_13 _ll_13; };
 // zbr:selfhost/CodeGen.zbr:18491
         const elem_zig: []const u8 = self.simdElemZig(_zbr_at(parts.items, 0));
 // zbr:selfhost/CodeGen.zbr:18492
@@ -34453,10 +34455,10 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:18506
-    pub fn genSimdStaticCall(self: *_zbr_ty_Generator, type_name: []const u8, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genSimdStaticCall(self: *_zbr_ty_Generator, type_name: []const u8, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:18507
-        const parts: std.ArrayList([]const u8) = blk092_14: { var _ll_14: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_14 = std.mem.splitSequence(u8, type_name, "x"); while (_split_iter_14.next()) |_se_14| { _ll_14.append(_zbr_rt._allocator, _se_14) catch @panic("OOM"); } break :blk092_14 _ll_14; };
+        const parts: _ZbrList([]const u8) = blk092_14: { var _ll_14: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_14 = std.mem.splitSequence(u8, type_name, "x"); while (_split_iter_14.next()) |_se_14| { _ll_14.append(_zbr_rt._allocator, _se_14) catch @panic("OOM"); } break :blk092_14 _ll_14; };
 // zbr:selfhost/CodeGen.zbr:18508
         const elem_zig: []const u8 = self.simdElemZig(_zbr_at(parts.items, 0));
 // zbr:selfhost/CodeGen.zbr:18509
@@ -34565,7 +34567,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:18567
-    pub fn genSimdInstanceCall(self: *_zbr_ty_Generator, obj: _zbr_ty_Expr, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genSimdInstanceCall(self: *_zbr_ty_Generator, obj: _zbr_ty_Expr, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:18568
         if (std.mem.eql(u8, mname, "sum")) {
@@ -34709,7 +34711,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:18636
-    pub fn genMathCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genMathCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:18637
         if (std.mem.eql(u8, mname, "sqrt")) {
@@ -35230,7 +35232,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:18903
-    pub fn genArgList(self: *_zbr_ty_Generator, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genArgList(self: *_zbr_ty_Generator, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:18904
         var first: bool = true;
@@ -35249,10 +35251,10 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:18915
-    pub fn genArgListForMethod(self: *_zbr_ty_Generator, recv: _zbr_ty_Expr, method: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genArgListForMethod(self: *_zbr_ty_Generator, recv: _zbr_ty_Expr, method: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:18916
-        var ps: ?std.ArrayList(_zbr_ty_Param) = null;
+        var ps: ?_ZbrList(_zbr_ty_Param) = null;
 // zbr:selfhost/CodeGen.zbr:18917
         if ((self.infer_ctx != null)) {
 // zbr:selfhost/CodeGen.zbr:18918
@@ -35270,7 +35272,7 @@ pub const _zbr_ty_Generator = struct {
             return;
         }
 // zbr:selfhost/CodeGen.zbr:18925
-        var body: ?std.ArrayList(_zbr_ty_Stmt) = null;
+        var body: ?_ZbrList(_zbr_ty_Stmt) = null;
 // zbr:selfhost/CodeGen.zbr:18926
         if ((self.infer_ctx != null)) {
 // zbr:selfhost/CodeGen.zbr:18927
@@ -35285,7 +35287,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:18931
-    pub fn genArgListByParams(self: *_zbr_ty_Generator, ps: std.ArrayList(_zbr_ty_Param), args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genArgListByParams(self: *_zbr_ty_Generator, ps: _ZbrList(_zbr_ty_Param), args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:18932
         var i: i64 = 0;
@@ -35343,25 +35345,25 @@ pub const _zbr_ty_Generator = struct {
             return false;
         }
 // zbr:selfhost/CodeGen.zbr:18962
-        const bps: ?std.ArrayList(_zbr_ty_Param) = self.lookupFnParams(bname);
+        const bps: ?_ZbrList(_zbr_ty_Param) = self.lookupFnParams(bname);
 // zbr:selfhost/CodeGen.zbr:18963
-        const bbody: ?std.ArrayList(_zbr_ty_Stmt) = self.lookupFnBody(bname);
+        const bbody: ?_ZbrList(_zbr_ty_Stmt) = self.lookupFnBody(bname);
 // zbr:selfhost/CodeGen.zbr:18964
         if (((bps == null) or (bbody == null))) {
 // zbr:selfhost/CodeGen.zbr:18965
             return false;
         }
 // zbr:selfhost/CodeGen.zbr:18966
-        const ps: std.ArrayList(_zbr_ty_Param) = bps.?;
+        const ps: _ZbrList(_zbr_ty_Param) = bps.?;
 // zbr:selfhost/CodeGen.zbr:18967
-        const body: std.ArrayList(_zbr_ty_Stmt) = bbody.?;
+        const body: _ZbrList(_zbr_ty_Stmt) = bbody.?;
 // zbr:selfhost/CodeGen.zbr:18968
         if ((@as(i64, @intCast(c.args.items.len)) != @as(i64, @intCast(ps.items.len)))) {
 // zbr:selfhost/CodeGen.zbr:18969
             return false;
         }
 // zbr:selfhost/CodeGen.zbr:18970
-        var borrowed = std.ArrayList(bool).empty;
+        var borrowed = _ZbrList(bool).empty;
 // zbr:selfhost/CodeGen.zbr:18971
         var any: bool = false;
 // zbr:selfhost/CodeGen.zbr:18972
@@ -35460,7 +35462,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19018
-    pub fn genArgListSigAware(self: *_zbr_ty_Generator, callee: _zbr_ty_Expr, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genArgListSigAware(self: *_zbr_ty_Generator, callee: _zbr_ty_Expr, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:19019
         const consumer: bool = self.isStdlibClosureStructConsumer(callee);
@@ -35487,7 +35489,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19030
-    pub fn lookupFnParams(self: *_zbr_ty_Generator, key: []const u8) ?std.ArrayList(_zbr_ty_Param) {
+    pub fn lookupFnParams(self: *_zbr_ty_Generator, key: []const u8) ?_ZbrList(_zbr_ty_Param) {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:19031
         for (self.module_decls.items) |decl| {
@@ -35593,7 +35595,7 @@ pub const _zbr_ty_Generator = struct {
             }
         }
 // zbr:selfhost/CodeGen.zbr:19067
-        const cm_parts: std.ArrayList([]const u8) = blk092_15: { var _ll_15: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_15 = std.mem.splitSequence(u8, key, "."); while (_split_iter_15.next()) |_se_15| { _ll_15.append(_zbr_rt._allocator, _se_15) catch @panic("OOM"); } break :blk092_15 _ll_15; };
+        const cm_parts: _ZbrList([]const u8) = blk092_15: { var _ll_15: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_15 = std.mem.splitSequence(u8, key, "."); while (_split_iter_15.next()) |_se_15| { _ll_15.append(_zbr_rt._allocator, _se_15) catch @panic("OOM"); } break :blk092_15 _ll_15; };
 // zbr:selfhost/CodeGen.zbr:19068
         var cm_class: []const u8 = "";
 // zbr:selfhost/CodeGen.zbr:19069
@@ -35633,7 +35635,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19092
-    pub fn lookupParamType(self: *_zbr_ty_Generator, ps: std.ArrayList(_zbr_ty_Param), arg_name: ?[]const u8, arg_idx: i64) ?_zbr_ty_TypeRef {
+    pub fn lookupParamType(self: *_zbr_ty_Generator, ps: _ZbrList(_zbr_ty_Param), arg_name: ?[]const u8, arg_idx: i64) ?_zbr_ty_TypeRef {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:19093
         if ((arg_name != null)) {
@@ -35660,7 +35662,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19105
-    pub fn lookupFnBody(self: *_zbr_ty_Generator, key: []const u8) ?std.ArrayList(_zbr_ty_Stmt) {
+    pub fn lookupFnBody(self: *_zbr_ty_Generator, key: []const u8) ?_ZbrList(_zbr_ty_Stmt) {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:19106
         for (self.module_decls.items) |decl| {
@@ -35766,7 +35768,7 @@ pub const _zbr_ty_Generator = struct {
             }
         }
 // zbr:selfhost/CodeGen.zbr:19150
-        const fb_parts: std.ArrayList([]const u8) = blk092_16: { var _ll_16: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var _split_iter_16 = std.mem.splitSequence(u8, key, "."); while (_split_iter_16.next()) |_se_16| { _ll_16.append(_zbr_rt._allocator, _se_16) catch @panic("OOM"); } break :blk092_16 _ll_16; };
+        const fb_parts: _ZbrList([]const u8) = blk092_16: { var _ll_16: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_16 = std.mem.splitSequence(u8, key, "."); while (_split_iter_16.next()) |_se_16| { _ll_16.append(_zbr_rt._allocator, _se_16) catch @panic("OOM"); } break :blk092_16 _ll_16; };
 // zbr:selfhost/CodeGen.zbr:19151
         var fb_class: []const u8 = "";
 // zbr:selfhost/CodeGen.zbr:19152
@@ -35792,7 +35794,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19161
-    pub fn genArgListFull(self: *_zbr_ty_Generator, args: std.ArrayList(_zbr_ty_Arg), params: ?std.ArrayList(_zbr_ty_Param), body: ?std.ArrayList(_zbr_ty_Stmt)) void {
+    pub fn genArgListFull(self: *_zbr_ty_Generator, args: _ZbrList(_zbr_ty_Arg), params: ?_ZbrList(_zbr_ty_Param), body: ?_ZbrList(_zbr_ty_Stmt)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:19162
         if ((params == null)) {
@@ -35806,7 +35808,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19174
-    pub fn genArgListNamed(self: *_zbr_ty_Generator, args: std.ArrayList(_zbr_ty_Arg), ps: std.ArrayList(_zbr_ty_Param), body: ?std.ArrayList(_zbr_ty_Stmt)) void {
+    pub fn genArgListNamed(self: *_zbr_ty_Generator, args: _ZbrList(_zbr_ty_Arg), ps: _ZbrList(_zbr_ty_Param), body: ?_ZbrList(_zbr_ty_Stmt)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:19175
         var first: bool = true;
@@ -35979,7 +35981,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19263
-    pub fn emitLambdaStmtsRetType(self: *_zbr_ty_Generator, ss: std.ArrayList(_zbr_ty_Stmt)) bool {
+    pub fn emitLambdaStmtsRetType(self: *_zbr_ty_Generator, ss: _ZbrList(_zbr_ty_Stmt)) bool {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:19264
         for (ss.items) |s| {
@@ -36180,9 +36182,9 @@ pub const _zbr_ty_Generator = struct {
                 lam_ctx.withReturnType(_zbr_fn_typeFromRef(lam.return_type.?));
             }
 // zbr:selfhost/CodeGen.zbr:19392
-            const lp_hints: std.ArrayList(_zbr_ty_Type_) = self.lam_hint;
+            const lp_hints: _ZbrList(_zbr_ty_Type_) = self.lam_hint;
 // zbr:selfhost/CodeGen.zbr:19393
-            self.lam_hint = std.ArrayList(_zbr_ty_Type_).empty;
+            self.lam_hint = _ZbrList(_zbr_ty_Type_).empty;
 // zbr:selfhost/CodeGen.zbr:19394
             var lp_i: i64 = 0;
 // zbr:selfhost/CodeGen.zbr:19395
@@ -36375,7 +36377,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19491
-    pub fn genFileCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genFileCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:19492
         if (std.mem.eql(u8, mname, "read")) {
@@ -36487,7 +36489,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:19548
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:19549
-            self.w.emit("    var _fl_list = std.ArrayList([]const u8).empty;\n");
+            self.w.emit("    var _fl_list = _ZbrList([]const u8).empty;\n");
 // zbr:selfhost/CodeGen.zbr:19550
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:19551
@@ -36532,7 +36534,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:19573
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:19574
-            self.w.emit("    var _ld_list = std.ArrayList([]const u8).empty;\n");
+            self.w.emit("    var _ld_list = _ZbrList([]const u8).empty;\n");
 // zbr:selfhost/CodeGen.zbr:19575
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:19576
@@ -36783,7 +36785,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19721
-    pub fn genSysCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genSysCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:19722
         if (std.mem.eql(u8, mname, "errln")) {
@@ -36937,7 +36939,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:19807
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:19808
-            self.w.emit("    var _sa_list = std.ArrayList([]const u8).empty;\n");
+            self.w.emit("    var _sa_list = _ZbrList([]const u8).empty;\n");
 // zbr:selfhost/CodeGen.zbr:19809
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:19810
@@ -37108,7 +37110,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19889
-    pub fn genArgCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genArgCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
         _ = args;
 // zbr:selfhost/CodeGen.zbr:19890
@@ -37127,7 +37129,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19899
-    pub fn genBuildStaticCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genBuildStaticCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
         _ = args;
 // zbr:selfhost/CodeGen.zbr:19900
@@ -37146,7 +37148,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19908
-    pub fn genBuildInstanceCall(self: *_zbr_ty_Generator, obj: _zbr_ty_Expr, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genBuildInstanceCall(self: *_zbr_ty_Generator, obj: _zbr_ty_Expr, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:19909
         if (((std.mem.eql(u8, mname, "exe") or std.mem.eql(u8, mname, "lib")) or std.mem.eql(u8, mname, "test_"))) {
@@ -37272,7 +37274,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:19971
-    pub fn genBuildTargetInstanceCall(self: *_zbr_ty_Generator, obj: _zbr_ty_Expr, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genBuildTargetInstanceCall(self: *_zbr_ty_Generator, obj: _zbr_ty_Expr, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:19972
         if (std.mem.eql(u8, mname, "linkLib")) {
@@ -37352,7 +37354,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20011
-    pub fn genJsonCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genJsonCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20012
         if (std.mem.eql(u8, mname, "parse")) {
@@ -37559,7 +37561,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20104
-    pub fn genHttpCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genHttpCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20105
         if (std.mem.eql(u8, mname, "get")) {
@@ -37687,7 +37689,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20166
-    pub fn genHttpResponseFactory(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genHttpResponseFactory(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20167
         if (std.mem.eql(u8, mname, "ok")) {
@@ -37776,7 +37778,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20209
-    pub fn genWsCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genWsCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20210
         if (std.mem.eql(u8, mname, "connect")) {
@@ -37833,7 +37835,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20237
-    pub fn genRegexCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genRegexCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20238
         if (std.mem.eql(u8, mname, "compile")) {
@@ -37871,7 +37873,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20256
-    pub fn genDateTimeCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genDateTimeCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20257
         if (std.mem.eql(u8, mname, "now")) {
@@ -37934,7 +37936,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20286
-    pub fn genHashCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genHashCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20287
         if (std.mem.eql(u8, mname, "sha256")) {
@@ -38118,7 +38120,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20374
-    pub fn genCryptoCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genCryptoCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20375
         if (std.mem.eql(u8, mname, "deriveKey")) {
@@ -38210,7 +38212,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20419
-    pub fn genRandomCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genRandomCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20420
         if (std.mem.eql(u8, mname, "new")) {
@@ -38399,7 +38401,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20508
-    pub fn genTerminalCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genTerminalCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20509
         if (std.mem.eql(u8, mname, "isTty")) {
@@ -38466,7 +38468,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20540
-    pub fn genLogCall(self: *_zbr_ty_Generator, mname0: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genLogCall(self: *_zbr_ty_Generator, mname0: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20544
         var mname: []const u8 = mname0;
@@ -38716,7 +38718,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20665
-    pub fn genCsvCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genCsvCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20666
         if (std.mem.eql(u8, mname, "parse")) {
@@ -38761,7 +38763,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20687
-    pub fn genTimerCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genTimerCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
         _ = args;
 // zbr:selfhost/CodeGen.zbr:20688
@@ -38780,7 +38782,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20696
-    pub fn genProgressCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genProgressCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20697
         if (std.mem.eql(u8, mname, "bar")) {
@@ -38818,7 +38820,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20715
-    pub fn genProfileCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genProfileCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20716
         if (std.mem.eql(u8, mname, "start")) {
@@ -38874,7 +38876,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20741
-    pub fn genBase64Call(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genBase64Call(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20742
         if (std.mem.eql(u8, mname, "encode")) {
@@ -38953,7 +38955,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20779
-    pub fn genUriCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genUriCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20780
         if (std.mem.eql(u8, mname, "parse")) {
@@ -38978,7 +38980,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20791
-    pub fn genCompressCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genCompressCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20792
         if (std.mem.eql(u8, mname, "gzip")) {
@@ -39017,7 +39019,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20809
-    pub fn genMimeCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genMimeCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20810
         if (std.mem.eql(u8, mname, "fromExt")) {
@@ -39056,7 +39058,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20827
-    pub fn genTcpCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genTcpCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20828
         if (std.mem.eql(u8, mname, "connect")) {
@@ -39123,7 +39125,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20860
-    pub fn genUdpCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genUdpCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20861
         if (std.mem.eql(u8, mname, "socket")) {
@@ -39158,7 +39160,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20877
-    pub fn genSqliteCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genSqliteCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20878
         if (std.mem.eql(u8, mname, "open")) {
@@ -39248,7 +39250,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20921
-    pub fn genNetCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genNetCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20922
         if (std.mem.eql(u8, mname, "resolve")) {
@@ -39276,7 +39278,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:20935
-    pub fn genGuiCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genGuiCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:20936
         if (std.mem.eql(u8, mname, "run")) {
@@ -39530,7 +39532,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:21060
-    pub fn genShellCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genShellCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:21061
         if (std.mem.eql(u8, mname, "run")) {
@@ -39598,7 +39600,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:21099
-    pub fn genDirCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genDirCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:21100
         if (std.mem.eql(u8, mname, "create")) {
@@ -39710,7 +39712,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:21151
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:21152
-            self.w.emit("    var _dl_list = std.ArrayList([]const u8).empty;\n");
+            self.w.emit("    var _dl_list = _ZbrList([]const u8).empty;\n");
 // zbr:selfhost/CodeGen.zbr:21153
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:21154
@@ -39775,7 +39777,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:21183
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:21184
-            self.w.emit("    var _dw_list = std.ArrayList([]const u8).empty;\n");
+            self.w.emit("    var _dw_list = _ZbrList([]const u8).empty;\n");
 // zbr:selfhost/CodeGen.zbr:21185
             self.writeIndent();
 // zbr:selfhost/CodeGen.zbr:21186
@@ -39820,7 +39822,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:21207
-    pub fn genPathCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genPathCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:21208
         if (std.mem.eql(u8, mname, "join")) {
@@ -39980,7 +39982,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:21294
-    pub fn genReflectCall(self: *_zbr_ty_Generator, mname: []const u8, args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genReflectCall(self: *_zbr_ty_Generator, mname: []const u8, args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:21295
         if (_zebra_lt(@as(i64, @intCast(args.items.len)), 1)) {
@@ -40042,7 +40044,7 @@ pub const _zbr_ty_Generator = struct {
     }
 
     // zbr:selfhost/CodeGen.zbr:21326
-    pub fn genGenericCtorCall(self: *_zbr_ty_Generator, name: []const u8, type_args: std.ArrayList(_zbr_ty_Arg), val_args: std.ArrayList(_zbr_ty_Arg)) void {
+    pub fn genGenericCtorCall(self: *_zbr_ty_Generator, name: []const u8, type_args: _ZbrList(_zbr_ty_Arg), val_args: _ZbrList(_zbr_ty_Arg)) void {
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:21327
         if (std.mem.eql(u8, name, "Chan")) {
@@ -40153,7 +40155,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:21377
         if (std.mem.eql(u8, name, "List")) {
 // zbr:selfhost/CodeGen.zbr:21378
-            self.w.emit("std.ArrayList(");
+            self.w.emit("_ZbrList(");
 // zbr:selfhost/CodeGen.zbr:21379
             if (_zebra_gt(@as(i64, @intCast(type_args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:21380
@@ -40174,7 +40176,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:21387
             if (key_is_str) {
 // zbr:selfhost/CodeGen.zbr:21388
-                self.w.emit("std.StringHashMap(");
+                self.w.emit("_ZbrMap(");
 // zbr:selfhost/CodeGen.zbr:21389
                 if (_zebra_ge(@as(i64, @intCast(type_args.items.len)), 2)) {
 // zbr:selfhost/CodeGen.zbr:21390
@@ -40185,7 +40187,7 @@ pub const _zbr_ty_Generator = struct {
                 }
             } else {
 // zbr:selfhost/CodeGen.zbr:21394
-                self.w.emit("_zbr_AutoMap(");
+                self.w.emit("_ZbrAutoMap(");
 // zbr:selfhost/CodeGen.zbr:21395
                 var fi: bool = true;
 // zbr:selfhost/CodeGen.zbr:21396
@@ -40223,10 +40225,10 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:21411
             if (set_key_str) {
 // zbr:selfhost/CodeGen.zbr:21412
-                self.w.emit("std.StringHashMap(void)");
+                self.w.emit("_ZbrMap(void)");
             } else {
 // zbr:selfhost/CodeGen.zbr:21414
-                self.w.emit("_zbr_AutoMap(");
+                self.w.emit("_ZbrAutoMap(");
 // zbr:selfhost/CodeGen.zbr:21415
                 if (_zebra_gt(@as(i64, @intCast(type_args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:21416
@@ -40310,12 +40312,12 @@ var _module_vars_inited: bool = false;
 pub fn _initModuleVars() void {
     if (_module_vars_inited) return;
     _module_vars_inited = true;
-    _zbr_mv__implicit_try_sites = std.ArrayList([]const u8).empty;
-    _zbr_mv__addr_tx_memo = std.StringHashMap(i64).init(_zbr_rt._allocator);
-    _zbr_mv__thread_spawn_sites = std.ArrayList([]const u8).empty;
-    _zbr_mv__inference_guess_sites = std.ArrayList([]const u8).empty;
-    _zbr_mv__inference_guess_msgs = std.ArrayList([]const u8).empty;
+    _zbr_mv__implicit_try_sites = _ZbrList([]const u8).empty;
+    _zbr_mv__addr_tx_memo = _ZbrMap(i64).init(_zbr_rt._allocator);
+    _zbr_mv__thread_spawn_sites = _ZbrList([]const u8).empty;
+    _zbr_mv__inference_guess_sites = _ZbrList([]const u8).empty;
+    _zbr_mv__inference_guess_msgs = _ZbrList([]const u8).empty;
     _zbr_mv__c_no_header_uses = _zbr_ty_StrSet.init();
     _zbr_mv__c_with_header_uses = _zbr_ty_StrSet.init();
-    _zbr_mv__native_lib_uses = std.ArrayList([]const u8).empty;
+    _zbr_mv__native_lib_uses = _ZbrList([]const u8).empty;
 }

@@ -2449,6 +2449,13 @@ def runLsp()
             evCh.send(rm!)
     )
     while true
+        # BUG-511: read `eof` BEFORE waiting. The flush below can take a while (it
+        # compiles the document); a client that sends its last requests and closes stdin
+        # meanwhile set `eof` with those requests still queued, and checking it AFTER the
+        # flush exited without answering them. Exiting only when EOF was already known
+        # when the wait came back empty means the queue has been drained (recvTimeout
+        # returns queued messages before reporting the closed channel).
+        var eof_before: bool = eof.load()
         var evo = evCh.recvTimeout(0.2)
         if evo == nil
             # A ~200ms lull (or EOF): publish coalesced diagnostics for changed docs.
@@ -2456,7 +2463,7 @@ def runLsp()
                 if docs.get(du) as dtext
                     lspPublishDiagnostics(du, dtext)
             dirty = HashMap(str, bool)()
-            if eof.load()
+            if eof_before
                 break
             continue
         var body: str = evo!

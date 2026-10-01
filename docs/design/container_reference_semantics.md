@@ -1,7 +1,7 @@
 <!-- doc-status: design -->
 # Containers are references — BUG-501's fix
 
-**Status:** DESIGN; §6 decided 2026-09-30; steps 2 (intent probe) and 3 (the measure, §5.1) done; Phase 0 next. Direction decided by Sean, 2026-09-30 ("go with (a), start
+**Status:** §6 decided 2026-09-30; steps 2 (intent probe), 3 (the measure, §5.1) and 4 (Phase 0: the one spelling, gate `container-spelling`) done; Phase 1 next. Direction decided by Sean, 2026-09-30 ("go with (a), start
 the design note for 501"): containers get **shared (reference) semantics everywhere**.
 Drafted by Opus 5.5 the same day. Nothing below is built; the decisions marked
 **OPEN** are Sean's.

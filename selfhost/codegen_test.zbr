@@ -132,11 +132,11 @@ def testGenTypePrimitive
 def testGenTypeGenerics
     var g = makeGen()
     g.genType(listTr(namedTr("int")))
-    assert g.w.output() == "std.ArrayList(i64)", "List(int)"
+    assert g.w.output() == "_ZbrList(i64)", "List(int)"
 
     var g2 = makeGen()
     g2.genType(hashTr(namedTr("str"), namedTr("int")))
-    assert g2.w.output() == "std.StringHashMap(i64)", "HashMap(str, int)"
+    assert g2.w.output() == "_ZbrMap(i64)", "HashMap(str, int)"
 
     print("4. genType generics: OK")
 
@@ -233,7 +233,7 @@ def testGenFieldDeclSB
     var fld = DeclVar(zspan(), zmods(), "buf", namedTr("StringBuilder"), nil, false)
     ig.genFieldDecl(fld)
     var out = g.w.output()
-    assert out == "    buf: std.ArrayList(u8) = .{},\n", "StringBuilder field: '${out}'"
+    assert out == "    buf: _ZbrList(u8) = .{},\n", "StringBuilder field: '${out}'"
     print("10. genFieldDecl StringBuilder: OK")
 
 # ── Main ──────────────────────────────────────────────────────────────────────

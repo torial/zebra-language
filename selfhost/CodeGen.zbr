@@ -4089,7 +4089,7 @@ struct Generator
                     emitTypeName(n.name)                    # BUG-280 → BUG-281 B
                     return
                 if n.name == "StringBuilder"
-                    w.emit("std.ArrayList(u8)")
+                    w.emit("_ZbrList(u8)")
                     return
                 if n.name == "CsvWriter"
                     w.emit("_CsvWriter")
@@ -4274,7 +4274,7 @@ struct Generator
                 w.emit(")")
                 return
             if key_str
-                w.emit("std.StringHashMap(")
+                w.emit("_ZbrMap(")
                 if gtr.args.len >= 2
                     genElemType(gtr.args.at(1))
                 else
@@ -4284,7 +4284,7 @@ struct Generator
                 # BUG-454: every non-str key goes through ONE comptime selector, so the
                 # annotation, the constructor and a field type cannot disagree about
                 # whether a key with `cue hash` + `cue equals` is looked up by content.
-                w.emit("_zbr_AutoMap(")
+                w.emit("_ZbrAutoMap(")
                 var ai = 0
                 while ai < gtr.args.len
                     if ai > 0
@@ -4297,7 +4297,7 @@ struct Generator
                 w.emit(")")
             return
         if gtr.name == "List"
-            w.emit("std.ArrayList(")
+            w.emit("_ZbrList(")
             if gtr.args.len >= 1
                 genElemType(gtr.args.at(0))
             else
@@ -4317,9 +4317,9 @@ struct Generator
             # StringHashMap(void) (content-hashed); else AutoHashMap(T, void).
             var set_key_str = gtr.args.len >= 1 and isStringTypeRef(gtr.args.at(0))
             if set_key_str
-                w.emit("std.StringHashMap(void)")
+                w.emit("_ZbrMap(void)")
             else
-                w.emit("_zbr_AutoMap(")
+                w.emit("_ZbrAutoMap(")
                 if gtr.args.len >= 1
                     genType(gtr.args.at(0))
                 else
@@ -4645,7 +4645,7 @@ struct Generator
             var tr = n.type_!
             if tr is TypeRef.named as nt
                 if nt.name == "StringBuilder"
-                    w.emit("std.ArrayList(u8) = .empty,\n")
+                    w.emit("_ZbrList(u8) = .empty,\n")
                     return
             genType(tr)
         else
@@ -5826,7 +5826,7 @@ struct Generator
                     return ""
                 if isBoxedElemType(le)
                     lz = "*" + lz
-                return "std.ArrayList(" + lz + ")"
+                return "_ZbrList(" + lz + ")"
             on Type_.optional as oi
                 var oz: str = genFieldZigType(oi)
                 if oz == ""
@@ -5834,11 +5834,11 @@ struct Generator
                 return "?" + oz
             on Type_.set_ as se
                 if isString(se)
-                    return "std.StringHashMap(void)"
+                    return "_ZbrMap(void)"
                 var sz: str = genFieldZigType(se)
                 if sz == ""
                     return ""
-                return "_zbr_AutoMap(" + sz + ", void)"
+                return "_ZbrAutoMap(" + sz + ", void)"
             on Type_.hashmap_ as hm
                 var vz: str = genFieldZigType(hm.val_t)
                 if vz == ""
@@ -5846,11 +5846,11 @@ struct Generator
                 if isBoxedElemType(hm.val_t)
                     vz = "*" + vz
                 if isString(hm.key_t)
-                    return "std.StringHashMap(" + vz + ")"
+                    return "_ZbrMap(" + vz + ")"
                 var kz: str = genFieldZigType(hm.key_t)
                 if kz == ""
                     return ""
-                return "_zbr_AutoMap(" + kz + ", " + vz + ")"
+                return "_ZbrAutoMap(" + kz + ", " + vz + ")"
             on Type_.named as n
                 if class_names.contains_(n)
                     return "*" + typeZigName(n)
@@ -7783,11 +7783,11 @@ struct Generator
                 else
                     w.emit("const ")
                 emitName(n.name)
-                w.emit(": std.ArrayList([]const u8) = ")
+                w.emit(": _ZbrList([]const u8) = ")
                 w.emit(lbl_sl)
                 w.emit(": { var ")
                 w.emit(ll_sl)
-                w.emit(": std.ArrayList([]const u8) = std.ArrayList([]const u8).empty; var ")
+                w.emit(": _ZbrList([]const u8) = _ZbrList([]const u8).empty; var ")
                 w.emit(si_sl)
                 w.emit(" = ")
                 genExpr(n.init_expr!)
@@ -8117,7 +8117,7 @@ struct Generator
                 if opt_ann
                     w.emit(": ")
                     genType(n.type_!)
-                w.emit(" = std.ArrayList(u8).empty;\n")
+                w.emit(" = _ZbrList(u8).empty;\n")
                 return
             if isGenericStdlibCtor(ie)
                 if opt_ann
@@ -8588,7 +8588,7 @@ struct Generator
                 on Expr.call as inner
                     if inner.callee is Expr.ident as id
                         if id.name == "List"
-                            w.emit("std.ArrayList(")
+                            w.emit("_ZbrList(")
                             if inner.args.len > 0
                                 genElemTypeFromExpr(inner.args.at(0).value)
                             else
@@ -8598,13 +8598,13 @@ struct Generator
                         if id.name == "HashMap"
                             var key_str = inner.args.len > 0 and isStringArgExpr(inner.args.at(0).value)
                             if key_str
-                                w.emit("std.StringHashMap(")
+                                w.emit("_ZbrMap(")
                                 if inner.args.len >= 2
                                     genElemTypeFromExpr(inner.args.at(1).value)
                                 else
                                     w.emit("anytype")
                             else
-                                w.emit("_zbr_AutoMap(")
+                                w.emit("_ZbrAutoMap(")
                                 var fi = true
                                 var iai = 0
                                 for ta in inner.args
@@ -8633,7 +8633,7 @@ struct Generator
                                     genType(type_hint!)
                                     lh_done = true
                         if not lh_done
-                            w.emit("std.ArrayList(anytype)")
+                            w.emit("_ZbrList(anytype)")
                         w.emit(".empty")
                         return
                     if id.name == "HashMap"
@@ -8659,9 +8659,9 @@ struct Generator
                                         w.emit(".init(_allocator)")
                                         return
                                     if set_key_str
-                                        w.emit("std.StringHashMap(void)")
+                                        w.emit("_ZbrMap(void)")
                                     else
-                                        w.emit("_zbr_AutoMap(")
+                                        w.emit("_ZbrAutoMap(")
                                         if gtr.args.len > 0
                                             genType(gtr.args.at(0))
                                         else
@@ -8816,7 +8816,7 @@ struct Generator
                 branch c.callee
                     on Expr.ident as id
                         if id.name == "List"
-                            w.emit("std.ArrayList(")
+                            w.emit("_ZbrList(")
                             if c.args.len > 0
                                 genElemTypeFromExpr(c.args.at(0).value)
                             w.emit(")")
@@ -8824,13 +8824,13 @@ struct Generator
                         if id.name == "HashMap"
                             var ks = c.args.len > 0 and isStringArgExpr(c.args.at(0).value)
                             if ks
-                                w.emit("std.StringHashMap(")
+                                w.emit("_ZbrMap(")
                                 if c.args.len >= 2
                                     genElemTypeFromExpr(c.args.at(1).value)
                                 else
                                     w.emit("anytype")
                             else
-                                w.emit("_zbr_AutoMap(")
+                                w.emit("_ZbrAutoMap(")
                                 var fi = true
                                 var cai = 0
                                 for ta in c.args
@@ -8848,9 +8848,9 @@ struct Generator
                             # §28f: Set(T) type-expr → void-valued hash map backing.
                             var set_ks = c.args.len > 0 and isStringArgExpr(c.args.at(0).value)
                             if set_ks
-                                w.emit("std.StringHashMap(void)")
+                                w.emit("_ZbrMap(void)")
                             else
-                                w.emit("_zbr_AutoMap(")
+                                w.emit("_ZbrAutoMap(")
                                 if c.args.len > 0
                                     genTypeFromExpr(c.args.at(0).value)
                                 else
@@ -9583,7 +9583,7 @@ struct Generator
                                 genType(hint)
                                 lh_done = true
                         if not lh_done
-                            w.emit("std.ArrayList(anytype)")
+                            w.emit("_ZbrList(anytype)")
                         w.emit(".empty")
                         return
                     if id.name == "HashMap"
@@ -13383,12 +13383,12 @@ struct Generator
                 var ll_kw: str = "var "
                 if ll.elems.len == 0
                     ll_kw = "const "
-                w.emit("(" + ll_label + ": { " + ll_kw + ll_var + ": std.ArrayList(")
+                w.emit("(" + ll_label + ": { " + ll_kw + ll_var + ": _ZbrList(")
                 var elem_zig: str = "[]const u8"
                 if ll.elem_type != nil
                     # honoured for future explicit-typed list literal
                     genType(ll.elem_type!)
-                    w.emit(") = std.ArrayList(")
+                    w.emit(") = _ZbrList(")
                     genType(ll.elem_type!)
                     w.emit(").empty; ")
                 else if ll.elems.len > 0 and .infer_ctx != nil
@@ -13420,9 +13420,9 @@ struct Generator
                             elem_zig = if(nz == "", "[]const u8", "*" + nz)
                         else
                             elem_zig = zigTypeForListElem(et)
-                    w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + ").empty; ")
+                    w.emit(elem_zig + ") = _ZbrList(" + elem_zig + ").empty; ")
                 else
-                    w.emit(elem_zig + ") = std.ArrayList(" + elem_zig + ").empty; ")
+                    w.emit(elem_zig + ") = _ZbrList(" + elem_zig + ").empty; ")
                 var li = 0
                 var ll_boxed = elem_zig.startsWith("*std.")
                 while li < ll.elems.len
@@ -13458,7 +13458,7 @@ struct Generator
                 # same treatment or Zig will reject the never-mutated binding.
                 w.emit("(" + sl_label + ": { var " + sl_var + " = ")
                 if sl_is_str
-                    w.emit("std.StringHashMap(void)")
+                    w.emit("_ZbrMap(void)")
                 else
                     var sl_elem_zig: str = "i64"
                     if structNameFromType(sl_elem_t) as sl_snm
@@ -13468,7 +13468,7 @@ struct Generator
                             sl_elem_zig = sl_snm
                     else
                         sl_elem_zig = zigTypeForListElem(sl_elem_t)
-                    w.emit("_zbr_AutoMap(" + sl_elem_zig + ", void)")
+                    w.emit("_ZbrAutoMap(" + sl_elem_zig + ", void)")
                 w.emit(".init(_allocator); ")
                 var sli = 0
                 while sli < sl.elems.len
@@ -13518,7 +13518,7 @@ struct Generator
                     dl_kw = "const "
                 w.emit("(" + dl_label + ": { " + dl_kw + dl_var + " = ")
                 if dk_is_str
-                    w.emit("std.StringHashMap(" + dv_zig + ")")
+                    w.emit("_ZbrMap(" + dv_zig + ")")
                 else
                     var dk_zig: str = "i64"
                     if structNameFromType(dk_t) as dks
@@ -13528,7 +13528,7 @@ struct Generator
                             dk_zig = dks
                     else
                         dk_zig = zigTypeForListElem(dk_t)
-                    w.emit("_zbr_AutoMap(" + dk_zig + ", " + dv_zig + ")")
+                    w.emit("_ZbrAutoMap(" + dk_zig + ", " + dv_zig + ")")
                 w.emit(".init(_allocator); ")
                 for en in dl.entries
                     w.emit(dl_var + ".put(")
@@ -15194,13 +15194,13 @@ struct Generator
             if id.name == "HashMap" and c.args.len == 0
                 # No LHS type context — emit anytype so the Zig error points at the
                 # missing annotation rather than producing a misleading type mismatch.
-                w.emit("std.StringHashMap(anytype).init(_allocator)")
+                w.emit("_ZbrMap(anytype).init(_allocator)")
                 return
             if id.name == "StrSet" and c.args.len == 0
                 emitStrSetInit()                        # BUG-281 B
                 return
             if id.name == "StringBuilder" and c.args.len == 0
-                w.emit("std.ArrayList(u8).empty")
+                w.emit("_ZbrList(u8).empty")
                 return
             # BUG-242. The bootstrap has carried CsvWriter since Builtins.zig; the selfhost
             # knew only the NAME (Resolver treats it as a builtin so it does not error as
@@ -16579,7 +16579,7 @@ struct Generator
                         w.emit(") catch @panic(\"OOM\"))")
                         return
                     if mname == "repeat" and args.len > 0
-                        w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
+                        w.emit("(blk_rep: { var _rep = _ZbrList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
                         genExpr(args.at(0).value)
                         w.emit(") : (_ri += 1) _rep.append(_allocator, ")
                         genExpr(m.object)
@@ -16752,7 +16752,7 @@ struct Generator
                         genExpr(m.object)
                         w.emit(", ")
                         genExpr(args.at(0).value)
-                        w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })")
+                        w.emit("); var _tok_list = _ZbrList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })")
                         return
                     if mname == "encodeBase64"
                         w.emit("_base64_encode(")
@@ -17976,7 +17976,7 @@ struct Generator
             return
         if mname == "split" and args.len > 0
             # Return an ArrayList from split
-            w.emit("blk_split: { var _sp = std.ArrayList([]const u8).empty; var _it = std.mem.splitSequence(u8, ")
+            w.emit("blk_split: { var _sp = _ZbrList([]const u8).empty; var _it = std.mem.splitSequence(u8, ")
             genExpr(m.object)
             w.emit(", ")
             genExpr(args.at(0).value)
@@ -17992,7 +17992,7 @@ struct Generator
             w.emit(") catch @panic(\"OOM\"))")
             return
         if mname == "repeat" and args.len > 0
-            w.emit("(blk_rep: { var _rep = std.ArrayList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
+            w.emit("(blk_rep: { var _rep = _ZbrList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
             genExpr(args.at(0).value)
             w.emit(") : (_ri += 1) _rep.append(_allocator, ")
             genExpr(m.object)
@@ -18157,7 +18157,7 @@ struct Generator
             genExpr(m.object)
             w.emit(", ")
             genExpr(args.at(0).value)
-            w.emit("); var _tok_list = std.ArrayList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })")
+            w.emit("); var _tok_list = _ZbrList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })")
             return
         if mname == "encodeBase64"
             w.emit("_base64_encode(")
@@ -19546,7 +19546,7 @@ struct Generator
                 w.emit("\"\"")
             w.emit(", _allocator, .unlimited) catch @panic(\"File.readLines error\");\n")
             writeIndent()
-            w.emit("    var _fl_list = std.ArrayList([]const u8).empty;\n")
+            w.emit("    var _fl_list = _ZbrList([]const u8).empty;\n")
             writeIndent()
             w.emit("    var _fl_it = _zbr_lines(_fl_content);\n")
             writeIndent()
@@ -19571,7 +19571,7 @@ struct Generator
             writeIndent()
             w.emit("    defer _ld_dir.close(_io);\n")
             writeIndent()
-            w.emit("    var _ld_list = std.ArrayList([]const u8).empty;\n")
+            w.emit("    var _ld_list = _ZbrList([]const u8).empty;\n")
             writeIndent()
             w.emit("    var _ld_iter = _ld_dir.iterate();\n")
             writeIndent()
@@ -19805,7 +19805,7 @@ struct Generator
             # Zig 0.16 removed std.process.argsAlloc; use _args.toSlice.
             w.emit("    const _sa_raw = _args.toSlice(_allocator) catch @panic(\"sys.args OOM\");\n")
             writeIndent()
-            w.emit("    var _sa_list = std.ArrayList([]const u8).empty;\n")
+            w.emit("    var _sa_list = _ZbrList([]const u8).empty;\n")
             writeIndent()
             w.emit("    for (_sa_raw) |_sa_arg| _sa_list.append(_allocator, _sa_arg) catch @panic(\"OOM\");\n")
             writeIndent()
@@ -21149,7 +21149,7 @@ struct Generator
             writeIndent()
             w.emit("    defer _dl_dir.close(_io);\n")
             writeIndent()
-            w.emit("    var _dl_list = std.ArrayList([]const u8).empty;\n")
+            w.emit("    var _dl_list = _ZbrList([]const u8).empty;\n")
             writeIndent()
             w.emit("    var _dl_iter = _dl_dir.iterate();\n")
             writeIndent()
@@ -21181,7 +21181,7 @@ struct Generator
             writeIndent()
             w.emit("    defer _dw_walker.deinit();\n")
             writeIndent()
-            w.emit("    var _dw_list = std.ArrayList([]const u8).empty;\n")
+            w.emit("    var _dw_list = _ZbrList([]const u8).empty;\n")
             writeIndent()
             w.emit("    while (_dw_walker.next(_io) catch null) |_dw_entry| {\n")
             writeIndent()
@@ -21375,7 +21375,7 @@ struct Generator
             w.emit(")")
             return
         if name == "List"
-            w.emit("std.ArrayList(")
+            w.emit("_ZbrList(")
             if type_args.len > 0
                 genElemTypeFromExpr(type_args.at(0).value)
             else
@@ -21385,13 +21385,13 @@ struct Generator
         if name == "HashMap"
             var key_is_str = type_args.len > 0 and isStringArgExpr(type_args.at(0).value)
             if key_is_str
-                w.emit("std.StringHashMap(")
+                w.emit("_ZbrMap(")
                 if type_args.len >= 2
                     genElemTypeFromExpr(type_args.at(1).value)
                 else
                     w.emit("anytype")
             else
-                w.emit("_zbr_AutoMap(")
+                w.emit("_ZbrAutoMap(")
                 var fi = true
                 var tai = 0
                 for ta in type_args
@@ -21409,9 +21409,9 @@ struct Generator
             # §28f: Set(T)() → void-valued hash map. str element → StringHashMap(void).
             var set_key_str = type_args.len > 0 and isStringArgExpr(type_args.at(0).value)
             if set_key_str
-                w.emit("std.StringHashMap(void)")
+                w.emit("_ZbrMap(void)")
             else
-                w.emit("_zbr_AutoMap(")
+                w.emit("_ZbrAutoMap(")
                 if type_args.len > 0
                     genTypeFromExpr(type_args.at(0).value)
                 else

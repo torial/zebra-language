@@ -14,6 +14,7 @@ const _zebra_gt = _zbr_rt._zebra_gt;
 const _zebra_ge = _zbr_rt._zebra_ge;
 const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
+const _ZbrList = _zbr_rt._ZbrList;
 
 const _zbr_mod_AstWalk = @import("AstWalk.zig");
 const _zbr_fn_mightUseName = _zbr_mod_AstWalk._zbr_fn_mightUseName;
@@ -47,13 +48,13 @@ const _zbr_ty_Type_ = _zbr_mod_TypeChecker._zbr_ty_Type_;
 const _zbr_fn_inferExpr = _zbr_mod_TypeChecker._zbr_fn_inferExpr;
 pub const _zbr_ty_StrSet = struct {
     _type_tag: u64 = _ttag_StrSet,
-    _items: std.ArrayList([]const u8) = undefined,
+    _items: _ZbrList([]const u8) = undefined,
     len: i64 = undefined,
     pub fn init() *_zbr_ty_StrSet {
         const _self = _zbr_rt._allocator.create(_zbr_ty_StrSet) catch @panic("OOM");
         _self._type_tag = _zbr_hash("StrSet");
 // zbr:selfhost/CgHelpers.zbr:60
-            _self._items = std.ArrayList([]const u8).empty;
+            _self._items = _ZbrList([]const u8).empty;
 // zbr:selfhost/CgHelpers.zbr:61
             _self.len = 0;
         return _self;
@@ -88,7 +89,7 @@ pub const _zbr_ty_StrSet = struct {
     // zbr:selfhost/CgHelpers.zbr:76
     pub fn removeStartingWith(self: *_zbr_ty_StrSet, prefix: []const u8) void {
 // zbr:selfhost/CgHelpers.zbr:77
-        var new_items = std.ArrayList([]const u8).empty;
+        var new_items = _ZbrList([]const u8).empty;
 // zbr:selfhost/CgHelpers.zbr:78
         for (self._items.items) |item| {
 // zbr:selfhost/CgHelpers.zbr:79
@@ -106,7 +107,7 @@ pub const _zbr_ty_StrSet = struct {
     // zbr:selfhost/CgHelpers.zbr:86
     pub fn removeOne(self: *_zbr_ty_StrSet, s: []const u8) void {
 // zbr:selfhost/CgHelpers.zbr:87
-        var new_items = std.ArrayList([]const u8).empty;
+        var new_items = _ZbrList([]const u8).empty;
 // zbr:selfhost/CgHelpers.zbr:88
         for (self._items.items) |item| {
 // zbr:selfhost/CgHelpers.zbr:89
@@ -122,7 +123,7 @@ pub const _zbr_ty_StrSet = struct {
     }
 
     // zbr:selfhost/CgHelpers.zbr:94
-    pub fn items(self: *const _zbr_ty_StrSet) std.ArrayList([]const u8) {
+    pub fn items(self: *const _zbr_ty_StrSet) _ZbrList([]const u8) {
 // zbr:selfhost/CgHelpers.zbr:95
         return self._items;
     }
@@ -344,7 +345,7 @@ pub fn _zbr_fn_typeRefStr(tr: _zbr_ty_TypeRef) []const u8 {
         },
         .generic => |g| {
 // zbr:selfhost/CgHelpers.zbr:187
-            var b = std.ArrayList(u8).empty;
+            var b = _ZbrList(u8).empty;
 // zbr:selfhost/CgHelpers.zbr:188
             b.appendSlice(_zbr_rt._allocator, g.name) catch @panic("OOM");
 // zbr:selfhost/CgHelpers.zbr:189
@@ -374,7 +375,7 @@ pub fn _zbr_fn_typeRefStr(tr: _zbr_ty_TypeRef) []const u8 {
         },
         .tuple => |t| {
 // zbr:selfhost/CgHelpers.zbr:201
-            var b2 = std.ArrayList(u8).empty;
+            var b2 = _ZbrList(u8).empty;
 // zbr:selfhost/CgHelpers.zbr:202
             b2.appendSlice(_zbr_rt._allocator, "(") catch @panic("OOM");
 // zbr:selfhost/CgHelpers.zbr:203
@@ -668,7 +669,7 @@ pub fn _zbr_fn_exprHasTry(expr: _zbr_ty_Expr) bool {
 }
 
 // zbr:selfhost/CgHelpers.zbr:380
-pub fn _zbr_fn_bodyHasRaise(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+pub fn _zbr_fn_bodyHasRaise(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/CgHelpers.zbr:381
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:382
@@ -889,7 +890,7 @@ pub fn _zbr_fn_bodyHasRaise(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
 }
 
 // zbr:selfhost/CgHelpers.zbr:474
-pub fn _zbr_fn_bodyHasAssert(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+pub fn _zbr_fn_bodyHasAssert(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/CgHelpers.zbr:475
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:476
@@ -994,7 +995,7 @@ pub fn _zbr_fn_bodyHasAssert(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
 }
 
 // zbr:selfhost/CgHelpers.zbr:520
-pub fn _zbr_fn_bodyNeedsErrVar(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+pub fn _zbr_fn_bodyNeedsErrVar(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/CgHelpers.zbr:521
     return _zbr_fn_bodyHasRaise(stmts);
 }
@@ -1389,7 +1390,7 @@ pub fn _zbr_fn_nameUsedInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 }
 
 // zbr:selfhost/CgHelpers.zbr:743
-pub fn _zbr_fn_nameUsedInStmts(name: []const u8, stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+pub fn _zbr_fn_nameUsedInStmts(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/CgHelpers.zbr:744
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:745
@@ -1851,7 +1852,7 @@ pub fn _zbr_fn_nameEscapesInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 }
 
 // zbr:selfhost/CgHelpers.zbr:1004
-pub fn _zbr_fn_nameEscapes(name: []const u8, stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+pub fn _zbr_fn_nameEscapes(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/CgHelpers.zbr:1005
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:1006
@@ -2523,7 +2524,7 @@ pub fn _zbr_fn_collectAllIdents(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet) void {
 }
 
 // zbr:selfhost/CgHelpers.zbr:1299
-pub fn _zbr_fn_seedEscapedFromReturns(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet) void {
+pub fn _zbr_fn_seedEscapedFromReturns(stmts: _ZbrList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet) void {
 // zbr:selfhost/CgHelpers.zbr:1300
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:1301
@@ -2607,7 +2608,7 @@ pub fn _zbr_fn_seedEscapedFromReturns(stmts: std.ArrayList(_zbr_ty_Stmt), out: *
 }
 
 // zbr:selfhost/CgHelpers.zbr:1339
-pub fn _zbr_fn_propagateEscapesOnce(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet) bool {
+pub fn _zbr_fn_propagateEscapesOnce(stmts: _ZbrList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet) bool {
 // zbr:selfhost/CgHelpers.zbr:1340
     var grew: bool = false;
 // zbr:selfhost/CgHelpers.zbr:1341
@@ -2765,7 +2766,7 @@ pub fn _zbr_fn_propagateEscapesOnce(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_z
 }
 
 // zbr:selfhost/CgHelpers.zbr:1403
-pub fn _zbr_fn_analyzeEscapes(stmts: std.ArrayList(_zbr_ty_Stmt)) *_zbr_ty_StrSet {
+pub fn _zbr_fn_analyzeEscapes(stmts: _ZbrList(_zbr_ty_Stmt)) *_zbr_ty_StrSet {
 // zbr:selfhost/CgHelpers.zbr:1404
     const out = _zbr_ty_StrSet.init();
 // zbr:selfhost/CgHelpers.zbr:1405
@@ -3347,7 +3348,7 @@ pub fn _zbr_fn_scanMutationsInExpr(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet, ic:
 }
 
 // zbr:selfhost/CgHelpers.zbr:1727
-pub fn _zbr_fn_scanMutationsInto(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet, ic: ?*_zbr_ty_InferCtx) void {
+pub fn _zbr_fn_scanMutationsInto(stmts: _ZbrList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet, ic: ?*_zbr_ty_InferCtx) void {
 // zbr:selfhost/CgHelpers.zbr:1728
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:1729
@@ -3537,7 +3538,7 @@ pub fn _zbr_fn_scanMutationsInto(stmts: std.ArrayList(_zbr_ty_Stmt), out: *_zbr_
 }
 
 // zbr:selfhost/CgHelpers.zbr:1810
-pub fn _zbr_fn_scanMutations(stmts: std.ArrayList(_zbr_ty_Stmt), ic: ?*_zbr_ty_InferCtx) *_zbr_ty_StrSet {
+pub fn _zbr_fn_scanMutations(stmts: _ZbrList(_zbr_ty_Stmt), ic: ?*_zbr_ty_InferCtx) *_zbr_ty_StrSet {
 // zbr:selfhost/CgHelpers.zbr:1811
     const out = _zbr_ty_StrSet.init();
 // zbr:selfhost/CgHelpers.zbr:1812
@@ -3608,7 +3609,7 @@ pub fn _zbr_fn_isRvalueReceiver(e: _zbr_ty_Expr) bool {
 }
 
 // zbr:selfhost/CgHelpers.zbr:1853
-pub fn _zbr_fn_methodMutatesSelf(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+pub fn _zbr_fn_methodMutatesSelf(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/CgHelpers.zbr:1854
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:1855
@@ -4215,7 +4216,7 @@ pub fn _zbr_fn_isContainerTypeRef(tr: _zbr_ty_TypeRef) bool {
 }
 
 // zbr:selfhost/CgHelpers.zbr:2135
-pub fn _zbr_fn_paramNeedsAddrOf(p: _zbr_ty_Param, body: ?std.ArrayList(_zbr_ty_Stmt)) bool {
+pub fn _zbr_fn_paramNeedsAddrOf(p: _zbr_ty_Param, body: ?_ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/CgHelpers.zbr:2136
     if ((p.type_ == null)) {
 // zbr:selfhost/CgHelpers.zbr:2136

@@ -98,7 +98,11 @@ RECV_NAMES = ("s", "h", "b", "f", "parts")
 OWN_MARKERS = (
     "_allocator", ".dupe(", "allocPrint", "allocUpperString", "allocLowerString",
     "std.mem.join", "std.mem.concat", "ArrayList",
+    # BUG-501 Phase 0: emitted code spells a List `_ZbrList(T)` (the runtime's one name).
+    "_ZbrList(",
 )
+# Either spelling names a List; the extractor went blind to the new one for a day.
+CONTAINER_MARKERS = ("ArrayList", "_ZbrList(")
 
 # Controls: known answers that must come out opposite. If these ever agree, the
 # classifier has stopped discriminating and every other row is worthless.
@@ -202,7 +206,8 @@ def element_class(rhs: str, declared: str) -> str:
     # element class for a result that has no elements. Codegen does not annotate every
     # binding, though — `tokenize()` emits a bare `const r = (blk: {...})` — so fall back
     # to the expression when there is no annotation to gate on.
-    container = ("ArrayList" in declared) if declared else ("ArrayList" in rhs)
+    src = declared if declared else rhs
+    container = any(m in src for m in CONTAINER_MARKERS)
     if not container:
         return "—"
     if any(h in rhs for h in SPLIT_HELPERS):

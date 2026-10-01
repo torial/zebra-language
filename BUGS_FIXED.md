@@ -6,6 +6,11 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-511: `zebra lsp` dropped every request still queued when the client closed stdin during a debounced diagnostics flush -- FIXED 2026-09-30
+- **Severity:** Medium (a client that sends its last requests and closes stdin -- a script, a test driver, an editor shutting down without `exit` -- got no replies to them; the server exited 0)
+- **Found by:** the `lsp-smoke` gate going red only under load (a FULL tier beside it): 2 of 3 runs, then about 1 in 15 once its own ordering bug was fixed. Instrumenting the server showed the reader had read all ten second-batch requests and reached EOF while the main loop was inside the debounced flush; the main loop then checked `eof`, found it set, and exited with the ten still in the channel.
+- **Fixed 2026-09-30.** The main loop reads `eof` BEFORE waiting and exits only when EOF was already known when the wait came back empty -- by which point the channel has been drained (recvTimeout returns queued messages before it reports a closed channel). 0 failures in 40 runs with six cores busy. The gate's own harness was fixed the same day: it read replies in a fixed order and slept 0.6 s for the debounce instead of waiting for the flush, which under load meant the lull it needed never came (`tools/lsp_server_smoke.py`, which now pins this bug).
+
 ### BUG-508: a STRUCT method body was never checked -- every statement-level refusal was skipped inside it -- FIXED 2026-09-30
 - **Severity:** High (an optional used as an operand, an unmarked throws call, a nil check on a non-optional, a redundant narrowing... all refused in a class method and silently accepted in a struct method, then failing inside zig against code the user never wrote)
 - **Repro:** `struct S` with `def bad(x: int?): int` / `return x + 1` -- no Zebra error; the same method in a `class` is refused "'x' may be nil here".

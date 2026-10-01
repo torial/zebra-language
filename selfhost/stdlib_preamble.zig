@@ -633,6 +633,20 @@ pub fn _zbr_HashMap(comptime K: type, comptime V: type) type {
 // used the cues and `HashMap(K, V)()` ignored them: two keys the cues call equal became
 // two entries. `hash` alone is not enough -- with no `equals` there is nothing to agree
 // with it, and @derive(Hash)-only structs keep today's by-value behaviour.
+// BUG-501 Phase 0 (docs/design/container_reference_semantics.md §4): emitted code names a
+// Zebra container ONLY through these. Today they are exactly the value types they always
+// were -- no behaviour changes. Phase 1 (containers become references) changes these
+// definitions and the constructors, not ~60 emit sites. `lint_container_spelling.py`
+// keeps the raw spellings out of the compiler's emitting code.
+pub fn _ZbrList(comptime T: type) type {
+    return std.ArrayList(T);
+}
+pub fn _ZbrMap(comptime V: type) type {
+    return std.StringHashMap(V);
+}
+pub fn _ZbrAutoMap(comptime K: type, comptime V: type) type {
+    return _zbr_AutoMap(K, V);
+}
 pub fn _zbr_AutoMap(comptime K: type, comptime V: type) type {
     if (comptime _zbr_has_cue(K, "hash") and _zbr_has_cue(K, "equals"))
         return std.HashMap(K, V, _zbr_CueCtx(K), std.hash_map.default_max_load_percentage);

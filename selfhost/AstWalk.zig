@@ -12,6 +12,7 @@ const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
 const _zebra_le = _zbr_rt._zebra_le;
 const _zebra_ge = _zbr_rt._zebra_ge;
+const _ZbrList = _zbr_rt._ZbrList;
 
 const _zbr_mod_Ast = @import("Ast.zig");
 const _zbr_ty_Expr = _zbr_mod_Ast._zbr_ty_Expr;
@@ -23,7 +24,7 @@ const _zbr_ty_LambdaBody = _zbr_mod_Ast._zbr_ty_LambdaBody;
 const _zbr_ty_Stmt = _zbr_mod_Ast._zbr_ty_Stmt;
 const _zbr_ty_BinaryOp = _zbr_mod_Ast._zbr_ty_BinaryOp;
 // zbr:selfhost/AstWalk.zbr:64
-pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: *std.ArrayList(_zbr_ty_ExprOld)) void {
+pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: *_ZbrList(_zbr_ty_ExprOld)) void {
 // zbr:selfhost/AstWalk.zbr:65
     switch (_zbr_val(expr)) {
         .old_ => |_ptr_o| {
@@ -227,9 +228,9 @@ pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: *std.ArrayList(_zbr_
 }
 
 // zbr:selfhost/AstWalk.zbr:147
-pub fn _zbr_fn_collectOldNodes(expr: _zbr_ty_Expr) std.ArrayList(_zbr_ty_ExprOld) {
+pub fn _zbr_fn_collectOldNodes(expr: _zbr_ty_Expr) _ZbrList(_zbr_ty_ExprOld) {
 // zbr:selfhost/AstWalk.zbr:148
-    var out = std.ArrayList(_zbr_ty_ExprOld).empty;
+    var out = _ZbrList(_zbr_ty_ExprOld).empty;
 // zbr:selfhost/AstWalk.zbr:149
     _zbr_fn_collectOldNodesInto(expr, &out);
 // zbr:selfhost/AstWalk.zbr:150
@@ -675,7 +676,7 @@ pub fn _zbr_fn_mightUseNameInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 }
 
 // zbr:selfhost/AstWalk.zbr:379
-pub fn _zbr_fn_mightUseName(name: []const u8, stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+pub fn _zbr_fn_mightUseName(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/AstWalk.zbr:380
     for (stmts.items) |s| {
 // zbr:selfhost/AstWalk.zbr:381
@@ -973,7 +974,7 @@ pub fn _zbr_fn_mightUseNameStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
 }
 
 // zbr:selfhost/AstWalk.zbr:512
-pub fn _zbr_fn_stmtsContainYield(stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+pub fn _zbr_fn_stmtsContainYield(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/AstWalk.zbr:513
     for (stmts.items) |s| {
 // zbr:selfhost/AstWalk.zbr:514
@@ -1122,7 +1123,7 @@ pub fn _zbr_fn_stmtNeedsLowering(s: _zbr_ty_Stmt) bool {
 }
 
 // zbr:selfhost/AstWalk.zbr:580
-pub fn _zbr_fn_stmtsHaveEscape(stmts: std.ArrayList(_zbr_ty_Stmt), loop_exits_count: bool) bool {
+pub fn _zbr_fn_stmtsHaveEscape(stmts: _ZbrList(_zbr_ty_Stmt), loop_exits_count: bool) bool {
 // zbr:selfhost/AstWalk.zbr:581
     for (stmts.items) |s| {
 // zbr:selfhost/AstWalk.zbr:582
@@ -1217,9 +1218,9 @@ pub fn _zbr_fn_stmtHasEscape(s: _zbr_ty_Stmt, loop_exits_count: bool) bool {
 }
 
 // zbr:selfhost/AstWalk.zbr:626
-pub fn _zbr_fn_nilCheckedNames(cond: _zbr_ty_Expr) std.ArrayList([]const u8) {
+pub fn _zbr_fn_nilCheckedNames(cond: _zbr_ty_Expr) _ZbrList([]const u8) {
 // zbr:selfhost/AstWalk.zbr:627
-    var out = std.ArrayList([]const u8).empty;
+    var out = _ZbrList([]const u8).empty;
 // zbr:selfhost/AstWalk.zbr:628
     _zbr_fn_collectNilChecked(cond, &out);
 // zbr:selfhost/AstWalk.zbr:629
@@ -1227,7 +1228,7 @@ pub fn _zbr_fn_nilCheckedNames(cond: _zbr_ty_Expr) std.ArrayList([]const u8) {
 }
 
 // zbr:selfhost/AstWalk.zbr:631
-pub fn _zbr_fn_collectNilChecked(e: _zbr_ty_Expr, out: *std.ArrayList([]const u8)) void {
+pub fn _zbr_fn_collectNilChecked(e: _zbr_ty_Expr, out: *_ZbrList([]const u8)) void {
 // zbr:selfhost/AstWalk.zbr:632
     if (_zbr_val(e) == .binary) {
         const b_ptr = e.binary;
@@ -1267,7 +1268,7 @@ pub fn _zbr_fn_collectNilChecked(e: _zbr_ty_Expr, out: *std.ArrayList([]const u8
 }
 
 // zbr:selfhost/AstWalk.zbr:647
-pub fn _zbr_fn_collectNilGuarded(e: _zbr_ty_Expr, out: *std.ArrayList([]const u8)) void {
+pub fn _zbr_fn_collectNilGuarded(e: _zbr_ty_Expr, out: *_ZbrList([]const u8)) void {
 // zbr:selfhost/AstWalk.zbr:648
     if (_zbr_val(e) == .binary) {
         const b_ptr = e.binary;
@@ -1307,7 +1308,7 @@ pub fn _zbr_fn_collectNilGuarded(e: _zbr_ty_Expr, out: *std.ArrayList([]const u8
 }
 
 // zbr:selfhost/AstWalk.zbr:662
-pub fn _zbr_fn_stmtsAlwaysExit(ss: std.ArrayList(_zbr_ty_Stmt)) bool {
+pub fn _zbr_fn_stmtsAlwaysExit(ss: _ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/AstWalk.zbr:663
     if ((@as(i64, @intCast(ss.items.len)) == 0)) {
 // zbr:selfhost/AstWalk.zbr:664
@@ -1320,9 +1321,9 @@ pub fn _zbr_fn_stmtsAlwaysExit(ss: std.ArrayList(_zbr_ty_Stmt)) bool {
 }
 
 // zbr:selfhost/AstWalk.zbr:670
-pub fn _zbr_fn_earlyExitNilNames(s: _zbr_ty_Stmt) std.ArrayList([]const u8) {
+pub fn _zbr_fn_earlyExitNilNames(s: _zbr_ty_Stmt) _ZbrList([]const u8) {
 // zbr:selfhost/AstWalk.zbr:671
-    var out = std.ArrayList([]const u8).empty;
+    var out = _ZbrList([]const u8).empty;
 // zbr:selfhost/AstWalk.zbr:672
     if (_zbr_val(s) == .if_) {
         const si_ptr = s.if_;
@@ -1341,7 +1342,7 @@ pub fn _zbr_fn_earlyExitNilNames(s: _zbr_ty_Stmt) std.ArrayList([]const u8) {
 }
 
 // zbr:selfhost/AstWalk.zbr:685
-pub fn _zbr_fn_nameReassignedIn(name: []const u8, stmts: std.ArrayList(_zbr_ty_Stmt)) bool {
+pub fn _zbr_fn_nameReassignedIn(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/AstWalk.zbr:686
     for (stmts.items) |st| {
 // zbr:selfhost/AstWalk.zbr:687
@@ -1355,7 +1356,7 @@ pub fn _zbr_fn_nameReassignedIn(name: []const u8, stmts: std.ArrayList(_zbr_ty_S
 }
 
 // zbr:selfhost/AstWalk.zbr:695
-pub fn _zbr_fn_nameReassignedAfter(name: []const u8, stmts: std.ArrayList(_zbr_ty_Stmt), guard_idx: i64) bool {
+pub fn _zbr_fn_nameReassignedAfter(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt), guard_idx: i64) bool {
 // zbr:selfhost/AstWalk.zbr:696
     var k: i64 = (guard_idx + 1);
 // zbr:selfhost/AstWalk.zbr:697
