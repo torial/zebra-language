@@ -2279,6 +2279,17 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-01 (closing the overnight: BUG-501 Phase 0 + measure, BUG-506..512,
+BUG-513 filed): 57/57 PASS in ONE invocation at JOBS=2 on `de74cea`.** smoke 650/650,
+round-trip byte-identical, `output_sweep` 466 identical, `full_sweep` / `divergence` 0
+regressions, `release-mode` (now compiling in a private TMP -- BUG-513), `regen-recover`,
+`gramgen` 0/0, `leakgen` 100/0, `libui-pin-build`, `node-addon`. Method notes from the night,
+each of which cost a re-run: a green `rebuild.sh` is NOT the round-trip (its regen runs the
+binary built before the change, so a checker change was twice "green" while the compiler
+refused its own source -- run `bootstrap_check.sh` explicitly); a runtime fix cannot be
+red-checked with an old binary here (it reads the fixed preamble from disk); and two sessions
+compiling in temp mode at once share `<TEMP>/zebra_rt.zig` (BUG-513).
+
 **DAILY tier 2026-09-30 (closing the GameEngine bug day: 10914bb / 93c4f2b / d6ef2d7 -- ten
 engine bugs, cross-module interfaces, nil narrowing, the §28a flip): 56/56 PASS in ONE
 invocation at JOBS=2 on `d6ef2d7`.** smoke 644/644, round-trip byte-identical, `output_sweep`
