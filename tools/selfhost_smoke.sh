@@ -2134,6 +2134,10 @@ smoke_run test/nil_narrow_chain_exit_test.zbr "nil_narrow: OK"
 smoke_run test/bug503_list_optional_ctor_test.zbr "bug503: OK"
 # BUG-505: early-exit narrowing of a `var` local (Fable's repros A and B).
 smoke_run test/bug505_local_early_exit_narrow_test.zbr "bug505: OK"
+# BUG-507: `if h.s as v` on a `^T?` binds the value, not the box pointer.
+smoke_run test/bug507_hat_optional_capture_test.zbr "bug507: OK"
+# BUG-508: a struct method body gets the statement-level checks a class method gets.
+smoke_tc_fail test/fail_fixtures/bug508_struct_method_checked_fail.zbr "bug508_struct_method_checked_fail.zbr:7:16: error: 'x' may be nil here"
 # §28a flip: a type that cannot be inferred is refused at `+`, `.len` and a List-shaped
 # method, located at the expression and naming what to annotate. The controls are
 # zig"..." values, which have no Zebra type -- they can never become a closed gap.

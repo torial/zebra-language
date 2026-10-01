@@ -6243,7 +6243,120 @@ def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
         eei -= 1
 
 # One statement of checkStmts (its former loop body; `stmts` is the enclosing list).
+# ── BUG-501 measure: where is a container copied out of a live location? ──────────
+# docs/design/container_reference_semantics.md §5. A container (List / HashMap / Set /
+# StringBuilder) is copied BY VALUE today wherever a value is copied; the flip to
+# reference semantics changes the meaning of exactly these sites. Recorded
+# unconditionally (behaviour-neutral), reported by main.zbr under --warn-container-copy
+# as `CONTAINER_COPY: <kind>: file:line:col`. A MEASURE: `bind_call` / `return_call`
+# over-report (a call that builds a fresh container is counted with one that hands out a
+# field), and stores nested inside a larger expression are not seen -- only a statement
+# that IS the call (`m.set(k, v)`).
+var _container_copy_sites: List(str) = List(str)()
+
+def containerCopySites(): List(str)
+    return _container_copy_sites
+
+def isContainerT(t: Type_): bool
+    branch t
+        on Type_.list_
+            return true
+        on Type_.hashmap_
+            return true
+        on Type_.set_
+            return true
+        on Type_.string_builder
+            return true
+        on Type_.optional as cco
+            return isContainerT(cco)
+        else
+            return false
+
+# A STRUCT (a value type) with a container field: copying it copies the container struct.
+def structHoldsContainer(t: Type_, ctx: InferCtx): bool
+    if t is Type_.named as shn
+        var sct: ClassTypes? = ctx.module_types.classOf(shn)
+        if sct == nil
+            sct = ctx.dep_types.classOf(shn)
+        if sct as sc
+            if sc.is_struct
+                for shf_k, shf_t in sc.field_types
+                    if isContainerT(shf_t)
+                        return true
+    return false
+
+def isLiveContainerExpr(e: Expr): bool
+    return e is Expr.ident or e is Expr.member or e is Expr.index
+
+def noteContainerCopy(kind: str, file: str, e: Expr, stmt_line: int)
+    var cl: int = exprSpanLine(e)
+    var cc: int = exprSpanCol(e)
+    if cl <= 0
+        cl = stmt_line
+    _container_copy_sites.add(kind + ": " + file + ":" + cl.toString() + ":" + cc.toString())
+
+# Classify a value that is about to be copied into a new home (`pos` names the home:
+# "bind" for var/assign, "return" for a return).
+def classifyContainerCopy(pos: str, e: Expr, file: str, line: int, ctx: InferCtx)
+    if e is Expr.except_ as cex
+        if structHoldsContainer(inferExpr(cex.base, ctx), ctx)
+            noteContainerCopy("except", file, e, line)
+        return
+    var t: Type_ = inferExpr(e, ctx)
+    if isContainerT(t)
+        if e is Expr.member
+            noteContainerCopy(pos + "_field", file, e, line)
+        else if e is Expr.ident or e is Expr.index
+            noteContainerCopy(pos + "_alias", file, e, line)
+        else if e is Expr.call as ccall
+            if not (ccall.callee is Expr.call)        # `List(int)()` -- a fresh constructor
+                noteContainerCopy(pos + "_call", file, e, line)
+    else if isLiveContainerExpr(e) and structHoldsContainer(t, ctx)
+        noteContainerCopy("struct_copy", file, e, line)
+
+def noteContainerCopies(s: Stmt, file: str, ctx: InferCtx)
+    # A MEASURE must not speak: inferExpr reports some errors itself, and the statement
+    # it measures is inferred again by the real check -- so infer quietly (the BUG-285
+    # mechanism), or every such error is reported twice.
+    var cc_quiet: bool = ctx.quiet_errors
+    ctx.quiet_errors = true
+    noteContainerCopies1(s, file, ctx)
+    ctx.quiet_errors = cc_quiet
+
+def noteContainerCopies1(s: Stmt, file: str, ctx: InferCtx)
+    branch s
+        on Stmt.var_ as ncv
+            if ncv.init_expr != nil
+                classifyContainerCopy("bind", ncv.init_expr!, file, ncv.span.line, ctx)
+                noteCtorArgs(ncv.init_expr!, file, ncv.span.line, ctx)
+        on Stmt.assign as nca
+            if nca.op == AssignOp.assign
+                classifyContainerCopy("bind", nca.value, file, nca.span.line, ctx)
+                noteCtorArgs(nca.value, file, nca.span.line, ctx)
+        on Stmt.return_ as ncr
+            if ncr.value != nil
+                classifyContainerCopy("return", ncr.value!, file, ncr.span.line, ctx)
+        on Stmt.expr as nce
+            if nce is Expr.call as nsc
+                if nsc.callee is Expr.member as nsm
+                    if nsm.member == "set" or nsm.member == "add" or nsm.member == "put" or nsm.member == "append" or nsm.member == "insert"
+                        for nsa in nsc.args
+                            if isLiveContainerExpr(nsa.value) and isContainerT(inferExpr(nsa.value, ctx))
+                                noteContainerCopy("store", file, nsa.value, exprSpanLine(nce))
+        else
+            pass
+
+# A struct constructor `S(a, b)` copies each live container argument into a field.
+def noteCtorArgs(e: Expr, file: str, line: int, ctx: InferCtx)
+    if e is Expr.call as nct
+        if nct.callee is Expr.ident as ncid
+            if structHoldsContainer(Type_.named(ncid.name), ctx)
+                for nca2 in nct.args
+                    if isLiveContainerExpr(nca2.value) and isContainerT(inferExpr(nca2.value, ctx))
+                        noteContainerCopy("ctor_arg", file, nca2.value, line)
+
 def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
+    noteContainerCopies(s, file, ctx)
     if true
         branch s
             on Stmt.var_ as dv
@@ -6717,6 +6830,14 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                     ctx.addErr(file, gp.span.line, gp.span.col, "`Iter(T)` is a generator's return type, not a parameter type; take the iterator's class or bind the call with `var it = f()`")
             if dm.stmts as dm_stmts
                 var saved_class: str = ctx.current_class
+                # One method's PARAMETERS and locals must not leak into the next: they
+                # shadowed a FIELD of the same name (Generator's `w: Writer` read as an
+                # earlier method's `w: str`, `indent: int` as an earlier parameter
+                # `indent: str`) once BUG-508 started checking struct methods. Snapshot the
+                # scope BEFORE the parameters are bound; restore it after the body.
+                var md_scope = HashMap(str, Type_)()
+                for mds_k, mds_v in ctx.scope
+                    md_scope.set(mds_k, mds_v)
                 ctx.withYieldType(nil)
                 if iterElemRef(dm.return_type) as gen_elem_r
                     ctx.withReturnType(nil)
@@ -6737,6 +6858,7 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                 checkStmts(dm_stmts, file, ctx)
                 if ctx.current_yield_type != nil
                     checkGeneratorStmts(dm_stmts, file, ctx)
+                ctx.scope = md_scope
                 ctx.withYieldType(nil)
                 ctx.setParamsHere(" ")
                 ctx.resetCopyLocals()
@@ -6763,12 +6885,20 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                 checkDecl(m, file, ctx, tc_result)
             ctx.current_class = saved_class
         on Decl.struct_ as ds
-            # BUG-359: struct FIELDS collide the same way class fields do (below);
-            # nothing else in this pass looks inside a struct.
+            # BUG-359: struct FIELDS collide the same way class fields do (below).
+            # BUG-508 (2026-09-30): a struct's METHOD bodies were never checked -- every
+            # statement-level refusal (an optional operand, an unmarked throws call, a
+            # nil check on a non-optional...) was skipped inside them and the program
+            # failed inside zig instead. Recurse exactly as a class does.
+            var saved_sclass: str = ctx.current_class
+            ctx.current_class = ds.name
             for sm in ds.members
                 checkSelfNamedMethod(sm, file, ctx)
                 if sm is Decl.var_ as sdv
                     checkReservedField(sdv, file, ctx)
+                else if sm is Decl.method
+                    checkDecl(sm, file, ctx, tc_result)
+            ctx.current_class = saved_sclass
         on Decl.var_ as dv
             # BUG-359: a class FIELD is declared bare (`_allocator: i64 = undefined,`)
             # so the qualify pass rewrites it; a MODULE var emits as `_zbr_mv_<name>`

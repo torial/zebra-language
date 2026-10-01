@@ -10018,6 +10018,14 @@ struct Generator
                     w.emit(")")
                 w.emit(") |")
                 var ig2 = indented()
+                # BUG-507: `if h.s as v` on a `^T?` field: the Zig optional is `?*T`, so the
+                # capture is a POINTER and `area(v)` (wanting a T) failed inside zig. A `^T`
+                # is transparent wherever it is bound (the union-variant arm above already
+                # copies `cap_ptr.*`), so capture the pointer privately and bind the value.
+                var box_cap: bool = false
+                if ig2.infer_ctx != nil and not exprYieldsOptBox(cond_expr)
+                    if inferExpr(cond_expr, ig2.infer_ctx!) is Type_.ref_to
+                        box_cap = true
                 # BUG-181: bind the unwrapped capture's type so method dispatch inside the
                 # block sees the proven inner type (e.g. StrSet.contains_ keeping its `_`)
                 # instead of `unknown`.  The narrowed type is the optional's inner type.
@@ -10039,12 +10047,17 @@ struct Generator
                 # place (`xs.add`, `j.putInt`, `sb.append`) gets a `var` copy.
                 var ms_b: StrSet = scanMutations(stmts, ig2.infer_ctx)
                 var mut_b: bool = cap != "_" and ms_b.contains_(cap)
-                if mut_b
+                if box_cap and cap != "_"
+                    w.emit("_zbr_capp_" + cap)
+                else if mut_b
                     w.emit("_zbr_cap_" + cap)
                 else
                     w.emit(cap)
                 w.emit("| {\n")
-                if mut_b
+                if box_cap and cap != "_"
+                    ig2.writeIndent()
+                    ig2.w.emit(if(mut_b, "var ", "const ") + cap + " = _zbr_capp_" + cap + ".*;\n")
+                else if mut_b
                     ig2.writeIndent()
                     ig2.w.emit("var " + cap + " = _zbr_cap_" + cap + ";\n")
                 # BUG-164 (fuzz F6): Zig rejects an unused payload capture.

@@ -1,0 +1,27 @@
+# BUG-507: `if h.s as v` on a `^T?` field binds the VALUE (a `^T` is transparent wherever
+# it is bound); it bound the pointer, and passing `v` where a `T` is wanted failed in zig.
+union Shape
+    circle: float
+    square: float
+
+struct Holder
+    var s: ^Shape?
+
+def area(sh: Shape): float
+    branch sh
+        on Shape.circle as r
+            return 3.0 * r * r
+        on Shape.square as w
+            return w * w
+
+def main()
+    var h = Holder(Shape.square(2.0))
+    var got_area = 0.0
+    if h.s as got
+        got_area = area(got)
+    assert got_area == 4.0
+    var empty = Holder(nil)
+    if empty.s as never
+        got_area = area(never)
+    assert got_area == 4.0
+    print("bug507: OK")

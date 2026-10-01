@@ -1,0 +1,29 @@
+# Positive control for tools/measure_container_copy.sh: every one of the ten kinds
+# of container copy (BUG-501, docs/design/container_reference_semantics.md §5) occurs
+# EXACTLY ONCE here. The measure refuses to report if any kind stops firing.
+class Bag
+    var items: List(int)
+    cue init()
+        .items = List(int)()
+    def all(): List(int)
+        return .items
+    def alias(xs: List(int)): List(int)
+        return xs
+    def viaCall(): List(int)
+        return .all()
+
+struct Rec
+    var xs: List(int)
+    var n: int
+
+def main()
+    var bag = Bag()
+    var a = bag.items
+    var b = a
+    var c = bag.all()
+    var outer = HashMap(str, List(int))()
+    outer.set("k", a)
+    var r1 = Rec(a, 0)
+    var r2 = r1
+    var r3 = r1 except n = 2
+    print(b.len + c.len + r2.n + r3.n + outer.len + bag.alias(a).len + bag.viaCall().len)

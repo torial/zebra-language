@@ -1,0 +1,10 @@
+# BUG-508: a STRUCT method body gets the same statement-level checks as a class method.
+# They were skipped entirely -- this reached zig -- because checkDecl never recursed into a
+# struct's members.
+struct S
+    var n: int
+    def bad(x: int?): int
+        return x + 1
+
+def main()
+    print(S(1).bad(2))

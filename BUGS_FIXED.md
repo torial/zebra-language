@@ -6,6 +6,18 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-508: a STRUCT method body was never checked -- every statement-level refusal was skipped inside it -- FIXED 2026-09-30
+- **Severity:** High (an optional used as an operand, an unmarked throws call, a nil check on a non-optional, a redundant narrowing... all refused in a class method and silently accepted in a struct method, then failing inside zig against code the user never wrote)
+- **Repro:** `struct S` with `def bad(x: int?): int` / `return x + 1` -- no Zebra error; the same method in a `class` is refused "'x' may be nil here".
+- **Found by:** building BUG-501's copy-site measure (2026-09-30): it reported nothing inside struct methods, and the reason was that `checkDecl`'s `Decl.struct_` arm looked only at field names ("nothing else in this pass looks inside a struct").
+- **Fixed 2026-09-30.** The struct arm recurses into its methods with `current_class` set, exactly as the class arm does. Turning the checks on found a second, older defect at once: `checkDecl` bound each method's parameters and locals into the SHARED context and never removed them, so an earlier method's `w: str` shadowed a later method's FIELD `w` (and a parameter `indent: str` the field `indent: int`). The compiler's own `Generator` -- a struct with hundreds of methods -- refused its own source on that (the `round-trip` gate caught it; a `rebuild.sh` run before it did not, because the regen ran the binary built before the checks). Class methods had the same leak all along, as false errors or wrong types whenever a field shared a name with an earlier method's parameter. The scope is now snapshotted before a method's parameters are bound and restored after its body. Fixture: `test/fail_fixtures/bug508_struct_method_checked_fail.zbr`.
+
+### BUG-507: `if h.s as v` on a `^T?` bound the box POINTER, so passing `v` where a `T` is wanted failed inside zig -- FIXED 2026-09-30
+- **Severity:** Medium (a leak: `expected type 'Shape', found '*Shape'`)
+- **Repro:** `struct Holder` / `var s: ^Shape?`; `if h.s as got` / `area(got)` with `def area(sh: Shape)`.
+- **Found by:** writing BUG-501's measure in the checker (`if ncv.init_expr as nci` on an `^Expr?` -- the compiler's own source hit it first).
+- **Fixed 2026-09-30.** A `^T` is transparent wherever it is bound (the union-variant capture already copied `cap_ptr.*`), so the plain `if x as v` arm captures the pointer privately when the condition is a `^T?` and binds `v` to the value. A `get as` on a boxed container (`exprYieldsOptBox`) keeps the pointer, which is BUG-501's alias. Fixture: `test/bug507_hat_optional_capture_test.zbr`.
+
 ### BUG-505: nil narrowing after an early exit covers a PARAMETER but not a `var` local initialised from an optional -- and for a dep-class method result the checker narrows while the emitted Zig does not -- FIXED 2026-09-30
 - **Severity:** Medium (the documented shape `if a == nil: return` then use `a` works for parameters; every real use in the GameEngine port is a local -- `var x = inst.getAttribute(k)` -- and those either refuse or fail in Zig, so the `!` workarounds stay)
 - **Repro A** (`zebra b_narrow.zbr`) -- local from an optional FIELD, refused by the checker:

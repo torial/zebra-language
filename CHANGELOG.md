@@ -23,6 +23,18 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Struct methods are checked like class methods (BUG-508).** Their bodies skipped every
+  statement-level check -- an optional used as an operand, an unmarked throws call -- and
+  failed inside zig instead. Code that compiled before may now get a Zebra error naming the
+  real problem. Fixed with it: a method's parameters and locals no longer leak into the
+  methods checked after it, where they shadowed a FIELD of the same name (wrong types or false
+  errors in class methods too).
+- **`if x as v` on a `^T?` binds the value (BUG-507)**, so `v` can be passed where a `T` is
+  expected.
+- **`--warn-container-copy`** (a measure for BUG-501, `tools/measure_container_copy.sh`):
+  reports every site where a container is copied out of a variable or field -- the sites
+  whose meaning changes when containers become references.
+
 - **Inference or error (§28a, the flip).** A `+`, `.len` or List-shaped method call whose
   operand/receiver type cannot be inferred is now a compile error located at that
   expression and naming what to annotate; it used to GUESS (numeric `+`, a string-shaped

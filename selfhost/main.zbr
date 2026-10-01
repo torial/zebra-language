@@ -43,7 +43,7 @@ use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
 use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage
 use CgHelpers exposing typeRefStr
-use TypeChecker exposing ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
+use TypeChecker exposing containerCopySites, ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
 
 # ── Multi-file compiler ──────────────────────────────────────────────────────
@@ -3949,7 +3949,7 @@ def main()
     if args.contains("--allow-implicit-try")
         sys.errln("zebra: --allow-implicit-try was removed (0.9.0-rc5): a throws call must be marked with `?`. Compile without the flag and every unmarked call is named with its line.")
         sys.exit(2)
-    var known_flags: str = "--build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
+    var known_flags: str = "--build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -4449,6 +4449,16 @@ def main()
     # annotate (the flip, 2026-09-30, after the corpus, the book and zebra-ide reached 0).
     # compileDep accumulated the sites across deps + root; a dep compiled twice records
     # twice, so the refusal de-duplicates.
+    # BUG-501 measure (docs/design/container_reference_semantics.md §5): every site where
+    # a container is copied out of a live location -- the sites whose meaning the flip to
+    # reference semantics changes. Report only; no exit. De-duplicated (deps re-check).
+    if args.contains("--warn-container-copy")
+        var cc_seen = List(str)()
+        for cc_site in containerCopySites()
+            if not cc_seen.contains(cc_site)
+                cc_seen.add(cc_site)
+                sys.errln("CONTAINER_COPY: " + cc_site)
+
     var ig_sites: List(str) = inferenceGuessSites()
     if args.contains("--warn-inference-guess")
         for ig_site in ig_sites
