@@ -10047,6 +10047,11 @@ struct Generator
                 # place (`xs.add`, `j.putInt`, `sb.append`) gets a `var` copy.
                 var ms_b: StrSet = scanMutations(stmts, ig2.infer_ctx)
                 var mut_b: bool = cap != "_" and ms_b.contains_(cap)
+                # A binding the body MUTATES keeps the pointer, so `got.x = 9` writes through
+                # to the boxed value as it did before BUG-507 (the value copy lost the write
+                # silently -- the BUG-501 shape). Only a read-only binding takes the value.
+                if mut_b
+                    box_cap = false
                 if box_cap and cap != "_"
                     w.emit("_zbr_capp_" + cap)
                 else if mut_b

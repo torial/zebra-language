@@ -2142,6 +2142,8 @@ smoke_tc_fail test/fail_fixtures/bug508_struct_method_checked_fail.zbr "bug508_s
 smoke_run test/bug509_optional_param_positions_test.zbr "bug509: OK"
 # BUG-510: List(Class).contains compares by identity.
 smoke_run test/bug510_list_contains_class_test.zbr "bug510: OK"
+# BUG-512: a `cue init` body gets the statement-level checks a method body gets.
+smoke_tc_fail test/fail_fixtures/bug512_init_body_checked_fail.zbr "bug512_init_body_checked_fail.zbr:6:14: error: 'x' may be nil here"
 # §28a flip: a type that cannot be inferred is refused at `+`, `.len` and a List-shaped
 # method, located at the expression and naming what to annotate. The controls are
 # zig"..." values, which have no Zebra type -- they can never become a closed gap.

@@ -6877,6 +6877,31 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                     ctx.errors.add(scp_err)
                 tc_result.store(ctx.current_class, dm.name, scope_ctx)
                 ctx.current_class = saved_class
+        on Decl.init as din
+            # BUG-512 (2026-10-01): a `cue init` body was never checked -- in a class OR a
+            # struct; checkDecl had no arm for it, so every statement-level refusal was
+            # skipped there (`.n = x + 1` with `x: int?` reached the §28a guess refusal at
+            # codegen, "cannot infer the type of x", instead of "x may be nil"). Checked
+            # like a method body: parameters bound, the scope restored afterwards so they
+            # cannot shadow a field in what is checked next.
+            if din.stmts as din_stmts
+                var di_scope = HashMap(str, Type_)()
+                for dis_k, dis_v in ctx.scope
+                    di_scope.set(dis_k, dis_v)
+                ctx.withYieldType(nil)
+                ctx.withReturnType(nil)
+                var di_pnames: str = " "
+                for dip in din.params
+                    var dipt: Type_ = Type_.unknown_
+                    if dip.type_ != nil
+                        dipt = typeFromRef(dip.type_!)
+                    ctx.bind(dip.name, dipt)
+                    di_pnames = di_pnames + dip.name + " "
+                ctx.setParamsHere(di_pnames)
+                ctx.resetCopyLocals()
+                checkStmts(din_stmts, file, ctx)
+                ctx.scope = di_scope
+                ctx.setParamsHere(" ")
         on Decl.class_ as dc
             var saved_class: str = ctx.current_class
             ctx.current_class = dc.name
@@ -6896,7 +6921,7 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                 checkSelfNamedMethod(sm, file, ctx)
                 if sm is Decl.var_ as sdv
                     checkReservedField(sdv, file, ctx)
-                else if sm is Decl.method
+                else if sm is Decl.method or sm is Decl.init
                     checkDecl(sm, file, ctx, tc_result)
             ctx.current_class = saved_sclass
         on Decl.var_ as dv

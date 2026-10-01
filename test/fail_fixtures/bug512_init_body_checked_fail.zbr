@@ -1,0 +1,9 @@
+# BUG-512: a `cue init` body gets the statement-level checks a method body gets (in a
+# class OR a struct). It got none: checkDecl had no arm for Decl.init.
+struct S
+    var n: int
+    cue init(x: int?)
+        .n = x + 1
+
+def main()
+    print(S(2).n)

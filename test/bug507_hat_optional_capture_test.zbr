@@ -7,6 +7,12 @@ union Shape
 struct Holder
     var s: ^Shape?
 
+struct Pt
+    var x: int
+
+struct PtBox
+    var p: ^Pt?
+
 def area(sh: Shape): float
     branch sh
         on Shape.circle as r
@@ -24,4 +30,11 @@ def main()
     if empty.s as never
         got_area = area(never)
     assert got_area == 4.0
+    # A binding the body MUTATES keeps the pointer: the write reaches the boxed value
+    # (the first fix bound a copy and lost it silently -- the BUG-501 shape).
+    var pb = PtBox(Pt(1))
+    if pb.p as got_p
+        got_p.x = 9
+    if pb.p as again
+        assert again.x == 9
     print("bug507: OK")

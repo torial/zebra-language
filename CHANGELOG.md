@@ -23,6 +23,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`cue init` bodies are checked like method bodies (BUG-512)** -- they were not checked at
+  all, in classes or structs. A constructor may now get a Zebra error naming a real problem.
+- **A mutated `if x as v` binding on a `^T?` writes through** (BUG-507 follow-up); a read-only
+  one is the value.
+
 - **Optional types everywhere a type goes (BUG-509).** `sig H(x: str?): str?`, a lambda's
   `def(x: str?): str?`, a capture's `var t: str?`, and the inline `def(str?): int` fn type
   were refused with "expected identifier, got '?'"; a `def` parameter always took them.

@@ -1,7 +1,7 @@
 <!-- doc-status: design -->
 # Containers are references — BUG-501's fix
 
-**Status:** §6 decided 2026-09-30; steps 2 (intent probe), 3 (the measure, §5.1) and 4 (Phase 0: the one spelling, gate `container-spelling`) done; Phase 1 next. Direction decided by Sean, 2026-09-30 ("go with (a), start
+**Status:** §6 decided 2026-09-30; steps 2 (intent probe), 3 (the measure, §5.1) and 4 (Phase 0: the one spelling, gate `container-spelling`) done; Phase 1 split into prep steps 1a-1c and the flip 1d (§9). Direction decided by Sean, 2026-09-30 ("go with (a), start
 the design note for 501"): containers get **shared (reference) semantics everywhere**.
 Drafted by Opus 5.5 the same day. Nothing below is built; the decisions marked
 **OPEN** are Sean's.
@@ -218,7 +218,27 @@ the acceptance test for Phase 1.
 1. Sean settles §6.
 2. The intent probe (§8), committed unrun.
 3. The measure (§5), run over corpus / `selfhost/` / book / engine; `selfhost/` sites read.
-4. Phase 0 (§4) -- no behaviour change, gated, shippable alone.
-5. Phase 1 -- the flip; FULL tier; Fable's engine witness; QUICKSTART §2 and the List /
-   HashMap sections rewritten to the §2 rule; CHANGELOG states it as a semantics change.
+4. Phase 0 (§4) -- no behaviour change, gated, shippable alone. **DONE 2026-09-30
+   (`68eb161`).**
+5. Phase 1, SPLIT (decided 2026-10-01): the flip itself is one atomic commit that cannot be
+   left half-done on `main`, so everything that can land first without changing behaviour
+   does, each gated on `output_sweep` byte-identical and an extended `container-spelling`:
+   - **1a. Constructors.** Every construction of a Zebra-visible container -- emitted, or
+     inside the runtime (the scratch list a `split` / `lines` / `tokenize` / `repeat` block
+     builds and hands back) -- goes through `_zbr_list_new(T)` / `_zbr_map_new(V)` /
+     `_zbr_automap_new(K, V)`, returning today's value. The lint then refuses
+     `_ZbrList(...).empty` and `.init(` outside those definitions.
+   - **1b. Runtime helper signatures.** A helper that TAKES a container accepts a value or a
+     pointer (normalised through `_zbr_val`); one that RETURNS a container declares
+     `_ZbrList(T)` and builds it with 1a's constructors. Measure first how many of the
+     runtime's 106 container uses are Zebra-visible.
+   - **1c. Container fields with no initializer** are allocated at construction (§6.3) --
+     strictly a behaviour change, but only for programs that read undefined memory today;
+     its own commit, with fixtures for the class `cue init` path and the struct-literal path.
+   - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
+     machinery is deleted. DAYTIME, with Sean and Fable reading the `output_sweep` diffs:
+     every changed output is either a program that relied on today's half-copy or one the
+     flip FIXED, and someone has to say which. FULL tier; Fable's engine witness;
+     QUICKSTART §2 and the List / HashMap sections rewritten to the §2 rule; CHANGELOG
+     states it as a semantics change; the intent probe moves to `test/boundary/`.
 6. BUG-501 closes with the probe green.

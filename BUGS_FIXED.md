@@ -6,6 +6,11 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-512: a `cue init` body was never type-checked -- in a class OR a struct -- FIXED 2026-10-01
+- **Severity:** High (every statement-level refusal was skipped inside constructors; `.n = x + 1` with `x: int?` reached the §28a guess refusal at codegen -- "cannot infer the type of x", wrong -- or, before §28a, zig)
+- **Found by:** an advisor pass on BUG-508's fix asking whether "exactly as a class does" covered `cue init`: a probe showed the class path did not either -- `checkDecl` had arms for methods, classes, structs and vars, none for `Decl.init`.
+- **Fixed 2026-10-01.** A `Decl.init` arm checks the body like a method's (parameters bound, return type cleared, scope restored afterwards); the struct arm recurses into `Decl.init` as well as `Decl.method`. The compiler's own constructors passed the newly enabled checks -- the round-trip gate (not just `rebuild.sh`) compiled them under it. Fixture: `test/fail_fixtures/bug512_init_body_checked_fail.zbr`.
+
 ### BUG-509: an optional type is refused in a `sig` parameter list and in a closure's parameter list, though a plain `def` takes one -- FIXED 2026-10-01
 - **Severity:** Low-Medium (a Roblox remote whose argument may be nil -- `Spawn:FireServer(pad, comp and comp:GetSelectedMonster())` -- cannot be typed honestly as a sig; the GameEngine sends `""` and says so in a comment)
 - **Repro A** (`zebra optparam.zbr`), the sig:
@@ -64,6 +69,7 @@ Open bugs live in `BUGS.md`.
 - **Repro:** `struct Holder` / `var s: ^Shape?`; `if h.s as got` / `area(got)` with `def area(sh: Shape)`.
 - **Found by:** writing BUG-501's measure in the checker (`if ncv.init_expr as nci` on an `^Expr?` -- the compiler's own source hit it first).
 - **Fixed 2026-09-30.** A `^T` is transparent wherever it is bound (the union-variant capture already copied `cap_ptr.*`), so the plain `if x as v` arm captures the pointer privately when the condition is a `^T?` and binds `v` to the value. A `get as` on a boxed container (`exprYieldsOptBox`) keeps the pointer, which is BUG-501's alias. Fixture: `test/bug507_hat_optional_capture_test.zbr`.
+- **Follow-up 2026-10-01.** The first fix bound the value for EVERY binding, so `if pb.p as got` / `got.x = 9` silently lost the write (the BUG-501 shape: a copy where an alias was meant) -- found by an advisor pass on the fix, measured by a probe printing 1 where 9 was written. A binding the body mutates now keeps the pointer; only a read-only binding takes the value, so nothing that compiled before changes output. The fixture carries the write-through case.
 
 ### BUG-505: nil narrowing after an early exit covers a PARAMETER but not a `var` local initialised from an optional -- and for a dep-class method result the checker narrows while the emitted Zig does not -- FIXED 2026-09-30
 - **Severity:** Medium (the documented shape `if a == nil: return` then use `a` works for parameters; every real use in the GameEngine port is a local -- `var x = inst.getAttribute(k)` -- and those either refuse or fail in Zig, so the `!` workarounds stay)
