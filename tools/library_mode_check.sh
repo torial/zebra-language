@@ -23,6 +23,22 @@ ZEXE="$REPO/zig-out/bin/zebra.exe"
 [[ -x "$ZEXE" ]] || ZEXE="$REPO/zig-out/bin/zebra"
 [[ -x "$ZEXE" ]] || { echo "library-mode: no built compiler" >&2; exit 2; }
 command -v zig >/dev/null 2>&1 || export PATH="/c/Users/Sean/.zvm/bin:$PATH"
+# BUG-302: zig can fail to read ITS OWN std under concurrent load ("unable to load
+# 'big.zig': Unexpected"). The first FULL after this gate was registered refused on exactly
+# that in its negative control (2026-10-01; passed twice standalone). Same predicate as every
+# other zig-invoking gate; only that failure is retried, and the count is printed.
+. "$REPO/tools/zig_build_lib.sh"
+INFRA_RETRIES=0
+run_host() {   # $1 = log file
+    local tries=0
+    while :; do
+        ( cd out && zig run host.zig ) > "$1" 2>&1
+        if zbr_zig_infra_error "$1" && [ $tries -lt 2 ]; then
+            tries=$((tries + 1)); INFRA_RETRIES=$((INFRA_RETRIES + 1)); continue
+        fi
+        break
+    done
+}
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -43,7 +59,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("host allocator kept: {}\n", .{rt._allocator.ptr == host.ptr});
 }
 EOF
-( cd out && zig run host.zig ) > run1.log 2>&1
+run_host run1.log
 if ! grep -q "lib main ran" run1.log; then
     echo "library-mode: REFUSING -- the host did not run the library (see below)"; tail -5 run1.log; exit 2
 fi
@@ -53,12 +69,12 @@ if ! grep -q '_host_alloc_set' out/lib485.zig; then
 fi
 sed 's/if (!_zbr_rt._host_alloc_set) _zbr_rt._allocator = _prog_alloc();/_zbr_rt._allocator = _prog_alloc();/; s/if (!_host_alloc_set) _allocator = _prog_alloc();/_allocator = _prog_alloc();/' out/lib485.zig > out/lib485_old.zig
 mv out/lib485_old.zig out/lib485.zig
-( cd out && zig run host.zig ) > run2.log 2>&1
+run_host run2.log
 if ! grep -q "host allocator kept: false" run2.log; then
     echo "library-mode: REFUSING -- the negative control did not see the allocator replaced, so the check cannot fail"; tail -3 run2.log; exit 2
 fi
 if grep -q "host allocator kept: true" run1.log; then
-    echo "library-mode: PASS -- a host allocator survives the library's main (control: the old prologue replaces it)"
+    echo "library-mode: PASS -- a host allocator survives the library's main (control: the old prologue replaces it); infra-retries=$INFRA_RETRIES"
     exit 0
 fi
 echo "library-mode: FAIL -- the library's main replaced the host's allocator (BUG-485)"; tail -3 run1.log

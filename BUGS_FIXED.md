@@ -6,6 +6,11 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-514: a lambda parameter the body never reads reached zig as `unused function parameter` -- FIXED 2026-10-01
+- **Severity:** Medium (a leak; a handler that ignores one of its sig's parameters -- the common case for an event callback -- failed inside zig)
+- **Found by:** Fable, porting the GameEngine's round_loop_test on 7f4be80: two closures with three parameters each, of which one was read.
+- **Fixed 2026-10-01.** `genLambdaEx` discards an unread parameter exactly as `genMethod` does -- `nameUsedInStmts` for a statement body, `mightUseNameInExpr` for an expression body -- under the EMITTED name (BUG-233 renames a parameter that shadows an enclosing one). Fixture: `test/bug514_lambda_unused_param_test.zbr` (capture closure handed to a sig, expression lambda, renamed parameter); refused inside zig on the N-1 anchor.
+
 ### BUG-506: `==` on two containers is accepted by the front end and refused by zig -- FIXED 2026-10-01
 - **Severity:** Medium (a leak: the user gets a Zig diagnostic about code they never wrote)
 - **Repro:** `var a = List(int)(); a.add(1); var b = List(int)(); b.add(1); print(a == b)` -> `error: operator == not allowed for type 'array_list.Aligned(i64,null)'`.

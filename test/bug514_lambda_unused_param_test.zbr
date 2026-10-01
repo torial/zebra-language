@@ -1,0 +1,27 @@
+# BUG-514 (Fable, GameEngine): a lambda parameter the body never reads is discarded,
+# as a `def` parameter is -- it reached zig as `unused function parameter`. Covers a
+# capture closure handed to a sig (statement body), an expression lambda, and a
+# parameter renamed because it shadows an enclosing name (BUG-233's rename).
+sig Handler(text: str, n: int): void
+
+class Log
+    var last: str = ""
+
+def fire(h: Handler)
+    h("hi", 3)
+
+def main()
+    var log = Log()
+    fire(def(text: str, n: int): void
+        capture
+            var lg: Log = log
+        lg.last = text
+    )
+    assert log.last == "hi"
+    var first = def(a: int, b: int): int = a
+    assert first(1, 2) == 1
+    var n = 7
+    var shadow = def(n: int, m: int): int = m
+    assert shadow(1, 5) == 5
+    assert n == 7
+    print("bug514: OK")

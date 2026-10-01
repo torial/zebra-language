@@ -19469,8 +19469,20 @@ struct Generator
                         if not lg.emitLambdaStmtsRetType(ss)
                             w.emit("void")
             w.emit(" {")
+            # BUG-514 (Fable, GameEngine): a parameter the body never reads is an unused
+            # function parameter to Zig -- a hard error. A `def` gets `_ = p;` (genMethod);
+            # a lambda did not, so a handler that ignores one of its sig's parameters failed
+            # inside zig. Same usage test as genMethod; the EMITTED name (BUG-233's rename).
             branch lam.body_
                 on LambdaBody.expr_ as ex
+                    for ulp in lam.params
+                        if not mightUseNameInExpr(ulp.name, ex)
+                            w.emit(" _ = ")
+                            if lp_names.contains_(ulp.name)
+                                w.emit(lp_pfx + ulp.name)
+                            else
+                                w.emit(zigSafeName(ulp.name))
+                            w.emit(";")
                     w.emit(" return ")
                     lg.genExpr(ex)
                     w.emit(";")
@@ -19479,6 +19491,15 @@ struct Generator
                     # Clear the outer-fn ensure context so `return` inside the lambda
                     # body is NOT rewritten to outer-fn `_result` capture.
                     var ig = lg.withInLambda().indented()
+                    for ulp2 in lam.params
+                        if not nameUsedInStmts(ulp2.name, ss)
+                            ig.writeIndent()
+                            ig.w.emit("_ = ")
+                            if lp_names.contains_(ulp2.name)
+                                ig.w.emit(lp_pfx + ulp2.name)
+                            else
+                                ig.w.emit(zigSafeName(ulp2.name))
+                            ig.w.emit(";\n")
                     ig.genStmts(ss)
                     lg.writeIndent()
             w.emit(" } }")

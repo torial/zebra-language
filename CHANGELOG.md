@@ -23,6 +23,9 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A lambda may ignore a parameter (BUG-514)** -- an unread one is discarded, as for a `def`;
+  it failed inside zig as `unused function parameter`.
+
 - **`==` / `!=` on two collections compare contents (BUG-506)** -- List, HashMap and Set;
   strings by content, nested collections recursively, class instances by identity. It was
   accepted and then refused inside zig.
