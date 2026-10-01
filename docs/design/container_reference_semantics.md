@@ -1,7 +1,7 @@
 <!-- doc-status: design -->
 # Containers are references — BUG-501's fix
 
-**Status:** DESIGN, not started. Direction decided by Sean, 2026-09-30 ("go with (a), start
+**Status:** DESIGN; §6 decided 2026-09-30; step 2 (the intent probe) done, step 3 next. Direction decided by Sean, 2026-09-30 ("go with (a), start
 the design note for 501"): containers get **shared (reference) semantics everywhere**.
 Drafted by Opus 5.5 the same day. Nothing below is built; the decisions marked
 **OPEN** are Sean's.
@@ -122,7 +122,13 @@ leaves the original's alone; after the flip it changes both. The round-trip woul
 resulting miscompile but not point at it -- only the measure over `selfhost/` does, so it
 runs, and its `selfhost/` sites are read by hand, before Phase 1.
 
-## 6. Decisions -- OPEN (Sean)
+## 6. Decisions -- DECIDED (Sean, 2026-09-30: "agree with all four recommendations, proceed")
+
+Settled as recommended: (1) `==` on containers is **structural**; (2) `xs.copy()` is a
+**shallow** copy and no deep-copy method is added (`<<-` remains the deep copy);
+(3) a container field with no initializer is **auto-allocated empty** at construction;
+(4) **`StringBuilder` is in scope**, same phase. The options as they were laid out:
+
 
 1. **`==` on containers.** Today it leaks: the front end accepts `a == b` on two Lists and
    zig refuses (`operator == not allowed for type 'array_list.Aligned(i64,null)'` --
@@ -155,7 +161,10 @@ runs, and its `selfhost/` sites are read by hand, before Phase 1.
 
 ## 8. The intent probe -- written before any code
 
-`test/boundary/container_reference_probe.zbr` <!-- doc-lint-ok: PROPOSED probe, written in step 2 of §9 --> (+ `.expected`) states every row of §1's table
+`docs/design/container_reference_probe.zbr` (+ `.expected`), STAGED here rather than in
+`test/boundary/` because a probe there must pass today (`@boundary-pending` encodes CURRENT
+behaviour, not intent), and this one fails by construction. It moves to `test/boundary/` in
+Phase 1 as the acceptance test, unedited. It states every row of §1's table
 under the NEW rule, plus the §2 consequences (struct copy shares, `except` shares, a returned
 map is the map). Its expectations are authored from this document, committed UNRUN -- the
 `boundary_check` discipline -- and it fails on today's compiler by construction. It becomes
