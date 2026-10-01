@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-515. Next new bug: BUG-516.**
+**Last bug number generated: BUG-516. Next new bug: BUG-517.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,14 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-516: a dependency found on `--module-path` is not emitted into `--output-dir`, and nothing says so -- the build fails inside zig with `unable to load 'dep.zig': FileNotFound` -- OPEN (found 2026-10-01)
+- **Severity:** Low-Medium (a standalone user of `--module-path` + `--output-dir` gets a zig error about a file the compiler chose not to write; the GameEngine's regen is unaffected because it compiles every module itself)
+- **Repro (Fable):** `mods/iface_a.zbr` (an interface + a class), `use_b.zbr` (`use iface_a exposing ...`); `zebra --module-path mods --output-dir out use_b.zbr` writes `out/use_b.zig` (which `@import`s `iface_a.zig`) and `out/zebra_rt.zig`, not `out/iface_a.zig`.
+- **Not an accident:** BUG-125 made module-path deps TYPES ONLY on purpose -- `compileDep_use` comments "It is NOT emitted: the host build provides the dep's .zig module", which is the engine's model (every module regenerated on its own). `examples_sweep` buckets the same shape as `DEPMISS`. What is missing is (a) a way for a standalone user to get the dep emitted, and (b) any word from the compiler when it leaves one out.
+- **Decision needed (Sean):** (1) emit module-path deps into `--output-dir` like sibling deps, with an opt-out for host builds; (2) keep types-only and add a flag to emit them; or (3) keep the behaviour and print a note naming each dep that was NOT emitted and why. (3) is cheap and right in any case (UNGIT: nothing withheld); (1) changes what the engine's regen writes, so it needs Fable's regen in the loop.
 
 ---
 
