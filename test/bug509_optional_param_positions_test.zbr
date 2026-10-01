@@ -1,0 +1,32 @@
+# BUG-509 (Fable, GameEngine): an optional type is accepted at every type position a
+# `def` parameter takes one -- a `sig` parameter and return type, a lambda parameter and
+# return type, a capture type, the inline `def(P): R` fn type. They were refused with
+# "expected identifier, got '?'" (the Lua side of the engine sends nil there).
+sig Handler(name: str, extra: str?): str?
+
+def describe(name: str, extra: str?): str?
+    if extra == nil
+        return name
+    return name + "+" + extra!
+
+def callIt(h: Handler, extra: str?): str
+    return h(name: "pad", extra: extra) orelse "none"
+
+def viaFnType(f: def(str?): int, v: str?): int
+    return f(v)
+
+def main()
+    assert callIt(describe, nil) == "pad"
+    assert callIt(describe, "boss") == "pad+boss"
+    var lam = def(extra: str?): str? = extra
+    assert (lam(nil) orelse "nil") == "nil"
+    var lens = def(s: str?): int = (s orelse "").len
+    assert viaFnType(lens, "abc") == 3
+    assert viaFnType(lens, nil) == 0
+    var suffix: str? = "!"
+    var bang = def(s: str): str
+        capture
+            var tail: str? = suffix
+        return s + (tail orelse "")
+    assert bang("hi") == "hi!"
+    print("bug509: OK")

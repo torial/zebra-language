@@ -1,0 +1,21 @@
+# BUG-510 (Fable, GameEngine): `contains` on a List of CLASS instances compares by
+# identity -- the answer `==` on two class values gives. It emitted
+# `std.mem.eql(u8, ...)` (any pointer was taken for a string) and failed inside zig.
+class Node
+    var name: str
+    cue init(name: str)
+        .name = name
+
+def main()
+    var a = Node("a")
+    var b = Node("a")
+    var l = List(Node)()
+    l.add(a)
+    assert l.contains(a)
+    assert not l.contains(b)          # same field values, a different object
+    assert a in l
+    var names = List(str)()
+    names.add("x")
+    assert names.contains("x")        # strings still compare by content
+    assert not names.contains("y")
+    print("bug510: OK")
