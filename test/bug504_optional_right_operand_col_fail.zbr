@@ -1,0 +1,8 @@
+# BUG-504: a nil-able RIGHT operand is refused at ITS column, not at the left operand's.
+# `b` is on line 5, column 16; the binary node (and `x`) starts at column 12.
+def total(b: int?): int
+    var x = 1
+    return x + b
+
+def main()
+    print(total(2))

@@ -51,14 +51,7 @@
 - **Where:** temp-mode compiles (no `--output-dir`) write `<TEMP>/<stem>.zig`, `<TEMP>/zebra_rt.zig` and `<TEMP>/<stem>.zig.run.exe`; every concurrent invocation on the machine shares those names. Two programs with the same stem (`main.zbr` in two projects) collide on everything.
 - **Found by:** `release-mode`'s second non-reproducing red (2026-10-01, the first on 2026-09-18), during a FULL tier that ran beside another session's engine regen. The gate now gives its compiles a private `TMP`/`TEMP` (and passes); the compiler does not protect anyone else.
 - **Fix direction:** a per-invocation scratch directory under TEMP (`zebra-<pid>-<n>/`), removed after a clean run as today, kept under `--keep-temp` and printed. `release_mode_check.sh` finds its executables by the shared names, so it moves to the new layout in the same change.
-
----
-
-### BUG-504: an optional-operand refusal on the RIGHT operand of a chained `+` reports the LEFT operand's column -- OPEN (found 2026-09-30)
-- **Severity:** Low (the message names the right variable; the caret and the column point at the wrong one)
-- **Repro:** `def pick(a: str?, b: str?): str` with `return a + "/" + b` -- both refusals are reported at the column of `a` (`8:16`), including "'b' may be nil here".
-- **Found by:** writing the nil-narrowing fixture (2026-09-30), before the fix made the refusal go away for that shape.
-- **Fix direction:** the operand check should anchor on the operand expression's own span (`exprCol`), not the binary node's.
+- **Design analysis (2026-10-02, not built -- two decisions first):** (1) **Accumulation.** `compileDep` writes each dep's `.zig` as it is generated, so a FRONT-END error in the root leaves a directory holding the deps and a 284 KB `zebra_rt.zig`. Today those files are overwritten next time (bounded); per-run directories would leak one per failed attempt -- BUG-244 again, and an edit/`-c` loop fails often. Options: delete the directory on every exit that is not a zig/program failure (many `sys.exit` sites in the driver -- funnel them), or a reaper for `zebra-*` older than a day (ambient deletion; needs a dir mtime the runtime may not expose on Windows). (2) **Printing the kept path** under `--keep-temp` changes what `output_sweep` captures (`2>&1`, and it runs misses with `--keep-temp`), so its `run_one` must strip that line -- and should READ it to find the emit, replacing today's guess at `$TEMP/<name>.zig` (runtime_module_check, release_mode_check and output_sweep all guess today). Also: the REPL's `<TEMP>/zbr_repl_session.zbr` has the same collision between two REPLs. Receipt for urgency: the same shared-TEMP fact let `output_sweep`'s emit check pass against another run's file (1b17ec4).
 
 ---
 

@@ -554,14 +554,16 @@ chk "\`--warnings-as-errors\` on a clean file still exits 0" "$([ "$RC" = 0 ] &&
 # never wrote) -- and must stay quiet under --library-mode, the host build this is for.
 mkdir -p "$W/mp516"
 printf 'def twice(n: int): int\n    return n * 2\n' > "$W/mp516/mpdep.zbr"
-printf 'use mpdep exposing twice\ndef main()\n    print(twice(2))\n' > "$W/mpuse.zbr"
+printf 'def thrice(n: int): int\n    return n * 3\n' > "$W/mp516/mpdep2.zbr"
+printf 'use mpdep exposing twice\nuse mpdep2 exposing thrice\ndef main()\n    print(twice(thrice(2)))\n' > "$W/mpuse.zbr"
 run --module-path mp516 -c mpuse.zbr
-chk "a --module-path dep that is not emitted is NAMED in a note (BUG-516)" \
-    "$(case "$ERR" in *"note: 'mpdep' was found on --module-path"*"TYPES only"*) echo 0;; *) echo 1;; esac)" \
+NNOTE=$(printf '%s\n' "$ERR" | grep -c 'note: found on --module-path')
+chk "--module-path deps that are not emitted are NAMED, in ONE note (BUG-516)" \
+    "$(case "$ERR" in *"note: found on --module-path"*"TYPES only: mpdep, mpdep2 --"*) [ "$NNOTE" = 1 ] && echo 0 || echo 1;; *) echo 1;; esac)" \
     "exit=$RC stderr=[$(echo "$ERR" | grep -m1 note)]"
 run --library-mode --module-path mp516 -c mpuse.zbr
 chk "...and the note is silent under --library-mode (the host build provides the dep)" \
-    "$(case "$ERR" in *"note: 'mpdep'"*) echo 1;; *) echo 0;; esac)" \
+    "$(case "$ERR" in *"module-path"*) echo 1;; *) echo 0;; esac)" \
     "exit=$RC stderr=[$(echo "$ERR" | grep -m1 note)]"
 
 echo

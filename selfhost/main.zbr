@@ -80,7 +80,7 @@ class MultiCompiler
     var c_i_dirs: List(str)    # deduplicated -I dirs for C deps that have a .h
     var strip_contracts: bool  # --turbo: strip require/ensure/invariant from all output
     var library_mode: bool     # --library-mode: omit `defer _arena.deinit()` from main() (script linked into a host process)
-    var mp_noted: List(str)    # BUG-516: module-path deps already reported as not emitted
+    var mp_noted: List(str)    # BUG-516: module-path deps read for types only (reported once, after the graph)
     var test_mode: bool        # true when invoked as `zebra test <file.zbr>`
     var tag_filter: str?       # --tag X: only run tests matching this tag
     var warn_non_exhaustive: bool  # --warn-non-exhaustive: warn branch...else missing variants
@@ -224,6 +224,20 @@ class MultiCompiler
     # SCOPED TO STATEFUL MODULES ON PURPOSE. Most modules in a healthy graph are shared
     # -- `Ast` is imported eight times by the selfhost -- and listing them all would be
     # a wall nobody reads. A module with no `var` has no instance to share.
+    # BUG-516: one note per program naming every --module-path dep that was read for its
+    # types and not written out. Silent under --library-mode, the host-build mode this
+    # behaviour exists for.
+    def reportModulePathDeps()
+        if library_mode or mp_noted.len == 0
+            return
+        var names: str = ""
+        for nm in mp_noted
+            if names != ""
+                names = names + ", "
+            names = names + nm
+        var they = if(mp_noted.len == 1, "it is", "they are")
+        sys.errln("note: found on --module-path (" + module_path + ") and read for TYPES only: " + names + " -- " + they + " not compiled or written out, so this program builds only where a host provides the .zig; to build it standalone, put the .zbr beside the source (BUG-516)")
+
     def reportSharedStatefulModules()
         var listed: List(str) = List(str)()
         var i: int = 0
@@ -461,12 +475,11 @@ class MultiCompiler
                 .scanDepForTypes(mp_path)?
                 # BUG-516: SAY so. A standalone user (a plain run, `--emit-zig`,
                 # `--output-dir`) otherwise met zig's `unable to load 'dep.zig':
-                # FileNotFound` about a file the compiler chose not to write. Silent under
-                # --library-mode, the host-build mode this behaviour exists for; once per
-                # dep, since the graph can reach it more than once.
-                if not library_mode and not mp_noted.contains(dep_name)
+                # FileNotFound` about a file the compiler chose not to write. Recorded
+                # here and reported ONCE by reportModulePathDeps after the graph is known
+                # -- one line per dep buried a hand-compiled engine test in ten.
+                if not mp_noted.contains(dep_name)
                     mp_noted.add(dep_name)
-                    sys.errln("note: '" + dep_name + "' was found on --module-path (" + mp_path + ") and read for its TYPES only -- it is not compiled or written out, so this program builds only where a host provides " + dep_name + ".zig; to build it standalone, put " + dep_name + ".zbr beside the source (BUG-516)")
                 return
         # Native C dep: collect path and optional -I dir; zig handles compilation.
         var c_path: str = dep_name + ".c"
@@ -4448,6 +4461,7 @@ def main()
     mc.compileDep(path, true)?
     # BUG-295 (b): after the whole graph is known, name the shared STATEFUL modules.
     mc.reportSharedStatefulModules()
+    mc.reportModulePathDeps()
 
     # §28b step 5 (the flip): reject implicit error propagation (a throws call the user
     # did not mark with `?`). compileDep accumulated every auto-`try` site across deps +

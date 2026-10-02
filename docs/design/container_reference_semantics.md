@@ -267,6 +267,12 @@ the acceptance test for Phase 1.
      FIELD DEFAULT, comptime-evaluated, which cannot allocate once 1d lands. So 1c covers
      initialised fields as well as uninitialised ones. Three module-scope `_zbr_new` sites
      sit inside `@TypeOf(...)`, which Zig never evaluates, and are safe.
+     **Landed `27f54ca`; Fable's GO, 2026-10-02:** all 180 engine sources regenerated from
+     the committed binary (83 re-emitted), build clean, full suite / test-gui / test-tuon /
+     test-mm 25/25 green, both autoplays to completion at their pre-1a frame rates, 0 drift
+     at 180/180; no raw `.empty` / `.init(_allocator)` in any emitted engine file outside
+     the runtime. Fable's 1d reviewer note is written: the engine's 26 `bind_field` rows
+     are five distinct sites, all correct under the flip.
    - **1b. Runtime helper signatures.** A helper that TAKES a container accepts a value or a
      pointer (normalised through `_zbr_val`); one that RETURNS a container declares
      `_ZbrList(T)` and builds it with 1a's constructors. Measure first how many of the

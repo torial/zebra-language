@@ -5824,7 +5824,15 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                     var ob_nm: str = "the value"
                     if obs is Expr.ident as obs_id
                         ob_nm = "'" + obs_id.name + "'"
-                    ctx.addErr(file, b.span.line, b.span.col, ob_nm + " may be nil here, so it cannot be used with this operator -- check it first (if x != nil ...), unwrap it (x!), or give a default (x orelse 0)")
+                    # BUG-504: anchor on the OPTIONAL operand, not the binary node -- the
+                    # node starts at its LEFT operand, so a nil right operand was reported
+                    # at the column of the left one.
+                    var ob_line: int = exprSpanLine(obs)
+                    var ob_col: int = exprSpanCol(obs)
+                    if ob_line == 0
+                        ob_line = b.span.line
+                        ob_col = b.span.col
+                    ctx.addErr(file, ob_line, ob_col, ob_nm + " may be nil here, so it cannot be used with this operator -- check it first (if x != nil ...), unwrap it (x!), or give a default (x orelse 0)")
             # BUG-331: a JsonValue is not a number or a string; the operator would
             # reach Zig. Say which typed read to use.
             if inferExpr(b.left, ctx) is Type_.json_value or inferExpr(b.right, ctx) is Type_.json_value

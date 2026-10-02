@@ -2197,6 +2197,7 @@ smoke_run test/deprecated_warning_test.zbr "deprecated: OK"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_location: assert failed at"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_message: custom message here"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"
+smoke_tc_fail test/bug504_optional_right_operand_col_fail.zbr "bug504_optional_right_operand_col_fail.zbr:5:16: error: 'b' may be nil here"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then
