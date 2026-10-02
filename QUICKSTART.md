@@ -3759,6 +3759,7 @@ Available backends: `stub` (no-op, for tests), `libui_ng` (native OS controls),
 | `Dir.createAll(path)` | void    | Create directory tree                      |
 | `Dir.delete(path)`    | void    | Delete empty directory                     |
 | `Dir.deleteAll(path)` | void    | Delete directory tree recursively          |
+| `Dir.tryDeleteAll(path)` | `bool` | Delete a tree without ever failing; true iff it is gone afterwards (retry on false) |
 | `Dir.exists(path)`    | `bool`  | True if directory exists                   |
 
 ### `Arg` — command-line argument parsing

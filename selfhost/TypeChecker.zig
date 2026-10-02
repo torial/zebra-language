@@ -5591,7 +5591,7 @@ pub fn _zbr_fn_inferExpr(e: _zbr_ty_Expr, ctx: *_zbr_ty_InferCtx) _zbr_ty_Type_ 
 // zbr:selfhost/TypeChecker.zbr:3308
                             if (std.mem.eql(u8, bname, "Dir")) {
 // zbr:selfhost/TypeChecker.zbr:3309
-                                if (std.mem.eql(u8, mem.member, "exists")) {
+                                if ((std.mem.eql(u8, mem.member, "exists") or std.mem.eql(u8, mem.member, "tryDeleteAll"))) {
 // zbr:selfhost/TypeChecker.zbr:3310
                                     return _zbr_ty_Type_.bool_;
                                 }

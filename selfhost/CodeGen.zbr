@@ -21180,6 +21180,18 @@ struct Generator
                 w.emit("\"\"")
             w.emit(") catch @panic(\"Dir.deleteAll error\"))")
             return
+        # Dir.tryDeleteAll: the tree delete a retry loop can use (File.tryDelete's sibling,
+        # BUG-513). Never panics; TRUE iff the directory is ABSENT AFTERWARDS -- on Windows a
+        # just-executed binary inside it can stay locked for a moment, and a caller that
+        # gets `false` can wait and try again.
+        if mname == "tryDeleteAll"
+            w.emit("(blk_dtd: { const _dtd_p = ")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"\"")
+            w.emit("; std.Io.Dir.cwd().deleteTree(_io, _dtd_p) catch {}; var _dtd_d = std.Io.Dir.cwd().openDir(_io, _dtd_p, .{}) catch break :blk_dtd true; _dtd_d.close(_io); break :blk_dtd false; })")
+            return
         if mname == "exists"
             w.emit("(blk_de: { var _de_d = std.Io.Dir.cwd().openDir(_io, ")
             if args.len > 0

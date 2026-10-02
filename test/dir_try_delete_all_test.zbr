@@ -1,0 +1,13 @@
+# Dir.tryDeleteAll (BUG-513's prerequisite): a recursive delete that never panics and
+# answers TRUE iff the directory is absent afterwards -- so "already gone" is true too.
+def main()
+    var base: str = sys.getenv("TEMP") orelse (sys.getenv("TMPDIR") orelse "/tmp")
+    var d: str = base + "/zz_tda_" + Random.randInt(100000, 999999).toString()
+    Dir.createAll(d + "/sub/deeper")
+    File.write(d + "/sub/a.txt", "x")
+    File.write(d + "/sub/deeper/b.txt", "y")
+    var before: bool = Dir.exists(d)
+    var deleted: bool = Dir.tryDeleteAll(d)
+    var after: bool = Dir.exists(d)
+    var again: bool = Dir.tryDeleteAll(d)
+    print("dir_try_delete_all: " + before.toString() + " " + deleted.toString() + " " + after.toString() + " " + again.toString())

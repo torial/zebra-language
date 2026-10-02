@@ -3306,7 +3306,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 if mem.member == "fieldNames" or mem.member == "fieldTypes"
                                     return Type_.list_(Type_.string_)
                             if bname == "Dir"
-                                if mem.member == "exists"
+                                if mem.member == "exists" or mem.member == "tryDeleteAll"
                                     return Type_.bool_
                                 if mem.member == "list" or mem.member == "walk"
                                     return Type_.list_(Type_.string_)

@@ -964,6 +964,7 @@ smoke_run test/stdlib_additions_test.zbr "stdlib_additions OK"
 smoke_run test/profile_test.zbr "profile OK"
 # Dir: the trailing "(N files found)" is machine-dependent, so the prefix is the assertion.
 smoke_run test/dir_walk_test.zbr "dir_walk_test: ok"
+smoke_run test/dir_try_delete_all_test.zbr "dir_try_delete_all: true true false true"
 smoke_run test/build_declarative_test.zbr "build declarative: ok"
 smoke_run test/regex_test.zbr "abc NUM def NUM"
 # Net: resolving the LOOPBACK literal needs no network and no DNS server, so this is

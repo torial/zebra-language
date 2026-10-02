@@ -158,7 +158,7 @@ named in the tool's header; what it cannot see is listed there too.
 
 `bytes` `nextBool` `nextFloat` `nextInt`
 
-## Namespaces (31) and static members (174; 1 namespace(s) OPEN: Math)
+## Namespaces (31) and static members (175; 1 namespace(s) OPEN: Math)
 
 ### Arg (1) <!-- genArgCall -->
 
@@ -184,9 +184,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `fromEpoch` `now` `of`
 
-### Dir (7) <!-- genDirCall -->
+### Dir (8) <!-- genDirCall -->
 
-`create` `createAll` `delete` `deleteAll` `exists` `list` `walk`
+`create` `createAll` `delete` `deleteAll` `exists` `list` `tryDeleteAll` `walk`
 
 ### File (15) <!-- genFileCall -->
 

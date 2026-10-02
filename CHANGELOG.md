@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`Dir.tryDeleteAll(path): bool`** -- a recursive delete that never fails: true iff the
+  directory is gone afterwards (already-gone counts), so a caller can wait and retry when a
+  file inside is still held -- `File.tryDelete`'s sibling. `Dir.deleteAll` still panics.
+
+- **An optional-operand refusal points at the nil-able operand (BUG-504)** -- it was
+  reported at the column of the operator's LEFT operand.
+
 - **A dependency found on `--module-path` that is not compiled is named in a note (BUG-516)**
   -- a standalone build met zig's `FileNotFound` about a file the compiler never wrote. Silent
   under `--library-mode`.
