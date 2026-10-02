@@ -238,11 +238,19 @@ cached_run_one() {  # $1 = test/foo.zbr ; same contract as run_one
     oc_miss=$((oc_miss+1))
     # the run itself, with --keep-temp so the emit it BUILT can be compared with the key's
     local out
+    tmp_t="${TMP:-${TEMP:-/tmp}}"; command -v cygpath >/dev/null 2>&1 && tmp_t="$(cygpath -u "$tmp_t")"
+    # The root emit is removed FIRST, so the comparison below can only be satisfied by THIS
+    # run's emit. TEMP is shared (BUG-513): on 2026-10-02 a run that died under fork
+    # exhaustion printed nothing, an earlier run's <name>.zig was still there, the check
+    # passed against it, and the empty capture was cached and replayed as a behaviour change.
+    rm -f "$tmp_t/$name.zig" 2>/dev/null
     out=$(MODE_FLAGS="$MODE_FLAGS --keep-temp" run_one "$zbr")
     printf '%s' "$out"
-    tmp_t="${TMP:-${TEMP:-/tmp}}"; command -v cygpath >/dev/null 2>&1 && tmp_t="$(cygpath -u "$tmp_t")"
     ok=1
     [ -n "$key" ] || ok=0
+    # An EMPTY capture is never stored: it is what a run that never started looks like, and
+    # a program that genuinely prints nothing only costs a re-run.
+    [ -n "$out" ] || ok=0
     if [ "$ok" = 1 ]; then
         for f in "$od"/*.zig; do cmp -s "$f" "$tmp_t/${f##*/}" || { ok=0; break; }; done
         [ "$ok" = 1 ] || oc_mismatch=$((oc_mismatch+1))

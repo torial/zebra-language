@@ -46,6 +46,12 @@ for a in "$@"; do case "$a" in
   --gate) GATE=1;;
   --update-baseline) UPDATE=1;;
   --examples) EXAMPLES=1;;
+  # An unknown flag is REFUSED, not ignored (2026-10-02): `--only <file>` -- compile_check's
+  # flag, not this tool's -- was silently dropped and the whole 750-file corpus swept, which
+  # read as "one file takes seven minutes". A typo'd --gate would have been worse: a sweep
+  # that compares nothing and exits 0.
+  *) echo "full_sweep: unknown argument '$a' (known: --gate --update-baseline --examples;" \
+          "for one file use: bash tools/compile_check.sh --only <name>)" >&2; exit 2;;
 esac; done
 
 # Corpus and baseline move TOGETHER, in one place. Split apart, the gate could be

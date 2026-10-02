@@ -114,8 +114,17 @@ zbr_zig_build() {         # $1 = main.zig   $2 = stderr file   [$3 = timeout sec
   done
   if [ -n "$key" ]; then
     [ -n "${ZBR_VCACHE_LOG:-}" ] && echo miss >> "$ZBR_VCACHE_LOG"
-    # Only zig's own verdict is worth keeping: not an infra failure, not a timeout.
-    if [ "$ZBR_RC" -ne 124 ] && ! { [ "$ZBR_RC" -ne 0 ] && zbr_zig_infra_error "$berr"; }; then
+    # Only zig's own verdict is worth keeping: not an infra failure, not a timeout, and not
+    # a failure with NOTHING on stderr -- zig always explains a real refusal, so a silent
+    # non-zero is a zig that never ran (2026-10-02: under fork exhaustion processes died at
+    # start with 0xC0000142, and a cached "failure" would have replayed as a regression).
+    # Nor a ROOT that vanished mid-compile ("unable to load '<root>.zig': FileNotFound"): the
+    # input was deleted under zig (two sweeps sharing a work dir, 2026-10-01 23:41-00:47), so
+    # it says nothing about the emit -- and once cached, eight files replayed it as a
+    # regression in every later sweep. A missing DEP is a real verdict and stays cacheable.
+    if [ "$ZBR_RC" -ne 124 ] && ! { [ "$ZBR_RC" -ne 0 ] && zbr_zig_infra_error "$berr"; } \
+       && ! { [ "$ZBR_RC" -ne 0 ] && [ ! -s "$berr" ]; } \
+       && ! { [ "$ZBR_RC" -ne 0 ] && grep -qF "unable to load '${main##*/}': FileNotFound" "$berr"; }; then
       local tmp="$cdir.tmp.$$"
       # Written aside, then renamed into place. A worker that loses the race to the same
       # key discards its copy (mv onto an existing dir would NEST it, not replace it).

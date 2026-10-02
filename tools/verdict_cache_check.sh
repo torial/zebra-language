@@ -14,10 +14,20 @@
 #   6. a timeout                   -> NOT cached
 #   7. ZBR_VCACHE=0                -> zig started even though the answer is cached
 #   8. a *.err file beside the root does not change the key (the gate's own evidence)
+#   9. a SILENT failure (non-zero, nothing on stderr) -> NOT cached: zig never ran
+#  11. the ROOT file reported missing ("unable to load 'p.zig': FileNotFound") -> NOT
+#      cached (the input vanished under zig); a missing DEP stays cached (a real verdict)
+#  10. output_sweep's OUTPUT cache: a run whose program output was lost (the compile
+#      succeeded, the binary died at start) must NOT store its empty capture
+#
+# Legs 9 and 10 are 2026-10-02's receipt: under fork exhaustion processes died at start
+# (0xC0000142), 29 empty captures were cached, and one replayed as a behaviour change on an
+# idle machine. Leg 10 was watched RED against the pre-fix output_sweep.sh (1 entry stored).
 #
 # Legs 2, 3, 5 and 6 are the ones that matter: each is a stale or poisoned answer.
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+ORIG_PATH="$PATH"
 TMP="${TMPDIR:-/tmp}/zz_verdict_cache_check"
 rm -rf "$TMP"; mkdir -p "$TMP/bin"
 export ZBR_VCACHE_DIR="$TMP/cache"          # never the real cache
@@ -34,6 +44,9 @@ case "\${STUB_MODE:-pass}" in
   real)    echo "$REAL_ERR" >&2; exit 1 ;;
   infra)   echo "$INFRA_ERR" >&2; exit 1 ;;
   slow)    sleep 5; exit 0 ;;
+  silent)  exit 1 ;;
+  rootgone) echo "x/p.zig:1:1: error: unable to load 'p.zig': FileNotFound" >&2; exit 1 ;;
+  depgone)  echo "x/p.zig:1:1: error: unable to load 'zebra_rt.zig': FileNotFound" >&2; exit 1 ;;
 esac
 STUB
 chmod +x "$TMP/bin/zig"
@@ -98,7 +111,47 @@ before=$(count)
 ZBR_VCACHE=0 STUB_MODE=pass zbr_zig_build "$TMP/a/p.zig" "$TMP/a/build.err" 30; c=$(count)
 check "7 ZBR_VCACHE=0 starts zig" $([ "$c" -gt "$before" ]; echo $?) "zig $before -> $c"
 
+# 9. a silent failure is never cached
+mkprog "$TMP/e"; printf '// e
+' >> "$TMP/e/p.zig"
+STUB_MODE=silent zbr_zig_build "$TMP/e/p.zig" "$TMP/e/build.err" 30; r1=$?; c1=$(count)
+STUB_MODE=pass zbr_zig_build "$TMP/e/p.zig" "$TMP/e/build.err" 30; r2=$?; c2=$(count)
+check "9 silent failure: not cached" $([ $r1 = 1 ] && [ $r2 = 0 ] && [ "$c2" -gt "$c1" ]; echo $?) "rc $r1/$r2, zig $c1 -> $c2"
+
+# 11. a vanished ROOT is not a verdict; a missing DEP is
+mkprog "$TMP/f"; printf '// f
+' >> "$TMP/f/p.zig"
+STUB_MODE=rootgone zbr_zig_build "$TMP/f/p.zig" "$TMP/f/build.err" 30; c1=$(count)
+STUB_MODE=pass zbr_zig_build "$TMP/f/p.zig" "$TMP/f/build.err" 30; r2=$?; c2=$(count)
+mkprog "$TMP/g"; printf '// g
+' >> "$TMP/g/p.zig"
+STUB_MODE=depgone zbr_zig_build "$TMP/g/p.zig" "$TMP/g/build.err" 30; c3=$(count)
+STUB_MODE=depgone zbr_zig_build "$TMP/g/p.zig" "$TMP/g/build.err" 30; c4=$(count)
+check "11 vanished root: not cached; missing dep: cached" $([ $r2 = 0 ] && [ "$c2" -gt "$c1" ] && [ "$c4" = "$c3" ]; echo $?) "root: zig $c1 -> $c2 (rc $r2); dep: zig $c3 -> $c4"
+
 echo "  $(zbr_vcache_summary "$ZBR_VCACHE_LOG")  (this run's own lookups)"
+
+# 10. the OUTPUT cache, with the REAL compiler and the real gate script: a stub zebra
+# compiles for real (so the emit check matches) and loses the program's output.
+ZREAL="$REPO/zig-out/bin/zebra.exe"; [ -x "$ZREAL" ] || ZREAL="${ZREAL%.exe}"
+[ -x "$ZREAL" ] || { echo "verdict-cache: REFUSING -- leg 10 needs a built compiler"; exit 2; }
+T10=bug406_print_containers_test
+W="$TMP/oc"; mkdir -p "$W/tmp"
+cat > "$W/zebra.exe" <<STUB10
+#!/usr/bin/env bash
+for a in "\$@"; do [ "\$a" = "--emit-zig" ] && exec "$ZREAL" "\$@"; done
+"$ZREAL" "\$@" >/dev/null 2>&1
+exit 0
+STUB10
+chmod +x "$W/zebra.exe"
+sed -e "s#^ZEBRA=.*#ZEBRA=\"$W/zebra.exe\"#" -e "s#^OCACHE_DIR=.*#OCACHE_DIR=\"$W/ocache\"#"     -e "s#^SCRIPT_DIR=.*#SCRIPT_DIR=\"$REPO/tools\"#" "$REPO/tools/output_sweep.sh" > "$W/os.sh"
+grep -q "^OCACHE_DIR=\"$W/ocache\"" "$W/os.sh" || { echo "verdict-cache: REFUSING -- leg 10 could not redirect the output cache"; exit 2; }
+( export PATH="$ORIG_PATH" TMP="$W/tmp" TEMP="$W/tmp"; unset ZBR_VCACHE_DIR ZBR_VCACHE_LOG; bash "$W/os.sh" --gate --only "$T10" > "$W/log" 2>&1 )
+grep -q "BEHAVIOUR CHANGED" "$W/log" || { echo "verdict-cache: REFUSING -- leg 10's stub did not lose the output (the attack never happened)"; exit 2; }
+n10=$(find "$W/ocache" -type f 2>/dev/null | wc -l | tr -d ' ')
+ok10=1; [ "$n10" = 0 ] && ok10=0
+check "10 output cache: lost output not stored" "$ok10" "$n10 entry stored -- an empty capture would replay as a behaviour change"
+
 rm -rf "$TMP"
-if [ $fail = 0 ]; then echo "verdict-cache: all 8 legs pass"; exit 0; fi
+if [ $fail = 0 ]; then echo "verdict-cache: all 11 legs pass"; exit 0; fi
 echo "verdict-cache: FAILED"; exit 1

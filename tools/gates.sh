@@ -400,7 +400,7 @@ run_fast "bug302-control" "all legs pass"  bash tools/bug302_infra_retry_check.s
 # The zig VERDICT CACHE in zig_build_lib.sh answers for full_sweep / compile_check /
 # divergence from memory when the emitted files are unchanged. A cache fails by LYING, so
 # this attacks it with a stub zig: a changed dep, a new zig and an infra error must MISS.
-run_fast "verdict-cache" "all 8 legs pass"  bash tools/verdict_cache_check.sh
+run_fast "verdict-cache" "all 11 legs pass"  bash tools/verdict_cache_check.sh
 # The walker-drift gate. A function searching the Expr tree for a name is only correct
 # if it descends into every variant that HOLDS expressions; miss one and it silently
 # answers "not used" for a whole construct, which surfaces as a Zig error in code the
