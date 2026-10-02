@@ -277,6 +277,15 @@ the acceptance test for Phase 1.
      pointer (normalised through `_zbr_val`); one that RETURNS a container declares
      `_ZbrList(T)` and builds it with 1a's constructors. Measure first how many of the
      runtime's 106 container uses are Zebra-visible.
+     **Measured 2026-10-02 (at `36c7c55`):** 20 `pub fn` RETURN `std.ArrayList` (the
+     functional trio, map keys/values/entries, the JSON list reads, CSV rows, `Net.resolve`,
+     the Regex find-all/split/groups); 10 TAKE one; 0 return a HashMap. About 21 sites
+     introspect a container argument's TYPE through `@TypeOf(arg)` -- `_MapKV(@TypeOf(map))`
+     in 7, the list helpers' `@TypeOf(xs)` -- and those are what break when handed a pointer.
+     Plan: one `_zbr_cont_t(T)` (T, or its child when T is a single-item pointer) that every
+     such site goes through, plus the 30 respelled signatures. A helper that only reads
+     `.items` or calls `.append` already works on a pointer -- Zig auto-derefs a single-item
+     pointer for field and method access -- so it is not 1b work.
    - **1c. Container fields with no initializer** are allocated at construction (§6.3) --
      strictly a behaviour change, but only for programs that read undefined memory today;
      its own commit, with fixtures for the class `cue init` path and the struct-literal path.

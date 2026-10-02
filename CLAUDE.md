@@ -2295,6 +2295,19 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-02 (closing the overnight: BUG-501 Phase 1a `27f54ca` with Fable's GO,
+BUG-504, BUG-516's one-note form, the gate-cache fixes `1b17ec4`): 57/57 PASS in ONE invocation
+at JOBS=2 on `36c7c55`, ~58 min.** smoke 653/653, round-trip byte-identical, `boundary` 34/0,
+`verdict-cache` 11/11, `output_sweep` 466 identical, `full_sweep` / `examples_sweep` /
+`divergence` 0 regressions, `regen-recover`, `gramgen` 0/0, `leakgen` 100/0, `libui-pin-build`,
+`node-addon`. **The night's method note, which cost two tiers:** a background command has a
+30-minute default limit, and killing the shell does NOT kill `gates.sh` -- the orphan ran on
+while a re-run started beside it, two sweeps shared one work dir, Windows ran out of process
+slots (`0xC0000142`), and BOTH caches stored non-answers that replayed as regressions on an idle
+machine (see the verdict-cache entry). `ps -W` cannot see a bash SCRIPT, so "no survivors" was
+the wrong instrument's zero. Launch tiers detached (`nohup ... > log; echo $? > rc`), wait on
+the rc file, and look for survivors with the process COMMAND LINE.
+
 **DAILY tier 2026-10-01 (closing the overnight: BUG-501 Phase 0 + measure, BUG-506..512,
 BUG-513 filed): 57/57 PASS in ONE invocation at JOBS=2 on `de74cea`.** smoke 650/650,
 round-trip byte-identical, `output_sweep` 466 identical, `full_sweep` / `divergence` 0
