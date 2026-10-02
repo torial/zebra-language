@@ -165,6 +165,30 @@ the original is unaffected, where the copy happens inside a larger expression (t
 statements, not nested stores), and `*_call` sites, which over-report. `output_sweep`'s 466
 programs are the witness for those in Phase 1.
 
+### 5.2 Review (Fable, reviewer of record -- Sean, 2026-10-01: "coordinate w/ Fable as a reviewer")
+
+Fable reviews every Phase 1 step on the GameEngine (regen, suite, both live autoplays) and
+signs 1d off in writing before it commits. Two findings from the first read, both adopted:
+
+1. **Copy-then-iterate-while-mutating** is a changed-behaviour class `output_sweep` may not
+   see: `var xs = .field` then `for x in xs` whose body adds to or removes from `.field`
+   works today by accident (the copy has its own length) and after 1d iterates a list being
+   edited -- possibly skipping or doubling an element without printing anything different.
+   The `bind_field` rows are the list to read. **The repo's 5, read 2026-10-01:** the 3 in
+   `selfhost/` are read-only (`mstmts_pre = m.stmts`, `sargs = sref2_ir.args`,
+   `alias_value_args = aa.args`). The 2 in `examples/tears_of_the_tuon.zbr` (462, 1368) are
+   the MVU immutable-update idiom -- `var lg = m.log; lg.add(line); return m except log = lg`
+   -- which after 1d also mutates the OLD model's list. That is harmless only if nothing keeps
+   the previous model: **checked**, both GUI sections replace it (`_model =
+   _mvu_update(_model, msg)`) and retain nothing. The 1d-correct spelling for a program that
+   does keep an old model is `m.log.copy()`. Fable reads the engine's 26.
+2. **1c's allocation side.** Allocating every container field with no initializer would, for
+   a field the constructor then assigns, allocate a header and drop it -- once per object, on
+   the current allocator. So 1c allocates ONLY a container field that no constructor path
+   assigns (no initializer, and not assigned at the top level of a `cue init` body); a field
+   the constructor sets costs nothing extra. Measured before landing: heap growth per 1M
+   constructions of a class with such a field, before vs after.
+
 ## 6. Decisions -- DECIDED (Sean, 2026-09-30: "agree with all four recommendations, proceed")
 
 Settled as recommended: (1) `==` on containers is **structural**; (2) `xs.copy()` is a

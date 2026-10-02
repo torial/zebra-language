@@ -23,6 +23,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A dependency found on `--module-path` that is not compiled is named in a note (BUG-516)**
+  -- a standalone build met zig's `FileNotFound` about a file the compiler never wrote. Silent
+  under `--library-mode`.
+
 - **Assigning a class to another module's interface-typed field converts it (BUG-515)** --
   optional or not, as passing it to an interface parameter already did.
 

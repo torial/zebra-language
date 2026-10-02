@@ -46,14 +46,6 @@
 
 ---
 
-### BUG-516: a dependency found on `--module-path` is not emitted into `--output-dir`, and nothing says so -- the build fails inside zig with `unable to load 'dep.zig': FileNotFound` -- OPEN (found 2026-10-01)
-- **Severity:** Low-Medium (a standalone user of `--module-path` + `--output-dir` gets a zig error about a file the compiler chose not to write; the GameEngine's regen is unaffected because it compiles every module itself)
-- **Repro (Fable):** `mods/iface_a.zbr` (an interface + a class), `use_b.zbr` (`use iface_a exposing ...`); `zebra --module-path mods --output-dir out use_b.zbr` writes `out/use_b.zig` (which `@import`s `iface_a.zig`) and `out/zebra_rt.zig`, not `out/iface_a.zig`.
-- **Not an accident:** BUG-125 made module-path deps TYPES ONLY on purpose -- `compileDep_use` comments "It is NOT emitted: the host build provides the dep's .zig module", which is the engine's model (every module regenerated on its own). `examples_sweep` buckets the same shape as `DEPMISS`. What is missing is (a) a way for a standalone user to get the dep emitted, and (b) any word from the compiler when it leaves one out.
-- **Decision needed (Sean):** (1) emit module-path deps into `--output-dir` like sibling deps, with an opt-out for host builds; (2) keep types-only and add a flag to emit them; or (3) keep the behaviour and print a note naming each dep that was NOT emitted and why. (3) is cheap and right in any case (UNGIT: nothing withheld); (1) changes what the engine's regen writes, so it needs Fable's regen in the loop.
-
----
-
 ### BUG-513: a plain `zebra x.zbr` builds in the SHARED system temp dir -- concurrent compiles can clobber each other's `x.zig` and `zebra_rt.zig` -- OPEN (found 2026-10-01)
 - **Severity:** Medium (two editor saves, two terminals, a gate beside another session's run: one compile can rewrite the other's runtime file mid-build; the symptom is a failure that does not reproduce)
 - **Where:** temp-mode compiles (no `--output-dir`) write `<TEMP>/<stem>.zig`, `<TEMP>/zebra_rt.zig` and `<TEMP>/<stem>.zig.run.exe`; every concurrent invocation on the machine shares those names. Two programs with the same stem (`main.zbr` in two projects) collide on everything.

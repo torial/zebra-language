@@ -80,6 +80,7 @@ class MultiCompiler
     var c_i_dirs: List(str)    # deduplicated -I dirs for C deps that have a .h
     var strip_contracts: bool  # --turbo: strip require/ensure/invariant from all output
     var library_mode: bool     # --library-mode: omit `defer _arena.deinit()` from main() (script linked into a host process)
+    var mp_noted: List(str)    # BUG-516: module-path deps already reported as not emitted
     var test_mode: bool        # true when invoked as `zebra test <file.zbr>`
     var tag_filter: str?       # --tag X: only run tests matching this tag
     var warn_non_exhaustive: bool  # --warn-non-exhaustive: warn branch...else missing variants
@@ -114,6 +115,7 @@ class MultiCompiler
         .c_i_dirs = List(str)()
         .strip_contracts = false
         .library_mode = false
+        .mp_noted = List(str)()
         .test_mode = false
         .tag_filter = nil
         .warn_non_exhaustive = false
@@ -457,6 +459,14 @@ class MultiCompiler
             var mp_path: str = module_path + "/" + dep_name + ".zbr"
             if fileExistsExact(mp_path)
                 .scanDepForTypes(mp_path)?
+                # BUG-516: SAY so. A standalone user (a plain run, `--emit-zig`,
+                # `--output-dir`) otherwise met zig's `unable to load 'dep.zig':
+                # FileNotFound` about a file the compiler chose not to write. Silent under
+                # --library-mode, the host-build mode this behaviour exists for; once per
+                # dep, since the graph can reach it more than once.
+                if not library_mode and not mp_noted.contains(dep_name)
+                    mp_noted.add(dep_name)
+                    sys.errln("note: '" + dep_name + "' was found on --module-path (" + mp_path + ") and read for its TYPES only -- it is not compiled or written out, so this program builds only where a host provides " + dep_name + ".zig; to build it standalone, put " + dep_name + ".zbr beside the source (BUG-516)")
                 return
         # Native C dep: collect path and optional -I dir; zig handles compilation.
         var c_path: str = dep_name + ".c"

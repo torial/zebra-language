@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# pins: BUG-516 a --module-path dep that is not emitted is named in a note, silent under --library-mode
 # pins: BUG-321 --help/-h/--version stream and exit code are asserted here, plus the
 #       asymmetry (usage for a BAD invocation stays on stderr, non-zero). A CLI bug
 #       has no test/*.zbr to be a fixture -- the subject is the compiler AS A COMMAND.
@@ -547,6 +548,21 @@ chk "\`--warnings-as-errors\` turns that warning into a FAILED compile that name
     "exit=$RC stderr=[$(echo "$ERR" | tail -1)]"
 run -c --warnings-as-errors hello.zbr
 chk "\`--warnings-as-errors\` on a clean file still exits 0" "$([ "$RC" = 0 ] && echo 0 || echo 1)" "exit=$RC"
+
+# ---- BUG-516: a dep found on --module-path is read for TYPES only and not written out; the
+# compiler must SAY so (a standalone build otherwise meets zig's FileNotFound about a file it
+# never wrote) -- and must stay quiet under --library-mode, the host build this is for.
+mkdir -p "$W/mp516"
+printf 'def twice(n: int): int\n    return n * 2\n' > "$W/mp516/mpdep.zbr"
+printf 'use mpdep exposing twice\ndef main()\n    print(twice(2))\n' > "$W/mpuse.zbr"
+run --module-path mp516 -c mpuse.zbr
+chk "a --module-path dep that is not emitted is NAMED in a note (BUG-516)" \
+    "$(case "$ERR" in *"note: 'mpdep' was found on --module-path"*"TYPES only"*) echo 0;; *) echo 1;; esac)" \
+    "exit=$RC stderr=[$(echo "$ERR" | grep -m1 note)]"
+run --library-mode --module-path mp516 -c mpuse.zbr
+chk "...and the note is silent under --library-mode (the host build provides the dep)" \
+    "$(case "$ERR" in *"note: 'mpdep'"*) echo 1;; *) echo 0;; esac)" \
+    "exit=$RC stderr=[$(echo "$ERR" | grep -m1 note)]"
 
 echo
 printf '  %s passed, %s pinned (known-broken), %s FAILED\n' "$pass" "$xfail" "$fail"

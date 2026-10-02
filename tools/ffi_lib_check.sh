@@ -28,6 +28,15 @@
 # pins: BUG-266 there is no test/*.zbr for bug_fixture_check's file scan to find.
 # pins: BUG-459 leg 3 -- the library under the other platform spelling (libzzlib.a / zzlib.a) must link.
 set -u
+# A PRIVATE temp dir for every compile here (BUG-513): a plain `zebra x.zbr` builds in
+# <TEMP>/x.zig beside a shared <TEMP>/zebra_rt.zig, so any other zebra running on the machine
+# could rewrite them mid-build. Leg 3 failed in a tier on 2026-10-01 and passed 4/4 alone,
+# with nothing kept to say why -- the shape release-mode had twice.
+_PRIV="$(mktemp -d)"
+trap 'rm -rf "$_PRIV"' EXIT
+if command -v cygpath >/dev/null 2>&1; then export TMP="$(cygpath -w "$_PRIV")"; else export TMP="$_PRIV"; fi
+export TEMP="$TMP"
+export TMPDIR="$_PRIV"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
@@ -36,7 +45,7 @@ ZEBRA="$REPO/zig-out/bin/zebra.exe"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 WORK="${TMPDIR:-/tmp}/zbr-ffi-lib-$$"
 rm -rf "$WORK"; mkdir -p "$WORK"
-trap 'rm -rf "$WORK"' EXIT
+trap 'rm -rf "$WORK" "$_PRIV"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -118,6 +127,7 @@ esac
 got3="$("$ZEBRA" "$L3/zzprog.zbr" 2>&1 | tr -d '\r')"
 if ! printf '%s\n' "$got3" | grep -qx "$EXPECT"; then
     echo "FAIL: leg 3 — the library as $L3NAME did not link (BUG-459)" >&2
+    printf '%s\n' "$got3" | tail -8 | sed 's/^/    /' >&2
     printf '%s\n' "$got3" | grep -v '^compiling:\|^ *parsing\|^ *parsed\|^ *resolved\|^wrote ' | tail -6 >&2
     exit 1
 fi
