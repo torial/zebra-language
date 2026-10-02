@@ -707,6 +707,18 @@ pub fn _ZbrMap(comptime V: type) type {
 pub fn _ZbrAutoMap(comptime K: type, comptime V: type) type {
     return _zbr_AutoMap(K, V);
 }
+// BUG-501 Phase 1a: EVERY construction of a Zebra-visible container goes through here, so
+// the flip to references (1d) changes this one function -- allocate the header, return the
+// pointer -- instead of ~40 emit sites. Today it returns the value it always did.
+pub fn _zbr_new(comptime C: type) C {
+    if (comptime @hasField(C, "items")) return C.empty;
+    return C.init(_allocator);
+}
+// A list the runtime or an emitted block uses as SCRATCH and never hands to Zebra code
+// (`repeat()`'s builder). It stays a plain value through the flip.
+pub fn _ZbrScratch(comptime T: type) type {
+    return std.ArrayList(T);
+}
 pub fn _zbr_AutoMap(comptime K: type, comptime V: type) type {
     if (comptime _zbr_has_cue(K, "hash") and _zbr_has_cue(K, "equals"))
         return std.HashMap(K, V, _zbr_CueCtx(K), std.hash_map.default_max_load_percentage);

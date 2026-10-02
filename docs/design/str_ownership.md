@@ -24,15 +24,15 @@
 | `f.format(1)` | **OWN** | — | `(std.fmt.allocPrint(_zbr_rt._allocator, f, .{ 1 }) catch @panic("OO...` | variadic; see BUG-224 for 2+ args |
 | `h.fromHex()` | **OWN** | — | `(blk_fhx: { if (h.len % 2 != 0) break :blk_fhx @as(?[]const u8, nul...` | receiver must be hex digits |
 | `parts.join(", ")` | **OWN** | — | `_zbr_list_join(", ", parts.items)` | called on List(str) |
-| `s.lines()` | **OWN** | **BORROW** | `blk_sl_2: { var _ll_2: _ZbrList([]const u8) = _ZbrList([]const u8)....` |  |
+| `s.lines()` | **OWN** | **BORROW** | `blk_sl_2: { var _ll_2: _ZbrList([]const u8) = _zbr_new(_ZbrList([]c...` |  |
 | `s.lower()` | **OWN** | — | `(std.ascii.allocLowerString(_zbr_rt._allocator, s) catch @panic("OO...` |  |
 | `s.padLeft(20, " ")` | **OWN** | — | `_pad_left(s, @as(usize, @intCast(20)), " ", _zbr_rt._allocator)` |  |
 | `s.padRight(20, " ")` | **OWN** | — | `_pad_right(s, @as(usize, @intCast(20)), " ", _zbr_rt._allocator)` |  |
-| `s.repeat(2)` | **OWN** | — | `(blk_rep: { var _rep = _ZbrList([]const u8).empty; defer _rep.deini...` |  |
+| `s.repeat(2)` | **OWN** | — | `(blk_rep: { var _rep = _ZbrScratch([]const u8).empty; defer _rep.de...` |  |
 | `s.replace("l", "L")` | **OWN** | — | `(std.mem.replaceOwned(u8, _zbr_rt._allocator, s, "l", "L") catch @p...` |  |
 | `s.replaceAll("l", "L")` | **OWN** | — | `(std.mem.replaceOwned(u8, _zbr_rt._allocator, s, "l", "L") catch @p...` |  |
 | `s.reverse()` | **OWN** | — | `_str_reverse(s, _zbr_rt._allocator)` |  |
-| `s.split(",")` | **OWN** | **BORROW** | `blk_sl_3: { var _ll_3: _ZbrList([]const u8) = _ZbrList([]const u8)....` |  |
+| `s.split(",")` | **OWN** | **BORROW** | `blk_sl_3: { var _ll_3: _ZbrList([]const u8) = _zbr_new(_ZbrList([]c...` |  |
 | `s.toHex()` | **OWN** | — | `(blk_hex: { const _hx_s = s; const _hx_buf = _zbr_rt._allocator.all...` |  |
 | `s.tokenize(",")` | **OWN** | **BORROW** | `(blk_tok: { var _tok_it = std.mem.tokenizeAny(u8, s, ","); var _tok...` |  |
 | `s.upper()` | **OWN** | — | `(std.ascii.allocUpperString(_zbr_rt._allocator, s) catch @panic("OO...` |  |

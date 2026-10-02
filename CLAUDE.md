@@ -1899,6 +1899,11 @@ python tools/lint_container_spelling.py  # THE CONTAINER-SPELLING LINT, register
                                 #   Controls: a planted raw spelling must be found, the new one must
                                 #   not, and CodeGen.zbr must keep >= 25 `_ZbrList(` literals or it
                                 #   REFUSES (exit 2). Red-checked by reverting one emit site.
+                                #   PHASE 1a (2026-10-01): also refuses a CONSTRUCTION spelled in
+                                #   place (`.empty` / `.init(_allocator)` in an emitted literal) --
+                                #   every one goes through the runtime's `_zbr_new(C)`, so the flip
+                                #   changes one function. `_ZbrScratch` and a line marked
+                                #   `container-spelling-ok: <reason>` are exempt (three today).
                                 #   CANNOT SEE: a spelling assembled from pieces.
 python tools/lint_oom_unreachable.py  # THE RELEASE-ONLY-UB GATE (A4): `unreachable` is
                                 #   undefined behaviour in ReleaseFast, which is what
@@ -2186,6 +2191,17 @@ version, an infra error and a timeout must each reach zig; a cached genuine fail
 come back with its stderr; the off switch must work. Watched red against the two bugs a
 cache like this ships with (a key that ignores deps: legs 2-3; caching infra/timeouts:
 legs 5-6). CANNOT SEE: the output cache's key (that one is checked in-line, per miss).
+
+**Legs 9-10 (2026-10-02) are the night both caches stored a non-answer.** Three heavy runs
+overlapped (an orphaned FULL, a re-run, another session's build), Windows ran out of process
+slots, and programs died at start with `0xC0000142`: their COMPILE had succeeded, so the
+emit check matched, and **29 empty captures were cached** -- one replayed as a behaviour
+change on an idle machine an hour later. Neither cache now stores a non-answer: no empty
+output capture (leg 10, the real gate script against a stub that compiles for real and
+loses the output) and no zig failure with an empty stderr (leg 9 -- zig always explains a
+real refusal). Both watched red against the pre-fix code. The poisoned entries were purged
+by date. **If a gate goes red on a file that runs fine by hand, try `ZBR_OCACHE=0` /
+`ZBR_VCACHE=0` before believing the file.**
 
 Why this matters: a green round-trip means the compiler is *self-consistent*, NOT that
 what it emits is *correct*. The independent witness (`zig`, which has no idea what Zebra

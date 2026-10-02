@@ -15,6 +15,7 @@ const _zebra_ge = _zbr_rt._zebra_ge;
 const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
 const _ZbrList = _zbr_rt._ZbrList;
+const _zbr_new = _zbr_rt._zbr_new;
 
 const _zbr_mod_AstWalk = @import("AstWalk.zig");
 const _zbr_fn_mightUseName = _zbr_mod_AstWalk._zbr_fn_mightUseName;
@@ -54,7 +55,7 @@ pub const _zbr_ty_StrSet = struct {
         const _self = _zbr_rt._allocator.create(_zbr_ty_StrSet) catch @panic("OOM");
         _self._type_tag = _zbr_hash("StrSet");
 // zbr:selfhost/CgHelpers.zbr:60
-            _self._items = _ZbrList([]const u8).empty;
+            _self._items = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/CgHelpers.zbr:61
             _self.len = 0;
         return _self;
@@ -89,7 +90,7 @@ pub const _zbr_ty_StrSet = struct {
     // zbr:selfhost/CgHelpers.zbr:76
     pub fn removeStartingWith(self: *_zbr_ty_StrSet, prefix: []const u8) void {
 // zbr:selfhost/CgHelpers.zbr:77
-        var new_items = _ZbrList([]const u8).empty;
+        var new_items = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/CgHelpers.zbr:78
         for (self._items.items) |item| {
 // zbr:selfhost/CgHelpers.zbr:79
@@ -107,7 +108,7 @@ pub const _zbr_ty_StrSet = struct {
     // zbr:selfhost/CgHelpers.zbr:86
     pub fn removeOne(self: *_zbr_ty_StrSet, s: []const u8) void {
 // zbr:selfhost/CgHelpers.zbr:87
-        var new_items = _ZbrList([]const u8).empty;
+        var new_items = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/CgHelpers.zbr:88
         for (self._items.items) |item| {
 // zbr:selfhost/CgHelpers.zbr:89
@@ -345,7 +346,7 @@ pub fn _zbr_fn_typeRefStr(tr: _zbr_ty_TypeRef) []const u8 {
         },
         .generic => |g| {
 // zbr:selfhost/CgHelpers.zbr:187
-            var b = _ZbrList(u8).empty;
+            var b = _zbr_new(_ZbrList(u8));
 // zbr:selfhost/CgHelpers.zbr:188
             b.appendSlice(_zbr_rt._allocator, g.name) catch @panic("OOM");
 // zbr:selfhost/CgHelpers.zbr:189
@@ -375,7 +376,7 @@ pub fn _zbr_fn_typeRefStr(tr: _zbr_ty_TypeRef) []const u8 {
         },
         .tuple => |t| {
 // zbr:selfhost/CgHelpers.zbr:201
-            var b2 = _ZbrList(u8).empty;
+            var b2 = _zbr_new(_ZbrList(u8));
 // zbr:selfhost/CgHelpers.zbr:202
             b2.appendSlice(_zbr_rt._allocator, "(") catch @panic("OOM");
 // zbr:selfhost/CgHelpers.zbr:203

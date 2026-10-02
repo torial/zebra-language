@@ -16,6 +16,7 @@ const _zebra_ge = _zbr_rt._zebra_ge;
 const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
 const _ZbrList = _zbr_rt._ZbrList;
+const _zbr_new = _zbr_rt._zbr_new;
 const _ZbrFn = _zbr_rt._ZbrFn;
 const _zbr_invoke = _zbr_rt._zbr_invoke;
 
@@ -133,7 +134,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:88
             _self.parenDepth = 0;
 // zbr:selfhost/Lexer.zbr:89
-            _self.out = _ZbrList(*_zbr_mod_Token._zbr_ty_Token).empty;
+            _self.out = _zbr_new(_ZbrList(*_zbr_mod_Token._zbr_ty_Token));
 // zbr:selfhost/Lexer.zbr:90
             _self.inLambdaParams = false;
 // zbr:selfhost/Lexer.zbr:91
@@ -141,7 +142,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:92
             _self.afterLambdaParams = false;
 // zbr:selfhost/Lexer.zbr:93
-            _self.lambdaStack = _ZbrList(i64).empty;
+            _self.lambdaStack = _zbr_new(_ZbrList(i64));
 // zbr:selfhost/Lexer.zbr:94
             _self.afterEnsureEol = false;
 // zbr:selfhost/Lexer.zbr:95

@@ -4645,7 +4645,7 @@ struct Generator
             var tr = n.type_!
             if tr is TypeRef.named as nt
                 if nt.name == "StringBuilder"
-                    w.emit("_ZbrList(u8) = .empty,\n")
+                    w.emit("_ZbrList(u8) = .empty,\n")   # container-spelling-ok: a FIELD default -- BUG-501 1c allocates at construction
                     return
             genType(tr)
         else
@@ -7787,7 +7787,7 @@ struct Generator
                 w.emit(lbl_sl)
                 w.emit(": { var ")
                 w.emit(ll_sl)
-                w.emit(": _ZbrList([]const u8) = _ZbrList([]const u8).empty; var ")
+                w.emit(": _ZbrList([]const u8) = _zbr_new(_ZbrList([]const u8)); var ")
                 w.emit(si_sl)
                 w.emit(" = ")
                 genExpr(n.init_expr!)
@@ -8117,7 +8117,7 @@ struct Generator
                 if opt_ann
                     w.emit(": ")
                     genType(n.type_!)
-                w.emit(" = _ZbrList(u8).empty;\n")
+                w.emit(" = _zbr_new(_ZbrList(u8));\n")
                 return
             if isGenericStdlibCtor(ie)
                 if opt_ann
@@ -8141,9 +8141,9 @@ struct Generator
                             if ll_init.elems.len == 0
                                 w.emit(": ")
                                 genType(n.type_!)
-                                w.emit(" = ")
+                                w.emit(" = _zbr_new(")
                                 genType(n.type_!)
-                                w.emit(".empty;\n")
+                                w.emit(");\n")
                                 return
                             # NON-EMPTY: BUG-230.  This used to emit the appends
                             # INLINE, against the binding itself — which required
@@ -8176,9 +8176,9 @@ struct Generator
                             w.emit(lname230)
                             w.emit(": ")
                             genType(n.type_!)
-                            w.emit(" = ")
+                            w.emit(" = _zbr_new(")
                             genType(n.type_!)
-                            w.emit(".empty; ")
+                            w.emit("); ")
                             var lli = 0
                             var box230 = gtll.args.len > 0 and isBoxedElemTypeRef(gtll.args.at(0))
                             while lli < ll_init.elems.len
@@ -8215,9 +8215,9 @@ struct Generator
                             if dl_init.entries.len == 0
                                 w.emit(": ")
                                 genType(n.type_!)
-                                w.emit(" = ")
+                                w.emit(" = _zbr_new(")
                                 genType(n.type_!)
-                                w.emit(".init(_allocator);\n")
+                                w.emit(");\n")
                                 return
             # BUG-092: var lines: List(str) = s.split(sep) / s.lines() —
             # auto-collect SplitIterator into an ArrayList.  Use a labeled
@@ -8588,15 +8588,16 @@ struct Generator
                 on Expr.call as inner
                     if inner.callee is Expr.ident as id
                         if id.name == "List"
-                            w.emit("_ZbrList(")
+                            w.emit("_zbr_new(_ZbrList(")
                             if inner.args.len > 0
                                 genElemTypeFromExpr(inner.args.at(0).value)
                             else
                                 w.emit("anytype")
-                            w.emit(").empty")
+                            w.emit("))")
                             return
                         if id.name == "HashMap"
                             var key_str = inner.args.len > 0 and isStringArgExpr(inner.args.at(0).value)
+                            w.emit("_zbr_new(")
                             if key_str
                                 w.emit("_ZbrMap(")
                                 if inner.args.len >= 2
@@ -8616,7 +8617,7 @@ struct Generator
                                     else
                                         genTypeFromExpr(ta.value)
                                     iai += 1
-                            w.emit(").init(_allocator)")
+                            w.emit("))")
                             return
                 on Expr.ident as id
                     if id.name == "StrSet"
@@ -8627,6 +8628,7 @@ struct Generator
                     # container element is a pointer here exactly as in an annotation).
                     if id.name == "List"
                         var lh_done = false
+                        w.emit("_zbr_new(")
                         if type_hint != nil
                             if type_hint! is TypeRef.generic as lgtr
                                 if lgtr.args.len > 0
@@ -8634,10 +8636,11 @@ struct Generator
                                     lh_done = true
                         if not lh_done
                             w.emit("_ZbrList(anytype)")
-                        w.emit(".empty")
+                        w.emit(")")
                         return
                     if id.name == "HashMap"
                         var hh_done = false
+                        w.emit("_zbr_new(")
                         if type_hint != nil
                             if type_hint! is TypeRef.generic as hgtr
                                 if hgtr.args.len > 0
@@ -8645,18 +8648,19 @@ struct Generator
                                     hh_done = true
                         if not hh_done
                             w.emit("std.AutoHashMap(anytype, anytype)")
-                        w.emit(".init(_allocator)")
+                        w.emit(")")
                         return
                     if id.name == "Set"
                         # §28f: bare `Set()` — element type from the `var s: Set(T) =`
                         # annotation. Mirrors bare HashMap; void value.
+                        w.emit("_zbr_new(")
                         if type_hint != nil
                             branch type_hint!
                                 on TypeRef.generic as gtr
                                     var set_key_str = gtr.args.len > 0 and isStringTypeRef(gtr.args.at(0))
                                     if gtr.args.len > 0 and cueHashKeyName(gtr.args.at(0)) != ""
                                         genType(type_hint!)
-                                        w.emit(".init(_allocator)")
+                                        w.emit(")")
                                         return
                                     if set_key_str
                                         w.emit("_ZbrMap(void)")
@@ -8671,7 +8675,7 @@ struct Generator
                                     w.emit("std.AutoHashMap(anytype, void)")
                         else
                             w.emit("std.AutoHashMap(anytype, void)")
-                        w.emit(".init(_allocator)")
+                        w.emit(")")
                         return
                 else
                     pass
@@ -8771,8 +8775,7 @@ struct Generator
                             if storedElemType(recv) as et
                                 var ez: str = genFieldZigType(et)
                                 if ez != ""
-                                    w.emit(ez)
-                                    w.emit(if(vid.name == "List", ".empty", ".init(_allocator)"))
+                                    w.emit("_zbr_new(" + ez + ")")
                                     bare_done = true
             if not bare_done
                 genExpr(v)
@@ -9581,23 +9584,25 @@ struct Generator
                     # 2026-09-24: the whole type from genType (nested elements are pointers)
                     if id.name == "List"
                         var lh_done = false
+                        w.emit("_zbr_new(")
                         if hint is TypeRef.generic as lgtr
                             if lgtr.args.len > 0
                                 genType(hint)
                                 lh_done = true
                         if not lh_done
                             w.emit("_ZbrList(anytype)")
-                        w.emit(".empty")
+                        w.emit(")")
                         return
                     if id.name == "HashMap"
                         var hh_done = false
+                        w.emit("_zbr_new(")
                         if hint is TypeRef.generic as hgtr
                             if hgtr.args.len > 0
                                 genType(hint)
                                 hh_done = true
                         if not hh_done
                             w.emit("std.AutoHashMap(anytype, anytype)")
-                        w.emit(".init(_allocator)")
+                        w.emit(")")
                         return
                     if id.name == "StrSet"
                         emitStrSetInit()                        # BUG-281 B
@@ -9651,9 +9656,9 @@ struct Generator
         w.emit(lname092)
         w.emit(": ")
         genType(list_t)
-        w.emit(" = ")
+        w.emit(" = _zbr_new(")
         genType(list_t)
-        w.emit(".empty; var ")
+        w.emit("); var ")
         w.emit(sname092)
         w.emit(" = ")
         genExpr(ie)
@@ -13399,9 +13404,9 @@ struct Generator
                 if ll.elem_type != nil
                     # honoured for future explicit-typed list literal
                     genType(ll.elem_type!)
-                    w.emit(") = _ZbrList(")
+                    w.emit(") = _zbr_new(_ZbrList(")
                     genType(ll.elem_type!)
-                    w.emit(").empty; ")
+                    w.emit(")); ")
                 else if ll.elems.len > 0 and .infer_ctx != nil
                     var et: Type_ = inferExpr(ll.elems.at(0), .infer_ctx!)
                     # §27a: user class/struct elements render *Class (classes) /
@@ -13431,9 +13436,9 @@ struct Generator
                             elem_zig = if(nz == "", "[]const u8", "*" + nz)
                         else
                             elem_zig = zigTypeForListElem(et)
-                    w.emit(elem_zig + ") = _ZbrList(" + elem_zig + ").empty; ")
+                    w.emit(elem_zig + ") = _zbr_new(_ZbrList(" + elem_zig + ")); ")
                 else
-                    w.emit(elem_zig + ") = _ZbrList(" + elem_zig + ").empty; ")
+                    w.emit(elem_zig + ") = _zbr_new(_ZbrList(" + elem_zig + ")); ")
                 var li = 0
                 var ll_boxed = elem_zig.startsWith("*std.")
                 while li < ll.elems.len
@@ -13467,7 +13472,7 @@ struct Generator
                 # is not reachable from source and the branch cannot be tested.
                 # If a distinct empty-set syntax is ever added, this needs the
                 # same treatment or Zig will reject the never-mutated binding.
-                w.emit("(" + sl_label + ": { var " + sl_var + " = ")
+                w.emit("(" + sl_label + ": { var " + sl_var + " = _zbr_new(")
                 if sl_is_str
                     w.emit("_ZbrMap(void)")
                 else
@@ -13480,7 +13485,7 @@ struct Generator
                     else
                         sl_elem_zig = zigTypeForListElem(sl_elem_t)
                     w.emit("_ZbrAutoMap(" + sl_elem_zig + ", void)")
-                w.emit(".init(_allocator); ")
+                w.emit("); ")
                 var sli = 0
                 while sli < sl.elems.len
                     w.emit(sl_var + ".put(")
@@ -13527,7 +13532,7 @@ struct Generator
                 var dl_kw: str = "var "
                 if dl.entries.len == 0
                     dl_kw = "const "
-                w.emit("(" + dl_label + ": { " + dl_kw + dl_var + " = ")
+                w.emit("(" + dl_label + ": { " + dl_kw + dl_var + " = _zbr_new(")
                 if dk_is_str
                     w.emit("_ZbrMap(" + dv_zig + ")")
                 else
@@ -13540,7 +13545,7 @@ struct Generator
                     else
                         dk_zig = zigTypeForListElem(dk_t)
                     w.emit("_ZbrAutoMap(" + dk_zig + ", " + dv_zig + ")")
-                w.emit(".init(_allocator); ")
+                w.emit("); ")
                 for en in dl.entries
                     w.emit(dl_var + ".put(")
                     if dk_is_str
@@ -14909,7 +14914,7 @@ struct Generator
                             w.emit(", ")
                         gf_first = false
                         if isEmptyUntypedListLit(va.value)
-                            w.emit(".empty")            # BUG-463: the param's own ArrayList
+                            w.emit(".empty")            # BUG-463: the param's own ArrayList  # container-spelling-ok: decl literal against an unspelled param type -- BUG-501 1d
                         else
                             genExpr(va.value)
                     w.emit(")")
@@ -14942,7 +14947,7 @@ struct Generator
                                 w.emit(", ")
                             gm_first = false
                             if isEmptyUntypedListLit(va.value)
-                                w.emit(".empty")        # BUG-463
+                                w.emit(".empty")        # BUG-463  # container-spelling-ok: decl literal against an unspelled param type -- BUG-501 1d
                             else
                                 genExpr(va.value)
                         w.emit(")")
@@ -15218,13 +15223,13 @@ struct Generator
             if id.name == "HashMap" and c.args.len == 0
                 # No LHS type context — emit anytype so the Zig error points at the
                 # missing annotation rather than producing a misleading type mismatch.
-                w.emit("_ZbrMap(anytype).init(_allocator)")
+                w.emit("_zbr_new(_ZbrMap(anytype))")
                 return
             if id.name == "StrSet" and c.args.len == 0
                 emitStrSetInit()                        # BUG-281 B
                 return
             if id.name == "StringBuilder" and c.args.len == 0
-                w.emit("_ZbrList(u8).empty")
+                w.emit("_zbr_new(_ZbrList(u8))")
                 return
             # BUG-242. The bootstrap has carried CsvWriter since Builtins.zig; the selfhost
             # knew only the NAME (Resolver treats it as a builtin so it does not error as
@@ -16603,7 +16608,7 @@ struct Generator
                         w.emit(") catch @panic(\"OOM\"))")
                         return
                     if mname == "repeat" and args.len > 0
-                        w.emit("(blk_rep: { var _rep = _ZbrList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
+                        w.emit("(blk_rep: { var _rep = _ZbrScratch([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
                         genExpr(args.at(0).value)
                         w.emit(") : (_ri += 1) _rep.append(_allocator, ")
                         genExpr(m.object)
@@ -16776,7 +16781,7 @@ struct Generator
                         genExpr(m.object)
                         w.emit(", ")
                         genExpr(args.at(0).value)
-                        w.emit("); var _tok_list = _ZbrList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })")
+                        w.emit("); var _tok_list = _zbr_new(_ZbrList([]const u8)); while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })")
                         return
                     if mname == "encodeBase64"
                         w.emit("_base64_encode(")
@@ -18000,7 +18005,7 @@ struct Generator
             return
         if mname == "split" and args.len > 0
             # Return an ArrayList from split
-            w.emit("blk_split: { var _sp = _ZbrList([]const u8).empty; var _it = std.mem.splitSequence(u8, ")
+            w.emit("blk_split: { var _sp = _zbr_new(_ZbrList([]const u8)); var _it = std.mem.splitSequence(u8, ")
             genExpr(m.object)
             w.emit(", ")
             genExpr(args.at(0).value)
@@ -18016,7 +18021,7 @@ struct Generator
             w.emit(") catch @panic(\"OOM\"))")
             return
         if mname == "repeat" and args.len > 0
-            w.emit("(blk_rep: { var _rep = _ZbrList([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
+            w.emit("(blk_rep: { var _rep = _ZbrScratch([]const u8).empty; defer _rep.deinit(_allocator); var _ri: i64 = 0; while (_ri < ")
             genExpr(args.at(0).value)
             w.emit(") : (_ri += 1) _rep.append(_allocator, ")
             genExpr(m.object)
@@ -18181,7 +18186,7 @@ struct Generator
             genExpr(m.object)
             w.emit(", ")
             genExpr(args.at(0).value)
-            w.emit("); var _tok_list = _ZbrList([]const u8).empty; while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })")
+            w.emit("); var _tok_list = _zbr_new(_ZbrList([]const u8)); while (_tok_it.next()) |_tok_t| { _tok_list.append(_allocator, _tok_t) catch @panic(\"OOM\"); } break :blk_tok _tok_list; })")
             return
         if mname == "encodeBase64"
             w.emit("_base64_encode(")
@@ -18919,8 +18924,9 @@ struct Generator
         if isEmptyUntypedListLit(e)
             if hint is TypeRef.generic as el_gtr
                 if el_gtr.name == "List" and el_gtr.args.len == 1
+                    w.emit("_zbr_new(")
                     genType(hint)
-                    w.emit(".empty")
+                    w.emit(")")
                     return true
         return false
 
@@ -19591,7 +19597,7 @@ struct Generator
                 w.emit("\"\"")
             w.emit(", _allocator, .unlimited) catch @panic(\"File.readLines error\");\n")
             writeIndent()
-            w.emit("    var _fl_list = _ZbrList([]const u8).empty;\n")
+            w.emit("    var _fl_list = _zbr_new(_ZbrList([]const u8));\n")
             writeIndent()
             w.emit("    var _fl_it = _zbr_lines(_fl_content);\n")
             writeIndent()
@@ -19616,7 +19622,7 @@ struct Generator
             writeIndent()
             w.emit("    defer _ld_dir.close(_io);\n")
             writeIndent()
-            w.emit("    var _ld_list = _ZbrList([]const u8).empty;\n")
+            w.emit("    var _ld_list = _zbr_new(_ZbrList([]const u8));\n")
             writeIndent()
             w.emit("    var _ld_iter = _ld_dir.iterate();\n")
             writeIndent()
@@ -19850,7 +19856,7 @@ struct Generator
             # Zig 0.16 removed std.process.argsAlloc; use _args.toSlice.
             w.emit("    const _sa_raw = _args.toSlice(_allocator) catch @panic(\"sys.args OOM\");\n")
             writeIndent()
-            w.emit("    var _sa_list = _ZbrList([]const u8).empty;\n")
+            w.emit("    var _sa_list = _zbr_new(_ZbrList([]const u8));\n")
             writeIndent()
             w.emit("    for (_sa_raw) |_sa_arg| _sa_list.append(_allocator, _sa_arg) catch @panic(\"OOM\");\n")
             writeIndent()
@@ -21194,7 +21200,7 @@ struct Generator
             writeIndent()
             w.emit("    defer _dl_dir.close(_io);\n")
             writeIndent()
-            w.emit("    var _dl_list = _ZbrList([]const u8).empty;\n")
+            w.emit("    var _dl_list = _zbr_new(_ZbrList([]const u8));\n")
             writeIndent()
             w.emit("    var _dl_iter = _dl_dir.iterate();\n")
             writeIndent()
@@ -21226,7 +21232,7 @@ struct Generator
             writeIndent()
             w.emit("    defer _dw_walker.deinit();\n")
             writeIndent()
-            w.emit("    var _dw_list = _ZbrList([]const u8).empty;\n")
+            w.emit("    var _dw_list = _zbr_new(_ZbrList([]const u8));\n")
             writeIndent()
             w.emit("    while (_dw_walker.next(_io) catch null) |_dw_entry| {\n")
             writeIndent()
@@ -21420,15 +21426,16 @@ struct Generator
             w.emit(")")
             return
         if name == "List"
-            w.emit("_ZbrList(")
+            w.emit("_zbr_new(_ZbrList(")
             if type_args.len > 0
                 genElemTypeFromExpr(type_args.at(0).value)
             else
                 w.emit("anytype")
-            w.emit(").empty")
+            w.emit("))")
             return
         if name == "HashMap"
             var key_is_str = type_args.len > 0 and isStringArgExpr(type_args.at(0).value)
+            w.emit("_zbr_new(")
             if key_is_str
                 w.emit("_ZbrMap(")
                 if type_args.len >= 2
@@ -21448,11 +21455,12 @@ struct Generator
                     else
                         genTypeFromExpr(ta.value)
                     tai += 1
-            w.emit(").init(_allocator)")
+            w.emit("))")
             return
         if name == "Set"
             # §28f: Set(T)() → void-valued hash map. str element → StringHashMap(void).
             var set_key_str = type_args.len > 0 and isStringArgExpr(type_args.at(0).value)
+            w.emit("_zbr_new(")
             if set_key_str
                 w.emit("_ZbrMap(void)")
             else
@@ -21462,7 +21470,7 @@ struct Generator
                 else
                     w.emit("anytype")
                 w.emit(", void)")
-            w.emit(".init(_allocator)")
+            w.emit(")")
             return
         # Generic user type
         w.emit(name)

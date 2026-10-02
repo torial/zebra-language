@@ -18,6 +18,7 @@ const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
 const _ZbrList = _zbr_rt._ZbrList;
 const _ZbrMap = _zbr_rt._ZbrMap;
+const _zbr_new = _zbr_rt._zbr_new;
 
 const _zbr_mod_Ast = @import("Ast.zig");
 const _zbr_ty_Module = _zbr_mod_Ast._zbr_ty_Module;
@@ -107,9 +108,9 @@ pub const _zbr_ty_UnionInfo = struct {
 // zbr:selfhost/Checker.zbr:30
             _self.line = line;
 // zbr:selfhost/Checker.zbr:31
-            _self.variants = _ZbrList([]const u8).empty;
+            _self.variants = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/Checker.zbr:32
-            _self.variant_lines = _ZbrList(i64).empty;
+            _self.variant_lines = _zbr_new(_ZbrList(i64));
         return _self;
     }
 
@@ -183,29 +184,29 @@ pub const _zbr_ty_DeadCodeChecker = struct {
         const _self = _zbr_rt._allocator.create(_zbr_ty_DeadCodeChecker) catch @panic("OOM");
         _self._type_tag = _zbr_hash("DeadCodeChecker");
 // zbr:selfhost/Checker.zbr:78
-            _self.union_infos = _ZbrMap(*_zbr_ty_UnionInfo).init(_zbr_rt._allocator);
+            _self.union_infos = _zbr_new(_ZbrMap(*_zbr_ty_UnionInfo));
 // zbr:selfhost/Checker.zbr:79
-            _self.match_sites = _ZbrMap(*_ZbrList([]const u8)).init(_zbr_rt._allocator);
+            _self.match_sites = _zbr_new(_ZbrMap(*_ZbrList([]const u8)));
 // zbr:selfhost/Checker.zbr:80
-            _self.match_key_list = _ZbrList([]const u8).empty;
+            _self.match_key_list = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/Checker.zbr:81
-            _self.constructed_set = _ZbrMap(bool).init(_zbr_rt._allocator);
+            _self.constructed_set = _zbr_new(_ZbrMap(bool));
 // zbr:selfhost/Checker.zbr:82
-            _self.constructed_key_list = _ZbrList([]const u8).empty;
+            _self.constructed_key_list = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/Checker.zbr:83
-            _self.module_fns = _ZbrMap([]const u8).init(_zbr_rt._allocator);
+            _self.module_fns = _zbr_new(_ZbrMap([]const u8));
 // zbr:selfhost/Checker.zbr:84
-            _self.module_fn_key_list = _ZbrList([]const u8).empty;
+            _self.module_fn_key_list = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/Checker.zbr:85
-            _self.fn_edges = _ZbrMap(*_ZbrList([]const u8)).init(_zbr_rt._allocator);
+            _self.fn_edges = _zbr_new(_ZbrMap(*_ZbrList([]const u8)));
 // zbr:selfhost/Checker.zbr:86
-            _self.root_set = _ZbrMap(bool).init(_zbr_rt._allocator);
+            _self.root_set = _zbr_new(_ZbrMap(bool));
 // zbr:selfhost/Checker.zbr:87
-            _self.root_key_list = _ZbrList([]const u8).empty;
+            _self.root_key_list = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/Checker.zbr:88
-            _self.reachable_set = _ZbrMap(bool).init(_zbr_rt._allocator);
+            _self.reachable_set = _zbr_new(_ZbrMap(bool));
 // zbr:selfhost/Checker.zbr:89
-            _self.exposed_names = _ZbrMap(bool).init(_zbr_rt._allocator);
+            _self.exposed_names = _zbr_new(_ZbrMap(bool));
 // zbr:selfhost/Checker.zbr:90
             _self.current_file = _intern("");
 // zbr:selfhost/Checker.zbr:91
@@ -226,7 +227,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:98
         if ((!self.match_sites.contains(key))) {
 // zbr:selfhost/Checker.zbr:99
-            self.match_sites.put(_intern(key), _zbr_boxed(_ZbrList([]const u8).empty)) catch @panic("OOM");
+            self.match_sites.put(_intern(key), _zbr_boxed(_zbr_new(_ZbrList([]const u8)))) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:100
             self.match_key_list.append(_zbr_rt._allocator, _intern(key)) catch @panic("OOM");
         }
@@ -267,7 +268,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:117
             self.module_fn_key_list.append(_zbr_rt._allocator, _intern(key)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:118
-            self.fn_edges.put(_intern(key), _zbr_boxed(_ZbrList([]const u8).empty)) catch @panic("OOM");
+            self.fn_edges.put(_intern(key), _zbr_boxed(_zbr_new(_ZbrList([]const u8)))) catch @panic("OOM");
         }
     }
 
@@ -312,7 +313,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:139
         if ((std.mem.indexOf(u8, fn_key, "::") != null)) {
 // zbr:selfhost/Checker.zbr:140
-            const parts: _ZbrList([]const u8) = blk092_1: { var _ll_1: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_1 = std.mem.splitSequence(u8, fn_key, "::"); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_zbr_rt._allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
+            const parts: _ZbrList([]const u8) = blk092_1: { var _ll_1: _ZbrList([]const u8) = _zbr_new(_ZbrList([]const u8)); var _split_iter_1 = std.mem.splitSequence(u8, fn_key, "::"); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_zbr_rt._allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
 // zbr:selfhost/Checker.zbr:141
             if (_zebra_ge(@as(i64, @intCast(parts.items.len)), 2)) {
 // zbr:selfhost/Checker.zbr:142
@@ -1234,7 +1235,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
     // zbr:selfhost/Checker.zbr:545
     pub fn computeReachability(self: *_zbr_ty_DeadCodeChecker) void {
 // zbr:selfhost/Checker.zbr:546
-        var pending = _ZbrList([]const u8).empty;
+        var pending = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/Checker.zbr:548
         var ri: i64 = 0;
 // zbr:selfhost/Checker.zbr:549
@@ -1340,7 +1341,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
     // zbr:selfhost/Checker.zbr:596
     pub fn report(self: *_zbr_ty_DeadCodeChecker) []const u8 {
 // zbr:selfhost/Checker.zbr:597
-        var sb = _ZbrList(u8).empty;
+        var sb = _zbr_new(_ZbrList(u8));
 // zbr:selfhost/Checker.zbr:598
         const RED: []const u8 = "\x1b[31m";
 // zbr:selfhost/Checker.zbr:599
@@ -1354,7 +1355,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:605
         var dead_count: i64 = 0;
 // zbr:selfhost/Checker.zbr:606
-        var dead_sb = _ZbrList(u8).empty;
+        var dead_sb = _zbr_new(_ZbrList(u8));
 // zbr:selfhost/Checker.zbr:607
         var i: i64 = 0;
 // zbr:selfhost/Checker.zbr:608
@@ -1366,7 +1367,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:611
                 dead_count = (dead_count + 1);
 // zbr:selfhost/Checker.zbr:612
-                const kparts: _ZbrList([]const u8) = blk092_2: { var _ll_2: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_2 = std.mem.splitSequence(u8, key, ":"); while (_split_iter_2.next()) |_se_2| { _ll_2.append(_zbr_rt._allocator, _se_2) catch @panic("OOM"); } break :blk092_2 _ll_2; };
+                const kparts: _ZbrList([]const u8) = blk092_2: { var _ll_2: _ZbrList([]const u8) = _zbr_new(_ZbrList([]const u8)); var _split_iter_2 = std.mem.splitSequence(u8, key, ":"); while (_split_iter_2.next()) |_se_2| { _ll_2.append(_zbr_rt._allocator, _se_2) catch @panic("OOM"); } break :blk092_2 _ll_2; };
 // zbr:selfhost/Checker.zbr:613
                 const uname: []const u8 = _zbr_at(kparts.items, 0);
 // zbr:selfhost/Checker.zbr:614
@@ -1393,7 +1394,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:625
         var phantom_count: i64 = 0;
 // zbr:selfhost/Checker.zbr:626
-        var phantom_sb = _ZbrList(u8).empty;
+        var phantom_sb = _zbr_new(_ZbrList(u8));
 // zbr:selfhost/Checker.zbr:627
         i = 0;
 // zbr:selfhost/Checker.zbr:628
@@ -1405,7 +1406,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:631
                 phantom_count = (phantom_count + 1);
 // zbr:selfhost/Checker.zbr:632
-                const kparts: _ZbrList([]const u8) = blk092_3: { var _ll_3: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_3 = std.mem.splitSequence(u8, key, ":"); while (_split_iter_3.next()) |_se_3| { _ll_3.append(_zbr_rt._allocator, _se_3) catch @panic("OOM"); } break :blk092_3 _ll_3; };
+                const kparts: _ZbrList([]const u8) = blk092_3: { var _ll_3: _ZbrList([]const u8) = _zbr_new(_ZbrList([]const u8)); var _split_iter_3 = std.mem.splitSequence(u8, key, ":"); while (_split_iter_3.next()) |_se_3| { _ll_3.append(_zbr_rt._allocator, _se_3) catch @panic("OOM"); } break :blk092_3 _ll_3; };
 // zbr:selfhost/Checker.zbr:633
                 const uname: []const u8 = _zbr_at(kparts.items, 0);
 // zbr:selfhost/Checker.zbr:634
@@ -1419,7 +1420,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:639
         var unreachable_count: i64 = 0;
 // zbr:selfhost/Checker.zbr:640
-        var unreach_sb = _ZbrList(u8).empty;
+        var unreach_sb = _zbr_new(_ZbrList(u8));
 // zbr:selfhost/Checker.zbr:641
         i = 0;
 // zbr:selfhost/Checker.zbr:642
@@ -1519,7 +1520,7 @@ pub fn _zbr_fn_checkerDirOf(path: []const u8) []const u8 {
         return "";
     }
 // zbr:selfhost/Checker.zbr:693
-    const parts: _ZbrList([]const u8) = blk092_4: { var _ll_4: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_4 = std.mem.splitSequence(u8, path, "/"); while (_split_iter_4.next()) |_se_4| { _ll_4.append(_zbr_rt._allocator, _se_4) catch @panic("OOM"); } break :blk092_4 _ll_4; };
+    const parts: _ZbrList([]const u8) = blk092_4: { var _ll_4: _ZbrList([]const u8) = _zbr_new(_ZbrList([]const u8)); var _split_iter_4 = std.mem.splitSequence(u8, path, "/"); while (_split_iter_4.next()) |_se_4| { _ll_4.append(_zbr_rt._allocator, _se_4) catch @panic("OOM"); } break :blk092_4 _ll_4; };
 // zbr:selfhost/Checker.zbr:694
     if (_zebra_le(@as(i64, @intCast(parts.items.len)), 1)) {
 // zbr:selfhost/Checker.zbr:695
@@ -1616,9 +1617,9 @@ pub fn _zbr_fn_checkerLoadDeps(path: []const u8, visited: *_ZbrList([]const u8),
 // zbr:selfhost/Checker.zbr:738
 pub fn _zbr_fn_runCheck(root_path: []const u8) anyerror!bool {
 // zbr:selfhost/Checker.zbr:739
-    var visited = _ZbrList([]const u8).empty;
+    var visited = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/Checker.zbr:740
-    var modules = _ZbrList(_zbr_ty_Module).empty;
+    var modules = _zbr_new(_ZbrList(_zbr_ty_Module));
 // zbr:selfhost/Checker.zbr:741
     (try _zbr_fn_checkerLoadDeps(root_path, &visited, &modules));
 // zbr:selfhost/Checker.zbr:742

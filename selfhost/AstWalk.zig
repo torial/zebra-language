@@ -13,6 +13,7 @@ const _zebra_lt = _zbr_rt._zebra_lt;
 const _zebra_le = _zbr_rt._zebra_le;
 const _zebra_ge = _zbr_rt._zebra_ge;
 const _ZbrList = _zbr_rt._ZbrList;
+const _zbr_new = _zbr_rt._zbr_new;
 
 const _zbr_mod_Ast = @import("Ast.zig");
 const _zbr_ty_Expr = _zbr_mod_Ast._zbr_ty_Expr;
@@ -230,7 +231,7 @@ pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: *_ZbrList(_zbr_ty_Ex
 // zbr:selfhost/AstWalk.zbr:147
 pub fn _zbr_fn_collectOldNodes(expr: _zbr_ty_Expr) _ZbrList(_zbr_ty_ExprOld) {
 // zbr:selfhost/AstWalk.zbr:148
-    var out = _ZbrList(_zbr_ty_ExprOld).empty;
+    var out = _zbr_new(_ZbrList(_zbr_ty_ExprOld));
 // zbr:selfhost/AstWalk.zbr:149
     _zbr_fn_collectOldNodesInto(expr, &out);
 // zbr:selfhost/AstWalk.zbr:150
@@ -1220,7 +1221,7 @@ pub fn _zbr_fn_stmtHasEscape(s: _zbr_ty_Stmt, loop_exits_count: bool) bool {
 // zbr:selfhost/AstWalk.zbr:626
 pub fn _zbr_fn_nilCheckedNames(cond: _zbr_ty_Expr) _ZbrList([]const u8) {
 // zbr:selfhost/AstWalk.zbr:627
-    var out = _ZbrList([]const u8).empty;
+    var out = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/AstWalk.zbr:628
     _zbr_fn_collectNilChecked(cond, &out);
 // zbr:selfhost/AstWalk.zbr:629
@@ -1323,7 +1324,7 @@ pub fn _zbr_fn_stmtsAlwaysExit(ss: _ZbrList(_zbr_ty_Stmt)) bool {
 // zbr:selfhost/AstWalk.zbr:670
 pub fn _zbr_fn_earlyExitNilNames(s: _zbr_ty_Stmt) _ZbrList([]const u8) {
 // zbr:selfhost/AstWalk.zbr:671
-    var out = _ZbrList([]const u8).empty;
+    var out = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/AstWalk.zbr:672
     if (_zbr_val(s) == .if_) {
         const si_ptr = s.if_;

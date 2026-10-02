@@ -247,11 +247,26 @@ the acceptance test for Phase 1.
 5. Phase 1, SPLIT (decided 2026-10-01): the flip itself is one atomic commit that cannot be
    left half-done on `main`, so everything that can land first without changing behaviour
    does, each gated on `output_sweep` byte-identical and an extended `container-spelling`:
-   - **1a. Constructors.** Every construction of a Zebra-visible container -- emitted, or
-     inside the runtime (the scratch list a `split` / `lines` / `tokenize` / `repeat` block
-     builds and hands back) -- goes through `_zbr_list_new(T)` / `_zbr_map_new(V)` /
-     `_zbr_automap_new(K, V)`, returning today's value. The lint then refuses
-     `_ZbrList(...).empty` and `.init(` outside those definitions.
+   - **1a. Constructors.** Every construction of a Zebra-visible container that CODEGEN
+     emits goes through ONE runtime function, `_zbr_new(C)` (C is the `_ZbrList` /
+     `_ZbrMap` / `_ZbrAutoMap` type), returning today's value -- one function rather than
+     the three first planned, since the container type already says which. A list an
+     emitted block uses as scratch and never hands to Zebra code (`repeat()`'s builder) is
+     spelled `_ZbrScratch(T)` and stays a value through the flip. `container-spelling` now
+     also refuses `.empty` / `.init(_allocator)` in an emitted literal, except on a line
+     carrying `container-spelling-ok: <reason>`; three do -- the two BUG-463 decl literals
+     against a parameter type codegen does not spell (1d), and the StringBuilder FIELD
+     default (1c). Lists the RUNTIME builds and returns (`split` / `lines` / `tokenize`)
+     moved to 1b, where their signatures change anyway.
+     **Census (2026-10-02), read from EMITTED Zig, not from CodeGen's literals** (the
+     keyword-ident lesson: reading the source finds fewer sites than reading the output):
+     the whole corpus, 802 files / 790 emitted modules, carries 701 `_zbr_new` calls and
+     exactly the three marked raw constructions; the compiler's own emit, 654 and none.
+     It also measured **1c's real scope**: 7 container fields written WITH an initializer
+     (`var xs = List(int)()` in a class) emit `xs: _ZbrList(i64) = _zbr_new(...)` -- a Zig
+     FIELD DEFAULT, comptime-evaluated, which cannot allocate once 1d lands. So 1c covers
+     initialised fields as well as uninitialised ones. Three module-scope `_zbr_new` sites
+     sit inside `@TypeOf(...)`, which Zig never evaluates, and are safe.
    - **1b. Runtime helper signatures.** A helper that TAKES a container accepts a value or a
      pointer (normalised through `_zbr_val`); one that RETURNS a container declares
      `_ZbrList(T)` and builds it with 1a's constructors. Measure first how many of the
@@ -260,7 +275,10 @@ the acceptance test for Phase 1.
      strictly a behaviour change, but only for programs that read undefined memory today;
      its own commit, with fixtures for the class `cue init` path and the struct-literal path.
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
-     machinery is deleted. DAYTIME, with Sean and Fable reading the `output_sweep` diffs:
+     machinery is deleted. Fable reviews it (Sean, 2026-10-01: "coordinate w/ Fable as a
+     reviewer -- that way progress can be made independent of me"); it is staged
+     uncommitted and lands only on Fable's written sign-off, with Fable reading the
+     `output_sweep` diffs:
      every changed output is either a program that relied on today's half-copy or one the
      flip FIXED, and someone has to say which. FULL tier; Fable's engine witness;
      QUICKSTART §2 and the List / HashMap sections rewritten to the §2 rule; CHANGELOG

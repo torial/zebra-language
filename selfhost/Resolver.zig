@@ -17,6 +17,7 @@ const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
 const _ZbrList = _zbr_rt._ZbrList;
 const _ZbrMap = _zbr_rt._ZbrMap;
+const _zbr_new = _zbr_rt._zbr_new;
 const _zbr_print = _zbr_rt._zbr_print;
 
 const _zbr_mod_Parser = @import("Parser.zig");
@@ -51,13 +52,13 @@ pub const _zbr_ty_Resolver = struct {
         const _self = _zbr_rt._allocator.create(_zbr_ty_Resolver) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Resolver");
 // zbr:selfhost/Resolver.zbr:61
-            _self.module_scope = _ZbrMap(i64).init(_zbr_rt._allocator);
+            _self.module_scope = _zbr_new(_ZbrMap(i64));
 // zbr:selfhost/Resolver.zbr:62
-            _self.class_scope = _ZbrMap(i64).init(_zbr_rt._allocator);
+            _self.class_scope = _zbr_new(_ZbrMap(i64));
 // zbr:selfhost/Resolver.zbr:63
-            _self.method_scope = _ZbrMap(i64).init(_zbr_rt._allocator);
+            _self.method_scope = _zbr_new(_ZbrMap(i64));
 // zbr:selfhost/Resolver.zbr:64
-            _self.errors = _ZbrList(_zbr_ty_ResolveError).empty;
+            _self.errors = _zbr_new(_ZbrList(_zbr_ty_ResolveError));
 // zbr:selfhost/Resolver.zbr:65
             _self.symbol_count = 0;
 // zbr:selfhost/Resolver.zbr:66
@@ -76,7 +77,7 @@ pub const _zbr_ty_Resolver = struct {
 // zbr:selfhost/Resolver.zbr:74
         if (_zebra_gt(@as(i64, @intCast(src_line.len)), 0)) {
 // zbr:selfhost/Resolver.zbr:75
-            var caret = _ZbrList(u8).empty;
+            var caret = _zbr_new(_ZbrList(u8));
 // zbr:selfhost/Resolver.zbr:76
             var c: i64 = 1;
 // zbr:selfhost/Resolver.zbr:77
@@ -147,7 +148,7 @@ pub const _zbr_ty_Resolver = struct {
     // zbr:selfhost/Resolver.zbr:108
     pub fn allErrorMessages(self: *_zbr_ty_Resolver) []const u8 {
 // zbr:selfhost/Resolver.zbr:109
-        var b = _ZbrList(u8).empty;
+        var b = _zbr_new(_ZbrList(u8));
 // zbr:selfhost/Resolver.zbr:110
         for (self.errors.items) |e| {
 // zbr:selfhost/Resolver.zbr:111
@@ -254,7 +255,7 @@ pub const _zbr_ty_Resolver = struct {
             .namespace_decl => |_ptr_ns| {
                 const ns = _ptr_ns.*;
 // zbr:selfhost/Resolver.zbr:164
-                const ns_root_parts: _ZbrList([]const u8) = blk092_1: { var _ll_1: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_1 = std.mem.splitSequence(u8, ns.name, "."); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_zbr_rt._allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
+                const ns_root_parts: _ZbrList([]const u8) = blk092_1: { var _ll_1: _ZbrList([]const u8) = _zbr_new(_ZbrList([]const u8)); var _split_iter_1 = std.mem.splitSequence(u8, ns.name, "."); while (_split_iter_1.next()) |_se_1| { _ll_1.append(_zbr_rt._allocator, _se_1) catch @panic("OOM"); } break :blk092_1 _ll_1; };
 // zbr:selfhost/Resolver.zbr:165
                 self.module_scope.put(_intern(_zbr_at(ns_root_parts.items, 0)), 0) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:166
@@ -302,9 +303,9 @@ pub const _zbr_ty_Resolver = struct {
             .stmt_var => |_ptr_mv| {
                 const mv = _ptr_mv.*;
 // zbr:selfhost/Resolver.zbr:187
-                self.class_scope = _ZbrMap(i64).init(_zbr_rt._allocator);
+                self.class_scope = _zbr_new(_ZbrMap(i64));
 // zbr:selfhost/Resolver.zbr:188
-                self.method_scope = _ZbrMap(i64).init(_zbr_rt._allocator);
+                self.method_scope = _zbr_new(_ZbrMap(i64));
 // zbr:selfhost/Resolver.zbr:189
                 for (mv.init_expr.items) |mve| {
 // zbr:selfhost/Resolver.zbr:190
@@ -351,7 +352,7 @@ pub const _zbr_ty_Resolver = struct {
     pub fn enterClass(self: *_zbr_ty_Resolver, name: []const u8, members: _ZbrList(_zbr_ty_PNode), type_params: _ZbrList([]const u8)) anyerror!void {
         _ = name;
 // zbr:selfhost/Resolver.zbr:210
-        self.class_scope = _ZbrMap(i64).init(_zbr_rt._allocator);
+        self.class_scope = _zbr_new(_ZbrMap(i64));
 // zbr:selfhost/Resolver.zbr:215
         for (type_params.items) |tp| {
 // zbr:selfhost/Resolver.zbr:216
@@ -427,7 +428,7 @@ pub const _zbr_ty_Resolver = struct {
     // zbr:selfhost/Resolver.zbr:250
     pub fn enterMethod(self: *_zbr_ty_Resolver, params: _ZbrList(_zbr_ty_PParam), stmts: _ZbrList(_zbr_ty_PNode)) anyerror!void {
 // zbr:selfhost/Resolver.zbr:251
-        self.method_scope = _ZbrMap(i64).init(_zbr_rt._allocator);
+        self.method_scope = _zbr_new(_ZbrMap(i64));
 // zbr:selfhost/Resolver.zbr:252
         for (params.items) |p| {
 // zbr:selfhost/Resolver.zbr:253
@@ -957,7 +958,7 @@ pub const _zbr_ty_Resolver = struct {
             return false;
         }
 // zbr:selfhost/Resolver.zbr:504
-        const parts: _ZbrList([]const u8) = blk092_2: { var _ll_2: _ZbrList([]const u8) = _ZbrList([]const u8).empty; var _split_iter_2 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_2.next()) |_se_2| { _ll_2.append(_zbr_rt._allocator, _se_2) catch @panic("OOM"); } break :blk092_2 _ll_2; };
+        const parts: _ZbrList([]const u8) = blk092_2: { var _ll_2: _ZbrList([]const u8) = _zbr_new(_ZbrList([]const u8)); var _split_iter_2 = std.mem.splitSequence(u8, name, "x"); while (_split_iter_2.next()) |_se_2| { _ll_2.append(_zbr_rt._allocator, _se_2) catch @panic("OOM"); } break :blk092_2 _ll_2; };
 // zbr:selfhost/Resolver.zbr:505
         if ((@as(i64, @intCast(parts.items.len)) != 2)) {
 // zbr:selfhost/Resolver.zbr:506
