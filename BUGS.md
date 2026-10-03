@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-517. Next new bug: BUG-518.**
+**Last bug number generated: BUG-520. Next new bug: BUG-521.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,22 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-520: `sb.toString().len` on a StringBuilder fails inside zig (and the older compiler printed a WRONG length) -- OPEN (found 2026-10-03)
+- **Severity:** Medium (a leak today: `-c` passes, the build fails with `incompatible types: '*const str' and '*const *const [0:0]u8'`; and the N-1 anchor (2026-09-27) compiled the same program and printed **48** for a 3-character string -- wrong output, which is worse)
+- **Repro:** `var sb = StringBuilder()` / `sb.append("hey")` / `print(sb.toString().len)`.
+- **Where:** `toString()` on a StringBuilder emits `(_allocator.dupe(u8, sb.items) catch "")`; taking `.len` directly on that leaves zig unable to resolve the peer type of `[]u8` and `""`. Found while writing BUG-501 1c's fixture; confirmed pre-existing by building HEAD's (pre-1c) compiler from the committed .zig -- same error.
+- **Fix direction:** emit the empty fallback typed (`@as([]const u8, "")`), or materialise the string first; add a smoke_run asserting `3`. Find out which change between 09-27 and today turned the wrong 48 into a compile error -- that change also altered what a working program printed.
+
+---
+
+### BUG-519: constructing a struct from ANOTHER module by named arguments ignores its field defaults -- `R(k: 3)` is refused "expected 2 argument(s), found 1" -- OPEN (found 2026-10-03)
+- **Severity:** Low-Medium (a front-end refusal, not a leak, but wrong: the same construction works inside the struct's own module, so a default is usable only locally)
+- **Repro:** `fdep.zbr`: `struct R` with `var xs: List(int) = List(int)()` and `var k: int`; root: `use fdep exposing R` then `var r = R(k: 3)`.
+- **Found by:** BUG-501 1c's probes (2026-10-03). It also bounds 1c: since cross-module construction must pass every field, a struct literal never has to fill an omitted field of another module's struct -- the fill uses the module-local struct registry.
+- **Fix direction:** the arity check for a struct constructor should count only fields WITHOUT a default; the dep's struct decl (fields + which have defaults) must reach the root's checker. Then 1c's literal fill needs the dep's container fields too -- extend it with the same data.
 
 ---
 

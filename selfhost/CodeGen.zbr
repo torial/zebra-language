@@ -4645,13 +4645,20 @@ struct Generator
             var tr = n.type_!
             if tr is TypeRef.named as nt
                 if nt.name == "StringBuilder"
-                    w.emit("_ZbrList(u8) = .empty,\n")   # container-spelling-ok: a FIELD default -- BUG-501 1c allocates at construction
+                    # BUG-501 1c: no comptime default -- every constructor fills it.
+                    w.emit("_ZbrList(u8) = undefined,\n")
                     return
             genType(tr)
         else
             w.emit("anytype")
         if n.init_expr != nil and ownerIsClass() and isDeferredFieldInit(n.init_expr!)
             w.emit(" = undefined")   # BUG-339: assigned in the constructor
+        else if isContainerField(n)
+            # BUG-501 1c: a container is built at CONSTRUCTION, never as a comptime field
+            # default -- a map could not be (BUG-518: `unable to resolve comptime value`), and
+            # after the flip to references no container can. Every constructor fills it
+            # (genFieldPrefill), and a struct literal fills an omitted one.
+            w.emit(" = undefined")
         else if n.init_expr != nil
             w.emit(" = ")
             genFieldInitExpr(n.init_expr!, n.type_)          # BUG-464
@@ -5015,13 +5022,8 @@ struct Generator
             dig.w.emit(";\n")
             for gfdecl in n.members
                 if gfdecl is Decl.var_ as gfld
-                    if not gfld.mods.is_static and gfld.init_expr != nil
-                        dig.writeIndent()
-                        dig.w.emit("self.")
-                        dig.emitName(gfld.name)
-                        dig.w.emit(" = ")
-                        dig.genFieldInitExpr(gfld.init_expr!, gfld.type_)
-                        dig.w.emit(";\n")
+                    if dig.needsPrefill(gfld)
+                        dig.genFieldPrefill("self.", gfld)    # BUG-501 1c
             for godecl in n.members
                 if godecl is Decl.method as gomth
                     if gomth.mods.is_once
@@ -5540,14 +5542,8 @@ struct Generator
             dig.w.emit(";\n")
             for fdecl in n.members
                 if fdecl is Decl.var_ as fld
-                    if not fld.mods.is_static
-                        if fld.init_expr != nil
-                            dig.writeIndent()
-                            dig.w.emit("self.")
-                            dig.emitName(fld.name)          # BUG-280
-                            dig.w.emit(" = ")
-                            dig.genFieldInitExpr(fld.init_expr!, fld.type_)   # BUG-464
-                            dig.w.emit(";\n")
+                    if dig.needsPrefill(fld)
+                        dig.genFieldPrefill("self.", fld)     # BUG-501 1c
             # Initialize @once cache fields to null (not present in AST; emitted by genMethod).
             for odecl in n.members
                 if odecl is Decl.method as omth
@@ -6637,16 +6633,10 @@ struct Generator
             # overwrite these defaults, which is fine.
             for fdecl in owner_members
                 if fdecl is Decl.var_ as fld
-                    if not fld.mods.is_static and fld.init_expr != nil
-                        bg.writeIndent()
-                        bg.w.emit("_self.")
-                        bg.w.emit(fld.name)
-                        bg.w.emit(" = ")
+                    if bg.needsPrefill(fld)
                         # BUG-418: a bare `HashMap()` / `List()` default takes the field's
-                        # declared type (the same hint the assignment path uses), so a
-                        # generic class's `HashMap(K, V)` field is not `StringHashMap(anytype)`.
-                        bg.genFieldInitExpr(fld.init_expr!, fld.type_)
-                        bg.w.emit(";\n")
+                        # declared type (genFieldPrefill passes it as the hint).
+                        bg.genFieldPrefill("_self.", fld)     # BUG-501 1c
             bg.genStmts(istmts)
             if ec_i1.armed and not endsInReturn(istmts)
                 ig.writeIndent()
@@ -6657,16 +6647,8 @@ struct Generator
             # BUG-095: same pre-fill for body-less `cue init` declarations.
             for fdecl in owner_members
                 if fdecl is Decl.var_ as fld
-                    if not fld.mods.is_static and fld.init_expr != nil
-                        ig.writeIndent()
-                        ig.w.emit("_self.")
-                        ig.w.emit(fld.name)
-                        ig.w.emit(" = ")
-                        # BUG-418: a bare `HashMap()` / `List()` default takes the field's
-                        # declared type (the same hint the assignment path uses), so a
-                        # generic class's `HashMap(K, V)` field is not `StringHashMap(anytype)`.
-                        ig.genFieldInitExpr(fld.init_expr!, fld.type_)
-                        ig.w.emit(";\n")
+                    if ig.needsPrefill(fld)
+                        ig.genFieldPrefill("_self.", fld)     # BUG-501 1c
             if ec_i2.armed
                 ig.writeIndent()
                 ig.w.emit("_ensure_armed = true;\n")
@@ -10915,6 +10897,64 @@ struct Generator
                     return false
             return true
         return false
+
+    # BUG-501 1c: is this field a Zebra container -- by its declared type, or (untyped) by a
+    # container-constructing initialiser?
+    def isContainerField(f: DeclVar): bool
+        if f.mods.is_static
+            return false
+        if f.type_ != nil
+            return isContainerTypeRef(f.type_!)
+        if f.init_expr != nil
+            return isContainerInitExpr(f.init_expr!)
+        return false
+
+    def isContainerInitExpr(e: Expr): bool
+        branch e
+            on Expr.list_lit
+                return true
+            on Expr.dict_lit
+                return true
+            on Expr.set_lit
+                return true
+            on Expr.call as c
+                var base: Expr = c.callee
+                var hops: int = 0
+                while hops < 4
+                    if base is Expr.call as inner
+                        base = inner.callee
+                    else
+                        break
+                    hops = hops + 1
+                if base is Expr.ident as bid
+                    return bid.name == "List" or bid.name == "HashMap" or bid.name == "Set" or bid.name == "StringBuilder"
+                return false
+            else
+                return false
+
+    # BUG-501 1c: one field's construction-time value, `<target><name> = <value>;`. The
+    # field's own initialiser when it has one; a fresh container (`_zbr_new(T)`) when it is
+    # an UNINITIALISED container -- before 1c that field held undefined memory, and reading
+    # it died far from the cause (probe: "integer does not fit in destination type").
+    def genFieldPrefill(target: str, f: DeclVar)
+        writeIndent()
+        w.emit(target)
+        emitName(f.name)                                    # BUG-280
+        w.emit(" = ")
+        if f.init_expr != nil
+            genFieldInitExpr(f.init_expr!, f.type_)         # BUG-464 / BUG-418
+        else
+            w.emit("_zbr_new(")
+            genType(f.type_!)
+            w.emit(")")
+        w.emit(";\n")
+
+    # Does a constructor have to fill this field? Its initialiser, or a container it must
+    # not leave undefined.
+    def needsPrefill(f: DeclVar): bool
+        if f.mods.is_static
+            return false
+        return f.init_expr != nil or isContainerField(f)
 
     def ownerIsClass(): bool
         return owner != "" and class_names.contains_(owner) and not struct_names.contains_(owner)
@@ -15347,6 +15387,7 @@ struct Generator
                 w.emit("{")
                 var first_sf = true
                 var sf_idx: int = 0
+                var sf_given = List(str)()                  # BUG-501 1c
                 for a in c.args
                     if first_sf
                         w.emit(" ")
@@ -15357,6 +15398,7 @@ struct Generator
                     if sf_name_opt == nil
                         sf_name_opt = structFieldNameAt(id.name, sf_idx)   # BUG-401
                     if sf_name_opt as sf_name
+                        sf_given.add(sf_name)
                         w.emit(".")
                         emitName(sf_name)                   # BUG-280
                         w.emit(" = ")
@@ -15368,6 +15410,28 @@ struct Generator
                     else
                         genExpr(a.value)
                     sf_idx = sf_idx + 1
+                # BUG-501 1c / BUG-518: a container field the literal OMITS is built here --
+                # it has no comptime default any more (a map never could have one).
+                for sfdecl in module_decls
+                    if sfdecl is Decl.struct_ as sfs
+                        if sfs.name == id.name
+                            for sfm in sfs.members
+                                if sfm is Decl.var_ as sff
+                                    if isContainerField(sff) and not sf_given.contains(sff.name)
+                                        if first_sf
+                                            w.emit(" ")
+                                        else
+                                            w.emit(", ")
+                                        first_sf = false
+                                        w.emit(".")
+                                        emitName(sff.name)
+                                        w.emit(" = ")
+                                        if sff.init_expr != nil
+                                            genFieldInitExpr(sff.init_expr!, sff.type_)
+                                        else
+                                            w.emit("_zbr_new(")
+                                            genType(sff.type_!)
+                                            w.emit(")")
                 if not first_sf
                     w.emit(" ")
                 w.emit("}")

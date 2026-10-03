@@ -1,0 +1,14 @@
+# BUG-518: a struct field with a HashMap initialiser, omitted at the construction site.
+# The field default was a comptime `_zbr_new(_ZbrMap(..))`, which Zig refused ("unable to
+# resolve comptime value"); since BUG-501 1c the literal builds it at construction.
+struct S
+    var m: HashMap(str, int) = HashMap()
+    var seen: Set(int) = Set(int)()
+    var k: int
+
+def main()
+    var s = S(k: 2)
+    s.m.set("x", 1)
+    s.seen.add(7)
+    var t = S(k: 3)
+    print("bug518: " + s.m.count().toString() + " " + s.seen.count().toString() + " " + t.m.count().toString() + " " + s.k.toString())

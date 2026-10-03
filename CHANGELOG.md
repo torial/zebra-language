@@ -23,6 +23,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A container field you never assign starts EMPTY (BUG-501 1c)** -- `var xs: List(int)` with no initialiser held undefined memory, and reading it panicked far from the cause ("integer does not fit in destination type"). Every constructor now builds it.
+
+- **A struct field with a HashMap or Set initialiser works when the construction omits it (BUG-518)** -- it was accepted and then refused inside zig ("unable to resolve comptime value").
+
 - **Each run builds in its own temp directory (BUG-513)** -- concurrent compiles shared `<TEMP>/<stem>.zig` and `zebra_rt.zig` and could rewrite each other mid-build. The directory is removed after a clean run or a front-end error; when the build or the program fails, or with `--keep-temp`, it is kept and its path printed.
 
 - **`Dir.tryDeleteAll(path): bool`** -- a recursive delete that never fails: true iff the

@@ -1,0 +1,54 @@
+# BUG-501 Phase 1c: every container FIELD is built at construction -- never a comptime
+# field default -- on every constructor path. Each value printed is read BEFORE any user
+# code assigned the field; an uninitialised container used to hold undefined memory, and
+# reading it died with "integer does not fit in destination type".
+
+class WithInit
+    var xs: List(int) = List(int)()      # initialised, the init never touches it
+    var bare: List(int)                  # UNinitialised container
+    var tag: int
+    cue init(t: int)
+        tag = t
+
+class NoInit
+    var xs: List(str) = List(str)()
+    var bare: HashMap(str, int)
+    var sb: StringBuilder
+
+class Gen(T)
+    var items: List(T) = List(T)()
+    var bare: List(T)
+    var n: int
+    cue init(k: int)
+        n = k
+
+class GenNoInit(T)
+    var bare: List(T)
+
+struct Pt
+    var tags: List(str)                  # uninitialised, omitted at the literal
+    var x: int
+
+struct WithCue
+    var xs: List(int) = List(int)()
+    var bare: Set(int)
+    var k: int
+    cue init(k0: int)
+        k = k0
+
+def main()
+    var a = WithInit(1)
+    var b = NoInit()
+    var g = Gen(int)(2)
+    var gn = GenNoInit(str)()
+    var p = Pt(x: 5)
+    var w = WithCue(4)
+    var counts: str = a.xs.len.toString() + a.bare.len.toString() + b.xs.len.toString() + b.bare.count().toString() + "[" + b.sb.toString() + "]" + g.items.len.toString() + g.bare.len.toString() + gn.bare.len.toString() + p.tags.len.toString() + w.xs.len.toString() + w.bare.count().toString()
+    a.bare.add(9)
+    b.bare.set("k", 1)
+    b.sb.append("hi")
+    g.bare.add(3)
+    p.tags.add("t")
+    w.bare.add(1)
+    var after: str = a.bare.len.toString() + b.bare.count().toString() + b.sb.toString() + g.bare.len.toString() + p.tags.len.toString() + w.bare.count().toString()
+    print("bug501_1c: " + counts + " " + after + " " + p.x.toString() + w.k.toString())

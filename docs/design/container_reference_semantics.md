@@ -327,6 +327,26 @@ the acceptance test for Phase 1.
      defined after 1c), the census re-run (0 comptime-position `_zbr_new`), output_sweep
      identical, and Fable's engine witness -- the engine has initialised container fields in
      several classes (Fable, 2026-10-02).
+   - **1c landed 2026-10-03.** Simpler than planned, because the constructors already did
+     most of it: BUG-095's pre-fill assigns every initialised field at the top of every
+     `cue init` (class AND struct), and both synthetic constructors do the same. So:
+     (1) a container field (by declared type, or an untyped container initialiser) emits
+     `= undefined` -- never a comptime default; (2) one helper, `genFieldPrefill`, now used by
+     all four constructor loops, also fills an UNINITIALISED container with `_zbr_new(T)`
+     (probe: reading one panicked "integer does not fit in destination type"); (3) a struct
+     literal builds every OMITTED container field at the site -- which fixed BUG-518 (a struct
+     HashMap/Set default was a comptime `_zbr_new` Zig refused); (4) `_zbr_HashMap` (the
+     generic-key map an earlier Phase 0 missed: the lint did not know the name) now builds
+     from `_ZbrMap`/`_ZbrAutoMap`. Cross-module struct construction cannot omit fields today
+     (BUG-519), so the module-local struct registry is enough. Census from EMITTED Zig:
+     comptime field defaults 7 -> **0**; raw constructions only the BUG-463 decl literal (1d);
+     container-spelling's exempt markers 3 -> 2. **1d cost input:** the compiler's own emit
+     gained **86** constructor-prologue `_zbr_new` calls -- free today (`.empty`), one
+     allocation each per construction after the flip unless Fable's definitely-assigned
+     refinement lands first. Gates: FULL 45/45 (`output_sweep` 466 identical from a cold
+     cache), round-trip byte-identical, gui-scaffold clean; fixtures
+     `test/bug518_struct_map_field_default_test.zbr`,
+     `test/bug501_container_fields_built_test.zbr`.
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
      machinery is deleted. Fable reviews it (Sean, 2026-10-01: "coordinate w/ Fable as a
      reviewer -- that way progress can be made independent of me"); it is staged

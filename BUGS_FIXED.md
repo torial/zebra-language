@@ -6,6 +6,11 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-518: a struct field with a HashMap (or Set) initialiser, omitted at the construction site, reached zig as `unable to resolve comptime value` -- FIXED 2026-10-03
+- **Severity:** Medium (a leak: `struct S` with `var m: HashMap(str, int) = HashMap()` and `S(k: 2)` passed the front end and failed inside the runtime's `_zbr_new`)
+- **Cause:** the field's default was a comptime `_zbr_new(_ZbrMap(..))`, and a map cannot be built at comptime. A List default happened to work only because `.empty` allocates nothing -- the same shape every container field takes once BUG-501 makes containers references.
+- **Fixed by BUG-501 Phase 1c (2026-10-03):** no container field has a comptime default any more; the struct literal path builds every OMITTED container field at the construction site (`.m = _zbr_new(...)`). Found by the advisor's probe (c) before 1c was written. Fixture `test/bug518_struct_map_field_default_test.zbr` (HashMap + Set fields, two constructions, the second must start empty), smoke_run `bug518: 1 1 0 2`.
+
 ### BUG-513: a plain `zebra x.zbr` builds in the SHARED system temp dir -- concurrent compiles can clobber each other's `x.zig` and `zebra_rt.zig` -- FIXED 2026-10-02
 - **Severity:** Medium (two editor saves, two terminals, a gate beside another session's run: one compile can rewrite the other's runtime file mid-build; the symptom is a failure that does not reproduce)
 - **Where:** temp-mode compiles (no `--output-dir`) write `<TEMP>/<stem>.zig`, `<TEMP>/zebra_rt.zig` and `<TEMP>/<stem>.zig.run.exe`; every concurrent invocation on the machine shares those names. Two programs with the same stem (`main.zbr` in two projects) collide on everything.

@@ -682,8 +682,9 @@ pub fn _zebra_sort_natural(comptime T: type, items: []T) void {
 // only at instantiation is it known whether the key is a str (content-hashed) or not.
 // A key type with `cue hash` is hashed through its cue (and compared through `cue equals`).
 pub fn _zbr_HashMap(comptime K: type, comptime V: type) type {
-    if (K == []const u8) return std.StringHashMap(V);
-    return _zbr_AutoMap(K, V);
+    // BUG-501: through the one container spelling, so the flip reaches this too.
+    if (K == []const u8) return _ZbrMap(V);
+    return _ZbrAutoMap(K, V);
 }
 // BUG-454: the ONE place that decides how a non-str key is hashed. Every HashMap/Set the
 // compiler emits -- annotation, constructor, field, literal -- names this, so they are
