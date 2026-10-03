@@ -6631,9 +6631,10 @@ struct Generator
             # `undefined` poison (0xAAAA…).  Mirrors the same pass already
             # done for the synthetic-init path.  The user's body may
             # overwrite these defaults, which is fine.
+            var assigned_first = bg.initAssignedFirst(ini, istmts)     # BUG-501 1c'
             for fdecl in owner_members
                 if fdecl is Decl.var_ as fld
-                    if bg.needsPrefill(fld)
+                    if bg.needsPrefill(fld) and not bg.elidePrefill(fld, assigned_first)
                         # BUG-418: a bare `HashMap()` / `List()` default takes the field's
                         # declared type (genFieldPrefill passes it as the hint).
                         bg.genFieldPrefill("_self.", fld)     # BUG-501 1c
@@ -10955,6 +10956,67 @@ struct Generator
         if f.mods.is_static
             return false
         return f.init_expr != nil or isContainerField(f)
+
+    # BUG-501 1c': container fields a `cue init` body DEFINITELY assigns before anything could
+    # read a field. Their prologue construction would be thrown away by the body's own line --
+    # free today (`.empty`), one allocation per construction after the flip (Fable, 2026-10-03:
+    # 171 such lines in the engine; 86 in the compiler's own emit). Conservative BY
+    # CONSTRUCTION: the scan only passes over `f = <simple>` -- a literal, an init PARAMETER, or
+    # an argument-less container construction, none of which can read a field -- and STOPS at
+    # anything else, so every field after that keeps its prologue. (It deliberately does not use
+    # exprMentionsThis, which defaults to false for a variant it does not model: a wrong "cannot
+    # read a field" here would leave a container undefined.)
+    def initAssignedFirst(ini: DeclInit, stmts: List(Stmt)): List(str)
+        var params = List(str)()
+        for p in ini.params
+            params.add(p.name)
+        var done = List(str)()
+        for st in stmts
+            if st is Stmt.assign as sa
+                if sa.op == AssignOp.assign
+                    var fname: str = ""
+                    if sa.target is Expr.ident as tid
+                        fname = tid.name
+                    else if sa.target is Expr.member as tm
+                        if tm.object is Expr.this_
+                            fname = tm.member
+                    if fname != "" and not params.contains(fname) and initSimpleValue(sa.value, params)
+                        done.add(fname)
+                        continue
+            return done
+        return done
+
+    def initSimpleValue(e: Expr, params: List(str)): bool
+        branch e
+            on Expr.int_lit
+                return true
+            on Expr.float_lit
+                return true
+            on Expr.bool_lit
+                return true
+            on Expr.char_lit
+                return true
+            on Expr.string_lit
+                return true
+            on Expr.nil_
+                return true
+            on Expr.ident as id
+                return params.contains(id.name)
+            on Expr.list_lit as ll
+                return ll.elems.len == 0
+            on Expr.call as c
+                return c.args.len == 0 and isContainerInitExpr(e)
+            else
+                return false
+
+    # Skip this field's prologue? Only a CONTAINER the body assigns first, and only when its
+    # own initialiser (if any) is side-effect free -- skipping it must be unobservable.
+    def elidePrefill(f: DeclVar, assigned_first: List(str)): bool
+        if not isContainerField(f) or not assigned_first.contains(f.name)
+            return false
+        if f.init_expr == nil
+            return true
+        return initSimpleValue(f.init_expr!, List(str)())
 
     def ownerIsClass(): bool
         return owner != "" and class_names.contains_(owner) and not struct_names.contains_(owner)

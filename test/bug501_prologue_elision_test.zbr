@@ -1,0 +1,44 @@
+# BUG-501 1c': a `cue init` that DEFINITELY assigns a container field first skips the
+# prologue construction (it would be thrown away). The adversaries are the cases where
+# skipping would leave the field undefined when something reads it -- each must KEEP its
+# prologue and read an EMPTY container, never garbage.
+
+class Elided
+    var xs: List(int)
+    var m: HashMap(str, int)
+    var tag: int
+    cue init(t: int)
+        tag = t                      # simple: passes the scan
+        xs = List(int)()             # definitely assigned first -> prologue elided
+        .m = HashMap(str, int)()     # contextual-self target, same
+        xs.add(1)
+
+class ReadsFirst
+    var xs: List(int)
+    var seen: int
+    cue init()
+        seen = xs.len                # READS xs before any assignment -> keep its prologue
+        xs = List(int)()
+
+class MethodReads
+    var xs: List(int)
+    var seen: int
+    cue init()
+        seen = .peek()               # a method that reads xs -> the scan stops here
+        xs = List(int)()
+
+    def peek(): int
+        return xs.len
+
+class FromParam
+    var xs: List(int)
+    cue init(start: List(int))
+        xs = start                   # a parameter: simple, elided
+
+def main()
+    var e = Elided(7)
+    var r = ReadsFirst()
+    var mr = MethodReads()
+    var src: List(int) = [4, 5]
+    var fp = FromParam(src)
+    print("bug501_elide: " + e.xs.len.toString() + " " + e.m.count().toString() + " " + e.tag.toString() + " | " + r.seen.toString() + " " + mr.seen.toString() + " | " + fp.xs.len.toString())

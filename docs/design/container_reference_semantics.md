@@ -340,10 +340,12 @@ the acceptance test for Phase 1.
      from `_ZbrMap`/`_ZbrAutoMap`. Cross-module struct construction cannot omit fields today
      (BUG-519), so the module-local struct registry is enough. Census from EMITTED Zig:
      comptime field defaults 7 -> **0**; raw constructions only the BUG-463 decl literal (1d);
-     container-spelling's exempt markers 3 -> 2. **1d cost input:** the compiler's own emit
-     gained **86** constructor-prologue `_zbr_new` calls -- free today (`.empty`), one
-     allocation each per construction after the flip unless Fable's definitely-assigned
-     refinement lands first. Gates: FULL 45/45 (`output_sweep` 466 identical from a cold
+     container-spelling's exempt markers 3 -> 2. **1d cost input:** 1c added **74**
+     constructor-prologue `_zbr_new` builds to the compiler's own emit -- free today
+     (`.empty`), one allocation each per construction after the flip. (First reported as
+     86: that figure counted the compiler's committed .zig, which the N-1 compiler generated,
+     so it was mostly the compiler's own BODY assignments. Corrected 2026-10-03 with a
+     prologue-only counter whose control -- the 1c' fixture -- reads exactly 5 -> 2.) Gates: FULL 45/45 (`output_sweep` 466 identical from a cold
      cache), round-trip byte-identical, gui-scaffold clean; fixtures
      `test/bug518_struct_map_field_default_test.zbr`,
      `test/bug501_container_fields_built_test.zbr`.
@@ -359,8 +361,16 @@ the acceptance test for Phase 1.
      skip a container field that the constructor body DEFINITELY assigns before any read --
      a straight-line assignment at the top level of the init body, before any statement
      that could read the field (a call, a method on self) -- and keep it otherwise. Witness:
-     the engine's prologue count should fall to ~0, the compiler's from 86 toward 0, and the
+     the engine's prologue count should fall to ~0, the compiler's toward 0, and the
      1c fixture (which reads fields before assignment) must still print the same.
+     **Built 2026-10-03.** The scan passes only `f = <literal | init parameter | argument-less
+     container construction>` and stops at anything else; a container field is elided only if
+     its own initialiser is side-effect free. Compiler emit, prologue-only count: **74 -> 27**
+     (the 27 are fields assigned after a non-trivial statement, or never -- correctly kept).
+     Fixture `test/bug501_prologue_elision_test.zbr`: an elided class, a field READ before
+     assignment and a method that reads it (both must keep the prologue and read an EMPTY
+     container), and a parameter assignment. Red-checked: with the scan made to pass over any
+     statement, the read-first class panicked "integer does not fit in destination type".
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
      machinery is deleted. Fable reviews it (Sean, 2026-10-01: "coordinate w/ Fable as a
      reviewer -- that way progress can be made independent of me"); it is staged
