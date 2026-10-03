@@ -2785,7 +2785,6 @@ pub const _zbr_ty_GenBlock = struct {
     pub fn init(id: i64) *_zbr_ty_GenBlock {
         const _self = _zbr_rt._allocator.create(_zbr_ty_GenBlock) catch @panic("OOM");
         _self._type_tag = _zbr_hash("GenBlock");
-            _self.stmts = _zbr_new(_ZbrList(_zbr_ty_Stmt));
 // zbr:selfhost/CodeGen.zbr:1500
             _self.id = id;
 // zbr:selfhost/CodeGen.zbr:1501
@@ -5540,7 +5539,6 @@ pub const _zbr_ty_CallChain = struct {
     args: _ZbrList(_zbr_ty_Arg) = undefined,
     pub fn init(recv: _zbr_ty_Expr, method: []const u8, args: _ZbrList(_zbr_ty_Arg)) _zbr_ty_CallChain {
         var _self: _zbr_ty_CallChain = undefined;
-            _self.args = _zbr_new(_ZbrList(_zbr_ty_Arg));
 // zbr:selfhost/CodeGen.zbr:3015
             _self.recv = recv;
 // zbr:selfhost/CodeGen.zbr:3016
@@ -5855,7 +5853,6 @@ pub const _zbr_ty_IfaceRef = struct {
     args: _ZbrList(_zbr_ty_TypeRef) = undefined,
     pub fn init(name: []const u8, base: []const u8, zig: []const u8, vt: []const u8, args: _ZbrList(_zbr_ty_TypeRef)) _zbr_ty_IfaceRef {
         var _self: _zbr_ty_IfaceRef = undefined;
-            _self.args = _zbr_new(_ZbrList(_zbr_ty_TypeRef));
 // zbr:selfhost/CodeGen.zbr:3297
             _self.name = _intern(name);
 // zbr:selfhost/CodeGen.zbr:3298

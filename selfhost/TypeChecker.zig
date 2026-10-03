@@ -177,7 +177,6 @@ pub const _zbr_ty_TupleType_ = struct {
     pub fn init(elems: _ZbrList(_zbr_ty_Type_)) *_zbr_ty_TupleType_ {
         const _self = _zbr_rt._allocator.create(_zbr_ty_TupleType_) catch @panic("OOM");
         _self._type_tag = _zbr_hash("TupleType_");
-            _self.elems = _zbr_new(_ZbrList(_zbr_ty_Type_));
 // zbr:selfhost/TypeChecker.zbr:91
             _self.elems = elems;
 // zbr:selfhost/TypeChecker.zbr:92
