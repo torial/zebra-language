@@ -1,0 +1,27 @@
+# BUG-501 1d prep: an empty `[]` handed to a GENERIC parameter is a real construction
+# (`_zbr_new(_ZbrList(...))`, the type parameters substituted by the call's type
+# arguments), not the `.empty` decl literal -- which cannot build a header once
+# containers are references. Covers the three generic call paths (a function, a static
+# method, an instance method) and a nested element type that is itself boxed.
+def count(T)(xs: List(T)): int
+    return xs.count()
+
+def rows(T)(xss: List(List(T))): int
+    return xss.count()
+
+class Kit
+    static
+        def size(T)(xs: List(T)): int
+            return xs.count()
+    var base: int = 10
+    def plus(T)(xs: List(T)): int
+        return .base + xs.count()
+
+def main()
+    var a = count(int)([])
+    var b = count(str)([])
+    var c = rows(float)([])
+    var d = Kit.size(bool)([])
+    var k = Kit()
+    var e = k.plus(int)([])
+    print("bug501_gel: ${a} ${b} ${c} ${d} ${e}")

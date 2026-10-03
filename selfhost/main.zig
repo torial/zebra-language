@@ -9,6 +9,9 @@ pub const std_options = _zbr_rt.std_options;
 const _prog_alloc = _zbr_rt._prog_alloc;
 const _zbr_version = _zbr_rt._zbr_version;
 const _zbr_val = _zbr_rt._zbr_val;
+const _ZbrRefOf = _zbr_rt._ZbrRefOf;
+const _zbr_ref = _zbr_rt._zbr_ref;
+const _zbr_cderef = _zbr_rt._zbr_cderef;
 const _sysSleep = _zbr_rt._sysSleep;
 const _intern = _zbr_rt._intern;
 const _zbr_norm_path = _zbr_rt._zbr_norm_path;
@@ -1957,7 +1960,7 @@ pub fn _zbr_fn_replRun() i64 {
 // zbr:selfhost/main.zbr:1192
             history.append(_zbr_rt._allocator, _intern(cell)) catch @panic("OOM");
 // zbr:selfhost/main.zbr:1193
-            prevOut = _zbr_fn_replEval(&decls, &stmts, cell, sessionPath, selfPath, prevOut);
+            prevOut = _zbr_fn_replEval(_zbr_ref(&decls), _zbr_ref(&stmts), cell, sessionPath, selfPath, prevOut);
 // zbr:selfhost/main.zbr:1194
             accum = "";
             continue;
@@ -2033,7 +2036,7 @@ pub fn _zbr_fn_replRun() i64 {
 // zbr:selfhost/main.zbr:1230
         history.append(_zbr_rt._allocator, _intern(cell)) catch @panic("OOM");
 // zbr:selfhost/main.zbr:1231
-        prevOut = _zbr_fn_replEval(&decls, &stmts, cell, sessionPath, selfPath, prevOut);
+        prevOut = _zbr_fn_replEval(_zbr_ref(&decls), _zbr_ref(&stmts), cell, sessionPath, selfPath, prevOut);
 // zbr:selfhost/main.zbr:1232
         accum = "";
     }
@@ -2044,11 +2047,11 @@ pub fn _zbr_fn_replRun() i64 {
 }
 
 // zbr:selfhost/main.zbr:1240
-pub fn _zbr_fn_replEval(decls: *_ZbrList([]const u8), stmts: *_ZbrList([]const u8), cell: []const u8, sessionPath: []const u8, selfPath: []const u8, prevOut: []const u8) []const u8 {
+pub fn _zbr_fn_replEval(decls: _ZbrRefOf(_ZbrList([]const u8)), stmts: _ZbrRefOf(_ZbrList([]const u8)), cell: []const u8, sessionPath: []const u8, selfPath: []const u8, prevOut: []const u8) []const u8 {
 // zbr:selfhost/main.zbr:1241
     const isDecl: bool = _zbr_fn_replIsDeclCell(cell);
 // zbr:selfhost/main.zbr:1242
-    const src: []const u8 = _zbr_fn_replBuildSource(decls.*, stmts.*, cell, isDecl);
+    const src: []const u8 = _zbr_fn_replBuildSource(_zbr_cderef(decls), _zbr_cderef(stmts), cell, isDecl);
 // zbr:selfhost/main.zbr:1243
     (blk_fw: {
         const _fw_path = sessionPath;
@@ -2262,7 +2265,7 @@ pub fn _zbr_fn_defaultPreamblePath() []const u8 {
 }
 
 // zbr:selfhost/main.zbr:1353
-pub fn _zbr_fn_tcCheckSide(src: []const u8, path: []const u8, diags: *_ZbrList([]const u8), with_warnings: bool) void {
+pub fn _zbr_fn_tcCheckSide(src: []const u8, path: []const u8, diags: _ZbrRefOf(_ZbrList([]const u8)), with_warnings: bool) void {
 // zbr:selfhost/main.zbr:1353
     {
         var _try_err: ?anyerror = null;
@@ -2511,7 +2514,7 @@ pub fn _zbr_fn_collectLspDiags(src: []const u8, path: []const u8) _ZbrList(_zbr_
 // zbr:selfhost/main.zbr:1469
     var raw = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/main.zbr:1470
-    _zbr_fn_tcCheckSide(src, path, &raw, true);
+    _zbr_fn_tcCheckSide(src, path, _zbr_ref(&raw), true);
 // zbr:selfhost/main.zbr:1471
     var diags = _zbr_new(_ZbrList(_zbr_ty_LspDiag));
 // zbr:selfhost/main.zbr:1472
@@ -4977,9 +4980,9 @@ pub fn _zbr_fn_runTypecheckMerge(path: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:2667
     var theirs_diags = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/main.zbr:2668
-    _zbr_fn_tcCheckSide(ours_src, path, &ours_diags, false);
+    _zbr_fn_tcCheckSide(ours_src, path, _zbr_ref(&ours_diags), false);
 // zbr:selfhost/main.zbr:2669
-    _zbr_fn_tcCheckSide(theirs_src, path, &theirs_diags, false);
+    _zbr_fn_tcCheckSide(theirs_src, path, _zbr_ref(&theirs_diags), false);
 // zbr:selfhost/main.zbr:2671
     std.debug.print("{s}\n", .{_str_concat("typecheck-merge: ", path, _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:2672

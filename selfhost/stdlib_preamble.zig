@@ -129,13 +129,38 @@ pub fn _zbr_boxed(v: anytype) _ZbrBoxOf(@TypeOf(v)) {
     p.* = v;
     return p;
 }
-fn _ZbrBoxOf(comptime T: type) type {
+pub fn _ZbrBoxOf(comptime T: type) type {
     return if (@typeInfo(T) == .pointer) T else *T;
+}
+// BUG-501 1d: which representation a List/HashMap/Set has. false = a value
+// (std.ArrayList); true = a pointer to a heap header. The shims below let codegen emit
+// the same text under both (docs/design/container_reference_semantics.md §9).
+pub const _zbr_ref_containers = false;
+/// The type of a container parameter its function mutates: a pointer to the caller's
+/// value today; the container itself once it is already a reference.
+pub fn _ZbrRefOf(comptime T: type) type {
+    return if (_zbr_cont_ptr(T)) T else *T;
+}
+/// The argument for such a parameter, given the address of the caller's variable.
+pub inline fn _zbr_ref(p: anytype) _ZbrRefOf(std.meta.Child(@TypeOf(p))) {
+    if (comptime _zbr_cont_ptr(std.meta.Child(@TypeOf(p)))) return p.*;
+    return p;
+}
+/// A mutated container parameter handed on to a by-value one: the value behind the
+/// pointer today; the reference itself once containers are references.
+pub inline fn _zbr_cderef(p: anytype) _ZbrCDerefOf(@TypeOf(p)) {
+    if (comptime _zbr_ref_containers) return p;
+    return p.*;
+}
+fn _ZbrCDerefOf(comptime T: type) type {
+    return if (_zbr_ref_containers) T else std.meta.Child(T);
 }
 /// The value behind a box, for a site that wants the container itself (a by-value
 /// parameter, a `.contains()` comparison); a value passes through.
 pub fn _zbr_unboxed(v: anytype) _ZbrUnboxOf(@TypeOf(v)) {
     const T = @TypeOf(v);
+    if (comptime _zbr_ref_containers and (_zbr_cont_ptr(T) or
+        (@typeInfo(T) == .optional and _zbr_cont_ptr(@typeInfo(T).optional.child)))) return v;
     if (comptime @typeInfo(T) == .pointer and @typeInfo(T).pointer.size == .one) return v.*;
     if (comptime @typeInfo(T) == .optional) {
         const C = @typeInfo(T).optional.child;
@@ -146,6 +171,8 @@ pub fn _zbr_unboxed(v: anytype) _ZbrUnboxOf(@TypeOf(v)) {
     return v;
 }
 fn _ZbrUnboxOf(comptime T: type) type {
+    if (_zbr_ref_containers and (_zbr_cont_ptr(T) or
+        (@typeInfo(T) == .optional and _zbr_cont_ptr(@typeInfo(T).optional.child)))) return T;
     if (@typeInfo(T) == .pointer and @typeInfo(T).pointer.size == .one) return @typeInfo(T).pointer.child;
     if (@typeInfo(T) == .optional) {
         const C = @typeInfo(T).optional.child;

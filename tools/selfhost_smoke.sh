@@ -2044,6 +2044,7 @@ smoke_tc_fail test/bug460_generic_call_no_type_arg_fail.zbr "bug460_generic_call
 smoke_run test/bug462_generic_return_type_test.zbr "bug462: OK"
 # BUG-463: an empty `[]` passed to a List(X) parameter takes the parameter's type.
 smoke_run test/bug463_empty_list_arg_test.zbr "bug463: OK"
+smoke_run test/bug501_generic_empty_list_test.zbr "bug501_gel: 0 0 0 0 10"
 # BUG-461: a name reused inside the scope that declares it is refused (Zig forbids
 # shadowing); sibling scopes may reuse a name.
 smoke_tc_fail test/bug461_shadowing_fail.zbr "bug461_shadowing_fail.zbr:7:5: error: \`n\` is already declared as a parameter"

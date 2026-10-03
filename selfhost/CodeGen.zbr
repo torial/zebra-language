@@ -7175,8 +7175,11 @@ struct Generator
             # BUG-091: List(T)/HashMap(K,V) param mutated by body → emit *T
             # so .append/.put can take *Self and the caller sees changes.
             if paramNeedsAddrOfTx(p, body)
-                w.emit("*")
-            if p.type_ != nil
+                # BUG-501 1d: `*T` today, T itself once containers are references.
+                w.emit("_ZbrRefOf(")
+                genType(p.type_!)
+                w.emit(")")
+            else if p.type_ != nil
                 genType(p.type_!)
             else
                 w.emit("anytype")
@@ -8707,13 +8710,19 @@ struct Generator
 
     def genElemType(tr: TypeRef)
         if isBoxedElemTypeRef(tr)
-            w.emit("*")
-        genType(tr)
+            w.emit("_ZbrBoxOf(")                # BUG-501 1d: `*T` until T is a reference
+            genType(tr)
+            w.emit(")")
+        else
+            genType(tr)
 
     def genElemTypeFromExpr(e: Expr)
         if isBoxedElemTypeExpr(e)
-            w.emit("*")
-        genTypeFromExpr(e)
+            w.emit("_ZbrBoxOf(")
+            genTypeFromExpr(e)
+            w.emit(")")
+        else
+            genTypeFromExpr(e)
 
     # Does a value STORED into this receiver (List elem / HashMap value) need boxing?
     # Asks the checker's type of the receiver; unknown means no (and zig then names the
@@ -15021,14 +15030,17 @@ struct Generator
                             w.emit(", ")
                         gf_first = false
                         genTypeArg(ta.value)
+                    var gf_ai = 0
                     for va in c.args
                         if not gf_first
                             w.emit(", ")
                         gf_first = false
                         if isEmptyUntypedListLit(va.value)
-                            w.emit(".empty")            # BUG-463: the param's own ArrayList  # container-spelling-ok: decl literal against an unspelled param type -- BUG-501 1d
+                            if not emitEmptyListForGenericArg(gf_id.name, gf_inner.args, gf_ai)
+                                w.emit(".empty")        # BUG-463: the param's own ArrayList  # container-spelling-ok: a generic callee from another module (no type params here) -- fails loudly in Zig under reference containers
                         else
                             genExpr(va.value)
+                        gf_ai += 1
                     w.emit(")")
                     return
             # BUG-457: the same shape through a class -- `Utils.identity(int)(42)` ->
@@ -15054,14 +15066,17 @@ struct Generator
                                 w.emit(", ")
                             gm_first = false
                             genTypeArg(ta.value)
+                        var gm_ai = 0
                         for va in c.args
                             if not gm_first
                                 w.emit(", ")
                             gm_first = false
                             if isEmptyUntypedListLit(va.value)
-                                w.emit(".empty")        # BUG-463  # container-spelling-ok: decl literal against an unspelled param type -- BUG-501 1d
+                                if not emitEmptyListForGenericArg(gf_key, gf_inner.args, gm_ai)
+                                    w.emit(".empty")    # BUG-463  # container-spelling-ok: a generic callee from another module (no type params here) -- fails loudly in Zig under reference containers
                             else
                                 genExpr(va.value)
+                            gm_ai += 1
                         w.emit(")")
                         return
         # Closure vars: capture-lambda struct instances use .call()
@@ -17128,11 +17143,15 @@ struct Generator
                                         genExpr(args.at(um_ai).value)   # Case 1: ptr→ptr
                                         um_emitted = true
                                     else
-                                        w.emit("&")
+                                        w.emit("_zbr_ref(&")            # BUG-501 1d
+                                        genExpr(args.at(um_ai).value)
+                                        w.emit(")")
+                                        um_emitted = true
                                 else
                                     if ump_p.type_ != nil and isContainerTypeRef(ump_p.type_!) and argIdentInCpp(args.at(um_ai).value)
+                                        w.emit("_zbr_cderef(")          # Case 2: ptr→value
                                         genExpr(args.at(um_ai).value)
-                                        w.emit(".*")                    # Case 2: ptr→value
+                                        w.emit(")")
                                         um_emitted = true
                                     else if ump_p.type_ != nil
                                         um_emitted = emitEmptyListForParam(args.at(um_ai).value, ump_p.type_!)   # BUG-463
@@ -18509,12 +18528,14 @@ struct Generator
                                         if argIdentInCpp(a.value)
                                             genExpr(a.value)    # Case 1: ptr→ptr
                                         else
-                                            w.emit("&")
+                                            w.emit("_zbr_ref(&")      # BUG-501 1d
                                             genExpr(a.value)
+                                            w.emit(")")
                                     else
                                         if is_container_n and argIdentInCpp(a.value)
+                                            w.emit("_zbr_cderef(")   # Case 2: ptr→value
                                             genExpr(a.value)
-                                            w.emit(".*")        # Case 2: ptr→value
+                                            w.emit(")")
                                         else
                                             genExpr(a.value)
                                     found = true
@@ -18530,12 +18551,14 @@ struct Generator
                                         if argIdentInCpp(pa.value)
                                             genExpr(pa.value)   # Case 1: ptr→ptr
                                         else
-                                            w.emit("&")
+                                            w.emit("_zbr_ref(&")      # BUG-501 1d
                                             genExpr(pa.value)
+                                            w.emit(")")
                                     else
                                         if is_container_n and argIdentInCpp(pa.value)
+                                            w.emit("_zbr_cderef(")   # Case 2: ptr→value
                                             genExpr(pa.value)
-                                            w.emit(".*")        # Case 2: ptr→value
+                                            w.emit(")")
                                         else
                                             genExpr(pa.value)
                                     found = true
@@ -18568,11 +18591,15 @@ struct Generator
                                 genExpr(a.value)        # Case 1: ptr→ptr, no &
                                 already_emitted = true
                             else
-                                w.emit("&")
+                                w.emit("_zbr_ref(&")    # BUG-501 1d
+                                genExpr(a.value)
+                                w.emit(")")
+                                already_emitted = true
                         else
                             if mp.type_ != nil and isContainerTypeRef(mp.type_!) and argIdentInCpp(a.value)
+                                w.emit("_zbr_cderef(")  # Case 2: ptr→value
                                 genExpr(a.value)
-                                w.emit(".*")            # Case 2: ptr→value, deref
+                                w.emit(")")
                                 already_emitted = true
                 if not already_emitted
                     genExpr(a.value)
@@ -19066,6 +19093,105 @@ struct Generator
                     return true
         return false
 
+    # BUG-501 1d: `first(int)([])` -- the empty list a GENERIC parameter receives. Its type
+    # is the parameter's `List(...)` with the callee's type parameters replaced by the
+    # call's type arguments, spelled through `_zbr_new` so it builds a header once
+    # containers are references (`.empty` cannot). False when the callee is not declared
+    # in this module or the parameter type is not a List this can spell; the caller then
+    # keeps `.empty`, which Zig refuses loudly under reference containers.
+    def emitEmptyListForGenericArg(key: str, type_args: List(Arg), arg_idx: int): bool
+        var tps_opt = lookupFnTypeParams(key)
+        if tps_opt == nil
+            return false
+        var tps: List(str) = tps_opt!
+        var ps_opt = lookupFnParams(key)
+        if ps_opt == nil
+            return false
+        var ps: List(Param) = ps_opt!
+        if arg_idx >= ps.len
+            return false
+        var pt_opt = ps.at(arg_idx).type_
+        if pt_opt == nil
+            return false
+        var pt: TypeRef = pt_opt!
+        if not (pt is TypeRef.generic)
+            return false
+        if not typeSubstSpellable(pt)
+            return false
+        w.emit("_zbr_new(")
+        genTypeSubst(pt, tps, type_args)
+        w.emit(")")
+        return true
+
+    # Can genTypeSubst spell this? A named type (a type parameter or not) and a
+    # `List(...)` of one; nothing else.
+    def typeSubstSpellable(tr: TypeRef): bool
+        branch tr
+            on TypeRef.named
+                return true
+            on TypeRef.generic as g
+                if g.name == "List" and g.args.len == 1
+                    return typeSubstSpellable(g.args.at(0))
+                return false
+            else
+                return false
+
+    # genType with the callee's type parameters replaced by the call's type arguments.
+    # A substituted parameter is NOT boxed: Zig instantiates the callee's `_ZbrList(T)`
+    # with T as given, so the argument must spell the same type.
+    def genTypeSubst(tr: TypeRef, tps: List(str), type_args: List(Arg))
+        branch tr
+            on TypeRef.named as n
+                var i = 0
+                while i < tps.len and i < type_args.len
+                    if tps.at(i) == n.name
+                        genTypeFromExpr(type_args.at(i).value)
+                        return
+                    i += 1
+                genType(tr)
+            on TypeRef.generic as g
+                w.emit("_ZbrList(")
+                var el: TypeRef = g.args.at(0)
+                if isBoxedElemTypeRef(el)
+                    w.emit("_ZbrBoxOf(")
+                    genTypeSubst(el, tps, type_args)
+                    w.emit(")")
+                else
+                    genTypeSubst(el, tps, type_args)
+                w.emit(")")
+            else
+                genType(tr)
+
+    # A generic function's type-parameter names, by the same keys lookupFnParams takes
+    # ("fn", "Class.method"); this module's declarations only.
+    def lookupFnTypeParams(key: str): List(str)?
+        for decl in module_decls
+            if decl is Decl.method as m
+                var mname: str = m.name
+                if mname == key
+                    return m.type_params
+            if decl is Decl.class_ as c
+                var cname: str = c.name
+                for mem in c.members
+                    if mem is Decl.method as dm
+                        var full_key: str = cname + "." + dm.name
+                        if full_key == key
+                            return dm.type_params
+                    if mem is Decl.namespace_ as ns
+                        for ndecl in ns.decls
+                            if ndecl is Decl.method as ndm
+                                var ns_key: str = cname + "." + ndm.name
+                                if ns_key == key
+                                    return ndm.type_params
+            if decl is Decl.struct_ as s
+                var sname: str = s.name
+                for mem in s.members
+                    if mem is Decl.method as sm
+                        var skey: str = sname + "." + sm.name
+                        if skey == key
+                            return sm.type_params
+        return nil
+
     def genArgList(args: List(Arg))
         var first = true
         for a in args
@@ -19362,12 +19488,14 @@ struct Generator
                             if argIdentInCpp(a.value)
                                 genExpr(a.value)        # Case 1: ptr→ptr, no &
                             else
-                                w.emit("&")
+                                w.emit("_zbr_ref(&")    # BUG-501 1d
                                 genExpr(a.value)
+                                w.emit(")")
                         else
                             if is_container and argIdentInCpp(a.value)
+                                w.emit("_zbr_cderef(")  # Case 2: ptr→value
                                 genExpr(a.value)
-                                w.emit(".*")            # Case 2: ptr→value, deref
+                                w.emit(")")
                             else
                                 if p.type_ != nil
                                     genCallWithTypeHint(a.value, p.type_!)
@@ -19390,12 +19518,14 @@ struct Generator
                             if argIdentInCpp(pa.value)
                                 genExpr(pa.value)       # Case 1: ptr→ptr, no &
                             else
-                                w.emit("&")
+                                w.emit("_zbr_ref(&")    # BUG-501 1d
                                 genExpr(pa.value)
+                                w.emit(")")
                         else
                             if is_container and argIdentInCpp(pa.value)
+                                w.emit("_zbr_cderef(")  # Case 2: ptr→value
                                 genExpr(pa.value)
-                                w.emit(".*")            # Case 2: ptr→value, deref
+                                w.emit(")")
                             else
                                 if p.type_ != nil
                                     genCallWithTypeHint(pa.value, p.type_!)

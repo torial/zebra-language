@@ -396,6 +396,28 @@ the acceptance test for Phase 1.
      the one to take -- "a construction of another value with no `this` among its arguments"
      -- since the argument list is right there and `this` passed as an argument still stops
      it; it needs no general call walker.
+   - **1d prep (2026-10-03): the switch made a one-file change.** Codegen now spells every
+     place the representation leaks through a runtime shim that is identity under today's
+     values: a mutated container parameter's type is `_ZbrRefOf(T)` (was `*T`); its argument
+     `_zbr_ref(&x)` (was `&x`); a mutated parameter handed on by value `_zbr_cderef(p)` (was
+     `p.*`); a boxed element type `_ZbrBoxOf(T)` (was `*T`); `_zbr_unboxed` keeps a container
+     reference whole. One comptime constant, `_zbr_ref_containers`, says which representation
+     is live. And the BUG-463 empty `[]` handed to a GENERIC parameter is built through
+     `_zbr_new` with the type parameters substituted (`emitEmptyListForGenericArg`) -- `.empty`
+     cannot build a header; a generic callee from ANOTHER module keeps `.empty` and fails
+     loudly in Zig at the switch (container-spelling's two remaining exempt markers say so).
+     **Proved in a worktree before landing:** with only the runtime definitions flipped
+     (`*std.ArrayList`, a heap header from `_zbr_new`, `_zbr_ref_containers = true`), the
+     compiler builds itself and the round-trip is byte-identical; smoke was 656/657 with
+     part a alone (the one failure the BUG-463 generic site, closed by part b -- both its
+     fixtures then pass flipped); and the hazard probe differs from the value build in
+     exactly ONE line, the
+     predicted one: `var x2 = x1; x2.add(3)` prints `assign 3 3` (an alias) where today it
+     prints `assign 2 3` (a copy). Before the prep the same flip stopped at 19 Zig errors
+     (13 mutable-parameter `**ArrayList`, 5 boxing, 1 `_zebra_in`).
+     Hazard probe (scratch, to move to test/ at the switch): nested printing, `==`, `in`,
+     a clone that copies entry by entry stays independent, the keep pattern, removal by
+     descending index, literal temporaries, all three parameter shapes, `allocate` + `<<-`.
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
      machinery is deleted. Fable reviews it (Sean, 2026-10-01: "coordinate w/ Fable as a
      reviewer -- that way progress can be made independent of me"); it is staged

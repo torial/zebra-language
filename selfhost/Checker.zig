@@ -8,6 +8,9 @@ pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 pub const std_options = _zbr_rt.std_options;
 const _zbr_val = _zbr_rt._zbr_val;
 const _zbr_boxed = _zbr_rt._zbr_boxed;
+const _ZbrBoxOf = _zbr_rt._ZbrBoxOf;
+const _ZbrRefOf = _zbr_rt._ZbrRefOf;
+const _zbr_ref = _zbr_rt._zbr_ref;
 const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
@@ -167,13 +170,13 @@ const _reflect_UnionInfo_field_types: []const []const u8 = &.{"str", "str", "int
 pub const _zbr_ty_DeadCodeChecker = struct {
     _type_tag: u64 = _ttag_DeadCodeChecker,
     union_infos: _ZbrMap(*_zbr_ty_UnionInfo) = undefined,
-    match_sites: _ZbrMap(*_ZbrList([]const u8)) = undefined,
+    match_sites: _ZbrMap(_ZbrBoxOf(_ZbrList([]const u8))) = undefined,
     match_key_list: _ZbrList([]const u8) = undefined,
     constructed_set: _ZbrMap(bool) = undefined,
     constructed_key_list: _ZbrList([]const u8) = undefined,
     module_fns: _ZbrMap([]const u8) = undefined,
     module_fn_key_list: _ZbrList([]const u8) = undefined,
-    fn_edges: _ZbrMap(*_ZbrList([]const u8)) = undefined,
+    fn_edges: _ZbrMap(_ZbrBoxOf(_ZbrList([]const u8))) = undefined,
     root_set: _ZbrMap(bool) = undefined,
     root_key_list: _ZbrList([]const u8) = undefined,
     reachable_set: _ZbrMap(bool) = undefined,
@@ -186,7 +189,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:78
             _self.union_infos = _zbr_new(_ZbrMap(*_zbr_ty_UnionInfo));
 // zbr:selfhost/Checker.zbr:79
-            _self.match_sites = _zbr_new(_ZbrMap(*_ZbrList([]const u8)));
+            _self.match_sites = _zbr_new(_ZbrMap(_ZbrBoxOf(_ZbrList([]const u8))));
 // zbr:selfhost/Checker.zbr:80
             _self.match_key_list = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/Checker.zbr:81
@@ -198,7 +201,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:84
             _self.module_fn_key_list = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/Checker.zbr:85
-            _self.fn_edges = _zbr_new(_ZbrMap(*_ZbrList([]const u8)));
+            _self.fn_edges = _zbr_new(_ZbrMap(_ZbrBoxOf(_ZbrList([]const u8))));
 // zbr:selfhost/Checker.zbr:86
             _self.root_set = _zbr_new(_ZbrMap(bool));
 // zbr:selfhost/Checker.zbr:87
@@ -1542,7 +1545,7 @@ pub fn _zbr_fn_checkerDirOf(path: []const u8) []const u8 {
 }
 
 // zbr:selfhost/Checker.zbr:703
-pub fn _zbr_fn_checkerLoadDeps(path: []const u8, visited: *_ZbrList([]const u8), modules: *_ZbrList(_zbr_ty_Module)) anyerror!void {
+pub fn _zbr_fn_checkerLoadDeps(path: []const u8, visited: _ZbrRefOf(_ZbrList([]const u8)), modules: _ZbrRefOf(_ZbrList(_zbr_ty_Module))) anyerror!void {
 // zbr:selfhost/Checker.zbr:704
     var vi: i64 = 0;
 // zbr:selfhost/Checker.zbr:705
@@ -1621,7 +1624,7 @@ pub fn _zbr_fn_runCheck(root_path: []const u8) anyerror!bool {
 // zbr:selfhost/Checker.zbr:740
     var modules = _zbr_new(_ZbrList(_zbr_ty_Module));
 // zbr:selfhost/Checker.zbr:741
-    (try _zbr_fn_checkerLoadDeps(root_path, &visited, &modules));
+    (try _zbr_fn_checkerLoadDeps(root_path, _zbr_ref(&visited), _zbr_ref(&modules)));
 // zbr:selfhost/Checker.zbr:742
     const n_deps: i64 = (@as(i64, @intCast(modules.items.len)) - 1);
 // zbr:selfhost/Checker.zbr:743

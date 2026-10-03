@@ -10,6 +10,9 @@ const _prog_alloc = _zbr_rt._prog_alloc;
 const _zbr_version = _zbr_rt._zbr_version;
 const _zbr_val = _zbr_rt._zbr_val;
 const _zbr_boxed = _zbr_rt._zbr_boxed;
+const _ZbrBoxOf = _zbr_rt._ZbrBoxOf;
+const _ZbrRefOf = _zbr_rt._ZbrRefOf;
+const _zbr_ref = _zbr_rt._zbr_ref;
 const _zbr_unboxed = _zbr_rt._zbr_unboxed;
 const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
@@ -254,8 +257,8 @@ pub const _zbr_ty_ClassTypes = struct {
     method_params: _ZbrMap([]const u8) = undefined,
     method_param_types: _ZbrMap([]const u8) = undefined,
     ctor_params: _ZbrList(_zbr_ty_Type_) = undefined,
-    fn_param_lists: _ZbrMap(*_ZbrList(_zbr_ty_Param)) = undefined,
-    fn_bodies: _ZbrMap(*_ZbrList(_zbr_ty_Stmt)) = undefined,
+    fn_param_lists: _ZbrMap(_ZbrBoxOf(_ZbrList(_zbr_ty_Param))) = undefined,
+    fn_bodies: _ZbrMap(_ZbrBoxOf(_ZbrList(_zbr_ty_Stmt))) = undefined,
     is_class: bool = undefined,
     is_interface: bool = undefined,
     is_struct: bool = undefined,
@@ -269,8 +272,8 @@ pub const _zbr_ty_ClassTypes = struct {
             _self.method_params = _zbr_new(_ZbrMap([]const u8));
             _self.method_param_types = _zbr_new(_ZbrMap([]const u8));
             _self.ctor_params = _zbr_new(_ZbrList(_zbr_ty_Type_));
-            _self.fn_param_lists = _zbr_new(_ZbrMap(*_ZbrList(_zbr_ty_Param)));
-            _self.fn_bodies = _zbr_new(_ZbrMap(*_ZbrList(_zbr_ty_Stmt)));
+            _self.fn_param_lists = _zbr_new(_ZbrMap(_ZbrBoxOf(_ZbrList(_zbr_ty_Param))));
+            _self.fn_bodies = _zbr_new(_ZbrMap(_ZbrBoxOf(_ZbrList(_zbr_ty_Stmt))));
             _self.method_deprecated = _zbr_new(_ZbrMap([]const u8));
             _self.throws_names = _zbr_new(_ZbrMap(bool));
 // zbr:selfhost/TypeChecker.zbr:254
@@ -292,9 +295,9 @@ pub const _zbr_ty_ClassTypes = struct {
 // zbr:selfhost/TypeChecker.zbr:262
             _self.ctor_params = _zbr_new(_ZbrList(_zbr_ty_Type_));
 // zbr:selfhost/TypeChecker.zbr:263
-            _self.fn_param_lists = _zbr_new(_ZbrMap(*_ZbrList(_zbr_ty_Param)));
+            _self.fn_param_lists = _zbr_new(_ZbrMap(_ZbrBoxOf(_ZbrList(_zbr_ty_Param))));
 // zbr:selfhost/TypeChecker.zbr:264
-            _self.fn_bodies = _zbr_new(_ZbrMap(*_ZbrList(_zbr_ty_Stmt)));
+            _self.fn_bodies = _zbr_new(_ZbrMap(_ZbrBoxOf(_ZbrList(_zbr_ty_Stmt))));
 // zbr:selfhost/TypeChecker.zbr:265
             _self.method_deprecated = _zbr_new(_ZbrMap([]const u8));
 // zbr:selfhost/TypeChecker.zbr:266
@@ -12451,7 +12454,7 @@ pub fn _zbr_fn_isFloatTypeName(n: []const u8) bool {
 }
 
 // zbr:selfhost/TypeChecker.zbr:7159
-pub fn _zbr_fn_hashFloatPath(tr: _zbr_ty_TypeRef, structs: _ZbrMap(_zbr_ty_DeclStruct), seen: *_ZbrList([]const u8)) []const u8 {
+pub fn _zbr_fn_hashFloatPath(tr: _zbr_ty_TypeRef, structs: _ZbrMap(_zbr_ty_DeclStruct), seen: _ZbrRefOf(_ZbrList([]const u8))) []const u8 {
 // zbr:selfhost/TypeChecker.zbr:7160
     switch (_zbr_val(tr)) {
         .named => |nt| {
@@ -12570,7 +12573,7 @@ pub fn _zbr_fn_checkDeriveHashFields(sd: _zbr_ty_DeclStruct, structs: _ZbrMap(_z
 // zbr:selfhost/TypeChecker.zbr:7207
                 seen.append(_zbr_rt._allocator, _intern(sd.name)) catch @panic("OOM");
 // zbr:selfhost/TypeChecker.zbr:7208
-                why = _zbr_fn_hashFloatPath(ft.?, structs, &seen);
+                why = _zbr_fn_hashFloatPath(ft.?, structs, _zbr_ref(&seen));
             } else {
 // zbr:selfhost/TypeChecker.zbr:7209
                 if ((f.init_expr != null)) {
@@ -12951,7 +12954,7 @@ pub fn _zbr_fn_checkMemberTypeNames(members: _ZbrList(_zbr_ty_Decl), scope: _Zbr
 }
 
 // zbr:selfhost/TypeChecker.zbr:7384
-pub fn _zbr_fn_declaredTypeNames(decls: _ZbrList(_zbr_ty_Decl), out: *_ZbrList([]const u8)) void {
+pub fn _zbr_fn_declaredTypeNames(decls: _ZbrList(_zbr_ty_Decl), out: _ZbrRefOf(_ZbrList([]const u8))) void {
 // zbr:selfhost/TypeChecker.zbr:7385
     for (decls.items) |d| {
 // zbr:selfhost/TypeChecker.zbr:7386
@@ -13020,7 +13023,7 @@ pub fn _zbr_fn_checkTypeNames(decls: _ZbrList(_zbr_ty_Decl), file: []const u8, c
 // zbr:selfhost/TypeChecker.zbr:7414
     var declared = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/TypeChecker.zbr:7415
-    _zbr_fn_declaredTypeNames(decls, &declared);
+    _zbr_fn_declaredTypeNames(decls, _zbr_ref(&declared));
 // zbr:selfhost/TypeChecker.zbr:7416
     _zbr_fn_checkDeclListTypeNames(decls, declared, file, ctx);
 }
@@ -13136,7 +13139,7 @@ pub fn _zbr_fn_checkDeclListTypeNames(decls: _ZbrList(_zbr_ty_Decl), declared: _
 }
 
 // zbr:selfhost/TypeChecker.zbr:7472
-pub fn _zbr_fn_shadowDeclare(name: []const u8, line: i64, col: i64, names: *_ZbrList([]const u8), lines: *_ZbrList(i64), file: []const u8, ctx: *_zbr_ty_InferCtx) void {
+pub fn _zbr_fn_shadowDeclare(name: []const u8, line: i64, col: i64, names: _ZbrRefOf(_ZbrList([]const u8)), lines: _ZbrRefOf(_ZbrList(i64)), file: []const u8, ctx: *_zbr_ty_InferCtx) void {
 // zbr:selfhost/TypeChecker.zbr:7473
     if ((std.mem.eql(u8, name, "") or std.mem.eql(u8, name, "_"))) {
 // zbr:selfhost/TypeChecker.zbr:7474
@@ -13170,7 +13173,7 @@ pub fn _zbr_fn_shadowDeclare(name: []const u8, line: i64, col: i64, names: *_Zbr
 }
 
 // zbr:selfhost/TypeChecker.zbr:7487
-pub fn _zbr_fn_shadowPop(names: *_ZbrList([]const u8), lines: *_ZbrList(i64), mark: i64) void {
+pub fn _zbr_fn_shadowPop(names: _ZbrRefOf(_ZbrList([]const u8)), lines: _ZbrRefOf(_ZbrList(i64)), mark: i64) void {
 // zbr:selfhost/TypeChecker.zbr:7488
     while (_zebra_gt(@as(i64, @intCast(names.items.len)), mark)) {
 // zbr:selfhost/TypeChecker.zbr:7489
@@ -13181,7 +13184,7 @@ pub fn _zbr_fn_shadowPop(names: *_ZbrList([]const u8), lines: *_ZbrList(i64), ma
 }
 
 // zbr:selfhost/TypeChecker.zbr:7492
-pub fn _zbr_fn_shadowStmts(stmts: _ZbrList(_zbr_ty_Stmt), names: *_ZbrList([]const u8), lines: *_ZbrList(i64), file: []const u8, ctx: *_zbr_ty_InferCtx) void {
+pub fn _zbr_fn_shadowStmts(stmts: _ZbrList(_zbr_ty_Stmt), names: _ZbrRefOf(_ZbrList([]const u8)), lines: _ZbrRefOf(_ZbrList(i64)), file: []const u8, ctx: *_zbr_ty_InferCtx) void {
 // zbr:selfhost/TypeChecker.zbr:7493
     const mark: i64 = @as(i64, @intCast(names.items.len));
 // zbr:selfhost/TypeChecker.zbr:7494
@@ -13358,7 +13361,7 @@ pub fn _zbr_fn_shadowFn(params: _ZbrList(_zbr_ty_Param), body: ?_ZbrList(_zbr_ty
         lines.append(_zbr_rt._allocator, 0) catch @panic("OOM");
     }
 // zbr:selfhost/TypeChecker.zbr:7567
-    _zbr_fn_shadowStmts(body.?, &names, &lines, file, ctx);
+    _zbr_fn_shadowStmts(body.?, _zbr_ref(&names), _zbr_ref(&lines), file, ctx);
 }
 
 // zbr:selfhost/TypeChecker.zbr:7569

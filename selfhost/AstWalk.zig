@@ -7,6 +7,8 @@ const _zbr_rt = @import("zebra_rt.zig");
 pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 pub const std_options = _zbr_rt.std_options;
 const _zbr_val = _zbr_rt._zbr_val;
+const _ZbrRefOf = _zbr_rt._ZbrRefOf;
+const _zbr_ref = _zbr_rt._zbr_ref;
 const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
@@ -25,7 +27,7 @@ const _zbr_ty_LambdaBody = _zbr_mod_Ast._zbr_ty_LambdaBody;
 const _zbr_ty_Stmt = _zbr_mod_Ast._zbr_ty_Stmt;
 const _zbr_ty_BinaryOp = _zbr_mod_Ast._zbr_ty_BinaryOp;
 // zbr:selfhost/AstWalk.zbr:64
-pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: *_ZbrList(_zbr_ty_ExprOld)) void {
+pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: _ZbrRefOf(_ZbrList(_zbr_ty_ExprOld))) void {
 // zbr:selfhost/AstWalk.zbr:65
     switch (_zbr_val(expr)) {
         .old_ => |_ptr_o| {
@@ -233,7 +235,7 @@ pub fn _zbr_fn_collectOldNodes(expr: _zbr_ty_Expr) _ZbrList(_zbr_ty_ExprOld) {
 // zbr:selfhost/AstWalk.zbr:148
     var out = _zbr_new(_ZbrList(_zbr_ty_ExprOld));
 // zbr:selfhost/AstWalk.zbr:149
-    _zbr_fn_collectOldNodesInto(expr, &out);
+    _zbr_fn_collectOldNodesInto(expr, _zbr_ref(&out));
 // zbr:selfhost/AstWalk.zbr:150
     return out;
 }
@@ -1223,13 +1225,13 @@ pub fn _zbr_fn_nilCheckedNames(cond: _zbr_ty_Expr) _ZbrList([]const u8) {
 // zbr:selfhost/AstWalk.zbr:627
     var out = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/AstWalk.zbr:628
-    _zbr_fn_collectNilChecked(cond, &out);
+    _zbr_fn_collectNilChecked(cond, _zbr_ref(&out));
 // zbr:selfhost/AstWalk.zbr:629
     return out;
 }
 
 // zbr:selfhost/AstWalk.zbr:631
-pub fn _zbr_fn_collectNilChecked(e: _zbr_ty_Expr, out: *_ZbrList([]const u8)) void {
+pub fn _zbr_fn_collectNilChecked(e: _zbr_ty_Expr, out: _ZbrRefOf(_ZbrList([]const u8))) void {
 // zbr:selfhost/AstWalk.zbr:632
     if (_zbr_val(e) == .binary) {
         const b_ptr = e.binary;
@@ -1269,7 +1271,7 @@ pub fn _zbr_fn_collectNilChecked(e: _zbr_ty_Expr, out: *_ZbrList([]const u8)) vo
 }
 
 // zbr:selfhost/AstWalk.zbr:647
-pub fn _zbr_fn_collectNilGuarded(e: _zbr_ty_Expr, out: *_ZbrList([]const u8)) void {
+pub fn _zbr_fn_collectNilGuarded(e: _zbr_ty_Expr, out: _ZbrRefOf(_ZbrList([]const u8))) void {
 // zbr:selfhost/AstWalk.zbr:648
     if (_zbr_val(e) == .binary) {
         const b_ptr = e.binary;
@@ -1334,7 +1336,7 @@ pub fn _zbr_fn_earlyExitNilNames(s: _zbr_ty_Stmt) _ZbrList([]const u8) {
 // zbr:selfhost/AstWalk.zbr:674
             if (_zbr_fn_stmtsAlwaysExit(si.then_stmts)) {
 // zbr:selfhost/AstWalk.zbr:675
-                _zbr_fn_collectNilGuarded(si.cond.*, &out);
+                _zbr_fn_collectNilGuarded(si.cond.*, _zbr_ref(&out));
             }
         }
     }
