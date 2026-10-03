@@ -386,6 +386,16 @@ the acceptance test for Phase 1.
      exprMentionsThis defaults to false. Fable concurs: the engine's hot constructor
      (`Instance`, four containers behind scalar assignments) is in the fixed set; the 71 are
      one-off component/service constructors.
+     **Fable's GO on `2d33db8`:** engine prologues **117 -> 46** (28 files re-emitted, 75
+     prologue lines deleted, nothing added); suite / imports / ReleaseFast / both autoplays
+     clean. All 46 follow a call -- the rule now fires on everything in its scope. **For 1d's
+     measure:** the hot `Instance` constructor still builds `attributes` and `attrSignals`,
+     because `.color = Color3(...)` (a STRUCT CONSTRUCTION) precedes them; most of the 46 are
+     that shape (`Vector3(...)`, `Instance("Blocks", "Folder")`, `Random.new(seed)` assigned
+     to a different field). If the heap measure says they matter, Fable's narrower widening is
+     the one to take -- "a construction of another value with no `this` among its arguments"
+     -- since the argument list is right there and `this` passed as an argument still stops
+     it; it needs no general call walker.
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
      machinery is deleted. Fable reviews it (Sean, 2026-10-01: "coordinate w/ Fable as a
      reviewer -- that way progress can be made independent of me"); it is staged
