@@ -31,6 +31,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$REPO/tools/scratch_paths.sh"   # BUG-521: per-checkout ${ZBR_BS}-* scratch
 cd "$REPO"
 
 CLEAN=0
@@ -75,7 +76,7 @@ else
 fi
 
 hdr "tool scratch outside the tree"
-for d in /tmp/bs-zig /tmp/bs-pre /tmp/bs-A /tmp/bs-B "$REPO/.selfcheck_tmp"; do
+for d in ${ZBR_BS}-zig ${ZBR_BS}-pre ${ZBR_BS}-A ${ZBR_BS}-B "$REPO/.selfcheck_tmp"; do
     if [[ -e "$d" ]]; then
         if [[ $CLEAN -eq 1 ]]; then
             rm -rf "$d" && printf '  removed  %s\n' "$d"
@@ -84,7 +85,7 @@ for d in /tmp/bs-zig /tmp/bs-pre /tmp/bs-A /tmp/bs-B "$REPO/.selfcheck_tmp"; do
         fi
     fi
 done
-[[ $CLEAN -eq 0 ]] && dim "(doctor.sh --fix also clears the /tmp/bs-* set)"
+[[ $CLEAN -eq 0 ]] && dim "(doctor.sh --fix also clears the ${ZBR_BS}-* set)"
 
 hdr "mutation reports on disk"
 n_rep=$(ls "$REPO"/tools/mutation_report_*.json 2>/dev/null | wc -l)

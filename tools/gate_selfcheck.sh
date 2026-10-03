@@ -34,6 +34,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$REPO/tools/scratch_paths.sh"   # BUG-521: per-checkout ${ZBR_BS}-* scratch
 cd "$REPO"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 PY=/c/Users/Sean/AppData/Local/Programs/Python/Python311/python
@@ -412,14 +413,14 @@ fi
 # ── round-trip: the freshness property whose absence made it vacuous ─────────
 # The emits compared must be FRESH selfhost output, not copies of the committed
 # bootstrap-emitted files. Checkable only if a prior full run left the dirs.
-if [ -f /tmp/bs-A/main/main.zig ] && [ -f selfhost/main.zig ]; then
-    if cmp -s /tmp/bs-A/main/main.zig selfhost/main.zig; then
+if [ -f ${ZBR_BS}-A/main/main.zig ] && [ -f selfhost/main.zig ]; then
+    if cmp -s ${ZBR_BS}-A/main/main.zig selfhost/main.zig; then
         bad "round-trip emit is IDENTICAL to the committed .zig — it may be comparing copies again"
     else
         pass "round-trip emits are fresh selfhost output (differ from committed)"
     fi
 else
-    note "round-trip: skipped (run bootstrap_check.sh first to populate /tmp/bs-A)"
+    note "round-trip: skipped (run bootstrap_check.sh first to populate ${ZBR_BS}-A)"
 fi
 
 # ── hazard-lint: fires on a planted tooling hazard, and REFUSES when blinded ──

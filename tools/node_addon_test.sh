@@ -33,8 +33,8 @@ for name in $POS; do rm -f "$DIR/$name.js"; done
 
 for name in $POS; do
     echo "── $name"
-    if ! "$ZEBRA" --target node-addon "$DIR/$name.zbr" >/tmp/na_$name.log 2>&1; then
-        echo "  FAIL: build of $name.zbr failed"; tail -5 /tmp/na_$name.log; fail=1; continue
+    if ! "$ZEBRA" --target node-addon "$DIR/$name.zbr" >/tmp/na_$$_$name.log 2>&1; then
+        echo "  FAIL: build of $name.zbr failed"; tail -5 /tmp/na_$$_$name.log; fail=1; continue
     fi
     if ! node "$DIR/$name.check.js"; then
         echo "  FAIL: $name.check.js assertions failed"; fail=1
@@ -43,7 +43,7 @@ done
 
 # Negative: bad.zbr must NOT build.
 echo "── bad (expect build failure)"
-if "$ZEBRA" --target node-addon "$DIR/bad.zbr" >/tmp/na_bad.log 2>&1; then
+if "$ZEBRA" --target node-addon "$DIR/bad.zbr" >/tmp/na_$$_bad.log 2>&1; then
     echo "  FAIL: bad.zbr built but should have been rejected (non-exportable param type)"; fail=1
 else
     echo "  ok: bad.zbr correctly rejected"

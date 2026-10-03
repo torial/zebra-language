@@ -88,7 +88,9 @@ BASELINE = REPO / "tools" / "doc_example_baseline.txt"
 # SHORT path on purpose: the first version wrote to a ~100-char scratch path and every
 # error message was truncated to just the path -- it reported 119 failures and could not
 # say why one of them failed.
-WORK = pathlib.Path("C:/tmp/zbr-docex") if sys.platform == "win32" else pathlib.Path("/tmp/zbr-docex")
+# Per-checkout (BUG-521): two checkouts running this gate at once wrote the same block files.
+_TREE_ID = __import__("hashlib").md5(str(REPO).encode()).hexdigest()[:8]
+WORK = pathlib.Path(f"C:/tmp/zbr-docex-{_TREE_ID}") if sys.platform == "win32" else pathlib.Path(f"/tmp/zbr-docex-{_TREE_ID}")
 
 FENCE = re.compile(r'^```zebra[ \t]*$(.*?)^```[ \t]*$', re.M | re.S)
 STATUS = re.compile(r'doc-status:\s*([a-z]+)')

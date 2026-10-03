@@ -130,6 +130,17 @@ process running from *this* tree, so path-scoping loses nothing — and the tool
 what it is leaving alone, because silence is what made the old behaviour look like an
 unrelated failure.
 
+**The round-trip's scratch is per-checkout too (BUG-521, 2026-10-03).** `/tmp/bs-zig`,
+`/tmp/bs-pre`, `/tmp/bs-A`... were one set for every checkout, so a `rebuild.sh` in the main
+tree cleared a worktree's regen mid-run, and the worktree's failure path RESTORED its
+`selfhost/*.zig` and runtime from the main tree's snapshot -- silently. They are now
+`${ZBR_BS}-zig` etc., `ZBR_BS=/tmp/bs-<hash of the checkout path>` (`tools/scratch_paths.sh`);
+two rebuilds in two checkouts at once were run deliberately afterwards and each kept its own.
+The same class was in `rebuild.sh`'s build log and probe, in `gates.sh` (whose start-up
+`rm` cleared ANOTHER checkout's failure logs -- `GATES_LOG_DIR` now defaults to
+`${ZBR_BS}-gates-logs`), `node_addon_test.sh` and `doc_example_check.py`; `hazard_lint` H12
+now refuses a fixed `/tmp` path in `tools/`.
+
 `doctor.sh` checks the failure modes this environment actually produces, every one of
 which has bitten us: **stale generated `.zig`** (you would be testing the OLD compiler —
 `zig build update-selfhost` silently skips regeneration, BUG-210, and this made a real
@@ -684,7 +695,12 @@ python tools/hazard_lint.py        # THE TOOLING GATE (static, instant, no build
                                 #   H11 `comm`/`join` without a pinned LC_ALL=C (sorted
                                 #   is a property of a file AND a collation -- a
                                 #   default-locale sort compared against an LC_ALL=C one
-                                #   fabricated a list of seven innocent failures).
+                                #   fabricated a list of seven innocent failures);
+                                #   H12 a FIXED /tmp scratch path (BUG-521 -- shared by
+                                #   every checkout, so a rebuild in one tree restored
+                                #   another tree's generated files; per-checkout
+                                #   `${ZBR_BS}-*` or per-process `$$` instead. Run
+                                #   against HEAD's tools it named 42 sites).
                                 #   Suppress with
                                 #   `# hazard-ok:<code> <reason>` — a reason is REQUIRED,
                                 #   because an unexplained suppression is how a gate goes
@@ -2259,7 +2275,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 104 scripts | <!-- doc-gen: 104 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 105 scripts | <!-- doc-gen: 105 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 41 tracked documents <!-- doc-gen: 41 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

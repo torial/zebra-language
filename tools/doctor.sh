@@ -28,6 +28,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$REPO/tools/scratch_paths.sh"   # BUG-521: per-checkout ${ZBR_BS}-* scratch
 cd "$REPO"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 
@@ -147,7 +148,7 @@ fi
 
 # ── 3. stale bootstrap scratch ───────────────────────────────────────────────
 stale_dirs=()
-for d in /tmp/bs-zig /tmp/bs-pre /tmp/selfhost-smoke; do
+for d in ${ZBR_BS}-zig ${ZBR_BS}-pre /tmp/selfhost-smoke; do
     [[ -e "$d" ]] && stale_dirs+=("$d")
 done
 if [[ ${#stale_dirs[@]} -gt 0 ]]; then

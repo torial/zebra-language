@@ -70,12 +70,16 @@
 set -uo pipefail
 # Where a FAILING gate's complete output is kept (the board shows only a tail). CI uploads
 # this directory as an artifact; locally it is the first place to look after a red board.
-GATES_LOG_DIR="${GATES_LOG_DIR:-/tmp/gates-logs}"
-mkdir -p "$GATES_LOG_DIR" 2>/dev/null && rm -f "$GATES_LOG_DIR"/*.log 2>/dev/null || true
+# Per-checkout by default (BUG-521): the start-up `rm` below used to clear ANOTHER
+# checkout's failure logs when two tiers ran in two trees.
+GATES_LOG_DIR="${GATES_LOG_DIR:-}"
 
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$REPO/tools/scratch_paths.sh"   # BUG-521: per-checkout ${ZBR_BS}-* scratch
+[ -n "$GATES_LOG_DIR" ] || GATES_LOG_DIR="${ZBR_BS}-gates-logs"
+mkdir -p "$GATES_LOG_DIR" 2>/dev/null && rm -f "$GATES_LOG_DIR"/*.log 2>/dev/null || true
 cd "$REPO"
 export PATH="/c/Users/Sean/.zvm/bin:$PATH"
 
@@ -327,16 +331,16 @@ _static_purity_check
 #
 # The warning is printed LOUDLY rather than swallowed: a downgrade nobody sees is how a
 # refusal turns into a habit of ignoring it.
-if ! bash "$SCRIPT_DIR/doctor.sh" >/tmp/gates-doctor.log 2>&1; then
+if ! bash "$SCRIPT_DIR/doctor.sh" >"${ZBR_BS}-gates-doctor.log" 2>&1; then
     if [[ "$MODE" == "static" ]]; then
         echo "gates.sh: WARNING — doctor says this tree cannot be trusted for BUILD results:" >&2
-        grep -E "WRONG" /tmp/gates-doctor.log >&2 || tail -5 /tmp/gates-doctor.log >&2
+        grep -E "WRONG" "${ZBR_BS}-gates-doctor.log" >&2 || tail -5 "${ZBR_BS}-gates-doctor.log" >&2
         echo "  Continuing anyway: no --static gate reads the compiler (purity-checked above)." >&2
         echo "  Any tier above static WILL refuse until this is fixed — run: bash tools/doctor.sh --fix" >&2
         echo >&2
     else
         echo "gates.sh: refusing to run — the tree is in a state where results cannot be trusted:" >&2
-        grep -E "WRONG" /tmp/gates-doctor.log >&2 || cat /tmp/gates-doctor.log >&2
+        grep -E "WRONG" "${ZBR_BS}-gates-doctor.log" >&2 || cat "${ZBR_BS}-gates-doctor.log" >&2
         exit 1
     fi
 fi

@@ -68,7 +68,7 @@ def main():
                 "def main()\n    print(helper())\n"
                 "def add(a: int, b: int): int\n    return a + b\n"
                 "def caller()\n    print(add(1, 2))\n")
-    uri = "file:///tmp/lsp_test.zbr"
+    uri = "file:///tmp/lsp_test.zbr"  # hazard-ok:H12 a URI sent to the server with the text inline; no file is written
     # `helper` in the call on line 8 spans cols 10..15 → point at char 12.
     HELPER_USE = {"line": 8, "character": 12}
 

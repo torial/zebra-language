@@ -35,7 +35,7 @@ for part in PARTS:
 
 # Sort by frequency desc.  Write UTF-8 to a file so the Windows
 # cp1252 console doesn't choke on emoji.
-out = Path("C:/tmp/unicode_report.txt")
+out = Path("C:/tmp/unicode_report.txt")  # hazard-ok:H12 a one-off report a person reads, not gate scratch
 with out.open("w", encoding="utf-8", newline="\n") as f:
     f.write(f"{'Code':<8} {'Count':>6}  {'Name':<55}  Sample / Files\n")
     f.write("-" * 140 + "\n")

@@ -376,8 +376,33 @@ def check_h11(path, text, lines, tree=None):
     return out
 
 
-PY_CHECKS = [check_h1, check_h2, check_h3, check_h4, check_h5, check_h6]
-SH_CHECKS = [check_h2, check_h4, check_h5, check_h10, check_h11]
+# --------------------------------------------------------------------------- H12
+# pins: BUG-521 a fixed /tmp scratch path in tools is shared by every checkout on the machine
+# RECEIPT (2026-10-03, BUG-521): bootstrap_check/rebuild used /tmp/bs-zig and /tmp/bs-pre
+# for EVERY checkout. A rebuild in the main tree cleared a worktree's regen mid-run, and the
+# worktree's failure path then RESTORED its selfhost/*.zig from the main tree's snapshot --
+# silently, into generated files. gates.sh's start-up `rm $GATES_LOG_DIR/*.log` did the same
+# to another tier's failure logs. Scratch must be per-checkout (`${ZBR_BS}-*`, from
+# tools/scratch_paths.sh) or per-process (`$$`, mktemp, os.getpid()).
+FIXED_TMP = re.compile(r"(?<![\w$.])(?:[A-Za-z]:)?/tmp/[A-Za-z_][\w.-]*")
+TMP_OK = ("$$", "mktemp", "ZBR_BS", "BASHPID", "os.getpid", "tempfile", "_TREE_ID", "$(date")
+
+
+def check_h12(path, text, lines, tree=None):
+    out = []
+    for i, ln in enumerate(lines, 1):
+        s = re.sub(r"#.*$", "", ln) if not path.endswith(".py") else re.sub(r"(^|\s)#.*$", "", ln)
+        if not FIXED_TMP.search(s) or any(t in s for t in TMP_OK):
+            continue
+        out.append(Hazard("H12", path, i,
+                          "a FIXED /tmp path is shared by every checkout on the machine: two "
+                          "runs in two trees clobber (or restore) each other's files. Use "
+                          "`${ZBR_BS}-name` (tools/scratch_paths.sh) or a per-process name"))
+    return out
+
+
+PY_CHECKS = [check_h1, check_h2, check_h3, check_h4, check_h5, check_h6, check_h12]
+SH_CHECKS = [check_h2, check_h4, check_h5, check_h10, check_h11, check_h12]
 
 
 def scan_text(path, text):
@@ -429,6 +454,7 @@ CONTROLS = {
     "H9": ("ctl_h9.py", 'import pathlib  # hazard-ok\n'),
     "H10": ("ctl_h10.sh", 'bash gates.sh | tail -5\nrc=$?\n'),
     "H11": ("ctl_h11.sh", 'comm -23 a.txt b.txt\n'),
+    "H12": ("ctl_h12.sh", 'BS_PRE=/tmp/bs-pre\nrm -rf "$BS_PRE"\n'),
 }
 
 

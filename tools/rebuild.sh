@@ -59,6 +59,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$REPO/tools/scratch_paths.sh"   # BUG-521: per-checkout ${ZBR_BS}-* scratch
 cd "$REPO"
 
 # Binary names differ by host: `zebra.exe` on Windows (the primary dev box), `zebra`
@@ -103,7 +104,7 @@ fail() { printf '\033[31mrebuild: %s\033[0m\n' "$1" >&2; exit 1; }
 # instead. The full log path is named too, because a 40-line cap is a judgement call and
 # the reader deserves the escape hatch when it guesses wrong.
 zbuild_or_fail() { # $1 = message for fail()
-    local log="/tmp/_rebuild_build.log"
+    local log="${ZBR_BS}-rebuild_build.log"
     if zig build > "$log" 2>&1; then
         tail -6 "$log"
         return 0
@@ -185,8 +186,8 @@ if [[ $REGEN -eq 1 ]]; then
             # (BUG-317), and the bare form also writes DEPENDENCIES next to the source (BUG-325),
             # which would rewrite selfhost/ behind your back.
             tmpd="$(mktemp -d)"
-            if ! "$BOOT" --emit-zig --output-dir "$tmpd" selfhost/main.zbr >/dev/null 2>/tmp/_rebuild_mod_err; then
-                tail -5 /tmp/_rebuild_mod_err >&2
+            if ! "$BOOT" --emit-zig --output-dir "$tmpd" selfhost/main.zbr >/dev/null 2>"${ZBR_BS}-rebuild_mod_err"; then
+                tail -5 "${ZBR_BS}-rebuild_mod_err" >&2
                 rm -rf "$tmpd"
                 fail "the bootstrap refused selfhost/$m.zbr — selfhost/$m.zig left untouched"
             fi
@@ -213,8 +214,8 @@ if [[ $REGEN -eq 1 ]]; then
     else
 
     # Footgun 2: stale state from a killed run.
-    step "clearing stale /tmp/bs-zig"
-    rm -rf /tmp/bs-zig
+    step "clearing stale ${ZBR_BS}-zig"
+    rm -rf ${ZBR_BS}-zig
 
     # Footgun 1: call bootstrap_check.sh DIRECTLY. Never `zig build update-selfhost`.
     step "regenerating selfhost/*.zig via the selfhost (N-1 regen authority)"
@@ -229,8 +230,8 @@ zbuild_or_fail "zig build failed"
 
 step "result"
 if [[ -x "$ZEXE" ]]; then
-    printf 'def main()\n    print("rebuild ok")\n' > /tmp/_rebuild_probe.zbr
-    if out=$(timeout 120 "./$ZEXE" run /tmp/_rebuild_probe.zbr 2>&1) \
+    printf 'def main()\n    print("rebuild ok")\n' > "${ZBR_BS}-rebuild_probe.zbr"
+    if out=$(timeout 120 "./$ZEXE" run "${ZBR_BS}-rebuild_probe.zbr" 2>&1) \
        && echo "$out" | grep -qF "rebuild ok"; then
         echo "  zebra.exe builds and runs"
         # Record WHICH generated Zig this binary was built from, so doctor can tell a
