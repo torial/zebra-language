@@ -574,7 +574,7 @@ const GuiContext = struct {
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
     // A drop-down; `on` is `def(i: int): Msg` with the chosen index.
-    pub fn combobox(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64, on: anytype) void {
+    pub fn combobox(self: GuiContext, label: []const u8, items: anytype, selected: i64, on: anytype) void {
         const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
         const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
         const payload: On = if (bare) &on else on;
@@ -589,7 +589,7 @@ const GuiContext = struct {
         if (self._send_fn) |f| self._b.comboboxFn(label, items.items, selected, @ptrCast(&payload), @sizeOf(On), Thunk.call, f, self._send_ptr.?);
     }
     // Radio buttons, one per item; `on` is `def(i: int): Msg` with the chosen index. The model drives the selection.
-    pub fn radio(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64, on: anytype) void {
+    pub fn radio(self: GuiContext, label: []const u8, items: anytype, selected: i64, on: anytype) void {
         const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
         const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
         const payload: On = if (bare) &on else on;
@@ -605,7 +605,7 @@ const GuiContext = struct {
     }
     // A drop-down that also takes typed text; `on` is `def(s: str): Msg` on every change
     // (a pick from the list or a keystroke). The model drives the text.
-    pub fn comboboxEditable(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), initial: []const u8, on: anytype) void {
+    pub fn comboboxEditable(self: GuiContext, label: []const u8, items: anytype, initial: []const u8, on: anytype) void {
         const bare = comptime (_zbr_is_fnlike(@TypeOf(on)) and @typeInfo(@TypeOf(on)) != .pointer);
         const On = if (bare) *const @TypeOf(on) else @TypeOf(on);
         const payload: On = if (bare) &on else on;

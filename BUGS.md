@@ -59,7 +59,7 @@
   ```
   `zebra -c` accepts it; `zebra x.zbr` fails in zig. `chars()` yields codepoints (u21); the literal is a string.
 - **Found by:** writing BUG-513's driver code (`keepFailedScratch` compared directory-name characters with "0".."9"); the first regen died in zig. The driver now uses `str.isNumeric()`.
-- **Fix direction:** decide what a codepoint compared with a ONE-character literal means. Either lower the literal to its codepoint (`ch >= "0"` reads naturally, and Python users will write it), or refuse in the front end naming `ch.toString()` / a char literal. Either way the checker must type a `chars()` element and stop the mismatch before codegen. leakgen does not generate `chars()` comparisons -- add the shape to `fuzz/gen.py` with the fix.
+- **Fix direction:** Zebra already HAS char literals -- `c'0'` -- and the GameEngine's two `chars()` loops (game/tuon/tuon_save.zbr) use them, which is why the engine never met this (Fable, 2026-10-02). So the simplest correct fix is a front-end refusal naming them: `'ch' is a character; compare it with c'0', not "0"`. Lowering a one-character string literal to its codepoint is the friendlier alternative; decide what a codepoint compared with a ONE-character literal means. Either lower the literal to its codepoint (`ch >= "0"` reads naturally, and Python users will write it), or refuse in the front end naming `ch.toString()` / a char literal. Either way the checker must type a `chars()` element and stop the mismatch before codegen. leakgen does not generate `chars()` comparisons -- add the shape to `fuzz/gen.py` with the fix.
 
 ---
 

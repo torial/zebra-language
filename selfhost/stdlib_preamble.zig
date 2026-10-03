@@ -763,13 +763,13 @@ pub fn _zebra_list_find(comptime T: type, pred: anytype, list: anytype) ?T {
     for (list.items) |item| { if (pred(item)) return item; }
     return null;
 }
-pub fn _zebra_list_map(comptime T: type, pred: anytype, list: anytype) std.ArrayList(@TypeOf(pred(@as(T, undefined)))) {
-    var out: std.ArrayList(@TypeOf(pred(@as(T, undefined)))) = .empty;
+pub fn _zebra_list_map(comptime T: type, pred: anytype, list: anytype) _ZbrList(@TypeOf(pred(@as(T, undefined)))) {
+    var out = _zbr_new(_ZbrList(@TypeOf(pred(@as(T, undefined)))));
     for (list.items) |item| out.append(_allocator, pred(item)) catch @panic("OOM");
     return out;
 }
-pub fn _zebra_list_filter(comptime T: type, pred: anytype, list: anytype) std.ArrayList(T) {
-    var out: std.ArrayList(T) = .empty;
+pub fn _zebra_list_filter(comptime T: type, pred: anytype, list: anytype) _ZbrList(T) {
+    var out = _zbr_new(_ZbrList(T));
     for (list.items) |item| { if (pred(item)) out.append(_allocator, item) catch @panic("OOM"); }
     return out;
 }
@@ -793,14 +793,14 @@ pub fn _zebra_list_reduce(comptime T: type, init_val: anytype, f: anytype, list:
 pub fn _MapKV(comptime T: type) type {
     return if (@typeInfo(T) == .pointer) @typeInfo(T).pointer.child.KV else T.KV;
 }
-pub fn _zebra_map_keys(map: anytype) std.ArrayList(@FieldType(_MapKV(@TypeOf(map)), "key")) {
-    var out: std.ArrayList(@FieldType(_MapKV(@TypeOf(map)),"key")) = .empty;
+pub fn _zebra_map_keys(map: anytype) _ZbrList(@FieldType(_MapKV(@TypeOf(map)), "key")) {
+    var out = _zbr_new(_ZbrList(@FieldType(_MapKV(@TypeOf(map)),"key")));
     var it = map.keyIterator();
     while (it.next()) |k| out.append(_allocator, k.*) catch @panic("OOM");
     return out;
 }
-pub fn _zebra_map_values(map: anytype) std.ArrayList(@FieldType(_MapKV(@TypeOf(map)),"value")) {
-    var out: std.ArrayList(@FieldType(_MapKV(@TypeOf(map)),"value")) = .empty;
+pub fn _zebra_map_values(map: anytype) _ZbrList(@FieldType(_MapKV(@TypeOf(map)),"value")) {
+    var out = _zbr_new(_ZbrList(@FieldType(_MapKV(@TypeOf(map)),"value")));
     var it = map.valueIterator();
     while (it.next()) |v| out.append(_allocator, v.*) catch @panic("OOM");
     return out;
@@ -810,8 +810,8 @@ pub fn _zebra_map_values(map: anytype) std.ArrayList(@FieldType(_MapKV(@TypeOf(m
 // same anonymous 2-tuple Zebra emits for `(K, V)`.  Because each `struct { K, V }`
 // is a distinct Zig type, the result is meant to be used via inference
 // (`var e = map.entries()`), not an explicit `List((K,V))` annotation.
-pub fn _zebra_map_entries(map: anytype) std.ArrayList(struct { @FieldType(_MapKV(@TypeOf(map)),"key"), @FieldType(_MapKV(@TypeOf(map)),"value") }) {
-    var out: std.ArrayList(struct { @FieldType(_MapKV(@TypeOf(map)),"key"), @FieldType(_MapKV(@TypeOf(map)),"value") }) = .empty;
+pub fn _zebra_map_entries(map: anytype) _ZbrList(struct { @FieldType(_MapKV(@TypeOf(map)),"key"), @FieldType(_MapKV(@TypeOf(map)),"value") }) {
+    var out = _zbr_new(_ZbrList(struct { @FieldType(_MapKV(@TypeOf(map)),"key"), @FieldType(_MapKV(@TypeOf(map)),"value") }));
     var it = map.iterator();
     while (it.next()) |e| out.append(_allocator, .{ e.key_ptr.*, e.value_ptr.* }) catch @panic("OOM");
     return out;
@@ -906,7 +906,7 @@ fn _child_env_map() ?*const std.process.Environ.Map {
     return m;
 }
 pub const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
-pub fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
+pub fn _sys_run(argv: anytype) SysRunResult {
     // BUG-219: this used to spawn with two pipes and drain them SEQUENTIALLY —
     // stdout to EOF first, then stderr. A child that fills its stderr buffer blocks
     // writing; blocked, it never exits; so its stdout never reaches EOF; so the
@@ -932,7 +932,7 @@ pub fn _sys_run(argv: std.ArrayList([]const u8)) SysRunResult {
     };
     return .{ .exit_code = _ec, .stdout = r.stdout, .stderr = r.stderr };
 }
-pub fn _sys_exec_inherit(argv: std.ArrayList([]const u8)) i64 {
+pub fn _sys_exec_inherit(argv: anytype) i64 {
     var child = std.process.spawn(_io, .{
         .argv   = argv.items,
         .environ_map = _child_env_map(),
@@ -952,7 +952,7 @@ pub const _SysProcess = struct {
     pid: i64,
     exit_code: i64 = -1,   // -1 until the child has been seen to exit (isRunning/exitCode)
 };
-pub fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
+pub fn _sys_spawn(argv: anytype) *_SysProcess {
     const p = _allocator.create(_SysProcess) catch @panic("OOM");
     p.* = .{ .child = undefined, .alive = false, .pid = -1 };
     p.child = std.process.spawn(_io, .{
@@ -979,12 +979,12 @@ pub fn _sys_spawn(argv: std.ArrayList([]const u8)) *_SysProcess {
 // / `readErrAvailable` drain only what the OS already holds (poll() on POSIX,
 // PeekNamedPipe on Windows) and return "" when nothing is pending; `write` is a
 // plain blocking write of a small message; `closeStdin` sends EOF.
-pub fn _sys_spawn_piped(argv: std.ArrayList([]const u8)) *_SysProcess {
+pub fn _sys_spawn_piped(argv: anytype) *_SysProcess {
     return _sys_spawn_piped_in(argv, "");
 }
 // `cwd == ""` inherits the parent's directory (sys.spawnPiped); otherwise the child
 // starts there (sys.spawnPipedIn) — a gate runner needs "run tools/x.sh in <repo>".
-pub fn _sys_spawn_piped_in(argv: std.ArrayList([]const u8), cwd: []const u8) *_SysProcess {
+pub fn _sys_spawn_piped_in(argv: anytype, cwd: []const u8) *_SysProcess {
     const p = _allocator.create(_SysProcess) catch @panic("OOM");
     p.* = .{ .child = undefined, .alive = false, .pid = -1 };
     p.child = std.process.spawn(_io, .{
@@ -2031,8 +2031,8 @@ pub fn _json_parse(src: []const u8) ?JsonValue {
 }
 // Object key iteration: with _json_get_opt (`get`), what lets a protocol relay COPY
 // fields it does not understand, whatever their type.
-pub fn _json_keys(v: JsonValue) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .empty;
+pub fn _json_keys(v: JsonValue) _ZbrList([]const u8) {
+    var _r = _zbr_new(_ZbrList([]const u8));
     switch (v) {
         .object => |o| {
             var it = o.iterator();
@@ -2213,10 +2213,10 @@ pub fn _json_as_obj(v: JsonValue) ?JsonValue {
     return switch (v) { .object => v, else => null };
 }
 // A REAL List(JsonValue) (BUG-337), copied into the program allocator.
-pub fn _json_as_list(v: JsonValue) ?std.ArrayList(JsonValue) {
+pub fn _json_as_list(v: JsonValue) ?_ZbrList(JsonValue) {
     switch (v) {
         .array => |a| {
-            var out: std.ArrayList(JsonValue) = .empty;
+            var out = _zbr_new(_ZbrList(JsonValue));
             out.appendSlice(_allocator, a.items) catch @panic("OOM");
             return out;
         },
@@ -2242,7 +2242,7 @@ pub fn _json_idx_bool(recv: anytype, key: anytype) anyerror!bool {
     const it = try _json_idx(recv, key);
     return _json_as_bool(it) orelse return _json_mismatch(key, "bool", it);
 }
-pub fn _json_idx_list(recv: anytype, key: anytype) anyerror!std.ArrayList(JsonValue) {
+pub fn _json_idx_list(recv: anytype, key: anytype) anyerror!_ZbrList(JsonValue) {
     const it = try _json_idx(recv, key);
     return _json_as_list(it) orelse return _json_mismatch(key, "a list (JSON array)", it);
 }
@@ -2268,7 +2268,7 @@ pub fn _json_conv_bool(recv: anytype) anyerror!bool {
     const v = try _json_unwrap(recv);
     return _json_as_bool(v) orelse return _json_value_mismatch("bool", v);
 }
-pub fn _json_conv_list(recv: anytype) anyerror!std.ArrayList(JsonValue) {
+pub fn _json_conv_list(recv: anytype) anyerror!_ZbrList(JsonValue) {
     const v = try _json_unwrap(recv);
     return _json_as_list(v) orelse return _json_value_mismatch("a list (JSON array)", v);
 }
@@ -2277,7 +2277,7 @@ pub fn _json_self_float(v: anytype) ?f64 { return _json_as_float(_json_recv(v) o
 pub fn _json_self_str(v: anytype) ?[]const u8 { return _json_as_str(_json_recv(v) orelse return null); }
 pub fn _json_self_bool(v: anytype) ?bool { return _json_as_bool(_json_recv(v) orelse return null); }
 pub fn _json_self_obj(v: anytype) ?JsonValue { return _json_as_obj(_json_recv(v) orelse return null); }
-pub fn _json_self_list(v: anytype) ?std.ArrayList(JsonValue) { return _json_as_list(_json_recv(v) orelse return null); }
+pub fn _json_self_list(v: anytype) ?_ZbrList(JsonValue) { return _json_as_list(_json_recv(v) orelse return null); }
 pub fn _json_has(v: JsonValue, key: anytype) bool { return _json_lookup(v, key) != null; }
 // The optional reads take a JsonValue OR a JsonValue? receiver: `j.tryObj("a")?.tryInt("b")`
 // lowers to one call, nil in, nil out. (An `if (x) |v| f(v) else null` wrapper defeats
@@ -2289,7 +2289,7 @@ pub fn _json_try_float(v: anytype, key: anytype) ?f64 { return _json_as_float(_j
 pub fn _json_try_str(v: anytype, key: anytype) ?[]const u8 { return _json_as_str(_json_get_opt(v, key) orelse return null); }
 pub fn _json_try_bool(v: anytype, key: anytype) ?bool { return _json_as_bool(_json_get_opt(v, key) orelse return null); }
 pub fn _json_try_obj(v: anytype, key: anytype) ?JsonValue { return _json_as_obj(_json_get_opt(v, key) orelse return null); }
-pub fn _json_try_list(v: anytype, key: anytype) ?std.ArrayList(JsonValue) { return _json_as_list(_json_get_opt(v, key) orelse return null); }
+pub fn _json_try_list(v: anytype, key: anytype) ?_ZbrList(JsonValue) { return _json_as_list(_json_get_opt(v, key) orelse return null); }
 pub const HttpResponse = struct { status: u16, text: []const u8, headers: []const [2][]const u8 = &.{} };
 pub fn _http_request(method: std.http.Method, url: []const u8, payload: ?[]const u8) ?HttpResponse {
     var _hc = std.http.Client{ .allocator = _allocator, .io = _io };
@@ -2871,29 +2871,29 @@ pub fn _csv_parse_file(path: []const u8) _CsvTable {
 }
 pub fn _csv_row_count(t: _CsvTable) i64 { return @as(i64, @intCast(t.rows.len)); }
 pub fn _csv_col_count(t: _CsvTable) i64 { return if (t.rows.len > 0) @as(i64, @intCast(t.rows[0].len)) else 0; }
-pub fn _csv_header(t: _CsvTable) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .empty;
+pub fn _csv_header(t: _CsvTable) _ZbrList([]const u8) {
+    var _r = _zbr_new(_ZbrList([]const u8));
     if (t.rows.len > 0) for (t.rows[0]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
-pub fn _csv_row(t: _CsvTable, n: i64) std.ArrayList([]const u8) {
-    var _r: std.ArrayList([]const u8) = .empty;
+pub fn _csv_row(t: _CsvTable, n: i64) _ZbrList([]const u8) {
+    var _r = _zbr_new(_ZbrList([]const u8));
     const _i: usize = @intCast(@max(0, n));
     if (_i < t.rows.len) for (t.rows[_i]) |f| _r.append(std.heap.page_allocator, f) catch {};
     return _r;
 }
-pub fn _csv_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
-    var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
-    for (t.rows) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+pub fn _csv_rows(t: _CsvTable) _ZbrList(_ZbrList([]const u8)) {
+    var _out = _zbr_new(_ZbrList(_ZbrList([]const u8)));
+    for (t.rows) |row| { var _r = _zbr_new(_ZbrList([]const u8)); for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
-pub fn _csv_data_rows(t: _CsvTable) std.ArrayList(std.ArrayList([]const u8)) {
-    var _out: std.ArrayList(std.ArrayList([]const u8)) = .empty;
+pub fn _csv_data_rows(t: _CsvTable) _ZbrList(_ZbrList([]const u8)) {
+    var _out = _zbr_new(_ZbrList(_ZbrList([]const u8)));
     const _s: usize = if (t.rows.len > 0) 1 else 0;
-    for (t.rows[_s..]) |row| { var _r: std.ArrayList([]const u8) = .empty; for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    for (t.rows[_s..]) |row| { var _r = _zbr_new(_ZbrList([]const u8)); for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
     return _out;
 }
-pub fn _csv_get(t: _CsvTable, row: std.ArrayList([]const u8), col: []const u8) []const u8 {
+pub fn _csv_get(t: _CsvTable, row: anytype, col: []const u8) []const u8 {
     if (t.rows.len == 0) return "";
     for (t.rows[0], 0..) |h, i| { if (std.mem.eql(u8, h, col)) return if (i < row.items.len) row.items[i] else ""; }
     return "";
@@ -2904,7 +2904,7 @@ pub const _CsvWriter = struct { buf: std.ArrayList(u8) };
 // field: capacity". Nothing noticed because no program could reach the CsvWriter path at
 // all — the selfhost never emitted a constructor for it.
 pub fn _csv_writer_init() _CsvWriter { return .{ .buf = .empty }; }
-pub fn _csv_write_row(w: *_CsvWriter, row: std.ArrayList([]const u8)) void {
+pub fn _csv_write_row(w: *_CsvWriter, row: anytype) void {
     const _pa = std.heap.page_allocator;
     for (row.items, 0..) |field, i| {
         if (i > 0) w.buf.append(_pa, ',') catch {};
@@ -3207,10 +3207,10 @@ pub fn _udp_bind(port: u16) UdpSocket {
     return s;
 }
 
-pub fn _net_resolve(host: []const u8) std.ArrayList([]const u8) {
+pub fn _net_resolve(host: []const u8) _ZbrList([]const u8) {
     // A1 (1.0 API freeze): returns List(str), not a raw []str slice, so it shares
     // the .count()/.at()/iterate API with every other string-sequence stdlib call.
-    var _result: std.ArrayList([]const u8) = .empty;
+    var _result = _zbr_new(_ZbrList([]const u8));
     const addr = std.Io.net.IpAddress.resolve(_io, host, 0) catch return _result;
     switch (addr) {
         .ip4 => |a| {
@@ -3511,9 +3511,9 @@ pub fn _regex_find(re: Regex, input: []const u8) []const u8 {
     }
     return "";
 }
-pub fn _regex_find_all(re: Regex, input: []const u8) std.ArrayList([]const u8) {
+pub fn _regex_find_all(re: Regex, input: []const u8) _ZbrList([]const u8) {
     // A1: returns List(str) (see _net_resolve note).
-    var out: std.ArrayList([]const u8) = .empty;
+    var out = _zbr_new(_ZbrList([]const u8));
     var i: usize = 0;
     while (i < input.len) {
         if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| {
@@ -3525,8 +3525,8 @@ pub fn _regex_find_all(re: Regex, input: []const u8) std.ArrayList([]const u8) {
 }
 // BUG-416: `re.split(text)` -- the pieces BETWEEN matches (a leading/trailing piece may
 // be empty, as in Python's re.split); no match -> the whole input as one piece.
-pub fn _regex_split(re: Regex, input: []const u8) std.ArrayList([]const u8) {
-    var out: std.ArrayList([]const u8) = .empty;
+pub fn _regex_split(re: Regex, input: []const u8) _ZbrList([]const u8) {
+    var out = _zbr_new(_ZbrList([]const u8));
     var start: usize = 0;
     var i: usize = 0;
     while (i < input.len) {
@@ -3626,13 +3626,13 @@ pub fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[
     }
     return last;
 }
-pub fn _regex_groups(re: Regex, input: []const u8) std.ArrayList([]const u8) {
+pub fn _regex_groups(re: Regex, input: []const u8) _ZbrList([]const u8) {
     // A1: returns List(str) (see _net_resolve note).
     const alloc = std.heap.page_allocator;
     var start: usize = 0;
     while (start <= input.len) : (start += 1) {
         if (_re_match_with_saves(&re, input, start)) |saves| {
-            var out: std.ArrayList([]const u8) = .empty;
+            var out = _zbr_new(_ZbrList([]const u8));
             var i: usize = 0;
             while (i + 1 < _MAX_SAVE_SLOTS) : (i += 2) {
                 const s = saves[i]; const e = saves[i + 1];
@@ -3801,8 +3801,8 @@ pub const _SqliteDbInner = struct {
         _bind(stmt, params);
         _ = sqlite3_step(stmt);
     }
-    pub fn _fetch(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) std.ArrayList(_SqliteRow) {
-        var rows = std.ArrayList(_SqliteRow).empty;
+    pub fn _fetch(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) {
+        var rows = _zbr_new(_ZbrList(_SqliteRow));
         const csql = _allocator.dupeZ(u8, sql) catch return rows;
         defer _allocator.free(csql);
         var stmt: *_sqlite3_stmt = undefined;
@@ -3838,8 +3838,8 @@ pub const _SqliteDbInner = struct {
     }
     pub fn exec_(self: *_SqliteDbInner, sql: []const u8) void { self._run(sql, &.{}); }
     pub fn exec_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void { self._run(sql, params); }
-    pub fn query_(self: *_SqliteDbInner, sql: []const u8) std.ArrayList(_SqliteRow) { return self._fetch(sql, &.{}); }
-    pub fn query_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) std.ArrayList(_SqliteRow) { return self._fetch(sql, params); }
+    pub fn query_(self: *_SqliteDbInner, sql: []const u8) _ZbrList(_SqliteRow) { return self._fetch(sql, &.{}); }
+    pub fn query_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) { return self._fetch(sql, params); }
     pub fn begin_(self: *_SqliteDbInner) void    { self._run("BEGIN",    &.{}); }
     pub fn commit_(self: *_SqliteDbInner) void   { self._run("COMMIT",   &.{}); }
     pub fn rollback_(self: *_SqliteDbInner) void { self._run("ROLLBACK", &.{}); }
@@ -4125,9 +4125,9 @@ pub const GuiContext = struct {
     pub fn vbox(self: GuiContext, id: []const u8, stretch: bool) _GuiVBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn hbox(self: GuiContext, id: []const u8, stretch: bool) _GuiHBox { return .{ ._b = self._b, ._id = id, ._stretch = stretch }; }
     pub fn progressBar(self: GuiContext, label: []const u8, value: f64) void { self._b.progressBarFn(label, value); }
-    pub fn combobox(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64, on: anytype) void { _ = on; _ = self._b.comboboxFn(label, items.items, selected); }
-    pub fn radio(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), selected: i64, on: anytype) void { _ = on; self._b.radioFn(label, items.items, selected); }
-    pub fn comboboxEditable(self: GuiContext, label: []const u8, items: std.ArrayList([]const u8), initial: []const u8, on: anytype) void { _ = on; self._b.comboboxEditableFn(label, items.items, initial); }
+    pub fn combobox(self: GuiContext, label: []const u8, items: anytype, selected: i64, on: anytype) void { _ = on; _ = self._b.comboboxFn(label, items.items, selected); }
+    pub fn radio(self: GuiContext, label: []const u8, items: anytype, selected: i64, on: anytype) void { _ = on; self._b.radioFn(label, items.items, selected); }
+    pub fn comboboxEditable(self: GuiContext, label: []const u8, items: anytype, initial: []const u8, on: anytype) void { _ = on; self._b.comboboxEditableFn(label, items.items, initial); }
     pub fn spinbox(self: GuiContext, label: []const u8, value: i64, min: i64, max: i64, on: anytype) void { _ = on; _ = self._b.spinboxFn(label, value, min, max); }
     pub fn openFile(self: GuiContext) ?[]const u8 { return self._b.openFileFn(); }
     pub fn saveFile(self: GuiContext) ?[]const u8 { return self._b.saveFileFn(); }
@@ -5128,7 +5128,7 @@ pub fn _random_gaussian(mean: f64, stddev: f64) f64 {
     const _gz = @sqrt(-2.0 * @log(_gu1)) * @cos(2.0 * std.math.pi * _gu2);
     return mean + stddev * _gz;
 }
-pub fn _random_weighted(items: std.ArrayList([]const u8), weights: std.ArrayList(f64)) []const u8 {
+pub fn _random_weighted(items: anytype, weights: anytype) []const u8 {
     if (items.items.len == 0) return "";
     var total: f64 = 0.0;
     for (weights.items) |w| total += w;
@@ -5323,7 +5323,7 @@ fn _zbr_show_into(sb: *std.ArrayList(u8), x: anytype, quote_str: bool) !void {
         else => try _zbr_show_fmt(sb, "{any}", .{x}),
     }
 }
-pub fn _file_write_lines(path: []const u8, lines: std.ArrayList([]const u8)) void {
+pub fn _file_write_lines(path: []const u8, lines: anytype) void {
     var content = std.ArrayList(u8).empty;
     defer content.deinit(_allocator);
     for (lines.items) |line| {

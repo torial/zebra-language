@@ -286,6 +286,17 @@ the acceptance test for Phase 1.
      such site goes through, plus the 30 respelled signatures. A helper that only reads
      `.items` or calls `.append` already works on a pointer -- Zig auto-derefs a single-item
      pointer for field and method access -- so it is not 1b work.
+     **Landed 2026-10-02.** 19 top-level runtime functions plus the SQLite `query` /
+     `query_p` / `_fetch` now return `_ZbrList(T)` built with `_zbr_new` (17 constructions);
+     13 container PARAMETERS take `anytype` (the sys.run/spawn family, CSV get/write, file
+     writeLines, Random.weighted, and the GUI combobox/radio/comboboxEditable items in all
+     three GuiContext copies -- stub, tui, libui -- so `gui-surface` and `fn-twins` stay
+     clean). The map family needed nothing: `_MapKV` already strips a pointer (BUG-195).
+     43 raw `std.ArrayList` uses remain in the runtime and are INTERNAL (byte buffers, CSV
+     and profiling scratch, the Build API's list, the channel buffer, and the `_ZbrList` /
+     `_ZbrScratch` definitions themselves). No behaviour change: FULL 45/45 with
+     `output_sweep` 466 identical from a COLD cache (every emit changed), divergence 0
+     regressions, gui-scaffold clean, libui-section 21/21.
    - **1c. Container fields with no initializer** are allocated at construction (§6.3) --
      strictly a behaviour change, but only for programs that read undefined memory today;
      its own commit, with fixtures for the class `cue init` path and the struct-literal path.
