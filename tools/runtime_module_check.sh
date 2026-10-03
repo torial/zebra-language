@@ -240,91 +240,127 @@ fi
 # pins: BUG-244 debugging evidence. `--keep-temp` opts out. CLI behaviour, so no
 # pins: BUG-244 test/*.zbr can carry it and smoke cannot see it.
 #
-# THE TEMP DIR IS THE WINDOWS ONE, and that trap already cost one attempt: zebra.exe is a
-# Windows binary reading TMP/TEMP, while Git Bash sets TMPDIR to the MSYS mount /tmp. A
-# check that looks at $TMPDIR watches the wrong directory and reports a clean ~20 MB while
-# 120 GB sits elsewhere. Ask the compiler where it actually wrote instead of assuming.
-# On Linux the compiler makes a per-run mkdtemp subdirectory of $TMPDIR; on Windows it
-# writes into TEMP itself. Look one level down too (2026-09-09), newest first.
-wintmp=$("$ZEBRA" --keep-temp "$hw/hw.zbr" >/dev/null 2>&1; ls -dt "${TEMP:-${TMP:-/tmp}}"/hw.zig "${TEMP:-${TMP:-/tmp}}"/*/hw.zig 2>/dev/null | head -1)
-if [ -n "$wintmp" ]; then
-    tdir=$(dirname "$wintmp")
-    rm -f "$tdir"/hw.zig "$tdir"/hw.zig.fast.exe "$tdir"/hw.zig.llvm.exe 2>/dev/null
-    "$ZEBRA" "$hw/hw.zbr" >/dev/null 2>&1
-    left=$(ls "$tdir"/hw.zig "$tdir"/hw.zig.*.exe 2>/dev/null | wc -l)
-    if [ "$left" -eq 0 ]; then
-        pass "a successful run leaves no scratch build in the temp dir"
-    else
-        fail "a successful run left $left scratch file(s) in $tdir"
-    fi
+# BUG-513 (2026-10-02): each run builds in its OWN `<TEMP>/zebra-<n>/`, removed on a clean
+# exit and on a front-end failure, KEPT (and named on stderr) when the build or the program
+# fails or --keep-temp asks. These legs run in a PRIVATE TEMP so that counting `zebra-*`
+# directories measures this run and nothing else on the machine. Every count is preceded by
+# a positive control (a --keep-temp run must leave exactly one), so a zero below is a
+# measurement and not a blind spot.
+st_priv="$(mktemp -d)"
+st_win="$st_priv"; command -v cygpath >/dev/null 2>&1 && st_win="$(cygpath -w "$st_priv")"
+zrun() { TMP="$st_win" TEMP="$st_win" TMPDIR="$st_priv" "$ZEBRA" "$@" 2>&1 >/dev/null; }
+ndirs() { ls -d "$st_priv"/zebra-* 2>/dev/null | wc -l; }
+named() { sed -n 's/^note: the scratch build is kept in //p' | tail -1 | tr -d '\r'; }
+upath() { if command -v cygpath >/dev/null 2>&1; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
+clean_priv() { rm -rf "${st_priv:?}"/zebra-* 2>/dev/null; }
 
-    # BUG-300, 2026-08-23. THE SUCCESS PATH WAS THE ONLY ONE CHECKED, and it was the one
-    # that already worked. Three separate leaks lived in the paths below:
-    #   - the .pdb sibling had NO delete call at all (435 files / 1.4 GB measured)
-    #   - a FAILING run kept its 20 MB binary by policy
-    #   - the COMPILE-FAILURE exit had no cleanup whatever, so the most ordinary failure
-    #     a user can hit orphaned a full binary
-    # A gate that only exercises success cannot see any of them.
-    #
-    # THE POLICY BEING PINNED: the emitted .zig SURVIVES a failure (it is the diagnostic
-    # artifact); executables and .pdb NEVER survive (`zig build-exe <the .zig>` rebuilds
-    # them). Each leg below asserts BOTH halves -- a fix that deleted everything would
-    # pass a "no binary" check while destroying the evidence.
+# 1. CONTROL: --keep-temp keeps exactly one directory, names it, and it holds hw.zig
+err=$(zrun --keep-temp "$hw/hw.zbr"); kd=$(printf '%s\n' "$err" | named)
+if [ "$(ndirs)" -eq 1 ] && [ -n "$kd" ] && [ -f "$(upath "$kd")/hw.zig" ]; then
+    pass "--keep-temp keeps ONE scratch directory, names it, and it holds the .zig"
+    st_ok=1
+else
+    fail "--keep-temp control: $(ndirs) dir(s), named '$kd' -- the legs below cannot be trusted"
+    st_ok=0
+fi
+clean_priv
+
+if [ "$st_ok" = 1 ]; then
+    # 2. a successful run leaves nothing
+    zrun "$hw/hw.zbr" >/dev/null
+    if [ "$(ndirs)" -eq 0 ]; then pass "a successful run leaves no scratch directory"
+    else fail "a successful run left $(ndirs) scratch directory(ies)"; fi
+    clean_priv
+
+    # 3. a FRONT-END failure leaves nothing -- even after a dep was already written
+    mkdir -p "$hw/fe"
+    printf 'def helper(): int\n    return 1\n' > "$hw/fe/fedep.zbr"
+    printf 'use fedep\ndef main()\n    var s: str = 5\n    print(s)\n' > "$hw/fe/feroot.zbr"
+    err=$(zrun "$hw/fe/feroot.zbr")
+    if [ "$(ndirs)" -eq 0 ] && ! printf '%s' "$err" | grep -q 'scratch build is kept'; then
+        pass "a front-end failure leaves no scratch directory (deps already written are removed)"
+    else
+        fail "a front-end failure left $(ndirs) directory(ies) -- one per failed attempt is BUG-244 again"
+    fi
+    clean_priv; rm -rf "$hw/fe"
+
+    # 4. BUG-300's two failure shapes: the .zig SURVIVES (evidence), no binary or .pdb does
     for shape in compile runtime; do
         if [ "$shape" = compile ]; then
-            # Must pass the type checker and fail in zig. BUG-375 made
-            # `x.nosuch()` a typecheck refusal, BUG-377/378 did the same for
-            # `List(int).new()` and `.add("s")`; a float literal into a List(int)
-            # is the numeric-widening rule the checker deliberately leaves to Zig.
+            # passes the type checker, fails in zig (a float literal into a List(int))
             printf 'def main()\n    var xs = List(int)()\n    xs.add(1.5)\n' > "$hw/zzfail.zbr"
         else
             printf 'def main()\n    print("x")\n    sys.exit(3)\n' > "$hw/zzfail.zbr"
         fi
-        rm -f "$tdir"/zzfail.zig "$tdir"/zzfail.zig.*.exe "$tdir"/zzfail.zig.*.pdb 2>/dev/null
-        "$ZEBRA" "$hw/zzfail.zbr" >/dev/null 2>&1
-        bins=$(ls "$tdir"/zzfail.zig.*.exe "$tdir"/zzfail.zig.*.pdb 2>/dev/null | wc -l)
-        src=$(ls "$tdir"/zzfail.zig 2>/dev/null | wc -l)
-        if [ "$bins" -ne 0 ]; then
-            fail "a $shape-failure run left $bins binary/pdb file(s) in $tdir"
-        elif [ "$src" -ne 1 ]; then
-            fail "a $shape-failure run did NOT keep the emitted .zig — the evidence is gone"
+        err=$(zrun "$hw/zzfail.zbr"); kd=$(printf '%s\n' "$err" | named)
+        kdu=""; [ -n "$kd" ] && kdu="$(upath "$kd")"
+        bins=$(ls "$kdu"/*.exe "$kdu"/*.pdb "$kdu"/*.dll 2>/dev/null | wc -l)
+        if [ "$(ndirs)" -ne 1 ] || [ -z "$kd" ]; then
+            fail "a $shape-failure run kept $(ndirs) directory(ies), named '$kd' (want exactly one, named)"
+        elif [ ! -f "$kdu/zzfail.zig" ]; then
+            fail "a $shape-failure run did NOT keep the emitted .zig -- the evidence is gone"
+        elif [ "$bins" -ne 0 ]; then
+            fail "a $shape-failure run left $bins binary/pdb file(s) in $kd"
         else
-            pass "a $shape-failure run keeps the .zig and no binary"
+            pass "a $shape-failure run keeps its .zig in ONE named directory, and no binary"
         fi
-        rm -f "$tdir"/zzfail.zig "$tdir"/zzfail.zig.*.exe "$tdir"/zzfail.zig.*.pdb "$hw/zzfail.zbr" 2>/dev/null
+        clean_priv
     done
-    if false; then
-        :
-    fi
 
-    # ...and the OPPOSITE direction, which is what stops this becoming a fix that
-    # deletes the evidence: --keep-temp must still leave them.
-    rm -f "$tdir"/hw.zig "$tdir"/hw.zig.*.exe 2>/dev/null
-    "$ZEBRA" --keep-temp "$hw/hw.zbr" >/dev/null 2>&1
-    kept=$(ls "$tdir"/hw.zig "$tdir"/hw.zig.*.exe 2>/dev/null | wc -l)
-    if [ "$kept" -gt 0 ]; then
-        pass "--keep-temp still leaves the scratch build"
+    # 4b. BOUNDED: a failure keeps its evidence, but ONE directory per program -- the shared
+    #     layout's overwrite used to guarantee that, and without it one FULL tier left 14.
+    #     A second program whose name EXTENDS the first's (zzfail-2) must not be pruned.
+    printf 'def main()
+    print("x")
+    sys.exit(3)
+' > "$hw/zzfail.zbr"
+    printf 'def main()
+    print("y")
+    sys.exit(4)
+' > "$hw/zzfail-2.zbr"
+    zrun "$hw/zzfail-2.zbr" >/dev/null
+    zrun "$hw/zzfail.zbr" >/dev/null
+    zrun "$hw/zzfail.zbr" >/dev/null
+    n_same=$(ls -d "$st_priv"/zebra-zzfail-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9] 2>/dev/null | wc -l)
+    n_other=$(ls -d "$st_priv"/zebra-zzfail-2-* 2>/dev/null | wc -l)
+    if [ "$n_same" -eq 1 ] && [ "$n_other" -eq 1 ]; then
+        pass "two failing runs of one program keep ONE directory; a similarly named program's is untouched"
     else
-        fail "--keep-temp deleted the scratch build anyway"
+        fail "after two failing runs: $n_same kept for zzfail (want 1), $n_other for zzfail-2 (want 1)"
     fi
-    rm -f "$tdir"/hw.zig "$tdir"/hw.zig.*.exe 2>/dev/null
+    clean_priv
+    rm -f "$hw/zzfail.zbr" "$hw/zzfail-2.zbr"
 
-    # THIRD LEG, and it exists because the first version of the fix got this WRONG.
-    # `--output-dir` means "put the output HERE" -- it is not scratch, and deleting it
-    # destroys exactly what the user asked for. contract_mode_check caught it: it runs
-    # `--turbo --output-dir DIR` and then READS the .zig, and its two --turbo legs went
-    # blind. Note which legs failed: only the ones where the program EXITS 0, because
-    # stripped contracts do not fire. The others passed only because their contracts
-    # failed and the non-zero exit happened to keep the files.
-    od="$OUT/keepdir"; rm -rf "$od"; mkdir -p "$od"
-    "$ZEBRA" --output-dir "$od" "$hw/hw.zbr" >/dev/null 2>&1
-    if [ -f "$od/hw.zig" ]; then
-        pass "--output-dir output SURVIVES a successful run (it is not scratch)"
+    # 5. THE BUG ITSELF, deterministically: two programs with the same stem. Under the shared
+    #    layout the second run overwrote <TEMP>/same.zig; now the first run's kept .zig must
+    #    still be the FIRST program's.
+    mkdir -p "$hw/sa" "$hw/sb"
+    printf 'def main()\n    print("from-a")\n' > "$hw/sa/same.zbr"
+    printf 'def main()\n    print("from-b")\n' > "$hw/sb/same.zbr"
+    err=$(zrun --keep-temp "$hw/sa/same.zbr"); kd=$(printf '%s\n' "$err" | named)
+    zrun "$hw/sb/same.zbr" >/dev/null
+    if [ -n "$kd" ] && grep -q 'from-a' "$(upath "$kd")/same.zig" 2>/dev/null; then
+        pass "a second same-named program does not overwrite the first run's build (BUG-513)"
     else
-        fail "--output-dir output was deleted after a successful run"
+        fail "the first run's same.zig was overwritten or not kept (BUG-513: shared TEMP)"
     fi
+    clean_priv; rm -rf "$hw/sa" "$hw/sb"
+fi
+rm -rf "$st_priv"
+
+# THIRD LEG, and it exists because the first version of the fix got this WRONG.
+# `--output-dir` means "put the output HERE" -- it is not scratch, and deleting it
+# destroys exactly what the user asked for. contract_mode_check caught it: it runs
+# `--turbo --output-dir DIR` and then READS the .zig, and its two --turbo legs went
+# blind. Note which legs failed: only the ones where the program EXITS 0, because
+# stripped contracts do not fire. The others passed only because their contracts
+# failed and the non-zero exit happened to keep the files.
+od="$OUT/keepdir"; rm -rf "$od"; mkdir -p "$od"
+"$ZEBRA" --output-dir "$od" "$hw/hw.zbr" >/dev/null 2>&1
+if [ -f "$od/hw.zig" ]; then
+    pass "--output-dir output SURVIVES a successful run (it is not scratch)"
 else
-    fail "BUG-244: could not locate the compiler's temp dir, so the leak check never ran"
+    fail "--output-dir output was deleted after a successful run"
 fi
 
 echo

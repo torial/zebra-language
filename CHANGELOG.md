@@ -23,6 +23,8 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Each run builds in its own temp directory (BUG-513)** -- concurrent compiles shared `<TEMP>/<stem>.zig` and `zebra_rt.zig` and could rewrite each other mid-build. The directory is removed after a clean run or a front-end error; when the build or the program fails, or with `--keep-temp`, it is kept and its path printed.
+
 - **`Dir.tryDeleteAll(path): bool`** -- a recursive delete that never fails: true iff the
   directory is gone afterwards (already-gone counts), so a caller can wait and retry when a
   file inside is still held -- `File.tryDelete`'s sibling. `Dir.deleteAll` still panics.

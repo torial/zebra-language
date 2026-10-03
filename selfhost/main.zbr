@@ -27,9 +27,10 @@
 #   zebra -c <source.zbr>                    compile only (selfhost pipeline)
 #   zebra --emit-zig <source.zbr>            print generated Zig to stdout
 #   zebra --emit-zig --output-dir DIR        emit .zig files to DIR
-#   zebra --keep-temp <source.zbr>           keep the scratch build (BUG-244); the
-#                                            emitted .zig and binary are removed after a
-#                                            CLEAN run and always kept after a failing one
+#   zebra --keep-temp <source.zbr>           keep the scratch build and name it. Each run
+#                                            builds in its own <TEMP>/zebra-<n>/ (BUG-513),
+#                                            removed after a clean run, kept and named after
+#                                            a failing one (binaries never survive, BUG-300)
 #   zebra --version                          print version and exit
 #
 # Preamble file: selfhost/stdlib_preamble.zig (~1465 lines)
@@ -81,6 +82,9 @@ class MultiCompiler
     var strip_contracts: bool  # --turbo: strip require/ensure/invariant from all output
     var library_mode: bool     # --library-mode: omit `defer _arena.deinit()` from main() (script linked into a host process)
     var mp_noted: List(str)    # BUG-516: module-path deps read for types only (reported once, after the graph)
+    var scratch_dir: str       # BUG-513: this run's own <TEMP>/zebra-<n>/ ("" until the first temp-mode emit)
+    var keep_temp: bool        # --keep-temp: keep (and name) the scratch directory on every exit
+    var scratch_stem: str      # BUG-513: the root's stem, so a directory says which program it holds
     var test_mode: bool        # true when invoked as `zebra test <file.zbr>`
     var tag_filter: str?       # --tag X: only run tests matching this tag
     var warn_non_exhaustive: bool  # --warn-non-exhaustive: warn branch...else missing variants
@@ -116,6 +120,9 @@ class MultiCompiler
         .strip_contracts = false
         .library_mode = false
         .mp_noted = List(str)()
+        .scratch_dir = ""
+        .keep_temp = false
+        .scratch_stem = "zbr"
         .test_mode = false
         .tag_filter = nil
         .warn_non_exhaustive = false
@@ -178,7 +185,7 @@ class MultiCompiler
         sys.errln("  no initialisation order satisfies both directions.")
         sys.errln("  fix: move the names they share into a third module that both import.")
         if cycle_is_error
-            sys.exit(1)
+            .exitWith(1, false)
 
     def hasListed(xs: List(str), v: str): bool
         var i: int = 0
@@ -227,6 +234,22 @@ class MultiCompiler
     # BUG-516: one note per program naming every --module-path dep that was read for its
     # types and not written out. Silent under --library-mode, the host-build mode this
     # behaviour exists for.
+    # BUG-513: every exit after the front end starts emitting comes through here. The run's
+    # scratch directory (<TEMP>/zebra-<n>/: the emitted .zig, its deps, zebra_rt.zig, the
+    # binary) is removed -- unless the BUILD or the PROGRAM failed (keep: its .zig is the
+    # evidence) or --keep-temp asked for it. A kept directory is NAMED, because its path is
+    # random per run and can no longer be guessed. With --output-dir there is no scratch.
+    def exitWith(code: int, keep: bool)
+        if scratch_dir != ""
+            if keep_temp
+                sys.errln("note: the scratch build is kept in " + scratch_dir)
+            else if keep
+                keepFailedScratch(scratch_dir, scratch_stem)
+                sys.errln("note: the scratch build is kept in " + scratch_dir)
+            else
+                removeScratchDir(scratch_dir)
+        sys.exit(code)
+
     def reportModulePathDeps()
         if library_mode or mp_noted.len == 0
             return
@@ -299,7 +322,7 @@ class MultiCompiler
         resolver.resolve(pm_node)?
         if resolver.errorCount() > 0
             sys.errln(resolver.allErrorMessages())
-            sys.exit(1)
+            .exitWith(1, false)
         sys.errln("  resolved OK")
 
         # Step 3: Discover and compile dependencies first
@@ -333,7 +356,7 @@ class MultiCompiler
                 var tc_result: TcResult = checkModule(module, zbr_path, tc_ctx)
                 if tc_ctx.hasErrors()
                     sys.errln(tc_ctx.errorMessages())
-                    sys.exit(1)
+                    .exitWith(1, false)
                 if tc_ctx.hasWarnings()
                     sys.errln(tc_ctx.warningMessages())
                     # the warning tier (2026-09-24): every warning prints as
@@ -341,7 +364,7 @@ class MultiCompiler
                     # a failed compile, which is how a deprecation becomes a contract.
                     if warnings_as_errors
                         sys.errln("error: " + tc_ctx.warningCount().toString() + " warning(s) with --warnings-as-errors")
-                        sys.exit(1)
+                        .exitWith(1, false)
 
                 # Step 5: Generate Zig
                 var zig_src: str = ""
@@ -757,7 +780,16 @@ class MultiCompiler
             # meant every `zebra file.zbr` littered the CURRENT directory with the scratch
             # .zig and its binaries — the exact #230 pollution, one level up (2026-09-09).
             tdir = "/tmp"
-        return tdir + "/" + base + ".zig"
+        # BUG-513: ONE directory per invocation, made on the first temp-mode emit. TEMP
+        # itself was shared by every concurrent compile on the machine -- two runs rewrote
+        # each other's <stem>.zig and zebra_rt.zig mid-build. exitWith removes it.
+        if scratch_dir == ""
+            var sd: str = tdir + "/zebra-" + scratch_stem + "-" + Random.randInt(100000000, 999999999).toString()
+            while Dir.exists(sd)
+                sd = tdir + "/zebra-" + scratch_stem + "-" + Random.randInt(100000000, 999999999).toString()
+            Dir.createAll(sd)
+            scratch_dir = sd
+        return scratch_dir + "/" + base + ".zig"
 
     # BUG-262: place every collected native `.zig` dep beside the emitted output.
     #
@@ -1001,7 +1033,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --warnings-as-errors <source.zbr> fail the compile on any warning (a deprecation, a function used as a value)", to_stdout)
     usageLine("  zebra --allow-inference-guess <f.zbr>    one-release migration aid: guess a type that cannot be inferred (warns) instead of refusing", to_stdout)
     usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: tui or libui_ng", to_stdout)
-    usageLine("  zebra --keep-temp <source.zbr>           keep the scratch build (kept anyway on failure)", to_stdout)
+    usageLine("  zebra --keep-temp <source.zbr>           keep the scratch build and print its directory (kept and printed anyway on failure)", to_stdout)
     usageLine("  zebra --gui-backend=X --scaffold-only <f>  write the GUI project beside the emit; do not build or run it", to_stdout)
     usageLine("  zebra --version                          print version and exit", to_stdout)
     usageLine("  zebra typecheck-merge <file.zbr>         type-check both sides of a conflict", to_stdout)
@@ -1129,7 +1161,8 @@ def replRun(): int
         tmpdir = tp
     else if File.exists("/tmp")
         tmpdir = "/tmp"
-    var sessionPath: str = tmpdir + "/zbr_repl_session.zbr"
+    # BUG-513: per session -- two REPLs shared one file and rewrote each other's cells.
+    var sessionPath: str = tmpdir + "/zbr_repl_session_" + Random.randInt(100000000, 999999999).toString() + ".zbr"
     var selfPath: str = sys.selfExe()
 
     while true
@@ -1198,6 +1231,7 @@ def replRun(): int
         prevOut = replEval(decls, stmts, cell, sessionPath, selfPath, prevOut)
         accum = ""
 
+    File.delete(sessionPath)
     return 0
 
 # Compile-and-run the session with `cell` appended. Returns the output this run produced,
@@ -1220,12 +1254,13 @@ def replEval(decls: List(str), stmts: List(str), cell: str, sessionPath: str, se
         argv.add("-c")
     argv.add(sessionPath)
     var r = sys.run(argv)
+    var rErr: str = replDropScratch(r.stderr)
 
     if r.exit_code != 0
         # The compiler has already said what is wrong, with a position. Show it and leave
         # the session untouched so the user can retype the cell.
-        if r.stderr != ""
-            sys.err(replStripNoise(r.stderr))
+        if rErr != ""
+            sys.err(replStripNoise(rErr))
         if r.stdout != "" and r.stdout.len > prevOut.len
             print(r.stdout[prevOut.len..r.stdout.len])
         return prevOut
@@ -1242,6 +1277,19 @@ def replEval(decls: List(str), stmts: List(str), cell: str, sessionPath: str, se
             Terminal.write(fresh)
     stmts.add(cell)
     return out
+
+# BUG-513: a cell whose program FAILED keeps its scratch build and names it. The REPL has
+# no use for that evidence (the cell is simply retyped), so it removes the directory and
+# does not show the note.
+def replDropScratch(s: str): str
+    var marker: str = "note: the scratch build is kept in "
+    var keep: str = ""
+    for ln in s.split("\n")
+        if ln.startsWith(marker)
+            removeScratchDir(ln[marker.len..ln.len].trim())
+            continue
+        keep = keep + ln + "\n"
+    return keep
 
 # The session file is compiled whole every time, so a variable declared in one cell and not
 # yet used looks unused to the backend. That is expected in a REPL, not a user error.
@@ -3351,6 +3399,42 @@ def deleteScratch(path: str)
         wait = wait * 2
         tries = tries + 1
 
+# BUG-513: the per-run scratch directory, removed with deleteScratch's patience for a binary
+# Windows still holds after it ran. Dir.tryDeleteAll never panics and is true iff the tree
+# is gone; a tree still present after the backoff is left and SAID, never silently kept.
+def removeScratchDir(path: str)
+    var tries: int = 0
+    var wait: int = 5
+    while tries < 10
+        if Dir.tryDeleteAll(path)
+            return
+        sys.sleep(wait)
+        wait = wait * 2
+        tries = tries + 1
+    sys.errln("note: could not remove the scratch build " + path + " -- a file in it is still in use")
+
+# BUG-513: a build kept because it FAILED is evidence, so it stays -- but one per program,
+# as the shared layout's overwrite used to guarantee: without this every failing run left a
+# directory behind (14 after one FULL tier). Binaries go first (BUG-300: the .zig is the
+# evidence, `zig build-exe <the .zig>` rebuilds the rest; Zig's fast path also leaves a
+# compiler_rt.dll). The directory is marked, and older MARKED directories of the same program
+# are removed -- never an unmarked one, which may be a concurrent run still building. The
+# name must be the stem then digits only, so program `a` never prunes program `a-1`.
+def keepFailedScratch(dir: str, stem: str)
+    for f in Dir.list(dir)
+        if f.endsWith(".exe") or f.endsWith(".pdb") or f.endsWith(".dll") or f.endsWith(".lib") or f.endsWith(".obj") or f.endsWith(".o")
+            deleteScratch(dir + "/" + f)
+    File.write(dir + "/.kept-failure", "")
+    var parent: str = Path.dirname(dir)
+    var mine: str = Path.basename(dir)
+    var prefix: str = "zebra-" + stem + "-"
+    for nm in Dir.list(parent)
+        if nm == mine or not nm.startsWith(prefix)
+            continue
+        var rest: str = nm[prefix.len..nm.len]
+        if rest.isNumeric() and File.exists(parent + "/" + nm + "/.kept-failure")
+            removeScratchDir(parent + "/" + nm)
+
 # -- DAP source map (`zebra debug`) --------------------------------------------
 # Codegen stamps `// zbr:<file>:<line>` above the code it emits for each Zebra
 # statement. Those comments are the ONLY link between the .zbr line a user set a
@@ -4458,6 +4542,8 @@ def main()
     mc.warnings_as_errors = werror
     mc.module_path = module_path
     mc.node_addon = mode_node
+    mc.keep_temp = keep_temp
+    mc.scratch_stem = Path.stem(path)
     mc.compileDep(path, true)?
     # BUG-295 (b): after the whole graph is known, name the shared STATEFUL modules.
     mc.reportSharedStatefulModules()
@@ -4471,7 +4557,7 @@ def main()
     if itry_sites.len > 0
         for itry_site in itry_sites
             sys.errln(itry_site + ": error: throws call needs '?' (auto error-propagation was removed; add '?')")
-        sys.exit(1)
+        mc.exitWith(1, false)
 
     # §28a: a type-dispatch site whose operand/receiver type could not be inferred
     # (numeric `+` vs string join, `.len`, a List-shaped method on an unknown receiver)
@@ -4506,7 +4592,7 @@ def main()
         else
             for ig_e in ig_seen
                 sys.errln(ig_e)
-            sys.exit(1)
+            mc.exitWith(1, false)
 
     if mode_emit
         # --emit-zig: print(root file's Zig source to stdout)
@@ -4524,7 +4610,7 @@ def main()
                 em_deps += 1
         if em_deps > 0
             sys.errln("note: " + em_deps.toString() + " dependency module(s) were compiled with the root, and `--emit-zig` prints only the root -- use `--output-dir DIR` to get every .zig this program needs")
-        sys.exit(0)
+        mc.exitWith(0, false)
 
     if mode_shared
         # --shared: emit, then `zig build-lib -dynamic` the root module into a shared
@@ -4561,9 +4647,9 @@ def main()
         if sr.stderr != ""
             sys.err(remapZigErrors(sr.stderr, sh_zig))
         if sr.exit_code != 0
-            sys.exit(1)
+            mc.exitWith(1, true)
         sys.errln("wrote " + sh_out)
-        sys.exit(0)
+        mc.exitWith(0, false)
 
     if mode_node
         # node-addon: compileDep wrote <stem>.zig (+ .js + .d.ts); build the
@@ -4604,14 +4690,14 @@ def main()
             if nr.stderr != ""
                 sys.err(remapZigErrors(nr.stderr, na_zig))
             if nr.exit_code != 0
-                sys.exit(1)
+                mc.exitWith(1, true)
             sys.errln("wrote " + na_stem + ".node")
-            sys.exit(0)
+            mc.exitWith(0, false)
         else
             sys.errln("zebra: could not find the Node.js N-API headers.")
             sys.errln("  Fetch them once with:   npx --yes node-gyp install")
             sys.errln("  Or set ZEBRA_NODE_INCLUDE=<path-to>/include/node (and, on Windows, ZEBRA_NODE_LIB=<path-to>/node.lib)")
-            sys.exit(1)
+            mc.exitWith(1, false)
 
     # --selfhost-compile: invoke zig to compile/run the generated file
     var zig_path: str = mc.zbrToZig(path)
@@ -4624,7 +4710,7 @@ def main()
         if st_sites.len > 0
             for st_site in st_sites
                 sys.errln(st_site + ": error: this starts a thread, and --single-threaded promises none -- drop the flag, or remove the thread")
-            sys.exit(1)
+            mc.exitWith(1, false)
 
     # #4: fast check mode. Everything the front end can answer has been answered by
     # now — parse, resolve, type-check and codegen all ran, and any diagnostic they
@@ -4633,7 +4719,7 @@ def main()
     # crash, so skipping it would trade real coverage for a few milliseconds.
     # What is skipped is only the `zig build-exe` invocation below.
     if mode_c and not check_full
-        sys.exit(0)
+        mc.exitWith(0, false)
 
     # GUI-via-selfhost: tui/libui_ng wrap the emitted zig (already using the
     # chosen backend via guiSelectPreamble) in a minimal `zig build` project
@@ -4642,8 +4728,8 @@ def main()
     if gui_selfhost
         var grc: int = compileGuiProject(zig_path, not mode_c, gui_backend, scaffold_only, prog_args, release)
         if grc != 0
-            sys.exit(1)
-        sys.exit(0)
+            mc.exitWith(1, true)
+        mc.exitWith(0, false)
 
     # Debug fast path (run mode, no C deps): build a temp exe with Zig's
     # self-hosted x86_64 backend + self-hosted linker (-fno-llvm -fno-lld),
@@ -4697,7 +4783,7 @@ def main()
             if mode_c
                 if fr.stderr != ""
                     sys.err(remapZigErrors(fr.stderr, zig_path))
-                sys.exit(0)
+                mc.exitWith(0, false)
             # Run the compiled program with INHERITED stdio, not captured.
             # sys.run() pipes the child's stdout/stderr; the reader blocks once
             # the OS pipe buffer (~4 KB) fills, hanging any program that prints
@@ -4742,8 +4828,8 @@ def main()
                 if rc == 0
                     deleteScratch(zig_path)
             if rc != 0
-                sys.exit(1)
-            sys.exit(0)
+                mc.exitWith(1, true)
+            mc.exitWith(0, false)
 
     var argv2 = List(str)()
     argv2.add(zigExe())
@@ -4839,7 +4925,7 @@ def main()
         deleteScratch(zig_path + ".fast.pdb")
         deleteScratch(llvm_exe)
         deleteScratch(zig_path + ".run.pdb")
-        sys.exit(1)
+        mc.exitWith(1, true)
     if not mode_c
         # Run the freshly built exe with inherited stdio — output streams live
         # and never blocks, no matter how much the program prints (BUG-208).
@@ -4859,8 +4945,8 @@ def main()
             if rc2 == 0
                 deleteScratch(zig_path)
         if rc2 != 0
-            sys.exit(1)
-    sys.exit(0)
+            mc.exitWith(1, true)
+    mc.exitWith(0, false)
 
 catch |e|
     sys.errln(e.message)

@@ -195,7 +195,19 @@ run_one() { # $1 = test/foo.zbr ; echoes program output, or a classification tok
         raw=$(timeout "$TIMEOUT_SECS" "$ZEBRA" $MODE_FLAGS "$zbr" </dev/null 2>&1); rc=$?
     fi
     if [ "$rc" -eq 124 ]; then printf '<<TIMEOUT>>'; return; fi
-    printf '%s' "$raw" | grep -vE '^wrote |^compiling:|^ *parsing\.\.\.|^ *parsed OK|^ *resolved OK'
+    # BUG-513: a run that KEPT its scratch build (a failing program, or --keep-temp) names
+    # it on stderr. That line is the compiler talking, not the program, so it is filtered
+    # out of the captured behaviour below. The directory goes to cached_run_one's emit
+    # check when it asked (OS_HOLD_SCRATCH) and is removed otherwise -- a sweep must not
+    # leave one directory behind per failing program.
+    local sd
+    sd=$(printf '%s\n' "$raw" | sed -n 's/^note: the scratch build is kept in //p' | tail -1 | tr -d '\r')
+    if [ -n "$sd" ]; then
+        command -v cygpath >/dev/null 2>&1 && sd="$(cygpath -u "$sd")"
+        if [ -n "${OS_HOLD_SCRATCH:-}" ]; then printf '%s' "$sd" > "$OUT/scratch_last"
+        else case "$sd" in */zebra-*) rm -rf -- "$sd";; esac; fi
+    fi
+    printf '%s' "$raw" | grep -vE '^wrote |^compiling:|^ *parsing\.\.\.|^ *parsed OK|^ *resolved OK|^note: the scratch build is kept in '
 }
 
 # ── THE OUTPUT CACHE (2026-09-26; gate runs only) ────────────────────────────────────────
@@ -238,15 +250,15 @@ cached_run_one() {  # $1 = test/foo.zbr ; same contract as run_one
     oc_miss=$((oc_miss+1))
     # the run itself, with --keep-temp so the emit it BUILT can be compared with the key's
     local out
-    tmp_t="${TMP:-${TEMP:-/tmp}}"; command -v cygpath >/dev/null 2>&1 && tmp_t="$(cygpath -u "$tmp_t")"
-    # The root emit is removed FIRST, so the comparison below can only be satisfied by THIS
-    # run's emit. TEMP is shared (BUG-513): on 2026-10-02 a run that died under fork
-    # exhaustion printed nothing, an earlier run's <name>.zig was still there, the check
-    # passed against it, and the empty capture was cached and replayed as a behaviour change.
-    rm -f "$tmp_t/$name.zig" 2>/dev/null
-    out=$(MODE_FLAGS="$MODE_FLAGS --keep-temp" run_one "$zbr")
+    # The run's emit is compared in the directory the COMPILER NAMES (BUG-513: one scratch
+    # directory per run, announced under --keep-temp), never a guessed path in a shared
+    # TEMP -- on 2026-10-02 a guessed path matched another run's file. No name, no store.
+    rm -f "$OUT/scratch_last"
+    out=$(OS_HOLD_SCRATCH=1 MODE_FLAGS="$MODE_FLAGS --keep-temp" run_one "$zbr")
     printf '%s' "$out"
+    tmp_t=""; [ -s "$OUT/scratch_last" ] && tmp_t="$(cat "$OUT/scratch_last")"
     ok=1
+    [ -n "$tmp_t" ] || ok=0
     [ -n "$key" ] || ok=0
     # An EMPTY capture is never stored: it is what a run that never started looks like, and
     # a program that genuinely prints nothing only costs a re-run.
@@ -255,7 +267,7 @@ cached_run_one() {  # $1 = test/foo.zbr ; same contract as run_one
         for f in "$od"/*.zig; do cmp -s "$f" "$tmp_t/${f##*/}" || { ok=0; break; }; done
         [ "$ok" = 1 ] || oc_mismatch=$((oc_mismatch+1))
     fi
-    rm -f "$tmp_t/$name.zig.fast.exe" "$tmp_t/$name.zig.run.exe" "$tmp_t/$name.zig.fast.pdb" "$tmp_t/$name.zig.run.pdb" 2>/dev/null
+    case "$tmp_t" in */zebra-*) rm -rf -- "$tmp_t";; esac
     if [ "$ok" = 1 ] && [ "$out" != "<<TIMEOUT>>" ]; then
         mkdir -p "$OCACHE_DIR/${key:0:2}"
         printf '%s' "$out" > "$OCACHE_DIR/${key:0:2}/$key.tmp.$$" && mv -f "$OCACHE_DIR/${key:0:2}/$key.tmp.$$" "$OCACHE_DIR/${key:0:2}/$key"

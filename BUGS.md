@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-516. Next new bug: BUG-517.**
+**Last bug number generated: BUG-517. Next new bug: BUG-518.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,12 +46,20 @@
 
 ---
 
-### BUG-513: a plain `zebra x.zbr` builds in the SHARED system temp dir -- concurrent compiles can clobber each other's `x.zig` and `zebra_rt.zig` -- OPEN (found 2026-10-01)
-- **Severity:** Medium (two editor saves, two terminals, a gate beside another session's run: one compile can rewrite the other's runtime file mid-build; the symptom is a failure that does not reproduce)
-- **Where:** temp-mode compiles (no `--output-dir`) write `<TEMP>/<stem>.zig`, `<TEMP>/zebra_rt.zig` and `<TEMP>/<stem>.zig.run.exe`; every concurrent invocation on the machine shares those names. Two programs with the same stem (`main.zbr` in two projects) collide on everything.
-- **Found by:** `release-mode`'s second non-reproducing red (2026-10-01, the first on 2026-09-18), during a FULL tier that ran beside another session's engine regen. The gate now gives its compiles a private `TMP`/`TEMP` (and passes); the compiler does not protect anyone else.
-- **Fix direction:** a per-invocation scratch directory under TEMP (`zebra-<pid>-<n>/`), removed after a clean run as today, kept under `--keep-temp` and printed. `release_mode_check.sh` finds its executables by the shared names, so it moves to the new layout in the same change.
-- **Design analysis (2026-10-02, not built -- two decisions first):** (1) **Accumulation.** `compileDep` writes each dep's `.zig` as it is generated, so a FRONT-END error in the root leaves a directory holding the deps and a 284 KB `zebra_rt.zig`. Today those files are overwritten next time (bounded); per-run directories would leak one per failed attempt -- BUG-244 again, and an edit/`-c` loop fails often. Options: delete the directory on every exit that is not a zig/program failure (many `sys.exit` sites in the driver -- funnel them), or a reaper for `zebra-*` older than a day (ambient deletion; needs a dir mtime the runtime may not expose on Windows). (2) **Printing the kept path** under `--keep-temp` changes what `output_sweep` captures (`2>&1`, and it runs misses with `--keep-temp`), so its `run_one` must strip that line -- and should READ it to find the emit, replacing today's guess at `$TEMP/<name>.zig` (runtime_module_check, release_mode_check and output_sweep all guess today). Also: the REPL's `<TEMP>/zbr_repl_session.zbr` has the same collision between two REPLs. Receipt for urgency: the same shared-TEMP fact let `output_sweep`'s emit check pass against another run's file (1b17ec4).
+### BUG-517: comparing a `chars()` element with a one-character string literal passes the front end and fails inside zig -- OPEN (found 2026-10-02)
+- **Severity:** Medium (a leak: `-c` exits 0, the build fails in the runtime with `incompatible types: 'u21' and '*const [1:0]u8'` -- a Zig error about code the user never wrote, pointing into zebra_rt.zig)
+- **Repro:**
+  ```zebra
+  def main()
+      var n: int = 0
+      for ch in "a1b2".chars()
+          if ch >= "0" and ch <= "9"
+              n = n + 1
+      print(n)
+  ```
+  `zebra -c` accepts it; `zebra x.zbr` fails in zig. `chars()` yields codepoints (u21); the literal is a string.
+- **Found by:** writing BUG-513's driver code (`keepFailedScratch` compared directory-name characters with "0".."9"); the first regen died in zig. The driver now uses `str.isNumeric()`.
+- **Fix direction:** decide what a codepoint compared with a ONE-character literal means. Either lower the literal to its codepoint (`ch >= "0"` reads naturally, and Python users will write it), or refuse in the front end naming `ch.toString()` / a char literal. Either way the checker must type a `chars()` element and stop the mismatch before codegen. leakgen does not generate `chars()` comparisons -- add the shape to `fuzz/gen.py` with the fix.
 
 ---
 

@@ -101,12 +101,21 @@ fi
 # knows nothing about the optimize flag. Before that fix it was silently relying on a
 # 20 MB-per-run leak to leave its evidence lying around. Asking for what it needs is the
 # honest version of the same dependency, and it keeps the branch under test the plain one.
-ZTMP="${TMP:-${TEMP:-/tmp}}"
-command -v cygpath >/dev/null 2>&1 && ZTMP="$(cygpath -u "$ZTMP")"
-rel_exe="$ZTMP/rel.zig.run.exe"
-rm -f "$ZTMP/rel.zig.fast.exe"
-(cd "$WORK" && timeout 600 "$ZEBRA" --keep-temp rel.zbr >/dev/null 2>&1)
-dbg_exe="$ZTMP/rel.zig.fast.exe"
+# BUG-513: each run builds in its OWN scratch directory and, under --keep-temp, NAMES it
+# ("note: the scratch build is kept in DIR"). The binaries are found there -- asked of the
+# compiler, never guessed -- and both directories are removed at the end.
+kept_dir() { sed -n 's/^note: the scratch build is kept in //p' | tail -1 | tr -d '\r'; }
+rel_dir="$(printf '%s\n' "$out" | kept_dir)"
+dbg_out="$(cd "$WORK" && timeout 600 "$ZEBRA" --keep-temp rel.zbr 2>&1)"
+dbg_dir="$(printf '%s\n' "$dbg_out" | kept_dir)"
+if command -v cygpath >/dev/null 2>&1; then
+    [ -n "$rel_dir" ] && rel_dir="$(cygpath -u "$rel_dir")"
+    [ -n "$dbg_dir" ] && dbg_dir="$(cygpath -u "$dbg_dir")"
+fi
+rel_exe="$rel_dir/rel.zig.run.exe"
+dbg_exe="$dbg_dir/rel.zig.fast.exe"
+# (a run that names no directory leaves rel_exe/dbg_exe pointing nowhere, and the existing
+# "cannot find the binary" checks below fail loudly; the private TMP's trap removes both)
 
 if [[ ! -f "$rel_exe" ]]; then
     say FAIL "cannot find the --release binary at $rel_exe — the size check could not run, so this gate knows NOTHING about the optimize flag"
