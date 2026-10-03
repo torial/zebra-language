@@ -300,6 +300,25 @@ the acceptance test for Phase 1.
    - **1c. Container fields with no initializer** are allocated at construction (§6.3) --
      strictly a behaviour change, but only for programs that read undefined memory today;
      its own commit, with fixtures for the class `cue init` path and the struct-literal path.
+   - **1c plan (scoped 2026-10-02, not built).** CodeGen already has the mechanism:
+     BUG-339's `isDeferredFieldInit` emits a class field `= undefined` and assigns its
+     initializer in the constructor (`_self.f = ...`, CodeGen ~6591). Today it EXCLUDES
+     `List(...)` and `StringBuilder` calls, because `.empty` is comptime-valid -- 1c removes
+     that exclusion (and adds HashMap/Set constructors and list/dict/set literals). Four parts:
+     (1) initialised container fields of a CLASS move into the constructor, INCLUDING generic
+     classes, which the deferral currently skips (`if not is_generic`) -- the census's
+     `generic_class_default_init_test` / `bug418` field defaults are exactly that hole;
+     (2) UNINITIALISED container fields get `_zbr_new(T)` in the constructor prologue -- first
+     cut: always, then Fable's refinement (skip a field every constructor definitely assigns
+     before reading), measured as heap per 1M constructions rather than assumed;
+     (3) the synthetic constructor of a class without `cue init` gets the same prologue;
+     (4) STRUCTS, the harder half: a struct literal that omits a container field relied on a
+     comptime default, so the construction site must fill it (`.{ .xs = _zbr_new(...), ... }`),
+     and a struct `cue init` (`var _self: T = undefined`) needs the same prologue.
+     Witnesses: a fixture per part that READS the field before any assignment (UB today,
+     defined after 1c), the census re-run (0 comptime-position `_zbr_new`), output_sweep
+     identical, and Fable's engine witness -- the engine has initialised container fields in
+     several classes (Fable, 2026-10-02).
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
      machinery is deleted. Fable reviews it (Sean, 2026-10-01: "coordinate w/ Fable as a
      reviewer -- that way progress can be made independent of me"); it is staged
