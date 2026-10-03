@@ -347,6 +347,20 @@ the acceptance test for Phase 1.
      cache), round-trip byte-identical, gui-scaffold clean; fixtures
      `test/bug518_struct_map_field_default_test.zbr`,
      `test/bug501_container_fields_built_test.zbr`.
+     **Fable's GO on 1c, 2026-10-03:** all 194 engine sources regenerated from the
+     committed compiler (0 failures; 55 files re-emitted, +175/-2), the full suite green (348
+     ok lines, unchanged), ReleaseFast built, both autoplays clean; 0 engine container fields
+     uninitialised and unassigned, so no engine behaviour changed. Provenance checked: a fresh
+     build of `b624e37` emits byte-identically to the binary used.
+   - **1c'. Definitely-assigned prologue elision -- REQUIRED before 1d (Fable's cost
+     finding).** Every one of the engine's **171** new prologue `_zbr_new` lines is followed
+     by the `cue init`'s own assignment of the same field, so at 1d each is an allocation the
+     next line discards (and the compiler's own emit has 86 of the same). The prologue must
+     skip a container field that the constructor body DEFINITELY assigns before any read --
+     a straight-line assignment at the top level of the init body, before any statement
+     that could read the field (a call, a method on self) -- and keep it otherwise. Witness:
+     the engine's prologue count should fall to ~0, the compiler's from 86 toward 0, and the
+     1c fixture (which reads fields before assignment) must still print the same.
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
      machinery is deleted. Fable reviews it (Sean, 2026-10-01: "coordinate w/ Fable as a
      reviewer -- that way progress can be made independent of me"); it is staged
