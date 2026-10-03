@@ -178,6 +178,7 @@ pub const _zbr_ty_DeclClass = struct {
             _self.ifaces = _zbr_new(_ZbrList(_zbr_ty_TypeRef));
             _self.mixins = _zbr_new(_ZbrList(_zbr_ty_TypeRef));
             _self.members = _zbr_new(_ZbrList(_zbr_ty_Decl));
+            _self.invariants = _zbr_new(_ZbrList(_zbr_ty_Expr));
 // zbr:selfhost/Ast.zbr:145
             _self.span = span;
 // zbr:selfhost/Ast.zbr:146
@@ -241,6 +242,7 @@ pub const _zbr_ty_DeclStruct = struct {
         var _self: _zbr_ty_DeclStruct = undefined;
             _self.ifaces = _zbr_new(_ZbrList(_zbr_ty_TypeRef));
             _self.members = _zbr_new(_ZbrList(_zbr_ty_Decl));
+            _self.invariants = _zbr_new(_ZbrList(_zbr_ty_Expr));
 // zbr:selfhost/Ast.zbr:184
             _self.span = span;
 // zbr:selfhost/Ast.zbr:185

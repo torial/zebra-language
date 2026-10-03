@@ -291,6 +291,7 @@ pub const _zbr_ty_PBranchOn = struct {
             _self.patterns = _zbr_new(_ZbrList([]const u8));
             _self.filter_cond = _zbr_new(_ZbrList(_zbr_ty_PNode));
             _self.stmts = _zbr_new(_ZbrList(_zbr_ty_PNode));
+            _self.struct_pat_node = _zbr_new(_ZbrList(_zbr_ty_PNode));
 // zbr:selfhost/Parser.zbr:224
             _self.patterns = patterns;
 // zbr:selfhost/Parser.zbr:225
@@ -1446,6 +1447,8 @@ pub const _zbr_ty_Parser = struct {
         const _self = _zbr_rt._allocator.create(_zbr_ty_Parser) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Parser");
             _self.tokens = _zbr_new(_ZbrList(*_zbr_mod_Token._zbr_ty_Token));
+            _self.parse_errors = _zbr_new(_ZbrList([]const u8));
+            _self.collected_decls = _zbr_new(_ZbrList(_zbr_ty_PNode));
 // zbr:selfhost/Parser.zbr:850
             _self.tokens = tokens;
 // zbr:selfhost/Parser.zbr:851

@@ -185,6 +185,14 @@ pub const _zbr_ty_MultiCompiler = struct {
     pub fn init(preamble_path: []const u8, output_dir: []const u8) *_zbr_ty_MultiCompiler {
         const _self = _zbr_rt._allocator.create(_zbr_ty_MultiCompiler) catch @panic("OOM");
         _self._type_tag = _zbr_hash("MultiCompiler");
+            _self.c_sources = _zbr_new(_ZbrList([]const u8));
+            _self.zig_sources = _zbr_new(_ZbrList([]const u8));
+            _self.lib_sources = _zbr_new(_ZbrList([]const u8));
+            _self.c_i_dirs = _zbr_new(_ZbrList([]const u8));
+            _self.mp_noted = _zbr_new(_ZbrList([]const u8));
+            _self.type_scanned = _zbr_new(_ZbrList([]const u8));
+            _self.sf_dep_bodies = _zbr_new(_ZbrList([]const u8));
+            _self.sf_dep_names = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/main.zbr:107
             _self.visited = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/main.zbr:108

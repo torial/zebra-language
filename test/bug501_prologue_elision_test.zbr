@@ -30,6 +30,21 @@ class MethodReads
     def peek(): int
         return xs.len
 
+enum Mode
+    Fast
+    Slow
+
+class ParamIdiom
+    var name: str
+    var mode: Mode
+    var items: List(int)
+    var given: List(str)
+    cue init(name: str, given: List(str))
+        .name = name                 # same-named parameter, `.f` target: passes
+        .mode = Mode.Slow            # an enum value: passes
+        .items = List(int)()         # elided
+        .given = given               # a container from a same-named parameter: elided
+
 class FromParam
     var xs: List(int)
     cue init(start: List(int))
@@ -41,4 +56,5 @@ def main()
     var mr = MethodReads()
     var src: List(int) = [4, 5]
     var fp = FromParam(src)
-    print("bug501_elide: " + e.xs.len.toString() + " " + e.m.count().toString() + " " + e.tag.toString() + " | " + r.seen.toString() + " " + mr.seen.toString() + " | " + fp.xs.len.toString())
+    var pi = ParamIdiom("n", ["a", "b", "c"])
+    print("bug501_elide: " + e.xs.len.toString() + " " + e.m.count().toString() + " " + e.tag.toString() + " | " + r.seen.toString() + " " + mr.seen.toString() + " | " + fp.xs.len.toString() + " | " + pi.name + pi.items.len.toString() + pi.given.len.toString())

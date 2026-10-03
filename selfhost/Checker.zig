@@ -101,6 +101,8 @@ pub const _zbr_ty_UnionInfo = struct {
     pub fn init(name: []const u8, file: []const u8, line: i64) *_zbr_ty_UnionInfo {
         const _self = _zbr_rt._allocator.create(_zbr_ty_UnionInfo) catch @panic("OOM");
         _self._type_tag = _zbr_hash("UnionInfo");
+            _self.variants = _zbr_new(_ZbrList([]const u8));
+            _self.variant_lines = _zbr_new(_ZbrList(i64));
 // zbr:selfhost/Checker.zbr:28
             _self.name = _intern(name);
 // zbr:selfhost/Checker.zbr:29

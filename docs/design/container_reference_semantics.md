@@ -371,6 +371,21 @@ the acceptance test for Phase 1.
      assignment and a method that reads it (both must keep the prologue and read an EMPTY
      container), and a parameter assignment. Red-checked: with the scan made to pass over any
      statement, the read-first class panicked "integer does not fit in destination type".
+     **Fable's GO + review, 2026-10-03:** correct wherever it fired, but it fired on a third
+     of what the rule promises. Measured with the prologue-only counter across the engine:
+     174 (1c) -> 117 (1c'). Fable classified all 117: **32 + 7 were a bug** -- the guard
+     against an ambiguous bare `x = x` (a target named like a parameter) was applied to
+     `.x = x` too, the usual constructor idiom, so `.jointName = jointName` stopped the scan
+     at line one and a container assigned from a same-named parameter was never elided.
+     Fixed (the guard is bare-identifier only), and an enum value (`Mode.Slow`) now counts as
+     simple (3 sites). Fixture class `ParamIdiom` pins all three shapes: 2 prologues before
+     the fix, 0 after; compiler emit 27 -> **20**. The remaining **71** engine sites follow a
+     CALL (`.root = Instance(...)`, service constructors); the "call without `this` in its
+     arguments" widening is DECLINED until 1d's heap-per-1M-constructions measure says it
+     matters -- it needs a walker conservative for every expression form, and the existing
+     exprMentionsThis defaults to false. Fable concurs: the engine's hot constructor
+     (`Instance`, four containers behind scalar assignments) is in the fixed set; the 71 are
+     one-off component/service constructors.
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
      machinery is deleted. Fable reviews it (Sean, 2026-10-01: "coordinate w/ Fable as a
      reviewer -- that way progress can be made independent of me"); it is staged

@@ -10974,13 +10974,18 @@ struct Generator
         for st in stmts
             if st is Stmt.assign as sa
                 if sa.op == AssignOp.assign
+                    # A BARE `x = ...` whose name is also a parameter is ambiguous, so only it is
+                    # refused; `.x = x` -- the usual constructor idiom -- names the field
+                    # unambiguously. (Fable, 2026-10-03: the first version refused both, and the
+                    # engine's `.jointName = jointName` lines stopped the scan at line one.)
                     var fname: str = ""
                     if sa.target is Expr.ident as tid
-                        fname = tid.name
+                        if not params.contains(tid.name)
+                            fname = tid.name
                     else if sa.target is Expr.member as tm
                         if tm.object is Expr.this_
                             fname = tm.member
-                    if fname != "" and not params.contains(fname) and initSimpleValue(sa.value, params)
+                    if fname != "" and initSimpleValue(sa.value, params)
                         done.add(fname)
                         continue
             return done
@@ -11002,6 +11007,11 @@ struct Generator
                 return true
             on Expr.ident as id
                 return params.contains(id.name)
+            on Expr.member as em
+                # an enum value -- `Color.Red` -- reads nothing (Fable: 3 engine sites)
+                if em.object is Expr.ident as eo
+                    return enum_names.contains_(eo.name)
+                return false
             on Expr.list_lit as ll
                 return ll.elems.len == 0
             on Expr.call as c

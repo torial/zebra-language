@@ -265,6 +265,15 @@ pub const _zbr_ty_ClassTypes = struct {
     pub fn init(name: []const u8) *_zbr_ty_ClassTypes {
         const _self = _zbr_rt._allocator.create(_zbr_ty_ClassTypes) catch @panic("OOM");
         _self._type_tag = _zbr_hash("ClassTypes");
+            _self.field_types = _zbr_new(_ZbrMap(_zbr_ty_Type_));
+            _self.method_returns = _zbr_new(_ZbrMap(_zbr_ty_Type_));
+            _self.method_params = _zbr_new(_ZbrMap([]const u8));
+            _self.method_param_types = _zbr_new(_ZbrMap([]const u8));
+            _self.ctor_params = _zbr_new(_ZbrList(_zbr_ty_Type_));
+            _self.fn_param_lists = _zbr_new(_ZbrMap(*_ZbrList(_zbr_ty_Param)));
+            _self.fn_bodies = _zbr_new(_ZbrMap(*_ZbrList(_zbr_ty_Stmt)));
+            _self.method_deprecated = _zbr_new(_ZbrMap([]const u8));
+            _self.throws_names = _zbr_new(_ZbrMap(bool));
 // zbr:selfhost/TypeChecker.zbr:254
             _self.name = _intern(_zbr_fn_internString(name));
 // zbr:selfhost/TypeChecker.zbr:255
@@ -2343,6 +2352,9 @@ pub const _zbr_ty_InferCtx = struct {
     pub fn init(module_types: *_zbr_ty_ModuleTypes, current_class: []const u8) *_zbr_ty_InferCtx {
         const _self = _zbr_rt._allocator.create(_zbr_ty_InferCtx) catch @panic("OOM");
         _self._type_tag = _zbr_hash("InferCtx");
+            _self.scope = _zbr_new(_ZbrMap(_zbr_ty_Type_));
+            _self.errors = _zbr_new(_ZbrList(_zbr_ty_Diagnostic));
+            _self.warnings = _zbr_new(_ZbrList(_zbr_ty_Diagnostic));
 // zbr:selfhost/TypeChecker.zbr:1405
             _self.module_types = module_types;
 // zbr:selfhost/TypeChecker.zbr:1406

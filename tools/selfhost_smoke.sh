@@ -967,7 +967,7 @@ smoke_run test/dir_walk_test.zbr "dir_walk_test: ok"
 smoke_run test/dir_try_delete_all_test.zbr "dir_try_delete_all: true true false true"
 smoke_run test/bug518_struct_map_field_default_test.zbr "bug518: 1 1 0 2"
 smoke_run test/bug501_container_fields_built_test.zbr "bug501_1c: 0000[]000000 11hi111 54"
-smoke_run test/bug501_prologue_elision_test.zbr "bug501_elide: 1 0 7 | 0 0 | 2"
+smoke_run test/bug501_prologue_elision_test.zbr "bug501_elide: 1 0 7 | 0 0 | 2 | n03"
 smoke_run test/build_declarative_test.zbr "build declarative: ok"
 smoke_run test/regex_test.zbr "abc NUM def NUM"
 # Net: resolving the LOOPBACK literal needs no network and no DNS server, so this is
