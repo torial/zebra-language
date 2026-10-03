@@ -297,6 +297,14 @@ the acceptance test for Phase 1.
      `_ZbrScratch` definitions themselves). No behaviour change: FULL 45/45 with
      `output_sweep` 466 identical from a COLD cache (every emit changed), divergence 0
      regressions, gui-scaffold clean, libui-section 21/21.
+     **Landed `475623c`; Fable's GO, 2026-10-02:** a full regen rewrote exactly one engine
+     file (`zebra_rt.zig`; 179 of 180 byte-identical), debug and ReleaseFast builds clean,
+     the full suite / test-gui / test-tuon / test-mm 25/25 green, both demos at ~60 fps,
+     0 drift. Its honest gap: the engine's one SQLite user (`datastore_test`) is SKIPPED in
+     the engine suite, so query results were compiled there but not run -- our corpus's
+     `sqlite_test` covers that shape. For 1c, Fable notes many initialised container fields
+     (module registries `var _x = List(T)()`, fields set in `cue init`) and will grep for
+     uninitialised ones rather than assume there are none.
    - **1c. Container fields with no initializer** are allocated at construction (§6.3) --
      strictly a behaviour change, but only for programs that read undefined memory today;
      its own commit, with fixtures for the class `cue init` path and the struct-literal path.
