@@ -3811,6 +3811,15 @@ def dbgTakeFrames(buf: str): List(str)
 def dbgFrame(body: str): str
     return "Content-Length: " + body.len.toString() + "\r\n\r\n" + body
 
+def selfHostedBackendUsable(): bool
+    # Zig's self-hosted backend is mature on x86_64 only. MEASURED on a native Apple-silicon
+    # runner (macos-native.yml, 2026-10-04, Zig 0.17, 3 cores / 7.5 GB): `zig build-exe
+    # -fno-llvm -fno-lld` of a hello-world was SIGKILLed after 57 s with no output, while
+    # LLVM built it in 6 s cold / 4 s warm. The run fast path's fallback only fires on a
+    # REPORTED failure, so every `zebra x.zbr` on a Mac paid ~60 s for a doomed attempt
+    # (67-92 s per program) before LLVM carried it. Comptime: a property of the binary.
+    return zig"builtin.target.cpu.arch == .x86_64"
+
 def dbgIsWindows(): bool
     # Comptime, like the macOS test beside it. It used to read the OS / SystemRoot
     # environment variables, and under Git Bash on torial one of them was absent, so
@@ -4813,7 +4822,9 @@ def main()
     # on identical source. Any program declaring a foreign symbol therefore takes the
     # authoritative LLVM path; everything else keeps the ~6x faster backend.
     # BUG-356: DynLib.open needs libc (dlopen); the fast path links none.
-    if not release and mc.c_sources.len == 0 and mc.lib_sources.len == 0 and not mc.uses_sqlite and not emittedExtern() and not emittedDynLib()
+    # selfHostedBackendUsable(): x86_64 only -- on Apple silicon the backend is killed after
+    # ~60 s without reporting anything, so the fallback above never helps (see the function).
+    if not release and selfHostedBackendUsable() and mc.c_sources.len == 0 and mc.lib_sources.len == 0 and not mc.uses_sqlite and not emittedExtern() and not emittedDynLib()
         var fast_exe: str = zig_path + ".fast.exe"
         var fargv = List(str)()
         fargv.add(zigExe())

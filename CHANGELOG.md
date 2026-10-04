@@ -23,6 +23,8 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Fixed: on Apple silicon, compiling or running a program took over a minute** (BUG-524): the compiler tried Zig's self-hosted backend, which macOS killed after ~60 s, before falling back to LLVM (4-6 s). The self-hosted backend is now used on x86_64 only, and a debug `zig build` of the compiler works on a Mac.
+
 - **Fixed: under Zig 0.17, programs using `sys.spawn` (and the compiler itself) did not compile on Linux without libc** (BUG-523): `std.os.linux.waitpid` changed its status parameter to `*i32`. Never released.
 
 - **The toolchain is Zig 0.17.0** (step 2 of the move, `docs/design/zig017_migration.md`). `.zig-version` pins it and the repo's tools refuse to run on any other zig (`tools/zig_toolchain.sh`); CI and release builds download 0.17.0, and release tags are `_zig0.17`. The source still builds with 0.16 until step 3.

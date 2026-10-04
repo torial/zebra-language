@@ -9,8 +9,13 @@ pub fn build(b: *std.Build) void {
     // with byte-identical output (validated via the round-trip, which rebuilds the
     // compiler from its own emit and diffs the result). Default ON for Debug; release
     // builds keep LLVM for codegen quality. `-Dfast-backend=false` forces LLVM.
+    // Default ON for x86_64 only: on Apple silicon (aarch64-macos, Zig 0.17, measured on a
+    // GitHub macos-latest runner 2026-10-04) the self-hosted build of this compiler was
+    // SIGKILLed after 61 s -- `zig build` simply failed for a Mac developer -- while
+    // `-Dfast-backend=false` built in 20 s. `-Dfast-backend=true` still forces it.
     const fast_backend = (b.option(bool, "fast-backend",
-        "Build the debug zebra.exe with Zig's self-hosted backend (~6x faster; Debug only)") orelse true) and isDebug(optimize);
+        "Build the debug zebra.exe with Zig's self-hosted backend (~6x faster; Debug only; default on x86_64 only)") orelse
+        (target.result.cpu.arch == .x86_64)) and isDebug(optimize);
     const setFastBackend = struct {
         fn apply(c: *std.Build.Step.Compile, on: bool) void {
             if (on) { c.use_llvm = false; c.use_lld = false; }
