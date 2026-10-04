@@ -3330,7 +3330,7 @@ pub const _RFrag = struct {
 };
 pub const _RC = struct {
     pat: []const u8, pos: usize = 0,
-    nodes: std.ArrayListUnmanaged(_RNode) = .{ .items = &.{}, .capacity = 0 }, alloc: std.mem.Allocator, n_caps: u8 = 0, flags: _RFlags = .{},
+    nodes: std.ArrayListUnmanaged(_RNode) = .empty, alloc: std.mem.Allocator, n_caps: u8 = 0, flags: _RFlags = .{},
     pub fn addNode(c: *_RC, n: _RNode) error{OutOfMemory}!u32 {
         const idx: u32 = @intCast(c.nodes.items.len);
         try c.nodes.append(c.alloc, n); return idx;
@@ -3531,7 +3531,7 @@ pub const Regex = struct {
     }
     pub fn matchAt(re: *const Regex, input: []const u8, from: usize, shortest: bool) error{OutOfMemory}!?usize {
         const alloc = re.alloc;
-        var cur: std.ArrayListUnmanaged(u32) = .{ .items = &.{}, .capacity = 0 }; var nxt: std.ArrayListUnmanaged(u32) = .{ .items = &.{}, .capacity = 0 };
+        var cur: std.ArrayListUnmanaged(u32) = .empty; var nxt: std.ArrayListUnmanaged(u32) = .empty;
         defer cur.deinit(alloc); defer nxt.deinit(alloc);
         const vis = try alloc.alloc(bool, re.nodes.len); defer alloc.free(vis);
         @memset(vis, false); try re.closure(&cur, vis, alloc, re.start, from, input);
@@ -3684,9 +3684,9 @@ pub fn _re_eclosure_s(
 pub fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[_MAX_SAVE_SLOTS]usize {
     const alloc = std.heap.page_allocator;
     const empty: [_MAX_SAVE_SLOTS]usize = @as([_MAX_SAVE_SLOTS]usize, @splat(0xFFFF_FFFF_FFFF_FFFF));
-    var cur: std.ArrayListUnmanaged(_RegThread) = .{ .items = &.{}, .capacity = 0 };
+    var cur: std.ArrayListUnmanaged(_RegThread) = .empty;
     defer cur.deinit(alloc);
-    var nxt: std.ArrayListUnmanaged(_RegThread) = .{ .items = &.{}, .capacity = 0 };
+    var nxt: std.ArrayListUnmanaged(_RegThread) = .empty;
     defer nxt.deinit(alloc);
     const vis = alloc.alloc(bool, re.nodes.len) catch return null;
     defer alloc.free(vis);
@@ -5194,7 +5194,7 @@ pub fn _base64_decode_url(s: []const u8) ?[]const u8 {
 }
 // ── Hash fast (non-crypto) hashes ────────────────────────────────────────────
 pub fn _hash_crc32(s: []const u8) i64 {
-    return @as(i64, @intCast(std.hash.crc.Crc32.hash(s)));
+    return @as(i64, @intCast(std.hash.Crc32.hash(s)));
 }
 pub fn _hash_fnv64(s: []const u8) i64 {
     return @as(i64, @bitCast(std.hash.Fnv1a_64.hash(s)));

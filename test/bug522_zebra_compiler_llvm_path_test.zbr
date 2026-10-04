@@ -1,0 +1,13 @@
+# BUG-522: a program the compiler runs can find the compiler through ZEBRA_COMPILER
+# (BUG-327 layer 2) -- on EVERY run path. The fast path set it; the LLVM path (taken by any
+# program with an `extern`, a C dep, sqlite, DynLib or --release) did not, so this program,
+# forced onto the LLVM path by its `extern`, saw nil. Found when Zig 0.17's linker sent
+# every program down the LLVM path.
+extern def abs(n: int32): int32
+
+def main()
+    var z = sys.getenv("ZEBRA_COMPILER")
+    var seen = "nil"
+    if z != nil
+        seen = "set"
+    print("bug522: zc=${seen} abs=${abs(-7)}")

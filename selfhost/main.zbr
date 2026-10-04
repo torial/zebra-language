@@ -4815,6 +4815,12 @@ def main()
         fargv.add(zig_path)
         fargv.add("-fno-llvm")
         fargv.add("-fno-lld")
+        # Zig 0.17's self-hosted COFF linker writes an import library beside every image
+        # and fails on ANY absolute output path ("flushing implib '...\x.lib' failed:
+        # BadPathName"), exit 1 with the exe already written -- so every fast build failed
+        # and fell back to the ~6x slower LLVM path, silently. An executable needs no
+        # implib; the flag is accepted by 0.16 too.
+        fargv.add("-fno-emit-implib")
         if mode_c
             fargv.add("-fno-emit-bin")
         else
@@ -4979,6 +4985,12 @@ def main()
         rargv2.add(llvm_exe)
         for pa2 in prog_args
             rargv2.add(pa2)
+        # BUG-522: the same ZEBRA_COMPILER hand-off as the fast path above. This branch
+        # (C deps, sqlite, extern, DynLib, --release) never set it, so a program it ran
+        # could not find the compiler (`zebra lsp`, a nested compile) -- invisible until
+        # Zig 0.17 sent every program here.
+        if sys.getenv("ZEBRA_COMPILER") == nil
+            sys.setenv("ZEBRA_COMPILER", sys.selfExe())
         var rc2: int = sys.exec_inherit(rargv2)
         # BUG-244, same rule as the fast path above: clean on success, keep on
         # failure. This branch is taken by any program with a C dep, sqlite, an

@@ -36,6 +36,21 @@ note (0.16 had it as a deprecated alias of `.windows`).
 | Build API: `b.args` / `b.build_root` removed; Optimize tags renamed | `build.zig`, the libui and tui scaffolds | `addPassthruArgs` behind `@hasDecl`; `isDebug()` by tag name; `buildRootDir()` behind `@hasField` |
 | `builtin.os` / `.cpu` deprecated (removed in 0.18) | runtime, `zig"…"` literals in main.zbr | `builtin.target.os` (valid in both) |
 
+Found by the FULL smoke suite run under 0.17 (`ZEBRA_ZIG` + PATH at 0.17), after the
+60-program sample had passed:
+
+| change | where | dual-version spelling |
+|---|---|---|
+| `std.hash.crc.Crc32` removed (crc namespace audit) | runtime `hashCrc32` | `std.hash.Crc32` (present in 0.16) |
+| ArrayList gained a `pointer_stability` field, so a field-by-field literal `.{ .items = &.{}, .capacity = 0 }` no longer compiles | runtime regex engine (5 sites) | `.empty` |
+| **the self-hosted COFF linker writes an import library beside every image and fails on ANY absolute output path** (`flushing implib '...\x.lib' failed: BadPathName`, exit 1 with the exe already written) -- a 0.17 bug, not ours | the driver's fast path (`-fno-llvm -fno-lld`) | `-fno-emit-implib` (accepted by 0.16; an exe needs no implib) |
+
+The linker bug made EVERY fast build fail and fall back to the ~6x slower LLVM path without a
+word, and that fallback exposed BUG-522 (the LLVM run path never handed the program
+`ZEBRA_COMPILER`), a pre-existing bug that also affected 0.16 programs with an `extern`, a C
+dependency or sqlite. A first hypothesis -- that 0.17 no longer inherits a variable set after
+startup -- was tested and failed (a 0.17-built parent passes it exactly as 0.16 does).
+
 Audited and NOT affected: `@bitCast` (every use is integer-to-integer; the silent change is for
 arrays, vectors and extern structs), `std.mem.eql` on floats (every use compares bytes), the
 `-OReleaseFast` CLI spelling (both versions accept it).

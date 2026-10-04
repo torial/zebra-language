@@ -6,6 +6,13 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-522: a program run on the compiler's LLVM path is not handed ZEBRA_COMPILER -- FIXED 2026-10-03
+- **Severity:** Medium (a program the compiler runs cannot find the compiler -- `zebra lsp`, a nested compile -- whenever it has an `extern`, a C dependency, sqlite, DynLib, or is built `--release`; the fast path handed it over, so most programs never noticed).
+- **Where:** selfhost/main.zbr's run step. BUG-327 layer 2 set `ZEBRA_COMPILER` before `exec_inherit` of the FAST-path executable only; the LLVM branch (`rargv2`) ran its executable without it.
+- **Found by:** the Zig 0.17 migration. 0.17's self-hosted COFF linker fails on every absolute output path while writing an import library (`flushing implib '...\x.lib' failed: BadPathName`, exit 1 with the exe already written), so EVERY program fell back to the LLVM path -- and `sys_spawn_piped_test` panicked "ZEBRA_COMPILER must be set". The first diagnosis (0.17 no longer inheriting a variable set after startup) was tested and FAILED: a 0.17-built parent passes `sys.setenv` to its child exactly as 0.16 does; the speculative runtime change it prompted was reverted unlanded.
+- **Fix:** the LLVM branch sets `ZEBRA_COMPILER` the same way (only if unset). The fast-path linker failure is avoided with `-fno-emit-implib` (accepted by 0.16 too); see docs/design/zig017_migration.md.
+- **Fixture:** `test/bug522_zebra_compiler_llvm_path_test.zbr` -- an `extern` forces the LLVM path; registered in smoke with `ZEBRA_COMPILER` UNSET around the leg so a caller's value cannot satisfy it. Watched RED on the unfixed compiler under Zig 0.16 (`zc=nil`), green after (`zc=set`).
+
 ### BUG-521: the round-trip's scratch (`/tmp/bs-zig`, `/tmp/bs-pre`, `/tmp/bs-A`...) was one set of paths for EVERY checkout -- two rebuilds at once could restore each other's generated files -- FIXED 2026-10-03
 - **Severity:** High for the workflow this repo runs (a second agent, isolated worktrees): the damage is silent and lands in GENERATED files a reader trusts.
 - **Found by:** doing it. A `rebuild.sh` in the main tree was started while one ran in a BUG-501 worktree. Main's "clearing stale /tmp/bs-zig" removed the worktree's regen mid-run (`/tmp/bs-zig/Resolver.zig missing or empty`), and the worktree's failure path then RESTORED its `selfhost/*.zig` -- and `stdlib_preamble.zig`, `zebra_rt.zig` -- from `/tmp/bs-pre`, which held the MAIN tree's snapshot. The worktree silently lost its runtime edits; a fixture compiled next reported `use of undeclared identifier '_ZbrBoxOf'`, which reads like a compiler bug. `kill_orphans.sh` had already been scoped to the tree (2026-08-01) for the same reason; the scratch paths never were.

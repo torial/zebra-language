@@ -2045,6 +2045,11 @@ smoke_run test/bug462_generic_return_type_test.zbr "bug462: OK"
 # BUG-463: an empty `[]` passed to a List(X) parameter takes the parameter's type.
 smoke_run test/bug463_empty_list_arg_test.zbr "bug463: OK"
 smoke_run test/bug501_generic_empty_list_test.zbr "bug501_gel: 0 0 0 0 10"
+# BUG-522: a program on the LLVM run path (an `extern` forces it) must still be handed
+# ZEBRA_COMPILER. Run with it UNSET, or a caller's value would satisfy the leg vacuously.
+_zc_saved="${ZEBRA_COMPILER-__unset__}"; unset ZEBRA_COMPILER
+smoke_run test/bug522_zebra_compiler_llvm_path_test.zbr "bug522: zc=set abs=7"
+[ "$_zc_saved" = "__unset__" ] || export ZEBRA_COMPILER="$_zc_saved"
 # BUG-461: a name reused inside the scope that declares it is refused (Zig forbids
 # shadowing); sibling scopes may reuse a name.
 smoke_tc_fail test/bug461_shadowing_fail.zbr "bug461_shadowing_fail.zbr:7:5: error: \`n\` is already declared as a parameter"
