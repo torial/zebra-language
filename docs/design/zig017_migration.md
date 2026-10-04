@@ -35,6 +35,7 @@ note (0.16 had it as a deprecated alias of `.windows`).
 | `@hasDecl` sees only `pub` decls, even in the same file (SILENT) | closure `call` was non-`pub` in the inline runtime shape | always `pub fn call` (`rtPub` removed) |
 | Build API: `b.args` / `b.build_root` removed; Optimize tags renamed | `build.zig`, the libui and tui scaffolds | `addPassthruArgs` behind `@hasDecl`; `isDebug()` by tag name; `buildRootDir()` behind `@hasField` |
 | `builtin.os` / `.cpu` deprecated (removed in 0.18) | runtime, `zig"…"` literals in main.zbr | `builtin.target.os` (valid in both) |
+| `std.os.linux.waitpid(pid, status: *u32 -> *i32, ...)` (unmentioned; found by the first LINUX CI build, BUG-523 -- no Windows build analyses it) | `sys.spawn`'s `isRunning`, Linux without libc | the status type is taken from `waitpid`'s own signature and `@bitCast`. Gate: `cross-sema` analyses windows / linux / linux-gnu |
 
 Found by the FULL smoke suite run under 0.17 (`ZEBRA_ZIG` + PATH at 0.17), after the
 60-program sample had passed:

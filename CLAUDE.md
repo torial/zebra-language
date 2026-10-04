@@ -226,10 +226,10 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 17 <!-- doc-gen: 17 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 35 <!-- doc-gen: 35 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 37 <!-- doc-gen: 37 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 45 <!-- doc-gen: 45 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 56 <!-- doc-gen: 56 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--fast` | 36 <!-- doc-gen: 36 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 38 <!-- doc-gen: 38 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 46 <!-- doc-gen: 46 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 57 <!-- doc-gen: 57 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -538,13 +538,27 @@ bash tools/libui_pin_build_check.sh  # THE STRANGER'S LIBUI BUILD, registered as
                                 #   matched `.paths = .{...}`, present in every build.zig.zon, and
                                 #   refused a correctly pinned scaffold. ~15 min the first time a
                                 #   pin is fetched.
-bash tools/win_sema_check.sh    # THE WINDOWS COMPILE WITNESS WITHOUT WINDOWS (2026-09-07):
-                                #   emits programs and runs `zig build-exe -target
-                                #   x86_64-windows-gnu -fno-emit-bin` — full Sema of every
-                                #   `os.tag == .windows` branch of the runtime, from Linux.
-                                #   First run caught the blind PeekNamedPipe path (BOOL enum
-                                #   compared with 0). libui_section_check now targets
-                                #   windows too. Blind to: runtime behaviour.
+bash tools/cross_sema_check.sh  # THE OTHER-OS COMPILE WITNESS, registered as `cross-sema`
+                                #   (FAST tier, ~12 s, 2026-10-04): emits five runtime-covering
+                                #   programs and runs `zig build-exe -fno-emit-bin` on each for
+                                #   x86_64-windows-gnu, x86_64-linux (NO libc -- the raw-syscall
+                                #   branches the fast `-fno-llvm` path builds) and
+                                #   x86_64-linux-gnu -lc. Full Sema of every OS / link_libc
+                                #   branch this host never builds. Grew out of
+                                #   `win_sema_check.sh` (2026-09-07, now a wrapper for the
+                                #   windows leg), which caught the blind PeekNamedPipe path and
+                                #   the kernel32 DynLib loader and was in NO tier.
+                                #   RECEIPT: the Zig 0.17 toolchain commit (0079ced) was green
+                                #   on every Windows gate and red on its first Linux CI build --
+                                #   0.17's `std.os.linux.waitpid` takes `*i32`, and isRunning's
+                                #   no-libc branch passed `*u32`. RED-CHECKED WITH THAT COMMIT'S
+                                #   OWN PREAMBLE, not a mutation: the linux leg names the same
+                                #   line, the two other targets stay green. Passes under 0.16
+                                #   too (the tree is dual-version until Phase C). The compiler
+                                #   ITSELF is not covered here; `zig build -Dtarget=x86_64-linux`
+                                #   is the by-hand check for that (it reproduced the CI error).
+                                #   Blind to: runtime behaviour, macOS, and any runtime helper no
+                                #   listed program instantiates (Zig analyses lazily).
 bash tools/styler_test.sh       # tokenizer unit test (`zig test` on the pure STYLER block
                                 #   extracted verbatim from the libui section). RED-checked:
                                 #   flipping a spec flag fails the matching tests.
@@ -2275,7 +2289,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 106 scripts | <!-- doc-gen: 106 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 107 scripts | <!-- doc-gen: 107 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 42 tracked documents <!-- doc-gen: 42 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

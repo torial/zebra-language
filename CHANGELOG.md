@@ -23,6 +23,8 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Fixed: under Zig 0.17, programs using `sys.spawn` (and the compiler itself) did not compile on Linux without libc** (BUG-523): `std.os.linux.waitpid` changed its status parameter to `*i32`. Never released.
+
 - **The toolchain is Zig 0.17.0** (step 2 of the move, `docs/design/zig017_migration.md`). `.zig-version` pins it and the repo's tools refuse to run on any other zig (`tools/zig_toolchain.sh`); CI and release builds download 0.17.0, and release tags are `_zig0.17`. The source still builds with 0.16 until step 3.
 
 - **`--gui-backend=tui` is refused, naming the reason**: the terminal backend is built on zigzag, which does not support Zig 0.17 yet. Use `--gui-backend=libui_ng`. It returns when zigzag does.

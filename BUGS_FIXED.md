@@ -6,6 +6,13 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-523: under Zig 0.17 the runtime does not compile for Linux without libc -- `std.os.linux.waitpid` takes `*i32` -- FIXED 2026-10-04
+- **Severity:** High for Linux (every program reaching `sys.spawn`'s `isRunning` on the no-libc path -- the fast `-fno-llvm` build -- failed to compile, and so did the COMPILER itself on Linux, since `zebra debug` uses it). Shipped in 0079ced (Phase B, the toolchain move); no release carried it.
+- **Where:** `selfhost/stdlib_preamble.zig`, `isRunning`'s `builtin.target.os.tag == .linux` branch passed `&st` with `st: u32`. Zig 0.16 declared `waitpid(pid, status: *u32, flags)`; 0.17 declares `status: *i32`. The release notes do not mention it.
+- **Found by:** the first Linux CI build of 0079ced (`quick-linux`, Build step: `zebra_rt.zig:1202:75: error: expected type '*i32', found '*u32'`). Every local gate was green: they all build for Windows, and Zig analyses lazily, so the Linux branch was never compiled here.
+- **Fix:** the status variable takes its type from `waitpid`'s own signature (`std.meta.Child(_zbr_fn_info_param(...))`) and is `@bitCast` to the `u32` status -- correct under 0.16 and 0.17, which the tree must be until Phase C.
+- **The class, not just the instance:** `tools/cross_sema_check.sh`, registered `cross-sema` (FAST), analyses five runtime-covering programs for x86_64-windows-gnu, x86_64-linux (no libc) and x86_64-linux-gnu -lc. It grew from `win_sema_check.sh`, which only had the Windows target and was in no tier. RED-CHECKED WITH THE REAL ATTACKER: run against 0079ced's own preamble the linux leg names the same line (`zebra_rt.zig:1202:75`), the other two targets stay green; with the fix all 15 analyses pass, under Zig 0.17 and 0.16. The compiler itself: `zig build -Dtarget=x86_64-linux` reproduced the CI error before the fix and builds and links after it. `# pins: BUG-523` in the tool.
+
 ### BUG-522: a program run on the compiler's LLVM path is not handed ZEBRA_COMPILER -- FIXED 2026-10-03
 - **Severity:** Medium (a program the compiler runs cannot find the compiler -- `zebra lsp`, a nested compile -- whenever it has an `extern`, a C dependency, sqlite, DynLib, or is built `--release`; the fast path handed it over, so most programs never noticed).
 - **Where:** selfhost/main.zbr's run step. BUG-327 layer 2 set `ZEBRA_COMPILER` before `exec_inherit` of the FAST-path executable only; the LLVM branch (`rargv2`) ran its executable without it.

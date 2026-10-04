@@ -1198,9 +1198,10 @@ pub fn _sys_process_is_running(p: *_SysProcess) bool {
             status = @bitCast(st);
             break :blk r;
         } else if (comptime builtin.target.os.tag == .linux) blk: {
-            var st: u32 = 0;
+            // The status pointee is *u32 in Zig 0.16 and *i32 in 0.17: take it from the signature.
+            var st: std.meta.Child(_zbr_fn_info_param(@typeInfo(@TypeOf(std.os.linux.waitpid)).@"fn", 1)) = 0;
             const r: isize = @bitCast(std.os.linux.waitpid(@intCast(pid), &st, std.os.linux.W.NOHANG));
-            status = st;
+            status = @bitCast(st);
             break :blk r;
         } else @compileError("sys.spawn: isRunning needs libc on this target");
         if (rc == 0) return true;
