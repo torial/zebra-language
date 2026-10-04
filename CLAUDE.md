@@ -226,7 +226,7 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 17 <!-- doc-gen: 17 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 36 <!-- doc-gen: 36 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| `--fast` | 35 <!-- doc-gen: 35 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
 | (default) | 38 <!-- doc-gen: 38 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
 | `--full` | 46 <!-- doc-gen: 46 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
 | `--daily` | 57 <!-- doc-gen: 57 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
@@ -539,12 +539,25 @@ bash tools/libui_pin_build_check.sh  # THE STRANGER'S LIBUI BUILD, registered as
                                 #   refused a correctly pinned scaffold. ~15 min the first time a
                                 #   pin is fetched.
 bash tools/cross_sema_check.sh  # THE OTHER-OS COMPILE WITNESS, registered as `cross-sema`
-                                #   (FAST tier, ~12 s, 2026-10-04): emits five runtime-covering
-                                #   programs and runs `zig build-exe -fno-emit-bin` on each for
+                                #   (QUICK tier, ~50-80 s, 2026-10-04). Five targets:
                                 #   x86_64-windows-gnu, x86_64-linux (NO libc -- the raw-syscall
-                                #   branches the fast `-fno-llvm` path builds) and
-                                #   x86_64-linux-gnu -lc. Full Sema of every OS / link_libc
-                                #   branch this host never builds. Grew out of
+                                #   branches the fast `-fno-llvm` path builds), x86_64-linux-gnu
+                                #   -lc, x86_64-macos and aarch64-macos (NOTHING had ever
+                                #   analysed the runtime for macOS before this). Two legs per
+                                #   target: PROGRAMS -- five runtime-covering programs emitted
+                                #   and `zig build-exe -fno-emit-bin`, which instantiates the
+                                #   GENERIC runtime as user code does -- and RUNTIME
+                                #   DECLARATIONS -- `zig test` referencing every declaration of
+                                #   the emitted zebra_rt.zig and recursing into its own
+                                #   container types (tools/fixtures/refall_rec.zig), which
+                                #   reaches the NON-generic helpers no listed program calls.
+                                #   Zig analyses lazily, so without that leg a helper nobody
+                                #   calls is never compiled for any target. The leg's control is
+                                #   PLANTED EVERY RUN: a @compileError in a method two structs
+                                #   deep must be reported or it REFUSES (exit 2) -- std's own
+                                #   refAllDecls does not recurse and misses it (measured), and a
+                                #   first draft whose filter was a RUNTIME condition escaped into
+                                #   std and reported 62 errors that were none of ours. Grew out of
                                 #   `win_sema_check.sh` (2026-09-07, now a wrapper for the
                                 #   windows leg), which caught the blind PeekNamedPipe path and
                                 #   the kernel32 DynLib loader and was in NO tier.
@@ -552,13 +565,14 @@ bash tools/cross_sema_check.sh  # THE OTHER-OS COMPILE WITNESS, registered as `c
                                 #   on every Windows gate and red on its first Linux CI build --
                                 #   0.17's `std.os.linux.waitpid` takes `*i32`, and isRunning's
                                 #   no-libc branch passed `*u32`. RED-CHECKED WITH THAT COMMIT'S
-                                #   OWN PREAMBLE, not a mutation: the linux leg names the same
-                                #   line, the two other targets stay green. Passes under 0.16
-                                #   too (the tree is dual-version until Phase C). The compiler
-                                #   ITSELF is not covered here; `zig build -Dtarget=x86_64-linux`
-                                #   is the by-hand check for that (it reproduced the CI error).
-                                #   Blind to: runtime behaviour, macOS, and any runtime helper no
-                                #   listed program instantiates (Zig analyses lazily).
+                                #   OWN PREAMBLE, not a mutation: BOTH legs name the same line on
+                                #   x86_64-linux and every other target stays green. Passes under
+                                #   0.16 too (the tree is dual-version until Phase C). The
+                                #   compiler ITSELF is not covered here; `zig build
+                                #   -Dtarget=<t>` is the by-hand check (it reproduced the CI
+                                #   error; x86_64-macos links a Mach-O in ~60 s).
+                                #   Blind to: linking and runtime behaviour on any non-host OS,
+                                #   and GENERIC runtime code that no listed program instantiates.
 bash tools/styler_test.sh       # tokenizer unit test (`zig test` on the pure STYLER block
                                 #   extracted verbatim from the libui section). RED-checked:
                                 #   flipping a spec flag fails the matching tests.

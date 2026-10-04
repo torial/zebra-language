@@ -8,8 +8,8 @@
 # version the binary does not print.
 #
 # Windows is the tested platform; Linux has been green since 2026-09-06
-# (docs/LINUX_BUILD.md). macOS has never built Zebra -- its job runs but may not fail
-# the release (continue-on-error) until a smoke has been seen green there.
+# (docs/LINUX_BUILD.md). macOS (aarch64) has been green since rc2 (2026-09-12); its leg
+# FAILS the release when red (experimental: false). See also macos-native.yml (manual probe).
 #
 # Zig checksums: all three platforms are PINNED to the sha256 values published in
 # ziglang.org/download/index.json for 0.17.0 (read 2026-09-10; the Windows value is

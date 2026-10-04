@@ -1,0 +1,80 @@
+# macOS native probe -- MANUAL ONLY (workflow_dispatch), no standing CI cost.
+#
+# Why it exists (2026-10-04): every gate runs on x86_64 (Windows, Linux). Apple silicon is
+# where Zig's SELF-HOSTED aarch64 backend gets used -- both by a debug `zig build` of the
+# compiler (build.zig's fast-backend default) and by the compiler's own run fast path
+# (`-fno-llvm -fno-lld` for user programs, falling back to LLVM only on a REPORTED error).
+# Cross-compiling for aarch64-macos from Windows, that backend did not finish hello-world
+# in 4 minutes under 0.16 OR 0.17, and the compiler's own debug build died with exit code
+# 5 after 53 minutes -- while rc6's release job (0.16, native) ran a debug hello-world fine.
+# So the cross result is not evidence about a Mac; this job is. Each probe is TIMED and
+# BOUNDED: a hang shows up as a timeout with its duration, never as a pass.
+name: macos-native
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download Zig (pinned by .zig-version)
+        shell: bash
+        run: |
+          set -euo pipefail
+          v=$(cat .zig-version)
+          [ "$v" = "0.17.0" ] || { echo "::error::this probe pins the 0.17.0 checksum; .zig-version says $v"; exit 1; }
+          curl -fsSL "https://ziglang.org/download/$v/zig-aarch64-macos-$v.tar.xz" -o zig.tar.xz
+          got=$(shasum -a 256 zig.tar.xz | cut -d" " -f1)
+          want=b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a
+          [ "$got" = "$want" ] || { echo "::error::Zig checksum mismatch: got $got want $want"; exit 1; }
+          tar xf zig.tar.xz && mv "zig-aarch64-macos-$v" zig-toolchain
+          echo "$GITHUB_WORKSPACE/zig-toolchain" >> "$GITHUB_PATH"
+
+      - name: Build the compiler (ReleaseSafe -- LLVM, what a release ships)
+        shell: bash
+        run: |
+          set -euo pipefail
+          zig version
+          s=$SECONDS; zig build -Doptimize=ReleaseSafe; echo "ReleaseSafe build: $((SECONDS-s)) s"
+          ./zig-out/bin/zebra --version
+
+      - name: "Probe 1: user programs through the run fast path (debug, aarch64 self-hosted backend)"
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          bound() { local t=$1; shift; "$@" & local p=$!; ( sleep "$t"; kill -9 "$p" ) >/dev/null 2>&1 & local w=$!; wait "$p"; local rc=$?; kill "$w" 2>/dev/null; return $rc; }   # no GNU timeout on macOS; a kill shows rc=137. (perl alarm was tried and did NOT fire on a test host.)
+          printf 'def main()\n    print("macos fast path ok")\n' > /tmp/hello.zbr
+          for f in /tmp/hello.zbr test/sys_spawn_piped_test.zbr examples/showcase.zbr; do
+            s=$SECONDS; out=$(bound 600 ./zig-out/bin/zebra "$f" 2>&1); rc=$?
+            echo "PROBE run $f: rc=$rc $((SECONDS-s)) s :: $(printf '%s' "$out" | tail -2 | tr '\n' ' ' | cut -c1-200)"
+          done
+
+      - name: "Probe 2: the self-hosted backend directly (does it finish, or does the fallback carry it?)"
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          bound() { local t=$1; shift; "$@" & local p=$!; ( sleep "$t"; kill -9 "$p" ) >/dev/null 2>&1 & local w=$!; wait "$p"; local rc=$?; kill "$w" 2>/dev/null; return $rc; }   # no GNU timeout on macOS; a kill shows rc=137. (perl alarm was tried and did NOT fire on a test host.)
+          ./zig-out/bin/zebra --emit-zig --output-dir /tmp/h /tmp/hello.zbr > /dev/null
+          cd /tmp/h
+          s=$SECONDS; bound 600 zig build-exe -fno-llvm -fno-lld hello.zig > be.log 2>&1; rc=$?
+          echo "PROBE self-hosted aarch64 build-exe: rc=$rc $((SECONDS-s)) s :: $(head -c 300 be.log | tr '\n' ' ')"
+          [ "$rc" = 0 ] && { s=$SECONDS; ./hello; echo "PROBE ran: rc=$? $((SECONDS-s)) s"; }
+
+      - name: "Probe 3: debug `zig build` of the compiler (build.zig's fast-backend default)"
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          bound() { local t=$1; shift; "$@" & local p=$!; ( sleep "$t"; kill -9 "$p" ) >/dev/null 2>&1 & local w=$!; wait "$p"; local rc=$?; kill "$w" 2>/dev/null; return $rc; }   # no GNU timeout on macOS; a kill shows rc=137. (perl alarm was tried and did NOT fire on a test host.)
+          s=$SECONDS; bound 2400 zig build --prefix /tmp/dbg > dbg.log 2>&1; rc=$?
+          echo "PROBE debug zig build: rc=$rc $((SECONDS-s)) s"
+          tail -15 dbg.log
+          s=$SECONDS; bound 2400 zig build -Dfast-backend=false --prefix /tmp/dbg-llvm > dbgl.log 2>&1; rc=$?
+          echo "PROBE debug zig build -Dfast-backend=false: rc=$rc $((SECONDS-s)) s"
+          tail -5 dbgl.log
