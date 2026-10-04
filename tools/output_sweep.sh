@@ -58,7 +58,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO"
-export PATH="/c/Users/Sean/.zvm/bin:$PATH"
+source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the shared ~/.zvm/bin default
 # shellcheck source=tools/zig_build_lib.sh
 . "$REPO/tools/zig_build_lib.sh"      # zbr_verdict_key: the output cache keys on the same hash
 

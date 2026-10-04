@@ -17,4 +17,4 @@ tool paths — do not move them).
 
 Release naming, so it is not lost again: the public release is **0.9** (internally the
 push is called 1.0), tagged with the toolchain it was tested against, e.g.
-`0.9_zig0.16`. See `NEXT_STEPS.md`.
+`0.9_zig0.17` (the toolchain moved from 0.16 on 2026-10-03). See `NEXT_STEPS.md`.

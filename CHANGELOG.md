@@ -23,6 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **The toolchain is Zig 0.17.0** (step 2 of the move, `docs/design/zig017_migration.md`). `.zig-version` pins it and the repo's tools refuse to run on any other zig (`tools/zig_toolchain.sh`); CI and release builds download 0.17.0, and release tags are `_zig0.17`. The source still builds with 0.16 until step 3.
+
+- **`--gui-backend=tui` is refused, naming the reason**: the terminal backend is built on zigzag, which does not support Zig 0.17 yet. Use `--gui-backend=libui_ng`. It returns when zigzag does.
+
+- **`ZEBRA_GUI_STUB_FRAMES=N`** runs a GUI program's MVU loop for N frames on the stub (test) backend, headless, printing `[gui] frame N` per frame; anything but a positive integer is refused.
+
 - **The compiler and every program it emits build with Zig 0.16 AND 0.17** (step 1 of the move to 0.17, `docs/design/zig017_migration.md`). The toolchain stays 0.16 for now. Visible changes: a `use foo` with `foo.h` now gets `_zbr_c_foo.zig` (the header translated with `zig translate-c`) beside the emitted file instead of an `@cImport`, and `--target node-addon` likewise writes `_zbr_c_napi.zig`. The libui_ng backend pins zig-libui-ng `aede6599`, which builds under both.
 
 - **A container field you never assign starts EMPTY (BUG-501 1c)** -- `var xs: List(int)` with no initialiser held undefined memory, and reading it panicked far from the cause ("integer does not fit in destination type"). Every constructor now builds it.

@@ -28,7 +28,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO"
-export PATH="/c/Users/Sean/.zvm/bin:$PATH"
+source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the shared ~/.zvm/bin default
 
 PROBE=tools/zz_gates_probe
 PASS=0; FAIL=0

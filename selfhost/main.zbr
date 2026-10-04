@@ -4476,9 +4476,15 @@ def main()
     if gui_backend == "stub"
         gui_backend = ""
     var has_gui              = gui_backend != ""
-    var gui_selfhost         = gui_backend == "tui" or gui_backend == "libui_ng"
+    # tui is REFUSED BY NAME since the Zig 0.17 move (Sean, 2026-10-03): it is built on
+    # zigzag, a third-party package with no 0.17 support. The section file
+    # (gui_tui_section.zig) and the scaffold are kept so it can return when zigzag moves.
+    if gui_backend == "tui"
+        sys.errln("zebra: --gui-backend=tui is not available on Zig 0.17: it is built on zigzag (github.com/meszmate/zigzag), which does not support 0.17 yet. Use --gui-backend=libui_ng, or no flag for the test backend. docs/design/zig017_migration.md")
+        sys.exit(2)
+    var gui_selfhost         = gui_backend == "libui_ng"
     if has_gui and not gui_selfhost
-        sys.errln("zebra: --gui-backend=" + gui_backend + " is not a backend; tui and libui_ng are, and stub (or no flag) is the test backend. glfw was retired with the bootstrap, 2026-09-15")
+        sys.errln("zebra: --gui-backend=" + gui_backend + " is not a backend; libui_ng is, and stub (or no flag) is the test backend. glfw was retired with the bootstrap, 2026-09-15; tui is unavailable on Zig 0.17")
         sys.exit(2)
     setGuiBackend(gui_backend)
     # --target node-addon: compile to a Node.js native addon (.node + .js + .d.ts)

@@ -43,16 +43,16 @@ call C libraries via `zig"..."` escape hatches (§23).
 
 ### Installation
 
-**Requirements:** Zig **0.16.0** -- the version releases are built and tested with (a
+**Requirements:** Zig **0.17.0** -- the version releases are built and tested with (a
 release archive bundles it, so this matters only when building from source). The
 recommended way to install Zig on Windows or Linux is
 [zvm](https://github.com/tristanisham/zvm) (Zig Version Manager):
 
 ```bash
 # Install zvm (follow instructions at https://github.com/tristanisham/zvm)
-# Then install Zig 0.16.0:
-zvm install 0.16.0
-zvm use 0.16.0
+# Then install Zig 0.17.0:
+zvm install 0.17.0
+zvm use 0.17.0
 ```
 
 **Clone and build:**
@@ -3199,22 +3199,22 @@ from both compilers in a structured format.
 | `--turbo` | Strip all contract checks (`require`/`ensure`/`invariant`) |
 | `--cpu=VALUE` | Pass `-mcpu=VALUE` to Zig (e.g. `native`, `x86_64+avx2`) — see §32 |
 | `--gui-backend=libui_ng` | Use native OS controls |
-| `--gui-backend=tui` | Use terminal UI backend |
+| `--gui-backend=tui` | Refused on Zig 0.17: the terminal backend's zigzag dependency does not support it yet |
 
 ---
 
 ## 30. GUI programming
 
 Zebra has a built-in GUI API with an **MVU (Model-View-Update)** architecture.
-Two backends are available: native OS controls via **libui-ng**, and a terminal
-UI via **ZigZag TUI**. (A third, Dear ImGui via OpenGL/GLFW, was removed on
+One backend is available: native OS controls via **libui-ng**. The terminal UI backend
+(**ZigZag TUI**) is unavailable on Zig 0.17 -- zigzag has no 0.17 support yet -- and
+`--gui-backend=tui` is refused with that reason; it returns when zigzag moves. (A third, Dear ImGui via OpenGL/GLFW, was removed on
 2026-08-29 -- see NEXT_STEPS "RETIRE THE IMGUI GUI BACKEND".)
 
 ### Running a GUI program
 
 ```bash
 zebra --gui-backend=libui_ng myapp.zbr  # Native OS controls (Win32/GTK3/Cocoa) — recommended
-zebra --gui-backend=tui      myapp.zbr  # Terminal UI (ZigZag — no GPU, no dependencies)
 zebra myapp.zbr                         # Default: stub backend (prints to stderr, for tests)
 ```
 
@@ -3707,8 +3707,9 @@ The GUI layer uses a `_GuiBackend` fn-pointer struct internally.  Swap the
 backend by implementing the fn-ptr slots and changing `_gui_active_backend`
 — no changes to user Zebra code required.
 
-Available backends: `stub` (no-op, for tests), `libui_ng` (native OS controls),
-`tui` (ZigZag terminal).
+Available backends: `stub` (no-op, for tests; `ZEBRA_GUI_STUB_FRAMES=N` runs N frames
+headless), `libui_ng` (native OS controls). `tui` (ZigZag terminal) is unavailable on
+Zig 0.17.
 
 ---
 

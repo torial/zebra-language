@@ -81,7 +81,7 @@ source "$REPO/tools/scratch_paths.sh"   # BUG-521: per-checkout ${ZBR_BS}-* scra
 [ -n "$GATES_LOG_DIR" ] || GATES_LOG_DIR="${ZBR_BS}-gates-logs"
 mkdir -p "$GATES_LOG_DIR" 2>/dev/null && rm -f "$GATES_LOG_DIR"/*.log 2>/dev/null || true
 cd "$REPO"
-export PATH="/c/Users/Sean/.zvm/bin:$PATH"
+source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the shared ~/.zvm/bin default
 
 # -- THE TIER LADDER -----------------------------------------------------------
 #
@@ -638,12 +638,6 @@ run_daily "gui-scaffold-modules" "startup path clean" bash tools/gui_scaffold_ch
 # later event -- the shape the stub backend cannot run (no `action`) and the smoke
 # fixture therefore cannot reach.
 run_daily "gui-scaffold-scope" "startup path clean" bash tools/gui_scaffold_check.sh examples/scope_smoke.zbr
-# g.area (2026-09-22): a CAPTURING draw closure handed to a Gui method on every render.
-# The BUG-358 shape moved here when the callback panels went: with area_smoke's draw
-# closure routed through the closure-via-sig pool the app died on its 65th frame, and
-# this run renders far more than 64 headless. The fix is in codegen (every Gui-receiver
-# call is a struct consumer), so this is where a regression would show.
-run_daily "gui-scaffold-area" "startup path clean" bash tools/gui_scaffold_check.sh examples/area_smoke.zbr
 # g.area (2026-09-22): a CAPTURING draw closure handed to a Gui method on every render.
 # The BUG-358 shape moved here when the callback panels went: with area_smoke's draw
 # closure routed through the closure-via-sig pool the app died on its 65th frame, and

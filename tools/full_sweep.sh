@@ -34,7 +34,7 @@
 # baseline entry here; nothing under test/ can reach the path, because the closure-thunk
 # route is only taken for stdlib callback consumers.
 set -u
-export PATH="/c/Users/Sean/.zvm/bin:$PATH"
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the shared ~/.zvm/bin default
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
 # Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26): use it when the .exe is absent.

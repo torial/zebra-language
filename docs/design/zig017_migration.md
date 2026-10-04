@@ -55,12 +55,34 @@ Audited and NOT affected: `@bitCast` (every use is integer-to-integer; the silen
 arrays, vectors and extern structs), `std.mem.eql` on floats (every use compares bytes), the
 `-OReleaseFast` CLI spelling (both versions accept it).
 
-## Phase B (not started)
+The linker bug was NOT reported upstream: the Zig team does not accept LLM-created content
+(Sean, 2026-10-03). The workaround stays until Phase C re-tests it.
 
-Tools and CI select 0.17 through `ZEBRA_ZIG` (the compiler's `zigExe()` already honours it);
-the N-1 anchor and `regen_recover --from <sha>` must build pre-migration commits with 0.16;
-`--gui-backend=tui` is refused by name; the `gui-scaffold` registrations move off tui; the
-release tag suffix becomes `_zig0.17`; zig-libui-ng's port is pushed and the pin bumped.
+## Phase B (2026-10-03/04): the toolchain is 0.17
+
+- **The pin.** `.zig-version` (0.17.0) and `tools/zig_toolchain.sh`, which every tool sources:
+  it puts that exact zig first on PATH, exports `ZEBRA_ZIG` (the compiler's `zigExe()`
+  honours it), and REFUSES on a version mismatch. It replaced 18 shell scripts' and 2 Python
+  tools' `~/.zvm/bin` -- the machine's SHARED default, which stays 0.16 for the other projects
+  (Sean's call) and would have kept every tool on 0.16 silently.
+- **History.** `regen_recover --from <sha>` builds a commit with THAT commit's
+  `.zig-version` (none = 0.16.0). The N-1 anchor moved to `n1-anchor-2026-10-03` = f5afd86
+  (Phase A.2, the first commit that builds under both); rc4's anchor is 0.16-only.
+- **CI and release** download 0.17.0 (checksums from ziglang.org's index, mapped one for one);
+  release tags are `_zig0.17`.
+- **tui is refused by name** (zigzag has no 0.17 support); the section file stays. Its
+  coverage moved: `gui_scaffold_check` reads the libui_ng scaffold (`--scaffold-only`) for
+  BUG-229's shape and runs the program on the STUB backend for 100 counted frames
+  (`ZEBRA_GUI_STUB_FRAMES`, new) for BUG-358's; the BUG-229 smoke leg is a PIN that fails the
+  day tui returns. Lost, and said so: a real backend's own startup is run by nothing.
+- **A probe 0.17 broke without breaking the code.** release-mode's BUG-468 stack-overflow
+  probe allocated a list per frame; under 0.17 the heap ran out first (`panic: OOM`). The
+  handler was fine -- a non-allocating probe prints "Stack overflow" on both toolchains in
+  both runtime shapes.
+- Measured: the DAILY tier under 0.17 passed everything but four gates, all fixed above
+  (two doc counts, the glfw-refusal wording, BUG-229's tui leg, the stack probe):
+  output_sweep 466 identical, full_sweep / divergence 0 regressions, libui-pin-build (a
+  stranger's build from the pin) PASS.
 
 ## Phase C
 

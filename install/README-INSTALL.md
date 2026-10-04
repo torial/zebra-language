@@ -51,6 +51,6 @@ to itself; to use a different Zig, set `ZEBRA_ZIG=/path/to/zig`.
 
 ## From source
 
-Zig 0.16 on PATH, then `git clone https://github.com/torial/zebra-language && cd
+Zig 0.17 on PATH (the version in `.zig-version`), then `git clone https://github.com/torial/zebra-language && cd
 zebra-language && zig build`. The compiler is `zig-out/bin/zebra` (`.exe` on Windows).
 `docs/LINUX_BUILD.md` has the container recipe.

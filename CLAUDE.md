@@ -229,7 +229,7 @@ per-tier counts, computed from the registrations rather than written down.
 | `--fast` | 35 <!-- doc-gen: 35 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
 | (default) | 37 <!-- doc-gen: 37 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
 | `--full` | 45 <!-- doc-gen: 45 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 57 <!-- doc-gen: 57 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--daily` | 56 <!-- doc-gen: 56 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -1250,7 +1250,7 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 56 assertions, 0 pins (2026-10-01: BUG-516 -- a --module-path dep left unemitted is named in a note, silent under --library-mode; 2026-09-26: `--allow-implicit-try` retired and refused BY NAME; `--target` other than node-addon and `--out` outside `zebra diagnostics` are refused -- both were accepted and IGNORED -- and --help must list the six flags it had omitted; 2026-09-24: three warning-tier legs -- a deprecation warns and `-c` exits 0, `--warnings-as-errors` fails naming the flag, and passes on a clean file; 2026-09-15: `--zig-backend` and
+                                #   past `repl` starting. 57 assertions, 0 pins (2026-10-03: `--gui-backend=tui` refused by name naming zigzag and libui_ng, and the GUI-args leg moved to libui_ng and requires BOTH run-arg spellings (`b.args` / 0.17 `addPassthruArgs`); 2026-10-01: BUG-516 -- a --module-path dep left unemitted is named in a note, silent under --library-mode; 2026-09-26: `--allow-implicit-try` retired and refused BY NAME; `--target` other than node-addon and `--out` outside `zebra diagnostics` are refused -- both were accepted and IGNORED -- and --help must list the six flags it had omitted; 2026-09-24: three warning-tier legs -- a deprecation warns and `-c` exits 0, `--warnings-as-errors` fails naming the flag, and passes on a clean file; 2026-09-15: `--zig-backend` and
                                 #   `--gui-backend=glfw` refused by name, retired with the bootstrap;
                                 #   `b.requires("^99.0")` refused through the real `zebra build`; 2026-09-14: `zebra up`
                                 #   refuses by name, OFFLINE, outside an install layout; 2026-09-10: BUG-317/324/325
@@ -2275,7 +2275,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 105 scripts | <!-- doc-gen: 105 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 106 scripts | <!-- doc-gen: 106 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 42 tracked documents <!-- doc-gen: 42 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -3193,8 +3193,9 @@ not a rendering problem — it needs neither a human nor a terminal. So
 
 | | covered by | |
 |---|---|---|
-| scaffold declares a global `= undefined` and never assigns it | `gui_scaffold_check` leg 1 (static) | **gated** |
-| app dies with a memory fault at startup | `gui_scaffold_check` leg 2 (runtime) | best-effort |
+| scaffold declares a global `= undefined` and never assigns it | `gui_scaffold_check` leg 1 (static, libui_ng `--scaffold-only` since 2026-10-03) | **gated** |
+| program faults or panics in the MVU loop, incl. past frame 64 (BUG-358) | `gui_scaffold_check` leg 2 (runtime, the STUB backend for 100 frames via `ZEBRA_GUI_STUB_FRAMES`, frames counted) | **gated** |
+| a real backend's own startup (terminal / window setup) | nothing since the tui backend was dropped (Zig 0.17) | uncovered |
 | rendering, input, layout, resize, colours | **a human running it** | still uncovered |
 
 **Its leg 2 now fails on a panic AFTER startup, and runs twice (2026-09-09).** BUG-358 —
@@ -3231,9 +3232,11 @@ the callback panels were removed: the first tui build of that example died on it
 builders by name. It names the receiver type now (every method on a `Gui` copies or calls
 its closure), and this registration is where that regression would show.
 
-Run it as `bash tools/gui_scaffold_check.sh [examples/foo.zbr]`. It builds a real tui app,
-so it is minutes, not seconds — treat it like `compile_check`: per-session and
-pre-release, not in the QUICK tier. The tool prints its own uncovered list, so the
+Run it as `bash tools/gui_scaffold_check.sh [examples/foo.zbr]`. **Since the Zig 0.17 move
+(2026-10-03) it no longer builds a tui app** — the tui backend is refused (its zigzag dependency
+has no 0.17 support). Leg 1 reads the libui_ng scaffold (`--scaffold-only`: no build, no
+network, no window); leg 2 runs the program on the stub backend for 100 frames headless and
+counts them, which keeps BUG-358's frame-65 class covered. Daily tier. The tool prints its own uncovered list, so the
 remaining gap cannot quietly be forgotten.
 
 Sean confirmed BUG-229's fix by running `--gui-backend=tui examples/counter.zbr` and

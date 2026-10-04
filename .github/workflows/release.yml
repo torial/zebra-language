@@ -2,7 +2,7 @@
 # built with (Zig is a RUNTIME dependency -- every program is emitted as Zig), and
 # attach one zip per platform to the GitHub release for the tag.
 #
-# Tag convention (Sean, 2026-09-09): v<version>_zig<zig major.minor>, e.g. v0.9.0_zig0.16.
+# Tag convention (Sean, 2026-09-09): v<version>_zig<zig major.minor>, e.g. v0.9.0_zig0.17.
 # The version is the ONE constant `_zbr_version` in selfhost/stdlib_preamble.zig; the
 # first job refuses a tag that does not spell it, so a release can never claim a
 # version the binary does not print.
@@ -12,7 +12,7 @@
 # the release (continue-on-error) until a smoke has been seen green there.
 #
 # Zig checksums: all three platforms are PINNED to the sha256 values published in
-# ziglang.org/download/index.json for 0.16.0 (read 2026-09-10; the Windows value is
+# ziglang.org/download/index.json for 0.17.0 (read 2026-09-10; the Windows value is
 # the one gates-*.yml already used, which is the control that the read was right).
 # `sha: index` is still accepted for a NEW platform until its value is seen once.
 name: release
@@ -35,7 +35,7 @@ jobs:
           ver=$(grep -oE '_zbr_version: \[\]const u8 = "[^"]+"' selfhost/stdlib_preamble.zig | sed -E 's/.*"([^"]+)"/\1/')
           [ -n "$ver" ] || { echo "::error::_zbr_version not found in selfhost/stdlib_preamble.zig"; exit 1; }
           tag="${GITHUB_REF_NAME}"
-          want="v${ver}_zig0.16"
+          want="v${ver}_zig0.17"
           if [ "$tag" != "$want" ]; then
             echo "::error::tag '$tag' does not match the compiler's version: expected '$want' (bump _zbr_version in selfhost/stdlib_preamble.zig, or fix the tag)"
             exit 1
@@ -50,23 +50,23 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            zig: zig-x86_64-windows-0.16.0
+            zig: zig-x86_64-windows-0.17.0
             ext: zip
-            sha: 68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e
+            sha: b5663f69581dcf391293fbf16c06cb80d81d806545ce618b4d0bab7f0eb8c428
             plat: windows-x86_64
             exe: zebra.exe
             experimental: false
           - os: ubuntu-latest
-            zig: zig-x86_64-linux-0.16.0
+            zig: zig-x86_64-linux-0.17.0
             ext: tar.xz
-            sha: 70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
+            sha: 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
             plat: linux-x86_64
             exe: zebra
             experimental: false
           - os: macos-latest
-            zig: zig-aarch64-macos-0.16.0
+            zig: zig-aarch64-macos-0.17.0
             ext: tar.xz
-            sha: b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489
+            sha: b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a
             plat: macos-aarch64
             exe: zebra
             experimental: false   # rc2's smoke ran green on macos-latest (2026-09-12); a red leg now fails the release
@@ -76,16 +76,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Download Zig 0.16.0 (${{ matrix.zig }})
+      - name: Download Zig 0.17.0 (${{ matrix.zig }})
         shell: bash
         run: |
           set -euo pipefail
-          url="https://ziglang.org/download/0.16.0/${{ matrix.zig }}.${{ matrix.ext }}"
+          url="https://ziglang.org/download/0.17.0/${{ matrix.zig }}.${{ matrix.ext }}"
           curl -fsSL "$url" -o "zig.${{ matrix.ext }}"
           want="${{ matrix.sha }}"
           if [ "$want" = "index" ]; then
             key=$(echo "${{ matrix.zig }}" | sed -e 's/^zig-//' -e 's/-0\.16\.0$//')
-            want=$(curl -fsSL https://ziglang.org/download/index.json | python3 -c "import json,sys; print(json.load(sys.stdin)['0.16.0']['$key']['shasum'])")
+            want=$(curl -fsSL https://ziglang.org/download/index.json | python3 -c "import json,sys; print(json.load(sys.stdin)['0.17.0']['$key']['shasum'])")
           fi
           got=$(sha256sum "zig.${{ matrix.ext }}" | cut -d" " -f1)
           [ "$got" = "$want" ] || { echo "::error::Zig checksum mismatch: got $got want $want"; exit 1; }
@@ -114,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           v="${{ needs.tag-matches-version.outputs.version }}"
-          name="zebra-${v}_zig0.16-${{ matrix.plat }}"
+          name="zebra-${v}_zig0.17-${{ matrix.plat }}"
           mkdir -p "dist/$name"
           cp -r zig-out/bin/. "dist/$name/"          # zebra[.exe], the preamble + GUI sections, vendor/sqlite/sqlite3.c
           cp -r zig-toolchain "dist/$name/zig"        # the Zig this binary was built and tested with

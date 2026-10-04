@@ -31,7 +31,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
-export PATH="/c/Users/Sean/.zvm/bin:$PATH"
+source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the shared ~/.zvm/bin default
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
 # Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26): use it when the .exe is absent.
 [ -x "$ZEBRA" ] || [ ! -x "${ZEBRA%.exe}" ] || ZEBRA="${ZEBRA%.exe}"
@@ -208,13 +208,18 @@ rm -rf "$_idx_dir"
 # from different places: the inline shape from the preamble in its root file, the module
 # shape from a re-export in the root. Classified on the TEXT; the `start` sentinel proves
 # the program ran (a build failure prints neither). Red-checked against rc4: silent.
+# THE PROBE MUST NOT ALLOCATE (2026-10-03). It used a per-frame list (`pad`) to stop LLVM
+# turning the recursion into a loop; under Zig 0.17 the frames got small enough that the
+# HEAP ran out first and the program printed `panic: OOM` -- this leg went red on a probe
+# that no longer overflowed its stack, while the handler was fine. A NON-associative step
+# (`* 3 + n`, mod) defeats the accumulator transform without touching the heap. Red-checked
+# again with the handler switched off in the preamble: silent, FAIL.
 _so_dir="$(mktemp -d)"
 cat > "$_so_dir/deep.zbr" <<'ZBR'
 def down(n: int): int
     if n < 1
         return 0
-    var pad = [n, n + 1, n + 2, n + 3]
-    return down(n - 1) + pad.count() - 4
+    return (down(n - 1) * 3 + n) % 1000003
 
 def main()
     print("start")
@@ -253,29 +258,30 @@ rm -rf "$_so_dir"
 # project and built with `zig build`, whose build.zig reads standardOptimizeOption. Nothing
 # passed it one, so every `--release --gui-backend=...` binary was Debug -- the BUG-228
 # shape again, in the one path this gate did not build. Same self-calibrating comparison as
-# leg 2: two builds of one program, one with the flag. tui backend (no native toolkit).
+# leg 2: two builds of one program, one with the flag. libui_ng backend (tui, which needed no
+# native toolkit, was dropped with the Zig 0.17 move: zigzag has no 0.17 support).
 # `-c --check-full` builds without launching the app (BUG-439).
 _gui_dir="$(mktemp -d)"
 _gui_build() {   # $1 = subdir, $2.. = extra flags; prints the app's size, or nothing
     mkdir -p "$_gui_dir/$1"
-    (cd "$_gui_dir/$1" && timeout 900 "$ZEBRA" -c --check-full "${@:2}" --gui-backend=tui \
+    (cd "$_gui_dir/$1" && timeout 900 "$ZEBRA" -c --check-full "${@:2}" --gui-backend=libui_ng \
         --output-dir . "$REPO/examples/counter.zbr" >build.log 2>&1)
     local app
-    for app in "$_gui_dir/$1/counter_gui_tui/zig-out/bin/app.exe" "$_gui_dir/$1/counter_gui_tui/zig-out/bin/app"; do
+    for app in "$_gui_dir/$1/counter_gui_libui_ng/zig-out/bin/app.exe" "$_gui_dir/$1/counter_gui_libui_ng/zig-out/bin/app"; do
         [[ -f "$app" ]] && { stat -c %s "$app"; return; }
     done
 }
 g_dbg="$(_gui_build dbg)"
 g_rel="$(_gui_build rel --release)"
 if [[ -z "$g_dbg" || -z "$g_rel" ]]; then
-    say FAIL "GUI (tui) build produced no app (debug='$g_dbg' release='$g_rel') -- the GUI size check could not run, so this gate knows NOTHING about GUI --release"
+    say FAIL "GUI (libui_ng) build produced no app (debug='$g_dbg' release='$g_rel') -- the GUI size check could not run, so this gate knows NOTHING about GUI --release"
     tail -5 "$_gui_dir/rel/build.log" 2>/dev/null | sed 's/^/        /'
     fail=$((fail + 1))
 elif [[ $(( g_rel * 100 / g_dbg )) -gt 75 ]]; then
     say FAIL "GUI release app is $((g_rel/1024)) KB vs $((g_dbg/1024)) KB without --release -- the optimize flag does not reach the GUI build (BUG-451)"
     fail=$((fail + 1))
 else
-    say ok "GUI (tui) release app $((g_rel/1024)) KB vs $((g_dbg/1024)) KB -- --release reaches the GUI build"
+    say ok "GUI (libui_ng) release app $((g_rel/1024)) KB vs $((g_dbg/1024)) KB -- --release reaches the GUI build"
 fi
 rm -rf "$_gui_dir"
 

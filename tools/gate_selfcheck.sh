@@ -36,7 +36,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$REPO/tools/scratch_paths.sh"   # BUG-521: per-checkout ${ZBR_BS}-* scratch
 cd "$REPO"
-export PATH="/c/Users/Sean/.zvm/bin:$PATH"
+source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the shared ~/.zvm/bin default
 PY=/c/Users/Sean/AppData/Local/Programs/Python/Python311/python
 
 FAIL=0

@@ -83,7 +83,7 @@ fi
 # DIV_SELF_OVERRIDE is the matching test hook for the subject side; see
 # n1_reference.sh. Together they let the gate be watched going RED.
 SELF="${DIV_SELF_OVERRIDE:-$REPO/zig-out/bin/zebra.exe}"
-export PATH="/c/Users/Sean/.zvm/bin:$PATH"
+source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the shared ~/.zvm/bin default
 
 # emit+compile one file with one compiler; echo a status token.
 #   EMITFAIL | NOMAIN | CPASS | CFAIL

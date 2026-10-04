@@ -4352,10 +4352,29 @@ pub fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
     _ = title; _ = width; _ = height;
 }
 pub fn _stub_deinit() void {}
-pub var _stub_frame_count: u8 = 0;
+pub var _stub_frame_count: u32 = 0;
+var _stub_frames_wanted: u32 = 0;
+// Frames the stub renders before Gui.run returns: 1, or $ZEBRA_GUI_STUB_FRAMES. The knob
+// lets a gate drive the MVU loop headless past per-frame resource limits (BUG-358's
+// 65th-frame closure-pool exhaustion) -- the tui backend did that until it was dropped with
+// the Zig 0.17 move (gui_scaffold_check.sh). A value that is not a positive integer is
+// refused, never read as 1: a gate asking for 100 frames must not silently get one.
+fn _stub_frames() u32 {
+    if (_stub_frames_wanted == 0) {
+        _stub_frames_wanted = 1;
+        if (_sys_getenv("ZEBRA_GUI_STUB_FRAMES")) |s| {
+            const n = std.fmt.parseInt(u32, s, 10) catch 0;
+            if (n == 0) @panic("ZEBRA_GUI_STUB_FRAMES must be a positive integer");
+            _stub_frames_wanted = n;
+        }
+    }
+    return _stub_frames_wanted;
+}
 pub fn _stub_new_frame() bool {
-    if (_stub_frame_count >= 1) return false;
+    if (_stub_frame_count >= _stub_frames()) return false;
     _stub_frame_count += 1;
+    // Only under the knob: a gate counts these to prove the loop really ran N frames.
+    if (_stub_frames() > 1) std.debug.print("[gui] frame {d}\n", .{_stub_frame_count});
     return true;
 }
 pub fn _stub_end_frame() void {}

@@ -128,7 +128,7 @@ def main():
 
     work = pathlib.Path(tempfile.mkdtemp(prefix="zbr-sig-"))
     env = dict(os.environ)
-    env["PATH"] = "/c/Users/Sean/.zvm/bin;" + env.get("PATH", "")
+    env["PATH"] = (os.path.dirname(os.environ["ZEBRA_ZIG"]) + ";" if os.environ.get("ZEBRA_ZIG") else "") + env.get("PATH", "")   # the pinned zig
 
     def compiles(recv, method, args, tag):
         src = work / ("sig_%s_%s_%s.zbr" % (recv.replace("(", "_").replace(")", ""), method, tag))

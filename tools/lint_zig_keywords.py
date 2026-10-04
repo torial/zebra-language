@@ -68,7 +68,7 @@ def fail_refuse(msg):
 def zig_lib_dir():
     """Resolve Zig's lib dir via `zig env`.  Output is ZON, not JSON."""
     exe = "zig"
-    for cand in (os.environ.get("ZIG_EXE"), "/c/Users/Sean/.zvm/bin/zig.exe"):
+    for cand in (os.environ.get("ZIG_EXE"), os.environ.get("ZEBRA_ZIG")):   # the pinned zig (tools/zig_toolchain.sh)
         if cand and pathlib.Path(cand).exists():
             exe = cand
             break

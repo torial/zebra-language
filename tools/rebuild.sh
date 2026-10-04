@@ -85,7 +85,7 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-export PATH="/c/Users/Sean/.zvm/bin:$PATH"
+source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the shared ~/.zvm/bin default
 
 step() { printf '\n\033[1m── %s\033[0m\n' "$1"; }
 fail() { printf '\033[31mrebuild: %s\033[0m\n' "$1" >&2; exit 1; }

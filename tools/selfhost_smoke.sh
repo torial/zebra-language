@@ -98,6 +98,21 @@ smoke_gui_emit_contains() {
     rm -f "$TMPDIR_OUT"/*.zig
 }
 
+# A PIN for a fixture whose backend is REFUSED (tui since the Zig 0.17 move): the emit must
+# fail and name the reason. It passes while the refusal stands and FAILS the day the backend
+# returns -- the signal to restore the fixture's real check (left in a comment at the call).
+smoke_gui_refused() {
+    local zbr="$1"; local backend="$2"; local reason="$3"
+    local label; label="$(basename "$zbr" .zbr)_${backend}pin"
+    if ! "$ZEBRA" --emit-zig --gui-backend="$backend" "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/refused.err" \
+       && grep -qF -- "$reason" "$TMPDIR_OUT/refused.err"; then
+        echo "  PASS: $label ($backend refused naming '$reason' -- restore the real check when it returns)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $label -- $backend was NOT refused as pinned: if it is back, restore this fixture's real check" >&2; FAIL=$((FAIL + 1))
+    fi
+    rm -f "$TMPDIR_OUT"/*.zig "$TMPDIR_OUT/refused.err"
+}
+
 # Run `zebra test` and check all tests pass (exit 0, no FAIL lines in output).
 smoke_test() {
     local zbr="$1"
@@ -934,7 +949,11 @@ smoke_run test/contract_old_test.zbr "100"
 # bug294-loop=7.
 
 # BUG-229: the tui emit must ASSIGN _tui_env, not merely declare it.
-smoke_gui_emit_contains test/bug229_tui_env_assigned_test.zbr tui "_tui_env = "
+# BUG-229's emit check needs the tui backend, REFUSED since the Zig 0.17 move (its zigzag
+# dependency has no 0.17 support). PINNED rather than dropped: this leg asserts the refusal,
+# so the day tui returns it FAILS -- and the original check must be restored:
+#   smoke_gui_emit_contains test/bug229_tui_env_assigned_test.zbr tui "_tui_env = "
+smoke_gui_refused test/bug229_tui_env_assigned_test.zbr tui "zigzag"
 smoke_tc_fail test/bug235_bare_use_test.zbr "undefined name: 'Widget'"
 smoke_run test/arg_count_ok_test.zbr "Hello, World"
 

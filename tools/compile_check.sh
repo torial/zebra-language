@@ -100,7 +100,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 JOBS="${JOBS:-4}"
-export PATH="/c/Users/Sean/.zvm/bin:$PATH"   # ensure zig is reachable when run standalone
+source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the shared ~/.zvm/bin default
 export CC_SINGLE_FILE="$SF"                   # picked up by --worker
 export CC_INLINE_RT="$RM"                     # picked up by --worker
 mkdir -p "$OUT"

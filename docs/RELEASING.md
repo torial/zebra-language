@@ -9,7 +9,7 @@ Written 2026-09-10 for the first public release, `0.9.0_zig0.16` (public 0.9 = i
 | what | where |
 |---|---|
 | the version, ONE place | `_zbr_version` in `selfhost/stdlib_preamble.zig`; `zebra --version` prints it |
-| the tag convention | `v<version>_zig0.16`, e.g. `v0.9.0_zig0.16`; the workflow refuses a mismatch or a `-dev` version. A test build is a semver PRE-RELEASE, `v0.9.0-rc1_zig0.16` (`_zbr_version = "0.9.0-rc1"`), which sorts BEFORE `0.9.0` -- not `0.89`, which sorts AFTER it (89 > 9) |
+| the tag convention | `v<version>_zig<zig major.minor>` -- `_zig0.17` since the Zig 0.17 move (2026-10-03; releases before it are `_zig0.16`), e.g. `v0.9.0_zig0.17`; the workflow refuses a mismatch or a `-dev` version. A test build is a semver PRE-RELEASE, `v0.9.0-rc1_zig0.16` (`_zbr_version = "0.9.0-rc1"`), which sorts BEFORE `0.9.0` -- not `0.89`, which sorts AFTER it (89 > 9) |
 | the workflow | `.github/workflows/release.yml` -- on a `v*` tag: Windows, Linux, macOS (experimental) builds, each with the pinned Zig bundled, smoke-tested, zipped, attached to the GitHub release with `SHA256SUMS.txt` |
 | how the binary finds Zig | `zigExe()` in `selfhost/main.zbr`: `$ZEBRA_ZIG`, then `<exe dir>/zig/zig`, then PATH |
 | installers | `install/install.sh`, `install/install.ps1`, `install/README-INSTALL.md` (shipped in the archive as `INSTALL.md`) |
@@ -21,7 +21,7 @@ Written 2026-09-10 for the first public release, `0.9.0_zig0.16` (public 0.9 = i
 2. Bump `_zbr_version` from `x.y.z-dev` to `x.y.z`; regenerate (`bash tools/rebuild.sh`,
    the preamble is embedded); commit "release: x.y.z".
 3. `CHANGELOG.md`: a section for the version.
-4. Tag: `git tag v0.9.0_zig0.16 && git push origin main --tags`. The workflow runs; the
+4. Tag: `git tag v0.9.0_zig0.17 && git push origin main --tags`. The workflow runs; the
    first job fails fast if the tag and `_zbr_version` disagree.
 5. When the release page has the three archives: on a clean machine (or a fresh user),
    run the installer for your platform and `zebra examples/hello.zbr`. That is the
@@ -32,7 +32,7 @@ Written 2026-09-10 for the first public release, `0.9.0_zig0.16` (public 0.9 = i
 
 - ~~No LICENSE file in the repo.~~ **MIT, added 2026-09-10 (Sean's call)**; `LICENSE` is
   copied into every release zip.
-- The Zig checksums for all three platforms are pinned in `release.yml` (the 0.16.0
+- The Zig checksums for all three platforms are pinned in `release.yml` (the 0.17.0
   values from `ziglang.org/download/index.json`, read 2026-09-10; Windows
   `68659eb5…`, Linux `70e49664…`, macOS-aarch64 `b23d70de…`). A new platform may
   start as `sha: index` (verified against the index at run time) until its value has

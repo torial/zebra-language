@@ -183,8 +183,8 @@ chk "\`--zig-backend\` is refused by name (retired with the bootstrap), nothing 
     "$([ "$RC" != 0 ] && case "$ERR" in *"unrecognized flag: --zig-backend"*) echo 0;; *) echo 1;; esac || echo 1)" \
     "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
 run --gui-backend=glfw hello.zbr
-chk "\`--gui-backend=glfw\` is refused naming tui and libui_ng (the delegated backend retired)" \
-    "$([ "$RC" != 0 ] && case "$ERR" in *"glfw is not a backend"*"tui and libui_ng"*) echo 0;; *) echo 1;; esac || echo 1)" \
+chk "\`--gui-backend=glfw\` is refused naming libui_ng (the delegated backend retired; tui is unavailable on Zig 0.17)" \
+    "$([ "$RC" != 0 ] && case "$ERR" in *"glfw is not a backend"*"libui_ng"*) echo 0;; *) echo 1;; esac || echo 1)" \
     "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
 
 # ---- `b.requires("^99.0")` (2026-09-15): the project-side version pin ----------------
@@ -527,11 +527,21 @@ chk "--help lists --cpu, --single-threaded, --module-path, --target, diagnostics
 # addArgs for the run step anyway. Scaffold-only is enough to witness the build.zig
 # half without opening a window; the argv half is the same code path.
 printf 'def view(g: Gui, m: int)\n    g.text("args")\ndef main()\n    Gui.run("a", 200, 100, def(): int\n        return 0\n    , def(m: int, msg: int): int\n        return m\n    , view)\n' > "$W/guiargs.zbr"
-run --gui-backend=tui --scaffold-only --output-dir "$W/ga" guiargs.zbr -- one two
-GA_BZ=$(ls "$W"/ga/guiargs_gui_tui/build.zig "$W"/ga/*/build.zig 2>/dev/null | head -1)
-chk "a GUI scaffold's build.zig forwards run-step args (BUG-429)" \
-    "$(grep -q 'run_step.addArgs(args)' "${GA_BZ:-/dev/null}" 2>/dev/null && echo 0 || echo 1)" \
+# libui_ng since the Zig 0.17 move (tui is refused, below). BOTH forwarding spellings must
+# be present: Zig 0.17 removed `b.args` for `addPassthruArgs()`, and the scaffold picks one
+# at comptime, so a scaffold carrying only one builds on only one toolchain.
+run --gui-backend=libui_ng --scaffold-only --output-dir "$W/ga" guiargs.zbr -- one two
+GA_BZ=$(ls "$W"/ga/guiargs_gui_libui_ng/build.zig "$W"/ga/*/build.zig 2>/dev/null | head -1)
+chk "a GUI scaffold's build.zig forwards run-step args on Zig 0.16 AND 0.17 (BUG-429)" \
+    "$(grep -q 'run_step.addArgs(args)' "${GA_BZ:-/dev/null}" 2>/dev/null && grep -q 'run_step.addPassthruArgs()' "${GA_BZ:-/dev/null}" 2>/dev/null && echo 0 || echo 1)" \
     "exit=$RC build.zig=[$GA_BZ] stderr=[$(echo "$ERR" | tail -1)]"
+
+# tui is refused BY NAME on Zig 0.17 (its zigzag dependency has no 0.17 support), with the
+# reason and the alternative -- never "not a backend", which would read as a typo.
+run --gui-backend=tui --scaffold-only --output-dir "$W/gt" guiargs.zbr
+chk "\`--gui-backend=tui\` is refused by name, naming zigzag and libui_ng" \
+    "$([ "$RC" = 2 ] && echo "$ERR" | grep -q 'zigzag' && echo "$ERR" | grep -q 'libui_ng' && echo 0 || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | tail -1)]"
 
 # ---- the warning tier (2026-09-24): a warning is a line, not a failure; -Werror flips it --
 # `@deprecated("...")` is the first warning that fires on ordinary code. Three legs, both

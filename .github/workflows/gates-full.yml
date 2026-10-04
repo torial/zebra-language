@@ -42,20 +42,20 @@ jobs:
         uses: actions/cache@v4
         with:
           path: zig-toolchain
-          key: zig-0.16.0-x86_64-windows
+          key: zig-0.17.0-x86_64-windows
 
-      - name: Download Zig 0.16.0
+      - name: Download Zig 0.17.0
         if: steps.cache-zig.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          url=https://ziglang.org/download/0.16.0/zig-x86_64-windows-0.16.0.zip
-          want=68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e
+          url=https://ziglang.org/download/0.17.0/zig-x86_64-windows-0.17.0.zip
+          want=b5663f69581dcf391293fbf16c06cb80d81d806545ce618b4d0bab7f0eb8c428
           curl -fsSL "$url" -o zig.zip
           got=$(sha256sum zig.zip | cut -d' ' -f1)
           [ "$got" = "$want" ] || { echo "::error::Zig checksum mismatch: got $got want $want"; exit 1; }
           unzip -q zig.zip
-          mv zig-x86_64-windows-0.16.0 zig-toolchain
+          mv zig-x86_64-windows-0.17.0 zig-toolchain
 
       - name: Put Zig on PATH and prove it runs
         shell: bash
@@ -64,7 +64,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/zig-toolchain" >> "$GITHUB_PATH"
           v="$("$GITHUB_WORKSPACE/zig-toolchain/zig.exe" version)"
           echo "zig version: $v"
-          [ "$v" = "0.16.0" ] || { echo "::error::expected zig 0.16.0, got '$v'"; exit 1; }
+          [ "$v" = "0.17.0" ] || { echo "::error::expected zig 0.17.0, got '$v'"; exit 1; }
 
       - name: Build
         shell: bash

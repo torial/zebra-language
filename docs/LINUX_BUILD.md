@@ -8,6 +8,11 @@ on Windows: two POSIX-only compile errors and three `.exe`-hardcoded gate script
 
 ```bash
 pip install ziglang==0.16.0            # ziglang.org may be unreachable from a sandbox; PyPI carries the binary
+# NOTE (2026-10-03): the repo pins Zig 0.17.0 (.zig-version) and PyPI's ziglang has NO 0.17.0
+# yet. Until it does, a sandbox that can only reach PyPI runs the tools on 0.16 EXPLICITLY:
+#   export ZEBRA_ZIG_VERSION=0.16.0
+# which works only while the tree still builds under both (docs/design/zig017_migration.md,
+# until Phase C). Where ziglang.org is reachable, download 0.17.0 instead.
 printf '#!/bin/sh\nexec python3 -m ziglang "$@"\n' > ~/bin/zig && chmod +x ~/bin/zig
 export PATH=$HOME/bin:$PATH
 zig build                              # ~10 s: zig-out/bin/zebra + zebra-bootstrap (no .exe suffix)

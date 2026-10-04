@@ -26,11 +26,11 @@ zig build run -- hello.zbr
 ```
 
 A GUI program is not much longer — Zebra uses an Elm-style Model/Update/View
-loop, and the same source runs against a native-widget or terminal backend:
+loop, run against native widgets (the terminal backend is unavailable on Zig 0.17 until its
+zigzag dependency supports it):
 
 ```bash
 zig-out/bin/zebra.exe --gui-backend=libui_ng run examples/counter.zbr
-zig-out/bin/zebra.exe --gui-backend=tui      run examples/counter.zbr
 ```
 
 ## Documentation
@@ -56,8 +56,9 @@ versions. Building from source is below; how a release is cut is in
 
 ## Requirements
 
-- **Zig 0.16.0.** (`build.zig.zon` declares a `minimum_zig_version` of 0.15.0, but
-  the tree currently builds against 0.16 and is only tested there.) Zig is also a
+- **Zig 0.17.0**, the version in `.zig-version`, which the repo's tools pin and refuse to
+  run without (`tools/zig_toolchain.sh`). The source still builds with 0.16 during the
+  migration (`docs/design/zig017_migration.md`). Zig is also a
   RUNTIME dependency: every program is emitted as Zig and built with `zig build-exe`,
   which is why a release bundles it.
 - Nothing else. `build.zig.zon` declares no dependencies (the Earley parser the

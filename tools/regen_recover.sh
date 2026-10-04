@@ -68,7 +68,14 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
     || { echo "regen_recover: REFUSING -- not a git worktree (the committed *.zig are the point)" >&2; exit 2; }
 git rev-parse --verify -q "$REV^{commit}" >/dev/null \
     || { echo "regen_recover: REFUSING -- '$REV' is not a commit" >&2; exit 2; }
-command -v zig >/dev/null || { echo "regen_recover: zig not on PATH" >&2; exit 2; }
+# Build REV with REV's OWN toolchain: its `.zig-version`, or 0.16.0 for a commit from before
+# the pin existed (the Zig 0.17 migration, docs/design/zig017_migration.md). A pre-migration
+# commit's *.zig do not build with 0.17, so `--from <old sha>` would otherwise fail for a
+# reason that has nothing to do with the recovery.
+ZEBRA_ZIG_VERSION="$(git show "$REV:.zig-version" 2>/dev/null | tr -d ' \r\n')"
+export ZEBRA_ZIG_VERSION="${ZEBRA_ZIG_VERSION:-0.16.0}"
+source "$REPO/tools/zig_toolchain.sh"
+echo "regen_recover: building $(git rev-parse --short "$REV") with Zig $ZIG_PIN ($ZEBRA_ZIG)"
 
 EXE=""; [[ "$(uname -s)" != Linux && "$(uname -s)" != Darwin ]] && EXE=.exe
 SCRATCH="$(cd "$REPO/.." && pwd)/zebra-recover"

@@ -22,7 +22,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 ZEXE="$REPO/zig-out/bin/zebra.exe"
 [[ -x "$ZEXE" ]] || ZEXE="$REPO/zig-out/bin/zebra"
 [[ -x "$ZEXE" ]] || { echo "library-mode: no built compiler" >&2; exit 2; }
-command -v zig >/dev/null 2>&1 || export PATH="/c/Users/Sean/.zvm/bin:$PATH"
+source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the shared ~/.zvm/bin default
 # BUG-302: zig can fail to read ITS OWN std under concurrent load ("unable to load
 # 'big.zig': Unexpected"). The first FULL after this gate was registered refused on exactly
 # that in its negative control (2026-10-01; passed twice standalone). Same predicate as every
