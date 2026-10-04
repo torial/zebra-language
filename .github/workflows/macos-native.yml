@@ -46,8 +46,8 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          set -uo pipefail
-          bound() { local t=$1; shift; "$@" & local p=$!; ( sleep "$t"; kill -9 "$p" ) >/dev/null 2>&1 & local w=$!; wait "$p"; local rc=$?; kill "$w" 2>/dev/null; return $rc; }   # no GNU timeout on macOS; a kill shows rc=137. (perl alarm was tried and did NOT fire on a test host.)
+          set +e -uo pipefail   # the runner invokes bash -e; a probe must survive its own failures
+          bound() { local t=$1; shift; "$@" & local p=$! n=0; while kill -0 "$p" 2>/dev/null; do [ $n -ge $((t*5)) ] && { kill -9 "$p"; echo "bound: killed after ${t}s: $*" >&2; break; }; sleep 0.2; n=$((n+1)); done; wait "$p"; }   # no GNU timeout on macOS. Polls in-shell: no background watcher to orphan. Proven under bash -e (hang->137, fast, fail, missing, no orphans).
           printf 'def main()\n    print("macos fast path ok")\n' > /tmp/hello.zbr
           for f in /tmp/hello.zbr test/sys_spawn_piped_test.zbr examples/showcase.zbr; do
             s=$SECONDS; out=$(bound 600 ./zig-out/bin/zebra "$f" 2>&1); rc=$?
@@ -58,20 +58,26 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          set -uo pipefail
-          bound() { local t=$1; shift; "$@" & local p=$!; ( sleep "$t"; kill -9 "$p" ) >/dev/null 2>&1 & local w=$!; wait "$p"; local rc=$?; kill "$w" 2>/dev/null; return $rc; }   # no GNU timeout on macOS; a kill shows rc=137. (perl alarm was tried and did NOT fire on a test host.)
+          set +e -uo pipefail   # the runner invokes bash -e; a probe must survive its own failures
+          bound() { local t=$1; shift; "$@" & local p=$! n=0; while kill -0 "$p" 2>/dev/null; do [ $n -ge $((t*5)) ] && { kill -9 "$p"; echo "bound: killed after ${t}s: $*" >&2; break; }; sleep 0.2; n=$((n+1)); done; wait "$p"; }   # no GNU timeout on macOS. Polls in-shell: no background watcher to orphan. Proven under bash -e (hang->137, fast, fail, missing, no orphans).
           ./zig-out/bin/zebra --emit-zig --output-dir /tmp/h /tmp/hello.zbr > /dev/null
           cd /tmp/h
-          s=$SECONDS; bound 600 zig build-exe -fno-llvm -fno-lld hello.zig > be.log 2>&1; rc=$?
-          echo "PROBE self-hosted aarch64 build-exe: rc=$rc $((SECONDS-s)) s :: $(head -c 300 be.log | tr '\n' ' ')"
-          [ "$rc" = 0 ] && { s=$SECONDS; ./hello; echo "PROBE ran: rc=$? $((SECONDS-s)) s"; }
+          s=$SECONDS; bound 600 zig build-exe -fno-llvm -fno-lld hello.zig > be.log 2>&1; rc=$?; d=$((SECONDS-s))
+          echo "PROBE self-hosted aarch64 build-exe: rc=$rc ${d} s (the watchdog fires only at 600 s)"
+          echo "--- be.log (last 30 lines):"; tail -30 be.log
+          [ "$rc" = 0 ] && { ./hello; echo "PROBE self-hosted binary ran: rc=$?"; }
+          s=$SECONDS; bound 600 zig build-exe hello.zig > llvm.log 2>&1; rc=$?
+          echo "PROBE LLVM build-exe (debug, cold): rc=$rc $((SECONDS-s)) s"; tail -5 llvm.log
+          [ "$rc" = 0 ] && { ./hello; echo "PROBE LLVM binary ran: rc=$?"; }
+          s=$SECONDS; bound 600 zig build-exe hello.zig > llvm2.log 2>&1; echo "PROBE LLVM build-exe (debug, warm): rc=$? $((SECONDS-s)) s"
+          echo "--- machine:"; sysctl hw.memsize hw.ncpu 2>/dev/null; vm_stat | head -5
 
       - name: "Probe 3: debug `zig build` of the compiler (build.zig's fast-backend default)"
         continue-on-error: true
         shell: bash
         run: |
-          set -uo pipefail
-          bound() { local t=$1; shift; "$@" & local p=$!; ( sleep "$t"; kill -9 "$p" ) >/dev/null 2>&1 & local w=$!; wait "$p"; local rc=$?; kill "$w" 2>/dev/null; return $rc; }   # no GNU timeout on macOS; a kill shows rc=137. (perl alarm was tried and did NOT fire on a test host.)
+          set +e -uo pipefail   # the runner invokes bash -e; a probe must survive its own failures
+          bound() { local t=$1; shift; "$@" & local p=$! n=0; while kill -0 "$p" 2>/dev/null; do [ $n -ge $((t*5)) ] && { kill -9 "$p"; echo "bound: killed after ${t}s: $*" >&2; break; }; sleep 0.2; n=$((n+1)); done; wait "$p"; }   # no GNU timeout on macOS. Polls in-shell: no background watcher to orphan. Proven under bash -e (hang->137, fast, fail, missing, no orphans).
           s=$SECONDS; bound 2400 zig build --prefix /tmp/dbg > dbg.log 2>&1; rc=$?
           echo "PROBE debug zig build: rc=$rc $((SECONDS-s)) s"
           tail -15 dbg.log
