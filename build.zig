@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
     // compiler from its own emit and diffs the result). Default ON for Debug; release
     // builds keep LLVM for codegen quality. `-Dfast-backend=false` forces LLVM.
     const fast_backend = (b.option(bool, "fast-backend",
-        "Build the debug zebra.exe with Zig's self-hosted backend (~6x faster; Debug only)") orelse true) and optimize == .Debug;
+        "Build the debug zebra.exe with Zig's self-hosted backend (~6x faster; Debug only)") orelse true) and isDebug(optimize);
     const setFastBackend = struct {
         fn apply(c: *std.Build.Step.Compile, on: bool) void {
             if (on) { c.use_llvm = false; c.use_lld = false; }
@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void {
     // 2026-09-27: the limit was 256 KiB and the preamble reached 262,321 bytes -- the read
     // failed with StreamTooLong and was reported as "missing", which sent the first
     // diagnosis to the zig cache. Keep the cap far above the file, and say what failed.
-    const raw_preamble = b.build_root.handle.readFileAlloc(b.graph.io, "selfhost/stdlib_preamble.zig", b.allocator, std.Io.Limit.limited(8 * 1024 * 1024)) catch |e|
+    const raw_preamble = buildRootDir(b).readFileAlloc(b.graph.io, "selfhost/stdlib_preamble.zig", b.allocator, std.Io.Limit.limited(8 * 1024 * 1024)) catch |e|
         std.debug.panic("cannot read selfhost/stdlib_preamble.zig: {s} (StreamTooLong = larger than build.zig's 8 MiB read limit)", .{@errorName(e)});
     // Strip the file header (HOW-TO comment + allocator setup) — CodeGen emits those dynamically.
     // The static helpers start at the STDLIB_PREAMBLE_HELPERS_START marker.
@@ -52,7 +52,7 @@ pub fn build(b: *std.Build) void {
     // N-API preamble (--target node-addon only).  Kept in a separate file so its
     // node_api.h @cImport never compiles into the compiler itself — embedded as a
     // string and only emitted into generated addons.  Phase 1.
-    const raw_napi = b.build_root.handle.readFileAlloc(b.graph.io, "selfhost/napi_preamble.zig", b.allocator, std.Io.Limit.limited(8 * 1024 * 1024)) catch |e|
+    const raw_napi = buildRootDir(b).readFileAlloc(b.graph.io, "selfhost/napi_preamble.zig", b.allocator, std.Io.Limit.limited(8 * 1024 * 1024)) catch |e|
         std.debug.panic("cannot read selfhost/napi_preamble.zig: {s} (StreamTooLong = larger than build.zig's 8 MiB read limit)", .{@errorName(e)});
     const napi_start_marker = "// === NAPI_PREAMBLE_HELPERS_START ===";
     const napi_end_marker   = "// === NAPI_PREAMBLE_HELPERS_END ===";
@@ -113,7 +113,7 @@ pub fn build(b: *std.Build) void {
     b.getInstallStep().dependOn(&install_gui_lui.step);
 
     const run = b.addRunArtifact(exe);
-    run.addArgs(b.args orelse &.{});
+    if (comptime @hasDecl(std.Build.Step.Run, "addPassthruArgs")) run.addPassthruArgs() else run.addArgs(b.args orelse &.{});
     const run_step = b.step("run", "Run the Zebra compiler");
     run_step.dependOn(&run.step);
 
@@ -206,4 +206,14 @@ fn lineEnd(buf: []const u8, from: usize) usize {
     var i = from;
     while (i < buf.len and buf[i] != '\n') : (i += 1) {}
     return if (i < buf.len) i + 1 else i;
+}
+
+// Zig 0.17 renamed the optimize tags (`.Debug` -> `.debug`) and moved `b.build_root`
+// (a Directory) to `b.root` (a Path). Both spellings, chosen at comptime, until 0.16 is
+// retired (docs/design/zig017_migration.md).
+fn isDebug(optimize: anytype) bool {
+    return std.mem.eql(u8, @tagName(optimize), "Debug") or std.mem.eql(u8, @tagName(optimize), "debug");
+}
+fn buildRootDir(b: *std.Build) std.Io.Dir {
+    return if (comptime @hasField(std.Build, "root")) b.root.root_dir.handle else b.build_root.handle;
 }

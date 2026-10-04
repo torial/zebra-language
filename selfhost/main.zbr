@@ -42,7 +42,7 @@ use Parser exposing PNode, PUse, PModule, PClass, fileExistsExact, caseOnlyMatch
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage
+use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing containerCopySites, ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -79,6 +79,7 @@ class MultiCompiler
     var zig_sources: List(str) # BUG-262: native .zig deps, COPIED beside the emit (see below)
     var lib_sources: List(str) # BUG-266: prebuilt .lib/.a/.so/.dylib deps to LINK
     var c_i_dirs: List(str)    # deduplicated -I dirs for C deps that have a .h
+    var c_headers: List(str)   # "alias\theader path\tinclude dir" per C dep with a .h (Zig 0.17: translate-c)
     var strip_contracts: bool  # --turbo: strip require/ensure/invariant from all output
     var library_mode: bool     # --library-mode: omit `defer _arena.deinit()` from main() (script linked into a host process)
     var mp_noted: List(str)    # BUG-516: module-path deps read for types only (reported once, after the graph)
@@ -114,6 +115,7 @@ class MultiCompiler
         .preamble_path = preamble_path
         .output_dir = output_dir
         .c_sources = List(str)()
+        .c_headers = List(str)()
         .zig_sources = List(str)()
         .lib_sources = List(str)()
         .c_i_dirs = List(str)()
@@ -454,6 +456,7 @@ class MultiCompiler
                     # temp dir, -c, the fast backend) resolves its destination through
                     # zbrToZig, so one copy site covers all of them.
                     .writeNativeZigDeps(zig_path)
+                    .writeCHeaderBindings(zig_path)?
 
                 # Step 7: Contribute this module's types to dep_types so
                 # subsequent deps (and the root) can resolve cross-module
@@ -523,6 +526,7 @@ class MultiCompiler
                 var c_dir: str = .dirOf(c_path)
                 if c_dir == ""
                     c_dir = "."
+                c_headers.add(u.path + "\t" + h_path + "\t" + c_dir)
                 var already_added: bool = false
                 var dchk: int = 0
                 while dchk < c_i_dirs.len
@@ -814,6 +818,31 @@ class MultiCompiler
                 dst_path = out_dir + "/" + base
             if dst_path != src_path
                 File.write(dst_path, File.read(src_path))
+            i = i + 1
+
+    # Zig 0.17 removed `@cImport`: a C dependency's header is translated with
+    # `zig translate-c` (the same translator, as a command) beside the emitted module,
+    # which @imports it by cHeaderZigFile(alias). Every emit route reaches here, as for
+    # writeNativeZigDeps. Content-compared, so an unchanged header is not rewritten.
+    def writeCHeaderBindings(zig_path: str) throws
+        var out_dir: str = .dirOf(zig_path)
+        var i: int = 0
+        while i < c_headers.len
+            var parts: List(str) = c_headers.at(i).split("\t")
+            var dst: str = cHeaderZigFile(parts.at(0))
+            if out_dir != ""
+                dst = out_dir + "/" + dst
+            var targv = List(str)()
+            targv.add(zigExe())
+            targv.add("translate-c")
+            targv.add("-lc")
+            targv.add("-I" + parts.at(2))
+            targv.add(parts.at(1))
+            var tr = sys.run(targv)
+            if tr.exit_code != 0
+                raise "zig translate-c failed for " + parts.at(1) + ":\n" + tr.stderr
+            if not (File.exists(dst) and File.read(dst) == tr.stdout)
+                File.write(dst, tr.stdout)
             i = i + 1
 
     def moduleNameOf(zbr_path_in: str): str
@@ -2926,13 +2955,13 @@ def fmtNormalize(src: str): str
 def upOs(): str
     if dbgIsWindows()
         return "windows"
-    var mac: bool = zig"builtin.os.tag == .macos"
+    var mac: bool = zig"builtin.target.os.tag == .macos"
     if mac
         return "macos"
     return "linux"
 
 def upArch(): str
-    var a: str = zig"@as([]const u8, @tagName(builtin.cpu.arch))"
+    var a: str = zig"@as([]const u8, @tagName(builtin.target.cpu.arch))"
     return a
 
 def upFetch(url: str): str throws
@@ -3099,7 +3128,7 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
     const run_step = b.addRunArtifact(exe);
-    if (b.args) |args| run_step.addArgs(args);   // `zebra app.zbr -- a b` reaches the program
+    if (comptime @hasDecl(std.Build.Step.Run, "addPassthruArgs")) run_step.addPassthruArgs() else if (b.args) |args| run_step.addArgs(args);   // `zebra app.zbr -- a b` reaches the program (Zig 0.17: addPassthruArgs)
     b.step("run", "Run the app").dependOn(&run_step.step);
 }
 """
@@ -3149,7 +3178,7 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
     const run_step = b.addRunArtifact(exe);
-    if (b.args) |args| run_step.addArgs(args);   // `zebra app.zbr -- a b` reaches the program
+    if (comptime @hasDecl(std.Build.Step.Run, "addPassthruArgs")) run_step.addPassthruArgs() else if (b.args) |args| run_step.addArgs(args);   // `zebra app.zbr -- a b` reaches the program (Zig 0.17: addPassthruArgs)
     b.step("run", "Run the app").dependOn(&run_step.step);
 }
 """
@@ -3208,8 +3237,8 @@ def relativePath(from_dir: str, target: str): str
 # first Windows run of the override (the doc said it worked; nothing had run it).
 def luiBuildZon(proj: str): str
     var dep: str = """        .zig_libui_ng = .{
-            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#b405e2b93766d36cf36206584059fd33b9e7ce7c",
-            .hash = "bindings_libui_ng-0.1.0-p2CY9UmDbgCL610cVUEBBrJ1DgU8qncM6jPBxDUg6DDE",
+            .url  = "git+https://github.com/torial/zig-libui-ng?ref=main#aede6599432c89b53bc45b70f3f2ab7218beb7f2",
+            .hash = "bindings_libui_ng-0.1.0-p2CY9cCGbgBlYA-J2f46y3nteuJNz5H0-mCWATJOTzVM",
         },
 """
     if sys.getenv("ZEBRA_LIBUI_PATH") as lp
@@ -3788,7 +3817,7 @@ def dbgIsWindows(): bool
     # `--shared` wrote `libgreeter.so` ON WINDOWS and the dynlib gate failed the first
     # --daily that ran it there (2026-09-10). The target is a property of the binary,
     # not of the environment it happens to run in.
-    return zig"builtin.os.tag == .windows"
+    return zig"builtin.target.os.tag == .windows"
 
 # lldb-dap (or the older lldb-vscode) must be on PATH; try each name by spawning.
 def dbgFindLldb(): str
@@ -4626,7 +4655,7 @@ def main()
         var sh_out: str = sh_dir + "/lib" + sh_stem + ".so"
         if dbgIsWindows()
             sh_out = sh_dir + "/" + sh_stem + ".dll"
-        else if zig"builtin.os.tag == .macos"
+        else if zig"builtin.target.os.tag == .macos"
             sh_out = sh_dir + "/lib" + sh_stem + ".dylib"
         var sargv = List(str)()
         sargv.add(zigExe())
@@ -4662,6 +4691,23 @@ def main()
                 na_stem = s
                 break
         if resolveNodeApi() as api
+            # Zig 0.17 removed @cImport: napi_preamble imports _zbr_c_napi.zig.
+            var nt_argv = List(str)()
+            nt_argv.add(zigExe())
+            nt_argv.add("translate-c")
+            nt_argv.add("-lc")
+            nt_argv.add("-DNAPI_VERSION=6")
+            nt_argv.add("-I" + api.include)
+            nt_argv.add(api.include + "/node_api.h")
+            var nt = sys.run(nt_argv)
+            if nt.exit_code != 0
+                sys.err(nt.stderr)
+                mc.exitWith(1, true)
+            var nt_dir: str = mc.dirOf(na_zig)
+            var nt_out: str = "_zbr_c_napi.zig"
+            if nt_dir != ""
+                nt_out = nt_dir + "/" + nt_out
+            File.write(nt_out, nt.stdout)
             var nargv = List(str)()
             nargv.add(zigExe())
             nargv.add("build-lib")
@@ -4676,7 +4722,7 @@ def main()
             # (resolveNodeApi returns no lib); macOS needs `-undefined
             # dynamic_lookup` so ld64 defers the N-API symbols to load time.
             # `builtin` is in scope in the emitted main.zig.
-            var na_is_macos: bool = zig"builtin.os.tag == .macos"
+            var na_is_macos: bool = zig"builtin.target.os.tag == .macos"
             if na_is_macos
                 nargv.add("-Wl,-undefined,dynamic_lookup")
             nargv.add("-femit-bin=" + na_stem + ".node")

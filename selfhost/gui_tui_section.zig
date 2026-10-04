@@ -657,7 +657,7 @@ const Gui = GuiContext;
 // `Msg.right`) are two instances; the same mount re-rendered finds its instance again.
 fn _ScopeWrap(comptime MapT: type) type {
     const is_fn = _zbr_is_fnlike(MapT);
-    const ChildMsg = if (is_fn) @typeInfo(MapT).@"fn".params[0].type.? else @typeInfo(@TypeOf(MapT.call)).@"fn".params[1].type.?;
+    const ChildMsg = if (is_fn) _zbr_fn_info_param(@typeInfo(MapT).@"fn", 0) else _zbr_fn_info_param(@typeInfo(@TypeOf(MapT.call)).@"fn", 1);
     const SendFn = *const fn (*anyopaque, *const anyopaque, usize) void;
     const MapStore = if (is_fn) *const MapT else MapT;
     return struct {
@@ -718,9 +718,9 @@ fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, 
     defer _gui_active_backend.deinitFn();
     const MsgType = comptime blk: {
         if (_zbr_is_fnlike(@TypeOf(_mvu_update)))
-            break :blk @typeInfo(@TypeOf(_mvu_update)).@"fn".params[1].type.?
+            break :blk _zbr_fn_info_param(@typeInfo(@TypeOf(_mvu_update)).@"fn", 1)
         else
-            break :blk @typeInfo(@TypeOf(@TypeOf(_mvu_update).call)).@"fn".params[2].type.?;
+            break :blk _zbr_fn_info_param(@typeInfo(@TypeOf(@TypeOf(_mvu_update).call)).@"fn", 2);
     };
     const _MvuQueue = struct { buf: [32]MsgType = undefined, len: usize = 0 };
     var _pq = _MvuQueue{};

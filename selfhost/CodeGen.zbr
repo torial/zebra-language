@@ -1317,9 +1317,9 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     if _coverage
         # This module's coverage record. Order-independent at top level, so it can
         # sit after the statements that index it. `counts` is indexed by SOURCE LINE.
-        w.emit("var _zbr_cov_counts = [_]u32{0} ** ")
+        w.emit("var _zbr_cov_counts: [")
         w.emit((_cov_max + 1).toString())
-        w.emit(";\n")
+        w.emit("]u32 = @splat(0);\n")
         w.emit("const _zbr_cov_lines = [_]u32{")
         var first: bool = true
         for ls in _cov_lines_s.split(" ")
@@ -2361,10 +2361,6 @@ def rtRuntimeText(preamble: str): str
 # as much as any runtime symbol did ("error: 'call' is not marked 'pub'", caught by
 # compile_check on the three threading tests). Applied only under the flag, so the
 # default emit stays byte-for-byte what it was.
-def rtPub(): str
-    if _runtime_module
-        return "pub "
-    return ""
 
 def rtSetDeps(dep_modules: List(str))
     var s: str = " "
@@ -3198,6 +3194,12 @@ def isCWithHeaderUse(path: str): bool
 
 def isCNoHeaderUse(path: str): bool
     return _c_no_header_uses.contains_(path)
+
+# The file the driver writes a C dependency's translated header to (`zig translate-c`,
+# beside the emitted module), and the name the module @imports it by. ONE function, used
+# by both sides, so the two cannot drift. Replaced `@cImport` (removed in Zig 0.17).
+def cHeaderZigFile(alias: str): str
+    return "_zbr_c_" + alias.replace("/", "_").replace(".", "_") + ".zig"
 
 # ── Prebuilt libraries (BUG-266) ──────────────────────────────────────────────
 # A `use foo` that resolved to `foo.lib` / `foo.a` / `foo.so` / `foo.dylib`: a
@@ -4444,9 +4446,7 @@ struct Generator
             # Zebra code calls them as `alias.some_fn(...)`.
             w.emit("const ")
             w.emit(modAliasSymbol(alias))                   # BUG-483
-            w.emit(" = @cImport(@cInclude(\"")
-            w.emit(alias)
-            w.emit(".h\"));\n")
+            w.emit(" = @import(\"" + cHeaderZigFile(alias) + "\");\n")   # Zig 0.17: no @cImport
             return
         if isCNoHeaderUse(alias)
             # C source, no header: nothing to import.  The author declares the
@@ -5115,7 +5115,7 @@ struct Generator
             genExpr(obj)
             # interp-escape lint (BUG-216): no `\"` inside an interpolated string -- the
             # interpolated parts and the quoted parts are separate emits.
-            w.emit(".lib.lookup(*const fn () callconv(.c) *${iface_name}, _allocator.dupeZ(u8, _sym) catch @panic(")
+            w.emit(".lib.lookup(*const fn () callconv(.c) *${iface_name}, _allocator.dupeSentinel(u8, _sym, 0) catch @panic(")
             w.emit("\"OOM\")) orelse std.debug.panic(\"DynLib.lookup: symbol not found: {s}\", .{_sym}); break :blk_")
             w.emit("${uid.toString()} _fn().*; }")
             return true
@@ -6375,7 +6375,14 @@ struct Generator
                 # (defers are LIFO) -- the message may live in the arena.
                 if auto_throws and not .library_mode
                     ei.writeIndent()
-                    ei.w.emit("errdefer |_zbr_e| _zbr_uncaught(_zbr_e);\n")
+                    ei.w.emit("return _zbr_main_body() catch |_zbr_e| _zbr_uncaught(_zbr_e);\n")
+                    w.emit("}\n")
+                    w.emit("fn _zbr_main_body() anyerror!")
+                    if m.return_type != nil
+                        genType(m.return_type!)
+                    else
+                        w.emit("void")
+                    w.emit(" {\n")
                 # `zebra build --list-targets`: arm before any user statement, so
                 # _build_run() prints the target list instead of invoking the compiler.
                 if _list_targets_mode
@@ -12114,7 +12121,7 @@ struct Generator
                 writeIndent()
                 w.emit("  const _rshim_")
                 w.emit(uid.toString())
-                w.emit(" = struct { " + rtPub() + "fn call(p: *anyopaque) []const u8 {\n")
+                w.emit(" = struct { pub fn call(p: *anyopaque) []const u8 {\n")
                 writeIndent()
                 w.emit("      return @as(*[]const u8, @alignCast(@ptrCast(p))).*;\n")
                 writeIndent()
@@ -12148,7 +12155,7 @@ struct Generator
                 writeIndent()
                 w.emit("  const _rshim_")
                 w.emit(uid.toString())
-                w.emit(" = struct { " + rtPub() + "fn call(p: *anyopaque) []const u8 {\n")
+                w.emit(" = struct { pub fn call(p: *anyopaque) []const u8 {\n")
                 writeIndent()
                 w.emit("      return @as(*[]const u8, @alignCast(@ptrCast(p))).*;\n")
                 writeIndent()
@@ -12191,7 +12198,7 @@ struct Generator
                 writeIndent()
                 w.emit("  const _rshim_")
                 w.emit(uid.toString())
-                w.emit(" = struct { " + rtPub() + "fn call(p: *anyopaque) []const u8 {\n")
+                w.emit(" = struct { pub fn call(p: *anyopaque) []const u8 {\n")
                 writeIndent()
                 w.emit("      return @as(*")
                 emitTypeName(type_name)                 # BUG-281 B
@@ -12809,12 +12816,12 @@ struct Generator
                     return
                 # FixedBuffer is handled inline in genAllocate (backing buffer needs depth).
                 if id.name == "StackFallback"
-                    w.emit("std.heap.stackFallback(")
+                    w.emit("_ZbrStackFallback(")
                     if c.args.len > 0
                         genExpr(c.args.at(0).value)
                     else
                         w.emit("256")
-                    w.emit(", _allocator)")
+                    w.emit("){ .fallback = _allocator }")
                     return
                 if id.name == "Page"
                     w.emit("std.heap.page_allocator")
@@ -19626,7 +19633,7 @@ struct Generator
             var cself: str = "self"
             if in_method
                 cself = "_zbr_cself" + w.nextUid().toString()
-            w.emit(" " + rtPub() + "fn call(")
+            w.emit(" pub fn call(")   # Zig 0.17: @hasDecl sees only pub decls, even in the same file
             var first = true
             if has_capture
                 if any_cap_mutated
@@ -21385,7 +21392,7 @@ struct Generator
                 w.emit("\"\"")
             w.emit(";\n")
             writeIndent()
-            w.emit("    const _sh_argv = if (comptime builtin.os.tag == .windows)\n")
+            w.emit("    const _sh_argv = if (comptime builtin.target.os.tag == .windows)\n")
             writeIndent()
             w.emit("        @as([]const []const u8, &[_][]const u8{ \"cmd\", \"/c\", _sh_cmd })\n")
             writeIndent()

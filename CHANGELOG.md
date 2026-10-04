@@ -23,6 +23,8 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **The compiler and every program it emits build with Zig 0.16 AND 0.17** (step 1 of the move to 0.17, `docs/design/zig017_migration.md`). The toolchain stays 0.16 for now. Visible changes: a `use foo` with `foo.h` now gets `_zbr_c_foo.zig` (the header translated with `zig translate-c`) beside the emitted file instead of an `@cImport`, and `--target node-addon` likewise writes `_zbr_c_napi.zig`. The libui_ng backend pins zig-libui-ng `aede6599`, which builds under both.
+
 - **A container field you never assign starts EMPTY (BUG-501 1c)** -- `var xs: List(int)` with no initialiser held undefined memory, and reading it panicked far from the cause ("integer does not fit in destination type"). Every constructor now builds it.
 
 - **A struct field with a HashMap or Set initialiser works when the construction omits it (BUG-518)** -- it was accepted and then refused inside zig ("unable to resolve comptime value").

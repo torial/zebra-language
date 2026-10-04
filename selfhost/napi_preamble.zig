@@ -15,10 +15,9 @@
 //!     survive @cImport) — the wrappers, not this file, call that.
 
 // === NAPI_PREAMBLE_HELPERS_START ===
-const napi = @cImport({
-    @cDefine("NAPI_VERSION", "6");
-    @cInclude("node_api.h");
-});
+// Zig 0.17 removed @cImport: the driver writes node_api.h's translation (NAPI_VERSION 6,
+// `zig translate-c`) beside the emitted file before `zig build-lib`.
+const napi = @import("_zbr_c_napi.zig");
 
 /// Throw a JS `Error` with `msg` and return null.  Emitted wrappers call this
 /// when argument extraction or arity checks fail, then `return` the null value

@@ -663,7 +663,7 @@ const Gui = GuiContext;
 // `Msg.right`) are two instances; the same mount re-rendered finds its instance again.
 fn _ScopeWrap(comptime MapT: type) type {
     const is_fn = _zbr_is_fnlike(MapT);
-    const ChildMsg = if (is_fn) @typeInfo(MapT).@"fn".params[0].type.? else @typeInfo(@TypeOf(MapT.call)).@"fn".params[1].type.?;
+    const ChildMsg = if (is_fn) _zbr_fn_info_param(@typeInfo(MapT).@"fn", 0) else _zbr_fn_info_param(@typeInfo(@TypeOf(MapT.call)).@"fn", 1);
     const SendFn = *const fn (*anyopaque, *const anyopaque, usize) void;
     const MapStore = if (is_fn) *const MapT else MapT;
     return struct {
@@ -724,9 +724,9 @@ fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anytype, 
     defer _gui_active_backend.deinitFn();
     const MsgType = comptime blk: {
         if (_zbr_is_fnlike(@TypeOf(_mvu_update)))
-            break :blk @typeInfo(@TypeOf(_mvu_update)).@"fn".params[1].type.?
+            break :blk _zbr_fn_info_param(@typeInfo(@TypeOf(_mvu_update)).@"fn", 1)
         else
-            break :blk @typeInfo(@TypeOf(@TypeOf(_mvu_update).call)).@"fn".params[2].type.?;
+            break :blk _zbr_fn_info_param(@typeInfo(@TypeOf(@TypeOf(_mvu_update).call)).@"fn", 2);
     };
     const _MvuQueue = struct { buf: [32]MsgType = undefined, len: usize = 0 };
     var _pq = _MvuQueue{};
@@ -1103,9 +1103,9 @@ const _CodeEditor = struct {
     // are CONSUMED and queued, everything else passes through untouched (so
     // Scintilla's own Ctrl+C/V/Z/… keep working unless the program claims them).
     // `takeKey()` pops one queued chord as (mods << 16) | vk, or 0.
-    hot: [32]u32 = [_]u32{0} ** 32,
+    hot: [32]u32 = @as([32]u32, @splat(0)),
     hot_n: usize = 0,
-    keys: [16]u32 = [_]u32{0} ** 16,
+    keys: [16]u32 = @as([16]u32, @splat(0)),
     key_n: usize = 0,
 };
 const _CeNotification = if (@hasDecl(_sci.Scintilla, "Notification")) _sci.Scintilla.Notification else struct { code: c_uint = 0, modificationType: c_int = 0, ch: c_int = 0, margin: c_int = 0, position: isize = 0 };
@@ -1259,7 +1259,7 @@ fn _code_editor_sci(_ed: *_CodeEditor, msg: i64, wparam: i64, lparam: i64) i64 {
 // SEARCHINTARGET/MARKERDEFINE etc.). wparam is passed through unchanged.
 fn _code_editor_sci_str(_ed: *_CodeEditor, msg: i64, wparam: i64, text: []const u8) i64 {
     const _s = _ed.scint orelse return 0;
-    const _z = _allocator.dupeZ(u8, text) catch return 0;
+    const _z = _allocator.dupeSentinel(u8, text, 0) catch return 0;
     defer _allocator.free(_z);
     return @bitCast(_s.sendMessage(@intCast(msg), @bitCast(wparam), @intFromPtr(_z.ptr)));
 }
@@ -1341,7 +1341,7 @@ const _LuiNode = struct {
 };
 var _lui_root: *_LuiNode = undefined;
 var _lui_stack: [32]*_LuiNode = undefined;
-var _lui_cursor: [32]usize = [_]usize{0} ** 32;
+var _lui_cursor: [32]usize = @as([32]usize, @splat(0));
 var _lui_depth: usize = 0;
 var _lui_keyed: std.StringHashMap(*_LuiNode) = undefined;   // id -> node, for the by-id reads
 var _lui_frame: u32 = 0;
@@ -1526,9 +1526,9 @@ fn _lui_free_node(_n: *_LuiNode) void {
 }
 // Window-level chords (uiWindowOnKey). Same shape as the CodeEditor's: registered
 // chords are consumed and queued, everything else passes to the focused control.
-var _lui_hot: [32]u32 = [_]u32{0} ** 32;
+var _lui_hot: [32]u32 = @as([32]u32, @splat(0));
 var _lui_hot_n: usize = 0;
-var _lui_keys: [16]u32 = [_]u32{0} ** 16;
+var _lui_keys: [16]u32 = @as([16]u32, @splat(0));
 var _lui_key_n: usize = 0;
 fn _lui_on_key(_w: *_ui.Window, vk: c_int, mods: c_int, _d: ?*anyopaque) bool {
     _ = _w;
@@ -2677,7 +2677,7 @@ fn _lui_tree_emit(_key: []const u8, _label: []const u8, _expanded: bool, _leaf: 
         _n = _have;
     } else {
         _n = _allocator.create(_LuiTNode) catch return null;
-        _n.* = .{ .key = _allocator.dupeZ(u8, _key) catch return null, .label = _allocator.dupeZ(u8, _label) catch return null, .leaf = _leaf, .icon = _icon };
+        _n.* = .{ .key = _allocator.dupeSentinel(u8, _key, 0) catch return null, .label = _allocator.dupeSentinel(u8, _label, 0) catch return null, .leaf = _leaf, .icon = _icon };
         _t.byKey.put(_n.key, _n) catch return null;
     }
     _n.b_label = _label;
@@ -2706,12 +2706,12 @@ fn _lui_tree_leaf(_key: []const u8, _label: []const u8) void { _lui_tree_leaf_ic
 // "warn" (a triangle). Named rather than loaded because the runtime has no image decoder
 // yet; a Gui.loadImage(path) would slot in beside this table.
 const _lui_icon_names = [_][]const u8{ "", "folder", "file", "dot", "warn" };
-var _lui_icons: [_lui_icon_names.len]?*_ui.Image = .{null} ** _lui_icon_names.len;
+var _lui_icons: [_lui_icon_names.len]?*_ui.Image = @splat(null);
 // Gui.registerIcon (2026-09-23): the program's own icons, straight-alpha RGBA bytes handed
 // in at any size, premultiplied here (libui wants that), indexed after the built-ins.
 const _lui_reg_cap = 250 - _lui_icon_names.len;
 var _lui_reg_names: [_lui_reg_cap][]const u8 = undefined;
-var _lui_reg_images: [_lui_reg_cap]?*_ui.Image = .{null} ** _lui_reg_cap;
+var _lui_reg_images: [_lui_reg_cap]?*_ui.Image = @splat(null);
 var _lui_reg_n: usize = 0;
 // Registrations made before Gui.run (the natural place: main() before the loop) are queued,
 // because libui's allocator does not exist before uiInit -- calling uiNewImage there trips
@@ -2793,7 +2793,7 @@ fn _lui_icon_image(_idx: u8) ?*_ui.Image {
     }
     if (_idx == 0) return null;
     if (_lui_icons[_idx]) |_im| return _im;
-    var _buf: [16 * 16 * 4]u8 = .{0} ** (16 * 16 * 4);
+    var _buf: [16 * 16 * 4]u8 = @splat(0);
     switch (_idx) {
         1 => { // folder: tab + body, warm yellow with a darker outline
             _lui_icon_rect(&_buf, 1, 3, 7, 5, 0xC9, 0x9A, 0x2E);
@@ -2849,7 +2849,7 @@ fn _lui_clipboard_text() []const u8 {
     return _lui_clip_buf;
 }
 fn _lui_set_clipboard_text(_text: []const u8) void {
-    const _z = _allocator.dupeZ(u8, _text) catch return;
+    const _z = _allocator.dupeSentinel(u8, _text, 0) catch return;
     defer _allocator.free(_z);
     _ui.Clipboard.SetText(_z);
 }
@@ -2900,7 +2900,7 @@ fn _lui_tree_diff(_t: *_LuiTree, _p: *_LuiTNode) void {
     // 3. labels, then recurse, then expansion (children must exist before expanding)
     for (_p.children.items) |_c| {
         if (!std.mem.eql(u8, _c.label, _c.b_label)) {
-            const _nl = _allocator.dupeZ(u8, _c.b_label) catch continue;
+            const _nl = _allocator.dupeSentinel(u8, _c.b_label, 0) catch continue;
             _allocator.free(_c.label);
             _c.label = _nl;
             _ui.Tree.Model.NodeChanged(_m, @ptrCast(_c));
@@ -3078,7 +3078,7 @@ fn _lui_table_free(_t: *_LuiTable) void {
 fn _lui_table_setup_col(_l: []const u8) void {
     const _t = _lui_cur_table orelse return;
     if (_t.table != null or _t.names.items.len >= _t.ncols) return;
-    const _z = _allocator.dupeZ(u8, _l) catch return;
+    const _z = _allocator.dupeSentinel(u8, _l, 0) catch return;
     _t.names.append(_allocator, _z) catch {};
 }
 fn _lui_table_setup_check_col(_l: []const u8, _cap: *const anyopaque, _cap_len: usize, _thunk: *const fn (*const anyopaque, i64, bool, *const fn (*anyopaque, *const anyopaque, usize) void, *anyopaque) void, _send_fn: *const fn (*anyopaque, *const anyopaque, usize) void, _send_ptr: *anyopaque) void {
@@ -3086,7 +3086,7 @@ fn _lui_table_setup_check_col(_l: []const u8, _cap: *const anyopaque, _cap_len: 
     if (_cap_len > 128) return;
     if (_t.table == null and _t.names.items.len < _t.ncols) {
         _t.check_col = @intCast(_t.names.items.len);
-        const _z = _allocator.dupeZ(u8, _l) catch return;
+        const _z = _allocator.dupeSentinel(u8, _l, 0) catch return;
         _t.names.append(_allocator, _z) catch {};
     }
     const _src: [*]const u8 = @ptrCast(_cap);
@@ -3102,7 +3102,7 @@ fn _lui_table_setup_edit_col(_l: []const u8, _cap: *const anyopaque, _cap_len: u
     if (_cap_len > 128) return;
     if (_t.table == null and _t.names.items.len < _t.ncols) {
         _t.edit_col = @intCast(_t.names.items.len);
-        const _z = _allocator.dupeZ(u8, _l) catch return;
+        const _z = _allocator.dupeSentinel(u8, _l, 0) catch return;
         _t.names.append(_allocator, _z) catch {};
     }
     const _src: [*]const u8 = @ptrCast(_cap);
@@ -3117,7 +3117,7 @@ fn _lui_table_setup_button_col(_l: []const u8, _cap: *const anyopaque, _cap_len:
     if (_cap_len > 128) return;
     if (_t.table == null and _t.names.items.len < _t.ncols) {
         _t.button_col = @intCast(_t.names.items.len);
-        const _z = _allocator.dupeZ(u8, _l) catch return;
+        const _z = _allocator.dupeSentinel(u8, _l, 0) catch return;
         _t.names.append(_allocator, _z) catch {};
     }
     const _src: [*]const u8 = @ptrCast(_cap);
@@ -3147,8 +3147,8 @@ fn _lui_table_cell_text(_s: []const u8) bool {
     const _t = _lui_cur_table orelse return false;
     if (_t.build.items.len == 0) _t.build.append(_allocator, .empty) catch return true;
     const _row = &_t.build.items[_t.build.items.len - 1];
-    while (_row.items.len < _t.cur_col) _row.append(_allocator, _allocator.dupeZ(u8, "") catch return true) catch return true;
-    const _z = _allocator.dupeZ(u8, _s) catch return true;
+    while (_row.items.len < _t.cur_col) _row.append(_allocator, _allocator.dupeSentinel(u8, "", 0) catch return true) catch return true;
+    const _z = _allocator.dupeSentinel(u8, _s, 0) catch return true;
     if (_row.items.len == _t.cur_col) {
         _row.append(_allocator, _z) catch { _allocator.free(_z); return true; };
     } else {
@@ -3290,13 +3290,13 @@ fn _lui_open_folder() ?[]const u8 {
     return _allocator.dupe(u8, _s) catch null;
 }
 fn _lui_msg_box(_title: []const u8, _desc: []const u8) void {
-    const _tz = _allocator.dupeZ(u8, _title) catch return;
-    const _mz = _allocator.dupeZ(u8, _desc) catch return;
+    const _tz = _allocator.dupeSentinel(u8, _title, 0) catch return;
+    const _mz = _allocator.dupeSentinel(u8, _desc, 0) catch return;
     _ui.Window.MsgBox(_lui_window orelse return, _tz, _mz);
 }
 fn _lui_msg_box_error(_title: []const u8, _desc: []const u8) void {
-    const _tz = _allocator.dupeZ(u8, _title) catch return;
-    const _mz = _allocator.dupeZ(u8, _desc) catch return;
+    const _tz = _allocator.dupeSentinel(u8, _title, 0) catch return;
+    const _mz = _allocator.dupeSentinel(u8, _desc, 0) catch return;
     _ui.Window.MsgBoxError(_lui_window orelse return, _tz, _mz);
 }
 const _gui_lui_backend = _GuiBackend{

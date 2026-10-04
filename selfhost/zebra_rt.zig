@@ -754,11 +754,70 @@ pub fn _zbr_AutoMap(comptime K: type, comptime V: type) type {
 }
 // BUG-422: `xs.sortBy(def(p) = p.dist())` -- a ONE-argument KEY function (Python's
 // `key=`) sorts ascending by the key; a two-argument comparator is unchanged.
+// Zig 0.17 reports a fn's parameters struct-of-arrays (`param_types`), 0.16 as
+// `params[i].type`; a struct's fields likewise (`field_names`/`field_types` vs `fields`).
+// Both spellings, chosen at comptime (the untaken branch is never analysed), until 0.16 is
+// retired -- docs/design/zig017_migration.md.
+// `allocate StackFallback(N)()`: Zig 0.16's std.heap.stackFallback(N, a) / .get() became
+// BufferFirstAllocator.init(buffer, a) / .allocator() in 0.17. Emitted code builds this and
+// calls .get(); whichever API the toolchain has is chosen at comptime.
+pub fn _ZbrStackFallback(comptime N: usize) type {
+    const new_api = @hasDecl(std.heap, "BufferFirstAllocator");
+    return struct {
+        fallback: std.mem.Allocator,
+        buf: if (new_api) [N]u8 else void = undefined,
+        inner: if (new_api) std.heap.BufferFirstAllocator else std.heap.StackFallbackAllocator(N) = undefined,
+        pub fn get(self: *@This()) std.mem.Allocator {
+            if (comptime new_api) {
+                self.inner = .init(&self.buf, self.fallback);
+                return self.inner.allocator();
+            } else {
+                self.inner = std.heap.stackFallback(N, self.fallback);
+                return self.inner.get();
+            }
+        }
+    };
+}
+pub fn _zbr_fn_info_arity(comptime I: anytype) usize {
+    return if (comptime @hasField(@TypeOf(I), "param_types")) I.param_types.len else I.params.len;
+}
+pub fn _zbr_fn_info_param(comptime I: anytype, comptime i: usize) type {
+    return if (comptime @hasField(@TypeOf(I), "param_types")) I.param_types[i].? else I.params[i].type.?;
+}
+pub fn _zbr_field_names(comptime T: type) []const []const u8 {
+    comptime {
+        const info = @typeInfo(T).@"struct";
+        if (@hasField(@TypeOf(info), "field_names")) {
+            var a: [info.field_names.len][]const u8 = undefined;
+            for (info.field_names, 0..) |n, i| a[i] = n;
+            const c = a;
+            return &c;
+        } else {
+            var a: [info.fields.len][]const u8 = undefined;
+            for (info.fields, 0..) |f, i| a[i] = f.name;
+            const c = a;
+            return &c;
+        }
+    }
+}
+pub fn _zbr_field_types(comptime T: type) []const type {
+    comptime {
+        const info = @typeInfo(T).@"struct";
+        if (@hasField(@TypeOf(info), "field_types")) {
+            return info.field_types;
+        } else {
+            var a: [info.fields.len]type = undefined;
+            for (info.fields, 0..) |f, i| a[i] = f.type;
+            const c = a;
+            return &c;
+        }
+    }
+}
 fn _zbr_fn_arity(comptime F: type) ?usize {
     return switch (@typeInfo(F)) {
-        .@"fn" => |f| f.params.len,
+        .@"fn" => |f| _zbr_fn_info_arity(f),
         .pointer => |p| switch (@typeInfo(p.child)) {
-            .@"fn" => |f| f.params.len,
+            .@"fn" => |f| _zbr_fn_info_arity(f),
             else => null,
         },
         else => null,
@@ -992,7 +1051,7 @@ pub fn _sys_spawn(argv: anytype) *_SysProcess {
     }) catch return p;
     p.alive = true;
     // pid: on POSIX child.id is pid_t; on Windows GetProcessId is not in Zig std so we leave -1.
-    if (comptime builtin.os.tag != .windows) {
+    if (comptime builtin.target.os.tag != .windows) {
         if (p.child.id) |pid| p.pid = @intCast(pid);
     }
     return p;
@@ -1024,7 +1083,7 @@ pub fn _sys_spawn_piped_in(argv: anytype, cwd: []const u8) *_SysProcess {
         .stderr = .pipe,
     }) catch return p;
     p.alive = true;
-    if (comptime builtin.os.tag != .windows) {
+    if (comptime builtin.target.os.tag != .windows) {
         if (p.child.id) |pid| p.pid = @intCast(pid);
     }
     return p;
@@ -1049,7 +1108,7 @@ fn _sys_pipe_read_available(fo: ?std.Io.File) []const u8 {
     var chunk: [16384]u8 = undefined;
     var rounds: usize = 0;
     while (rounds < 4) : (rounds += 1) {
-        if (comptime builtin.os.tag == .windows) {
+        if (comptime builtin.target.os.tag == .windows) {
             const k32 = struct {
                 extern "kernel32" fn PeekNamedPipe(h: std.os.windows.HANDLE, buf: ?*anyopaque, n: u32, read: ?*u32, avail: ?*u32, left: ?*u32) callconv(.winapi) std.os.windows.BOOL;
                 extern "kernel32" fn ReadFile(h: std.os.windows.HANDLE, buf: [*]u8, n: u32, read: ?*u32, ov: ?*anyopaque) callconv(.winapi) std.os.windows.BOOL;
@@ -1084,7 +1143,7 @@ pub fn _sys_stdin_read_available() []const u8 {
 // to read. A relay uses it to pass EOF on to its child instead of spinning.
 pub fn _sys_stdin_closed() bool {
     const f = std.Io.File.stdin();
-    if (comptime builtin.os.tag == .windows) {
+    if (comptime builtin.target.os.tag == .windows) {
         const k32 = struct {
             extern "kernel32" fn PeekNamedPipe(h: std.os.windows.HANDLE, buf: ?*anyopaque, n: u32, read: ?*u32, avail: ?*u32, left: ?*u32) callconv(.winapi) std.os.windows.BOOL;
         };
@@ -1115,7 +1174,7 @@ pub fn _sys_process_kill(p: *_SysProcess) void {
 }
 pub fn _sys_process_is_running(p: *_SysProcess) bool {
     if (!p.alive) return false;
-    if (comptime builtin.os.tag == .windows) {
+    if (comptime builtin.target.os.tag == .windows) {
         const handle = p.child.id orelse { p.alive = false; return false; };
         var timeout: std.os.windows.LARGE_INTEGER = 0;
         const status = std.os.windows.ntdll.NtWaitForSingleObject(handle, .FALSE, &timeout);
@@ -1138,7 +1197,7 @@ pub fn _sys_process_is_running(p: *_SysProcess) bool {
             const r: isize = @intCast(std.c.waitpid(@intCast(pid), &st, std.c.W.NOHANG));
             status = @bitCast(st);
             break :blk r;
-        } else if (comptime builtin.os.tag == .linux) blk: {
+        } else if (comptime builtin.target.os.tag == .linux) blk: {
             var st: u32 = 0;
             const r: isize = @bitCast(std.os.linux.waitpid(@intCast(pid), &st, std.os.linux.W.NOHANG));
             status = st;
@@ -1205,7 +1264,7 @@ pub fn _sys_read_bytes(count: i64) ?[]const u8 {
 // found by the first --daily on Windows after the dynlib gate was registered
 // (2026-09-10). The loader is therefore selected here: kernel32 on Windows, std.DynLib
 // (dlopen) everywhere else, behind one `lookup`/`close` surface codegen emits against.
-pub const _DynLibInner = if (builtin.os.tag == .windows) struct {
+pub const _DynLibInner = if (builtin.target.os.tag == .windows) struct {
     handle: std.os.windows.HMODULE,
     extern "kernel32" fn LoadLibraryExW(lpLibFileName: [*:0]const u16, hFile: ?*anyopaque, dwFlags: u32) callconv(.winapi) ?std.os.windows.HMODULE;
     extern "kernel32" fn GetProcAddress(hModule: std.os.windows.HMODULE, lpProcName: [*:0]const u8) callconv(.winapi) ?*anyopaque;
@@ -2793,7 +2852,7 @@ pub fn _ws_serve(port: u16, handler: anytype) void {
             const headers = hdr_buf[0..hdr_len];
             // Extract Sec-WebSocket-Key
             const key_marker = "Sec-WebSocket-Key: ";
-            const k0 = std.ascii.indexOfIgnoreCase(headers, key_marker) orelse { ctx.conn.close(_io); return; };
+            const k0 = std.ascii.findIgnoreCase(headers, key_marker) orelse { ctx.conn.close(_io); return; };
             const k1 = k0 + key_marker.len;
             const k2 = std.mem.indexOfScalarPos(u8, headers, k1, '\r') orelse { ctx.conn.close(_io); return; };
             const client_key = headers[k1..k2];
@@ -2995,21 +3054,20 @@ pub fn _ZbrFn(comptime F: type) type {
     const I = @typeInfo(F).@"fn";
     const R = I.return_type.?;
     const Args = std.meta.ArgsTuple(F);
-    const P = I.params;
     return struct {
         const Self = @This();
         ctx: ?*anyopaque,
         f: *const fn (?*anyopaque, Args) R,
-        pub const call = switch (P.len) {
+        pub const call = switch (_zbr_fn_info_arity(I)) {
             0 => struct { fn c(self: Self) R { return self.f(self.ctx, .{}); } }.c,
-            1 => struct { fn c(self: Self, a0: P[0].type.?) R { return self.f(self.ctx, .{a0}); } }.c,
-            2 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?) R { return self.f(self.ctx, .{ a0, a1 }); } }.c,
-            3 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?, a2: P[2].type.?) R { return self.f(self.ctx, .{ a0, a1, a2 }); } }.c,
-            4 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?, a2: P[2].type.?, a3: P[3].type.?) R { return self.f(self.ctx, .{ a0, a1, a2, a3 }); } }.c,
-            5 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?, a2: P[2].type.?, a3: P[3].type.?, a4: P[4].type.?) R { return self.f(self.ctx, .{ a0, a1, a2, a3, a4 }); } }.c,
-            6 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?, a2: P[2].type.?, a3: P[3].type.?, a4: P[4].type.?, a5: P[5].type.?) R { return self.f(self.ctx, .{ a0, a1, a2, a3, a4, a5 }); } }.c,
-            7 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?, a2: P[2].type.?, a3: P[3].type.?, a4: P[4].type.?, a5: P[5].type.?, a6: P[6].type.?) R { return self.f(self.ctx, .{ a0, a1, a2, a3, a4, a5, a6 }); } }.c,
-            8 => struct { fn c(self: Self, a0: P[0].type.?, a1: P[1].type.?, a2: P[2].type.?, a3: P[3].type.?, a4: P[4].type.?, a5: P[5].type.?, a6: P[6].type.?, a7: P[7].type.?) R { return self.f(self.ctx, .{ a0, a1, a2, a3, a4, a5, a6, a7 }); } }.c,
+            1 => struct { fn c(self: Self, a0: _zbr_fn_info_param(I, 0)) R { return self.f(self.ctx, .{a0}); } }.c,
+            2 => struct { fn c(self: Self, a0: _zbr_fn_info_param(I, 0), a1: _zbr_fn_info_param(I, 1)) R { return self.f(self.ctx, .{ a0, a1 }); } }.c,
+            3 => struct { fn c(self: Self, a0: _zbr_fn_info_param(I, 0), a1: _zbr_fn_info_param(I, 1), a2: _zbr_fn_info_param(I, 2)) R { return self.f(self.ctx, .{ a0, a1, a2 }); } }.c,
+            4 => struct { fn c(self: Self, a0: _zbr_fn_info_param(I, 0), a1: _zbr_fn_info_param(I, 1), a2: _zbr_fn_info_param(I, 2), a3: _zbr_fn_info_param(I, 3)) R { return self.f(self.ctx, .{ a0, a1, a2, a3 }); } }.c,
+            5 => struct { fn c(self: Self, a0: _zbr_fn_info_param(I, 0), a1: _zbr_fn_info_param(I, 1), a2: _zbr_fn_info_param(I, 2), a3: _zbr_fn_info_param(I, 3), a4: _zbr_fn_info_param(I, 4)) R { return self.f(self.ctx, .{ a0, a1, a2, a3, a4 }); } }.c,
+            6 => struct { fn c(self: Self, a0: _zbr_fn_info_param(I, 0), a1: _zbr_fn_info_param(I, 1), a2: _zbr_fn_info_param(I, 2), a3: _zbr_fn_info_param(I, 3), a4: _zbr_fn_info_param(I, 4), a5: _zbr_fn_info_param(I, 5)) R { return self.f(self.ctx, .{ a0, a1, a2, a3, a4, a5 }); } }.c,
+            7 => struct { fn c(self: Self, a0: _zbr_fn_info_param(I, 0), a1: _zbr_fn_info_param(I, 1), a2: _zbr_fn_info_param(I, 2), a3: _zbr_fn_info_param(I, 3), a4: _zbr_fn_info_param(I, 4), a5: _zbr_fn_info_param(I, 5), a6: _zbr_fn_info_param(I, 6)) R { return self.f(self.ctx, .{ a0, a1, a2, a3, a4, a5, a6 }); } }.c,
+            8 => struct { fn c(self: Self, a0: _zbr_fn_info_param(I, 0), a1: _zbr_fn_info_param(I, 1), a2: _zbr_fn_info_param(I, 2), a3: _zbr_fn_info_param(I, 3), a4: _zbr_fn_info_param(I, 4), a5: _zbr_fn_info_param(I, 5), a6: _zbr_fn_info_param(I, 6), a7: _zbr_fn_info_param(I, 7)) R { return self.f(self.ctx, .{ a0, a1, a2, a3, a4, a5, a6, a7 }); } }.c,
             else => @compileError("a sig takes at most 8 parameters"),
         };
         pub fn from(v: anytype) Self {
@@ -3032,7 +3090,7 @@ pub fn _ZbrFn(comptime F: type) type {
                 },
                 .@"struct" => {
                     if (!@hasDecl(T, "call")) @compileError("not a function or closure: " ++ @typeName(T));
-                    const by_val = @typeInfo(@TypeOf(T.call)).@"fn".params[0].type.? == T;
+                    const by_val = _zbr_fn_info_param(@typeInfo(@TypeOf(T.call)).@"fn", 0) == T;
                     if (@sizeOf(T) == 0) return .{ .ctx = null, .f = struct {
                         fn e(_: ?*anyopaque, a: Args) R {
                             var c: T = undefined;
@@ -3058,7 +3116,7 @@ pub fn _ZbrFn(comptime F: type) type {
         pub fn fromRef(p: anytype) Self {
             const T = @typeInfo(@TypeOf(p)).pointer.child;
             if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "call")) return from(p.*);
-            const by_val = @typeInfo(@TypeOf(T.call)).@"fn".params[0].type.? == T;
+            const by_val = _zbr_fn_info_param(@typeInfo(@TypeOf(T.call)).@"fn", 0) == T;
             if (@sizeOf(T) == 0) return from(p.*);
             return .{ .ctx = @ptrCast(p), .f = struct {
                 fn e(ctx: ?*anyopaque, a: Args) R {
@@ -3098,7 +3156,7 @@ pub fn _ZbrInvokeRet(comptime T: type) type {
 pub inline fn _zbr_invoke(fp: anytype, args: anytype) _ZbrInvokeRet(@TypeOf(fp.*)) {
     const T = @TypeOf(fp.*);
     if (comptime _zbr_is_fnlike(T)) return @call(.auto, fp.*, args);
-    if (comptime @typeInfo(@TypeOf(T.call)).@"fn".params[0].type.? == T) return @call(.auto, T.call, .{fp.*} ++ args);
+    if (comptime _zbr_fn_info_param(@typeInfo(@TypeOf(T.call)).@"fn", 0) == T) return @call(.auto, T.call, .{fp.*} ++ args);
     return @call(.auto, T.call, .{fp} ++ args);
 }
 
@@ -3252,7 +3310,7 @@ pub fn _net_resolve(host: []const u8) _ZbrList([]const u8) {
 // ─── Thompson NFA regex engine ───────────────────────────────────────────────
 pub const _RNodeKind = enum(u8) { match, lit, dot, cls, split, save, bol, eol_a, wb };
 pub const _RNode = struct {
-    kind: _RNodeKind, c: u8 = 0, bits: [32]u8 = [_]u8{0} ** 32,
+    kind: _RNodeKind, c: u8 = 0, bits: [32]u8 = @as([32]u8, @splat(0)),
     neg: bool = false, slot: u8 = 0, out1: u32 = 0xFFFF_FFFF, out2: u32 = 0xFFFF_FFFF,
 };
 pub const _RFlags = struct {
@@ -3260,7 +3318,7 @@ pub const _RFlags = struct {
     lazy_match: bool = false, // set when any *? +? ?? is parsed
 };
 pub const _RFrag = struct {
-    start: u32, outs: [64]u32 = [_]u32{0xFFFF_FFFF} ** 64, n: u8 = 0,
+    start: u32, outs: [64]u32 = @as([64]u32, @splat(0xFFFF_FFFF)), n: u8 = 0,
     pub fn one(s: u32, d: u32) _RFrag { var f = _RFrag{ .start = s }; f.outs[0] = d; f.n = 1; return f; }
     pub fn two(s: u32, d1: u32, d2: u32) _RFrag { var f = _RFrag{ .start = s }; f.outs[0] = d1; f.outs[1] = d2; f.n = 2; return f; }
     pub fn merge(a: _RFrag, b: _RFrag) _RFrag {
@@ -3290,7 +3348,7 @@ pub const _RC = struct {
     pub fn eat(c: *_RC) ?u8 { if (c.pos < c.pat.len) { defer c.pos += 1; return c.pat[c.pos]; } return null; }
     pub fn expect(c: *_RC, ch: u8) bool { if (c.peek() == ch) { c.pos += 1; return true; } return false; }
     pub fn parseClass(c: *_RC) error{OutOfMemory}![32]u8 {
-        var bits = [_]u8{0} ** 32;
+        var bits = @as([32]u8, @splat(0));
         while (c.peek()) |ch| {
             if (ch == ']') break; _ = c.eat();
             if (ch == '\\') { const esc = c.eat() orelse break; _rSetEsc(&bits, esc); }
@@ -3340,9 +3398,9 @@ pub const _RC = struct {
                     const idx = try c.addNode(.{ .kind = .wb, .neg = (esc == 'B') });
                     return _RFrag.one(idx, idx);
                 }
-                var bits = [_]u8{0} ** 32;
+                var bits = @as([32]u8, @splat(0));
                 const neg = std.ascii.isUpper(esc);
-                if (neg) { _rSetEsc(&bits, std.ascii.toLower(esc)); const pb = bits; bits = [_]u8{0} ** 32; for (&bits, pb) |*b, p| b.* = ~p; }
+                if (neg) { _rSetEsc(&bits, std.ascii.toLower(esc)); const pb = bits; bits = @as([32]u8, @splat(0)); for (&bits, pb) |*b, p| b.* = ~p; }
                 else _rSetEsc(&bits, esc);
                 const _ci = try c.addNode(.{ .kind = .cls, .bits = bits, .neg = false });
                 return _RFrag.one(_ci, _ci);
@@ -3625,7 +3683,7 @@ pub fn _re_eclosure_s(
 }
 pub fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[_MAX_SAVE_SLOTS]usize {
     const alloc = std.heap.page_allocator;
-    const empty: [_MAX_SAVE_SLOTS]usize = [_]usize{0xFFFF_FFFF_FFFF_FFFF} ** _MAX_SAVE_SLOTS;
+    const empty: [_MAX_SAVE_SLOTS]usize = @as([_MAX_SAVE_SLOTS]usize, @splat(0xFFFF_FFFF_FFFF_FFFF));
     var cur: std.ArrayListUnmanaged(_RegThread) = .{ .items = &.{}, .capacity = 0 };
     defer cur.deinit(alloc);
     var nxt: std.ArrayListUnmanaged(_RegThread) = .{ .items = &.{}, .capacity = 0 };
@@ -3711,8 +3769,8 @@ pub fn _zbr_deep_copy(comptime T: type, alloc: std.mem.Allocator, src: T, depth:
                 return copy;
             }
             var out: T = undefined;
-            inline for (@typeInfo(T).@"struct".fields) |f|
-                @field(out, f.name) = try _zbr_deep_copy(f.type, alloc, @field(src, f.name), depth + 1);
+            inline for (comptime _zbr_field_names(T), comptime _zbr_field_types(T)) |f_name, f_type|
+                @field(out, f_name) = try _zbr_deep_copy(f_type, alloc, @field(src, f_name), depth + 1);
             return out;
         },
         else => return src,
@@ -3809,7 +3867,7 @@ pub const _SqliteDbInner = struct {
                 .int   => |v| _ = sqlite3_bind_int64(stmt, idx, v),
                 .float => |v| _ = sqlite3_bind_double(stmt, idx, v),
                 .text  => |v| {
-                    const cz = _allocator.dupeZ(u8, v) catch return;
+                    const cz = _allocator.dupeSentinel(u8, v, 0) catch return;
                     defer _allocator.free(cz);
                     _ = sqlite3_bind_text(stmt, idx, cz, -1, _SQLITE_TRANSIENT);
                 },
@@ -3818,7 +3876,7 @@ pub const _SqliteDbInner = struct {
         }
     }
     pub fn _run(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void {
-        const csql = _allocator.dupeZ(u8, sql) catch return;
+        const csql = _allocator.dupeSentinel(u8, sql, 0) catch return;
         defer _allocator.free(csql);
         var stmt: *_sqlite3_stmt = undefined;
         if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
@@ -3831,7 +3889,7 @@ pub const _SqliteDbInner = struct {
     }
     pub fn _fetch(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) {
         var rows = _zbr_new(_ZbrList(_SqliteRow));
-        const csql = _allocator.dupeZ(u8, sql) catch return rows;
+        const csql = _allocator.dupeSentinel(u8, sql, 0) catch return rows;
         defer _allocator.free(csql);
         var stmt: *_sqlite3_stmt = undefined;
         if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
@@ -3878,7 +3936,7 @@ pub const SqliteDb  = *_SqliteDbInner;
 pub const SqliteRow = _SqliteRow;
 
 pub fn _sqlite_open(path: []const u8) ?SqliteDb {
-    const cpath = _allocator.dupeZ(u8, path) catch return null;
+    const cpath = _allocator.dupeSentinel(u8, path, 0) catch return null;
     defer _allocator.free(cpath);
     var db_raw: *_sqlite3 = undefined;
     if (sqlite3_open(cpath, &db_raw) != _SQLITE_OK) {
@@ -4182,7 +4240,7 @@ pub const Gui = GuiContext;
 // one heap instance per (parent send, parent queue, map), found again on re-render.
 fn _ScopeWrap(comptime MapT: type) type {
     const is_fn = _zbr_is_fnlike(MapT);
-    const ChildMsg = if (is_fn) @typeInfo(MapT).@"fn".params[0].type.? else @typeInfo(@TypeOf(MapT.call)).@"fn".params[1].type.?;
+    const ChildMsg = if (is_fn) _zbr_fn_info_param(@typeInfo(MapT).@"fn", 0) else _zbr_fn_info_param(@typeInfo(@TypeOf(MapT.call)).@"fn", 1);
     const SendFn = *const fn (*anyopaque, *const anyopaque) void;
     const MapStore = if (is_fn) *const MapT else MapT;
     return struct {
@@ -4218,9 +4276,9 @@ pub fn _gui_mvu_run(title: []const u8, width: i64, height: i64, _mvu_init: anyty
     defer _gui_active_backend.deinitFn();
     const MsgType = comptime blk: {
         if (_zbr_is_fnlike(@TypeOf(_mvu_update)))
-            break :blk @typeInfo(@TypeOf(_mvu_update)).@"fn".params[1].type.?
+            break :blk _zbr_fn_info_param(@typeInfo(@TypeOf(_mvu_update)).@"fn", 1)
         else
-            break :blk @typeInfo(@TypeOf(@TypeOf(_mvu_update).call)).@"fn".params[2].type.?;
+            break :blk _zbr_fn_info_param(@typeInfo(@TypeOf(@TypeOf(_mvu_update).call)).@"fn", 2);
     };
     const _MvuQueue = struct { buf: [32]MsgType = undefined, len: usize = 0 };
     var _pq = _MvuQueue{};
@@ -5336,12 +5394,12 @@ fn _zbr_show_into(sb: *std.ArrayList(u8), x: anytype, quote_str: bool) !void {
                 try sb.appendSlice(_allocator, _zbr_show_type_name(@typeName(T)));
                 try sb.append(_allocator, '{');
                 comptime var shown: usize = 0;
-                inline for (st.fields) |f| {
-                    if (comptime f.name.len > 0 and f.name[0] != '_') {
+                inline for (comptime _zbr_field_names(T)) |f_name| {
+                    if (comptime f_name.len > 0 and f_name[0] != '_') {
                         if (shown > 0) try sb.appendSlice(_allocator, ", ");
-                        try sb.appendSlice(_allocator, f.name);
+                        try sb.appendSlice(_allocator, f_name);
                         try sb.appendSlice(_allocator, ": ");
-                        try _zbr_show_into(sb, @field(x, f.name), true);
+                        try _zbr_show_into(sb, @field(x, f_name), true);
                         shown += 1;
                     }
                 }
@@ -5392,7 +5450,7 @@ pub fn _zebra_panic(msg: []const u8, first_trace_addr: ?usize) noreturn {
     std.process.exit(1);
 }
 pub fn _sys_setenv(key: []const u8, val: []const u8) void {
-    if (comptime builtin.os.tag == .windows) {
+    if (comptime builtin.target.os.tag == .windows) {
         const key_w = std.unicode.utf8ToUtf16LeAllocZ(_allocator, key) catch return;
         defer _allocator.free(key_w);
         const val_w = std.unicode.utf8ToUtf16LeAllocZ(_allocator, val) catch return;
@@ -5408,16 +5466,16 @@ pub fn _sys_setenv(key: []const u8, val: []const u8) void {
         _env_overrides.put(_allocator, k, v) catch {};
         if (comptime builtin.link_libc) {
             const c = struct { extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int; };
-            const kz = _allocator.dupeZ(u8, key) catch return;
+            const kz = _allocator.dupeSentinel(u8, key, 0) catch return;
             defer _allocator.free(kz);
-            const vz = _allocator.dupeZ(u8, val) catch return;
+            const vz = _allocator.dupeSentinel(u8, val, 0) catch return;
             defer _allocator.free(vz);
             _ = c.setenv(kz.ptr, vz.ptr, 1);
         }
     }
 }
 pub fn _sys_getenv(key: []const u8) ?[]const u8 {
-    if (comptime builtin.os.tag == .windows) {
+    if (comptime builtin.target.os.tag == .windows) {
         const environ: std.process.Environ = .{ .block = .global };
         return environ.getAlloc(_allocator, key) catch null;
     } else {
