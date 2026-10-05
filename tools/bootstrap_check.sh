@@ -18,8 +18,8 @@
 #   tools/bootstrap_check.sh --update  # steps 1+2, then update selfhost/*.zig
 #
 # What it does (full mode):
-#   1. Regenerates all selfhost .zig files from the Zig-compiled zebra into
-#      /tmp/bs-zig (leaving selfhost/*.zig untouched at this stage).
+#   1. Regenerates all selfhost .zig files with zig-out/bin/zebra (the N-1 selfhost, built from the committed .zig)
+#      into ${ZBR_BS}-zig (leaving selfhost/*.zig untouched at this stage).
 #   2. Builds zebra-selfhost-A.exe from /tmp/bs-zig.
 #   3. Has A re-emit every module into /tmp/bs-A/<mod>/ (one dir per root, so a
 #      later root's deps cannot clobber an earlier root's emit).
@@ -32,18 +32,19 @@
 # the A/B round-trip. selfhost/*.zig is never touched in quick mode, so the
 # working tree stays clean. Run full mode before commit.
 #
-# Update mode (--update) runs steps 1+2 then uses zebra-bootstrap.exe (the
-# authoritative Zig-compiled compiler) to re-emit all selfhost/*.zig in place.
+# Update mode (--update) runs steps 1+2 then uses zig-out/bin/zebra (the N-1
+# selfhost, the regeneration authority) to re-emit all selfhost/*.zig in place.
 # Equivalent to `zig build update-selfhost`.
 # Use after editing selfhost/*.zbr when you need zebra.exe to reflect the
 # changes: run --update, then `zig build`.
 # Like full mode, --update snapshots selfhost/*.zig before writing and restores
 # on any failure, so a partial emit never leaves the working tree in a mixed state.
 #
-# Why bootstrap, not selfhost-A? Using selfhost-A to regenerate itself is
+# Why N-1, not selfhost-A? Using selfhost-A to regenerate itself is
 # chicken-and-egg: a codegen bug in selfhost/CodeGen.zbr would cause selfhost-A
 # to reproduce that same bug in the output .zig files, making it impossible to
-# fix without bypassing the step manually.  Bootstrap is the ground truth;
+# fix without bypassing the step manually.  The compiler built from the COMMITTED
+# .zig (which the previous round trip proved) is the ground truth;
 # selfhost-A's correctness is tested by the full round-trip (steps 3-5).
 #
 # Why these flags exist: running `zebra --emit-zig selfhost/X.zbr` manually and
@@ -103,8 +104,8 @@ SELFHOST_B="$REPO/zig-out/bin/zebra-selfhost-B$EXE"
 # Build the round-trip's verification binaries (selfhost-A/B) with Zig's self-hosted
 # x86_64 backend + linker by default: ~6x faster than LLVM+LLD (1.4s vs 8.5s for the
 # ~25k-line compiler) and verified to emit byte-identically to the LLVM build.  These
-# are ephemeral round-trip *checkers* — the committed selfhost/*.zig is produced by the
-# Zig-compiled bootstrap (LLVM), not by A/B — so the speedup carries no artifact risk.
+# are ephemeral round-trip *checkers* — the committed selfhost/*.zig is produced by
+# zig-out/bin/zebra (the N-1 selfhost), not by A/B — so the speedup carries no artifact risk.
 # Each build below falls back to LLVM automatically if the self-hosted backend hits a
 # gap (a real codegen error becomes a fallback, never a false gate failure).
 # Set BOOTSTRAP_FAST=0 to force LLVM for both (e.g. to cross-check the backend).
@@ -198,9 +199,10 @@ fi
 if [[ $QUICK -eq 1 ]]; then
     if [[ $UPDATE -eq 1 ]]; then
         echo "── Step 3 (update): re-emitting selfhost/*.zig via the selfhost (N-1 regen authority)"
-        # Use the Zig-compiled bootstrap compiler — never selfhost-A — to avoid
+        # Use zig-out/bin/zebra (the N-1 selfhost) — never selfhost-A — to avoid
         # the chicken-and-egg where selfhost-A has a codegen bug that regenerates
-        # itself incorrectly.  Bootstrap is the authoritative, self-contained emitter.
+        # itself incorrectly.  N-1 is the authoritative emitter (the Zig bootstrap
+        # held that role until 2026-08-30 and was deleted 2026-09-16).
         # The round-trip fidelity test (selfhost-A == selfhost-B) lives in full mode.
         #
         # Kill-safety: emit every file into a temp dir FIRST, validate each is
@@ -263,7 +265,7 @@ for f in "${FILES[@]}"; do
 done
 
 # Build B from selfhost-A's OWN OUTPUT — that is what makes this level-2.
-# It used to build from the committed selfhost/*.zig, which is bootstrap-emitted,
+# It used to build from the committed selfhost/*.zig, which was then bootstrap-emitted,
 # so B was the same compiler as A and the step proved nothing about A's emit.
 # /tmp/bs-A/main/ is the right set: emitting main.zbr produces main.zig root-shaped
 # plus every dep dep-shaped, in one directory — exactly a buildable tree.
@@ -299,8 +301,8 @@ if [[ $DIVERGENT -ne 0 ]]; then
 fi
 
 # The working tree is untouched by steps 3-5: both selfhost passes emit into
-# /tmp/bs-A and /tmp/bs-B, so selfhost/*.zig keeps whatever the bootstrap (the
-# regen authority) last wrote. The old comment here claimed the tree was left
+# ${ZBR_BS}-A and ${ZBR_BS}-B, so selfhost/*.zig keeps whatever the N-1 regen
+# (--update, or tools/rebuild.sh) last wrote. The old comment here claimed the tree was left
 # "in selfhost-B-emitted state ... the deterministic fixed point"; that stopped
 # being true when --emit-zig moved to $TEMP, and it is now false by design
 # rather than by accident.

@@ -460,17 +460,86 @@ else
     note "examples-sweep: skipped (no baseline -- run --examples --update-baseline)"
 fi
 
-# ── round-trip: the freshness property whose absence made it vacuous ─────────
-# The emits compared must be FRESH selfhost output, not copies of the committed
-# bootstrap-emitted files. Checkable only if a prior full run left the dirs.
-if [ -f ${ZBR_BS}-A/main/main.zig ] && [ -f selfhost/main.zig ]; then
-    if cmp -s ${ZBR_BS}-A/main/main.zig selfhost/main.zig; then
-        bad "round-trip emit is IDENTICAL to the committed .zig — it may be comparing copies again"
-    else
-        pass "round-trip emits are fresh selfhost output (differ from committed)"
-    fi
+# ── round-trip: the emits it compares must be FRESH, not copies ──────────────
+# The vacuous bug (found 2026-07-28): steps 3/5 of bootstrap_check copied the committed
+# selfhost/<mod>.zig into A and B, so the A-vs-B diff compared a file with itself and
+# could not fail. This leg used to catch that by requiring A's main.zig to DIFFER from
+# the committed one -- valid while the committed .zig was emitted by the Zig bootstrap,
+# with its own header. Since the N-1 switch (2026-08-30) the committed .zig IS selfhost
+# output, so on a clean tree A matching it is the correct fixed point, and the old leg
+# was red on every clean run (removed 2026-10-04).
+#
+# THE REAL ADVERSARY, not an inference from bytes: append a unique comment line to every
+# committed selfhost/<mod>.zig, run the real round trip, and require that NO A/B emit
+# carries it. A genuine emit regenerates from the .zbr and cannot contain it; a copy
+# always does. Nothing in bootstrap_check builds from the planted files (step 1 uses the
+# prebuilt zig-out/bin/zebra, which read them at ITS build time), so the plant cannot
+# change what is emitted. Only the FILES modules are planted -- never the preamble or
+# the gui sections, which codegen reads from disk and would echo into a fresh emit.
+# The restore does NOT trust bootstrap_check's own failure trap: its snapshot is taken
+# after the plant. A kill mid-leg is covered by our own trap, and every file is cmp'd
+# against its backup afterwards.
+# CANNOT SEE: whether the A-vs-B diff itself can go red (a divergence between two
+# generations). No leg here plants that; it would need a non-fixed-point codegen change.
+RT_FILES="Token Lexer Ast AstWalk Parser Resolver AstBuilder CgHelpers TypeChecker CodeGen Checker main"
+rt_restore() { for f in $RT_FILES; do [ -f "$OUT/rt/$f.zig" ] && cp -p "$OUT/rt/$f.zig" "selfhost/$f.zig"; done; }
+if [ ! -x zig-out/bin/zebra.exe ] && [ ! -x zig-out/bin/zebra ]; then
+    note "round-trip freshness: skipped (no built compiler -- run tools/rebuild.sh)"
 else
-    note "round-trip: skipped (run bootstrap_check.sh first to populate ${ZBR_BS}-A)"
+    mkdir -p "$OUT/rt"
+    for f in $RT_FILES; do cp -p "selfhost/$f.zig" "$OUT/rt/$f.zig"; done
+    # INT/TERM must EXIT: a bash trap that returns lets the script run on, and it then
+    # compared files against backups the handler had just deleted (seen on a TERM test).
+    # And it must KILL AND WAIT FOR bootstrap_check first: a kill of this shell alone left
+    # it running as an orphan (it then collided with the next run in ${ZBR_BS}-*), and
+    # its OWN failure trap restores a snapshot taken AFTER the plant -- so our restore has
+    # to be the last write. Its zig/zebra children may outlive it; they write only to
+    # ${ZBR_BS}-*, never to selfhost/.
+    RT_PID=""
+    rt_abort() { [ -n "$RT_PID" ] && { kill "$RT_PID" 2>/dev/null; wait "$RT_PID" 2>/dev/null; }; RT_PID=""; }
+    trap 'rt_restore; rm -rf "$OUT" "$LAST_OUT_FILE"' EXIT; trap 'rt_abort; exit 130' INT TERM
+    PLANT="// gate_selfcheck round-trip plant $$ -- a fresh emit cannot contain this line"
+    for f in $RT_FILES; do printf '%s\n' "$PLANT" >> "selfhost/$f.zig"; done
+    why=""
+    for f in $RT_FILES; do   # positive control: the plant is really there to be copied
+        grep -qxF "$PLANT" "selfhost/$f.zig" || why="plant did not land in selfhost/$f.zig"
+    done
+    rm -rf "${ZBR_BS}-A" "${ZBR_BS}-B"   # leftovers from an earlier run must not count
+    if [ -z "$why" ]; then
+        # A background job + `wait`, not $(...): a trap fires during `wait` at once, and
+        # rt_abort has a PID to kill.
+        bash tools/bootstrap_check.sh > "$LAST_OUT_FILE" 2>&1 &
+        RT_PID=$!
+        wait "$RT_PID"; got=$?
+        RT_PID=""
+        if [ "$got" -ne 0 ]; then
+            # KEEP the failure's own account: $OUT is deleted on exit, and a 300-byte tail
+            # once ended in ".zig" and said nothing (2026-10-05).
+            cp "$LAST_OUT_FILE" "${ZBR_BS}-selfcheck-roundtrip.log"
+            why="bootstrap_check failed (rc=$got) on a tree that differs from clean only by comments -- not a freshness verdict. $(grep -aE 'FAIL|DIVERGENT|error' "$LAST_OUT_FILE" | head -4 | tr '\n' ' ') [full log: ${ZBR_BS}-selfcheck-roundtrip.log]"
+        fi
+    fi
+    rt_restore
+    trap 'rm -rf "$OUT" "$LAST_OUT_FILE"' EXIT; trap - INT TERM
+    for f in $RT_FILES; do
+        cmp -s "$OUT/rt/$f.zig" "selfhost/$f.zig" || bad "round-trip leg did NOT restore selfhost/$f.zig -- restore it from git now"
+    done
+    if [ -z "$why" ]; then
+        for side in A B; do for f in $RT_FILES; do
+            e="${ZBR_BS}-$side/$f/$f.zig"
+            if ! head -1 "$e" 2>/dev/null | grep -q '^// Generated by'; then
+                why="$side/$f/$f.zig missing, empty or not an emit -- an absent file also lacks the plant"
+            elif grep -qxF "$PLANT" "$e"; then
+                why="$side/$f/$f.zig carries the plant: the round trip is comparing COPIES of the committed .zig"
+            fi
+            [ -n "$why" ] && break 2
+        done; done
+    fi
+    if [ -z "$why" ]; then
+        pass "round-trip emits are fresh (a line planted in every committed .zig reached no A/B emit)"
+    else
+        bad "round-trip freshness: $why"
+    fi
 fi
 
 # ── hazard-lint: fires on a planted tooling hazard, and REFUSES when blinded ──
