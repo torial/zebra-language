@@ -1856,6 +1856,14 @@ python tools/bug_fixture_check.py --gate  # THE REGRESSION-FIXTURE GATE (A1): SQ
                                 #   if something actually RUNS it, since an orphaned .zbr
                                 #   nobody executes is the shape this class of debt takes.
                                 #   Also globs test/boundary/*.zbr. Static; instant. QUICK.
+                                #   `--update-baseline` MERGES (2026-10-04): a line for a
+                                #   still-unpinned bug is kept BYTE FOR BYTE, because its
+                                #   reason is often hand-written ("PINNED BY GATE check-mode
+                                #   leg 1b") and is the only record of why no .zbr pins it.
+                                #   It used to regenerate the file from ledger titles and
+                                #   overwrote seven such reasons in one run. New debt is
+                                #   appended, pinned lines dropped, both printed in full;
+                                #   gate_selfcheck plants all three and red-checked HEAD.
 python tools/registration_check.py # THE UNASSERTED-FILE GATE (BUG-243, static, instant):
                                 #   every tracked test/*.zbr must have its status asserted by
                                 #   SOMETHING — a smoke* registration, presence in the

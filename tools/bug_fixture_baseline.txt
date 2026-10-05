@@ -1,4 +1,6 @@
-# DERIVED by tools/bug_fixture_check.py --update-baseline.
+# Maintained by tools/bug_fixture_check.py --update-baseline, which MERGES: existing
+# lines are kept verbatim (their reason may be hand-written -- edit it freely), newly
+# unpinned bugs are appended with their ledger title, newly pinned ones are dropped.
 # Fixed bugs that are NOT pinned by a test that actually runs. This is DEBT,
 # recorded so the gate can fail on NEW debt without failing on the backlog.
 # Shrinking this list is good; it should never grow.

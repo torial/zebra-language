@@ -30,7 +30,12 @@ it stays visible instead of becoming invisible.
 
     python tools/bug_fixture_check.py                    # report
     python tools/bug_fixture_check.py --gate             # fail on NEW unpinned fixed bugs
-    python tools/bug_fixture_check.py --update-baseline  # accept current debt
+    python tools/bug_fixture_check.py --update-baseline  # merge current debt into the baseline
+
+--update-baseline keeps every existing line for a still-unpinned bug BYTE FOR BYTE (the
+reason column is often hand-written: why no .zbr can pin it, which gate does), appends
+newly unpinned bugs with their ledger title, and drops -- printing each in full -- the
+lines for bugs that became pinned. gate_selfcheck.sh plants all three cases.
 """
 import pathlib
 import re
@@ -39,6 +44,14 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parent.parent
 BASELINE = REPO / "tools" / "bug_fixture_baseline.txt"
 SMOKE = REPO / "tools" / "selfhost_smoke.sh"
+# Written only when no baseline exists; an existing file keeps its own header.
+BASELINE_HEADER = (
+    "# Maintained by tools/bug_fixture_check.py --update-baseline, which MERGES: existing\n"
+    "# lines are kept verbatim (their reason may be hand-written -- edit it freely), newly\n"
+    "# unpinned bugs are appended with their ledger title, newly pinned ones are dropped.\n"
+    "# Fixed bugs that are NOT pinned by a test that actually runs. This is DEBT,\n"
+    "# recorded so the gate can fail on NEW debt without failing on the backlog.\n"
+    "# Shrinking this list is good; it should never grow.\n")
 
 
 def fixed_bugs() -> dict:
@@ -238,14 +251,45 @@ def main() -> int:
     print(f"  no fixture at all:                  {len(unpinned)}")
 
     if "--update-baseline" in sys.argv:
-        BASELINE.write_text(
-            "# DERIVED by tools/bug_fixture_check.py --update-baseline.\n"
-            "# Fixed bugs that are NOT pinned by a test that actually runs. This is DEBT,\n"
-            "# recorded so the gate can fail on NEW debt without failing on the backlog.\n"
-            "# Shrinking this list is good; it should never grow.\n"
-            + "".join(f"{n}\t{bugs[n]}\n" for n in sorted(debt)),
-            encoding="utf-8", newline="\n")
-        print(f"baseline updated: {len(debt)} unpinned -> tools/bug_fixture_baseline.txt")
+        # A MERGE, not a regeneration (2026-10-04). The reason column of an existing line
+        # is often HAND-WRITTEN -- "a CLI property; PINNED BY GATE check-mode leg 1b (no
+        # .zbr can express 'must not run')" -- and it is the only record of WHY that bug
+        # has no fixture. The first version rewrote the whole file from the ledger titles,
+        # so every run silently replaced those reasons with whatever BUGS.md's heading said
+        # that day (seven lines on 2026-10-04, BUG-439 among them). Now: a line whose bug is
+        # still debt is kept BYTE FOR BYTE, in place; a newly unpinned bug is appended with
+        # its ledger title; a line whose bug became pinned is dropped and PRINTED IN FULL,
+        # since dropping a reason is the one lossy step. Comments and blank lines stay put.
+        old_lines = BASELINE.read_text(encoding="utf-8").split("\n") \
+            if BASELINE.exists() else BASELINE_HEADER.rstrip("\n").split("\n")
+        if old_lines and old_lines[-1] == "":
+            old_lines.pop()  # the final newline, re-added on write
+        kept, dropped, seen = [], [], set()
+        for ln in old_lines:
+            if not ln.strip() or ln.startswith("#"):
+                kept.append(ln)
+                continue
+            num, tab, _ = ln.partition("\t")
+            if not tab or not num.isdigit():
+                # Neither keep nor drop silently: either guess loses or invents a reason.
+                sys.stderr.write(f"baseline line is not `<number>\\t<reason>`: {ln!r}\n"
+                                 "Refusing to rewrite tools/bug_fixture_baseline.txt; fix "
+                                 "the line by hand.\n")
+                return 2
+            n = int(num)
+            if n in debt and n not in seen:
+                kept.append(ln)
+                seen.add(n)
+            else:
+                dropped.append(ln)
+        added = [f"{n}\t{bugs[n]}" for n in sorted(debt - seen)]
+        BASELINE.write_text("\n".join(kept + added) + "\n", encoding="utf-8", newline="\n")
+        for ln in dropped:
+            print(f"  dropped (pinned now, or not a fixed bug): {ln}")
+        for ln in added:
+            print(f"  added (newly unpinned):                   {ln}")
+        print(f"baseline updated: {len(debt)} unpinned, {len(seen)} kept verbatim, "
+              f"{len(added)} added, {len(dropped)} dropped -> {BASELINE.name}")
         return 0
 
     if "--gate" in sys.argv:

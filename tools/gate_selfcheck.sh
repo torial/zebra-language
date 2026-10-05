@@ -103,6 +103,10 @@ echo
 # and still appeared to PASS, because the assertion used `grep -qv`, which inverts
 # per LINE and so matched almost any output. A wrong fixture and a wrong assertion
 # cancelling out to green is precisely what this harness exists to expose.
+# The mkdir is this leg's own (2026-10-04): it used to come from the interp-escape leg
+# above, and when that leg retired (e8b928f) the plant was written into a missing
+# directory, the lint scanned nothing, and this leg reported "did NOT fire" every run.
+mkdir -p "$OUT/lint"
 printf 'def g(x: int): int\n    branch x\n        on 1\n            if x > 0\n                return 5\n        else\n            return 0\n' > "$OUT/lint/fall.zbr"
 r=$(run_checker $PY tools/lint_fallthrough.py ".selfcheck_tmp/lint/fall.zbr")
 case "$r" in
@@ -232,6 +236,52 @@ PYEOF
     fi
 else
     note "bug-fixture: skipped (no baseline — run --update-baseline)"
+fi
+
+# ── bug-fixture --update-baseline: a hand-written reason must SURVIVE ────────
+# The reason column is often the only record of WHY a bug has no fixture ("a CLI
+# property; PINNED BY GATE check-mode leg 1b"), and until 2026-10-04 every
+# --update-baseline replaced it with the ledger's heading. Survival alone is a
+# cooperative attacker -- a tool that never writes the file passes it -- so three plants:
+#   (a) the first debt line's reason replaced   -> must survive BYTE FOR BYTE, in place
+#   (b) the second debt line deleted            -> must come back, appended, named "added"
+#   (c) a line for 99999, not a fixed bug       -> must be removed, named "dropped"
+# and everything else must be the perturbed input unchanged. Restored immediately.
+BFB=tools/bug_fixture_baseline.txt
+if [ -f "$BFB" ]; then
+    base=$(run_rc $PY tools/bug_fixture_check.py --gate)
+    if [ "$base" -ne 0 ] || grep -q 'newly pinned' "$LAST_OUT_FILE"; then
+        note "bug-fixture merge: skipped (baseline does not match current debt: rc=$base)"
+    else
+        cp -p "$BFB" "$OUT/bfb.bak"
+        a=$(grep -E '^[0-9]+	' "$BFB" | sed -n 1p | cut -f1)
+        bn=$(grep -E '^[0-9]+	' "$BFB" | sed -n 2p | cut -f1)
+        planted="$a	ZZ planted by gate_selfcheck -- a hand-written reason, kept verbatim "
+        awk -F'\t' -v a="$a" -v bn="$bn" -v p="$planted" \
+            '$1==a {print p; next} $1==bn {next} {print}' "$OUT/bfb.bak" > "$BFB"
+        cp "$BFB" "$OUT/bfb.expect_prefix"           # what (a) and the rest must look like
+        printf '99999\tZZ planted by gate_selfcheck -- not a fixed bug\n' >> "$BFB"
+        got=$(run_rc $PY tools/bug_fixture_check.py --update-baseline)
+        cp "$BFB" "$OUT/bfb.got"
+        cp -p "$OUT/bfb.bak" "$BFB"
+        why=""
+        [ "$got" -eq 0 ] || why="rc=$got: $(last_out)"
+        # (b) first: the cmp below strips the LAST line, so without the append it would
+        # blame a kept line rather than the missing one.
+        [ -z "$why" ] && { tail -1 "$OUT/bfb.got" | grep -qE "^$bn	" \
+            || why="(b): deleted BUG-$bn was not appended back as the last line"; }
+        [ -z "$why" ] && { sed '$d' "$OUT/bfb.got" | cmp -s - "$OUT/bfb.expect_prefix" \
+            || why="(a)/(c): output is not the perturbed input minus 99999 -- a kept line was rewritten, moved or lost, or 99999 survived"; }
+        [ -z "$why" ] && { grep -qE "added .*$bn	" "$LAST_OUT_FILE" \
+            || why="(b): BUG-$bn re-added without being NAMED as added"; }
+        [ -z "$why" ] && { grep -qE "dropped .*99999	" "$LAST_OUT_FILE" \
+            || why="(c): 99999 removed without being NAMED as dropped"; }
+        if [ -z "$why" ]; then
+            pass "bug-fixture --update-baseline keeps a hand-written reason byte for byte (+ re-adds, drops, names both)"
+        else
+            bad "bug-fixture --update-baseline merge: $why"
+        fi
+    fi
 fi
 
 # ── output-sweep: a perturbed RECORDED OUTPUT must be caught ─────────────────
